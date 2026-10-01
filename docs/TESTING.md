@@ -15,6 +15,9 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   `electron/main/mcp/launch.js` (proxy mode while the dev instance runs, headless when
   nothing runs; `--exe dist/win-unpacked/Scumble.exe` for the package, `--direct` for the
   old registration, which the Python client rejects by design).
+  `python tools/mcp_attach_test.py` (run by the `mcp` gate after it) checks `--attach-only`, the switch of the repo's
+  `.mcp.json`, on a profile of its own: `ping` alone and nothing started while no Scumble runs, the attach to an
+  instance it starts (port 9573) with `tools/list_changed`, nothing started after that instance closes.
   `python tools/llm_test.py` checks the OpenAI-compatible upsample endpoint against
   `tools/llm_mock.py` (a mock server it starts itself; no ComfyUI, no key, no local model).
   `python tools/generate_test.py` covers "Generate new" (a base image from the prompt

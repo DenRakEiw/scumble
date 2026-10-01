@@ -93,7 +93,8 @@ for g in "$@"; do
   t0=$(date +%s)
   case "$g" in
     smoke) q0=$(curl -s -m 5 http://127.0.0.1:8188/queue); $T python tools/smoke_test.py "$OUT/smoke" --no-helpers > "$OUT/$g.log" 2>&1; rc=$?; q1=$(curl -s -m 5 http://127.0.0.1:8188/queue); echo "queue before $q0 after $q1" >> "$OUT/$g.log" ;;
-    mcp) if [ -n "$EXE" ]; then $T python tools/mcp_test.py --exe "$EXE" --user-data-dir "$PROFILE" "$OUT/mcp" > "$OUT/$g.log" 2>&1; else $T python tools/mcp_test.py --user-data-dir "$PROFILE" "$OUT/mcp" > "$OUT/$g.log" 2>&1; fi; rc=$? ;;
+    # mcp_attach_test.py: --attach-only (the dev .mcp.json) on a profile of its own, with an instance it starts (port 9573)
+    mcp) if [ -n "$EXE" ]; then $T python tools/mcp_test.py --exe "$EXE" --user-data-dir "$PROFILE" "$OUT/mcp" > "$OUT/$g.log" 2>&1 && $T python tools/mcp_attach_test.py --exe "$EXE" "$OUT/mcp_attach" >> "$OUT/$g.log" 2>&1; else $T python tools/mcp_test.py --user-data-dir "$PROFILE" "$OUT/mcp" > "$OUT/$g.log" 2>&1 && $T python tools/mcp_attach_test.py "$OUT/mcp_attach" >> "$OUT/$g.log" 2>&1; fi; rc=$? ;;
     commands) $T python tools/commands_test.py "$OUT/commands" > "$OUT/$g.log" 2>&1; rc=$? ;;
     assistant) timeout 900 python tools/assistant_test.py --user-data-dir "$PROFILE" ${EXE:+--exe "$EXE"} "$OUT/assistant" > "$OUT/$g.log" 2>&1; rc=$? ;;
     film) $T python tools/film_test.py "$OUT/film" > "$OUT/$g.log" 2>&1; rc=$? ;;

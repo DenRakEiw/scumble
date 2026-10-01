@@ -44,16 +44,19 @@ const registration = require("./mcp/registration");
 //                               headless when none runs (docs/MCP.md)
 //   Scumble --cmd <name> [json] run one command against the running (or a headless) instance,
 //                               print the result as JSON and exit
+//   --attach-only               with --mcp / --cmd: drive a running instance, never start one (a dev
+//                               checkout's registration: its headless app would take the user's profile)
 //
 // Electron writes a CR LF to stdout before any JavaScript runs, which strict MCP clients
 // reject; it cannot be suppressed from here. Clients register mcp/launch.js instead, which
 // runs in Node mode (prints nothing), spawns this process and drops those bytes.
 function parseArgs(argv) {
-    const out = { mcp: false, headless: false, cmd: null, cmdArgs: null };
+    const out = { mcp: false, headless: false, cmd: null, cmdArgs: null, attachOnly: false };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === "--mcp") out.mcp = true;
         else if (a === "--headless") out.headless = true;
+        else if (a === "--attach-only") out.attachOnly = true;
         else if (a === "--cmd") { out.cmd = argv[++i] || "ping"; if (argv[i + 1] && !argv[i + 1].startsWith("--")) out.cmdArgs = argv[++i]; }
     }
     return out;
@@ -1142,7 +1145,7 @@ function maybeQuit() {
  * it. A proxy whose instance went away reconnects, or takes over, at the next call.
  */
 class AgentBackend extends require("node:events").EventEmitter {
-    constructor() { super(); this.client = null; this.own = false; }
+    constructor() { super(); this.client = null; this.own = false; this.stub = false; }
 
     async ensure() {
         if (this.own) return bridge;
@@ -1153,8 +1156,10 @@ class AgentBackend extends require("node:events").EventEmitter {
                 this.client = await LocalClient.connect(userData);
                 this.client.on("commands", () => this.emit("changed"));
                 this.client.on("close", () => { this.client = null; });
+                if (this.stub) { this.stub = false; this.emit("changed"); }   // the client lists the real tools now
                 return this.client;
             } catch (_) { /* nobody listens */ }
+            if (ARGS.attachOnly) throw new Error("Scumble is not running: start it, then try again (this registration only attaches to a running Scumble, --attach-only)");
             if (app.requestSingleInstanceLock()) {
                 app.on("second-instance", onSecondInstance);
                 await app.whenReady();
@@ -1170,7 +1175,16 @@ class AgentBackend extends require("node:events").EventEmitter {
     }
 
     async run(name, args) { return (await this.ensure()).run(name, args); }
-    async describe() { return (await this.ensure()).describe(); }
+    async describe() {
+        try { return await (await this.ensure()).describe(); }
+        catch (err) {
+            // --attach-only with no Scumble running: ping alone, so the client keeps the server; the first call that
+            // reaches a started Scumble says the list changed
+            if (!ARGS.attachOnly) throw err;
+            this.stub = true;
+            return [{ name: "ping", description: `Whether Scumble answers. ${err.message}. Call ping again once it runs: the other tools come then.`, params: {} }];
+        }
+    }
     info() { return { mode: this.own ? (windowVisible() ? "window" : "headless") : "proxy", pid: process.pid }; }
 }
 

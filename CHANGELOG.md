@@ -21,6 +21,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   local* kept the other recipe's Model, Text encoder and VAE in the Settings panel, so a run loaded the wrong files. Now
   every local recipe starts from its own. Once after the update, the Settings rows of a local recipe in an open or
   saved document go back to the recipe's defaults.
+- **For agents:** `--attach-only` beside `--mcp` (or `--cmd`) makes an MCP registration drive a running Scumble and
+  never start one in the background. With no Scumble open it offers `ping` alone and says Scumble is not running; once
+  you start Scumble, the next call reaches it and the client gets every tool.
 
 ## 0.1.35 — 2026-09-30
 

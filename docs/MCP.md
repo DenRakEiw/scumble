@@ -15,8 +15,15 @@ recipe's backend like it does in the window.
 | `Scumble --mcp` | the stdio MCP server. If Scumble is already running, the server drives that instance over the local command socket. If not, this process starts the app **headless** (no window) and quits it when the client disconnects. |
 | `Scumble --headless` | the app without a window, for scripts (`--cmd`) or a later `--mcp` |
 | `Scumble --cmd <name> [json]` | run one command against the running instance (or a short-lived headless one), print the result as JSON, exit 1 on error |
+| `--attach-only` (with `--mcp` or `--cmd`) | drive a running instance and never start one. With no Scumble running, `--mcp` lists `ping` alone and every call answers "Scumble is not running"; the first call that reaches a started Scumble sends `tools/list_changed`, and the client lists every command. |
 
 Dev: `node_modules/.bin/electron . --mcp` (or `.cmd`, `--headless`, `--cmd status` likewise).
+
+**The repo's `.mcp.json` registers the dev tree with `--attach-only`.** The dev app's `productName` gives it the
+installed app's profile (`%APPDATA%\Scumble`), so a headless dev instance held the user's single-instance lock: a
+Start-menu Scumble handed over to the dev tree, which then wrote the user's autosave, showed the dev version and had
+no updater (`docs/BUGS.md`). With the switch a Claude Code session in the checkout drives the user's open Scumble and
+starts nothing when none runs. `tools/mcp_attach_test.py` (part of the `mcp` gate) checks it on a profile of its own.
 
 A second start of Scumble while a headless instance runs brings its window up (the
 single-instance lock hands the start over; a window that was never shown needs `restore()`
@@ -50,7 +57,7 @@ claude mcp add scumble -- "/home/<you>/Applications/scumble-<version>.AppImage" 
 Claude Code, dev checkout (`.mcp.json` in the repo does this for the project scope):
 
 ```bash
-claude mcp add scumble -e ELECTRON_RUN_AS_NODE=1 -- F:\canvas\node_modules\electron\dist\electron.exe F:\canvas\electron\main\mcp\launch.js --mcp
+claude mcp add scumble -e ELECTRON_RUN_AS_NODE=1 -- F:\canvas\node_modules\electron\dist\electron.exe F:\canvas\electron\main\mcp\launch.js --mcp --attach-only
 ```
 
 Claude Desktop (`claude_desktop_config.json`):

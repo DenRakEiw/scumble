@@ -11,6 +11,51 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### A headless MCP instance of the dev tree took the user's profile - fixed for 0.1.36
+
+**Reported** 2026-09-16 ("wieso kann ich die app nicht starten?"), during a Claude Code session in `F:\canvas`.
+
+**Seen:** starting Scumble showed no window at all. Two processes were running, both started by that session's MCP
+registration (`.mcp.json`: `electron.exe electron/main/mcp/launch.js --mcp`, i.e. the dev app from `F:\canvas`):
+the launcher and `electron.exe F:\canvas --mcp`. No Scumble was running when the session began, so the MCP server had
+started the app **headless** (`AgentBackend` in `electron/main/main.js`), on the default profile `%APPDATA%\Scumble`.
+It held that profile's single-instance lock since the start of the session. After both were stopped, the packaged app
+started normally.
+
+**Known:** both instances use the same `userData`, so a second start is meant to hand over to the running one:
+`app.on("second-instance", () => showWindow())` (`main.js` 573 for the headless agent path, 626 for the normal start),
+and `showWindow()` creates the window or restores a hidden one. `docs/MCP.md` and CLAUDE.md say "a second start of
+Scumble shows it". Here nothing appeared.
+
+**Not known, to measure first:**
+- Which binary the user started (the installed 0.1.14 in `%LOCALAPPDATA%\Programs`, or `dist\win-unpacked\Scumble.exe`),
+  and whether a second start of the **same** build as the headless one shows the window (dev headless + dev start,
+  exe headless + exe start). A dev and a packaged Electron may not share the lock or the hand-over.
+- Whether `second-instance` fires in the headless instance at all (log it), and whether `showWindow()` then creates a
+  window that stays hidden or off screen.
+- Whether the headless instance's renderer was ready (`bridge` ready) when the second start arrived.
+
+**Measured 2026-10-01 (0.1.35 code, a scratch profile, port 9571):** the dev launcher with `--mcp` and stdin held open
+starts the app headless (no window in the process list); a second start on the same profile exits in 0.2 to 0.3 s and
+the headless instance's window comes up ("Scumble - 1 agent connected"), both with the dev app (`electron.exe F:\canvas`)
+and with the packaged `dist/win-unpacked/Scumble.exe` as the second start. The dev app's `productName` gives it the
+installed app's `%APPDATA%\Scumble`, so the two share the lock. The hand-over works; "no window at all" did not come
+back (the default profile itself was not tried: the user's app was running on it). `showWindow`'s `restore()` is in
+since 0.1.0. What stays (`docs/HISTORY.md`, 0.1.28): a Start-menu Scumble hands over to the **dev tree** on the
+user's own profile, so the user sees the dev window (its version, no updater) and dev code writes their autosave.
+
+**Workaround:** start Scumble before Claude Code, so the MCP server drives the visible window; or stop the leftover
+`electron.exe ... --mcp` processes. A fix belongs in the hand-over (the running headless instance shows its window on a
+second start of any build), with a gate step in `tools/mcp_test.py`: start headless through the launcher, start the
+app a second time, assert a visible window within a few seconds.
+
+**Fixed** 2026-10-01 on the user's pick ("nur verbinden"): `--attach-only` (with `--mcp` / `--cmd`) drives a running
+instance and never starts one; the repo's `.mcp.json` passes it. With no Scumble running the server lists `ping` alone
+and answers "Scumble is not running"; the first call that reaches a started Scumble sends `tools/list_changed`.
+`tools/mcp_attach_test.py` (in the `mcp` gate, a profile of its own, port 9573): ping alone and no renderer on the
+profile, the attach (proxy mode, 89 tools, one list_changed), the instance closed and still nothing started. Without the
+switch the server keeps its old behaviour (installed registrations, `Help > Copy MCP registration`).
+
 ### Switching between the local recipes kept the other recipe's model files - fixed for 0.1.36
 
 **Found** by the review of item 26 step 26e (read, and reproduced in a plain-Node copy of the three functions; not run in
@@ -47,256 +92,15 @@ before-26f comparison take Gemini's new `aspectRatio` and checks each Gemini tex
 3:2 (3:2 goes); the three checks fail on the old adapter. The Size row's "auto" stays the model's own size (Lite offers
 only auto and 1K). Not run live.
 
-### Erasing had become very slow since 0.1.32 - fixed for 0.1.33
-
-**Reported** 2026-09-29 by the user: "das radieren ist seit dem letzten update mega langsam geworden", then "auf
-hochauflösenden bildern sehr langsam und ruckelig", and "gefühlt am schlimmsten ist es wenn man innerhalb einer auswahl
-radiert". **Cause**: package 4 step 5 (788e26e) painted every coalesced pen point as a segment of its own: its own
-stroke-buffer box (on tiles a scratch round trip), both ends of the soft dab or tip stamped, and for clone and heal their
-own source and destination reads; a slow frame coalesced more points into the next move. **Fix** (80bce51, 3dfaf61 on
-main; `hotfix/0.1.33` off v0.1.32): `layerStroke` and `cloneStroke` draw a move in one box, `pathStamps` places its dabs
-evenly along the whole path (both ends for the brushes, past the start for clone and heal, as one segment did), each
-segment weighted by its own step so a pen's rising pressure does not space the large dabs as the smallest, and Follow
-stroke takes the tip's angle from the move (0.1.32 took it from each coalesced piece, and pieces under 0.5 px never turned
-it). Carrying the spacing across moves (the first idea here) was not built: it would have made a large soft eraser's edge
-visibly softer than 0.1.31's, where one move's density per frame keeps it. A straight move of 8 coalesced points writes
-the bytes of one point (soft, tip, Follow stroke at flow 100 and 50 %, paint, clone, heal; the hard brush one line per
-move, only its antialiased outline moves); `editor_test` "a_move_of_coalesced_points_is_one_box_and_one_run_of_dabs",
-both backends. A review workflow (four lenses, a skeptic per finding) found the two points after 80bce51.
-
-**Measured** (`tools/brush_perf.js`, 15000 x 10000, tiles, fit, 8 coalesced points, ms a move, median; 0.1.31 / 0.1.32 /
-fix): erase 700 px 14.2 / 57.1 / 13.0 and 1,000 px 21.7 / 108.8 / 18.9; paint (hard) 1,000 px 9.4 / 52.6 / 10.2; clone
-1,000 px 15.8 / 112.2 / 27.7; heal 700 px 16.3 / 124.6 / 27.6. Clone and heal stay above 0.1.31 at the largest sizes with
-one point a move too (23.5 and 24.9 ms): that is 0.1.32's box-per-move source, which saves 0.1.31's half second and
-1.7 GB at the press. Inside a selection (`SELECT`, a hard rectangle over 5-95 %) the same rows: erase 1,000 px
-18.0 / 98.0 / 16.8. The selection itself added nothing measurable per move or per frame in any version, only 10-20 ms
-once at the release; not covered: a feathered or free selection, strokes across its edge, other zooms, a real pen. If
-the user still finds it slow inside a selection on 0.1.33, measure that case first.
-
-### The reference list's up / down moved a reference past the next layer, not the next reference - fixed for 0.1.34
-
-**Found** 2026-09-29 while `docs/PLAN_REFS.md` was researched (read): up / down called `moveLayer(id, ±1)` on the
-whole stack, so with an image layer between two references a click added an undo step and left the reference order as
-it was. `moveReference` (step 26b1) steps past the next reference with `reorderLayer`; Ctrl+] / Ctrl+[ on an active
-reference do the same. The commands gate's `refs_remap` moves one past the other.
-
-### At the renderer's 15.5 GB of typed arrays the editor threw a RangeError - fixed for 0.1.32
-
-**Found** by phase N1 (2026-09-17, `native_limits.py layers 15000x10000 22`: the 19th full 15k layer) and the gap review
-of 2026-09-26: at Chromium's limit on `ArrayBuffer`s a new tile's `new Uint8ClampedArray` threw an uncaught
-`RangeError: Array buffer allocation failed` out of whatever write needed it (`allocTileBytes`, after the arena had
-counted a refused chunk). And `writable()` counted a shared tile's holders down *before* it allocated the copy, so a
-failed allocation let the next write go into the tile the undo step still read. Now the copy comes first, the
-allocation throws a `PixelMemoryError` whose message says what ran out and what gives it back (close a document,
-delete or merge layers), a stroke's commit catches it (its undo step is in), and the shell shows one nothing caught in
-the status line. `tools/pixel_memory_test.js` (plain Node; red on the old order). Mip chains built while drawing can
-still hit the limit; not measured in the app.
-
-### A user font renamed on open could lose to a local font of the same family - fixed for 0.1.32
-
-**Found** by the .scumble review of 2026-09-26 (read): `ensureFont` (`renderer/editor/inpaint_text.js`) searched the
-user font list by family before it looked at the layer's `fontRef`, so a document whose "MyFont.ttf" was imported as
-"MyFont (1).ttf" (the mirror held other bytes under that name) re-rendered its text from the local file. Now the
-layer's own file comes first and the family only when that file does not load; every font file is registered under a
-name of its own, so two files of one family in one session each draw as themselves. `tools/font_ref_test.js` (plain
-Node, the editor's host and FontFace stood in for; red on the old code).
-
-### Rotate, distort and warp baked the layer mask in without a word - fixed for 0.1.32
-
-**Found** by the gap review of 2026-09-26 (read): `applyPending` bakes a live mask into the new pixels and drops a
-switched-off one (the new pixels have no grid the mask could stay on), and said nothing. Now the status line says
-which of the two happened and that Ctrl+Z brings the mask back (the `layerfull` undo step holds it). Editor step
-`a_transform_says_it_baked_the_mask`.
-
-### The Opacity slider was hidden for the brushes, and AltGr+8 / AltGr+9 moved the layer - fixed for 0.1.32
-
-**Found** 2026-09-27 by package 4's map of the brush code (`dist/map4/engine.md` R6 and R5, read): `buildOptsBar`
-moved the Opacity label twice, and the second call (for "shape", since e0c00a7) overwrote its tool list, so the
-slider showed for the shape tool only (paint, erase, clone, heal, bucket and gradient had it through `set_brush`
-alone). And on a German keyboard `[` and `]` are AltGr+8 / AltGr+9, which Chromium on Windows reports with Ctrl and
-Alt down: the key handler took them for Ctrl+[ / Ctrl+] and moved the active layer instead of sizing the brush (AltGr
-+ß for `\`, the base peek, did nothing). Now one tool list, and `onKey` treats a key typed with AltGr as the
-character it types. Editor step `brush_keys_under_altgr_and_the_opacity_slider`.
-
-### Guides, saved selections, past results, film points and 3D objects stayed put on Crop, Extend or Resize - fixed for 0.1.32
-
-**Found** 2026-09-26 (saved selections, the gap review) and 2026-09-27 (guides, by reading; results-history entries,
-film control points, glb frames and a fixed export size by 23b's map of the code): none of them followed a crop, an
-extend or a resize, so they landed off by what was cut away or added. Now one map (`docXf`, PLAN_0_1_31 §7 23b step 3)
-moves them all: guides shifted or scaled and dropped outside (held by the canvas step), saved selections and history
-entries through an `xf`, the plugins through the geometry event's matrix, a fixed export size zeroed. Editor step
-`guides_and_saved_selections_follow_crop_extend_resize` on both backends, glb `frame_follows_crop_resize_and_turn`,
-film `points_follow_crop_resize_and_turn`.
-
-### A text layer rotated by the transform tool lost its rotation on the next edit - fixed for 0.1.32
-
-**Found** 2026-09-27 (23a's review): the transform tool baked the turned text into pixels and kept no angle, so the
-next render drew it upright. Now the text keeps `text.angle` and is drawn at it (23b step 4); distort and warp turn it
-into a paint layer with a status line. Editor step `a_text_layer_keeps_its_free_angle` on both backends. A text turned
-by 0.1.31 has no angle stored and still comes back upright at its first edit.
-
-### TIFF was offered and could not be read - fixed for 0.1.30
-
-**Found** by the gap review of 2026-09-26: the Open dialog listed `tif` / `tiff`, the file was uploaded to the mirror
-(and a connected ComfyUI) and then failed in an `<img>`. Now `renderer/editor/inpaint_tiff.js` reads it as a stream
-(and writes TIFF exports); a TIFF never reaches the local store. Gate `tiff` on both backends, `tools/tiff_test.js`;
-mutation rounds 22 of 22 (the module) and 10 of 10 (the app side).
-
-### Every PNG export carried the prompt, the seed and the recipe - fixed for 0.1.30
-
-**Found** by the gap review of 2026-09-26: two tEXt chunks in every PNG export, the recipe (for an imported workflow
-every widget value of it, paths and third-party key widgets included) and the prompt fields. Now only when the Export
-section's switch *Prompt and recipe in the PNG* (`settings.embedRecipe`, off by default then, on since 0.1.32) or the `export` command's
-`metadata` says so (`host.workflowForPng` answers null otherwise; the node keeps embedding its graph). Every PNG export
-also carries an `sRGB` chunk on both paths (not the uploads, whose names are their hash). Gate `metadata`
-(`tools/metadata_test.py`) on both backends, 12 of 12 mutations red.
-
-### A quit or an update install skipped the pixel flush - fixed for 0.1.29
-
-**Found** by the gap review of 2026-09-26. Layer pixels reach the file mirror 15 s after the last change, and neither a
-close nor `quitAndInstall` waited for them: the last strokes, or a layer made in those seconds, came back without
-their pixels. Now a close waits for the window's save and the update's installer starts after it
-(`electron/main/quit.js`); a crashed window reloads. On the way: a send to a crashed window failed, Electron logged the
-failure and the log sent it again, 1.4 MB of log over two crashes (`main.js` `send` and the log forwarding). Gate
-`quit` (`tools/quit_test.py`, `tools/quit_test.js`), 11 of 11 mutations red.
-
-### The creative upscalers seem to take no prompt - fixed for 0.1.27
-
-**Reported** by the user on 2026-09-22 ("beim creative upscale muss man auch einen prompt mitsenden koennen").
-Clarity and Magnific Creative (`usesPrompt`) did send a prompt, but only the Generate tab's, and the Upscale dialog
-showed nothing of it. The dialog has a Prompt field for such a recipe now (`#up-prompt`, prefilled from the tab), the
-`upscale` command a `prompt` argument, `list_recipes` a `usesPrompt` flag. Gate step
-`the_dialog_sends_its_own_prompt_to_an_upscaler_that_takes_one` (`tools/upscale_test.py`), 6 of 6 mutations red.
-**Not changed, and only a key could decide it:** Topaz Wonder's *Redefine* model takes a `prompt` on fal (its schema
-says so), Topaz Bloom only `autoprompt`; neither recipe sends a prompt, because it is unknown whether the other Wonder
-models refuse one.
-
-### A PSD saved with layers cannot be opened with them - fixed for 0.1.25
-
-Reported by the user on 2026-09-22 ("man kann zwar als .psd speichern aber keine .psd mit den ebenen laden").
-Measured: not a broken path but a missing one. The open dialog listed no `.psd` / `.ora`, and a PSD reached the
-browser's image decoder, which cannot read it. **Built:** `renderer/editor/inpaint_layered.js` (`readPsd`, `readOra`,
-plain data, no DOM) and the editor's `readLayered` / `loadLayered`: `loadFile` (Open, `load_image`, a drop on an empty
-tab) opens a PSD or ORA with its layers, decided by the file's first bytes, not its name; a drop on an open document
-adds its layers where the file has them. The bottom layer becomes the base when it covers the picture, visible,
-opaque and normal (Photoshop's Background, the editor's own export); otherwise the base is transparent. A layer mask
-is multiplied into the layer's alpha, a group's visibility and opacity into its layers; adjustment and fill layers,
-clipping masks and blend modes the editor lacks are named in the status line. RGB and grayscale, 8 and 16 bit, RLE,
-raw and ZIP; PSB, CMYK, Lab and 32 bit are refused by name. **Found on the way and fixed:** the editor's own PSD
-export wrote every layer name through an ASCII-only Pascal string, so "Gürtel" came back as "G_rtel" in Photoshop too;
-both PSD writers (`inpaint_export.js`, `inpaint_bands.js`) now also write the `luni` block with the full name.
-Checked on real files of the user's (Photoshop PSDs with groups, masks and a gradient fill; the editor's own PSD and
-ORA exports): the layers composited again match the file's merged picture to 0.00 to 0.14 levels, except where a
-left-out fill layer is the background (named in the notes). Tests: `node tools/layered_test.js` (44 checks on files
-built byte by byte), the gate `layered` (`tools/layered_test.py`, 7 steps: the round trip through the editor's own
-PSD and ORA export, a transparent base, a drop, a file named .png, a truncated file); mutation round 18 of 18 red.
-
-### Layer names cannot be edited (GitHub issue #1) - fixed for 0.1.23
-
-Measured on 2026-09-21 in a fresh instance: the side panel was 291 px, a layer row 259 px, its content 274 px, and
-the name of every layer with the full button set **0 px** wide (the Base row, with fewer buttons, 202 px). The name is
-the only element that gives in (`flex:1` with `overflow:hidden`), so it vanished, could not be double-clicked, and the
-trash button stood 23 px past the list's edge. The rename itself (`renameLayerInline`) was never broken. Fixed: the
-panel is 320 px, the row's mini buttons 22 px with a 3 px gap, the name `min-width:48px`, the kind select shrinks
-(44 to 84 px), the selects of the expanded rows shrink, a text layer's rows wrap, and a rename pushes a `layers` undo
-step. `editor_test.py` `layer_rows_fit_the_panel_and_names_can_be_renamed` (17 layers, so the list shows its
-scrollbar; the active row of each kind; nothing past the list's edge; a real `dblclick`, Enter, undo) is red on the
-0.1.22 code and red without the undo step.
-
-An entry here leaves the file when the release named in it is published.
-
-- **The assistant's picker warned about itself** (fixed 2026-09-20, in 0.1.22; reported by the user the same
-  evening 0.1.21 went out: "wieso hast du im agent ueberall geschrieben: not tried with a real key... muessen die
-  user ja nicht wissen"). `marks()` in `renderer/assistant.js` appended "not tried with a real key" to every model
-  of every provider, because every registry entry carried `tried: false` - ten providers, so the picker read as a
-  row of warnings about the app instead of information about a model. **Decided and done:** the mark goes
-  altogether, and with it the `tried` flag of `electron/main/assistant/providers.js` and the field `picker()` and
-  `noticeFor()` put on their answer. A row now says only what is true of that model ("cannot look at the picture",
-  a provider's own preview note). The honest sentence stays where the report said it belongs: `docs/ASSISTANT.md`,
-  "What it cannot do" ("It has **not been tried against a live API** in this release"), and the release notes.
-  Gate: `tools/assistant_test.py` `the_picker_carries_the_users_own_models_and_no_warning_about_itself` (no option
-  of the rendered picker matches "not tried" or "not tested"), and `node tools/models_test.js`
-  `no_group_warns_about_itself` for the groups the main process hands over; both red when the mark is put back.
-- **FLUX.2 [flex] on fal sent the safety tolerance as its step count** (fixed 2026-09-20, in 0.1.21; it was under
-  "What OpenRouter (item 12) found on the way"). `recipes/flux2_flex.json`, the `fal` variant carried
-  `num_inference_steps` and `safety_tolerance` both at `"index": 1`. One slot holds one value
-  (`editor.settings["1"]`, `settingsChanged`), and `providerParams` reads every row from its slot, so the panel showed
-  two rows instead of three and the request went out as `num_inference_steps: "2", guidance_scale: 2.5,
-  safety_tolerance: "2"`: 2 steps instead of 50, and the steps as a string (measured in the app on the old file,
-  2026-09-20). The row is `"index": 3` now, the slot `guidance_scale` does not use. Gates: `node tools/recipes_test.js`
-  (every settings row of every shipped recipe owns its slot and its key, comfy recipes included) and
-  `tools/recipes_test.py` `flux2_flex_on_fal_has_three_slots_and_sends_three_values` (three rows with three labels,
-  three values in the request).
-- **A recipe with a `providers` map could not be imported** (fixed 2026-09-20, in 0.1.21; same section). `importFile`
-  (`electron/main/recipes.js`) took a provider recipe only in the old one-provider shape, so the shape every shipped
-  recipe has was refused with "This file is neither a ComfyUI workflow, an API-format prompt nor a Scumble recipe."
-  and nobody could copy a recipe, add a variant of their own and import it. `hasVariants` now takes either shape, a
-  `kind: "provider"` file that names no provider at all gets a message of its own (an empty map and an array count as
-  none), and `importFile` answers the normalized recipe, as `list()` serves it - the Settings note used to read
-  "(undefined, 0 nodes, 0 settings)" for a provider recipe and now names the providers that came in. A copy that keeps
-  the shipped id still shadows the shipped recipe, as one placed in `%APPDATA%/Scumble/recipes/` by hand does. Gates:
-  `node tools/recipes_test.js` (both shapes, what stays refused, nothing written on a refusal) and
-  `tools/recipes_test.py` (the import through the dialog, the list, the chosen variant reaching `host`).
-- **Opening a large JPEG, WebP or a PNG with a colour profile blocked the window** (fixed 2026-09-19, in 0.1.20; it
-  was under "What phase N1 found on the way"). On tiles such a file of `InpaintEditor.imageWorkerFrom` pixels and more
-  (32 MP; 0 turns it off) is decoded in a pool worker (`image_read`: `createImageBitmap` with the `<img>`'s settings,
-  drawn in bands of 256 rows into a CPU OffscreenCanvas and read there) and put into tiles without the round trip
-  (`putCanvasRows`); a plain PNG keeps the stream reader. It covers opening a file, an image layer (drop, paste, the
-  file inputs, `add_image_layer`), the restore at start (every file on tiles by its own size, fetched once: a small one
-  goes to the `<img>` from the bytes already fetched) and `load_image` by file name (`setBaseFromRef`). A failed read
-  falls back to the `<img>` (but for a PNG above the canvas limit, which only the stream reader holds); an open still
-  decoding never lands over a later one; a PNG with a `cICP` chunk keeps the browser's decoder too, as `iCCP`, `gAMA`
-  and `cHRM` did. The same bytes as the `<img>` way. 15000 x 10000, the window
-  blocked before / after (`dist/daily/open_bench.py`): JPEG 950 / 98 ms, JPEG with an Adobe RGB profile 3,692 / 34 ms,
-  JPEG with EXIF orientation 6 1,872 / 62 ms, WebP with alpha 1,656 / 38 ms, PNG with an Adobe RGB profile 4,437 /
-  45 ms; wall 1.04 to 0.78 s, 3.78 to 1.08 s, 5.84 to 2.68 s. Gate: `editor_test.py`
-  `large_image_files_open_in_a_worker` (six Pillow files: plain, profiled and rotated JPEG, alpha WebP, profiled and
-  16-bit PNG; the worker's bytes against the `<img>`'s, the EXIF size, the profile really applied, an image layer and
-  a restore through the worker). Mutations caught: the profile dropped, `premultiplyAlpha: "none"`, a band a row off,
-  the restore not routed, `imageOrientation: "flipY"`; `"none"` is equivalent (Chromium 152 treats it as
-  `"from-image"`). Canvas backend unchanged.
-- **A provider run's crop and stitch held the window** (fixed 2026-09-19, in 0.1.20). The row in the list said
-  0.6 s; on the user's usual document it was far worse, because `readBox` took the whole flatten for a colour-matched
-  layer: 15000 x 10000, a 1,024 px selection (`native_test.py provider_crop`, `match_provider_crop`,
-  `film_provider_crop`), the longest block before / after: plain stack 665 / 24 ms, with a 5,000 x 3,500 matched
-  layer 1,469 / 22 ms, with a film look over it 6,283 / 51 ms; wall about 0.6 s, in workers. `host.runProvider` now
-  calls `prepareCropAsync` / `finishResultAsync` (stitch.js): the selection's window is read here and planned, the
-  crop box is composited by the tile workers (`readBoxBytes`: the stack or the filter program of B items 1 and 7, the
-  matched layer's statistics from point samples as decision (b) of 7c allows for runs; `readBox` and the canvas
-  backend's flatten are the fallback), and the crop, the masks, the resizes, the answer's decode, the colour match and
-  every PNG are made in a stitch worker of its own (`stitch_worker.js`, app only), the same steps as the synchronous
-  pair (`planCrop`, `cropPixels`, `finishPixels`). The run is one moment as before: the selection's window, the stack
-  the box is composited from (`holdRunStack`, copy-on-write clones), the reference layers, the recipe's parameters, the
-  prompt and the seed are all taken at the click, before the first await. The synchronous `prepareCrop` / `finishResult` stay (the fallback
-  and what the size tests read); `setStitchInWorker(false)` and `InpaintEditor.boxOverTiles = false` are the A/B
-  switches. Gate: `export_test.py` `a_run_off_the_window_sends_what_the_window_sent`: info, masks and the plain
-  stack's crop and patch files byte for byte against the synchronous pair; over a soft layer and a levels layer within
-  B item 1's two levels on 0.1 % of the bytes, with a matched layer within decision (b)'s levels (colour premultiplied
-  by alpha: a level where alpha is 8 is 31 levels of straight colour nobody sees). Mutations caught: the box a row
-  off, the stitch without its region, the mask not resized, a program band shifted; the limits dropped in the shared
-  settings is equivalent there (`size_test` holds it). `smoke` ran the new path against the loopback provider
-  (2026-09-19, PASS on both backends). An adversarial review (four lenses, two refuters a finding: 15 findings, 7
-  upheld, all fixed with the other 8) gave the one-moment snapshot, the parameters at the click, the `<img>` fallback of
-  the stream reader, `cICP`, the restore by file size and the transfers instead of copies.
-- **Releasing a stroke held the window** (fixed on tiles 2026-09-19, in 0.1.20; the bullet "Releasing an erase stroke
-  is its own stutter" below). The commit wrote band after band through canvases (the stroke's part materialised, the
-  layer's tiles put into a scratch, drawn, read back): on tiles a stroke is now composited a tile at a time through
-  the compositing kernel (`commitStrokeTiles`, `compositeStroke`: the stroke's box and, with a clip, the selection
-  under each tile as the kernel's coverage; only the pixels the stroke reaches are written). A scaled or fractional
-  layer with a clip and the canvas backend keep the bands; `InpaintEditor.strokeTiles = false` is the A/B switch.
-  `tools/release_test.py` (real mouse events, 15000 x 10000 with a matched result layer and a film look, until the
-  picture settled), the longest block after the release before / after: an erase on the matched layer at fit 70 /
-  34 ms (the commit 51 / 17), a stroke of paint there 88 / 36 ms (67 / 19), a long diagonal erase across a full-size
-  layer 288 / 66 ms (271 / 48); at 1:1 31 / 38 ms (the commit 4 ms either way, the frame's film look the rest). Gate:
-  `editor_test.py` `a_stroke_commits_through_the_kernel_on_tiles` (paint at an opacity, erase, erase at an opacity,
-  the alpha locked, paint and erase clipped on a layer off the origin: pixels the stroke does not reach the same bytes,
-  the rest within two levels premultiplied of the bands', undo byte for byte; an erase at full opacity is the same
-  bytes). Mutations caught: the clip ignored, the opacity ignored, the alpha lock as source-over, untouched pixels
-  not restored, the clip a few pixels off, the clip without the layer's offset.
-
 ---
 
 ## Open
+
+### Topaz Wonder's Redefine model may take a prompt (open since 0.1.27, needs a key)
+
+Left over from the creative-upscaler fix of 0.1.27 (the Upscale dialog's Prompt field for recipes with `usesPrompt`):
+Topaz Wonder's *Redefine* model takes a `prompt` on fal (its schema says so), Topaz Bloom only `autoprompt`; neither
+recipe sends a prompt, because it is unknown whether the other Wonder models refuse one. Only a run with a key decides it.
 
 ### Smudge and the tone brushes still dab once per coalesced point (measured 2026-09-29, not a regression)
 
@@ -543,35 +347,6 @@ match and alignment (71.5 s to 1.96 s at 2500 x 1800), with `paste` "crop" (43.1
 masks alone at 6000 x 4000 889.5 s to 4.4 s, equal on eight cases; run again against the committed file, the same.
 **Next:** a ComfyUI restart when it suits the user, then one local run on a large document; the entry leaves this file
 when that run is fast (a node release with a `pyproject.toml` version takes it to the registry).
-
-### A headless MCP instance keeps Scumble from starting
-
-**Reported** 2026-09-16 ("wieso kann ich die app nicht starten?"), during a Claude Code session in `F:\canvas`.
-
-**Seen:** starting Scumble showed no window at all. Two processes were running, both started by that session's MCP
-registration (`.mcp.json`: `electron.exe electron/main/mcp/launch.js --mcp`, i.e. the dev app from `F:\canvas`):
-the launcher and `electron.exe F:\canvas --mcp`. No Scumble was running when the session began, so the MCP server had
-started the app **headless** (`AgentBackend` in `electron/main/main.js`), on the default profile `%APPDATA%\Scumble`.
-It held that profile's single-instance lock since the start of the session. After both were stopped, the packaged app
-started normally.
-
-**Known:** both instances use the same `userData`, so a second start is meant to hand over to the running one:
-`app.on("second-instance", () => showWindow())` (`main.js` 573 for the headless agent path, 626 for the normal start),
-and `showWindow()` creates the window or restores a hidden one. `docs/MCP.md` and CLAUDE.md say "a second start of
-Scumble shows it". Here nothing appeared.
-
-**Not known, to measure first:**
-- Which binary the user started (the installed 0.1.14 in `%LOCALAPPDATA%\Programs`, or `dist\win-unpacked\Scumble.exe`),
-  and whether a second start of the **same** build as the headless one shows the window (dev headless + dev start,
-  exe headless + exe start). A dev and a packaged Electron may not share the lock or the hand-over.
-- Whether `second-instance` fires in the headless instance at all (log it), and whether `showWindow()` then creates a
-  window that stays hidden or off screen.
-- Whether the headless instance's renderer was ready (`bridge` ready) when the second start arrived.
-
-**Workaround:** start Scumble before Claude Code, so the MCP server drives the visible window; or stop the leftover
-`electron.exe ... --mcp` processes. A fix belongs in the hand-over (the running headless instance shows its window on a
-second start of any build), with a gate step in `tools/mcp_test.py`: start headless through the launcher, start the
-app a second time, assert a visible window within a few seconds.
 
 ### Selection undo and bounds lose isolated pixels above 1 MP (canvas backend)
 
