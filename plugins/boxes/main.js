@@ -21,7 +21,7 @@
 
 import { BOX_ID, KINDS, DESC_MAX, toFrame, idWords, smallBox, smallNote } from "/editor/boxes.js";
 import { clipboardText, fold } from "./format.js";
-import { makeTool, colourOf } from "./tool.js";
+import { makeTool, colourOf, colourSlot, nextColour } from "./tool.js";
 
 const HELP = "Boxes tell a model that takes them (FLUX 3 Image) where things go. New: what the description says, in the box. Keep: an element stays where it is. Move: from its source box to this one. Remove: taken out, the background filled. From reference: a reference layer (or a part of it) placed in the box. Text: the words rendered in the box. Positions are image pixels; a run measures the boxes in the crop it sends and leaves out one outside it. A box sets place and size, not a hard edge.";
 const KIND_LABELS = { new: "New", keep: "Keep", move: "Move", remove: "Remove", from: "From reference", text: "Text" };
@@ -31,7 +31,8 @@ export function activate(scumble) {
     const { ui } = scumble;
 
     // ---- the data ----------------------------------------------------------------------------------------------------
-    // per document: { version: 1, boxes: [{ id, kind, rect: [l, t, r, b] (image px), src, layer, desc, text }] }
+    // per document: { version: 1, boxes: [{ id, kind, rect: [l, t, r, b] (image px), src, layer, desc, text, colour }] }
+    // (colour: the box's slot in tool.js PALETTE, given when it is made)
     const boxesOf = (doc) => { const d = scumble.documents.data(doc).get(); return Array.isArray(d.boxes) ? d.boxes : []; };
     const write = (doc, boxes, label) => scumble.documents.data(doc).set({ version: 1, boxes }, { undo: label });
 
@@ -120,7 +121,10 @@ export function activate(scumble) {
         }
         if (!BOX_ID.test(id)) throw new Error(`the id "${id}" is not lowercase words and a number joined by underscores (knight_1, red_scarf_2), or is a picture's name (ref_image_1)`);
         if (others.some((b) => b.id === id)) throw new Error(`the id ${id} is already used by another box`);
-        return { id, kind, rect, src, layer, desc, text };
+        // every box its own colour, given when it is made and kept through every change (a box from before colours
+        // keeps the one its place in the list gave it); a duplicate is a new box and gets a new one
+        const colour = base ? colourSlot(base, boxes) : nextColour(boxes);
+        return { id, kind, rect, src, layer, desc, text, colour };
     }
 
     // ---- what a box says -----------------------------------------------------------------------------------------------
@@ -398,7 +402,7 @@ export function activate(scumble) {
                 for (const b of boxes) {
                     const row = ui.el("div", "boxes-row");
                     row.dataset.box = b.id;
-                    row.style.borderLeftColor = colourOf(b);
+                    row.style.borderLeftColor = colourOf(b, boxes);
                     // a click on the row (not in a field) selects the box on the canvas
                     row.addEventListener("pointerdown", (e) => { if (!e.target.closest("input, select, button")) boxTool.select(doc, b.id); });
                     const head = ui.el("div", "boxes-head");

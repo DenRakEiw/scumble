@@ -4,16 +4,34 @@
 // Escape lets go of it, D duplicates it, the arrows nudge it by 1 px (Shift 10), Alt+click goes through boxes that lie
 // on top of each other. A Move box's source and a From box's part are boxes of their own once the box is selected. A
 // drag changes nothing until the button comes up: then it is one undo step through the plugin's data. The overlay draws
-// every box in its kind's colour with its id, and the first words of its description when the box is wide enough; while
-// the tool is active it also shows the crop Generate sends (S3c): the picture outside it dimmed, its size on its edge.
+// every box in its own colour with its id (and its kind when the id does not say it), and the first words of its
+// description when the box is wide enough; the kind shows in the shape (Remove hatched, Move's source dashed with an
+// arrow, From's part dashed). While the tool is active it also shows the crop Generate sends (S3c): the picture outside
+// it dimmed, its size on its edge.
 
-export const COLOURS = { new: "#3ddc84", text: "#3ddc84", keep: "#b4b4b4", move: "#4aa3ff", remove: "#ff5a5a", from: "#b57cff" };
+/** Every box its own colour (the user, 2026-10-02: six New boxes in one green could not be told apart). */
+export const PALETTE = ["#3ddc84", "#ff9f1c", "#2ec4f0", "#ff4fd8", "#ffd60a", "#a78bfa", "#ff6b6b", "#b8f53b", "#4d7cff", "#ff8fa3"];
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
 /** The rectangle the tool shows and edits for a box: a Keep or Remove box is where the element is (src). */
 export const mainRect = (b) => ((b.kind === "keep" || b.kind === "remove") && Array.isArray(b.src) ? b.src : b.rect);
-/** The colour of a box (a Text box is a New box with words). */
-export const colourOf = (b) => COLOURS[b.text != null ? "text" : b.kind] || COLOURS.new;
+/** A box's place in PALETTE: the one it got when it was made, or (a box from before colours) its place in the list. */
+export const colourSlot = (b, boxes) => (Number.isInteger(b.colour) && b.colour >= 0 ? b.colour : Math.max(0, (boxes || []).indexOf(b))) % PALETTE.length;
+/** The colour of a box. */
+export const colourOf = (b, boxes) => PALETTE[colourSlot(b, boxes)];
+/** The slot a new box gets: the first one no box has, else the least used (the lowest of those). */
+export function nextColour(boxes) {
+    const used = new Array(PALETTE.length).fill(0);
+    for (const b of boxes || []) used[colourSlot(b, boxes)]++;
+    return used.indexOf(Math.min(...used));
+}
+/** The tag's kind word when the id does not say it already (keep_1 does); a Text box shows T, a From box its reference. */
+function kindMark(b, refName) {
+    if (b.kind === "from") return refName ? ` ← ${refName}` : "";
+    if (b.text != null) return " T";
+    if (b.kind === "new" || b.id.startsWith(b.kind + "_")) return "";
+    return ` · ${b.kind}`;
+}
 
 /** A rectangle with whole, ordered corners, at least 1 px each way. */
 function tidy(r) {
@@ -50,6 +68,68 @@ export function makeTool(scumble, api) {
     const selected = new Map();   // doc id -> box id
     let drag = null;              // { docId, mode: "new" | "move" | "resize", part: "main" | "src", id, handle, start, orig, rect, moved, square }
     const viewOf = (doc) => ({ scale: doc.editor.view.scale, dpr: window.devicePixelRatio || 1 });
+    let lastClick = null;         // { docId, id, t }: the click before, for a double click on a box
+    let editing = null;           // { docId, id, field, dlg, area }: the description typed into a box on the canvas
+
+    // ---- a double click on a box: its description typed on the canvas (the user, 2026-10-02) --------------------------
+    // The field sits in a non-modal <dialog>: the editor's shortcuts leave a key inside an open dialog alone, Escape
+    // included, so the field handles Enter and Escape itself. It edits the description (a Text box: its words); it is
+    // never rendered into the picture.
+    function closeEditor(commit) {
+        const e = editing;
+        if (!e) return;
+        editing = null;
+        const value = e.area.value;
+        e.dlg.remove();
+        if (!commit) return;
+        let d = e.doc;
+        try { d = scumble.documents.byId(e.docId) || e.doc; } catch (_) { /* the tab was closed: nothing to write */ return; }
+        const b = api.boxesOf(d).find((x) => x.id === e.id);
+        if (!b || value === (e.field === "text" ? b.text || "" : b.desc || "")) return;
+        try {
+            const n = api.set(d, b.id, { [e.field]: value });
+            d.status(n.id !== b.id ? `Box ${b.id} described; it is called ${n.id} now.` : `Box ${b.id} described.`);
+        } catch (err) { d.status(String((err && err.message) || err)); }
+        d.draw();
+    }
+    function openEditor(doc, b, ev) {
+        closeEditor(true);
+        const field = b.text != null ? "text" : "desc";
+        const r = mainRect(b);
+        const view = viewOf(doc);
+        const k = view.scale / view.dpr;   // CSS pixels per image pixel
+        const raw = ev && ev.raw && Number.isFinite(ev.raw.clientX) ? ev.raw : null;
+        const turned = !!(doc.editor.view && doc.editor.view.angle);
+        // the box's top left on the screen from the click (a turned view: at the click)
+        let left = raw ? raw.clientX + (turned ? 0 : (r[0] - ev.x) * k) : 100;
+        let top = raw ? raw.clientY + (turned ? 0 : (r[1] - ev.y) * k) : 100;
+        const width = Math.max(200, Math.min(480, turned ? 260 : (r[2] - r[0]) * k - 8));
+        left = Math.max(4, Math.min(window.innerWidth - width - 8, left + 4));
+        top = Math.max(4, Math.min(window.innerHeight - 90, top + 18));
+        const colour = colourOf(b, api.boxesOf(doc));
+        const dlg = document.createElement("dialog");
+        dlg.className = "boxes-inline";
+        dlg.style.cssText = `position:fixed;inset:auto;left:${left}px;top:${top}px;margin:0;padding:0;border:none;background:transparent;z-index:10050;`;   // over the editor (.ipc-modal is 10000)
+        const area = document.createElement("textarea");
+        area.rows = 3;
+        area.value = field === "text" ? b.text || "" : b.desc || "";
+        area.placeholder = field === "text" ? "The words to render in the box" : "What goes in the box (a reference as @img1)";
+        area.title = "Enter keeps it, Shift+Enter starts a new line, Escape cancels";
+        area.style.cssText = `width:${Math.round(width)}px;box-sizing:border-box;font:13px system-ui,sans-serif;color:#fff;background:rgba(18,18,18,0.94);border:2px solid ${colour};border-radius:4px;padding:6px 8px;resize:none;outline:none;`;
+        area.addEventListener("keydown", (e) => {
+            e.stopPropagation();
+            if (e.key === "Escape") { e.preventDefault(); closeEditor(false); }
+            else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); closeEditor(true); }
+        });
+        area.addEventListener("blur", () => { if (editing && editing.area === area) closeEditor(true); });
+        dlg.appendChild(area);
+        document.body.appendChild(dlg);
+        dlg.show();
+        editing = { docId: doc.id, doc, id: b.id, field, dlg, area };
+        area.focus();
+        area.setSelectionRange(area.value.length, area.value.length);
+        doc.status(`Describe ${b.id}: Enter keeps it, Escape cancels. It goes into the prompt as words, never into the picture.`);
+    }
 
     const selOf = (doc) => {
         const id = selected.get(doc.id);
@@ -107,12 +187,12 @@ export function makeTool(scumble, api) {
     const tool = {
         id: "box",
         label: "Boxes",
-        title: "Boxes for the prompt (FLUX 3 Image): drag to draw a box, click to select, drag to move, the handles to resize; Delete removes, D duplicates, arrows nudge, Alt+click picks a box under another",
+        title: "Boxes for the prompt (FLUX 3 Image): drag to draw a box, click to select, double-click to describe it, drag to move, the handles to resize; Delete removes, D duplicates, arrows nudge, Alt+click picks a box under another",
         icon: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="11" height="9" rx="1"/><rect x="10" y="10" width="11" height="9" rx="1" stroke-dasharray="3 2"/></svg>',
         key: "X",
-        hint: "Boxes: drag to draw a box, click to select, drag to move, handles resize; Delete removes, D duplicates, arrows nudge (Shift 10 px), Alt+click picks a box under another. Describe the boxes in the Generate pane's Boxes panel.",
+        hint: "Boxes: drag to draw a box, click to select, double-click to describe it, drag to move, handles resize; Delete removes, D duplicates, arrows nudge (Shift 10 px), Alt+click picks a box under another. The Generate pane's Boxes panel lists them all.",
         drawAlways: true,
-        onDeselect(doc) { drag = null; doc.draw(); },
+        onDeselect(doc) { drag = null; lastClick = null; closeEditor(true); doc.draw(); },
         onDown(doc, ev) {
             if (!doc.loaded) return;
             drag = null;
@@ -161,16 +241,28 @@ export function makeTool(scumble, api) {
             doc.status(`${drag.id || "New box"}: ${r[0]}, ${r[1]} - ${r[2]}, ${r[3]} (${r[2] - r[0]} x ${r[3] - r[1]} px)`);
             doc.draw();
         },
-        onUp(doc) {
+        onUp(doc, ev) {
             const d = drag;
             drag = null;
             if (!d || d.docId !== doc.id) return;
-            if (!d.moved || !d.rect) { doc.draw(); return; }
+            if (!d.moved || !d.rect) {
+                // a click on a box: the second one within half a second opens its description on the canvas
+                if (d.mode === "move" && d.id) {
+                    const now = Date.now();
+                    const twice = lastClick && lastClick.docId === doc.id && lastClick.id === d.id && now - lastClick.t < 500;
+                    lastClick = twice ? null : { docId: doc.id, id: d.id, t: now };
+                    const b = twice ? api.boxesOf(doc).find((x) => x.id === d.id) : null;
+                    if (b) { doc.draw(); openEditor(doc, b, ev); return; }
+                } else lastClick = null;
+                doc.draw();
+                return;
+            }
+            lastClick = null;
             if (d.mode === "new") {
                 try {
                     const b = api.add(doc, { kind: "new", rect: d.rect, id: api.nextId(api.boxesOf(doc), "box") });
                     select(doc, b.id);
-                    doc.status(`Box ${b.id} added: describe it in the Boxes panel of the Generate pane.${api.switchNote(doc)}`);
+                    doc.status(`Box ${b.id} added: double-click it to describe it (or use the Boxes panel of the Generate pane).${api.switchNote(doc)}`);
                 } catch (err) { doc.status(String((err && err.message) || err)); doc.draw(); }
                 return;
             }
@@ -293,7 +385,7 @@ export function makeTool(scumble, api) {
             for (const b0 of order) {
                 let b = b0;
                 if (live && live.id === b.id) b = { ...b, ...patchFor(b, live.part, live.rect) };
-                const colour = colourOf(b), r = mainRect(b), isSel = b.id === sel;
+                const colour = colourOf(b0, boxes), r = mainRect(b), isSel = b.id === sel;
                 if (!Array.isArray(r)) continue;
                 const lw = (isSel ? 2.5 : 1.5) * px;
                 ctx.globalAlpha = base;
@@ -303,12 +395,12 @@ export function makeTool(scumble, api) {
                 if (b.kind === "remove") hatch(r, colour);
                 outline(r, colour, lw, base < 1 ? [6, 4] : null);
                 const name = b.kind === "from" ? api.referenceName(doc, b.layer) : null;
-                tag(r, colour, name ? `${b.id} ← ${name}` : b.text != null ? `${b.id} T` : b.id);
+                tag(r, colour, b.id + kindMark(b, name));
                 words(r, b.text != null ? `"${b.text}"` : b.desc);
                 if (isSel) { ctx.globalAlpha = 1; handles(r, colour); if ((b.kind === "move" || b.kind === "from") && Array.isArray(b.src) && (b.kind === "move" || visibleLayer(b.layer))) handles(b.src, colour); }
             }
             ctx.globalAlpha = 1;
-            if (live && live.mode === "new" && live.rect) outline(live.rect, COLOURS.new, 2 * px, [6, 4]);
+            if (live && live.mode === "new" && live.rect) outline(live.rect, PALETTE[nextColour(boxes)], 2 * px, [6, 4]);
             if (crop) {
                 const f = cropFrame;
                 const sent = crop.emitted && (crop.emitted[0] !== crop.w || crop.emitted[1] !== crop.h) ? `, sent as ${crop.emitted[0]} × ${crop.emitted[1]}` : "";

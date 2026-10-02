@@ -3,6 +3,18 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- **Boxes: every box its own colour.** A new box takes a colour no other box of the document has (ten in turn), keeps
+  it through every change, and its row in the Boxes section has the same colour at its edge, so six New boxes are six
+  colours now, not six greens. The kind shows in the shape and the tag instead: a Move box has a dashed source and an
+  arrow, a Remove box is hatched, a From reference box names its reference, a Text box carries a T, and Keep, Move
+  and Remove say their kind when the name does not.
+- **Boxes: double-click a box to describe it on the picture.** With the Boxes tool, a double-click on a box opens a
+  field over it with its description (on a Text box, its words): Enter keeps it, Shift+Enter starts a new line, Escape
+  cancels, a click elsewhere or another tool keeps what you typed. It goes into the prompt as words, never into the
+  picture.
+
 ## 0.1.37 — 2026-10-02
 
 - **FLUX 3 Image: boxes in the prompt, behind one switch.** A switch *Boxes* in a row of its own under the prompt

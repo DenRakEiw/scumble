@@ -70,7 +70,7 @@ const plain = await c("add_paint_layer", { name: "Plain", doc: window.__bDoc });
 const a = await c("boxes.add", { rect: [100, 100, 400, 300], desc: "a dog", doc: window.__bDoc });
 // the document's first box turns its Boxes switch on (S3d) and says so
 // no id given: the id is made from the description's words (S3e)
-if (!eq(a, { id: "dog_1", kind: "new", rect: [100, 100, 400, 300], src: null, layer: null, desc: "a dog", text: null, switched_on: true })) throw new Error("add: " + JSON.stringify(a));
+if (!eq(a, { id: "dog_1", kind: "new", rect: [100, 100, 400, 300], src: null, layer: null, desc: "a dog", text: null, colour: 0, switched_on: true })) throw new Error("add: " + JSON.stringify(a));
 if (!ednow().genSettings.boxes) throw new Error("the first box did not turn the switch on");
 // the note says what is true under the selected recipe: a recipe that takes no boxes hides the switch
 const takes0 = (await c("boxes.list", D())).recipe.takes;
@@ -137,7 +137,7 @@ return { steps: undos };
 await c("select_rect", { x: 300, y: 200, w: 200, h: 150, doc: window.__bDoc });
 await c("set_prompt", { text: "a red\\ndoor", doc: window.__bDoc });
 const b = await c("boxes.from_selection", D());
-if (!eq(b, { id: "red_door_1", kind: "new", rect: [300, 200, 500, 350], src: null, layer: null, desc: "a red door", text: null })) throw new Error("from selection: " + JSON.stringify(b));
+if (!eq({ ...b, colour: undefined }, { id: "red_door_1", kind: "new", rect: [300, 200, 500, 350], src: null, layer: null, desc: "a red door", text: null })) throw new Error("from selection: " + JSON.stringify(b));
 // the prompt names the reference: a From box of that layer into the selection
 const lamp = (await c("list_layers", D())).layers.find((l) => l.id === window.__bRef);
 if (!lamp || lamp.label !== "img1") throw new Error("the lamp is not @img1: " + JSON.stringify(lamp));
@@ -272,9 +272,11 @@ if (ed.undo.length !== undo0 + 6) throw new Error("nudge, duplicate and delete s
 ptr("down", 1000, 200); ptr("up", 1000, 200);
 if (!key("Escape") || selId() !== null) throw new Error("Escape did not deselect");
 if (key("Delete")) throw new Error("Delete with nothing selected was taken");
-// the overlay: the box's green on the screen canvas while the tool is active, nothing once another tool is and the panel is closed
+// the overlay: the box's own colour (its panel row's border) on the screen canvas while the tool is active, nothing once
+// another tool is and the panel is closed
 const g = ed.canvas.getContext("2d");
-const green = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); const d = g.getImageData(Math.round(sx) - 3, Math.round(sy), 7, 1).data; for (let i = 0; i < d.length; i += 4) if (d[i + 1] - d[i] > 90 && d[i + 1] > 150) return true; return false; };
+const own = ed.panes.gen.querySelector(`.boxes-row[data-box="${made.id}"]`).style.borderLeftColor.match(/\\d+/g).map(Number);
+const green = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); const d = g.getImageData(Math.round(sx) - 3, Math.round(sy), 7, 1).data; for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - own[0]) < 40 && Math.abs(d[i + 1] - own[1]) < 40 && Math.abs(d[i + 2] - own[2]) < 40) return true; return false; };
 ed.draw();
 if (!green(960, 220)) throw new Error("no box drawn on the canvas while the tool is active");
 const details = Array.from(ed.panes.gen.querySelectorAll("details")).find((d) => d.querySelector("summary") && d.querySelector("summary").textContent.trim() === "Boxes");
@@ -598,6 +600,70 @@ await c("undo", D());
 if ((await boxes()).length !== 6) throw new Error("the clear's undo");
 await c("close_document", { doc: window.__bDoc, force: true });
 return { boxes: after.length };
+"""),
+    ("each_box_its_own_colour_and_a_double_click_describes_it", """
+// 0.1.38: every box its own colour, kept through a change; a double click on a box opens its description on the canvas
+const d = await c("new_document");
+window.__bDoc = d.id;
+host.shell.activate(ednow());
+await c("new_canvas", { width: 1200, height: 800, doc: d.id });
+const ed = ednow();
+const add = (a) => c("boxes.add", { ...D(), ...a });
+await add({ kind: "new", rect: [20, 20, 220, 220], desc: "a lamp" });
+const b2 = await add({ kind: "new", rect: [300, 20, 500, 220], desc: "a chair" });
+await add({ kind: "keep", rect: [600, 20, 800, 220], src: [600, 20, 800, 220] });
+let list = await boxes();
+if (!eq(list.map((b) => b.colour), [0, 1, 2])) throw new Error("three boxes, three colours: " + JSON.stringify(list.map((b) => b.colour)));
+await c("boxes.remove", { ...D(), id: b2.id });
+const b4 = await add({ kind: "new", rect: [300, 300, 500, 500], desc: "a vase" });
+if (b4.colour !== 1) throw new Error("a new box takes the free colour: " + b4.colour);
+const moved = await c("boxes.set", { ...D(), id: list[0].id, rect: [30, 30, 230, 230] });
+if (moved.colour !== 0) throw new Error("a change keeps the colour: " + moved.colour);
+await wait(60);
+const borders = [...ed.panes.gen.querySelectorAll(".boxes-row")].map((r) => r.style.borderLeftColor);
+if (new Set(borders).size !== 3) throw new Error("the panel rows' colours: " + JSON.stringify(borders));
+// an undo and a redo keep the colours
+const before = await boxes();
+await c("undo", D()); await c("redo", D());
+if (!eq((await boxes()).map((b) => b.colour), before.map((b) => b.colour))) throw new Error("undo / redo changed the colours");
+// the double click: the tool's pointer hooks, two clicks within half a second
+ed.setTool("boxes.box");
+const fake = { shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, button: 0, pressure: 0.5, pointerType: "mouse", clientX: 400, clientY: 300 };
+const ptr = (phase, x, y) => { host.pluginPointer(ed, phase, { ...fake, type: "pointer" + phase }, x, y, ed.pointer); if (phase === "up") ed.pointer = null; };
+const dbl = (x, y) => { ptr("down", x, y); ptr("up", x, y); ptr("down", x, y); ptr("up", x, y); };
+dbl(400, 400);
+let dlg = document.querySelector("dialog.boxes-inline[open]");
+if (!dlg) throw new Error("no field after a double click");
+let area = dlg.querySelector("textarea");
+if (area.value !== "a vase") throw new Error("the field holds " + JSON.stringify(area.value));
+if (document.activeElement !== area) throw new Error("the field has no focus");
+area.value = "a small brass bell";
+area.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+await wait(50);
+if (document.querySelector("dialog.boxes-inline")) throw new Error("Enter left the field open");
+list = await boxes();
+const bell = list.find((b) => b.desc === "a small brass bell");
+if (!bell || bell.colour !== 1) throw new Error("Enter: " + JSON.stringify(list));
+// Escape cancels; the editor's own Escape does not see the key
+dbl(400, 400);
+area = document.querySelector("dialog.boxes-inline[open] textarea");
+area.value = "nothing";
+area.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+await wait(50);
+if (document.querySelector("dialog.boxes-inline")) throw new Error("Escape left the field open");
+if ((await boxes()).some((b) => b.desc === "nothing")) throw new Error("Escape kept the text");
+// two clicks far apart in time are no double click
+ptr("down", 400, 400); ptr("up", 400, 400); await wait(600); ptr("down", 400, 400); ptr("up", 400, 400);
+if (document.querySelector("dialog.boxes-inline")) throw new Error("a slow second click opened the field");
+// a tool change closes an open field and keeps what it holds
+dbl(400, 400);
+document.querySelector("dialog.boxes-inline[open] textarea").value = "a bronze bell";
+ed.setTool("brush");
+await wait(50);
+if (document.querySelector("dialog.boxes-inline")) throw new Error("the tool change left the field open");
+if (!(await boxes()).some((b) => b.desc === "a bronze bell")) throw new Error("the tool change dropped the text");
+await c("close_document", { doc: window.__bDoc, force: true });
+return { colours: list.map((b) => b.id + ":" + b.colour).join(" ") };
 """),
 ]
 

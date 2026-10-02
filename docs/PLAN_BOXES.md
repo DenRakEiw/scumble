@@ -97,6 +97,18 @@ as the size of the thing (the manual says so now). Seen on the way: ids from a d
 words, adjectives included (`small_black_1`, `white_wall_1`; "black_cat" would read better), cosmetic. The
 bbox rows are `[y0, x0, y1, x1]` on 0-1000, as the docs write them. Next: S4 and S5 optional.
 
+**After 0.1.37 (2026-10-02 night, the user's screenshot of six green New boxes over a 3 x 3 grid):** every box its
+own colour, and a double click describes a box on the canvas. `tool.js` `PALETTE` (ten colours), `colourSlot(b,
+boxes)` (the box's `colour` field, or its place in the list for a box made before), `nextColour(boxes)` (the first slot
+no box has, else the least used); `normalise` gives a new box `nextColour`, a changed one keeps its slot (an old box
+gets the one it showed); duplicates are new boxes. The kind shows in the shape and the tag (`kindMark`: " · keep" when
+the id does not say it, T, "← reference"). The double click: two clicks on a box within 500 ms in `onUp` open a
+`<textarea>` in a non-modal `<dialog class="boxes-inline">` over the box (the editor's key handler leaves keys inside
+an open dialog alone, Escape included; `z-index` 10050 over `.ipc-modal`'s 10000), Enter keeps (`api.set` with `desc`,
+or `text` on a Text box), Escape cancels, blur and a tool change keep. Gate step
+`each_box_its_own_colour_and_a_double_click_describes_it`; one look over CDP with real mouse events (dpr 1.5). The
+tool texts still name FLUX 3 Image alone: no Ideogram recipe gets boxes yet (S5; 4.5's hosts document none).
+
 ## 1. Sources
 
 - BFL docs, fetched 2026-10-01 as markdown (`https://docs.bfl.ml/<page>.md`, index `https://docs.bfl.ml/llms.txt`):
