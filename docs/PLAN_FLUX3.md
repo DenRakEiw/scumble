@@ -214,3 +214,290 @@ of it may be redundant or fight it; worth one A/B by eye.
   the 2048 limit), the text.refs table row; `docs/TESTING.md`: `tools/flux3_test.js`.
 - `CLAUDE.md` "Unverified": FLUX 3 until the live check ran.
 - Remove "pre-release" from the recipe's description once it ran live.
+
+## FLUX 3 Image on other providers (researched 2026-10-02, not built)
+
+**The ask (the user, 2026-10-02):** put on the plan that Scumble also supports the other FLUX 3 Image API providers,
+with four links: fal (`fal.ai/models/blackforestlabs/flux-3/edit-image`), WaveSpeed
+(`wavespeed.ai/models/black-forest-labs/flux-3/image-to-video`), OpenRouter (`openrouter.ai/black-forest-labs/flux-3-image`)
+and Oxen.ai (the user's workbench, `oxen.ai/DenRakEiw/ai/workbench/playground?model=flux-3-image`).
+
+**How this was researched:** public pages, `llms.txt` files and machine-readable schemas, all fetched without a key;
+no request with a key, no login, nothing generated, no code changed. The WaveSpeed link is a **video** model
+(`image-to-video`); WaveSpeed sells FLUX 3 Image as two other routes (below). The Oxen workbench link redirects to the
+login and was not opened; Oxen's public model list and model page were read instead. This section replaces the guesses
+of §3 "Second path" (fal's edit path is `edit-image`, not `/edit`). Comfy Router and Replicate, also named in §3, were
+not looked at in this round.
+
+**Which of Scumble's adapters ran live (README, 2026-10-02):** BFL (FLUX 3 Image) and OpenRouter (GPT Image 2.5).
+fal, WaveSpeed and Oxen are written from docs and never ran against the live service.
+
+### At a glance
+
+| | BFL direct (built) | OpenRouter | fal | Oxen.ai | WaveSpeed |
+|---|---|---|---|---|---|
+| Route | `POST /v1/flux-3-image` | `POST /api/v1/images`, one id | two ids: `edit-image`, `text-to-image` | one id, `/images/edit` (and `/images/generate`) | two ids: `edit`, `text-to-image` |
+| Pictures | `images`, base64, 1 to 10 | `input_references`, URL or data URL, 0 to 10 | `image_urls`, URL or data URI, 1 to 10 (edit only) | `input_image`, URL (data URL "not recommended"), up to 10 | `images`, URL or data URI, 1 to 10 (edit only) |
+| Per picture | 256 px a side to 16 MP, 20 MB | not stated | 256 px a side to 4 MP | not stated | 256 px a side to 4 MP |
+| Aspect | 15 presets + `auto` | 15 presets + `auto` | 14 presets (no `9:21`) + `auto` | 15 presets + `auto` | 14 presets (no `9:21`), no `auto` |
+| Size | `resolution` 1k / 2k / 4k (768sq, 1.5k exist) | `resolution` "768" / "1K" / "1.5K" / "2K" / "4K" | `resolution` 512sq / 768sq / 1k / 2k / 4k | `resolution` 768sq / 1k / 2k / 4k | `resolution` 1k / 2k / 4k |
+| Safety | `safety_tolerance` 0-4 | passthrough only, range not stated | `safety_tolerance` 0-4 | `safety_tolerance` 0-4 | none |
+| Grounding | `grounding`, Scumble's row on | cannot be set | none | `grounding`, default **false** | none |
+| Prompt expansion | always (no switch) | not stated | `enable_prompt_expansion`, default false | not stated | `enable_prompt_expansion`, default false |
+| Seed | none | none | none | none | none |
+| Answer | poll, signed URL; cost, MP, expanded prompt | sync, base64; `usage.cost` | fal queue, URL | sync, base64 or URL | queue + poll, URL |
+| 1k / 2k / 4k | 4.8 / 10 credits seen (about $0.048 / $0.10 at $0.01 a credit, not checked) / not seen | $0.048 / $0.10 / $0.607 list, half that now | $0.024 now, $0.048 from Oct 8 / not stated / not stated | $0.0624 / $0.13 / $0.7891 | $0.05 / $0.12 / $0.65 |
+| Key row in Scumble | Black Forest Labs | OpenRouter | fal | Oxen.ai | WaveSpeedAI |
+
+All four number the pictures from 1 with the crop first (on an edit), then the Original, then the reference layers,
+the same as BFL direct. So the recipe-level `refs.name: "image {n}"` fits every variant as it is: `@img1` goes out as
+"image 2" on an edit (or "image 3" with the Original) and as "image 1" on Generate new. No variant needs its own
+`refs.name`.
+
+### OpenRouter
+
+| | |
+|---|---|
+| Endpoints | One model id for edits and new images: `black-forest-labs/flux-3-image` (dated slug `black-forest-labs/flux-3-image-20261001`, listed 2026-10-01). `POST https://openrouter.ai/api/v1/images`, the route `openrouter.js` already uses. An edit is the same id with `input_references`. Public capability lists (no key): `GET /api/v1/images/models` and `GET /api/v1/images/models/black-forest-labs/flux-3-image/endpoints`. One host: Black Forest Labs (`provider_slug` `black-forest-labs`; the model page: OpenRouter "forwards every request to it directly"), `headquarters` null, `datacenters` [], so Scumble's China `provider.ignore` list does not touch it. No BYOK. The chat route lists the model too (`supported_parameters` `["seed"]`) but documents no image options for it: not used. |
+| Pictures and references | `input_references`: 0 to 10 entries `{ "type": "image_url", "image_url": { "url": "https://..." \| "data:image/png;base64,..." } }`. Not stated: how the list maps onto BFL's `images` (order, re-encoding), per-picture limits, the body size limit (only "413 request body too large"). |
+| Size | `resolution` enum "768" \| "1K" \| "1.5K" \| "2K" \| "4K" ("Concrete pixel dimensions are derived per provider"; the playground's 16:9 at 2K came back 2736 × 1536). `aspect_ratio`: BFL's 15 presets plus "auto"; what an absent `aspect_ratio` does is not stated. `n` 1..1. No width / height / `size`. |
+| Seed, safety, grounding | No `seed` (FLUX.2 lists it, FLUX 3 does not). `safety_tolerance` only as passthrough (`allowed_passthrough_parameters: ["safety_tolerance"]`), sent as `provider: { options: { "black-forest-labs": { "safety_tolerance": n } } }`; its range is not stated (BFL: 0 to 4); unrecognised passthrough keys are "silently dropped". Grounding is neither a parameter nor a passthrough key: it cannot be set, and what OpenRouter sends BFL for it is not stated (BFL's default is on). Not listed, so not sent (an unlisted parameter answers 400): `output_format`, `size`, `quality`, `background`, `output_compression`, `stream`. |
+| Response | Synchronous: `{ created, data: [{ b64_json, media_type }], usage: { prompt_tokens, completion_tokens, total_tokens, cost } }`; `media_type` "may be omitted". No URL, no seed, no expanded prompt, no megapixels. A failed upstream answers 502 and is not billed; 524 is an edge timeout (threshold not stated). Latency over 3 days: P50 43.8 s, P90 111 s, P99 206 s. Data policy: "Prompt training: No", "30 day retention". |
+| Price | Per output image, list / now ("50% off", end not stated): 768 $0.041 / $0.0205, 1K $0.048 / $0.024, 1.5K $0.07 / $0.035, 2K $0.10 / $0.05, 4K $0.607 / $0.3035. No price for input pictures. `usage.cost` gives the charge in USD. |
+| Sources | [model page](https://openrouter.ai/black-forest-labs/flux-3-image), [llms.txt](https://openrouter.ai/black-forest-labs/flux-3-image/llms.txt), [images/models](https://openrouter.ai/api/v1/images/models), [endpoints](https://openrouter.ai/api/v1/images/models/black-forest-labs/flux-3-image/endpoints), [providers](https://openrouter.ai/api/v1/providers), [image guide](https://openrouter.ai/docs/guides/overview/multimodal/image-generation.md), [API reference](https://openrouter.ai/docs/api/api-reference/images/generate-an-image.md) |
+
+**What changes in Scumble.** A variant `providers.openrouter` in `recipes/flux3.json` (the last key, the OpenRouter
+convention) runs today without code:
+
+```json
+"openrouter": { "model": "black-forest-labs/flux-3-image", "input": "edit",
+  "options": { "accepts": ["resolution", "aspect_ratio", "n"],
+    "ratios": ["21:9","2:1","16:9","3:2","7:5","4:3","5:4","1:1","4:5","3:4","5:7","2:3","9:16","1:2","9:21"],
+    "tiers": { "1K": 1024, "2K": 2048, "4K": 4096 }, "max_images": 10 },
+  "settings": [], "text": { "sizes": [1024, 2048, 4096], "refs": {} }, "note": "..." }
+```
+
+`layout()` puts the crop at `input_references[0]`; the recipe's `limits` (2048 in 16s, min 608, the 15 aspects) hold
+for the variant; `openrouter` is in `TEXT_PROVIDERS`. Where it falls short of BFL direct, each fixed by an option in
+`electron/main/providers/openrouter.js` (other recipes unchanged; most exist in `oxen.js` already):
+
+1. **The prompt is wrapped.** `promptFor` puts `refs.instruction` around it ("Edit image 1 and keep its size and
+   framing. ..."); BFL direct sends it as written. Option `options.prompt: "as_written"`. Until then the variant
+   carries no `boxes` (the box rows would land inside the wrapper, not at the end).
+2. **An edit sends no `aspect_ratio`** (`aspectFor` only runs for `req.kind === "text"`) and returns no `info.fit`.
+   Option `options.edit_aspect: "preset_or_auto"`: the preset within 3 % of the crop with `info.fit: "stretch"`,
+   else "auto" (set in code: `bodyFor` drops an "auto" param).
+3. **The tier goes by long side** (`tierFor`: a 1344 × 768 crop goes as 2K, BFL direct sends 1k). Option
+   `options.tier_unit: "area"` with FLUX 3's 15 % slack. Never "768" or "1.5K".
+4. **No safety tolerance.** `bodyFor` builds `provider` with `ignore` / `only` only. Option
+   `options.passthrough: { "black-forest-labs": ["safety_tolerance"] }`, the value rounded and clamped 0 to 4; then a
+   Safety tolerance row `["INT", { "default": 2, "min": 0, "max": 4 }]`. No Grounding row; the note says grounding is
+   BFL's default and cannot be switched off here.
+5. **Picture rules.** `picturesFor` checks the count, `max_ratio` and the 18 MB inline total. Add `min_side` 256 /
+   `max_pixels` 16,000,000, scaling reference layers through `ctx.resizePng` (as `flux3.js` does for BFL).
+6. **Seed.** `run()` reports `req.seed` though none went out: report null when `accepts` lacks "seed".
+
+After 1, the variant gets `"boxes": "flux3"` and the `selection_box` row (`bodyFor` sends only keys in `PARAMS` and
+`accepts`, so the row never reaches OpenRouter). Tests: `tools/openrouter_test.js` (the FLUX 3 body is exactly
+`model, prompt, input_references, resolution, aspect_ratio, n, provider { ignore, options }`; no `seed`, no
+`output_format`), `tools/recipes_test.js` §4 (`flux3: { bfl: {}, openrouter: {} }`). Docs: the OpenRouter section of
+`docs/RECIPES.md` (its recipe count), the FLUX 3 section, the recipe description ("Also on OpenRouter.").
+
+### fal
+
+| | |
+|---|---|
+| Endpoints | Under BFL's own namespace `blackforestlabs/`, not `fal-ai/`; both dated 2026-10-01. Edit: `blackforestlabs/flux-3/edit-image` (image-to-image). New image: `blackforestlabs/flux-3/text-to-image`. Queue `POST https://queue.fal.run/<id>`, then `GET .../requests/{request_id}/status`, `GET .../requests/{request_id}`, `PUT .../requests/{request_id}/cancel`; sync `POST https://fal.run/<id>`. No inpaint, fill or mask endpoint. The same prefix holds FLUX 3 **video** endpoints (`text-to-video`, `image-to-video`, ...): not for Scumble. Auth `Authorization: Key ...`. |
+| Pictures and references | Edit: `image_urls` (required), 1 to 10, "Reference image URLs or data URIs, in image 1 through image 10 order. Each must be at least 256 pixels per dimension and at most 4 megapixels. The first controls auto aspect ratio." Whether "4 megapixels" is 4,000,000 or 4,194,304 is not stated. Text-to-image has **no picture field**: a new image with references goes to `edit-image`. |
+| Size | `aspect_ratio`: "auto" (default) and 14 presets, **no "9:21"** ("Auto uses the first reference image when editing"; what auto does when image 1 is no preset is not stated). `resolution`: "512sq" \| "768sq" \| "1k" (default) \| "2k" \| "4k", no 1.5k; the sizes of 512sq / 768sq are not stated; "4k can take several minutes". No width / height / `image_size`. |
+| Seed, safety, grounding | No `seed`. `safety_tolerance` integer 0 to 4, default 2. No grounding. `enable_prompt_expansion` boolean, default **false** (BFL direct always expands). Also `output_format` "jpeg" (default) \| "png", `sync_mode`, `version` "latest". No `mask`, `negative_prompt`, `num_images`. The schema does not set `additionalProperties: false`; whether unknown fields are refused is not stated. |
+| Response | fal's queue (`IN_QUEUE`, `IN_PROGRESS`, `COMPLETED`); result `{ images: [{ url, content_type, file_name, file_size, width, height }] }`. No seed, cost or expanded prompt. CDN files are "available for at least 7 days by default" (`fal.js` downloads at once). |
+| Price | "starting at $0.0205 per image. A 1K (1 MP) image costs $0.024", a 50 % launch rate: "The discount ends October 8, after which a 1K (1 MP) image will cost $0.048." Edit: "One flat price per image, whatever the number of references." 2k and 4k: not stated (`fal.ai/pricing` has no FLUX 3 row). |
+| Sources | [edit-image](https://fal.ai/models/blackforestlabs/flux-3/edit-image), [text-to-image](https://fal.ai/models/blackforestlabs/flux-3/text-to-image), their `llms.txt`, OpenAPI [edit](https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=blackforestlabs/flux-3/edit-image) / [text](https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=blackforestlabs/flux-3/text-to-image), catalog `https://api.fal.ai/v1/models?q=flux-3`, [llms-full.txt](https://fal.ai/docs/llms-full.txt) (CDN lifetime) |
+
+**What changes in Scumble.** A variant `providers.fal` plus four changes in `electron/main/providers/fal.js`:
+
+- **The variant:** `"model": "blackforestlabs/flux-3/edit-image"`, `"input": "edit"`; `options`: `max_images` 10,
+  `boxes` "flux3", `omit: ["num_images", "seed", "selection_box"]` (`fal.js` always sends `num_images: 1` and the
+  seed, and passes every settings row by name, so the app-side `selection_box` row would reach fal), the new `sizing`
+  "flux3", `aspect_ratios` the 14. Variant `limits` (they override the recipe's): `pixels` 4000000 (a 2048 × 2048
+  crop is 4.19 MP) and `aspects` the 14. `settings`: Safety tolerance INT 0 to 4 default 2, `enable_prompt_expansion`
+  BOOLEAN (default: open question 3), `selection_box`; no Grounding row. `text`: `"model":
+  "blackforestlabs/flux-3/text-to-image"` named explicitly (`textModelOf` strips only `/(edit|inpaint|fill)$`),
+  `sizes` [1024, 2048, 4096], `refs: { "model": "blackforestlabs/flux-3/edit-image", "options": { "aspect_ratios":
+  [the 14] } }`, `settings` safety and expansion.
+- **a) `textLayout`** tests `/\/edit$/`, which `.../edit-image` does not match: Generate new with references is
+  refused today ("This text-to-image endpoint takes no reference images"). Accept `/\/edit(-image)?$/`, or any route
+  named by `text.refs.model`.
+- **b) Sizing.** With `sizing: "none"` an edit sends no `resolution` (fal's default 1k: a 2048 crop comes back at
+  about 1 MP), a text run sends no size at all, and an agent's aspect ("5:3") goes out raw. A `sizing: "flux3"`
+  branch: `resolution` the tier by area (FLUX 3's rule, 1k / 2k / 4k); a text run the nearest of the 14 always; an
+  edit the preset within 3 % of the crop, else no `aspect_ratio` (auto).
+- **c) Picture rules.** References and the Original go as they are; fal refuses one over 4 MP or under 256 px a side.
+  Scale them through `ctx.resizePng` to the 4 MP cap. The crop is held by the variant's `limits.pixels`.
+- **d) Seed.** `seed: num(out.seed, req.seed)` reports the editor's seed: none when `omit` holds "seed".
+
+Unchanged: `index.js` (`checkPictures`, `resolveNames`, the boxes), the queue code, the stitch (fal returns no
+`info.fit`; the stitch's own 1 % check applies unless b sets it), the key row. Tests: the fal layouts in
+`tools/refs_layout_test.js` (edit and text route, the 10-picture cap), a body test against the saved OpenAPI schema,
+`tools/recipes_test.js` §4 (`fal: { model: "blackforestlabs/flux-3/edit-image", options: { aspect_ratios: [...] } }`).
+
+### Oxen.ai
+
+| | |
+|---|---|
+| Endpoints | One id, `flux-3-image` (display name "FLUX 3 Image", developer `black_forest_labs`, `released_at` 2026-10-01; its list entry was created 2026-10-02 07:27 UTC). The public model page shows `POST https://hub.oxen.ai/api/ai/images/edit` for every call, even a text-only body; the model list gives `"endpoint": "/images/generate"`, as for every image model. Async: `POST https://hub.oxen.ai/api/ai/queue`, `GET .../queue/{id}` (not used by Scumble). No per-model docs page (`docs.oxen.ai/inference-api/reference/models/flux-3-image.md` answers 404). Auth `Authorization: Bearer ...`. |
+| Pictures and references | `input_image`: an array of URI strings, nullable, maxItems 10, "image 1" first. URLs must be publicly downloadable; "Data URIs (data:image/...;base64,...) work as an alternative but aren't recommended for production". Per-picture limits and formats: not stated. The schema's prompt text says "Use @Image1, @Image2, etc."; `x-media-references` names the pattern "image {n}"; whether the API rewrites `@ImageN` itself is not stated. `x-bounding-boxes: { format: "flux", imageField: "input_image", aspectRatioField: "aspect_ratio" }`: Oxen's own UI writes BFL's box rows into the prompt. |
+| Size | `aspect_ratio` "auto" (default) and BFL's 15 presets. `resolution` "768sq" \| "1k" (default) \| "2k" \| "4k". No width / height. |
+| Seed, safety, grounding | No `seed`. `safety_tolerance` integer 0 to 4, default 2 (`x-hidden` in the workbench, listed as accepted on the model page). `grounding` boolean, default **false** (BFL's own default is true). Generic: `response_format` "url" \| "b64_json", `target_namespace`. Not in the schema: `negative_prompt`, `output_format`, mask, `num_images`. Whether unknown fields are refused: not stated. |
+| Response | Synchronous: `{ model, created, images: [{ url } \| { b64_json }] }`; a URL is "a temporary link" (lifetime not stated). No cost, seed or expanded prompt. Oxen saves every result in the user's account. The docs' generic "typically 5-30 seconds" does not fit FLUX 3 (80 s and 109 s on BFL direct); `oxen.js` waits up to Node's 300 s for the answer's headers. |
+| Price | Per image (`pricing.cost_per_image_grid.high`): 768sq $0.0533, 1k $0.0624, 2k $0.13, 4k $0.7891, about 1.3 × BFL direct. Whether pictures or grounding change it: not stated. |
+| Sources | [model page](https://www.oxen.ai/ai/models/flux-3-image), `https://hub.oxen.ai/api/ai/models/flux-3-image` (no key), [image generation](https://docs.oxen.ai/inference-api/reference/image_generation.md), [image editing](https://docs.oxen.ai/inference-api/reference/image_editing.md), [async queue](https://docs.oxen.ai/inference-api/reference/async_queue.md), [llms-full.txt](https://docs.oxen.ai/llms-full.txt) |
+
+**What changes in Scumble.** A variant `providers.oxen` (after `bfl`) runs edits, new images and new images with
+references today:
+
+```json
+"oxen": { "model": "flux-3-image", "input": "edit",
+  "options": { "accepts": ["aspect_ratio", "resolution", "safety_tolerance", "grounding"], "edit_aspect": "auto",
+    "ratios": [the 15], "tiers": { "1k": 1048576, "2k": 4194304, "4k": 16777216 }, "tier_unit": "area",
+    "numbers": ["safety_tolerance"], "max_images": 10 },
+  "settings": [Safety tolerance INT 0-4 default 2, Grounding BOOLEAN default true],
+  "text": { "sizes": [1024, 2048, 4096], "refs": {}, "settings": [the same two] }, "note": "..." }
+```
+
+`run()` sends an edit and a new image with references to `/images/edit`, a new image without them to
+`/images/generate`; the pictures go as data URLs in `input_image` with the crop at [0]; the tier goes by area; no
+seed or negative prompt goes out (not in `accepts`); `response_format: "b64_json"` always. The Grounding row keeps
+Scumble's default (on), not Oxen's (open question 5). For parity, in `electron/main/providers/oxen.js`:
+
+1. **Prompt as written.** `promptFor` wraps an edit through `openrouter.promptFor` and a new image with references
+   through `instruction`: the same `options.prompt: "as_written"` as OpenRouter, checked in both places. Then
+   `"boxes": "flux3"` and the `selection_box` row; `boxes.js` numbers `ref_image_k` from Oxen's layout as it is.
+2. **App-side rows.** `bodyFor` skips keys not in `accepts`, so `selection_box` stays home; `tools/oxen_test.js`
+   (:280-283) requires every settings key in `accepts` and needs an exemption for app-side rows.
+3. **Aspect fit and tier slack (optional, plain "auto" works).** An `edit_aspect` mode "preset_or_auto" plus
+   `info.fit`; the 15 % tier slack as an option, or the tiers × 1.15 in the recipe (1205862 / 4823449 / 19293798).
+4. **Picture rules.** `picturesFor` has no 256 px minimum or 16 MP maximum; add them (the crop refused, references
+   scaled through `ctx.resizePng`). Oxen states no limits, so BFL's are the working assumption.
+5. **Seed.** `run()` reports `body.seed ?? req.seed`: null when `accepts` has no seed.
+6. **Grounding words.** An agent's "on" / "off" goes out as a string today; coerce it as `flux3.js` does.
+
+Tests: `tools/refs/oxen/flux-3-image.json` (the model entry `{ id, endpoint, pricing, request_schema }`, saved during
+this research in the session scratchpad as `oxen/flux-3-image.json`; fetch it again from the public URL when
+building), then `tools/oxen_test.js` §3 checks every body against it; `tools/recipes_test.js` §4 (`oxen: {}`).
+
+### WaveSpeed
+
+| | |
+|---|---|
+| Endpoints | The FLUX 3 collection (`wavespeed.ai/collections/flux-3`) has 12 models, two of them images: `black-forest-labs/flux-3/text-to-image` and `black-forest-labs/flux-3/edit`, each `POST https://api.wavespeed.ai/api/v3/<id>`; result `GET https://api.wavespeed.ai/api/v3/predictions/{id}/result`. The other ten (including the user's link, `image-to-video`) are video. `black-forest-labs/flux-3` alone does not exist. Schemas (OpenAPI 3.0, no key): `https://wavespeed.ai/center/default/api/v1/model_schema/black-forest-labs/flux-3/edit` and `.../text-to-image`. Auth `Authorization: Bearer ...`. Who runs the model behind WaveSpeed is not stated. |
+| Pictures and references | Edit: `images` (required), 1 to 10, "URLs or data URIs", order matters ("Refer to input images by their order, such as image 1 or image 2"); each 256 px a side to 4 MP (4.0 or 4.19 MP not stated); a byte cap is not stated. Text-to-image has **no picture field**. |
+| Size | `aspect_ratio`: 14 presets, **no "9:21" and no "auto"**; edit: no default (left out, it follows the first picture); text: default "1:1". `resolution` "1k" (default) \| "2k" \| "4k" ("4k can take several minutes"). No width / height / `size`. |
+| Seed, safety, grounding | **None of the three** (the playground shows an "Enable Safety Checker" switch that is not in the schema). `enable_prompt_expansion` boolean, default **false**; `output_format` "jpeg" (default) \| "png". No `negative_prompt`, mask, `enable_sync_mode`, `enable_base64_output`. Both input schemas say `"additionalProperties": false`; whether the server enforces it is not stated. |
+| Response | Submit answers `{ code, message, data: { id, model, status, urls, outputs: [], created_at } }`; poll about every 2 s (`created`, `processing`, `completed`; `failed`, `cancelled`, `timeout`, `deleted`); `data.outputs` are URLs ("generally expire within 7 days"), `data.timings.inference` in ms. No base64 option for this model, no cost, no expanded prompt. |
+| Price | 1k $0.05, 2k $0.12, 4k $0.65 per image, the same on both routes, "based only on the selected resolution" (the page warns that listed prices may be outdated). |
+| Sources | [edit](https://wavespeed.ai/models/black-forest-labs/flux-3/edit), [text-to-image](https://wavespeed.ai/models/black-forest-labs/flux-3/text-to-image), their `llms.txt`, [edit API](https://wavespeed.ai/docs/docs-api/black-forest-labs/black-forest-labs-flux-3-edit), [text API](https://wavespeed.ai/docs/docs-api/black-forest-labs/black-forest-labs-flux-3-text-to-image), [collection](https://wavespeed.ai/collections/flux-3), [data retention](https://wavespeed.ai/docs/data-retention-policy) |
+
+**What changes in Scumble.** The adapter's protocol, upload path and `images` list (crop first) fit; a variant alone
+is not enough because `electron/main/providers/wavespeed.js` sends fields FLUX 3 does not take:
+
+- **The variant:** `"model": "black-forest-labs/flux-3/edit"`, `"input": "edit"`; `options`: `max_images` 10,
+  `aspect_ratios` the 14, `negative` false, a new `accepts` list (`resolution`, `enable_prompt_expansion`,
+  `output_format`), `boxes` "flux3" only once the rows are checked live. Variant `limits`: `aspects` the 14, `pixels`
+  4000000. `settings`: `enable_prompt_expansion`, `selection_box` (with `boxes`); a Resolution row only if the tier
+  code below is not built. `text`: `"model": "black-forest-labs/flux-3/text-to-image"` named explicitly (`textModelOf`
+  strips "/edit" to `black-forest-labs/flux-3`, which does not exist), `refs: { "model":
+  "black-forest-labs/flux-3/edit" }`, `settings` explicit (otherwise the variant's rows, `selection_box` included,
+  are copied).
+- **Seed** (`wavespeed.js:69`): `seed` goes out whenever the editor has one (no recipe has a `random_seed` row).
+  An `options.accepts` allowlist, or `options.seed: false`; `:169` then reports no seed. The same latent problem
+  sits in every WaveSpeed recipe whose schema has no `seed` (nano-banana-2/edit, seedream-v5.0-pro/edit,
+  gpt-image-2/edit, all also `additionalProperties: false`): fixing it changes their bodies too, so the step runs
+  `tools/refs_layout_test.js` over every WaveSpeed variant.
+- **Param pass-through** (`:97-100`) sends every row that is not "" / null / "auto": the `accepts` list keeps
+  `selection_box` and anything else out.
+- **Picture rules:** 256 px to 4 MP, references scaled through `ctx.resizePng`.
+- **Optional:** the tier by area instead of a Resolution row (a row left at "auto" sends nothing and WaveSpeed
+  renders 1k); `info.fit: "stretch"` when the crop is within 3 % of the preset; an early refusal of a blank prompt
+  (`minLength` 1).
+
+Works as is: the closest of `aspect_ratios` (`:101`), no negative prompt with `negative: false`, `output_format`
+"png", `layout` / `textLayout` (`EDIT_ROUTE` matches `.../flux-3/edit`, not `.../text-to-image`). Tests:
+`tools/refs_layout_test.js` (WaveSpeed edit and text routes), a body test against the saved schema,
+`tools/recipes_test.js` §4 (`wavespeed: { model: "black-forest-labs/flux-3/edit" }`).
+
+### Shared pieces (F0, after item 28 is done with `flux3.js`)
+
+- **FLUX 3's rules, reusable.** Every adapter above needs the tier by area with 15 % slack, the preset-within-3 %
+  rule, safety rounded and clamped 0 to 4, grounding words as a boolean, and the picture rules. `flux3.js` exports
+  `_tierOf` and `_shapeOf` today, but `_shapeOf` takes a request and BFL's 15 presets, and `FLUX3_PICTURE` is fixed
+  at 16 MP; `safetyOf`, `groundingOf`, `rescaleOf` and the picture code are not exported. Export them with their
+  limits as parameters (`shapeFor(w, h, kind, presets, { auto })`, `pictureOf(bytes, what, ctx, { minSide,
+  maxPixels, maxBase64 })`), so fal and WaveSpeed pass 14 presets and 4 MP, OpenRouter and Oxen 15 and 16 MP. Not
+  before the other session is done with `flux3.js` / `bfl.js`; copying small helpers into each adapter is the
+  fallback.
+- **App-side rows.** `selection_box` is read by the renderer (`host.js` "Selection as box") and reaches the adapter
+  in `params` like any row. BFL and OpenRouter send only what they accept; fal and WaveSpeed pass rows by name. One
+  place in `providers/index.js` that drops app-side rows before the adapter would replace four `omit` lists
+  (coordinate with item 28, which owns the row).
+- **`recipes/flux3.json`** is item 28's file too (it added `boxes` and `selection_box` in 1d81f06): add variants
+  after that session's commits, one provider per step. `"default"` stays `"bfl"`. The description gains "Also on
+  OpenRouter, fal.ai, Oxen.ai and WaveSpeedAI." as each lands.
+
+### Order to build (one step per session, the light test tier: request shapes in plain Node, `lint`, `types`)
+
+1. **F1 OpenRouter.** Best documented (a machine-readable parameter list and price list per endpoint), BFL is its
+   only host and gets the request directly, the same 15 presets + "auto" and 10 pictures as BFL direct, and the
+   only one of the four adapters that has run live. At list price it equals BFL direct; now half. The recipe-only
+   variant first (boxes off), then options 1 to 6 and boxes on.
+2. **F2 fal.** The same 1k price as OpenRouter ($0.024 until October 8, then $0.048) and a full OpenAPI schema; but
+   4 MP per picture and 14 presets (variant limits of its own), no grounding, the prompt expansion off by default,
+   four changes in `fal.js`, and `fal.js` never ran live.
+3. **F3 Oxen.** Closest to BFL direct in its fields (grounding, safety, 15 presets + "auto", BFL's box format named in
+   its own schema) and almost works recipe-only; but no per-model docs page, a route conflict, data URLs "not
+   recommended", results stored in the account, about 1.3 × the price, and `oxen.js` never ran live.
+4. **F4 WaveSpeed.** The fewest controls (no safety, grounding, "auto" or 9:21), 4 MP, the highest 2k / 4k prices
+   after Oxen, an upstream it does not name, and a seed fix that changes every WaveSpeed recipe; never ran live.
+
+F0 goes before whichever step first needs a rule that is not exported (F1's tier and aspect options can follow
+`oxen.js`'s and do not need it).
+
+### Open questions for the user
+
+1. All four, or only some? OpenRouter and fal cost what BFL direct costs (or less while the launch discounts last);
+   Oxen and WaveSpeed cost more and offer less. Which keys are stored in the app (the Oxen workbench link suggests an
+   Oxen account)?
+2. OpenRouter cannot switch grounding off (and does not say what it sends): acceptable, with a note in the variant?
+3. fal and WaveSpeed: the prompt expansion row on by default (closer to BFL direct, which always expands) or off
+   (the host's default)?
+4. fal and WaveSpeed take at most 4 MP per picture. Their variants hold the crop to 4,000,000 px (a 2048 × 2048 crop
+   becomes about 2000 × 2000, still the 2k tier, as on BFL direct, whose `max` 2048 keeps edits at 2k too) and scale
+   larger reference layers down before sending. Fine until a live run shows whether 4.19 MP passes?
+5. Oxen's grounding default: Scumble's (on, like the BFL row) or Oxen's (off)?
+6. Selection as box on hosts where the rows were never seen to pass (fal, WaveSpeed, Oxen, OpenRouter): ship the row
+   with the variant, or only after its live check?
+7. Comfy Router and Replicate (named in §3) were not looked at: research them too?
+
+### Live checks, with the user present (after each step, on the user's word)
+
+The 0.1.36 way: a dev instance on its own profile (`--no-comfy`), the user types the provider's key into Settings,
+driven over CDP; 1k only; about two runs per provider (roughly $0.05 to $0.20 each provider at today's prices).
+
+- **Every provider:** one Generate new with one reference and `@img1` (the text route, the picture named "image 1"),
+  one edit with one reference (the crop as image 1, `@img1` as "image 2", the aspect and tier sent, the stitch without
+  a seam), and the result judged by eye against BFL direct. With boxes on: one edit with Selection as box (the rows
+  pass and the change lands in the box).
+- **OpenRouter:** the order of `input_references` upstream; what an edit with "auto" returns; the pixel sizes per
+  tier; that the `safety_tolerance` passthrough is taken (no 400); `media_type`; `usage.cost` against the discount.
+- **fal:** whether "4 megapixels" takes a 2048 × 2048 crop (keep `pixels` 4000000 until then); what "auto" does with a
+  crop between presets; the 2k price on the fal dashboard; png comes back.
+- **Oxen:** data URLs in `input_image` (never run live on Oxen for any model); `/images/edit` vs `/images/generate`
+  for a new image without references; the time of a 2k edit against the 300 s header limit; that `grounding` is
+  honoured both ways; the run appears in the user's Oxen account (privacy).
+- **WaveSpeed:** whether `additionalProperties: false` is enforced (the body after the seed fix carries nothing
+  extra; an older body with `seed` must not be sent deliberately); the 4 MP edge; that the box rows pass; the quality
+  next to BFL direct, since the upstream is not named.
+
+When a provider has run live: its line in `docs/RECIPES.md` and the README's "verified" sentence, `CLAUDE.md`
+"Unverified", and the CHANGELOG bullet at its release.
