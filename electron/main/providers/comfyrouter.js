@@ -24,7 +24,9 @@
 //   vertexai/*   Gemini generateContent: contents[].parts (text, then a label part and inlineData per picture),
 //                generationConfig.imageConfig -> candidates[0].content.parts[].inlineData
 //   bfl/*        FLUX.2: prompt, input_image .. input_image_9 (base64), width, height; FLUX.1 Fill: image, mask
-//                (base64, white = repaint) -> result.sample (a URL on Comfy storage)
+//                (base64, white = repaint) -> result.sample (a URL on Comfy storage). FLUX 3 Image (bfl/flux-3-image):
+//                BFL's own body (flux3.js: prompt, images [base64], aspect_ratio, resolution, safety_tolerance,
+//                grounding; no seed), the box rows in the prompt as on BFL's API -> result.sample, result.prompt
 //   byteplus/*   Seedream: prompt, image [data URLs], size "WxH", watermark false, response_format b64_json
 //                -> data[0].b64_json
 //   qwen/*       Qwen Image 3.0: input.messages[0].content [{ image }, .., { text }], parameters { size "W*H" ..}
@@ -53,6 +55,10 @@ const { dataUri, b64, fetchImage, sleep: realSleep, fitPixels, closestAspect, cl
 const { layoutOf, refRoles, countOf, instruction, labelParts } = require("./refs");
 const openai = require("./openai");
 const ark = require("./ark");
+const flux3 = require("./flux3");
+
+/** The FLUX 3 Image model part on the Router (bfl/flux-3-image): flux3.js builds its body and reads its shape. */
+const FLUX3_MODEL = "flux-3-image";
 
 const BASE = "https://api.comfy.org";
 const EDIT_WAIT_MS = 15 * 60 * 1000;
@@ -441,7 +447,10 @@ const DIALECTS = {
     },
 
     bfl: {
-        body(req, o, pics, model) {
+        body(req, o, pics, model, ctx) {
+            // FLUX 3 Image: the Router takes BFL's own schema (tools/refs/comfyrouter/bfl_flux-3-image.json), so the body
+            // is the one bfl.js sends, pictures and their rules included (a promise; run() awaits every body)
+            if (model === FLUX3_MODEL) return flux3.body(req, `bfl/${model}`, ctx);
             const p = req.params || {};
             const body = { prompt: String(req.prompt || ""), output_format: "png" };
             if (req.seed != null && !p.random_seed) body.seed = req.seed >>> 0;
@@ -463,6 +472,7 @@ const DIALECTS = {
             return body;
         },
         layout(req, o, model) {
+            if (model === FLUX3_MODEL) return req.kind === "text" ? flux3.textLayout(req) : flux3.layout(req);
             if (model === "flux-pro-1.0-fill") {
                 if (req.kind === "text") return layoutOf({ drops: "FLUX.1 Fill takes no reference images" });
                 return layoutOf({ seq: [["crop", "image"]], own: req.mask && req.mask.length ? [["mask", "mask"]] : [], max: picturesMax(o), drops: "FLUX.1 Fill takes no reference images" });
@@ -472,6 +482,12 @@ const DIALECTS = {
         read(j, req) {
             const r = j.result || {};
             if (!r.sample) return { refused: j.status || null };
+            // FLUX 3 is sent no seed: one the answer names is reported, else none (null, not the editor's); its shape
+            // goes to the stitch (fit "stretch" when a preset went) and the prompt as the model expanded it to the log
+            if (splitModel(String(req.model || ""))[1] === FLUX3_MODEL) {
+                const seed = r.seed != null && Number.isFinite(Number(r.seed)) ? Number(r.seed) : null;
+                return { url: r.sample, seed, info: { ...flux3.infoOf(req), expanded_prompt: typeof r.prompt === "string" ? r.prompt : null, duration: r.duration != null ? Number(r.duration) : null } };
+            }
             return { url: r.sample, seed: r.seed != null ? Number(r.seed) : req.seed };
         },
     },
@@ -759,7 +775,7 @@ async function run(req, ctx, kind) {
     if (kind !== "text" && !req.image) throw new Error(`Comfy Router ${modelId}: no picture to ${kind === "upscale" ? "upscale" : "edit"}.`);
     const pics = kind === "upscale" ? [] : await picturesFor(req, o, ctx, modelId);
     if (kind === "upscale" && req.image.length > PICTURE_BYTES_MAX) throw new Error(`Comfy Router ${modelId}: the picture is ${(req.image.length / 1024 / 1024).toFixed(1)} MB, more than the 25 MB the Router takes; upscale a smaller selection.`);
-    const body = d.body(req, o, pics, model, ctx);
+    const body = await d.body(req, o, pics, model, ctx);
     const got = await send(ctx, test || BASE, modelId, body, kind === "upscale" ? UPSCALE_WAIT_MS : EDIT_WAIT_MS);
     if (got.meta.dropped) ctx.log(`the Router dropped parameters: ${got.meta.dropped}`);
     let out = got.bytes ? { bytes: got.bytes, mime: got.mime } : d.read(got.json, req, o, ctx, body);
@@ -773,7 +789,8 @@ async function run(req, ctx, kind) {
     }
     const bytes = Buffer.from(out.bytes);
     return {
-        bytes, mime: sniff(bytes, out.mime), seed: out.seed != null && Number.isFinite(out.seed) ? out.seed : req.seed,
+        // a read that says null sent no seed (FLUX 3 Image); one that says nothing answers with the request's
+        bytes, mime: sniff(bytes, out.mime), seed: out.seed === null ? null : out.seed != null && Number.isFinite(out.seed) ? out.seed : req.seed,
         info: { model: modelId, request_id: got.meta.request_id, credits: got.meta.credits != null ? Number(got.meta.credits) : null, dropped: got.meta.dropped || null, pictures: pics.length, ...(out.info || {}) },
     };
 }

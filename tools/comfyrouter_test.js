@@ -278,7 +278,7 @@ const VARIANTS = {
     seedream_5_lite: "byteplus/seedream-5-0-260128", seedream_5_pro: "byteplus/seedream-5-0-pro-260628",
     qwen_image_edit: "qwen/qwen-image-3.0", magnific_precision: "freepik/ai-image-upscaler-precision-v2",
     krea_2: "krea/krea-2-large", grok_imagine: "xai/grok-imagine-image-2.0", ideogram_4: "ideogram/ideogram-v4",
-    ideogram_4_5: "ideogram/ideogram-4-5",
+    ideogram_4_5: "ideogram/ideogram-4-5", flux3: "bfl/flux-3-image",
 };
 
 async function main() {
@@ -466,7 +466,7 @@ async function main() {
     await section("6. recipes and schemas", async () => {
         const recipes = loadRecipes();
         const served = recipes.filter((r) => r.providers && r.providers.comfyrouter).map((r) => r.id).sort();
-        check("seventeen shipped recipes carry a comfyrouter variant", eq(served, Object.keys(VARIANTS).sort()), served.join(", "));
+        check("eighteen shipped recipes carry a comfyrouter variant", eq(served, Object.keys(VARIANTS).sort()), served.join(", "));
         const bad = [];
         let bodies = 0;
         for (const r of recipes.filter((x) => x.providers && x.providers.comfyrouter)) {
@@ -558,6 +558,20 @@ async function main() {
         check("Gemini fill with the crop, the mask and 13 references (15 pictures, max_images 14): the mask picture counts, refused before any call", layCap.max === 14 && /vertexai\/gemini-3\.1-flash-image takes at most 14 pictures; this run has 15 \(the crop, the mask, 13 references\)/.test(eCap || "") && sCap.calls.length === 0, `max ${layCap.max}: ${eCap}`);
         x = await run("nano_banana_2", "text", { params: { aspect_ratio: "auto", image_size: "auto" }, width: 1536, height: 1024, aspect: "3:2" });
         check("Gemini text: the dialog's aspect and the smallest tier covering its long side", eq(x.body.generationConfig.imageConfig, { aspectRatio: "3:2", imageSize: "2K" }) && x.body.contents[0].parts.length === 1, short(x.body));
+        // FLUX 3 Image (docs/PLAN_0_1_38.md B1): BFL's own body through flux3.js, no seed, the planned preset
+        const b64tag = (s) => tagOf(Buffer.from(s, "base64"));
+        x = await run("flux3", "edit", { references: [pngOf(512, 512, 64, "REF1")], cropAspect: "4:3", params: { safety_tolerance: 3, grounding: false } });
+        check("FLUX 3 edit: prompt, images [crop, reference] as plain base64, the planned 4:3 at 1k, the two settings; no seed, mask, size or output format", eq(Object.keys(x.body).sort(), ["aspect_ratio", "grounding", "images", "prompt", "resolution", "safety_tolerance"]) && x.body.images.length === 2 && b64tag(x.body.images[0]) === "CROP" && b64tag(x.body.images[1]) === "REF1" && x.body.aspect_ratio === "4:3" && x.body.resolution === "1k" && x.body.safety_tolerance === 3 && x.body.grounding === false && x.body.prompt === "a red door" && !schemaProblems("bfl/flux-3-image", x.body).length, short({ ...x.body, images: x.body.images.length }));
+        check("FLUX 3 answer: the sample downloaded, the seed the answer names, fit stretch and the shape for the stitch", tagOf(x.out.bytes) === "ASSET" && x.out.seed === 2784347701 && x.out.info.fit === "stretch" && x.out.info.aspect === "4:3" && x.out.info.resolution === "1k" && x.out.info.model === "bfl/flux-3-image", short({ seed: x.out.seed, info: x.out.info }));
+        x = await run("flux3", "edit", {}, { result: [() => json(200, { id: "f3", status: "Ready", result: { sample: `${BASE}/asset/bfl.png`, prompt: "A red door, expanded." } })] });
+        check("FLUX 3 answer without a seed: seed null (none was sent), never the editor's 42; the expanded prompt in info", x.out.seed === null && x.out.info.expanded_prompt === "A red door, expanded." && !("seed" in x.body), short({ seed: x.out.seed, info: x.out.info }));
+        x = await run("flux3", "text", { references: [pngOf(512, 512, 64, "TREF1")] });
+        check("FLUX 3 text run: the reference alone in images, the dialog's 3:2, no crop", x.body.images.length === 1 && b64tag(x.body.images[0]) === "TREF1" && x.body.aspect_ratio === "3:2" && !schemaProblems("bfl/flux-3-image", x.body).length, short({ ...x.body, images: x.body.images.length }));
+        const lay3 = router.layout(editReq(variant("flux3"), { references: [pngOf(512, 512, 64, "REF1")] }));
+        check("FLUX 3 layout: the crop at images[0], the reference at images[1], ten at most; the variant takes FLUX 3's box rows", eq(lay3.pictures.map((p) => p.field), ["images[0]", "images[1]"]) && lay3.max === 10 && require(path.join(ROOT, "electron", "main", "providers", "boxes.js")).schemaOf(editReq(variant("flux3"))) === "flux3", short(lay3.pictures));
+        const sBlank = fakeServer();
+        const eBlank = await throws(() => router.edit(editReq(variant("flux3"), { prompt: "  " }), ctxFor(sBlank)));
+        check("FLUX 3 with a blank prompt: refused before any call", /FLUX 3 Image needs a prompt/.test(eBlank || "") && sBlank.calls.length === 0, eBlank);
         // FLUX.2 and Fill
         x = await run("flux2_max", "edit", { references: [pngOf(512, 512, 64, "REF1")], width: 3000, height: 100, params: { safety_tolerance: 3, prompt_upsampling: false } });
         check("FLUX.2 edit: input_image and input_image_2 as plain base64, width and height held to 256..2048, the seed, png, the settings", Buffer.from(x.body.input_image, "base64").toString("latin1").includes("CROP") && Buffer.from(x.body.input_image_2, "base64").toString("latin1").includes("REF1") && x.body.width === 2048 && x.body.height === 256 && x.body.seed === 42 && x.body.output_format === "png" && x.body.safety_tolerance === 3 && x.body.prompt_upsampling === false && x.out.seed === 2784347701, short({ ...x.body, input_image: "..", input_image_2: ".." }));

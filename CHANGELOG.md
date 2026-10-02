@@ -19,6 +19,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   wall clock" is `wall_clock_1`. A name once made stays.
 - **The seed `generate` reports is the one the model got.** A route that sends no seed (FLUX 3 Image) answers `seed:
   null` to agents, and the result's row in the history says "no seed sent" instead of offering a seed it never used.
+- **FLUX 3 Image on Comfy Router.** The FLUX 3 Image recipe has a second provider, Comfy Router, on the Comfy key
+  you may already have for Comfy Cloud and billed in Comfy credits: the same edits with up to nine more pictures, new
+  images with up to ten references, and the boxes in the prompt. Written from the Router's published schema, not run
+  against the live service yet.
 - **FLUX 3 Image keeps the crop's shape.** A crop widened to one of the model's shapes now always asks for that
   shape; when the rounding of its size put it more than 3 % off, it went as "auto" and the answer was not fitted onto
   the crop exactly.

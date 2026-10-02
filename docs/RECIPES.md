@@ -559,7 +559,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   |---|---|---|
   | FLUX.2 [pro], [flex], [max] | BFL, Replicate, OpenRouter, ToAPIs (pro, flex), Comfy Router (pro, max), Oxen.ai (pro, flex), Magnific (pro, flex); fal and WaveSpeed (the `/edit` route) | - |
   | FLUX.2 [klein] | BFL, Oxen.ai (`max: 4`); fal and WaveSpeed (`/edit`) | - |
-  | FLUX 3 Image | BFL | - |
+  | FLUX 3 Image | BFL, Comfy Router | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, OpenRouter, Comfy Router, Oxen.ai; WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
@@ -659,7 +659,12 @@ polls). Written from docs.bfl.ai/flux_3 and `https://api.bfl.ai/openapi.json` as
 was released; **not run against the live API yet** (`docs/PLAN_FLUX3.md`). One endpoint and no tiers:
 `POST https://api.bfl.ai/v1/flux-3-image` with the `x-key` header, the same Black Forest Labs key row as FLUX.2. A
 `bfl` variant is FLUX 3 when its `options.schema` is `"flux3"` (or its `model` starts with `flux-3`); `bfl.js` then
-takes body, `layout` and `textLayout` from `flux3.js` and keeps its own submit and poll.
+takes body, `layout` and `textLayout` from `flux3.js` and keeps its own submit and poll. The `comfyrouter` variant
+(`bfl/flux-3-image`, docs/PLAN_0_1_38.md B1) sends the same body: the Router takes BFL's own schema
+(`tools/refs/comfyrouter/bfl_flux-3-image.json`, additionalProperties false; its `version` field is left at
+`latest`), so `comfyrouter.js`'s `bfl` dialect calls `flux3.body`, `layout` and `textLayout` for that model, reads
+`result.sample`, and reports the seed the answer names or none (null, never the request's); the box rows ride in
+the prompt as on BFL's API. Not run against the live Router either.
 
 - **The body** is `{ prompt, images, aspect_ratio, resolution, safety_tolerance, grounding }` and nothing else. The
   schema is strict (an unknown field answers 422), so no `seed`, mask, `width` / `height`, `mode`, negative prompt or

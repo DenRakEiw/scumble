@@ -158,7 +158,8 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
 (async () => {
     // ---- 1. the recipe ------------------------------------------------------------------------------------------
     console.log("\n--- 1. recipes/flux3.json ---");
-    check("one bfl variant, the home provider, an edit route, named FLUX 3 Image", eq(RECIPE.providerIds, ["bfl"]) && RECIPE.default === "bfl" && V.input === "edit" && V.edit === true && RECIPE.name === "FLUX 3 Image", short({ ids: RECIPE.providerIds, def: RECIPE.default, input: V.input, name: RECIPE.name }));
+    // B1: Comfy Router serves the same body (tools/comfyrouter_test.js holds that variant)
+    check("the bfl variant, the home provider, an edit route, named FLUX 3 Image; Comfy Router second", eq(RECIPE.providerIds, ["bfl", "comfyrouter"]) && RECIPE.default === "bfl" && V.input === "edit" && V.edit === true && RECIPE.name === "FLUX 3 Image", short({ ids: RECIPE.providerIds, def: RECIPE.default, input: V.input, name: RECIPE.name }));
     check("the endpoint flux-3-image is the variant's model, and the variant declares the FLUX 3 schema", V.model === "flux-3-image" && V.options.schema === "flux3" && flux3.isFlux3({ options: V.options }, V.model), short({ model: V.model, options: V.options }));
     check("options: accepts safety_tolerance and grounding (the adapter's default too), 10 pictures, no images_field", eq(V.options.accepts, ["safety_tolerance", "grounding"]) && eq(flux3.FLUX3_ACCEPTS, V.options.accepts) && V.options.max_images === 10 && !("images_field" in V.options) && flux3.FLUX3_IMAGES_FIELD === "images", short(V.options));
     check("limits: 2048 long side in 16 px steps, 608 the smallest, the 15 aspect presets", V.limits.max === 2048 && V.limits.step === 16 && V.limits.min === 608 && eq(V.limits.aspects, flux3.FLUX3_ASPECTS) && V.limits.aspects.length === 15, short(V.limits));

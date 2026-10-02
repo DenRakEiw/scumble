@@ -4,7 +4,7 @@
   "name": "FLUX 3 Image",
   "family": "Black Forest Labs",
   "refs": { "name": "image {n}" },
-  "description": "Black Forest Labs' FLUX 3 Image: instruction edits of the crop with up to nine more pictures, new images from the prompt with up to ten reference images. Adapter written from the provider's docs (2026-10-01).",
+  "description": "Black Forest Labs' FLUX 3 Image: instruction edits of the crop with up to nine more pictures, new images from the prompt with up to ten reference images. Adapter written from the provider's docs (2026-10-01). Also on Comfy Router.",
   "default": "bfl",
   "providers": {
     "bfl": {
@@ -31,6 +31,49 @@
         }
       ],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The crop is image 1, then the Original and the reference layers (image 2 ..), ten pictures at most, each at least 256 px a side. The crop is widened to one of the model's 15 aspect presets; the size is a tier picked from the crop (1k about 1 MP, 2k about 4 MP). There is no seed, so two runs differ, and the model expands the prompt itself. Grounding lets it search the web and images for the prompt before it renders. The Boxes switch under the prompt sends the document's boxes as bounding boxes in the prompt, or the selection as one box when there are none (a New row with the prompt as its description; with an @img token, that reference placed in the box), so the model puts the change where the box is. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "text": {
+        "sizes": [1024, 2048, 4096],
+        "refs": {},
+        "settings": [
+          {
+            "index": 1,
+            "key": "safety_tolerance",
+            "label": "Safety tolerance",
+            "spec": ["INT", { "default": 2, "min": 0, "max": 4 }]
+          },
+          {
+            "index": 2,
+            "key": "grounding",
+            "label": "Grounding (web and image search)",
+            "spec": ["BOOLEAN", { "default": true }]
+          }
+        ]
+      }
+    },
+    "comfyrouter": {
+      "model": "bfl/flux-3-image",
+      "input": "edit",
+      "options": {
+        "schema": "flux3",
+        "accepts": ["safety_tolerance", "grounding"],
+        "max_images": 10,
+        "boxes": "flux3"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "safety_tolerance",
+          "label": "Safety tolerance",
+          "spec": ["INT", { "default": 2, "min": 0, "max": 4 }]
+        },
+        {
+          "index": 2,
+          "key": "grounding",
+          "label": "Grounding (web and image search)",
+          "spec": ["BOOLEAN", { "default": true }]
+        }
+      ],
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The pictures go inline in the request to Comfy, which passes them to Black Forest Labs; the answer comes back through Comfy's storage. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The crop is image 1, then the Original and the reference layers (image 2 ..), ten pictures at most, each at least 256 px a side. The crop is widened to one of the model's 15 aspect presets; the size is a tier picked from the crop (1k about 1 MP, 2k about 4 MP). There is no seed, so two runs differ, and the model expands the prompt itself. Grounding lets it search the web and images for the prompt before it renders. The Boxes switch under the prompt sends the document's boxes as bounding boxes in the prompt, or the selection as one box when there are none (a New row with the prompt as its description; with an @img token, that reference placed in the box), so the model puts the change where the box is. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
       "text": {
         "sizes": [1024, 2048, 4096],
         "refs": {},
