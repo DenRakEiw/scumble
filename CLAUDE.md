@@ -99,7 +99,8 @@ COMMANDS.md regenerated, one look over CDP. A review (two readers, each finding 
 fixed (the worst: "remove the man" went as "place remove the man"); two refuted. **Also this session, on the user's
 word:** Ideogram 4.5 for the next release (item 31), from the docs only, no live test; a research workflow (Replicate,
 Comfy Router, WaveSpeed) writes `docs/PLAN_IDEOGRAM45.md` and saved the Router's schema
-`tools/refs/comfyrouter/ideogram_ideogram-4-5.json` (committed apart once read). **Not done:** the live FLUX 3 checks
+`tools/refs/comfyrouter/ideogram_ideogram-4-5.json` (both committed after S3e; the plan: a new recipe
+`recipes/ideogram_4_5.json`, Generate as Precise Edit with the mask inverted, steps I0-I3, eleven open questions in §9). **Not done:** the live FLUX 3 checks
 §6.1-6.3 (the user's key); S4 (optional); the node repo's build is still behind. Next: item 31 (Ideogram 4.5 from the
 plan), then a release of item 28 and 31 on the user's word.
 
