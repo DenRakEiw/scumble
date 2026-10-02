@@ -146,6 +146,15 @@ async function providerEdit(request) {
     }
 }
 
+/**
+ * The seed a provider's answer says the model got (providers/index.js passes the adapter's `seed` on), or null when
+ * the route sent none (FLUX 3 Image takes no seed; WaveSpeed's routes whose `accepts` leave it out).
+ */
+function answeredSeed(res) {
+    const n = res && res.seed != null && res.seed !== "" ? Number(res.seed) : NaN;
+    return Number.isFinite(n) ? n : null;
+}
+
 /** "a", "a and b", "a, b and c" */
 function listWords(items) {
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
@@ -1465,6 +1474,8 @@ export const host = {
                 prompt: named.prompt, negative: named.negative, seed,
                 image: prep.image, mask: prep.mask, maskAlpha: prep.maskAlpha, width: prep.width, height: prep.height, references,
                 params: shape.params, original: shape.original, refName: shape.refName, boxes,
+                // the preset the crop was widened to (stitch.js planFrame), which FLUX 3 sends as its aspect_ratio
+                cropAspect: info.aspect || null,
             };
             res = await providerEdit(request);
             editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
@@ -1483,7 +1494,7 @@ export const host = {
         const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
         editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
         const cutout = info.keepAlpha ? fin.cutout : false;
-        await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider }]);
+        await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res) }]);
         // addResults writes its own line, so the cut-out note, the names the references went as and what the route left
         // out go on afterwards
         if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`);
@@ -1589,7 +1600,7 @@ export const host = {
             const fin = await finishResultAsync(editor, info, prep.sel, res.bytes, res.mime);
             const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
             const ref = await this.uploadResult(fin.blob, `n${editor.node.id}_upscale_${stamp}.png`);
-            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider }]);
+            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res) }]);
             const got = res.info && res.info.width ? ` (${res.info.width} × ${res.info.height} came back)` : "";
             editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.${texts.note ? " " + texts.note : ""}`);
             return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null, note: texts.note };

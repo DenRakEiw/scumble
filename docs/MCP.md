@@ -114,8 +114,8 @@ another reference go before it). `set_prompt` and `generate_new` take `refs: {"i
 id>"}`: the agent's tokens are read with its own map and rewritten to the labels now (an id no
 layer has is refused), and `set_prompt`'s answer carries `labels` and `parked`. `generate`
 returns `prompt_sent` (the prompt as the model got it, each token written as that model's name,
-on a local ComfyUI recipe as its graph numbers the picture) and `notes` (what the route declared
-it left out); a run that cannot send a token (a hidden or deleted reference, one past a local
+on a local ComfyUI recipe as its graph numbers the picture), `notes` (what the route declared
+it left out) and `seed` (the seed the model got; null when the route sends none, as FLUX 3 Image); a run that cannot send a token (a hidden or deleted reference, one past a local
 recipe's slots) throws at once with the reason. An upscale sends no reference picture: a token
 goes as its layer's name.
 

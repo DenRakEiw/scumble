@@ -890,6 +890,47 @@ if (ed.referenceLayers().map((l) => l.id).join() !== [A, B].join()) throw new Er
 if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift + " times without a remap");
 return out;
 """.replace("__LOOP_EDIT__", LOOP_EDIT)),
+    # docs/PLAN_0_1_38.md A2.1: generate reports the seed the model got, null when the route sends none (FLUX 3 Image;
+    # the loopback's options.no_seed stands in), and the result's history row says so; a route that sends one reports it
+    ("generate_reports_the_seed_the_model_got", """
+const ed = window.editor;
+const { host } = await import("./editor/host.js");
+const prev = host.recipe;
+const P0 = ed.promptText, N0 = ed.negativeText;
+const g0 = { seed: ed.genSettings.seed, seedRandom: ed.genSettings.seedRandom };
+const newLayers = async (before) => { for (const l of ed.layers.filter((x) => !before.has(x.id))) await c("remove_layer", { layer: l.id }); };
+const rowText = () => { const row = ed.historyList && ed.historyList.querySelector(".ipc-htext"); return row ? row.textContent : ""; };
+const out = {};
+try {
+    await c("set_prompt", { text: "a red door", negative: "" });
+    await c("set_generation", { seed: 4242 });
+    await c("select_rect", { x: 40, y: 40, w: 120, h: 90 });
+    host.setRecipe({ ...__LOOP_EDIT__, options: { no_seed: true } });
+    let before = new Set(ed.layers.map((l) => l.id));
+    const none = await c("generate", { timeout: 60 });
+    const h1 = ed.history[ed.history.length - 1];
+    if (none.seed !== null || h1.seed !== null) throw new Error("a route without a seed reports " + JSON.stringify({ answer: none.seed, history: h1.seed }));
+    if (!/api · no seed sent/.test(rowText()) || /seed 4242/.test(rowText())) throw new Error("the history row: " + rowText());
+    await newLayers(before);
+    out.none = rowText();
+    host.setRecipe(__LOOP_EDIT__);
+    before = new Set(ed.layers.map((l) => l.id));
+    const sent = await c("generate", { timeout: 60 });
+    const h2 = ed.history[ed.history.length - 1];
+    if (sent.seed !== 4242 || h2.seed !== 4242 || !/seed 4242/.test(rowText())) throw new Error("a route with a seed reports " + JSON.stringify({ answer: sent.seed, history: h2.seed, row: rowText() }));
+    await newLayers(before);
+    out.sent = sent.seed;
+} finally {
+    host.setRecipe(prev);
+    await c("select_none");
+    await c("set_prompt", { text: P0, negative: N0 });
+    ed.genSettings.seed = g0.seed;
+    ed.genSettings.seedRandom = g0.seedRandom;
+    ed.syncGenControls();
+}
+if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the prompt after the step: " + JSON.stringify([ed.promptText, ed.negativeText]));
+return out;
+""".replace("__LOOP_EDIT__", LOOP_EDIT)),
     # 26a2: a run with more pictures than the route takes is refused by main before the adapter runs, at once, with
     # nothing added; one reference fewer goes
     ("refs_over_cap", """

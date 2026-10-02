@@ -14,6 +14,14 @@ the section for its version; `docs/` and the commit history hold the technical d
   field over it with its description (on a Text box, its words): Enter keeps it, Shift+Enter starts a new line, Escape
   cancels, a click elsewhere or another tool keeps what you typed. It goes into the prompt as words, never into the
   picture.
+- **Boxes: names from the noun, not the adjectives.** A box named after its description takes the last two words of
+  its first phrase: "a small black cat sitting in the grass" is `black_cat_1` (it was `small_black_1`), "the white
+  wall clock" is `wall_clock_1`. A name once made stays.
+- **The seed `generate` reports is the one the model got.** A route that sends no seed (FLUX 3 Image) answers `seed:
+  null` to agents, and the result's row in the history says "no seed sent" instead of offering a seed it never used.
+- **FLUX 3 Image keeps the crop's shape.** A crop widened to one of the model's shapes now always asks for that
+  shape; when the rounding of its size put it more than 3 % off, it went as "auto" and the answer was not fitted onto
+  the crop exactly.
 - **A question when an update is ready.** Once Scumble has downloaded a new version in the background, it asks:
   *Restart and update* saves your documents, installs the new version and starts it with them; *Later* leaves it for
   when you close Scumble, which installs it then; *Skip this version* leaves it out until a newer one comes, so

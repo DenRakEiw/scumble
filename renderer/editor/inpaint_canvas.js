@@ -14850,8 +14850,9 @@ class InpaintEditor {
                 }
                 const n = this.history.length + 1;
                 const layer = this.addLayer({ name: "Result " + n, kind: "result", ref, px: this.pixels.Layer.fromImage(img), x: r.x || 0, y: r.y || 0, w: r.width || img.naturalWidth, h: r.height || img.naturalHeight });
+                // a provider run says which seed the model got (null: none went, FLUX 3 Image); a local result is the editor's
                 this.history.push({ key, name: layer.name, ref, x: layer.x, y: layer.y, w: layer.w, h: layer.h, prompt: this.promptText, layerId: layer.id, time: Date.now(),
-                    seed: this.genSettings.seed, mode: this.genSettings.mode, denoise: this.genSettings.denoise });
+                    seed: r.seed !== undefined ? r.seed : this.genSettings.seed, mode: this.genSettings.mode, denoise: this.genSettings.denoise });
                 this.renderHistory();
                 const al = r.align && r.align.aligned ? ` · aligned (shift ${r.align.shift[0]}, ${r.align.shift[1]} px, scale ${r.align.scale[0]}, ${r.align.scale[1]})` : "";
                 this.setStatus(`Result ${n} added (${r.width} × ${r.height} at ${r.x}, ${r.y})${al}`);
@@ -15476,6 +15477,8 @@ class InpaintEditor {
                 meta.style.cursor = "pointer";
                 meta.addEventListener("click", (e) => { e.stopPropagation(); this.genSettings.seed = h.seed; this.genSettings.seedRandom = false; this.syncGenControls(); this.notifyChanged(); this.setStatus(`Seed ${h.seed} set (random off).`); });
                 text.appendChild(meta);
+            } else if (h.seed === null && h.mode) {
+                text.appendChild(el("span", null, `${h.mode} · no seed sent`));
             }
             if (h.prompt) { const p = el("span", null, h.prompt); p.title = h.prompt; text.appendChild(p); }
             item.appendChild(text);

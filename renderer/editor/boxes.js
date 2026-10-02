@@ -23,17 +23,31 @@ const ID_STOP = new Set(("a an the this that these those some any each every of 
     "add bring brighten change darken draw fill give insert lighten make paint place put recolor recolour render replace " +
     "show swap turn use write move keep remove erase delete take let set").split(" "));
 
+/** Nouns that end in -ing: they do not end a phrase the way a verb's -ing form does ("a gold ring", "a tall building"). */
+const ING_NOUNS = new Set(("ring king wing sing thing string spring swing sling sting building painting ceiling clothing " +
+    "evening morning wedding pudding railing sibling bedding earring awning icing lightning ending opening landing " +
+    "drawing something nothing everything stuffing frosting filling dumpling herring viking").split(" "));
+
 /**
- * The name part of an id made from a description (S3e): its first two telling words, lowercase, accents dropped,
- * joined by an underscore ("A red scarf" -> "red_scarf", "make the tiger pink" -> "tiger_pink"); "" when it has none.
- * An @img token, a {@...} marker and a <name> are not words of it.
+ * The name part of an id made from a description (S3e; docs/PLAN_0_1_38.md A2): the last two words of its first
+ * phrase of telling words, lowercase, accents dropped, joined by an underscore. The phrase ends at a stop word or at a
+ * verb's -ing form once it has a word, so the adjectives go and the noun stays: "a small black cat sitting in the
+ * grass" -> "black_cat", "the white wall clock" -> "wall_clock", "A red scarf" -> "red_scarf", "make the tiger pink"
+ * -> "tiger_pink", "a sleeping cat" -> "sleeping_cat"; "" when it has none. An @img token, a {@...} marker and a
+ * <name> are not words of it.
  */
 export function idWords(text) {
     const s = String(text == null ? "" : text).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
         .split(String.fromCharCode(223)).join("ss")
         .replace(/@img[0-9]+|\{@[^}]*\}|<[^>]*>/g, " ");
-    const words = s.split(/[^a-z0-9]+/).filter((w) => /^[a-z]/.test(w) && !ID_STOP.has(w));
-    return words.slice(0, 2).map((w) => w.slice(0, 16)).join("_");
+    const phrase = [];
+    for (const w of s.split(/[^a-z0-9]+/)) {
+        if (!/^[a-z]/.test(w)) continue;
+        if (ID_STOP.has(w)) { if (phrase.length) break; continue; }
+        if (phrase.length && w.length > 4 && w.endsWith("ing") && !ING_NOUNS.has(w)) break;
+        phrase.push(w);
+    }
+    return phrase.slice(-2).map((w) => w.slice(0, 16)).join("_");
 }
 
 /** The longest description a box carries. */

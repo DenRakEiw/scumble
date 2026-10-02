@@ -46,6 +46,8 @@ const FLUX3_PICTURE = { minSide: 256, maxPixels: 16000000, maxBase64: 20000000 }
 
 /** |ln(crop aspect / preset aspect)| up to this sends the preset (the answer then stretches onto the crop exactly). */
 const FIT_SLACK = 0.03;
+/** A preset the crop was planned at (`req.cropAspect`) is sent while the emitted size is within this of it. */
+const PLANNED_SLACK = 0.08;
 
 const JPEG_QUALITY = 92;
 
@@ -102,16 +104,22 @@ function textShape(req) {
 
 /** "stretch" when the preset is within FIT_SLACK of w:h, else null. */
 function fitFor(ratio, w, h) {
+    return withinOf(ratio, w, h, FIT_SLACK) ? "stretch" : null;
+}
+
+/** Whether the preset "a:b" is within `slack` (|ln| of the ratios) of w:h. */
+function withinOf(ratio, w, h, slack) {
     const [a, b] = String(ratio).split(":").map(Number);
-    if (!(a > 0 && b > 0 && w > 0 && h > 0)) return null;
-    return Math.abs(Math.log(w / h) - Math.log(a / b)) <= FIT_SLACK ? "stretch" : null;
+    if (!(a > 0 && b > 0 && w > 0 && h > 0)) return false;
+    return Math.abs(Math.log(w / h) - Math.log(a / b)) <= slack;
 }
 
 /**
- * The size a request asks for: { aspect, resolution, fit }. An edit sends the preset nearest the emitted crop when it is
- * within 3 % (the crop was widened to a preset by the recipe's limits.aspects, so that is the usual case) and "auto"
- * otherwise, which follows image 1, the crop; a text run always sends the nearest preset. The tier follows the size, or
- * the `resolution` row where the variant accepts one.
+ * The size a request asks for: { aspect, resolution, fit }. An edit sends the preset the crop was widened to
+ * (`req.cropAspect`, renderer/editor/stitch.js planFrame by the recipe's limits.aspects; the emitted size's rounding to
+ * 16 px can put it a few % off), else the preset nearest the emitted crop when it is within 3 %, and "auto" otherwise,
+ * which follows image 1, the crop; a text run always sends the nearest preset. The tier follows the size, or the
+ * `resolution` row where the variant accepts one.
  */
 function shapeOf(req) {
     const p = req.params || {};
@@ -122,8 +130,10 @@ function shapeOf(req) {
         aspect = closestAspect(w, h, FLUX3_ASPECTS);
     } else {
         const w = +req.width || 1, h = +req.height || 1;
-        const near = closestAspect(w, h, FLUX3_ASPECTS);
-        fit = fitFor(near, w, h);
+        // IPC input is never trusted: a preset of the list, near the size
+        const planned = FLUX3_ASPECTS.includes(String(req.cropAspect)) && withinOf(String(req.cropAspect), w, h, PLANNED_SLACK) ? String(req.cropAspect) : null;
+        const near = planned || closestAspect(w, h, FLUX3_ASPECTS);
+        fit = planned ? "stretch" : fitFor(near, w, h);
         aspect = fit ? near : "auto";
     }
     const row = o.accepts.has("resolution") && ["1k", "2k", "4k"].includes(p.resolution) ? p.resolution : null;

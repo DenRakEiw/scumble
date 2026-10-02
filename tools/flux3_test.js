@@ -257,6 +257,13 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     check("1000 x 701 (2 % off 7:5) sends 7:5 with fit stretch, no width or height", x.body && x.body.aspect_ratio === "7:5" && x.out && x.out.info.fit === "stretch" && x.out.info.aspect === "7:5" && !("width" in x.body) && !("height" in x.body), short(x.body && { aspect: x.body.aspect_ratio, info: x.out && x.out.info }));
     x = await run(editReq({ width: 1000, height: 617 }));
     check("1000 x 617 (no preset within 3 %) sends auto, fit null: the answer follows image 1, the crop", x.body && x.body.aspect_ratio === "auto" && x.out && x.out.info.fit === null && x.out.info.aspect === "auto", short(x.body && { aspect: x.body.aspect_ratio, info: x.out && x.out.info }));
+    // A2: the preset the crop was widened to goes even when the 16 px rounding put the emitted size past 3 %
+    x = await run(editReq({ width: 1000, height: 590, cropAspect: "16:9" }));
+    check("1000 x 590 (4 % off its planned 16:9) sends 16:9 with fit stretch", x.body && x.body.aspect_ratio === "16:9" && x.out && x.out.info.fit === "stretch" && x.out.info.aspect === "16:9", short(x.body && { aspect: x.body.aspect_ratio, info: x.out && x.out.info }));
+    x = await run(editReq({ width: 1000, height: 617, cropAspect: "1:1" }));
+    check("a planned preset far from the size (1:1 for 1000 x 617) is not trusted: auto", x.body && x.body.aspect_ratio === "auto" && x.out && x.out.info.fit === null, short(x.body && x.body.aspect_ratio));
+    x = await run(editReq({ width: 1000, height: 590, cropAspect: "17:9" }));
+    check("a planned aspect that is no preset (17:9) is not sent: the 3 % rule decides (auto)", x.body && x.body.aspect_ratio === "auto", short(x.body && x.body.aspect_ratio));
     x = await run(editReq({ width: 1920, height: 1080, params: { safety_tolerance: 2, aspect_ratio: "1:1" } }));
     check("1920 x 1080 sends 16:9 / 2k; an aspect_ratio parameter does not override the shape", x.body && x.body.aspect_ratio === "16:9" && x.body.resolution === "2k", short(x.body && { aspect: x.body.aspect_ratio, resolution: x.body.resolution }));
     check("the tiers by area: 1024 x 768 1k, 1088 x 1088 1k (15 % slack), 1536 x 1024 2k, 2048 x 1024 2k, 2048 x 2048 2k, 4096 x 2304 4k, 5000 x 5000 4k", flux3._tierOf(1024, 768) === "1k" && flux3._tierOf(1088, 1088) === "1k" && flux3._tierOf(1536, 1024) === "2k" && flux3._tierOf(2048, 1024) === "2k" && flux3._tierOf(2048, 2048) === "2k" && flux3._tierOf(4096, 2304) === "4k" && flux3._tierOf(5000, 5000) === "4k", short([[1024, 768], [1088, 1088], [1536, 1024], [2048, 1024], [2048, 2048], [4096, 2304], [5000, 5000]].map(([w, h]) => flux3._tierOf(w, h))));

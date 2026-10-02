@@ -95,8 +95,9 @@ function transparent(req) {
 module.exports = {
     label: "Loopback (test)",
     needsKey: false,
-    // the crop as `image`, then the references in order (docs/PLAN_REFS.md C3). Two test hooks for the gates:
-    // options.drops (a sentence) declares a drop, so index.js strips every reference; options.max_images is a cap
+    // the crop as `image`, then the references in order (docs/PLAN_REFS.md C3). Test hooks for the gates:
+    // options.drops (a sentence) declares a drop, so index.js strips every reference; options.max_images is a cap;
+    // options.no_seed answers without a seed, as a route that sends none (FLUX 3 Image) does
     layout(req) {
         const o = req.options || {};
         if (typeof o.drops === "string" && o.drops.trim()) return layoutOf({ seq: [["crop", "image"]], drops: o.drops.trim() });
@@ -114,8 +115,9 @@ module.exports = {
         if (req.params.fail) throw new Error("loopback failure requested");
         // what arrived, so a gate can read the prompt after main resolved its reference names
         const info = { width: req.width, height: req.height, references: req.references.length, mask: !!req.mask, background: transparent(req) ? "transparent" : "auto", prompt: req.prompt || "", negative: req.negative == null ? null : req.negative, original: req.original ? 1 : 0 };
-        if (transparent(req)) return { bytes: discPng(req.width, req.height, req.seed || 0), mime: "image/png", seed: req.seed, info };
-        return { bytes: req.image, mime: "image/png", seed: req.seed, info };
+        const seed = req.options && req.options.no_seed ? undefined : req.seed;
+        if (transparent(req)) return { bytes: discPng(req.width, req.height, req.seed || 0), mime: "image/png", seed, info };
+        return { bytes: req.image, mime: "image/png", seed, info };
     },
     // kind "upscale": the picture scaled by the factor (2 when the variant picks its own), resampled by Electron,
     // with a 4 px magenta frame as the marker that it went through the upscaler (tools/upscale_test.py)

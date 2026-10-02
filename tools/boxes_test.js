@@ -201,8 +201,12 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     const IDS = [["red_scarf_1", true], ["knight_12", true], ["red_1", true], ["a_b_c_9", true], ["ref_1", true], ["ref_image_lamp_1", true], ["red__scarf_1", false], ["red_2b_1", false], ["Red_1", false], ["red_scarf", false], ["red_scarf_0", false], ["_red_1", false], ["ref_image_1", false], ["ref_image_12", false]];
     check("BOX_ID: lowercase words joined by underscores, then a number, never a picture's name (ref_image_1) (both sides)", IDS.every(([id, ok]) => R.BOX_ID.test(id) === ok && boxes.BOX_ID.test(id) === ok), short(IDS.filter(([id, ok]) => R.BOX_ID.test(id) !== ok).map(([id]) => id)));
     const WORDS = [["A red scarf", "red_scarf"], ["make the tiger pink", "tiger_pink"], ["put @img1 on the table", "table"], ["Gr" + String.fromCharCode(246) + String.fromCharCode(223) + "e " + String.fromCharCode(196) + "pfel", "grosse_apfel"],
-        ["", ""], [null, ""], ["3 red cats", "red_cats"], ["<lamp_1> on {@ref:2}", ""], ["supercalifragilisticexpialidocious hat", "supercalifragili_hat"], ["the the a", ""], ["SALE", "sale"], ["ref image of the lamp", "image_lamp"]];
-    check("idWords: the first two telling words, lowercase, accents dropped; tokens, markers and <names> are no words", WORDS.every(([t, w]) => R.idWords(t) === w), short(WORDS.map(([t]) => R.idWords(t))));
+        ["", ""], [null, ""], ["3 red cats", "red_cats"], ["<lamp_1> on {@ref:2}", ""], ["supercalifragilisticexpialidocious hat", "supercalifragili_hat"], ["the the a", ""], ["SALE", "sale"], ["ref image of the lamp", "image"],
+        // A2: the last two words of the first phrase (seen live in 0.1.37: small_black_1, white_wall_1)
+        ["a small black cat sitting in the grass", "black_cat"], ["the white wall clock", "wall_clock"], ["a man leaning on a wall", "man"],
+        ["a sleeping cat", "sleeping_cat"], ["a gold ring on the table", "gold_ring"], ["a tall glass building", "glass_building"],
+        ["a very old wooden chair", "wooden_chair"], ["a cat with a hat", "cat"], ["a dog lying on the rug", "dog"]];
+    check("idWords: the last two words of the first phrase of telling words, lowercase, accents dropped; tokens, markers and <names> are no words", WORDS.every(([t, w]) => R.idWords(t) === w), short(WORDS.map(([t]) => R.idWords(t))));
     check("every id made from words passes BOX_ID", WORDS.filter(([, w]) => w).every(([, w]) => R.BOX_ID.test(w + "_1")), "");
     const sm = [{ id: "a_1", kind: "new", rect: [0, 0, 0.04, 0.5] }, { id: "b_1", kind: "keep", rect: [0, 0, 0.04, 0.5], src: [0, 0, 0.04, 0.5] }, { id: "c_1", kind: "move", rect: [0, 0, 0.5, 0.5] }, { id: "d_1", kind: "from", rect: [0, 0, 0.5, 0.05] }];
     check("smallBoxes: the boxes that place something (new, from, move) under 48 px a side as sent; a small Keep is no matter", eq(R.smallBoxes(sm, [1024, 880]), ["a_1", "d_1"]), short(R.smallBoxes(sm, [1024, 880])));

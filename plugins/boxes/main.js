@@ -484,7 +484,7 @@ export function activate(scumble) {
     });
     scumble.commands.register("add", {
         description: "Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).",
-        params: { id: { type: "string", description: "lowercase words and a number joined by underscores (knight_1, red_scarf_2); default made from the description's first two telling words (\"a red scarf\" -> red_scarf_1), else the next free box_n" }, ...FIELDS },
+        params: { id: { type: "string", description: "lowercase words and a number joined by underscores (knight_1, red_scarf_2); default made from the last two words of the description's first phrase (\"a red scarf\" -> red_scarf_1, \"a small black cat sitting in the grass\" -> black_cat_1), else the next free box_n" }, ...FIELDS },
         needsImage: true, scope: "doc",
         run(doc, a) { const b = add(doc, a); return { ...summary(b), ...(switchNote(doc) ? { switched_on: true } : {}) }; },
     });

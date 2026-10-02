@@ -779,7 +779,7 @@ const COMMANDS = {
         },
     },
     generate: {
-        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out.",
+        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out; seed is the seed the model got, null when the route sends none (FLUX 3 Image).",
         params: { timeout: P.timeout(600) },
         async run(ed, a) {
             const n0 = ed.history.length;
