@@ -1,6 +1,12 @@
 # Ideogram 4.5 in Scumble (researched 2026-10-02)
 
-## Status: I0 - I3 built (2026-10-02); the README / MANUAL lines open
+## Status: built (2026-10-02: I0 - I3, then the README / MANUAL lines); not released, never run live
+
+**The docs (2026-10-02, one session):** `README.md`'s model list names "Ideogram 4.5 (edits with the selection as its
+mask)"; `docs/MANUAL.md` "Recipes" has a paragraph after FLUX 3 Image's (the three hosts, the selection as the mask,
+three references without a number and a named one refused, 6:1, Quality and Edit precision, no seed on WaveSpeed,
+Generate new from the prompt alone, not run live). RECIPES.md and the CHANGELOG entry came with I1 - I3; `docs/COMMANDS.md`
+needed nothing.
 
 **I3 as built (2026-10-02, one session):** `comfyrouter.js`'s ideogram dialect branches on the model part
 `ideogram-4-5`. Its `edit` is now a function of the model (`editable(d, model)` replaces the three `d.edit === false`

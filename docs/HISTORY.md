@@ -50,6 +50,31 @@ The paragraph of 2026-10-02 (item 31 I0 + I1) was moved here the same day, when 
 
 The paragraph of 2026-10-02 (item 31 I2) was moved here the same day, when I3 was built.
 
+The paragraph of 2026-10-02 (item 31 I3) was moved here the same day, when the README / MANUAL lines were written.
+
+## 2026-10-02 (item 31 I3, moved here the same day)
+
+**This session (2026-10-02, "weiter", the tenth of the day):** item 31 I3 (`docs/PLAN_IDEOGRAM45.md` "I3 as built"),
+one commit, not released (CHANGELOG Unreleased: the Ideogram 4.5 entry now names Comfy Router). The I2 paragraph is in
+`docs/HISTORY.md`. **Router** (`comfyrouter.js`): the ideogram dialect branches on `ideogram-4-5`; its `edit` is a
+function of the model part (`editable(d, model)` replaces the three `d.edit === false` reads, 4.0 stays text-only);
+`body()` gets ctx as a fifth argument. Generate: Precise Edit `{ prompt as typed, image, reference_images (only with
+references, unnumbered, `style`), mask (util.js `ideogramMask`, none for a whole-crop selection), quality, seed modulo
+2^31, num_images: 1 }`; Generate new: `{ prompt, size, quality (very_low -> low by `text_values`), magic_prompt "off"
+(`text.fixed`), seed, num_images: 1 }`, `size` the closest of **36** presets within the tier the asked area bills as (1K
+up to 1024 x 1024). `read()` (shared with 4.0): an `is_image_safe: false` item is never used (its `url` is empty in
+Ideogram's docs), `info.generation_id` / `answered`. A fix on the way: `picturesFor` named a decimal `max_bytes` in MiB
+("24 MB" for 25,000,000, Seedream 5 pro too); now decimal MB. **Recipe** `recipes/ideogram_4_5.json` gains the
+`comfyrouter` variant (description "Also on Comfy Router."). Tests: `tools/ideogram45_test.js` 242 (sections 15-24 the
+Router, written by a background agent against the stated API; 12 mutations of `comfyrouter.js` on a copy all caught),
+`comfyrouter_test` 127 (seventeen variants, the per-model edit flag, a fake `bitmap` in `ctxFor`), `refs_layout_test`
+665, `recipes_test` 51, magnific / flux3 / oxen green; `tools/comfyrouter_mock.py` and `comfyrouter_test.py`'s list
+updated (the gate itself not run); gates `lint`, `types` green `--offline` (labels `i3`, `i3b`). A review workflow (two
+readers, each finding checked by a third) confirmed five, all fixed: Ideogram 4.0's 38 sizes held six that break 4.5's
+"multiple of 32" rule (16:9 at 1024 went as 1280x720; now 1344x768), the empty `url` of an unsafe picture, and three
+sentences. **Not done:** the README / MANUAL lines; no live run (the user's word). Next: the README / MANUAL lines
+(`docs/PLAN_IDEOGRAM45.md` §8), then a release of items 28 and 31 on the user's word.
+
 ## 2026-10-02 (item 31 I2, moved here the same day)
 
 **This session (2026-10-02, "baue weiter", the ninth of the day):** item 31 I2 (`docs/PLAN_IDEOGRAM45.md` "I2 as

@@ -68,18 +68,18 @@ the section for its version; `docs/` and the commit history hold the technical d
   size), and `scumble.host.cropFrame(editor)` says what that crop is.
 - **Ideogram 4.5**, a new recipe on your Replicate token, your WaveSpeed key or Comfy Router (your Comfy key, billed
   in Comfy credits). Ideogram's precise edit model changes the selected area and leaves the rest of the crop as it
-  was, pixel for pixel, at the crop's own size, and is strong at lettering. Your selection goes as the model's mask;
-  a selection over the whole crop lets it edit the whole crop. Up to three reference layers go along (the Original
-  counts as one); the model takes them without a number, so the prompt cannot name them with `@img1`. A very narrow
+  was, pixel for pixel, at the crop's own size, and is strong at lettering. Your selection goes as the model's mask; a
+  selection over the whole crop lets it edit the whole crop. Up to three more pictures go along (the Original and your
+  reference layers); the model takes them without a number, so the prompt cannot name them with `@img1`. A very narrow
   selection is sent with more of its surroundings, since the model takes no picture steeper than 6:1. Generate new
   makes a picture from the prompt at the closest of seven shapes on Replicate and WaveSpeed. The Settings panel has
-  *Quality* (Very low, Low, Medium, High; Medium by default), which is also the price per picture: $0.008, $0.03,
-  $0.06 or $0.22 for an edit on Replicate and WaveSpeed, $0.03 to $0.10 for a new picture on Replicate, $0.03 to
-  $0.22 on WaveSpeed (Very low goes as Low there). On WaveSpeed the Settings panel also has *Edit precision* (High by
+  *Quality* (very_low, low, medium, high; medium by default), which is also the price per picture: $0.008, $0.03,
+  $0.06 or $0.22 for an edit on Replicate and WaveSpeed, $0.03 to $0.10 for a new picture on Replicate, $0.03 to $0.22
+  on WaveSpeed (very_low goes as low there). On WaveSpeed the Settings panel also has *Edit precision* (high by
   default, which keeps the unchanged pixels), a new picture comes in one of seven shapes at 1k or 2k by the size you
   ask for, your prompt goes as written, and no seed goes, so two runs differ. On Comfy Router a new picture comes at
-  the closest of Ideogram's 1K or 2K sizes by the size you ask for, your prompt goes as written, and Very low goes as
-  Low; Comfy had not published the price. Written from Replicate's, WaveSpeed's and Comfy Router's documentation and
+  the closest of Ideogram's 1K or 2K sizes by the size you ask for, your prompt goes as written, and very_low goes as
+  low; Comfy had not published the price. Written from Replicate's, WaveSpeed's and Comfy Router's documentation and
   not run against the live services yet.
 
 ## 0.1.36 — 2026-10-01

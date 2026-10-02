@@ -29,9 +29,9 @@ Rendering happens on your own [ComfyUI](https://github.com/comfyanonymous/ComfyU
 (local or remote, for example on RunPod) or through API providers: Google (Nano Banana
 2 / 2 Lite / Pro), OpenAI (GPT Image 2.5 Flare / Sunburst, 2), Black Forest Labs
 (FLUX 3 Image, FLUX.2 max / pro / flex / klein, FLUX.1 Fill), ByteDance Seedream 5 and 4.5, Qwen Image Edit and Qwen Image 2.1,
-Magnific's Mystic, Ideogram's mask inpainting and Image Expand outpainting (FLUX Pro, Ideogram, Seedream 4.5),
+Ideogram 4.5 (edits with the selection as its mask), and on Magnific its own Mystic, Ideogram mask inpainting and Image Expand outpainting (FLUX Pro, Ideogram, Seedream 4.5),
 each through the model's own API where Scumble has one (for Seedream that is ByteDance's BytePlus ModelArk) or
-through ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud, OpenRouter, Oxen.ai and Magnific. Object masks and background removal
+through ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud, Comfy Router, OpenRouter, Oxen.ai and Magnific. Object masks and background removal
 run inside the app through ONNX Runtime (SAM2, BiRefNet, RMBG). The editor is the same
 code as the ComfyUI node [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas);
 Scumble is the standalone window around it, plus recipes, plugins, an MCP server and the assistant.
@@ -57,7 +57,7 @@ press Generate. The recipe decides where it runs: your ComfyUI, or a provider wi
   selections.
 - Recipes instead of node graphs: pick a model ("FLUX.2 [max]", "Nano Banana 2") and the
   provider it runs on (ToAPIs, its own API such as BytePlus ModelArk for Seedream, fal.ai, Replicate, WaveSpeedAI,
-  Comfy Cloud, OpenRouter, Oxen.ai, Magnific); import your own ComfyUI
+  Comfy Cloud, Comfy Router, OpenRouter, Oxen.ai, Magnific); import your own ComfyUI
   workflow as a recipe if it holds an Inpaint Canvas node, or a copy of a shipped model recipe with
   a variant of your own.
 - API runs go out at the size the provider really takes (*Highres fix* picks the tier), with

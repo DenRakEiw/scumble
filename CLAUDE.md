@@ -76,31 +76,26 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02: item 28 S1-S3e built, the plugin hook, the Boxes plugin with its tool and crop frame, one Boxes switch under the prompt, the caption's place words; 0.1.36 is Latest; item 31 Ideogram 4.5 I0-I3 built, the Replicate, WaveSpeed and Comfy Router variants)
+## Where things stand (2026-10-02: item 28 S1-S3e built, the plugin hook, the Boxes plugin with its tool and crop frame, one Boxes switch under the prompt, the caption's place words; 0.1.36 is Latest; item 31 Ideogram 4.5 built, the Replicate, WaveSpeed and Comfy Router variants and its README / MANUAL lines; both wait for a release)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02, "weiter", the tenth of the day):** item 31 I3 (`docs/PLAN_IDEOGRAM45.md` "I3 as built"),
-one commit, not released (CHANGELOG Unreleased: the Ideogram 4.5 entry now names Comfy Router). The I2 paragraph is in
-`docs/HISTORY.md`. **Router** (`comfyrouter.js`): the ideogram dialect branches on `ideogram-4-5`; its `edit` is a
-function of the model part (`editable(d, model)` replaces the three `d.edit === false` reads, 4.0 stays text-only);
-`body()` gets ctx as a fifth argument. Generate: Precise Edit `{ prompt as typed, image, reference_images (only with
-references, unnumbered, `style`), mask (util.js `ideogramMask`, none for a whole-crop selection), quality, seed modulo
-2^31, num_images: 1 }`; Generate new: `{ prompt, size, quality (very_low -> low by `text_values`), magic_prompt "off"
-(`text.fixed`), seed, num_images: 1 }`, `size` the closest of **36** presets within the tier the asked area bills as (1K
-up to 1024 x 1024). `read()` (shared with 4.0): an `is_image_safe: false` item is never used (its `url` is empty in
-Ideogram's docs), `info.generation_id` / `answered`. A fix on the way: `picturesFor` named a decimal `max_bytes` in MiB
-("24 MB" for 25,000,000, Seedream 5 pro too); now decimal MB. **Recipe** `recipes/ideogram_4_5.json` gains the
-`comfyrouter` variant (description "Also on Comfy Router."). Tests: `tools/ideogram45_test.js` 242 (sections 15-24 the
-Router, written by a background agent against the stated API; 12 mutations of `comfyrouter.js` on a copy all caught),
-`comfyrouter_test` 127 (seventeen variants, the per-model edit flag, a fake `bitmap` in `ctxFor`), `refs_layout_test`
-665, `recipes_test` 51, magnific / flux3 / oxen green; `tools/comfyrouter_mock.py` and `comfyrouter_test.py`'s list
-updated (the gate itself not run); gates `lint`, `types` green `--offline` (labels `i3`, `i3b`). A review workflow (two
-readers, each finding checked by a third) confirmed five, all fixed: Ideogram 4.0's 38 sizes held six that break 4.5's
-"multiple of 32" rule (16:9 at 1024 went as 1280x720; now 1344x768), the empty `url` of an unsafe picture, and three
-sentences. **Not done:** the README / MANUAL lines; no live run (the user's word). Next: the README / MANUAL lines
-(`docs/PLAN_IDEOGRAM45.md` §8), then a release of items 28 and 31 on the user's word.
+**This session (2026-10-02, "baue weiter", the eleventh of the day):** item 31's last step, the README / MANUAL
+lines (`docs/PLAN_IDEOGRAM45.md` status), one commit, not released. The I3 paragraph is in `docs/HISTORY.md`.
+`README.md`: "Ideogram 4.5 (edits with the selection as its mask)" in the model list, Magnific's three entries now read
+"and on Magnific its own Mystic, Ideogram mask inpainting and Image Expand", and **Comfy Router** joined both provider
+lists (missing since 0.1.28). `docs/MANUAL.md` "Recipes": a paragraph after FLUX 3 Image's (the three hosts, the
+selection as the mask, three more pictures without a number and a named one refused, 6:1, *Quality* and *Edit
+precision*, no seed on WaveSpeed only, Generate new from the prompt alone, not run live). The Settings panel shows a
+combo's raw values (`selectInput`), so the manual and the CHANGELOG entry now write `very_low`, `medium`, `high`.
+**A fix on the way:** the chapter "Boxes in the prompt" (item 28 S3a, dddd942) had no `<!-- slug -->` and no
+summary line, so `renderer/help/manual.js` refused the whole manual (`tools/manual_test.js` red since S3a, the in-app
+Help and the assistant's manual context with it); now `slug: boxes` and a summary, `manual_test` PASS, the `help` gate
+green `--offline` (label `i31docs`). A check workflow (two readers, each finding verified by a third) confirmed six of
+seven, all fixed. Item 31 is done. Next: a release of items 28 and 31 on the user's word (CHANGELOG Unreleased holds
+both; `docs/RELEASING.md`: `npm run dist`, exe gates, the post); item 28's live checks §6.1-6.3 before it if the user
+wants them. Run `node tools/manual_test.js` whenever `docs/MANUAL.md` changes.
 
 **Released:** 0.1.36 is Latest (published 2026-10-01 22:38:25 CEST, tag on 5bc5831 "0.1.36 prepared"; the tag build
 green) on the user's "baue fertig und release dann das update mit flux3". 0.1.36 = **FLUX 3 Image** (ea71629) + item 25
@@ -228,8 +223,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `tools/refs/comfyrouter/ideogram_ideogram-4-5.json`), WaveSpeed (`ideogram-ai/ideogram-v4.5/edit` and siblings); the
   adapters exist. Research and the build plan: `docs/PLAN_IDEOGRAM45.md`. **I0 + I1 built 2026-10-02** (the shared
   helpers, `recipes/ideogram_4_5.json` with its Replicate variant, `tools/ideogram45_test.js`; Unreleased), **I2** the
-  same day (the WaveSpeed variant, the `accepts` allowlist), **I3** the same day (the Comfy Router variant). Next:
-  the README / MANUAL lines.
+  same day (the WaveSpeed variant, the `accepts` allowlist), **I3** the same day (the Comfy Router variant), **the README / MANUAL lines** the same day: built, under
+  Unreleased. Next: the release with item 28 on the user's word.
 
 ## Gate runner and flakes
 
