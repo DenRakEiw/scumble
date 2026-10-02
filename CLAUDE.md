@@ -195,7 +195,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   same night (the canvas tool X and the overlay), **S3c** the next session (the crop frame, the paste warning), **S3d**
   the session after (one Boxes switch under the prompt field, the first box turns it on), **S3e** the one after (the
   caption's place words, ids from the description, the warnings, the tool's hit order); none released, all under
-  Unreleased. Next: the live checks §6.1-6.3 with the user's key, a release with item 31 on the user's word; S4 optional.
+  Unreleased. The live checks §6.1-6.3 ran on 2026-10-02 night, released in 0.1.37 the same night; S4 / S5 optional.
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended
@@ -221,7 +221,16 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   adapters exist. Research and the build plan: `docs/PLAN_IDEOGRAM45.md`. **I0 + I1 built 2026-10-02** (the shared
   helpers, `recipes/ideogram_4_5.json` with its Replicate variant, `tools/ideogram45_test.js`; Unreleased), **I2** the
   same day (the WaveSpeed variant, the `accepts` allowlist), **I3** the same day (the Comfy Router variant), **the README / MANUAL lines** the same day: built, under
-  Unreleased. Next: the release with item 28 on the user's word.
+  Unreleased. Released in 0.1.37 (2026-10-02 night), never run live.
+- 32: a popup when a new version is out (the user, 2026-10-02 night: "Beim start der app nach updates suchen und mit pop
+  up benachrichtigen wenn es eine neue version gibt"). **Half of it exists:** the installed app checks GitHub 8 s after
+  the start (`main.js` `updater.check()`, unless *Settings > Updates* has it off; not headless, not in agent mode, not
+  in the Store copy), downloads by itself (`autoDownload`) and then shows only a quiet `Update to <version>` button in
+  the title row (`#shell-update`); the release notes sit in *Settings > Updates*. Missing: a dialog through item 25's
+  `renderer/dialogs.js` once the update is downloaded, with the version and its CHANGELOG notes, *Restart and update* /
+  *Later* (maybe *Skip this version*); once per version, not on every start; not while a document is busy or unsaved
+  without asking first (the restart path `restartPlan` exists); none in the Store copy (the Store updates it) and none
+  for Linux packages that cannot update themselves. Small (about half a day), nothing planned in detail.
 
 ## Gate runner and flakes
 
