@@ -922,7 +922,7 @@ const CROP_DEFAULTS = { context: "auto", feather: "auto", fill: "none", colorMat
 const CROP_LEGACY = { context: "manual", feather: "manual", fill: "none", colorMatch: false };   // workflows saved before these existed
 // Generate settings: mode picks which result input the round trip uses ("api" =
 // result, "local" = result_local); denoise and seed are emitted as node outputs.
-const GEN_DEFAULTS = { mode: "api", denoise: 1.0, seed: 0, seedRandom: true, refine: false };
+const GEN_DEFAULTS = { mode: "api", denoise: 1.0, seed: 0, seedRandom: true, refine: false, boxes: false };
 // Editor-driven setting outputs: wildcard outputs after the fixed ones, wired to
 // any widget input in the graph. FIXED_OUTPUTS must match RETURN_NAMES up to "negative".
 const FIXED_OUTPUTS = 13;
@@ -1578,6 +1578,9 @@ const STYLE = `
 .ipc-upsample { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .ipc-gen { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; }
 .ipc-gen label { display:flex; align-items:center; gap:6px; }
+.ipc-boxes { padding-top:0; }
+.ipc-boxes label { display:flex; align-items:center; gap:6px; }
+.ipc-boxes .ipc-hint { color:var(--sc-muted, #888); }
 .ipc-gen input[type=range] { width:120px; margin:0; }
 .ipc-gen b { min-width:32px; font-weight:500; color:var(--sc-fg-2, #ccc); }
 .ipc-settings { display:grid; grid-template-columns:auto 1fr; gap:4px 10px; align-items:center; }
@@ -17910,6 +17913,7 @@ class InpaintEditor {
     }
 
     syncGenControls() {
+        this.syncBoxesRow();
         if (!this.modeSel) return;
         const local = this.genSettings.mode === "local";
         this.modeSel.value = local ? "local" : "api";
@@ -17921,6 +17925,22 @@ class InpaintEditor {
         this.refineBtn.hidden = !local;
         this.denoiseInput.parentElement.hidden = !local;
         if (this.negativeInput) this.negativeInput.hidden = !local;
+    }
+
+    /**
+     * The Boxes switch under the prompt field (item 28 S3d): shown while the recipe sends boxes (host.boxSwitch), its
+     * label counting the document's boxes; the hint says what goes while it is on (the selection, with no boxes) and
+     * that the boxes stay home while it is off. The node has no boxes: its host answers null and the row stays hidden.
+     */
+    syncBoxesRow() {
+        if (!this.boxesRow) return;
+        const s = host.boxSwitch(this);
+        this.boxesRow.hidden = !(s && s.takes);
+        if (!s) return;
+        const on = !!this.genSettings.boxes;
+        this.boxesCheck.checked = on;
+        this.boxesLabel.textContent = s.count ? `Boxes · ${s.count}` : "Boxes";
+        this.boxesHint.textContent = on ? (s.count ? "" : "the selection goes as one box") : (s.count ? "not sent" : "");
     }
 
     /** Drop the helper models from VRAM: ComfyUI's /free resets the executor, which releases the node instances holding them. */

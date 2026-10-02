@@ -76,38 +76,39 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02: item 28 S1-S3c built, the selection as a FLUX 3 box, the plugin hook and the Boxes plugin with its tool and crop frame; 0.1.36 is Latest)
+## Where things stand (2026-10-02: item 28 S1-S3d built, the plugin hook, the Boxes plugin with its tool and crop frame, one Boxes switch under the prompt; 0.1.36 is Latest)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02, "baue weiter", the fifth of the day):** item 28 S3c as `docs/PLAN_BOXES.md` §10 plans it,
-one commit, not released (CHANGELOG Unreleased, under the S3b entry). The S3b paragraph is in `docs/HISTORY.md`.
-Core: `stitch.js` `planFrame(editor, params, limits)` (the run's `planCrop` from the selection's cached bounds,
-`selectionBbox` takes a stand-in with `.bounds`; one strip scan per selection change, so an overlay may ask per draw), `host.cropFrame(editor)`
-(app host only). Plugin: while the Boxes tool is active the picture outside that crop is dimmed, the crop's size on
-its bottom edge (drawn last, over the boxes); the panel names the crop in its note and warns of boxes the crop leaves
-out, cuts, or that change pixels outside the selection while Paste is "selection" (2 px slack on the bounds; Keep
-changes nothing, Move counts its source too), with "Paste the whole crop" through the `set_crop` command. Found on
-the way: `selectionBounds()` / `getBounds()` are exclusive on x1 / y1, so S1's `selectionBox` and `boxContext`'s
-`selection` were 1 px too wide and tall (fixed, tests moved). `tools/boxes_test.js` section 11 (planFrame against
-planCrop on a real mask, four cases), `tools/boxes_test.py` step `the_crop_frame_and_the_paste_warning` (the frame
-against `prepareCrop`, the dim, the three warnings, the button; FLUX 3 selected for the step and put back); gates
-`boxes` and `commands` green `--offline` (labels `s3c`, `s3c2`), lint and types clean, one look over CDP; manual, PLUGINS.md,
-CHANGELOG. Item 30 (Ideogram 4 as an update of its own) added to the list on the user's word. **Not done:** the live
-FLUX 3 checks §6.1-6.3 (the user's key); S4 (Keep rows from the objects, optional); the editor's own dashed crop
-outline (`cropRect()`, no aspect presets or limits) still differs from the run's crop on a provider recipe. The node
-repo is not rebuilt. A review (two readers, every finding checked by a third) found four, all fixed: `getBounds()`
-after a marquee / ellipse / lasso at fractional coordinates is up to a pixel wider than the run's alpha >= 128 box and
-can tip the aspect preset, so `planFrame` scans it exact (`scanBoundsIn`, once per `selectionSeq`); `cropFrame` plans
-a provider upscaler with mode "crop"; "left out" uses the run's `toFrame`; a new host / plugin event `crop` (node
-parameter or API size) re-renders the panel. **The user asked during the session** how the box prompt is switched on
-and wants one switch: **S3d** in `docs/PLAN_BOXES.md` §10, with the user's answers (a row of its own under the prompt
-field; the first box turns it on; on = the document's boxes, or the selection when there are none; S1's Settings row
-goes). The user also pointed at `github.com/koshimazaki/flux-api-control-surface` (MIT, a FLUX 3 box editor): read,
-its ideas are **S3e** in §10 (position words in the caption, ids from the description, a warning for a New box
-without one, the smaller box wins the hit test). Next: S3d, then S3e or the live checks with the user, then a
-release of item 28 on the user's word; S4 optional.
+**This session (2026-10-02, "baue weiter", the sixth of the day):** item 28 S3d as `docs/PLAN_BOXES.md` §10 plans it
+(with the user's answers: a row of its own under the prompt field, the first box turns it on), one commit here and one
+in the node repo (`js/host.js`: `boxSwitch() { return null; }`), not released (CHANGELOG Unreleased: the S1 entry is now
+the switch's). The S3c paragraph is in `docs/HISTORY.md`. Core: `genSettings.boxes` (GEN_DEFAULTS false, saved with
+`gen`), the row `ed.boxesRow` in `inpaint_modal.js` `buildPrompt` ("Boxes · N", hint "the selection goes as one box" /
+"not sent"), `syncBoxesRow()` (from `syncGenControls`, `host.applyRecipe`, `host.changed`, a plugin loaded or
+unloaded), `host.boxSwitch(editor)` -> `{ takes, count }` (`takesBoxes(r)`: `options.boxes` or `text.refs.options.boxes`),
+`set_generation boxes`, `status` `generation.boxes`. Runs: off, no source asked and a note "The document's N boxes did
+not go"; on, the sources first, then S1's selection box only when no source holds a box (`pluginHost.countBoxes`, the
+new optional sync `count(doc)` of `scumble.generate.register`, API 3 unchanged): one deviation from the plan, so a box
+the crop leaves out does not turn into a selection box. S1's `selection_box` row is gone from `recipes/flux3.json`
+(`boolOf` with it). Plugin: `add()` turns the switch on for a document's first box (`switchOn`, a status note that
+names the switch, or says it waits for a recipe that takes boxes; `switched_on` in the commands' answers; undo, redo
+and open never do), the overlay dashed at half strength while off, the panel note "Not sent ..." and no crop warnings
+while off, `boxes.list` answers `switch`. Tests: `boxes_test.py` step `the_boxes_switch` (loopback recipe with
+`options.boxes`, the sources counted through a wrapped `host.plugins`, the overlay through a recording context, the
+switch through a `.scumble` save and open), the add step expects `switched_on` and the note; `flux3_test.js` 101 checks;
+gates `boxes`, `commands`, `types` green `--offline` (labels `s3d2`, `s3d3`), `build_node.py --check` only the known
+"differs" lines, lint clean, one look over CDP (on and off). COMMANDS.md regenerated. A review (two readers, every
+finding checked by a third) found three, all fixed: the row did not follow a plugin turned on or off, the first box's
+note named a switch that is hidden under a recipe without boxes, and the test's hide check could not fail; one more
+was refuted (the switch outside the box's undo step is the plan: undoing the first box leaves it on, the manual says
+so). Also this session, on the user's word: a Reddit report in `docs/BUGS.md` (the local Flux.2 Klein example fails
+with "mat1 and mat2 shapes cannot be multiplied (1024x5120 and 12288x4096)"; read, not run: a text encoder that does
+not fit Klein 9B, or an old ComfyUI; ask for the log first), its own commit. **Not done:** the live FLUX 3 checks
+§6.1-6.3 (the user's key); S3e; S4 (optional); the node repo's build is still behind (only its `host.js` changed).
+Next: S3e (position words in the caption, ids from the description, the missing-description warning, the tool's hit
+order) or the live checks with the user, then a release of item 28 on the user's word.
 
 **Released:** 0.1.36 is Latest (published 2026-10-01 22:38:25 CEST, tag on 5bc5831 "0.1.36 prepared"; the tag build
 green) on the user's "baue fertig und release dann das update mit flux3". 0.1.36 = **FLUX 3 Image** (ea71629) + item 25
@@ -204,12 +205,12 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `providers/boxes.js` writes the rows after `resolveNames`, plugins supply boxes through
   `scumble.generate.register`; S1 the selection as a box behind a FLUX 3 row, S2 the hook, S3a-c the built-in
   "Boxes" plugin, S4 Keep rows from the SAM2 objects; §8-§12 the implementation plan per session, §6 the live
-  checks after S1, §7 the open questions). **S1 built 2026-10-02** (the "Selection as box" row, off by default), **S2 the same day**
+  checks after S1, §7 the open questions). **S1 built 2026-10-02** (the selection as a box; its Settings row went in S3d), **S2 the same day**
   (plugin API 3, `scumble.generate.register`, the sample's source behind `sample.box`) and **S3a the same night**
   (`plugins/boxes`: the data, the panel in the Generate pane, the six commands, the generate source), **S3b** the
-  same night (the canvas tool X and the overlay), **S3c** the next session (the crop frame, the paste warning); none
-  released, all under Unreleased. Next: S3d (one Boxes switch in the Prompt section, the user's wish, §10), the live
-  checks §6.1-6.3 with the user's key, a release on the user's word; S4 optional.
+  same night (the canvas tool X and the overlay), **S3c** the next session (the crop frame, the paste warning), **S3d**
+  the session after (one Boxes switch under the prompt field, the first box turns it on); none released, all under
+  Unreleased. Next: S3e (§10), the live checks §6.1-6.3 with the user's key, a release on the user's word; S4 optional.
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended

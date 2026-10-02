@@ -135,7 +135,7 @@ filter's params hold more keys in a real file):
     "selection": "data:image/png;base64,iVBORw0KGgo...",
     "selections": [], "seen": ["r12"],
     "crop": { "context": "auto", "feather": "auto" }, "upsample": { "useCase": "auto", "backend": "auto" },
-    "gen": { "mode": "api", "denoise": 1, "seed": 42, "seedRandom": true, "refine": false },
+    "gen": { "mode": "api", "denoise": 1, "seed": 42, "seedRandom": true, "refine": false, "boxes": false },
     "settings": {}, "refs": { "fit": "pad" }, "cutout": { "backend": "auto" }
   },
   "extra": {},
@@ -168,7 +168,7 @@ history entry would name it and it would be `false`.
 | `selectionBox` | `[x, y, w, h]` | only when the selection PNG holds a box of the mask instead of the whole canvas: where the box goes |
 | `selections` | array | the saved selections, `{ name, url, orient, xf }`, `url` a PNG data URL drawn at 0, 0; `orient` `{ turn, flip }` (0.1.31) turns it first, then `xf` (0.1.32: the map `[a, b, c, d, e, f]` of every crop, extend, resize, turn and straighten since it was saved) places it; each left out when it does nothing |
 | `guides` | `{ x: [], y: [] }` | guide positions in pixels; left out when there are none |
-| `crop`, `upsample`, `gen`, `settings`, `refs`, `cutout` | objects | the crop, prompt upsampling, generation, recipe *Settings* panel, reference-image (`{ fit }`, not file refs) and cut-out settings |
+| `crop`, `upsample`, `gen`, `settings`, `refs`, `cutout` | objects | the crop, prompt upsampling, generation, recipe *Settings* panel, reference-image (`{ fit }`, not file refs) and cut-out settings; `gen.boxes` is the Boxes switch under the prompt (boxes in the prompt on or off for this document, default false; an older app keeps it as an unknown key) |
 
 ### 4.1 Layers
 

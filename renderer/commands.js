@@ -246,7 +246,7 @@ export function status(ed) {
     return {
         doc: ed.node.id, name: docName(ed), loaded: !!ed.base, width: ed.width || 0, height: ed.height || 0,
         base: ed.base ? ed.base.ref : null, prompt: ed.promptText || "", negative: ed.negativeText || "",
-        generation: { mode: ed.genSettings.mode, seed: ed.genSettings.seed, seed_random: !!ed.genSettings.seedRandom, denoise: ed.genSettings.denoise },
+        generation: { mode: ed.genSettings.mode, seed: ed.genSettings.seed, seed_random: !!ed.genSettings.seedRandom, denoise: ed.genSettings.denoise, boxes: !!ed.genSettings.boxes },
         crop: { ...ed.cropSettings }, selection: bounds(ed), active_layer: ed.activeLayerId,
         layers: ed.layers.map((l) => layerSummary(ed, l)), results: results.length, history: ed.history.length,
         // every reference layer top first: its label (what @img<n> names; null while hidden) and, from the `status`
@@ -621,8 +621,8 @@ const COMMANDS = {
         },
     },
     set_generation: {
-        description: "Generation settings: mode api / local (the recipe decides what is available), seed, random seed, denoise, refine.",
-        params: { mode: P.str("api or local", { enum: ["api", "local"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass") },
+        description: "Generation settings: mode api / local (the recipe decides what is available), seed, random seed, denoise, refine, and the document's Boxes switch (boxes).",
+        params: { mode: P.str("api or local", { enum: ["api", "local"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay") },
         async run(ed, a) {
             const g = ed.genSettings;
             if (a.mode != null) { if (!["api", "local"].includes(a.mode)) throw new Error("mode must be api or local"); g.mode = a.mode; }
@@ -630,9 +630,12 @@ const COMMANDS = {
             if (a.seed_random != null) g.seedRandom = !!a.seed_random;
             if (a.denoise != null) g.denoise = Math.min(1, Math.max(0.05, +a.denoise || 1));
             if (a.refine != null) g.refine = !!a.refine;
+            if (a.boxes != null) g.boxes = !!a.boxes;
             if (ed.syncGenControls) ed.syncGenControls();
             ed.renderInfo(); ed.notifyChanged();
-            return { mode: g.mode, seed: g.seed, seed_random: !!g.seedRandom, denoise: g.denoise, refine: !!g.refine };
+            // the Boxes overlay draws the boxes dashed while the switch is off
+            if (a.boxes != null) ed.draw();
+            return { mode: g.mode, seed: g.seed, seed_random: !!g.seedRandom, denoise: g.denoise, refine: !!g.refine, boxes: !!g.boxes };
         },
     },
     set_crop: {

@@ -40,6 +40,38 @@ night, when 0.1.36 was released with FLUX 3 Image.
 The paragraph of 2026-10-02 ("s1 ausplan", item 28 S1 built) was moved here the same day, when S2 was built (CLAUDE.md
 keeps the 0.1.36 block and the S2 paragraph).
 
+The paragraph of 2026-10-02 (item 28 S3c) was moved here the same day, when S3d was built.
+
+## 2026-10-02 (item 28 S3c, moved here the same day)
+
+**This session (2026-10-02, "baue weiter", the fifth of the day):** item 28 S3c as `docs/PLAN_BOXES.md` §10 plans it,
+one commit, not released (CHANGELOG Unreleased, under the S3b entry). The S3b paragraph is in `docs/HISTORY.md`.
+Core: `stitch.js` `planFrame(editor, params, limits)` (the run's `planCrop` from the selection's cached bounds,
+`selectionBbox` takes a stand-in with `.bounds`; one strip scan per selection change, so an overlay may ask per draw), `host.cropFrame(editor)`
+(app host only). Plugin: while the Boxes tool is active the picture outside that crop is dimmed, the crop's size on
+its bottom edge (drawn last, over the boxes); the panel names the crop in its note and warns of boxes the crop leaves
+out, cuts, or that change pixels outside the selection while Paste is "selection" (2 px slack on the bounds; Keep
+changes nothing, Move counts its source too), with "Paste the whole crop" through the `set_crop` command. Found on
+the way: `selectionBounds()` / `getBounds()` are exclusive on x1 / y1, so S1's `selectionBox` and `boxContext`'s
+`selection` were 1 px too wide and tall (fixed, tests moved). `tools/boxes_test.js` section 11 (planFrame against
+planCrop on a real mask, four cases), `tools/boxes_test.py` step `the_crop_frame_and_the_paste_warning` (the frame
+against `prepareCrop`, the dim, the three warnings, the button; FLUX 3 selected for the step and put back); gates
+`boxes` and `commands` green `--offline` (labels `s3c`, `s3c2`), lint and types clean, one look over CDP; manual, PLUGINS.md,
+CHANGELOG. Item 30 (Ideogram 4 as an update of its own) added to the list on the user's word. **Not done:** the live
+FLUX 3 checks §6.1-6.3 (the user's key); S4 (Keep rows from the objects, optional); the editor's own dashed crop
+outline (`cropRect()`, no aspect presets or limits) still differs from the run's crop on a provider recipe. The node
+repo is not rebuilt. A review (two readers, every finding checked by a third) found four, all fixed: `getBounds()`
+after a marquee / ellipse / lasso at fractional coordinates is up to a pixel wider than the run's alpha >= 128 box and
+can tip the aspect preset, so `planFrame` scans it exact (`scanBoundsIn`, once per `selectionSeq`); `cropFrame` plans
+a provider upscaler with mode "crop"; "left out" uses the run's `toFrame`; a new host / plugin event `crop` (node
+parameter or API size) re-renders the panel. **The user asked during the session** how the box prompt is switched on
+and wants one switch: **S3d** in `docs/PLAN_BOXES.md` §10, with the user's answers (a row of its own under the prompt
+field; the first box turns it on; on = the document's boxes, or the selection when there are none; S1's Settings row
+goes). The user also pointed at `github.com/koshimazaki/flux-api-control-surface` (MIT, a FLUX 3 box editor): read,
+its ideas are **S3e** in §10 (position words in the caption, ids from the description, a warning for a New box
+without one, the smaller box wins the hit test). Next: S3d, then S3e or the live checks with the user, then a
+release of item 28 on the user's word; S4 optional.
+
 ## 2026-10-02 (item 28 S3b, moved here the same day)
 
 **This session (2026-10-02, "baue weiter", the fourth of the day):** item 28 S3b as `docs/PLAN_BOXES.md` §10 plans it,

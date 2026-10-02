@@ -2,8 +2,9 @@
 // A box says where an element goes in the picture (New), which element stays (Keep), moves (Move) or goes (Remove),
 // and which reference layer, or a part of it, is placed in it (From reference); a Text box renders words. The boxes
 // live in the document's plugin data (scumble.documents.data: saved with the session and the .scumble file) in image
-// pixels, follow the picture through a crop, a turn or a resize (the "geometry" event), and go out with every run of a
-// recipe that takes boxes through the generate hook (plugin API 3): the app measures them in the crop it sends and
+// pixels, follow the picture through a crop, a turn or a resize (the "geometry" event), and go out with a run of a
+// recipe that takes boxes through the generate hook (plugin API 3) while the document's Boxes switch under the prompt is
+// on (the core's genSettings.boxes, S3d; the first box turns it on): the app measures them in the crop it sends and
 // writes the model's rows. S3a: the data, the panel in the Generate pane, the commands. S3b: the canvas tool and the
 // overlay (tool.js). S3c: the crop Generate sends, as a frame while the tool is active and as warnings in the panel
 // (a box the crop leaves out or cuts; a box outside the selection while Paste keeps the selection only).
@@ -100,11 +101,31 @@ export function activate(scumble) {
         const words = b.text != null ? `text reading "${b.text}"${b.desc ? ", " + b.desc : ""}` : b.desc || "";
         return words.replace(TOKEN, (m, n) => `<ref_image_${n}>`);
     }
-    /** The recipe's stand on boxes: { takes, name }. */
+    /** The recipe's stand on boxes: { takes, name } (takes: the core's own test, the one the Boxes switch shows by). */
     function recipeState() {
         const r = scumble.host.recipe;
-        return { takes: !!(r && r.options && typeof r.options.boxes === "string"), name: r ? r.name || r.id : null };
+        const s = scumble.host.boxSwitch(null);
+        return { takes: !!(s && s.takes), name: r ? r.name || r.id : null };
     }
+
+    // ---- the Boxes switch under the prompt (S3d): the core's genSettings.boxes, per document ---------------------------
+    const SWITCH_NOTE = "The Boxes switch under the prompt is on now: the boxes go with the next run.";
+    const SWITCH_LATER = "The Boxes switch is on for this document: the boxes go with a run of a recipe that takes them (FLUX 3 Image).";
+    const switched = new Map();   // document id -> the note of the switch the last add turned on, until its caller has said it
+    const switchOf = (doc) => !!(doc.editor && doc.editor.genSettings && doc.editor.genSettings.boxes);
+    /** The first box of a document turns its switch on, so a drawn box is not left out without a word. */
+    function switchOn(doc) {
+        const ed = doc.editor;
+        if (!ed || !ed.genSettings || ed.genSettings.boxes) return;
+        ed.genSettings.boxes = true;
+        ed.notifyChanged();   // the row follows (host.changed), the file keeps it
+        // under a recipe that takes no boxes the row is hidden: the switch waits for one that does
+        const note = recipeState().takes ? SWITCH_NOTE : SWITCH_LATER;
+        switched.set(doc.id, note);
+        doc.status(note);
+    }
+    /** " " + the note when the last add turned the switch on, else "": for the caller's own status line. */
+    const switchNote = (doc) => { const n = switched.get(doc.id); switched.delete(doc.id); return n ? " " + n : ""; };
 
     // ---- the crop Generate sends (S3c) ---------------------------------------------------------------------------------
     /** The crop Generate would send now ({ x, y, w, h, emitted, paste } in image pixels), or null without a selection. */
@@ -145,9 +166,12 @@ export function activate(scumble) {
 
     // ---- changes (one undo step each) ----------------------------------------------------------------------------------
     function add(doc, input) {
+        switched.delete(doc.id);
         const boxes = boxesOf(doc);
         const b = normalise(doc, input, { boxes });
         write(doc, [...boxes, b], `Add box ${b.id}`);
+        // the first box turns the switch on; an undo, a redo or an opened document never does (they do not add)
+        if (!boxes.length) switchOn(doc);
         return b;
     }
     function set(doc, id, patch) {
@@ -197,8 +221,9 @@ export function activate(scumble) {
     // ---- the tool and the overlay ----------------------------------------------------------------------------------------
     const panels = new Map();   // doc id -> { box, highlight() } of the open panel
     const boxTool = makeTool(scumble, {
-        boxesOf, add, set, remove, nextId,
+        boxesOf, add, set, remove, nextId, switchNote,
         frame: cropOf,
+        sent: switchOf,
         panelShown(doc) {
             const p = panels.get(doc.id);
             if (!p || !p.box.isConnected) return false;
@@ -236,6 +261,7 @@ export function activate(scumble) {
     // ---- the generate hook: the document's boxes for a run that takes them ------------------------------------------
     scumble.generate.register({
         id: "document",
+        count(doc) { return boxesOf(doc).length; },
         boxes(doc) {
             return boxesOf(doc).map((b) => ({ id: b.id, kind: b.kind, rect: b.rect, src: b.kind === "new" ? undefined : b.src, layer: b.kind === "from" ? b.layer : undefined, desc: descOf(doc, b) }));
         },
@@ -257,7 +283,7 @@ export function activate(scumble) {
             box.appendChild(list);
             const run = (fn) => { try { fn(); } catch (err) { doc.status(String((err && err.message) || err)); render(true); } };
             const buttons = ui.el("div", "boxes-buttons");
-            buttons.appendChild(ui.button("Selection → box", "The selection's bounds as a New box with the prompt as its description (a From box when the prompt names a reference with @img1)", () => run(() => fromSelection(doc))));
+            buttons.appendChild(ui.button("Selection → box", "The selection's bounds as a New box with the prompt as its description (a From box when the prompt names a reference with @img1)", () => run(() => { const b = fromSelection(doc); doc.status(`Box ${b.id} added.${switchNote(doc)}`); })));
             buttons.appendChild(ui.button("Clear", "Remove every box of this document (Ctrl+Z brings them back)", () => run(() => { const n = clear(doc); doc.status(n ? `${n} box${n === 1 ? "" : "es"} removed (Ctrl+Z brings them back).` : "No boxes."); })));
             buttons.appendChild(ui.button("Copy rows", "The boxes as the model's rows, measured against the whole picture, to the clipboard (a run measures them in the crop it sends)", () => run(() => copyRows(doc))));
             box.appendChild(buttons);
@@ -304,9 +330,14 @@ export function activate(scumble) {
                 const boxes = boxesOf(doc);
                 const refs = shownReferences(doc);
                 const rs = recipeState();
-                const chk = rs.takes && doc.loaded ? cropCheck(doc, boxes) : null;
+                const on = switchOf(doc);
+                const chk = rs.takes && on && doc.loaded ? cropCheck(doc, boxes) : null;
                 const at = chk ? ` Generate measures them in the crop it sends, ${chk.crop.w} × ${chk.crop.h} px at ${chk.crop.x}, ${chk.crop.y} (the frame the Boxes tool shows).` : "";
-                note.textContent = !rs.name ? "" : rs.takes ? `${rs.name} sends these boxes with every Generate and Generate new run.${at}` : `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image) is selected.`;
+                note.textContent = !rs.name ? ""
+                    : !rs.takes ? `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image) is selected.`
+                    : !on ? `Not sent: the Boxes switch under the prompt is off. The boxes stay with the document; switch it on to send them with ${rs.name}.`
+                    : boxes.length ? `${rs.name} sends these boxes with every Generate and Generate new run.${at}`
+                    : `${rs.name} sends the selection as one box while the document has none (the Boxes switch is on).`;
                 renderWarnings(chk);
                 const k = JSON.stringify([boxes, refs.map((l) => [l.id, l.name])]);
                 if (!force && k === key) return;
@@ -379,7 +410,7 @@ export function activate(scumble) {
     });
 
     // ---- Plugins menu ------------------------------------------------------------------------------------------------
-    scumble.actions.register({ id: "from_selection", label: "Selection → box", run: (doc) => { try { const b = fromSelection(doc); doc.status(`Box ${b.id} added.`); return b; } catch (err) { doc.status(String(err.message || err)); return null; } } });
+    scumble.actions.register({ id: "from_selection", label: "Selection → box", run: (doc) => { try { const b = fromSelection(doc); doc.status(`Box ${b.id} added.${switchNote(doc)}`); return b; } catch (err) { doc.status(String(err.message || err)); return null; } } });
 
     // ---- commands ------------------------------------------------------------------------------------------------------
     const FIELDS = {
@@ -392,15 +423,15 @@ export function activate(scumble) {
     };
     const summary = (b) => ({ ...b });
     scumble.commands.register("list", {
-        description: "The boxes of this document (image pixels) and whether the selected recipe sends them.",
+        description: "The boxes of this document (image pixels), whether the selected recipe takes boxes and whether the document's Boxes switch is on (set_generation boxes): a run sends them only when both are.",
         params: {}, needsImage: true, scope: "doc",
-        run(doc) { const rs = recipeState(); return { boxes: boxesOf(doc).map(summary), count: boxesOf(doc).length, recipe: { name: rs.name, takes: rs.takes } }; },
+        run(doc) { const rs = recipeState(); return { boxes: boxesOf(doc).map(summary), count: boxesOf(doc).length, recipe: { name: rs.name, takes: rs.takes }, switch: switchOf(doc) }; },
     });
     scumble.commands.register("add", {
-        description: "Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with the next run of a recipe that takes boxes (FLUX 3 Image).",
+        description: "Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).",
         params: { id: { type: "string", description: "a lowercase name, an underscore and a number (knight_1); default the next free box_n" }, ...FIELDS },
         needsImage: true, scope: "doc",
-        run(doc, a) { return summary(add(doc, a)); },
+        run(doc, a) { const b = add(doc, a); return { ...summary(b), ...(switchNote(doc) ? { switched_on: true } : {}) }; },
     });
     scumble.commands.register("set", {
         description: "Change a box: only the given fields change (new_id renames it). One undo step.",
@@ -418,7 +449,7 @@ export function activate(scumble) {
         description: "The selection's bounds as a box: a new box described by the prompt (or desc); when the prompt names a reference with @img1, that layer placed into the selection (a from box). One undo step.",
         params: { id: { type: "string", description: "default the next free edit_n" }, desc: { type: "string", description: "the description (default the prompt)" } },
         needsImage: true, scope: "doc",
-        run(doc, a) { return summary(fromSelection(doc, a || {})); },
+        run(doc, a) { const b = fromSelection(doc, a || {}); return { ...summary(b), ...(switchNote(doc) ? { switched_on: true } : {}) }; },
     });
     scumble.commands.register("clear", {
         description: "Remove every box of this document. One undo step.",

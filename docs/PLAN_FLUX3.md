@@ -437,7 +437,11 @@ Works as is: the closest of `aspect_ratios` (`:101`), no negative prompt with `n
   maxPixels, maxBase64 })`), so fal and WaveSpeed pass 14 presets and 4 MP, OpenRouter and Oxen 15 and 16 MP. Not
   before the other session is done with `flux3.js` / `bfl.js`; copying small helpers into each adapter is the
   fallback.
-- **App-side rows.** `selection_box` is read by the renderer (`host.js` "Selection as box") and reaches the adapter
+- **App-side rows.** **Since item 28 S3d (2026-10-02) the `selection_box` row is gone:** boxes are the Boxes switch
+  under the prompt (the document's `genSettings.boxes`), not a Settings row, so the variants in this section need
+  neither the row nor its `omit` entries; read its mentions in this section (and "Selection as box" in the open
+  questions and live checks) as the Boxes switch. What follows holds for any later
+  app-side row. `selection_box` was read by the renderer (`host.js` "Selection as box") and reached the adapter
   in `params` like any row. BFL and OpenRouter send only what they accept; fal and WaveSpeed pass rows by name. One
   place in `providers/index.js` that drops app-side rows before the adapter would replace four `omit` lists
   (coordinate with item 28, which owns the row).

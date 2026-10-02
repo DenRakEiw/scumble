@@ -24,8 +24,11 @@ import * as dialogs from "../dialogs.js";
 
 const PROXY = "/comfy";
 
-/** A BOOLEAN Settings row's value as on / off: the checkbox gives true, an agent may give "true", 1, "on" or "yes". */
-const boolOf = (v) => v === true || v === 1 || /^(true|1|yes|on)$/i.test(String(v == null ? "" : v).trim());
+/**
+ * Whether a run of the recipe sends boxes (item 28): the variant's `options.boxes` names the rows' format, for Generate
+ * and Generate new; Generate new with references may take its text route's own options.
+ */
+const takesBoxes = (r) => !!(r && r.kind === "provider" && (typeof (r.options || {}).boxes === "string" || typeof ((r.text && r.text.refs && r.text.refs.options) || {}).boxes === "string"));
 const SUBFOLDER = "inpaint_canvas";
 
 // How big the crop goes to an API provider. The app is for quality, so "max" is the default:
@@ -273,6 +276,7 @@ export const api = {
  * @property {boolean} removeSupported
  * @property {boolean} refTokens                                     @img1 in the prompt names a reference layer (docs/PLAN_REFS.md); the node has none yet
  * @property {(editor: any, over?: any, opts?: { keep?: boolean }) => Promise<any>} refLayout   the chosen route's name for each shown reference ({ names, over, none, local, cap, refuse, guess? }); the node answers null
+ * @property {(editor: any) => { takes: boolean, count: number } | null} boxSwitch   the Boxes switch under the prompt (docs/PLAN_BOXES.md S3d): does the recipe send boxes, how many the document holds; the node answers null
  * @property {() => any} removeModel
  * @property {(editor: any, req: { image: Uint8Array, mask: Uint8Array }) => Promise<any>} removeInApp
  * @property {(editor: any) => Promise<any>} warmRemove
@@ -340,6 +344,16 @@ export const host = {
         // Generate with a provider upscaler sends the crop at its own size (runUpscale plans with mode "crop")
         const limits = r && r.kind === "provider" && r.task === "upscale" && r.limits ? { ...r.limits, mode: "crop" } : this.cropLimits();
         return planFrame(editor, this.nodeParams, limits);
+    },
+
+    /**
+     * The Boxes switch under the prompt field (item 28 S3d, docs/PLAN_BOXES.md §10): `takes` says a run of the selected
+     * recipe sends boxes (the row shows only then), `count` how many boxes the plugins hold for the document (its
+     * label). The switch itself is the document's `genSettings.boxes`: on, a run sends the boxes, or the selection as one
+     * box when there are none; off, none.
+     */
+    boxSwitch(editor) {
+        return { takes: takesBoxes(this.recipe), count: editor && this.plugins ? this.plugins.countBoxes(editor) : 0 };
     },
 
     setApiSize(mode) {
@@ -1026,6 +1040,7 @@ export const host = {
         const mode = r.kind === "provider" || r.mode === "api" ? "api" : "local";
         if (ed.genSettings.mode !== mode) { ed.genSettings.mode = mode; ed.syncGenControls(); }
         ed.settingsChanged();
+        ed.syncBoxesRow();
         ed.renderInfo();
     },
 
@@ -1417,25 +1432,30 @@ export const host = {
             named = this.refPrompt(editor, snap, "edit", { sent: [...Array(original).fill(null), ...snap.refIds] });
         editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label}${info.keepAlpha ? ", transparent background" : ""} ...`);
             const shape = this.layoutShape(editor, { recipe: r, params, original, count: references.length });
-            // the selection as a box (item 28 S1): geometry in fractions of the crop; main writes the model's rows
-            // behind the variant's `options.boxes` and the recipe's "Selection as box" row
+            // the boxes (item 28): geometry in fractions of the crop, main writes the model's rows behind the variant's
+            // `options.boxes`; only while the document's Boxes switch is on (S3d)
             const preNotes = [];
             const boxes = [];
-            const takesBoxes = !!(shape.options && typeof shape.options.boxes === "string");
-            const selBounds = takesBoxes && info.has_selection ? editor.selectionBounds() : null;
-            if (takesBoxes && selBounds && boolOf(params.selection_box)) {
+            const takes = !!(shape.options && typeof shape.options.boxes === "string");
+            const sendBoxes = takes && !!editor.genSettings.boxes;
+            const held = takes && this.plugins ? this.plugins.countBoxes(editor) : 0;
+            if (takes && !sendBoxes && held) preNotes.push(`The document's ${held} box${held === 1 ? "" : "es"} did not go: the Boxes switch under the prompt is off.`);
+            const selBounds = sendBoxes && info.has_selection ? editor.selectionBounds() : null;
+            // the plugins' boxes (S2): every scumble.generate source, in image pixels, mapped into the crop by the core
+            if (sendBoxes && this.plugins) {
+                const ctx = this.boxContext(editor, { mode: "edit", recipe: r, provider: shape.provider, model: shape.model, schema: shape.options.boxes, frame: frameOf(info), bounds: selBounds, sent: [...Array(original).fill(null), ...snap.refIds] });
+                const got = await this.plugins.boxes(editor, ctx, []);
+                boxes.push(...got.boxes);
+                preNotes.push(...got.notes);
+            }
+            // no source holds a box for the document: the selection goes as one (S1). Boxes the crop left out are no
+            // reason for it: the document still holds them
+            if (sendBoxes && selBounds && !boxes.length && !held) {
                 const b = selectionBox(selBounds, frameOf(info), { prompt: named.prompt, pair: named.pairs[0] || null });
                 if (b) {
                     boxes.push(b);
                     if (smallBox(b.rect, info.emitted)) preNotes.push(`The selection is small for a box (under ${SMALL_PX} px a side as sent): the model may not place anything in it.`);
                 }
-            }
-            // the plugins' boxes (S2): every scumble.generate source, in image pixels, mapped into the crop by the core
-            if (takesBoxes && this.plugins) {
-                const ctx = this.boxContext(editor, { mode: "edit", recipe: r, provider: shape.provider, model: shape.model, schema: shape.options.boxes, frame: frameOf(info), bounds: selBounds, sent: [...Array(original).fill(null), ...snap.refIds] });
-                const got = await this.plugins.boxes(editor, ctx, boxes);
-                boxes.push(...got.boxes);
-                preNotes.push(...got.notes);
             }
             const request = {
                 provider: shape.provider, model: shape.model, kind: shape.kind, fields: shape.fields, options: shape.options,
@@ -1655,11 +1675,15 @@ export const host = {
             editor.setStatus(`Asking ${label} for a new ${width} × ${height} image${withRefs ? ` with ${references.length} reference image${references.length > 1 ? "s" : ""}` : ""}${cutout ? " on a transparent ground" : ""} ...`);
             const model = (withRefs && tr.model) || t.model;
             const options = withRefs && tr.options ? { ...(r.options || {}), ...tr.options } : r.options || null;
-            // the plugins' boxes (item 28 S2) when the variant takes them: a new image has no selection, so the boxes
-            // come from scumble.generate sources alone, drawn on the document (the frame; the new image is made at the
-            // requested size, so the fractions carry over, stretched when the aspect differs)
+            // the plugins' boxes (item 28 S2) when the variant takes them and the document's Boxes switch is on (S3d): a
+            // new image has no selection, so the boxes come from scumble.generate sources alone, drawn on the document
+            // (the frame; the new image is made at the requested size, so the fractions carry over, stretched when the
+            // aspect differs)
             let boxes = [];
-            if (options && typeof options.boxes === "string" && this.plugins) {
+            const takes = !!(options && typeof options.boxes === "string");
+            const held = takes && this.plugins ? this.plugins.countBoxes(editor) : 0;
+            if (takes && !editor.genSettings.boxes && held) preNotes.push(`The document's ${held} box${held === 1 ? "" : "es"} did not go: the Boxes switch under the prompt is off.`);
+            if (takes && editor.genSettings.boxes && this.plugins) {
                 const frame = { x: 0, y: 0, w: editor.width || width, h: editor.height || height };
                 const got = await this.plugins.boxes(editor, this.boxContext(editor, { mode: "new", recipe: r, provider: r.provider, model, schema: options.boxes, frame, bounds: null, sent: refIds }), []);
                 boxes = got.boxes;
@@ -2074,6 +2098,8 @@ export const host = {
         clearTimeout(this._saveTimer);
         this._saveTimer = setTimeout(() => this.saveAll(), 1500);
         if (info && info.geometry) this.emit("geometry", { editor, ...info.geometry });
+        // the Boxes switch counts the document's boxes: a plugin's data change and its undo come through here
+        if (editor && editor.syncBoxesRow) editor.syncBoxesRow();
         this.emit("changed", { editor });
     },
 

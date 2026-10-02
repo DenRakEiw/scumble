@@ -792,6 +792,27 @@ function buildPrompt(ed, section) {
         wrap.appendChild(ed.negativeInput);
         d.appendChild(wrap);
 
+        // the Boxes switch (item 28 S3d): a row of its own, shown while the recipe sends boxes (syncBoxesRow)
+        ed.boxesRow = el("div", "ipc-sec ipc-boxes");
+        ed.boxesRow.hidden = true;
+        const boxLab = el("label", null, "");
+        boxLab.title = "Send boxes with Generate and Generate new: the document's boxes (the Boxes panel and tool), or the selection as one box when there are none. Off, no box goes and the boxes stay with the document. The first box a document gets turns it on.";
+        ed.boxesCheck = document.createElement("input");
+        ed.boxesCheck.type = "checkbox";
+        ed.boxesCheck.addEventListener("change", () => {
+            ed.genSettings.boxes = ed.boxesCheck.checked;
+            ed.syncBoxesRow();
+            ed.notifyChanged();
+            ed.draw();
+        });
+        boxLab.appendChild(ed.boxesCheck);
+        ed.boxesLabel = el("span", null, "Boxes");
+        boxLab.appendChild(ed.boxesLabel);
+        ed.boxesRow.appendChild(boxLab);
+        ed.boxesHint = el("span", "ipc-hint", "");
+        ed.boxesRow.appendChild(ed.boxesHint);
+        d.appendChild(ed.boxesRow);
+
         // prompt upsampling
         const up = el("div", "ipc-sec ipc-upsample");
         const caseLab = el("label", null, "Use case");

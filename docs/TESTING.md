@@ -20,9 +20,14 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   instance it starts (port 9573) with `tools/list_changed`, nothing started after that instance closes.
   `python tools/llm_test.py` checks the OpenAI-compatible upsample endpoint against
   `tools/llm_mock.py` (a mock server it starts itself; no ComfyUI, no key, no local model).
-  `python tools/boxes_test.py` covers the Boxes plugin (item 28 S3a): the commands and their refusals, one undo
+  `python tools/boxes_test.py` covers the Boxes plugin (item 28 S3a-S3d): the commands and their refusals, one undo
   step per change, the selection as a box, the document's boxes through the core's `collectBoxes`, the panel's rows,
-  a crop moving the boxes, a `.scumble` round trip; no ComfyUI and no key needed. `node tools/boxes_test.js` is the
+  a crop moving the boxes, a `.scumble` round trip, the tool (S3b: draw, move, resize, keys), the crop frame and the
+  panel's warnings (S3c), and the Boxes switch (S3d, step `the_boxes_switch`, a document of its own with a loopback
+  recipe that takes boxes: the row hidden and shown, the first box turning it on and the count, a run with it on and
+  off counting the sources asked, the note, the panel's note and the overlay's dashed half-strength outline through a
+  recording context, a box the crop leaves out keeping the selection from going, the selection as one box with none,
+  the switch through a `.scumble` save and open); no ComfyUI and no key needed. `node tools/boxes_test.js` is the
   plain-Node side (main's rows, the renderer's mapping, the plugin's clipboard formatter).
   `python tools/generate_test.py` covers "Generate new" (a base image from the prompt
   alone) against the loopback provider, no ComfyUI and no key needed.
@@ -180,14 +185,16 @@ bash tools/run_gates.sh 26c-it --offline --tiles on editor`. The hover and drag 
 synthetic pointer events are unreliable while a real mouse is over the window (see the flakes below).
 
 FLUX 3 Image (`electron/main/providers/flux3.js`, `recipes/flux3.json`, `docs/PLAN_FLUX3.md`): `node tools/flux3_test.js`
-(plain Node, a scripted api.bfl.ai, 101 checks) pins the recipe as `recipes.js` serves it, the body against the released
+(plain Node, a scripted api.bfl.ai, 101 checks) pins the recipe as `recipes.js` serves it (two Settings rows on each
+shape, no `selection_box` since S3d), the body against the released
 schema (only prompt, images, aspect_ratio, resolution, safety_tolerance, grounding; every body sent is checked at the
 end), the aspect preset within 3 % or auto, the tiers by area, the 256 px / 16 MP / 20 MB rules (the crop refused, a
 reference scaled through `ctx.resizePng`, the JPEG fallback), the parameter coercion (safety 0 to 4, grounding from an
 agent's words), the poll (Reasoning, 503 / 422 status bodies, dropped connections and gateway pages retried, the
 download tried three times, the regional polling_url allowlist), the answer's info (cost, megapixels, expanded prompt,
-no seed), the selection box (a request with one box ends in the JSON rows, the `selection_box` row never reaches the
-body, a request without boxes sends the same body as before) and that FLUX.2 through the same adapter is unchanged.
+no seed), the selection box (a request with one box ends in the JSON rows, a stray app-side key in the params never
+reaches the body, a request without boxes sends the same body as before) and that FLUX.2 through the same adapter is
+unchanged.
 Light tier: written from the docs; a live call is the user's (`docs/PLAN_FLUX3.md`).
 
 Boxes in the prompt (item 28 S1, `electron/main/providers/boxes.js`, `renderer/editor/boxes.js`, `docs/PLAN_BOXES.md`):
@@ -196,8 +203,9 @@ its refusals, one FLUX 3 row per kind against the FLUX 3 layout (the Original sh
 markers do, a from box past the pictures or after a strip refused), a text run's layout rows, the instruction
 sentences, `applyBoxes`' prompt, and the renderer's module (the frame, pixels to fractions with a crop that cuts the
 selection, the selection as a New or From box, the small-box note, the same id pattern on both sides). The wiring in
-the app (the row off and on, the status line, the log) was looked at once over CDP with a loopback variant that
-declares `options.boxes` (2026-10-02); no gate step, light tier.
+the app was looked at once over CDP for S1 (2026-10-02, a loopback variant that declares `options.boxes`); since S3d
+the `boxes` gate's step `the_boxes_switch` runs it (the Boxes switch that replaced S1's row, the selection as one
+box, the status line).
 
 26e, @img tokens on local ComfyUI recipes (`renderer/editor/comfyrefs.js`, `docs/RECIPES.md` "Reference images named
 in the prompt (local)"): `node tools/comfyrefs_test.js` (plain Node, run by `recipes_test.py`'s node step after

@@ -42,7 +42,8 @@ function resized(r, h, dx, dy) {
  * The tool's definition for scumble.tools.register. `api` is the plugin's data side: boxesOf(doc), add(doc, input),
  * set(doc, id, patch), remove(doc, id), nextId(boxes, base), frame(doc) (the crop Generate sends, { x, y, w, h,
  * emitted } in image pixels, or null), panelShown(doc) (the Boxes panel is open and on screen), selChanged(doc) (the
- * panel shows the selection), referenceName(doc, id).
+ * panel shows the selection), referenceName(doc, id), sent(doc) (the document's Boxes switch is on: off, the boxes are
+ * drawn dashed and paler), switchNote(doc) (" " + a note when the last add turned that switch on, else "").
  */
 export function makeTool(scumble, api) {
     const selected = new Map();   // doc id -> box id
@@ -165,7 +166,7 @@ export function makeTool(scumble, api) {
                 try {
                     const b = api.add(doc, { kind: "new", rect: d.rect, id: api.nextId(api.boxesOf(doc), "box") });
                     select(doc, b.id);
-                    doc.status(`Box ${b.id} added: describe it in the Boxes panel of the Generate pane.`);
+                    doc.status(`Box ${b.id} added: describe it in the Boxes panel of the Generate pane.${api.switchNote(doc)}`);
                 } catch (err) { doc.status(String((err && err.message) || err)); doc.draw(); }
                 return;
             }
@@ -214,6 +215,8 @@ export function makeTool(scumble, api) {
             if (!boxes.length && !live && !crop) return;
             const px = view.dpr / view.scale;   // one screen pixel in image pixels
             const sel = selected.get(doc.id);
+            // the Boxes switch is off: the boxes stay with the document but go with no run, drawn dashed and paler
+            const base = api.sent(doc) ? 1 : 0.5;
             ctx.font = `${11 * px}px system-ui, sans-serif`;
             ctx.textBaseline = "top";
             const outline = (r, colour, width, dash) => {
@@ -255,7 +258,7 @@ export function makeTool(scumble, api) {
             };
             const hatch = (r, colour) => {
                 ctx.save(); ctx.beginPath(); ctx.rect(r[0], r[1], r[2] - r[0], r[3] - r[1]); ctx.clip();
-                ctx.strokeStyle = colour; ctx.globalAlpha = 0.45; ctx.lineWidth = 1 * px;
+                ctx.strokeStyle = colour; ctx.globalAlpha = 0.45 * base; ctx.lineWidth = 1 * px;
                 const step = 9 * px, w = r[2] - r[0], h = r[3] - r[1];
                 ctx.beginPath();
                 for (let o = -h; o < w; o += step) { ctx.moveTo(r[0] + o, r[3]); ctx.lineTo(r[0] + o + h, r[1]); }
@@ -289,16 +292,18 @@ export function makeTool(scumble, api) {
                 const colour = colourOf(b), r = mainRect(b), isSel = b.id === sel;
                 if (!Array.isArray(r)) continue;
                 const lw = (isSel ? 2.5 : 1.5) * px;
+                ctx.globalAlpha = base;
                 if (b.kind === "move" && Array.isArray(b.src)) { outline(b.src, colour, 1.5 * px, [5, 4]); arrow(b.src, r, colour); }
                 if (b.kind === "from" && Array.isArray(b.src) && visibleLayer(b.layer)) outline(b.src, colour, 1.5 * px, [5, 4]);
-                ctx.globalAlpha = 0.1; ctx.fillStyle = colour; ctx.fillRect(r[0], r[1], r[2] - r[0], r[3] - r[1]); ctx.globalAlpha = 1;
+                ctx.globalAlpha = 0.1 * base; ctx.fillStyle = colour; ctx.fillRect(r[0], r[1], r[2] - r[0], r[3] - r[1]); ctx.globalAlpha = base;
                 if (b.kind === "remove") hatch(r, colour);
-                outline(r, colour, lw, null);
+                outline(r, colour, lw, base < 1 ? [6, 4] : null);
                 const name = b.kind === "from" ? api.referenceName(doc, b.layer) : null;
                 tag(r, colour, name ? `${b.id} ← ${name}` : b.text != null ? `${b.id} T` : b.id);
                 words(r, b.text != null ? `"${b.text}"` : b.desc);
-                if (isSel) { handles(r, colour); if ((b.kind === "move" || b.kind === "from") && Array.isArray(b.src) && (b.kind === "move" || visibleLayer(b.layer))) handles(b.src, colour); }
+                if (isSel) { ctx.globalAlpha = 1; handles(r, colour); if ((b.kind === "move" || b.kind === "from") && Array.isArray(b.src) && (b.kind === "move" || visibleLayer(b.layer))) handles(b.src, colour); }
             }
+            ctx.globalAlpha = 1;
             if (live && live.mode === "new" && live.rect) outline(live.rect, COLOURS.new, 2 * px, [6, 4]);
             if (crop) {
                 const f = cropFrame;

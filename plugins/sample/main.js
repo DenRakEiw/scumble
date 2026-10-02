@@ -178,7 +178,7 @@ export function activate(scumble) {
         },
     });
     scumble.commands.register("box", {
-        description: "Switch the sample's box source on or off: on, every run of a recipe that takes boxes gets one box in the middle of the frame. Without `on` it answers the state.",
+        description: "Switch the sample's box source on or off: on, every run of a recipe that takes boxes gets one box in the middle of the frame while the document's Boxes switch is on. Without `on` it answers the state.",
         params: { on: { type: "boolean", description: "true switches the source on, false off" } },
         run(doc, args) {
             if (args && args.on != null) scumble.storage.set({ box: !!args.on });

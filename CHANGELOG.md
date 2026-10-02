@@ -5,28 +5,36 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
-- **FLUX 3 Image: the selection as a box.** A new switch in the recipe's Settings, *Selection as box*, off by default,
-  sends your selection along as a bounding box in the prompt, in the form the model's documentation describes: it is
-  told where in the crop the change goes and what to put there (your prompt), or, when the prompt names a reference
-  with @img1, that this reference goes into the box. The status line says "Sent with 1 box.", the log keeps the
-  prompt as it went out, and a very small selection gets a note, since the model often leaves a box under about 40
-  pixels empty.
-- **Plugins can supply boxes for the prompt.** Plugin API 3 adds `scumble.generate.register({ id, boxes(doc, ctx) })`:
-  a plugin answers boxes in image pixels (new, keep, move, remove, or a reference layer placed) for every Generate and
-  Generate new run of a recipe that takes boxes, and Scumble maps them into the crop, numbers duplicate ids, writes the
-  model's rows and sends them with the prompt. A box outside the crop is left out with a note; a box that names a
-  reference layer the run does not send stops the run before anything is sent. The `generate` and `generate_new`
-  commands answer `boxes`, how many went. The sample plugin shows a source (`sample.box` switches it on).
+- **FLUX 3 Image: boxes in the prompt, behind one switch.** A switch *Boxes* in a row of its own under the prompt
+  field decides whether a run sends bounding boxes in the prompt, in the form the model's documentation describes. It
+  shows while the selected recipe takes boxes and counts the document's boxes ("Boxes · 3"). On, Generate and
+  Generate new send the document's boxes; with none, Generate sends your selection as one box: the model is told
+  where in the crop the change goes and what to put there (your prompt), or, when the prompt names a reference with
+  @img1, that this reference goes into the box. Off, no box goes and the boxes stay with the document; the status
+  line says how many did not go. The switch is off in a new document and is saved with it; the first box you draw or
+  add turns it on, and the status line says so. Switching it off never deletes a box. The status line says "Sent
+  with 1 box.", the log keeps the prompt as it went out, and a very small selection gets a note, since the model
+  often leaves a box under about 40 pixels empty. Agents switch it with `set_generation` (`boxes`), and `status`
+  reports it.
+- **Plugins can supply boxes for the prompt.** Plugin API 3 adds `scumble.generate.register({ id, boxes(doc, ctx),
+  count(doc) })`: a plugin answers boxes in image pixels (new, keep, move, remove, or a reference layer placed) for a
+  Generate or Generate new run of a recipe that takes boxes while the Boxes switch is on, and Scumble maps them into
+  the crop, numbers duplicate ids, writes the model's rows and sends them with the prompt. The optional `count(doc)`
+  says how many boxes the plugin holds for the document: the switch counts them, and the selection goes as a box only
+  when no plugin holds one. A box outside the crop is left out with a note; a box that names a reference layer the
+  run does not send stops the run before anything is sent. The `generate` and `generate_new` commands answer `boxes`,
+  how many went. The sample plugin shows a source (`sample.box` switches it on).
 - **Boxes: a panel for the boxes of a document.** A new section *Boxes* in the Generate pane (a built-in plugin) keeps
   boxes with the document: for each one its name, what it does (New adds what the description says in the box, Keep
   holds an element where it is, Move takes it from a source box to a new one, Remove takes it out, From reference
   places a reference layer or a part of it, Text renders words), the description and the position in image pixels.
   *Selection → box* takes the selection's bounds (a From box when the prompt names a reference with @img1), *Clear*
-  removes them, *Copy rows* puts the model's rows on the clipboard for another tool. The boxes go out with every
-  Generate and Generate new run of a recipe that takes them (FLUX 3 Image) and stay with the document otherwise;
-  they are saved in the `.scumble` file, follow a crop, a turn or a resize of the picture, and every change is one
-  undo step. Agents and scripts have `boxes_add`, `boxes_set`, `boxes_remove`, `boxes_list`, `boxes_from_selection`
-  and `boxes_clear`.
+  removes them, *Copy rows* puts the model's rows on the clipboard for another tool. The boxes go out with Generate
+  and Generate new runs of a recipe that takes them (FLUX 3 Image) while the Boxes switch is on and stay with the
+  document otherwise, and the section says which is the case; they are saved in the `.scumble` file, follow a crop, a
+  turn or a resize of the picture, and every change is one undo step. Agents and scripts have `boxes_add`,
+  `boxes_set`, `boxes_remove`, `boxes_list` (which also says whether the switch is on), `boxes_from_selection` and
+  `boxes_clear`.
 - **Boxes: draw them on the canvas.** The *Boxes* tool (X, under Plugins in the tool column) draws a box with a drag
   on the picture; a click selects one (its row in the panel lights up, and a click on a row selects its box), a drag
   moves it, the eight handles resize it. Delete removes the selected box, D duplicates it, the arrow keys nudge it by
@@ -34,13 +42,14 @@ the section for its version; `docs/` and the commit history hold the technical d
   and a From box's part get handles of their own once the box is selected. Each gesture is one undo step. The boxes
   show on the picture in their kind's colour (New green, Keep grey, Move blue with an arrow from its source, Remove
   red and hatched, From reference violet with the reference's name) with their name and the first words of their
-  description, while the tool is active or the Boxes section is open.
+  description, while the tool is active or the Boxes section is open; while the Boxes switch is off they are drawn
+  dashed and paler.
 - **Boxes: the crop on the canvas, and what it does to them.** While the Boxes tool is active and something is
   selected, the picture outside the crop Generate would send is dimmed, its size under the crop's edge (the crop as
-  the run plans it, the model's shapes and sizes included). The Boxes section warns of a box the crop leaves out, one
-  whose edge it cuts, and one that changes the picture outside the selection while *Paste* keeps the selection only,
-  which would cut the result there; *Paste the whole crop* in that warning switches Paste for the document.
-- The selection as a box (and a plugin's view of the selection) was one pixel too wide and too tall.
+  the run plans it, the model's shapes and sizes included). While the Boxes switch is on, the Boxes section warns of a
+  box the crop leaves out, one whose edge it cuts, and one that changes the picture outside the selection while
+  *Paste* keeps the selection only, which would cut the result there; *Paste the whole crop* in that warning switches
+  Paste for the document.
 - Plugins get a `crop` event when an app setting the crop of a run depends on changes (a node parameter, the API
   size), and `scumble.host.cropFrame(editor)` says what that crop is.
 

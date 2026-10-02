@@ -1,4 +1,4 @@
-# Boxes in the prompt: FLUX 3 Image and Ideogram 4 (item 28; researched 2026-10-01 night, planned S1-S4, S1 built 2026-10-02)
+# Boxes in the prompt: FLUX 3 Image and Ideogram 4 (item 28; researched 2026-10-01 night, planned S1-S4, S1-S3d built 2026-10-02)
 
 The user's idea (2026-10-01): a selection sent to FLUX 3 as a bounding box, and, after looking at Kijai's
 Ideogram 4 prompt builder, a **plugin** for box prompts made for FLUX 3 and Ideogram 4. §1-§3 are the research, §4
@@ -79,7 +79,8 @@ aspect preset (1:1 vs 5:4 measured), so `planFrame` scans it exact with `scanBou
 provider upscaler plans with mode "crop" (`cropFrame` follows `runUpscale`); "left out" uses the run's own `toFrame`
 (its 1/1000 floor); a new host event `crop` (a node parameter or the API size changed) re-renders the panel. Tests:
 `tools/boxes_test.js` section 11, `tools/boxes_test.py` step `the_crop_frame_and_the_paste_warning`; gates `boxes`
-and `commands` green offline (labels `s3c`, `s3c2`). Next: S3d (the switch), S3e, the live checks §6 with the user.
+and `commands` green offline (labels `s3c`, `s3c2`). S3d (the Boxes switch) was built the same day, as §10 says
+under "As built". Next: S3e, the live checks §6 with the user.
 
 ## 1. Sources
 
@@ -401,10 +402,10 @@ would cut it. Set Paste to crop" with a button that does it (`editor.cropSetting
 editor's own setter so the panel updates). Generate new: the frame is the document; the same overlay.
 
 **S3d, one switch in the Prompt section (the user, 2026-10-02: "wie aktiviert man den bbox prompt? ... ein Schalter
-wäre ideal", since FLUX 3 and Ideogram 4 take a prompt with and without boxes; proposed, not built, half a day).**
-Today two things send boxes and neither is a switch where the prompt is: the recipe's Settings row "Selection as box"
-(S1, off by default) and the Boxes panel, whose boxes go with every run of a recipe that takes boxes as long as the
-document holds any (sending without them means Clear and Ctrl+Z). Proposed:
+wäre ideal", since FLUX 3 and Ideogram 4 take a prompt with and without boxes; built 2026-10-02, "As built" below).**
+Before it two things sent boxes and neither was a switch where the prompt is: the recipe's Settings row "Selection as
+box" (S1, off by default) and the Boxes panel, whose boxes went with every run of a recipe that takes boxes as long as
+the document held any (sending without them meant Clear and Ctrl+Z). Proposed:
 - **A switch "Boxes" in the Prompt section** (core: `inpaint_modal.js` `buildPrompt`, in the reference bar's row or
   under the field), shown only while the selected variant declares `options.boxes`; its label carries the count
   ("Boxes · 3"). Its state is per document in the editor's state (`genSettings.boxes`, saved with the `gen` key, so
@@ -420,6 +421,27 @@ document holds any (sending without them means Clear and Ctrl+Z). Proposed:
 turns it on** (yes). Tests: one `boxes_test.py` step (the switch hides with a recipe without boxes, a run's
 `collectBoxes` is skipped while it is off, the first box turns it on, the state survives a save and open),
 `boxes_test.js` unchanged.
+
+**As built (2026-10-02).** The row is built in the core editor: `inpaint_modal.js`
+`buildPrompt` adds it under the prompt field (a checkbox, the label "Boxes" or "Boxes · n", a muted hint "the
+selection goes as one box" while on with no boxes, "not sent" while off with boxes), `InpaintEditor.syncBoxesRow()`
+fills it from a new host member `host.boxSwitch(editor)` → `{ takes, count }` (`takes` from the variant's
+`options.boxes` or a text route's `text.refs.options.boxes`; the node's `js/host.js` has a stub that answers null, so
+the row never shows there), and `host.changed` re-syncs it after every data change and undo. `genSettings.boxes`
+(default false) rides in the `gen` key; `set_generation` takes and answers `boxes`, `status` reports
+`generation.boxes`. The plugin's `add` turns the switch on when the document held no box (the tool's drag, Selection →
+box, the action, `boxes.add`, `boxes.from_selection`; the last two answer `switched_on: true`), with a status note;
+undo, redo and an opened document never do, and undoing that first box leaves the switch on. While it is off the
+overlay draws the boxes dashed at half strength, the panel's note says they are not sent and the S3c warnings stay
+hidden, `boxes.list` answers `switch`, and a run of a document with boxes says how many did not go. S1's row is gone
+from `recipes/flux3.json`; the edit note names the switch. **One departure:** the selection goes as a box only when
+no source holds a box for the document and none answered one, not whenever the sources answered nothing: a box the
+crop leaves out still counts, so it does not turn into a selection box. For that and for the label the generate
+source got an optional synchronous `count(doc)` (`plugins.js` `countBoxes`, a throwing count is 0); the sources are
+asked before the selection box, so `collectBoxes` gets no `taken` boxes from the app's runs. Tests: `boxes_test.py`
+step `the_boxes_switch` (a loopback recipe that takes boxes, no key) and `switched_on` in the add step;
+`tools/flux3_test.js` 101 checks (no `selection_box` row, a stray app-side key never reaches the body); gates
+`boxes` and `commands` green offline.
 
 **S3e, ideas from another FLUX 3 box editor (proposed, not planned in detail).** The user pointed at
 `github.com/koshimazaki/flux-api-control-surface` (MIT, TypeScript; read 2026-10-02: `ui/lib/flux3-image-boxes.ts`,
@@ -485,7 +507,7 @@ app path (`objects()` through a real SAM2 model) by eye on the user's machine, w
 | 3 | S3a (data, panel, commands) | "Boxes plugin: panel and commands (S3a)" |
 | 4 | S3b (tool and overlay) | "Boxes plugin: the tool (S3b)" |
 | 5 | S3c (crop frame, paste warning), `boxes_test.py`, manual | "Boxes plugin: the frame and the paste (S3c)" |
-| 5b | S3d (the Boxes switch in the Prompt section, the user's wish) | "Boxes: one switch in the Prompt section (S3d)" |
+| 5b | S3d (the Boxes switch in the Prompt section, the user's wish), built 2026-10-02 | "Boxes: one switch in the Prompt section (S3d)" |
 | 5c | S3e (position words, ids from the desc, the missing-desc warning, the tool's hit order) | "Boxes: the caption and the tool (S3e)" |
 | 6 | S4 (`Document.objects`, Keep boxes) | "Boxes plugin: Keep rows from the objects (S4)" |
 

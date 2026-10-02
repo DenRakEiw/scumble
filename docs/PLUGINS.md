@@ -76,7 +76,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `panels.register(def)` / `unregister(id)` | side panels |
 | `actions.register(def)` / `unregister(id)` / `run(id)` | Plugins menu entries |
 | `tools.register(def)` / `unregister(id)` | tools in the tool column |
-| `generate.register(def)` / `unregister(id)` | (API 3) a box source for the prompt: `{ id, boxes(doc, ctx) }` answers boxes in image pixels for a run of a recipe that takes them (FLUX 3 Image); see "Generate" |
+| `generate.register(def)` / `unregister(id)` | (API 3) a box source for the prompt: `{ id, boxes(doc, ctx), count(doc) }` answers boxes in image pixels for a run of a recipe that takes them (FLUX 3 Image) while the document's Boxes switch is on; the optional `count(doc)` says how many it holds; see "Generate" |
 | `events.on(type, fn)` | `built`, `activate`, `changed`, `tool`, `removed`, `theme` (a skin was switched: `fn({ doc: null, skin })`, `skin` the id or `""`; read the tokens with `getComputedStyle(document.documentElement)`, docs/SKINS.md), `geometry` (the whole picture changed its geometry, before its `changed`: `fn({ doc, kind, m, op, from, to })`; `kind` `"turn"` (a quarter or half turn or a mirror), `"crop"`, `"extend"`, `"resize"` (also an upscale) or `"straighten"` (a turn by any angle about the old picture's centre, then a crop); `m` always: `[a, b, c, d, e, f]`, the canvas matrix from old to new image coordinates (x' = a x + c y + e, y' = b x + d y + f; continuous, pixel (x, y) covers x..x+1), e.g. a crop of `left` / `top` px `[1, 0, 0, 1, -left, -top]`, an extend `[1, 0, 0, 1, left, top]`, a resize of W x H to w x h `[w / W, 0, 0, h / H, 0, 0]`, a clockwise quarter turn `[0, 1, -1, 0, H, 0]`, `"h"` `[-1, 0, 0, 1, W, 0]`, `"v"` `[1, 0, 0, -1, 0, H]`, a straighten by t degrees translate(-x, -y) after the rotation by t about (W / 2, H / 2); a length scales by sqrt(\|a d - b c\|); `op` only for a turn: `1` clockwise, `-1`, `2` a half turn, `"h"`, `"v"`; `from` / `to` `{ width, height }`; map your own image coordinates in `documents.data(doc)` and in your filter layers' params by `m` with new objects, never by changing the old ones: undo and redo send no event, the step puts both back by itself), `recipe` (API 3: another recipe was selected, `fn({ doc, recipe })`, `recipe` its id, `doc` the active tab; read it through `scumble.host.recipe`), `crop` (an app setting the crop of a run depends on changed, a node parameter or the API size: `fn({ doc })` once per open tab, the document unchanged; `scumble.host.cropFrame(doc.editor)` is the crop now); `fn({ doc, ... })`; returns `off()` |
 | `storage.get()` / `storage.set(patch)` | a small persistent object per plugin (`settings.json`): `get()` returns a copy synchronously (loaded before `activate`), `set(patch)` merges at once and writes through in the background |
 | `documents.data(doc).get()` / `.set(patch)` | (API 2) a JSON object per plugin **and per document**: saved with the document in the session and in its `.scumble` file, where every file ref inside it (`{ filename, subfolder, type }`) is packed and comes back renamed if it had to be; `get()` returns a copy, `set(patch)` merges and marks the document changed; `set(patch, { undo: "Add box" })` (API 3) first pushes one undo step that holds the plugins' data as it was, named as given, so the change is taken back with Ctrl+Z like an edit (a turn, crop or resize step keeps the data beside its pixels on its own, so the `geometry` handler sets without `undo`). Data of a plugin that is off or missing rides along unchanged |
@@ -85,7 +85,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `ui.confirm(text)` | a yes / no question in the browser's own box (synchronous: true / false) |
 | `ui.ask({ title, message, detail, buttons, defaultId, cancelId, danger })` | a question in the app's own dialog, in the skin's colours: a promise of the index of the button pressed (Escape: `cancelId`, by default the last button) |
 | `makeCanvas(w, h)` | a canvas |
-| `host` | the app's host object and raw editors: unstable, for what the API does not cover |
+| `host` | the app's host object and raw editors: unstable, for what the API does not cover. The built-in Boxes plugin reads two members: `host.cropFrame(editor)` (the crop Generate sends) and `host.boxSwitch(editor)` → `{ takes, count }` (whether the selected recipe sends boxes, how many the sources hold for the document; the switch itself is `editor.genSettings.boxes`); both are the app host's (the ComfyUI node's host has no `cropFrame` and answers null to `boxSwitch`) |
 
 ## `Document`
 
@@ -390,16 +390,23 @@ scumble.generate.register({
     boxes(doc, ctx) {   // -> Box[] | null, or a promise of one
         return [{ id: "knight_1", kind: "new", rect: [120, 80, 420, 400], desc: "a knight on a horse" }];
     },
+    count(doc) { return 1; },   // optional, synchronous: how many boxes this source holds for the document
 });
 ```
 
 (API 3) A **box source** for the prompt: some models take, with the instruction, a table of boxes that says where in
 the picture an element goes, which element to keep, move or remove, and which reference picture to place (FLUX 3
-Image reads such rows; `docs/RECIPES.md` "FLUX 3 Image", the plan in `docs/PLAN_BOXES.md`). Every run of a recipe
-whose variant declares `options.boxes` (Generate and Generate new) calls each registered source, in plugin order,
-and sends what they answer; a recipe that takes no boxes never calls them. The core, not the plugin, writes the
-model's rows: it knows the crop and the final order of the pictures, which a plugin writing text into the prompt
-would not.
+Image reads such rows; `docs/RECIPES.md` "FLUX 3 Image", the plan in `docs/PLAN_BOXES.md`). A run of a recipe whose
+variant declares `options.boxes` (Generate and Generate new) calls each registered source, in plugin order, and sends
+what they answer, **while the document's Boxes switch is on** (the row under the prompt field, `genSettings.boxes`,
+the `set_generation` parameter `boxes`; off by default, the Boxes plugin's first box turns it on). With the switch off
+no source is asked, and a run says in its notes how many boxes did not go (the sources' `count`); a recipe that takes no
+boxes never calls them. The core, not the plugin, writes the model's rows: it knows the crop and the final order of
+the pictures, which a plugin writing text into the prompt would not.
+
+`count(doc)` (optional, synchronous, a number) says how many boxes the source holds for the document, wherever they
+lie: the switch's label adds up every source's count ("Boxes · 3"), and an edit sends the selection as one box only
+when the count is 0 and no source answered a box. A source without `count` counts 0; a count that throws counts 0.
 
 A box is in **image pixels** (the document's coordinates, `[l, t, r, b]`, right and bottom exclusive):
 
@@ -422,9 +429,11 @@ new image is made at the requested size, so the fractions carry over), `selectio
 lies outside it with a note in the status line (and in `generate`'s `notes`); a `from` box naming a layer this run
 does not send refuses the run, like an `@img` token nobody can resolve. A source that throws or answers a malformed
 box is reported in *Settings › Plugins* and skipped; the run goes on without its boxes. The box rows go out in the
-prompt, so the log and `generate`'s `prompt_sent` show them, and the answer's `boxes` field counts them. The built-in
-"Selection as box" row of the FLUX 3 recipe is the first source; `plugins/sample` has a second (`sample.box` switches
-it on) that reads as a template.
+prompt, so the log and `generate`'s `prompt_sent` show them, and the answer's `boxes` field counts them. With the
+switch on and no box held by any source, the core sends the selection as one box itself (`edit_1`, a New box with the
+prompt as its description, a From box when the prompt names a reference with @img1). The built-in Boxes plugin is a
+source; `plugins/sample` has another (`sample.box` switches it on, and the document's Boxes switch has to be on too)
+that reads as a template.
 
 ## Settings › Plugins
 
@@ -449,14 +458,16 @@ through the core's `collectBoxes` (mapped into a stated frame, a duplicate id su
 `node tools/boxes_test.js` tests the mapping of plugin boxes itself in plain Node, and the Boxes plugin's clipboard
 formatter against main's rows. `python tools/boxes_test.py` (the gate `boxes`) drives the Boxes plugin: its commands,
 the undo steps, the panel, the tool, the crop frame and the panel's warnings, the boxes through `collectBoxes`, a
-crop, a `.scumble` round trip.
+crop, a `.scumble` round trip, and the Boxes switch (the row shown and hidden, the first box turning it on, a run
+with it on and off against a loopback recipe that takes boxes, the selection as one box when no source holds one).
 `python tools/film_test.py` does the same for the film pack (`docs/FILM.md`): every filter on
 both paths, the commands, the control point tool with undo, the overlay, the panel.
 
 ## Built-in plugins
 
 - `plugins/sample`: one of every extension point, the template (~190 lines); its box source
-  answers one box in the middle of the frame while `sample.box` has switched it on (off by default).
+  answers one box in the middle of the frame while `sample.box` has switched it on (off by default) and the
+  document's Boxes switch is on.
 - `plugins/film`: the film pack (`docs/FILM.md`), the first real plugin: eleven filter types
   with shader and CPU paths, a tool with overlay and keys, a thumbnail panel, actions,
   commands. It imports the app's `GRAIN_PRESETS` by absolute path (`/editor/inpaint_filters.js`),
@@ -474,8 +485,12 @@ both paths, the commands, the control point tool with undo, the overlay, the pan
   event), a panel "Boxes" in the Generate pane (one row per box: id, kind, description, the geometry; Selection → box,
   Clear, Copy rows), the action Selection → box, the commands `boxes.list` / `add` / `set` / `remove` /
   `from_selection` / `clear` (one undo step each through `set(patch, { undo })`), and a `generate` source that answers
-  the document's boxes. `format.js` is a copy of main's row formatter for the clipboard text alone, tested against
-  the same vectors. The tool *Boxes* (X, `tool.js`) draws, selects, moves and resizes boxes on the canvas (one undo
+  the document's boxes and counts them (`count(doc)`). The first box a document gets (the tool, Selection → box, the
+  action, `boxes.add`, `boxes.from_selection`) turns the document's Boxes switch on (`editor.genSettings.boxes`) with
+  a status note, and those two commands answer `switched_on: true`; undo, redo and opening a document never do.
+  `boxes.list` answers `switch`, whether it is on. While it is off the overlay draws the boxes dashed at half
+  strength, the panel's note says they are not sent and the crop warnings stay hidden. `format.js` is a copy of
+  main's row formatter for the clipboard text alone, tested against the same vectors. The tool *Boxes* (X, `tool.js`) draws, selects, moves and resizes boxes on the canvas (one undo
   step per gesture; Delete, D duplicates, arrows nudge, Escape, Alt+click goes through stacked boxes) and draws
   them as an overlay while it is active or the panel is open (`drawAlways`, the panel's `<details>` open and
   on screen). While the tool is active it also shows the crop Generate sends (S3c): `scumble.host.cropFrame(editor)`

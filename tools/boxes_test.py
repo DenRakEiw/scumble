@@ -10,7 +10,10 @@ the pointer and key hooks (draw, move, resize, a click that changes nothing, nud
 stacked boxes, Delete, Escape; one undo step per gesture; the panel row lit) and the overlay on the screen canvas.
 S3c: the crop frame (host.cropFrame against the run's prepareCrop, the picture outside it dimmed while the tool is
 active) and the panel's warnings (a box outside the crop, one across its edge, one outside the selection, the button
-that sets Paste to the whole crop), under FLUX 3 Image, the recipe put back.
+that sets Paste to the whole crop), under FLUX 3 Image, the recipe put back. S3d: the Boxes switch under the prompt
+(the row hidden under a recipe that takes no boxes, the first box turning it on, the label's count, a loopback run
+with it on and off, the panel's note and the overlay's dashed outline while off, a box the crop leaves out keeping the
+selection from going as a box, the selection as one box with none, the switch carried by a .scumble file).
 
     python tools/boxes_test.py
 
@@ -62,7 +65,12 @@ const ref = await c("add_paint_layer", { name: "Lamp", doc: window.__bDoc });
 await c("set_layer", { layer: ref.id, role: "reference", x: 500, y: 350, w: 200, h: 100, doc: window.__bDoc });
 const plain = await c("add_paint_layer", { name: "Plain", doc: window.__bDoc });
 const a = await c("boxes.add", { rect: [100, 100, 400, 300], desc: "a dog", doc: window.__bDoc });
-if (!eq(a, { id: "box_1", kind: "new", rect: [100, 100, 400, 300], src: null, layer: null, desc: "a dog", text: null })) throw new Error("add: " + JSON.stringify(a));
+// the document's first box turns its Boxes switch on (S3d) and says so
+if (!eq(a, { id: "box_1", kind: "new", rect: [100, 100, 400, 300], src: null, layer: null, desc: "a dog", text: null, switched_on: true })) throw new Error("add: " + JSON.stringify(a));
+if (!ednow().genSettings.boxes) throw new Error("the first box did not turn the switch on");
+// the note says what is true under the selected recipe: a recipe that takes no boxes hides the switch
+const takes0 = (await c("boxes.list", D())).recipe.takes;
+if (!(takes0 ? /under the prompt is on now/ : /Boxes switch is on for this document/).test(ednow().status)) throw new Error("the switch's note under this recipe (takes " + takes0 + "): " + ednow().status);
 const k = await c("boxes.add", { id: "log_1", kind: "keep", rect: { x: 800, y: 600, w: 200, h: 100 }, src: [800, 600, 1000, 700], desc: "a log", doc: window.__bDoc });
 if (!eq(k.rect, [800, 600, 1000, 700]) || !eq(k.src, [800, 600, 1000, 700])) throw new Error("keep: " + JSON.stringify(k));
 const m = await c("boxes.add", { kind: "move", rect: [600, 100, 900, 400], src: [200, 500, 500, 800], doc: window.__bDoc });
@@ -160,7 +168,7 @@ if (!eq(small.boxes.find((b) => b.id === "dog_1").rect, [100 / 600, 100 / 400, 4
 let err = null;
 try { await P.collectBoxes(ed, { ...ctx, references: [] }, []); } catch (e) { err = e; }
 if (!err || err.code !== "layer" || !/"Lamp"/.test(err.message)) throw new Error("no refusal for an unsent layer: " + (err && err.message));
-// the S1 selection box already holds edit_1: the plugin's edit_1 gets the next number
+// a box the run already holds named edit_1 (collectBoxes' `taken`): the plugin's edit_1 gets the next number
 const taken = await P.collectBoxes(ed, ctx, [{ id: "edit_1" }]);
 if (!taken.boxes.some((b) => b.id === "edit_3")) throw new Error("duplicate id not numbered on: " + JSON.stringify(taken.boxes.map((b) => b.id)));
 return { ids: got.boxes.map((b) => b.id), notes: small.notes };
@@ -350,6 +358,111 @@ try {
     await c("select_none", D());
     if (was) await c("select_recipe", was);
     if (JSON.stringify(await boxes()) !== JSON.stringify(before)) throw new Error("the test's boxes were not taken back");
+}
+"""),
+    ("the_boxes_switch", """
+// S3d: one switch under the prompt field. A document of its own (the main one keeps its boxes), a loopback recipe
+// that takes boxes (no key), the core's collectBoxes counted through a wrapped host.plugins; all put back.
+const main = window.__bDoc;
+const prev = host.recipe;
+const orig = host.plugins;
+const path = window.__bPath.replace(/boxes[.]scumble$/, "switch.scumble");
+const LOOP = { id: "loopback_boxes", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", name: "Loopback", settings: [] };
+let calls = 0;
+const out = {};
+try {
+    const d = await c("new_document");
+    window.__bDoc = d.id;
+    const ed = ednow();
+    host.shell.activate(ed);
+    await c("new_canvas", { width: 1200, height: 800, doc: d.id });
+    if (ed.genSettings.boxes) throw new Error("a new document starts with the switch on");
+    // the row: shown under a recipe that takes boxes, hidden again under one that does not, then shown for the step
+    host.setRecipe({ ...LOOP, options: { boxes: "flux3" } });
+    if (!ed.boxesRow || ed.boxesRow.hidden || ed.boxesLabel.textContent !== "Boxes" || ed.boxesCheck.checked) throw new Error("the row under a recipe that takes boxes: " + JSON.stringify([ed.boxesRow && ed.boxesRow.hidden, ed.boxesLabel.textContent, ed.boxesCheck.checked]));
+    if (!ed.promptInput.closest(".ipc-prompt").nextElementSibling || ed.promptInput.closest(".ipc-prompt").nextElementSibling !== ed.boxesRow) throw new Error("the row is not right under the prompt field");
+    host.setRecipe(LOOP);
+    if (!ed.boxesRow.hidden) throw new Error("the Boxes row shows under a recipe that takes no boxes");
+    host.setRecipe({ ...LOOP, options: { boxes: "flux3" } });
+    if (ed.boxesRow.hidden) throw new Error("the Boxes row did not come back");
+    // the first box turns it on with a note, the second does not; the label counts them
+    const a = await c("boxes.add", { id: "dog_1", rect: [100, 100, 400, 300], desc: "a dog", doc: d.id });
+    if (!a.switched_on || !ed.genSettings.boxes || !ed.boxesCheck.checked) throw new Error("the first box did not turn the switch on: " + JSON.stringify(a));
+    if (!/Boxes switch under the prompt is on/.test(ed.status)) throw new Error("no note in the status: " + ed.status);
+    const b = await c("boxes.add", { id: "cat_1", rect: [600, 400, 800, 600], desc: "a cat", doc: d.id });
+    if (b.switched_on) throw new Error("the second box reported the switch");
+    if (ed.boxesLabel.textContent !== "Boxes \u00b7 2" || ed.boxesHint.textContent !== "") throw new Error("the label: " + ed.boxesLabel.textContent + " / " + ed.boxesHint.textContent);
+    if (!(await c("boxes.list", D())).switch) throw new Error("boxes.list does not say the switch is on");
+    // on: a run sends both boxes, asking the sources once
+    host.plugins = { ...orig, boxes: (...x) => { calls++; return orig.boxes(...x); } };
+    await c("set_prompt", { text: "a garden", doc: d.id });
+    await c("select_rect", { x: 100, y: 100, w: 700, h: 500, doc: d.id });
+    let g = await c("generate", { timeout: 60 });
+    if (g.boxes !== 2 || calls !== 1 || !String(g.prompt_sent).endsWith("]")) throw new Error("a run with the switch on: " + JSON.stringify({ boxes: g.boxes, calls, prompt: g.prompt_sent }));
+    // off (set_generation): no box goes and the sources are not asked, the boxes stay, a note says so
+    const off = await c("set_generation", { boxes: false, doc: d.id });
+    if (off.boxes !== false || ed.boxesCheck.checked || ed.boxesHint.textContent !== "not sent") throw new Error("set_generation boxes false: " + JSON.stringify(off) + " " + ed.boxesHint.textContent);
+    if ((await c("status", D())).generation.boxes !== false) throw new Error("status does not report the switch");
+    g = await c("generate", { timeout: 60 });
+    if (g.boxes !== 0 || calls !== 1 || String(g.prompt_sent).includes("dog_1")) throw new Error("a run with the switch off: " + JSON.stringify({ boxes: g.boxes, calls, prompt: g.prompt_sent }));
+    if (!(g.notes || []).some((n) => /2 boxes did not go: the Boxes switch under the prompt is off/.test(n))) throw new Error("no note for the boxes left home: " + JSON.stringify(g.notes));
+    if ((await boxes()).length !== 2) throw new Error("switching off took boxes away");
+    // the panel says it, the overlay draws the boxes dashed and paler (a recording context: the outline's dash and alpha)
+    const details = Array.from(ed.panes.gen.querySelectorAll("details")).find((x) => x.querySelector("summary") && x.querySelector("summary").textContent.trim() === "Boxes");
+    const note = details ? details.querySelector(".boxes-note").textContent : "";
+    if (!/Not sent: the Boxes switch under the prompt is off/.test(note)) throw new Error("the panel's note while off: " + note);
+    const outlineOf = () => {
+        const cv = new OffscreenCanvas(64, 64), real = cv.getContext("2d"), rec = [];
+        const ctx = new Proxy(real, {
+            get(t, k) { const v = t[k]; if (typeof v !== "function") return v; return (...x) => { if (k === "strokeRect" && x[0] === 100 && x[1] === 100 && x[2] === 300) rec.push({ dash: t.getLineDash().length > 0, alpha: t.globalAlpha }); return v.apply(t, x); }; },
+            set(t, k, v) { t[k] = v; return true; },
+        });
+        host.plugins.overlay(ed, ctx);
+        return rec;
+    };
+    ed.setTool("boxes.box");
+    const dim = outlineOf();
+    await c("set_generation", { boxes: true, doc: d.id });
+    const lit = outlineOf();
+    ed.setTool("select");
+    if (!dim.length || !dim.every((r) => r.dash && r.alpha < 1)) throw new Error("the outline while off is not dashed and paler: " + JSON.stringify(dim));
+    if (!lit.length || !lit.every((r) => !r.dash && r.alpha === 1)) throw new Error("the outline while on: " + JSON.stringify(lit));
+    out.overlay = { dim: dim[0], lit: lit[0] };
+    // a box the crop leaves out is still the document's: the selection does not go as a box in its place
+    await c("boxes.remove", { id: "cat_1", doc: d.id });
+    await c("select_rect", { x: 950, y: 600, w: 150, h: 120, doc: d.id });
+    g = await c("generate", { timeout: 60 });
+    if (g.boxes !== 0 || String(g.prompt_sent).includes("edit_1")) throw new Error("the selection went in place of a box the crop left out: " + JSON.stringify({ boxes: g.boxes, prompt: g.prompt_sent, notes: g.notes }));
+    // no boxes at all, the switch on: the selection goes as one box (S1's edit_1)
+    await c("boxes.clear", D());
+    if (ed.boxesLabel.textContent !== "Boxes" || ed.boxesHint.textContent !== "the selection goes as one box" || !ed.genSettings.boxes) throw new Error("the row with no boxes: " + ed.boxesLabel.textContent + " / " + ed.boxesHint.textContent);
+    g = await c("generate", { timeout: 60 });
+    if (g.boxes !== 1 || !String(g.prompt_sent).includes('"id":"edit_1"')) throw new Error("the selection as one box: " + JSON.stringify({ boxes: g.boxes, prompt: g.prompt_sent }));
+    out.selection = g.prompt_sent;
+    // the switch rides in the file; an open with boxes is no first box
+    const again = await c("boxes.add", { id: "dog_1", rect: [100, 100, 400, 300], desc: "a dog", doc: d.id });
+    if (again.switched_on || (await boxes()).length !== 1 || !ed.genSettings.boxes) throw new Error("a box with the switch already on: " + JSON.stringify(again));
+    await c("set_generation", { boxes: false, doc: d.id });
+    await c("save_document", { path, doc: d.id });
+    await c("close_document", { doc: d.id, force: true });
+    let o = await c("open_document", { path });
+    window.__bDoc = o.id;
+    if (ednow().genSettings.boxes !== false || (await boxes()).length !== 1) throw new Error("after the open with the switch off: " + JSON.stringify([ednow().genSettings.boxes, await boxes()]));
+    if (ednow().boxesLabel.textContent !== "Boxes \u00b7 1" || ednow().boxesCheck.checked) throw new Error("the row after the open: " + ednow().boxesLabel.textContent);
+    await c("set_generation", { boxes: true, doc: o.id });
+    await c("save_document", { path, doc: o.id });
+    await c("close_document", { doc: o.id, force: true });
+    o = await c("open_document", { path });
+    window.__bDoc = o.id;
+    if (ednow().genSettings.boxes !== true || !ednow().boxesCheck.checked) throw new Error("the switch on did not come back from the file");
+    out.calls = calls;
+    return out;
+} finally {
+    host.plugins = orig;
+    if (window.__bDoc !== main) { try { await c("close_document", { doc: window.__bDoc, force: true }); } catch (_) { /* gone */ } }
+    window.__bDoc = main;
+    host.setRecipe(prev);
+    host.shell.activate(ednow());
 }
 """),
     ("boxes_follow_a_crop_and_its_undo", """

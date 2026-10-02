@@ -318,7 +318,7 @@ Set the prompt (and the negative prompt, used by local chains). @img1, @img2 ...
 
 ### `set_generation`
 
-Generation settings: mode api / local (the recipe decides what is available), seed, random seed, denoise, refine.
+Generation settings: mode api / local (the recipe decides what is available), seed, random seed, denoise, refine, and the document's Boxes switch (boxes).
 
 | param | type | description |
 |---|---|---|
@@ -328,6 +328,7 @@ Generation settings: mode api / local (the recipe decides what is available), se
 | `seed_random` | boolean | a new seed per run |
 | `denoise` | number | 0.05..1 |
 | `refine` | boolean | refine pass |
+| `boxes` | boolean | the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay |
 
 ### `set_crop`
 
@@ -902,7 +903,7 @@ The label variants, positions and the current defaults, plus where the icons com
 
 ### `boxes.list` *(plugin boxes)*
 
-The boxes of this document (image pixels) and whether the selected recipe sends them.
+The boxes of this document (image pixels), whether the selected recipe takes boxes and whether the document's Boxes switch is on (set_generation boxes): a run sends them only when both are.
 
 | param | type | description |
 |---|---|---|
@@ -910,7 +911,7 @@ The boxes of this document (image pixels) and whether the selected recipe sends 
 
 ### `boxes.add` *(plugin boxes)*
 
-Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with the next run of a recipe that takes boxes (FLUX 3 Image).
+Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).
 
 | param | type | description |
 |---|---|---|
@@ -1056,7 +1057,7 @@ Mean colour of the selection (or the whole picture) as rgb and hex.
 
 ### `sample.box` *(plugin sample)*
 
-Switch the sample's box source on or off: on, every run of a recipe that takes boxes gets one box in the middle of the frame. Without `on` it answers the state.
+Switch the sample's box source on or off: on, every run of a recipe that takes boxes gets one box in the middle of the frame while the document's Boxes switch is on. Without `on` it answers the state.
 
 | param | type | description |
 |---|---|---|

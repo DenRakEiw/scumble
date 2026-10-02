@@ -411,6 +411,7 @@ export async function runAction(id, ed = host.editor) {
 
 function registerGenerate(entry, def) {
     if (!def || typeof def.boxes !== "function") throw new Error("generate.register needs { id, boxes(doc, ctx) }");
+    if (def.count != null && typeof def.count !== "function") throw new Error("generate.register: count must be a function count(doc)");
     const id = fullId(entry, def.id);
     if (entry.regs.generate.has(id)) throw new Error(`generate source "${id}" is already registered`);
     entry.regs.generate.set(id, { id, def });
@@ -423,8 +424,9 @@ function unregisterGenerate(entry, id) {
 
 /**
  * The boxes every registered source answers for a run, in plugin order, mapped from image pixels into the request's
- * shape (renderer/editor/boxes.js pluginBoxes). `ctx` is what the sources see (host.boxContext), `taken` the boxes the
- * run already holds (the S1 selection box): a duplicate id gets the next number. A source that throws or answers a
+ * shape (renderer/editor/boxes.js pluginBoxes). `ctx` is what the sources see (host.boxContext), `taken` boxes the run
+ * already holds (a duplicate id gets the next number; the app's runs pass none: the selection box of S1 goes only when
+ * no source answers, S3d). A source that throws or answers a
  * malformed box is reported like a failing filter and skipped, the run goes on; a from box whose layer this run does
  * not send refuses the run (the error is thrown on). Returns { boxes, notes }.
  */
@@ -450,6 +452,22 @@ export async function collectBoxes(ed, ctx, taken = []) {
         }
     }
     return out;
+}
+
+/**
+ * How many boxes the sources hold for a document now: the sum of each source's optional `count(doc)` (sync; a source
+ * without one counts 0). The Boxes switch's label, and whether a run sends the selection as a box (S3d: only when the
+ * document holds none). A count that throws counts 0: it is a label, and the run reports a failing source.
+ */
+export function countBoxes(ed) {
+    let n = 0;
+    for (const entry of plugins.values()) {
+        for (const reg of entry.regs.generate.values()) {
+            if (typeof reg.def.count !== "function") continue;
+            try { const k = Math.floor(Number(reg.def.count(new Document(ed)))); if (k > 0) n += k; } catch (_) { /* counts 0 */ }
+        }
+    }
+    return n;
 }
 
 function registerTool(entry, def) {
@@ -780,6 +798,7 @@ async function load(p) {
         console.error(`plugin ${p.id} failed to load:`, err);
         removeRegs(entry);
     }
+    syncBoxRows();
     if (onChanged) onChanged();
     return entry;
 }
@@ -802,7 +821,13 @@ async function unload(entry) {
     removeRegs(entry);
     entry.loaded = false;
     plugins.delete(entry.id);
+    syncBoxRows();
     if (onChanged) onChanged();
+}
+
+/** The Boxes switch under the prompt counts the generate sources' boxes: a plugin loaded or unloaded changes them. */
+function syncBoxRows() {
+    for (const ed of host.editors()) if (ed && typeof ed.syncBoxesRow === "function") ed.syncBoxesRow();
 }
 
 /** Load every enabled plugin that is not loaded yet; unload those disabled or gone. */
@@ -878,5 +903,5 @@ host.on("removed", ({ editor }) => {
 });
 host.on("tool", toolChanged);
 
-export const pluginHost = { pointer, key, overlay, boxes: collectBoxes, runAction, list: () => listPlugins(), reload: reloadPlugins, load: loadPlugins, setEnabled, entries: () => plugins };
+export const pluginHost = { pointer, key, overlay, boxes: collectBoxes, countBoxes, runAction, list: () => listPlugins(), reload: reloadPlugins, load: loadPlugins, setEnabled, entries: () => plugins };
 host.plugins = pluginHost;
