@@ -96,6 +96,37 @@ only auto and 1K). Not run live.
 
 ## Open
 
+### The local Flux.2 Klein example fails in the sampler: "mat1 and mat2 shapes cannot be multiplied" (reported 2026-10-02)
+
+**Reported** 2026-10-02 by a Reddit user, passed on by the user: "Yep, an error for me as well running the example
+local workflow: RuntimeError: mat1 and mat2 shapes cannot be multiplied (1024x5120 and 12288x4096)". "As well" reads as
+a second person with the same or a similar error in that thread (not seen).
+
+**Seen:** the error text only; no log, no ComfyUI version, no model files.
+
+**Known (read, not run):**
+- "The example local workflow" is most likely the node's `examples/inpaint_canvas_flux2_klein_local.json`
+  (ComfyUI-InpaintCanvas, commit 7e12b3f): a Flux.2 Klein 9B subgraph, `UNETLoader` `flux-2-klein-base-9b-fp8`,
+  `CLIPLoader` `qwen_3_8b_fp8mixed` with type `flux2`, the Flux.2 VAE. The app's recipe "Flux.2 Klein local"
+  (`recipes/flux2_klein_local.json`) is the same chain with `flux-2-klein-base-9b` / `qwen3_8b`; which of the two the
+  reporter ran is not known.
+- The shapes: the second matrix is a linear layer taking 12288 features to 4096, which fits Klein 9B's text input
+  (three stacked hidden states of Qwen3 8B, 3 × 4096); the conditioning arrived as 1024 tokens of 5120 features. So the
+  diffusion model is the 9B one and the text encoder is not the one it was trained with: a model of another size or
+  family (5120 is the hidden size of Mistral Small 24B, Flux.2 dev's encoder, and of Qwen3 14B), or a ComfyUI that
+  builds the wrong encoder for the file. Both readings are unverified. The error is raised inside ComfyUI's model
+  forward, not in the node's code; the node's crop and stitch never see the conditioning.
+
+**Not known, to measure first:**
+- Which workflow, which file in the `CLIPLoader` (and its type), which diffusion model, which ComfyUI version (Klein's
+  Qwen3 encoders need a ComfyUI from January 2026 or later). Ask on Reddit for the console log around the error.
+- Reproduce on a free ComfyUI (not the user's production 8188 without their word): Klein 9B with `qwen_3_8b` (expected:
+  runs), with Klein 4B's `qwen_3_4b`, and with Flux.2 dev's Mistral encoder, to see which one gives `1024x5120`.
+
+**Possible fixes, after the measurement:** the example's note and the README name the exact text encoder per Klein
+size (4B and 9B take different ones, and a mismatch fails only in the sampler); the app's local recipe check
+(`/object_info`) could warn when the chosen text encoder file's name does not fit the diffusion model's size.
+
 ### Topaz Wonder's Redefine model may take a prompt (open since 0.1.27, needs a key)
 
 Left over from the creative-upscaler fix of 0.1.27 (the Upscale dialog's Prompt field for recipes with `usesPrompt`):
