@@ -14,7 +14,7 @@ const EXCLUDED = new Set(["list_commands", "run_action", "set_status", "ailabel_
 const READS = new Set([
     "ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips",
     "filter_types", "status", "get_state", "read_log", "film_looks", "glb_info", "sample_mean_color",
-    "screenshot", "compare", "list_history",
+    "screenshot", "compare", "list_history", "boxes_list",
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
@@ -53,6 +53,15 @@ const POLICY = {
     group_layers: AUTO, ungroup_layers: AUTO,
     set_group: (call) => (call.args && call.args.locked === false ? ASK("unlocks a group you locked") : AUTO()),
     film_apply_look: AUTO, film_add_point: AUTO,
+
+    // the Boxes plugin (docs/PLAN_BOXES.md §10): every change is one undo step of the document's plugin data
+    boxes_list: AUTO, boxes_add: AUTO, boxes_set: AUTO, boxes_from_selection: AUTO,
+    boxes_remove: () => ASK("removes a box from the document (Ctrl+Z takes it back)"),
+    boxes_clear: () => ASK("removes every box of the document, yours included (Ctrl+Z takes it back)"),
+    // the sample plugin's switch is stored with the plugin, for every document
+    sample_box: (call) => (call.args && call.args.on != null
+        ? ASK("switches the sample plugin's box source for every document; the setting is saved")
+        : AUTO()),
 
     set_filter: (call) => (hasParams(call) && !call.args.type
         ? AUTO("a filter's parameters; the shell pushes the undo step")
