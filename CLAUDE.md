@@ -83,7 +83,8 @@ verbatim). Check `gh release list` before believing any release state written do
 
 **This session (2026-10-02 late night, "baue weiter", then "mache noch ein paar schritte weiter ... ich gehe jetzt
 schlafen"):** A1, A2, B1 and B3 of `docs/PLAN_0_1_38.md`, each its own commit, none pushed (main is ahead of origin by
-6 with this hand-over's: 7de1423 and 4d8dcde from before, then c3872b7, 03cd400, a2ba272, 77cd42d). The 0.1.37 block is in `docs/HISTORY.md`.
+8: 7de1423 and 4d8dcde from before, then c3872b7, 03cd400, a2ba272, 77cd42d, the hand-over 5097a78 and the review
+fixes 8443bd9). The 0.1.37 block is in `docs/HISTORY.md`.
 - **A1, item 32 (c3872b7):** the update question (`renderer/shell.js` `announceUpdate`): *Restart and update* /
   *Later* / *Skip this version*, once per start (`updater.announce`, IPC `update:announced`), one line per top-level
   release-note bullet (`releaseHeadlines`), the focus on *Later* (`dialogs.ask` `focusId`), waits for a question, a
@@ -105,7 +106,13 @@ schlafen"):** A1, A2, B1 and B3 of `docs/PLAN_0_1_38.md`, each its own commit, n
   `openrouter.js`, each off unless set). **Ask the user whether 0.1.38 ships them** (the agreed 0.1.38 was small) or
   holds them for 0.1.39 (then a branch or a revert before the release). Side effect of B3: every OpenRouter model whose
   endpoints take no seed reports seed null now.
-- Gates run (all `--offline`, tiles): platform, assistant, commands, boxes, openrouter, recipes, lint, types; Node:
+- **Review of A2, B1, B3 (8443bd9):** six findings, all fixed: box ids end a phrase at a comma, a word of place or a
+  German article (`rote_lampe_1`), a Text box keeps its text's first two words; OpenAI, Gemini, ModelArk, ToAPIs,
+  Magnific and Comfy Router report the seed they sent (none when none went; fal and Replicate still fall back to the
+  editor's); FLUX 3 on Comfy Router checks what flux3.js sends, not the raw layers; an OpenRouter passthrough slug must
+  be a host slug (`__proto__`); the manual says OpenRouter has no Grounding switch. `docs/PLAN_0_1_38.md` has it.
+- Gates run (all `--offline`, tiles): platform, assistant, commands, boxes, openrouter, toapis, ark, magnific, recipes,
+  lint, types; Node:
   updater, restart, quit, manual, boxes, flux3, comfyrouter, openrouter, recipes, refs_layout, ideogram45. No exe
   gates (that is the release's). One look at the update question in a dev instance (a screenshot, fine).
 - **Next:** the user's word on A3 (the 0.1.38 release, with or without B1/B3) and on B2 (its live check §6.4 needs
@@ -273,6 +280,9 @@ there; add a new flake there, with the date and what was ruled out.
   workers' buffer and the GPU (B item 7 part 2). 572 MB go up in 0.1 s and come back in 0.2 s, on the main thread.
 
 **Electron and Windows**
+- electron-updater installs a downloaded update on every normal quit (`autoInstallOnAppQuit`, on by default) and adds
+  that quit handler only when a download ends with the switch on: a Skip has to turn it off in main, and a Skip taken
+  back has to add the handler (`updater.js` `_applySkip`, 6.8.9).
 - In the main process `process.stdin` never emits `data` from a pipe (read fd 0 with `fs.createReadStream`); Electron prints
   a CR LF to stdout before any JS runs (hence the MCP launcher); a window created hidden stays hidden after `show()`,
   `restore()` brings it up.
