@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02 night: 0.1.37 is Latest = item 28 boxes for FLUX 3 + item 31 Ideogram 4.5; the boxes ran live before it; the post is out)
+## Where things stand (2026-10-02 night: 0.1.37 is Latest; item 33 built for 0.1.38; next docs/PLAN_0_1_38.md A1)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -126,8 +126,16 @@ Release? ja kannst du machen". The item 31 docs paragraph and the 0.1.36 "Releas
   (`docs/HISTORY.md`, 2026-09-28 late night); item 25's look and timing; item 26's look in the app; the Boxes' look and
   feel in the app. The Store package of 0.1.37 was not built (on the user's word per release). Whether to delete the key
   from the gate profile `rel36-exe`. Whether to close the adm-zip PR.
-- Next: the user's pick. Candidates: item 29 (FLUX 3 on fal / OpenRouter / Oxen / WaveSpeed; Comfy Router would matter
-  for the challenge), item 28 S4 / S5, item 30, the Klein report once the reporter answers.
+- **After the release, the same night:** item 33 built (every box its own colour, a double click describes a box on
+  the canvas; 7de1423, CHANGELOG Unreleased, `docs/PLAN_BOXES.md` "After 0.1.37"); item 32 put on the list; the user
+  asked whether Ideogram can take the boxes (yes: Ideogram 4's JSON caption, S5; 4.5 takes none). Then the plan for
+  the next two updates: **`docs/PLAN_0_1_38.md`** (the user: "ok, mache einen umsetzungsplan, dann machen wir clear und
+  es geht los"). 0.1.38 small: A1 item 32 (the update dialog), A2 three leftovers (the FLUX 3 seed in `generate`, box
+  ids from the last two words of the first phrase, planCrop's aspect to the FLUX 3 adapter), A3 the release with the
+  Store link on the website hub and the adm-zip PR closed on the user's yes. 0.1.39: B1 FLUX 3 on Comfy Router
+  (`bfl/flux-3-image` exists, schema in `tools/refs/comfyrouter/bfl_flux-3-image.json`), B2 Ideogram 4's JSON caption
+  from the boxes (live check §6.4 on fal first), B3-B6 FLUX 3 on OpenRouter / fal / Oxen / WaveSpeed, B7 the release.
+- **Next: `docs/PLAN_0_1_38.md` A1** (item 32, the update dialog).
 
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
@@ -230,7 +238,10 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `renderer/dialogs.js` once the update is downloaded, with the version and its CHANGELOG notes, *Restart and update* /
   *Later* (maybe *Skip this version*); once per version, not on every start; not while a document is busy or unsaved
   without asking first (the restart path `restartPlan` exists); none in the Store copy (the Store updates it) and none
-  for Linux packages that cannot update themselves. Small (about half a day), nothing planned in detail.
+  for Linux packages that cannot update themselves. Small (about half a day); planned as `docs/PLAN_0_1_38.md` A1.
+- 33: every box its own colour and a double click that describes a box on the canvas (the user, 2026-10-02 night,
+  with a screenshot of six green boxes: "jede neu box soll eine andere farbe haben", then "mit doppelklick auf die box
+  ... den prompt im canvas in die box schreiben"): built the same night (7de1423), under Unreleased for 0.1.38.
 
 ## Gate runner and flakes
 
