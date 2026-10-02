@@ -716,7 +716,7 @@ const COMMANDS = {
             if (r.kind === "provider") {
                 const out = await host.runGenerate(ed, { width: w, height: h, aspect: a.aspect || null, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed, background: a.background || null });
                 ed.notifyChanged();
-                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, prompt_sent: out.prompt, references: out.references, kept: out.kept, dropped: out.dropped, notes: out.notes || [], info: out.info || null, status: ed.status };
+                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, prompt_sent: out.prompt, references: out.references, kept: out.kept, dropped: out.dropped, notes: out.notes || [], info: out.info || null, boxes: out.boxes || 0, status: ed.status };
             }
             if (a.background === "transparent" && r.kind !== "provider") throw new Error("a transparent background is an API model's parameter; this is a local ComfyUI recipe");
             // the run's token check, made before the canvas replaces the picture: the references stay, so this snapshot
@@ -808,8 +808,8 @@ const COMMANDS = {
             const h = ed.history[ed.history.length - 1];
             const layer = ed.layers.find((l) => l.id === h.layerId);
             // prompt_sent: the prompt as the model got it, each @img token written as the model's name for its picture;
-            // notes: what the route (or a local recipe's slots) left out
-            return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - t0) / 100) / 10, prompt_sent: ed.lastSentPrompt, notes: ed.lastRunNotes || [] };
+            // notes: what the route (or a local recipe's slots) left out; boxes: how many boxes went in the prompt
+            return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - t0) / 100) / 10, prompt_sent: ed.lastSentPrompt, notes: ed.lastRunNotes || [], boxes: ed.lastSentBoxes || 0 };
         },
     },
 

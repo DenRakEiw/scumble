@@ -63,6 +63,67 @@ export function selectionBox(bounds, frame, { prompt = "", pair = null } = {}) {
         : { id: "edit_1", kind: "new", rect, src: null, ref: null, desc };
 }
 
+/** The kinds a box may have (main's boxes.js keeps the same set). */
+export const KINDS = new Set(["new", "keep", "move", "remove", "from"]);
+
+const pxRect = (r) => Array.isArray(r) && r.length === 4 && r.every((v) => Number.isFinite(Number(v))) && Number(r[0]) < Number(r[2]) && Number(r[1]) < Number(r[3]);
+
+/**
+ * A plugin's boxes (`scumble.generate.register`, docs/PLUGINS.md "Generate"; S2 of docs/PLAN_BOXES.md) mapped into
+ * the request's shape. A plugin box is the request's shape with `rect` and `src` in **image pixels** ([l, t, r, b],
+ * r and b exclusive) and, on a from box, `layer` (the reference layer's id) instead of `ref`; its `src` is then where
+ * the element sits in that layer as it is placed in the picture (image pixels too; null = the whole picture).
+ * `ctx.frame` is the run's frame ({ x, y, w, h }), `ctx.references` the pictures of this run as the {@ref:i} markers
+ * count them ([{ index, layerId, frame }]). `opts.taken` holds the ids already used (boxes or strings): a duplicate
+ * gets the next free number (edit_1 -> edit_2). Returns { boxes, notes }: a box (or its source) outside the frame is
+ * dropped with a note naming it. Throws on a malformed box (`err.code` "shape": the plugin's bug) and on a from box
+ * whose layer this run does not send (`err.code` "layer", `opts.nameOf(layerId)` names it: the run refuses, as an
+ * unresolvable @img token does).
+ */
+export function pluginBoxes(list, ctx, { taken = [], nameOf = null } = {}) {
+    const fail = (code, msg) => { const e = new Error(msg); e.code = code; return e; };
+    if (list == null) return { boxes: [], notes: [] };
+    if (!Array.isArray(list)) throw fail("shape", "boxes() did not return a list");
+    const frame = ctx && ctx.frame;
+    const where = ctx && ctx.mode === "new" ? "image" : "crop";
+    const used = new Set(taken.map((b) => (typeof b === "string" ? b : b && b.id)).filter(Boolean));
+    const out = [], notes = [];
+    list.forEach((b, i) => {
+        const who = `Box ${b && typeof b.id === "string" ? b.id : "#" + (i + 1)}`;
+        if (!b || typeof b !== "object") throw fail("shape", `${who}: not an object`);
+        if (typeof b.id !== "string" || !BOX_ID.test(b.id)) throw fail("shape", `${who}: the id is not a lowercase name, an underscore and a number (knight_1)`);
+        if (!KINDS.has(b.kind)) throw fail("shape", `${who}: the kind "${String(b.kind).slice(0, 20)}" is not new, keep, move, remove or from`);
+        if (!pxRect(b.rect)) throw fail("shape", `${who}: rect is not [l, t, r, b] in image pixels with l < r and t < b`);
+        if (b.desc != null && typeof b.desc !== "string") throw fail("shape", `${who}: desc is not a string`);
+        let src = null, ref = null;
+        if (b.kind === "from") {
+            if (typeof b.layer !== "string" || !b.layer) throw fail("shape", `${who}: a from box needs layer, the reference layer's id`);
+            if (b.src != null && !pxRect(b.src)) throw fail("shape", `${who}: src is not [l, t, r, b] in image pixels with l < r and t < b`);
+            const r = (ctx && ctx.references || []).find((x) => x && x.layerId === b.layer);
+            if (!r) throw fail("layer", `${who}: ${nameOf ? nameOf(b.layer) : "layer " + b.layer} is not a reference picture of this run: nothing was sent.`);
+            ref = r.index;
+            src = b.src == null ? [0, 0, 1, 1] : toFrame(b.src, r.frame);
+            if (!src) { notes.push(`${who}: its source lies outside the reference layer, so the box was not sent.`); return; }
+        } else if (b.kind !== "new") {
+            if (!pxRect(b.src)) throw fail("shape", `${who}: src is not [l, t, r, b] in image pixels with l < r and t < b`);
+            src = toFrame(b.src, frame);
+            if (!src) { notes.push(`${who}: its source lies outside the ${where}, so the box was not sent.`); return; }
+        } else if (b.src != null) throw fail("shape", `${who}: a new box has no src`);
+        const rect = toFrame(b.rect, frame);
+        if (!rect) { notes.push(`${who} lies outside the ${where} and was not sent.`); return; }
+        let id = b.id;
+        if (used.has(id)) {
+            const m = /^(.*_)([1-9][0-9]*)$/.exec(id);
+            let n = Number(m[2]) + 1;
+            while (used.has(m[1] + n)) n++;
+            id = m[1] + n;
+        }
+        used.add(id);
+        out.push({ id, kind: b.kind, rect, src, ref, desc: foldDesc(b.desc) });
+    });
+    return { boxes: out, notes };
+}
+
 /** True when `rect` (fractions) is under SMALL_PX on a side at the emitted size ([w, h] pixels). */
 export function smallBox(rect, emitted) {
     if (!Array.isArray(rect) || !Array.isArray(emitted)) return false;

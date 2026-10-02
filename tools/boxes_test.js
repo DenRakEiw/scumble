@@ -166,6 +166,43 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     check("the two resolvers agree on the desc: main names the renderer's marker", boxes.rowsFlux3({ ...r2, boxes: [fb] }, lay2)[0].desc === "put image 3 here", "");
     check("refs.js's resolver on the same desc gives the same name", refs.resolveMarkers(fb.desc, lay2.pictures, "image {n}").text === "put image 3 here", "");
 
+    // ---- 9. a plugin's boxes (S2, docs/PLAN_BOXES.md §9): image pixels and layer ids into the request's shape ---------
+    // the frame is the crop of §8 (100, 50, 800 x 600); the reference "Cat" (layer L3, picture index 1) sits at 500, 350, 200 x 100
+    const pctx = { mode: "edit", schema: "flux3", frame, selection: null, references: [{ index: 1, layerId: "L3", name: "Cat", frame: { x: 500, y: 350, w: 200, h: 100 } }] };
+    let pb = R.pluginBoxes([{ id: "cat_1", kind: "new", rect: [300, 200, 500, 350], desc: "a\n  cat" }], pctx);
+    check("pluginBoxes: a new box in image pixels becomes fractions of the frame, the desc folded", eq(pb, { boxes: [{ id: "cat_1", kind: "new", rect: [0.25, 0.25, 0.5, 0.5], src: null, ref: null, desc: "a cat" }], notes: [] }), short(pb));
+    pb = R.pluginBoxes([{ id: "cat_1", kind: "move", rect: [300, 200, 500, 350], src: [100, 50, 300, 200] }], pctx);
+    check("pluginBoxes: a move box's src is mapped into the frame too, a missing desc is empty", pb.boxes[0].kind === "move" && eq(pb.boxes[0].src, [0, 0, 0.25, 0.25]) && pb.boxes[0].desc === "", short(pb));
+    pb = R.pluginBoxes([{ id: "cat_1", kind: "from", rect: [300, 200, 500, 350], layer: "L3" }], pctx);
+    check("pluginBoxes: a from box names a layer; the core writes the picture's index and the whole picture as src", eq(pb.boxes[0], { id: "cat_1", kind: "from", rect: [0.25, 0.25, 0.5, 0.5], src: [0, 0, 1, 1], ref: 1, desc: "" }), short(pb));
+    pb = R.pluginBoxes([{ id: "cat_1", kind: "from", rect: [300, 200, 500, 350], layer: "L3", src: [500, 350, 600, 400] }], pctx);
+    check("pluginBoxes: a from box's src in image pixels is measured in the layer's own frame", eq(pb.boxes[0].src, [0, 0, 0.5, 0.5]), short(pb));
+    pb = R.pluginBoxes([{ id: "cat_1", kind: "new", rect: [0, 0, 50, 20] }, { id: "dog_1", kind: "new", rect: [300, 200, 500, 350] }, { id: "ox_1", kind: "keep", rect: [300, 200, 500, 350], src: [0, 0, 50, 20] }], pctx);
+    check("pluginBoxes: a box (or a source) outside the frame is dropped with a note naming it, the others go", pb.boxes.length === 1 && pb.boxes[0].id === "dog_1" && pb.notes.length === 2 && /^Box cat_1 lies outside the crop/.test(pb.notes[0]) && /^Box ox_1: its source lies outside the crop/.test(pb.notes[1]), short(pb));
+    pb = R.pluginBoxes([{ id: "edit_1", kind: "new", rect: [300, 200, 500, 350] }, { id: "edit_1", kind: "new", rect: [300, 200, 500, 350] }], pctx, { taken: [sb] });
+    check("pluginBoxes: a duplicate id gets the next free number, across sources (the S1 box holds edit_1)", eq(pb.boxes.map((b) => b.id), ["edit_2", "edit_3"]), short(pb.boxes.map((b) => b.id)));
+    let code = null, msg = null;
+    try { R.pluginBoxes([{ id: "cat_1", kind: "from", rect: [300, 200, 500, 350], layer: "L9" }], pctx, { nameOf: (id) => `the layer "Dog" (${id})` }); } catch (e) { code = e.code; msg = e.message; }
+    check("pluginBoxes: a from box whose layer this run does not send refuses with the layer's name (code layer)", code === "layer" && /^Box cat_1: the layer "Dog" \(L9\) is not a reference picture of this run: nothing was sent\.$/.test(msg), msg);
+    code = null;
+    try { R.pluginBoxes([{ id: "Cat", kind: "new", rect: [300, 200, 500, 350] }], pctx); } catch (e) { code = e.code; msg = e.message; }
+    check("pluginBoxes: a bad id is a shape error (the plugin's bug, reported and skipped by the core)", code === "shape" && /^Box Cat: the id/.test(msg), msg);
+    check("pluginBoxes: a bad kind, a bad rect, a src on a new box, a from box without a layer, a keep box without a src",
+        /kind "x"/.test(throws(() => R.pluginBoxes([{ id: "a_1", kind: "x", rect: [0, 0, 1, 1] }], pctx)))
+        && /rect is not/.test(throws(() => R.pluginBoxes([{ id: "a_1", kind: "new", rect: [5, 0, 1, 1] }], pctx)))
+        && /no src/.test(throws(() => R.pluginBoxes([{ id: "a_1", kind: "new", rect: [300, 200, 500, 350], src: [0, 0, 1, 1] }], pctx)))
+        && /needs layer/.test(throws(() => R.pluginBoxes([{ id: "a_1", kind: "from", rect: [300, 200, 500, 350] }], pctx)))
+        && /src is not/.test(throws(() => R.pluginBoxes([{ id: "a_1", kind: "keep", rect: [300, 200, 500, 350] }], pctx))), "");
+    check("pluginBoxes: null or [] is no box, a non-list is a shape error", eq(R.pluginBoxes(null, pctx), { boxes: [], notes: [] }) && eq(R.pluginBoxes([], pctx).boxes, []) && /list/.test(throws(() => R.pluginBoxes({}, pctx))), "");
+    check("pluginBoxes: on a new image the note says image, not crop", /outside the image/.test(R.pluginBoxes([{ id: "a_1", kind: "new", rect: [0, 0, 50, 20] }], { ...pctx, mode: "new" }).notes[0]), "");
+    const pall = R.pluginBoxes([
+        { id: "cat_1", kind: "from", rect: [300, 200, 500, 350], layer: "L3" }, { id: "dog_1", kind: "new", rect: [300, 200, 500, 350], desc: "a dog" },
+        { id: "ox_1", kind: "move", rect: [300, 200, 500, 350], src: [100, 50, 300, 200] }, { id: "ox_2", kind: "remove", rect: [300, 200, 500, 350], src: [100, 50, 300, 200] },
+    ], pctx).boxes;
+    check("every plugin box passes main's shape check and makes a FLUX 3 row (the from box naming the reference's slot)",
+        boxes.checkBoxes(pall).length === 4 && boxes.rowsFlux3({ ...r2, boxes: pall }, lay2).length === 4 && typeof boxes.rowsFlux3({ ...r2, boxes: pall }, lay2)[0].from === "string", short(boxes.rowsFlux3({ ...r2, boxes: pall }, lay2)));
+    check("the kinds are the same set on both sides", eq([...R.KINDS].sort(), [...boxes.KINDS].sort()), "");
+
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);
     console.log(failed ? "FAIL" : "PASS");

@@ -12,8 +12,21 @@ once in the app over CDP with a loopback variant that declares `options.boxes` (
 place in the order sent (`n - 1`), not parsed from its field, so any layout with numbered pictures works (the loopback
 look needed it); the `text` shape of the recipe lists its two rows explicitly, since `recipes.js` would otherwise
 copy the edit rows, Selection as box included, into the Generate new dialog. The status line says "Sent with 1 box."
-from main's `boxes` count in the answer. **No live call yet**: the checks of §6 (6.1-6.3) are next, with the user's
-key; S2 after them.
+from main's `boxes` count in the answer. **No live call yet**: the checks of §6 (6.1-6.3) are still open, with the
+user's key.
+
+**S2 built 2026-10-02** as §9 says (the user: "baue weiter"): `scumble.generate.register({ id, boxes(doc, ctx) })`
+(API 3), `renderer/editor/boxes.js` `pluginBoxes` (the pure mapping, `err.code` "shape" / "layer"), `plugins.js`
+`collectBoxes` (plugin order, a throwing or malformed source reported and skipped, an unsent layer thrown on) reached
+from `host.js` as `this.plugins.boxes` (no import cycle), `host.boxContext`; `runProvider` collects after the S1 box,
+`runGenerate` when the text variant declares `options.boxes`; `generate` / `generate_new` answer `boxes`; the sample
+plugin's source behind `sample.box`; `tools/boxes_test.js` 76 checks, `commands_test.py` step `generate_boxes`;
+`docs/PLUGINS.md` "Generate". Three departures from §9: `ctx.references` carry the layer's `name` and `frame` in the
+picture (a from box's `src` in image pixels is measured in that frame, null = the whole layer); the frame of Generate
+new is the **document** (the picture the boxes were drawn on), not the requested size, so a box keeps its place when
+the dialog asks for another size (stretched when the aspect differs); a box whose *source* lies outside the frame is
+dropped with its own note. Not done: nothing in the UI shows a plugin's boxes before the run (S3's panel does).
+Next: §6.1-6.3 live with the user's key, then S3a.
 
 ## 1. Sources
 

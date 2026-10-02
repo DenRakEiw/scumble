@@ -76,24 +76,28 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02: item 28 S1 built, the selection as a FLUX 3 box; 0.1.36 is Latest)
+## Where things stand (2026-10-02: item 28 S1 and S2 built, the selection as a FLUX 3 box and the plugin hook; 0.1.36 is Latest)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02, "s1 ausplan"):** item 28 S1 as `docs/PLAN_BOXES.md` §8 plans it, one commit, not
-released (CHANGELOG Unreleased). `renderer/editor/boxes.js` (frameOf / toFrame / selectionBox / smallBox, pure),
-`electron/main/providers/boxes.js` (checkBoxes, the 0-1000 grid, rowsFlux3 for every kind, instructionFlux3,
-applyBoxes), `index.js` `edit()` applies the rows after `resolveNames` when `req.boxes` holds something (no
-`options.boxes`: dropped with a note; the log's record and the answer carry `boxes: n`), `host.runProvider` builds the
-box from `editor.selectionBounds()` in the crop behind the recipe's new "Selection as box" row (`selection_box`,
-BOOLEAN, off; the recipe's `text` shape lists its rows explicitly so the dialog does not inherit it), `generateNew`
-sends `boxes: []`. `tools/boxes_test.js` 63 checks, `flux3_test.js` 101, `recipes_test.js` 51, lint and types clean;
-looked at once in the app over CDP with a loopback variant declaring `options.boxes` (the row off and on, "Sent with 1
-box.", the rows in `prompt_sent` and the log, the small-selection note). Departures from the plan in the plan's
-status paragraph. **Not done:** a live FLUX 3 call (§6.1-6.3 need the user's key and credits: the same edit with and
-without the box, about 10 credits each at 2k); the `generate` command's answer has no `boxes` field (the status line
-and `prompt_sent` show it). Next session: the live checks with the user, then S2 (`docs/PLAN_BOXES.md` §9).
+**This session (2026-10-02, "baue weiter"):** item 28 S2 as `docs/PLAN_BOXES.md` §9 plans it, one commit, not released
+(CHANGELOG Unreleased, under the S1 entry). The S1 paragraph is in `docs/HISTORY.md`. Plugin API 3:
+`scumble.generate.register({ id, boxes(doc, ctx) })` answers boxes in image pixels (`layer` instead of `ref` on a
+from box); `renderer/editor/boxes.js` `pluginBoxes` maps them (fractions of the frame, a from box's `src` in the
+layer's frame, duplicate ids numbered on, a box outside the frame dropped with a note; `err.code` "shape" for a
+plugin's bug, "layer" for an unsent reference layer), `renderer/plugins.js` `collectBoxes` runs the sources in plugin
+order (a throwing or malformed source reported and skipped, "layer" thrown on so the run refuses), reached from
+`host.js` as `this.plugins.boxes` (`pluginHost`, no import cycle); `host.boxContext` builds `ctx` (`frame`, `selection`,
+`references` with `index`, `layerId`, `name`, `frame`); `runProvider` collects after the S1 box, `runGenerate` when the
+text variant declares `options.boxes` (the frame is the document, not the requested size); `generate` and
+`generate_new` answer `boxes: n` (`editor.lastSentBoxes`); the sample plugin registers a source behind the new
+`sample.box` command (off by default); Settings › Plugins lists "n box source(s)". `tools/boxes_test.js` 76 checks,
+`commands_test.py` step `generate_boxes` (gate `commands` offline green), lint and types clean; looked at once over
+CDP with a loopback variant declaring `options.boxes`: the source off (0 boxes), on (`sample_1` row, "Sent with 1
+box."), with the S1 row too (`edit_1` and `sample_1`, `boxes: 2`). Departures from §9 in the plan's status paragraph.
+**Not done:** the live FLUX 3 checks §6.1-6.3 (the user's key and credits); nothing in the UI shows a plugin's boxes
+before a run (S3's panel). Next session: the live checks with the user, then S3a (`docs/PLAN_BOXES.md` §10).
 
 **Released:** 0.1.36 is Latest (published 2026-10-01 22:38:25 CEST, tag on 5bc5831 "0.1.36 prepared"; the tag build
 green) on the user's "baue fertig und release dann das update mit flux3". 0.1.36 = **FLUX 3 Image** (ea71629) + item 25
@@ -190,8 +194,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `providers/boxes.js` writes the rows after `resolveNames`, plugins supply boxes through
   `scumble.generate.register`; S1 the selection as a box behind a FLUX 3 row, S2 the hook, S3a-c the built-in
   "Boxes" plugin, S4 Keep rows from the SAM2 objects; §8-§12 the implementation plan per session, §6 the live
-  checks after S1, §7 the open questions). **S1 built 2026-10-02** (the "Selection as box" row, off by default; not
-  released, under Unreleased). Next: the live checks §6.1-6.3 with the user's key, then S2.
+  checks after S1, §7 the open questions). **S1 built 2026-10-02** (the "Selection as box" row, off by default) and
+  **S2 the same day** (plugin API 3, `scumble.generate.register`, the sample's source behind `sample.box`); neither
+  released, both under Unreleased. Next: the live checks §6.1-6.3 with the user's key, then S3a.
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended

@@ -2,11 +2,12 @@
 // in <app>/plugins/), each with a plugin.json manifest and an entry module that exports
 // `activate(scumble)` (and optionally `deactivate()`). The `scumble` object handed to a
 // plugin is built here (makeApi): documents with pixel access, the command core, and the
-// extension points filter / panel / action / tool. Everything a plugin registers is
-// tracked per plugin, so disabling or reloading it takes all of it out again without a
+// extension points filter / panel / action / tool / generate. Everything a plugin registers
+// is tracked per plugin, so disabling or reloading it takes all of it out again without a
 // restart. See docs/PLUGINS.md for the API as a user sees it.
 
 import { host } from "./editor/host.js";
+import { pluginBoxes } from "./editor/boxes.js";
 import { commands, findLayer, layerSummary, touch, bounds } from "./commands.js";
 import { FILTERS, FILTER_IDS, filterDefaults, applyFilter } from "./editor/inpaint_filters.js";
 import { registerGLFilter, unregisterGLFilter, runShader, glFiltersAvailable, glToCanvas, isGLSurface } from "./editor/inpaint_filters_gl.js";
@@ -14,13 +15,13 @@ import { el, icon, makeCanvas } from "./editor/inpaint_canvas.js";
 import { LayerPixels } from "./editor/inpaint_pixels.js";
 import * as dialogs from "./dialogs.js";
 
-export const API_VERSION = 2;   // 2: documents.data(doc), per-document plugin data (docs/PLAN_DOCUMENTS.md §3.6)
+export const API_VERSION = 3;   // 2: documents.data(doc), per-document plugin data (docs/PLAN_DOCUMENTS.md §3.6); 3: generate.register (box sources, docs/PLAN_BOXES.md §9)
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 
 const plugins = new Map();   // id -> entry { id, manifest, module, api, regs, loaded, error, errors: [] }
 
 function newRegs() {
-    return { filters: new Set(), panels: new Map(), actions: new Map(), tools: new Map(), commands: new Set(), listeners: [] };
+    return { filters: new Set(), panels: new Map(), actions: new Map(), tools: new Map(), commands: new Set(), generate: new Map(), listeners: [] };
 }
 
 function report(entry, where, err) {
@@ -406,6 +407,51 @@ export async function runAction(id, ed = host.editor) {
     throw new Error(`no plugin action "${id}"`);
 }
 
+// ---- generate: box sources (API 3, docs/PLAN_BOXES.md §9) ------------------------------------
+
+function registerGenerate(entry, def) {
+    if (!def || typeof def.boxes !== "function") throw new Error("generate.register needs { id, boxes(doc, ctx) }");
+    const id = fullId(entry, def.id);
+    if (entry.regs.generate.has(id)) throw new Error(`generate source "${id}" is already registered`);
+    entry.regs.generate.set(id, { id, def });
+    return id;
+}
+
+function unregisterGenerate(entry, id) {
+    entry.regs.generate.delete(id);
+}
+
+/**
+ * The boxes every registered source answers for a run, in plugin order, mapped from image pixels into the request's
+ * shape (renderer/editor/boxes.js pluginBoxes). `ctx` is what the sources see (host.boxContext), `taken` the boxes the
+ * run already holds (the S1 selection box): a duplicate id gets the next number. A source that throws or answers a
+ * malformed box is reported like a failing filter and skipped, the run goes on; a from box whose layer this run does
+ * not send refuses the run (the error is thrown on). Returns { boxes, notes }.
+ */
+export async function collectBoxes(ed, ctx, taken = []) {
+    const out = { boxes: [], notes: [] };
+    const used = taken.slice();
+    const nameOf = (id) => { const l = ed.layers.find((x) => x.id === id); return l ? `the layer "${l.name}"` : `layer ${id}`; };
+    for (const entry of plugins.values()) {
+        for (const reg of entry.regs.generate.values()) {
+            let list;
+            try { list = await reg.def.boxes(new Document(ed), { ...ctx }); }
+            catch (err) { report(entry, `generate ${reg.def.id}`, err); continue; }
+            let got;
+            try { got = pluginBoxes(list, ctx, { taken: used, nameOf }); }
+            catch (err) {
+                if (err && err.code === "layer") throw err;
+                report(entry, `generate ${reg.def.id}`, err);
+                continue;
+            }
+            out.boxes.push(...got.boxes);
+            out.notes.push(...got.notes);
+            for (const b of got.boxes) used.push(b.id);
+        }
+    }
+    return out;
+}
+
 function registerTool(entry, def) {
     if (!def || typeof def !== "object") throw new Error("tools.register needs { id, label, title, onDown/onMove/onUp(doc, ev) }");
     const id = fullId(entry, def.id);
@@ -641,6 +687,12 @@ function makeApi(entry) {
         panels: { register: (def) => registerPanel(entry, def), unregister: (id) => unregisterPanel(entry, id.includes(".") ? id : `${entry.id}.${id}`) },
         actions: { register: (def) => registerAction(entry, def), unregister: (id) => unregisterAction(entry, id.includes(".") ? id : `${entry.id}.${id}`), run: (id) => runAction(id.includes(".") ? id : `${entry.id}.${id}`) },
         tools: { register: (def) => registerTool(entry, def), unregister: (id) => unregisterTool(entry, id.includes(".") ? id : `${entry.id}.${id}`) },
+        /**
+         * (API 3) A box source for the prompt: `{ id, boxes(doc, ctx) }` answers boxes in image pixels (or null) for
+         * every run of a recipe that takes boxes (`ctx.schema`, "flux3" today); the core maps them into the frame and
+         * sends them with the request (docs/PLUGINS.md "Generate").
+         */
+        generate: { register: (def) => registerGenerate(entry, def), unregister: (id) => unregisterGenerate(entry, id.includes(".") ? id : `${entry.id}.${id}`) },
 
         events: {
             /**
@@ -733,6 +785,7 @@ function removeRegs(entry) {
     for (const id of Array.from(entry.regs.panels.keys())) unregisterPanel(entry, id);
     for (const id of Array.from(entry.regs.actions.keys())) unregisterAction(entry, id);
     for (const id of Array.from(entry.regs.tools.keys())) unregisterTool(entry, id);
+    for (const id of Array.from(entry.regs.generate.keys())) unregisterGenerate(entry, id);
     for (const id of Array.from(entry.regs.commands)) commands.unregister(id, entry.id);
     for (const off of entry.regs.listeners) { try { off(); } catch (_) { /* ignore */ } }
     entry.regs = newRegs();
@@ -784,8 +837,8 @@ export function listPlugins(fresh) {
             source: p.source, dir: p.dir, enabled: !!p.enabled, loaded: !!(entry && entry.loaded), error: (entry && entry.error) || p.error || null, errors: entry ? entry.errors.slice() : [],
             registered: entry ? {
                 filters: Array.from(entry.regs.filters), panels: Array.from(entry.regs.panels.keys()), actions: Array.from(entry.regs.actions.keys()).map((id) => ({ id, label: entry.regs.actions.get(id).def.label })),
-                tools: Array.from(entry.regs.tools.keys()), commands: Array.from(entry.regs.commands),
-            } : { filters: [], panels: [], actions: [], tools: [], commands: [] },
+                tools: Array.from(entry.regs.tools.keys()), commands: Array.from(entry.regs.commands), generate: Array.from(entry.regs.generate.keys()),
+            } : { filters: [], panels: [], actions: [], tools: [], commands: [], generate: [] },
         });
     }
     return out;
@@ -821,5 +874,5 @@ host.on("removed", ({ editor }) => {
 });
 host.on("tool", toolChanged);
 
-export const pluginHost = { pointer, key, overlay, runAction, list: () => listPlugins(), reload: reloadPlugins, load: loadPlugins, setEnabled, entries: () => plugins };
+export const pluginHost = { pointer, key, overlay, boxes: collectBoxes, runAction, list: () => listPlugins(), reload: reloadPlugins, load: loadPlugins, setEnabled, entries: () => plugins };
 host.plugins = pluginHost;

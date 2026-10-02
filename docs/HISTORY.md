@@ -31,6 +31,25 @@ The block of 2026-09-29 (night, item 26 built, S1 to S5) was moved here late the
 The block of 2026-10-01 (just after midnight, 0.1.35 released; with the day's notes for 0.1.36) was moved here the same
 night, when 0.1.36 was released with FLUX 3 Image.
 
+The paragraph of 2026-10-02 ("s1 ausplan", item 28 S1 built) was moved here the same day, when S2 was built (CLAUDE.md
+keeps the 0.1.36 block and the S2 paragraph).
+
+## This session (2026-10-02, "s1 ausplan": item 28 S1 built, the selection as a FLUX 3 box)
+
+**This session (2026-10-02, "s1 ausplan"):** item 28 S1 as `docs/PLAN_BOXES.md` §8 plans it, one commit, not
+released (CHANGELOG Unreleased). `renderer/editor/boxes.js` (frameOf / toFrame / selectionBox / smallBox, pure),
+`electron/main/providers/boxes.js` (checkBoxes, the 0-1000 grid, rowsFlux3 for every kind, instructionFlux3,
+applyBoxes), `index.js` `edit()` applies the rows after `resolveNames` when `req.boxes` holds something (no
+`options.boxes`: dropped with a note; the log's record and the answer carry `boxes: n`), `host.runProvider` builds the
+box from `editor.selectionBounds()` in the crop behind the recipe's new "Selection as box" row (`selection_box`,
+BOOLEAN, off; the recipe's `text` shape lists its rows explicitly so the dialog does not inherit it), `generateNew`
+sends `boxes: []`. `tools/boxes_test.js` 63 checks, `flux3_test.js` 101, `recipes_test.js` 51, lint and types clean;
+looked at once in the app over CDP with a loopback variant declaring `options.boxes` (the row off and on, "Sent with 1
+box.", the rows in `prompt_sent` and the log, the small-selection note). Departures from the plan in the plan's
+status paragraph. **Not done:** a live FLUX 3 call (§6.1-6.3 need the user's key and credits: the same edit with and
+without the box, about 10 credits each at 2k); the `generate` command's answer has no `boxes` field (the status line
+and `prompt_sent` show it). Next session: the live checks with the user, then S2 (`docs/PLAN_BOXES.md` §9).
+
 ## Where things stand (2026-10-01, just after midnight: 0.1.35 released, the post live)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,

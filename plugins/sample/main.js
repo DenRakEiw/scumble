@@ -6,6 +6,7 @@
 //   actions  Desaturate active layer, Selection to new layer (Plugins menu)
 //   tool     Colour probe (K): hover to read the colour under the cursor
 //   command  sample.mean_color for scripts and MCP
+//   generate a box source (API 3): one box in the middle of the frame when sample.box switched it on
 
 let probeCache = null;   // { doc, tiles: Map "tx,ty" -> ImageData } the flattened pixels of the 256 px squares the probe went over
 
@@ -160,6 +161,28 @@ export function activate(scumble) {
             if (!n) return { pixels: 0 };
             const c = [r, g, b].map((v) => Math.round(v / n));
             return { pixels: n, rgb: c, hex: "#" + c.map((v) => v.toString(16).padStart(2, "0")).join(""), selection: sel ? sel.bounds : null };
+        },
+    });
+
+    // ---- generate: a box source (API 3) ----------------------------------------------------------
+    // Boxes in the prompt for a recipe that takes them (FLUX 3 Image): the source answers boxes in image pixels (the
+    // shape in docs/PLUGINS.md "Generate"), the app maps them into the crop and writes the model's rows. Here one fixed
+    // box in the middle of the run's frame, only while the plugin's `box` flag is on (off by default; the command
+    // sample.box switches it), so a run is never changed by accident.
+    scumble.generate.register({
+        id: "box",
+        boxes(doc, ctx) {
+            if (!scumble.storage.get().box) return null;
+            const f = ctx.frame;
+            return [{ id: "sample_1", kind: "new", rect: [f.x + f.w / 4, f.y + f.h / 4, f.x + f.w * 3 / 4, f.y + f.h * 3 / 4], desc: "a sample box in the middle of the frame" }];
+        },
+    });
+    scumble.commands.register("box", {
+        description: "Switch the sample's box source on or off: on, every run of a recipe that takes boxes gets one box in the middle of the frame. Without `on` it answers the state.",
+        params: { on: { type: "boolean", description: "true switches the source on, false off" } },
+        run(doc, args) {
+            if (args && args.on != null) scumble.storage.set({ box: !!args.on });
+            return { on: !!scumble.storage.get().box };
         },
     });
 

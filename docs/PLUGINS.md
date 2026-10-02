@@ -2,9 +2,9 @@
 
 A plugin is a folder with a `plugin.json` and a JavaScript module. Scumble loads it at start
 (and on *Reload plugins*) and hands its `activate(scumble)` function one API object. With it
-the plugin reads and writes documents, runs the command core, and registers the four
-extension points: **filter types**, **side panels**, **menu actions** and **tools**, plus its
-own commands. Everything a plugin registers is tracked, so disabling it in *Settings ›
+the plugin reads and writes documents, runs the command core, and registers the five
+extension points: **filter types**, **side panels**, **menu actions**, **tools** and **box
+sources** for the prompt, plus its own commands. Everything a plugin registers is tracked, so disabling it in *Settings ›
 Plugins* or reloading takes all of it out again without a restart. Only JavaScript for now
 (Python plugins as a stdio process come later, see `docs/BRIEF.md` §5).
 
@@ -29,7 +29,7 @@ plugin id (letters, digits, `-`, `_`); every registered thing is prefixed with i
   "author": "you",
   "homepage": "https://...",
   "entry": "main.js",
-  "registers": ["filter", "panel", "action", "tool", "command"],
+  "registers": ["filter", "panel", "action", "tool", "command", "generate"],
   "enabledByDefault": true
 }
 ```
@@ -59,7 +59,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 
 | member | what |
 |---|---|
-| `version` | API version, `2` (2 added `documents.data`; a plugin that needs it checks `scumble.version >= 2`) |
+| `version` | API version, `3` (2 added `documents.data`, 3 `generate.register`; a plugin that needs one checks `scumble.version >= 3`) |
 | `id`, `name`, `manifest` | from `plugin.json` |
 | `url(rel)` | URL of a file in the plugin folder |
 | `log(...)`, `warn(...)` | console with the plugin id |
@@ -76,6 +76,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `panels.register(def)` / `unregister(id)` | side panels |
 | `actions.register(def)` / `unregister(id)` / `run(id)` | Plugins menu entries |
 | `tools.register(def)` / `unregister(id)` | tools in the tool column |
+| `generate.register(def)` / `unregister(id)` | (API 3) a box source for the prompt: `{ id, boxes(doc, ctx) }` answers boxes in image pixels for a run of a recipe that takes them (FLUX 3 Image); see "Generate" |
 | `events.on(type, fn)` | `built`, `activate`, `changed`, `tool`, `removed`, `theme` (a skin was switched: `fn({ doc: null, skin })`, `skin` the id or `""`; read the tokens with `getComputedStyle(document.documentElement)`, docs/SKINS.md), `geometry` (the whole picture changed its geometry, before its `changed`: `fn({ doc, kind, m, op, from, to })`; `kind` `"turn"` (a quarter or half turn or a mirror), `"crop"`, `"extend"`, `"resize"` (also an upscale) or `"straighten"` (a turn by any angle about the old picture's centre, then a crop); `m` always: `[a, b, c, d, e, f]`, the canvas matrix from old to new image coordinates (x' = a x + c y + e, y' = b x + d y + f; continuous, pixel (x, y) covers x..x+1), e.g. a crop of `left` / `top` px `[1, 0, 0, 1, -left, -top]`, an extend `[1, 0, 0, 1, left, top]`, a resize of W x H to w x h `[w / W, 0, 0, h / H, 0, 0]`, a clockwise quarter turn `[0, 1, -1, 0, H, 0]`, `"h"` `[-1, 0, 0, 1, W, 0]`, `"v"` `[1, 0, 0, -1, 0, H]`, a straighten by t degrees translate(-x, -y) after the rotation by t about (W / 2, H / 2); a length scales by sqrt(\|a d - b c\|); `op` only for a turn: `1` clockwise, `-1`, `2` a half turn, `"h"`, `"v"`; `from` / `to` `{ width, height }`; map your own image coordinates in `documents.data(doc)` and in your filter layers' params by `m` with new objects, never by changing the old ones: undo and redo send no event, the step puts both back by itself); `fn({ doc, ... })`; returns `off()` |
 | `storage.get()` / `storage.set(patch)` | a small persistent object per plugin (`settings.json`): `get()` returns a copy synchronously (loaded before `activate`), `set(patch)` merges at once and writes through in the background |
 | `documents.data(doc).get()` / `.set(patch)` | (API 2) a JSON object per plugin **and per document**: saved with the document in the session and in its `.scumble` file, where every file ref inside it (`{ filename, subfolder, type }`) is packed and comes back renamed if it had to be; `get()` returns a copy, `set(patch)` merges and marks the document changed. Data of a plugin that is off or missing rides along unchanged |
@@ -381,6 +382,48 @@ Registered as `<plugin>.<name>`, listed by `list_commands`, callable by other pl
 and MCP (`docs/MCP.md`; the tool name replaces `.` with `_`). `params` is the same schema the built-in commands use (`type`,
 `description`, `default`, `required`, `enum`).
 
+## Generate
+
+```js
+scumble.generate.register({
+    id: "boxes",
+    boxes(doc, ctx) {   // -> Box[] | null, or a promise of one
+        return [{ id: "knight_1", kind: "new", rect: [120, 80, 420, 400], desc: "a knight on a horse" }];
+    },
+});
+```
+
+(API 3) A **box source** for the prompt: some models take, with the instruction, a table of boxes that says where in
+the picture an element goes, which element to keep, move or remove, and which reference picture to place (FLUX 3
+Image reads such rows; `docs/RECIPES.md` "FLUX 3 Image", the plan in `docs/PLAN_BOXES.md`). Every run of a recipe
+whose variant declares `options.boxes` (Generate and Generate new) calls each registered source, in plugin order,
+and sends what they answer; a recipe that takes no boxes never calls them. The core, not the plugin, writes the
+model's rows: it knows the crop and the final order of the pictures, which a plugin writing text into the prompt
+would not.
+
+A box is in **image pixels** (the document's coordinates, `[l, t, r, b]`, right and bottom exclusive):
+
+```js
+{ id: "knight_1",                    // a lowercase name, an underscore and a number; unique in the run (a duplicate gets the next number)
+  kind: "new" | "keep" | "move" | "remove" | "from",
+  rect: [l, t, r, b],                // where the element goes (for remove: where it was)
+  src: [l, t, r, b] | null,          // keep / move / remove: where it is now; from: where it is in the reference layer (null: the whole layer)
+  layer: "L12",                      // from only: the reference layer's id (doc.layers() has it)
+  desc: "..." }                      // what it is, at most 400 characters
+```
+
+`ctx` says what the run is: `mode` `"edit"` or `"new"`, `recipe`, `provider`, `model`, `schema` (the rows' format,
+`"flux3"`), `frame` `{ x, y, w, h }` in image pixels (the crop an edit sends, the whole document for a new image: the
+new image is made at the requested size, so the fractions carry over), `selection` `{ x, y, w, h }` or null, and
+`references` `[{ index, layerId, name, frame }]`, the reference layers this run sends in the order the model gets them
+(a `from` box names one of them by `layer`). The core maps every box into fractions of the frame and drops one that
+lies outside it with a note in the status line (and in `generate`'s `notes`); a `from` box naming a layer this run
+does not send refuses the run, like an `@img` token nobody can resolve. A source that throws or answers a malformed
+box is reported in *Settings › Plugins* and skipped; the run goes on without its boxes. The box rows go out in the
+prompt, so the log and `generate`'s `prompt_sent` show them, and the answer's `boxes` field counts them. The built-in
+"Selection as box" row of the FLUX 3 recipe is the first source; `plugins/sample` has a second (`sample.box` switches
+it on) that reads as a template.
+
 ## Settings › Plugins
 
 The list shows every plugin with its state (loaded, disabled, error with the first lines of
@@ -399,13 +442,16 @@ field, `"plugin"` or `"skin"`; a skin is always `enabled: false` and never `load
 
 `python tools/commands_test.py` (app running with `--remote-debugging-port=9555`) exercises the
 command core and the sample plugin: filter on the GPU and CPU path, panel, actions with undo,
-the tool through the pointer hooks, the command, reload and disable / enable.
+the tool through the pointer hooks, the command, reload and disable / enable, the box source
+through the core's `collectBoxes` (mapped into a stated frame, a duplicate id suffixed).
+`node tools/boxes_test.js` tests the mapping of plugin boxes itself in plain Node.
 `python tools/film_test.py` does the same for the film pack (`docs/FILM.md`): every filter on
 both paths, the commands, the control point tool with undo, the overlay, the panel.
 
 ## Built-in plugins
 
-- `plugins/sample`: one of every extension point, the template (~150 lines).
+- `plugins/sample`: one of every extension point, the template (~190 lines); its box source
+  answers one box in the middle of the frame while `sample.box` has switched it on (off by default).
 - `plugins/film`: the film pack (`docs/FILM.md`), the first real plugin: eleven filter types
   with shader and CPU paths, a tool with overlay and keys, a thumbnail panel, actions,
   commands. It imports the app's `GRAIN_PRESETS` by absolute path (`/editor/inpaint_filters.js`),

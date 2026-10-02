@@ -1351,6 +1351,23 @@ export const host = {
      * patch that is stored in the file mirror as a result and added like a result from
      * the node. No ComfyUI involved. `opts.refs`: the click's reference snapshot.
      */
+    /**
+     * What a plugin's box source sees (scumble.generate, docs/PLUGINS.md "Generate"; docs/PLAN_BOXES.md §9): the run's
+     * frame in image pixels (the crop of an edit, the document of Generate new), the selection's box, and the pictures
+     * of this run as the {@ref:i} markers count them (`sent`: a null for the Original, which takes an index and has no
+     * layer; then the reference layers' ids), each with the layer's frame in the picture for a from box's source.
+     */
+    boxContext(editor, { mode, recipe, provider, model, schema, frame, bounds, sent }) {
+        const references = [];
+        (sent || []).forEach((id, index) => {
+            if (!id) return;
+            const l = editor.layers.find((x) => x.id === id);
+            references.push({ index, layerId: id, name: l ? l.name : id, frame: l ? { x: l.x || 0, y: l.y || 0, w: l.w || 0, h: l.h || 0 } : null });
+        });
+        const selection = bounds ? { x: bounds[0], y: bounds[1], w: bounds[2] - bounds[0] + 1, h: bounds[3] - bounds[1] + 1 } : null;
+        return { mode, recipe: recipe ? recipe.id : null, provider: provider || null, model: model || null, schema: schema || null, frame, selection, references };
+    },
+
     async runProvider(editor, opts = {}) {
         const r = this.recipe;
         if (!editor.base) throw new Error("Load an image first.");
@@ -1361,6 +1378,7 @@ export const host = {
         this.refPrompt(editor, snap, "edit");
         editor.lastSentPrompt = null;
         editor.lastRunNotes = [];
+        editor.lastSentBoxes = 0;
         const token = { provider: r.provider, label, started: Date.now(), editor };
         editor.providerPending = token;
         this._providerRuns.add(token);
@@ -1387,12 +1405,21 @@ export const host = {
             // behind the variant's `options.boxes` and the recipe's "Selection as box" row
             const preNotes = [];
             const boxes = [];
-            if (shape.options && typeof shape.options.boxes === "string" && info.has_selection && boolOf(params.selection_box)) {
-                const b = selectionBox(editor.selectionBounds(), frameOf(info), { prompt: named.prompt, pair: named.pairs[0] || null });
+            const takesBoxes = !!(shape.options && typeof shape.options.boxes === "string");
+            const selBounds = takesBoxes && info.has_selection ? editor.selectionBounds() : null;
+            if (takesBoxes && selBounds && boolOf(params.selection_box)) {
+                const b = selectionBox(selBounds, frameOf(info), { prompt: named.prompt, pair: named.pairs[0] || null });
                 if (b) {
                     boxes.push(b);
                     if (smallBox(b.rect, info.emitted)) preNotes.push(`The selection is small for a box (under ${SMALL_PX} px a side as sent): the model may not place anything in it.`);
                 }
+            }
+            // the plugins' boxes (S2): every scumble.generate source, in image pixels, mapped into the crop by the core
+            if (takesBoxes && this.plugins) {
+                const ctx = this.boxContext(editor, { mode: "edit", recipe: r, provider: shape.provider, model: shape.model, schema: shape.options.boxes, frame: frameOf(info), bounds: selBounds, sent: [...Array(original).fill(null), ...snap.refIds] });
+                const got = await this.plugins.boxes(editor, ctx, boxes);
+                boxes.push(...got.boxes);
+                preNotes.push(...got.notes);
             }
             const request = {
                 provider: shape.provider, model: shape.model, kind: shape.kind, fields: shape.fields, options: shape.options,
@@ -1427,6 +1454,7 @@ export const host = {
         }).filter(Boolean);
         if (sentAs.length) editor.setStatus(`${editor.status} Named in the prompt: ${sentAs.join(", ")}.`);
         const sentBoxes = res.boxes > 0 ? Math.floor(res.boxes) : 0;
+        editor.lastSentBoxes = sentBoxes;
         if (sentBoxes) editor.setStatus(`${editor.status} Sent with ${sentBoxes} box${sentBoxes === 1 ? "" : "es"}.`);
         if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`);
         return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout, prompt: editor.lastSentPrompt, refs: res.refs || [], pairs: named.pairs, notes: editor.lastRunNotes, info: res.info || null, boxes: sentBoxes };
@@ -1603,21 +1631,34 @@ export const host = {
         const genParams = { ...this.providerParams(editor, opts.background ? { background: opts.background } : null), ...(t.fixed || {}) };
         const cutout = this.wantsTransparent(genParams);
         let res, request, references = [];
+        const preNotes = [];
         try {
             // the pixels are read now, before the first await (referenceBytes)
             references = refIds.length ? await referenceBytes(editor, refIds) : [];
             const withRefs = references.length > 0;
             editor.setStatus(`Asking ${label} for a new ${width} × ${height} image${withRefs ? ` with ${references.length} reference image${references.length > 1 ? "s" : ""}` : ""}${cutout ? " on a transparent ground" : ""} ...`);
+            const model = (withRefs && tr.model) || t.model;
+            const options = withRefs && tr.options ? { ...(r.options || {}), ...tr.options } : r.options || null;
+            // the plugins' boxes (item 28 S2) when the variant takes them: a new image has no selection, so the boxes
+            // come from scumble.generate sources alone, drawn on the document (the frame; the new image is made at the
+            // requested size, so the fractions carry over, stretched when the aspect differs)
+            let boxes = [];
+            if (options && typeof options.boxes === "string" && this.plugins) {
+                const frame = { x: 0, y: 0, w: editor.width || width, h: editor.height || height };
+                const got = await this.plugins.boxes(editor, this.boxContext(editor, { mode: "new", recipe: r, provider: r.provider, model, schema: options.boxes, frame, bounds: null, sent: refIds }), []);
+                boxes = got.boxes;
+                preNotes.push(...got.notes);
+            }
             request = {
-                provider: r.provider, model: (withRefs && tr.model) || t.model, kind: "text",
+                provider: r.provider, model, kind: "text",
                 prompt: named.prompt, negative: named.negative,
                 seed: opts.seed != null ? opts.seed : editor.genSettings.seed,
                 width, height, aspect: opts.aspect || null,
                 image: null, mask: null, maskAlpha: null, references, original: 0,
                 refName: tr.name || (r.refs && r.refs.name) || null, refsMax: withRefs ? tr.max || null : null,
-                fields: r.fields || null, options: withRefs && tr.options ? { ...(r.options || {}), ...tr.options } : r.options || null,
+                fields: r.fields || null, options,
                 params: genParams,
-                boxes: [],   // a new image has no selection; plugin boxes come with S2 (docs/PLAN_BOXES.md §9)
+                boxes,
             };
             res = await providerEdit(request);
         } finally {
@@ -1633,18 +1674,19 @@ export const host = {
         // the reference layers stay (they name what the prompt refers to), every other layer goes with the old base
         const swap = await editor.setBaseFromCanvas(c, { keepRefs: true });
         const gotAlpha = cutout && transparentPixels(c);
-        const notes = res.notes || [];
+        const notes = [...preNotes, ...(res.notes || [])];
         const sentAs = named.pairs.map((p) => {
             const got = (res.refs || []).find((x) => x.ref === p.ref);
             return got ? `${p.label} → ${got.name}` : null;
         }).filter(Boolean);
         const kept = swap && swap.kept ? swap.kept : 0, dropped = swap && swap.dropped ? swap.dropped : 0;
         const stay = kept ? ` The reference layer${kept > 1 ? "s stay" : " stays"}${dropped ? `, ${dropped} other layer${dropped > 1 ? "s were" : " was"} replaced` : ""}.` : "";
-        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image${cutout ? (gotAlpha ? " with a transparent background" : " (the model returned no transparency)") : ""}.${sentAs.length ? ` Named in the prompt: ${sentAs.join(", ")}.` : ""}${stay}${notes.length ? " " + notes.join(" ") : ""}`);
+        const sentBoxes = res.boxes > 0 ? Math.floor(res.boxes) : 0;
+        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image${cutout ? (gotAlpha ? " with a transparent background" : " (the model returned no transparency)") : ""}.${sentAs.length ? ` Named in the prompt: ${sentAs.join(", ")}.` : ""}${sentBoxes ? ` Sent with ${sentBoxes} box${sentBoxes === 1 ? "" : "es"}.` : ""}${stay}${notes.length ? " " + notes.join(" ") : ""}`);
         const labels = snap.labels;
         return {
             provider: r.provider, model: request.model, seconds: res.seconds, width: c.width, height: c.height, transparent: !!gotAlpha,
-            prompt: res.prompt != null ? res.prompt : named.prompt, note: notes.join(" "), notes, info: res.info || null,
+            prompt: res.prompt != null ? res.prompt : named.prompt, note: notes.join(" "), notes, info: res.info || null, boxes: sentBoxes,
             references: refIds.map((id, i) => {
                 const got = (res.refs || []).find((x) => x.ref === i);
                 return { label: "img" + labels.get(id), id, sentAs: got ? got.name : null };
@@ -1816,6 +1858,7 @@ export const host = {
         if (upscale && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
         editor.lastSentPrompt = null;
         editor.lastRunNotes = [];
+        editor.lastSentBoxes = 0;   // a local recipe takes no boxes (docs/PLAN_BOXES.md: FLUX 3 Image and Ideogram 4 only)
         // an upscale's canvas state carries no references (upscaleState), so none is read or uploaded for it; a reference
         // past the recipe's slots is not uploaded either
         const sopts = upscale ? { refIds: [], prompt: texts.prompt, negative: texts.negative } : { refIds: snap.refIds.slice(0, early.lay.kept), prompt: snap.prompt, negative: snap.negative };

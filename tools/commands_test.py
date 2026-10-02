@@ -307,6 +307,30 @@ if (!editor.toolButtons["sample.probe"]) throw new Error("tool button not back")
 if ((await c("list_layers")).layers.length !== n0) throw new Error("layer count changed");
 return { loaded: s.loaded, registered: s.registered };
 """),
+    # item 28 S2 (docs/PLAN_BOXES.md §9): a plugin's box source through the core's collectBoxes. The loopback provider
+    # declares no options.boxes, so a run cannot carry them here: the source is called with a fake context instead,
+    # off by default, one box on, mapped into fractions of the frame, a duplicate id suffixed, switched off again.
+    ("generate_boxes", """
+const P = await import("./plugins.js");
+if (P.API_VERSION < 3) throw new Error("API " + P.API_VERSION);
+const ctx = { mode: "edit", recipe: "x", provider: "bfl", model: "flux-3-image", schema: "flux3", frame: { x: 100, y: 50, w: 800, h: 600 }, selection: null, references: [] };
+if ((await c("sample.box")).on) throw new Error("the sample's box source is on by default");
+let got = await P.collectBoxes(editor, ctx, []);
+if (got.boxes.length !== 0 || got.notes.length !== 0) throw new Error("boxes with the flag off: " + JSON.stringify(got));
+await c("sample.box", { on: true });
+try {
+    got = await P.collectBoxes(editor, ctx, []);
+    const want = [{ id: "sample_1", kind: "new", rect: [0.25, 0.25, 0.75, 0.75], src: null, ref: null, desc: "a sample box in the middle of the frame" }];
+    if (JSON.stringify(got.boxes) !== JSON.stringify(want)) throw new Error("mapped box: " + JSON.stringify(got));
+    got = await P.collectBoxes(editor, ctx, [{ id: "sample_1" }]);
+    if (got.boxes.length !== 1 || got.boxes[0].id !== "sample_2") throw new Error("duplicate id not suffixed: " + JSON.stringify(got.boxes));
+    const s = (await c("list_plugins")).plugins.find((p) => p.id === "sample");
+    if (!s.registered.generate || !s.registered.generate.includes("sample.box")) throw new Error("the source is not listed: " + JSON.stringify(s.registered));
+} finally { await c("sample.box", { on: false }); }
+if ((await c("sample.box")).on) throw new Error("still on");
+if ((await P.collectBoxes(editor, ctx, [])).boxes.length) throw new Error("boxes after switching off");
+return { box: got.boxes[0], version: P.API_VERSION };
+"""),
     # Files above 64 MB take the editor's streaming upload route. That route has to land in
     # the local mirror like every other upload: proxied to ComfyUI instead, loading a large
     # image answered 502 with the server down, and the view found nothing afterwards.

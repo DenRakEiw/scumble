@@ -11,6 +11,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   with @img1, that this reference goes into the box. The status line says "Sent with 1 box.", the log keeps the
   prompt as it went out, and a very small selection gets a note, since the model often leaves a box under about 40
   pixels empty.
+- **Plugins can supply boxes for the prompt.** Plugin API 3 adds `scumble.generate.register({ id, boxes(doc, ctx) })`:
+  a plugin answers boxes in image pixels (new, keep, move, remove, or a reference layer placed) for every Generate and
+  Generate new run of a recipe that takes boxes, and Scumble maps them into the crop, numbers duplicate ids, writes the
+  model's rows and sends them with the prompt. A box outside the crop is left out with a note; a box that names a
+  reference layer the run does not send stops the run before anything is sent. The `generate` and `generate_new`
+  commands answer `boxes`, how many went. The sample plugin shows a source (`sample.box` switches it on);
+  the box editor itself comes as a plugin next.
 
 ## 0.1.36 — 2026-10-01
 
