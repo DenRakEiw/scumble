@@ -42,6 +42,39 @@ keeps the 0.1.36 block and the S2 paragraph).
 
 The paragraph of 2026-10-02 (item 28 S3c) was moved here the same day, when S3d was built.
 
+The paragraph of 2026-10-02 (item 28 S3d) was moved here the same day, when S3e was built.
+
+## 2026-10-02 (item 28 S3d, moved here the same day)
+
+**This session (2026-10-02, "baue weiter", the sixth of the day):** item 28 S3d as `docs/PLAN_BOXES.md` §10 plans it
+(with the user's answers: a row of its own under the prompt field, the first box turns it on), one commit here and one
+in the node repo (`js/host.js`: `boxSwitch() { return null; }`), not released (CHANGELOG Unreleased: the S1 entry is now
+the switch's). The S3c paragraph is in `docs/HISTORY.md`. Core: `genSettings.boxes` (GEN_DEFAULTS false, saved with
+`gen`), the row `ed.boxesRow` in `inpaint_modal.js` `buildPrompt` ("Boxes · N", hint "the selection goes as one box" /
+"not sent"), `syncBoxesRow()` (from `syncGenControls`, `host.applyRecipe`, `host.changed`, a plugin loaded or
+unloaded), `host.boxSwitch(editor)` -> `{ takes, count }` (`takesBoxes(r)`: `options.boxes` or `text.refs.options.boxes`),
+`set_generation boxes`, `status` `generation.boxes`. Runs: off, no source asked and a note "The document's N boxes did
+not go"; on, the sources first, then S1's selection box only when no source holds a box (`pluginHost.countBoxes`, the
+new optional sync `count(doc)` of `scumble.generate.register`, API 3 unchanged): one deviation from the plan, so a box
+the crop leaves out does not turn into a selection box. S1's `selection_box` row is gone from `recipes/flux3.json`
+(`boolOf` with it). Plugin: `add()` turns the switch on for a document's first box (`switchOn`, a status note that
+names the switch, or says it waits for a recipe that takes boxes; `switched_on` in the commands' answers; undo, redo
+and open never do), the overlay dashed at half strength while off, the panel note "Not sent ..." and no crop warnings
+while off, `boxes.list` answers `switch`. Tests: `boxes_test.py` step `the_boxes_switch` (loopback recipe with
+`options.boxes`, the sources counted through a wrapped `host.plugins`, the overlay through a recording context, the
+switch through a `.scumble` save and open), the add step expects `switched_on` and the note; `flux3_test.js` 101 checks;
+gates `boxes`, `commands`, `types` green `--offline` (labels `s3d2`, `s3d3`), `build_node.py --check` only the known
+"differs" lines, lint clean, one look over CDP (on and off). COMMANDS.md regenerated. A review (two readers, every
+finding checked by a third) found three, all fixed: the row did not follow a plugin turned on or off, the first box's
+note named a switch that is hidden under a recipe without boxes, and the test's hide check could not fail; one more
+was refuted (the switch outside the box's undo step is the plan: undoing the first box leaves it on, the manual says
+so). Also this session, on the user's word: a Reddit report in `docs/BUGS.md` (the local Flux.2 Klein example fails
+with "mat1 and mat2 shapes cannot be multiplied (1024x5120 and 12288x4096)"; read, not run: a text encoder that does
+not fit Klein 9B, or an old ComfyUI; ask for the log first), its own commit. **Not done:** the live FLUX 3 checks
+§6.1-6.3 (the user's key); S3e; S4 (optional); the node repo's build is still behind (only its `host.js` changed).
+Next: S3e (position words in the caption, ids from the description, the missing-description warning, the tool's hit
+order) or the live checks with the user, then a release of item 28 on the user's word.
+
 ## 2026-10-02 (item 28 S3c, moved here the same day)
 
 **This session (2026-10-02, "baue weiter", the fifth of the day):** item 28 S3c as `docs/PLAN_BOXES.md` §10 plans it,

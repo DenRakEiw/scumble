@@ -707,19 +707,24 @@ takes body, `layout` and `textLayout` from `flux3.js` and keeps its own submit a
   the document (`count` 0) and none answered one, an edit sends the selection as one box (S1): `host.runProvider`
   measures the selection's bounds in the crop (`renderer/editor/boxes.js`: fractions of the frame, clamped to it;
   nothing when it lies outside) and puts
-  `request.boxes: [{ id: "edit_1", kind: "new", rect, src: null, ref: null, desc: <the prompt> }]` into the request;
+  `request.boxes: [{ id: "red_door_1", kind: "new", rect, src: null, ref: null, desc: <the prompt> }]` into the request
+  (the id from the prompt's first two telling words, `edit_1` when it has none);
   with an `@img` token in the prompt the box is `kind: "from"` with that reference's index and `src: [0, 0, 1, 1]`
   (the whole reference picture goes into the selection). A box the crop leaves out still counts as held, so the
   selection does not go in its place; Generate new has no selection and sends only the sources' boxes. Main's
   `electron/main/providers/boxes.js` writes the rows
   after `resolveNames` and before `body()`, where the pictures' final names are known: the prompt, then one sentence
-  per box the prompt does not name by `<id>` ("In <ref_image_0>, add <edit_1> in its box." / "place <edit_1> from
-  <ref_image_2> in its box."), a space and the JSON rows, each `[top, left, bottom, right]` on the docs' 0 to 1000
+  per box the prompt does not name by `<id>` with its description and its place by thirds of the frame ("In
+  <ref_image_0>, place a red door <red_door_1> at the top left." / "Place a lamp <lamp_1> from <ref_image_2> on the
+  right." / "Move the sofa <sofa_1> up and to the left, larger."; S3e), on an edit whose prompt is empty or one
+  box's own description closed by "Leave the rest of the picture as it is.", a space and the JSON rows, each
+  `[top, left, bottom, right]` on the docs' 0 to 1000
   grid of the crop (`ref_image_k` = the k-th picture sent, the crop 0). The rows know every kind the docs list (new,
   keep, move, remove, from; on a text run `{ id, bbox, desc }`, new only); the Boxes plugin's boxes and a plugin's
   own source go the same way. `prompt_sent`, `editor.lastSentPrompt` and the log carry the prompt as
-  sent, the log's record `boxes: n`, the status line "Sent with 1 box."; a selection under 48 px a side at the
-  emitted size adds a note (the docs: a 40 x 25 px element "often did not appear"). A recipe without
+  sent, the log's record `boxes: n`, the status line "Sent with 1 box."; a box that places something (the selection's,
+  a plugin's New, From or Move target) under 48 px a side at the emitted size adds a note (the docs: a 40 x 25 px
+  element "often did not appear"), and a New box without a description another. A recipe without
   `options.boxes` never gets a box from the renderer, and main drops boxes it is handed anyway with a note. Built
   from the docs; whether the box steers the model better than the green-fill tip is the user's live check
   (`docs/PLAN_BOXES.md` §6).

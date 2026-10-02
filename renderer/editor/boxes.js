@@ -4,15 +4,37 @@
 // pictures (which slot is ref_image_k). Pure functions, no DOM, no editor: tools/boxes_test.js imports this file.
 //
 // A box as the request carries it (`request.boxes`):
-//   { id: "edit_1",                     // /^[a-z][a-z0-9]*_[1-9][0-9]*$/, unique per request
+//   { id: "edit_1",                     // BOX_ID (red_scarf_1), unique per request
 //     kind: "new" | "keep" | "move" | "remove" | "from",
 //     rect: [l, t, r, b],               // fractions 0..1 of the frame: the target
 //     src: [l, t, r, b] | null,         // keep / move / remove: where it is in the frame; from: where it is in the reference
 //     ref: null | i,                    // from: the reference's index as the {@ref:i} markers count it (0-based, the Original included)
 //     desc: "..." }                     // at most DESC_MAX characters, newlines folded
 
-/** The shape of a box id: a lowercase name, an underscore and a number (the docs' `<knight_1>`). */
-export const BOX_ID = /^[a-z][a-z0-9]*_[1-9][0-9]*$/;
+/**
+ * The shape of a box id: lowercase words joined by underscores, then a number (the docs' `<knight_1>`, `red_scarf_2`);
+ * not a picture's name (`ref_image_1`), which the caption and the rows use for the pictures.
+ */
+export const BOX_ID = /^(?!ref_image_[0-9]+$)[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_[1-9][0-9]*$/;
+
+/** Words that say little about what a box holds, left out of an id made from its description. */
+const ID_STOP = new Set(("a an the this that these those some any each every of in on at to into onto from with without by for and or but as " +
+    "it its is are be was were here there very more less new please also then so ref " +
+    "add bring brighten change darken draw fill give insert lighten make paint place put recolor recolour render replace " +
+    "show swap turn use write move keep remove erase delete take let set").split(" "));
+
+/**
+ * The name part of an id made from a description (S3e): its first two telling words, lowercase, accents dropped,
+ * joined by an underscore ("A red scarf" -> "red_scarf", "make the tiger pink" -> "tiger_pink"); "" when it has none.
+ * An @img token, a {@...} marker and a <name> are not words of it.
+ */
+export function idWords(text) {
+    const s = String(text == null ? "" : text).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+        .split(String.fromCharCode(223)).join("ss")
+        .replace(/@img[0-9]+|\{@[^}]*\}|<[^>]*>/g, " ");
+    const words = s.split(/[^a-z0-9]+/).filter((w) => /^[a-z]/.test(w) && !ID_STOP.has(w));
+    return words.slice(0, 2).map((w) => w.slice(0, 16)).join("_");
+}
 
 /** The longest description a box carries. */
 export const DESC_MAX = 400;
@@ -58,9 +80,11 @@ export function selectionBox(bounds, frame, { prompt = "", pair = null } = {}) {
     if (!rect) return null;
     const desc = foldDesc(prompt);
     const from = pair && Number.isInteger(pair.ref) && pair.ref >= 0;
+    // named after the prompt's words (door_red_1), so the caption names something the model can read (S3e)
+    const id = `${idWords(desc) || "edit"}_1`;
     return from
-        ? { id: "edit_1", kind: "from", rect, src: [0, 0, 1, 1], ref: pair.ref, desc }
-        : { id: "edit_1", kind: "new", rect, src: null, ref: null, desc };
+        ? { id, kind: "from", rect, src: [0, 0, 1, 1], ref: pair.ref, desc }
+        : { id, kind: "new", rect, src: null, ref: null, desc };
 }
 
 /** The kinds a box may have (main's boxes.js keeps the same set). */
@@ -102,7 +126,7 @@ export function pluginBoxes(list, ctx, { taken = [], nameOf = null } = {}) {
     list.forEach((b, i) => {
         const who = `Box ${b && typeof b.id === "string" ? b.id : "#" + (i + 1)}`;
         if (!b || typeof b !== "object") throw fail("shape", `${who}: not an object`);
-        if (typeof b.id !== "string" || !BOX_ID.test(b.id)) throw fail("shape", `${who}: the id is not a lowercase name, an underscore and a number (knight_1)`);
+        if (typeof b.id !== "string" || !BOX_ID.test(b.id)) throw fail("shape", `${who}: the id is not lowercase words and a number joined by underscores (knight_1, red_scarf_2)`);
         if (!KINDS.has(b.kind)) throw fail("shape", `${who}: the kind "${String(b.kind).slice(0, 20)}" is not new, keep, move, remove or from`);
         if (!pxRect(b.rect)) throw fail("shape", `${who}: rect is not [l, t, r, b] in image pixels with l < r and t < b`);
         if (b.desc != null && typeof b.desc !== "string") throw fail("shape", `${who}: desc is not a string`);
@@ -140,4 +164,16 @@ export function smallBox(rect, emitted) {
     if (!Array.isArray(rect) || !Array.isArray(emitted)) return false;
     const w = (rect[2] - rect[0]) * emitted[0], h = (rect[3] - rect[1]) * emitted[1];
     return w < SMALL_PX || h < SMALL_PX;
+}
+
+/** The ids of the boxes (request shape, fractions) that place something (New, From, Move's target) in a box under SMALL_PX a side as sent. */
+export function smallBoxes(boxes, emitted) {
+    return (boxes || []).filter((b) => b && (b.kind === "new" || b.kind === "from" || b.kind === "move") && smallBox(b.rect, emitted)).map((b) => b.id);
+}
+
+/** The note for small boxes (smallBoxes' ids), or null for none. */
+export function smallNote(ids) {
+    if (!ids || !ids.length) return null;
+    const one = ids.length === 1;
+    return `${one ? "Box" : "Boxes"} ${ids.join(", ")} ${one ? "is" : "are"} small (under ${SMALL_PX} px a side as sent): the model may not place anything there.`;
 }

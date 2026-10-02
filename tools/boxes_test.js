@@ -124,26 +124,61 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     // ---- 5. the instruction ----------------------------------------------------------------------------------------------
     console.log("\n--- 5. the instruction sentences ---");
     const ins = (prompt, bs, lay) => boxes.instructionFlux3(prompt, bs, lay, boxes.rowsFlux3({ ...r2, kind: lay === layT ? "text" : "edit", boxes: bs }, lay));
-    check("new: 'Add <edit_1> in its box.', opened with 'In <ref_image_0>,' since the prompt names no frame", ins("make the door red", [box()], lay2) === "make the door red In <ref_image_0>, add <edit_1> in its box.", short(ins("make the door red", [box()], lay2)));
-    check("from: 'Place <lamp_1> from <ref_image_2> in its box.'", ins("the lamp", [box({ id: "lamp_1", kind: "from", src: [0, 0, 1, 1], ref: 1 })], lay2) === "the lamp In <ref_image_0>, place <lamp_1> from <ref_image_2> in its box.", short(ins("the lamp", [box({ id: "lamp_1", kind: "from", src: [0, 0, 1, 1], ref: 1 })], lay2)));
+    const said = (what, got, want) => check(what, got === want, short(got));
+    said("new: the desc placed with its place in words, opened with 'In <ref_image_0>,' since the prompt names no frame; the prompt ends in a stop",
+        ins("make the door red", [box()], lay2), "make the door red. In <ref_image_0>, place a red door <edit_1> in the middle.");
+    said("from: 'place <desc> <id> from <ref_image_2>' and the place",
+        ins("the lamp", [box({ id: "lamp_1", kind: "from", src: [0, 0, 1, 1], ref: 1 })], lay2), "the lamp. In <ref_image_0>, place a red door <lamp_1> from <ref_image_2> in the middle.");
     const four = [box({ id: "sofa_1", kind: "move", src: [0, 0, 0.5, 0.5] }), box({ id: "cat_1", kind: "remove", src: [0, 0, 0.5, 0.5] }), box({ id: "log_1", kind: "keep", src: [0, 0, 0.5, 0.5] })];
-    check("move, remove, keep sentences, the first opened with the frame", ins("tidy up", four, lay2) === "tidy up In <ref_image_0>, move <sofa_1> to its new box. Remove <cat_1>. Keep <log_1> unchanged.", short(ins("tidy up", four, lay2)));
-    check("a box the prompt names by <id> gets no sentence", ins("put <edit_1> here, a red door", [box()], lay2) === "put <edit_1> here, a red door", short(ins("put <edit_1> here, a red door", [box()], lay2)));
-    check("a prompt that names <ref_image_0> gets no 'In' opener", ins("In <ref_image_0> paint the wall", [box()], lay2) === "In <ref_image_0> paint the wall Add <edit_1> in its box.", short(ins("In <ref_image_0> paint the wall", [box()], lay2)));
-    check("a text run gets no opener (no frame)", ins("a lighthouse", [box()], layT) === "a lighthouse Add <edit_1> in its box.", short(ins("a lighthouse", [box()], layT)));
-    check("an empty prompt is the sentences alone", ins("", [box()], lay2) === "In <ref_image_0>, add <edit_1> in its box.", short(ins("", [box()], lay2)));
+    said("move (the way it goes), remove (where it is), keep sentences, the first opened with the frame",
+        ins("tidy up", four, lay2), "tidy up. In <ref_image_0>, move a red door <sofa_1> down and to the right. Remove a red door <cat_1> at the top left. Keep a red door <log_1> as it is.");
+    said("a box the prompt names by <id> gets no sentence, and the user's prompt no closing", ins("put <edit_1> here, a red door", [box()], lay2), "put <edit_1> here, a red door");
+    said("a prompt that names <ref_image_0> gets no 'In' opener", ins("In <ref_image_0> paint the wall", [box()], lay2), "In <ref_image_0> paint the wall. Place a red door <edit_1> in the middle.");
+    said("a text run gets no opener and no closing (no frame)", ins("a lighthouse", [box()], layT), "a lighthouse. Place a red door <edit_1> in the middle.");
+    said("an empty prompt: the sentences and the closing", ins("", [box()], lay2), "In <ref_image_0>, place a red door <edit_1> in the middle. Leave the rest of the picture as it is.");
+    said("a prompt that is the box's own description (the selection's box) goes as it is, the box's sentence says only where, then the closing",
+        ins("A red door.", [box()], lay2), "A red door. In <ref_image_0>, the change goes in <edit_1> in the middle. Leave the rest of the picture as it is.");
+    said("a prompt the box's description repeats is never turned round ('remove the man' stays an instruction to remove)",
+        ins("remove the man", [box({ desc: "remove the man" })], lay2), "remove the man. In <ref_image_0>, the change goes in <edit_1> in the middle. Leave the rest of the picture as it is.");
+    said("a from box described by the prompt: its picture goes in the box",
+        ins("put image 3 here", [box({ kind: "from", src: [0, 0, 1, 1], ref: 1, desc: "put image 3 here" })], lay2), "put image 3 here. In <ref_image_0>, <ref_image_2> goes in <edit_1> in the middle. Leave the rest of the picture as it is.");
+    const long = Array.from({ length: 30 }, (_, i) => `word${i} of a long upsampled prompt`).join(", ");
+    const longCap = ins(long, [box({ desc: long.slice(0, 400) })], lay2);
+    check("a prompt past 400 characters (the box's desc cut at 400) goes once, whole, and the box says only where",
+        longCap === `${long}. In <ref_image_0>, the change goes in <edit_1> in the middle. Leave the rest of the picture as it is.` && long.length > 400, short(longCap));
+    said("an opening article 'A' is lowered like any capital", ins("", [box({ desc: "A red scarf" })], lay2), "In <ref_image_0>, place a red scarf <edit_1> in the middle. Leave the rest of the picture as it is.");
+    said("a desc that reads as an instruction goes as it is (its capital lowered)", ins("", [box({ desc: "Make the tiger pink." })], lay2), "In <ref_image_0>, make the tiger pink <edit_1> in the middle. Leave the rest of the picture as it is.");
+    said("an acronym keeps its case; a New box without a desc fills the area", ins("", [box({ desc: "NASA logo" }), box({ id: "edit_2", desc: "" })], lay2),
+        "In <ref_image_0>, place NASA logo <edit_1> in the middle. Fill the area <edit_2> in the middle so it fits the picture. Leave the rest of the picture as it is.");
+    said("move: the kind's own verb is not said twice; up and to the left, larger (four times the area)",
+        ins("", [box({ id: "lamp_1", kind: "move", src: [0.6, 0.6, 0.9, 0.9], rect: [0, 0, 0.6, 0.6], desc: "Move the lamp" })], lay2), "In <ref_image_0>, move the lamp <lamp_1> up and to the left, larger. Leave the rest of the picture as it is.");
+    said("move: a shift under a tenth of the frame goes 'to its new box'; remove drops 'erase'; keep and an empty desc say 'the element'",
+        ins("x", [box({ id: "lamp_1", kind: "move", src: [0.4, 0.4, 0.6, 0.6], rect: [0.45, 0.4, 0.65, 0.6], desc: "" }), box({ id: "cat_1", kind: "remove", src: [0.7, 0, 1, 0.3], desc: "erase the cat" }), box({ id: "log_1", kind: "keep", src: [0, 0, 0.5, 0.5], desc: "" })], lay2),
+        "x. In <ref_image_0>, move the element <lamp_1> to its new box. Remove the cat <cat_1> at the top right. Keep the element <log_1> as it is.");
+    said("a from box without a desc: what the picture shows", ins("", [box({ id: "lamp_1", kind: "from", src: [0, 0, 1, 1], ref: 1, desc: "", rect: [0, 0.7, 0.3, 1] })], lay2),
+        "In <ref_image_0>, place what <ref_image_2> shows as <lamp_1> at the bottom left. Leave the rest of the picture as it is.");
+    said("a prompt ending in ! or ? keeps its own stop", ins("Night!", [box()], lay2), "Night! In <ref_image_0>, place a red door <edit_1> in the middle.");
+    // the place in words: thirds of the frame, the middle of the box decides; over three quarters each way is "most of the picture"
+    const W5 = [[[0, 0, 1000, 1000], "over most of the picture"], [[0, 0, 200, 200], "at the top left"], [[800, 400, 1000, 600], "at the bottom"], [[400, 0, 600, 200], "on the left"],
+        [[400, 400, 600, 600], "in the middle"], [[0, 700, 300, 1000], "at the top right"], [[700, 800, 1000, 1000], "at the bottom right"], [[300, 0, 366, 100], "at the top left"], [[300, 400, 367, 600], "in the middle"], [[0, 0, 1000, 600], "on the left"], [[0, 0, 1000, 700], "in the middle"]];
+    check("whereWords: thirds of the frame, the edges of a third by the box's middle", W5.every(([g, w]) => boxes.whereWords(g) === w), short(W5.map(([g]) => boxes.whereWords(g))));
+    const Y5 = [[[0, 0, 500, 500], [500, 500, 1000, 1000], "down and to the right"], [[500, 500, 1000, 1000], [0, 0, 500, 500], "up and to the left"], [[400, 400, 600, 600], [400, 499, 600, 699], "to its new box"],
+        [[400, 400, 600, 600], [400, 500, 600, 700], "to the right"], [[400, 400, 600, 600], [200, 400, 400, 600], "up"], [[400, 400, 600, 600], [350, 350, 650, 650], "to its new box, larger"], [[300, 300, 700, 700], [400, 400, 600, 600], "to its new box, smaller"]];
+    check("wayWords: a tenth of the frame makes a direction, half the area again larger or smaller", Y5.every(([a, b, w]) => boxes.wayWords(a, b) === w), short(Y5.map(([a, b]) => boxes.wayWords(a, b))));
 
     // ---- 6. applyBoxes ---------------------------------------------------------------------------------------------------
     console.log("\n--- 6. applyBoxes ---");
     let a = boxes.applyBoxes({ ...r2, boxes: [box()] }, lay2);
-    check("the prompt: the instruction, a space, the JSON rows; one row; no notes", a.prompt === 'make the door red In <ref_image_0>, add <edit_1> in its box. [{"id":"edit_1","from":null,"src_bbox":null,"tgt_bbox":[250,250,750,750],"desc":"a red door"}]' && a.rows.length === 1 && eq(a.notes, []), short(a.prompt));
+    check("the prompt: the instruction, a space, the JSON rows; one row; no notes", a.prompt === 'make the door red. In <ref_image_0>, place a red door <edit_1> in the middle. [{"id":"edit_1","from":null,"src_bbox":null,"tgt_bbox":[250,250,750,750],"desc":"a red door"}]' && a.rows.length === 1 && eq(a.notes, []), short(a.prompt));
+    a = boxes.applyBoxes({ ...r2, prompt: "", boxes: [box({ desc: "" }), box({ id: "keep_1", kind: "keep", src: [0, 0, 0.5, 0.5], desc: "" }), box({ id: "edit_2", desc: "" })] }, lay2);
+    check("a New box without a description goes with a note naming it (a Keep box without one does not)", eq(a.notes, ["Boxes edit_1, edit_2 went without a description: the model guesses what goes there."]), short(a.notes));
     check("the rows parse back as JSON after the last space", eq(JSON.parse(a.prompt.slice(a.prompt.lastIndexOf(" [") + 1)), a.rows), "");
     e = throws(() => boxes.applyBoxes({ ...r2, options: { schema: "flux3" }, boxes: [box()] }, lay2));
     check("a variant without options.boxes refuses here (index.js never calls it then)", /^Boxes: no row format for "null"/.test(e), e);
     e = throws(() => boxes.applyBoxes({ ...r2, boxes: [box({ id: "bad id" })] }, lay2));
     check("the shape check runs first", /^Box bad id: the id is not/.test(e), e);
     a = boxes.applyBoxes({ ...r2, prompt: "image 3 goes {@ref:1}", boxes: [box({ kind: "from", src: [0, 0, 1, 1], ref: 1, desc: "{@ref:1}" })] }, lay2);
-    check("a marker left in the prompt stays (index.js resolved it before): the rows' desc is resolved", a.prompt.startsWith("image 3 goes {@ref:1} In <ref_image_0>, place <edit_1> from <ref_image_2> in its box. ") && a.rows[0].desc === "image 3", short(a.prompt));
+    check("a marker left in the prompt stays (index.js resolved it before): the rows' desc is resolved", a.prompt.startsWith("image 3 goes {@ref:1}. In <ref_image_0>, place image 3 <edit_1> from <ref_image_2> in the middle. ") && a.rows[0].desc === "image 3", short(a.prompt));
 
     // ---- 7. the renderer's module --------------------------------------------------------------------------------------
     console.log("\n--- 7. renderer/editor/boxes.js ---");
@@ -155,14 +190,24 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     check("toFrame: a rectangle outside the crop is null, a 1/1000-thin one too", R.toFrame([0, 0, 100, 50], frame) === null && R.toFrame([900, 700, 1000, 800], frame) === null && R.toFrame([300, 200, 300.4, 350], frame) === null, "");
     check("toFrame: a bad rectangle or frame is null", R.toFrame(null, frame) === null && R.toFrame([1, 2, 3], frame) === null && R.toFrame([0, 0, 1, 1], { x: 0, y: 0, w: 0, h: 0 }) === null && R.toFrame([NaN, 0, 1, 1], frame) === null, "");
     const sb = R.selectionBox([300, 200, 500, 350], frame, { prompt: "a red\ndoor" });
-    check("selectionBox: the bounds as editor.selectionBounds gives them (x1, y1 exclusive), kind new, the folded prompt as desc", eq(sb, { id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.5, 0.5], src: null, ref: null, desc: "a red door" }), short(sb));
+    check("selectionBox: the bounds as editor.selectionBounds gives them (x1, y1 exclusive), kind new, the folded prompt as desc, the id from its words", eq(sb, { id: "red_door_1", kind: "new", rect: [0.25, 0.25, 0.5, 0.5], src: null, ref: null, desc: "a red door" }), short(sb));
     const fb = R.selectionBox([300, 200, 500, 350], frame, { prompt: "put {@ref:1} here", pair: { label: "img1", id: "L3", ref: 1 } });
-    check("selectionBox with a pair: kind from, the reference's index, the whole picture as src, the markers kept in the desc", eq(fb, { id: "edit_1", kind: "from", rect: [0.25, 0.25, 0.5, 0.5], src: [0, 0, 1, 1], ref: 1, desc: "put {@ref:1} here" }), short(fb));
+    check("selectionBox with a pair: kind from, the reference's index, the whole picture as src, the markers kept in the desc; no telling words: edit_1", eq(fb, { id: "edit_1", kind: "from", rect: [0.25, 0.25, 0.5, 0.5], src: [0, 0, 1, 1], ref: 1, desc: "put {@ref:1} here" }), short(fb));
     check("selectionBox with a pair that has no picture (ref -1) is a new box", R.selectionBox([300, 200, 500, 350], frame, { prompt: "x", pair: { label: "img1", id: "L3", ref: -1 } }).kind === "new", "");
     check("selectionBox: no selection or a selection outside the crop is null", R.selectionBox(null, frame, { prompt: "x" }) === null && R.selectionBox([0, 0, 50, 20], frame, { prompt: "x" }) === null, "");
     check("the whole crop selected is [0, 0, 1, 1]", eq(R.selectionBox([100, 50, 900, 650], frame, { prompt: "x" }).rect, [0, 0, 1, 1]), "");
     check("smallBox: under 48 px a side at the emitted size", R.smallBox([0, 0, 0.04, 0.5], [1024, 880]) === true && R.smallBox([0, 0, 0.5, 0.05], [1024, 880]) === true && R.smallBox([0, 0, 0.05, 0.06], [1024, 880]) === false && R.SMALL_PX === 48, "");
     check("the id pattern and the desc limit are the same on both sides", R.BOX_ID.source === boxes.BOX_ID.source && R.DESC_MAX === boxes.DESC_MAX, "");
+    const IDS = [["red_scarf_1", true], ["knight_12", true], ["red_1", true], ["a_b_c_9", true], ["ref_1", true], ["ref_image_lamp_1", true], ["red__scarf_1", false], ["red_2b_1", false], ["Red_1", false], ["red_scarf", false], ["red_scarf_0", false], ["_red_1", false], ["ref_image_1", false], ["ref_image_12", false]];
+    check("BOX_ID: lowercase words joined by underscores, then a number, never a picture's name (ref_image_1) (both sides)", IDS.every(([id, ok]) => R.BOX_ID.test(id) === ok && boxes.BOX_ID.test(id) === ok), short(IDS.filter(([id, ok]) => R.BOX_ID.test(id) !== ok).map(([id]) => id)));
+    const WORDS = [["A red scarf", "red_scarf"], ["make the tiger pink", "tiger_pink"], ["put @img1 on the table", "table"], ["Gr" + String.fromCharCode(246) + String.fromCharCode(223) + "e " + String.fromCharCode(196) + "pfel", "grosse_apfel"],
+        ["", ""], [null, ""], ["3 red cats", "red_cats"], ["<lamp_1> on {@ref:2}", ""], ["supercalifragilisticexpialidocious hat", "supercalifragili_hat"], ["the the a", ""], ["SALE", "sale"], ["ref image of the lamp", "image_lamp"]];
+    check("idWords: the first two telling words, lowercase, accents dropped; tokens, markers and <names> are no words", WORDS.every(([t, w]) => R.idWords(t) === w), short(WORDS.map(([t]) => R.idWords(t))));
+    check("every id made from words passes BOX_ID", WORDS.filter(([, w]) => w).every(([, w]) => R.BOX_ID.test(w + "_1")), "");
+    const sm = [{ id: "a_1", kind: "new", rect: [0, 0, 0.04, 0.5] }, { id: "b_1", kind: "keep", rect: [0, 0, 0.04, 0.5], src: [0, 0, 0.04, 0.5] }, { id: "c_1", kind: "move", rect: [0, 0, 0.5, 0.5] }, { id: "d_1", kind: "from", rect: [0, 0, 0.5, 0.05] }];
+    check("smallBoxes: the boxes that place something (new, from, move) under 48 px a side as sent; a small Keep is no matter", eq(R.smallBoxes(sm, [1024, 880]), ["a_1", "d_1"]), short(R.smallBoxes(sm, [1024, 880])));
+    check("smallNote: one box, several, none", R.smallNote(["a_1"]) === "Box a_1 is small (under 48 px a side as sent): the model may not place anything there."
+        && R.smallNote(["a_1", "d_1"]) === "Boxes a_1, d_1 are small (under 48 px a side as sent): the model may not place anything there." && R.smallNote([]) === null, short(R.smallNote(["a_1", "d_1"])));
     check("every box the renderer makes passes main's shape check", boxes.checkBoxes([sb]).length === 1 && boxes.checkBoxes([fb]).length === 1, "");
     check("the two resolvers agree on the desc: main names the renderer's marker", boxes.rowsFlux3({ ...r2, boxes: [fb] }, lay2)[0].desc === "put image 3 here", "");
     check("refs.js's resolver on the same desc gives the same name", refs.resolveMarkers(fb.desc, lay2.pictures, "image {n}").text === "put image 3 here", "");
@@ -180,7 +225,7 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     check("pluginBoxes: a from box's src in image pixels is measured in the layer's own frame", eq(pb.boxes[0].src, [0, 0, 0.5, 0.5]), short(pb));
     pb = R.pluginBoxes([{ id: "cat_1", kind: "new", rect: [0, 0, 50, 20] }, { id: "dog_1", kind: "new", rect: [300, 200, 500, 350] }, { id: "ox_1", kind: "keep", rect: [300, 200, 500, 350], src: [0, 0, 50, 20] }], pctx);
     check("pluginBoxes: a box (or a source) outside the frame is dropped with a note naming it, the others go", pb.boxes.length === 1 && pb.boxes[0].id === "dog_1" && pb.notes.length === 2 && /^Box cat_1 lies outside the crop/.test(pb.notes[0]) && /^Box ox_1: its source lies outside the crop/.test(pb.notes[1]), short(pb));
-    pb = R.pluginBoxes([{ id: "edit_1", kind: "new", rect: [300, 200, 500, 350] }, { id: "edit_1", kind: "new", rect: [300, 200, 500, 350] }], pctx, { taken: [sb] });
+    pb = R.pluginBoxes([{ id: "edit_1", kind: "new", rect: [300, 200, 500, 350] }, { id: "edit_1", kind: "new", rect: [300, 200, 500, 350] }], pctx, { taken: [{ ...sb, id: "edit_1" }] });
     check("pluginBoxes: a duplicate id gets the next free number, across sources (the S1 box holds edit_1)", eq(pb.boxes.map((b) => b.id), ["edit_2", "edit_3"]), short(pb.boxes.map((b) => b.id)));
     let code = null, msg = null;
     try { R.pluginBoxes([{ id: "cat_1", kind: "from", rect: [300, 200, 500, 350], layer: "L9" }], pctx, { nameOf: (id) => `the layer "Dog" (${id})` }); } catch (e) { code = e.code; msg = e.message; }
@@ -241,10 +286,21 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     check("format.rowsText equals main's text rows", eq(ft.rows, boxes.rowsFlux3({ ...req({ kind: "text" }), boxes: viaCore.boxes.filter((b) => b.kind === "new") }, flux3.layout(req({ kind: "text" }))).map((r) => r)), "");
     const fi = F.instructionFlux3("make it night", pxBoxes, fr.rows);
     const mi = boxes.instructionFlux3("make it night", viaCore.boxes, lay2, mainRows);
-    check("format.instructionFlux3 equals main's instruction (one sentence per box, In <ref_image_0> first)", fi === mi && fi.startsWith("make it night In <ref_image_0>, add <dog_1> in its box. Keep <log_1> unchanged."), short(fi));
+    check("format.instructionFlux3 equals main's instruction (one sentence per box, In <ref_image_0> first)", fi === mi && fi.startsWith("make it night. In <ref_image_0>, place a dog <dog_1> at the top left. Keep a log <log_1> as it is. Move an ox <ox_1> up and to the right."), short(fi));
+    // the caption's words on both sides: the same vectors through main's and the plugin's copy
+    const grids = [];
+    for (const t of [0, 150, 320, 340, 500, 660, 680, 900]) for (const l of [0, 150, 320, 340, 500, 660, 680, 900]) grids.push([t, l, Math.min(1000, t + 90), Math.min(1000, l + 90)]);
+    grids.push([0, 0, 1000, 1000], [0, 0, 760, 760], [0, 0, 740, 1000]);
+    check("format.whereWords equals main's on " + grids.length + " grids", grids.every((g) => F.whereWords(g) === boxes.whereWords(g)), "");
+    check("format.wayWords equals main's on " + grids.length * grids.length + " pairs", grids.every((a) => grids.every((b) => F.wayWords(a, b) === boxes.wayWords(a, b))), "");
+    const capCases = [["", [box()]], ["A red door", [box()]], ["remove the man", [box({ desc: "remove the man" })]], [long, [box({ desc: long.slice(0, 400) })]], ["x", [box({ desc: "make it pink" }), box({ id: "edit_2", desc: "" })]], ["In <ref_image_0> go", [box({ id: "cat_1", kind: "remove", src: [0, 0, 0.2, 0.2] })]], ["<edit_1> stays", [box()]]];
+    check("format.captionFlux3 equals main's on an edit and on a new image", capCases.every(([p, bs]) => {
+        const rs = boxes.rowsFlux3({ ...r2, boxes: bs }, lay2);
+        return F.captionFlux3(p, bs, rs, "ref_image_0") === boxes.captionFlux3(p, bs, rs, "ref_image_0") && F.captionFlux3(p, bs, rs, null) === boxes.captionFlux3(p, bs, rs, null);
+    }), "");
     const ct = F.clipboardText("make it night", pxBoxes, docFrame, { nameOf });
     check("format.clipboardText: the instruction, a space and the JSON rows, as a run sends it", ct.text === `${mi} ${JSON.stringify(mainRows)}` && ct.rows.length === 5, short(ct.text));
-    check("format.clipboardText on a new image: rowsText and no In <ref_image_0>", /^make it night Add <dog_1> in its box\. \[\{"id":"dog_1","bbox"/.test(F.clipboardText("make it night", pxBoxes, docFrame, { mode: "new" }).text), short(F.clipboardText("make it night", pxBoxes, docFrame, { mode: "new" }).text));
+    check("format.clipboardText on a new image: rowsText, no In <ref_image_0> and no closing", /^make it night\. Place a dog <dog_1> at the top left\. \[\{"id":"dog_1","bbox"/.test(F.clipboardText("make it night", pxBoxes, docFrame, { mode: "new" }).text), short(F.clipboardText("make it night", pxBoxes, docFrame, { mode: "new" }).text));
     check("format.rowsFlux3: a from box whose layer is not shown is noted, a part of the layer measured in the layer's frame",
         F.rowsFlux3([pxBoxes[4]], docFrame, { nameOf: () => null }).notes.length === 1
         && eq(F.rowsFlux3([{ ...pxBoxes[4], src: [500, 350, 600, 400], layerFrame: { x: 500, y: 350, w: 200, h: 100 } }], docFrame, { nameOf }).rows[0].src_bbox, [0, 0, 500, 500]), "");

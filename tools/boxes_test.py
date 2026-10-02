@@ -13,7 +13,10 @@ active) and the panel's warnings (a box outside the crop, one across its edge, o
 that sets Paste to the whole crop), under FLUX 3 Image, the recipe put back. S3d: the Boxes switch under the prompt
 (the row hidden under a recipe that takes no boxes, the first box turning it on, the label's count, a loopback run
 with it on and off, the panel's note and the overlay's dashed outline while off, a box the crop leaves out keeping the
-selection from going as a box, the selection as one box with none, the switch carried by a .scumble file).
+selection from going as a box, the selection as one box with none, the switch carried by a .scumble file). S3e: ids
+from the description (a default id only, not one the prompt names), the warnings for a New box without a description
+and for a small box, a run's caption with the places in words and its notes, the smallest box under a click, a box
+turned into Move stepping aside.
 
     python tools/boxes_test.py
 
@@ -66,7 +69,8 @@ await c("set_layer", { layer: ref.id, role: "reference", x: 500, y: 350, w: 200,
 const plain = await c("add_paint_layer", { name: "Plain", doc: window.__bDoc });
 const a = await c("boxes.add", { rect: [100, 100, 400, 300], desc: "a dog", doc: window.__bDoc });
 // the document's first box turns its Boxes switch on (S3d) and says so
-if (!eq(a, { id: "box_1", kind: "new", rect: [100, 100, 400, 300], src: null, layer: null, desc: "a dog", text: null, switched_on: true })) throw new Error("add: " + JSON.stringify(a));
+// no id given: the id is made from the description's words (S3e)
+if (!eq(a, { id: "dog_1", kind: "new", rect: [100, 100, 400, 300], src: null, layer: null, desc: "a dog", text: null, switched_on: true })) throw new Error("add: " + JSON.stringify(a));
 if (!ednow().genSettings.boxes) throw new Error("the first box did not turn the switch on");
 // the note says what is true under the selected recipe: a recipe that takes no boxes hides the switch
 const takes0 = (await c("boxes.list", D())).recipe.takes;
@@ -76,13 +80,13 @@ if (!eq(k.rect, [800, 600, 1000, 700]) || !eq(k.src, [800, 600, 1000, 700])) thr
 const m = await c("boxes.add", { kind: "move", rect: [600, 100, 900, 400], src: [200, 500, 500, 800], doc: window.__bDoc });
 if (m.id !== "move_1") throw new Error("the default id of a move box: " + m.id);
 const f = await c("boxes.add", { kind: "from", rect: [900, 500, 1100, 700], layer: "Lamp", desc: "the lamp", doc: window.__bDoc });
-if (f.id !== "ref_1" || f.layer !== ref.id || f.src !== null) throw new Error("from: " + JSON.stringify(f));
+if (f.id !== "lamp_1" || f.layer !== ref.id || f.src !== null) throw new Error("from: " + JSON.stringify(f));
 const t = await c("boxes.add", { id: "sign_1", rect: [50, 700, 400, 780], text: "OPEN", desc: "red neon", doc: window.__bDoc });
 if (t.kind !== "new" || t.text !== "OPEN") throw new Error("text box: " + JSON.stringify(t));
 if ((await boxes()).length !== 5) throw new Error("count " + (await boxes()).length);
 // the refusals: nothing is added by any of them
-await fails(() => c("boxes.add", { id: "box_1", rect: [0, 0, 10, 10], doc: window.__bDoc }), /already used/);
-await fails(() => c("boxes.add", { id: "Box1", rect: [0, 0, 10, 10], doc: window.__bDoc }), /lowercase name/);
+await fails(() => c("boxes.add", { id: "dog_1", rect: [0, 0, 10, 10], doc: window.__bDoc }), /already used/);
+await fails(() => c("boxes.add", { id: "Box1", rect: [0, 0, 10, 10], doc: window.__bDoc }), /lowercase words/);
 await fails(() => c("boxes.add", { rect: [10, 10, 10, 20], doc: window.__bDoc }), /empty/);
 await fails(() => c("boxes.add", { kind: "from", rect: [0, 0, 10, 10], doc: window.__bDoc }), /needs layer/);
 await fails(() => c("boxes.add", { kind: "from", rect: [0, 0, 10, 10], layer: "Plain", doc: window.__bDoc }), /not a reference layer/);
@@ -92,8 +96,9 @@ await fails(() => c("boxes.add", { kind: "giant", rect: [0, 0, 10, 10], doc: win
 await fails(() => c("boxes.set", { id: "nope_1", desc: "x", doc: window.__bDoc }), /no box nope_1/);
 await fails(() => c("boxes.remove", { id: "nope_1", doc: window.__bDoc }), /no box nope_1/);
 if ((await boxes()).length !== 5) throw new Error("a refusal changed the list");
-// set: a rename, a kind change (a New box turned Keep takes its rect as the source), a field alone
-const s1 = await c("boxes.set", { id: "box_1", new_id: "dog_1", desc: "a brown dog", doc: window.__bDoc });
+// set: a field alone (an id made from words stays when the description changes), a kind change (a New box turned
+// Keep takes its rect as the source), a rename
+const s1 = await c("boxes.set", { id: "dog_1", desc: "a brown dog", doc: window.__bDoc });
 if (s1.id !== "dog_1" || s1.desc !== "a brown dog" || !eq(s1.rect, [100, 100, 400, 300])) throw new Error("set: " + JSON.stringify(s1));
 const s2 = await c("boxes.set", { id: "dog_1", kind: "keep", doc: window.__bDoc });
 if (s2.kind !== "keep" || !eq(s2.src, [100, 100, 400, 300])) throw new Error("new to keep: " + JSON.stringify(s2));
@@ -111,7 +116,7 @@ const ed = ednow();
 const before = JSON.stringify(await boxes());
 const h0 = await c("list_history", D());
 const names = h0.rows.map((r) => r.label || r.name || "").join("|");
-if (!/Add box box_1/.test(names) || !/Remove box move_1/.test(names) || !/Change box dog_1/.test(names)) throw new Error("the steps are not named: " + names);
+if (!/Add box dog_1/.test(names) || !/Remove box move_1/.test(names) || !/Change box dog_1/.test(names)) throw new Error("the steps are not named: " + names);
 await c("undo", D());
 let now = await boxes();
 if (now.length !== 5 || !now.some((b) => b.id === "move_1")) throw new Error("undo of the remove: " + JSON.stringify(now.map((b) => b.id)));
@@ -132,13 +137,13 @@ return { steps: undos };
 await c("select_rect", { x: 300, y: 200, w: 200, h: 150, doc: window.__bDoc });
 await c("set_prompt", { text: "a red\\ndoor", doc: window.__bDoc });
 const b = await c("boxes.from_selection", D());
-if (!eq(b, { id: "edit_1", kind: "new", rect: [300, 200, 500, 350], src: null, layer: null, desc: "a red door", text: null })) throw new Error("from selection: " + JSON.stringify(b));
+if (!eq(b, { id: "red_door_1", kind: "new", rect: [300, 200, 500, 350], src: null, layer: null, desc: "a red door", text: null })) throw new Error("from selection: " + JSON.stringify(b));
 // the prompt names the reference: a From box of that layer into the selection
 const lamp = (await c("list_layers", D())).layers.find((l) => l.id === window.__bRef);
 if (!lamp || lamp.label !== "img1") throw new Error("the lamp is not @img1: " + JSON.stringify(lamp));
 await c("set_prompt", { text: "put @img1 on the table", doc: window.__bDoc });
 const f = await c("boxes.from_selection", { desc: undefined, doc: window.__bDoc });
-if (f.id !== "edit_2" || f.kind !== "from" || f.layer !== window.__bRef || f.desc !== "put @img1 on the table") throw new Error("from selection with a token: " + JSON.stringify(f));
+if (f.id !== "table_1" || f.kind !== "from" || f.layer !== window.__bRef || f.desc !== "put @img1 on the table") throw new Error("from selection with a token: " + JSON.stringify(f));
 await c("select_none", D());
 await fails(() => c("boxes.from_selection", D()), /Nothing is selected/);
 await c("set_prompt", { text: "", doc: window.__bDoc });
@@ -157,9 +162,9 @@ const by = Object.fromEntries(got.boxes.map((b) => [b.id, b]));
 if (got.boxes.length !== 6 || got.notes.length) throw new Error("mapped: " + JSON.stringify(got));
 if (!eq(by.dog_1.rect, [100 / 1200, 100 / 800, 400 / 1200, 300 / 800]) || by.dog_1.src !== null) throw new Error("dog_1: " + JSON.stringify(by.dog_1));
 if (by.log_1.kind !== "keep" || !eq(by.log_1.src, by.log_1.rect)) throw new Error("log_1: " + JSON.stringify(by.log_1));
-if (by.ref_1.kind !== "from" || by.ref_1.ref !== 2 || !eq(by.ref_1.src, [0, 0, 1, 1])) throw new Error("ref_1: " + JSON.stringify(by.ref_1));
+if (by.lamp_1.kind !== "from" || by.lamp_1.ref !== 2 || !eq(by.lamp_1.src, [0, 0, 1, 1])) throw new Error("lamp_1: " + JSON.stringify(by.lamp_1));
 if (by.sign_1.desc !== 'text reading "OPEN", red neon') throw new Error("sign_1 desc: " + by.sign_1.desc);
-if (by.edit_2.desc !== "put {@ref:2} on the table" || by.edit_2.kind !== "from") throw new Error("edit_2: " + JSON.stringify(by.edit_2));
+if (by.table_1.desc !== "put {@ref:2} on the table" || by.table_1.kind !== "from") throw new Error("table_1: " + JSON.stringify(by.table_1));
 // a smaller frame (a crop at 0, 0, 600 x 400): the boxes outside it are noted, the ones inside clamped
 const small = await P.collectBoxes(ed, { ...ctx, frame: { x: 0, y: 0, w: 600, h: 400 } }, []);
 if (!small.notes.some((n) => /log_1/.test(n)) || small.boxes.some((b) => b.id === "log_1")) throw new Error("the box outside the crop went: " + JSON.stringify(small));
@@ -168,9 +173,9 @@ if (!eq(small.boxes.find((b) => b.id === "dog_1").rect, [100 / 600, 100 / 400, 4
 let err = null;
 try { await P.collectBoxes(ed, { ...ctx, references: [] }, []); } catch (e) { err = e; }
 if (!err || err.code !== "layer" || !/"Lamp"/.test(err.message)) throw new Error("no refusal for an unsent layer: " + (err && err.message));
-// a box the run already holds named edit_1 (collectBoxes' `taken`): the plugin's edit_1 gets the next number
-const taken = await P.collectBoxes(ed, ctx, [{ id: "edit_1" }]);
-if (!taken.boxes.some((b) => b.id === "edit_3")) throw new Error("duplicate id not numbered on: " + JSON.stringify(taken.boxes.map((b) => b.id)));
+// a box the run already holds named red_door_1 (collectBoxes' `taken`): the plugin's red_door_1 gets the next number
+const taken = await P.collectBoxes(ed, ctx, [{ id: "red_door_1" }]);
+if (!taken.boxes.some((b) => b.id === "red_door_2")) throw new Error("duplicate id not numbered on: " + JSON.stringify(taken.boxes.map((b) => b.id)));
 return { ids: got.boxes.map((b) => b.id), notes: small.notes };
 """),
     ("panel_rows_in_the_generate_pane", """
@@ -194,14 +199,15 @@ const bad = details.querySelector(".boxes-row .boxes-id");
 bad.value = "Hound"; bad.dispatchEvent(new Event("change"));
 await wait(50);
 if (!(await boxes()).some((b) => b.id === "hound_1") || details.querySelector(".boxes-row .boxes-id").value !== "hound_1") throw new Error("a bad id was taken or the field not restored");
-if (!/lowercase name/.test(ed.status)) throw new Error("no status for the bad id: " + ed.status);
-// the kind select of the first row: New -> Move takes the rect as the source and shows a From row
+if (!/lowercase words/.test(ed.status)) throw new Error("no status for the bad id: " + ed.status);
+// the kind select of the first row: New -> Move takes the rect as the source, the target steps aside by a fifth of
+// the picture (S3e: 1200 / 5 to the right), and shows a From row
 // the rows were rebuilt by the rename: query the first row again
 const sel = details.querySelector(".boxes-row .boxes-select");
 sel.value = "move"; sel.dispatchEvent(new Event("change"));
 await wait(50);
 const hound = (await boxes()).find((b) => b.id === "hound_1");
-if (hound.kind !== "move" || !eq(hound.src, hound.rect)) throw new Error("the panel's kind change: " + JSON.stringify(hound));
+if (hound.kind !== "move" || !eq(hound.src, [100, 100, 400, 300]) || !eq(hound.rect, [340, 100, 640, 300])) throw new Error("the panel's kind change: " + JSON.stringify(hound));
 if (details.querySelector(".boxes-row").querySelectorAll(".boxes-geo").length !== 2) throw new Error("a move box shows one geometry row");
 await c("undo", D()); await c("undo", D());
 await wait(50);
@@ -318,7 +324,7 @@ try {
     if (!/far_1/.test(line(/left out/)) || /edge_1|spill_1/.test(line(/left out/))) throw new Error("the box outside the crop: " + JSON.stringify(w1));
     if (!/edge_1/.test(line(/past the crop's edge/)) || /spill_1/.test(line(/past the crop's edge/))) throw new Error("the box across the crop's edge: " + JSON.stringify(w1));
     const spill = line(/outside the selection/);
-    if (!/spill_1/.test(spill) || !/edge_1/.test(spill) || /far_1|edit_1/.test(spill)) throw new Error("the boxes outside the selection: " + JSON.stringify(w1));
+    if (!/spill_1/.test(spill) || !/edge_1/.test(spill) || /far_1|red_door_1/.test(spill)) throw new Error("the boxes outside the selection: " + JSON.stringify(w1));
     const note = details.querySelector(".boxes-note").textContent;
     if (!note.includes(`${f.w} × ${f.h} px at ${f.x}, ${f.y}`)) throw new Error("the note does not name the crop: " + note);
     // the overlay: the picture outside the crop dimmed while the tool is active, not with another tool
@@ -358,6 +364,102 @@ try {
     await c("select_none", D());
     if (was) await c("select_recipe", was);
     if (JSON.stringify(await boxes()) !== JSON.stringify(before)) throw new Error("the test's boxes were not taken back");
+}
+"""),
+    ("ids_warnings_caption_and_hit_order", """
+// S3e: a box named after its description while its id is a default one, the panel's warnings for a New box without a
+// description and for a small box, a run's caption with the places in words and its notes (a loopback recipe that
+// takes boxes, no key), the tool's hit order (the smallest box under the pointer) and a box turned into Move stepping
+// aside from its source. A document of its own; the recipe put back.
+const main = window.__bDoc;
+const prev = host.recipe;
+const LOOP = { id: "loopback_boxes", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", name: "Loopback", settings: [], options: { boxes: "flux3" } };
+const out = {};
+try {
+    const d = await c("new_document");
+    window.__bDoc = d.id;
+    const ed = ednow();
+    host.shell.activate(ed);
+    await c("new_canvas", { width: 1200, height: 800, doc: d.id });
+    host.setRecipe(LOOP);
+    const details = Array.from(ed.panes.gen.querySelectorAll("details")).find((x) => x.querySelector("summary") && x.querySelector("summary").textContent.trim() === "Boxes");
+    if (!details) throw new Error("no Boxes section in the new document's Generate pane");
+    details.open = true;
+    const warns = () => Array.from(details.querySelectorAll(".boxes-warn-row")).map((r) => r.textContent);
+    const selId = () => { const row = ed.panes.gen.querySelector(".boxes-row.boxes-row-sel"); return row ? row.dataset.box : null; };
+    const fake = { shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, button: 0, pressure: 0.5, pointerType: "mouse" };
+    const ptr = (phase, x, y, extra) => { host.pluginPointer(ed, phase, { ...fake, ...(extra || {}), type: "pointer" + phase }, x, y, ed.pointer); if (phase === "up") ed.pointer = null; };
+    const drag = (pts) => { ptr("down", pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ptr("move", p[0], p[1]); const l = pts[pts.length - 1]; ptr("up", l[0], l[1]); };
+    const click = (x, y, extra) => { ptr("down", x, y, extra); ptr("up", x, y, extra); };
+    const key = (k) => host.pluginKey(ed, { key: k, shiftKey: false, preventDefault() {} }, k.toLowerCase());
+    // a drawn box is box_1; described, it is named after its first two telling words and stays selected
+    ed.setTool("boxes.box");
+    drag([[100, 100], [250, 200], [400, 300]]);
+    if ((await boxes()).map((b) => b.id).join() !== "box_1") throw new Error("the drawn box: " + JSON.stringify(await boxes()));
+    // the panel warns of a New box without a description
+    await wait(50);
+    if (!warns().some((t) => /^Box box_1 has no description/.test(t))) throw new Error("no warning for the box without a description: " + JSON.stringify(warns()));
+    const r1 = await c("boxes.set", { id: "box_1", desc: "A red scarf", doc: d.id });
+    if (r1.id !== "red_scarf_1" || !/Box box_1 is called red_scarf_1 now/.test(ed.status)) throw new Error("named after its description: " + JSON.stringify(r1) + " / " + ed.status);
+    await wait(50);
+    if (selId() !== "red_scarf_1") throw new Error("the renamed box is not selected: " + selId());
+    if (warns().some((t) => /no description/.test(t))) throw new Error("the warning stayed after the description: " + JSON.stringify(warns()));
+    // an id once made from words stays when the description changes again
+    if ((await c("boxes.set", { id: "red_scarf_1", desc: "a blue hat", doc: d.id })).id !== "red_scarf_1") throw new Error("a made id changed");
+    // a default id the prompt names as <box_1> stays; one added with a description is named at once
+    const b1 = await c("boxes.add", { rect: [700, 100, 1000, 400], doc: d.id });
+    if (b1.id !== "box_1") throw new Error("the next default id: " + b1.id);
+    await c("set_prompt", { text: "put <box_1> on the left", doc: d.id });
+    if ((await c("boxes.set", { id: "box_1", desc: "a green lamp", doc: d.id })).id !== "box_1") throw new Error("a box the prompt names was renamed");
+    await c("set_prompt", { text: "", doc: d.id });
+    const t1 = await c("boxes.add", { rect: [500, 500, 700, 700], desc: "the old tree", doc: d.id });
+    if (t1.id !== "old_tree_1") throw new Error("added with a description: " + t1.id);
+    // the tool's hit order: a click on a small box inside bigger ones takes the small one, though a bigger one lies on
+    // top of it (cloth_1, added after it); Alt+click goes on by size
+    await c("boxes.add", { id: "pin_1", rect: [150, 150, 250, 250], desc: "a pin", doc: d.id });
+    await c("boxes.add", { id: "cloth_1", rect: [120, 120, 300, 280], desc: "a cloth", doc: d.id });
+    key("Escape");
+    click(200, 200);
+    await wait(20);
+    if (selId() !== "pin_1") throw new Error("the click took " + selId() + ", not the smaller box");
+    click(200, 200, { altKey: true });
+    await wait(20);
+    if (selId() !== "cloth_1") throw new Error("Alt+click did not go on to the next bigger box: " + selId());
+    ed.setTool("select");
+    await c("boxes.remove", { id: "cloth_1", doc: d.id });
+    // turned into Move, the target steps aside by a fifth of the picture: right, or left at the right edge
+    const m1 = await c("boxes.set", { id: "old_tree_1", kind: "move", doc: d.id });
+    if (!eq(m1.src, [500, 500, 700, 700]) || !eq(m1.rect, [740, 500, 940, 700])) throw new Error("a New box turned Move: " + JSON.stringify(m1));
+    const m2 = await c("boxes.set", { id: "box_1", kind: "move", doc: d.id });
+    if (!eq(m2.src, [700, 100, 1000, 400]) || !eq(m2.rect, [460, 100, 760, 400])) throw new Error("a box at the right edge turned Move: " + JSON.stringify(m2));
+    // turned Keep with a rect given (and text: null, as the panel's kind select sends it): the rect is where the element
+    // is, and a kind change is no new description, so a default id stays
+    await c("boxes.add", { id: "box_7", rect: [900, 600, 1000, 700], desc: "a stone", doc: d.id });
+    const k7 = await c("boxes.set", { id: "box_7", kind: "keep", text: null, rect: [880, 580, 1000, 700], doc: d.id });
+    if (k7.id !== "box_7" || !eq(k7.src, [880, 580, 1000, 700]) || !eq(k7.rect, [880, 580, 1000, 700])) throw new Error("a New box turned Keep with a rect: " + JSON.stringify(k7));
+    await c("boxes.remove", { id: "box_7", doc: d.id });
+    // a selection and its crop: a small box warned of in the panel, a run's caption and notes
+    await c("boxes.add", { id: "dot_1", rect: [110, 110, 118, 118], desc: "a dot", doc: d.id });
+    await c("boxes.add", { rect: [300, 150, 380, 250], doc: d.id });
+    await c("select_rect", { x: 100, y: 100, w: 300, h: 200, doc: d.id });
+    await wait(50);
+    const w = warns();
+    if (!w.some((t) => /dot_1 (is|are) small/.test(t))) throw new Error("no warning for the small box: " + JSON.stringify(w));
+    if (!w.some((t) => /box_2 has no description/.test(t))) throw new Error("no warning for box_2: " + JSON.stringify(w));
+    const g = await c("generate", { timeout: 60 });
+    const sent = String(g.prompt_sent || "");
+    if (!/[Pp]lace a blue hat <red_scarf_1> (at|on|in) the [a-z ]+\\./.test(sent)) throw new Error("the caption does not place the hat: " + sent);
+    if (!/Fill the area <box_2> /.test(sent) || !sent.includes("Leave the rest of the picture as it is. [")) throw new Error("the caption: " + sent);
+    const notes = (g.notes || []).join(" ");
+    if (!/dot_1 (is|are) small/.test(notes) || !/box_2 went without a description/.test(notes)) throw new Error("the run's notes: " + notes);
+    out.caption = sent.slice(0, sent.indexOf(" [{"));
+    out.notes = g.notes;
+    return out;
+} finally {
+    if (window.__bDoc !== main) { try { await c("close_document", { doc: window.__bDoc, force: true }); } catch (_) { /* gone */ } }
+    window.__bDoc = main;
+    host.setRecipe(prev);
+    host.shell.activate(ednow());
 }
 """),
     ("the_boxes_switch", """
@@ -432,12 +534,13 @@ try {
     await c("boxes.remove", { id: "cat_1", doc: d.id });
     await c("select_rect", { x: 950, y: 600, w: 150, h: 120, doc: d.id });
     g = await c("generate", { timeout: 60 });
-    if (g.boxes !== 0 || String(g.prompt_sent).includes("edit_1")) throw new Error("the selection went in place of a box the crop left out: " + JSON.stringify({ boxes: g.boxes, prompt: g.prompt_sent, notes: g.notes }));
-    // no boxes at all, the switch on: the selection goes as one box (S1's edit_1)
+    if (g.boxes !== 0 || String(g.prompt_sent).includes('"id":')) throw new Error("the selection went in place of a box the crop left out: " + JSON.stringify({ boxes: g.boxes, prompt: g.prompt_sent, notes: g.notes }));
+    // no boxes at all, the switch on: the selection goes as one box (S1's, named after the prompt: garden_1), the
+    // prompt as it is, the box's sentence saying only where
     await c("boxes.clear", D());
     if (ed.boxesLabel.textContent !== "Boxes" || ed.boxesHint.textContent !== "the selection goes as one box" || !ed.genSettings.boxes) throw new Error("the row with no boxes: " + ed.boxesLabel.textContent + " / " + ed.boxesHint.textContent);
     g = await c("generate", { timeout: 60 });
-    if (g.boxes !== 1 || !String(g.prompt_sent).includes('"id":"edit_1"')) throw new Error("the selection as one box: " + JSON.stringify({ boxes: g.boxes, prompt: g.prompt_sent }));
+    if (g.boxes !== 1 || !String(g.prompt_sent).includes('"id":"garden_1"') || !/^a garden\\. In <ref_image_0>, the change goes in <garden_1> /.test(String(g.prompt_sent))) throw new Error("the selection as one box: " + JSON.stringify({ boxes: g.boxes, prompt: g.prompt_sent }));
     out.selection = g.prompt_sent;
     // the switch rides in the file; an open with boxes is no first box
     const again = await c("boxes.add", { id: "dog_1", rect: [100, 100, 400, 300], desc: "a dog", doc: d.id });

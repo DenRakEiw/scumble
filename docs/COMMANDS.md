@@ -916,7 +916,7 @@ Add a box for the prompt: where an element goes (new), stays (keep), moves to (m
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `id` | string | a lowercase name, an underscore and a number (knight_1); default the next free box_n |
+| `id` | string | lowercase words and a number joined by underscores (knight_1, red_scarf_2); default made from the description's first two telling words ("a red scarf" -> red_scarf_1), else the next free box_n |
 | `kind` | string | new (an element added in the box), keep, move, remove (an element of the picture), from (a reference layer placed in the box) (one of `new`, `keep`, `move`, `remove`, `from`) |
 | `rect` | array | [left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was |
 | `src` | array | keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer) |
@@ -926,7 +926,7 @@ Add a box for the prompt: where an element goes (new), stays (keep), moves to (m
 
 ### `boxes.set` *(plugin boxes)*
 
-Change a box: only the given fields change (new_id renames it). One undo step.
+Change a box: only the given fields change (new_id renames it). A box whose id is still a default one (box_1, edit_2) is named after a new description (red_scarf_1) unless the prompt names it as <id>; the answer carries the id. One undo step.
 
 | param | type | description |
 |---|---|---|
@@ -956,7 +956,7 @@ The selection's bounds as a box: a new box described by the prompt (or desc); wh
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `id` | string | default the next free edit_n |
+| `id` | string | default made from the description's words (red_door_1), else the next free edit_n |
 | `desc` | string | the description (default the prompt) |
 
 ### `boxes.clear` *(plugin boxes)*

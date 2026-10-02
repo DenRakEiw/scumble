@@ -1,5 +1,6 @@
 // The Boxes tool and overlay (item 28 S3b, docs/PLAN_BOXES.md §10). Drag on empty canvas draws a New box, a click selects
-// a box (its row in the panel lights up), a drag moves it, the eight handles resize it; Delete removes the selected box,
+// a box (its row in the panel lights up; the smallest box under the pointer), a drag moves it, the eight handles resize
+// it; Delete removes the selected box,
 // Escape lets go of it, D duplicates it, the arrows nudge it by 1 px (Shift 10), Alt+click goes through boxes that lie
 // on top of each other. A Move box's source and a From box's part are boxes of their own once the box is selected. A
 // drag changes nothing until the button comes up: then it is one undo step through the plugin's data. The overlay draws
@@ -77,15 +78,18 @@ export function makeTool(scumble, api) {
         }
         return null;
     }
-    /** Every box part under (x, y), the topmost (drawn last) first. */
+    /**
+     * Every box part under (x, y), the smallest first (S3e: a box inside another is grabbed directly, not only by
+     * Alt+click), the topmost (drawn last) first among the same size.
+     */
     function hitsAt(doc, x, y) {
         const out = [];
         const boxes = api.boxesOf(doc);
         for (let i = boxes.length - 1; i >= 0; i--) {
             const b = boxes[i];
-            for (const [part, r] of partsOf(b)) if ((part === "main" || b.id === selected.get(doc.id)) && inside(r, x, y)) out.push({ b, part });
+            for (const [part, r] of partsOf(b)) if ((part === "main" || b.id === selected.get(doc.id)) && inside(r, x, y)) out.push({ b, part, area: (r[2] - r[0]) * (r[3] - r[1]) });
         }
-        return out;
+        return out.sort((p, q) => p.area - q.area);   // a stable sort: the topmost stays first among equals
     }
     /** The patch that puts part `part` of box `b` at rectangle `r`. */
     function patchFor(b, part, r) {

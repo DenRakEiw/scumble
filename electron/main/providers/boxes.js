@@ -9,8 +9,9 @@
 // tgt_bbox, desc }: Keep (from the frame, the same box twice), Move (a new tgt_bbox), New (from and src_bbox null),
 // Remove (tgt_bbox null), From (from "ref_image_k", src_bbox in that picture); a new image's row is { id, bbox, desc }.
 // The pictures are <ref_image_0> (the first of `images`, the crop on an edit), <ref_image_1> ..; the text names each
-// element as <id>. The docs: the instruction and the rows should agree, so a sentence is added for every box the
-// prompt does not mention by its <id>.
+// element as <id>. The docs: the instruction and the rows should agree and the caption should say where each element
+// goes, so a sentence is added for every box the prompt does not mention by its <id>, with its description and its
+// place in words (S3e: "Place a red scarf <red_scarf_1> at the top left.").
 "use strict";
 
 const { resolveMarkers, validRefName, REF_NAME_DEFAULT } = require("./refs");
@@ -21,8 +22,11 @@ const SCHEMAS = new Set(["flux3"]);
 /** The kinds a box may have. */
 const KINDS = new Set(["new", "keep", "move", "remove", "from"]);
 
-/** The shape of a box id (the same as the renderer's BOX_ID). */
-const BOX_ID = /^[a-z][a-z0-9]*_[1-9][0-9]*$/;
+/**
+ * The shape of a box id (the same as the renderer's BOX_ID): lowercase words joined by underscores, then a number; not
+ * a picture's name (ref_image_1), which the caption and the rows use for the pictures.
+ */
+const BOX_ID = /^(?!ref_image_[0-9]+$)[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_[1-9][0-9]*$/;
 
 /** The longest description a row carries (the renderer folds to the same). */
 const DESC_MAX = 400;
@@ -48,7 +52,7 @@ function checkBoxes(boxes) {
         const who = `Box ${b && typeof b.id === "string" ? b.id : "#" + (i + 1)}`;
         const bad = (why) => new Error(`${who}: ${why}: nothing was sent.`);
         if (!b || typeof b !== "object") throw bad("not an object");
-        if (typeof b.id !== "string" || !BOX_ID.test(b.id)) throw bad("the id is not a lowercase name, an underscore and a number (knight_1)");
+        if (typeof b.id !== "string" || !BOX_ID.test(b.id)) throw bad("the id is not lowercase words and a number joined by underscores (knight_1, red_scarf_2)");
         if (seen.has(b.id)) throw bad("the id is used twice");
         seen.add(b.id);
         if (!KINDS.has(b.kind)) throw bad(`the kind "${String(b.kind).slice(0, 20)}" is not new, keep, move, remove or from`);
@@ -135,32 +139,107 @@ function rowsFlux3(req, lay) {
     });
 }
 
+// ---- the caption (S3e): the docs ask the caption to name each element as <id> and to say where it goes ---------------
+// plugins/boxes/format.js keeps a copy of everything from here to captionFlux3 for the clipboard; tools/boxes_test.js
+// holds the two to the same vectors.
+
+/** Words that open an instruction: a description that starts with one goes into the caption as it is ("make the tiger pink"). */
+const VERB = /^(?:add|bring|brighten|change|darken|draw|fill|give|insert|lighten|make|paint|place|put|recolou?r|render|replace|show|swap|turn|use|write)\b/i;
+
+/** A description as a clause of the caption: one line, no closing stop, a capital that only opened the sentence lowered (an acronym keeps its case). */
+function clauseOf(s) {
+    const t = String(s == null ? "" : s).replace(/\s+/g, " ").trim().replace(/[\s.!;:,]+$/, "");
+    return /^(?:[A-Z][a-z]|A(?=\s))/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t;
+}
+
+/** `s` without a leading verb of the kind's own ("move the lamp" -> "the lamp"), so the clause does not say it twice. */
+const dropVerb = (s, re) => s.replace(re, "").trim();
+
 /**
- * The prompt with one sentence per box it does not mention by `<id>` (the docs: the instruction and the rows should
- * agree). On an edit whose prompt does not name the frame, "In <ref_image_0>, " opens the first added sentence.
+ * Where a box lies in the frame ([top, left, bottom, right] on the 0 to 1000 grid), in words: by thirds of the frame
+ * ("at the top left", "at the bottom", "on the right", "in the middle"); a box over three quarters of the frame each way
+ * is "over most of the picture".
  */
-function instructionFlux3(prompt, boxes, lay, rows) {
-    const text = String(prompt == null ? "" : prompt).trim();
-    const frame = frameName(lay);
-    const byId = new Map((rows || []).map((r) => [r.id, r]));
-    const sentences = [];
-    for (const b of boxes) {
-        if (text.includes(`<${b.id}>`)) continue;
-        const row = byId.get(b.id);
-        switch (b.kind) {
-            case "new": sentences.push(`Add <${b.id}> in its box.`); break;
-            case "from": sentences.push(`Place <${b.id}> from <${row && row.from ? row.from : "ref_image_1"}> in its box.`); break;
-            case "move": sentences.push(`Move <${b.id}> to its new box.`); break;
-            case "remove": sentences.push(`Remove <${b.id}>.`); break;
-            case "keep": sentences.push(`Keep <${b.id}> unchanged.`); break;
-            default: break;
+function whereWords(g) {
+    if (!Array.isArray(g) || g.length !== 4) return "";
+    if (g[2] - g[0] >= 750 && g[3] - g[1] >= 750) return "over most of the picture";
+    const third = (mid, lo, hi) => (mid * 3 < 1000 ? lo : mid * 3 > 2000 ? hi : "");
+    const v = third((g[0] + g[2]) / 2, "top", "bottom"), h = third((g[1] + g[3]) / 2, "left", "right");
+    return v && h ? `at the ${v} ${h}` : v ? `at the ${v}` : h ? `on the ${h}` : "in the middle";
+}
+
+/**
+ * Which way a Move box goes, from its source to its target (grids), in words: up or down and to the left or right when
+ * its middle moves a tenth of the frame or more that way, else "to its new box"; ", larger" or ", smaller" when its
+ * area grows or shrinks by half or more.
+ */
+function wayWords(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return "to its new box";
+    const dy = (b[0] + b[2] - a[0] - a[2]) / 2, dx = (b[1] + b[3] - a[1] - a[3]) / 2;
+    const v = dy <= -100 ? "up" : dy >= 100 ? "down" : "";
+    const h = dx <= -100 ? "to the left" : dx >= 100 ? "to the right" : "";
+    const way = v && h ? `${v} and ${h}` : v || h || "to its new box";
+    const area = (g) => Math.max(1, (g[2] - g[0]) * (g[3] - g[1]));
+    const k = area(b) / area(a);
+    return k >= 1.5 ? `${way}, larger` : k <= 1 / 1.5 ? `${way}, smaller` : way;
+}
+
+/** The caption's clause for one box and its row: what happens to it, named as <id>, and where. */
+function clauseFlux3(b, row) {
+    const d = clauseOf(row.desc), id = `<${b.id}>`;
+    switch (b.kind) {
+        case "new": {
+            const where = whereWords(row.tgt_bbox || row.bbox);
+            return d ? `${VERB.test(d) ? d : "place " + d} ${id} ${where}` : `fill the area ${id} ${where} so it fits the picture`;
         }
+        case "from": {
+            const where = whereWords(row.tgt_bbox), pic = `<${row.from}>`;
+            return d ? `${VERB.test(d) ? d : "place " + d} ${id} from ${pic} ${where}` : `place what ${pic} shows as ${id} ${where}`;
+        }
+        case "move": return `move ${dropVerb(d, /^move\b/i) || "the element"} ${id} ${wayWords(row.src_bbox, row.tgt_bbox)}`;
+        case "remove": return `remove ${dropVerb(d, /^(?:remove|erase|delete)\b/i) || "the element"} ${id} ${whereWords(row.src_bbox)}`;
+        case "keep": return `keep ${dropVerb(d, /^keep\b/i) || "the element"} ${id} as it is`;
+        default: return "";
     }
-    if (sentences.length && frame && !text.includes(`<${frame}>`)) {
-        const s = sentences[0];
-        sentences[0] = `In <${frame}>, ${s.charAt(0).toLowerCase()}${s.slice(1)}`;
-    }
-    return [text, ...sentences].filter(Boolean).join(" ");
+}
+
+/**
+ * The clause of a box whose description is the prompt itself (the selection's box): the prompt, sent as it is, says
+ * what happens, so the clause only says where ("the change goes in <id> at the top left"), or which picture goes there.
+ */
+function placeOnly(b, row) {
+    const where = whereWords(row.tgt_bbox || row.bbox);
+    return b.kind === "from" && row.from ? `<${row.from}> goes in <${b.id}> ${where}` : `the change goes in <${b.id}> ${where}`;
+}
+
+/**
+ * The caption the rows go with: the prompt as it is, then one sentence per box it does not name by `<id>` with the
+ * box's description and its place in words (the docs: the instruction and the rows should agree). `rows` are the rows
+ * sent; a box without one (left out) gets no sentence. `frame` is the frame's picture name on an edit (`ref_image_0`),
+ * null on a new image. A box whose description is the prompt (the selection's box; a prompt past DESC_MAX was cut in
+ * its row) gets a sentence that says only where. On an edit "In <frame>, " opens the first sentence when the prompt
+ * does not name the frame, and "Leave the rest of the picture as it is." closes the caption when the prompt says nothing
+ * the boxes do not: empty, or one box's own description.
+ */
+function captionFlux3(prompt, boxes, rows, frame) {
+    const text = String(prompt == null ? "" : prompt).replace(/\s+/g, " ").trim();
+    const byId = new Map((rows || []).map((r) => [r.id, r]));
+    const told = (boxes || []).filter((b) => b && byId.has(b.id) && !text.includes(`<${b.id}>`));
+    const plain = (s) => clauseOf(s).toLowerCase();
+    const whole = plain(text);
+    const isPrompt = (d) => { const a = plain(d); return !!a && (a === whole || (a.length >= DESC_MAX - 10 && whole.length > a.length && whole.startsWith(a))); };
+    const said = !!text && told.some((b) => isPrompt(byId.get(b.id).desc));
+    const clauses = told.map((b) => (isPrompt(byId.get(b.id).desc) ? placeOnly(b, byId.get(b.id)) : clauseFlux3(b, byId.get(b.id)))).filter(Boolean);
+    if (clauses.length && frame && !text.includes(`<${frame}>`)) clauses[0] = `In <${frame}>, ${clauses[0]}`;
+    const sentences = clauses.map((s) => `${s.charAt(0).toUpperCase()}${s.slice(1)}.`);
+    if (frame && byId.size && (!text || said)) sentences.push("Leave the rest of the picture as it is.");
+    const head = text && sentences.length && !/[.!?]$/.test(text) ? `${text}.` : text;
+    return [head, ...sentences].filter(Boolean).join(" ");
+}
+
+/** The prompt with the caption's sentences for the boxes (captionFlux3), against the layout: the frame is its crop's name. */
+function instructionFlux3(prompt, boxes, lay, rows) {
+    return captionFlux3(prompt, boxes, rows, frameName(lay));
 }
 
 /**
@@ -175,7 +254,10 @@ function applyBoxes(req, lay) {
     const boxes = checkBoxes(req.boxes);
     const rows = rowsFlux3(req, lay);
     const prompt = instructionFlux3(req.prompt, boxes, lay, rows);
-    return { prompt: `${prompt} ${JSON.stringify(rows)}`, rows, notes: [] };
+    // a New box without a description leaves the model to guess what goes there (the panel warns of it before)
+    const bare = rows.filter((r, i) => boxes[i].kind === "new" && !r.desc).map((r) => r.id);
+    const notes = bare.length ? [`${bare.length === 1 ? "Box" : "Boxes"} ${bare.join(", ")} went without a description: the model guesses what goes there.`] : [];
+    return { prompt: `${prompt} ${JSON.stringify(rows)}`, rows, notes };
 }
 
-module.exports = { SCHEMAS, KINDS, BOX_ID, DESC_MAX, schemaOf, checkBoxes, grid, frameName, pictureName, rowsFlux3, instructionFlux3, applyBoxes, _descOf: descOf };
+module.exports = { SCHEMAS, KINDS, BOX_ID, DESC_MAX, schemaOf, checkBoxes, grid, frameName, pictureName, rowsFlux3, instructionFlux3, captionFlux3, whereWords, wayWords, applyBoxes, _descOf: descOf };

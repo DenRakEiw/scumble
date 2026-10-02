@@ -1,4 +1,4 @@
-# Boxes in the prompt: FLUX 3 Image and Ideogram 4 (item 28; researched 2026-10-01 night, planned S1-S4, S1-S3d built 2026-10-02)
+# Boxes in the prompt: FLUX 3 Image and Ideogram 4 (item 28; researched 2026-10-01 night, planned S1-S4, S1-S3e built 2026-10-02)
 
 The user's idea (2026-10-01): a selection sent to FLUX 3 as a bounding box, and, after looking at Kijai's
 Ideogram 4 prompt builder, a **plugin** for box prompts made for FLUX 3 and Ideogram 4. §1-§3 are the research, §4
@@ -79,8 +79,9 @@ aspect preset (1:1 vs 5:4 measured), so `planFrame` scans it exact with `scanBou
 provider upscaler plans with mode "crop" (`cropFrame` follows `runUpscale`); "left out" uses the run's own `toFrame`
 (its 1/1000 floor); a new host event `crop` (a node parameter or the API size changed) re-renders the panel. Tests:
 `tools/boxes_test.js` section 11, `tools/boxes_test.py` step `the_crop_frame_and_the_paste_warning`; gates `boxes`
-and `commands` green offline (labels `s3c`, `s3c2`). S3d (the Boxes switch) was built the same day, as §10 says
-under "As built". Next: S3e, the live checks §6 with the user.
+and `commands` green offline (labels `s3c`, `s3c2`). S3d (the Boxes switch) and S3e (the caption's place words, ids
+from the description, the warnings, the tool's hit order) were built the same day, as §10 says under "As built". Next:
+the live checks §6 with the user, then a release of item 28 on the user's word; S4 optional.
 
 ## 1. Sources
 
@@ -462,6 +463,56 @@ step `the_boxes_switch` (a loopback recipe that takes boxes, no key) and `switch
 - Later, larger: a small card next to the selected box on the canvas (kind, description, reference) so a box is
   described where it is drawn, not only in the side panel.
 
+**S3e as built (2026-10-02, the user: "weiter").** Written in our own words and code (their source was read for the
+idea only). **The caption:** main's `providers/boxes.js` `captionFlux3(prompt, boxes, rows, frame)` (with `clauseFlux3`,
+`whereWords`, `wayWords`; `instructionFlux3` calls it with the layout's frame name) and its copy in
+`plugins/boxes/format.js` write one sentence per box the prompt does not name by `<id>`: New "place <desc> <id> <where>"
+(a desc that starts with an instruction verb goes as it is, an empty one "fill the area <id> <where> so it fits the
+picture"), From "... <id> from <ref_image_k> <where>" ("place what <ref_image_k> shows as <id>" without a desc), Move
+"move <desc> <id> <way>", Remove "remove <desc> <id> <where>", Keep "keep <desc> <id> as it is" (the kind's own verb
+dropped from the desc, "the element" for an empty one). `<where>` by thirds of the frame from the box's middle ("at the
+top left", "at the bottom", "on the right", "in the middle", "over most of the picture" at three quarters each way);
+`<way>` up / down and to the left / right when the middle moves **a tenth** of the frame (the plan's "a fifth" was a
+misreading; their source uses a twentieth), else "to its new box", ", larger" / ", smaller" at half the area again.
+"In <frame>, " opens the first sentence on an edit as before; the prompt gets a full stop before the sentences.
+**The closing** "Leave the rest of the picture as it is." goes on an edit only when the prompt is empty or equals one
+box's desc (folded, lowercase, no closing stop): a prompt of the user's own ("make it night") is not contradicted.
+The prompt always goes first as it is; a box whose desc is the prompt (S1's selection box; also a prompt past
+`DESC_MAX` whose desc is its first 400 characters) gets a sentence that says only where ("make the door red. In
+<ref_image_0>, the change goes in <door_red_1> in the middle. Leave the rest of the picture as it is."; a From box
+"<ref_image_2> goes in <edit_1> ..."). `applyBoxes` answers a note for every New box without a desc ("Box box_2 went without a description: the model
+guesses what goes there."). **Ids:** `BOX_ID` is now `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_[1-9][0-9]*$` on both sides
+(several words, each starting with a letter); `renderer/editor/boxes.js` `idWords(text)` takes the first two words that
+are not stop words (articles, prepositions, the instruction verbs; accents dropped, ß as ss, @img tokens, `{@..}`
+markers and `<names>` skipped, 16 letters a word). The plugin's `normalise` makes a new box's id from its words (a Text
+box's text first, then the desc; `box_n` / `ref_n` / `edit_n` without words), and renames a box whose id is still a
+default one (`box|keep|move|remove|ref|edit_n`) when a patch changes its desc or text, unless the prompt names it as
+`<id>`; an id once made from words, or typed, stays (no hidden "auto" flag in the data). `set` re-selects a renamed
+box in the tool and says "Box box_1 is called red_scarf_1 now, after its description." S1's `selectionBox` is named
+after the prompt too (`red_door_1`, `edit_1` without words). **Warnings:** the panel warns of a New box (not Text)
+without a desc while the recipe takes boxes and the switch is on, and, with a selection, of a box that places something
+(New, From, Move's target) under 48 px a side at the crop's emitted size (`cropCheck().small`); `host.js` adds the same
+note for the plugins' boxes to a run (`smallBoxes` / `smallNote` in `renderer/editor/boxes.js`; Generate new at the
+requested size). The desc field shows a placeholder ("what goes in the box"). **The tool:** `hitsAt` sorts the boxes
+under the pointer by area, the topmost first among equals (the selected box still stays the one dragged when it is
+under the pointer, so a click on a small box inside the selected one needs Escape first); a box turned into Move whose
+target lies on its source steps aside by a fifth of the picture (right, else left, down, up), and a New or From box
+turned into Keep / Move / Remove takes its rect as the source (a From box's `src` was a part of its layer). **Tests:**
+`tools/boxes_test.js` 116 checks (the caption cases, the place and way vectors, main and `format.js` equal on 67 grids
+and their pairs, `idWords`, `BOX_ID`, `smallBoxes`), `tools/flux3_test.js` 101 (the two box prompts), `boxes_test.py` a
+step `ids_warnings_caption_and_hit_order` (a loopback recipe that takes boxes: the rename, the warnings, the run's
+caption and notes, the hit order, Move stepping aside) and the older steps on the new ids; gates `boxes`, `commands`,
+`lint`, `types` green offline (labels `s3e`, `s3e2`, after the review `s3e3`); one look over CDP. **A review** (two
+readers, each finding checked by a third) confirmed eight, all fixed: the first build dropped a prompt that equalled
+the box's desc and wrote "place <prompt>", so "remove the man" went as "place remove the man" (now the prompt stays
+word for word and the box says only where); a prompt past 400 characters went twice, the second copy cut; the wider
+`BOX_ID` let a box be called `ref_image_1` (now refused, and "ref" is a stop word); `clauseOf` did not lower an opening
+"A"; a New or From box turned Keep or Remove with a rect given took its old rect as the source; a kind change from the
+panel (it sends `text: null`) counted as a new description and renamed a default id; the hit-order step passed without
+the sort (now a bigger box lies on top of the small one); PLUGINS.md and a tooltip gave the old id rule. Two were
+refuted (the panel row follows a rename at once; the selected box staying the one dragged is the design). Not done: the
+card on the canvas (later).
+
 **Tests (normal tier).** `tools/boxes_test.py`, gate `boxes` on the tiles backend: the commands (add, set, remove,
 list, from_selection), the undo step, the tool through the pointer hooks (draw, move, resize, delete, as
 `film_test.py` drives the control points), the overlay drawn (a pixel of the box's colour on the screen canvas),
@@ -508,7 +559,7 @@ app path (`objects()` through a real SAM2 model) by eye on the user's machine, w
 | 4 | S3b (tool and overlay) | "Boxes plugin: the tool (S3b)" |
 | 5 | S3c (crop frame, paste warning), `boxes_test.py`, manual | "Boxes plugin: the frame and the paste (S3c)" |
 | 5b | S3d (the Boxes switch in the Prompt section, the user's wish), built 2026-10-02 | "Boxes: one switch in the Prompt section (S3d)" |
-| 5c | S3e (position words, ids from the desc, the missing-desc warning, the tool's hit order) | "Boxes: the caption and the tool (S3e)" |
+| 5c | S3e (position words, ids from the desc, the missing-desc warning, the tool's hit order), built 2026-10-02 | "Boxes: the caption and the tool (S3e)" |
 | 6 | S4 (`Document.objects`, Keep boxes) | "Boxes plugin: Keep rows from the objects (S4)" |
 
 A release after session 5 at the earliest (S1 alone is a row most users would not find); the CHANGELOG section

@@ -367,7 +367,7 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     let boxed = editReq({ params: { ...defaults(V.settings, V.fixed), selection_box: true }, boxes: [BOX] });
     boxed = { ...boxed, prompt: boxes.applyBoxes(boxed, bfl.layout(boxed)).prompt };
     x = await run(boxed);
-    check("a request with one box: the prompt ends in the JSON rows, after the instruction sentence", !x.err && x.body.prompt === 'make the door red In <ref_image_0>, add <edit_1> in its box. [{"id":"edit_1","from":null,"src_bbox":null,"tgt_bbox":[250,250,750,750],"desc":"make the door red"}]', x.err || short(x.body && x.body.prompt));
+    check("a request with one box: the prompt ends in the JSON rows, after the caption (the prompt is the box's desc: it goes as it is, the box says where)", !x.err && x.body.prompt === 'make the door red. In <ref_image_0>, the change goes in <edit_1> in the middle. Leave the rest of the picture as it is. [{"id":"edit_1","from":null,"src_bbox":null,"tgt_bbox":[250,250,750,750],"desc":"make the door red"}]', x.err || short(x.body && x.body.prompt));
     check("a key that is no API field never reaches the body, the keys are the schema's", !x.err && !("selection_box" in x.body) && eq(Object.keys(x.body), SCHEMA), short(x.body && Object.keys(x.body)));
     const plain = await run(editReq());
     const plainOff = await run(editReq({ boxes: [] }));
@@ -377,7 +377,7 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     const named2 = refs.resolveMarkers(boxed.prompt, lay2.pictures, boxed.refName);
     boxed = { ...boxed, prompt: boxes.applyBoxes({ ...boxed, prompt: named2.text }, lay2).prompt };
     x = await run(boxed);
-    check("a from box with the Original: the reference is ref_image_2 (the crop 0, the Original 1), named 'image 3' in the desc", !x.err && x.body.prompt === 'put image 3 here In <ref_image_0>, place <edit_1> from <ref_image_2> in its box. [{"id":"edit_1","from":"ref_image_2","src_bbox":[0,0,1000,1000],"tgt_bbox":[0,500,500,1000],"desc":"put image 3 here"}]' && eq(tagsOf(x.body.images), ["CROP", "REF0", "REF1"]), x.err || short(x.body && x.body.prompt));
+    check("a from box with the Original: the reference is ref_image_2 (the crop 0, the Original 1), named 'image 3' in the desc", !x.err && x.body.prompt === 'put image 3 here. In <ref_image_0>, <ref_image_2> goes in <edit_1> at the top right. Leave the rest of the picture as it is. [{"id":"edit_1","from":"ref_image_2","src_bbox":[0,0,1000,1000],"tgt_bbox":[0,500,500,1000],"desc":"put image 3 here"}]' && eq(tagsOf(x.body.images), ["CROP", "REF0", "REF1"]), x.err || short(x.body && x.body.prompt));
 
     // ---- 7. every body against the schema -----------------------------------------------------------------------------
     console.log("\n--- 7. the schema ---");

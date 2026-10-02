@@ -19,7 +19,7 @@ import { glReleasePool } from "./inpaint_filters_gl.js";
 import { withoutSecrets } from "./redact.js";
 import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
 import { comfyRefSpec, comfyLayout, trimSlots, refName, resolveMarkers as resolveComfyMarkers } from "./comfyrefs.js";
-import { frameOf, selectionBox, smallBox, SMALL_PX } from "./boxes.js";
+import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from "./boxes.js";
 import * as dialogs from "../dialogs.js";
 
 const PROXY = "/comfy";
@@ -1447,6 +1447,9 @@ export const host = {
                 const got = await this.plugins.boxes(editor, ctx, []);
                 boxes.push(...got.boxes);
                 preNotes.push(...got.notes);
+                // every box that places something, not only the selection's (S3e)
+                const small = smallNote(smallBoxes(got.boxes, info.emitted));
+                if (small) preNotes.push(small);
             }
             // no source holds a box for the document: the selection goes as one (S1). Boxes the crop left out are no
             // reason for it: the document still holds them
@@ -1688,6 +1691,8 @@ export const host = {
                 const got = await this.plugins.boxes(editor, this.boxContext(editor, { mode: "new", recipe: r, provider: r.provider, model, schema: options.boxes, frame, bounds: null, sent: refIds }), []);
                 boxes = got.boxes;
                 preNotes.push(...got.notes);
+                const small = smallNote(smallBoxes(got.boxes, [width, height]));
+                if (small) preNotes.push(small);
             }
             request = {
                 provider: r.provider, model, kind: "text",

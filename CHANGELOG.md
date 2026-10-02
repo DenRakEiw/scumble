@@ -50,6 +50,20 @@ the section for its version; `docs/` and the commit history hold the technical d
   box the crop leaves out, one whose edge it cuts, and one that changes the picture outside the selection while
   *Paste* keeps the selection only, which would cut the result there; *Paste the whole crop* in that warning switches
   Paste for the document.
+- **Boxes: the prompt says where each box goes.** A run with boxes now writes a sentence per box into the prompt with
+  its description and its place in words ("Place a red scarf <red_scarf_1> at the top left.", "Move the lamp
+  <old_lamp_1> up and to the left, larger."); a description written as an instruction goes in as it is. Your prompt
+  goes first, word for word; the selection's box, described by the prompt, only says where the change goes. With an
+  empty prompt, or the selection's box, the sentences end with "Leave the rest of the picture as it is.". *Copy rows*
+  writes the same text.
+- **Boxes are named after their description.** A box keeps its default name (box_1) only until it is described: then
+  it is called after the description's first two telling words (red_scarf_1), and the selection's box after the
+  prompt. A name of your own (not box_1, edit_2 and the like) stays, and so does one your prompt uses. Names may now
+  hold several words (`red_scarf_1`).
+- **Boxes: warnings before a run, and a tool that takes the box you point at.** The Boxes section warns of a New box
+  without a description and of a box too small for the model to place anything in; a run notes both. A click with the
+  Boxes tool takes the smallest box under the pointer, so a box inside another is picked directly. A box turned into
+  Move keeps its place as the source and its target steps aside, so the two can be told apart.
 - Plugins get a `crop` event when an app setting the crop of a run depends on changes (a node parameter, the API
   size), and `scumble.host.cropFrame(editor)` says what that crop is.
 

@@ -411,7 +411,7 @@ when the count is 0 and no source answered a box. A source without `count` count
 A box is in **image pixels** (the document's coordinates, `[l, t, r, b]`, right and bottom exclusive):
 
 ```js
-{ id: "knight_1",                    // a lowercase name, an underscore and a number; unique in the run (a duplicate gets the next number)
+{ id: "knight_1",                    // lowercase words and a number joined by underscores (red_scarf_2); unique in the run (a duplicate gets the next number)
   kind: "new" | "keep" | "move" | "remove" | "from",
   rect: [l, t, r, b],                // where the element goes (for remove: where it was)
   src: [l, t, r, b] | null,          // keep / move / remove: where it is now; from: where it is in the reference layer (null: the whole layer)
@@ -430,8 +430,8 @@ lies outside it with a note in the status line (and in `generate`'s `notes`); a 
 does not send refuses the run, like an `@img` token nobody can resolve. A source that throws or answers a malformed
 box is reported in *Settings › Plugins* and skipped; the run goes on without its boxes. The box rows go out in the
 prompt, so the log and `generate`'s `prompt_sent` show them, and the answer's `boxes` field counts them. With the
-switch on and no box held by any source, the core sends the selection as one box itself (`edit_1`, a New box with the
-prompt as its description, a From box when the prompt names a reference with @img1). The built-in Boxes plugin is a
+switch on and no box held by any source, the core sends the selection as one box itself (named after the prompt's
+first two telling words, `red_door_1`, or `edit_1` without any; a New box with the prompt as its description, a From box when the prompt names a reference with @img1). The built-in Boxes plugin is a
 source; `plugins/sample` has another (`sample.box` switches it on, and the document's Boxes switch has to be on too)
 that reads as a template.
 

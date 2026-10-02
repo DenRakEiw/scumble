@@ -7,7 +7,10 @@
 // on (the core's genSettings.boxes, S3d; the first box turns it on): the app measures them in the crop it sends and
 // writes the model's rows. S3a: the data, the panel in the Generate pane, the commands. S3b: the canvas tool and the
 // overlay (tool.js). S3c: the crop Generate sends, as a frame while the tool is active and as warnings in the panel
-// (a box the crop leaves out or cuts; a box outside the selection while Paste keeps the selection only).
+// (a box the crop leaves out or cuts; a box outside the selection while Paste keeps the selection only). S3e: a box is
+// named after its description while it has a default id (red_scarf_1), the panel warns of a New box without one and of
+// a box too small to place anything in, a box turned into Move steps aside from its source; the caption of a run says
+// where each box goes (main's providers/boxes.js, format.js for the clipboard).
 //
 //   tool     Boxes (X): draw, select, move, resize, delete, duplicate, nudge; the overlay while the tool or the panel
 //            shows, the crop's frame while the tool is active
@@ -16,7 +19,7 @@
 //   commands boxes.list, boxes.add, boxes.set, boxes.remove, boxes.from_selection, boxes.clear
 //   generate the document's boxes for a run that takes them
 
-import { BOX_ID, KINDS, DESC_MAX, toFrame } from "/editor/boxes.js";
+import { BOX_ID, KINDS, DESC_MAX, toFrame, idWords, smallBox, smallNote } from "/editor/boxes.js";
 import { clipboardText, fold } from "./format.js";
 import { makeTool, colourOf } from "./tool.js";
 
@@ -57,19 +60,34 @@ export function activate(scumble) {
         while (used.has(`${base}_${n}`)) n++;
         return `${base}_${n}`;
     }
+    /** The id a box gets by default, by its kind (S3a), and Selection → box's edit_n. */
+    const DEFAULT_ID = /^(?:box|keep|move|remove|ref|edit)_[1-9][0-9]*$/;
+    /** The words an id is made from (S3e): a Text box's words, else its description. */
+    const wordsOf = (b) => idWords(b.text) || idWords(b.desc);
+    /** The prompt names the box as <id>: renaming it would leave the prompt naming nothing. */
+    const promptNames = (doc, id) => String((doc.editor && doc.editor.promptText) || "").includes(`<${id}>`);
+    /** `r` moved aside by a fifth of the picture (right, else left, else down, else up), so a box turned into Move does not lie on its source. */
+    function aside(doc, r) {
+        const dx = Math.round(doc.width / 5), dy = Math.round(doc.height / 5);
+        if (r[2] + dx <= doc.width) return [r[0] + dx, r[1], r[2] + dx, r[3]];
+        if (r[0] - dx >= 0) return [r[0] - dx, r[1], r[2] - dx, r[3]];
+        if (r[3] + dy <= doc.height) return [r[0], r[1] + dy, r[2], r[3] + dy];
+        if (r[1] - dy >= 0) return [r[0], r[1] - dy, r[2], r[3] - dy];
+        return r.slice();
+    }
     /**
      * A box held to its shape: `input` the fields given, `base` the box it changes (null for a new one). The id matches
      * BOX_ID and is unique in the document; a keep / move / remove box needs a source; a from box a reference layer; a
-     * new box has neither. `text` makes a Text box (a new box whose words are rendered).
+     * new box has neither. `text` makes a Text box (a new box whose words are rendered). Without an id given, the id
+     * comes from the words of the description (S3e: "a red scarf" -> red_scarf_1): a new box's, and a box's whose id
+     * is still a default one (box_1, edit_2) when its description or text changes, unless the prompt names it as <id>;
+     * an id once made from words stays. `idBase` is the default when there are no words.
      */
-    function normalise(doc, input, { base = null, boxes = boxesOf(doc) } = {}) {
+    function normalise(doc, input, { base = null, boxes = boxesOf(doc), idBase = null } = {}) {
         const a = input || {};
         const kind = a.kind != null ? String(a.kind) : base ? base.kind : "new";
         if (!KINDS.has(kind)) throw new Error(`kind "${kind}" is not new, keep, move, remove or from`);
-        const id = a.id != null && String(a.id).trim() !== "" ? String(a.id).trim() : base ? base.id : nextId(boxes, kind === "from" ? "ref" : kind === "new" ? "box" : kind);
-        if (!BOX_ID.test(id)) throw new Error(`the id "${id}" is not a lowercase name, an underscore and a number (knight_1)`);
-        if (boxes.some((b) => b.id === id && (!base || b.id !== base.id))) throw new Error(`the id ${id} is already used by another box`);
-        const rect = a.rect != null ? rectOf(a.rect, "rect") : base ? base.rect : null;
+        let rect = a.rect != null ? rectOf(a.rect, "rect") : base ? base.rect : null;
         if (!rect) throw new Error("rect is required: [left, top, right, bottom] in image pixels");
         let src = a.src !== undefined ? (a.src == null ? null : rectOf(a.src, "src")) : base ? base.src : null;
         let layer = a.layer !== undefined ? (a.layer == null ? null : referenceOf(doc, a.layer).id) : base ? base.layer : null;
@@ -79,13 +97,29 @@ export function activate(scumble) {
             if (!layer) throw new Error("a From reference box needs layer, the reference layer");
         } else {
             layer = null;
-            if (!src && base && base.kind === "new") src = rect.slice();   // a New box turned into Keep / Move / Remove: it is where it is
+            // a New or From box turned into Keep / Move / Remove: the element is where the box is (a From box's src is
+            // a part of its reference layer, not a place in the picture)
+            if (base && (base.kind === "new" || base.kind === "from") && a.src === undefined) src = (kind !== "move" && a.rect != null ? rect : base.rect).slice();
             if (!src) throw new Error(`a ${kind} box needs src, where the element is now: [left, top, right, bottom]`);
+            // turned into Move with the target on its source: the target steps aside, so the two can be told apart
+            if (kind === "move" && base && base.kind !== "move" && a.rect == null && rect.every((v, i) => v === src[i])) rect = aside(doc, src);
         }
         const desc = a.desc !== undefined ? fold(a.desc) : base ? base.desc || "" : "";
         if (desc.length > DESC_MAX) throw new Error(`desc is longer than ${DESC_MAX} characters`);
         const text = a.text !== undefined ? (a.text == null ? null : String(a.text).replace(/\s+/g, " ").trim()) : base ? base.text || null : null;
         if (text != null && kind !== "new") throw new Error("only a New box renders text");
+        let id;
+        const others = base ? boxes.filter((b) => b.id !== base.id) : boxes;
+        if (a.id != null && String(a.id).trim() !== "") id = String(a.id).trim();
+        else if (!base) id = nextId(boxes, wordsOf({ desc, text }) || idBase || (kind === "from" ? "ref" : kind === "new" ? "box" : kind));
+        else {
+            id = base.id;
+            const words = wordsOf({ desc, text });
+            const changed = desc !== (base.desc || "") || text !== (base.text == null ? null : base.text);
+            if (changed && words && DEFAULT_ID.test(base.id) && !promptNames(doc, base.id)) id = nextId(others, words);
+        }
+        if (!BOX_ID.test(id)) throw new Error(`the id "${id}" is not lowercase words and a number joined by underscores (knight_1, red_scarf_2), or is a picture's name (ref_image_1)`);
+        if (others.some((b) => b.id === id)) throw new Error(`the id ${id} is already used by another box`);
         return { id, kind, rect, src, layer, desc, text };
     }
 
@@ -141,23 +175,28 @@ export function activate(scumble) {
     /**
      * What Generate would do with the boxes now: `out` the ones it leaves out (outside its crop, or a sliver of it, by
      * the run's own toFrame), `cut` the ones its edge cuts, `spill` (with Paste on "selection") the ones that change
-     * pixels outside the selection, where the paste cuts the result away. Null without a selection or boxes. The
-     * selection is its bounding box, 2 px of slack for the soft edge.
+     * pixels outside the selection, where the paste cuts the result away, `small` (S3e) the ones that place something
+     * in a box under 48 px a side at the size the crop is sent at. Null without a selection or boxes. The selection is
+     * its bounding box, 2 px of slack for the soft edge.
      */
     function cropCheck(doc, boxes = boxesOf(doc)) {
         const crop = cropOf(doc);
         const sel = typeof doc.editor.getBounds === "function" ? doc.editor.getBounds() : null;
         if (!crop || !sel || !boxes.length) return null;
         const f = [crop.x, crop.y, crop.x + crop.w, crop.y + crop.h];
-        const out = [], cut = [], spill = [];
+        const sentAt = Array.isArray(crop.emitted) ? crop.emitted : [crop.w, crop.h];
+        const out = [], cut = [], spill = [], small = [];
         for (const b of boxes) {
             const rs = placed(b);
             if (rs.some((r) => !toFrame(r, crop))) { out.push(b.id); continue; }
             if (rs.some((r) => !within(r, f))) cut.push(b.id);
             if (crop.paste !== "crop" && changes(b).some((r) => !within(r, sel, 2))) spill.push(b.id);
+            if (b.kind !== "keep" && b.kind !== "remove" && smallBox(toFrame(b.rect, crop), sentAt)) small.push(b.id);
         }
-        return { crop, out, cut, spill };
+        return { crop, out, cut, spill, small };
     }
+    /** The New boxes (not Text) without a description: the model would have to guess what goes there (S3e). */
+    const bareOf = (boxes) => boxes.filter((b) => b.kind === "new" && b.text == null && !b.desc).map((b) => b.id);
     /** Crop > Paste on "whole crop" for this document (the set_crop command: the Crop section follows). */
     async function pasteWholeCrop(doc) {
         await scumble.commands.run("set_crop", { doc: doc.id, paste: "crop" });
@@ -165,10 +204,10 @@ export function activate(scumble) {
     }
 
     // ---- changes (one undo step each) ----------------------------------------------------------------------------------
-    function add(doc, input) {
+    function add(doc, input, { idBase = null } = {}) {
         switched.delete(doc.id);
         const boxes = boxesOf(doc);
-        const b = normalise(doc, input, { boxes });
+        const b = normalise(doc, input, { boxes, idBase });
         write(doc, [...boxes, b], `Add box ${b.id}`);
         // the first box turns the switch on; an undo, a redo or an opened document never does (they do not add)
         if (!boxes.length) switchOn(doc);
@@ -181,6 +220,11 @@ export function activate(scumble) {
         const b = normalise(doc, patch, { base: boxes[i], boxes });
         const next = boxes.slice(); next[i] = b;
         write(doc, next, `Change box ${id}`);
+        if (b.id !== id) {
+            // named after its new description (S3e): the tool keeps it selected under its new id
+            if (boxTool.selected(doc) === id) boxTool.select(doc, b.id);
+            if (patch && patch.id == null) doc.status(`Box ${id} is called ${b.id} now, after its description.`);
+        }
         return b;
     }
     function remove(doc, id) {
@@ -204,14 +248,17 @@ export function activate(scumble) {
         const prompt = desc != null ? String(desc) : String(doc.editor.promptText || "");
         const m = TOKEN.exec(prompt); TOKEN.lastIndex = 0;
         const ref = m ? doc.layers().find((l) => l.label === "img" + m[1]) : null;
-        return add(doc, { id: id || nextId(boxesOf(doc), "edit"), kind: ref ? "from" : "new", rect: [x, y, x + w, y + h], layer: ref ? ref.id : undefined, desc: prompt });
+        // the id from the prompt's words (red_door_1), edit_n when it has none
+        return add(doc, { id: id || undefined, kind: ref ? "from" : "new", rect: [x, y, x + w, y + h], layer: ref ? ref.id : undefined, desc: prompt }, { idBase: "edit" });
     }
     function copyRows(doc) {
         const boxes = boxesOf(doc);
         if (!boxes.length) { doc.status("No boxes to copy."); return null; }
         const refs = shownReferences(doc);
         const layerById = new Map(doc.layers().map((l) => [l.id, l]));
-        const got = clipboardText(String(doc.editor.promptText || ""), boxes.map((b) => ({ ...b, layerFrame: b.layer && layerById.has(b.layer) ? { x: layerById.get(b.layer).x, y: layerById.get(b.layer).y, w: layerById.get(b.layer).w, h: layerById.get(b.layer).h } : null })),
+        // the prompt's @img tokens as the descriptions' (clipDesc), so a box described by the prompt reads as said by it
+        const prompt = String(doc.editor.promptText || "").replace(TOKEN, (m, n) => `<ref_image_${n}>`);
+        const got = clipboardText(prompt, boxes.map((b) => ({ ...b, layerFrame: b.layer && layerById.has(b.layer) ? { x: layerById.get(b.layer).x, y: layerById.get(b.layer).y, w: layerById.get(b.layer).w, h: layerById.get(b.layer).h } : null })),
             { x: 0, y: 0, w: doc.width, h: doc.height }, { mode: "edit", nameOf: (id) => { const k = refs.findIndex((l) => l.id === id); return k < 0 ? null : `ref_image_${k + 1}`; }, descOf: (b) => fold(clipDesc(doc, b)) });
         if (navigator.clipboard) navigator.clipboard.writeText(got.text).catch(() => {});
         doc.status(`${got.rows.length} row${got.rows.length === 1 ? "" : "s"} copied, measured against the whole picture (a run measures them in the crop it sends).${got.notes.length ? " " + got.notes.join(" ") : ""}`);
@@ -310,8 +357,10 @@ export function activate(scumble) {
             // under the pointer is not replaced by a change elsewhere
             let warnKey = null;
             const names = (ids) => `${ids.length === 1 ? "Box" : "Boxes"} ${ids.join(", ")}`;
-            const renderWarnings = (chk) => {
+            const renderWarnings = (chk, bare) => {
                 const lines = [];
+                if (bare.length) lines.push([`${names(bare)} ${bare.length === 1 ? "has" : "have"} no description: the model does not know what goes there. Describe ${bare.length === 1 ? "it in its row" : "them in their rows"}.`, false]);
+                if (chk && chk.small.length) lines.push([smallNote(chk.small), false]);
                 if (chk && chk.out.length) lines.push([`${names(chk.out)} ${chk.out.length === 1 ? "lies" : "lie"} outside the crop Generate sends and ${chk.out.length === 1 ? "is" : "are"} left out.`, false]);
                 if (chk && chk.cut.length) lines.push([`${names(chk.cut)} ${chk.cut.length === 1 ? "reaches" : "reach"} past the crop's edge: Generate sends the part inside it.`, false]);
                 if (chk && chk.spill.length) lines.push([`${names(chk.spill)} ${chk.spill.length === 1 ? "reaches" : "reach"} outside the selection: Generate pastes the result inside the selection only and would cut ${chk.spill.length === 1 ? "it" : "them"} there.`, true]);
@@ -338,7 +387,7 @@ export function activate(scumble) {
                     : !on ? `Not sent: the Boxes switch under the prompt is off. The boxes stay with the document; switch it on to send them with ${rs.name}.`
                     : boxes.length ? `${rs.name} sends these boxes with every Generate and Generate new run.${at}`
                     : `${rs.name} sends the selection as one box while the document has none (the Boxes switch is on).`;
-                renderWarnings(chk);
+                renderWarnings(chk, rs.takes && on ? bareOf(boxes) : []);
                 const k = JSON.stringify([boxes, refs.map((l) => [l.id, l.name])]);
                 if (!force && k === key) return;
                 // a field being edited is not rebuilt under the user's cursor: the next change after it blurs does it
@@ -353,7 +402,7 @@ export function activate(scumble) {
                     // a click on the row (not in a field) selects the box on the canvas
                     row.addEventListener("pointerdown", (e) => { if (!e.target.closest("input, select, button")) boxTool.select(doc, b.id); });
                     const head = ui.el("div", "boxes-head");
-                    head.appendChild(field("boxes-id", b.id, "The element's name in the prompt: a lowercase name, an underscore and a number", (v) => change(b.id, { id: v })));
+                    head.appendChild(field("boxes-id", b.id, "The element's name in the prompt: lowercase words and a number joined by underscores (knight_1, red_scarf_2)", (v) => change(b.id, { id: v })));
                     const kindNow = b.text != null ? "text" : b.kind;
                     head.appendChild(select(Object.entries(KIND_LABELS), kindNow, "What the box does", (v) => {
                         if (v === "text") change(b.id, { kind: "new", text: b.text || "" });
@@ -363,7 +412,9 @@ export function activate(scumble) {
                     head.appendChild(ui.button("×", "Remove this box", () => run(() => remove(doc, b.id))));
                     row.appendChild(head);
                     if (b.text != null) row.appendChild(field("boxes-text", b.text, "The words rendered in the box", (v) => change(b.id, { text: v })));
-                    row.appendChild(field("boxes-desc", b.desc, b.text != null ? "Style and colour of the text (optional)" : "What it is (a reference as @img1)", (v) => change(b.id, { desc: v })));
+                    const desc = field("boxes-desc", b.desc, b.text != null ? "Style and colour of the text (optional)" : "What it is (a reference as @img1); a box still called box_1 takes its name from it", (v) => change(b.id, { desc: v }));
+                    desc.placeholder = b.text != null ? "style of the text (optional)" : b.kind === "new" ? "what goes in the box" : b.kind === "from" ? "what to take from the reference (optional)" : "what it is";
+                    row.appendChild(desc);
                     const geo = ui.el("div", "boxes-geo");
                     geo.appendChild(ui.el("span", "boxes-geo-label", b.kind === "remove" ? "Was" : b.kind === "keep" ? "At" : "To"));
                     geo.appendChild(field("boxes-rect", rectText(b.kind === "keep" || b.kind === "remove" ? b.src : b.rect), "left, top, right, bottom in image pixels", (v) => change(b.id, b.kind === "keep" || b.kind === "remove" ? { src: parseRect(v), rect: parseRect(v) } : { rect: parseRect(v) })));
@@ -429,12 +480,12 @@ export function activate(scumble) {
     });
     scumble.commands.register("add", {
         description: "Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).",
-        params: { id: { type: "string", description: "a lowercase name, an underscore and a number (knight_1); default the next free box_n" }, ...FIELDS },
+        params: { id: { type: "string", description: "lowercase words and a number joined by underscores (knight_1, red_scarf_2); default made from the description's first two telling words (\"a red scarf\" -> red_scarf_1), else the next free box_n" }, ...FIELDS },
         needsImage: true, scope: "doc",
         run(doc, a) { const b = add(doc, a); return { ...summary(b), ...(switchNote(doc) ? { switched_on: true } : {}) }; },
     });
     scumble.commands.register("set", {
-        description: "Change a box: only the given fields change (new_id renames it). One undo step.",
+        description: "Change a box: only the given fields change (new_id renames it). A box whose id is still a default one (box_1, edit_2) is named after a new description (red_scarf_1) unless the prompt names it as <id>; the answer carries the id. One undo step.",
         params: { id: { type: "string", description: "the box to change", required: true }, new_id: { type: "string", description: "a new id" }, ...FIELDS },
         needsImage: true, scope: "doc",
         run(doc, a) { const { id, new_id: newId, ...rest } = a || {}; return summary(set(doc, String(id), newId != null ? { ...rest, id: newId } : rest)); },
@@ -447,7 +498,7 @@ export function activate(scumble) {
     });
     scumble.commands.register("from_selection", {
         description: "The selection's bounds as a box: a new box described by the prompt (or desc); when the prompt names a reference with @img1, that layer placed into the selection (a from box). One undo step.",
-        params: { id: { type: "string", description: "default the next free edit_n" }, desc: { type: "string", description: "the description (default the prompt)" } },
+        params: { id: { type: "string", description: "default made from the description's words (red_door_1), else the next free edit_n" }, desc: { type: "string", description: "the description (default the prompt)" } },
         needsImage: true, scope: "doc",
         run(doc, a) { const b = fromSelection(doc, a || {}); return { ...summary(b), ...(switchNote(doc) ? { switched_on: true } : {}) }; },
     });
