@@ -52,10 +52,12 @@ const open = new Set();        // the dialogs on screen: { dialog, finish }
 /**
  * Ask in a modal dialog of the app. `buttons` are labels, left to right; `defaultId` has the focus and Enter answers
  * it (`primary` draws it as the main action unless `danger` names it), `cancelId` is the answer of Escape. `danger`:
- * the index of a button that loses something (drawn as such). Resolves with the index of the button pressed.
+ * the index of a button that loses something (drawn as such). `focusId`: another button to take the focus (a
+ * question that opens unasked, while the user may be typing, puts it on the harmless answer; Enter answers the
+ * focused button). Resolves with the index of the button pressed.
  * `signal` (an AbortSignal) closes the dialog with `cancelId` (main took the question back).
  */
-export function ask({ title = "", message = "", detail = "", buttons = ["OK", "Cancel"], defaultId = 0, cancelId = null, danger = -1, primary = true, signal = null } = {}) {
+export function ask({ title = "", message = "", detail = "", buttons = ["OK", "Cancel"], defaultId = 0, cancelId = null, danger = -1, primary = true, focusId = null, signal = null } = {}) {
     const labels = (Array.isArray(buttons) && buttons.length ? buttons : ["OK"]).map((b) => String(b));
     const cancel = cancelId != null && cancelId >= 0 && cancelId < labels.length ? cancelId : labels.length - 1;
     const def = defaultId >= 0 && defaultId < labels.length ? defaultId : 0;
@@ -132,7 +134,7 @@ export function ask({ title = "", message = "", detail = "", buttons = ["OK", "C
         document.body.appendChild(dialog);
         open.add(entry);
         try { dialog.showModal(); } catch (_) { dialog.setAttribute("open", ""); }
-        els[def].focus();
+        els[focusId != null && focusId >= 0 && focusId < els.length ? focusId : def].focus();
     });
 }
 

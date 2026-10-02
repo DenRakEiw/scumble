@@ -243,6 +243,14 @@ export function assistantOpen() {
     return !!(started && ui.dialog.open);
 }
 
+/**
+ * Whether a turn runs, whether a card waits for the user's answer, and how many external agents are connected
+ * (shell.js asks before an update restarts the app, and its update question waits while a card asks).
+ */
+export function assistantActivity() {
+    return { busy, asking: !!openAsk, agents };
+}
+
 function open(on) {
     if (on && !ui.dialog.open) {
         focusBefore = document.activeElement;
@@ -792,7 +800,12 @@ async function refresh() {
     await fillPicker(state);
     showNotice();
     showCost();
-    if (!ui.list.childNodes.length && Array.isArray(state.events) && state.events.length) replay(state.events);
+    if (!ui.list.childNodes.length && Array.isArray(state.events) && state.events.length) {
+        replay(state.events);
+        // a turn still running in main (the window reloaded during it): the replay ends idle, main's state wins
+        busy = !!state.busy;
+        ui.send.textContent = busy ? "Stop" : "Send";
+    }
     if (state.pending && !openAsk) askCard({ ...state.pending, name: state.pending.name, call: state.pending.call });
     syncButton();
 }

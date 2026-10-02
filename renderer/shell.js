@@ -7,9 +7,9 @@ import { glFiltersAvailable } from "./editor/inpaint_filters_gl.js";
 import { setPixelsOptions } from "./editor/inpaint_pixels.js";
 import { commands, docSummary } from "./commands.js";
 import * as plugins from "./plugins.js";
-import { waitForUser, editorOf } from "./assistant_wait.js";
+import { waitForUser, editorOf, userBusy } from "./assistant_wait.js";
 import { beforeCall as snapshotTurn, watchUserEdits, forgetDocument } from "./assistant_turns.js";
-import { initAssistant, toggleAssistant, assistantOpen, resetAssistant, refreshAssistantModels } from "./assistant.js";
+import { initAssistant, toggleAssistant, assistantOpen, resetAssistant, refreshAssistantModels, assistantActivity } from "./assistant.js";
 import { initHelp, toggleHelp, helpOpen } from "./help.js";
 import { initSkins, applySkin, reloadSkins, renderAppearance } from "./skins.js";
 import * as dialogs from "./dialogs.js";
@@ -2003,7 +2003,11 @@ function updateText(s) {
     if (s.state === "checking") return "Checking for updates ...";
     if (s.state === "latest") return s.manual ? `Scumble ${s.current} is up to date.` : "";
     if (s.state === "downloading") return `Downloading Scumble ${s.version} ... ${s.percent == null ? "" : s.percent + "%"}`;
-    if (s.state === "downloaded") return `Scumble ${s.version} is downloaded; restart to install it.`;
+    if (s.state === "downloaded") {
+        return s.skip && s.skip === s.version
+            ? `Scumble ${s.version} is downloaded. You skipped it, so it is not installed when Scumble closes; Install installs it now.`
+            : `Scumble ${s.version} is downloaded: Install restarts into it now, otherwise it is installed when Scumble closes.`;
+    }
     if (s.state === "error") return `Update check failed: ${s.error}`;
     return "";
 }
@@ -2025,10 +2029,138 @@ export function renderUpdate(s) {
     ui.updateBar.hidden = !(s && s.state === "downloaded");
     if (s && s.state === "downloaded") ui.updateBar.textContent = `Update to ${s.version}`;
 }
-window.scumble.updates.onStatus(renderUpdate);
+
+// ---- the question when an update is ready (CLAUDE.md item 32, docs/PLAN_0_1_38.md A1) ----------------------------
+
+let lastUpdate = null;            // the newest status (from main, or a test's)
+const updateAsked = new Set();    // the versions this window asked about (main keeps the same for the start: `announced`)
+let updateAsking = false;
+let lastUserInput = 0;            // a key, a click or a wheel turn anywhere: the question does not cut into typing
+for (const type of ["keydown", "pointerdown", "wheel"]) window.addEventListener(type, () => { lastUserInput = Date.now(); }, { capture: true, passive: true });
+
+/** What the question waits for now, or null: another question (the assistant's too), a modal panel, the restore, an edit. */
+function updateQuestionWaits() {
+    if (dialogs.openCount() > 0) return "a question";
+    if (Array.from(document.querySelectorAll("dialog[open]")).some((d) => d.matches(":modal"))) return "a dialog";
+    if (assistantActivity().asking) return "the assistant's question";
+    if (host._restoring) return "the restore";
+    if (host.editors().some((ed) => userBusy(ed))) return "an edit";
+    if (Date.now() - lastUserInput < 3000) return "typing";
+    return null;
+}
+
+/**
+ * The question's detail: each change's bold lead from the release notes (`s.headlines`, electron/main/updater.js),
+ * at most `lines` of them; notes without such leads as text, cut at a line break near `chars`; then what Later and
+ * Skip do. The whole notes stay in Settings › Updates.
+ */
+export function updateQuestionDetail(s, { lines = 8, chars = 1500 } = {}) {
+    const parts = [];
+    const heads = s && Array.isArray(s.headlines) ? s.headlines.filter(Boolean).map(String) : [];
+    if (heads.length) {
+        const shown = heads.slice(0, lines).map((h) => "• " + h);
+        if (heads.length > lines) shown.push(`… and ${heads.length - lines} more in Settings › Updates.`);
+        parts.push("What changed:\n" + shown.join("\n"));
+    } else if (s && s.notes) {
+        const text = String(s.notes).trim();
+        let cut = text.length;
+        if (text.length > chars) {
+            cut = text.lastIndexOf("\n", chars);
+            if (cut < chars / 2) cut = text.lastIndexOf(" ", chars);
+            if (cut < chars / 2) cut = chars;
+        }
+        parts.push("What changed:\n" + text.slice(0, cut).trimEnd() + (cut < text.length ? "\n…, the rest in Settings › Updates." : ""));
+    }
+    parts.push("Later installs it when you close Scumble. Skip this version leaves it out until a newer one comes; the Update button in the title row still installs it.");
+    return parts.join("\n\n");
+}
+
+/**
+ * Ask once when an update is downloaded: Restart and update, Later, Skip this version. Not after a check the user
+ * started (Settings › Updates shows that answer), not for a version this start asked about or the user skipped, and
+ * never over another question, a modal panel, the restore at start or an edit in progress: it waits for those, and
+ * gives up when a newer status replaces this one meanwhile. The Store copy and dev never reach "downloaded". Resolves
+ * with the index of the button pressed, or false when it did not ask.
+ */
+export async function announceUpdate(s) {
+    if (s) lastUpdate = s;
+    const v = s && s.state === "downloaded" && !s.manual && s.version ? String(s.version) : null;
+    if (!v || updateAsking || updateAsked.has(v) || s.announced === v || s.skip === v || (settings.updates || {}).skip === v) return false;
+    const current = (u) => !!(u && u.state === "downloaded" && !u.manual && String(u.version) === v);
+    updateAsking = true;
+    try {
+        while (updateQuestionWaits()) {
+            await new Promise((r) => setTimeout(r, 500));
+            if (!current(lastUpdate)) return false;
+        }
+        const now = lastUpdate;
+        updateAsked.add(v);
+        window.scumble.updates.announced(v).catch(() => { /* this window still remembers it */ });
+        const i = await dialogs.ask({
+            title: `Scumble ${v} is ready`,
+            message: `You have ${now.current}. Restart and update saves your documents, installs ${v} and starts it; the documents come back as they were.`,
+            detail: updateQuestionDetail(now),
+            buttons: ["Restart and update", "Later", "Skip this version"],
+            defaultId: 0,
+            cancelId: 1,
+            // it opens unasked: a key the user was typing answers Later, never the restart
+            focusId: 1,
+        });
+        if (i === 0) await installUpdate();
+        else if (i === 2) await skipUpdate(v);
+        return i;
+    } finally {
+        updateAsking = false;
+        // a newer version arrived while this one waited or was asked
+        if (lastUpdate && lastUpdate !== s && lastUpdate.state === "downloaded" && String(lastUpdate.version) !== v) announceUpdate(lastUpdate);
+    }
+}
+
+/**
+ * Skip a version (null: none): no question for it, and it is not installed when Scumble closes (main reads
+ * settings.updates.skip, electron/main/updater.js setSkip). Install and the title row's button still install it.
+ */
+export async function skipUpdate(version) {
+    const updates = { ...(settings.updates || {}) };
+    if (version) updates.skip = String(version); else delete updates.skip;
+    settings = await window.scumble.settings.set({ updates });
+    return settings.updates;
+}
+
+/**
+ * Restart into the downloaded update: the title row's button, Install in Settings › Updates and the question. A run in
+ * flight, a working assistant or a connected agent ends with the app, so that is asked first; main saves every
+ * document before the installer starts (update:install).
+ */
+async function installUpdate() {
+    // busy() leaves out a render on the user's ComfyUI (it holds no flag while it runs): its result would be lost too
+    const working = host.editors().filter((ed) => busy(ed) || (ed._localRuns && ed._localRuns.size > 0)).length;
+    const as = assistantActivity();
+    const what = [];
+    if (working) what.push(working === 1 ? "a document is still working" : `${working} documents are still working`);
+    if (as.busy) what.push("the assistant is working");
+    if (as.agents) what.push(as.agents === 1 ? "an agent is connected" : `${as.agents} agents are connected`);
+    if (what.length) {
+        const text = what.join(", ").replace(/, ([^,]*)$/, " and $1");
+        const yes = await dialogs.confirm(`${text[0].toUpperCase()}${text.slice(1)}. Restart and update anyway?`, {
+            detail: "What runs now ends with the app: a run's result does not come back, and an agent's session ends.",
+            ok: "Restart and update",
+            danger: true,
+        });
+        if (!yes) return false;
+    }
+    let ok = false;
+    try { ok = await window.scumble.updates.install(); } catch (_) { /* said below */ }
+    if (!ok && host.editor) host.editor.setStatus("The update did not start; Settings › Updates offers it again.");
+    return ok;
+}
+
+window.scumble.updates.onStatus((s) => { renderUpdate(s); announceUpdate(s); });
+// a status from before this window listened (a window reloaded after a crash): main's `announced` says whether it asked
+window.scumble.updates.status().then((s) => { renderUpdate(s); announceUpdate(s); }, () => { /* no updater */ });
 ui.updateCheck.addEventListener("click", async () => { renderUpdate(await window.scumble.updates.check()); });
-ui.updateInstall.addEventListener("click", () => window.scumble.updates.install());
-ui.updateBar.addEventListener("click", () => window.scumble.updates.install());
+ui.updateInstall.addEventListener("click", () => installUpdate());
+ui.updateBar.addEventListener("click", () => installUpdate());
 ui.updateAuto.addEventListener("change", async () => { settings = await window.scumble.settings.set({ updates: { ...(settings.updates || {}), check: ui.updateAuto.checked } }); });
 /** A memory row's value as the row shows and stores it: a whole number of MB, at least `min`. */
 function wholeMB(v, min, fallback) {
@@ -2120,7 +2252,7 @@ async function renderTileMode() {
         // with an update downloaded the restart goes through its installer (electron/main/restart.js)
         let upd = null;
         try { upd = await window.scumble.updates.status(); } catch (_) { /* no updater */ }
-        if (upd && upd.state === "downloaded") text.push(`Restart now also installs ${upd.version}.`);
+        if (upd && upd.state === "downloaded" && upd.skip !== upd.version) text.push(`Restart now also installs ${upd.version}.`);
     }
     ui.setTilesNote.textContent = text.join(" ");
     ui.setTilesRestart.disabled = false;

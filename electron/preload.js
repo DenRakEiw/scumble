@@ -227,6 +227,7 @@ contextBridge.exposeInMainWorld("scumble", {
         status: () => ipcRenderer.invoke("update:status"),
         check: () => ipcRenderer.invoke("update:check"),
         install: () => ipcRenderer.invoke("update:install"),
+        announced: (version) => ipcRenderer.invoke("update:announced", version),
         onStatus: (cb) => on("update:status", cb),
     },
     onMenu: (cb) => on("menu", cb),

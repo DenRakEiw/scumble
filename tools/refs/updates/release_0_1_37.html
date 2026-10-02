@@ -1,0 +1,80 @@
+<ul>
+<li><strong>FLUX 3 Image: boxes in the prompt, behind one switch.</strong> A switch <em>Boxes</em> in a row of its own under the prompt<br>
+field decides whether a run sends bounding boxes in the prompt, in the form the model's documentation describes. It<br>
+shows while the selected recipe takes boxes and counts the document's boxes ("Boxes · 3"). On, Generate and<br>
+Generate new send the document's boxes; with none, Generate sends your selection as one box: the model is told<br>
+where in the crop the change goes and what to put there (your prompt), or, when the prompt names a reference with<br>
+<a class="user-mention notranslate" data-hovercard-type="organization" data-hovercard-url="/orgs/img1/hovercard" data-octo-click="hovercard-link-click" data-octo-dimensions="link_type:self" href="https://github.com/img1">@img1</a>, that this reference goes into the box. Off, no box goes and the boxes stay with the document; the status<br>
+line says how many did not go. The switch is off in a new document and is saved with it; the first box you draw or<br>
+add turns it on, and the status line says so. Switching it off never deletes a box. The status line says "Sent<br>
+with 1 box.", the log keeps the prompt as it went out, and a very small selection gets a note, since the model<br>
+often leaves a box under about 40 pixels empty. Agents switch it with <code>set_generation</code> (<code>boxes</code>), and <code>status</code><br>
+reports it. Tried live before the release, five edits at 1k: with the selection as a box a cat sat in the middle<br>
+of the box (without, at the selection's edge, where <em>Paste</em> would have cut it), a From reference box put a wall clock<br>
+from a reference layer exactly into its box, and a Remove box took out a street lamp and its glow. The model fills a<br>
+box: draw it at the size the thing should have.</li>
+<li><strong>Plugins can supply boxes for the prompt.</strong> Plugin API 3 adds <code>scumble.generate.register({ id, boxes(doc, ctx), count(doc) })</code>: a plugin answers boxes in image pixels (new, keep, move, remove, or a reference layer placed) for a<br>
+Generate or Generate new run of a recipe that takes boxes while the Boxes switch is on, and Scumble maps them into<br>
+the crop, numbers duplicate ids, writes the model's rows and sends them with the prompt. The optional <code>count(doc)</code><br>
+says how many boxes the plugin holds for the document: the switch counts them, and the selection goes as a box only<br>
+when no plugin holds one. A box outside the crop is left out with a note; a box that names a reference layer the<br>
+run does not send stops the run before anything is sent. The <code>generate</code> and <code>generate_new</code> commands answer <code>boxes</code>,<br>
+how many went. The sample plugin shows a source (<code>sample.box</code> switches it on).</li>
+<li><strong>Boxes: a panel for the boxes of a document.</strong> A new section <em>Boxes</em> in the Generate pane (a built-in plugin) keeps<br>
+boxes with the document: for each one its name, what it does (New adds what the description says in the box, Keep<br>
+holds an element where it is, Move takes it from a source box to a new one, Remove takes it out, From reference<br>
+places a reference layer or a part of it, Text renders words), the description and the position in image pixels.<br>
+<em>Selection → box</em> takes the selection's bounds (a From box when the prompt names a reference with <a class="user-mention notranslate" data-hovercard-type="organization" data-hovercard-url="/orgs/img1/hovercard" data-octo-click="hovercard-link-click" data-octo-dimensions="link_type:self" href="https://github.com/img1">@img1</a>), <em>Clear</em><br>
+removes them, <em>Copy rows</em> puts the model's rows on the clipboard for another tool. The boxes go out with Generate<br>
+and Generate new runs of a recipe that takes them (FLUX 3 Image) while the Boxes switch is on and stay with the<br>
+document otherwise, and the section says which is the case; they are saved in the <code>.scumble</code> file, follow a crop, a<br>
+turn or a resize of the picture, and every change is one undo step. Agents and scripts have <code>boxes_add</code>,<br>
+<code>boxes_set</code>, <code>boxes_remove</code>, <code>boxes_list</code> (which also says whether the switch is on), <code>boxes_from_selection</code> and<br>
+<code>boxes_clear</code>; the assistant adds and changes boxes by itself and asks before it removes one or clears them.</li>
+<li><strong>Boxes: draw them on the canvas.</strong> The <em>Boxes</em> tool (X, under Plugins in the tool column) draws a box with a drag<br>
+on the picture; a click selects one (its row in the panel lights up, and a click on a row selects its box), a drag<br>
+moves it, the eight handles resize it. Delete removes the selected box, D duplicates it, the arrow keys nudge it by<br>
+a pixel (Shift: ten), Escape lets go of it, and Alt+click picks a box that lies under another. A Move box's source<br>
+and a From box's part get handles of their own once the box is selected. Each gesture is one undo step. The boxes<br>
+show on the picture in their kind's colour (New green, Keep grey, Move blue with an arrow from its source, Remove<br>
+red and hatched, From reference violet with the reference's name) with their name and the first words of their<br>
+description, while the tool is active or the Boxes section is open; while the Boxes switch is off they are drawn<br>
+dashed and paler.</li>
+<li><strong>Boxes: the crop on the canvas, and what it does to them.</strong> While the Boxes tool is active and something is<br>
+selected, the picture outside the crop Generate would send is dimmed, its size under the crop's edge (the crop as<br>
+the run plans it, the model's shapes and sizes included). While the Boxes switch is on, the Boxes section warns of a<br>
+box the crop leaves out, one whose edge it cuts, and one that changes the picture outside the selection while<br>
+<em>Paste</em> keeps the selection only, which would cut the result there; <em>Paste the whole crop</em> in that warning switches<br>
+Paste for the document.</li>
+<li><strong>Boxes: the prompt says where each box goes.</strong> A run with boxes now writes a sentence per box into the prompt with<br>
+its description and its place in words ("Place a red scarf &lt;red_scarf_1&gt; at the top left.", "Move the lamp<br>
+&lt;old_lamp_1&gt; up and to the left, larger."); a description written as an instruction goes in as it is. Your prompt<br>
+goes first, word for word; the selection's box, described by the prompt, only says where the change goes. With an<br>
+empty prompt, or the selection's box, the sentences end with "Leave the rest of the picture as it is.". <em>Copy rows</em><br>
+writes the same text.</li>
+<li><strong>Boxes are named after their description.</strong> A box keeps its default name (box_1) only until it is described: then<br>
+it is called after the description's first two telling words (red_scarf_1), and the selection's box after the<br>
+prompt. A name of your own (not box_1, edit_2 and the like) stays, and so does one your prompt uses. Names may now<br>
+hold several words (<code>red_scarf_1</code>).</li>
+<li><strong>Boxes: warnings before a run, and a tool that takes the box you point at.</strong> The Boxes section warns of a New box<br>
+without a description and of a box too small for the model to place anything in; a run notes both. A click with the<br>
+Boxes tool takes the smallest box under the pointer, so a box inside another is picked directly. A box turned into<br>
+Move keeps its place as the source and its target steps aside, so the two can be told apart.</li>
+<li>Plugins get a <code>crop</code> event when an app setting the crop of a run depends on changes (a node parameter, the API<br>
+size), and <code>scumble.host.cropFrame(editor)</code> says what that crop is.</li>
+<li><strong>Ideogram 4.5</strong>, a new recipe on your Replicate token, your WaveSpeed key or Comfy Router (your Comfy key, billed<br>
+in Comfy credits). Ideogram's precise edit model changes the selected area and leaves the rest of the crop as it<br>
+was, pixel for pixel, at the crop's own size, and is strong at lettering. Your selection goes as the model's mask; a<br>
+selection over the whole crop lets it edit the whole crop. Up to three more pictures go along (the Original and your<br>
+reference layers); the model takes them without a number, so the prompt cannot name them with <code>@img1</code>. A very narrow<br>
+selection is sent with more of its surroundings, since the model takes no picture steeper than 6:1. Generate new<br>
+makes a picture from the prompt at the closest of seven shapes on Replicate and WaveSpeed. The Settings panel has<br>
+<em>Quality</em> (very_low, low, medium, high; medium by default), which is also the price per picture: $0.008, $0.03,<br>
+$0.06 or $0.22 for an edit on Replicate and WaveSpeed, $0.03 to $0.10 for a new picture on Replicate, $0.03 to $0.22<br>
+on WaveSpeed (very_low goes as low there). On WaveSpeed the Settings panel also has <em>Edit precision</em> (high by<br>
+default, which keeps the unchanged pixels), a new picture comes in one of seven shapes at 1k or 2k by the size you<br>
+ask for, your prompt goes as written, and no seed goes, so two runs differ. On Comfy Router a new picture comes at<br>
+the closest of Ideogram's 1K or 2K sizes by the size you ask for, your prompt goes as written, and very_low goes as<br>
+low; Comfy had not published the price. Written from Replicate's, WaveSpeed's and Comfy Router's documentation and<br>
+not run against the live services yet.</li>
+</ul>

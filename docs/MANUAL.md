@@ -35,7 +35,7 @@ The app alone can do a great deal — open, paint, select, layer, filter, save, 
 
 - Windows 10 and 11, 64-bit. A GPU is not required for the editor itself: filters run on the GPU when there is one and fall back to the processor when there is not.
 - The installer is about 128 MB, the installed app about 410 MB, most of which is Chromium and the helper models' runtime.
-- Updates: Settings › Updates shows what changed before you restart into the new version. You are never updated behind your back.
+- Updates: when a new version is downloaded, Scumble asks once whether to restart into it now, later (it is installed when you close Scumble) or not for this version. Settings › Updates shows everything that changed.
 
 ## Where it renders: your ComfyUI, or an API key
 
@@ -606,7 +606,7 @@ Ctrl+, opens the settings: the ComfyUI server and its authentication, API provid
 
 Settings › Appearance switches the app's look: the default, 90s, Duck or a skin you add (docs/SKINS.md); View › Skin does the same from the menu, and View › Skin › Default brings the default back if a skin makes the app hard to read. A skin recolours the app's questions too, but cannot hide them or change the order of their buttons.
 
-Updates come from GitHub releases. The app checks, downloads, and shows you the release notes before you restart into the new version. Nothing is installed while you are working.
+Updates come from GitHub releases. A few seconds after the start the app looks for a new version and downloads it in the background (Settings › Updates switches the check off). Once it is downloaded, a question names the version and what changed since yours, one line per change. Restart and update saves your documents, installs it and starts the new version with them. Later installs it when you close Scumble. Skip this version leaves it out until a newer one comes; closing Scumble then installs nothing. The question comes once per start and waits while you draw, type or answer another question; a key you were still typing answers Later. When a restart would end a run, the assistant's turn or an agent's session, it asks first. The Update button in the title row and Settings › Updates, which has the whole release notes of every version since yours, install a downloaded version at any time, a skipped one too. Nothing is installed while you are working. The copy from the Microsoft Store is updated by the Store.
 
 When something misbehaves: Ctrl+Shift+L opens the log, which is also written to a file. The status line under the canvas carries the last thing that happened, including the reason a run was refused — a missing key, a server that did not answer, a size a provider would not take. And the changelog says what changed in the version you are on, which is often the answer by itself.
 

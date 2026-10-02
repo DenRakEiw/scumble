@@ -21,6 +21,8 @@ const cases = [
     ["look-alike arguments are not the switches", { argv: ["--mcp-port=1", "--headless-ish"] }, { args: ["--mcp-port=1", "--headless-ish"] }],
     ["a downloaded update is installed instead", { argv: dev, updateState: "downloaded" }, { install: true }],
     ["an update still downloading does not install", { argv: ["--no-tiles"], updateState: "downloading" }, { args: ["--no-tiles"] }],
+    // main.js passes "skipped" for a downloaded version the user skipped (updater.skipped())
+    ["a skipped update is not installed by a restart", { argv: ["--no-tiles"], updateState: "skipped" }, { args: ["--no-tiles"] }],
 ];
 
 let failed = 0;

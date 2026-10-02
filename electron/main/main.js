@@ -858,7 +858,12 @@ async function probeComfy(conn) {
 
 function installIpc() {
     ipcMain.handle("settings:get", () => settings.get());
-    ipcMain.handle("settings:set", (_e, patch) => settings.set(patch));
+    // a write of `updates` may change the skipped version, which decides whether the downloaded one installs on quit
+    ipcMain.handle("settings:set", (_e, patch) => {
+        const s = settings.set(patch);
+        if (patch && patch.updates) updater.setSkip((s.updates || {}).skip);
+        return s;
+    });
     ipcMain.handle("state:load", (_e, gen) => settings.loadState(gen));
     ipcMain.handle("state:generations", () => autosave.generations(app.getPath("userData")));
     ipcMain.handle("state:startMode", () => { const m = startMode; startMode = "normal"; return m; });
@@ -1076,7 +1081,8 @@ function installIpc() {
     ipcMain.handle("app:relaunch", () => {
         if (agentMode || local.clients.size) throw new Error("An agent is connected to Scumble; restart it after the agent is done.");
         if (assistant && assistant.busy()) throw new Error("The assistant is working; stop it first.");
-        const plan = restartPlan({ argv: process.argv.slice(1), updateState: updater.status.state });
+        // a skipped version stays out of a restart too (renderer/shell.js skipUpdate)
+        const plan = restartPlan({ argv: process.argv.slice(1), updateState: updater.skipped() ? "skipped" : updater.status.state });
         quitGuard.release();   // the window saved before it asked (renderer/shell.js saveBeforeRestart)
         if (plan.install && installOrReset()) return { installing: updater.status.version };
         app.relaunch({ args: restartPlan({ argv: process.argv.slice(1) }).args });
@@ -1086,6 +1092,7 @@ function installIpc() {
     // updates (electron/main/updater.js): GitHub Releases feed, checked at start unless switched off
     ipcMain.handle("update:status", () => updater.status);
     ipcMain.handle("update:check", () => updater.check({ manual: true }));
+    ipcMain.handle("update:announced", (_e, version) => updater.announce(version));
     // the installer ends every Scumble process as soon as it starts: the window saves first (quit.js)
     ipcMain.handle("update:install", async () => {
         if (updater.status.state !== "downloaded") return false;
@@ -1129,6 +1136,7 @@ function startApp() {
     const url = !process.argv.includes("--no-comfy") && settings.get().comfy && settings.get().comfy.url;
     if (url) connectComfy().catch((err) => console.warn("connect at start:", err.message));
     const upd = settings.get().updates || {};
+    updater.setSkip(upd.skip);
     if (app.isPackaged && !headless && !agentMode && upd.check !== false) setTimeout(() => updater.check().catch(() => {}), 8000);
     app.on("activate", () => showWindow());
     app.on("window-all-closed", () => { comfy.disconnect(); app.quit(); });

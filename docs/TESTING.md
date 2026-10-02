@@ -103,6 +103,16 @@ getValue / setValue with a damaged state repaired, PSD both writers, opened and 
 backends: the PNG export and the stack box are the tiles' only). Every gate name `X` without a rule of its own
 in `tools/run_gates.sh` runs `tools/X_test.py`.
 
+Item 32 (the update question, `docs/PLAN_0_1_38.md` A1): `node tools/updater_test.js` runs `electron/main/updater.js`
+with Electron and electron-updater stubbed: the release notes and one line per bullet from the 0.1.37 feed
+(`tools/refs/updates/release_0_1_37.html`) and small cases (sub-bullets, several versions, the 30,000 cap), a skipped
+version kept from installing on quit and the quit handler added when the skip is taken back, a skipped download checked
+again, `manual` kept, `announce`, and source checks of main's wiring and of electron-updater's quit handler. The
+platform gate's `the_update_question_asks_once` asks once in the window (the focus on Later, not again for an asked,
+announced, manual or skipped version, Skip stored and in main's status, the wait for another question, the question
+before a restart while an API run or a local render is in flight); `tools/restart_test.js` keeps a skipped version out of
+a restart.
+
 Item 26 (`docs/PLAN_REFS.md`, @img tokens for reference layers): `node tools/refs_layout_test.js` pins every adapter's
 `layout(req)` against the request its real builder sends (every shipped provider variant, every ToAPIs channel, 0 / 1 /
 3 references, the Original on and off; a fake fetch captures the picture-carrying request), the caps, and

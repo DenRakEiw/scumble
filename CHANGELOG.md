@@ -14,6 +14,19 @@ the section for its version; `docs/` and the commit history hold the technical d
   field over it with its description (on a Text box, its words): Enter keeps it, Shift+Enter starts a new line, Escape
   cancels, a click elsewhere or another tool keeps what you typed. It goes into the prompt as words, never into the
   picture.
+- **A question when an update is ready.** Once Scumble has downloaded a new version in the background, it asks:
+  *Restart and update* saves your documents, installs the new version and starts it with them; *Later* leaves it for
+  when you close Scumble, which installs it then; *Skip this version* leaves it out until a newer one comes, so
+  closing Scumble installs nothing (the *Update to ...* button in the title row and *Settings › Updates* still install
+  it). The question lists what changed since your version, one line per change, comes once per start, and waits
+  while you draw, type or answer another question, the assistant's included; a key you were typing when it opens
+  answers *Later*. Before a restart that would end a run in progress (on an API or on your ComfyUI), the assistant's
+  turn or an agent's session, it asks first; the button in the title row now does the same. It never asks after a
+  check you started in *Settings › Updates*, which shows the answer there, and never in the Microsoft Store copy,
+  which the Store updates.
+- **Settings › Updates shows the whole release notes**, of every version since yours: they were cut after 4,000
+  characters, and a jump over several versions showed only the newest one's. A check there now also looks again when
+  the downloaded version is one you skipped.
 
 ## 0.1.37 — 2026-10-02
 
