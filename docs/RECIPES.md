@@ -168,7 +168,9 @@ parameters, picture field, mask convention, aspect rule, tiers and presets, belo
 `seed_max`, `negative: false`, `sizes` and `text_values` for Ideogram 4.5, with `fields.references` for a fill's
 unnumbered references and `max_ratio` / `max_bytes` checks, "Ideogram 4.5" below; WaveSpeed's `mask: "black"`,
 `negative: false`, `accepts` / `text_accepts` (the allowlist of optional keys per route), `tiers`, `text_values`,
-`fields.references`, `max_ratio` / `max_bytes` for the same model; Magnific takes none, its route table knows each route's rules),
+`fields.references`, `max_ratio` / `max_bytes` for the same model; Comfy Router's `seed_max`, `resolutions` (Ideogram's
+1K / 2K presets) and `text_values` for it, beside the `max_images`, `max_ratio` and `max_bytes` every Router variant
+may set (its ideogram dialect knows the mask and the references itself); Magnific takes none, its route table knows each route's rules),
 `limits` (the size ceiling, below), `edit: false` (the variant makes images from
 the prompt alone and the Generate button says so), `text` (the Generate new shape, below; **required on every
 `magnific` variant**, as `{ "model": "<text route>", ... }` or `false`, because Magnific's edit routes end in `-edit`
@@ -300,7 +302,7 @@ of the request, and each family has its own word for it (the vendors' prompting 
     Replicate's one-image edit (Qwen Image Edit, "This endpoint takes one picture"), Comfy Cloud's one-picture nodes
     (the two Gemini image nodes and the upscaler nodes, "this node takes one picture"), In-app LaMa ("LaMa fills from
     the picture alone") and Magnific Image Expand ("Image Expand takes the picture alone").
-  - Routes that make pictures from the prompt alone (Comfy Router's xai / ideogram / krea, Magnific's Z-Image and
+  - Routes that make pictures from the prompt alone (Comfy Router's xai / ideogram-v4 / krea, Magnific's Z-Image and
     Mystic) and routes that need a mask refuse an edit run in their layout with the builder's own words. The adapters
     that count their own pictures keep that check with their own wording (a direct call, from a test, is refused
     before any request); in the app the central check runs first.
@@ -346,6 +348,7 @@ of the request, and each family has its own word for it (the vendors' prompting 
   | `qwen_image_edit` · WaveSpeed | 3 | https://wavespeed.ai/docs/docs-api/wavespeed-ai/qwen-image-edit-plus |
   | `ideogram_4_5` · Replicate | 4 | https://replicate.com/ideogram-ai/ideogram-4-5-precise-edit (`reference_images` up to 4, 3 with a mask; read 2026-10-02) |
   | `ideogram_4_5` · WaveSpeed | 4 | https://wavespeed.ai/docs/docs-api/ideogram-ai/ideogram-ai-ideogram-v4.5-edit (`reference_images` up to 4, 3 with `mask_url`; read 2026-10-02) |
+  | `ideogram_4_5` · Comfy Router | 4 | https://docs.comfy.org/router-schemas/ideogram/ideogram-4-5.json (`reference_images` up to 4, 3 with a mask; read 2026-10-02, saved in `tools/refs/comfyrouter/`) |
   | `gpt_image_2` · fal | 16 | https://fal.ai/models/openai/gpt-image-2/edit/api |
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · WaveSpeed | 16 | https://wavespeed.ai/docs/docs-api/openai/openai-gpt-image-2-edit, `…-2.5-flare-edit`, `…-2.5-sunburst-edit` ("0 ~ 16 items") |
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · OpenAI | 16 | OpenAI's `image[]` (not read at a URL in this step; not read by `openai.js` yet, above) |
@@ -566,7 +569,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   | Qwen Image 2.1 | Oxen.ai | - |
   | HY Image 3.5 | Comfy Partner API | - |
   | Grok Imagine | OpenRouter; fal (`/edit`), Oxen.ai (`xai-grok-imagine-image-edit`) | Comfy Router |
-  | FLUX.1 Fill, Ideogram 4, Krea 2, Recraft V4, Z-Image, Z-Image Turbo, Mystic, Reve | - | every variant with a text shape |
+  | FLUX.1 Fill, Ideogram 4, Ideogram 4.5, Krea 2, Recraft V4, Z-Image, Z-Image Turbo, Mystic, Reve | - | every variant with a text shape |
 
   Comfy Cloud has no text shape, nor do Oxen.ai's Seedream 5 lite and the expand, inpaint and LaMa recipes (`text:
   false`). The caps for a new image: FLUX.2 8 (Replicate flex 10, Comfy Router 9, WaveSpeed 3, Magnific 4), klein 4
@@ -749,12 +752,15 @@ takes body, `layout` and `textLayout` from `flux3.js` and keeps its own submit a
 mask edit whose answer has the picture's own size and copies the pixels the edit does not touch. Written from the
 hosts' documentation as read on 2026-10-02 and **not run against the live API** (the user's word: from the docs, no
 live test). Ideogram has no adapter of its own in Scumble; the variants run on Replicate (the default, built in step
-I1) and WaveSpeedAI (I2), with Comfy Router to follow (I3).
+I1), WaveSpeedAI (I2) and Comfy Router (I3).
 
 - **Generate** is Ideogram's *Precise Edit* (Replicate `ideogram-ai/ideogram-4-5-precise-edit`, WaveSpeed
-  `ideogram-ai/ideogram-v4.5/edit`, both `input: "fill"`): the crop as `image`, the selection as `mask` (WaveSpeed:
+  `ideogram-ai/ideogram-v4.5/edit`, Comfy Router `ideogram/ideogram-4-5` with `image` in the body, whose presence
+  selects Precise Edit there; all `input: "fill"`): the crop as `image`, the selection as `mask` (WaveSpeed:
   `mask_url`) and the reference layers (the Original first when it is on) as
-  `reference_images`. **The mask is inverted** (`options.mask: "black"`, `util.js` `ideogramMask`): Ideogram edits where
+  `reference_images`; Replicate and WaveSpeed take the pictures as uploads, the Router as data URIs in the body.
+  **The mask is inverted** (Replicate and WaveSpeed `options.mask: "black"`, the Router's ideogram dialect by the
+  model id; `util.js` `ideogramMask`): Ideogram edits where
   its mask is black and keeps the white, the reverse of Scumble's; channel 0 at 128 or more becomes black. Ideogram
   refuses a mask without both colours, so a selection over the whole crop sends **no** mask (the whole crop is edited,
   the stitch keeps the selection, `info.mask` says so), and a selection with no pixel at half strength is refused
@@ -771,10 +777,24 @@ I1) and WaveSpeedAI (I2), with Comfy Router to follow (I3).
   (`options.aspect_ratios`: 1:1, 4:3, 3:4, 3:2, 2:3, 16:9, 9:16) and `resolution` 1k / 2k by the asked long side
   (`options.tiers`, `util.js` `tierFor`: up to 1024 px 1k, above 2k; the pixels of each are not documented),
   `enable_prompt_expansion: false` from `text.fixed`, so the prompt goes as written (WaveSpeed's default would expand
-  it). The text routes have no *Very low*, so `options.text_values` sends it as *Low* on both.
-- **Seed** under Ideogram's cap on Replicate: `options.seed_max` 2147483647, the editor's seed modulo 2^31
-  (`util.js` `seedOf`); Replicate reports the seed only in its logs, so the answer reports the one sent. WaveSpeed's
-  two routes take **no seed** (two runs differ), and the answer reports none.
+  it). Comfy Router (the same id, no picture field, so Ideogram's generate operation): `size` the preset of
+  `options.resolutions` closest to the asked aspect (or size) within the tier the asked size bills as, 1K up to 1024 x
+  1024 pixels, else 2K, and `magic_prompt: "off"` from `text.fixed` (the Router's default auto would rewrite the
+  prompt). The 36 presets (15 1K, 21 2K): the 4.5 generate
+  page says a new image takes only "the supported 1K/2K presets", names three of them and holds every exact size to
+  sides that are multiples of 32, at most 2048 x 2048 pixels and 6:1; so the list is Ideogram's 38 sizes of its 4.0
+  page without the six that break the 32 rule (1280x720, 720x1280, 1440x720, 720x1440, 1296x3168, 3168x1296), plus
+  Replicate's 4.5 shapes 1344x768, 768x1344, 1536x640 and 640x1536. Which presets 4.5 really takes is a live check.
+  The text routes have no *Very low*, so `options.text_values`
+  sends it as *Low* on all three.
+- **Seed** under Ideogram's cap on Replicate and Comfy Router: `options.seed_max` 2147483647, the editor's seed modulo
+  2^31 (`util.js` `seedOf`); Replicate reports the seed only in its logs, so the answer reports the one sent; the
+  Router's answer names the seed Ideogram used. WaveSpeed's two routes take **no seed** (two runs differ), and the
+  answer reports none.
+- **Comfy Router's answer** is `{ data: [{ url, seed, resolution, is_image_safe }], generation_id, seed }`: the picture
+  is downloaded from `url`, `info` keeps `generation_id` and the `resolution` answered, and a picture the answer marks
+  `is_image_safe: false` is not used ("Only use images where this is true"; the run fails when no other is safe). The
+  same holds for Ideogram 4.0's text-only Router variant, whose answer has the same shape.
 - **Only the keys the routes name** (WaveSpeed; both schemas say `additionalProperties: false`, whether the server
   enforces it is not stated): `options.accepts` `quality`, `edit_precision` for the edit and `options.text_accepts`
   `quality`, `aspect_ratio`, `resolution`, `enable_prompt_expansion` for a new image. Everything else the adapter
@@ -782,13 +802,16 @@ I1) and WaveSpeedAI (I2), with Comfy Router to follow (I3).
   the edit's Settings rows (`host.providerParams`), so *Edit precision* reaches the text run and is dropped there.
   The list is the allowlist `docs/PLAN_FLUX3.md` F4 needs for FLUX 3 on WaveSpeed.
 - **Settings:** *Quality* very_low / low / medium / high (default medium), also the billed rate; Replicate `fixed`
-  `num_images: 1` (WaveSpeed has no such field). **Price** (2026-10-02): an edit $0.008 / $0.03 / $0.06 / $0.22 per
-  image on both hosts; a new image $0.03 / $0.06 / $0.10 on Replicate, $0.03 / $0.06 / $0.22 on WaveSpeed (Low /
-  Medium / High, 1k and 2k the same).
-- **Checks before sending** (Ideogram's Precise Edit page, on both hosts): the recipe's `limits.ratio` 6 widens a crop steeper than
+  `num_images: 1`, the Router's dialect sends `num_images: 1` in every body (WaveSpeed has no such field). **Price**
+  (2026-10-02): an edit $0.008 / $0.03 / $0.06 / $0.22 per image on Replicate and WaveSpeed; a new image $0.03 / $0.06
+  / $0.10 on Replicate, $0.03 / $0.06 / $0.22 on WaveSpeed (Low / Medium / High, 1k and 2k the same); Comfy had not
+  published its price.
+- **Checks before sending** (Ideogram's Precise Edit page, on all three hosts; on the Router `picturesFor` holds the
+  crop and the references, the dialect the mask): the recipe's `limits.ratio` 6 widens a crop steeper than
   6:1 wherever the picture allows, and `options.max_ratio` 6 refuses one that stays steeper (a picture narrower than
   that); `options.max_bytes` 25,000,000 holds the crop, the mask and each reference to Ideogram's 25 MB (an opaque
-  picture over it goes as JPEG, one with transparency is refused, "Nothing was sent"). Otherwise the conservative 2048
+  picture over it goes as JPEG, one with transparency is refused; Replicate's and WaveSpeed's refusals end "Nothing
+  was sent", the Router's have their own words and hold each reference layer to the 6:1 shape too). Otherwise the conservative 2048
   default size until a live run says how large a crop the hosts take.
 
 What a provider run does: `prepareCrop` builds the crop like the node (selection bbox
@@ -1881,7 +1904,7 @@ on a queued run.
   name (`keyNameOf`), `describeAll()` lists Comfy Router with `sharesKey: "comfycloud"` and the Comfy Cloud key's
   state, and Settings › API providers skips it. The Comfy Cloud row's hint says the Router runs on the same key with
   credits only. There is no *check balance* (`GET /customers/balance` exists in the API document; not wired).
-- **The recipes.** Sixteen recipes carry a `comfyrouter` variant, always **last**, and no default changed. Their
+- **The recipes.** Seventeen recipes carry a `comfyrouter` variant, always **last**, and no default changed. Their
   descriptions say "Also on Comfy Router." `comfyrouter` is in `TEXT_PROVIDERS`: Generate new sends the same model
   id without a picture, or with the reference layers alone where the variant has `text.refs` (26f; the openai dialect
   in `image`, the vertexai one with label parts, bfl in `input_image..`, byteplus in `image`, qwen before the text).
@@ -1895,12 +1918,15 @@ on a queued run.
 | `seedream_5_lite`, `seedream_5_pro` | `byteplus/seedream-5-0-260128`, `-5-0-pro-260628` | edit | ModelArk's body (`ark._size`): `image` data URLs, `size` "WxH" in the crop's shape, `watermark: false`, `response_format: "b64_json"`, `output_format: "png"`, the seed. **The Router's schema gives other pixel ranges than ModelArk's docs**: lite 3,686,400 to ~9,437,184 (ModelArk: to 16.8 MP), pro 1,048,576 to 4,194,304; lite takes pictures of at most 10 MB |
 | `qwen_image_edit` | `qwen/qwen-image-3.0` | edit | `input.messages[0].content`: the pictures (at most three) then the text; `parameters`: `size` "W*H" (0.26 to 6.55 MP, no steeper than 8:1), `prompt_extend: false`, `watermark: false`, seed, negative prompt |
 | `magnific_precision` | `freepik/ai-image-upscaler-precision-v2` | upscale | `image` (plain base64), `scale_factor` 2..16, the four Magnific settings |
+| `ideogram_4_5` | `ideogram/ideogram-4-5` | fill | Ideogram's Precise Edit, selected by `image`: the crop in `image`, the selection inverted to Ideogram's black = edit in `mask` (none for a selection over the whole crop), up to three references unnumbered in `reference_images`, all data URIs; `quality`, the seed modulo 2^31, `num_images: 1`; no `size` or `magic_prompt`. Generate new: the prompt alone, `size` the closest 1K / 2K preset, `magic_prompt: "off"` ("Ideogram 4.5" above). The ideogram dialect's `edit` is a function of the model part: 4.5 edits, 4.0 does not |
 | `grok_imagine`, `ideogram_4`, `krea_2` | `xai/grok-imagine-image-2.0`, `ideogram/ideogram-v4`, `krea/krea-2-large` | text only (`edit: false`) | The Router's schemas for these take **no input picture**, so the variants work in Generate new only: the closest preset aspect (Grok's 13, Krea's 8), Ideogram's closest of its 21 2K sizes, Grok's tier 1k / 2k |
 
 The Seedream, Qwen and Gemini bodies carry `refs.instruction`, numbered by the dialect's layout, as the ModelArk
 and OpenRouter adapters do ("Reference pictures" above): Seedream and Qwen "Edit Image 1 and keep its size and
-framing. …", Gemini the mask sentence; the OpenAI and FLUX bodies send the prompt as written. `model` is never in a
-body: the Router splices in the model the path names.
+framing. …", Gemini the mask sentence; the OpenAI, FLUX and Ideogram 4.5 bodies send the prompt as written. `model`
+is never in a body: the Router splices in the model the path names. A dialect's `body()` gets the run's context as a
+fifth argument (Ideogram 4.5 decodes the mask with it). A model's own byte limit in whole decimal megabytes
+(`options.max_bytes` 25,000,000 or 10,000,000) is named in those in a refusal, the Router's 25 MiB in MiB.
 
 **Not wired, and why:** Recraft V4 (`recraft/recraftv4`: text only, and its schema documents no size list), SeedVR2
 (`wavespeed/seedvr2`: its `image` is a URL and its size a target resolution, not a factor), FLUX.2 [flex] and

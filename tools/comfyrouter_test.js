@@ -134,7 +134,7 @@ function nativeAnswer(prov, body, host) {
         case "qwen": return { output: { choices: [{ finish_reason: "stop", message: { role: "assistant", content: [{ image: asset("qwen.png") }] } }] }, usage: { output_image_count: 1 }, request_id: "q-1" };
         case "freepik": return { data: { task_id: RID, status: "COMPLETED", generated: [asset("freepik.png")] } };
         case "xai": return { data: [{ url: asset("xai.jpg"), mime_type: "image/jpeg" }] };
-        case "ideogram": return { created: "2026-09-23T10:00:00Z", data: [{ url: asset("ideogram.png"), seed: 5, resolution: body.resolution, is_image_safe: true }] };
+        case "ideogram": return { created: "2026-09-23T10:00:00Z", generation_id: "gen-1", seed: 5, data: [{ url: asset("ideogram.png"), seed: 5, resolution: body.resolution || body.size || "1024x768", is_image_safe: true }] };
         case "krea": return { job_id: RID, created_at: "2026-09-23T10:00:00Z", completed_at: "2026-09-23T10:00:09Z", status: "completed", result: { urls: [asset("krea.png")] } };
         default: return {};
     }
@@ -214,13 +214,28 @@ function fakeServer(opts = {}) {
     return { fetch, calls, submits, syncs, statuses, reads, cancels, assets, storage, uploads, hy };
 }
 
+/**
+ * A stand-in for Electron's nativeImage, which Ideogram 4.5's inverted mask needs (util.js blackEditMask): any PNG reads
+ * as a bitmap of its IHDR size with the middle half selected (white), a bitmap writes back as a PNG of its size tagged
+ * BLACK-EDIT. tools/ideogram45_test.js checks the inversion pixel for pixel.
+ */
+function fakeBitmap(png) {
+    const w = png.readUInt32BE(16), h = png.readUInt32BE(20), data = Buffer.alloc(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const v = x >= w / 4 && x < (3 * w) / 4 && y >= h / 4 && y < (3 * h) / 4 ? 255 : 0, j = (y * w + x) * 4;
+        data[j] = v; data[j + 1] = v; data[j + 2] = v; data[j + 3] = 255;
+    }
+    return { width: w, height: h, data };
+}
+
 function ctxFor(server, extra = {}) {
     const sleeps = [], logs = [], uuids = [];
     let n = 0;
     return {
         key: KEY, base: BASE, fetch: server.fetch, log: (m) => logs.push(String(m)), sleep: async (ms) => { sleeps.push(ms); },
         uuid: () => { const u = `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`; uuids.push(u); return u; },
-        sleeps, logs, uuids, opaque: () => true, toJpeg: (b) => jpegOf(Math.min(b.length - 1, 2_000_000), "JPEG"), ...extra,
+        sleeps, logs, uuids, opaque: () => true, toJpeg: (b) => jpegOf(Math.min(b.length - 1, 2_000_000), "JPEG"),
+        bitmap: (png) => fakeBitmap(Buffer.from(png)), fromBitmap: (bm) => pngOf(bm.width, bm.height, 96, "BLACK-EDIT"), ...extra,
     };
 }
 
@@ -263,6 +278,7 @@ const VARIANTS = {
     seedream_5_lite: "byteplus/seedream-5-0-260128", seedream_5_pro: "byteplus/seedream-5-0-pro-260628",
     qwen_image_edit: "qwen/qwen-image-3.0", magnific_precision: "freepik/ai-image-upscaler-precision-v2",
     krea_2: "krea/krea-2-large", grok_imagine: "xai/grok-imagine-image-2.0", ideogram_4: "ideogram/ideogram-v4",
+    ideogram_4_5: "ideogram/ideogram-4-5",
 };
 
 async function main() {
@@ -450,7 +466,7 @@ async function main() {
     await section("6. recipes and schemas", async () => {
         const recipes = loadRecipes();
         const served = recipes.filter((r) => r.providers && r.providers.comfyrouter).map((r) => r.id).sort();
-        check("sixteen shipped recipes carry a comfyrouter variant", eq(served, Object.keys(VARIANTS).sort()), served.join(", "));
+        check("seventeen shipped recipes carry a comfyrouter variant", eq(served, Object.keys(VARIANTS).sort()), served.join(", "));
         const bad = [];
         let bodies = 0;
         for (const r of recipes.filter((x) => x.providers && x.providers.comfyrouter)) {
@@ -472,7 +488,8 @@ async function main() {
             if (!d) { bad.push(`${r.id}: no dialect for ${prov}`); continue; }
             const up = r.task === "upscale";
             if (up !== !!d.upscale) bad.push(`${r.id}: task ${r.task} but the dialect ${d.upscale ? "is" : "is not"} an upscaler`);
-            if (!up && (v.edit === false) !== (d.edit === false)) bad.push(`${r.id}: edit ${v.edit} against the dialect`);
+            // the dialect edits per model where only some of its models do (Ideogram 4.5 does, 4.0 does not)
+            if (!up && (v.edit === false) === router._editable(d, v.model.split("/")[1])) bad.push(`${r.id}: edit ${v.edit} against the dialect`);
             const textless = up || v.text === null;
             if (!up && prov === "bfl" && v.model.endsWith("fill") !== textless) bad.push(`${r.id}: a text shape ${JSON.stringify(v.text)}`);
             if (!up && !v.model.endsWith("fill") && (!v.text || v.text.model !== v.model || !v.text.sizes.length)) bad.push(`${r.id}: text ${JSON.stringify(v.text)}`);
@@ -495,9 +512,10 @@ async function main() {
                 if (!out || !out.bytes || !out.bytes.length) bad.push(`${r.id} ${kind}: no picture back`);
                 // the pictures sent are the layout's: every one it numbers, the crop alone where it declares a drop
                 if (kind === "edit" && out) {
-                    const lay = router.layout(req), numbered = lay.pictures.filter((p) => p.n != null).length;
+                    // countOf: every picture but a mask in its own field (Ideogram 4.5's references are unnumbered, in a field of their own)
+                    const lay = router.layout(req), counted = refsLib.countOf(lay);
                     const sent = out.info.pictures + (lay.pictures.some((p) => p.role === "mask" && p.n != null) ? 1 : 0);
-                    if (lay.drops ? out.info.pictures !== 1 : sent !== numbered) bad.push(`${r.id} edit: ${out.info.pictures} pictures sent, the layout numbers ${numbered}${lay.drops ? " and drops the references" : ""}`);
+                    if (lay.drops ? out.info.pictures !== 1 : sent !== counted) bad.push(`${r.id} edit: ${out.info.pictures} pictures sent, the layout counts ${counted}${lay.drops ? " and drops the references" : ""}`);
                 }
                 if (s.submits[0] && s.submits[0].url !== `${BASE}/v2/models/${v.model}/requests`) bad.push(`${r.id} ${kind}: ${s.submits[0].url}`);
                 bodies++;
@@ -888,7 +906,7 @@ async function main() {
         check("Qwen text with 4 references (it takes 3): the text layout's cap is the edit's 3; index.js's check and the adapter both refuse in the same words before any call", qLay.max === 3 && eChk === want && eCap === want && sCap.calls.length === 0, short([eChk, eCap]));
         const sBig = fakeServer();
         const eBig = await throws(() => router.generate(textReq(variant("seedream_5_lite"), { references: [pngOf(3000, 2000, 10_000_001, "BIGREF", 2)] }), ctxFor(sBig, { opaque: () => false })));
-        check("a reference over the model's bytes with transparency: refused before any call, without the edit's Highres fix advice", /the reference 1 is 9\.5 MB, more than the 10 MB a picture may have \(it has transparency, so it stays PNG\)\. Use a smaller reference layer\.$/.test(eBig || "") && sBig.calls.length === 0, eBig);
+        check("a reference over the model's bytes with transparency: refused before any call, without the edit's Highres fix advice", /the reference 1 is 10\.0 MB, more than the 10 MB a picture may have \(it has transparency, so it stays PNG\)\. Use a smaller reference layer\.$/.test(eBig || "") && sBig.calls.length === 0, eBig);
         const x2 = await run("seedream_5_lite", { references: [pngOf(3000, 2000, 10_000_001, "BIGREF", 2)] });
         check("... an opaque one goes as JPEG", fromDataUrl(x2.body.image[0]).mime === "image/jpeg" && tagOf(fromDataUrl(x2.body.image[0]).bytes) === "JPEG", short(fromDataUrl(x2.body.image[0]).mime));
     });

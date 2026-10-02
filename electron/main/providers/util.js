@@ -183,7 +183,8 @@ function blackEditMask(mask, image, ctx, who) {
 }
 
 /**
- * The mask an Ideogram 4.5 edit sends (Replicate, WaveSpeed and Comfy Router, `options.mask: "black"`): Ideogram refuses
+ * The mask an Ideogram 4.5 edit sends (Replicate and WaveSpeed under `options.mask: "black"`, Comfy Router's ideogram
+ * dialect by the model id `ideogram-4-5`): Ideogram refuses
  * a mask without both colours, so a selection over the whole picture sends none (null: the whole picture is edited and
  * the stitch keeps the selection), and one with no pixel at half strength is refused before anything is sent.
  */

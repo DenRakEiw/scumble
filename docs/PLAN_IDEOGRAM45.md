@@ -1,6 +1,40 @@
 # Ideogram 4.5 in Scumble (researched 2026-10-02)
 
-## Status: I0 + I1 + I2 built (2026-10-02), I3 open
+## Status: I0 - I3 built (2026-10-02); the README / MANUAL lines open
+
+**I3 as built (2026-10-02, one session):** `comfyrouter.js`'s ideogram dialect branches on the model part
+`ideogram-4-5`. Its `edit` is now a function of the model (`editable(d, model)` replaces the three `d.edit === false`
+reads; `_editable` exported for the test): 4.5 edits, `ideogram-v4` stays text-only. `body()` gets the run's ctx as a
+fifth argument. The edit (`ideogram45Edit`): `{ prompt, image, reference_images (only with references), mask,
+quality, seed, num_images: 1 }`, the prompt as typed (no instruction head, as the OpenAI and FLUX bodies), the mask
+through `util.js` `ideogramMask` (none for a whole-crop selection, `info.mask` says so from the body in `read()`), held
+to the same per-picture limit as the pictures and with them to the 64 MiB, the seed through `seedOf` with
+`options.seed_max`. The layout: `image` numbered, `mask` and `reference_images[i]` own, `style`, `max` 4; a text run's
+layout declares the same drop as `ideogram-v4` (the string `NO_TEXT_REFS`). The text body (`ideogram45Text`): `{ prompt,
+size, quality, magic_prompt, seed, num_images: 1 }`, `size` the closest preset of `options.resolutions` within the tier
+the asked **area** bills as (1K up to 1024 x 1024 pixels), `options.text_values` swapping very_low, `magic_prompt` from
+`text.fixed` "off". `read()` (shared with 4.0): an item `is_image_safe: false` is not used (refused when none is safe,
+also in Ideogram's documented shape where such an item's `url` is empty), `info.generation_id` and `info.answered`, the
+seed from the item, else the answer, else the one sent. Not §4's shape in three places: `resolutions` holds **36**
+presets: Ideogram's 4.0 list of 38 without the six whose sides are not multiples of 32 (1280x720, 720x1280, 1440x720,
+720x1440, 1296x3168, 3168x1296; the 4.5 generate page holds every exact size to that), plus Replicate's 4.5 shapes
+1344x768, 768x1344, 1536x640, 640x1536 (the review found the 38 first sent 16:9 at 1024 as 1280x720), grouped by area
+(15 1K, 21 2K: 1024x3072 and 3072x1024 bill as 2K); `magic_prompt` is `text.fixed`, not a text Settings row (text rows never reach a run,
+I1); `text_values` instead of a hard-coded very_low swap. Recipe variant: `max_images` 4, `max_ratio` 6, `max_bytes`
+25,000,000, `seed_max`, `resolutions`, `text_values`, the Quality row, `text { sizes [1024, 2048], fixed { magic_prompt:
+"off" } }`. A fix on the way: `picturesFor` named a decimal `max_bytes` in MiB ("24 MB" for 25,000,000, also Seedream 5
+pro's); a whole number of decimal MB is now named in MB (`tools/comfyrouter_test.js`'s Seedream lite line: "10.0 MB").
+Tests: `tools/comfyrouter_test.js` (the variant table, "seventeen", the dialect's edit per model, the edit-picture count
+by `countOf`, a fake `bitmap` in `ctxFor`, the 4.5 answer in the fake), `tools/comfyrouter_mock.py` (the 4.5 pictures,
+the answer at the picture's size) and `tools/comfyrouter_test.py`'s list, `tools/recipes_test.js` takes-none,
+`tools/refs_layout_test.js` reads the variant (665), `tools/ideogram45_test.js` gains the Router sections 15-24 (242
+checks in all; a background agent wrote them against the stated API, and 12 mutations of `comfyrouter.js` on a copy
+were all caught). A review workflow (two readers: the schema and Ideogram's pages, and HEAD-vs-tree bodies of all 17
+Router variants plus the app path through `index.js`; each finding checked by a third) confirmed five: the 4.0 sizes
+breaking the 32 rule (fixed as above), `read()` missing Ideogram's empty `url` for an unsafe picture (fixed), and three
+sentences (CHANGELOG's "seven shapes" and prices, RECIPES.md's "Nothing was sent", `util.js`'s `ideogramMask` comment;
+fixed). Docs: RECIPES.md (the variant-fields paragraph, the caps table, "Ideogram 4.5", the Router's table and its
+count, the text-refs table), CHANGELOG Unreleased.
 
 **I2 as built (2026-10-02, one session):** `util.js` now also holds `tierFor` (Comfy Router's and Magnific's copies
 gone), `checkRatio` and `withinBytes` (moved from `replicate.js`, the messages unchanged). `wavespeed.js`: a fill's

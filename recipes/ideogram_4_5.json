@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Ideogram 4.5",
   "family": "Ideogram",
-  "description": "Ideogram 4.5, Ideogram's precise edit model: real mask inpainting (the selection goes as the mask, the answer comes back at the crop's size and what the edit does not touch is copied from it), strong at typography. Written from the providers' documentation (2026-10-02); not run against the live API yet. Also on WaveSpeedAI.",
+  "description": "Ideogram 4.5, Ideogram's precise edit model: real mask inpainting (the selection goes as the mask, the answer comes back at the crop's size and what the edit does not touch is copied from it), strong at typography. Written from the providers' documentation (2026-10-02); not run against the live API yet. Also on WaveSpeedAI. Also on Comfy Router.",
   "default": "replicate",
   "limits": {
     "ratio": 6
@@ -154,6 +154,87 @@
         }
       },
       "note": "Runs on WaveSpeedAI with the WaveSpeed key; written from WaveSpeed's schema (2026-10-02), not run against the live API yet. Generate: the selection goes as the mask (inverted to Ideogram's black = edit; a selection over the whole crop sends none, so the whole crop is edited) and up to three reference layers as unnumbered references, which the prompt cannot name; Edit precision High (the default here) restores the unchanged pixels, as WaveSpeed describes it. No seed on WaveSpeed: two runs differ. Generate new: the prompt alone, the closest of seven aspects at 1k or 2k by the asked size, prompt expansion off so the prompt goes as written, Very low goes as Low. Per image: Very low $0.008, Low $0.03, Medium $0.06, High $0.22; a new image Low $0.03, Medium $0.06, High $0.22 (WaveSpeed, 2026-10-02)."
+    },
+    "comfyrouter": {
+      "model": "ideogram/ideogram-4-5",
+      "input": "fill",
+      "options": {
+        "max_images": 4,
+        "max_ratio": 6,
+        "max_bytes": 25000000,
+        "seed_max": 2147483647,
+        "resolutions": [
+          "2048x2048",
+          "1440x2880",
+          "2880x1440",
+          "1664x2496",
+          "2496x1664",
+          "1792x2240",
+          "2240x1792",
+          "1440x2560",
+          "2560x1440",
+          "1600x2560",
+          "2560x1600",
+          "1728x2304",
+          "2304x1728",
+          "1152x2944",
+          "2944x1152",
+          "1248x3328",
+          "3328x1248",
+          "1280x3072",
+          "3072x1280",
+          "1024x3072",
+          "3072x1024",
+          "1024x1024",
+          "896x1120",
+          "1120x896",
+          "864x1152",
+          "1152x864",
+          "832x1248",
+          "1248x832",
+          "800x1280",
+          "1280x800",
+          "512x1536",
+          "1536x512",
+          "1344x768",
+          "768x1344",
+          "1536x640",
+          "640x1536"
+        ],
+        "text_values": {
+          "quality": {
+            "very_low": "low"
+          }
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "very_low",
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024,
+          2048
+        ],
+        "fixed": {
+          "magic_prompt": "off"
+        }
+      },
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. Written from the Router's published schema (2026-10-02). Generate sends the crop, the selection as the mask (inverted to Ideogram's black = edit; a selection over the whole crop sends none, so the whole crop is edited) and up to three reference layers to Comfy, which passes them to Ideogram's Precise Edit; the references go unnumbered, so the prompt cannot name them, and the answer has the crop's size. Generate new: the prompt alone at the closest of Ideogram's 1K or 2K sizes by the asked size, Magic Prompt off so the prompt goes as written, Very low goes as Low. Quality is also the billed rate; Comfy had not published the price on 2026-10-02."
     }
   }
 }

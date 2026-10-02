@@ -109,6 +109,14 @@ def pictures_of(prov, body):
                     out.append(("image",) + decode(c["image"]))
     elif prov == "freepik" and body.get("image"):
         out.append(("image",) + decode(body["image"]))
+    elif prov == "ideogram":
+        # Ideogram 4.5's Precise Edit: image, then mask and reference_images (4.0 sends no picture)
+        if body.get("image"):
+            out.append(("image",) + decode(body["image"]))
+        if body.get("mask"):
+            out.append(("mask",) + decode(body["mask"]))
+        for u in body.get("reference_images") or []:
+            out.append(("reference_images",) + decode(u))
     return out
 
 
@@ -395,8 +403,9 @@ class Handler(BaseHTTPRequestHandler):
         if prov == "xai":
             return {"data": [{"url": asset(1024, 1024), "mime_type": "image/png"}]}
         if prov == "ideogram":
-            w, h = wxh(body.get("resolution")) or (2048, 2048)
-            return {"created": "2026-09-23T10:00:00Z", "data": [{"url": asset(w, h), "seed": 5, "resolution": body.get("resolution"), "is_image_safe": True}]}
+            # 4.0 asks a "resolution", 4.5 a "size" for a new image; a 4.5 edit answers at its picture's size
+            w, h = dims or wxh(body.get("resolution")) or wxh(body.get("size")) or (2048, 2048)
+            return {"created": "2026-09-23T10:00:00Z", "generation_id": "gen-mock", "seed": 5, "data": [{"url": asset(w, h), "seed": 5, "resolution": "%dx%d" % (w, h), "is_image_safe": True}]}
         if prov == "krea":
             return {"job_id": str(uuid.uuid4()), "created_at": "2026-09-23T10:00:00Z", "completed_at": "2026-09-23T10:00:09Z", "status": "completed", "result": {"urls": [asset(1024, 1024)]}}
         return {}

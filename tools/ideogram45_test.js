@@ -1,5 +1,5 @@
-// Ideogram 4.5 on Replicate and on WaveSpeedAI (recipes/ideogram_4_5.json through electron/main/providers/replicate.js
-// and electron/main/providers/wavespeed.js), in plain Node, no Electron, no key and no network:
+// Ideogram 4.5 on Replicate, on WaveSpeedAI and on Comfy Router (recipes/ideogram_4_5.json through
+// electron/main/providers/replicate.js, wavespeed.js and comfyrouter.js), in plain Node, no Electron, no key and no network:
 //   node tools/ideogram45_test.js
 // Replicate (sections 0-6): a scripted fetch plays api.replicate.com (the prediction POST answers "succeeded" at once,
 // so nothing polls) and replicate.delivery (the output download). The pictures are small (64 x 48), so every picture
@@ -7,6 +7,12 @@
 // WaveSpeed (sections 7-13): a scripted fetch plays api.wavespeed.ai (the upload tickets, the binary upload, the submit,
 // which answers "completed" at once, so nothing polls), the presigned PUT host and the CDN (the output download); each
 // download_url maps back to the bytes PUT, so the picture in image, mask_url and reference_images[i] is read back.
+// Section 14 checks the hosts, the keys and the errors of both.
+// Comfy Router (sections 15-24): a scripted fetch plays api.comfy.org's queue (the submit answers 201 IN_QUEUE, the status
+// COMPLETED at once, the result read Ideogram's native answer; the waits go through an injected sleep that only records)
+// and the host the answer's picture URL names. Every picture goes as a data URI and is read back from the body, and every
+// Ideogram 4.5 body is held against the Router's published schema (tools/refs/comfyrouter/ideogram_ideogram-4-5.json).
+// Section 23 holds Ideogram 4.0 (ideogram/ideogram-v4, text only) to what it sent before.
 // A fake codec stands in for Electron's nativeImage (bitmap / fromBitmap): its "PNG" is a real signature and IHDR
 // followed by the raw RGBA, so the inverted mask is checked pixel for pixel.
 // The light tier (CLAUDE.md "Working rules"): the request shapes the recipe's variants send, written from Replicate's and
@@ -22,6 +28,7 @@ const ROOT = path.join(__dirname, "..");
 const PROV = path.join(ROOT, "electron", "main", "providers");
 const rep = require(path.join(PROV, "replicate.js"));
 const ws = require(path.join(PROV, "wavespeed.js"));
+const router = require(path.join(PROV, "comfyrouter.js"));
 const refs = require(path.join(PROV, "refs.js"));
 
 const KEY = "r8_test0123456789abcdef0123456789";   // the shape of a Replicate token; never a real one
@@ -38,6 +45,18 @@ const WS_OUT = WS_CDN + "out/x.png";
 const WS_CALLS = [];
 const WS_STRAYS = [];   // calls the fake WaveSpeed does not play (answered 404)
 const WS_ERRORS = [];
+
+const CR_KEY = "comfyui-" + "0f1e2d3c4b5a6978".repeat(3);   // the shape of a Comfy key (comfyui- and hex); never a real one
+const CR_API = "https://api.comfy.org";
+const CR_MODEL = "ideogram/ideogram-4-5";
+const CR_ROOT = `${CR_API}/v2/models/${CR_MODEL}`;
+const CR_RID = "6f1a1a6e-6a53-4a5f-9d3a-2b3b0a1f9c21";
+const CR_DL_ORIGIN = "https://ideogram.test";               // the host the answer's picture URLs name
+const CR_OUT = CR_DL_ORIGIN + "/out/x.png";
+const CR_CALLS = [];
+const CR_STRAYS = [];   // calls the fake Router does not play (answered 404)
+const CR_ERRORS = [];
+const CR_SCHEMA = [];   // { op, problems } of every Ideogram 4.5 body the fake Router received
 
 const results = [];
 function check(what, ok, detail) {
@@ -233,6 +252,133 @@ async function runWs(req, more = {}, opt = {}) {
     return { s, out, err, sub, input: (sub && sub.body) || {} };
 }
 const sameAs = (a, b) => !!a && Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
+
+// ---- Comfy Router's published schema for ideogram/ideogram-4-5, and a validator for what the bodies use of it ----------
+
+let CR_DOC = null;
+function deref(doc, s) {
+    let n = 0;
+    while (s && s.$ref && n++ < 30) s = s.$ref.replace(/^#\//, "").split("/").reduce((o, k) => o && o[k], doc);
+    return s;
+}
+/** Problems of `v` against `s` ([] when it holds), as tools/comfyrouter_test.js has it plus string lengths. Unknown fields count. */
+function validate(doc, s, v, at = "body") {
+    s = deref(doc, s);
+    if (!s) return [];
+    const out = [];
+    if (s.allOf) for (const x of s.allOf) out.push(...validate(doc, x, v, at));
+    for (const k of ["anyOf", "oneOf"]) {
+        if (!s[k]) continue;
+        const alts = s[k].map((x) => validate(doc, x, v, at));
+        if (!alts.some((p) => !p.length)) out.push(`${at}: matches none of ${k} (${short(alts.map((p) => p[0]))})`);
+    }
+    if (v === null) return s.nullable || s.type === "null" ? out : out.concat(s.type ? [`${at}: null`] : []);
+    const t = s.type;
+    const is = { string: typeof v === "string", integer: Number.isInteger(v), number: typeof v === "number", boolean: typeof v === "boolean", array: Array.isArray(v), object: v && typeof v === "object" && !Array.isArray(v) };
+    if (t && !is[t]) return out.concat([`${at}: not ${t} (${short(v)})`]);
+    if (s.enum && !s.enum.includes(v)) out.push(`${at}: ${short(v)} not in ${short(s.enum)}`);
+    if (typeof v === "string") {
+        if (s.minLength != null && v.length < s.minLength) out.push(`${at}: ${v.length} characters < ${s.minLength}`);
+        if (s.maxLength != null && v.length > s.maxLength) out.push(`${at}: ${v.length} characters > ${s.maxLength}`);
+    }
+    if (typeof v === "number") {
+        if (s.minimum != null && v < s.minimum) out.push(`${at}: ${v} < ${s.minimum}`);
+        if (s.maximum != null && v > s.maximum) out.push(`${at}: ${v} > ${s.maximum}`);
+    }
+    if (Array.isArray(v)) {
+        if (s.minItems != null && v.length < s.minItems) out.push(`${at}: ${v.length} items < ${s.minItems}`);
+        if (s.maxItems != null && v.length > s.maxItems) out.push(`${at}: ${v.length} items > ${s.maxItems}`);
+        if (s.items) v.forEach((x, i) => out.push(...validate(doc, s.items, x, `${at}[${i}]`)));
+    }
+    if (is.object && (s.properties || s.type === "object")) {
+        const props = s.properties || {};
+        for (const r of s.required || []) if (!(r in v)) out.push(`${at}: missing ${r}`);
+        for (const [k, x] of Object.entries(v)) {
+            if (props[k]) out.push(...validate(doc, props[k], x, `${at}.${k}`));
+            else if (s.properties && !s.allOf && !s.anyOf && !s.oneOf && s.additionalProperties !== true) out.push(`${at}: unknown field ${k}`);
+        }
+    }
+    return out;
+}
+/**
+ * Problems of an Ideogram 4.5 body against the Router's request schema; the picture fields also as the schema's media
+ * description has them (a data URI of png, webp or jpeg: this adapter never sends a URL).
+ */
+function schemaProblems(body) {
+    if (!CR_DOC) CR_DOC = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "comfyrouter", "ideogram_ideogram-4-5.json"), "utf8"));
+    const op = CR_DOC.paths[`/v2/models/${CR_MODEL}`].post;
+    const out = validate(CR_DOC, op.requestBody.content["application/json"].schema, body);
+    const media = /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/]+=*$/;
+    for (const k of ["image", "mask"]) if (k in body && !media.test(String(body[k]))) out.push(`body.${k}: not a png / webp / jpeg data URI`);
+    for (const [i, x] of (Array.isArray(body.reference_images) ? body.reference_images : []).entries()) if (!media.test(String(x))) out.push(`body.reference_images[${i}]: not a png / webp / jpeg data URI`);
+    return out;
+}
+
+// ---- a fake Comfy Router (api.comfy.org) ------------------------------------------------------------------------------
+
+/** Ideogram's native answer as the Router returns it (the schema's Ideogram45Response); the top-level seed differs from data[0]'s on purpose. */
+const nativeIdeogram = (body) => ({ data: [{ url: CR_OUT, seed: 918273645, resolution: "1024x768", prompt: String(body.prompt || body.text_prompt || ""), is_image_safe: true }], generation_id: "gen_0123456789", seed: 1234 });
+
+/**
+ * POST /v2/models/<provider>/<model>/requests answers 201 { request_id, status: IN_QUEUE }, the status read COMPLETED at
+ * once, the result read the native answer (`opt.answer(body)` its JSON, `opt.result(body)` a whole Response); any GET on
+ * CR_DL_ORIGIN answers RESULT. Every Ideogram 4.5 body is held against the Router's schema as it arrives.
+ */
+function fakeRouter(opt = {}) {
+    const calls = [], submits = [], statuses = [], reads = [], gets = [], strays = [];
+    async function fetch(url, init = {}) {
+        const method = String(init.method || "GET").toUpperCase();
+        const call = { url: String(url), method, headers: recordHeaders(init) };
+        calls.push(call);
+        CR_CALLS.push(call);
+        const u = new URL(String(url));
+        const m = u.origin === CR_API ? /^\/v2\/models\/([^/]+)\/([^/]+)\/requests(?:\/([^/]+)(\/status)?)?$/.exec(u.pathname) : null;
+        if (m && method === "POST" && !m[3]) {
+            const body = JSON.parse(init.body);
+            const model = `${m[1]}/${m[2]}`;
+            submits.push({ ...call, body, model });
+            if (model === CR_MODEL) CR_SCHEMA.push({ op: "image" in body ? "edit" : "text", problems: schemaProblems(body) });
+            return json(201, { request_id: CR_RID, status: "IN_QUEUE" });
+        }
+        if (m && method === "GET" && m[3] === CR_RID && m[4] === "/status") {
+            statuses.push(call);
+            return json(200, { request_id: CR_RID, status: "COMPLETED" });
+        }
+        if (m && method === "GET" && m[3] === CR_RID && !m[4]) {
+            reads.push(call);
+            const body = submits.length ? submits[submits.length - 1].body : {};
+            if (opt.result) return opt.result(body);
+            return json(200, (opt.answer || nativeIdeogram)(body));
+        }
+        if (u.origin === CR_DL_ORIGIN && method === "GET") {
+            gets.push(call);
+            return new Response(RESULT, { status: 200, headers: { "content-type": "image/png" } });
+        }
+        strays.push(call);
+        CR_STRAYS.push(call);
+        return json(404, { detail: `not played by this test: ${method} ${url}`, error_type: "model_not_found" });
+    }
+    return { fetch, calls, submits, statuses, reads, gets, strays };
+}
+
+/** A run against the fake Router with an injected sleep (recorded, never waited) and uuid. */
+async function runCr(req, more = {}, opt = {}) {
+    const s = fakeRouter(opt);
+    const sleeps = [], uuids = [];
+    let n = 0;
+    const ctx = {
+        key: CR_KEY, fetch: s.fetch, bitmap: codec.bitmap, fromBitmap: codec.fromBitmap, log: () => {},
+        sleep: async (ms) => { sleeps.push(ms); },
+        uuid: () => { const u = `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`; uuids.push(u); return u; },
+        ...more,
+    };
+    let out = null, err = null;
+    try { out = await (req.kind === "text" ? router.generate(req, ctx) : router.edit(req, ctx)); } catch (e) { err = String((e && e.message) || e); CR_ERRORS.push(err); }
+    const sub = s.submits[0] || null;
+    return { s, out, err, sub, body: (sub && sub.body) || {}, sleeps, uuids };
+}
+/** { mime, bytes } of a data URI, or null. */
+const uriOf = (s) => { const m = /^data:([^;,]+);base64,(.*)$/s.exec(String(s)); return m ? { mime: m[1], bytes: Buffer.from(m[2], "base64") } : null; };
 
 // ---- the recipes as recipes.js serves them ------------------------------------------------------------------------
 
@@ -625,6 +771,231 @@ async function main() {
     check("WaveSpeed: the key went on every api.wavespeed.ai call, never on a PUT to the presigned URL or a download; no call outside the three hosts", WS_CALLS.length > 60 && wsApi.length + wsPuts.length + wsCdn.length === WS_CALLS.length && wsApi.every((c) => c.headers.authorization === "Bearer " + WS_KEY) && wsPuts.length > 0 && wsPuts.every((c) => c.method === "PUT" && !("authorization" in c.headers)) && wsCdn.length > 0 && wsCdn.every((c) => c.method === "GET" && c.url === WS_OUT && !("authorization" in c.headers)), `${WS_CALLS.length} calls, ${wsApi.length} to the API, ${wsPuts.length} PUTs, ${wsCdn.length} downloads`);
     check("WaveSpeed: every call was one the fake plays (no 404 stray)", WS_STRAYS.length === 0, short(WS_STRAYS.map((c) => `${c.method} ${c.url}`)));
     check("WaveSpeed: the key (and the Replicate token) appear in no error of the run", WS_ERRORS.length >= 8 && !WS_ERRORS.some((m) => m.includes(WS_KEY) || m.includes(KEY)), `${WS_ERRORS.length} errors`);
+
+    // ---- Comfy Router (api.comfy.org) ----
+    const CV = R.providers.comfyrouter;
+    const CR_WHO = `Comfy Router ${CR_MODEL}`;
+    const crFill = (extra = {}) => fillReq(CV, { provider: "comfyrouter", ...extra });
+    const crParams = (more = {}) => ({ ...defaults(CV.settings, CV.fixed), ...more });
+    // Generate new: the edit's Settings row defaults plus the variant's text.fixed, as the app builds them
+    const crTextParams = (more = {}) => ({ ...defaults(CV.settings), ...((CV.text && CV.text.fixed) || {}), ...more });
+    const crText = (extra = {}) => ({ provider: "comfyrouter", model: CV.text && CV.text.model, kind: "text", prompt: "a lighthouse at dusk", negative: "", seed: 7, width: 1024, height: 1024, aspect: null, image: null, mask: null, maskAlpha: null, references: [], original: 0, fields: null, options: CV.options || null, params: crTextParams(), ...extra });
+    const EDIT_KEYS = ["image", "mask", "num_images", "prompt", "quality", "seed"];
+    const NEVER_ON_EDIT = ["size", "magic_prompt", "images", "aspect_ratio", "negative_prompt", "output_format", "text_prompt", "resolution"];
+    const TEXT_KEYS_CR = ["magic_prompt", "num_images", "prompt", "quality", "seed", "size"];
+    const PICTURE_KEYS = ["image", "images", "mask", "reference_images"];
+    const queueSeq = (root) => [`POST ${root}/requests`, `GET ${root}/requests/${CR_RID}/status`, `GET ${root}/requests/${CR_RID}`, `GET ${CR_OUT}`];
+    const SIZES = [[1024, 683, "3:2", "1248x832"], [2048, 1152, "16:9", "2560x1440"], [1024, 1024, null, "1024x1024"], [2048, 2048, "1:1", "2048x2048"], [1536, 1024, "3:2", "2496x1664"], [1024, 576, "16:9", "1344x768"], [3000, 1000, null, "3072x1024"]];
+
+    // ---- 15. Comfy Router: the recipe ----
+    await section("15. Comfy Router: the recipe", async () => {
+        check("ideogram_4_5's Comfy Router variant: a fill on ideogram/ideogram-4-5", CV && CV.model === CR_MODEL && CV.input === "fill" && CV.edit === true, short(CV && { model: CV.model, input: CV.input, edit: CV.edit }));
+        const o = (CV && CV.options) || {};
+        check("options: max_images 4, max_ratio 6, max_bytes 25 MB, seed_max 2147483647, very_low as low on a text run", o.max_images === 4 && o.max_ratio === 6 && o.max_bytes === 25000000 && o.seed_max === 2147483647 && eq(o.text_values, { quality: { very_low: "low" } }), short(o));
+        const res = Array.isArray(o.resolutions) ? o.resolutions : [];
+        check("options.resolutions: WxH presets, holding every size the text runs below expect", res.length > 0 && res.every((s) => /^\d+x\d+$/.test(s)) && SIZES.every(([, , , want]) => res.includes(want)), short(res));
+        const rows = (CV.settings || []).map((s) => [s.key, s.spec[0], s.spec[1] && s.spec[1].default]);
+        check("Settings rows: Quality (very_low .. high, default medium) alone", eq(rows, [["quality", ["very_low", "low", "medium", "high"], "medium"]]), short(rows));
+        check("the text shape: ideogram/ideogram-4-5, fixed magic_prompt off", CV.text && CV.text.model === CR_MODEL && eq(CV.text.fixed, { magic_prompt: "off" }), short(CV.text));
+        check("... so a text run's params are quality medium, magic_prompt off", eq(crTextParams(), { quality: "medium", magic_prompt: "off" }), short(crTextParams()));
+    });
+
+    // ---- 16. Comfy Router: a fill ----
+    await section("16. Comfy Router: a fill", async () => {
+        const x = await runCr(crFill({ negative: "blurry, low quality", seed: 7 }));
+        const seq = x.s.calls.map((c) => `${c.method} ${c.url}`);
+        check("the queue: one POST to /v2/models/ideogram/ideogram-4-5/requests, the status, the result, the picture's download; nothing else", !x.err && eq(seq, queueSeq(CR_ROOT)) && x.s.submits.length === 1 && !x.s.strays.length, x.err || short(seq));
+        check("the waits went through the injected sleep (recorded, none waited)", x.sleeps.length >= 1, short(x.sleeps));
+        check("the body holds image, mask, num_images, prompt, quality and seed, nothing else", !x.err && eq(keysOf(x.body), EDIT_KEYS), short(keysOf(x.body)));
+        check("no size, magic_prompt, images, aspect_ratio, negative_prompt, output_format, text_prompt or resolution (a negative was given)", !x.err && NEVER_ON_EDIT.every((k) => !(k in x.body)), short(keysOf(x.body)));
+        check("the prompt as typed, quality medium (the default), num_images 1, seed 7", x.body.prompt === "a red door" && x.body.quality === "medium" && x.body.num_images === 1 && x.body.seed === 7, short({ ...x.body, image: undefined, mask: undefined }));
+        const img = uriOf(x.body.image);
+        check("image: a data:image/png URI of the crop's exact bytes", String(x.body.image).startsWith("data:image/png;base64,") && sameBytes(x.body.image, IMAGE), short(String(x.body.image).slice(0, 40)) + (img ? ` (${img.bytes.length} bytes)` : ""));
+        check("mask: a data:image/png URI the codec reads at the crop's size (64 x 48)", String(x.body.mask).startsWith("data:image/png;base64,") && (() => { const bm = codec.bitmap(bytesOf(x.body.mask) || Buffer.alloc(0)); return !!bm && bm.width === W && bm.height === H; })(), short(String(x.body.mask).slice(0, 40)));
+        const bad = notInverted(x.body.mask, W, H, RECT);
+        check("the mask is Scumble's inverted, every pixel: the selected rectangle black (0,0,0,255), the rest white (255,255,255,255)", !x.err && bad === null, bad);
+        check("... spot pixels: (16,12) and (39,29) black, (15,12), (40,29), (0,0) and (63,47) white", eq(pixel(x.body.mask, 16, 12), [0, 0, 0, 255]) && eq(pixel(x.body.mask, 39, 29), [0, 0, 0, 255]) && eq(pixel(x.body.mask, 15, 12), [255, 255, 255, 255]) && eq(pixel(x.body.mask, 40, 29), [255, 255, 255, 255]) && eq(pixel(x.body.mask, 0, 0), [255, 255, 255, 255]) && eq(pixel(x.body.mask, 63, 47), [255, 255, 255, 255]), short([pixel(x.body.mask, 16, 12), pixel(x.body.mask, 15, 12)]));
+        check("... and it is not the mask as given", !sameBytes(x.body.mask, RECT_MASK));
+        const y = await runCr(crFill({ mask: maskPng(W, H, RAMP) }));
+        const badRamp = notInverted(y.body.mask, W, H, RAMP);
+        check("a soft ramp: 128 and above black, below white (x = 31 at 124 stays white, x = 32 at 128 turns black)", !y.err && badRamp === null && eq(pixel(y.body.mask, 31, 0), [255, 255, 255, 255]) && eq(pixel(y.body.mask, 32, 0), [0, 0, 0, 255]), y.err || badRamp);
+        check("the answer: the downloaded picture as image/png, no info.mask for a partial selection", !x.err && sameAs(x.out.bytes, RESULT) && x.out.mime === "image/png" && !("mask" in x.out.info), x.err || short(x.out && x.out.info));
+        const [post, st, rd, dl] = x.s.calls;
+        check("the POST carries X-API-Key, Content-Type JSON and the run's Idempotency-Key (the injected uuid)", !!post && post.headers["x-api-key"] === CR_KEY && post.headers["content-type"] === "application/json" && post.headers["idempotency-key"] === x.uuids[0] && x.uuids.length === 1, short(post && post.headers));
+        check("the status and result reads carry the key; the picture's download carries no X-API-Key", !!dl && st.headers["x-api-key"] === CR_KEY && rd.headers["x-api-key"] === CR_KEY && !("x-api-key" in dl.headers) && !("authorization" in dl.headers), short([st && st.headers, dl && dl.headers]));
+    });
+
+    // ---- 17. Comfy Router: whole and empty selections, a mask that cannot be used ----
+    await section("17. Comfy Router: whole and empty selections", async () => {
+        let x = await runCr(crFill({ mask: maskPng(W, H, () => 255) }));
+        check("the mask all 255 (the whole crop selected): no mask key at all, the crop still goes", !x.err && !("mask" in x.body) && sameBytes(x.body.image, IMAGE) && x.s.submits.length === 1 && eq(keysOf(x.body), ["image", "num_images", "prompt", "quality", "seed"]), x.err || short(keysOf(x.body)));
+        check("... and the answer's info.mask says so", !x.err && x.out.info.mask === "none: the selection covers the whole crop, so the whole crop was edited", short(x.out && x.out.info));
+        x = await runCr(crFill({ mask: maskPng(W, H, (xx) => (xx === 0 ? 128 : 255)) }));
+        check("a mask at 128 or more everywhere also counts as the whole crop (no mask key, info.mask set)", !x.err && !("mask" in x.body) && /^none: /.test((x.out && x.out.info.mask) || ""), x.err || short(keysOf(x.body)));
+        x = await runCr(crFill({ mask: maskPng(W, H, () => 0) }));
+        check("the mask all 0: refused before any fetch call, holds no pixel at half strength", /holds no pixel at half strength/.test(x.err || "") && x.s.calls.length === 0, x.err);
+        x = await runCr(crFill({ mask: maskPng(W, H, () => 127) }));
+        check("the mask all 127 (under half strength): refused the same way, no fetch", /holds no pixel at half strength/.test(x.err || "") && x.s.calls.length === 0, x.err);
+        x = await runCr(crFill({ mask: maskPng(32, H, () => 255) }));
+        check("a mask of another size than the crop (32 x 48 for 64 x 48): refused, no fetch", !!x.err && x.s.calls.length === 0, x.err);
+        x = await runCr(crFill(), { bitmap: undefined });
+        check("no ctx.bitmap: refused before any call, cannot read the mask", /cannot read the mask/.test(x.err || "") && x.s.calls.length === 0, x.err);
+    });
+
+    // ---- 18. Comfy Router: references, the count and the layout ----
+    await section("18. Comfy Router: references and layout", async () => {
+        let x = await runCr(crFill());
+        check("no reference layer: no reference_images key", !x.err && !("reference_images" in x.body), short(keysOf(x.body)));
+        x = await runCr(crFill({ references: [REF[0], REF[1]] }));
+        const list = x.body.reference_images;
+        check("2 references: reference_images of 2 data URIs, each the layer's exact bytes in order", !x.err && Array.isArray(list) && list.length === 2 && sameBytes(list[0], REF[0]) && sameBytes(list[1], REF[1]), x.err || short(Array.isArray(list) ? list.map((s) => String(s).slice(0, 30)) : list));
+        check("... the keys: image, mask, num_images, prompt, quality, reference_images, seed", eq(keysOf(x.body), ["image", "mask", "num_images", "prompt", "quality", "reference_images", "seed"]), short(keysOf(x.body)));
+        check("... the prompt as typed (no edit head, no reference sentence), the crop still in image, the mask still inverted", x.body.prompt === "a red door" && sameBytes(x.body.image, IMAGE) && notInverted(x.body.mask, W, H, RECT) === null, short(x.body.prompt));
+        x = await runCr(crFill({ references: [REF[2], REF[0]], original: 1 }));
+        check("original 1: the Original (references[0]) goes first in reference_images, then the reference layer", !x.err && (x.body.reference_images || []).length === 2 && sameBytes(x.body.reference_images[0], REF[2]) && sameBytes(x.body.reference_images[1], REF[0]), x.err || short(keysOf(x.body)));
+        x = await runCr(crFill({ references: REF.slice(0, 3) }));
+        check("3 references (the crop + 3 = 4, max_images): all three go, in order", !x.err && (x.body.reference_images || []).length === 3 && [0, 1, 2].every((i) => sameBytes(x.body.reference_images[i], REF[i])), x.err);
+        x = await runCr(crFill({ references: REF.slice(0, 4) }));
+        check("4 references: refused before any call, takes at most 4 pictures", /takes at most 4 pictures/.test(x.err || "") && x.s.calls.length === 0, x.err);
+
+        const req2 = crFill({ references: [REF[0], REF[1]], original: 1 });
+        const lay = router.layout(req2);
+        const pics = lay.pictures.map((p) => [p.role, p.ref === undefined ? null : p.ref, p.field, p.n]);
+        check("layout (original 1, 2 references): style true, max 4, no drops", lay.style === true && lay.max === 4 && lay.drops === null, short(lay));
+        check("... the crop in image numbered 1, the mask in its own field mask, the Original and the reference unnumbered in reference_images[i]", eq(pics, [["crop", null, "image", 1], ["mask", null, "mask", null], ["original", 0, "reference_images[0]", null], ["reference", 1, "reference_images[1]", null]]), short(pics));
+        const lay0 = router.layout(crFill({ references: [REF[0], REF[1]] }));
+        check("... without original both are role reference", eq(lay0.pictures.filter((p) => p.ref != null).map((p) => p.role), ["reference", "reference"]), short(lay0.pictures));
+        let ok = true, why = "";
+        try { refs.checkLayout(lay, req2); } catch (e) { ok = false; why = String(e.message); }
+        check("... refs.checkLayout accepts it", ok, why);
+        let e = null;
+        try { refs.checkPictures(lay, { ...req2, prompt: "the hat from {@ref:0}" }, CR_WHO); } catch (err) { e = String(err.message); }
+        check("a prompt with the marker {@ref:0} and references: refused by refs.checkPictures, without a number", /without a number/.test(e || ""), e);
+        check("_editable: the ideogram dialect edits with ideogram-4-5, not with ideogram-v4", router._editable(router.DIALECTS.ideogram, "ideogram-4-5") === true && router._editable(router.DIALECTS.ideogram, "ideogram-v4") === false, short([router._editable(router.DIALECTS.ideogram, "ideogram-4-5"), router._editable(router.DIALECTS.ideogram, "ideogram-v4")]));
+    });
+
+    // ---- 19. Comfy Router: the crop's shape and its bytes ----
+    await section("19. Comfy Router: shape and bytes", async () => {
+        const strip = (w, h) => crFill({ image: imagePng(w, h), mask: maskPng(w, h, (xx) => (xx < 8 ? 255 : 0)), width: w, height: h });
+        let x = await runCr(strip(640, 96));
+        check("a crop of 640 x 96 (6.7:1): refused before any call, no steeper than 6:1", /no steeper than 6:1/.test(x.err || "") && x.s.calls.length === 0, x.err);
+        x = await runCr(strip(96, 640));
+        check("... and 96 x 640 too", /no steeper than 6:1/.test(x.err || "") && x.s.calls.length === 0, x.err);
+        x = await runCr(strip(576, 96));
+        check("a crop of 576 x 96 (6:1 exactly) goes", !x.err && x.s.submits.length === 1, x.err);
+        const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
+        const OVER = header(W, H, 25000001), EXACT = header(W, H, 25000000);   // a 64 x 48 IHDR, padded
+        x = await runCr(crFill({ image: OVER }), { opaque: () => true, toJpeg: () => JPEG });
+        const got = uriOf(x.body.image);
+        check("an opaque crop of 25,000,001 bytes goes as data:image/jpeg (ctx.toJpeg's bytes)", !x.err && !!got && got.mime === "image/jpeg" && sameAs(got.bytes, JPEG), x.err || short(String(x.body.image).slice(0, 40)));
+        check("... its mask still a PNG, inverted", !x.err && String(x.body.mask).startsWith("data:image/png;base64,") && notInverted(x.body.mask, W, H, RECT) === null, x.err || short(String(x.body.mask).slice(0, 40)));
+        x = await runCr(crFill({ image: OVER }), { opaque: () => false, toJpeg: () => JPEG });
+        check("... with transparency (ctx.opaque false): refused before any call", !!x.err && x.s.calls.length === 0, x.err);
+        x = await runCr(crFill({ image: EXACT }), { opaque: () => true, toJpeg: () => JPEG });
+        check("a crop of exactly 25,000,000 bytes is not over: it goes as data:image/png, its exact bytes", !x.err && String(x.body.image).startsWith("data:image/png;base64,") && sameBytes(x.body.image, EXACT), x.err || short(String(x.body.image).slice(0, 40)));
+    });
+
+    // ---- 20. Comfy Router: the seed and the quality of an edit ----
+    await section("20. Comfy Router: seed and quality", async () => {
+        const seedOfRun = async (seed) => { const r = await runCr(crFill({ seed })); return r.err ? r.err : r.body.seed; };
+        const s = [await seedOfRun(4000000000), await seedOfRun(5), await seedOfRun(2147483648), await seedOfRun(2147483647)];
+        check("the seed modulo 2147483648: 4000000000 -> 1852516352, 5 -> 5, 2147483648 -> 0, 2147483647 stays", eq(s, [1852516352, 5, 0, 2147483647]), short(s));
+        const x = await runCr(crFill({ seed: 4000000000, params: crParams({ random_seed: true }) }));
+        check("params.random_seed true: no seed key (and no random_seed key)", !x.err && !("seed" in x.body) && !("random_seed" in x.body) && x.body.quality === "medium", x.err || short(keysOf(x.body)));
+        const q = [];
+        for (const v of ["very_low", "low", "medium", "high"]) { const r = await runCr(crFill({ params: crParams({ quality: v }) })); q.push(r.err || r.body.quality); }
+        check("quality goes as the Quality row says (very_low is valid on an edit)", eq(q, ["very_low", "low", "medium", "high"]), short(q));
+    });
+
+    // ---- 21. Comfy Router: the answer ----
+    await section("21. Comfy Router: the answer", async () => {
+        let x = await runCr(crFill({ seed: 7 }));
+        check("the run's seed is data[0].seed (918273645), not the top-level seed or the seed sent", !x.err && x.out.seed === 918273645, x.err || short(x.out && x.out.seed));
+        check("info.generation_id is the answer's, info.answered is data[0].resolution", !x.err && x.out.info.generation_id === "gen_0123456789" && x.out.info.answered === "1024x768", x.err || short(x.out && x.out.info));
+        check("data[0].url is downloaded once, without the X-API-Key", !x.err && x.s.gets.length === 1 && x.s.gets[0].url === CR_OUT && !("x-api-key" in x.s.gets[0].headers), short(x.s.gets.map((c) => [c.url, c.headers])));
+        const unsafe = { url: CR_DL_ORIGIN + "/out/unsafe.png", seed: 11, resolution: "512x512", prompt: "p", is_image_safe: false };
+        x = await runCr(crFill(), {}, { answer: () => ({ data: [unsafe], generation_id: "gen_u", seed: 11 }) });
+        check("an answer whose only item has is_image_safe false fails: no picture in the answer, not safe", !!x.err && x.err.includes("no picture in the answer") && x.err.includes("not safe"), x.err);
+        check("... and the unsafe picture is not downloaded", x.s.gets.length === 0, short(x.s.gets.map((c) => c.url)));
+        // Ideogram's pages: "If false, `url` is empty"
+        x = await runCr(crFill(), {}, { answer: () => ({ data: [{ ...unsafe, url: "" }], generation_id: "gen_e", seed: 11 }) });
+        check("an unsafe item with an empty url (Ideogram's documented shape) fails as not safe too", !!x.err && x.err.includes("not safe") && x.s.gets.length === 0, x.err);
+        x = await runCr(crFill(), {}, { answer: () => ({ data: [{ ...unsafe, url: null }], generation_id: "gen_n", seed: 11 }) });
+        check("... and with a null url", !!x.err && x.err.includes("not safe") && x.s.gets.length === 0, x.err);
+        const safe = { url: CR_DL_ORIGIN + "/out/safe.png", seed: 22, resolution: "640x480", prompt: "p", is_image_safe: true };
+        x = await runCr(crFill(), {}, { answer: () => ({ data: [unsafe, safe], generation_id: "gen_s", seed: 11 }) });
+        check("an unsafe item followed by a safe one: the safe one is downloaded, its seed and resolution reported", !x.err && x.s.gets.length === 1 && x.s.gets[0].url === safe.url && x.out.seed === 22 && x.out.info.answered === "640x480" && x.out.info.generation_id === "gen_s", x.err || short({ gets: x.s.gets.map((c) => c.url), seed: x.out && x.out.seed, info: x.out && x.out.info }));
+    });
+
+    // ---- 22. Comfy Router: a text run (Generate new) ----
+    await section("22. Comfy Router: text runs", async () => {
+        let x = await runCr(crText({ negative: "blurry" }));
+        const seq = x.s.calls.map((c) => `${c.method} ${c.url}`);
+        check("the queue: one POST to /v2/models/ideogram/ideogram-4-5/requests, the status, the result, the download", !x.err && eq(seq, queueSeq(CR_ROOT)), x.err || short(seq));
+        check("the body holds magic_prompt, num_images, prompt, quality, seed and size, nothing else", !x.err && eq(keysOf(x.body), TEXT_KEYS_CR), short(keysOf(x.body)));
+        check("no picture field", PICTURE_KEYS.every((k) => !(k in x.body)), short(keysOf(x.body)));
+        check("magic_prompt off (text.fixed), quality medium, num_images 1, the prompt as written, seed 7", x.body.magic_prompt === "off" && x.body.quality === "medium" && x.body.num_images === 1 && x.body.prompt === "a lighthouse at dusk" && x.body.seed === 7, short(x.body));
+        check("the answer: the downloaded picture, the seed data[0].seed", !x.err && sameAs(x.out.bytes, RESULT) && x.out.seed === 918273645, x.err || short(x.out && x.out.seed));
+        const q = [];
+        for (const v of ["very_low", "low", "medium", "high"]) { const r = await runCr(crText({ params: crTextParams({ quality: v }) })); q.push(r.err || r.body.quality); }
+        check("quality very_low goes as low (text_values), low, medium and high as they are", eq(q, ["low", "low", "medium", "high"]), short(q));
+        const res = (CV.options && CV.options.resolutions) || [];
+        // Ideogram's 4.5 generate page: "An exact size must have both sides a multiple of 32 and at least 256px, a total
+        // of at most 2048x2048 pixels, and an aspect ratio of at most 6:1" (Ideogram 4.0's 1280x720 or 1296x3168 are not)
+        const off = res.filter((r) => { const [w, h] = r.split("x").map(Number); return w % 32 || h % 32 || Math.min(w, h) < 256 || w * h > 2048 * 2048 || Math.max(w, h) > 6 * Math.min(w, h); });
+        check("every preset in options.resolutions keeps Ideogram 4.5's size rule (sides multiples of 32, at least 256, at most 2048 x 2048 pixels, 6:1)", res.length > 0 && !off.length, short(off));
+        for (const [w, h, aspect, want] of [...SIZES, [1024, 1024, "16:9", "1344x768"], [1024, 1025, null, "2048x2048"]]) {
+            const r = await runCr(crText({ width: w, height: h, aspect }));
+            check(`size: ${w} x ${h}${aspect ? ` aspect ${aspect}` : ", no aspect"} -> ${want}`, !r.err && r.body.size === want && res.includes(r.body.size), r.err || short(r.body.size));
+        }
+        x = await runCr(crText({ references: [REF[0], REF[1]] }));
+        check("a text run given 2 references sends none (the same six keys, no picture field)", !x.err && eq(keysOf(x.body), TEXT_KEYS_CR) && PICTURE_KEYS.every((k) => !(k in x.body)), x.err || short(keysOf(x.body)));
+        const lay = router.textLayout(crText({ references: [REF[0], REF[1]] }));
+        check("textLayout: drops \"this model takes no reference images for a new image\", no pictures", lay.drops === "this model takes no reference images for a new image" && Array.isArray(lay.pictures) && lay.pictures.length === 0, short(lay));
+        x = await runCr(crText({ seed: 4000000000 }));
+        const r = await runCr(crText({ seed: 4000000000, params: crTextParams({ random_seed: true }) }));
+        check("the seed modulo 2147483648 on a text run too (4000000000 -> 1852516352); random_seed sends none", !x.err && x.body.seed === 1852516352 && !r.err && !("seed" in r.body) && !("random_seed" in r.body), short([x.err || x.body.seed, r.err || keysOf(r.body)]));
+    });
+
+    // ---- 23. Comfy Router: Ideogram 4.0 unchanged ----
+    await section("23. Comfy Router: Ideogram 4.0", async () => {
+        const V4 = loadRecipe("ideogram_4").providers.comfyrouter;
+        check("ideogram_4's Comfy Router variant: ideogram/ideogram-v4", V4 && V4.model === "ideogram/ideogram-v4" && V4.text && V4.text.model === "ideogram/ideogram-v4", short(V4 && { model: V4.model, text: V4.text && V4.text.model }));
+        let x = await runCr(fillReq(V4, { provider: "comfyrouter" }));
+        check("Generate (router.edit): refused before any call, makes pictures from the prompt alone: use Generate new", /makes pictures from the prompt alone: use Generate new/.test(x.err || "") && x.s.calls.length === 0, x.err);
+        let e = null;
+        try { router.layout(fillReq(V4, { provider: "comfyrouter", references: [REF[0]] })); } catch (err) { e = String(err.message); }
+        check("router.layout: refused with the same words", /makes pictures from the prompt alone: use Generate new/.test(e || ""), e);
+        const t4 = (extra = {}) => ({ provider: "comfyrouter", model: V4.text.model, kind: "text", prompt: "a lighthouse at dusk", negative: "", seed: 7, width: 2560, height: 1440, aspect: null, image: null, mask: null, maskAlpha: null, references: [], original: 0, fields: null, options: V4.options || null, params: defaults(V4.text.settings, V4.text.fixed), ...extra });
+        x = await runCr(t4());
+        const seq = x.s.calls.map((c) => `${c.method} ${c.url}`);
+        check("Generate new: the queue on /v2/models/ideogram/ideogram-v4", !x.err && eq(seq, queueSeq(`${CR_API}/v2/models/ideogram/ideogram-v4`)), x.err || short(seq));
+        check("... the body { text_prompt, resolution 2560x1440, rendering_speed DEFAULT } for a 2560 x 1440 ask, nothing else", !x.err && eq(keysOf(x.body), ["rendering_speed", "resolution", "text_prompt"]) && x.body.text_prompt === "a lighthouse at dusk" && x.body.resolution === "2560x1440" && x.body.rendering_speed === "DEFAULT", x.err || short(x.body));
+        x = await runCr(t4({ references: [REF[0], REF[1]] }));
+        check("... with 2 references the same three keys, no picture", !x.err && eq(keysOf(x.body), ["rendering_speed", "resolution", "text_prompt"]), x.err || short(keysOf(x.body)));
+        const lay = router.textLayout(t4({ references: [REF[0], REF[1]] }));
+        check("textLayout: the same drop, no pictures", lay.drops === "this model takes no reference images for a new image" && lay.pictures.length === 0, short(lay));
+    });
+
+    // ---- 24. Comfy Router: the schema and the whole run ----
+    await section("24. Comfy Router: the schema and the whole run", async () => {
+        const probe = schemaProblems({ prompt: "", seed: 2147483648, quality: "ultra", size: 2048, num_images: 9, reference_images: [...REF, REF[0]].map((b) => "data:image/png;base64," + b.toString("base64")), extra: 1, image: "https://example.com/a.gif" });
+        check("the validator is not vacuous: an empty prompt, seed 2^31, quality ultra, size a number, num_images 9, 5 references, an unknown field and a URL image are each found", probe.length >= 8 && probe.some((p) => /unknown field extra/.test(p)) && probe.some((p) => /seed: 2147483648 > 2147483647/.test(p)) && probe.some((p) => /reference_images: 5 items > 4/.test(p)) && probe.some((p) => /prompt: 0 characters/.test(p)), short(probe));
+        const edits = CR_SCHEMA.filter((s) => s.op === "edit"), texts = CR_SCHEMA.filter((s) => s.op === "text");
+        const badEdit = edits.filter((s) => s.problems.length), badText = texts.filter((s) => s.problems.length);
+        check("every Ideogram 4.5 edit body sent holds against the Router's schema", edits.length >= 20 && !badEdit.length, `${edits.length} bodies; ${short(badEdit.map((s) => s.problems))}`);
+        check("every Ideogram 4.5 text body sent holds against the Router's schema", texts.length >= 10 && !badText.length, `${texts.length} bodies; ${short(badText.map((s) => s.problems))}`);
+        const echo = await runCr(crFill(), {}, { result: () => json(400, { detail: `the key ${CR_KEY} was refused`, error_type: "invalid_input" }) });
+        check("a result read that echoes the key fails without the key in its message", !!echo.err && !echo.err.includes(CR_KEY), echo.err);
+        const api = CR_CALLS.filter((c) => new URL(c.url).origin === CR_API);
+        const dls = CR_CALLS.filter((c) => new URL(c.url).origin === CR_DL_ORIGIN);
+        const posts = api.filter((c) => c.method === "POST");
+        check("no call left the two hosts (api.comfy.org and the answer's picture host)", CR_CALLS.length > 100 && api.length + dls.length === CR_CALLS.length, `${CR_CALLS.length} calls, ${api.length} to the API, ${dls.length} downloads`);
+        check("the key went on every api.comfy.org call; every POST with Content-Type JSON and a UUID Idempotency-Key", api.every((c) => c.headers["x-api-key"] === CR_KEY) && posts.length > 30 && posts.every((c) => c.headers["content-type"] === "application/json" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(c.headers["idempotency-key"] || "")), short(api.find((c) => c.headers["x-api-key"] !== CR_KEY)));
+        check("no download carried the key", dls.length > 30 && dls.every((c) => c.method === "GET" && !("x-api-key" in c.headers) && !("authorization" in c.headers)), `${dls.length} downloads`);
+        check("every call was one the fake Router plays (no 404 stray)", CR_STRAYS.length === 0, short(CR_STRAYS.map((c) => `${c.method} ${c.url}`)));
+        check("the Comfy key appears in no error of the run", CR_ERRORS.length >= 10 && !CR_ERRORS.some((m) => m.includes(CR_KEY)), `${CR_ERRORS.length} errors`);
+    });
 
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

@@ -48,6 +48,31 @@ The paragraph of 2026-10-02 (item 28 S3e) was moved here the same day, when item
 
 The paragraph of 2026-10-02 (item 31 I0 + I1) was moved here the same day, when I2 was built.
 
+The paragraph of 2026-10-02 (item 31 I2) was moved here the same day, when I3 was built.
+
+## 2026-10-02 (item 31 I2, moved here the same day)
+
+**This session (2026-10-02, "baue weiter", the ninth of the day):** item 31 I2 (`docs/PLAN_IDEOGRAM45.md` "I2 as
+built"), one commit, not released (CHANGELOG Unreleased: the Ideogram 4.5 entry now names WaveSpeed). The I0 + I1
+paragraph is in `docs/HISTORY.md`. **Shared:** `util.js` now also holds `tierFor` (Comfy Router's and Magnific's
+copies gone), `checkRatio` and `withinBytes` (from `replicate.js`, messages unchanged). **WaveSpeed**
+(`wavespeed.js`): a fill's `fields.references` (unnumbered, `style`), `options.mask: "black"` (no `mask_url` for a
+whole-crop selection), `max_ratio` / `max_bytes` before the first upload (the upload carries the mime now), no
+`aspect_ratios` preset on a fill, a text run's `text_values` and `tiers`, and the **allowlist** `options.accepts`
+(a text run: `text_accepts`, else `accepts`): only `prompt`, the picture keys and the listed keys go; a dropped seed
+is reported as none. It is the piece `docs/PLAN_FLUX3.md` F4 needs (noted there: F4's list must name `aspect_ratio`).
+**Recipe** `recipes/ideogram_4_5.json` gains the `wavespeed` variant (`ideogram-ai/ideogram-v4.5/edit` for Generate,
+`ideogram-ai/ideogram-v4.5` for Generate new; rows Quality and Edit precision, default high; `accepts` `quality`,
+`edit_precision`, `text_accepts` `quality`, `aspect_ratio`, `resolution`, `enable_prompt_expansion`;
+`text.fixed` `enable_prompt_expansion: false`, since text rows never reach a run). Tests: `tools/ideogram45_test.js`
+149 (sections 7-14 WaveSpeed, written by a background agent against the stated API; 8 mutations of `wavespeed.js` on
+a copy all caught), `refs_layout_test` 663, `recipes_test` 51, magnific / comfyrouter / oxen / flux3 / assistant
+green; gates `recipes`, `lint`, `types` green `--offline` (label `i2`). A review workflow (two readers, schema
+against WaveSpeed's live schema pages and regressions as HEAD-vs-tree bodies of every WaveSpeed and Replicate
+variant; each finding checked by a third) confirmed one, a doc sentence (RECIPES.md's drop list), fixed. **Not
+done:** I3 (Comfy Router: the ideogram dialect's 4.5 branch), README / MANUAL lines; no live run (the user's word).
+Next: I3, then the README / MANUAL lines, then a release of items 28 and 31 on the user's word.
+
 ## 2026-10-02 (item 31 I0 + I1, moved here the same day)
 
 **This session (2026-10-02, "baue weiter", the eighth of the day):** item 31 I0 + I1 (`docs/PLAN_IDEOGRAM45.md`

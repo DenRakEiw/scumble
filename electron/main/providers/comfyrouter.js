@@ -30,7 +30,9 @@
 //   qwen/*       Qwen Image 3.0: input.messages[0].content [{ image }, .., { text }], parameters { size "W*H" ..}
 //                -> output.choices[0].message.content[].image (a URL)
 //   freepik/*    Magnific Precision V2 (upscale): image (base64), scale_factor 2..16 -> data.generated[0] (a URL)
-//   xai/*, ideogram/*, krea/*   text to image only (the Router's schemas for them take no input picture)
+//   ideogram/ideogram-4-5   Ideogram 4.5: an edit is Precise Edit (image, reference_images, mask black = edit, all
+//                data URLs; `image` selects the operation), a new image the prompt with a 1K / 2K size -> data[0].url
+//   xai/*, ideogram/ideogram-v4, krea/*   text to image only (the Router's schemas for them take no input picture)
 //
 // A variant's `options` say what the model takes: max_images, max_bytes (per picture), pixels [min, max] (Seedream),
 // ratios (the aspect presets of the text-only models), tiers ({ "1K": 1024, .. }, Gemini's and Grok's size classes).
@@ -38,7 +40,8 @@
 // refs.instruction, numbered by that layout, so it names the pictures as the resolved markers do. A route whose layout
 // declares a drop (FLUX.1 Fill) sends the crop alone. textLayout(req) does the same for Generate new with reference
 // layers (26f): the same fields without the crop, the references numbered from 1, the edit cap as the reference cap
-// (the crop's slot becomes a reference slot); xai, ideogram and krea take no picture and declare the drop.
+// (the crop's slot becomes a reference slot); xai, ideogram and krea take no picture for a new image and declare the
+// drop (Ideogram 4.5 would edit a picture it is given, so its new image is the prompt alone too).
 //
 // The host is api.comfy.org and never a URL from a recipe; settings.comfyrouter.base may name a loopback mock for
 // the tests, and then only a key that starts with "test-" goes there, while such a key never goes to Comfy. Answer
@@ -46,7 +49,7 @@
 "use strict";
 
 const { randomUUID } = require("node:crypto");
-const { dataUri, b64, fetchImage, sleep: realSleep, fitPixels, closestAspect, tierFor } = require("./util");
+const { dataUri, b64, fetchImage, sleep: realSleep, fitPixels, closestAspect, closestSize, tierFor, seedOf, textShape, ideogramMask } = require("./util");
 const { layoutOf, refRoles, countOf, instruction, labelParts } = require("./refs");
 const openai = require("./openai");
 const ark = require("./ark");
@@ -219,7 +222,9 @@ async function picturesFor(req, o, ctx, model) {
         const refs = pics.length - 1;
         throw new Error(`${who} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${pics.length} (the crop, ${refs} reference${refs === 1 ? "" : "s"}): turn Original off or hide reference layers.`);
     }
-    const limit = Math.min(+o.max_bytes > 0 ? +o.max_bytes : PICTURE_BYTES_MAX, PICTURE_BYTES_MAX);
+    const limit = pictureLimit(o);
+    // a model's own limit in whole decimal MB (Ideogram's and Seedream's 25,000,000) is named in those, the Router's 25 MiB in MiB
+    const unit = Number.isInteger(limit / 1e6) ? 1e6 : 1024 * 1024;
     for (const p of pics) {
         const s = pngSize(p.bytes);
         if (s && +o.max_ratio > 0) {
@@ -229,9 +234,9 @@ async function picturesFor(req, o, ctx, model) {
         if (p.bytes.length > limit) {
             const opaque = typeof ctx.opaque === "function" && (await ctx.opaque(p.bytes));
             const jpeg = opaque && typeof ctx.toJpeg === "function" ? await ctx.toJpeg(p.bytes, JPEG_QUALITY) : null;
-            const mb = (limit / 1024 / 1024).toFixed(0);
+            const mb = (limit / unit).toFixed(0);
             if (!jpeg || !jpeg.length || jpeg.length > limit) {
-                throw new Error(`${who}: the ${p.what} is ${(p.bytes.length / 1024 / 1024).toFixed(1)} MB, more than the ${mb} MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. ${text ? "Use a smaller reference layer." : "Set Highres fix lower or use a smaller reference layer."}`);
+                throw new Error(`${who}: the ${p.what} is ${(p.bytes.length / unit).toFixed(1)} MB, more than the ${mb} MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. ${text ? "Use a smaller reference layer." : "Set Highres fix lower or use a smaller reference layer."}`);
             }
             ctx.log(`${p.what} ${p.bytes.length} bytes as JPEG ${jpeg.length} bytes`);
             p.bytes = Buffer.from(jpeg);
@@ -241,6 +246,11 @@ async function picturesFor(req, o, ctx, model) {
     const total = pics.reduce((n, p) => n + p.bytes.length, 0);
     if (total > PICTURES_BYTES_MAX) throw new Error(`${who}: the pictures are ${(total / 1024 / 1024).toFixed(1)} MB together, more than the 64 MB one request may carry. ${text ? "Hide reference layers or use smaller ones." : "Set Highres fix lower or hide reference layers."}`);
     return pics;
+}
+
+/** One picture's byte limit: the variant's `options.max_bytes`, never above the Router's 25 MiB. */
+function pictureLimit(o) {
+    return Math.min(+o.max_bytes > 0 ? +o.max_bytes : PICTURE_BYTES_MAX, PICTURE_BYTES_MAX);
 }
 
 /** picturesFor's count check as a layout's `max`: the crop and the references together (a text run: the references). */
@@ -264,12 +274,81 @@ const editPrompt = (req, lay) => instruction(req, lay, String(req.prompt || ""))
 
 const setting = (p, k) => (p[k] != null && p[k] !== "" && p[k] !== "auto" ? p[k] : null);
 
+/** Whether dialect `d` edits a picture with `model`: its `edit` is false (no model does) or a function of the model part. */
+const editable = (d, model) => (typeof d.edit === "function" ? !!d.edit(model) : d.edit !== false);
+
+const NO_TEXT_REFS = "this model takes no reference images for a new image";
+
+// Ideogram 4.5: the one Ideogram id with an edit (the Router's body picks the operation: `image` selects Precise Edit)
+const IDEOGRAM_45 = "ideogram-4-5";
+const IDEOGRAM_SEED_MAX = 2147483647;
+const IDEOGRAM_1K = 1024 * 1024;   // "up to 1024x1024 bills as 1K, above that as 2K" (Ideogram's 4.5 generate page)
+
+/**
+ * Ideogram 4.5's Precise Edit body: the crop as `image` (its presence selects the operation), the references as
+ * `reference_images` (only when there are any), the selection as `mask` inverted to Ideogram's black = edit (none for
+ * a selection over the whole crop: Ideogram refuses a mask without both colours, so the whole crop is edited and the
+ * stitch keeps the selection), the quality, the seed under Ideogram's cap, one picture. No `size` or `magic_prompt`:
+ * the Router drops both for Precise Edit, and the answer has the crop's size. picturesFor held the crop and the
+ * references to the count, the 6:1 shape and the bytes; the mask is held here, before anything is sent.
+ */
+function ideogram45Edit(req, o, pics, model, ctx) {
+    const who = ctx.who || `Comfy Router ideogram/${model}`;
+    if (!pics.length) throw new Error(`${who}: no picture to edit.`);
+    const p = req.params || {};
+    const body = { prompt: String(req.prompt || ""), image: uri(pics[0]) };
+    if (pics.length > 1) body.reference_images = pics.slice(1).map(uri);
+    const mask = req.mask && req.mask.length ? ideogramMask(req.mask, req.image, ctx, who) : null;
+    if (mask) {
+        const total = pics.reduce((n, x) => n + x.bytes.length, 0) + mask.length;
+        const limit = pictureLimit(o), unit = Number.isInteger(limit / 1e6) ? 1e6 : 1024 * 1024;
+        if (mask.length > limit) throw new Error(`${who}: the mask is ${(mask.length / unit).toFixed(1)} MB, more than the ${(limit / unit).toFixed(0)} MB a picture may have. Set Highres fix lower.`);
+        if (total > PICTURES_BYTES_MAX) throw new Error(`${who}: the pictures and the mask are ${(total / 1024 / 1024).toFixed(1)} MB together, more than the 64 MB one request may carry. Set Highres fix lower or hide reference layers.`);
+        body.mask = dataUri(mask, "image/png");
+    }
+    if (setting(p, "quality")) body.quality = p.quality;
+    const seed = seedOf(req, +o.seed_max > 0 ? +o.seed_max : IDEOGRAM_SEED_MAX);
+    if (seed !== undefined) body.seed = seed;
+    body.num_images = 1;
+    return body;
+}
+
+/**
+ * Ideogram 4.5's new image: the prompt alone with an exact size, the preset of `options.resolutions` closest to the
+ * asked shape within the tier the asked size bills as (1K up to 1024 x 1024 pixels, else 2K; "Without source images,
+ * an exact size must be one of the supported 1K/2K presets"), no size (the Router's auto) without a list. The edit's
+ * Settings rows reach a text run (host.providerParams), so `options.text_values` swaps a value the text operation
+ * refuses (very_low); `magic_prompt` goes when set (the recipe's text.fixed sends off, so the prompt goes as written).
+ */
+function ideogram45Text(req, o) {
+    const p = { ...(req.params || {}) };
+    for (const [k, swap] of Object.entries(o.text_values || {})) {
+        if (swap && typeof swap === "object" && p[k] != null && Object.prototype.hasOwnProperty.call(swap, String(p[k]))) p[k] = swap[String(p[k])];
+    }
+    const body = { prompt: String(req.prompt || "") };
+    const all = (Array.isArray(o.resolutions) ? o.resolutions : []).filter((s) => /^\d+x\d+$/.test(String(s)));
+    if (all.length) {
+        const area = (s) => { const [w, h] = String(s).split("x").map(Number); return w * h; };
+        const asked = (+req.width || 0) * (+req.height || 0);
+        const small = asked > 0 && asked <= IDEOGRAM_1K;
+        const tier = all.filter((s) => (area(s) <= IDEOGRAM_1K) === small);
+        const [w, h] = textShape(req);
+        body.size = closestSize(w, h, tier.length ? tier : all);
+    }
+    if (setting(p, "quality")) body.quality = p.quality;
+    if (setting(p, "magic_prompt")) body.magic_prompt = p.magic_prompt;
+    const seed = seedOf(req, +o.seed_max > 0 ? +o.seed_max : IDEOGRAM_SEED_MAX);
+    if (seed !== undefined) body.seed = seed;
+    body.num_images = 1;
+    return body;
+}
+
 // ---- dialects ------------------------------------------------------------------------------------------------
-// Each: body(req, o, pics, model) -> JSON body; read(json, req, o, ctx) -> { bytes, mime, seed?, info? } or
+// Each: body(req, o, pics, model, ctx) -> JSON body; read(json, req, o, ctx, body) -> { bytes, mime, seed?, info? } or
 // { url } (fetched by the caller); layout(req, o, model) -> where body() puts each picture of an edit, and of a text
 // run with references (req.kind "text": no crop, the references from the first picture field on). `text: false`
-// where the Router's schema takes no prompt-only run, `edit: false` where it takes no input picture, `upscale: true`
-// for an upscaler.
+// where the Router's schema takes no prompt-only run, `edit: false` where it takes no input picture (a function of the
+// model part where only some of the family's models do), `upscale: true` for an upscaler.
 
 const DIALECTS = {
     openai: {
@@ -476,19 +555,37 @@ const DIALECTS = {
     },
 
     ideogram: {
-        edit: false,
-        body(req, o) {
+        // Ideogram 4.0 (ideogram-v4) takes no input picture; 4.5 edits through Precise Edit
+        edit: (model) => model === IDEOGRAM_45,
+        body(req, o, pics, model, ctx) {
             const p = req.params || {};
+            if (model === IDEOGRAM_45) return req.kind === "text" ? ideogram45Text(req, o) : ideogram45Edit(req, o, pics, model, ctx);
             // the 2K sizes of the Router's schema, as "WxH"; the one closest to the asked aspect
             const res = closestAspect(req.width || 1, req.height || 1, (o.resolutions || ["2048x2048"]).map((s) => s.replace("x", ":")));
             const body = { text_prompt: String(req.prompt || ""), resolution: res.replace(":", "x") };
             if (setting(p, "rendering_speed")) body.rendering_speed = p.rendering_speed;
             return body;
         },
-        read(j) {
-            const item = Array.isArray(j.data) ? j.data.find((d) => d && d.url) : null;
-            if (!item) return null;
-            return { url: item.url, seed: item.seed != null ? Number(item.seed) : undefined };
+        // 4.5's edit: the crop in `image`, the mask and the references in fields of their own, the references
+        // unnumbered (no host documents how a prompt names one, so `style`: a prompt that names one is refused); a new
+        // image is the prompt alone, since a picture in that call would become the picture edited
+        layout(req, o, model) {
+            if (model !== IDEOGRAM_45 || req.kind === "text") return layoutOf({ drops: NO_TEXT_REFS });
+            const mask = req.mask && req.mask.length ? [["mask", "mask"]] : [];
+            const refs = refRoles(req).map(([role, i]) => [role, `reference_images[${i}]`, i]);
+            return layoutOf({ seq: [["crop", "image"]], own: [...mask, ...refs], max: picturesMax(o), style: true });
+        },
+        read(j, req, o, ctx, body) {
+            const items = Array.isArray(j.data) ? j.data.filter((d) => d && typeof d === "object") : [];
+            // "Only use images where this is true" (the schema's is_image_safe); Ideogram leaves `url` empty when it is false
+            const item = items.find((d) => d.url && d.is_image_safe !== false);
+            if (!item) return items.some((d) => d.is_image_safe === false) ? { refused: "Ideogram marked the picture as not safe (is_image_safe false)" } : null;
+            const info = {};
+            if (j.generation_id) info.generation_id = String(j.generation_id);
+            if (item.resolution) info.answered = String(item.resolution);
+            if (body && body.image && !body.mask) info.mask = "none: the selection covers the whole crop, so the whole crop was edited";
+            const seed = item.seed != null ? Number(item.seed) : j.seed != null ? Number(j.seed) : body && body.seed != null ? body.seed : undefined;
+            return { url: item.url, seed, info };
         },
     },
 
@@ -650,7 +747,7 @@ async function run(req, ctx, kind) {
     checkKey(!!test, ctx.key);
     if (kind === "upscale" && !d.upscale) throw new Error(`Comfy Router ${modelId} is not an upscaler.`);
     if (kind !== "upscale" && d.upscale) throw new Error(`Comfy Router ${modelId} is an upscaler; run it with Upscale.`);
-    if (kind === "edit" && d.edit === false) throw new Error(`Comfy Router ${modelId} makes pictures from the prompt alone: use Generate new.`);
+    if (kind === "edit" && !editable(d, model)) throw new Error(`Comfy Router ${modelId} makes pictures from the prompt alone: use Generate new.`);
     const o = req.options || {};
     req = { ...req, params: req.params || {}, references: req.references || [], kind: kind === "text" ? "text" : req.kind };
     // a route whose layout declares a drop (FLUX.1 Fill; for a new image xai, ideogram and krea) sends no reference at
@@ -662,7 +759,7 @@ async function run(req, ctx, kind) {
     if (kind !== "text" && !req.image) throw new Error(`Comfy Router ${modelId}: no picture to ${kind === "upscale" ? "upscale" : "edit"}.`);
     const pics = kind === "upscale" ? [] : await picturesFor(req, o, ctx, modelId);
     if (kind === "upscale" && req.image.length > PICTURE_BYTES_MAX) throw new Error(`Comfy Router ${modelId}: the picture is ${(req.image.length / 1024 / 1024).toFixed(1)} MB, more than the 25 MB the Router takes; upscale a smaller selection.`);
-    const body = d.body(req, o, pics, model);
+    const body = d.body(req, o, pics, model, ctx);
     const got = await send(ctx, test || BASE, modelId, body, kind === "upscale" ? UPSCALE_WAIT_MS : EDIT_WAIT_MS);
     if (got.meta.dropped) ctx.log(`the Router dropped parameters: ${got.meta.dropped}`);
     let out = got.bytes ? { bytes: got.bytes, mime: got.mime } : d.read(got.json, req, o, ctx, body);
@@ -695,17 +792,17 @@ function dialectOf(req) {
 /** Where each picture of an edit goes: the dialect run() picks, refused with run()'s own words. */
 function layout(req) {
     const { d, model, modelId } = dialectOf(req);
-    if (d.edit === false) throw new Error(`Comfy Router ${modelId} makes pictures from the prompt alone: use Generate new.`);
+    if (!editable(d, model)) throw new Error(`Comfy Router ${modelId} makes pictures from the prompt alone: use Generate new.`);
     return d.layout(req, req.options || {}, model);
 }
 
 /**
  * A text run's pictures in dialect `d`: its references alone, in the fields an edit puts them in from the first on,
  * capped by the model's max_images (the crop's slot becomes a reference slot); a model whose schema takes no input
- * picture (xai, ideogram, krea) declares the drop.
+ * picture (xai, ideogram-v4, krea) declares the drop, and so does Ideogram 4.5's layout for a text run.
  */
 function textLayoutOf(d, req, o, model) {
-    if (d.edit === false || typeof d.layout !== "function") return layoutOf({ drops: "this model takes no reference images for a new image" });
+    if (!editable(d, model) || typeof d.layout !== "function") return layoutOf({ drops: NO_TEXT_REFS });
     return d.layout(req, o, model);
 }
 
@@ -732,6 +829,7 @@ module.exports = {
     _explain: explain,
     _pictures: picturesFor,
     _tierFor: tierFor,
+    _editable: editable,
     DIALECTS,
     BASE,
     // shared with comfypartner.js, which talks to the same host with the same key
