@@ -28,26 +28,48 @@ const ING_NOUNS = new Set(("ring king wing sing thing string spring swing sling 
     "evening morning wedding pudding railing sibling bedding earring awning icing lightning ending opening landing " +
     "drawing something nothing everything stuffing frosting filling dumpling herring viking").split(" "));
 
+/** Words that say where a thing is, not what it is: they end a phrase as the stop words do ("a red ball under the chair"). */
+const ID_PLACE = new Set("over under behind near next beside above below between through across around against along beneath inside outside upon toward towards".split(" "));
+
+/** German articles and prepositions (accents dropped), so a German description is named after its noun too. */
+const ID_STOP_DE = new Set("der die das den dem des ein eine einen einem einer eines auf im am unter uber neben hinter vor mit von zu zum zur und oder ist sind fur bei aus nach".split(" "));
+
+const idStop = (w) => ID_STOP.has(w) || ID_PLACE.has(w) || ID_STOP_DE.has(w);
+
 /**
  * The name part of an id made from a description (S3e; docs/PLAN_0_1_38.md A2): the last two words of its first
- * phrase of telling words, lowercase, accents dropped, joined by an underscore. The phrase ends at a stop word or at a
- * verb's -ing form once it has a word, so the adjectives go and the noun stays: "a small black cat sitting in the
- * grass" -> "black_cat", "the white wall clock" -> "wall_clock", "A red scarf" -> "red_scarf", "make the tiger pink"
- * -> "tiger_pink", "a sleeping cat" -> "sleeping_cat"; "" when it has none. An @img token, a {@...} marker and a
- * <name> are not words of it.
+ * phrase of telling words, lowercase, accents dropped, joined by an underscore. The phrase lies in the first clause
+ * that has one (up to a comma or a full stop) and ends at a stop word, a word of place (under, next ...) or a verb's
+ * -ing form followed by one of those or by nothing, so the adjectives go and the noun stays: "a small black cat
+ * sitting in the grass" -> "black_cat", "the white wall clock" -> "wall_clock", "A red scarf" -> "red_scarf", "make
+ * the tiger pink" -> "tiger_pink", "a bright shining star" -> "shining_star", "eine rote Lampe auf dem Tisch" ->
+ * "rote_lampe"; "" when it has none. `first`: the first two telling words instead, for a Text box's words, which are
+ * a sign's text and not a noun phrase ("BIG SALE TODAY" -> "big_sale"). A one-letter word (the s of "dog's"), an @img
+ * token, a {@...} marker and a <name> are not words of it.
  */
-export function idWords(text) {
+export function idWords(text, { first = false } = {}) {
     const s = String(text == null ? "" : text).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
         .split(String.fromCharCode(223)).join("ss")
         .replace(/@img[0-9]+|\{@[^}]*\}|<[^>]*>/g, " ");
-    const phrase = [];
-    for (const w of s.split(/[^a-z0-9]+/)) {
-        if (!/^[a-z]/.test(w)) continue;
-        if (ID_STOP.has(w)) { if (phrase.length) break; continue; }
-        if (phrase.length && w.length > 4 && w.endsWith("ing") && !ING_NOUNS.has(w)) break;
-        phrase.push(w);
+    const name = (words) => words.map((w) => w.slice(0, 16)).join("_");
+    for (const clause of s.split(/[,.;:!?\n]/)) {
+        const words = clause.split(/[^a-z0-9]+/).filter((w) => /^[a-z]/.test(w) && w.length > 1);
+        if (first) {
+            const telling = words.filter((w) => !idStop(w));
+            if (telling.length) return name(telling.slice(0, 2));
+            continue;
+        }
+        const phrase = [];
+        for (let i = 0; i < words.length; i++) {
+            const w = words[i];
+            if (idStop(w)) { if (phrase.length) break; continue; }
+            const verb = w.length > 4 && w.endsWith("ing") && !ING_NOUNS.has(w) && (i + 1 >= words.length || idStop(words[i + 1]));
+            if (phrase.length && verb) break;
+            phrase.push(w);
+        }
+        if (phrase.length) return name(phrase.slice(-2));
     }
-    return phrase.slice(-2).map((w) => w.slice(0, 16)).join("_");
+    return "";
 }
 
 /** The longest description a box carries. */

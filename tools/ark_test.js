@@ -189,7 +189,7 @@ async function main() {
         check("size is the emitted crop's own WxH when it lies in the pixel range (1536x1024 on 5.0 pro)", b.size === "1536x1024", b.size);
         check("watermark is false (the API adds one by default), response_format b64_json, output_format png", b.watermark === false && b.response_format === "b64_json" && b.output_format === "png", short({ watermark: b.watermark, response_format: b.response_format, output_format: b.output_format }));
         check("no seed, n, sequential_image_generation, stream, negative prompt or other field this run has no use for", !NEVER.some((k) => k in b), Object.keys(b).join(","));
-        check("the answer: the bytes of data[0].b64_json, image/png from the bytes, the seed as asked", out.bytes.equals(RESULT) && out.mime === "image/png" && out.seed === 42, short({ mime: out.mime, seed: out.seed, tag: tagOf(out.bytes) }));
+        check("the answer: the bytes of data[0].b64_json, image/png from the bytes, no seed (none was sent)", out.bytes.equals(RESULT) && out.mime === "image/png" && out.seed === undefined, short({ mime: out.mime, seed: out.seed, tag: tagOf(out.bytes) }));
         check("info: the answer's model, region ap-southeast, the size sent, the size answered, usage.generated_images", out.info.model === PRO_ID && out.info.region === "ap-southeast" && out.info.size === "1536x1024" && out.info.answered === "1536x1008" && out.info.generated_images === 1, short(out.info));
         check("info.pictures names what went in", eq(out.info.pictures, ["crop png", "reference 1 png", "reference 2 png"]), short(out.info.pictures));
 

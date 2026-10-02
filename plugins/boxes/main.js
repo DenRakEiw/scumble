@@ -63,8 +63,8 @@ export function activate(scumble) {
     }
     /** The id a box gets by default, by its kind (S3a), and Selection → box's edit_n. */
     const DEFAULT_ID = /^(?:box|keep|move|remove|ref|edit)_[1-9][0-9]*$/;
-    /** The words an id is made from (S3e): a Text box's words, else its description. */
-    const wordsOf = (b) => idWords(b.text) || idWords(b.desc);
+    /** The words an id is made from (S3e): a Text box's words (their first two: a sign's text), else its description. */
+    const wordsOf = (b) => idWords(b.text, { first: true }) || idWords(b.desc);
     /** The prompt names the box as <id>: renaming it would leave the prompt naming nothing. */
     const promptNames = (doc, id) => String((doc.editor && doc.editor.promptText) || "").includes(`<${id}>`);
     /** `r` moved aside by a fifth of the picture (right, else left, else down, else up), so a box turned into Move does not lie on its source. */

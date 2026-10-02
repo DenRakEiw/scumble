@@ -467,7 +467,8 @@ async function run(req, ctx) {
     const file = await download(ctx, ch.model, task.id, url);   // files.toapis.com, no key
     const billing = done.billing || {};
     return {
-        bytes: file.bytes, mime: file.mime, seed: req.seed,
+        // the seed the channel sent (its `seed` path), none where it has none
+        bytes: file.bytes, mime: file.mime, seed: ch.seed && getPath(body, ch.seed) != null ? Number(getPath(body, ch.seed)) : undefined,
         info: { model: ch.model, channel: ch.name, task: task.id, size: body.size || null, resolution: getPath(body, ch.tier_key || "resolution") || null, cost_usd: billing.cost_usd != null ? billing.cost_usd : null, credits: billing.credits != null ? billing.credits : null },
     };
 }

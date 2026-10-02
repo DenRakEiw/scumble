@@ -147,7 +147,7 @@ module.exports = {
         const mask = pickMask(req);
         const json = await postEdits(ctx, model, req.prompt, pictures, mask && req.kind !== "edit" ? mask : null, size, extra);
         const out = unpack(json, model, size, extra);
-        return { ...out, seed: req.seed };
+        return { ...out, seed: undefined };
     },
 
     textLayout,
@@ -166,7 +166,7 @@ module.exports = {
             const lay = textLayout(req), n = countOf(lay);
             if (lay.max != null && n > lay.max) throw new Error(`OpenAI ${model} takes at most ${lay.max} reference picture${lay.max === 1 ? "" : "s"} for a new image; this run has ${n}: hide reference layers.`);
             const json = await postEdits(ctx, model, req.prompt, req.references.map((r, i) => [r, `reference_${i + 1}.png`]), null, size, extra);
-            return { ...unpack(json, model, size, extra), seed: req.seed };
+            return { ...unpack(json, model, size, extra), seed: undefined };
         }
         const body = { model, prompt: req.prompt || "", size, n: 1, ...extra };
         const r = await ctx.fetch("https://api.openai.com/v1/images/generations", {
@@ -174,7 +174,7 @@ module.exports = {
         });
         if (!r.ok) throw new Error(`OpenAI ${model}: ${await readError(r)}`);
         const out = unpack(await r.json(), model, size, extra);
-        return { ...out, seed: req.seed };
+        return { ...out, seed: undefined };
     },
 
     // exported for tools/transparent_test.py and tools/size_test.py

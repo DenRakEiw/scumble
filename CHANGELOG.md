@@ -16,10 +16,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   picture.
 - **Boxes: names from the noun, not the adjectives.** A box named after its description takes the last two words of
   its first phrase: "a small black cat sitting in the grass" is `black_cat_1` (it was `small_black_1`), "the white
-  wall clock" is `wall_clock_1`. A name once made stays.
-- **The seed `generate` reports is the one the model got.** A route that sends no seed (FLUX 3 Image, GPT Image on
-  OpenRouter) answers `seed: null` to agents, and the result's row in the history says "no seed sent" instead of
-  offering a seed it never used.
+  wall clock" is `wall_clock_1`, "a red ball under the chair" is `red_ball_1`, and a German description works too
+  ("eine rote Lampe auf dem Tisch" is `rote_lampe_1`). A Text box keeps the first two words of its text
+  (`big_sale_1`). A name once made stays.
+- **The seed `generate` reports is the one the model got.** A route that sends no seed (FLUX 3 Image; GPT Image,
+  Nano Banana and Seedream on their own APIs and on OpenRouter and Comfy Router; the Magnific and ToAPIs routes without
+  one) answers `seed: null` to agents, and the result's row in the history says "no seed sent" instead of offering a
+  seed it never used.
 - **FLUX 3 Image on OpenRouter and Comfy Router.** The FLUX 3 Image recipe has two more providers: OpenRouter, on
   its own key, and Comfy Router, on the Comfy key you may already have for Comfy Cloud and billed in Comfy credits.
   Both send the edits with up to nine more pictures, new images with up to ten references, and the boxes in the

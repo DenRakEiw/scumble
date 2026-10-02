@@ -455,7 +455,8 @@ function passthrough(o, p) {
     if (!o.passthrough || typeof o.passthrough !== "object" || Array.isArray(o.passthrough)) return null;
     const out = {};
     for (const [slug, keys] of Object.entries(o.passthrough)) {
-        if (!Array.isArray(keys)) continue;
+        // a recipe is not trusted: a host slug ("black-forest-labs"), never "__proto__" or the like
+        if (!Array.isArray(keys) || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) continue;
         for (const k of keys) {
             const check = Object.prototype.hasOwnProperty.call(PASSTHROUGH, k) ? PASSTHROUGH[k] : null;
             const v = check ? check(p[k]) : undefined;

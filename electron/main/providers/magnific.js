@@ -674,7 +674,7 @@ async function run(req, ctx, kind) {
             out.fit = null;
         }
     }
-    return { bytes, mime: sniff(bytes, file.mime), seed: body.seed != null ? body.seed : req.seed, info: out };
+    return { bytes, mime: sniff(bytes, file.mime), seed: body.seed != null ? body.seed : undefined, info: out };   // the seed sent, if any
 }
 
 /** Where each picture of an edit goes: the route and dialect run() picks, refused with run()'s own words. */

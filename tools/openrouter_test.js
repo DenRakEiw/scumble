@@ -791,6 +791,10 @@ async function main() {
         await openrouter.generate(textReq(v, { aspect: "16:9", width: 1344, height: 768, params: { safety_tolerance: 1 } }), ctxFor(st));
         check("a text run: the prompt as written, the asked 16:9, 1K by area, the safety tolerance", st.images[0].prompt === "a lighthouse at dusk" && st.images[0].aspect_ratio === "16:9" && st.images[0].resolution === "1K" && eq(st.images[0].provider.options, { "black-forest-labs": { safety_tolerance: 1 } }) && !("input_references" in st.images[0]), short(st.images[0]));
         check("the variant takes FLUX 3's box rows, and its layout puts the crop first", require(path.join(ROOT, "electron", "main", "providers", "boxes.js")).schemaOf(editReq(v)) === "flux3" && openrouter.layout(editReq(v, { kind: "edit" })).pictures[0].field === "input_references[0]", "");
+        // the review of B3: a recipe's passthrough slug is checked; "__proto__" never reaches Object.prototype
+        const evil = { ...v.options, passthrough: JSON.parse('{"__proto__": ["safety_tolerance"], "black-forest-labs": ["safety_tolerance"]}') };
+        const eb = openrouter._body(editReq(v, { kind: "edit", options: evil, params: { safety_tolerance: 3 } }), [], []);
+        check("a passthrough slug __proto__ is left out: Object.prototype untouched, the real slug kept", ({}).safety_tolerance === undefined && eq(eb.provider.options, { "black-forest-labs": { safety_tolerance: 3 } }), short(eb.provider));
         // the other variants are untouched: no passthrough, no aspect on an edit, the long-side tier (GPT Image 2)
         const g = fakeServer();
         await openrouter.edit(editReq(variant("gpt_image_2"), { params: { safety_tolerance: 3 } }), ctxFor(g));

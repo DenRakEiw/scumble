@@ -205,9 +205,15 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
         // A2: the last two words of the first phrase (seen live in 0.1.37: small_black_1, white_wall_1)
         ["a small black cat sitting in the grass", "black_cat"], ["the white wall clock", "wall_clock"], ["a man leaning on a wall", "man"],
         ["a sleeping cat", "sleeping_cat"], ["a gold ring on the table", "gold_ring"], ["a tall glass building", "glass_building"],
-        ["a very old wooden chair", "wooden_chair"], ["a cat with a hat", "cat"], ["a dog lying on the rug", "dog"]];
+        ["a very old wooden chair", "wooden_chair"], ["a cat with a hat", "cat"], ["a dog lying on the rug", "dog"],
+        // the review of A2: places, clauses, an -ing adjective, a possessive, German
+        ["a red ball under the chair", "red_ball"], ["string lights over the patio", "string_lights"], ["a small dog next to the door", "small_dog"],
+        ["an old wooden chair, painted red", "wooden_chair"], ["a bright shining star", "shining_star"], ["the dog's bowl", "dog_bowl"],
+        ["a dog running", "dog"], ["eine rote Lampe auf dem Tisch", "rote_lampe"], ["please, a red scarf", "red_scarf"]];
     check("idWords: the last two words of the first phrase of telling words, lowercase, accents dropped; tokens, markers and <names> are no words", WORDS.every(([t, w]) => R.idWords(t) === w), short(WORDS.map(([t]) => R.idWords(t))));
     check("every id made from words passes BOX_ID", WORDS.filter(([, w]) => w).every(([, w]) => R.BOX_ID.test(w + "_1")), "");
+    const SIGNS = [["BIG SALE TODAY", "big_sale"], ["Grand Opening Today", "grand_opening"], ["Happy Birthday Anna", "happy_birthday"], ["the end", "end"]];
+    check("idWords with first (a Text box's words): the first two telling words", SIGNS.every(([t, w]) => R.idWords(t, { first: true }) === w), short(SIGNS.map(([t]) => R.idWords(t, { first: true }))));
     const sm = [{ id: "a_1", kind: "new", rect: [0, 0, 0.04, 0.5] }, { id: "b_1", kind: "keep", rect: [0, 0, 0.04, 0.5], src: [0, 0, 0.04, 0.5] }, { id: "c_1", kind: "move", rect: [0, 0, 0.5, 0.5] }, { id: "d_1", kind: "from", rect: [0, 0, 0.5, 0.05] }];
     check("smallBoxes: the boxes that place something (new, from, move) under 48 px a side as sent; a small Keep is no matter", eq(R.smallBoxes(sm, [1024, 880]), ["a_1", "d_1"]), short(R.smallBoxes(sm, [1024, 880])));
     check("smallNote: one box, several, none", R.smallNote(["a_1"]) === "Box a_1 is small (under 48 px a side as sent): the model may not place anything there."

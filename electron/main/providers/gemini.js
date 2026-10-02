@@ -97,6 +97,6 @@ module.exports = {
             const why = (cand && cand.finishReason) || (out.promptFeedback && out.promptFeedback.blockReason) || partsOut.map((x) => x.text).filter(Boolean).join(" ").slice(0, 200) || "no image part";
             throw new Error("Gemini: " + why);
         }
-        return { bytes: Buffer.from(img.inlineData.data, "base64"), mime: img.inlineData.mimeType || "image/png", seed: req.seed, info: { model } };
+        return { bytes: Buffer.from(img.inlineData.data, "base64"), mime: img.inlineData.mimeType || "image/png", seed: undefined, info: { model } };   // generateContent is sent no seed
     },
 };

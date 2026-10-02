@@ -341,7 +341,7 @@ async function run(req, ctx) {
     }
     const usage = j.usage || {};
     return {
-        bytes, mime, seed: req.seed,
+        bytes, mime, seed: undefined,   // the body carries no seed
         info: { model: j.model || model, region: where.region, size: body.size, answered: item.size || null, pictures: pics.map((x) => `${x.what} ${x.mime === "image/jpeg" ? "jpeg" : "png"}`), generated_images: usage.generated_images != null ? usage.generated_images : null },
     };
 }

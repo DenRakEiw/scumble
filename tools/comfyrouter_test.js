@@ -569,6 +569,13 @@ async function main() {
         check("FLUX 3 text run: the reference alone in images, the dialog's 3:2, no crop", x.body.images.length === 1 && b64tag(x.body.images[0]) === "TREF1" && x.body.aspect_ratio === "3:2" && !schemaProblems("bfl/flux-3-image", x.body).length, short({ ...x.body, images: x.body.images.length }));
         const lay3 = router.layout(editReq(variant("flux3"), { references: [pngOf(512, 512, 64, "REF1")] }));
         check("FLUX 3 layout: the crop at images[0], the reference at images[1], ten at most; the variant takes FLUX 3's box rows", eq(lay3.pictures.map((p) => p.field), ["images[0]", "images[1]"]) && lay3.max === 10 && require(path.join(ROOT, "electron", "main", "providers", "boxes.js")).schemaOf(editReq(variant("flux3"))) === "flux3", short(lay3.pictures));
+        // the review of B1: a reference past the Router's 25 MiB as a raw layer goes the way flux3.js sends it (here as
+        // JPEG, past 20 MB of base64), not refused by the Router's rules for the raw layers
+        // three 23 MB layers: each under the Router's 25 MiB, together past its 64 MiB as raw layers (refused before the
+        // fix), sent by flux3.js as JPEG (each past 20 MB of base64)
+        const big = (t) => pngOf(4096, 3072, 23 * 1000 * 1000, t);
+        x = await run("flux3", "edit", { references: [big("BIG1"), big("BIG2"), big("BIG3")] });
+        check("FLUX 3: three 23 MB reference layers go as flux3.js sends them (JPEG), four pictures counted", x.body.images.length === 4 && [1, 2, 3].every((i) => b64tag(x.body.images[i]) === "JPEG") && x.out.info.pictures === 4, short({ n: x.body.images.length, info: x.out.info.pictures }));
         const sBlank = fakeServer();
         const eBlank = await throws(() => router.edit(editReq(variant("flux3"), { prompt: "  " }), ctxFor(sBlank)));
         check("FLUX 3 with a blank prompt: refused before any call", /FLUX 3 Image needs a prompt/.test(eBlank || "") && sBlank.calls.length === 0, eBlank);

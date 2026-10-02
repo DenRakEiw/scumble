@@ -488,7 +488,7 @@ const DIALECTS = {
                 const seed = r.seed != null && Number.isFinite(Number(r.seed)) ? Number(r.seed) : null;
                 return { url: r.sample, seed, info: { ...flux3.infoOf(req), expanded_prompt: typeof r.prompt === "string" ? r.prompt : null, duration: r.duration != null ? Number(r.duration) : null } };
             }
-            return { url: r.sample, seed: r.seed != null ? Number(r.seed) : req.seed };
+            return { url: r.sample, seed: r.seed != null ? Number(r.seed) : undefined };
         },
     },
 
@@ -773,9 +773,17 @@ async function run(req, ctx, kind) {
     if (kind === "text" && req.references.length && textLayoutOf(d, req, o, model).drops) req = { ...req, references: [], original: 0 };
     if (kind === "text" && !String(req.prompt || "").trim()) throw new Error(`Comfy Router ${modelId}: a new image needs a prompt.`);
     if (kind !== "text" && !req.image) throw new Error(`Comfy Router ${modelId}: no picture to ${kind === "upscale" ? "upscale" : "edit"}.`);
-    const pics = kind === "upscale" ? [] : await picturesFor(req, o, ctx, modelId);
+    // FLUX 3 Image builds and checks its own pictures (flux3.js: scaled into 16 MP, JPEG past 20 MB of base64); the
+    // Router's rules for the raw layers would refuse what it sends, so only the total of what goes is checked here
+    const ownPictures = prov === "bfl" && model === FLUX3_MODEL;
+    const pics = kind === "upscale" || ownPictures ? [] : await picturesFor(req, o, ctx, modelId);
     if (kind === "upscale" && req.image.length > PICTURE_BYTES_MAX) throw new Error(`Comfy Router ${modelId}: the picture is ${(req.image.length / 1024 / 1024).toFixed(1)} MB, more than the 25 MB the Router takes; upscale a smaller selection.`);
     const body = await d.body(req, o, pics, model, ctx);
+    const sentPictures = ownPictures ? (Array.isArray(body.images) ? body.images : []) : pics;
+    if (ownPictures) {
+        const total = sentPictures.reduce((n, b) => n + Math.floor((String(b).length * 3) / 4), 0);
+        if (total > PICTURES_BYTES_MAX) throw new Error(`${ctx.who || "Comfy Router " + modelId}: the pictures are ${(total / 1024 / 1024).toFixed(1)} MB together as sent, more than the 64 MB one request may carry. Hide reference layers or use smaller ones.`);
+    }
     const got = await send(ctx, test || BASE, modelId, body, kind === "upscale" ? UPSCALE_WAIT_MS : EDIT_WAIT_MS);
     if (got.meta.dropped) ctx.log(`the Router dropped parameters: ${got.meta.dropped}`);
     let out = got.bytes ? { bytes: got.bytes, mime: got.mime } : d.read(got.json, req, o, ctx, body);
@@ -789,9 +797,10 @@ async function run(req, ctx, kind) {
     }
     const bytes = Buffer.from(out.bytes);
     return {
-        // a read that says null sent no seed (FLUX 3 Image); one that says nothing answers with the request's
-        bytes, mime: sniff(bytes, out.mime), seed: out.seed === null ? null : out.seed != null && Number.isFinite(out.seed) ? out.seed : req.seed,
-        info: { model: modelId, request_id: got.meta.request_id, credits: got.meta.credits != null ? Number(got.meta.credits) : null, dropped: got.meta.dropped || null, pictures: pics.length, ...(out.info || {}) },
+        // the seed the answer names, else the one the body sent (bfl, ideogram, byteplus put it in `seed`), else none:
+        // a read that says null sent none (FLUX 3 Image)
+        bytes, mime: sniff(bytes, out.mime), seed: out.seed === null ? null : out.seed != null && Number.isFinite(out.seed) ? out.seed : body && body.seed != null && Number.isFinite(Number(body.seed)) ? Number(body.seed) : null,
+        info: { model: modelId, request_id: got.meta.request_id, credits: got.meta.credits != null ? Number(got.meta.credits) : null, dropped: got.meta.dropped || null, pictures: sentPictures.length, ...(out.info || {}) },
     };
 }
 
