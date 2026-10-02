@@ -216,7 +216,8 @@ async function main() {
         check("no seed in the request: none in the body", !("seed" in s6.images[0]), Object.keys(s6.images[0]).join(","));
         const s7 = fakeServer();
         const out7 = await openrouter.edit(editReq(variant("gpt_image_2"), { seed: 42 }), ctxFor(s7));
-        check("a model without seed in accepts (GPT Image 2) gets no seed", !("seed" in s7.images[0]) && s7.images[0].n === 1 && out7.seed === 42, Object.keys(s7.images[0]).join(","));
+        // B3: and reports none (it reported the editor's 42 before)
+        check("a model without seed in accepts (GPT Image 2) gets no seed and reports none", !("seed" in s7.images[0]) && s7.images[0].n === 1 && out7.seed === null, Object.keys(s7.images[0]).join(",") + " seed " + out7.seed);
         const s8 = fakeServer();
         await openrouter.edit(editReq({ model: "test/no-n", input: "edit", options: { accepts: ["aspect_ratio"], ratios: ["1:1"] } }), ctxFor(s8));
         check("a model without n in accepts gets no n (and no seed)", !("n" in s8.images[0]) && !("seed" in s8.images[0]) && !("resolution" in s8.images[0]), Object.keys(s8.images[0]).join(","));
@@ -668,8 +669,8 @@ async function main() {
         let list;
         try { list = await recipes.list(RECIPES); } finally { fs.rmSync(empty, { recursive: true, force: true }); }
         const served = list.filter((r) => r.providers && r.providers.openrouter);
-        const want = ["flux2_flex", "flux2_max", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "krea_2", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "recraft_v4", "seedream_5_lite", "seedream_5_pro"];
-        check("fourteen shipped recipes carry an openrouter variant, all of them builtin", eq(served.map((r) => r.id).sort(), want) && served.every((r) => r.source === "builtin"), served.map((r) => r.id).join(", "));
+        const want = ["flux2_flex", "flux2_max", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "krea_2", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "recraft_v4", "seedream_5_lite", "seedream_5_pro"];
+        check("fifteen shipped recipes carry an openrouter variant, all of them builtin", eq(served.map((r) => r.id).sort(), want) && served.every((r) => r.source === "builtin"), served.map((r) => r.id).join(", "));
         const qwen = list.filter((r) => r.providers && r.providers.openrouter && /qwen/i.test(String(r.providers.openrouter.model || "")));
         check("no recipe has an openrouter variant with a Qwen model (Alibaba, the only host, has a datacentre in China)", qwen.length === 0, qwen.map((r) => r.id).join(", "));
         const bad = [];
@@ -687,7 +688,9 @@ async function main() {
             if (raw.providers.toapis && r.providerIds[0] !== "toapis") bad.push(r.id + ": toapis is not first");
             if (!v.text || !v.text.model || !Array.isArray(v.text.sizes) || !v.text.sizes.length) bad.push(r.id + ": no text shape " + JSON.stringify(v.text));
             else if (v.text.model !== v.model) bad.push(r.id + ": the text model " + v.text.model + " is not the edit model " + v.model);
-            for (const st of v.settings || []) if (!accepts.includes(st.key)) bad.push(r.id + ": the setting " + st.key + " is not in accepts");
+            // a row may also go as a passthrough to the host (FLUX 3's safety_tolerance, B3)
+            const passed = Object.values(o.passthrough || {}).flat();
+            for (const st of v.settings || []) if (!accepts.includes(st.key) && !passed.includes(st.key)) bad.push(r.id + ": the setting " + st.key + " is neither in accepts nor a passthrough");
             if (!Array.isArray(o.ratios) || !o.ratios.length || o.ratios.includes("auto")) bad.push(r.id + ": ratios " + JSON.stringify(o.ratios));
             if (!(typeof o.max_images === "number" && o.max_images > 0)) bad.push(r.id + ": max_images " + JSON.stringify(o.max_images));
             if (accepts.includes("resolution")) {
@@ -712,7 +715,8 @@ async function main() {
                 const b = s.images[0];
                 const extra = b ? Object.keys(b).filter((k) => !allowed(k, req.kind)) : ["no request"];
                 if (extra.length) bad.push(r.id + " edit: keys outside accepts: " + extra.join(","));
-                if (b && ("aspect_ratio" in b)) bad.push(r.id + " edit: an aspect_ratio");
+                // an edit sends no aspect unless the variant asks for its preset (FLUX 3: edit_aspect, B3)
+                if (b && ("aspect_ratio" in b) !== (o.edit_aspect === "preset_or_auto")) bad.push(r.id + " edit: aspect_ratio " + b.aspect_ratio);
                 if (b && accepts.includes("resolution") && !b.resolution) bad.push(r.id + " edit: no resolution");
                 if (b && refsOf(b).length !== (req.kind === "fill" ? 2 : 1)) bad.push(r.id + " edit: " + refsOf(b).length + " pictures");
                 if (b && b.model !== v.model) bad.push(r.id + " edit: model " + b.model);
@@ -738,7 +742,8 @@ async function main() {
                 if (extra2.length) bad.push(r.id + " text with references: keys outside accepts: " + extra2.join(","));
                 const got2 = tb2 ? refsOf(tb2) : [];
                 if (got2.length !== 2 || !got2[0].bytes.equals(refs2[0]) || !got2[1].bytes.equals(refs2[1])) bad.push(r.id + " text with references: " + got2.length + " pictures");
-                if (tb2 && tb2.prompt !== "a lighthouse at dusk Images 1 and 2 are reference images.") bad.push(r.id + " text with references: prompt " + tb2.prompt);
+                const want2 = o.prompt === "as_written" ? "a lighthouse at dusk" : "a lighthouse at dusk Images 1 and 2 are reference images.";
+                if (tb2 && tb2.prompt !== want2) bad.push(r.id + " text with references: prompt " + tb2.prompt);
                 if (tb2 && tb && tb2.aspect_ratio !== tb.aspect_ratio) bad.push(r.id + " text with references: aspect_ratio " + tb2.aspect_ratio);
             }
             texts++;
@@ -749,6 +754,49 @@ async function main() {
     });
 
     // ---- 11. prompt upsampling on the OpenRouter key (llm.js) ----
+    // ---- 10b. FLUX 3 Image (docs/PLAN_0_1_38.md B3): the prompt as written, the planned preset, the tier by area, the
+    // safety tolerance as a passthrough, the picture rules, no seed ----
+    await section("10b. FLUX 3 Image", async () => {
+        const v = variant("flux3");
+        const run = async (extra = {}, ctxExtra = {}) => {
+            const s = fakeServer();
+            const out = await openrouter.edit(editReq(v, { kind: "edit", width: 1024, height: 768, image: pngOf(1024, 768, 80, "CROP"), params: { safety_tolerance: 2 }, ...extra }), ctxFor(s, ctxExtra));
+            return { b: s.images[0], out, s };
+        };
+        let x = await run({ references: [pngOf(640, 480, 70, "REF1")] });
+        const keys = Object.keys(x.b).sort();
+        check("an edit: model, the prompt as written, the crop and the reference, 4:3 (the crop's preset), 1K, n 1, provider { ignore, options }; no seed, no output_format", eq(keys, ["aspect_ratio", "input_references", "model", "n", "prompt", "provider", "resolution"]) && x.b.prompt === "a red door" && x.b.aspect_ratio === "4:3" && x.b.resolution === "1K" && refsOf(x.b).length === 2 && eq(x.b.provider.options, { "black-forest-labs": { safety_tolerance: 2 } }) && Array.isArray(x.b.provider.ignore), short({ ...x.b, input_references: refsOf(x.b).length }));
+        check("the answer: no seed (none went), fit stretch for the stitch", x.out.seed === null && x.out.info.fit === "stretch" && x.out.info.aspect_ratio === "4:3", short({ seed: x.out.seed, info: x.out.info }));
+        x = await run({ width: 1000, height: 590, cropAspect: "16:9" });
+        check("1000 x 590 planned at 16:9 (4 % off) sends 16:9 with fit stretch", x.b.aspect_ratio === "16:9" && x.out.info.fit === "stretch", short({ aspect: x.b.aspect_ratio, fit: x.out.info.fit }));
+        x = await run({ width: 1000, height: 617 });
+        check("1000 x 617, no preset within 3 % and none planned: auto, no fit", x.b.aspect_ratio === "auto" && !("fit" in x.out.info), short({ aspect: x.b.aspect_ratio, info: x.out.info }));
+        x = await run({ width: 1344, height: 768 });
+        check("1344 x 768 is 1K by its area (the long side would make it 2K); 2048 x 2048 2K; 2600 x 2000 (past 15 % of 2K) 4K", x.b.resolution === "1K" && openrouter._tierByArea(2048, 2048, v.options.tiers) === "2K" && openrouter._tierByArea(2600, 2000, v.options.tiers) === "4K", short({ r: x.b.resolution, t2: openrouter._tierByArea(2048, 2048, v.options.tiers), t4: openrouter._tierByArea(2600, 2000, v.options.tiers) }));
+        x = await run({ params: { safety_tolerance: 7.6 } });
+        const y = await run({ params: { safety_tolerance: "" } });
+        check("safety_tolerance rounded and held to 0..4 (7.6 goes as 4); an empty row sends no provider.options", eq(x.b.provider.options, { "black-forest-labs": { safety_tolerance: 4 } }) && !("options" in y.b.provider), short([x.b.provider, y.b.provider]));
+        const scaled = [];
+        x = await run({ references: [pngOf(200, 150, 70, "SMALL")] }, { resizePng: async (bytes, to) => { scaled.push(to); return pngOf(to.width, to.height, 70, "SCALED"); } });
+        check("a reference layer under 256 px a side is scaled to 341 x 256 before it goes", eq(scaled, [{ width: 341, height: 256 }]) && refsOf(x.b).length === 2, short(scaled));
+        const sNo = fakeServer();
+        const eNo = await throws(() => openrouter.edit(editReq(v, { kind: "edit", width: 1024, height: 768, image: pngOf(1024, 768, 80, "CROP"), references: [pngOf(200, 150, 70, "SMALL")] }), ctxFor(sNo)));
+        const sCrop = fakeServer();
+        const eCrop = await throws(() => openrouter.edit(editReq(v, { kind: "edit", width: 200, height: 200, image: pngOf(200, 200, 80, "CROP") }), ctxFor(sCrop)));
+        check("without resizePng a small reference is refused; a small crop always is, both before any call", /takes pictures of at least 256 px a side; the reference 1 is 200 × 150: use a larger layer/.test(eNo || "") && /the crop is 200 × 200: select a larger area/.test(eCrop || "") && sNo.images.length === 0 && sCrop.images.length === 0, short([eNo, eCrop]));
+        const sBlank = fakeServer();
+        const eBlank = await throws(() => openrouter.edit(editReq(v, { kind: "edit", prompt: " ", image: pngOf(1024, 768, 80, "CROP") }), ctxFor(sBlank)));
+        check("a blank prompt is refused before any call", /needs a prompt/.test(eBlank || "") && sBlank.images.length === 0, eBlank);
+        const st = fakeServer();
+        await openrouter.generate(textReq(v, { aspect: "16:9", width: 1344, height: 768, params: { safety_tolerance: 1 } }), ctxFor(st));
+        check("a text run: the prompt as written, the asked 16:9, 1K by area, the safety tolerance", st.images[0].prompt === "a lighthouse at dusk" && st.images[0].aspect_ratio === "16:9" && st.images[0].resolution === "1K" && eq(st.images[0].provider.options, { "black-forest-labs": { safety_tolerance: 1 } }) && !("input_references" in st.images[0]), short(st.images[0]));
+        check("the variant takes FLUX 3's box rows, and its layout puts the crop first", require(path.join(ROOT, "electron", "main", "providers", "boxes.js")).schemaOf(editReq(v)) === "flux3" && openrouter.layout(editReq(v, { kind: "edit" })).pictures[0].field === "input_references[0]", "");
+        // the other variants are untouched: no passthrough, no aspect on an edit, the long-side tier (GPT Image 2)
+        const g = fakeServer();
+        await openrouter.edit(editReq(variant("gpt_image_2"), { params: { safety_tolerance: 3 } }), ctxFor(g));
+        check("GPT Image 2 is unchanged: no provider.options, no aspect_ratio on an edit", !("options" in (g.images[0].provider || {})) && !("aspect_ratio" in g.images[0]), short(g.images[0].provider));
+    });
+
     await section("11. llm.js", async () => {
         openrouter._resetHosts();
         let currentKey = KEY;

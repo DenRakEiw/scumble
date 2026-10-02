@@ -1479,10 +1479,12 @@ async function main() {
             // the instruction sentence where the route writes one, the prompt as given where it does not
             const SENTENCE = new Set(["gemini", "openrouter", "ark", "oxen", "magnific", "comfypartner", "comfyrouter:vertexai", "comfyrouter:byteplus", "comfyrouter:qwen"]);
             const sent = [...new Set(stringsWith(shot.request, req.prompt))];
-            const wantText = SENTENCE.has(key) && lay ? refs.instruction(req, lay, req.prompt) : req.prompt;
-            if (SENTENCE.has(key)) tally.sentence++;
+            // a variant whose prompt goes as written (FLUX 3 on OpenRouter, options.prompt "as_written") writes none
+            const writes = SENTENCE.has(key) && !(req.options && req.options.prompt === "as_written");
+            const wantText = writes && lay ? refs.instruction(req, lay, req.prompt) : req.prompt;
+            if (writes) tally.sentence++;
             if (!eq(sent, [wantText])) bad.push(`the prompt goes as ${short(sent)}, not ${JSON.stringify(wantText)}`);
-            if (!SENTENCE.has(key) && all.some((t) => /reference image/.test(t))) bad.push("a reference sentence on a route that writes none");
+            if (!writes && all.some((t) => /reference image/.test(t))) bad.push("a reference sentence on a route that writes none");
             if (/^(gemini|comfyrouter:vertexai)$/.test(key) && lay) {
                 tally.parts++;
                 const pat = patternOfReq(req);

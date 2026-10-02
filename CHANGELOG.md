@@ -17,12 +17,15 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Boxes: names from the noun, not the adjectives.** A box named after its description takes the last two words of
   its first phrase: "a small black cat sitting in the grass" is `black_cat_1` (it was `small_black_1`), "the white
   wall clock" is `wall_clock_1`. A name once made stays.
-- **The seed `generate` reports is the one the model got.** A route that sends no seed (FLUX 3 Image) answers `seed:
-  null` to agents, and the result's row in the history says "no seed sent" instead of offering a seed it never used.
-- **FLUX 3 Image on Comfy Router.** The FLUX 3 Image recipe has a second provider, Comfy Router, on the Comfy key
-  you may already have for Comfy Cloud and billed in Comfy credits: the same edits with up to nine more pictures, new
-  images with up to ten references, and the boxes in the prompt. Written from the Router's published schema, not run
-  against the live service yet.
+- **The seed `generate` reports is the one the model got.** A route that sends no seed (FLUX 3 Image, GPT Image on
+  OpenRouter) answers `seed: null` to agents, and the result's row in the history says "no seed sent" instead of
+  offering a seed it never used.
+- **FLUX 3 Image on OpenRouter and Comfy Router.** The FLUX 3 Image recipe has two more providers: OpenRouter, on
+  its own key, and Comfy Router, on the Comfy key you may already have for Comfy Cloud and billed in Comfy credits.
+  Both send the edits with up to nine more pictures, new images with up to ten references, and the boxes in the
+  prompt. On OpenRouter the prompt goes as you wrote it, the crop's shape and size class are the same as on Black
+  Forest Labs' own API, and the safety tolerance row works; grounding cannot be switched there. Written from the
+  providers' documentation and schemas, not run against the live services yet.
 - **FLUX 3 Image keeps the crop's shape.** A crop widened to one of the model's shapes now always asks for that
   shape; when the rounding of its size put it more than 3 % off, it went as "auto" and the answer was not fitted onto
   the crop exactly.

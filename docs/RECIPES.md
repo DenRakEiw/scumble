@@ -559,7 +559,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   |---|---|---|
   | FLUX.2 [pro], [flex], [max] | BFL, Replicate, OpenRouter, ToAPIs (pro, flex), Comfy Router (pro, max), Oxen.ai (pro, flex), Magnific (pro, flex); fal and WaveSpeed (the `/edit` route) | - |
   | FLUX.2 [klein] | BFL, Oxen.ai (`max: 4`); fal and WaveSpeed (`/edit`) | - |
-  | FLUX 3 Image | BFL, Comfy Router | - |
+  | FLUX 3 Image | BFL, OpenRouter, Comfy Router | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, OpenRouter, Comfy Router, Oxen.ai; WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
@@ -1096,8 +1096,8 @@ allowlist, the mask on every channel, and ToAPIs last in `PROVIDERS`.
 ### OpenRouter (`openrouter`)
 
 [OpenRouter](https://openrouter.ai) is an aggregator: one key for most hosted models, each request routed to
-a host that serves the model. Scumble uses its unified Image API for 14 recipes (GPT Image 2 and 2.5 Flare /
-Sunburst, Nano Banana 2 / 2 Lite / Pro, FLUX.2 max / pro / flex, Seedream 5 lite and pro, Grok Imagine 2.0,
+a host that serves the model. Scumble uses its unified Image API for 15 recipes (GPT Image 2 and 2.5 Flare /
+Sunburst, Nano Banana 2 / 2 Lite / Pro, FLUX 3 Image, FLUX.2 max / pro / flex, Seedream 5 lite and pro, Grok Imagine 2.0,
 and in Generate new only Krea 2 and Recraft V4) and its Chat Completions for prompt upsampling (docs/HELPERS.md
 "Through the OpenRouter key"). The adapter `electron/main/providers/openrouter.js` is written from OpenRouter's
 docs (the `.md` twins of `openrouter.ai/docs/...`, `openapi.json`, the per-model guides at
@@ -1121,8 +1121,15 @@ files `openrouter` is the **last** key of `providers`, so it is last in each rec
 Generate new and in `list_recipes`; ToAPIs stays first. **No recipe's `default` changed and nothing switches
 to OpenRouter on its own**: a recipe runs there when you pick it in the recipe's select, in Generate new or
 with `select_recipe(id, "openrouter")`. `openrouter` is in `TEXT_PROVIDERS`, and a text run uses the edit
-variant's model id (the Image API takes `input_references` as optional). The descriptions of the 14 recipes
-say "Also on OpenRouter."
+variant's model id (the Image API takes `input_references` as optional). The descriptions of the 15 recipes
+say "Also on OpenRouter." FLUX 3 Image's variant (docs/PLAN_0_1_38.md B3) sets the options that make it
+BFL's request: `prompt: "as_written"` (no instruction around the prompt, so the box rows stay at its end; a blank
+prompt is refused), `edit_aspect: "preset_or_auto"` (an edit sends the preset the crop was widened to, or the one
+within 3 % of it, with `info.fit: "stretch"`; else "auto"), `tier_unit: "area"` (the tier by area with 15 % slack,
+not the long side), `passthrough: { "black-forest-labs": ["safety_tolerance"] }` (the row goes as
+`provider.options`, a whole number 0 to 4; only keys `openrouter.js` knows pass), `min_side` 256 / `max_pixels`
+16,000,000 (a reference layer is scaled into them, the crop refused). Grounding cannot be set on OpenRouter. A model
+whose endpoints take no seed reports none (null) since then, GPT Image's too.
 
 *check balance* asks `GET /api/v1/key` with the key (15 s timeout). That answer describes the key's own
 spending limit (`limit`, `limit_remaining`, `limit_reset`) and what the key has used, **not the account's
@@ -1419,7 +1426,7 @@ in-flight 402 only with `Retry-After`, never before the header's time and not at
 again in N s"; a plain 402, a 502 and a network error sent once) and an error object inside a 200; the host list (read once per session and base, without the key, the dated list when it fails, asked
 again after a failure); *check balance* with and without a limit, with a monthly and a daily limit (the
 period's use, BYOK counted when the key includes it) and with a reset it does not know; the base allowlist and the key rule on
-edit, generate and balance; every shipped recipe normalised by `recipes.js` (fourteen with an `openrouter`
+edit, generate and balance; every shipped recipe normalised by `recipes.js` (fifteen with an `openrouter`
 variant, none with a Qwen model, `openrouter` last, the `default` kept, ToAPIs first where present, the
 settings rows within `accepts`, the notes and descriptions, each building an edit and a text request of
 accepted keys only); the four upsampling rows (after every other row, no `reasoning` in `llm.list()`, the
@@ -1909,7 +1916,7 @@ on a queued run.
   name (`keyNameOf`), `describeAll()` lists Comfy Router with `sharesKey: "comfycloud"` and the Comfy Cloud key's
   state, and Settings › API providers skips it. The Comfy Cloud row's hint says the Router runs on the same key with
   credits only. There is no *check balance* (`GET /customers/balance` exists in the API document; not wired).
-- **The recipes.** Seventeen recipes carry a `comfyrouter` variant, always **last**, and no default changed. Their
+- **The recipes.** Eighteen recipes carry a `comfyrouter` variant (FLUX 3 Image since B1), always **last**, and no default changed. Their
   descriptions say "Also on Comfy Router." `comfyrouter` is in `TEXT_PROVIDERS`: Generate new sends the same model
   id without a picture, or with the reference layers alone where the variant has `text.refs` (26f; the openai dialect
   in `image`, the vertexai one with label parts, bfl in `input_image..`, byteplus in `image`, qwen before the text).

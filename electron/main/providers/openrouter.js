@@ -28,6 +28,16 @@
 //               one is refused before sending
 //   only_for    { <resolution>: [host slugs] }: a tier only some of the model's hosts serve goes only to them
 //               (Nano Banana Pro's 4K: Google AI Studio lists it, Vertex AI stops at 2K)
+// FLUX 3 Image's options (docs/PLAN_FLUX3.md "OpenRouter", docs/PLAN_0_1_38.md B3), each off unless a variant sets it:
+//   prompt      "as_written": the prompt goes as the user wrote it, no instruction around it (the box rows stay at its end)
+//   edit_aspect "preset_or_auto": an edit sends the preset the crop was widened to (req.cropAspect) or the one within
+//               3 % of the emitted crop, and info.fit "stretch" for the stitch; else "auto" (image 1's shape)
+//   tier_unit   "area": the tier by the emitted area (a tier's base squared, 15 % slack) instead of the long side
+//   passthrough { <host slug>: [keys] }: settings rows that go as provider.options[<slug>][key]; only keys this file
+//               knows (PASSTHROUGH: safety_tolerance, a whole number 0 to 4)
+//   min_side, max_pixels   each picture's size: a reference layer outside is scaled into them (ctx.resizePng), the
+//               crop is refused
+// The seed reported is the one sent: none (null) where `accepts` has no seed.
 // Settings rows pass through by key when `accepts` has the key; "auto", empty values and random_seed are not
 // sent. `fixed` (output_format "png" for FLUX) passes the same way.
 //
@@ -60,6 +70,15 @@ const RETRY_WAIT_MAX_MS = 60000;   // a Retry-After longer than this is not wait
 const PROVIDERS_TIMEOUT_MS = 10000;
 const BALANCE_TIMEOUT_MS = 15000;
 const PARAMS = ["resolution", "aspect_ratio", "quality", "background", "output_format", "output_compression"];
+/** The passthrough keys this file sends (`options.passthrough`), each value checked; anything else is left out. */
+const PASSTHROUGH = {
+    safety_tolerance: (v) => (v === "" || v == null || !Number.isFinite(Number(v)) ? undefined : Math.max(0, Math.min(4, Math.round(Number(v))))),
+};
+/** edit_aspect: a preset within this of the emitted crop goes (|ln| of the ratios); the planned one within the second. */
+const FIT_SLACK = 0.03;
+const PLANNED_SLACK = 0.08;
+/** tier_unit "area": a size up to this much over a tier's area still takes it. */
+const AREA_SLACK = 1.15;
 
 /** The base URL for this install: https://openrouter.ai, or http://127.0.0.1:<port> (the test mock); else null. */
 function allowedBase(value) {
@@ -228,6 +247,7 @@ async function picturesFor(req, o, ctx, model) {
         const parts = [`the crop`, ...(pics.some((p) => p.what === "mask") ? ["the mask"] : []), `${req.references.length} reference${req.references.length === 1 ? "" : "s"}`];
         throw new Error(`OpenRouter ${model} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${pics.length} (${parts.join(", ")}): turn Original off or hide reference layers.`);
     }
+    await sizeRules(pics, o, ctx, model);
     if (+o.max_ratio > 0) {
         for (const p of pics) {
             const s = pngSize(p.bytes);
@@ -255,6 +275,40 @@ async function picturesFor(req, o, ctx, model) {
     return pics;
 }
 
+/**
+ * `options.min_side` / `max_pixels` (FLUX 3: 256 px, 16 MP): a reference layer or the Original outside them is scaled
+ * into them through ctx.resizePng, the crop is refused (the selection decides its size). The mask is never touched.
+ */
+async function sizeRules(pics, o, ctx, model) {
+    const minSide = +o.min_side > 0 ? +o.min_side : 0, maxPx = +o.max_pixels > 0 ? +o.max_pixels : 0;
+    if (!minSide && !maxPx) return;
+    const mp = (n) => `${+(n / 1e6).toFixed(1)} MP`;
+    for (const p of pics) {
+        if (p.what === "mask") continue;
+        const s = pngSize(p.bytes);
+        if (!s) continue;
+        const [w, h] = s;
+        const small = minSide && Math.min(w, h) < minSide, big = maxPx && w * h > maxPx;
+        if (!small && !big) continue;
+        if (p.what !== "crop" && typeof ctx.resizePng === "function") {
+            const k = big ? Math.sqrt((maxPx * 0.995) / (w * h)) : minSide / Math.min(w, h);
+            const to = { width: Math.max(1, Math.round(w * k)), height: Math.max(1, Math.round(h * k)) };
+            if ((minSide && Math.min(to.width, to.height) < minSide) || (maxPx && to.width * to.height > maxPx)) {
+                throw new Error(`OpenRouter ${model} takes pictures of ${minSide} px a side to ${mp(maxPx)}; the ${p.what} is ${w} × ${h}, which no scale fits: use a less elongated layer.`);
+            }
+            const scaled = await ctx.resizePng(p.bytes, to);
+            if (!scaled || !scaled.length) throw new Error(`OpenRouter ${model}: the ${p.what} (${w} × ${h}) could not be scaled to ${to.width} × ${to.height}.`);
+            ctx.log && ctx.log(`${p.what} ${w} × ${h} scaled to ${to.width} × ${to.height}`);
+            p.bytes = Buffer.from(scaled);
+            continue;
+        }
+        const fix = p.what === "crop" ? (small ? "select a larger area or more context around it" : "select a smaller area") : (small ? "use a larger layer" : "use a smaller layer");
+        throw new Error(small
+            ? `OpenRouter ${model} takes pictures of at least ${minSide} px a side; the ${p.what} is ${w} × ${h}: ${fix}.`
+            : `OpenRouter ${model} takes pictures of at most ${mp(maxPx)}; the ${p.what} is ${w} × ${h}: ${fix}.`);
+    }
+}
+
 /** Where picturesFor above puts each picture: input_references holds the crop, the mask (a fill), the references. */
 function layout(req) {
     const o = req.options || {};
@@ -274,6 +328,11 @@ function textLayout(req) {
 
 // ---- the request ---------------------------------------------------------------------------------------
 
+/** The parameters a variant's endpoints take (`options.accepts`). */
+function accepts(o) {
+    return new Set(Array.isArray(o && o.accepts) ? o.accepts : []);
+}
+
 /** The smallest tier whose base covers the long side, else the largest; null without tiers. */
 function tierFor(w, h, tiers) {
     const rows = Object.entries(tiers || {}).map(([k, v]) => [k, +v]).filter(([, v]) => v > 0).sort((a, b) => a[1] - b[1]);
@@ -281,6 +340,29 @@ function tierFor(w, h, tiers) {
     const long = Math.max(w, h);
     for (const [k, v] of rows) if (v >= long) return k;
     return rows[rows.length - 1][0];
+}
+
+/** tier_unit "area": the smallest tier whose base squared (with AREA_SLACK) covers the area, else the largest. */
+function tierByArea(w, h, tiers) {
+    const rows = Object.entries(tiers || {}).map(([k, v]) => [k, +v]).filter(([, v]) => v > 0).sort((a, b) => a[1] - b[1]);
+    if (!rows.length) return null;
+    for (const [k, v] of rows) if (w * h <= v * v * AREA_SLACK) return k;
+    return rows[rows.length - 1][0];
+}
+
+/**
+ * edit_aspect "preset_or_auto": { aspect, fit } of an edit. The preset the crop was widened to (req.cropAspect, one of
+ * `ratios`, within PLANNED_SLACK of the emitted size), else the nearest within FIT_SLACK, both with fit "stretch" (the
+ * answer comes back in that shape and the stitch stretches it onto the crop); else "auto" and no fit.
+ */
+function editAspect(req, o) {
+    const ratios = Array.isArray(o.ratios) ? o.ratios.filter((r) => r && r !== "auto") : [];
+    const w = Math.max(1, +req.width || 1024), h = Math.max(1, +req.height || 1024);
+    const off = (r) => { const [a, b] = String(r).split(":").map(Number); return a > 0 && b > 0 ? Math.abs(Math.log(w / h) - Math.log(a / b)) : Infinity; };
+    const planned = String(req.cropAspect || "");
+    if (ratios.includes(planned) && off(planned) <= PLANNED_SLACK) return { aspect: planned, fit: "stretch" };
+    const near = ratios.length ? closestAspect(w, h, ratios) : null;
+    return near && off(near) <= FIT_SLACK ? { aspect: near, fit: "stretch" } : { aspect: "auto", fit: null };
 }
 
 /** The aspect_ratio of a text run: the asked one when it is a preset, else the closest preset. */
@@ -307,7 +389,7 @@ function bodyFor(req, pics, ignore) {
     const o = req.options || {};
     const p = req.params || {};
     const accepts = new Set(Array.isArray(o.accepts) ? o.accepts : []);
-    const body = { model: String(req.model || ""), prompt: promptFor(req) };
+    const body = { model: String(req.model || ""), prompt: o.prompt === "as_written" ? String(req.prompt || "") : promptFor(req) };
     for (const [k, v] of [...Object.entries(p)]) {
         if (!PARAMS.includes(k) || !accepts.has(k) || v === "" || v == null || String(v).toLowerCase() === "auto") continue;
         body[k] = v;
@@ -316,13 +398,14 @@ function bodyFor(req, pics, ignore) {
     if (String(body.background || "").toLowerCase() === "transparent" && body.output_format && !/^(png|webp)$/i.test(body.output_format)) body.output_format = "png";
     const w = Math.max(1, +req.width || 1024), h = Math.max(1, +req.height || 1024);
     if (accepts.has("resolution") && body.resolution == null) {
-        const tier = tierFor(w, h, o.tiers);
+        const tier = o.tier_unit === "area" ? tierByArea(w, h, o.tiers) : tierFor(w, h, o.tiers);
         if (tier) body.resolution = tier;
     }
     if (req.kind === "text" && accepts.has("aspect_ratio") && body.aspect_ratio == null) {
         const a = aspectFor(req, o);
         if (a) body.aspect_ratio = a;
     }
+    if (req.kind !== "text" && o.edit_aspect === "preset_or_auto" && accepts.has("aspect_ratio") && body.aspect_ratio == null) body.aspect_ratio = editAspect(req, o).aspect;
     if (accepts.has("seed") && req.seed != null && !p.random_seed) body.seed = Number(req.seed) >>> 0;
     if (accepts.has("n")) body.n = 1;
     if (pics.length) body.input_references = pics.map((x) => ({ type: "image_url", image_url: { url: `data:${x.mime};base64,${x.bytes.toString("base64")}` } }));
@@ -330,6 +413,8 @@ function bodyFor(req, pics, ignore) {
     if (ignore && ignore.length) provider.ignore = [...ignore];
     const only = o.only_for && body.resolution != null ? o.only_for[body.resolution] : null;
     if (Array.isArray(only) && only.length) provider.only = only.map(String);
+    const pass = passthrough(o, p);
+    if (pass) provider.options = pass;
     if (Object.keys(provider).length) body.provider = provider;
     return body;
 }
@@ -365,6 +450,22 @@ async function post(ctx, body) {
     return r;
 }
 
+/** provider.options from `options.passthrough` and the settings rows, or null: { <slug>: { key: value } }. */
+function passthrough(o, p) {
+    if (!o.passthrough || typeof o.passthrough !== "object" || Array.isArray(o.passthrough)) return null;
+    const out = {};
+    for (const [slug, keys] of Object.entries(o.passthrough)) {
+        if (!Array.isArray(keys)) continue;
+        for (const k of keys) {
+            const check = Object.prototype.hasOwnProperty.call(PASSTHROUGH, k) ? PASSTHROUGH[k] : null;
+            const v = check ? check(p[k]) : undefined;
+            if (v === undefined) continue;
+            (out[slug] || (out[slug] = {}))[k] = v;
+        }
+    }
+    return Object.keys(out).length ? out : null;
+}
+
 async function run(req, ctx) {
     // ctx.sleep is injectable so tools/openrouter_test.js waits in milliseconds
     ctx = { ...ctx, sleep: ctx.sleep || realSleep, log: ctx.log || (() => {}) };
@@ -376,6 +477,8 @@ async function run(req, ctx) {
     req = { ...req, references: req.references || [] };
     if (req.kind === "text" && !String(req.prompt || "").trim()) throw new Error(`OpenRouter ${model}: a new image needs a prompt.`);
     if (req.kind !== "text" && !req.image) throw new Error(`OpenRouter ${model}: no crop to edit.`);
+    // a prompt that goes as written goes nowhere blank (FLUX 3 refuses one)
+    if (o.prompt === "as_written" && !String(req.prompt || "").trim()) throw new Error(`OpenRouter ${model} needs a prompt: say what to make or change.`);
     // a text run's pictures are its references (none without: then the body is the text-to-image one as before)
     const pics = await picturesFor(req, o, ctx, model);
     const ignore = await chinaHosts(ctx);
@@ -390,9 +493,12 @@ async function run(req, ctx) {
     return {
         bytes: Buffer.from(item.b64_json, "base64"),
         mime: item.media_type || "image/png",
-        seed: body.seed != null ? body.seed : req.seed,
+        // the seed sent; a model whose endpoints take none got none
+        seed: body.seed != null ? body.seed : accepts(o).has("seed") ? req.seed : null,
         info: {
             model, resolution: body.resolution || null, aspect_ratio: body.aspect_ratio || null,
+            // edit_aspect: the stitch stretches an answer in the preset's shape onto the crop
+            ...(req.kind !== "text" && o.edit_aspect === "preset_or_auto" && body.aspect_ratio && body.aspect_ratio !== "auto" ? { fit: "stretch" } : {}),
             pictures: pics.map((x) => `${x.what} ${x.mime === "image/jpeg" ? "jpeg" : "png"}`),
             cost: usage.cost != null ? usage.cost : null,
         },
@@ -450,7 +556,9 @@ module.exports = {
     _body: bodyFor,
     _pictures: picturesFor,
     _tier: tierFor,
+    _tierByArea: tierByArea,
     _aspect: aspectFor,
+    _editAspect: editAspect,
     _failure: failure,
     _resetHosts: () => chinaCache.clear(),
     CHINA_HOSTS,

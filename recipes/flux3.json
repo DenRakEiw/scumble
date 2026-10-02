@@ -4,7 +4,7 @@
   "name": "FLUX 3 Image",
   "family": "Black Forest Labs",
   "refs": { "name": "image {n}" },
-  "description": "Black Forest Labs' FLUX 3 Image: instruction edits of the crop with up to nine more pictures, new images from the prompt with up to ten reference images. Adapter written from the provider's docs (2026-10-01). Also on Comfy Router.",
+  "description": "Black Forest Labs' FLUX 3 Image: instruction edits of the crop with up to nine more pictures, new images from the prompt with up to ten reference images. Adapter written from the provider's docs (2026-10-01). Also on OpenRouter. Also on Comfy Router.",
   "default": "bfl",
   "providers": {
     "bfl": {
@@ -46,6 +46,44 @@
             "key": "grounding",
             "label": "Grounding (web and image search)",
             "spec": ["BOOLEAN", { "default": true }]
+          }
+        ]
+      }
+    },
+    "openrouter": {
+      "model": "black-forest-labs/flux-3-image",
+      "input": "edit",
+      "options": {
+        "accepts": ["resolution", "aspect_ratio", "n"],
+        "ratios": ["21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1", "4:5", "3:4", "5:7", "2:3", "9:16", "1:2", "9:21"],
+        "tiers": { "1K": 1024, "2K": 2048, "4K": 4096 },
+        "max_images": 10,
+        "prompt": "as_written",
+        "edit_aspect": "preset_or_auto",
+        "tier_unit": "area",
+        "passthrough": { "black-forest-labs": ["safety_tolerance"] },
+        "min_side": 256,
+        "max_pixels": 16000000,
+        "boxes": "flux3"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "safety_tolerance",
+          "label": "Safety tolerance",
+          "spec": ["INT", { "default": 2, "min": 0, "max": 4 }]
+        }
+      ],
+      "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. The pictures go inline in the request to OpenRouter, which passes them to Black Forest Labs, its only host. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The crop is image 1, then the Original and the reference layers (image 2 ..), ten pictures at most, each at least 256 px a side (a smaller or larger reference layer is scaled). The crop is widened to one of the model's 15 aspect presets and sent as that shape; the size is a tier picked from the crop's area (1K about 1 MP, 2K about 4 MP). The prompt goes as written. There is no seed, so two runs differ. Grounding (web and image search) cannot be set here; Black Forest Labs' default is on. The Boxes switch under the prompt sends the document's boxes as bounding boxes in the prompt, as on Black Forest Labs' own API. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "text": {
+        "sizes": [1024, 2048, 4096],
+        "refs": {},
+        "settings": [
+          {
+            "index": 1,
+            "key": "safety_tolerance",
+            "label": "Safety tolerance",
+            "spec": ["INT", { "default": 2, "min": 0, "max": 4 }]
           }
         ]
       }

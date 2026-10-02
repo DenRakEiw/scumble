@@ -256,6 +256,8 @@ the same as BFL direct. So the recipe-level `refs.name: "image {n}"` fits every 
 
 ### OpenRouter
 
+**Built 2026-10-02 night** (docs/PLAN_0_1_38.md B3): the variant and the six options below, as planned.
+
 | | |
 |---|---|
 | Endpoints | One model id for edits and new images: `black-forest-labs/flux-3-image` (dated slug `black-forest-labs/flux-3-image-20261001`, listed 2026-10-01). `POST https://openrouter.ai/api/v1/images`, the route `openrouter.js` already uses. An edit is the same id with `input_references`. Public capability lists (no key): `GET /api/v1/images/models` and `GET /api/v1/images/models/black-forest-labs/flux-3-image/endpoints`. One host: Black Forest Labs (`provider_slug` `black-forest-labs`; the model page: OpenRouter "forwards every request to it directly"), `headquarters` null, `datacenters` [], so Scumble's China `provider.ignore` list does not touch it. No BYOK. The chat route lists the model too (`supported_parameters` `["seed"]`) but documents no image options for it: not used. |
