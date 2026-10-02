@@ -76,30 +76,31 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02: item 28 S1-S3e built, the plugin hook, the Boxes plugin with its tool and crop frame, one Boxes switch under the prompt, the caption's place words; 0.1.36 is Latest; item 31 Ideogram 4.5 I0 + I1 built, the Replicate variant)
+## Where things stand (2026-10-02: item 28 S1-S3e built, the plugin hook, the Boxes plugin with its tool and crop frame, one Boxes switch under the prompt, the caption's place words; 0.1.36 is Latest; item 31 Ideogram 4.5 I0-I2 built, the Replicate and WaveSpeed variants)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02, "baue weiter", the eighth of the day):** item 31 I0 + I1 (`docs/PLAN_IDEOGRAM45.md`
-"Status: I0 + I1 built"), one commit, not released (CHANGELOG Unreleased: one entry beside item 28's). The S3e
-paragraph is in `docs/HISTORY.md`. **Shared:** `providers/util.js` holds `pngSize`, `seedOf`, `textShape`,
-`blackEditMask` (Magnific's Ideogram Inpaint unchanged) and `ideogramMask` (null for a whole-crop selection: no mask
-goes; refused when nothing is at half strength). **Replicate** (`replicate.js`): a fill's `fields.references`
-(unnumbered, `style`), `options.mask: "black"`, `seed_max`, `negative: false`, `max_ratio` / `max_bytes` (checked
-before any upload; an opaque picture over the cap goes as JPEG), a text run's `sizes` (`size`, no `aspect_ratio`) and
-`text_values` (new: Generate new takes the *edit* Settings rows, `host.providerParams`, so the edit's `very_low` is
-mapped to `low`; `text.settings` never reach a run, a chip for that was offered). **Recipe** `recipes/ideogram_4_5.json`:
-Replicate only (Precise Edit for Generate, `ideogram-4-5` for Generate new), Quality default medium, `limits.ratio` 6
-on the recipe. The refusal for a named unnumbered reference and the crop info card say "without a number (as style
-references or unnumbered references)". Tests: `tools/ideogram45_test.js` 67 (new, the light tier), `recipes_test` 51,
-`refs_layout_test` 661 (its sweep decodes the inverted mask), `magnific_test` 137, flux3 / comfyrouter / oxen / boxes
-green; gates `recipes`, `lint`, `types` green `--offline` (labels `i1`, `i1b`); `build_node.py --check` only the known
-"differs"; one look over CDP (the recipe lists, "no Replicate key yet", the layouts). A review (two readers, each
-finding checked by a third) confirmed three, all fixed (the 6:1 aspect rule, Ideogram's 25 MB per picture, the info
-card's wording); one refuted. **Not done:** I2 (WaveSpeed: `accepts` allowlist, which `docs/PLAN_FLUX3.md` F4 reuses),
-I3 (Comfy Router: the ideogram dialect's 4.5 branch), README / MANUAL lines; no live run (the user's word). Next: I2,
-then I3, then a release of items 28 and 31 on the user's word.
+**This session (2026-10-02, "baue weiter", the ninth of the day):** item 31 I2 (`docs/PLAN_IDEOGRAM45.md` "I2 as
+built"), one commit, not released (CHANGELOG Unreleased: the Ideogram 4.5 entry now names WaveSpeed). The I0 + I1
+paragraph is in `docs/HISTORY.md`. **Shared:** `util.js` now also holds `tierFor` (Comfy Router's and Magnific's
+copies gone), `checkRatio` and `withinBytes` (from `replicate.js`, messages unchanged). **WaveSpeed**
+(`wavespeed.js`): a fill's `fields.references` (unnumbered, `style`), `options.mask: "black"` (no `mask_url` for a
+whole-crop selection), `max_ratio` / `max_bytes` before the first upload (the upload carries the mime now), no
+`aspect_ratios` preset on a fill, a text run's `text_values` and `tiers`, and the **allowlist** `options.accepts`
+(a text run: `text_accepts`, else `accepts`): only `prompt`, the picture keys and the listed keys go; a dropped seed
+is reported as none. It is the piece `docs/PLAN_FLUX3.md` F4 needs (noted there: F4's list must name `aspect_ratio`).
+**Recipe** `recipes/ideogram_4_5.json` gains the `wavespeed` variant (`ideogram-ai/ideogram-v4.5/edit` for Generate,
+`ideogram-ai/ideogram-v4.5` for Generate new; rows Quality and Edit precision, default high; `accepts` `quality`,
+`edit_precision`, `text_accepts` `quality`, `aspect_ratio`, `resolution`, `enable_prompt_expansion`;
+`text.fixed` `enable_prompt_expansion: false`, since text rows never reach a run). Tests: `tools/ideogram45_test.js`
+149 (sections 7-14 WaveSpeed, written by a background agent against the stated API; 8 mutations of `wavespeed.js` on
+a copy all caught), `refs_layout_test` 663, `recipes_test` 51, magnific / comfyrouter / oxen / flux3 / assistant
+green; gates `recipes`, `lint`, `types` green `--offline` (label `i2`). A review workflow (two readers, schema
+against WaveSpeed's live schema pages and regressions as HEAD-vs-tree bodies of every WaveSpeed and Replicate
+variant; each finding checked by a third) confirmed one, a doc sentence (RECIPES.md's drop list), fixed. **Not
+done:** I3 (Comfy Router: the ideogram dialect's 4.5 branch), README / MANUAL lines; no live run (the user's word).
+Next: I3, then the README / MANUAL lines, then a release of items 28 and 31 on the user's word.
 
 **Released:** 0.1.36 is Latest (published 2026-10-01 22:38:25 CEST, tag on 5bc5831 "0.1.36 prepared"; the tag build
 green) on the user's "baue fertig und release dann das update mit flux3". 0.1.36 = **FLUX 3 Image** (ea71629) + item 25
@@ -226,8 +227,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   no live run. Hosts: Replicate (`ideogram-ai/ideogram-4-5`), Comfy Router (the schema saved as
   `tools/refs/comfyrouter/ideogram_ideogram-4-5.json`), WaveSpeed (`ideogram-ai/ideogram-v4.5/edit` and siblings); the
   adapters exist. Research and the build plan: `docs/PLAN_IDEOGRAM45.md`. **I0 + I1 built 2026-10-02** (the shared
-  helpers, `recipes/ideogram_4_5.json` with its Replicate variant, `tools/ideogram45_test.js`; Unreleased). Next: I2
-  WaveSpeed, I3 Comfy Router, then the README / MANUAL lines.
+  helpers, `recipes/ideogram_4_5.json` with its Replicate variant, `tools/ideogram45_test.js`; Unreleased), **I2** the
+  same day (the WaveSpeed variant, the `accepts` allowlist). Next: I3 Comfy Router, then the README / MANUAL lines.
 
 ## Gate runner and flakes
 

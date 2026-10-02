@@ -46,6 +46,30 @@ The paragraph of 2026-10-02 (item 28 S3d) was moved here the same day, when S3e 
 
 The paragraph of 2026-10-02 (item 28 S3e) was moved here the same day, when item 31 I0 + I1 was built.
 
+The paragraph of 2026-10-02 (item 31 I0 + I1) was moved here the same day, when I2 was built.
+
+## 2026-10-02 (item 31 I0 + I1, moved here the same day)
+
+**This session (2026-10-02, "baue weiter", the eighth of the day):** item 31 I0 + I1 (`docs/PLAN_IDEOGRAM45.md`
+"Status: I0 + I1 built"), one commit, not released (CHANGELOG Unreleased: one entry beside item 28's). The S3e
+paragraph is in `docs/HISTORY.md`. **Shared:** `providers/util.js` holds `pngSize`, `seedOf`, `textShape`,
+`blackEditMask` (Magnific's Ideogram Inpaint unchanged) and `ideogramMask` (null for a whole-crop selection: no mask
+goes; refused when nothing is at half strength). **Replicate** (`replicate.js`): a fill's `fields.references`
+(unnumbered, `style`), `options.mask: "black"`, `seed_max`, `negative: false`, `max_ratio` / `max_bytes` (checked
+before any upload; an opaque picture over the cap goes as JPEG), a text run's `sizes` (`size`, no `aspect_ratio`) and
+`text_values` (new: Generate new takes the *edit* Settings rows, `host.providerParams`, so the edit's `very_low` is
+mapped to `low`; `text.settings` never reach a run, a chip for that was offered). **Recipe** `recipes/ideogram_4_5.json`:
+Replicate only (Precise Edit for Generate, `ideogram-4-5` for Generate new), Quality default medium, `limits.ratio` 6
+on the recipe. The refusal for a named unnumbered reference and the crop info card say "without a number (as style
+references or unnumbered references)". Tests: `tools/ideogram45_test.js` 67 (new, the light tier), `recipes_test` 51,
+`refs_layout_test` 661 (its sweep decodes the inverted mask), `magnific_test` 137, flux3 / comfyrouter / oxen / boxes
+green; gates `recipes`, `lint`, `types` green `--offline` (labels `i1`, `i1b`); `build_node.py --check` only the known
+"differs"; one look over CDP (the recipe lists, "no Replicate key yet", the layouts). A review (two readers, each
+finding checked by a third) confirmed three, all fixed (the 6:1 aspect rule, Ideogram's 25 MB per picture, the info
+card's wording); one refuted. **Not done:** I2 (WaveSpeed: `accepts` allowlist, which `docs/PLAN_FLUX3.md` F4 reuses),
+I3 (Comfy Router: the ideogram dialect's 4.5 branch), README / MANUAL lines; no live run (the user's word). Next: I2,
+then I3, then a release of items 28 and 31 on the user's word.
+
 ## 2026-10-02 (item 28 S3e, moved here the same day)
 
 **This session (2026-10-02, "weiter", the seventh of the day):** item 28 S3e (`docs/PLAN_BOXES.md` §10 "S3e as built"),

@@ -404,7 +404,9 @@ is not enough because `electron/main/providers/wavespeed.js` sends fields FLUX 3
 
 - **The variant:** `"model": "black-forest-labs/flux-3/edit"`, `"input": "edit"`; `options`: `max_images` 10,
   `aspect_ratios` the 14, `negative` false, a new `accepts` list (`resolution`, `enable_prompt_expansion`,
-  `output_format`), `boxes` "flux3" only once the rows are checked live. Variant `limits`: `aspects` the 14, `pixels`
+  `output_format`, **and `aspect_ratio`**: the allowlist was built in item 31 I2, 2026-10-02, and keeps only `prompt`,
+  the picture keys and what it names, so the preset from `aspect_ratios` goes only when listed; `text_accepts` holds
+  the text route's own list, else `accepts` serves both; a dropped seed is reported as none), `boxes` "flux3" only once the rows are checked live. Variant `limits`: `aspects` the 14, `pixels`
   4000000. `settings`: `enable_prompt_expansion`, `selection_box` (with `boxes`); a Resolution row only if the tier
   code below is not built. `text`: `"model": "black-forest-labs/flux-3/text-to-image"` named explicitly (`textModelOf`
   strips "/edit" to `black-forest-labs/flux-3`, which does not exist), `refs: { "model":

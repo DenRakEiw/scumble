@@ -1,6 +1,24 @@
 # Ideogram 4.5 in Scumble (researched 2026-10-02)
 
-## Status: I0 + I1 built (2026-10-02), I2 and I3 open
+## Status: I0 + I1 + I2 built (2026-10-02), I3 open
+
+**I2 as built (2026-10-02, one session):** `util.js` now also holds `tierFor` (Comfy Router's and Magnific's copies
+gone), `checkRatio` and `withinBytes` (moved from `replicate.js`, the messages unchanged). `wavespeed.js`: a fill's
+`fields.references` (unnumbered, `style`), `options.mask: "black"` (`ideogramMask`; no `mask_url` for a whole-crop
+selection, `info.mask` says so), `max_ratio` / `max_bytes` before the first upload (the upload now carries the mime,
+JPEG for an opaque picture over the cap), no `aspect_ratios` preset on a fill, a text run's `text_values` and
+`tiers` (`resolution` by the asked long side), and the **allowlist**: `options.accepts` (a text run:
+`options.text_accepts`, else `accepts`) keeps only `prompt`, the picture keys and the listed keys; with a list and
+no `seed` in it the answer reports no seed. Variants without these options send what they sent before. Not §4's
+shape in three places: `accepts` is split per route (`accepts` `quality`, `edit_precision`; `text_accepts`
+`quality`, `aspect_ratio`, `resolution`, `enable_prompt_expansion`), because a new image gets the edit's Settings
+rows, so *Edit precision* would reach the text route; `enable_prompt_expansion: false` is `text.fixed`, not a text
+Settings row (text rows never reach a run, I1); `max_ratio` 6 and `max_bytes` 25 MB as on Replicate. Docs: RECIPES.md
+(the variant-fields paragraph, the adapter paragraph, the caps table, "Ideogram 4.5"), CHANGELOG Unreleased,
+`docs/PLAN_FLUX3.md` F4 (the allowlist built, `aspect_ratio` must be listed). Tests: `tools/ideogram45_test.js`
+gains the WaveSpeed sections 7-14 (149 checks in all; a background agent wrote them against the stated API, and 8
+mutations of `wavespeed.js` on a copy were all caught), `tools/recipes_test.js` takes-none, `tools/refs_layout_test.js`
+reads the variant unchanged (663). Next: I3 (Comfy Router), then the README / MANUAL lines.
 
 **I0 + I1 as built (2026-10-02, one session):** `util.js` holds `pngSize`, `seedOf`, `textShape`, `blackEditMask`
 (answers `{ png, edits, pixels }`; Magnific's Ideogram Inpaint sends its `png` as before, unchanged) and

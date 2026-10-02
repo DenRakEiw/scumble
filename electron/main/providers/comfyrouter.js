@@ -46,7 +46,7 @@
 "use strict";
 
 const { randomUUID } = require("node:crypto");
-const { dataUri, b64, fetchImage, sleep: realSleep, fitPixels, closestAspect } = require("./util");
+const { dataUri, b64, fetchImage, sleep: realSleep, fitPixels, closestAspect, tierFor } = require("./util");
 const { layoutOf, refRoles, countOf, instruction, labelParts } = require("./refs");
 const openai = require("./openai");
 const ark = require("./ark");
@@ -261,14 +261,6 @@ const uri = (p) => dataUri(p.bytes, p.mime);
  * what its references are ("Images 1 and 2 are reference images."), the prompt as it is without any.
  */
 const editPrompt = (req, lay) => instruction(req, lay, String(req.prompt || ""));
-
-/** The tier ("1K", "2K" ..) whose size covers the long side, else the largest; null without tiers. */
-function tierFor(long, tiers) {
-    const list = Object.entries(tiers || {}).filter(([, v]) => +v > 0).sort((a, b) => a[1] - b[1]);
-    if (!list.length) return null;
-    const hit = list.find(([, v]) => +v >= long);
-    return (hit || list[list.length - 1])[0];
-}
 
 const setting = (p, k) => (p[k] != null && p[k] !== "" && p[k] !== "auto" ? p[k] : null);
 

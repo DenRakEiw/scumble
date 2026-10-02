@@ -119,6 +119,38 @@ function seedOf(req, max) {
     return (Number(req.seed) >>> 0) % (max + 1);
 }
 
+/** The tier ({ name: long side }) for a long side: the smallest that holds it, else the largest (Comfy Router, Magnific, WaveSpeed). */
+function tierFor(long, tiers) {
+    const list = Object.entries(tiers || {}).filter(([, v]) => +v > 0).sort((a, b) => a[1] - b[1]);
+    if (!list.length) return null;
+    const hit = list.find(([, v]) => +v >= long);
+    return (hit || list[list.length - 1])[0];
+}
+
+/**
+ * Refuses a crop steeper than the variant's `options.max_ratio` (Ideogram 4.5's 1:6 .. 6:1) before the first upload; the
+ * recipe's limits.ratio widens a crop to it wherever the picture allows, so this only meets a picture too narrow to widen.
+ */
+function checkRatio(image, o, who) {
+    const size = +(o || {}).max_ratio > 0 ? pngSize(Buffer.from(image || [])) : null;
+    if (size && Math.max(size[0], size[1]) > +o.max_ratio * Math.min(size[0], size[1])) throw new Error(`${who} takes pictures no steeper than ${+o.max_ratio}:1; the crop is ${size[0]} × ${size[1]}, and the picture is too narrow to widen it. Nothing was sent.`);
+}
+
+/**
+ * A picture held to the variant's `options.max_bytes` (Ideogram 4.5: 25 MB each): an opaque one over it goes as JPEG,
+ * one with transparency or still over it as JPEG is refused before anything is sent. Answers { bytes, mime }.
+ */
+function withinBytes(bytes, what, o, ctx, who) {
+    const max = +(o || {}).max_bytes > 0 ? +o.max_bytes : 0;
+    if (!max || bytes.length <= max) return { bytes, mime: "image/png" };
+    const opaque = typeof ctx.opaque === "function" && ctx.opaque(bytes);
+    const jpeg = opaque && typeof ctx.toJpeg === "function" ? ctx.toJpeg(bytes, 92) : null;
+    if (!jpeg || !jpeg.length || jpeg.length > max) {
+        throw new Error(`${who}: the ${what} is ${(bytes.length / 1e6).toFixed(1)} MB, more than the ${Math.round(max / 1e6)} MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. Set Highres fix lower or use a smaller reference layer. Nothing was sent.`);
+    }
+    return { bytes: Buffer.from(jpeg), mime: "image/jpeg" };
+}
+
 /** The shape a text run asks for: `aspect` when it reads as W:H, else the size. */
 function textShape(req) {
     const m = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(String(req.aspect || ""));
@@ -161,4 +193,4 @@ function ideogramMask(mask, image, ctx, who) {
     return m.edits === m.pixels ? null : m.png;
 }
 
-module.exports = { dataUri, b64, fetchImage, readError, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, textShape, blackEditMask, ideogramMask };
+module.exports = { dataUri, b64, fetchImage, readError, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask };

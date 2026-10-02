@@ -38,7 +38,7 @@
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
-const { fetchImage, sleep: realSleep, closestAspect, pngSize, seedOf, textShape, blackEditMask } = require("./util");
+const { fetchImage, sleep: realSleep, closestAspect, pngSize, seedOf, tierFor, textShape, blackEditMask } = require("./util");
 const { picturesFor } = require("./comfyrouter")._shared;
 const { layoutOf, refRoles, instruction } = require("./refs");
 
@@ -197,14 +197,6 @@ function editPrompt(req, R) {
 function preset(w, h, table) {
     const ratio = closestAspect(Math.max(1, w), Math.max(1, h), Object.keys(table));
     return { ratio, value: table[ratio] };
-}
-
-/** The tier whose size covers the long side, else the largest; null without tiers. */
-function tierFor(long, tiers) {
-    const list = Object.entries(tiers || {}).filter(([, v]) => +v > 0).sort((a, b) => a[1] - b[1]);
-    if (!list.length) return null;
-    const hit = list.find(([, v]) => +v >= long);
-    return (hit || list[list.length - 1])[0];
 }
 
 /** "stretch" when the preset is within 3 % of w:h (the answer then maps onto the crop exactly), else null. */

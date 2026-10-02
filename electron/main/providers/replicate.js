@@ -27,7 +27,7 @@
 // layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
-const { dataUri, fetchImage, readError, sleep, num, closestAspect, closestSize, seedOf, textShape, ideogramMask, pngSize } = require("./util");
+const { dataUri, fetchImage, readError, sleep, num, closestAspect, closestSize, seedOf, textShape, ideogramMask, checkRatio, withinBytes } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://api.replicate.com/v1";
@@ -52,21 +52,6 @@ function firstUrl(out) {
     if (Array.isArray(out)) { for (const v of out) { const u = firstUrl(v); if (u) return u; } return null; }
     if (out && typeof out === "object") { for (const v of Object.values(out)) { const u = firstUrl(v); if (u) return u; } }
     return null;
-}
-
-/**
- * A picture held to the variant's `options.max_bytes` (Ideogram 4.5: 25 MB each): an opaque one over it goes as JPEG,
- * one with transparency or still over it as JPEG is refused before anything is sent. Answers { bytes, mime }.
- */
-function withinBytes(bytes, what, o, ctx, who) {
-    const max = +o.max_bytes > 0 ? +o.max_bytes : 0;
-    if (!max || bytes.length <= max) return { bytes, mime: "image/png" };
-    const opaque = typeof ctx.opaque === "function" && ctx.opaque(bytes);
-    const jpeg = opaque && typeof ctx.toJpeg === "function" ? ctx.toJpeg(bytes, 92) : null;
-    if (!jpeg || !jpeg.length || jpeg.length > max) {
-        throw new Error(`${who}: the ${what} is ${(bytes.length / 1e6).toFixed(1)} MB, more than the ${Math.round(max / 1e6)} MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. Set Highres fix lower or use a smaller reference layer. Nothing was sent.`);
-    }
-    return { bytes: Buffer.from(jpeg), mime: "image/jpeg" };
 }
 
 /** The input of a run; what the answer's info should say about it goes into `info`. */
@@ -113,8 +98,7 @@ async function inputFor(req, ctx, info = {}) {
         if (lay.max != null && n > lay.max) throw new Error(`${who} takes at most ${lay.max} picture${lay.max === 1 ? "" : "s"}; this run has ${n}: hide reference layers or turn Original off.`);
         // every check before the first upload: the crop's shape (`options.max_ratio`, Ideogram 4.5's 1:6 .. 6:1, which
         // the recipe's limits.ratio widens a crop to wherever the picture allows), the mask, the bytes of each picture
-        const size = +o.max_ratio > 0 ? pngSize(Buffer.from(req.image)) : null;
-        if (size && Math.max(size[0], size[1]) > +o.max_ratio * Math.min(size[0], size[1])) throw new Error(`${who} takes pictures no steeper than ${+o.max_ratio}:1; the crop is ${size[0]} × ${size[1]}, and the picture is too narrow to widen it. Nothing was sent.`);
+        checkRatio(req.image, o, who);
         let mask = req.mask && req.mask.length ? req.mask : null;
         if (mask && o.mask === "black") {
             mask = ideogramMask(mask, req.image, ctx, who);

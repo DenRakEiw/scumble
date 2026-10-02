@@ -66,15 +66,19 @@ the section for its version; `docs/` and the commit history hold the technical d
   Move keeps its place as the source and its target steps aside, so the two can be told apart.
 - Plugins get a `crop` event when an app setting the crop of a run depends on changes (a node parameter, the API
   size), and `scumble.host.cropFrame(editor)` says what that crop is.
-- **Ideogram 4.5**, a new recipe on your Replicate token. Ideogram's precise edit model changes the selected area and
-  leaves the rest of the crop as it was, pixel for pixel, at the crop's own size, and is strong at lettering. Your
+- **Ideogram 4.5**, a new recipe on your Replicate token or your WaveSpeed key. Ideogram's precise edit model changes
+  the selected area and leaves the rest of the crop as it was, pixel for pixel, at the crop's own size, and is strong
+  at lettering. Your
   selection goes as the model's mask; a selection over the whole crop lets it edit the whole crop. Up to three
   reference layers go along (the Original counts as one); the model takes them without a number, so the prompt
   cannot name them with `@img1`. A very narrow selection is sent with more of its surroundings, since the model takes
   no picture steeper than 6:1. Generate new makes a picture from the prompt at the closest of seven shapes. The
   Settings panel has *Quality* (Very low, Low, Medium, High; Medium by default), which is also the price per picture:
-  $0.008, $0.03, $0.06 or $0.22 for an edit, $0.03 to $0.10 for a new picture (Very low goes as Low there). Written
-  from Replicate's documentation and not run against the live service yet.
+  $0.008, $0.03, $0.06 or $0.22 for an edit, $0.03 to $0.10 for a new picture on Replicate, $0.03 to $0.22 on
+  WaveSpeed (Very low goes as Low there). On WaveSpeed the Settings panel also has *Edit precision* (High by default,
+  which keeps the unchanged pixels), a new picture comes in one of seven shapes at 1k or 2k by the size you ask for,
+  your prompt goes as written, and no seed goes, so two runs differ. Written from Replicate's and WaveSpeed's
+  documentation and not run against the live services yet.
 
 ## 0.1.36 — 2026-10-01
 

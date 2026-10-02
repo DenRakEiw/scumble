@@ -198,14 +198,22 @@ unchanged.
 Light tier: written from the docs; a live call is the user's (`docs/PLAN_FLUX3.md`).
 
 Ideogram 4.5 (`recipes/ideogram_4_5.json`, `electron/main/providers/replicate.js`, `util.js` `ideogramMask`,
-`docs/PLAN_IDEOGRAM45.md`): `node tools/ideogram45_test.js` (plain Node, a scripted api.replicate.com, 67 checks) pins
+`docs/PLAN_IDEOGRAM45.md`): `node tools/ideogram45_test.js` (plain Node, a scripted api.replicate.com and
+api.wavespeed.ai, 149 checks; 67 of them Replicate's, I1) pins
 the Replicate variant as `recipes.js` serves it, the Precise Edit body (exactly prompt, seed, image, mask, quality,
 num_images; no negative, size or aspect), the mask inverted pixel for pixel with the 128 threshold, no mask for a
 whole-crop selection and a refusal for an empty one or one of another size, a crop steeper than 6:1 refused and a
 picture over 25 MB sent as JPEG or refused (all before any request), the seed under 2^31, `reference_images`
 only with references and the cap of 4 before any upload, the unnumbered layout, the text route's `size` from the seven
 presets with Very low sent as Low, and that FLUX.1 Fill and Nano Banana 2 on Replicate send what they sent before.
-Light tier: written from the docs, no live call (the user's word).
+The WaveSpeed sections (I2) play the media upload (ticket, presigned PUT, the binary fallback), the submit and the
+download, and read every picture back from its upload: the edit body exactly prompt, image, mask_url, quality,
+edit_precision (and reference_images with references; no seed, output_format, negative, aspect or size, the
+`accepts` allowlist), the inverted mask, the whole-crop and empty selections, the 6:1 and 25 MB checks with a JPEG
+upload's mime, the text body exactly prompt, quality, aspect_ratio, resolution, enable_prompt_expansion (the tier by
+the long side, no Edit precision, Very low as Low), no seed reported, the key never on a presigned PUT or a download,
+and FLUX.1 Fill and Nano Banana 2 on WaveSpeed unchanged. A mutation round of 8 changes to `wavespeed.js` on a copy
+(2026-10-02) was caught by all. Light tier: written from the docs, no live call (the user's word).
 
 Boxes in the prompt (item 28 S1, `electron/main/providers/boxes.js`, `renderer/editor/boxes.js`, `docs/PLAN_BOXES.md`):
 `node tools/boxes_test.js` (plain Node, 63 checks) pins the 0 to 1000 grid (BFL's own example), the shape check and
