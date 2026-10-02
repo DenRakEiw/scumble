@@ -14,6 +14,8 @@ The block of 2026-09-28 (early morning, package 4 complete) was moved here at no
 
 The block of 2026-10-02 (item 28 S2) was moved here the same night, when S3a was built.
 
+The block of 2026-10-02 (item 28 S3a) was moved here the same night, when S3b was built.
+
 The block of 2026-09-28 (afternoon, package 5 step 3) was moved here in the evening, when step 4 was built.
 
 The block of 2026-09-27 (night), the open threads and the full list were moved here the same night, when CLAUDE.md was
@@ -35,6 +37,24 @@ night, when 0.1.36 was released with FLUX 3 Image.
 
 The paragraph of 2026-10-02 ("s1 ausplan", item 28 S1 built) was moved here the same day, when S2 was built (CLAUDE.md
 keeps the 0.1.36 block and the S2 paragraph).
+
+## 2026-10-02 (item 28 S3a, moved here the same night)
+
+**This session (2026-10-02, "baue weiter", the third of the day):** item 28 S3a as `docs/PLAN_BOXES.md` §10 plans it, one
+commit, not released (CHANGELOG Unreleased, under the S2 entry). The S2 paragraph is in `docs/HISTORY.md`. The built-in
+plugin `plugins/boxes/` keeps a document's boxes in `documents.data` (image pixels), shows them as a "Boxes" section in
+the Generate pane (a row per box: id, kind incl. Text, description, geometry fields, the reference select of a From box;
+Selection → box, Clear, Copy rows; a note whether the selected recipe sends boxes), registers the action, the commands
+`boxes.list / add / set / remove / from_selection / clear` and the `generate` source `boxes.document`, and moves the
+boxes with the picture on the `geometry` event. Core: a snapshot kind `data` behind `documents.data(doc).set(patch, {
+undo: label })` (one undo step per change), a `recipe` host event from `host.setRecipe`, and `{@layer:<id>}` markers in
+a plugin desc (`pluginBoxes` makes them `{@ref:i}`; the plugin writes `@img1` that way). `format.js` is a copy of
+main's row formatter for the clipboard text, tested against the same vectors. `tools/boxes_test.js` 91 checks,
+`tools/boxes_test.py` new (gate `boxes`, eight steps), gates `commands` and `boxes` green `--offline` (label `s3a`),
+lint and types clean, `docs/COMMANDS.md` regenerated, manual section "Boxes in the prompt". Departures from §10 in the
+plan's status paragraph. **Not done:** the live FLUX 3 checks §6.1-6.3 (the user's key and credits; by the plan's own
+rule they come before S3 is worth three days, but the user said build on); S3b (the tool and the overlay) and S3c (the
+crop frame, the paste warning). Next session: S3b, or the live checks with the user.
 
 ## 2026-10-02 (item 28 S2, moved here the same night)
 

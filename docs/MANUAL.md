@@ -174,9 +174,11 @@ Above the field a bar shows every reference as a chip, a hidden one dimmed with 
 
 Some models take, with the instruction, a table of boxes that says where things go; FLUX 3 Image is the first in Scumble. The *Boxes* section of the Generate pane keeps such boxes with the document. Each row is one box: its name (a lowercase word, an underscore and a number, the way the model refers to it), what it does, a description, and its position in image pixels. *New* adds what the description says inside the box. *Keep* holds an element where it is. *Move* takes an element from its source box (From) to the new one (To). *Remove* takes an element out and fills the background. *From reference* places a reference layer, or a part of it, in the box. *Text* renders the words you give, the description saying how. A description may name a reference layer with @img1, as the prompt does.
 
+The *Boxes* tool (X, under Plugins in the tool column) draws them on the picture: drag on an empty place for a New box, click a box to select it (its row in the section lights up; a click on a row selects its box), drag it to move it, drag one of its eight handles to resize it. Delete removes the selected box, D duplicates it, the arrow keys nudge it by a pixel (with Shift by ten), Escape lets go of it, and Alt+click picks a box that lies under another. A Move box's source and a From box's part get handles of their own once the box is selected. Each gesture is one undo step. While the tool is active or the section is open, the boxes show on the picture in their kind's colour (New and Text green, Keep grey, Move blue with an arrow from its source, Remove red and hatched, From reference violet with the reference's name), with their name and the first words of the description.
+
 *Selection → box* takes the selection's bounds as a New box with the prompt as its description; when the prompt names a reference with @img1, the box places that reference into the selection instead. *Clear* removes every box, *Copy rows* puts the model's rows on the clipboard for use in another tool (measured against the whole picture). Every change is one undo step, the boxes are saved in the .scumble file, and they follow a crop, a turn or a resize of the picture.
 
-The boxes go out with every Generate and Generate new run of a recipe that takes them; a recipe that does not simply leaves them where they are, and the section says which is the case. A run measures the boxes in the crop it sends, so a box outside the crop is left out with a note in the status line; a box sets place and size, not a hard edge, and the stitch still keeps an edit inside the selection. Agents and scripts have the same through `boxes_add`, `boxes_set`, `boxes_remove`, `boxes_list`, `boxes_from_selection` and `boxes_clear`. Drawing boxes on the canvas with a tool comes in a later version.
+The boxes go out with every Generate and Generate new run of a recipe that takes them; a recipe that does not simply leaves them where they are, and the section says which is the case. A run measures the boxes in the crop it sends, so a box outside the crop is left out with a note in the status line; a box sets place and size, not a hard edge, and the stitch still keeps an edit inside the selection. Agents and scripts have the same through `boxes_add`, `boxes_set`, `boxes_remove`, `boxes_list`, `boxes_from_selection` and `boxes_clear`.
 
 ## Layers, masks and colour match
 
@@ -492,7 +494,7 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | T  ·  Shift+T | Transform · text |
 | C | Canvas frame — drag its edges to crop or extend, outside it to turn the picture; Enter applies, Esc resets |
 | Ctrl+drag | Canvas tool: draw along a horizon or a wall to straighten the picture |
-| X | Canvas tool: turn the frame's aspect on its side |
+| X | Canvas tool: turn the frame's aspect on its side; any other tool: the Boxes tool (boxes in the prompt) |
 | H  ·  I | Hand · eyedropper |
 
 #### View

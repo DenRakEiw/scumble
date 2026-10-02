@@ -76,27 +76,25 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02: item 28 S1-S3a built, the selection as a FLUX 3 box, the plugin hook and the Boxes plugin's panel and commands; 0.1.36 is Latest)
+## Where things stand (2026-10-02: item 28 S1-S3b built, the selection as a FLUX 3 box, the plugin hook and the Boxes plugin's panel and commands; 0.1.36 is Latest)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02, "baue weiter", the third of the day):** item 28 S3a as `docs/PLAN_BOXES.md` §10 plans it, one
-commit, not released (CHANGELOG Unreleased, under the S2 entry). The S2 paragraph is in `docs/HISTORY.md`. The built-in
-plugin `plugins/boxes/` keeps a document's boxes in `documents.data` (image pixels), shows them as a "Boxes" section in
-the Generate pane (a row per box: id, kind incl. Text, description, geometry fields, the reference select of a From box;
-Selection → box, Clear, Copy rows; a note whether the selected recipe sends boxes), registers the action, the commands
-`boxes.list / add / set / remove / from_selection / clear` and the `generate` source `boxes.document`, and moves the
-boxes with the picture on the `geometry` event. Core: a snapshot kind `data` behind `documents.data(doc).set(patch, {
-undo: label })` (one undo step per change), a `recipe` host event from `host.setRecipe`, and `{@layer:<id>}` markers in
-a plugin desc (`pluginBoxes` makes them `{@ref:i}`; the plugin writes `@img1` that way). `format.js` is a copy of
-main's row formatter for the clipboard text, tested against the same vectors. `tools/boxes_test.js` 91 checks,
-`tools/boxes_test.py` new (gate `boxes`, eight steps), gates `commands` and `boxes` green `--offline` (label `s3a`),
-lint and types clean, `docs/COMMANDS.md` regenerated, manual section "Boxes in the prompt". Departures from §10 in the
-plan's status paragraph. **Not done:** the live FLUX 3 checks §6.1-6.3 (the user's key and credits; by the plan's own
-rule they come before S3 is worth three days, but the user said build on); S3b (the tool and the overlay) and S3c (the
-crop frame, the paste warning). Next session: S3b, or the live checks with the user.
-
+**This session (2026-10-02, "baue weiter", the fourth of the day):** item 28 S3b as `docs/PLAN_BOXES.md` §10 plans it,
+one commit, not released (CHANGELOG Unreleased, under the S3a entry). The S3a paragraph is in `docs/HISTORY.md`.
+`plugins/boxes/tool.js` (`makeTool(scumble, api)`): the tool `boxes.box` (X) draws a New box with a drag on empty
+canvas, selects with a click (the panel row lit, a row click selects its box), moves with a drag, resizes with the
+eight handles; Delete, Escape, arrows (Shift 10), D duplicates, Alt+click cycles stacked boxes; one undo step per
+gesture (nothing written until pointer up). The overlay draws every box in its kind's colour with its id tag and
+the desc's first words, Move's source dashed with an arrow, while the tool is active or the panel is open and on
+screen. Departures in the plan's S3b paragraph (D instead of Ctrl+D, which the editor takes for Deselect; the
+source's own handles instead of a "Set source" mode). Core: the Canvas tool's X now runs before the plugins' keys
+in `inpaint_canvas.js` `onKey`. `tools/boxes_test.py` step `the_tool_draws_moves_resizes_and_keys`, gates `boxes`
+and `commands` green `--offline` (label `s3b2`), lint and types clean, one look over CDP with all six kinds, manual
+and PLUGINS.md updated. **Not done:** the live FLUX 3 checks §6.1-6.3 (the user's key); S3c (the crop frame, the
+paste warning). The node repo is not rebuilt (the `onKey` change rides with the next node version). Next session:
+S3c, or the live checks with the user.
 
 **Released:** 0.1.36 is Latest (published 2026-10-01 22:38:25 CEST, tag on 5bc5831 "0.1.36 prepared"; the tag build
 green) on the user's "baue fertig und release dann das update mit flux3". 0.1.36 = **FLUX 3 Image** (ea71629) + item 25
@@ -195,8 +193,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   "Boxes" plugin, S4 Keep rows from the SAM2 objects; §8-§12 the implementation plan per session, §6 the live
   checks after S1, §7 the open questions). **S1 built 2026-10-02** (the "Selection as box" row, off by default), **S2 the same day**
   (plugin API 3, `scumble.generate.register`, the sample's source behind `sample.box`) and **S3a the same night**
-  (`plugins/boxes`: the data, the panel in the Generate pane, the six commands, the generate source); none released,
-  all under Unreleased. Next: S3b (the tool and the overlay), the live checks §6.1-6.3 with the user's key.
+  (`plugins/boxes`: the data, the panel in the Generate pane, the six commands, the generate source), **S3b** the
+  same night (the canvas tool X and the overlay); none released, all under Unreleased. Next: S3c (the crop frame,
+  the paste warning), the live checks §6.1-6.3 with the user's key.
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended

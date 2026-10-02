@@ -474,7 +474,10 @@ both paths, the commands, the control point tool with undo, the overlay, the pan
   Clear, Copy rows), the action Selection → box, the commands `boxes.list` / `add` / `set` / `remove` /
   `from_selection` / `clear` (one undo step each through `set(patch, { undo })`), and a `generate` source that answers
   the document's boxes. `format.js` is a copy of main's row formatter for the clipboard text alone, tested against
-  the same vectors. The canvas tool and the overlay (S3b) and the crop frame (S3c) are not built yet.
+  the same vectors. The tool *Boxes* (X, `tool.js`) draws, selects, moves and resizes boxes on the canvas (one undo
+  step per gesture; Delete, D duplicates, arrows nudge, Escape, Alt+click goes through stacked boxes) and draws
+  them as an overlay while it is active or the panel is open (`drawAlways`, the panel's `<details>` open and
+  on screen). The crop frame (S3c) is not built yet.
   `tools/boxes_test.py` is its gate.
 - `plugins/glb`: a 3D object (.glb / .gltf) placed in the picture through a dialog and
   rendered into a layer, with an optional depth layer for a ControlNet, re-editable

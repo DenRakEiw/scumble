@@ -1,9 +1,9 @@
 {
   "name": "Boxes",
   "version": "0.1.0",
-  "description": "Boxes in the prompt for a model that takes them (FLUX 3 Image): where an element goes, which one stays, moves or is removed, which reference layer is placed where, words to render. A panel in the Generate pane, Selection → box, Copy rows, and the commands boxes.add / set / remove / list / from_selection / clear for scripts and agents. The boxes are saved with the document and sent with every run of a recipe that takes them.",
+  "description": "Boxes in the prompt for a model that takes them (FLUX 3 Image): where an element goes, which one stays, moves or is removed, which reference layer is placed where, words to render. A canvas tool (X) that draws, moves and resizes them, a panel in the Generate pane, Selection → box, Copy rows, and the commands boxes.add / set / remove / list / from_selection / clear for scripts and agents. The boxes are saved with the document and sent with every run of a recipe that takes them.",
   "author": "Scumble",
   "entry": "main.js",
-  "registers": ["panel", "action", "command", "generate"],
+  "registers": ["tool", "panel", "action", "command", "generate"],
   "enabledByDefault": true
 }

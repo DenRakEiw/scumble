@@ -4,9 +4,10 @@
 // live in the document's plugin data (scumble.documents.data: saved with the session and the .scumble file) in image
 // pixels, follow the picture through a crop, a turn or a resize (the "geometry" event), and go out with every run of a
 // recipe that takes boxes through the generate hook (plugin API 3): the app measures them in the crop it sends and
-// writes the model's rows. S3a: the data, the panel in the Generate pane, the commands. S3b adds the canvas tool and
-// the overlay, S3c the crop frame and the paste warning.
+// writes the model's rows. S3a: the data, the panel in the Generate pane, the commands. S3b: the canvas tool and the
+// overlay (tool.js). S3c adds the crop frame and the paste warning.
 //
+//   tool     Boxes (X): draw, select, move, resize, delete, duplicate, nudge; the overlay while the tool or the panel shows
 //   panel    "Boxes" in the Generate pane: one row per box, Selection → box, Clear, Copy rows
 //   action   Selection → box (Plugins menu)
 //   commands boxes.list, boxes.add, boxes.set, boxes.remove, boxes.from_selection, boxes.clear
@@ -14,6 +15,7 @@
 
 import { BOX_ID, KINDS, DESC_MAX } from "/editor/boxes.js";
 import { clipboardText, fold } from "./format.js";
+import { makeTool, colourOf } from "./tool.js";
 
 const HELP = "Boxes tell a model that takes them (FLUX 3 Image) where things go. New: what the description says, in the box. Keep: an element stays where it is. Move: from its source box to this one. Remove: taken out, the background filled. From reference: a reference layer (or a part of it) placed in the box. Text: the words rendered in the box. Positions are image pixels; a run measures the boxes in the crop it sends and leaves out one outside it. A box sets place and size, not a hard edge.";
 const KIND_LABELS = { new: "New", keep: "Keep", move: "Move", remove: "Remove", from: "From reference", text: "Text" };
@@ -153,6 +155,25 @@ export function activate(scumble) {
         return got;
     }
 
+    // ---- the tool and the overlay ----------------------------------------------------------------------------------------
+    const panels = new Map();   // doc id -> { box, highlight() } of the open panel
+    const boxTool = makeTool(scumble, {
+        boxesOf, add, set, remove, nextId,
+        panelShown(doc) {
+            const p = panels.get(doc.id);
+            if (!p || !p.box.isConnected) return false;
+            const details = p.box.closest("details");
+            return (!details || details.open) && p.box.getClientRects().length > 0;
+        },
+        selChanged(doc) { const p = panels.get(doc.id); if (p) p.highlight(); },
+        referenceName(doc, id) {
+            const l = doc.layers().find((x) => x.id === id);
+            return l ? (l.label ? "@" + l.label : l.name) : "(no layer)";
+        },
+    });
+    scumble.tools.register(boxTool.tool);
+    scumble.events.on("removed", (ev) => { if (ev.doc) { boxTool.forget(ev.doc.id); panels.delete(ev.doc.id); } });
+
     // ---- the picture changed its geometry: the boxes move with it ----------------------------------------------------
     scumble.events.on("geometry", (ev) => {
         if (!ev.doc || !Array.isArray(ev.m)) return;
@@ -229,9 +250,13 @@ export function activate(scumble) {
                 if (!force && list.contains(document.activeElement)) { pending = true; return; }
                 key = k; pending = false;
                 list.innerHTML = "";
-                if (!boxes.length) { list.appendChild(ui.el("div", "boxes-empty", doc.loaded ? "No boxes yet. Selection → box takes the selection; boxes.add places one by numbers." : "Load an image first.")); return; }
+                if (!boxes.length) { list.appendChild(ui.el("div", "boxes-empty", doc.loaded ? "No boxes yet. Draw one with the Boxes tool (X), or Selection → box takes the selection; boxes.add places one by numbers." : "Load an image first.")); return; }
                 for (const b of boxes) {
                     const row = ui.el("div", "boxes-row");
+                    row.dataset.box = b.id;
+                    row.style.borderLeftColor = colourOf(b);
+                    // a click on the row (not in a field) selects the box on the canvas
+                    row.addEventListener("pointerdown", (e) => { if (!e.target.closest("input, select, button")) boxTool.select(doc, b.id); });
                     const head = ui.el("div", "boxes-head");
                     head.appendChild(field("boxes-id", b.id, "The element's name in the prompt: a lowercase name, an underscore and a number", (v) => change(b.id, { id: v })));
                     const kindNow = b.text != null ? "text" : b.kind;
@@ -268,12 +293,23 @@ export function activate(scumble) {
                     }
                     list.appendChild(row);
                 }
+                highlight();
             };
+            const highlight = () => {
+                const id = boxTool.selected(doc);
+                for (const row of list.querySelectorAll(".boxes-row")) row.classList.toggle("boxes-row-sel", row.dataset.box === id);
+            };
+            panels.set(doc.id, { box, highlight });
+            // the overlay shows while the panel is open: opening or closing it repaints the canvas
+            const details = box.closest("details");
+            if (details) details.addEventListener("toggle", () => doc.draw());
             list.addEventListener("focusout", () => { if (pending) setTimeout(() => { if (!list.contains(document.activeElement)) render(); }, 0); });
             render(true);
+            doc.draw();
             scumble.events.on("changed", (ev) => { if (ev.doc && ev.doc.id === doc.id) render(); });
             scumble.events.on("recipe", () => render());
         },
+        destroy(box, doc) { panels.delete(doc.id); },
     });
 
     // ---- Plugins menu ------------------------------------------------------------------------------------------------

@@ -142,7 +142,8 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 .boxes-note { font-size: 11px; color: var(--sc-muted, #888); }
 .boxes-list { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 .boxes-empty { font-size: 11px; color: var(--sc-muted, #888); }
-.boxes-row { display: flex; flex-direction: column; gap: 3px; padding: 5px 6px; border: 1px solid var(--sc-line, #3a3a3a); border-radius: var(--sc-radius, 4px); background: var(--sc-well, #161616); }
+.boxes-row { display: flex; flex-direction: column; gap: 3px; padding: 5px 6px; border: 1px solid var(--sc-line, #3a3a3a); border-left-width: 3px; border-radius: var(--sc-radius, 4px); background: var(--sc-well, #161616); }
+.boxes-row.boxes-row-sel { border-color: var(--sc-accent, #ffd166); box-shadow: 0 0 0 1px var(--sc-accent, #ffd166); }
 .boxes-head { display: flex; gap: 4px; align-items: center; }
 .boxes-head .boxes-id { flex: 1; min-width: 0; }
 .boxes-head .boxes-select { max-width: 120px; }

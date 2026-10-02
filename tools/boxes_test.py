@@ -5,7 +5,9 @@ from_selection / clear with their refusals, one undo step per change (the "data"
 box (a From box when the prompt names a reference with @img1), the document's boxes through the core's collectBoxes
 (image pixels into fractions of a stated frame, an @img token as the layer's picture, a box outside the frame noted,
 a from box of a layer the run does not send refusing), the panel's rows in the Generate pane, the boxes following a
-crop of the whole picture (and its undo), and a .scumble save and open carrying them.
+crop of the whole picture (and its undo), and a .scumble save and open carrying them. S3b: the Boxes tool through
+the pointer and key hooks (draw, move, resize, a click that changes nothing, nudge, duplicate, Alt+click through
+stacked boxes, Delete, Escape; one undo step per gesture; the panel row lit) and the overlay on the screen canvas.
 
     python tools/boxes_test.py
 
@@ -196,6 +198,83 @@ if ((await boxes()).find((b) => b.id === "dog_1").kind !== "new") throw new Erro
 if (details.querySelector(".boxes-row .boxes-id").value !== "dog_1") throw new Error("the panel did not follow the undo");
 window.__bNote = note;
 return { rows: rows.length, note };
+"""),
+    ("the_tool_draws_moves_resizes_and_keys", """
+// S3b: the Boxes tool through the pointer and key hooks, one undo step per gesture, the panel row lit, the overlay drawn
+const ed = ednow();
+const before = await boxes();
+for (const b of before) for (const r of [b.rect, b.src]) if (r && r[2] > 880 && r[1] < 360) throw new Error("the test's corner is taken by " + b.id);
+const undo0 = ed.undo.length;
+ed.setTool("boxes.box");
+if (ed.tool !== "boxes.box") throw new Error("the tool was not selected: " + ed.tool);
+const fake = { shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, button: 0, pressure: 0.5, pointerType: "mouse" };
+const ptr = (phase, x, y, extra) => { host.pluginPointer(ed, phase, { ...fake, ...(extra || {}), type: "pointer" + phase }, x, y, ed.pointer); if (phase === "up") ed.pointer = null; };
+const drag = (pts, extra) => { ptr("down", pts[0][0], pts[0][1], extra); for (const p of pts.slice(1)) ptr("move", p[0], p[1], extra); const l = pts[pts.length - 1]; ptr("up", l[0], l[1], extra); };
+const key = (k, shift) => host.pluginKey(ed, { key: k, shiftKey: !!shift, preventDefault() {} }, k.toLowerCase());
+const P2 = P.pluginHost.entries().get("boxes");
+const selId = () => { const row = ed.panes.gen.querySelector(".boxes-row.boxes-row-sel"); return row ? row.dataset.box : null; };
+// draw a New box on empty canvas
+drag([[900, 60], [1000, 150], [1100, 250]]);
+let now = await boxes();
+const made = now.find((b) => !before.some((x) => x.id === b.id));
+if (!made || made.kind !== "new" || !eq(made.rect, [900, 60, 1100, 250])) throw new Error("draw: " + JSON.stringify(made));
+if (ed.undo.length !== undo0 + 1) throw new Error("drawing should be one undo step: " + (ed.undo.length - undo0));
+await wait(50);
+if (selId() !== made.id) throw new Error("the new box's row is not lit: " + selId());
+// a drag inside moves it, the south-east handle resizes it
+drag([[1000, 150], [1030, 180], [1050, 200]]);
+now = await boxes();
+if (!eq(now.find((b) => b.id === made.id).rect, [950, 110, 1150, 300])) throw new Error("move: " + JSON.stringify(now.find((b) => b.id === made.id)));
+drag([[1150, 300], [1160, 315], [1170, 330]]);
+now = await boxes();
+if (!eq(now.find((b) => b.id === made.id).rect, [950, 110, 1170, 330])) throw new Error("resize: " + JSON.stringify(now.find((b) => b.id === made.id)));
+if (ed.undo.length !== undo0 + 3) throw new Error("three gestures, " + (ed.undo.length - undo0) + " undo steps");
+// a click without a drag changes nothing
+ptr("down", 1000, 200); ptr("up", 1000, 200);
+if (ed.undo.length !== undo0 + 3) throw new Error("a click made an undo step");
+// Shift+arrow nudges by 10, D duplicates (the copy selected), Delete removes the copy
+if (!key("ArrowRight", true)) throw new Error("the arrow was not taken");
+if (!eq((await boxes()).find((b) => b.id === made.id).rect, [960, 110, 1180, 330])) throw new Error("nudge: " + JSON.stringify((await boxes()).find((b) => b.id === made.id)));
+key("d");
+now = await boxes();
+const copy = now[now.length - 1];
+if (copy.id === made.id || !eq(copy.rect, [970, 120, 1190, 340]) || copy.kind !== "new") throw new Error("duplicate: " + JSON.stringify(copy));
+await wait(50);
+if (selId() !== copy.id) throw new Error("the copy is not selected: " + selId());
+// Alt+click goes through the two boxes under the pointer
+ptr("down", 1050, 200, { altKey: true }); ptr("up", 1050, 200, { altKey: true });
+await wait(20);
+if (selId() !== made.id) throw new Error("alt+click did not pick the box below: " + selId());
+ptr("down", 1050, 200, { altKey: true }); ptr("up", 1050, 200, { altKey: true });
+await wait(20);
+if (selId() !== copy.id) throw new Error("the second alt+click did not come round: " + selId());
+key("Delete");
+if ((await boxes()).some((b) => b.id === copy.id)) throw new Error("Delete did not remove the copy");
+if (ed.undo.length !== undo0 + 6) throw new Error("nudge, duplicate and delete should be three undo steps: " + (ed.undo.length - undo0));
+// Escape lets go of the selection, a key with nothing selected is the editor's
+ptr("down", 1000, 200); ptr("up", 1000, 200);
+if (!key("Escape") || selId() !== null) throw new Error("Escape did not deselect");
+if (key("Delete")) throw new Error("Delete with nothing selected was taken");
+// the overlay: the box's green on the screen canvas while the tool is active, nothing once another tool is and the panel is closed
+const g = ed.canvas.getContext("2d");
+const green = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); const d = g.getImageData(Math.round(sx) - 3, Math.round(sy), 7, 1).data; for (let i = 0; i < d.length; i += 4) if (d[i + 1] - d[i] > 90 && d[i + 1] > 150) return true; return false; };
+ed.draw();
+if (!green(960, 220)) throw new Error("no box drawn on the canvas while the tool is active");
+const details = Array.from(ed.panes.gen.querySelectorAll("details")).find((d) => d.querySelector("summary") && d.querySelector("summary").textContent.trim() === "Boxes");
+details.open = false;
+ed.setTool("select");
+await wait(30);
+ed.draw();
+if (green(960, 220)) throw new Error("the box is drawn with another tool and the panel closed");
+details.open = true;
+await wait(30);
+ed.draw();
+const shown = details.getClientRects().length > 0;
+if (shown && !green(960, 220)) throw new Error("the panel is open and shown, but the box is not drawn");
+// back to the boxes as they were: six steps undone
+for (let i = 0; i < 6; i++) await c("undo", D());
+if (JSON.stringify(await boxes()) !== JSON.stringify(before)) throw new Error("the undo did not put the boxes back: " + JSON.stringify(await boxes()));
+return { made: made.id, copy: copy.id, panelShown: shown, plugin: !!P2 };
 """),
     ("boxes_follow_a_crop_and_its_undo", """
 const before = await boxes();

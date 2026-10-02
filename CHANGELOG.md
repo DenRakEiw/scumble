@@ -26,7 +26,15 @@ the section for its version; `docs/` and the commit history hold the technical d
   Generate and Generate new run of a recipe that takes them (FLUX 3 Image) and stay with the document otherwise;
   they are saved in the `.scumble` file, follow a crop, a turn or a resize of the picture, and every change is one
   undo step. Agents and scripts have `boxes_add`, `boxes_set`, `boxes_remove`, `boxes_list`, `boxes_from_selection`
-  and `boxes_clear`. Drawing boxes on the canvas comes next.
+  and `boxes_clear`.
+- **Boxes: draw them on the canvas.** The *Boxes* tool (X, under Plugins in the tool column) draws a box with a drag
+  on the picture; a click selects one (its row in the panel lights up, and a click on a row selects its box), a drag
+  moves it, the eight handles resize it. Delete removes the selected box, D duplicates it, the arrow keys nudge it by
+  a pixel (Shift: ten), Escape lets go of it, and Alt+click picks a box that lies under another. A Move box's source
+  and a From box's part get handles of their own once the box is selected. Each gesture is one undo step. The boxes
+  show on the picture in their kind's colour (New green, Keep grey, Move blue with an arrow from its source, Remove
+  red and hatched, From reference violet with the reference's name) with their name and the first words of their
+  description, while the tool is active or the Boxes section is open.
 
 ## 0.1.36 — 2026-10-01
 

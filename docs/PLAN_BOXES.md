@@ -45,6 +45,21 @@ reference names are `ref_image_k` by the shown references' order (a run numbers 
 and the `commands` gate green offline; lint and types clean; one look at the panel over CDP under the FLUX 3 recipe.
 Next: S3b (the tool and the overlay, §10), the live checks §6 whenever the user has time.
 
+**S3b built 2026-10-02** (the user: "baue weiter"): `plugins/boxes/tool.js` (`makeTool(scumble, api)`), the tool
+`boxes.box` (X) as §10 says: drag on empty canvas draws a New box `box_n`, click selects, drag moves, eight handles
+resize (6 screen px), Delete, Escape, arrows (Shift 10), Alt+click cycles the boxes under the pointer; a drag moves
+nothing until the button comes up (one `set` with `undo` per gesture, a click under 3 screen px none). The overlay
+in the kinds' colours with the id tag, the desc's first words on a dark strip, Move's dashed source and arrow,
+From's dashed part (when its layer shows) and the reference's `@label` in the tag; shown while the tool is active
+or the panel's `<details>` is open and on screen. The panel row of the selected box is lit (`boxes-row-sel`, the
+kind's colour as the row's left border), a click on a row selects its box. Departures from §10: **D** duplicates,
+not Ctrl+D (the editor takes Ctrl+D for Deselect before a plugin sees a key, and `onKey` gets no Ctrl keys); no
+"Set source" mode: a selected Move box's source (and a From box's part) has handles of its own; no `colour` field
+(the kind sets the colour). One core change: the Canvas tool's own X runs before the plugins' keys in `onKey`
+(otherwise X in the Canvas tool would switch to Boxes). `tools/boxes_test.py` step
+`the_tool_draws_moves_resizes_and_keys`; gates `boxes` and `commands` green offline (label `s3b2`); one look over
+CDP with all six kinds. Next: S3c (the crop frame, the paste warning), the live checks §6 with the user.
+
 ## 1. Sources
 
 - BFL docs, fetched 2026-10-01 as markdown (`https://docs.bfl.ml/<page>.md`, index `https://docs.bfl.ml/llms.txt`):

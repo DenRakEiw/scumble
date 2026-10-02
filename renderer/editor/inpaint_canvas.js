@@ -3093,8 +3093,9 @@ class InpaintEditor {
         if (e.shiftKey && k === "r") { this.setTool("ellipse"); return; }
         if (e.shiftKey && k === "t") { this.setTool("text"); return; }
         if (e.key === "\\") { e.preventDefault(); if (!e.repeat && !this.peekBase) { this.peekBase = true; this.peekHold = true; this.peekCode = e.code || null; this.draw(); } return; }
-        if (host.pluginKey(this, e, k)) return;
+        // the Canvas tool's own X before the plugins' keys (the Boxes tool is X)
         if (k === "x" && this.tool === "canvas") { this.swapFrameAspect(); this.setStatus(this.frameStatus()); return; }
+        if (host.pluginKey(this, e, k)) return;
         switch (k) {
             case "1": this.zoomTo(1); break;
             case "4": this.rotateView(-Math.PI / 12); break;
