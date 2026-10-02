@@ -76,67 +76,43 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02 night: 0.1.37 is Latest; item 33 built for 0.1.38; next docs/PLAN_0_1_38.md A1)
+## Where things stand (2026-10-02 late night: 0.1.37 is Latest; A1, A2, B1, B3 of docs/PLAN_0_1_38.md built; next A3 on the user's word)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02 night, "weiter ^^ was fehlt noch bis zum release ?", the twelfth of the day):** the 0.1.37
-release, on the user's "Release freigeben, ja frei ... blog... webseite ... readme update" and "Live-Checks vor dem
-Release? ja kannst du machen". The item 31 docs paragraph and the 0.1.36 "Released" block are in `docs/HISTORY.md`.
-- **Released:** 0.1.37 is Latest (published 2026-10-02 21:42:20 CEST, title "Scumble 0.1.37: Boxes for FLUX 3,
-  Ideogram 4.5", tag on a085d56 "0.1.37 prepared"; the tag build green on Windows and Linux). 0.1.37 = item 28 S1-S3e
-  (boxes in the prompt for FLUX 3 Image, the Boxes plugin, plugin API 3 `scumble.generate.register`) + item 31
-  (Ideogram 4.5 on Replicate, WaveSpeed, Comfy Router; never run live) + the assistant's policy rows for the Boxes
-  commands (a895684) + adm-zip 0.6.1 in the lockfile. **The post `v0-1-37` ("Boxes: telling FLUX 3 where things go",
-  picture `public/projects/scumble/blog/v0-1-37-boxes-clock.jpg` from the live check 6.2) is pushed**, the manual synced,
-  `hub.version` 0.1.37, website commit 2a66b51.
-- **Found by the exe gates:** `assistant` red on both backends, `every_tool_has_a_policy_row`: the six `boxes_*`
-  commands and `sample_box` had no row in `electron/main/assistant/policy.js` (item 28 S2 / S3a never ran the assistant
-  gate). Rows now: `boxes_list` a read; add / set / from_selection auto; remove and clear ask; `sample_box` with `on` asks;
-  `tools/assistant_test.js` table rows, `docs/PLAN_ASSISTANT.md` §5 row. **A new plugin command needs a policy row:** run
-  the `assistant` gate whenever a plugin registers a command.
-- **Live checks §6.1-6.3 done** (`docs/PLAN_BOXES.md` status: five FLUX 3 edits at 1k, 5 credits each, 25 in all, on the
-  0.1.37 exe with the gate profile `rel36-exe` that holds the user's BFL key, driven over CDP by a scratch script; Paste
-  set to the whole crop): the selection as a box put a cat in the box (without, at the selection's edge); a From box put
-  the reference's clock exactly into its box; a Remove box took out a street lamp and its glow. The model fills a box
-  (the manual and CHANGELOG say so). Cosmetic: ids from a description take its first two telling words, adjectives
-  included (`small_black_1`, `white_wall_1`).
-- adm-zip: the scanner PR (`DenRakEiw/scumble` PR 2, "fix: upgrade adm-zip to 0.6.1") was read, not merged: the same
-  bump went into a085d56 (0.6.1's diff read: extraction hardening; only onnxruntime-node's install script uses it). The
-  PR can be closed (not done: an outward action the user did not ask for).
-- Exe gates `--offline`: tiles `rel37-exe` (34 with `boxes`) and canvas `rel37-exe-canvas` (21) all green but
-  `assistant`; after the fix and a second `npm run dist`: `rel37-exe-asst` (assistant, help) and
-  `rel37-exe-asst-canvas` (assistant) green. Plain-Node tests green: boxes, ideogram45, flux3, manual, recipes,
-  comfyrouter, refs_layout, magnific, assistant.
-- **Looked at, not fixed:** the local Flux.2 Klein report (`docs/BUGS.md`): the node's example and the app's recipe both
-  pair Klein 9B with Qwen3 8B, type `flux2`; the error is in ComfyUI's model forward (5120 features into a 12288 input),
-  so no quick fix without the reporter's log. The example's VAE is `full_encoder_small_decoder.safetensors`, not the
-  standard `flux2-vae.safetensors` (a validation error for anyone without that file; unchecked whether that is an
-  official file).
-- **The user asked about the Comfy Dev Platform Challenge** (blog.comfy.org, Oct 5-19 2026; theme "Pick a feature
-  people currently pay for and reimagine it in the open"; open-source licence, setup, demo video; FLUX bonus with FLUX 2
-  or 3 as the core model; the first 100 sign-ups get Comfy credits by Oct 5). Open with Comfy: whether an existing project
-  may enter, whether an app on local ComfyUI / Comfy Cloud / Comfy Router counts, whether FLUX 3 via Comfy Router counts
-  (item 29, not built). A question in English was drafted for the user; they sign up themselves.
-- Small leftovers (carried over): the `generate` command still reports the editor's seed for a FLUX 3 run (none is
-  sent); planCrop's chosen aspect is not passed to the adapter (a crop past 3 % goes as `auto`, works).
-- **Open for the user** (carried over): the fills, multi-selection, solo and align (0.1.35); whether 0.1.33 feels right
-  under their pen; the smudge and tone brushes dab once per coalesced point (BUGS.md); the defaults of packages 4 and 5
-  (`docs/HISTORY.md`, 2026-09-28 late night); item 25's look and timing; item 26's look in the app; the Boxes' look and
-  feel in the app. The Store package of 0.1.37 was not built (on the user's word per release). Whether to delete the key
-  from the gate profile `rel36-exe`. Whether to close the adm-zip PR.
-- **After the release, the same night:** item 33 built (every box its own colour, a double click describes a box on
-  the canvas; 7de1423, CHANGELOG Unreleased, `docs/PLAN_BOXES.md` "After 0.1.37"); item 32 put on the list; the user
-  asked whether Ideogram can take the boxes (yes: Ideogram 4's JSON caption, S5; 4.5 takes none). Then the plan for
-  the next two updates: **`docs/PLAN_0_1_38.md`** (the user: "ok, mache einen umsetzungsplan, dann machen wir clear und
-  es geht los"). 0.1.38 small: A1 item 32 (the update dialog), A2 three leftovers (the FLUX 3 seed in `generate`, box
-  ids from the last two words of the first phrase, planCrop's aspect to the FLUX 3 adapter), A3 the release with the
-  Store link on the website hub and the adm-zip PR closed on the user's yes. 0.1.39: B1 FLUX 3 on Comfy Router
-  (`bfl/flux-3-image` exists, schema in `tools/refs/comfyrouter/bfl_flux-3-image.json`), B2 Ideogram 4's JSON caption
-  from the boxes (live check §6.4 on fal first), B3-B6 FLUX 3 on OpenRouter / fal / Oxen / WaveSpeed, B7 the release.
-- **Next: `docs/PLAN_0_1_38.md` A1** (item 32, the update dialog).
-
+**This session (2026-10-02 late night, "baue weiter", then "mache noch ein paar schritte weiter ... ich gehe jetzt
+schlafen"):** A1, A2, B1 and B3 of `docs/PLAN_0_1_38.md`, each its own commit, none pushed (main is ahead of origin by
+6 with this hand-over's: 7de1423 and 4d8dcde from before, then c3872b7, 03cd400, a2ba272, 77cd42d). The 0.1.37 block is in `docs/HISTORY.md`.
+- **A1, item 32 (c3872b7):** the update question (`renderer/shell.js` `announceUpdate`): *Restart and update* /
+  *Later* / *Skip this version*, once per start (`updater.announce`, IPC `update:announced`), one line per top-level
+  release-note bullet (`releaseHeadlines`), the focus on *Later* (`dialogs.ask` `focusId`), waits for a question, a
+  modal dialog, the assistant's card, the restore, an edit and 3 s of typing; `installUpdate()` asks before ending a
+  run (API or a local render, `_localRuns`), the assistant's turn or an agent's session (the title-row button and
+  Settings' Install too). **Found while building:** electron-updater installs a download on quit
+  (`autoInstallOnAppQuit`), so Skip turns that off in main (`setSkip` / `_applySkip`, read from settings at the start
+  and on every `settings:set`), adds the quit handler back when a skip is taken back, and `app:relaunch` skips it too.
+  `fullChangelog` on and the notes' cap 30,000 (0.1.37 alone is 8,300; it was cut at 4,000). A review workflow (16
+  findings, 12 held) drove most of the details; `docs/PLAN_0_1_38.md` A1 lists them. Tests: `tools/updater_test.js`
+  (new), platform gate step `the_update_question_asks_once`, a `restart_test` row. Not touched: README says the .deb
+  does not update itself, but electron-builder 26 ships it with `app-update.yml` (DebUpdater, pkexec; never run).
+- **A2 (03cd400):** `generate` reports the seed the model got (`host.js` `answeredSeed`; null for FLUX 3; the history
+  row says "no seed sent"; commands gate step with the loopback's `options.no_seed`); box ids from the last two words
+  of the first phrase (`black_cat_1`; an -ing verb ends the phrase, -ing nouns do not); the request carries
+  `cropAspect`, which `flux3.js` sends past the 3 % rounding slack.
+- **B1 (a2ba272) and B3 (77cd42d), built ahead, under CHANGELOG Unreleased:** FLUX 3 Image on Comfy Router
+  (`bfl/flux-3-image`, the `bfl` dialect calls `flux3.body`) and on OpenRouter (six variant options in
+  `openrouter.js`, each off unless set). **Ask the user whether 0.1.38 ships them** (the agreed 0.1.38 was small) or
+  holds them for 0.1.39 (then a branch or a revert before the release). Side effect of B3: every OpenRouter model whose
+  endpoints take no seed reports seed null now.
+- Gates run (all `--offline`, tiles): platform, assistant, commands, boxes, openrouter, recipes, lint, types; Node:
+  updater, restart, quit, manual, boxes, flux3, comfyrouter, openrouter, recipes, refs_layout, ideogram45. No exe
+  gates (that is the release's). One look at the update question in a dev instance (a screenshot, fine).
+- **Next:** the user's word on A3 (the 0.1.38 release, with or without B1/B3) and on B2 (its live check §6.4 needs
+  their fal key). Otherwise B4 fal, B5 Oxen, B6 WaveSpeed (`docs/PLAN_FLUX3.md` has the notes).
+- The weekly limit stood at 89 % all night (1d 11h to its reset at the end): one review workflow, no more.
+- Carried over: the small leftovers of A2 are done; the open items of the 0.1.37 block (the user's looks, the Store
+  package, the gate profile key, the adm-zip PR) stand.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
@@ -213,7 +189,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 29: FLUX 3 Image on the other providers (the user, 2026-10-02): fal (blackforestlabs/flux-3/edit-image and its text
   sibling), WaveSpeed (the user's link was image-to-video; whether it has FLUX 3 Image is part of the research),
   OpenRouter (black-forest-labs/flux-3-image) and Oxen.ai (flux-3-image), as variants of `recipes/flux3.json` on the
-  existing adapters. Researched, nothing built: `docs/PLAN_FLUX3.md` "FLUX 3 Image on other providers".
+  existing adapters. Researched: `docs/PLAN_FLUX3.md` "FLUX 3 Image on other providers". **Comfy Router (B1) and OpenRouter
+  (B3) built 2026-10-02 late night**, under Unreleased; fal, Oxen, WaveSpeed open.
 - 30: Ideogram 4 support as an update of its own (the user, 2026-10-02: "ein anderer release", not with item 28's
   boxes). Known so far (one web search, 2026-10-02): Ideogram 4.0 is Ideogram's first open-weight model (9.3B flow
   DiT, Qwen3-VL-8B text encoder, June 2026; weights non-commercial, 256-2048 px, aspects up to 6:1), structured JSON
@@ -238,7 +215,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `renderer/dialogs.js` once the update is downloaded, with the version and its CHANGELOG notes, *Restart and update* /
   *Later* (maybe *Skip this version*); once per version, not on every start; not while a document is busy or unsaved
   without asking first (the restart path `restartPlan` exists); none in the Store copy (the Store updates it) and none
-  for Linux packages that cannot update themselves. Small (about half a day); planned as `docs/PLAN_0_1_38.md` A1.
+  for Linux packages that cannot update themselves. Small (about half a day); planned as `docs/PLAN_0_1_38.md` A1. **Built 2026-10-02 late night** (c3872b7), with a real
+  Skip (no install on quit), under Unreleased.
 - 33: every box its own colour and a double click that describes a box on the canvas (the user, 2026-10-02 night,
   with a screenshot of six green boxes: "jede neu box soll eine andere farbe haben", then "mit doppelklick auf die box
   ... den prompt im canvas in die box schreiben"): built the same night (7de1423), under Unreleased for 0.1.38.
