@@ -66,6 +66,9 @@ export function selectionBox(bounds, frame, { prompt = "", pair = null } = {}) {
 /** The kinds a box may have (main's boxes.js keeps the same set). */
 export const KINDS = new Set(["new", "keep", "move", "remove", "from"]);
 
+/** How a plugin's desc names a reference layer: `{@layer:L12}`, the layer's id (pluginBoxes turns it into a {@ref:i} marker). */
+export const LAYER_MARK = /\{@layer:([^}\s]+)\}/g;
+
 const pxRect = (r) => Array.isArray(r) && r.length === 4 && r.every((v) => Number.isFinite(Number(v))) && Number(r[0]) < Number(r[2]) && Number(r[1]) < Number(r[3]);
 
 /**
@@ -78,7 +81,9 @@ const pxRect = (r) => Array.isArray(r) && r.length === 4 && r.every((v) => Numbe
  * gets the next free number (edit_1 -> edit_2). Returns { boxes, notes }: a box (or its source) outside the frame is
  * dropped with a note naming it. Throws on a malformed box (`err.code` "shape": the plugin's bug) and on a from box
  * whose layer this run does not send (`err.code` "layer", `opts.nameOf(layerId)` names it: the run refuses, as an
- * unresolvable @img token does).
+ * unresolvable @img token does). A desc may name a reference layer as `{@layer:<id>}` (LAYER_MARK): it becomes the
+ * `{@ref:i}` marker main resolves to the model's name for that picture ("image 2"), or refuses like a from box when
+ * the layer is not sent.
  */
 export function pluginBoxes(list, ctx, { taken = [], nameOf = null } = {}) {
     const fail = (code, msg) => { const e = new Error(msg); e.code = code; return e; };
@@ -88,6 +93,12 @@ export function pluginBoxes(list, ctx, { taken = [], nameOf = null } = {}) {
     const where = ctx && ctx.mode === "new" ? "image" : "crop";
     const used = new Set(taken.map((b) => (typeof b === "string" ? b : b && b.id)).filter(Boolean));
     const out = [], notes = [];
+    const refOf = (layerId) => (ctx && ctx.references || []).find((x) => x && x.layerId === layerId) || null;
+    const descOf = (b, who) => foldDesc(b.desc).replace(LAYER_MARK, (_, id) => {
+        const r = refOf(id);
+        if (!r) throw fail("layer", `${who} names ${nameOf ? nameOf(id) : "layer " + id}, which is not a reference picture of this run: nothing was sent.`);
+        return `{@ref:${r.index}}`;
+    });
     list.forEach((b, i) => {
         const who = `Box ${b && typeof b.id === "string" ? b.id : "#" + (i + 1)}`;
         if (!b || typeof b !== "object") throw fail("shape", `${who}: not an object`);
@@ -99,7 +110,7 @@ export function pluginBoxes(list, ctx, { taken = [], nameOf = null } = {}) {
         if (b.kind === "from") {
             if (typeof b.layer !== "string" || !b.layer) throw fail("shape", `${who}: a from box needs layer, the reference layer's id`);
             if (b.src != null && !pxRect(b.src)) throw fail("shape", `${who}: src is not [l, t, r, b] in image pixels with l < r and t < b`);
-            const r = (ctx && ctx.references || []).find((x) => x && x.layerId === b.layer);
+            const r = refOf(b.layer);
             if (!r) throw fail("layer", `${who}: ${nameOf ? nameOf(b.layer) : "layer " + b.layer} is not a reference picture of this run: nothing was sent.`);
             ref = r.index;
             src = b.src == null ? [0, 0, 1, 1] : toFrame(b.src, r.frame);
@@ -119,7 +130,7 @@ export function pluginBoxes(list, ctx, { taken = [], nameOf = null } = {}) {
             id = m[1] + n;
         }
         used.add(id);
-        out.push({ id, kind: b.kind, rect, src, ref, desc: foldDesc(b.desc) });
+        out.push({ id, kind: b.kind, rect, src, ref, desc: descOf(b, who) });
     });
     return { boxes: out, notes };
 }

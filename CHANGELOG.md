@@ -16,8 +16,17 @@ the section for its version; `docs/` and the commit history hold the technical d
   Generate new run of a recipe that takes boxes, and Scumble maps them into the crop, numbers duplicate ids, writes the
   model's rows and sends them with the prompt. A box outside the crop is left out with a note; a box that names a
   reference layer the run does not send stops the run before anything is sent. The `generate` and `generate_new`
-  commands answer `boxes`, how many went. The sample plugin shows a source (`sample.box` switches it on);
-  the box editor itself comes as a plugin next.
+  commands answer `boxes`, how many went. The sample plugin shows a source (`sample.box` switches it on).
+- **Boxes: a panel for the boxes of a document.** A new section *Boxes* in the Generate pane (a built-in plugin) keeps
+  boxes with the document: for each one its name, what it does (New adds what the description says in the box, Keep
+  holds an element where it is, Move takes it from a source box to a new one, Remove takes it out, From reference
+  places a reference layer or a part of it, Text renders words), the description and the position in image pixels.
+  *Selection → box* takes the selection's bounds (a From box when the prompt names a reference with @img1), *Clear*
+  removes them, *Copy rows* puts the model's rows on the clipboard for another tool. The boxes go out with every
+  Generate and Generate new run of a recipe that takes them (FLUX 3 Image) and stay with the document otherwise;
+  they are saved in the `.scumble` file, follow a crop, a turn or a resize of the picture, and every change is one
+  undo step. Agents and scripts have `boxes_add`, `boxes_set`, `boxes_remove`, `boxes_list`, `boxes_from_selection`
+  and `boxes_clear`. Drawing boxes on the canvas comes next.
 
 ## 0.1.36 — 2026-10-01
 

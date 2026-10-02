@@ -639,14 +639,17 @@ function makeApi(entry) {
             /**
              * This plugin's JSON object for one document: it is saved with the document (the session's autosave and a
              * .scumble file, whose refs inside it travel as files) and comes back with it; data of a plugin that is not
-             * installed rides along untouched. get() returns a copy, set(patch) merges and marks the document changed.
+             * installed rides along untouched. get() returns a copy, set(patch) merges and marks the document changed;
+             * set(patch, { undo: "Add box" }) first pushes one undo step holding the plugins' data as it was (the label is
+             * what the history calls it), so a plugin's change of its own data is taken back like an edit (API 3).
              */
             data(doc) {
                 const ed = doc && doc.editor;
                 if (!ed) throw new Error("documents.data needs a document");
                 return {
                     get: () => JSON.parse(JSON.stringify((ed.pluginData && ed.pluginData[entry.id]) || {})),
-                    set(patch) {
+                    set(patch, { undo = false } = {}) {
+                        if (undo) ed.pushUndo({ kind: "data", label: typeof undo === "string" ? undo : `${m.name || entry.id} data` });
                         if (!ed.pluginData || typeof ed.pluginData !== "object") ed.pluginData = {};
                         ed.pluginData[entry.id] = JSON.parse(JSON.stringify({ ...(ed.pluginData[entry.id] || {}), ...(patch || {}) }));
                         host.changed(ed);

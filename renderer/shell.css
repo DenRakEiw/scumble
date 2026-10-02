@@ -137,6 +137,20 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 .film-chip-on { border-color: var(--sc-accent, #ffd166); color: var(--sc-accent, #ffd166); }
 .film-row.scumble-plugin-row { grid-template-columns: 62px 1fr 48px; }
 .film-del { align-self: flex-start; }
+
+/* boxes plugin (the Boxes panel in the Generate pane) */
+.boxes-note { font-size: 11px; color: var(--sc-muted, #888); }
+.boxes-list { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.boxes-empty { font-size: 11px; color: var(--sc-muted, #888); }
+.boxes-row { display: flex; flex-direction: column; gap: 3px; padding: 5px 6px; border: 1px solid var(--sc-line, #3a3a3a); border-radius: var(--sc-radius, 4px); background: var(--sc-well, #161616); }
+.boxes-head { display: flex; gap: 4px; align-items: center; }
+.boxes-head .boxes-id { flex: 1; min-width: 0; }
+.boxes-head .boxes-select { max-width: 120px; }
+.boxes-field { background: var(--sc-field, #161616); color: var(--sc-fg, #ccc); border: 1px solid var(--sc-line, #3a3a3a); border-radius: var(--sc-radius, 4px); padding: 2px 5px; font: 11px var(--sc-font, system-ui, sans-serif); width: 100%; box-sizing: border-box; min-width: 0; }
+.boxes-field:focus { outline: none; border-color: var(--sc-accent, #ffd166); }
+.boxes-geo { display: grid; grid-template-columns: 34px 1fr; gap: 4px; align-items: center; font-size: 11px; }
+.boxes-geo-label { color: var(--sc-muted, #888); }
+.boxes-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
 #shell-update { background: var(--sc-active-bg, #2f5d9a) !important; border-color: var(--sc-active, #3f74bb) !important; }
 #shell-update:hover { background: var(--sc-active-bg, #3a6fb5) !important; }
 .shell-check { display: inline-flex; align-items: center; gap: 6px; }

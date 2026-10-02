@@ -202,6 +202,51 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     check("every plugin box passes main's shape check and makes a FLUX 3 row (the from box naming the reference's slot)",
         boxes.checkBoxes(pall).length === 4 && boxes.rowsFlux3({ ...r2, boxes: pall }, lay2).length === 4 && typeof boxes.rowsFlux3({ ...r2, boxes: pall }, lay2)[0].from === "string", short(boxes.rowsFlux3({ ...r2, boxes: pall }, lay2)));
     check("the kinds are the same set on both sides", eq([...R.KINDS].sort(), [...boxes.KINDS].sort()), "");
+    // a desc may name a reference layer as {@layer:id} (S3a: the Boxes plugin writes an @img token that way): it becomes
+    // the {@ref:i} marker main resolves; a layer this run does not send refuses like a from box
+    pb = R.pluginBoxes([{ id: "cat_1", kind: "new", rect: [300, 200, 500, 350], desc: "put {@layer:L3} on the sofa" }], pctx);
+    check("pluginBoxes: {@layer:L3} in a desc becomes {@ref:1}, the layer's picture index", pb.boxes[0].desc === "put {@ref:1} on the sofa", short(pb.boxes[0]));
+    check("main then names it: image 3 (the crop, the Original, then the reference)", boxes.rowsFlux3({ ...r2, boxes: pb.boxes }, lay2)[0].desc === "put image 3 on the sofa", "");
+    code = null;
+    try { R.pluginBoxes([{ id: "cat_1", kind: "new", rect: [300, 200, 500, 350], desc: "put {@layer:L9} here" }], pctx, { nameOf: (id) => `the layer "Dog" (${id})` }); } catch (e) { code = e.code; msg = e.message; }
+    check("pluginBoxes: {@layer:} of a layer this run does not send refuses with the layer's name (code layer)", code === "layer" && /^Box cat_1 names the layer "Dog" \(L9\), which is not a reference picture of this run: nothing was sent\.$/.test(msg), msg);
+    check("LAYER_MARK is exported and matches only the braces form", R.LAYER_MARK instanceof RegExp && "x {@layer:L12} y @img1".replace(R.LAYER_MARK, "<$1>") === "x <L12> y @img1", "");
+
+    // ---- 10. the Boxes plugin's clipboard formatter (plugins/boxes/format.js) against main's rows -------------------
+    // the same boxes in image pixels, main's rows through the renderer's mapping (as a run does it) and the plugin's rows
+    // straight from pixels: the grid, the kinds and the instruction agree
+    console.log("\n--- 10. plugins/boxes/format.js (Copy rows) ---");
+    const F = await import(pathToFileURL(path.join(ROOT, "plugins", "boxes", "format.js")).href);
+    const docFrame = { x: 0, y: 0, w: 1920, h: 1080 };
+    check("format.grid: BFL's example from pixels", eq(F.grid([384, 108, 1536, 972], docFrame), [100, 200, 900, 800]), short(F.grid([384, 108, 1536, 972], docFrame)));
+    check("format.grid equals main's grid of the renderer's fractions on a crop", eq(F.grid([300, 200, 500, 350], frame), boxes.grid(R.toFrame([300, 200, 500, 350], frame))) && eq(F.grid([0, 0, 500, 350], frame), boxes.grid(R.toFrame([0, 0, 500, 350], frame))), "");
+    check("format.grid: a thin box is at least 1 apart, the far edge clamped", eq(F.grid([1919.8, 1079.8, 1920, 1080], docFrame), [999, 999, 1000, 1000]), short(F.grid([1919.8, 1079.8, 1920, 1080], docFrame)));
+    const pxBoxes = [
+        { id: "dog_1", kind: "new", rect: [100, 100, 400, 300], src: null, layer: null, desc: "a dog", text: null },
+        { id: "log_1", kind: "keep", rect: [800, 600, 1000, 700], src: [800, 600, 1000, 700], layer: null, desc: "a log", text: null },
+        { id: "ox_1", kind: "move", rect: [1200, 200, 1500, 500], src: [200, 500, 500, 800], layer: null, desc: "an ox", text: null },
+        { id: "cat_1", kind: "remove", rect: [600, 100, 700, 200], src: [600, 100, 700, 200], layer: null, desc: "a cat", text: null },
+        { id: "lamp_1", kind: "from", rect: [1500, 700, 1800, 1000], src: null, layer: "L3", desc: "the lamp", text: null },
+        { id: "far_1", kind: "new", rect: [3000, 3000, 3200, 3100], src: null, layer: null, desc: "outside", text: null },
+    ];
+    const nameOf = (id) => (id === "L3" ? "ref_image_2" : null);
+    const fr = F.rowsFlux3(pxBoxes, docFrame, { nameOf });
+    const viaCore = R.pluginBoxes(pxBoxes.map((b) => ({ ...b, src: b.kind === "new" ? undefined : b.src, layer: b.kind === "from" ? b.layer : undefined })), { mode: "edit", schema: "flux3", frame: docFrame, references: [{ index: 1, layerId: "L3", name: "Lamp", frame: { x: 0, y: 0, w: 1920, h: 1080 } }] });
+    const mainRows = boxes.rowsFlux3({ ...r2, boxes: viaCore.boxes }, lay2);
+    check("format.rowsFlux3: five rows, the box outside the picture noted and left out (as the core does)", fr.rows.length === 5 && fr.notes.length === 1 && /far_1 lies outside/.test(fr.notes[0]) && viaCore.boxes.length === 5 && /far_1 lies outside/.test(viaCore.notes[0]), short(fr.notes));
+    check("format.rowsFlux3: the rows equal main's rows for the same boxes", eq(fr.rows, mainRows), short(fr.rows) + " vs " + short(mainRows));
+    const ft = F.rowsText(pxBoxes, docFrame);
+    check("format.rowsText: new boxes only ({ id, bbox, desc }), the others noted", ft.rows.length === 1 && eq(ft.rows[0], { id: "dog_1", bbox: [93, 52, 278, 208], desc: "a dog" }) && ft.notes.length === 5, short(ft));
+    check("format.rowsText equals main's text rows", eq(ft.rows, boxes.rowsFlux3({ ...req({ kind: "text" }), boxes: viaCore.boxes.filter((b) => b.kind === "new") }, flux3.layout(req({ kind: "text" }))).map((r) => r)), "");
+    const fi = F.instructionFlux3("make it night", pxBoxes, fr.rows);
+    const mi = boxes.instructionFlux3("make it night", viaCore.boxes, lay2, mainRows);
+    check("format.instructionFlux3 equals main's instruction (one sentence per box, In <ref_image_0> first)", fi === mi && fi.startsWith("make it night In <ref_image_0>, add <dog_1> in its box. Keep <log_1> unchanged."), short(fi));
+    const ct = F.clipboardText("make it night", pxBoxes, docFrame, { nameOf });
+    check("format.clipboardText: the instruction, a space and the JSON rows, as a run sends it", ct.text === `${mi} ${JSON.stringify(mainRows)}` && ct.rows.length === 5, short(ct.text));
+    check("format.clipboardText on a new image: rowsText and no In <ref_image_0>", /^make it night Add <dog_1> in its box\. \[\{"id":"dog_1","bbox"/.test(F.clipboardText("make it night", pxBoxes, docFrame, { mode: "new" }).text), short(F.clipboardText("make it night", pxBoxes, docFrame, { mode: "new" }).text));
+    check("format.rowsFlux3: a from box whose layer is not shown is noted, a part of the layer measured in the layer's frame",
+        F.rowsFlux3([pxBoxes[4]], docFrame, { nameOf: () => null }).notes.length === 1
+        && eq(F.rowsFlux3([{ ...pxBoxes[4], src: [500, 350, 600, 400], layerFrame: { x: 500, y: 350, w: 200, h: 100 } }], docFrame, { nameOf }).rows[0].src_bbox, [0, 0, 500, 500]), "");
 
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

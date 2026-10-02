@@ -898,6 +898,8 @@ export const host = {
     setRecipe(recipe) {
         this.recipe = recipe;
         for (const ed of this._editors) this.applyRecipe(ed);
+        // the plugins hear of it (a panel that says whether the recipe takes boxes): the active tab, the recipe's id
+        this.emit("recipe", { editor: this.editor, recipe: recipe ? recipe.id : null });
     },
 
     onModeChanged: null,   // set by the shell: (mode, editor) => void

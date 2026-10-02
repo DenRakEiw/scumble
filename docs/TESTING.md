@@ -20,6 +20,10 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   instance it starts (port 9573) with `tools/list_changed`, nothing started after that instance closes.
   `python tools/llm_test.py` checks the OpenAI-compatible upsample endpoint against
   `tools/llm_mock.py` (a mock server it starts itself; no ComfyUI, no key, no local model).
+  `python tools/boxes_test.py` covers the Boxes plugin (item 28 S3a): the commands and their refusals, one undo
+  step per change, the selection as a box, the document's boxes through the core's `collectBoxes`, the panel's rows,
+  a crop moving the boxes, a `.scumble` round trip; no ComfyUI and no key needed. `node tools/boxes_test.js` is the
+  plain-Node side (main's rows, the renderer's mapping, the plugin's clipboard formatter).
   `python tools/generate_test.py` covers "Generate new" (a base image from the prompt
   alone) against the loopback provider, no ComfyUI and no key needed.
   `python tools/shape_test.py` covers the shape tool: every kind, fill and outline, the

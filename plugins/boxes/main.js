@@ -1,0 +1,330 @@
+// Boxes plugin (item 28 S3, docs/PLAN_BOXES.md §10): boxes in the prompt for a model that takes them (FLUX 3 Image).
+// A box says where an element goes in the picture (New), which element stays (Keep), moves (Move) or goes (Remove),
+// and which reference layer, or a part of it, is placed in it (From reference); a Text box renders words. The boxes
+// live in the document's plugin data (scumble.documents.data: saved with the session and the .scumble file) in image
+// pixels, follow the picture through a crop, a turn or a resize (the "geometry" event), and go out with every run of a
+// recipe that takes boxes through the generate hook (plugin API 3): the app measures them in the crop it sends and
+// writes the model's rows. S3a: the data, the panel in the Generate pane, the commands. S3b adds the canvas tool and
+// the overlay, S3c the crop frame and the paste warning.
+//
+//   panel    "Boxes" in the Generate pane: one row per box, Selection → box, Clear, Copy rows
+//   action   Selection → box (Plugins menu)
+//   commands boxes.list, boxes.add, boxes.set, boxes.remove, boxes.from_selection, boxes.clear
+//   generate the document's boxes for a run that takes them
+
+import { BOX_ID, KINDS, DESC_MAX } from "/editor/boxes.js";
+import { clipboardText, fold } from "./format.js";
+
+const HELP = "Boxes tell a model that takes them (FLUX 3 Image) where things go. New: what the description says, in the box. Keep: an element stays where it is. Move: from its source box to this one. Remove: taken out, the background filled. From reference: a reference layer (or a part of it) placed in the box. Text: the words rendered in the box. Positions are image pixels; a run measures the boxes in the crop it sends and leaves out one outside it. A box sets place and size, not a hard edge.";
+const KIND_LABELS = { new: "New", keep: "Keep", move: "Move", remove: "Remove", from: "From reference", text: "Text" };
+const TOKEN = /@img([1-9][0-9]*)\b/g;
+
+export function activate(scumble) {
+    const { ui } = scumble;
+
+    // ---- the data ----------------------------------------------------------------------------------------------------
+    // per document: { version: 1, boxes: [{ id, kind, rect: [l, t, r, b] (image px), src, layer, desc, text }] }
+    const boxesOf = (doc) => { const d = scumble.documents.data(doc).get(); return Array.isArray(d.boxes) ? d.boxes : []; };
+    const write = (doc, boxes, label) => scumble.documents.data(doc).set({ version: 1, boxes }, { undo: label });
+
+    const num = (v) => (typeof v === "string" && v.trim() !== "" ? Number(v) : v);
+    /** A rectangle argument ([l, t, r, b] or { x, y, w, h }) as whole image pixels, or an error naming `what`. */
+    function rectOf(v, what) {
+        let r = v;
+        if (v && typeof v === "object" && !Array.isArray(v)) r = [num(v.x), num(v.y), num(v.x) + num(v.w), num(v.y) + num(v.h)];
+        if (!Array.isArray(r) || r.length !== 4) throw new Error(`${what} must be [left, top, right, bottom] in image pixels (or { x, y, w, h })`);
+        const out = r.map((x) => Math.round(Number(num(x))));
+        if (!out.every(Number.isFinite)) throw new Error(`${what} holds a value that is not a number`);
+        if (out[2] <= out[0] || out[3] <= out[1]) throw new Error(`${what} is empty: right must be past left and bottom past top`);
+        return out;
+    }
+    const shownReferences = (doc) => doc.layers().filter((l) => l.role === "reference" && l.visible);
+    /** A reference layer by id, name, a part of the name or "active"; refuses a layer that is not a reference. */
+    function referenceOf(doc, key) {
+        const l = doc.layer(key);
+        if (l.role !== "reference") throw new Error(`${l.name} is not a reference layer: set its role to reference first`);
+        return l;
+    }
+    /** The next free id with that base: box_1, box_2 .. */
+    function nextId(boxes, base = "box") {
+        const used = new Set(boxes.map((b) => b.id));
+        let n = 1;
+        while (used.has(`${base}_${n}`)) n++;
+        return `${base}_${n}`;
+    }
+    /**
+     * A box held to its shape: `input` the fields given, `base` the box it changes (null for a new one). The id matches
+     * BOX_ID and is unique in the document; a keep / move / remove box needs a source; a from box a reference layer; a
+     * new box has neither. `text` makes a Text box (a new box whose words are rendered).
+     */
+    function normalise(doc, input, { base = null, boxes = boxesOf(doc) } = {}) {
+        const a = input || {};
+        const kind = a.kind != null ? String(a.kind) : base ? base.kind : "new";
+        if (!KINDS.has(kind)) throw new Error(`kind "${kind}" is not new, keep, move, remove or from`);
+        const id = a.id != null && String(a.id).trim() !== "" ? String(a.id).trim() : base ? base.id : nextId(boxes, kind === "from" ? "ref" : kind === "new" ? "box" : kind);
+        if (!BOX_ID.test(id)) throw new Error(`the id "${id}" is not a lowercase name, an underscore and a number (knight_1)`);
+        if (boxes.some((b) => b.id === id && (!base || b.id !== base.id))) throw new Error(`the id ${id} is already used by another box`);
+        const rect = a.rect != null ? rectOf(a.rect, "rect") : base ? base.rect : null;
+        if (!rect) throw new Error("rect is required: [left, top, right, bottom] in image pixels");
+        let src = a.src !== undefined ? (a.src == null ? null : rectOf(a.src, "src")) : base ? base.src : null;
+        let layer = a.layer !== undefined ? (a.layer == null ? null : referenceOf(doc, a.layer).id) : base ? base.layer : null;
+        if (kind === "new") { src = null; layer = null; }
+        else if (kind === "from") {
+            src = src || null;
+            if (!layer) throw new Error("a From reference box needs layer, the reference layer");
+        } else {
+            layer = null;
+            if (!src && base && base.kind === "new") src = rect.slice();   // a New box turned into Keep / Move / Remove: it is where it is
+            if (!src) throw new Error(`a ${kind} box needs src, where the element is now: [left, top, right, bottom]`);
+        }
+        const desc = a.desc !== undefined ? fold(a.desc) : base ? base.desc || "" : "";
+        if (desc.length > DESC_MAX) throw new Error(`desc is longer than ${DESC_MAX} characters`);
+        const text = a.text !== undefined ? (a.text == null ? null : String(a.text).replace(/\s+/g, " ").trim()) : base ? base.text || null : null;
+        if (text != null && kind !== "new") throw new Error("only a New box renders text");
+        return { id, kind, rect, src, layer, desc, text };
+    }
+
+    // ---- what a box says -----------------------------------------------------------------------------------------------
+    /** The desc a run gets: a text box says what it reads; an @img token becomes a {@layer:id} marker the app resolves. */
+    function descOf(doc, b) {
+        const labels = new Map(doc.layers().filter((l) => l.label).map((l) => [l.label, l.id]));
+        const words = b.text != null ? `text reading "${b.text}"${b.desc ? ", " + b.desc : ""}` : b.desc || "";
+        return words.replace(TOKEN, (m, n) => (labels.has("img" + n) ? `{@layer:${labels.get("img" + n)}}` : m));
+    }
+    /** The desc for the clipboard: an @img token as the model's picture name (<ref_image_k>, k the reference's number). */
+    function clipDesc(doc, b) {
+        const words = b.text != null ? `text reading "${b.text}"${b.desc ? ", " + b.desc : ""}` : b.desc || "";
+        return words.replace(TOKEN, (m, n) => `<ref_image_${n}>`);
+    }
+    /** The recipe's stand on boxes: { takes, name }. */
+    function recipeState() {
+        const r = scumble.host.recipe;
+        return { takes: !!(r && r.options && typeof r.options.boxes === "string"), name: r ? r.name || r.id : null };
+    }
+
+    // ---- changes (one undo step each) ----------------------------------------------------------------------------------
+    function add(doc, input) {
+        const boxes = boxesOf(doc);
+        const b = normalise(doc, input, { boxes });
+        write(doc, [...boxes, b], `Add box ${b.id}`);
+        return b;
+    }
+    function set(doc, id, patch) {
+        const boxes = boxesOf(doc);
+        const i = boxes.findIndex((b) => b.id === id);
+        if (i < 0) throw new Error(`no box ${id}`);
+        const b = normalise(doc, patch, { base: boxes[i], boxes });
+        const next = boxes.slice(); next[i] = b;
+        write(doc, next, `Change box ${id}`);
+        return b;
+    }
+    function remove(doc, id) {
+        const boxes = boxesOf(doc);
+        if (!boxes.some((b) => b.id === id)) throw new Error(`no box ${id}`);
+        write(doc, boxes.filter((b) => b.id !== id), `Remove box ${id}`);
+    }
+    function clear(doc) {
+        const n = boxesOf(doc).length;
+        if (n) write(doc, [], "Clear boxes");
+        return n;
+    }
+    /**
+     * The selection's bounds as a box: a New box with the prompt as its description; when the prompt names a reference
+     * with @img, a From box of that layer (the whole layer into the selection), the prompt still its description.
+     */
+    function fromSelection(doc, { id, desc } = {}) {
+        const sel = doc.selection({ box: true });   // the bounds' mask alone, not a mask of the whole picture
+        if (!sel) throw new Error("Nothing is selected.");
+        const { x, y, w, h } = sel.bounds;
+        const prompt = desc != null ? String(desc) : String(doc.editor.promptText || "");
+        const m = TOKEN.exec(prompt); TOKEN.lastIndex = 0;
+        const ref = m ? doc.layers().find((l) => l.label === "img" + m[1]) : null;
+        return add(doc, { id: id || nextId(boxesOf(doc), "edit"), kind: ref ? "from" : "new", rect: [x, y, x + w, y + h], layer: ref ? ref.id : undefined, desc: prompt });
+    }
+    function copyRows(doc) {
+        const boxes = boxesOf(doc);
+        if (!boxes.length) { doc.status("No boxes to copy."); return null; }
+        const refs = shownReferences(doc);
+        const layerById = new Map(doc.layers().map((l) => [l.id, l]));
+        const got = clipboardText(String(doc.editor.promptText || ""), boxes.map((b) => ({ ...b, layerFrame: b.layer && layerById.has(b.layer) ? { x: layerById.get(b.layer).x, y: layerById.get(b.layer).y, w: layerById.get(b.layer).w, h: layerById.get(b.layer).h } : null })),
+            { x: 0, y: 0, w: doc.width, h: doc.height }, { mode: "edit", nameOf: (id) => { const k = refs.findIndex((l) => l.id === id); return k < 0 ? null : `ref_image_${k + 1}`; }, descOf: (b) => fold(clipDesc(doc, b)) });
+        if (navigator.clipboard) navigator.clipboard.writeText(got.text).catch(() => {});
+        doc.status(`${got.rows.length} row${got.rows.length === 1 ? "" : "s"} copied, measured against the whole picture (a run measures them in the crop it sends).${got.notes.length ? " " + got.notes.join(" ") : ""}`);
+        return got;
+    }
+
+    // ---- the picture changed its geometry: the boxes move with it ----------------------------------------------------
+    scumble.events.on("geometry", (ev) => {
+        if (!ev.doc || !Array.isArray(ev.m)) return;
+        const boxes = boxesOf(ev.doc);
+        if (!boxes.length) return;
+        const [a, b, c, d, e, f] = ev.m;
+        const map = (r) => {
+            if (!Array.isArray(r)) return r;
+            const xs = [], ys = [];
+            for (const [x, y] of [[r[0], r[1]], [r[2], r[1]], [r[0], r[3]], [r[2], r[3]]]) { xs.push(a * x + c * y + e); ys.push(b * x + d * y + f); }
+            const out = [Math.round(Math.min(...xs)), Math.round(Math.min(...ys)), Math.round(Math.max(...xs)), Math.round(Math.max(...ys))];
+            if (out[2] <= out[0]) out[2] = out[0] + 1;
+            if (out[3] <= out[1]) out[3] = out[1] + 1;
+            return out;
+        };
+        // new objects, never the old ones: the step's own undo puts the data back (docs/PLUGINS.md, events)
+        scumble.documents.data(ev.doc).set({ version: 1, boxes: boxes.map((x) => ({ ...x, rect: map(x.rect), src: map(x.src) })) });
+    });
+
+    // ---- the generate hook: the document's boxes for a run that takes them ------------------------------------------
+    scumble.generate.register({
+        id: "document",
+        boxes(doc) {
+            return boxesOf(doc).map((b) => ({ id: b.id, kind: b.kind, rect: b.rect, src: b.kind === "new" ? undefined : b.src, layer: b.kind === "from" ? b.layer : undefined, desc: descOf(doc, b) }));
+        },
+    });
+
+    // ---- panel -----------------------------------------------------------------------------------------------------------
+    scumble.panels.register({
+        id: "panel",
+        title: "Boxes",
+        pane: "gen",
+        open: false,
+        build(box, doc) {
+            box.appendChild(ui.el("div", "shell-help", HELP));
+            const note = ui.el("div", "shell-help boxes-note", "");
+            box.appendChild(note);
+            const list = ui.el("div", "boxes-list");
+            box.appendChild(list);
+            const run = (fn) => { try { fn(); } catch (err) { doc.status(String((err && err.message) || err)); render(true); } };
+            const buttons = ui.el("div", "boxes-buttons");
+            buttons.appendChild(ui.button("Selection → box", "The selection's bounds as a New box with the prompt as its description (a From box when the prompt names a reference with @img1)", () => run(() => fromSelection(doc))));
+            buttons.appendChild(ui.button("Clear", "Remove every box of this document (Ctrl+Z brings them back)", () => run(() => { const n = clear(doc); doc.status(n ? `${n} box${n === 1 ? "" : "es"} removed (Ctrl+Z brings them back).` : "No boxes."); })));
+            buttons.appendChild(ui.button("Copy rows", "The boxes as the model's rows, measured against the whole picture, to the clipboard (a run measures them in the crop it sends)", () => run(() => copyRows(doc))));
+            box.appendChild(buttons);
+            const field =(cls, value, title, onChange) => {
+                const inp = document.createElement("input");
+                inp.type = "text"; inp.className = `boxes-field ${cls}`; inp.value = value == null ? "" : value; inp.title = title; inp.spellcheck = false;
+                inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") inp.blur(); });
+                inp.addEventListener("change", () => onChange(inp.value));
+                return inp;
+            };
+            const select = (options, value, title, onChange) => {
+                const sel = document.createElement("select");
+                sel.className = "ipc-sel boxes-select"; sel.title = title;
+                for (const [id, label] of options) { const o = document.createElement("option"); o.value = id; o.textContent = label; sel.appendChild(o); }
+                sel.value = value;
+                sel.addEventListener("keydown", (e) => e.stopPropagation());
+                sel.addEventListener("change", () => onChange(sel.value));
+                return sel;
+            };
+            const change = (id, patch) => run(() => set(doc, id, patch));
+            const rectText = (r) => (Array.isArray(r) ? r.join(", ") : "");
+            const parseRect = (s) => s.split(/[\s,;]+/).filter(Boolean).map(Number);
+            let key = null, pending = false;
+            const render = (force = false) => {
+                const boxes = boxesOf(doc);
+                const refs = shownReferences(doc);
+                const rs = recipeState();
+                note.textContent = !rs.name ? "" : rs.takes ? `${rs.name} sends these boxes with every Generate and Generate new run.` : `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image) is selected.`;
+                const k = JSON.stringify([boxes, refs.map((l) => [l.id, l.name])]);
+                if (!force && k === key) return;
+                // a field being edited is not rebuilt under the user's cursor: the next change after it blurs does it
+                if (!force && list.contains(document.activeElement)) { pending = true; return; }
+                key = k; pending = false;
+                list.innerHTML = "";
+                if (!boxes.length) { list.appendChild(ui.el("div", "boxes-empty", doc.loaded ? "No boxes yet. Selection → box takes the selection; boxes.add places one by numbers." : "Load an image first.")); return; }
+                for (const b of boxes) {
+                    const row = ui.el("div", "boxes-row");
+                    const head = ui.el("div", "boxes-head");
+                    head.appendChild(field("boxes-id", b.id, "The element's name in the prompt: a lowercase name, an underscore and a number", (v) => change(b.id, { id: v })));
+                    const kindNow = b.text != null ? "text" : b.kind;
+                    head.appendChild(select(Object.entries(KIND_LABELS), kindNow, "What the box does", (v) => {
+                        if (v === "text") change(b.id, { kind: "new", text: b.text || "" });
+                        else if (v === "from") { if (!refs.length) { doc.status("Add a reference layer first (a layer with the role reference, shown)."); render(true); return; } change(b.id, { kind: "from", layer: b.layer && refs.some((l) => l.id === b.layer) ? b.layer : refs[0].id, text: null }); }
+                        else change(b.id, { kind: v, text: null, ...(v !== "new" && b.kind === "new" ? { src: b.rect } : {}) });
+                    }));
+                    head.appendChild(ui.button("×", "Remove this box", () => run(() => remove(doc, b.id))));
+                    row.appendChild(head);
+                    if (b.text != null) row.appendChild(field("boxes-text", b.text, "The words rendered in the box", (v) => change(b.id, { text: v })));
+                    row.appendChild(field("boxes-desc", b.desc, b.text != null ? "Style and colour of the text (optional)" : "What it is (a reference as @img1)", (v) => change(b.id, { desc: v })));
+                    const geo = ui.el("div", "boxes-geo");
+                    geo.appendChild(ui.el("span", "boxes-geo-label", b.kind === "remove" ? "Was" : b.kind === "keep" ? "At" : "To"));
+                    geo.appendChild(field("boxes-rect", rectText(b.kind === "keep" || b.kind === "remove" ? b.src : b.rect), "left, top, right, bottom in image pixels", (v) => change(b.id, b.kind === "keep" || b.kind === "remove" ? { src: parseRect(v), rect: parseRect(v) } : { rect: parseRect(v) })));
+                    row.appendChild(geo);
+                    if (b.kind === "move") {
+                        const g2 = ui.el("div", "boxes-geo");
+                        g2.appendChild(ui.el("span", "boxes-geo-label", "From"));
+                        g2.appendChild(field("boxes-rect", rectText(b.src), "where the element is now: left, top, right, bottom", (v) => change(b.id, { src: parseRect(v) })));
+                        row.appendChild(g2);
+                    }
+                    if (b.kind === "from") {
+                        const g3 = ui.el("div", "boxes-geo");
+                        g3.appendChild(ui.el("span", "boxes-geo-label", "Layer"));
+                        const opts = refs.map((l) => [l.id, `${l.label ? "@" + l.label + " " : ""}${l.name}`]);
+                        if (!refs.some((l) => l.id === b.layer)) opts.unshift([b.layer, "(not a shown reference)"]);
+                        g3.appendChild(select(opts, b.layer, "The reference layer placed in the box (shown reference layers)", (v) => change(b.id, { layer: v })));
+                        row.appendChild(g3);
+                        const g4 = ui.el("div", "boxes-geo");
+                        g4.appendChild(ui.el("span", "boxes-geo-label", "Part"));
+                        g4.appendChild(field("boxes-rect", rectText(b.src), "the part of the reference layer, in image pixels where the layer sits; empty = the whole layer", (v) => change(b.id, { src: v.trim() ? parseRect(v) : null })));
+                        row.appendChild(g4);
+                    }
+                    list.appendChild(row);
+                }
+            };
+            list.addEventListener("focusout", () => { if (pending) setTimeout(() => { if (!list.contains(document.activeElement)) render(); }, 0); });
+            render(true);
+            scumble.events.on("changed", (ev) => { if (ev.doc && ev.doc.id === doc.id) render(); });
+            scumble.events.on("recipe", () => render());
+        },
+    });
+
+    // ---- Plugins menu ------------------------------------------------------------------------------------------------
+    scumble.actions.register({ id: "from_selection", label: "Selection → box", run: (doc) => { try { const b = fromSelection(doc); doc.status(`Box ${b.id} added.`); return b; } catch (err) { doc.status(String(err.message || err)); return null; } } });
+
+    // ---- commands ------------------------------------------------------------------------------------------------------
+    const FIELDS = {
+        kind: { type: "string", description: "new (an element added in the box), keep, move, remove (an element of the picture), from (a reference layer placed in the box)", enum: ["new", "keep", "move", "remove", "from"] },
+        rect: { type: "array", description: "[left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was" },
+        src: { type: "array", description: "keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer)" },
+        layer: { type: "string", description: "from only: the reference layer (id, name or a unique part of it)" },
+        desc: { type: "string", description: `what the element is, at most ${DESC_MAX} characters; a reference as @img1` },
+        text: { type: "string", description: "new only: words to render in the box (the box becomes a Text box)" },
+    };
+    const summary = (b) => ({ ...b });
+    scumble.commands.register("list", {
+        description: "The boxes of this document (image pixels) and whether the selected recipe sends them.",
+        params: {}, needsImage: true, scope: "doc",
+        run(doc) { const rs = recipeState(); return { boxes: boxesOf(doc).map(summary), count: boxesOf(doc).length, recipe: { name: rs.name, takes: rs.takes } }; },
+    });
+    scumble.commands.register("add", {
+        description: "Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with the next run of a recipe that takes boxes (FLUX 3 Image).",
+        params: { id: { type: "string", description: "a lowercase name, an underscore and a number (knight_1); default the next free box_n" }, ...FIELDS },
+        needsImage: true, scope: "doc",
+        run(doc, a) { return summary(add(doc, a)); },
+    });
+    scumble.commands.register("set", {
+        description: "Change a box: only the given fields change (new_id renames it). One undo step.",
+        params: { id: { type: "string", description: "the box to change", required: true }, new_id: { type: "string", description: "a new id" }, ...FIELDS },
+        needsImage: true, scope: "doc",
+        run(doc, a) { const { id, new_id: newId, ...rest } = a || {}; return summary(set(doc, String(id), newId != null ? { ...rest, id: newId } : rest)); },
+    });
+    scumble.commands.register("remove", {
+        description: "Remove a box. One undo step.",
+        params: { id: { type: "string", description: "the box to remove", required: true } },
+        needsImage: true, scope: "doc",
+        run(doc, a) { remove(doc, String(a.id)); return { removed: String(a.id), count: boxesOf(doc).length }; },
+    });
+    scumble.commands.register("from_selection", {
+        description: "The selection's bounds as a box: a new box described by the prompt (or desc); when the prompt names a reference with @img1, that layer placed into the selection (a from box). One undo step.",
+        params: { id: { type: "string", description: "default the next free edit_n" }, desc: { type: "string", description: "the description (default the prompt)" } },
+        needsImage: true, scope: "doc",
+        run(doc, a) { return summary(fromSelection(doc, a || {})); },
+    });
+    scumble.commands.register("clear", {
+        description: "Remove every box of this document. One undo step.",
+        params: {}, needsImage: true, scope: "doc",
+        run(doc) { return { removed: clear(doc) }; },
+    });
+
+    scumble.log("loaded");
+}
+
+export function deactivate() {}

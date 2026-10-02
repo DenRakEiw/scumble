@@ -694,7 +694,9 @@ takes body, `layout` and `textLayout` from `flux3.js` and keeps its own submit a
   search before it renders; off keeps the prompt from going to search; and *Selection as box* (`selection_box`, a
   BOOLEAN row off by default, on the edit shape only: Generate new has no selection). `selection_box` is not an API
   field: `body()` copies only the keys `accepts` names, so the row never reaches the request.
-- **Boxes in the prompt** (item 28 S1, `docs/PLAN_BOXES.md`; the docs' bounding-box rows). With *Selection as box*
+- **Boxes in the prompt** (item 28 S1-S3a, `docs/PLAN_BOXES.md`; the docs' bounding-box rows; the built-in Boxes plugin
+  of S3a, `plugins/boxes`, keeps a document's boxes and sends them through the plugin hook, `docs/PLUGINS.md`
+  "Generate" and "Built-in plugins"). With *Selection as box*
   on, an edit sends the selection as one box: `host.runProvider` measures the selection's bounds in the crop
   (`renderer/editor/boxes.js`: fractions of the frame, clamped to it; nothing when it lies outside) and puts
   `request.boxes: [{ id: "edit_1", kind: "new", rect, src: null, ref: null, desc: <the prompt> }]` into the request;

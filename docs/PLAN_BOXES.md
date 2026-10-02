@@ -28,6 +28,23 @@ the dialog asks for another size (stretched when the aspect differs); a box whos
 dropped with its own note. Not done: nothing in the UI shows a plugin's boxes before the run (S3's panel does).
 Next: §6.1-6.3 live with the user's key, then S3a.
 
+**S3a built 2026-10-02** (the user: "baue weiter"; the live checks of §6 are still open, the user was not present):
+`plugins/boxes/` (`plugin.json`, `main.js`, `format.js`), the data `{ version: 1, boxes: [{ id, kind, rect, src, layer,
+desc, text }] }` in `documents.data`, the panel in the Generate pane (a row per box: id field, kind select with Text as a
+sixth entry that is a New box with `text`, the description, the geometry fields To / From / At / Was, for a From box the
+reference select and a Part field; Selection → box, Clear, Copy rows; a recipe note that says whether the selected
+recipe sends boxes), the action, the six commands as `boxes.<name>`, the `generate` source `boxes.document`, the
+`geometry` handler mapping `rect` and `src` by `m`. Three core additions: a snapshot kind `data` in `inpaint_canvas.js`
+(the plugins' per-document data alone) behind `documents.data(doc).set(patch, { undo: label })`, a `recipe` host event
+emitted by `host.setRecipe` (the panel's note), and `{@layer:<id>}` markers in a plugin desc that `pluginBoxes` turns
+into `{@ref:i}` (the plugin writes an `@img1` token of a description that way; refuses like a from box when the layer
+is not sent). Departures from §10: no `colour` field yet (S3b's overlay), `pasteWarned` not yet (S3c); the ids default
+to `box_n` / `keep_n` / `move_n` / `remove_n` / `ref_n` by kind and `edit_n` for Selection → box; the clipboard's
+reference names are `ref_image_k` by the shown references' order (a run numbers them itself). Tests: `tools/boxes_test.js`
+91 checks (the `{@layer:}` marker, `format.js` against main's rows), `tools/boxes_test.py` (gate `boxes`, eight steps)
+and the `commands` gate green offline; lint and types clean; one look at the panel over CDP under the FLUX 3 recipe.
+Next: S3b (the tool and the overlay, §10), the live checks §6 whenever the user has time.
+
 ## 1. Sources
 
 - BFL docs, fetched 2026-10-01 as markdown (`https://docs.bfl.ml/<page>.md`, index `https://docs.bfl.ml/llms.txt`):

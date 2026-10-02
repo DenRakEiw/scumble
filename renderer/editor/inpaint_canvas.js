@@ -71,7 +71,7 @@ const MAX_SNAPSHOTS = 8;                    // named snapshots of the whole docu
 const UNDO_LABELS = {
     layerrect: "Layer pixels", layer: "Layer pixels", layerfull: "Layer", selection: "Selection", transform: "Transform", transforms: "Transform layers",
     mask: "Layer mask", match: "Colour match", filter: "Filter", text: "Text", layers: "Layers", canvas: "Canvas",
-    turn: "Assistant turn taken back",
+    turn: "Assistant turn taken back", data: "Plugin data",
 };
 /**
  * An orientation `{ turn, flip }` (quarter turns clockwise after an optional horizontal mirror) with one more flip or turn
@@ -11422,6 +11422,9 @@ class InpaintEditor {
         }
         if (step.kind === "selection") return this.snapshotSelection();
         if (step.kind === "turn") return this.turnSnapshot();
+        // the plugins' per-document data alone (scumble.documents.data(doc).set(patch, { undo })): a plugin's own change
+        // of what it keeps with the document, no pixels; a canvas or turn step carries the same copy beside its pixels
+        if (step.kind === "data") return { kind: "data", pluginData: this.pluginDataCopy() };
         if (step.kind === "layers") return { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), groups: this.groupsCopy(), activeLayerId: this.activeLayerId };
         if (step.kind === "transforms") {
             // the places of several layers moved or scaled together (a multi-selection): one step, no pixels
@@ -11639,6 +11642,11 @@ class InpaintEditor {
             this.uploaded.baseHash = null;
             this.uploaded.controlHash = null;
             this.renderLayers(); this.renderHistory(); this.draw(); this.drawThumb(); this.notifyChanged();
+            return;
+        }
+        if (snap.kind === "data") {
+            this.pluginData = snap.pluginData ? JSON.parse(JSON.stringify(snap.pluginData)) : {};
+            this.renderHistory(); this.draw(); this.notifyChanged();   // the plugins hear "changed" and redraw their overlays
             return;
         }
         if (snap.kind === "turn") {

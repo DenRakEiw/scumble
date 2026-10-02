@@ -76,28 +76,27 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02: item 28 S1 and S2 built, the selection as a FLUX 3 box and the plugin hook; 0.1.36 is Latest)
+## Where things stand (2026-10-02: item 28 S1-S3a built, the selection as a FLUX 3 box, the plugin hook and the Boxes plugin's panel and commands; 0.1.36 is Latest)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02, "baue weiter"):** item 28 S2 as `docs/PLAN_BOXES.md` §9 plans it, one commit, not released
-(CHANGELOG Unreleased, under the S1 entry). The S1 paragraph is in `docs/HISTORY.md`. Plugin API 3:
-`scumble.generate.register({ id, boxes(doc, ctx) })` answers boxes in image pixels (`layer` instead of `ref` on a
-from box); `renderer/editor/boxes.js` `pluginBoxes` maps them (fractions of the frame, a from box's `src` in the
-layer's frame, duplicate ids numbered on, a box outside the frame dropped with a note; `err.code` "shape" for a
-plugin's bug, "layer" for an unsent reference layer), `renderer/plugins.js` `collectBoxes` runs the sources in plugin
-order (a throwing or malformed source reported and skipped, "layer" thrown on so the run refuses), reached from
-`host.js` as `this.plugins.boxes` (`pluginHost`, no import cycle); `host.boxContext` builds `ctx` (`frame`, `selection`,
-`references` with `index`, `layerId`, `name`, `frame`); `runProvider` collects after the S1 box, `runGenerate` when the
-text variant declares `options.boxes` (the frame is the document, not the requested size); `generate` and
-`generate_new` answer `boxes: n` (`editor.lastSentBoxes`); the sample plugin registers a source behind the new
-`sample.box` command (off by default); Settings › Plugins lists "n box source(s)". `tools/boxes_test.js` 76 checks,
-`commands_test.py` step `generate_boxes` (gate `commands` offline green), lint and types clean; looked at once over
-CDP with a loopback variant declaring `options.boxes`: the source off (0 boxes), on (`sample_1` row, "Sent with 1
-box."), with the S1 row too (`edit_1` and `sample_1`, `boxes: 2`). Departures from §9 in the plan's status paragraph.
-**Not done:** the live FLUX 3 checks §6.1-6.3 (the user's key and credits); nothing in the UI shows a plugin's boxes
-before a run (S3's panel). Next session: the live checks with the user, then S3a (`docs/PLAN_BOXES.md` §10).
+**This session (2026-10-02, "baue weiter", the third of the day):** item 28 S3a as `docs/PLAN_BOXES.md` §10 plans it, one
+commit, not released (CHANGELOG Unreleased, under the S2 entry). The S2 paragraph is in `docs/HISTORY.md`. The built-in
+plugin `plugins/boxes/` keeps a document's boxes in `documents.data` (image pixels), shows them as a "Boxes" section in
+the Generate pane (a row per box: id, kind incl. Text, description, geometry fields, the reference select of a From box;
+Selection → box, Clear, Copy rows; a note whether the selected recipe sends boxes), registers the action, the commands
+`boxes.list / add / set / remove / from_selection / clear` and the `generate` source `boxes.document`, and moves the
+boxes with the picture on the `geometry` event. Core: a snapshot kind `data` behind `documents.data(doc).set(patch, {
+undo: label })` (one undo step per change), a `recipe` host event from `host.setRecipe`, and `{@layer:<id>}` markers in
+a plugin desc (`pluginBoxes` makes them `{@ref:i}`; the plugin writes `@img1` that way). `format.js` is a copy of
+main's row formatter for the clipboard text, tested against the same vectors. `tools/boxes_test.js` 91 checks,
+`tools/boxes_test.py` new (gate `boxes`, eight steps), gates `commands` and `boxes` green `--offline` (label `s3a`),
+lint and types clean, `docs/COMMANDS.md` regenerated, manual section "Boxes in the prompt". Departures from §10 in the
+plan's status paragraph. **Not done:** the live FLUX 3 checks §6.1-6.3 (the user's key and credits; by the plan's own
+rule they come before S3 is worth three days, but the user said build on); S3b (the tool and the overlay) and S3c (the
+crop frame, the paste warning). Next session: S3b, or the live checks with the user.
+
 
 **Released:** 0.1.36 is Latest (published 2026-10-01 22:38:25 CEST, tag on 5bc5831 "0.1.36 prepared"; the tag build
 green) on the user's "baue fertig und release dann das update mit flux3". 0.1.36 = **FLUX 3 Image** (ea71629) + item 25
@@ -194,15 +193,20 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `providers/boxes.js` writes the rows after `resolveNames`, plugins supply boxes through
   `scumble.generate.register`; S1 the selection as a box behind a FLUX 3 row, S2 the hook, S3a-c the built-in
   "Boxes" plugin, S4 Keep rows from the SAM2 objects; §8-§12 the implementation plan per session, §6 the live
-  checks after S1, §7 the open questions). **S1 built 2026-10-02** (the "Selection as box" row, off by default) and
-  **S2 the same day** (plugin API 3, `scumble.generate.register`, the sample's source behind `sample.box`); neither
-  released, both under Unreleased. Next: the live checks §6.1-6.3 with the user's key, then S3a.
+  checks after S1, §7 the open questions). **S1 built 2026-10-02** (the "Selection as box" row, off by default), **S2 the same day**
+  (plugin API 3, `scumble.generate.register`, the sample's source behind `sample.box`) and **S3a the same night**
+  (`plugins/boxes`: the data, the panel in the Generate pane, the six commands, the generate source); none released,
+  all under Unreleased. Next: S3b (the tool and the overlay), the live checks §6.1-6.3 with the user's key.
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended
   as one, so overlapping layers inside do not show through each other; a nested composite in every path and the
   blend-atop ops in the kernel, 7 - 9 days; `docs/PLAN_0_1_31.md` §6 step 5). Parked, someday maybe (the user,
   2026-09-30: "nicht so wichtig"; merging the layers and setting that layer's opacity does it today).
+- 29: FLUX 3 Image on the other providers (the user, 2026-10-02): fal (blackforestlabs/flux-3/edit-image and its text
+  sibling), WaveSpeed (the user's link was image-to-video; whether it has FLUX 3 Image is part of the research),
+  OpenRouter (black-forest-labs/flux-3-image) and Oxen.ai (flux-3-image), as variants of `recipes/flux3.json` on the
+  existing adapters. Researched, nothing built: `docs/PLAN_FLUX3.md` "FLUX 3 Image on other providers".
 
 ## Gate runner and flakes
 

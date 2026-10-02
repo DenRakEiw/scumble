@@ -12,6 +12,8 @@ The block of 2026-09-27 (evening, after the 0.1.31 release) was moved here the s
 
 The block of 2026-09-28 (early morning, package 4 complete) was moved here at noon, when package 5 steps 1 and 2 were built.
 
+The block of 2026-10-02 (item 28 S2) was moved here the same night, when S3a was built.
+
 The block of 2026-09-28 (afternoon, package 5 step 3) was moved here in the evening, when step 4 was built.
 
 The block of 2026-09-27 (night), the open threads and the full list were moved here the same night, when CLAUDE.md was
@@ -33,6 +35,26 @@ night, when 0.1.36 was released with FLUX 3 Image.
 
 The paragraph of 2026-10-02 ("s1 ausplan", item 28 S1 built) was moved here the same day, when S2 was built (CLAUDE.md
 keeps the 0.1.36 block and the S2 paragraph).
+
+## 2026-10-02 (item 28 S2, moved here the same night)
+
+**This session (2026-10-02, "baue weiter"):** item 28 S2 as `docs/PLAN_BOXES.md` §9 plans it, one commit, not released
+(CHANGELOG Unreleased, under the S1 entry). The S1 paragraph is in `docs/HISTORY.md`. Plugin API 3:
+`scumble.generate.register({ id, boxes(doc, ctx) })` answers boxes in image pixels (`layer` instead of `ref` on a
+from box); `renderer/editor/boxes.js` `pluginBoxes` maps them (fractions of the frame, a from box's `src` in the
+layer's frame, duplicate ids numbered on, a box outside the frame dropped with a note; `err.code` "shape" for a
+plugin's bug, "layer" for an unsent reference layer), `renderer/plugins.js` `collectBoxes` runs the sources in plugin
+order (a throwing or malformed source reported and skipped, "layer" thrown on so the run refuses), reached from
+`host.js` as `this.plugins.boxes` (`pluginHost`, no import cycle); `host.boxContext` builds `ctx` (`frame`, `selection`,
+`references` with `index`, `layerId`, `name`, `frame`); `runProvider` collects after the S1 box, `runGenerate` when the
+text variant declares `options.boxes` (the frame is the document, not the requested size); `generate` and
+`generate_new` answer `boxes: n` (`editor.lastSentBoxes`); the sample plugin registers a source behind the new
+`sample.box` command (off by default); Settings › Plugins lists "n box source(s)". `tools/boxes_test.js` 76 checks,
+`commands_test.py` step `generate_boxes` (gate `commands` offline green), lint and types clean; looked at once over
+CDP with a loopback variant declaring `options.boxes`: the source off (0 boxes), on (`sample_1` row, "Sent with 1
+box."), with the S1 row too (`edit_1` and `sample_1`, `boxes: 2`). Departures from §9 in the plan's status paragraph.
+**Not done:** the live FLUX 3 checks §6.1-6.3 (the user's key and credits); nothing in the UI shows a plugin's boxes
+before a run (S3's panel). Next session: the live checks with the user, then S3a (`docs/PLAN_BOXES.md` §10).
 
 ## This session (2026-10-02, "s1 ausplan": item 28 S1 built, the selection as a FLUX 3 box)
 

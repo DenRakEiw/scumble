@@ -59,7 +59,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 
 | member | what |
 |---|---|
-| `version` | API version, `3` (2 added `documents.data`, 3 `generate.register`; a plugin that needs one checks `scumble.version >= 3`) |
+| `version` | API version, `3` (2 added `documents.data`, 3 `generate.register`, `documents.data().set(patch, { undo })` and the `recipe` event; a plugin that needs one checks `scumble.version >= 3`) |
 | `id`, `name`, `manifest` | from `plugin.json` |
 | `url(rel)` | URL of a file in the plugin folder |
 | `log(...)`, `warn(...)` | console with the plugin id |
@@ -77,9 +77,9 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `actions.register(def)` / `unregister(id)` / `run(id)` | Plugins menu entries |
 | `tools.register(def)` / `unregister(id)` | tools in the tool column |
 | `generate.register(def)` / `unregister(id)` | (API 3) a box source for the prompt: `{ id, boxes(doc, ctx) }` answers boxes in image pixels for a run of a recipe that takes them (FLUX 3 Image); see "Generate" |
-| `events.on(type, fn)` | `built`, `activate`, `changed`, `tool`, `removed`, `theme` (a skin was switched: `fn({ doc: null, skin })`, `skin` the id or `""`; read the tokens with `getComputedStyle(document.documentElement)`, docs/SKINS.md), `geometry` (the whole picture changed its geometry, before its `changed`: `fn({ doc, kind, m, op, from, to })`; `kind` `"turn"` (a quarter or half turn or a mirror), `"crop"`, `"extend"`, `"resize"` (also an upscale) or `"straighten"` (a turn by any angle about the old picture's centre, then a crop); `m` always: `[a, b, c, d, e, f]`, the canvas matrix from old to new image coordinates (x' = a x + c y + e, y' = b x + d y + f; continuous, pixel (x, y) covers x..x+1), e.g. a crop of `left` / `top` px `[1, 0, 0, 1, -left, -top]`, an extend `[1, 0, 0, 1, left, top]`, a resize of W x H to w x h `[w / W, 0, 0, h / H, 0, 0]`, a clockwise quarter turn `[0, 1, -1, 0, H, 0]`, `"h"` `[-1, 0, 0, 1, W, 0]`, `"v"` `[1, 0, 0, -1, 0, H]`, a straighten by t degrees translate(-x, -y) after the rotation by t about (W / 2, H / 2); a length scales by sqrt(\|a d - b c\|); `op` only for a turn: `1` clockwise, `-1`, `2` a half turn, `"h"`, `"v"`; `from` / `to` `{ width, height }`; map your own image coordinates in `documents.data(doc)` and in your filter layers' params by `m` with new objects, never by changing the old ones: undo and redo send no event, the step puts both back by itself); `fn({ doc, ... })`; returns `off()` |
+| `events.on(type, fn)` | `built`, `activate`, `changed`, `tool`, `removed`, `theme` (a skin was switched: `fn({ doc: null, skin })`, `skin` the id or `""`; read the tokens with `getComputedStyle(document.documentElement)`, docs/SKINS.md), `geometry` (the whole picture changed its geometry, before its `changed`: `fn({ doc, kind, m, op, from, to })`; `kind` `"turn"` (a quarter or half turn or a mirror), `"crop"`, `"extend"`, `"resize"` (also an upscale) or `"straighten"` (a turn by any angle about the old picture's centre, then a crop); `m` always: `[a, b, c, d, e, f]`, the canvas matrix from old to new image coordinates (x' = a x + c y + e, y' = b x + d y + f; continuous, pixel (x, y) covers x..x+1), e.g. a crop of `left` / `top` px `[1, 0, 0, 1, -left, -top]`, an extend `[1, 0, 0, 1, left, top]`, a resize of W x H to w x h `[w / W, 0, 0, h / H, 0, 0]`, a clockwise quarter turn `[0, 1, -1, 0, H, 0]`, `"h"` `[-1, 0, 0, 1, W, 0]`, `"v"` `[1, 0, 0, -1, 0, H]`, a straighten by t degrees translate(-x, -y) after the rotation by t about (W / 2, H / 2); a length scales by sqrt(\|a d - b c\|); `op` only for a turn: `1` clockwise, `-1`, `2` a half turn, `"h"`, `"v"`; `from` / `to` `{ width, height }`; map your own image coordinates in `documents.data(doc)` and in your filter layers' params by `m` with new objects, never by changing the old ones: undo and redo send no event, the step puts both back by itself), `recipe` (API 3: another recipe was selected, `fn({ doc, recipe })`, `recipe` its id, `doc` the active tab; read it through `scumble.host.recipe`); `fn({ doc, ... })`; returns `off()` |
 | `storage.get()` / `storage.set(patch)` | a small persistent object per plugin (`settings.json`): `get()` returns a copy synchronously (loaded before `activate`), `set(patch)` merges at once and writes through in the background |
-| `documents.data(doc).get()` / `.set(patch)` | (API 2) a JSON object per plugin **and per document**: saved with the document in the session and in its `.scumble` file, where every file ref inside it (`{ filename, subfolder, type }`) is packed and comes back renamed if it had to be; `get()` returns a copy, `set(patch)` merges and marks the document changed. Data of a plugin that is off or missing rides along unchanged |
+| `documents.data(doc).get()` / `.set(patch)` | (API 2) a JSON object per plugin **and per document**: saved with the document in the session and in its `.scumble` file, where every file ref inside it (`{ filename, subfolder, type }`) is packed and comes back renamed if it had to be; `get()` returns a copy, `set(patch)` merges and marks the document changed; `set(patch, { undo: "Add box" })` (API 3) first pushes one undo step that holds the plugins' data as it was, named as given, so the change is taken back with Ctrl+Z like an edit (a turn, crop or resize step keeps the data beside its pixels on its own, so the `geometry` handler sets without `undo`). Data of a plugin that is off or missing rides along unchanged |
 | `ui.status(text)` | the status bar of the active tab |
 | `ui.el(tag, cls, text)`, `ui.icon(name)`, `ui.button(label, title, onClick)`, `ui.slider(label, {min, max, step, value, unit}, onChange)` | DOM helpers in the editor's style |
 | `ui.confirm(text)` | a yes / no question in the browser's own box (synchronous: true / false) |
@@ -412,6 +412,8 @@ A box is in **image pixels** (the document's coordinates, `[l, t, r, b]`, right 
   desc: "..." }                      // what it is, at most 400 characters
 ```
 
+A desc may name a reference layer as `{@layer:<id>}` (the layer's id): the core turns it into the marker main resolves to the model's own name for that picture ("image 2"), or refuses the run when that layer is not sent; the Boxes plugin writes an `@img1` token of a description that way.
+
 `ctx` says what the run is: `mode` `"edit"` or `"new"`, `recipe`, `provider`, `model`, `schema` (the rows' format,
 `"flux3"`), `frame` `{ x, y, w, h }` in image pixels (the crop an edit sends, the whole document for a new image: the
 new image is made at the requested size, so the fractions carry over), `selection` `{ x, y, w, h }` or null, and
@@ -444,7 +446,9 @@ field, `"plugin"` or `"skin"`; a skin is always `enabled: false` and never `load
 command core and the sample plugin: filter on the GPU and CPU path, panel, actions with undo,
 the tool through the pointer hooks, the command, reload and disable / enable, the box source
 through the core's `collectBoxes` (mapped into a stated frame, a duplicate id suffixed).
-`node tools/boxes_test.js` tests the mapping of plugin boxes itself in plain Node.
+`node tools/boxes_test.js` tests the mapping of plugin boxes itself in plain Node, and the Boxes plugin's clipboard
+formatter against main's rows. `python tools/boxes_test.py` (the gate `boxes`) drives the Boxes plugin: its commands,
+the undo steps, the panel, the boxes through `collectBoxes`, a crop, a `.scumble` round trip.
 `python tools/film_test.py` does the same for the film pack (`docs/FILM.md`): every filter on
 both paths, the commands, the control point tool with undo, the overlay, the panel.
 
@@ -464,6 +468,14 @@ both paths, the commands, the control point tool with undo, the overlay, the pan
   200 lines on the plain API, no editor patch; `tools/ailabel_test.py` is its gate.
 - `plugins/skin_90s` and `plugins/skin_duck`: the two built-in skins, **90s** and **Duck**
   (docs/SKINS.md): a `plugin.json` and a `skin.css` each, no code.
+- `plugins/boxes`: boxes in the prompt for a model that takes them (FLUX 3 Image; item 28, `docs/PLAN_BOXES.md`
+  §10): the boxes of a document in `documents.data` (image pixels, saved with the document, moved by the `geometry`
+  event), a panel "Boxes" in the Generate pane (one row per box: id, kind, description, the geometry; Selection → box,
+  Clear, Copy rows), the action Selection → box, the commands `boxes.list` / `add` / `set` / `remove` /
+  `from_selection` / `clear` (one undo step each through `set(patch, { undo })`), and a `generate` source that answers
+  the document's boxes. `format.js` is a copy of main's row formatter for the clipboard text alone, tested against
+  the same vectors. The canvas tool and the overlay (S3b) and the crop frame (S3c) are not built yet.
+  `tools/boxes_test.py` is its gate.
 - `plugins/glb`: a 3D object (.glb / .gltf) placed in the picture through a dialog and
   rendered into a layer, with an optional depth layer for a ControlNet, re-editable
   (`docs/GLB.md`). three.js vendored under `vendor/` by `tools/vendor_three.py`; a panel, two
