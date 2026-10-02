@@ -5,15 +5,17 @@
 // pixels, follow the picture through a crop, a turn or a resize (the "geometry" event), and go out with every run of a
 // recipe that takes boxes through the generate hook (plugin API 3): the app measures them in the crop it sends and
 // writes the model's rows. S3a: the data, the panel in the Generate pane, the commands. S3b: the canvas tool and the
-// overlay (tool.js). S3c adds the crop frame and the paste warning.
+// overlay (tool.js). S3c: the crop Generate sends, as a frame while the tool is active and as warnings in the panel
+// (a box the crop leaves out or cuts; a box outside the selection while Paste keeps the selection only).
 //
-//   tool     Boxes (X): draw, select, move, resize, delete, duplicate, nudge; the overlay while the tool or the panel shows
-//   panel    "Boxes" in the Generate pane: one row per box, Selection → box, Clear, Copy rows
+//   tool     Boxes (X): draw, select, move, resize, delete, duplicate, nudge; the overlay while the tool or the panel
+//            shows, the crop's frame while the tool is active
+//   panel    "Boxes" in the Generate pane: one row per box, Selection → box, Clear, Copy rows; the crop warnings
 //   action   Selection → box (Plugins menu)
 //   commands boxes.list, boxes.add, boxes.set, boxes.remove, boxes.from_selection, boxes.clear
 //   generate the document's boxes for a run that takes them
 
-import { BOX_ID, KINDS, DESC_MAX } from "/editor/boxes.js";
+import { BOX_ID, KINDS, DESC_MAX, toFrame } from "/editor/boxes.js";
 import { clipboardText, fold } from "./format.js";
 import { makeTool, colourOf } from "./tool.js";
 
@@ -104,6 +106,43 @@ export function activate(scumble) {
         return { takes: !!(r && r.options && typeof r.options.boxes === "string"), name: r ? r.name || r.id : null };
     }
 
+    // ---- the crop Generate sends (S3c) ---------------------------------------------------------------------------------
+    /** The crop Generate would send now ({ x, y, w, h, emitted, paste } in image pixels), or null without a selection. */
+    function cropOf(doc) {
+        try { return typeof scumble.host.cropFrame === "function" ? scumble.host.cropFrame(doc.editor) : null; }
+        catch (_) { return null; }
+    }
+    /** The rectangles a run measures in the crop: the target, and the source of a Keep, Move or Remove box (a From box's part lies in its layer). */
+    const placed = (b) => (b.kind === "new" || b.kind === "from" ? [b.rect] : [b.rect, b.src]).filter(Array.isArray);
+    /** Where a box changes pixels: the target of a New, Text, From or Move box, Move's source, Remove's place; a Keep box nowhere. */
+    const changes = (b) => (b.kind === "keep" ? [] : b.kind === "remove" ? [b.src || b.rect] : b.kind === "move" ? [b.rect, b.src] : [b.rect]).filter(Array.isArray);
+    const within = (r, f, tol = 0) => r[0] >= f[0] - tol && r[1] >= f[1] - tol && r[2] <= f[2] + tol && r[3] <= f[3] + tol;
+    /**
+     * What Generate would do with the boxes now: `out` the ones it leaves out (outside its crop, or a sliver of it, by
+     * the run's own toFrame), `cut` the ones its edge cuts, `spill` (with Paste on "selection") the ones that change
+     * pixels outside the selection, where the paste cuts the result away. Null without a selection or boxes. The
+     * selection is its bounding box, 2 px of slack for the soft edge.
+     */
+    function cropCheck(doc, boxes = boxesOf(doc)) {
+        const crop = cropOf(doc);
+        const sel = typeof doc.editor.getBounds === "function" ? doc.editor.getBounds() : null;
+        if (!crop || !sel || !boxes.length) return null;
+        const f = [crop.x, crop.y, crop.x + crop.w, crop.y + crop.h];
+        const out = [], cut = [], spill = [];
+        for (const b of boxes) {
+            const rs = placed(b);
+            if (rs.some((r) => !toFrame(r, crop))) { out.push(b.id); continue; }
+            if (rs.some((r) => !within(r, f))) cut.push(b.id);
+            if (crop.paste !== "crop" && changes(b).some((r) => !within(r, sel, 2))) spill.push(b.id);
+        }
+        return { crop, out, cut, spill };
+    }
+    /** Crop > Paste on "whole crop" for this document (the set_crop command: the Crop section follows). */
+    async function pasteWholeCrop(doc) {
+        await scumble.commands.run("set_crop", { doc: doc.id, paste: "crop" });
+        doc.status("Paste is now the whole crop for this document (Generate pane, Crop > Paste): the boxes outside the selection keep their result.");
+    }
+
     // ---- changes (one undo step each) ----------------------------------------------------------------------------------
     function add(doc, input) {
         const boxes = boxesOf(doc);
@@ -159,6 +198,7 @@ export function activate(scumble) {
     const panels = new Map();   // doc id -> { box, highlight() } of the open panel
     const boxTool = makeTool(scumble, {
         boxesOf, add, set, remove, nextId,
+        frame: cropOf,
         panelShown(doc) {
             const p = panels.get(doc.id);
             if (!p || !p.box.isConnected) return false;
@@ -211,6 +251,8 @@ export function activate(scumble) {
             box.appendChild(ui.el("div", "shell-help", HELP));
             const note = ui.el("div", "shell-help boxes-note", "");
             box.appendChild(note);
+            const warn = ui.el("div", "boxes-warn");
+            box.appendChild(warn);
             const list = ui.el("div", "boxes-list");
             box.appendChild(list);
             const run = (fn) => { try { fn(); } catch (err) { doc.status(String((err && err.message) || err)); render(true); } };
@@ -238,12 +280,34 @@ export function activate(scumble) {
             const change = (id, patch) => run(() => set(doc, id, patch));
             const rectText = (r) => (Array.isArray(r) ? r.join(", ") : "");
             const parseRect = (s) => s.split(/[\s,;]+/).filter(Boolean).map(Number);
+            // what Generate would do with the boxes now (S3c): rebuilt only when it says something else, so the button
+            // under the pointer is not replaced by a change elsewhere
+            let warnKey = null;
+            const names = (ids) => `${ids.length === 1 ? "Box" : "Boxes"} ${ids.join(", ")}`;
+            const renderWarnings = (chk) => {
+                const lines = [];
+                if (chk && chk.out.length) lines.push([`${names(chk.out)} ${chk.out.length === 1 ? "lies" : "lie"} outside the crop Generate sends and ${chk.out.length === 1 ? "is" : "are"} left out.`, false]);
+                if (chk && chk.cut.length) lines.push([`${names(chk.cut)} ${chk.cut.length === 1 ? "reaches" : "reach"} past the crop's edge: Generate sends the part inside it.`, false]);
+                if (chk && chk.spill.length) lines.push([`${names(chk.spill)} ${chk.spill.length === 1 ? "reaches" : "reach"} outside the selection: Generate pastes the result inside the selection only and would cut ${chk.spill.length === 1 ? "it" : "them"} there.`, true]);
+                const k = JSON.stringify(lines);
+                if (k === warnKey) return;
+                warnKey = k;
+                warn.innerHTML = "";
+                for (const [text, paste] of lines) {
+                    const row = ui.el("div", "boxes-warn-row", text);
+                    if (paste) row.appendChild(ui.button("Paste the whole crop", "Crop > Paste on whole crop for this document: the result of the whole crop is pasted back, so a box outside the selection keeps its change", () => pasteWholeCrop(doc).catch((err) => doc.status(String((err && err.message) || err)))));
+                    warn.appendChild(row);
+                }
+            };
             let key = null, pending = false;
             const render = (force = false) => {
                 const boxes = boxesOf(doc);
                 const refs = shownReferences(doc);
                 const rs = recipeState();
-                note.textContent = !rs.name ? "" : rs.takes ? `${rs.name} sends these boxes with every Generate and Generate new run.` : `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image) is selected.`;
+                const chk = rs.takes && doc.loaded ? cropCheck(doc, boxes) : null;
+                const at = chk ? ` Generate measures them in the crop it sends, ${chk.crop.w} × ${chk.crop.h} px at ${chk.crop.x}, ${chk.crop.y} (the frame the Boxes tool shows).` : "";
+                note.textContent = !rs.name ? "" : rs.takes ? `${rs.name} sends these boxes with every Generate and Generate new run.${at}` : `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image) is selected.`;
+                renderWarnings(chk);
                 const k = JSON.stringify([boxes, refs.map((l) => [l.id, l.name])]);
                 if (!force && k === key) return;
                 // a field being edited is not rebuilt under the user's cursor: the next change after it blurs does it
@@ -308,6 +372,8 @@ export function activate(scumble) {
             doc.draw();
             scumble.events.on("changed", (ev) => { if (ev.doc && ev.doc.id === doc.id) render(); });
             scumble.events.on("recipe", () => render());
+            // a node parameter or the API size changed the crop Generate sends
+            scumble.events.on("crop", (ev) => { if (ev.doc && ev.doc.id === doc.id) render(); });
         },
         destroy(box, doc) { panels.delete(doc.id); },
     });

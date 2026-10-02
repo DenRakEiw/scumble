@@ -35,6 +35,14 @@ the section for its version; `docs/` and the commit history hold the technical d
   show on the picture in their kind's colour (New green, Keep grey, Move blue with an arrow from its source, Remove
   red and hatched, From reference violet with the reference's name) with their name and the first words of their
   description, while the tool is active or the Boxes section is open.
+- **Boxes: the crop on the canvas, and what it does to them.** While the Boxes tool is active and something is
+  selected, the picture outside the crop Generate would send is dimmed, its size under the crop's edge (the crop as
+  the run plans it, the model's shapes and sizes included). The Boxes section warns of a box the crop leaves out, one
+  whose edge it cuts, and one that changes the picture outside the selection while *Paste* keeps the selection only,
+  which would cut the result there; *Paste the whole crop* in that warning switches Paste for the document.
+- The selection as a box (and a plugin's view of the selection) was one pixel too wide and too tall.
+- Plugins get a `crop` event when an app setting the crop of a run depends on changes (a node parameter, the API
+  size), and `scumble.host.cropFrame(editor)` says what that crop is.
 
 ## 0.1.36 — 2026-10-01
 

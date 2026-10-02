@@ -222,6 +222,12 @@ function maskToCanvas(m, { luminance = false } = {}) {
 }
 
 function selectionBbox(m, padding) {
+    if (m.bounds) {
+        // a stand-in that carries the selection's bounds ([x0, y0, x1, y1], x1 and y1 exclusive) instead of its mask
+        // (planFrame): the same box, read from the editor's cached bounds
+        const [bx0, by0, bx1, by1] = m.bounds;
+        return { has: true, x0: Math.max(0, bx0 - padding), y0: Math.max(0, by0 - padding), x1: Math.min(m.fullW, bx1 + padding), y1: Math.min(m.fullH, by1 + padding) };
+    }
     const { w, h } = m;
     const ox = m.ox | 0, oy = m.oy | 0, W = m.fullW || w, H = m.fullH || h;
     let x0 = w, y0 = h, x1 = -1, y1 = -1;
@@ -442,6 +448,32 @@ export function planCrop(s, sel) {
         original: hasSelection && fillMode !== "none" && withOriginal ? 1 : 0,
     };
     return { x0, y0, cw, ch, ew, eh, resize: targetSize > 0, growUsed, featherUsed, fillMode, withOriginal, autoFeather, hasSelection, info };
+}
+
+/** planFrame's exact selection box per editor: { loose (the getBounds box it was scanned in), seq, b }. */
+const exactBounds = new WeakMap();
+
+/**
+ * The crop a run would send now, planned from the selection's bounds instead of its mask (a strip scan once per
+ * selection change, so an overlay can ask on every draw): `{ x, y, w, h, emitted, paste, aspect }` in image pixels, or
+ * null without a selection. The same geometry as the run's `planCrop` (the Boxes tool's frame, docs/PLAN_BOXES.md §10
+ * S3c).
+ */
+export function planFrame(editor, params, limits) {
+    const loose = editor && typeof editor.getBounds === "function" ? editor.getBounds() : null;
+    if (!loose) return null;
+    // after a marquee, ellipse or lasso at fractional coordinates getBounds() is the shape's box floored and ceiled
+    // (boundsAfter), up to a pixel wider than the alpha >= 128 box planCrop reads from the mask, which can tip the crop
+    // to another aspect preset: the box is made exact by the editor's strip scan, once per selection change
+    let b = loose;
+    if (typeof editor.scanBoundsIn === "function") {
+        const m = exactBounds.get(editor);
+        if (m && m.loose === loose && m.seq === editor.selectionSeq) b = m.b;
+        else { b = editor.scanBoundsIn(loose); exactBounds.set(editor, { loose, seq: editor.selectionSeq, b }); }
+        if (!b) return null;
+    }
+    const p = planCrop(cropSettingsOf(editor, params || {}, limits), { bounds: b, fullW: editor.width, fullH: editor.height });
+    return { x: p.x0, y: p.y0, w: p.cw, h: p.ch, emitted: [p.ew, p.eh], paste: p.info.paste, aspect: p.info.aspect };
 }
 
 /**

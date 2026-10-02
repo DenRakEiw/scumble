@@ -152,6 +152,9 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 .boxes-geo { display: grid; grid-template-columns: 34px 1fr; gap: 4px; align-items: center; font-size: 11px; }
 .boxes-geo-label { color: var(--sc-muted, #888); }
 .boxes-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+.boxes-warn { display: flex; flex-direction: column; gap: 4px; }
+.boxes-warn:empty { display: none; }
+.boxes-warn-row { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 11px; color: var(--sc-warn, #f0c674); }
 #shell-update { background: var(--sc-active-bg, #2f5d9a) !important; border-color: var(--sc-active, #3f74bb) !important; }
 #shell-update:hover { background: var(--sc-active-bg, #3a6fb5) !important; }
 .shell-check { display: inline-flex; align-items: center; gap: 6px; }

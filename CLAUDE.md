@@ -76,25 +76,38 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02: item 28 S1-S3b built, the selection as a FLUX 3 box, the plugin hook and the Boxes plugin's panel and commands; 0.1.36 is Latest)
+## Where things stand (2026-10-02: item 28 S1-S3c built, the selection as a FLUX 3 box, the plugin hook and the Boxes plugin with its tool and crop frame; 0.1.36 is Latest)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02, "baue weiter", the fourth of the day):** item 28 S3b as `docs/PLAN_BOXES.md` §10 plans it,
-one commit, not released (CHANGELOG Unreleased, under the S3a entry). The S3a paragraph is in `docs/HISTORY.md`.
-`plugins/boxes/tool.js` (`makeTool(scumble, api)`): the tool `boxes.box` (X) draws a New box with a drag on empty
-canvas, selects with a click (the panel row lit, a row click selects its box), moves with a drag, resizes with the
-eight handles; Delete, Escape, arrows (Shift 10), D duplicates, Alt+click cycles stacked boxes; one undo step per
-gesture (nothing written until pointer up). The overlay draws every box in its kind's colour with its id tag and
-the desc's first words, Move's source dashed with an arrow, while the tool is active or the panel is open and on
-screen. Departures in the plan's S3b paragraph (D instead of Ctrl+D, which the editor takes for Deselect; the
-source's own handles instead of a "Set source" mode). Core: the Canvas tool's X now runs before the plugins' keys
-in `inpaint_canvas.js` `onKey`. `tools/boxes_test.py` step `the_tool_draws_moves_resizes_and_keys`, gates `boxes`
-and `commands` green `--offline` (label `s3b2`), lint and types clean, one look over CDP with all six kinds, manual
-and PLUGINS.md updated. **Not done:** the live FLUX 3 checks §6.1-6.3 (the user's key); S3c (the crop frame, the
-paste warning). The node repo is not rebuilt (the `onKey` change rides with the next node version). Next session:
-S3c, or the live checks with the user.
+**This session (2026-10-02, "baue weiter", the fifth of the day):** item 28 S3c as `docs/PLAN_BOXES.md` §10 plans it,
+one commit, not released (CHANGELOG Unreleased, under the S3b entry). The S3b paragraph is in `docs/HISTORY.md`.
+Core: `stitch.js` `planFrame(editor, params, limits)` (the run's `planCrop` from the selection's cached bounds,
+`selectionBbox` takes a stand-in with `.bounds`; one strip scan per selection change, so an overlay may ask per draw), `host.cropFrame(editor)`
+(app host only). Plugin: while the Boxes tool is active the picture outside that crop is dimmed, the crop's size on
+its bottom edge (drawn last, over the boxes); the panel names the crop in its note and warns of boxes the crop leaves
+out, cuts, or that change pixels outside the selection while Paste is "selection" (2 px slack on the bounds; Keep
+changes nothing, Move counts its source too), with "Paste the whole crop" through the `set_crop` command. Found on
+the way: `selectionBounds()` / `getBounds()` are exclusive on x1 / y1, so S1's `selectionBox` and `boxContext`'s
+`selection` were 1 px too wide and tall (fixed, tests moved). `tools/boxes_test.js` section 11 (planFrame against
+planCrop on a real mask, four cases), `tools/boxes_test.py` step `the_crop_frame_and_the_paste_warning` (the frame
+against `prepareCrop`, the dim, the three warnings, the button; FLUX 3 selected for the step and put back); gates
+`boxes` and `commands` green `--offline` (labels `s3c`, `s3c2`), lint and types clean, one look over CDP; manual, PLUGINS.md,
+CHANGELOG. Item 30 (Ideogram 4 as an update of its own) added to the list on the user's word. **Not done:** the live
+FLUX 3 checks §6.1-6.3 (the user's key); S4 (Keep rows from the objects, optional); the editor's own dashed crop
+outline (`cropRect()`, no aspect presets or limits) still differs from the run's crop on a provider recipe. The node
+repo is not rebuilt. A review (two readers, every finding checked by a third) found four, all fixed: `getBounds()`
+after a marquee / ellipse / lasso at fractional coordinates is up to a pixel wider than the run's alpha >= 128 box and
+can tip the aspect preset, so `planFrame` scans it exact (`scanBoundsIn`, once per `selectionSeq`); `cropFrame` plans
+a provider upscaler with mode "crop"; "left out" uses the run's `toFrame`; a new host / plugin event `crop` (node
+parameter or API size) re-renders the panel. **The user asked during the session** how the box prompt is switched on
+and wants one switch: **S3d** in `docs/PLAN_BOXES.md` §10, with the user's answers (a row of its own under the prompt
+field; the first box turns it on; on = the document's boxes, or the selection when there are none; S1's Settings row
+goes). The user also pointed at `github.com/koshimazaki/flux-api-control-surface` (MIT, a FLUX 3 box editor): read,
+its ideas are **S3e** in §10 (position words in the caption, ids from the description, a warning for a New box
+without one, the smaller box wins the hit test). Next: S3d, then S3e or the live checks with the user, then a
+release of item 28 on the user's word; S4 optional.
 
 **Released:** 0.1.36 is Latest (published 2026-10-01 22:38:25 CEST, tag on 5bc5831 "0.1.36 prepared"; the tag build
 green) on the user's "baue fertig und release dann das update mit flux3". 0.1.36 = **FLUX 3 Image** (ea71629) + item 25
@@ -194,8 +207,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   checks after S1, §7 the open questions). **S1 built 2026-10-02** (the "Selection as box" row, off by default), **S2 the same day**
   (plugin API 3, `scumble.generate.register`, the sample's source behind `sample.box`) and **S3a the same night**
   (`plugins/boxes`: the data, the panel in the Generate pane, the six commands, the generate source), **S3b** the
-  same night (the canvas tool X and the overlay); none released, all under Unreleased. Next: S3c (the crop frame,
-  the paste warning), the live checks §6.1-6.3 with the user's key.
+  same night (the canvas tool X and the overlay), **S3c** the next session (the crop frame, the paste warning); none
+  released, all under Unreleased. Next: S3d (one Boxes switch in the Prompt section, the user's wish, §10), the live
+  checks §6.1-6.3 with the user's key, a release on the user's word; S4 optional.
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended
@@ -206,6 +220,14 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   sibling), WaveSpeed (the user's link was image-to-video; whether it has FLUX 3 Image is part of the research),
   OpenRouter (black-forest-labs/flux-3-image) and Oxen.ai (flux-3-image), as variants of `recipes/flux3.json` on the
   existing adapters. Researched, nothing built: `docs/PLAN_FLUX3.md` "FLUX 3 Image on other providers".
+- 30: Ideogram 4 support as an update of its own (the user, 2026-10-02: "ein anderer release", not with item 28's
+  boxes). Known so far (one web search, 2026-10-02): Ideogram 4.0 is Ideogram's first open-weight model (9.3B flow
+  DiT, Qwen3-VL-8B text encoder, June 2026; weights non-commercial, 256-2048 px, aspects up to 6:1), structured JSON
+  prompts with bounding boxes, Turbo / Default / Quality tiers on Ideogram's own API, a remote MCP server; on fal
+  since September 2026. Scumble today: `recipes/ideogram_4.json` (fal `ideogram/v4/image-to-image`, Comfy Router and
+  Oxen text only), never run live. Open: Ideogram's own API as a direct adapter (the tiers, edit / remix with a
+  mask?), a local ComfyUI recipe on the open weights (the user has Ideogram 4 nodes), the JSON caption with the
+  boxes (item 28 S5), live checks. Not researched in depth, nothing planned.
 
 ## Gate runner and flakes
 

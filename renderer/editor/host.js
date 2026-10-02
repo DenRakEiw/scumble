@@ -14,7 +14,7 @@
 //           that asked: results by prompt id, helper masks / texts by the canvas_node id
 //           the helper prompt carried (= editor.node.id).
 
-import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, canvasBytes, referenceBytes } from "./stitch.js";
+import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, canvasBytes, referenceBytes, planFrame } from "./stitch.js";
 import { glReleasePool } from "./inpaint_filters_gl.js";
 import { withoutSecrets } from "./redact.js";
 import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
@@ -331,11 +331,22 @@ export const host = {
         return { ...r.limits, mode: this.apiSize };
     },
 
+    /**
+     * The crop an API run of the selected recipe would send now (stitch.js planFrame: `{ x, y, w, h, emitted, paste,
+     * aspect }` in image pixels), or null without a selection. Cheap enough for an overlay: the Boxes plugin draws it.
+     */
+    cropFrame(editor) {
+        const r = this.recipe;
+        // Generate with a provider upscaler sends the crop at its own size (runUpscale plans with mode "crop")
+        const limits = r && r.kind === "provider" && r.task === "upscale" && r.limits ? { ...r.limits, mode: "crop" } : this.cropLimits();
+        return planFrame(editor, this.nodeParams, limits);
+    },
+
     setApiSize(mode) {
         if (!API_SIZES.some(([id]) => id === mode)) return;
         this.apiSize = mode;
         window.scumble.settings.set({ apiSize: mode }).catch((err) => console.warn("apiSize not saved", err));
-        for (const ed of this._editors) if (ed._apiSizeSelect) ed._apiSizeSelect.value = mode;
+        for (const ed of this._editors) { if (ed._apiSizeSelect) ed._apiSizeSelect.value = mode; this.emit("crop", { editor: ed }); }
     },
 
     /** The Export section's switch: one value for every open editor, kept in the settings. */
@@ -391,6 +402,8 @@ export const host = {
     //                             (before its "changed"; `m` maps old image coordinates to new ones, `op` only for turns)
     //   tool (editor, tool, prev) the active tool changed
     //   removed (editor)          a tab was closed
+    //   crop (editor)             an app setting the crop of a run depends on changed (a node parameter, the API size);
+    //                             once per open editor, the document itself unchanged
 
     on(type, fn) {
         if (!this._listeners.has(type)) this._listeners.set(type, new Set());
@@ -1348,12 +1361,6 @@ export const host = {
     },
 
     /**
-     * A run through an API provider: crop in the app (stitch.js), one request to the
-     * main process (electron/main/providers), the answer stitched back into an RGBA
-     * patch that is stored in the file mirror as a result and added like a result from
-     * the node. No ComfyUI involved. `opts.refs`: the click's reference snapshot.
-     */
-    /**
      * What a plugin's box source sees (scumble.generate, docs/PLUGINS.md "Generate"; docs/PLAN_BOXES.md §9): the run's
      * frame in image pixels (the crop of an edit, the document of Generate new), the selection's box, and the pictures
      * of this run as the {@ref:i} markers count them (`sent`: a null for the Original, which takes an index and has no
@@ -1366,10 +1373,17 @@ export const host = {
             const l = editor.layers.find((x) => x.id === id);
             references.push({ index, layerId: id, name: l ? l.name : id, frame: l ? { x: l.x || 0, y: l.y || 0, w: l.w || 0, h: l.h || 0 } : null });
         });
-        const selection = bounds ? { x: bounds[0], y: bounds[1], w: bounds[2] - bounds[0] + 1, h: bounds[3] - bounds[1] + 1 } : null;
+        // the selection's bounds are [x0, y0, x1, y1] with x1 and y1 exclusive (editor.getBounds)
+        const selection = bounds ? { x: bounds[0], y: bounds[1], w: bounds[2] - bounds[0], h: bounds[3] - bounds[1] } : null;
         return { mode, recipe: recipe ? recipe.id : null, provider: provider || null, model: model || null, schema: schema || null, frame, selection, references };
     },
 
+    /**
+     * A run through an API provider: crop in the app (stitch.js), one request to the
+     * main process (electron/main/providers), the answer stitched back into an RGBA
+     * patch that is stored in the file mirror as a result and added like a result from
+     * the node. No ComfyUI involved. `opts.refs`: the click's reference snapshot.
+     */
     async runProvider(editor, opts = {}) {
         const r = this.recipe;
         if (!editor.base) throw new Error("Load an image first.");
@@ -2041,6 +2055,7 @@ export const host = {
         for (const ed of this._editors) {
             if (ed._nodeParamInputs && ed._nodeParamInputs[key]) ed._nodeParamInputs[key].value = value;
             ed.renderInfo(); ed.draw();
+            this.emit("crop", { editor: ed });
         }
     },
 

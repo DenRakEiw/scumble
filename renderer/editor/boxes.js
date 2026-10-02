@@ -46,15 +46,15 @@ export function toFrame(rectPx, frame) {
 }
 
 /**
- * The selection as one box (S1): `bounds` the selection's bounding box ([x0, y0, x1, y1] image pixels, inclusive, as
- * editor.selectionBounds() gives it; null without a selection), `frame` the crop. With a `pair` (the first @img token
+ * The selection as one box (S1): `bounds` the selection's bounding box ([x0, y0, x1, y1] image pixels, x1 and y1
+ * exclusive, as editor.selectionBounds() gives it; null without a selection), `frame` the crop. With a `pair` (the first @img token
  * the prompt carries, `pair.ref` its picture index) the box takes that reference's whole picture into the selection
  * (kind "from"); without one it is a New row described by the prompt. The desc keeps the prompt's {@ref:i} markers:
  * main resolves them in the rows as in the prompt. Null without a selection or when it lies outside the frame.
  */
 export function selectionBox(bounds, frame, { prompt = "", pair = null } = {}) {
     if (!Array.isArray(bounds) || bounds.length !== 4) return null;
-    const rect = toFrame([bounds[0], bounds[1], bounds[2] + 1, bounds[3] + 1], frame);
+    const rect = toFrame(bounds, frame);
     if (!rect) return null;
     const desc = foldDesc(prompt);
     const from = pair && Number.isInteger(pair.ref) && pair.ref >= 0;

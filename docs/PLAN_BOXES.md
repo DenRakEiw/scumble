@@ -60,6 +60,27 @@ not Ctrl+D (the editor takes Ctrl+D for Deselect before a plugin sees a key, and
 `the_tool_draws_moves_resizes_and_keys`; gates `boxes` and `commands` green offline (label `s3b2`); one look over
 CDP with all six kinds. Next: S3c (the crop frame, the paste warning), the live checks §6 with the user.
 
+**S3c built 2026-10-02** (the user: "baue weiter"): the frame is `host.cropFrame(editor)` (app host), which calls the
+new `stitch.js` `planFrame(editor, params, limits)`: `planCrop(cropSettingsOf(...))` with a stand-in for the
+selection's mask that carries the editor's cached bounds (`selectionBbox` reads `.bounds`; the same > 0.5 threshold, no
+pixels read), so the tool's `draw` asks per frame. While the tool is active the picture outside the crop is dimmed and
+the crop's size ("sent as" the emitted size when it differs) is written under its bottom edge, over the boxes. The
+panel's note names the crop; warnings (only when the recipe takes boxes and something is selected): boxes the crop
+leaves out, boxes its edge cuts, and, while Paste is "selection", boxes that change pixels outside the selection's
+bounds (2 px slack; Keep changes nothing, Move counts target and source, Remove its place), with "Paste the whole crop"
+through the `set_crop` command (no editor setter was needed: the command updates the Crop section and fires
+`changed`). Departures from §10: the frame dims the outside instead of a bare outline (the editor's own dashed
+`cropRect()` lies near it and differs on a provider recipe); no `pasteWarned` field (the warning shows while the
+condition holds); a box outside the crop is warned of too. Found: `editor.selectionBounds()` is exclusive on x1 / y1,
+S1's `selectionBox` and `boxContext`'s `selection` added 1 (fixed). A review (two readers, each finding checked by a
+third) found four, all fixed: `getBounds()` after a marquee, ellipse or lasso at fractional coordinates is the shape's
+box floored and ceiled, up to a pixel wider than the alpha >= 128 box the run reads, which can tip the crop to another
+aspect preset (1:1 vs 5:4 measured), so `planFrame` scans it exact with `scanBoundsIn`, once per `selectionSeq`; a
+provider upscaler plans with mode "crop" (`cropFrame` follows `runUpscale`); "left out" uses the run's own `toFrame`
+(its 1/1000 floor); a new host event `crop` (a node parameter or the API size changed) re-renders the panel. Tests:
+`tools/boxes_test.js` section 11, `tools/boxes_test.py` step `the_crop_frame_and_the_paste_warning`; gates `boxes`
+and `commands` green offline (labels `s3c`, `s3c2`). Next: S3d (the switch), S3e, the live checks §6 with the user.
+
 ## 1. Sources
 
 - BFL docs, fetched 2026-10-01 as markdown (`https://docs.bfl.ml/<page>.md`, index `https://docs.bfl.ml/llms.txt`):
@@ -379,6 +400,46 @@ drawn outside): a warning row "Box sofa_1 lies outside the selection: the result
 would cut it. Set Paste to crop" with a button that does it (`editor.cropSettings.paste = "crop"`, through the
 editor's own setter so the panel updates). Generate new: the frame is the document; the same overlay.
 
+**S3d, one switch in the Prompt section (the user, 2026-10-02: "wie aktiviert man den bbox prompt? ... ein Schalter
+wäre ideal", since FLUX 3 and Ideogram 4 take a prompt with and without boxes; proposed, not built, half a day).**
+Today two things send boxes and neither is a switch where the prompt is: the recipe's Settings row "Selection as box"
+(S1, off by default) and the Boxes panel, whose boxes go with every run of a recipe that takes boxes as long as the
+document holds any (sending without them means Clear and Ctrl+Z). Proposed:
+- **A switch "Boxes" in the Prompt section** (core: `inpaint_modal.js` `buildPrompt`, in the reference bar's row or
+  under the field), shown only while the selected variant declares `options.boxes`; its label carries the count
+  ("Boxes · 3"). Its state is per document in the editor's state (`genSettings.boxes`, saved with the `gen` key, so
+  the `.scumble` file and the session carry it; an older app ignores the field), set by `set_generation` too.
+- **One meaning:** on, a run sends the document's boxes (every `scumble.generate` source); with none, the selection
+  goes as one box (S1's box). Off, no box goes, the boxes stay. **S1's Settings row goes** (never released, so no
+  document holds it). `host.runProvider` / `generateNew` check the switch before S1's box and `collectBoxes`.
+- **Default off**; the first box a document gets (tool, panel, `boxes.add`) turns it on with a status note, so a drawn
+  box is not silently ignored; switching off never deletes a box. The Boxes overlay draws the boxes dashed and paler
+  while the switch is off, the panel's note says "not sent: the Boxes switch is off".
+- Ideogram 4 (item 30 / S5) uses the same switch: on, the prompt goes as the JSON caption with the boxes; off, as text.
+**The user's answers (2026-10-02):** the switch goes in **a row of its own under the prompt field**; **the first box
+turns it on** (yes). Tests: one `boxes_test.py` step (the switch hides with a recipe without boxes, a run's
+`collectBoxes` is skipped while it is off, the first box turns it on, the state survives a save and open),
+`boxes_test.js` unchanged.
+
+**S3e, ideas from another FLUX 3 box editor (proposed, not planned in detail).** The user pointed at
+`github.com/koshimazaki/flux-api-control-surface` (MIT, TypeScript; read 2026-10-02: `ui/lib/flux3-image-boxes.ts`,
+`flux3-image-regions.ts`, the region components). It has the same five rows from the same docs, and a mode "Precise"
+(an edit with boxes) that the first drawn box switches on, as S3d does. Worth taking, in our own words and code:
+- **Position words in the caption** (the docs ask the caption to say where each element goes): "place a red scarf
+  <scarf_1> at the top left", "move the lamp <lamp_1> up and to the left" (thirds of the frame for a place, a fifth of
+  the frame as the threshold for a direction), and on an edit a closing "Keep the rest of the image exactly
+  unchanged."; a desc that already reads as an instruction ("make the tiger pink") goes as it is, a bare description
+  gets "place". Main's `instructionFlux3` and the plugin's `format.js` copy, with `boxes_test.js` vectors.
+- **Ids from the description** (`red_scarf_1`: the first two words that are not stop words, numbered) while a box
+  still has its default id (`box_n`): the caption then names something the model can read.
+- **A New box without a description** is a panel warning (their run refuses it: "Describe what goes in box 2"), and
+  the small-box note (S1's 48 px) for every box, not only the selection's.
+- **The tool:** the smaller box wins the hit test (a box inside another is grabbed directly; ours takes the topmost
+  and needs Alt+click), and a box turned into Move gets its target shifted by a fifth of the frame so the two
+  rectangles do not lie on top of each other.
+- Later, larger: a small card next to the selected box on the canvas (kind, description, reference) so a box is
+  described where it is drawn, not only in the side panel.
+
 **Tests (normal tier).** `tools/boxes_test.py`, gate `boxes` on the tiles backend: the commands (add, set, remove,
 list, from_selection), the undo step, the tool through the pointer hooks (draw, move, resize, delete, as
 `film_test.py` drives the control points), the overlay drawn (a pixel of the box's colour on the screen canvas),
@@ -424,6 +485,8 @@ app path (`objects()` through a real SAM2 model) by eye on the user's machine, w
 | 3 | S3a (data, panel, commands) | "Boxes plugin: panel and commands (S3a)" |
 | 4 | S3b (tool and overlay) | "Boxes plugin: the tool (S3b)" |
 | 5 | S3c (crop frame, paste warning), `boxes_test.py`, manual | "Boxes plugin: the frame and the paste (S3c)" |
+| 5b | S3d (the Boxes switch in the Prompt section, the user's wish) | "Boxes: one switch in the Prompt section (S3d)" |
+| 5c | S3e (position words, ids from the desc, the missing-desc warning, the tool's hit order) | "Boxes: the caption and the tool (S3e)" |
 | 6 | S4 (`Document.objects`, Keep boxes) | "Boxes plugin: Keep rows from the objects (S4)" |
 
 A release after session 5 at the earliest (S1 alone is a row most users would not find); the CHANGELOG section

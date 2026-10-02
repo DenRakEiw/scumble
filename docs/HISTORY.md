@@ -16,6 +16,8 @@ The block of 2026-10-02 (item 28 S2) was moved here the same night, when S3a was
 
 The block of 2026-10-02 (item 28 S3a) was moved here the same night, when S3b was built.
 
+The paragraph of 2026-10-02 (item 28 S3b) was moved here the same day, when S3c was built.
+
 The block of 2026-09-28 (afternoon, package 5 step 3) was moved here in the evening, when step 4 was built.
 
 The block of 2026-09-27 (night), the open threads and the full list were moved here the same night, when CLAUDE.md was
@@ -37,6 +39,23 @@ night, when 0.1.36 was released with FLUX 3 Image.
 
 The paragraph of 2026-10-02 ("s1 ausplan", item 28 S1 built) was moved here the same day, when S2 was built (CLAUDE.md
 keeps the 0.1.36 block and the S2 paragraph).
+
+## 2026-10-02 (item 28 S3b, moved here the same day)
+
+**This session (2026-10-02, "baue weiter", the fourth of the day):** item 28 S3b as `docs/PLAN_BOXES.md` §10 plans it,
+one commit, not released (CHANGELOG Unreleased, under the S3a entry). The S3a paragraph is in `docs/HISTORY.md`.
+`plugins/boxes/tool.js` (`makeTool(scumble, api)`): the tool `boxes.box` (X) draws a New box with a drag on empty
+canvas, selects with a click (the panel row lit, a row click selects its box), moves with a drag, resizes with the
+eight handles; Delete, Escape, arrows (Shift 10), D duplicates, Alt+click cycles stacked boxes; one undo step per
+gesture (nothing written until pointer up). The overlay draws every box in its kind's colour with its id tag and
+the desc's first words, Move's source dashed with an arrow, while the tool is active or the panel is open and on
+screen. Departures in the plan's S3b paragraph (D instead of Ctrl+D, which the editor takes for Deselect; the
+source's own handles instead of a "Set source" mode). Core: the Canvas tool's X now runs before the plugins' keys
+in `inpaint_canvas.js` `onKey`. `tools/boxes_test.py` step `the_tool_draws_moves_resizes_and_keys`, gates `boxes`
+and `commands` green `--offline` (label `s3b2`), lint and types clean, one look over CDP with all six kinds, manual
+and PLUGINS.md updated. **Not done:** the live FLUX 3 checks §6.1-6.3 (the user's key); S3c (the crop frame, the
+paste warning). The node repo is not rebuilt (the `onKey` change rides with the next node version). Next session:
+S3c, or the live checks with the user.
 
 ## 2026-10-02 (item 28 S3a, moved here the same night)
 

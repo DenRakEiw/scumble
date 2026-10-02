@@ -8,6 +8,9 @@ a from box of a layer the run does not send refusing), the panel's rows in the G
 crop of the whole picture (and its undo), and a .scumble save and open carrying them. S3b: the Boxes tool through
 the pointer and key hooks (draw, move, resize, a click that changes nothing, nudge, duplicate, Alt+click through
 stacked boxes, Delete, Escape; one undo step per gesture; the panel row lit) and the overlay on the screen canvas.
+S3c: the crop frame (host.cropFrame against the run's prepareCrop, the picture outside it dimmed while the tool is
+active) and the panel's warnings (a box outside the crop, one across its edge, one outside the selection, the button
+that sets Paste to the whole crop), under FLUX 3 Image, the recipe put back.
 
     python tools/boxes_test.py
 
@@ -275,6 +278,79 @@ if (shown && !green(960, 220)) throw new Error("the panel is open and shown, but
 for (let i = 0; i < 6; i++) await c("undo", D());
 if (JSON.stringify(await boxes()) !== JSON.stringify(before)) throw new Error("the undo did not put the boxes back: " + JSON.stringify(await boxes()));
 return { made: made.id, copy: copy.id, panelShown: shown, plugin: !!P2 };
+"""),
+    ("the_crop_frame_and_the_paste_warning", """
+// S3c: the crop Generate sends, as the run plans it, drawn while the tool is active; the panel's warnings for a box the
+// crop leaves out, one its edge cuts, one outside the selection while Paste keeps the selection only, and the button
+// that sets Paste to the whole crop. FLUX 3 Image is selected for the step (it takes boxes) and the recipe put back.
+const ed = ednow();
+const was = host.recipe ? { id: host.recipe.id, provider: host.recipe.kind === "provider" ? host.recipe.provider : undefined } : null;
+const before = await boxes();
+const S = await import('./editor/stitch.js');
+try {
+    await c("select_recipe", { id: "flux3", provider: "bfl" });
+    await c("select_rect", { x: 300, y: 200, w: 200, h: 150, doc: window.__bDoc });
+    await c("set_crop", { paste: "selection", doc: window.__bDoc });
+    // the frame is the run's crop: planCrop on the selection's mask (prepareCrop) gives the same box
+    const f = host.cropFrame(ed);
+    const run = S.prepareCrop(ed, host.nodeParams, host.cropLimits(), { references: false });
+    if (!f || !eq([f.x, f.y, f.w, f.h], run.info.bbox) || !eq(f.emitted, run.info.emitted)) throw new Error("the frame is not the run's crop: " + JSON.stringify([f, run.info.bbox, run.info.emitted]));
+    const F = [f.x, f.y, f.x + f.w, f.y + f.h];
+    if (F[0] < 30 || F[2] > 1100 || F[3] > 720) throw new Error("the test's boxes need room around the crop: " + JSON.stringify(F));
+    // three boxes: outside the crop, across its left edge, inside it but outside the selection
+    await c("boxes.add", { id: "far_1", rect: [1120, 730, 1180, 790], doc: window.__bDoc });
+    await c("boxes.add", { id: "edge_1", rect: [F[0] - 20, F[1] + 10, F[0] + 40, F[1] + 60], doc: window.__bDoc });
+    await c("boxes.add", { id: "spill_1", rect: [F[0] + 5, F[3] - 40, F[0] + 45, F[3] - 5], doc: window.__bDoc });
+    const details = Array.from(ed.panes.gen.querySelectorAll("details")).find((d) => d.querySelector("summary") && d.querySelector("summary").textContent.trim() === "Boxes");
+    details.open = true;
+    await wait(50);
+    const rows = () => Array.from(details.querySelectorAll(".boxes-warn-row")).map((r) => r.textContent);
+    const w1 = rows();
+    const line = (re) => w1.find((t) => re.test(t)) || "";
+    if (!/far_1/.test(line(/left out/)) || /edge_1|spill_1/.test(line(/left out/))) throw new Error("the box outside the crop: " + JSON.stringify(w1));
+    if (!/edge_1/.test(line(/past the crop's edge/)) || /spill_1/.test(line(/past the crop's edge/))) throw new Error("the box across the crop's edge: " + JSON.stringify(w1));
+    const spill = line(/outside the selection/);
+    if (!/spill_1/.test(spill) || !/edge_1/.test(spill) || /far_1|edit_1/.test(spill)) throw new Error("the boxes outside the selection: " + JSON.stringify(w1));
+    const note = details.querySelector(".boxes-note").textContent;
+    if (!note.includes(`${f.w} × ${f.h} px at ${f.x}, ${f.y}`)) throw new Error("the note does not name the crop: " + note);
+    // the overlay: the picture outside the crop dimmed while the tool is active, not with another tool
+    const g = ed.canvas.getContext("2d");
+    const lum = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); const d = g.getImageData(Math.round(sx), Math.round(sy), 1, 1).data; return d[0] + d[1] + d[2]; };
+    details.open = false;
+    ed.setTool("select"); await wait(30); ed.draw();
+    // two points no box covers: one outside the crop, one inside it near its top right corner
+    const pin = [F[2] - 15, F[1] + 15];
+    for (const b of await boxes()) for (const r of [b.rect, b.src]) if (r && pin[0] >= r[0] && pin[0] <= r[2] && pin[1] >= r[1] && pin[1] <= r[3]) throw new Error("the inside point lies in " + b.id);
+    const plain = lum(1150, 40), inside = lum(pin[0], pin[1]);
+    ed.setTool("boxes.box"); await wait(30); ed.draw();
+    const dim = lum(1150, 40), inside2 = lum(pin[0], pin[1]);
+    if (!(dim < plain * 0.85) || Math.abs(inside2 - inside) > 6) throw new Error("the crop's frame: outside " + plain + " -> " + dim + ", inside " + inside + " -> " + inside2);
+    ed.setTool("select");
+    // the button sets Paste to the whole crop for this document; the selection's warning goes, the others stay
+    details.open = true;
+    await wait(30);
+    const btn = Array.from(details.querySelectorAll(".boxes-warn-row button")).find((b) => /whole crop/.test(b.textContent));
+    if (!btn) throw new Error("no button in the selection's warning");
+    btn.click();
+    await wait(80);
+    if (ed.cropSettings.paste !== "crop" || ed.cropPasteSel.value !== "whole crop") throw new Error("paste was not set: " + JSON.stringify(ed.cropSettings) + " / " + ed.cropPasteSel.value);
+    const w2 = rows();
+    if (w2.some((t) => /outside the selection/.test(t)) || !w2.some((t) => /far_1/.test(t))) throw new Error("the warnings after the paste: " + JSON.stringify(w2));
+    // a recipe without boxes shows no warnings
+    if (was && was.id !== "flux3") {
+        await c("select_recipe", was);
+        await wait(50);
+        if (rows().length) throw new Error("warnings under a recipe that takes no boxes: " + JSON.stringify(rows()));
+    }
+    return { frame: [f.x, f.y, f.w, f.h], emitted: f.emitted, warnings: w1, dim: [plain, dim] };
+} finally {
+    ed.setTool("select");
+    await c("set_crop", { paste: "selection", doc: window.__bDoc });
+    while ((await boxes()).length > before.length) await c("undo", D());
+    await c("select_none", D());
+    if (was) await c("select_recipe", was);
+    if (JSON.stringify(await boxes()) !== JSON.stringify(before)) throw new Error("the test's boxes were not taken back");
+}
 """),
     ("boxes_follow_a_crop_and_its_undo", """
 const before = await boxes();

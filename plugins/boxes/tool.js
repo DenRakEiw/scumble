@@ -3,7 +3,8 @@
 // Escape lets go of it, D duplicates it, the arrows nudge it by 1 px (Shift 10), Alt+click goes through boxes that lie
 // on top of each other. A Move box's source and a From box's part are boxes of their own once the box is selected. A
 // drag changes nothing until the button comes up: then it is one undo step through the plugin's data. The overlay draws
-// every box in its kind's colour with its id, and the first words of its description when the box is wide enough.
+// every box in its kind's colour with its id, and the first words of its description when the box is wide enough; while
+// the tool is active it also shows the crop Generate sends (S3c): the picture outside it dimmed, its size on its edge.
 
 export const COLOURS = { new: "#3ddc84", text: "#3ddc84", keep: "#b4b4b4", move: "#4aa3ff", remove: "#ff5a5a", from: "#b57cff" };
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
@@ -39,8 +40,9 @@ function resized(r, h, dx, dy) {
 
 /**
  * The tool's definition for scumble.tools.register. `api` is the plugin's data side: boxesOf(doc), add(doc, input),
- * set(doc, id, patch), remove(doc, id), nextId(boxes, base), panelShown(doc) (the Boxes panel is open and on screen),
- * selChanged(doc) (the panel shows the selection), referenceName(doc, id).
+ * set(doc, id, patch), remove(doc, id), nextId(boxes, base), frame(doc) (the crop Generate sends, { x, y, w, h,
+ * emitted } in image pixels, or null), panelShown(doc) (the Boxes panel is open and on screen), selChanged(doc) (the
+ * panel shows the selection), referenceName(doc, id).
  */
 export function makeTool(scumble, api) {
     const selected = new Map();   // doc id -> box id
@@ -208,7 +210,8 @@ export function makeTool(scumble, api) {
             if (!view.active && !api.panelShown(doc)) return;
             const boxes = api.boxesOf(doc);
             const live = drag && drag.docId === doc.id && drag.moved ? drag : null;
-            if (!boxes.length && !live) return;
+            const crop = view.active ? api.frame(doc) : null;
+            if (!boxes.length && !live && !crop) return;
             const px = view.dpr / view.scale;   // one screen pixel in image pixels
             const sel = selected.get(doc.id);
             ctx.font = `${11 * px}px system-ui, sans-serif`;
@@ -271,6 +274,13 @@ export function makeTool(scumble, api) {
                 ctx.closePath(); ctx.fill();
             };
             const visibleLayer = (id) => { const l = doc.layers().find((x) => x.id === id); return !!(l && l.visible); };
+            const cropFrame = crop ? [crop.x, crop.y, crop.x + crop.w, crop.y + crop.h] : null;
+            if (crop) {
+                // the crop Generate sends: the picture outside it dimmed and a thin frame under the boxes, its size on top
+                ctx.fillStyle = "rgba(0,0,0,0.3)";
+                ctx.beginPath(); ctx.rect(0, 0, doc.width, doc.height); ctx.rect(crop.x, crop.y, crop.w, crop.h); ctx.fill("evenodd");
+                outline(cropFrame, "#ffffff", 1 * px, [6, 4]);
+            }
             // the selected box last, so its handles lie on top
             const order = boxes.filter((b) => b.id !== sel).concat(boxes.filter((b) => b.id === sel));
             for (const b0 of order) {
@@ -290,6 +300,15 @@ export function makeTool(scumble, api) {
                 if (isSel) { handles(r, colour); if ((b.kind === "move" || b.kind === "from") && Array.isArray(b.src) && (b.kind === "move" || visibleLayer(b.layer))) handles(b.src, colour); }
             }
             if (live && live.mode === "new" && live.rect) outline(live.rect, COLOURS.new, 2 * px, [6, 4]);
+            if (crop) {
+                const f = cropFrame;
+                const sent = crop.emitted && (crop.emitted[0] !== crop.w || crop.emitted[1] !== crop.h) ? `, sent as ${crop.emitted[0]} × ${crop.emitted[1]}` : "";
+                const text = `Crop Generate sends: ${crop.w} × ${crop.h}${sent}`;
+                const h = 15 * px, w = ctx.measureText(text).width + 6 * px;
+                const y = f[3] + h <= doc.height ? f[3] : f[3] - h;
+                ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(f[0], y, w, h);
+                ctx.fillStyle = "#fff"; ctx.fillText(text, f[0] + 3 * px, y + 2 * px);
+            }
         },
     };
     return { tool, selected: (doc) => selected.get(doc.id) || null, select, forget: (docId) => selected.delete(docId) };

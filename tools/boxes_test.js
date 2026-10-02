@@ -8,6 +8,7 @@
 // test. The request shapes follow docs.bfl.ai/flux_3 as read on 2026-10-01.
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
@@ -153,13 +154,13 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     check("toFrame: a crop that cuts the selection clamps it to the frame", eq(R.toFrame([0, 0, 500, 350], frame), [0, 0, 0.5, 0.5]) && eq(R.toFrame([500, 350, 2000, 2000], frame), [0.5, 0.5, 1, 1]), short(R.toFrame([0, 0, 500, 350], frame)));
     check("toFrame: a rectangle outside the crop is null, a 1/1000-thin one too", R.toFrame([0, 0, 100, 50], frame) === null && R.toFrame([900, 700, 1000, 800], frame) === null && R.toFrame([300, 200, 300.4, 350], frame) === null, "");
     check("toFrame: a bad rectangle or frame is null", R.toFrame(null, frame) === null && R.toFrame([1, 2, 3], frame) === null && R.toFrame([0, 0, 1, 1], { x: 0, y: 0, w: 0, h: 0 }) === null && R.toFrame([NaN, 0, 1, 1], frame) === null, "");
-    const sb = R.selectionBox([300, 200, 499, 349], frame, { prompt: "a red\ndoor" });
-    check("selectionBox: inclusive bounds (+1 on the far sides), kind new, the folded prompt as desc", eq(sb, { id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.5, 0.5], src: null, ref: null, desc: "a red door" }), short(sb));
-    const fb = R.selectionBox([300, 200, 499, 349], frame, { prompt: "put {@ref:1} here", pair: { label: "img1", id: "L3", ref: 1 } });
+    const sb = R.selectionBox([300, 200, 500, 350], frame, { prompt: "a red\ndoor" });
+    check("selectionBox: the bounds as editor.selectionBounds gives them (x1, y1 exclusive), kind new, the folded prompt as desc", eq(sb, { id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.5, 0.5], src: null, ref: null, desc: "a red door" }), short(sb));
+    const fb = R.selectionBox([300, 200, 500, 350], frame, { prompt: "put {@ref:1} here", pair: { label: "img1", id: "L3", ref: 1 } });
     check("selectionBox with a pair: kind from, the reference's index, the whole picture as src, the markers kept in the desc", eq(fb, { id: "edit_1", kind: "from", rect: [0.25, 0.25, 0.5, 0.5], src: [0, 0, 1, 1], ref: 1, desc: "put {@ref:1} here" }), short(fb));
-    check("selectionBox with a pair that has no picture (ref -1) is a new box", R.selectionBox([300, 200, 499, 349], frame, { prompt: "x", pair: { label: "img1", id: "L3", ref: -1 } }).kind === "new", "");
+    check("selectionBox with a pair that has no picture (ref -1) is a new box", R.selectionBox([300, 200, 500, 350], frame, { prompt: "x", pair: { label: "img1", id: "L3", ref: -1 } }).kind === "new", "");
     check("selectionBox: no selection or a selection outside the crop is null", R.selectionBox(null, frame, { prompt: "x" }) === null && R.selectionBox([0, 0, 50, 20], frame, { prompt: "x" }) === null, "");
-    check("the whole crop selected is [0, 0, 1, 1]", eq(R.selectionBox([100, 50, 899, 649], frame, { prompt: "x" }).rect, [0, 0, 1, 1]), "");
+    check("the whole crop selected is [0, 0, 1, 1]", eq(R.selectionBox([100, 50, 900, 650], frame, { prompt: "x" }).rect, [0, 0, 1, 1]), "");
     check("smallBox: under 48 px a side at the emitted size", R.smallBox([0, 0, 0.04, 0.5], [1024, 880]) === true && R.smallBox([0, 0, 0.5, 0.05], [1024, 880]) === true && R.smallBox([0, 0, 0.05, 0.06], [1024, 880]) === false && R.SMALL_PX === 48, "");
     check("the id pattern and the desc limit are the same on both sides", R.BOX_ID.source === boxes.BOX_ID.source && R.DESC_MAX === boxes.DESC_MAX, "");
     check("every box the renderer makes passes main's shape check", boxes.checkBoxes([sb]).length === 1 && boxes.checkBoxes([fb]).length === 1, "");
@@ -247,6 +248,53 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     check("format.rowsFlux3: a from box whose layer is not shown is noted, a part of the layer measured in the layer's frame",
         F.rowsFlux3([pxBoxes[4]], docFrame, { nameOf: () => null }).notes.length === 1
         && eq(F.rowsFlux3([{ ...pxBoxes[4], src: [500, 350, 600, 400], layerFrame: { x: 500, y: 350, w: 200, h: 100 } }], docFrame, { nameOf }).rows[0].src_bbox, [0, 0, 500, 500]), "");
+
+    // ---- 11. the Boxes tool's frame (S3c): stitch.js planFrame against the run's planCrop on a real mask --------------
+    // planFrame plans from the editor's cached bounds, the run from the selection's mask: the same crop either way
+    console.log("\n--- 11. stitch.js planFrame (the crop frame the Boxes tool draws) ---");
+    const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "stitch.js")).href);
+    const recipeLimits = JSON.parse(fs.readFileSync(path.join(ROOT, "recipes", "flux3.json"), "utf8")).limits;
+    const W = 1600, H = 1000;
+    const maskOf = (b) => {
+        const data = new Float32Array(W * H);
+        for (let y = b[1]; y < b[3]; y++) data.fill(1, y * W + b[0], y * W + b[2]);
+        return { data, w: W, h: H, ox: 0, oy: 0, fullW: W, fullH: H };
+    };
+    const fakeEditor = (b, crop) => ({ width: W, height: H, getBounds: () => b, genSettings: { mode: "api", denoise: 1 }, cropSettings: { context: "auto", feather: "auto", fill: "none", paste: "selection", ...crop }, base: null });
+    const settingsOf = (ed, params, limits) => ({ width: ed.width, height: ed.height, gen: { ...ed.genSettings }, crop: { ...ed.cropSettings }, params: { ...params }, limits: limits ? { ...limits } : null, base: null });
+    const cases = [
+        ["FLUX 3 limits, auto context, a wide selection", [300, 400, 900, 520], {}, { padding: 0, target_size: 0, feather: 0, multiple_of: 16 }, { ...recipeLimits, mode: "max" }],
+        ["FLUX 3 limits, a selection at the corner", [0, 0, 120, 90], {}, { padding: 0, target_size: 0, feather: 0, multiple_of: 16 }, { ...recipeLimits, mode: "max" }],
+        ["manual context 40 px, no limits (a local recipe), paste crop", [500, 300, 760, 610], { context: "manual", paste: "crop" }, { padding: 40, target_size: 0, feather: 8, multiple_of: 64 }, null],
+        ["manual context, target size 1024, FLUX 3 limits", [1200, 100, 1590, 990], { context: "manual" }, { padding: 64, target_size: 1024, feather: 8, multiple_of: 16 }, { ...recipeLimits, mode: "crop" }],
+    ];
+    for (const [what, b, crop, params, limits] of cases) {
+        const ed = fakeEditor(b, crop);
+        const f = S.planFrame(ed, params, limits);
+        const p = S.planCrop(settingsOf(ed, params, limits), maskOf(b));
+        const want = { x: p.x0, y: p.y0, w: p.cw, h: p.ch, emitted: [p.ew, p.eh], paste: p.info.paste, aspect: p.info.aspect };
+        check(`planFrame equals planCrop on the mask: ${what}`, eq(f, want), short(f) + " vs " + short(want));
+    }
+    check("planFrame: no selection is null", S.planFrame(fakeEditor(null, {}), {}, null) === null, "");
+    // a marquee at fractional coordinates: getBounds() holds the drag box floored and ceiled, a pixel wider than the
+    // alpha >= 128 box the run reads; planFrame scans it exact (the review's case: the wider box tips 1:1 to 5:4)
+    {
+        const W2 = 4000, H2 = 3000, exact = [1001, 801, 1404, 1101], loose = [1000, 800, 1405, 1102];
+        const data = new Float32Array(W2 * H2);
+        for (let y = exact[1]; y < exact[3]; y++) data.fill(1, y * W2 + exact[0], y * W2 + exact[2]);
+        let scans = 0;
+        const ed2 = { width: W2, height: H2, getBounds: () => loose, scanBoundsIn: (b) => { scans++; return b === loose ? exact : null; }, selectionSeq: 7, genSettings: { mode: "api", denoise: 1 }, cropSettings: { context: "auto", feather: "auto", fill: "none", paste: "selection" }, base: null };
+        const params = { padding: 0, target_size: 0, feather: 0, multiple_of: 16 }, limits = { ...recipeLimits, mode: "max" };
+        const f = S.planFrame(ed2, params, limits);
+        const p = S.planCrop(settingsOf(ed2, params, limits), { data, w: W2, h: H2, ox: 0, oy: 0, fullW: W2, fullH: H2 });
+        const wide = S.planCrop(settingsOf(ed2, params, limits), { bounds: loose, fullW: W2, fullH: H2 });
+        check("planFrame scans a loose getBounds() box exact: the run's crop, not the wider box's", eq([f.x, f.y, f.w, f.h, f.aspect], [p.x0, p.y0, p.cw, p.ch, p.info.aspect]) && p.info.aspect !== wide.info.aspect, short([f, p.info.bbox, p.info.aspect, wide.info.aspect]));
+        S.planFrame(ed2, params, limits);
+        const once = scans === 1;
+        ed2.selectionSeq++;
+        S.planFrame(ed2, params, limits);
+        check("planFrame scans once per selection change", once && scans === 2, String(scans));
+    }
 
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

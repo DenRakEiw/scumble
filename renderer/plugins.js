@@ -702,7 +702,8 @@ function makeApi(entry) {
              * built, activate, changed, tool, removed, theme (a skin was switched; doc is null), geometry (the whole picture was
              * turned, cropped, extended, resized or straightened: `kind`, `m` the matrix from old image coordinates to new
              * ones, `op` 1 / -1 / 2 / "h" / "v" for a turn only, `from` and `to` { width, height }; an undo puts the plugin's
-             * document data back itself): fn({ doc, ... }); returns the off() function.
+             * document data back itself), recipe (another recipe was selected), crop (a node parameter or the API size
+             * changed the crop a run sends; once per open tab): fn({ doc, ... }); returns the off() function.
              */
             on(type, fn) {
                 const wrapped = (data) => { try { fn({ ...data, doc: docOf(data.editor) }); } catch (err) { report(entry, `on ${type}`, err); } };
