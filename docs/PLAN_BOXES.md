@@ -83,6 +83,20 @@ and `commands` green offline (labels `s3c`, `s3c2`). S3d (the Boxes switch) and 
 from the description, the warnings, the tool's hit order) were built the same day, as §10 says under "As built". Next:
 the live checks §6 with the user, then a release of item 28 on the user's word; S4 optional.
 
+**Live checks §6.1-6.3 done 2026-10-02** (the user: "ja kannst du machen"; the 0.1.37 exe on the gate profile
+`rel36-exe` that holds their BFL key, driven over CDP by a scratch script; Paste set to the whole crop so the model's
+whole answer shows; base `flux3_live_base.png` 2048 x 1536, reference `flux3_live_moth.png`, which is a paper room with
+a wall clock). Five edits, each 1:1 at 1k, 5 credits, 50-150 s. **6.1** "Add a small black cat sitting in the grass.",
+selection 320 x 300 in a 512 crop: without a box the cat came small at the lower right, across the selection's edge
+(Paste "selection" would have cut it); with the selection as a box (`tgt_bbox [207,188,793,813]`) it sat in the middle
+and filled the box. The rest of the crop held in both. **6.2** "Hang the white wall clock from @img1 on the wooden
+wall.": plain, the right clock, small, inside the selection; with a From box (`src_bbox` the clock's part of the
+reference) the clock filled the box exactly. **6.3** a Remove box on the street lamp with "Remove the street lamp.":
+lamp and glow gone, the cow and the wall untouched. Verdict: the boxes do what §2 says; the model takes a box's size
+as the size of the thing (the manual says so now). Seen on the way: ids from a description take its first two telling
+words, adjectives included (`small_black_1`, `white_wall_1`; "black_cat" would read better), cosmetic. The
+bbox rows are `[y0, x0, y1, x1]` on 0-1000, as the docs write them. Next: S4 and S5 optional.
+
 ## 1. Sources
 
 - BFL docs, fetched 2026-10-01 as markdown (`https://docs.bfl.ml/<page>.md`, index `https://docs.bfl.ml/llms.txt`):

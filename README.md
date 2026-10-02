@@ -39,7 +39,7 @@ Scumble is the standalone window around it, plus recipes, plugins, an MCP server
 Windows first (from the [Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R) or the installer below), a Linux build (AppImage, .deb) that has not been tried on Linux yet, macOS is planned. Free software, GPL-3.0.
 What has been verified so far: local rendering through ComfyUI, the in-app helper models,
 the film pack, the command core, the MCP server, the tile engine on large documents and
-auto-update, and among the API providers FLUX 3 Image on Black Forest Labs and GPT Image 2.5 through OpenRouter; the
+auto-update, and among the API providers FLUX 3 Image on Black Forest Labs (with boxes in the prompt) and GPT Image 2.5 through OpenRouter; the
 other API providers and the assistant's model calls are untested against the live services.
 
 ## Features
@@ -64,6 +64,10 @@ press Generate. The recipe decides where it runs: your ComfyUI, or a provider wi
   reference layers, and transparent results from the OpenAI image models land as cut-outs.
 - Start from nothing: *Generate new* makes the base image from the prompt alone, locally
   or through a provider, and you edit it from there.
+- Boxes in the prompt for FLUX 3 Image: draw boxes on the picture with the Boxes tool (X) and say what each one
+  does (add something new, keep, move or remove an element, place a reference layer, render words); the run tells
+  the model where each change goes. With no boxes drawn, the selection goes as one box. One switch under the prompt
+  turns them on and off, and the boxes are saved with the document.
 - Prompt upsampling through a stored API key, an OpenRouter, Oxen.ai or ToAPIs key, or a local Ollama /
   LM Studio, with your own prompt-writing rules as Markdown templates.
 
@@ -235,7 +239,7 @@ renderer/editor/   the editor, shared with the ComfyUI node (docs/BUILD_NODE.md)
                    kernels (wasm), inpaint_bands.js the strip writers
 crates/px/         the Rust source of the pixel kernels
 recipes/           ComfyUI recipes (API-format prompts with a fixed canvas node id) and model recipes (one per model, a variant per provider), docs/RECIPES.md
-plugins/           built-in plugins: sample (one of every extension point), film (the film pack), glb (3D objects), ailabel (the EU AI label)
+plugins/           built-in plugins: sample (one of every extension point), film (the film pack), glb (3D objects), ailabel (the EU AI label), boxes (boxes in the prompt)
 docker/runpod/     Dockerfile + provision.sh for a ComfyUI box on RunPod (draft, docs/RUNPOD.md)
 tools/             build_node.py (the node's editor), build_px.py (the kernels), cdp.py (DevTools driver), the tests, run_gates.sh
 docs/              BRIEF.md (vision, decisions, phases), ASSISTANT.md, COMMANDS.md, PLUGINS.md, FILM.md, MCP.md, RECIPES.md,

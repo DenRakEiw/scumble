@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.37 — 2026-10-02
 
 - **FLUX 3 Image: boxes in the prompt, behind one switch.** A switch *Boxes* in a row of its own under the prompt
   field decides whether a run sends bounding boxes in the prompt, in the form the model's documentation describes. It
@@ -15,7 +15,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   add turns it on, and the status line says so. Switching it off never deletes a box. The status line says "Sent
   with 1 box.", the log keeps the prompt as it went out, and a very small selection gets a note, since the model
   often leaves a box under about 40 pixels empty. Agents switch it with `set_generation` (`boxes`), and `status`
-  reports it.
+  reports it. Tried live before the release, five edits at 1k: with the selection as a box a cat sat in the middle
+  of the box (without, at the selection's edge, where *Paste* would have cut it), a From reference box put a wall clock
+  from a reference layer exactly into its box, and a Remove box took out a street lamp and its glow. The model fills a
+  box: draw it at the size the thing should have.
 - **Plugins can supply boxes for the prompt.** Plugin API 3 adds `scumble.generate.register({ id, boxes(doc, ctx),
   count(doc) })`: a plugin answers boxes in image pixels (new, keep, move, remove, or a reference layer placed) for a
   Generate or Generate new run of a recipe that takes boxes while the Boxes switch is on, and Scumble maps them into
@@ -34,7 +37,7 @@ the section for its version; `docs/` and the commit history hold the technical d
   document otherwise, and the section says which is the case; they are saved in the `.scumble` file, follow a crop, a
   turn or a resize of the picture, and every change is one undo step. Agents and scripts have `boxes_add`,
   `boxes_set`, `boxes_remove`, `boxes_list` (which also says whether the switch is on), `boxes_from_selection` and
-  `boxes_clear`.
+  `boxes_clear`; the assistant adds and changes boxes by itself and asks before it removes one or clears them.
 - **Boxes: draw them on the canvas.** The *Boxes* tool (X, under Plugins in the tool column) draws a box with a drag
   on the picture; a click selects one (its row in the panel lights up, and a click on a row selects its box), a drag
   moves it, the eight handles resize it. Delete removes the selected box, D duplicates it, the arrow keys nudge it by
