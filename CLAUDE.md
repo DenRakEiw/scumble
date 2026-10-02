@@ -76,33 +76,30 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02: item 28 S1-S3e built, the plugin hook, the Boxes plugin with its tool and crop frame, one Boxes switch under the prompt, the caption's place words; 0.1.36 is Latest; item 31 Ideogram 4.5 researched)
+## Where things stand (2026-10-02: item 28 S1-S3e built, the plugin hook, the Boxes plugin with its tool and crop frame, one Boxes switch under the prompt, the caption's place words; 0.1.36 is Latest; item 31 Ideogram 4.5 I0 + I1 built, the Replicate variant)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02, "weiter", the seventh of the day):** item 28 S3e (`docs/PLAN_BOXES.md` §10 "S3e as built"),
-one commit, not released (CHANGELOG Unreleased: three entries). The S3d paragraph is in `docs/HISTORY.md`. **The caption:**
-main's `providers/boxes.js` `captionFlux3` (and its copy in `plugins/boxes/format.js`, held to the same vectors) writes a
-sentence per box the prompt does not name by `<id>` with the desc and its place by thirds ("place a red scarf
-<red_scarf_1> at the top left", "move the lamp <lamp_1> up and to the left, larger", a desc that starts with an
-instruction verb as it is); the prompt always goes first word for word, a box whose desc is the prompt (S1's) says only
-where ("the change goes in <door_red_1> ..."), "Leave the rest of the picture as it is." closes an edit whose prompt is
-empty or a box's desc; `applyBoxes` notes a New box without a desc. **Ids:** `BOX_ID` takes several words
-(`red_scarf_1`), never `ref_image_k`; `renderer/editor/boxes.js` `idWords`; a box with a default id (`box_n`, `edit_n` ..)
-is named after a new desc or text unless the prompt names it, S1's box after the prompt. **Warnings:** the panel warns of a
-New box without a desc and of small boxes (`cropCheck().small`), runs note small boxes (`smallBoxes` / `smallNote` in
-`host.js`). **Tool:** the smallest box under a click wins; a box turned Move steps aside by a fifth of the picture. Tests:
-`boxes_test.js` 120, `flux3_test.js` 101, `boxes_test.py` step `ids_warnings_caption_and_hit_order`; gates `boxes`,
-`commands`, `lint`, `types` green `--offline` (labels `s3e`..`s3e3`), `build_node.py --check` only the known "differs",
-COMMANDS.md regenerated, one look over CDP. A review (two readers, each finding checked by a third) confirmed eight, all
-fixed (the worst: "remove the man" went as "place remove the man"); two refuted. **Also this session, on the user's
-word:** Ideogram 4.5 for the next release (item 31), from the docs only, no live test; a research workflow (Replicate,
-Comfy Router, WaveSpeed) writes `docs/PLAN_IDEOGRAM45.md` and saved the Router's schema
-`tools/refs/comfyrouter/ideogram_ideogram-4-5.json` (both committed after S3e; the plan: a new recipe
-`recipes/ideogram_4_5.json`, Generate as Precise Edit with the mask inverted, steps I0-I3, eleven open questions in §9). **Not done:** the live FLUX 3 checks
-§6.1-6.3 (the user's key); S4 (optional); the node repo's build is still behind. Next: item 31 (Ideogram 4.5 from the
-plan), then a release of item 28 and 31 on the user's word.
+**This session (2026-10-02, "baue weiter", the eighth of the day):** item 31 I0 + I1 (`docs/PLAN_IDEOGRAM45.md`
+"Status: I0 + I1 built"), one commit, not released (CHANGELOG Unreleased: one entry beside item 28's). The S3e
+paragraph is in `docs/HISTORY.md`. **Shared:** `providers/util.js` holds `pngSize`, `seedOf`, `textShape`,
+`blackEditMask` (Magnific's Ideogram Inpaint unchanged) and `ideogramMask` (null for a whole-crop selection: no mask
+goes; refused when nothing is at half strength). **Replicate** (`replicate.js`): a fill's `fields.references`
+(unnumbered, `style`), `options.mask: "black"`, `seed_max`, `negative: false`, `max_ratio` / `max_bytes` (checked
+before any upload; an opaque picture over the cap goes as JPEG), a text run's `sizes` (`size`, no `aspect_ratio`) and
+`text_values` (new: Generate new takes the *edit* Settings rows, `host.providerParams`, so the edit's `very_low` is
+mapped to `low`; `text.settings` never reach a run, a chip for that was offered). **Recipe** `recipes/ideogram_4_5.json`:
+Replicate only (Precise Edit for Generate, `ideogram-4-5` for Generate new), Quality default medium, `limits.ratio` 6
+on the recipe. The refusal for a named unnumbered reference and the crop info card say "without a number (as style
+references or unnumbered references)". Tests: `tools/ideogram45_test.js` 67 (new, the light tier), `recipes_test` 51,
+`refs_layout_test` 661 (its sweep decodes the inverted mask), `magnific_test` 137, flux3 / comfyrouter / oxen / boxes
+green; gates `recipes`, `lint`, `types` green `--offline` (labels `i1`, `i1b`); `build_node.py --check` only the known
+"differs"; one look over CDP (the recipe lists, "no Replicate key yet", the layouts). A review (two readers, each
+finding checked by a third) confirmed three, all fixed (the 6:1 aspect rule, Ideogram's 25 MB per picture, the info
+card's wording); one refuted. **Not done:** I2 (WaveSpeed: `accepts` allowlist, which `docs/PLAN_FLUX3.md` F4 reuses),
+I3 (Comfy Router: the ideogram dialect's 4.5 branch), README / MANUAL lines; no live run (the user's word). Next: I2,
+then I3, then a release of items 28 and 31 on the user's word.
 
 **Released:** 0.1.36 is Latest (published 2026-10-01 22:38:25 CEST, tag on 5bc5831 "0.1.36 prepared"; the tag build
 green) on the user's "baue fertig und release dann das update mit flux3". 0.1.36 = **FLUX 3 Image** (ea71629) + item 25
@@ -228,7 +225,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   documentation hinzufügen, kein test nötig"): in the next release with item 28, built from the providers' docs only,
   no live run. Hosts: Replicate (`ideogram-ai/ideogram-4-5`), Comfy Router (the schema saved as
   `tools/refs/comfyrouter/ideogram_ideogram-4-5.json`), WaveSpeed (`ideogram-ai/ideogram-v4.5/edit` and siblings); the
-  adapters exist. Research and the build plan: `docs/PLAN_IDEOGRAM45.md`. Nothing built.
+  adapters exist. Research and the build plan: `docs/PLAN_IDEOGRAM45.md`. **I0 + I1 built 2026-10-02** (the shared
+  helpers, `recipes/ideogram_4_5.json` with its Replicate variant, `tools/ideogram45_test.js`; Unreleased). Next: I2
+  WaveSpeed, I3 Comfy Router, then the README / MANUAL lines.
 
 ## Gate runner and flakes
 

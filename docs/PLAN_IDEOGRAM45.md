@@ -1,6 +1,23 @@
 # Ideogram 4.5 in Scumble (researched 2026-10-02)
 
-## Status: researched, nothing built
+## Status: I0 + I1 built (2026-10-02), I2 and I3 open
+
+**I0 + I1 as built (2026-10-02, one session):** `util.js` holds `pngSize`, `seedOf`, `textShape`, `blackEditMask`
+(answers `{ png, edits, pixels }`; Magnific's Ideogram Inpaint sends its `png` as before, unchanged) and
+`ideogramMask` (null for a selection over the whole crop, a refusal when no pixel is at half strength or more), Magnific
+imports them. `replicate.js` reads `options.mask: "black"`, `seed_max`, `negative: false`, `sizes` (a text run's
+`size`, no `aspect_ratio`) and **`text_values`** (new, not in §5: a Generate new run's params come from the *edit*
+Settings rows, `host.providerParams`, so the edit's `very_low` would reach the text route, which refuses it; the
+variant maps it to `low`), and a fill's `fields.references` (unnumbered, `style: true`; the fill now checks its own
+`max` before any upload). After the review: `options.max_ratio` 6 and `max_bytes` 25,000,000 (Ideogram's Precise
+Edit page: aspects 1:6 .. 6:1, 25 MB a picture; an opaque picture over it goes as JPEG) and the recipe-level
+`limits.ratio` 6, which the WaveSpeed and Router variants inherit; the crop info card's wording. The recipe `recipes/ideogram_4_5.json` has the Replicate variant only, without
+`text.settings` (they are never sent, see above). The refusal for a named unnumbered reference says "without a number
+(as style references or unnumbered references)" in `refs.js`, `index.js` and `host.js`. Docs: `docs/RECIPES.md`
+"Ideogram 4.5" (after "FLUX 3 Image"), the variant-fields paragraph, the caps table, the drops list; CHANGELOG
+Unreleased. Tests: `tools/recipes_test.js` takes-none, `tools/refs_layout_test.js` (the sweep decodes the inverted
+mask for any `ideogram…4.5` route), `tools/magnific_test.js`'s wording, a new request-shape test
+`tools/ideogram45_test.js` (the light tier, 67 checks). Next: I2 (WaveSpeed), I3 (Comfy Router), then the README / MANUAL lines.
 
 Researched on 2026-10-02 by three readers (one per host), checked against the code on `main` (1298229 plus the
 uncommitted working tree). **Nothing is built:** no recipe, adapter or test file changed; the only new file

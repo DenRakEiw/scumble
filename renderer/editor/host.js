@@ -1344,8 +1344,8 @@ export const host = {
                 // the route's pictures that are no reference layer (the crop, a mask sent as a picture, the Original)
                 // come off its max
                 const cap = ans.max != null ? Math.max(0, ans.max - (ans.sent - shape.count) - shape.original) : null;
-                // style references go without a number: a token for one refuses the run (refs.js checkPictures)
-                const refuse = ans.style ? "this route sends reference images as style references, which have no number: take the token out to run" : null;
+                // style references and other unnumbered references (Ideogram 4.5) go without a number: a token for one refuses the run (refs.js checkPictures)
+                const refuse = ans.style ? "this route sends reference images without a number (as style references or unnumbered references): take the token out to run" : null;
                 info = { names, over: overSet, none, local: false, cap, refuse, style: !!ans.style };
             } catch (err) {
                 info = blank(String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));

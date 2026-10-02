@@ -1,0 +1,72 @@
+{
+  "id": "ideogram_4_5",
+  "kind": "provider",
+  "name": "Ideogram 4.5",
+  "family": "Ideogram",
+  "description": "Ideogram 4.5, Ideogram's precise edit model: real mask inpainting (the selection goes as the mask, the answer comes back at the crop's size and what the edit does not touch is copied from it), strong at typography. Written from the providers' documentation (2026-10-02); not run against the live API yet.",
+  "default": "replicate",
+  "limits": {
+    "ratio": 6
+  },
+  "providers": {
+    "replicate": {
+      "model": "ideogram-ai/ideogram-4-5-precise-edit",
+      "input": "fill",
+      "fields": {
+        "image": "image",
+        "mask": "mask",
+        "references": "reference_images"
+      },
+      "options": {
+        "mask": "black",
+        "max_images": 4,
+        "max_ratio": 6,
+        "max_bytes": 25000000,
+        "seed_max": 2147483647,
+        "negative": false,
+        "sizes": [
+          "1024x1024",
+          "1280x896",
+          "896x1280",
+          "1344x768",
+          "768x1344",
+          "1536x640",
+          "640x1536"
+        ],
+        "text_values": {
+          "quality": {
+            "very_low": "low"
+          }
+        }
+      },
+      "fixed": {
+        "num_images": 1
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "very_low",
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "model": "ideogram-ai/ideogram-4-5",
+        "sizes": [
+          1024
+        ]
+      },
+      "note": "Runs on Replicate with the Replicate token; written from Replicate's schema (2026-10-02), not run against the live API yet. Generate: Ideogram's Precise Edit; the selection goes as the mask (inverted to Ideogram's black = edit; a selection over the whole crop sends none, so the whole crop is edited) and up to three reference layers as unnumbered references, which the prompt cannot name; the answer has the crop's size. Generate new: the prompt alone at the closest of seven sizes, Very low goes as Low. Per image: Very low $0.008, Low $0.03, Medium $0.06, High $0.22; a new image Low $0.03, Medium $0.06, High $0.10 (Replicate, 2026-10-02)."
+    }
+  }
+}

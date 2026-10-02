@@ -164,8 +164,9 @@ switches: fal `sizing: "none"` for endpoints without a free `image_size`, fal
 `omit: ["output_format", ...]` for an endpoint that refuses the fields the other models
 take; ToAPIs' channels, sizes and tiers, below; OpenRouter's accepted parameters, presets, tiers and
 picture limits, below; ModelArk's pixel range, picture count, PNG switch and regions, below; Oxen.ai's accepted
-parameters, picture field, mask convention, aspect rule, tiers and presets, below; Magnific takes
-none, its route table knows each route's rules),
+parameters, picture field, mask convention, aspect rule, tiers and presets, below; Replicate's `mask: "black"`,
+`seed_max`, `negative: false`, `sizes` and `text_values` for Ideogram 4.5, with `fields.references` for a fill's
+unnumbered references and `max_ratio` / `max_bytes` checks, "Ideogram 4.5" below; Magnific takes none, its route table knows each route's rules),
 `limits` (the size ceiling, below), `edit: false` (the variant makes images from
 the prompt alone and the Generate button says so), `text` (the Generate new shape, below; **required on every
 `magnific` variant**, as `{ "model": "<text route>", ... }` or `false`, because Magnific's edit routes end in `-edit`
@@ -289,10 +290,11 @@ of the request, and each family has its own word for it (the vendors' prompting 
     answered line and returns them, and `generate` over MCP returns them as `notes`. A drop with no reference given
     notes nothing. A prompt that names a reference on such a route is refused ("…, so the prompt cannot name a
     reference image. Take the name out or pick a recipe that sends references."), and so is a marker for a style
-    reference. `provider:layout` answers a dropping route's `names` all null.
+    reference or another unnumbered one (Ideogram 4.5's). `provider:layout` answers a dropping route's `names` all null.
   - The routes that declare a drop: the fills without an image list (fal FLUX.1 Fill, Qwen inpaint and Z-Image turbo,
     "This endpoint takes the crop and the mask only"; fal Ideogram 4, "This endpoint takes one picture"; BFL, Comfy
-    Cloud and Comfy Router FLUX.1 Fill, "FLUX.1 Fill takes no reference images"; the Replicate and WaveSpeed fills),
+    Cloud and Comfy Router FLUX.1 Fill, "FLUX.1 Fill takes no reference images"; the Replicate fills without
+    `fields.references` and the WaveSpeed fills),
     Replicate's one-image edit (Qwen Image Edit, "This endpoint takes one picture"), Comfy Cloud's one-picture nodes
     (the two Gemini image nodes and the upscaler nodes, "this node takes one picture"), In-app LaMa ("LaMa fills from
     the picture alone") and Magnific Image Expand ("Image Expand takes the picture alone").
@@ -318,7 +320,8 @@ of the request, and each family has its own word for it (the vendors' prompting 
   - Range words (`Images 2 to 5 are reference images.`) only for a pattern that is one word and the number; any other
     pattern lists the names: `<image2>, <image3> and <image4> are reference images.` A name at the start of a
     sentence gets a capital only when it begins with a lower-case letter.
-  - Style references (Magnific Ideogram) get no reference sentence; upscale runs send the prompt unchanged.
+  - Style references (Magnific Ideogram) and Ideogram 4.5's unnumbered references get no reference sentence; upscale
+    runs send the prompt unchanged.
   - A new image with references has no head: the prompt, then the reference sentence (`a lighthouse at dusk Images 1
     and 2 are reference images.`); without references its prompt goes unchanged.
 - **Label parts.** Gemini direct and Comfy Router's vertexai dialect send text and pictures as parts; with more than
@@ -339,6 +342,7 @@ of the request, and each family has its own word for it (the vendors' prompting 
   | `seedream_5_lite` · Replicate | 14 | https://replicate.com/bytedance/seedream-5-lite ("Combine up to 14 reference images") |
   | `seedream_5_lite`, `_pro` · WaveSpeed | 10 | https://wavespeed.ai/docs/docs-api/bytedance/bytedance-seedream-v5.0-lite-edit, `…-v5.0-pro-edit` ("0 ~ 10 items") |
   | `qwen_image_edit` · WaveSpeed | 3 | https://wavespeed.ai/docs/docs-api/wavespeed-ai/qwen-image-edit-plus |
+  | `ideogram_4_5` · Replicate | 4 | https://replicate.com/ideogram-ai/ideogram-4-5-precise-edit (`reference_images` up to 4, 3 with a mask; read 2026-10-02) |
   | `gpt_image_2` · fal | 16 | https://fal.ai/models/openai/gpt-image-2/edit/api |
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · WaveSpeed | 16 | https://wavespeed.ai/docs/docs-api/openai/openai-gpt-image-2-edit, `…-2.5-flare-edit`, `…-2.5-sunburst-edit` ("0 ~ 16 items") |
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · OpenAI | 16 | OpenAI's `image[]` (not read at a URL in this step; not read by `openai.js` yet, above) |
@@ -611,7 +615,8 @@ only - gpt-image-2 always works at high fidelity and the docs say to omit it; `s
 holds a free size inside each model's own rules), **gemini** (`aspect_ratio`,
 `image_size`; no mask input, the mask goes along as an image and the prompt names the
 white area), **replicate** (settings by name, `model` is `owner/name` or
-`owner/name:version`, files over 256 kB through the Files API), **wavespeed** (`POST
+`owner/name:version`, files over 256 kB through the Files API; Ideogram 4.5's inverted mask, seed cap and preset
+sizes from `options`, "Ideogram 4.5" below), **wavespeed** (`POST
 /api/v3/<model>`, poll `predictions/<id>/result`; inputs are URLs only, so crop, mask and
 references go through the media upload first; `options.aspect_ratios` picks the preset
 closest to the crop, `options.size = "star"` sends `W*H` for the fill models; the key link
@@ -733,6 +738,37 @@ takes body, `layout` and `textLayout` from `flux3.js` and keeps its own submit a
   4k "can take several minutes"; the poll waits up to 15 minutes.
 - **Not built:** Keep rows from the in-app objects (`docs/PLAN_BOXES.md` S4), the regional hosts (the docs name only
   `api.bfl.ai` for this endpoint), and any aggregator variant (item 29, `docs/PLAN_FLUX3.md`).
+
+**Ideogram 4.5** (`recipes/ideogram_4_5.json`; `docs/PLAN_IDEOGRAM45.md`). Ideogram's precise edit model: a real
+mask edit whose answer has the picture's own size and copies the pixels the edit does not touch. Written from the
+hosts' documentation as read on 2026-10-02 and **not run against the live API** (the user's word: from the docs, no
+live test). Ideogram has no adapter of its own in Scumble; the variants run on Replicate (the default, built in step
+I1), with WaveSpeedAI and Comfy Router to follow (I2, I3).
+
+- **Generate** is Ideogram's *Precise Edit* (Replicate `ideogram-ai/ideogram-4-5-precise-edit`, `input: "fill"`): the
+  crop as `image`, the selection as `mask` and the reference layers (the Original first when it is on) as
+  `reference_images`. **The mask is inverted** (`options.mask: "black"`, `util.js` `ideogramMask`): Ideogram edits where
+  its mask is black and keeps the white, the reverse of Scumble's; channel 0 at 128 or more becomes black. Ideogram
+  refuses a mask without both colours, so a selection over the whole crop sends **no** mask (the whole crop is edited,
+  the stitch keeps the selection, `info.mask` says so), and a selection with no pixel at half strength is refused
+  before anything is sent. `options.max_images` 4 counts the crop and the references (Precise Edit takes 3 references
+  beside a mask). The references go **unnumbered** (the layout's `style`, as Magnific's Ideogram): no host documents how
+  a prompt names one, so an `@img` token is refused ("without a number"). No negative prompt (`options.negative:
+  false`), no size: the answer follows the crop.
+- **Generate new** is the text route (`text.model` `ideogram-ai/ideogram-4-5`): the prompt alone (a picture there
+  would be the one edited, so `text.refs` stays off), `size` the closest of the seven presets in `options.sizes`
+  (1024x1024, 1280x896, 896x1280, 1344x768, 768x1344, 1536x640, 640x1536) to the asked aspect or size, no
+  `aspect_ratio`. The text route has no *Very low*, so `options.text_values` sends it as *Low*.
+- **Seed** under Ideogram's cap: `options.seed_max` 2147483647, the editor's seed modulo 2^31 (`util.js` `seedOf`).
+  Replicate reports the seed only in its logs, so the answer reports the one sent.
+- **Settings:** *Quality* very_low / low / medium / high (default medium), also the billed rate; `fixed`
+  `num_images: 1`. **Price** (Replicate, 2026-10-02): an edit $0.008 / $0.03 / $0.06 / $0.22 per image, a new image
+  $0.03 / $0.06 / $0.10 (Low / Medium / High).
+- **Checks before sending** (Ideogram's Precise Edit page): the recipe's `limits.ratio` 6 widens a crop steeper than
+  6:1 wherever the picture allows, and `options.max_ratio` 6 refuses one that stays steeper (a picture narrower than
+  that); `options.max_bytes` 25,000,000 holds the crop, the mask and each reference to Ideogram's 25 MB (an opaque
+  picture over it goes as JPEG, one with transparency is refused, "Nothing was sent"). Otherwise the conservative 2048
+  default size until a live run says how large a crop the hosts take.
 
 What a provider run does: `prepareCrop` builds the crop like the node (selection bbox
 plus context, fill mode, scaling to the size the variant's `limits` allow, the grown and feathered

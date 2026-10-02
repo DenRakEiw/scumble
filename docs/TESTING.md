@@ -197,6 +197,16 @@ reaches the body, a request without boxes sends the same body as before) and tha
 unchanged.
 Light tier: written from the docs; a live call is the user's (`docs/PLAN_FLUX3.md`).
 
+Ideogram 4.5 (`recipes/ideogram_4_5.json`, `electron/main/providers/replicate.js`, `util.js` `ideogramMask`,
+`docs/PLAN_IDEOGRAM45.md`): `node tools/ideogram45_test.js` (plain Node, a scripted api.replicate.com, 67 checks) pins
+the Replicate variant as `recipes.js` serves it, the Precise Edit body (exactly prompt, seed, image, mask, quality,
+num_images; no negative, size or aspect), the mask inverted pixel for pixel with the 128 threshold, no mask for a
+whole-crop selection and a refusal for an empty one or one of another size, a crop steeper than 6:1 refused and a
+picture over 25 MB sent as JPEG or refused (all before any request), the seed under 2^31, `reference_images`
+only with references and the cap of 4 before any upload, the unnumbered layout, the text route's `size` from the seven
+presets with Very low sent as Low, and that FLUX.1 Fill and Nano Banana 2 on Replicate send what they sent before.
+Light tier: written from the docs, no live call (the user's word).
+
 Boxes in the prompt (item 28 S1, `electron/main/providers/boxes.js`, `renderer/editor/boxes.js`, `docs/PLAN_BOXES.md`):
 `node tools/boxes_test.js` (plain Node, 63 checks) pins the 0 to 1000 grid (BFL's own example), the shape check and
 its refusals, one FLUX 3 row per kind against the FLUX 3 layout (the Original shifting the reference slots as the

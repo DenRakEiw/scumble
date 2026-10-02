@@ -102,4 +102,63 @@ function num(v, fallback) {
     return Number.isFinite(n) ? n : fallback;
 }
 
-module.exports = { dataUri, b64, fetchImage, readError, sleep, closestSize, closestAspect, fitPixels, num };
+/** [width, height] from a PNG's IHDR, or null for anything else. */
+function pngSize(b) {
+    if (!b || b.length < 24) return null;
+    if (b[0] !== 0x89 || b[1] !== 0x50 || b[2] !== 0x4e || b[3] !== 0x47) return null;
+    const v = (o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+    return [v(16), v(20)];
+}
+
+/**
+ * The seed as a route with a cap takes it, or undefined (no seed, or the Random seed row on): the editor's seed runs up
+ * to 0xffffffff, Ideogram's cap is 2147483647 (Magnific, Replicate's `options.seed_max`).
+ */
+function seedOf(req, max) {
+    if (max == null || req.seed == null || req.seed === "" || (req.params || {}).random_seed) return undefined;
+    return (Number(req.seed) >>> 0) % (max + 1);
+}
+
+/** The shape a text run asks for: `aspect` when it reads as W:H, else the size. */
+function textShape(req) {
+    const m = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(String(req.aspect || ""));
+    if (m && +m[1] > 0 && +m[2] > 0) return [+m[1], +m[2]];
+    return [Math.max(1, +req.width || 1024), Math.max(1, +req.height || 1024)];
+}
+
+/**
+ * Ideogram's mask from Scumble's: Scumble's is white where to repaint, Ideogram's black ("Black regions indicate where
+ * to edit"), of the picture's own size. Channel 0 at 128 or more becomes black, the rest white; always PNG. Answers
+ * { png, edits, pixels } (`edits` the black pixels); throws when the mask cannot be read or differs from the picture in
+ * size. Magnific's Ideogram Inpaint sends `png` as it is; Ideogram 4.5 goes through ideogramMask below.
+ */
+function blackEditMask(mask, image, ctx, who) {
+    if (!mask || !mask.length) throw new Error(`${who} needs the selection as a mask.`);
+    if (typeof ctx.bitmap !== "function" || typeof ctx.fromBitmap !== "function") throw new Error(`${who}: this build cannot read the mask.`);
+    const bm = ctx.bitmap(mask);
+    if (!bm || !bm.width || !bm.height) throw new Error(`${who}: the mask could not be read.`);
+    const size = pngSize(Buffer.from(image || []));
+    if (size && (size[0] !== bm.width || size[1] !== bm.height)) throw new Error(`${who}: the mask is ${bm.width} × ${bm.height} and the picture ${size[0]} × ${size[1]}; Ideogram takes a mask of the picture's own size.`);
+    const n = bm.width * bm.height;
+    const out = Buffer.alloc(n * 4);
+    let edits = 0;
+    for (let i = 0, j = 0; i < n; i++, j += 4) {
+        const v = bm.data[j] >= 128 ? 0 : 255;
+        if (!v) edits++;
+        out[j] = v; out[j + 1] = v; out[j + 2] = v; out[j + 3] = 255;
+    }
+    return { png: Buffer.from(ctx.fromBitmap({ width: bm.width, height: bm.height, data: out })), edits, pixels: n };
+}
+
+/**
+ * The mask an Ideogram 4.5 edit sends (Replicate, WaveSpeed and Comfy Router, `options.mask: "black"`): Ideogram refuses
+ * a mask without both colours, so a selection over the whole picture sends none (null: the whole picture is edited and
+ * the stitch keeps the selection), and one with no pixel at half strength is refused before anything is sent.
+ */
+function ideogramMask(mask, image, ctx, who) {
+    const m = blackEditMask(mask, image, ctx, who);
+    if (!m.edits) throw new Error(`${who}: the selection holds no pixel at half strength or more, so the model would have nothing to edit. Select the area to change.`);
+    return m.edits === m.pixels ? null : m.png;
+}
+
+module.exports = { dataUri, b64, fetchImage, readError, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, textShape, blackEditMask, ideogramMask };

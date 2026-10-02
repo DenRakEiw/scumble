@@ -225,7 +225,7 @@ function checkPictures(lay, req, who) {
         if (marker) throw new Error(`${who}: ${drops}, so the prompt cannot name a reference image. Take the name out or pick a recipe that sends references.`);
         return { req: { ...req, references: [], original: 0 }, notes: [`${who}: ${drops}; ${countWords(req)} not sent.`] };
     }
-    if (lay.style && marker) throw new Error(`${who} sends reference layers as style references, which have no number: take the name out of the prompt.`);
+    if (lay.style && marker) throw new Error(`${who} sends reference layers without a number (as style references or unnumbered references): take the name out of the prompt.`);
     const max = +lay.max > 0 ? +lay.max : null, count = countOf(lay);
     if (max != null && count > max && req.kind === "text") {
         throw new Error(`${who} takes at most ${max} reference picture${max === 1 ? "" : "s"} for a new image; this run has ${count}: hide reference layers.`);

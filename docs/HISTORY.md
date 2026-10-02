@@ -44,6 +44,33 @@ The paragraph of 2026-10-02 (item 28 S3c) was moved here the same day, when S3d 
 
 The paragraph of 2026-10-02 (item 28 S3d) was moved here the same day, when S3e was built.
 
+The paragraph of 2026-10-02 (item 28 S3e) was moved here the same day, when item 31 I0 + I1 was built.
+
+## 2026-10-02 (item 28 S3e, moved here the same day)
+
+**This session (2026-10-02, "weiter", the seventh of the day):** item 28 S3e (`docs/PLAN_BOXES.md` §10 "S3e as built"),
+one commit, not released (CHANGELOG Unreleased: three entries). The S3d paragraph is in `docs/HISTORY.md`. **The caption:**
+main's `providers/boxes.js` `captionFlux3` (and its copy in `plugins/boxes/format.js`, held to the same vectors) writes a
+sentence per box the prompt does not name by `<id>` with the desc and its place by thirds ("place a red scarf
+<red_scarf_1> at the top left", "move the lamp <lamp_1> up and to the left, larger", a desc that starts with an
+instruction verb as it is); the prompt always goes first word for word, a box whose desc is the prompt (S1's) says only
+where ("the change goes in <door_red_1> ..."), "Leave the rest of the picture as it is." closes an edit whose prompt is
+empty or a box's desc; `applyBoxes` notes a New box without a desc. **Ids:** `BOX_ID` takes several words
+(`red_scarf_1`), never `ref_image_k`; `renderer/editor/boxes.js` `idWords`; a box with a default id (`box_n`, `edit_n` ..)
+is named after a new desc or text unless the prompt names it, S1's box after the prompt. **Warnings:** the panel warns of a
+New box without a desc and of small boxes (`cropCheck().small`), runs note small boxes (`smallBoxes` / `smallNote` in
+`host.js`). **Tool:** the smallest box under a click wins; a box turned Move steps aside by a fifth of the picture. Tests:
+`boxes_test.js` 120, `flux3_test.js` 101, `boxes_test.py` step `ids_warnings_caption_and_hit_order`; gates `boxes`,
+`commands`, `lint`, `types` green `--offline` (labels `s3e`..`s3e3`), `build_node.py --check` only the known "differs",
+COMMANDS.md regenerated, one look over CDP. A review (two readers, each finding checked by a third) confirmed eight, all
+fixed (the worst: "remove the man" went as "place remove the man"); two refuted. **Also this session, on the user's
+word:** Ideogram 4.5 for the next release (item 31), from the docs only, no live test; a research workflow (Replicate,
+Comfy Router, WaveSpeed) writes `docs/PLAN_IDEOGRAM45.md` and saved the Router's schema
+`tools/refs/comfyrouter/ideogram_ideogram-4-5.json` (both committed after S3e; the plan: a new recipe
+`recipes/ideogram_4_5.json`, Generate as Precise Edit with the mask inverted, steps I0-I3, eleven open questions in §9). **Not done:** the live FLUX 3 checks
+§6.1-6.3 (the user's key); S4 (optional); the node repo's build is still behind. Next: item 31 (Ideogram 4.5 from the
+plan), then a release of item 28 and 31 on the user's word.
+
 ## 2026-10-02 (item 28 S3d, moved here the same day)
 
 **This session (2026-10-02, "baue weiter", the sixth of the day):** item 28 S3d as `docs/PLAN_BOXES.md` §10 plans it

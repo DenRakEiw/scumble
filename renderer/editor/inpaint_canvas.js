@@ -14422,8 +14422,9 @@ class InpaintEditor {
             const ctrl = this.layers.filter((l) => this.isControl(l) && this.shown(l)).length;
             rows.push(["Control", ctrl ? `${ctrl} layer${ctrl > 1 ? "s" : ""}` : "none (black)"]);
             const refs = shown.length;
-            // a route that sends the references as style references gives them no number: they go, unnamed
-            if (lay && lay.style && refs && !lay.none) rows.push(["References", `${refs} image${refs > 1 ? "s" : ""} as style references (no number)`]);
+            // a route that sends the references as style references (Magnific's Ideogram) or in a list of their own
+            // (Ideogram 4.5) gives them no number: they go, unnamed
+            if (lay && lay.style && refs && !lay.none) rows.push(["References", `${refs} image${refs > 1 ? "s" : ""} without a number (style or unnumbered references)`]);
             else if (lay && lay.names && refs && !lay.none) {
                 // the app: what each shown reference goes as ("img1 → <image3>"), what is left out, and a guessed wording
                 const labels = this.refLabels();

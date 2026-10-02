@@ -136,7 +136,7 @@ function resolveNames(p, req, lay, given) {
         const r = resolveMarkers(t, lay.pictures, req.refName);
         for (const left of r.left) {
             if (left.ref >= req.references.length) throw new Error(`The prompt names reference picture ${left.ref + 1}, and the request carries ${req.references.length}: nothing was sent.`);
-            if (left.why === "unnumbered") throw new Error(`${p.label} ${req.model}: this route sends the reference images as style references, which have no number the prompt could name: take the reference out of the prompt.`);
+            if (left.why === "unnumbered") throw new Error(`${p.label} ${req.model}: this route sends the reference images without a number the prompt could name (as style references or unnumbered references): take the reference out of the prompt.`);
             throw new Error(`${p.label} ${req.model}: ${lay.drops || "this route leaves that reference image out."}`);
         }
         out[k] = r.text;

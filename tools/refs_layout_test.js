@@ -195,13 +195,15 @@ async function viaIndex(request, spies = []) {
 /**
  * The pictures of one request, each known by its bytes: `ids` maps base64 to "crop", "mask", "maskAlpha" or "ref<i>"
  * (references[i], the Original at 0 when `original`). A route that sends a picture it derives from one of them gets
- * that derivation, computed here from the fixture, as a second key of the same id: Magnific's Ideogram mask (inverted,
+ * that derivation, computed here from the fixture, as a second key of the same id: Magnific's and Ideogram 4.5's mask (inverted,
  * channel 0 at 128 and above black), Image Expand's kept part (the crop inside a 32 px frame), in-app LaMa's RGBA crop
  * and its hole. Those routes decode their pictures, so they get codec pictures at a smaller size.
  */
 function fixturesFor(provider, model, nRefs, original) {
     const route = String(model || "").replace(/^\/+|\/+$/g, "").replace(/^v1\/ai\//, "");
-    const magnific = provider === "magnific" && (route === "ideogram-image-edit" || route.startsWith("image-expand/"));
+    // Ideogram 4.5 (Replicate, WaveSpeed, Comfy Router) inverts the mask as Magnific's Ideogram does (util.js blackEditMask)
+    const ideogram45 = /ideogram.*4[-.]5/.test(route);
+    const magnific = (provider === "magnific" && (route === "ideogram-image-edit" || route.startsWith("image-expand/"))) || ideogram45;
     const inapp = provider === "inapp";
     const [w, h] = inapp ? [512, 512] : magnific ? [512, 384] : [1024, 768];
     const F = 32;
@@ -223,7 +225,7 @@ function fixturesFor(provider, model, nRefs, original) {
     const add = (id, b) => ids.set(Buffer.from(b).toString("base64"), id);
     add("crop", image); add("mask", mask); add("maskAlpha", maskAlpha);
     references.forEach((b, i) => add(`ref${i}`, b));
-    if (magnific && route === "ideogram-image-edit") {
+    if (magnific && (route === "ideogram-image-edit" || ideogram45)) {
         const bm = codec.bitmap(mask), inv = Buffer.alloc(bm.data.length);
         for (let j = 0; j < inv.length; j += 4) { const v = bm.data[j] >= 128 ? 0 : 255; inv[j] = v; inv[j + 1] = v; inv[j + 2] = v; inv[j + 3] = 255; }
         add("mask", codec.fromBitmap({ width: bm.width, height: bm.height, data: inv }));
@@ -911,7 +913,7 @@ async function main() {
         const refusals = [
             ["an index past the end ({@ref:5} with 2 references)", loop({ prompt: "from {@ref:5}" }), ["loopback"], null],
             ["a reference the route drops (fal's FLUX.1 Fill, no fields.images)", { provider: "fal", kind: "fill", model: flux1.model, fields: flux1.fields || null, options: flux1.options || null, prompt: "the coat from {@ref:0}", references: [png("REF0")], original: 0, image: png("CROP"), mask: png("MASK"), maskAlpha: png("MASKA"), width: 64, height: 64, params: defaults(flux1.settings, flux1.fixed) }, ["fal"], /left out|takes the crop/i],
-            ["an Ideogram style reference (no number)", { provider: "magnific", kind: "fill", model: ideo.model, prompt: "in the style of {@ref:0}", references: [png("REF0")], original: 0, image: png("CROP"), mask: png("MASK"), maskAlpha: png("MASKA"), width: 64, height: 64, params: defaults(ideo.settings, ideo.fixed) }, ["magnific"], /no number/i],
+            ["an Ideogram style reference (no number)", { provider: "magnific", kind: "fill", model: ideo.model, prompt: "in the style of {@ref:0}", references: [png("REF0")], original: 0, image: png("CROP"), mask: png("MASK"), maskAlpha: png("MASKA"), width: 64, height: 64, params: defaults(ideo.settings, ideo.fixed) }, ["magnific"], /without a number/i],
             ["a text run with a marker on a route that drops the references (loopback options.drops)", { provider: "loopback", kind: "text", model: "loopback", prompt: "like {@ref:0}", references: [png("REF0")], original: 0, width: 64, height: 64, params: {}, options: { drops: "test drop" } }, ["loopback"], /test drop, so the prompt cannot name a reference image/],
             ["a text run that marks an Original", { provider: "loopback", kind: "text", model: "loopback", prompt: "like {@ref:1}", references: [png("ORIG"), png("REF1")], original: 1, width: 64, height: 64, params: {} }, ["loopback"], /A new image has no Original picture/],
             ["a text run with a marker past its references ({@ref:2} with 2)", { provider: "loopback", kind: "text", model: "loopback", prompt: "like {@ref:2}", references: [png("REF0"), png("REF1")], original: 0, width: 64, height: 64, params: {} }, ["loopback"], /names reference picture 3, and the request carries 2/],
@@ -1090,7 +1092,7 @@ async function main() {
         e = await throws(() => refs.checkPictures(cropOnly(DROP), reqOf(1, { kind: "fill", negative: "not {@ref:0}" }), WHO));
         check("checkPictures: a drop with a marker in the negative is refused", !!e && e.startsWith(`${WHO}: ${DROP}, so the prompt cannot name`), e);
         e = await throws(() => refs.checkPictures(style, reqOf(2, { kind: "fill", prompt: "in the style of {@ref:1}" }), WHO));
-        check("checkPictures: a style reference named by a marker is refused", e === `${WHO} sends reference layers as style references, which have no number: take the name out of the prompt.`, e);
+        check("checkPictures: a style reference named by a marker is refused", e === `${WHO} sends reference layers without a number (as style references or unnumbered references): take the name out of the prompt.`, e);
         req = reqOf(2, { kind: "fill" });
         chk = refs.checkPictures(style, req, WHO);
         check("checkPictures: style references without a marker go (3 of max 11)", chk.req === req && eq(chk.notes, []), short(chk));
@@ -1149,7 +1151,7 @@ async function main() {
         chk = refs.checkPictures(L({ drops: TDROP }), req, WHO);
         check("checkPictures, kind text: no reference given, nothing changes (a drop included)", chk.req === req && eq(chk.notes, []), short(chk));
         e = await throws(() => refs.checkPictures(L({ own: [["reference", "style[0]", 0]], style: true }), textOf(1, { prompt: "like {@ref:0}" }), WHO));
-        check("checkPictures, kind text: a style reference named by a marker is refused", e === `${WHO} sends reference layers as style references, which have no number: take the name out of the prompt.`, e);
+        check("checkPictures, kind text: a style reference named by a marker is refused", e === `${WHO} sends reference layers without a number (as style references or unnumbered references): take the name out of the prompt.`, e);
     });
 
     // ---- 9. providers/index.js: the check before the adapter, the notes (26a2) ----

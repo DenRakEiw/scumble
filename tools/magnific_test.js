@@ -759,7 +759,7 @@ async function main() {
             y = await via("ideogram-image-edit", "fill", 10, 0);
             check("... and goes with 11", !y.err && y.calls === 1 && y.req.references.length === 10, y.err);
             y = await via("ideogram-image-edit", "fill", 1, 0, "in the style of {@ref:0}");
-            check("Ideogram with a marker: a style reference has no number, refused", /style references, which have no number/.test(y.err || "") && y.calls === 0, y.err);
+            check("Ideogram with a marker: a style reference has no number, refused", /without a number \(as style references/.test(y.err || "") && y.calls === 0, y.err);
         } finally { index.PROVIDERS.magnific.edit = keep; }
 
         // a text run with references (26f): laid out by textLayout, held to its cap, the markers named from 1

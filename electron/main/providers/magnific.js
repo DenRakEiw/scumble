@@ -38,7 +38,7 @@
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
-const { fetchImage, sleep: realSleep, closestAspect } = require("./util");
+const { fetchImage, sleep: realSleep, closestAspect, pngSize, seedOf, textShape, blackEditMask } = require("./util");
 const { picturesFor } = require("./comfyrouter")._shared;
 const { layoutOf, refRoles, instruction } = require("./refs");
 
@@ -147,14 +147,6 @@ function scrub(text, key) {
 
 // ---- pictures --------------------------------------------------------------------------------------------------
 
-/** [width, height] from a PNG's IHDR, or null for anything else. */
-function pngSize(b) {
-    if (!b || b.length < 24) return null;
-    if (b[0] !== 0x89 || b[1] !== 0x50 || b[2] !== 0x4e || b[3] !== 0x47) return null;
-    const v = (o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
-    return [v(16), v(20)];
-}
-
 function sniff(bytes, fallback) {
     if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
     if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
@@ -201,23 +193,10 @@ function editPrompt(req, R) {
     return instruction(req, DIALECTS[R.dialect].layout(req, R), req.prompt);
 }
 
-/** The seed as the route takes it, or undefined (no seed, or the Random seed row on). */
-function seedOf(req, max) {
-    if (max == null || req.seed == null || req.seed === "" || (req.params || {}).random_seed) return undefined;
-    return (Number(req.seed) >>> 0) % (max + 1);
-}
-
 /** The preset of `table` ("W:H" -> value) closest to w:h: { ratio, value }. */
 function preset(w, h, table) {
     const ratio = closestAspect(Math.max(1, w), Math.max(1, h), Object.keys(table));
     return { ratio, value: table[ratio] };
-}
-
-/** The shape a text run asks for: `aspect` when it reads as W:H, else the size. */
-function textShape(req) {
-    const m = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(String(req.aspect || ""));
-    if (m && +m[1] > 0 && +m[2] > 0) return [+m[1], +m[2]];
-    return [Math.max(1, +req.width || 1024), Math.max(1, +req.height || 1024)];
 }
 
 /** The tier whose size covers the long side, else the largest; null without tiers. */
@@ -247,24 +226,9 @@ function accepted(params, R) {
     return out;
 }
 
-/**
- * Ideogram's mask from Scumble's: Scumble's is white where to repaint, Ideogram's black ("Black regions indicate where
- * to edit"), of the picture's own size. Channel 0 at 128 or more becomes black, the rest white; always PNG.
- */
+/** Ideogram's mask from Scumble's (black = edit; util.js blackEditMask), sent as it comes out. */
 function invertedMask(mask, image, ctx, who = "Magnific") {
-    if (!mask || !mask.length) throw new Error(`${who} needs the selection as a mask.`);
-    if (typeof ctx.bitmap !== "function" || typeof ctx.fromBitmap !== "function") throw new Error(`${who}: this build cannot read the mask.`);
-    const bm = ctx.bitmap(mask);
-    if (!bm || !bm.width || !bm.height) throw new Error(`${who}: the mask could not be read.`);
-    const size = pngSize(Buffer.from(image || []));
-    if (size && (size[0] !== bm.width || size[1] !== bm.height)) throw new Error(`${who}: the mask is ${bm.width} × ${bm.height} and the picture ${size[0]} × ${size[1]}; Ideogram takes a mask of the picture's own size.`);
-    const n = bm.width * bm.height;
-    const out = Buffer.alloc(n * 4);
-    for (let i = 0, j = 0; i < n; i++, j += 4) {
-        const v = bm.data[j] >= 128 ? 0 : 255;
-        out[j] = v; out[j + 1] = v; out[j + 2] = v; out[j + 3] = 255;
-    }
-    return Buffer.from(ctx.fromBitmap({ width: bm.width, height: bm.height, data: out }));
+    return blackEditMask(mask, image, ctx, who).png;
 }
 
 const EXPAND_RULE = "Image Expand extends a picture outward: select only the new border around it (Image › Extend canvas selects it for you); for other selections use an edit recipe.";
