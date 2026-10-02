@@ -688,14 +688,34 @@ takes body, `layout` and `textLayout` from `flux3.js` and keeps its own submit a
   repeated; the cost lands in `info` where BFL reports one.
 - **Options** (the variant's `options`): `schema: "flux3"`; `accepts`, the optional fields that may go (default and
   shipped `["safety_tolerance", "grounding"]`; `resolution` is the only other one `flux3.js` knows); `max_images`
-  (default 10); `images_field` (default `images`). The Settings rows: *Safety tolerance* 0 to 4 (default 2; 5 answers
-  422) and *Grounding (web and image search)*, a BOOLEAN row on by default as in the API: the model may research the
-  prompt with web and image search before it renders; off keeps the prompt from going to search.
+  (default 10); `images_field` (default `images`); `boxes: "flux3"`, the row format the route takes for boxes in
+  the prompt (below). The Settings rows: *Safety tolerance* 0 to 4 (default 2; 5 answers 422), *Grounding (web and
+  image search)*, a BOOLEAN row on by default as in the API: the model may research the prompt with web and image
+  search before it renders; off keeps the prompt from going to search; and *Selection as box* (`selection_box`, a
+  BOOLEAN row off by default, on the edit shape only: Generate new has no selection). `selection_box` is not an API
+  field: `body()` copies only the keys `accepts` names, so the row never reaches the request.
+- **Boxes in the prompt** (item 28 S1, `docs/PLAN_BOXES.md`; the docs' bounding-box rows). With *Selection as box*
+  on, an edit sends the selection as one box: `host.runProvider` measures the selection's bounds in the crop
+  (`renderer/editor/boxes.js`: fractions of the frame, clamped to it; nothing when it lies outside) and puts
+  `request.boxes: [{ id: "edit_1", kind: "new", rect, src: null, ref: null, desc: <the prompt> }]` into the request;
+  with an `@img` token in the prompt the box is `kind: "from"` with that reference's index and `src: [0, 0, 1, 1]`
+  (the whole reference picture goes into the selection). Main's `electron/main/providers/boxes.js` writes the rows
+  after `resolveNames` and before `body()`, where the pictures' final names are known: the prompt, then one sentence
+  per box the prompt does not name by `<id>` ("In <ref_image_0>, add <edit_1> in its box." / "place <edit_1> from
+  <ref_image_2> in its box."), a space and the JSON rows, each `[top, left, bottom, right]` on the docs' 0 to 1000
+  grid of the crop (`ref_image_k` = the k-th picture sent, the crop 0). The rows know every kind the docs list (new,
+  keep, move, remove, from; on a text run `{ id, bbox, desc }`, new only), for the plugin sources of S2; the
+  selection box is the only source today. `prompt_sent`, `editor.lastSentPrompt` and the log carry the prompt as
+  sent, the log's record `boxes: n`, the status line "Sent with 1 box."; a selection under 48 px a side at the
+  emitted size adds a note (the docs: a 40 x 25 px element "often did not appear"). A recipe without
+  `options.boxes` never gets a box from the renderer, and main drops boxes it is handed anyway with a note. Built
+  from the docs; whether the box steers the model better than the green-fill tip is the user's live check
+  (`docs/PLAN_BOXES.md` §6).
 - **Price** (BFL's pricing page): per image by tier, 1k $0.048, 2k $0.10, 4k $0.607 (`768sq` $0.041, not sent).
   Whether references, input megapixels or Grounding change it is not stated, hence the cost in `info`. The docs say
   4k "can take several minutes"; the poll waits up to 15 minutes.
-- **Not built:** bounding-box rows in the prompt (the docs' `tgt_bbox` on a 0 to 1000 grid, planned in
-  `docs/PLAN_BOXES.md`; the green-fill tip of the recipe's note stands in), the regional hosts (the docs name only `api.bfl.ai` for this endpoint), and any
+- **Not built:** boxes beyond the selection (a box editor, Keep / Move / Remove rows, boxes from plugins:
+  `docs/PLAN_BOXES.md` S2-S4), the regional hosts (the docs name only `api.bfl.ai` for this endpoint), and any
   aggregator variant.
 
 What a provider run does: `prepareCrop` builds the crop like the node (selection bbox

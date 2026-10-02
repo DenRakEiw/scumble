@@ -3,6 +3,15 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- **FLUX 3 Image: the selection as a box.** A new switch in the recipe's Settings, *Selection as box*, off by default,
+  sends your selection along as a bounding box in the prompt, in the form the model's documentation describes: it is
+  told where in the crop the change goes and what to put there (your prompt), or, when the prompt names a reference
+  with @img1, that this reference goes into the box. The status line says "Sent with 1 box.", the log keeps the
+  prompt as it went out, and a very small selection gets a note, since the model often leaves a box under about 40
+  pixels empty.
+
 ## 0.1.36 — 2026-10-01
 
 - **FLUX 3 Image from Black Forest Labs**, a new recipe on your Black Forest Labs key. It edits a selection by

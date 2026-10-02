@@ -36,6 +36,7 @@ const log = require("../log");
 const keys = require("../keys");
 const settings = require("../settings");
 const { MARKER_ANY, TOKEN, REF_NAME_DEFAULT, validRefName, nameOf, refRoles, layoutOf, countOf, checkLayout, resolveMarkers, checkPictures } = require("./refs");
+const boxes = require("./boxes");   // the box rows of a prompt (item 28, docs/PLAN_BOXES.md)
 
 // how much of a prompt goes into a log record
 const PROMPT_LOG = 500;
@@ -175,12 +176,13 @@ async function edit(request) {
         original: request.original ? 1 : 0,      // references[0] is the crop before the fill (docs/PLAN_REFS.md C3)
         refName: validRefName(request.refName) ? request.refName : REF_NAME_DEFAULT,   // IPC input is never trusted
         refsMax: +request.refsMax > 0 ? Math.floor(+request.refsMax) : null,   // a text run's cap from the variant (26f)
+        boxes: Array.isArray(request.boxes) ? request.boxes : [],              // box geometry in fractions of the frame (item 28)
     };
     const t0 = Date.now();
     const ctx = contextFor(id, p, key);
     // the request's shape for the log: never the key, never the pixels
-    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
-    let out, named, lay, notes = [];
+    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, boxes: req.boxes.length, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
+    let out, named, lay, notes = [], sentBoxes = 0;
     try {
         if (req.original && !req.references.length) throw new Error("The request marks an Original picture but carries no reference picture: nothing was sent.");
         if (req.original && text) throw new Error("A new image has no Original picture, and the request marks one: nothing was sent.");
@@ -196,15 +198,26 @@ async function edit(request) {
         named = resolveNames(p, req, lay, stripped ? 0 : given);
         req.prompt = named.prompt;
         req.negative = named.negative;
+        // the box rows go into the prompt here, where the pictures' final names are known (item 28); a route without
+        // a schema for them drops them with a note, so boxes never block a run elsewhere
+        if (req.boxes.length) {
+            if (!boxes.schemaOf(req)) notes.push(`The boxes were not sent: ${p.label} ${req.model} takes none.`);
+            else {
+                const a = boxes.applyBoxes(req, lay);
+                req.prompt = a.prompt;
+                sentBoxes = a.rows.length;
+                for (const n of a.notes) notes.push(n);
+            }
+        }
         out = text ? await p.generate(req, ctx) : upscale ? await p.upscale(req, ctx) : await p.edit(req, ctx);
     } catch (err) {
         log.record({ level: "error", source: id, message: `${p.label} ${verb} failed after ${((Date.now() - t0) / 1000).toFixed(1)} s: ${err && err.message || err}`, detail: { request: shape(), stack: err && err.stack } });
         throw err;
     }
     if (!out || !out.bytes) { log.record({ level: "error", source: id, message: p.label + " returned no image.", detail: shape() }); throw new Error(p.label + " returned no image."); }
-    log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), notes } });
+    log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), boxes: sentBoxes, notes } });
     const bytes = toBuffer(out.bytes);
-    return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, negative: req.negative == null ? null : req.negative, refs: named.refs, notes };
+    return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, negative: req.negative == null ? null : req.negative, refs: named.refs, notes, boxes: sentBoxes };
 }
 
 /**

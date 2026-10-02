@@ -10,7 +10,8 @@
 //        and Generating come before it); result.sample is a signed URL, result.prompt the prompt as the model expanded it
 //   The schema is strict: an unknown field answers 422. There is no seed, mask, width / height, mode, negative prompt or
 //   output format. Each picture is 256 x 256 px to 16 MP and at most 20 MB of base64. The prompt names the pictures
-//   "image 1", "image 2" .. in the order of `images`. Bounding boxes go into the prompt itself (not built here).
+//   "image 1", "image 2" .. in the order of `images`. Bounding-box rows go into the prompt itself: boxes.js writes
+//   them (a JSON array after the text, `<ref_image_k>` naming the pictures) and index.js applies them before body().
 //
 // The body carries only prompt, the pictures, the shape and the fields the variant's `options.accepts` names.
 "use strict";

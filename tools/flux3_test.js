@@ -18,6 +18,7 @@ util.sleep = async (ms) => { SLEEPS.push(ms); };   // before bfl.js takes its co
 const bfl = require(path.join(PROV, "bfl.js"));
 const flux3 = require(path.join(PROV, "flux3.js"));
 const refs = require(path.join(PROV, "refs.js"));
+const boxes = require(path.join(PROV, "boxes.js"));
 
 const KEY = "test-bfl-0123456789abcdef";
 const results = [];
@@ -165,7 +166,9 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     check("Generate new: the same endpoint, sizes 1024 / 2048 / 4096 (1k / 2k / 4k), the reference layers go along (text.refs)", V.text && V.text.model === V.model && eq(V.text.sizes, [1024, 2048, 4096]) && eq(V.text.refs, { max: null, field: null, model: null, options: null, name: null }), short(V.text));
     check("refs.name 'image {n}' (the docs: 'image 1' is the first entry of images)", V.refs.name === "image {n}", short(V.refs));
     const safety = (V.settings || []).find((s) => s.key === "safety_tolerance"), grounding = (V.settings || []).find((s) => s.key === "grounding");
-    check("the rows: Safety tolerance INT 0 to 4 (default 2), Grounding BOOLEAN (default true, the API's)", safety && eq(safety.spec, ["INT", { default: 2, min: 0, max: 4 }]) && grounding && eq(grounding.spec, ["BOOLEAN", { default: true }]) && V.settings.length === 2, short(V.settings));
+    const selbox = (V.settings || []).find((s) => s.key === "selection_box");
+    check("the rows: Safety tolerance INT 0 to 4 (default 2), Grounding BOOLEAN (default true, the API's), Selection as box BOOLEAN (default false)", safety && eq(safety.spec, ["INT", { default: 2, min: 0, max: 4 }]) && grounding && eq(grounding.spec, ["BOOLEAN", { default: true }]) && selbox && eq(selbox.spec, ["BOOLEAN", { default: false }]) && V.settings.length === 3, short(V.settings));
+    check("the variant takes boxes in the flux3 format (options.boxes), the text shape has no Selection as box row", V.options.boxes === "flux3" && boxes.schemaOf({ options: V.options }) === "flux3" && !(V.text.settings || []).some((s) => s.key === "selection_box"), short({ boxes: V.options.boxes, text: V.text.settings }));
     check("a FLUX.2 endpoint is not FLUX 3, a flux-3 endpoint is without the option, flux-30 is not", !flux3.isFlux3({}, "flux-2-pro") && flux3.isFlux3({}, "flux-3") && flux3.isFlux3({}, "flux-3-image") && !flux3.isFlux3({}, "flux-30"), "");
     check("another endpoint name with options.schema flux3 is FLUX 3", flux3.isFlux3({ options: { schema: "flux3" } }, "flux-image-pro"), "");
 
@@ -356,6 +359,25 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     check("a download that keeps failing ends the run", !!x.err && /socket hang up/.test(x.err), x.err);
     x = await run(editReq(), { submit: () => json(200, { id: "t1", polling_url: "https://api.eu1.bfl.ai/v1/get_result?id=t1", cost: null, input_mp: null }), polls: [[200, { ...READY, cost: null, result: { ...READY.result, seed: null } }]] });
     check("a cost, megapixels or seed given as null are left out, not reported as 0", !x.err && !("cost" in x.out.info) && !("input_mp" in x.out.info) && x.out.seed === undefined, x.err || short({ info: x.out && x.out.info, seed: x.out && x.out.seed }));
+
+    // ---- 6b. the selection as a box (item 28 S1; the rows themselves in tools/boxes_test.js) ----------------------------
+    console.log("\n--- 6b. the selection as a box ---");
+    // index.js applies the rows to the prompt after resolveNames, before body(): the same here, by hand
+    const BOX = { id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.75, 0.75], src: null, ref: null, desc: "make the door red" };
+    let boxed = editReq({ params: { ...defaults(V.settings, V.fixed), selection_box: true }, boxes: [BOX] });
+    boxed = { ...boxed, prompt: boxes.applyBoxes(boxed, bfl.layout(boxed)).prompt };
+    x = await run(boxed);
+    check("a request with one box: the prompt ends in the JSON rows, after the instruction sentence", !x.err && x.body.prompt === 'make the door red In <ref_image_0>, add <edit_1> in its box. [{"id":"edit_1","from":null,"src_bbox":null,"tgt_bbox":[250,250,750,750],"desc":"make the door red"}]', x.err || short(x.body && x.body.prompt));
+    check("the Selection as box row never reaches the body (not an API field), the keys are the schema's", !x.err && !("selection_box" in x.body) && eq(Object.keys(x.body), SCHEMA), short(x.body && Object.keys(x.body)));
+    const plain = await run(editReq());
+    const plainOff = await run(editReq({ params: { ...defaults(V.settings, V.fixed), selection_box: false }, boxes: [] }));
+    check("a request without boxes (the row off, boxes []) sends the same body as before S1", !plain.err && !plainOff.err && eq(plain.body, plainOff.body), short(plainOff.body && Object.keys(plainOff.body)));
+    boxed = editReq({ references: [REF[0], REF[1]], original: 1, prompt: "put {@ref:1} here", boxes: [{ id: "edit_1", kind: "from", rect: [0.5, 0, 1, 0.5], src: [0, 0, 1, 1], ref: 1, desc: "put {@ref:1} here" }] });
+    const lay2 = bfl.layout(boxed);
+    const named2 = refs.resolveMarkers(boxed.prompt, lay2.pictures, boxed.refName);
+    boxed = { ...boxed, prompt: boxes.applyBoxes({ ...boxed, prompt: named2.text }, lay2).prompt };
+    x = await run(boxed);
+    check("a from box with the Original: the reference is ref_image_2 (the crop 0, the Original 1), named 'image 3' in the desc", !x.err && x.body.prompt === 'put image 3 here In <ref_image_0>, place <edit_1> from <ref_image_2> in its box. [{"id":"edit_1","from":"ref_image_2","src_bbox":[0,0,1000,1000],"tgt_bbox":[0,500,500,1000],"desc":"put image 3 here"}]' && eq(tagsOf(x.body.images), ["CROP", "REF0", "REF1"]), x.err || short(x.body && x.body.prompt));
 
     // ---- 7. every body against the schema -----------------------------------------------------------------------------
     console.log("\n--- 7. the schema ---");

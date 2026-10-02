@@ -13,7 +13,8 @@
       "options": {
         "schema": "flux3",
         "accepts": ["safety_tolerance", "grounding"],
-        "max_images": 10
+        "max_images": 10,
+        "boxes": "flux3"
       },
       "settings": [
         {
@@ -27,12 +28,32 @@
           "key": "grounding",
           "label": "Grounding (web and image search)",
           "spec": ["BOOLEAN", { "default": true }]
+        },
+        {
+          "index": 3,
+          "key": "selection_box",
+          "label": "Selection as box",
+          "spec": ["BOOLEAN", { "default": false }]
         }
       ],
-      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The crop is image 1, then the Original and the reference layers (image 2 ..), ten pictures at most, each at least 256 px a side. The crop is widened to one of the model's 15 aspect presets; the size is a tier picked from the crop (1k about 1 MP, 2k about 4 MP). There is no seed, so two runs differ, and the model expands the prompt itself. Grounding lets it search the web and images for the prompt before it renders. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The crop is image 1, then the Original and the reference layers (image 2 ..), ten pictures at most, each at least 256 px a side. The crop is widened to one of the model's 15 aspect presets; the size is a tier picked from the crop (1k about 1 MP, 2k about 4 MP). There is no seed, so two runs differ, and the model expands the prompt itself. Grounding lets it search the web and images for the prompt before it renders. Selection as box sends the selection as a bounding box in the prompt (a New row with the prompt as its description; with an @img token, that reference placed in the box), so the model puts the change where the selection is. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
       "text": {
         "sizes": [1024, 2048, 4096],
-        "refs": {}
+        "refs": {},
+        "settings": [
+          {
+            "index": 1,
+            "key": "safety_tolerance",
+            "label": "Safety tolerance",
+            "spec": ["INT", { "default": 2, "min": 0, "max": 4 }]
+          },
+          {
+            "index": 2,
+            "key": "grounding",
+            "label": "Grounding (web and image search)",
+            "spec": ["BOOLEAN", { "default": true }]
+          }
+        ]
       }
     }
   },

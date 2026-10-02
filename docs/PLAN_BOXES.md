@@ -1,9 +1,19 @@
-# Boxes in the prompt: FLUX 3 Image and Ideogram 4 (item 28; researched 2026-10-01 night, planned S1-S4, nothing built)
+# Boxes in the prompt: FLUX 3 Image and Ideogram 4 (item 28; researched 2026-10-01 night, planned S1-S4, S1 built 2026-10-02)
 
 The user's idea (2026-10-01): a selection sent to FLUX 3 as a bounding box, and, after looking at Kijai's
 Ideogram 4 prompt builder, a **plugin** for box prompts made for FLUX 3 and Ideogram 4. §1-§3 are the research, §4
-the design decision, §5 the steps, §8-§11 the implementation plan for S1-S4 (the user's ask the same night). No code
-was written, no API call was made. The user decides the open questions (§7).
+the design decision, §5 the steps, §8-§11 the implementation plan for S1-S4 (the user's ask the same night). The user
+decides the open questions (§7).
+
+**Status (2026-10-02):** S1 built as §8 says (`renderer/editor/boxes.js`, `electron/main/providers/boxes.js`, the
+recipe's row and `options.boxes`, `tools/boxes_test.js` 63 checks, `tools/flux3_test.js` 101, the docs); looked at
+once in the app over CDP with a loopback variant that declares `options.boxes` (the row off and on, the rows in
+`prompt_sent` and the log, the small-selection note). Two small departures from §8: a picture's `ref_image_k` is its
+place in the order sent (`n - 1`), not parsed from its field, so any layout with numbered pictures works (the loopback
+look needed it); the `text` shape of the recipe lists its two rows explicitly, since `recipes.js` would otherwise
+copy the edit rows, Selection as box included, into the Generate new dialog. The status line says "Sent with 1 box."
+from main's `boxes` count in the answer. **No live call yet**: the checks of §6 (6.1-6.3) are next, with the user's
+key; S2 after them.
 
 ## 1. Sources
 

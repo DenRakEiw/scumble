@@ -19,9 +19,13 @@ import { glReleasePool } from "./inpaint_filters_gl.js";
 import { withoutSecrets } from "./redact.js";
 import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
 import { comfyRefSpec, comfyLayout, trimSlots, refName, resolveMarkers as resolveComfyMarkers } from "./comfyrefs.js";
+import { frameOf, selectionBox, smallBox, SMALL_PX } from "./boxes.js";
 import * as dialogs from "../dialogs.js";
 
 const PROXY = "/comfy";
+
+/** A BOOLEAN Settings row's value as on / off: the checkbox gives true, an agent may give "true", 1, "on" or "yes". */
+const boolOf = (v) => v === true || v === 1 || /^(true|1|yes|on)$/i.test(String(v == null ? "" : v).trim());
 const SUBFOLDER = "inpaint_canvas";
 
 // How big the crop goes to an API provider. The app is for quality, so "max" is the default:
@@ -1379,15 +1383,26 @@ export const host = {
             named = this.refPrompt(editor, snap, "edit", { sent: [...Array(original).fill(null), ...snap.refIds] });
         editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label}${info.keepAlpha ? ", transparent background" : ""} ...`);
             const shape = this.layoutShape(editor, { recipe: r, params, original, count: references.length });
+            // the selection as a box (item 28 S1): geometry in fractions of the crop; main writes the model's rows
+            // behind the variant's `options.boxes` and the recipe's "Selection as box" row
+            const preNotes = [];
+            const boxes = [];
+            if (shape.options && typeof shape.options.boxes === "string" && info.has_selection && boolOf(params.selection_box)) {
+                const b = selectionBox(editor.selectionBounds(), frameOf(info), { prompt: named.prompt, pair: named.pairs[0] || null });
+                if (b) {
+                    boxes.push(b);
+                    if (smallBox(b.rect, info.emitted)) preNotes.push(`The selection is small for a box (under ${SMALL_PX} px a side as sent): the model may not place anything in it.`);
+                }
+            }
             const request = {
                 provider: shape.provider, model: shape.model, kind: shape.kind, fields: shape.fields, options: shape.options,
                 prompt: named.prompt, negative: named.negative, seed,
                 image: prep.image, mask: prep.mask, maskAlpha: prep.maskAlpha, width: prep.width, height: prep.height, references,
-                params: shape.params, original: shape.original, refName: shape.refName,
+                params: shape.params, original: shape.original, refName: shape.refName, boxes,
             };
             res = await providerEdit(request);
             editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
-            editor.lastRunNotes = res.notes || [];
+            editor.lastRunNotes = [...preNotes, ...(res.notes || [])];
         } finally {
             if (editor.providerPending === token) editor.providerPending = null;
             this._providerRuns.delete(token);
@@ -1411,8 +1426,10 @@ export const host = {
             return got ? `${p.label} → ${got.name}` : null;
         }).filter(Boolean);
         if (sentAs.length) editor.setStatus(`${editor.status} Named in the prompt: ${sentAs.join(", ")}.`);
+        const sentBoxes = res.boxes > 0 ? Math.floor(res.boxes) : 0;
+        if (sentBoxes) editor.setStatus(`${editor.status} Sent with ${sentBoxes} box${sentBoxes === 1 ? "" : "es"}.`);
         if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`);
-        return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout, prompt: editor.lastSentPrompt, refs: res.refs || [], pairs: named.pairs, notes: editor.lastRunNotes, info: res.info || null };
+        return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout, prompt: editor.lastSentPrompt, refs: res.refs || [], pairs: named.pairs, notes: editor.lastRunNotes, info: res.info || null, boxes: sentBoxes };
     },
 
     /**
@@ -1600,6 +1617,7 @@ export const host = {
                 refName: tr.name || (r.refs && r.refs.name) || null, refsMax: withRefs ? tr.max || null : null,
                 fields: r.fields || null, options: withRefs && tr.options ? { ...(r.options || {}), ...tr.options } : r.options || null,
                 params: genParams,
+                boxes: [],   // a new image has no selection; plugin boxes come with S2 (docs/PLAN_BOXES.md §9)
             };
             res = await providerEdit(request);
         } finally {

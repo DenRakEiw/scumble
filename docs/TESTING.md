@@ -176,14 +176,24 @@ bash tools/run_gates.sh 26c-it --offline --tiles on editor`. The hover and drag 
 synthetic pointer events are unreliable while a real mouse is over the window (see the flakes below).
 
 FLUX 3 Image (`electron/main/providers/flux3.js`, `recipes/flux3.json`, `docs/PLAN_FLUX3.md`): `node tools/flux3_test.js`
-(plain Node, a scripted api.bfl.ai, 96 checks) pins the recipe as `recipes.js` serves it, the body against the released
+(plain Node, a scripted api.bfl.ai, 101 checks) pins the recipe as `recipes.js` serves it, the body against the released
 schema (only prompt, images, aspect_ratio, resolution, safety_tolerance, grounding; every body sent is checked at the
 end), the aspect preset within 3 % or auto, the tiers by area, the 256 px / 16 MP / 20 MB rules (the crop refused, a
 reference scaled through `ctx.resizePng`, the JPEG fallback), the parameter coercion (safety 0 to 4, grounding from an
 agent's words), the poll (Reasoning, 503 / 422 status bodies, dropped connections and gateway pages retried, the
 download tried three times, the regional polling_url allowlist), the answer's info (cost, megapixels, expanded prompt,
-no seed) and that FLUX.2 through the same adapter is unchanged. Light tier: written from the docs; a live call is the
-user's (`docs/PLAN_FLUX3.md`).
+no seed), the selection box (a request with one box ends in the JSON rows, the `selection_box` row never reaches the
+body, a request without boxes sends the same body as before) and that FLUX.2 through the same adapter is unchanged.
+Light tier: written from the docs; a live call is the user's (`docs/PLAN_FLUX3.md`).
+
+Boxes in the prompt (item 28 S1, `electron/main/providers/boxes.js`, `renderer/editor/boxes.js`, `docs/PLAN_BOXES.md`):
+`node tools/boxes_test.js` (plain Node, 63 checks) pins the 0 to 1000 grid (BFL's own example), the shape check and
+its refusals, one FLUX 3 row per kind against the FLUX 3 layout (the Original shifting the reference slots as the
+markers do, a from box past the pictures or after a strip refused), a text run's layout rows, the instruction
+sentences, `applyBoxes`' prompt, and the renderer's module (the frame, pixels to fractions with a crop that cuts the
+selection, the selection as a New or From box, the small-box note, the same id pattern on both sides). The wiring in
+the app (the row off and on, the status line, the log) was looked at once over CDP with a loopback variant that
+declares `options.boxes` (2026-10-02); no gate step, light tier.
 
 26e, @img tokens on local ComfyUI recipes (`renderer/editor/comfyrefs.js`, `docs/RECIPES.md` "Reference images named
 in the prompt (local)"): `node tools/comfyrefs_test.js` (plain Node, run by `recipes_test.py`'s node step after
