@@ -76,62 +76,59 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02: item 28 S1-S3e built, the plugin hook, the Boxes plugin with its tool and crop frame, one Boxes switch under the prompt, the caption's place words; 0.1.36 is Latest; item 31 Ideogram 4.5 built, the Replicate, WaveSpeed and Comfy Router variants and its README / MANUAL lines; both wait for a release)
+## Where things stand (2026-10-02 night: 0.1.37 is Latest = item 28 boxes for FLUX 3 + item 31 Ideogram 4.5; the boxes ran live before it; the post is out)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02, "baue weiter", the eleventh of the day):** item 31's last step, the README / MANUAL
-lines (`docs/PLAN_IDEOGRAM45.md` status), one commit, not released. The I3 paragraph is in `docs/HISTORY.md`.
-`README.md`: "Ideogram 4.5 (edits with the selection as its mask)" in the model list, Magnific's three entries now read
-"and on Magnific its own Mystic, Ideogram mask inpainting and Image Expand", and **Comfy Router** joined both provider
-lists (missing since 0.1.28). `docs/MANUAL.md` "Recipes": a paragraph after FLUX 3 Image's (the three hosts, the
-selection as the mask, three more pictures without a number and a named one refused, 6:1, *Quality* and *Edit
-precision*, no seed on WaveSpeed only, Generate new from the prompt alone, not run live). The Settings panel shows a
-combo's raw values (`selectInput`), so the manual and the CHANGELOG entry now write `very_low`, `medium`, `high`.
-**A fix on the way:** the chapter "Boxes in the prompt" (item 28 S3a, dddd942) had no `<!-- slug -->` and no
-summary line, so `renderer/help/manual.js` refused the whole manual (`tools/manual_test.js` red since S3a, the in-app
-Help and the assistant's manual context with it); now `slug: boxes` and a summary, `manual_test` PASS, the `help` gate
-green `--offline` (label `i31docs`). A check workflow (two readers, each finding verified by a third) confirmed six of
-seven, all fixed. Item 31 is done. Next: a release of items 28 and 31 on the user's word (CHANGELOG Unreleased holds
-both; `docs/RELEASING.md`: `npm run dist`, exe gates, the post); item 28's live checks §6.1-6.3 before it if the user
-wants them. Run `node tools/manual_test.js` whenever `docs/MANUAL.md` changes.
-
-**Released:** 0.1.36 is Latest (published 2026-10-01 22:38:25 CEST, tag on 5bc5831 "0.1.36 prepared"; the tag build
-green) on the user's "baue fertig und release dann das update mit flux3". 0.1.36 = **FLUX 3 Image** (ea71629) + item 25
-(the app's own dialogs, b1299b7) + bug round A (Gemini aspect 2958601, local recipe rows 1142a10, `--attach-only`
-7f6b88d). **The post `v0-1-36` ("FLUX 3 on day one", with the user's welcome picture made with FLUX 3,
-`public/projects/scumble/blog/v0-1-36-welcome-flux3.jpg`) is live**, the manual synced, `hub.version` 0.1.36, website
-commit e124c57 deployed (Vercel: success).
-- **FLUX 3 Image** (BFL released it 2026-10-01 17:00; `docs/PLAN_FLUX3.md` status, `docs/RECIPES.md` "FLUX 3 Image"):
-  the pre-release adapter would have failed every call (it sent `mode`, `seed`, `reference_images`, `width` / `height`;
-  the released schema is strict). Rebuilt from docs.bfl.ai/flux_3 and `api.bfl.ai/openapi.json` (a docs workflow, then
-  two reviewers): `POST /v1/flux-3-image { prompt, images, aspect_ratio, resolution, safety_tolerance, grounding }`;
-  an edit sends the preset nearest the crop when within 3 % (`fit: stretch`) else `auto`, a new image always a preset;
-  the tier by area (1k / 2k / 4k; never 768sq or 1.5k); pictures 256 px .. 16 MP .. 20 MB (the crop refused, a reference
-  scaled through the new `ctx.resizePng` in `providers/index.js`, JPEG past 20 MB); safety rounded and clamped 0-4,
-  grounding parsed from an agent's words; `bfl.js` keeps cost / megapixels / the expanded prompt in `info`, reports no
-  seed for FLUX 3, and every BFL poll and download survives a dropped connection or a gateway page. Recipe "FLUX 3
-  Image": `refs.name` "image {n}", Grounding row on by default, `text.sizes` 1024 / 2048 / 4096, limits 2048 / 16 / min
-  608 / ratio 2.4 / the 15 aspects. `tools/flux3_test.js` 96 checks.
-- **Ran live once each way** (the user typed their BFL key into the gate window of `rel36-exe`, so the key sits
-  encrypted in `dist/gates/profiles/rel36-exe/secrets.json`; the node pack's `.env` key is a review key, refused on
-  api.bfl.ai): an edit 1:1 / 2k in 80 s for 10 credits, stitched without a seam, `@img1` -> "image 2"; Generate new 4:3 /
-  1k in 109 s for 4.8 credits, 1184 x 880. The test reference was the wrong picture (the folder had changed), so taking
-  a subject from a reference was not judged. FLUX 3 plans edits itself with `src_bbox` / `tgt_bbox` rows (seen in the
-  expanded prompt); turning a selection into a bounding box is the obvious next step (not built). Later that night
-  the user ran FLUX 3 live themselves: "funktioniert wunderbar".
-- Exe gates `--offline` green: tiles `rel36-exe` (31 gates; `editor` red once from the user's mouse in the window, the
-  known live-stroke flake; `help` red because the profile now held a key, its own guard) then `rel36-exe-final` (help,
-  editor) on a fresh profile; canvas `rel36-exe-canvas` (20) all green.
-- Small leftovers: the `generate` command still reports the editor's seed for a FLUX 3 run (none is sent); planCrop's
-  chosen aspect is not passed to the adapter, so a crop whose 16 px rounding lands past 3 % goes as `auto` (works).
-  A GitHub PR "fix: upgrade adm-zip to 0.6.1 (CVE-2026-102282)" waits with `action_required` (not looked at).
+**This session (2026-10-02 night, "weiter ^^ was fehlt noch bis zum release ?", the twelfth of the day):** the 0.1.37
+release, on the user's "Release freigeben, ja frei ... blog... webseite ... readme update" and "Live-Checks vor dem
+Release? ja kannst du machen". The item 31 docs paragraph and the 0.1.36 "Released" block are in `docs/HISTORY.md`.
+- **Released:** 0.1.37 is Latest (published 2026-10-02 21:42:20 CEST, title "Scumble 0.1.37: Boxes for FLUX 3,
+  Ideogram 4.5", tag on a085d56 "0.1.37 prepared"; the tag build green on Windows and Linux). 0.1.37 = item 28 S1-S3e
+  (boxes in the prompt for FLUX 3 Image, the Boxes plugin, plugin API 3 `scumble.generate.register`) + item 31
+  (Ideogram 4.5 on Replicate, WaveSpeed, Comfy Router; never run live) + the assistant's policy rows for the Boxes
+  commands (a895684) + adm-zip 0.6.1 in the lockfile. **The post `v0-1-37` ("Boxes: telling FLUX 3 where things go",
+  picture `public/projects/scumble/blog/v0-1-37-boxes-clock.jpg` from the live check 6.2) is pushed**, the manual synced,
+  `hub.version` 0.1.37, website commit 2a66b51.
+- **Found by the exe gates:** `assistant` red on both backends, `every_tool_has_a_policy_row`: the six `boxes_*`
+  commands and `sample_box` had no row in `electron/main/assistant/policy.js` (item 28 S2 / S3a never ran the assistant
+  gate). Rows now: `boxes_list` a read; add / set / from_selection auto; remove and clear ask; `sample_box` with `on` asks;
+  `tools/assistant_test.js` table rows, `docs/PLAN_ASSISTANT.md` §5 row. **A new plugin command needs a policy row:** run
+  the `assistant` gate whenever a plugin registers a command.
+- **Live checks §6.1-6.3 done** (`docs/PLAN_BOXES.md` status: five FLUX 3 edits at 1k, 5 credits each, 25 in all, on the
+  0.1.37 exe with the gate profile `rel36-exe` that holds the user's BFL key, driven over CDP by a scratch script; Paste
+  set to the whole crop): the selection as a box put a cat in the box (without, at the selection's edge); a From box put
+  the reference's clock exactly into its box; a Remove box took out a street lamp and its glow. The model fills a box
+  (the manual and CHANGELOG say so). Cosmetic: ids from a description take its first two telling words, adjectives
+  included (`small_black_1`, `white_wall_1`).
+- adm-zip: the scanner PR (`DenRakEiw/scumble` PR 2, "fix: upgrade adm-zip to 0.6.1") was read, not merged: the same
+  bump went into a085d56 (0.6.1's diff read: extraction hardening; only onnxruntime-node's install script uses it). The
+  PR can be closed (not done: an outward action the user did not ask for).
+- Exe gates `--offline`: tiles `rel37-exe` (34 with `boxes`) and canvas `rel37-exe-canvas` (21) all green but
+  `assistant`; after the fix and a second `npm run dist`: `rel37-exe-asst` (assistant, help) and
+  `rel37-exe-asst-canvas` (assistant) green. Plain-Node tests green: boxes, ideogram45, flux3, manual, recipes,
+  comfyrouter, refs_layout, magnific, assistant.
+- **Looked at, not fixed:** the local Flux.2 Klein report (`docs/BUGS.md`): the node's example and the app's recipe both
+  pair Klein 9B with Qwen3 8B, type `flux2`; the error is in ComfyUI's model forward (5120 features into a 12288 input),
+  so no quick fix without the reporter's log. The example's VAE is `full_encoder_small_decoder.safetensors`, not the
+  standard `flux2-vae.safetensors` (a validation error for anyone without that file; unchecked whether that is an
+  official file).
+- **The user asked about the Comfy Dev Platform Challenge** (blog.comfy.org, Oct 5-19 2026; theme "Pick a feature
+  people currently pay for and reimagine it in the open"; open-source licence, setup, demo video; FLUX bonus with FLUX 2
+  or 3 as the core model; the first 100 sign-ups get Comfy credits by Oct 5). Open with Comfy: whether an existing project
+  may enter, whether an app on local ComfyUI / Comfy Cloud / Comfy Router counts, whether FLUX 3 via Comfy Router counts
+  (item 29, not built). A question in English was drafted for the user; they sign up themselves.
+- Small leftovers (carried over): the `generate` command still reports the editor's seed for a FLUX 3 run (none is
+  sent); planCrop's chosen aspect is not passed to the adapter (a crop past 3 % goes as `auto`, works).
 - **Open for the user** (carried over): the fills, multi-selection, solo and align (0.1.35); whether 0.1.33 feels right
   under their pen; the smudge and tone brushes dab once per coalesced point (BUGS.md); the defaults of packages 4 and 5
-  (`docs/HISTORY.md`, 2026-09-28 late night); item 25's look and timing; item 26's look in the app. The Store package of
-  0.1.36 was not built (the Store listing is live, on the user's word per release). Whether to delete the key from the
-  gate profile `rel36-exe`.
+  (`docs/HISTORY.md`, 2026-09-28 late night); item 25's look and timing; item 26's look in the app; the Boxes' look and
+  feel in the app. The Store package of 0.1.37 was not built (on the user's word per release). Whether to delete the key
+  from the gate profile `rel36-exe`. Whether to close the adm-zip PR.
+- Next: the user's pick. Candidates: item 29 (FLUX 3 on fal / OpenRouter / Oxen / WaveSpeed; Comfy Router would matter
+  for the challenge), item 28 S4 / S5, item 30, the Klein report once the reporter answers.
+
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in

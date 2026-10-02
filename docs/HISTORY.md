@@ -52,6 +52,62 @@ The paragraph of 2026-10-02 (item 31 I2) was moved here the same day, when I3 wa
 
 The paragraph of 2026-10-02 (item 31 I3) was moved here the same day, when the README / MANUAL lines were written.
 
+The paragraph of 2026-10-02 (item 31 docs) and the 0.1.36 "Released" block were moved here the same night, at the 0.1.37 release.
+
+## 2026-10-02 (item 31 docs and the 0.1.36 release block, moved here at the 0.1.37 release)
+
+**This session (2026-10-02, "baue weiter", the eleventh of the day):** item 31's last step, the README / MANUAL
+lines (`docs/PLAN_IDEOGRAM45.md` status), one commit, not released. The I3 paragraph is in `docs/HISTORY.md`.
+`README.md`: "Ideogram 4.5 (edits with the selection as its mask)" in the model list, Magnific's three entries now read
+"and on Magnific its own Mystic, Ideogram mask inpainting and Image Expand", and **Comfy Router** joined both provider
+lists (missing since 0.1.28). `docs/MANUAL.md` "Recipes": a paragraph after FLUX 3 Image's (the three hosts, the
+selection as the mask, three more pictures without a number and a named one refused, 6:1, *Quality* and *Edit
+precision*, no seed on WaveSpeed only, Generate new from the prompt alone, not run live). The Settings panel shows a
+combo's raw values (`selectInput`), so the manual and the CHANGELOG entry now write `very_low`, `medium`, `high`.
+**A fix on the way:** the chapter "Boxes in the prompt" (item 28 S3a, dddd942) had no `<!-- slug -->` and no
+summary line, so `renderer/help/manual.js` refused the whole manual (`tools/manual_test.js` red since S3a, the in-app
+Help and the assistant's manual context with it); now `slug: boxes` and a summary, `manual_test` PASS, the `help` gate
+green `--offline` (label `i31docs`). A check workflow (two readers, each finding verified by a third) confirmed six of
+seven, all fixed. Item 31 is done. Next: a release of items 28 and 31 on the user's word (CHANGELOG Unreleased holds
+both; `docs/RELEASING.md`: `npm run dist`, exe gates, the post); item 28's live checks §6.1-6.3 before it if the user
+wants them. Run `node tools/manual_test.js` whenever `docs/MANUAL.md` changes.
+
+**Released:** 0.1.36 is Latest (published 2026-10-01 22:38:25 CEST, tag on 5bc5831 "0.1.36 prepared"; the tag build
+green) on the user's "baue fertig und release dann das update mit flux3". 0.1.36 = **FLUX 3 Image** (ea71629) + item 25
+(the app's own dialogs, b1299b7) + bug round A (Gemini aspect 2958601, local recipe rows 1142a10, `--attach-only`
+7f6b88d). **The post `v0-1-36` ("FLUX 3 on day one", with the user's welcome picture made with FLUX 3,
+`public/projects/scumble/blog/v0-1-36-welcome-flux3.jpg`) is live**, the manual synced, `hub.version` 0.1.36, website
+commit e124c57 deployed (Vercel: success).
+- **FLUX 3 Image** (BFL released it 2026-10-01 17:00; `docs/PLAN_FLUX3.md` status, `docs/RECIPES.md` "FLUX 3 Image"):
+  the pre-release adapter would have failed every call (it sent `mode`, `seed`, `reference_images`, `width` / `height`;
+  the released schema is strict). Rebuilt from docs.bfl.ai/flux_3 and `api.bfl.ai/openapi.json` (a docs workflow, then
+  two reviewers): `POST /v1/flux-3-image { prompt, images, aspect_ratio, resolution, safety_tolerance, grounding }`;
+  an edit sends the preset nearest the crop when within 3 % (`fit: stretch`) else `auto`, a new image always a preset;
+  the tier by area (1k / 2k / 4k; never 768sq or 1.5k); pictures 256 px .. 16 MP .. 20 MB (the crop refused, a reference
+  scaled through the new `ctx.resizePng` in `providers/index.js`, JPEG past 20 MB); safety rounded and clamped 0-4,
+  grounding parsed from an agent's words; `bfl.js` keeps cost / megapixels / the expanded prompt in `info`, reports no
+  seed for FLUX 3, and every BFL poll and download survives a dropped connection or a gateway page. Recipe "FLUX 3
+  Image": `refs.name` "image {n}", Grounding row on by default, `text.sizes` 1024 / 2048 / 4096, limits 2048 / 16 / min
+  608 / ratio 2.4 / the 15 aspects. `tools/flux3_test.js` 96 checks.
+- **Ran live once each way** (the user typed their BFL key into the gate window of `rel36-exe`, so the key sits
+  encrypted in `dist/gates/profiles/rel36-exe/secrets.json`; the node pack's `.env` key is a review key, refused on
+  api.bfl.ai): an edit 1:1 / 2k in 80 s for 10 credits, stitched without a seam, `@img1` -> "image 2"; Generate new 4:3 /
+  1k in 109 s for 4.8 credits, 1184 x 880. The test reference was the wrong picture (the folder had changed), so taking
+  a subject from a reference was not judged. FLUX 3 plans edits itself with `src_bbox` / `tgt_bbox` rows (seen in the
+  expanded prompt); turning a selection into a bounding box is the obvious next step (not built). Later that night
+  the user ran FLUX 3 live themselves: "funktioniert wunderbar".
+- Exe gates `--offline` green: tiles `rel36-exe` (31 gates; `editor` red once from the user's mouse in the window, the
+  known live-stroke flake; `help` red because the profile now held a key, its own guard) then `rel36-exe-final` (help,
+  editor) on a fresh profile; canvas `rel36-exe-canvas` (20) all green.
+- Small leftovers: the `generate` command still reports the editor's seed for a FLUX 3 run (none is sent); planCrop's
+  chosen aspect is not passed to the adapter, so a crop whose 16 px rounding lands past 3 % goes as `auto` (works).
+  A GitHub PR "fix: upgrade adm-zip to 0.6.1 (CVE-2026-102282)" waits with `action_required` (not looked at).
+- **Open for the user** (carried over): the fills, multi-selection, solo and align (0.1.35); whether 0.1.33 feels right
+  under their pen; the smudge and tone brushes dab once per coalesced point (BUGS.md); the defaults of packages 4 and 5
+  (`docs/HISTORY.md`, 2026-09-28 late night); item 25's look and timing; item 26's look in the app. The Store package of
+  0.1.36 was not built (the Store listing is live, on the user's word per release). Whether to delete the key from the
+  gate profile `rel36-exe`.
+
 ## 2026-10-02 (item 31 I3, moved here the same day)
 
 **This session (2026-10-02, "weiter", the tenth of the day):** item 31 I3 (`docs/PLAN_IDEOGRAM45.md` "I3 as built"),
