@@ -1,11 +1,14 @@
 // Where the ComfyUI window's page may go (item 35, docs/PLAN_COMFY_VIEW.md §2.1, §2.4). Plain functions, no Electron,
 // so tools/comfyhosts_test.js checks them in Node.
 //
-// My ComfyUI: the page stays on its own origin; links elsewhere go to the system browser and no popup opens.
-// Comfy Cloud (V4): the page signs in with Firebase's signInWithPopup (read from cloud.comfy.org's bundle on
-// 2026-10-03: a *.firebaseapp.com auth domain, then Google or GitHub), so a popup to those hosts opens as a child
-// window in the same partition, and the page may navigate to them (Firebase's redirect fallback). Google may refuse a
-// sign-in from an embedded browser; nothing here hides what the window is.
+// Both targets sign in with Firebase's signInWithPopup: Comfy Cloud's own login (read from cloud.comfy.org's bundle on
+// 2026-10-03: a *.firebaseapp.com auth domain, then Google or GitHub), and the Comfy account login a ComfyUI's API
+// nodes ask for (the same Firebase, dreamboothy.firebaseapp.com; the user's Google login on their own ComfyUI went to
+// the system browser and never came back, 2026-10-03). So a popup to those hosts opens as a child window in the same
+// partition on either target: it keeps its opener, which the answer needs. Other popups go to the system browser.
+// My ComfyUI: the page stays on its own origin. Comfy Cloud: the page may also navigate to the sign-in hosts
+// (Firebase's redirect fallback). Google may refuse a sign-in from an embedded browser; nothing here hides what the
+// window is.
 "use strict";
 
 const CLOUD_URL = "https://cloud.comfy.org";
@@ -27,11 +30,11 @@ function cloudAuthUrl(url) {
 }
 
 /**
- * What the page's window.open gets: "child" (a sign-in window in the same partition), "external" (the system
- * browser) or "deny". `target` is "comfy" or "cloud".
+ * What the page's window.open gets: "child" (a sign-in window in the same partition, on either target), "external"
+ * (the system browser) or "deny".
  */
-function popupAction(url, target) {
-    if (target === "cloud" && cloudAuthUrl(url)) return "child";
+function popupAction(url) {
+    if (cloudAuthUrl(url)) return "child";
     return /^https?:\/\//i.test(String(url)) ? "external" : "deny";
 }
 

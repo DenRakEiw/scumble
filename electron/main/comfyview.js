@@ -214,14 +214,15 @@ class ComfyView {
         bar.webContents.on("did-finish-load", () => this.sendState());
         bar.webContents.loadURL(barUrl).catch(() => { /* a reload or a close while it loads */ });
 
-        // the page: links to other origins go to the system browser; the page stays on the target's origin, and on Comfy
-        // Cloud its sign-in opens as a child window in the same partition (electron/main/comfyhosts.js)
+        // the page: links to other origins go to the system browser; the page stays on the target's origin, and a
+        // sign-in (Comfy Cloud's, or a ComfyUI's Comfy account) opens as a child window in the same partition
+        // (electron/main/comfyhosts.js)
         const wc = page.webContents;
         wc.setWindowOpenHandler(({ url }) => {
-            const act = popupAction(url, this.kind);
+            const act = popupAction(url);
             if (act === "child") {
                 return { action: "allow", overrideBrowserWindowOptions: {
-                    width: 520, height: 720, title: "Sign in to Comfy Cloud", autoHideMenuBar: true, backgroundColor: this.background(),
+                    width: 520, height: 720, title: "Sign in", autoHideMenuBar: true, backgroundColor: this.background(),
                     webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
                 } };
             }
@@ -233,7 +234,7 @@ class ComfyView {
             child.on("closed", () => this.children.delete(child));
             if (process.platform !== "darwin") child.setMenu(null);
             child.webContents.setIgnoreMenuShortcuts(true);
-            child.webContents.setWindowOpenHandler(({ url }) => { if (popupAction(url, "cloud") !== "deny") shell.openExternal(url); return { action: "deny" }; });
+            child.webContents.setWindowOpenHandler(({ url }) => { if (popupAction(url) !== "deny") shell.openExternal(url); return { action: "deny" }; });
         });
         wc.on("will-navigate", (e, url) => {
             if (navigationAllowed(url, this.shown.origin, this.kind)) return;

@@ -15,7 +15,7 @@ const yes = ["https://cloud.comfy.org/cloud/login", "https://dreamboothy.firebas
 const no = ["http://accounts.google.com/", "https://evil.com/", "https://firebaseapp.com.evil.com/", "https://comfy.org.evil.com/", "https://notgithub.com/", "https://user:pw@github.com/", "javascript:alert(1)", "file:///C:/x", "scumble://app/index.html", "https://firebaseapp.com/"];
 check("the sign-in hosts of Comfy Cloud pass", yes.every(cloudAuthUrl), yes.filter((u) => !cloudAuthUrl(u)).join(" "));
 check("look-alikes, http, credentials in the URL and other schemes do not", no.every((u) => !cloudAuthUrl(u)), no.filter(cloudAuthUrl).join(" "));
-check("a popup to a sign-in host is a child window on Comfy Cloud only", popupAction(yes[1], "cloud") === "child" && popupAction(yes[1], "comfy") === "external");
+check("a popup to a sign-in host is a child window on both targets (a ComfyUI's Comfy account login uses the same Firebase)", popupAction(yes[1], "cloud") === "child" && popupAction(yes[1], "comfy") === "child" && popupAction(yes[2], "comfy") === "child");
 check("other http(s) popups go to the system browser, anything else is denied", popupAction("https://example.com/", "cloud") === "external" && popupAction("scumble://app/index.html", "cloud") === "deny" && popupAction("file:///C:/x", "comfy") === "deny");
 const origin = "http://127.0.0.1:8188";
 check("My ComfyUI: the page stays on its origin", navigationAllowed(origin + "/x", origin, "comfy") && !navigationAllowed("https://accounts.google.com/", origin, "comfy") && !navigationAllowed("scumble://app/index.html", origin, "comfy"));

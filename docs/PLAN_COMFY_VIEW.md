@@ -275,7 +275,7 @@ none of V1-V5 may change that:
   `https://cloud.comfy.org`, its page signs in with Firebase's `signInWithPopup` (read from the cloud's bundle in the
   built-in browser the same day, no sign-in: a `*.firebaseapp.com` auth domain, then Google or GitHub; the login page
   itself is `/cloud/login` on the same origin). A popup to `cloud.comfy.org`, `*.comfy.org`, `*.firebaseapp.com`,
-  `accounts.google.com` or `github.com` (https, no credentials in the URL) opens on Comfy Cloud as a child window in
+  `accounts.google.com` or `github.com` (https, no credentials in the URL) opens as a child window (on both targets since the user's first look, 2026-10-03: a ComfyUI's own Comfy account login for the API nodes uses the same Firebase, and in the system browser its answer never came back) in
   `persist:comfyui` (sandboxed, no preload, no menu, its own popups to the system browser), closed with the window;
   the page may navigate to those hosts too (the redirect fallback). Nothing hides that this is an app window: Google
   may refuse the sign-in there; email and GitHub are the ways the notes name. The target is `settings.comfyView.target`
