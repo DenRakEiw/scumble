@@ -175,8 +175,7 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   built in a worktree with a `node_modules` junction, exe gates `--offline` on port 9561 both backends ALL PASS
   (`dist/gates/gates/rel40-exe`, `rel40-exe-canvas`), published 22:03, post live (`#v0-1-40`, website 58af1e5); no
   manual sync (MANUAL.md unchanged between the tags). Main's CHANGELOG has the 0.1.40 section (9b600c0); main's
-  `package.json` stays 0.1.39 until 0.1.41. Main's commits since d4d137d are **not pushed** (the user was asked, no
-  answer yet). **Next (0.1.41, after the weekly reset):** the cleanup the user asked for: in cloud mode hide the
+  `package.json` stays 0.1.39 until 0.1.41. Main is pushed to origin (the user's word, the same night). **Next (0.1.41, after the weekly reset):** the cleanup the user asked for: in cloud mode hide the
   local-only controls (Free VRAM, Padding / Target / Feather / Multiple, Highres fix, the Settings hint about wiring
   node outputs, the negative placeholder "local mode"), the Sample plugin off by default (tests that use it turn it on);
   then the release of item 35 as 0.1.41. Old line kept below for the checks:
