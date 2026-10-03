@@ -114,7 +114,10 @@ a graph without the node saved from the window is a Comfy Cloud recipe that Save
 the node is refused for it; `tools/recipes_test.js` section 8 checks `fromCloudGraph` and the import of an API and a UI
 export; section 9 reads all 26 image-edit templates of Comfy's template package without titles
 (`tools/refs/comfy_templates/`, MIT; `python tools/template_fixtures.py <templates folder>` refreshes them and the
-node definitions they use, read from a ComfyUI in its own input order);
+node definitions they use, read from a ComfyUI in its own input order); V6: the gate's two steps check the comfy cloud
+mode (the select, the list, each mode's last recipe), section 10 the six shipped Comfy Cloud recipes against the
+exports they come from (`node tools/cloud_recipes.js --check`, `tools/refs/comfy_cloud/`), `tools/cloudgraph_test.js`
+runs one of them on its fake cloud and `tools/refs_layout_test.js` sweeps their layouts;
 `tools/recipes_test.js` section 5 checks `fromPrompt(toPrompt(r))` on every shipped ComfyUI recipe), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
 view of item 24: real Tab and Escape presses over CDP; the chrome hidden, the view the window's size, full screen and a
 fitted picture while on, the view / rulers / chrome / window put back after; Tab ignored in a text field, a dialog, the

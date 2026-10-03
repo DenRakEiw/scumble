@@ -584,6 +584,34 @@ async function main() {
         flat["475"]._meta = { title: "Scumble crop" };
         const titled = recipes.fromCloudGraph({ output: flat, name: "t", ids: [], date: "2026-10-03" });
         check("titles win over the reading: Scumble crop on the second LoadImage makes it the crop", titled.providers.comfycloud.options.graph["475"]._meta.title === "scumble:picture:0" && /A graph made for Comfy Cloud/.test(titled.providers.comfycloud.note));
+        // a control read by its label (Qwen 2509's "prompt_1" shows "negative_prompt"), the negative side alone when the
+        // controls name only the prompt (Flux.2 Klein's negative encoder), an encoder's own negative field (Mage Flow)
+        check("Qwen 2509: the negative through the control labelled negative_prompt", eq(v("image_qwen_image_edit_2509.json").options.values.negative, [["433:110", "prompt"]]), short(v("image_qwen_image_edit_2509.json").options.values));
+        check("Flux.2 Klein 9B: the negative encoder without a control, by where its conditioning goes", eq(v(k9).options.values.negative, [["75:67", "text"]]), short(v(k9).options.values));
+        check("Mage Flow: the negative field of the encoder the prompt goes into", eq(v("image_mage_flow_edit_turbo_int8.json").options.values.negative, [["12:5", "negative_prompt"]]), short(v("image_mage_flow_edit_turbo_int8.json").options.values));
+    });
+
+    // ---- 10. the Comfy Cloud recipes Scumble ships (item 35 V6 step 4: the user's picks of Comfy's templates) ----------
+    await section("10. the shipped Comfy Cloud recipes", async () => {
+        const tool = require(path.join(ROOT, "tools", "cloud_recipes.js"));
+        const info = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "comfy_templates", "object_info.json"), "utf8"));
+        const stale = tool.MANIFEST.filter((m) => fs.readFileSync(path.join(RECIPES, `${m.id}.json`), "utf8") !== JSON.stringify(tool.build(m, info), null, 2) + "\n").map((m) => m.id);
+        check("each shipped file is what its export gives (node tools/cloud_recipes.js)", !stale.length, short(stale));
+        const list = await recipes.list(RECIPES);
+        const want = { cloud_boogu_image_edit: 1, cloud_flux2_klein_9b: 1, cloud_flux2_klein_9b_multi: 2, cloud_mage_flow_edit_turbo: 2, cloud_qwen_image_2_1_edit: 2, cloud_qwen_image_edit_2509: 2 };
+        const bad = [];
+        for (const [id, pictures] of Object.entries(want)) {
+            const r = list.find((x) => x.id === id);
+            const v = r && r.providers && r.providers.comfycloud;
+            const g = v && v.options && v.options.graph;
+            const titles = g ? Object.values(g).map((n) => (n._meta || {}).title).filter((t) => /^scumble:picture:/.test(t || "")) : [];
+            const ok = r && r.source === "builtin" && r.kind === "provider" && r.default === "comfycloud" && eq(r.providerIds, ["comfycloud"]) && r.family === "Comfy Cloud"
+                && v.options.pictures === pictures && titles.length === pictures && g[v.options.save] && /^SaveImage/.test(g[v.options.save].class_type)
+                && v.options.values.prompt && v.options.values.prompt.length && v.options.values.negative && v.options.values.seed
+                && !Object.values(g).some((n) => n.class_type === "InpaintCanvas") && v.options.workflow && Array.isArray(v.options.workflow.nodes) && Array.isArray(v.options.needs);
+            if (!ok) bad.push(id);
+        }
+        check("all six are listed as shipped Comfy Cloud recipes: their pictures titled, prompt, negative and seed read, their SaveImage, the template's layout kept", !bad.length, short(bad));
     });
 
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });

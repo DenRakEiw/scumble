@@ -204,12 +204,18 @@ function graphLayout(req) {
     return layoutOf({ seq, own: o.mask && req.mask ? [["mask", "scumble:mask"]] : [], max: Math.max(1, Math.round(+o.pictures || 1)) });
 }
 
-async function buildDetached(req, ctx) {
-    const o = req.options;
+/** What a cloud-form graph refuses before anything goes out: more pictures than it takes, a fill without a mask. */
+function detachedFits(req) {
     const lay = graphLayout(req);
     const max = lay.max, count = countOf(lay);
     if (count > max) throw new Error(`This Comfy Cloud recipe takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${count}: hide reference layers or turn Original off.`);
-    if (o.mask && !req.mask) throw new Error("This Comfy Cloud recipe needs a selection mask.");
+    if (req.options.mask && !req.mask) throw new Error("This Comfy Cloud recipe needs a selection mask.");
+    return lay;
+}
+
+async function buildDetached(req, ctx) {
+    const o = req.options;
+    const lay = detachedFits(req);
     const graph = JSON.parse(JSON.stringify(o.graph || {}));
     const stamp = Date.now().toString(36);
     const files = [await upload(ctx, req.image, `scumble-${stamp}-crop.png`)];
@@ -228,6 +234,8 @@ async function buildDetached(req, ctx) {
     const vals = { prompt: req.prompt || "", negative: req.negative || "", seed, width: req.width, height: req.height };
     for (const [name, pairs] of Object.entries(o.values || {})) {
         if (!Object.prototype.hasOwnProperty.call(vals, name) || vals[name] == null) continue;   // denoise, mode: the graph's own
+        // an empty negative field keeps the graph's own negative (a template's default, "worst quality, ..."), not ""
+        if (name === "negative" && !vals.negative) continue;
         for (const [id, input] of Array.isArray(pairs) ? pairs : []) if (graph[id] && graph[id].inputs) graph[id].inputs[input] = vals[name];
     }
     for (const [k, v] of Object.entries(req.params || {})) {
@@ -367,7 +375,9 @@ async function run(req, ctx, waitMs) {
         if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
         const headers = { "X-API-Key": ctx.key, "Content-Type": "application/json" };
         if (detached) {
-            // every node the graph needs, before any upload (§2.4: a missing one stops the run by name)
+            // what the graph refuses by itself, before any call; then every node it needs, before any upload (§2.4: a
+            // missing one stops the run by name)
+            detachedFits(req);
             const have = await cloudClasses(ctx);
             const needs = Array.isArray(req.options.needs) ? req.options.needs : Object.values(req.options.graph).map((n) => n && n.class_type);
             const missing = [...new Set(needs.filter((c) => c && !have.has(c)))];

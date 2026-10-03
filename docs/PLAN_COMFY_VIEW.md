@@ -363,6 +363,20 @@ none of V1-V5 may change that:
      (`recipes/<id>_cloud.json`, family "Comfy Cloud", the graph from the export, `options.workflow` kept so the
      window shows the template's layout), a `recipes_test.js` section on them, then step 3's check and one live run
      each on the user's key before the release.
+     **Built 2026-10-03 (evening, the user: "alle als rezept mitliefern ... über den installer"):**
+     `tools/cloud_recipes.js` (the manifest: ids `cloud_*`, names "... (Comfy Cloud)", family "Comfy Cloud", a
+     description each; `--check`) writes the six `recipes/cloud_*.json` (57-145 KB each, the UI export kept as
+     `options.workflow`); `recipes/**` is in the installer already. The reading grew on the way: a control by its name
+     **or label** (`promotedOf` gives `label`; Qwen 2509's negative), the negative side alone when the controls name only
+     the prompt (Flux.2 Klein's negative encoder), the `negative_prompt` field of the prompt's encoder (Mage Flow, Boogu);
+     on the 26 older fixtures that adds a negative to 16 of them, two with a default text (Anima "worst quality ...",
+     Chrono Edit), so **an empty negative keeps the graph's own** in `comfycloud.js` (a set one replaces it). The run
+     now refuses a graph's picture count before the node-list call (`detachedFits`). Tests: `recipes_test.js` 107
+     (section 9's three new reads, section 10 the six shipped files against their exports and as listed), `cloudgraph_test.js`
+     14 (the Qwen 2509 recipe on the fake cloud, the negative kept and replaced), `refs_layout_test.js` 692 (its fake
+     answers the node list, a graph recipe's pictures read by their titles), gates `lint types recipes comfyview generate
+     size transparent` PASS offline (`dist/gates/gates/v6s4`, `v6s4b`), one look in the app (the six under *comfy cloud*).
+     Not done: a live run (the user's key, credits), step 3's model check.
   5. **Generate new on Comfy Cloud (the user, the same evening, nine text-to-image exports, `tools/refs/comfy_cloud/
      t2i/`):** Anima base v1, Anima preview, Flux.2 dev, Flux.2 Klein 9B text-to-image, Ideogram 4, Krea 2 turbo, Mage
      Flow t2i int8, Qwen Image 2.1 t2i, Z-Image turbo. Today `fromCloudGraph` refuses eight of them ("No LoadImage

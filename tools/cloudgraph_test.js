@@ -133,6 +133,28 @@ async function main() {
     check("a graph made for Comfy Cloud: the crop into its LoadImage, the prompt into its text, its Scumble result answers",
         tagOf(mo.bytes) === "RESULT mine.png" && s.prompts[0][1].inputs.image === "up1.png" && s.prompts[0][2].inputs.text === "a red door", tagOf(mo.bytes));
 
+    // 7. a shipped Comfy Cloud recipe (Comfy's Qwen Image Edit 2509 template, V6 step 4): the crop and the Original into
+    // its two LoadImage nodes, the prompt and the negative into its two encoders, its SaveImageAdvanced answers; an empty
+    // negative keeps the graph's own (a template's default), a set one replaces it
+    const q = list.find((r) => r.id === "cloud_qwen_image_edit_2509");
+    const qv = q && q.providers.comfycloud;
+    if (!qv) check("the shipped recipe cloud_qwen_image_edit_2509 is listed", false);
+    else {
+        const opts = JSON.parse(JSON.stringify(qv.options));
+        opts.graph["433:110"].inputs.prompt = "worst quality";
+        cloud._clearNodeList();
+        s = fakeCloud({ classes: qv.options.needs, outputs: () => ({ 469: { images: [{ filename: "qwen.png" }] } }) });
+        const qctx = { key: "k-qwen", fetch: s.fetch, sleep: async () => {} };
+        const qo = await cloud.edit(reqOf({ options: opts, negative: "", params: {}, references: [png("ORIGINAL")], original: 1 }), qctx);
+        const qg = s.prompts[0];
+        check("Qwen Image Edit 2509 on Comfy Cloud: the crop into LoadImage 78, the Original into 470, the prompt into 433:111, its SaveImageAdvanced answers",
+            tagOf(qo.bytes) === "RESULT qwen.png" && s.uploads.join(",") === "CROP,ORIGINAL" && qg["78"].inputs.image === "up1.png" && qg["470"].inputs.image === "up2.png" && qg["433:111"].inputs.prompt === "a red door",
+            short({ uploads: s.uploads, crop: qg["78"].inputs.image, second: qg["470"].inputs.image, prompt: qg["433:111"].inputs.prompt }));
+        check("an empty negative keeps the graph's own", qg["433:110"].inputs.prompt === "worst quality", qg["433:110"].inputs.prompt);
+        await cloud.edit(reqOf({ options: opts, negative: "blurry", params: {}, references: [png("ORIGINAL")], original: 1 }), qctx);
+        check("a negative of the run replaces it", s.prompts[1]["433:110"].inputs.prompt === "blurry", s.prompts[1]["433:110"].inputs.prompt);
+    }
+
     fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

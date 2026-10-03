@@ -43,6 +43,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   *api*: the recipe picker then lists your Comfy Cloud recipes alone, and they run on Comfy Cloud with your Comfy
   Cloud key. The negative prompt field shows there as in *local*; a graph with a negative takes it. Each mode comes back with the recipe you
   last used in it; with no Comfy Cloud recipe yet, the status line says how to make one.
+- **Six Comfy Cloud recipes come with Scumble**, from Comfy's own image-edit templates: Boogu Image 0.1 Edit, Flux.2
+  Klein 9B base (one picture, or two), Mage Flow Edit Turbo, Qwen Image 2.1 Edit and Qwen Image Edit 2509. Pick
+  *comfy cloud* and one of them, add your Comfy Cloud key, and the selection renders there. They have not run on Comfy
+  Cloud from Scumble yet.
+- **Templates read more fully.** A template's negative prompt is found when its control shows that name, when its
+  negative encoder has no control at all, or when the encoder has a negative field of its own; an empty negative in
+  the editor keeps the template's default instead of clearing it.
 - **Importing workflows with subgraphs** reads them correctly: a newer subgraph's inputs are matched by name (before,
   a picture could land on a model loader's input), and a muted or bypassed subgraph adds none of its nodes.
 

@@ -807,7 +807,7 @@ function markedInput(node, names) {
  * options.graph). `base` a cloud recipe it overwrites (its id, name, description and the Settings rows whose input is
  * still there), else `name` and `ids` give a new one. `workflow` (the UI graph) is kept to open it again as laid out.
  * `promoted` (promotedOf of the UI graph) tells a reading without titles the template's own controls.
- * @param {{ output: any, workflow?: any, base?: Recipe | null, name?: string, ids?: string[], date: string, promoted?: { name: string, node: string, input: string }[] }} a
+ * @param {{ output: any, workflow?: any, base?: Recipe | null, name?: string, ids?: string[], date: string, promoted?: { name: string, label?: string, node: string, input: string }[] }} a
  * @returns {Recipe}
  */
 function fromCloudGraph({ output, workflow, base, name, ids, date, promoted }) {
@@ -916,8 +916,9 @@ const naturally = (a, b) => String(a).localeCompare(String(b), undefined, { nume
 
 /**
  * The controls a UI workflow's subgraphs show (their promoted inputs: a template's prompt, seed, steps ...), as
- * { name, node, input } with the node's flat id ("<instance>:<inner>", as ComfyUI flattens a graph for a run) and the
- * inner input the control drives. Muted and bypassed instances show none. Needs no node definitions.
+ * { name, label, node, input } with the node's flat id ("<instance>:<inner>", as ComfyUI flattens a graph for a run) and
+ * the inner input the control drives; `label` is what the control shows when it differs from its name (Qwen Image Edit
+ * 2509's "prompt_1" shows "negative_prompt"). Muted and bypassed instances show none. Needs no node definitions.
  */
 function promotedOf(wf) {
     const out = [];
@@ -933,10 +934,11 @@ function promotedOf(wf) {
             for (const raw of def.links || []) {
                 const l = Array.isArray(raw) ? { origin: raw[1], originSlot: raw[2], target: raw[3], targetSlot: raw[4] } : { origin: raw.origin_id, originSlot: raw.origin_slot, target: raw.target_id, targetSlot: raw.target_slot };
                 if (String(l.origin) !== "-10") continue;
-                const name = def.inputs && def.inputs[+l.originSlot] && def.inputs[+l.originSlot].name;
+                const slot = def.inputs && def.inputs[+l.originSlot];
+                const name = slot && slot.name;
                 const tn = inner.get(String(l.target));
                 const input = tn && tn.inputs && tn.inputs[+l.targetSlot] && tn.inputs[+l.targetSlot].name;
-                if (name && input) out.push({ name: String(name), node: at + String(l.target), input: String(input) });
+                if (name && input) out.push({ name: String(name), label: slot.label ? String(slot.label) : "", node: at + String(l.target), input: String(input) });
             }
             walk(def.nodes, at, depth + 1);
         }
@@ -949,9 +951,10 @@ function promotedOf(wf) {
  * Where Scumble's pictures and values go in an API prompt nobody titled for it (cloudMark): the LoadImage nodes in the
  * order their consumers number them (image_1 / image1 / image before image_2 ...; the node id breaks a tie) as pictures
  * 0, 1, ...; a LoadImage whose MASK output is read as the mask; the prompt, the negative and the seed from the
- * subgraph controls of that name (`promoted`, promotedOf), else from the encoders' text inputs (positive when their
- * conditioning reaches a "positive" input or no "negative" one) and the seed inputs; the one SaveImage(Advanced) as the
- * result. Returns { pictures, maskFrom, values, save, found } or throws with what it could not tell.
+ * subgraph controls of that name or label (`promoted`, promotedOf), else from the encoders' text inputs (positive when
+ * their conditioning reaches a "positive" input or no "negative" one) and the seed inputs; with no negative found, the
+ * `negative_prompt` input of a node the prompt goes into; the one SaveImage(Advanced) as the result. Returns
+ * { pictures, maskFrom, values, save, found } or throws with what it could not tell.
  */
 function detectRoles(prompt, promoted) {
     const ids = Object.keys(prompt);
@@ -988,11 +991,14 @@ function detectRoles(prompt, promoted) {
     if (masks.length) found.push(`mask: the MASK of ${label(masks[0])}`);
 
     // the prompt, the negative, the seed: the template's own controls first
-    const promotedTo = (re, type) => (promoted || []).filter((p) => re.test(p.name) && prompt[p.node] && prompt[p.node].inputs && typeof prompt[p.node].inputs[p.input] === type).map((p) => [p.node, p.input]);
+    const promotedTo = (re, type) => (promoted || []).filter((p) => (re.test(p.name) || (p.label && re.test(p.label))) && prompt[p.node] && prompt[p.node].inputs && typeof prompt[p.node].inputs[p.input] === type).map((p) => [p.node, p.input]);
     let pos = promotedTo(/^(prompt|text|positive|positive_prompt)$/i, "string");
     let neg = promotedTo(/^(negative|negative_prompt)$/i, "string");
     let seed = promotedTo(/^(noise_)?seed$/i, "number");
-    if (!pos.length) {
+    // the encoders' text inputs when the controls name no prompt, or the negative side alone when they name the prompt
+    // and no negative (Flux.2 Klein's negative encoder has no control of its own)
+    const negativeOnly = pos.length > 0;
+    if (!pos.length || !neg.length) {
         // where a linked text starts: four hops along string links at most, to a node holding the text itself
         const textSource = (link) => {
             let at = link;
@@ -1035,10 +1041,13 @@ function detectRoles(prompt, promoted) {
                 if (!at) continue;
                 if (/^negative(_prompt)?$/i.test(k)) { neg.push(at); continue; }
                 if (!/^(text|prompt|positive)$/i.test(k)) continue;
-                (side(id) === "positive" ? pos : neg).push(at);
+                if (side(id) === "negative") neg.push(at);
+                else if (!negativeOnly) pos.push(at);
             }
         }
     }
+    // an encoder with a negative field of its own (Mage Flow, Boogu): the negative goes beside the prompt
+    if (!neg.length) for (const [id] of pos) if (typeof (prompt[id].inputs || {}).negative_prompt === "string" && !neg.some(([x]) => x === id)) neg.push([id, "negative_prompt"]);
     if (!seed.length) for (const id of ids) for (const [k, v] of Object.entries(prompt[id].inputs || {})) if (/^(noise_)?seed$/.test(k) && typeof v === "number") seed.push([id, k]);
     if (pos.length) found.push(`prompt: ${pos.map(([id, k]) => `${label(id)}.${k}`).join(", ")}`);
     if (neg.length) found.push(`negative: ${neg.map(([id, k]) => `${label(id)}.${k}`).join(", ")}`);

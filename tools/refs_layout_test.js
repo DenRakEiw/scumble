@@ -298,18 +298,21 @@ async function bodyOf(body) {
 /**
  * Runs the adapter's real `edit` (or `generate`) against a fake fetch. The uploads are answered, each file's URL (or
  * Comfy Cloud name) mapped to its bytes; a GET that is no upload answers what the adapter asks first (OpenRouter's host
- * list); the first other POST is the request with the pictures: its body is kept and the call throws. In-app LaMa sends
+ * list, Comfy Cloud's node list for a graph recipe); the first other POST is the request with the pictures: its body is kept and the call throws. In-app LaMa sends
  * nothing: its ONNX call is that request. Returns { calls, uploads, request, error }.
  */
 async function capture(p, req, verb = "edit") {
     const shot = { calls: [], uploads: new Map(), pending: new Map(), request: null, error: null, result: null };
     let k = 0;
     const upload = (url, bytes) => { shot.uploads.set(url, bytes); return url; };
+    if (typeof p._clearNodeList === "function") p._clearNodeList();   // Comfy Cloud keeps the node list per key
     async function fetch(url, init = {}) {
         const method = String(init.method || "GET").toUpperCase();
         const u = new URL(String(url));
         shot.calls.push(`${method} ${u.host}${u.pathname}`);
         if (method === "PUT" && shot.pending.has(String(url))) { upload(shot.pending.get(String(url)), await bytesOf(init.body)); return new Response(null, { status: 200 }); }
+        // Comfy Cloud's node list, asked before a graph recipe's run: every node its graph needs
+        if (method === "GET" && u.pathname === "/api/object_info") return json(200, Object.fromEntries(((req.options && req.options.needs) || []).map((c) => [c, {}])));
         if (method === "GET") return u.pathname === "/api/v1/providers" ? json(200, { data: [] }) : json(404, { error: { message: "no route " + u.pathname } });
         const at = u.pathname;
         if (/\/v1\/uploads\/images$/.test(at)) {                              // ToAPIs
@@ -355,9 +358,19 @@ async function capture(p, req, verb = "edit") {
     if (shot.request && req.provider === "comfycloud" && shot.request.prompt) {
         // the field of a Comfy Cloud picture is an input key of the model node; its links lead to the uploads
         shot.graph = shot.request.prompt;
-        const node = String((req.options && req.options.node) || "");
-        const id = Object.keys(shot.graph).find((n) => shot.graph[n] && shot.graph[n].class_type === node);
-        shot.node = id ? shot.graph[id].inputs : null;
+        if (req.options && req.options.graph) {
+            // a graph recipe (item 35 V5): its pictures are the titled LoadImage nodes, keyed by title as the layout's
+            // fields are; a picture past the run's last repeats an earlier upload and is no picture of its own
+            const titled = Object.values(shot.graph).map((n) => [String((n && n._meta && n._meta.title) || ""), n]).filter(([t]) => /^scumble:(picture:\d+|mask)$/.test(t));
+            titled.sort(([a], [b]) => naturalCmp(a, b));
+            const seen = new Set();
+            shot.node = {};
+            for (const [t, n] of titled) { const v = n.inputs && n.inputs.image; if (seen.has(v)) continue; seen.add(v); shot.node[t] = v; }
+        } else {
+            const node = String((req.options && req.options.node) || "");
+            const id = Object.keys(shot.graph).find((n) => shot.graph[n] && shot.graph[n].class_type === node);
+            shot.node = id ? shot.graph[id].inputs : null;
+        }
     }
     return shot;
 }

@@ -165,8 +165,21 @@ spaces, `:`, `_` or `-` between words):
 | `Scumble seed` | any node | the seed into its `seed` (or `noise_seed`) input |
 | `Scumble result` | a SaveImage | the picture Scumble reads; needed only when the graph has more than one SaveImage |
 
+A control is read by its name or by the label it shows (Qwen Image Edit 2509's `prompt_1` shows `negative_prompt`).
+When the controls name the prompt but no negative, the negative comes from the encoder whose conditioning reaches a
+`negative` input, else from a `negative_prompt` field of the encoder the prompt goes into (Mage Flow, Boogu). An empty
+negative in the editor keeps the graph's own (a template's default such as "worst quality, ..."); a set one replaces it.
+
+**Shipped:** six of Comfy's image-edit templates as Comfy Cloud exports them, picked by the user (MIT,
+`tools/refs/comfy_cloud/edit/`): `cloud_boogu_image_edit`, `cloud_flux2_klein_9b`, `cloud_flux2_klein_9b_multi` (the
+same template with its two-picture subgraph live), `cloud_mage_flow_edit_turbo`, `cloud_qwen_image_2_1_edit` and
+`cloud_qwen_image_edit_2509`. `node tools/cloud_recipes.js` writes them from the exports (the widget order from
+`tools/refs/comfy_templates/object_info.json`), `--check` says whether a file still matches; each keeps the template's
+layout for the ComfyUI window. They have not run on Comfy Cloud from Scumble yet.
+
 Before a run Scumble checks every node of the graph against Comfy Cloud's node list (kept ten minutes per key) and
-names a missing one instead of uploading anything. The crop goes out at most 2048 px on a side in steps of 16 (a cloud
+names a missing one instead of uploading anything; a run with more pictures than the graph takes is refused before
+that. The crop goes out at most 2048 px on a side in steps of 16 (a cloud
 copy keeps the node's target size and multiple).
 
 ## Provider recipes (`kind: "provider"`)

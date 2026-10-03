@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 evening: 0.1.39 is Latest; item 35 V1-V5 and V6 steps 1-2 built, V6 steps 3-5 next, no release yet)
+## Where things stand (2026-10-03 evening: 0.1.39 is Latest; item 35 V1-V5 and V6 steps 1, 2 and 4 built, V6 steps 3 and 5 next, no release yet)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -137,11 +137,15 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   `lint types document commands` PASS and `comfyview` 23 of 23 offline (`dist/gates/gates/v6s2d`, `v6s2e`; the
   listed Ctrl+S focus flake in between).
   The user sent their picks the same evening, exported from Comfy Cloud: six image-edit and nine text-to-image
-  workflows, now fixtures in `tools/refs/comfy_cloud/` (MIT). The six edits read without titles; the text-to-image
-  ones need a text route for cloud recipes (Generate new). Both are planned as V6 steps 4 and 5 in
-  docs/PLAN_COMFY_VIEW.md, with what the reading found.
-- **Next: V6 step 3** (the model-file check against Comfy Cloud before a run), then step 4 (the six edit templates
-  as shipped cloud recipes) and step 5 (text-to-image cloud recipes for Generate new), then the live checks, then the
+  workflows, now fixtures in `tools/refs/comfy_cloud/` (MIT), and asked for all of them as recipes in the installer.
+- **V6 step 4 built the same evening:** the six edits ship as `recipes/cloud_*.json`, written by
+  `tools/cloud_recipes.js` (`--check`); the reading grew (a control by its label, the negative side alone, an
+  encoder's own negative field) and an empty negative keeps the graph's own; a graph refuses too many pictures before
+  any call. `recipes_test` 107, `cloudgraph` 14, `refs_layout` 692, gates `lint types recipes comfyview generate size
+  transparent help` PASS offline (`v6s4`, `v6s4b`, `v6s4c`), one look (the six under *comfy cloud*). Not run live.
+- **Next: V6 step 5** (the nine text-to-image exports as cloud recipes for Generate new: a text route for cloud
+  recipes, width / height into the graph; docs/PLAN_COMFY_VIEW.md V6 step 5) and **step 3** (the model-file check
+  against Comfy Cloud before a run), then the live checks, then the
   release. Old line kept below for the checks:
 - **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
   ist"): a recipe opened and saved back on the user's ComfyUI (queues nothing), the Comfy Cloud login in the window
