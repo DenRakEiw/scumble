@@ -167,7 +167,10 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   67e7a8c reads `/api/jobs/<id>` (CHANGELOG "Comfy Cloud runs bring their result back again"; a hotfix release only on
   the user's word). The user's idea for a cleanup update: the Sample plugin's panel is not needed by users (plugin
   template and test fixture; proposed: off by default), not decided.
-- **Next: the live checks** (one Generate new run on Comfy Cloud is still open), then the release. Old line kept below for the checks:
+- **Live checks on Comfy Cloud passed** (the user, the same night): inpaint and Generate new, no error in the log.
+  Still unlooked: the ComfyUI window's round trip on the user's own ComfyUI (open a recipe, save it back; queues
+  nothing). **Next:** the user's decision on the hotfix 0.1.40 (a branch off v0.1.39 with 67e7a8c alone) and the
+  cleanup (cloud mode hides the local-only controls, the Sample plugin off by default), then the release of item 35. Old line kept below for the checks:
 - **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
   ist"): a recipe opened and saved back on the user's ComfyUI (queues nothing), the Comfy Cloud login in the window
   (which sign-ins work), one cloud run with the user's key (credits), a RunPod pod if the user starts one; then the

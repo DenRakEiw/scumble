@@ -449,8 +449,9 @@ none of V1-V5 may change that:
   on Comfy Cloud and lost their result: Comfy Cloud no longer serves `/api/history` ("This endpoint is not available on
   Comfy Cloud. Use /api/jobs/{prompt_id} instead."), fixed in 67e7a8c (`/api/jobs/<id>`, every Comfy Cloud run was
   hit, released versions too). The Comfy Cloud page in the window once showed "Couldn't load your workspace"
-  (`/api/billing/status` 500, its remote config fetch aborted: Comfy Cloud's side; it loaded again later). Still open:
-  one Generate new run on Comfy Cloud.
+  (`/api/billing/status` 500, its remote config fetch aborted: Comfy Cloud's side; it loaded again later). Then a
+  Generate new run on Comfy Cloud and another inpaint, both successful (the user, the same night; the window had Anima
+  base 1.0 selected afterwards), no error in the instance's log.
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
   loopback run; one live run on Comfy Cloud with the user's key (credits). Possibly two sessions.
