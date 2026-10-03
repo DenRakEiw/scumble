@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 night: 0.1.40 is Latest, a hotfix; item 35 V1-V6 built and its Comfy Cloud live checks passed, the cleanup and its release 0.1.41 next)
+## Where things stand (2026-10-03 night: 0.1.41 is Latest, item 35 released; next: item 36, the portable zip)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -184,7 +184,15 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   keeps running but has no side panel** (a06cd5f; the user: "die funktion kann ja für mcp bleiben aber den panel
   entfernen"; `sample_mean_color` is an AUTO tool of the assistant), commands_test checks the Boxes panel for the panel
   API instead. Gates `comfyview generate lint types` (c041a) and `commands mcp assistant skins lint` (c041b) PASS
-  offline. **Next:** the ComfyUI window's round trip on the user's ComfyUI (the last look), then 0.1.41 with item 35. Old line kept below for the checks:
+  offline. The user's last look passed: a recipe opened in the ComfyUI window and saved back; it found that Edit in
+  ComfyUI kept Comfy Cloud when the window had shown it last (fixed, 1de5acb, a comfyview gate step).
+- **0.1.41 released the same night (the user: "mache den release jetzt")**: item 35 (ComfyUI in Scumble, Comfy Cloud
+  recipes and mode, Generate new on Comfy Cloud), Cancel for API runs, the cleanup; three stale CHANGELOG lines fixed
+  first. Exe gates `--offline` on port 9561 both backends ALL PASS (`rel41-exe` 35 with comfyview, `rel41-exe-canvas`
+  22); tag `v0.1.41` on 220feb6 (the built commit; 5a18579 after it is CLAUDE.md alone), published 23:56, manual synced
+  and post live (`#v0-1-41`, website e26563f). **Next:** item 36 (the portable zip) on the user's word; the Store
+  package per release is still only on the user's word; the Comfy Dev Platform Challenge (Oct 5-19) to plan with the
+  user (memory `comfy-dev-challenge`). Old line kept below for the checks:
 - **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
   ist"): a recipe opened and saved back on the user's ComfyUI (queues nothing), the Comfy Cloud login in the window
   (which sign-ins work), one cloud run with the user's key (credits), a RunPod pod if the user starts one; then the
