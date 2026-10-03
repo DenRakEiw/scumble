@@ -60,7 +60,10 @@ function fakeCloud({ classes, info, outputs, promptError, jobError } = {}) {
             return promptError ? json(400, { error: { message: promptError } }) : json(200, { prompt_id: "p1" });
         }
         if (u.pathname === "/api/job/p1/status") return json(200, jobError ? { status: "error", error_message: jobError } : { status: "success" });
-        if (u.pathname === "/api/history/p1") return json(200, { p1: { outputs: (outputs || (() => ({})))(s.prompts[s.prompts.length - 1]) } });
+        // Comfy Cloud no longer serves /api/history (2026-10-03); the job's details hold its outputs
+        if (u.pathname.startsWith("/api/history")) return json(404, { error: { message: "This endpoint is not available on Comfy Cloud. Use /api/jobs/{prompt_id} instead." } });
+        if (u.pathname === "/api/jobs/p1") return json(200, jobError ? { id: "p1", status: "failed", execution_error: { node_type: "UNETLoader", exception_type: "ValueError", exception_message: jobError } }
+            : { id: "p1", status: "completed", outputs: (outputs || (() => ({})))(s.prompts[s.prompts.length - 1]) });
         if (u.pathname === "/api/view") return new Response(null, { status: 302, headers: { location: "https://signed.example/" + u.searchParams.get("filename") } });
         if (u.host === "signed.example") return new Response(png("RESULT " + u.pathname.slice(1)), { status: 200, headers: { "content-type": "image/png" } });
         return json(404, { error: "no route " + u.pathname });
@@ -249,6 +252,15 @@ async function main() {
         check("Generate new the same way: a refused prompt names the VAE the list lacks",
             /^Comfy Cloud prompt: Prompt outputs failed validation Comfy Cloud's node list does not name the model file ae\.safetensors \(VAELoader vae_name\); unless/.test(ezf || "") && s.prompts.length === 1, short(ezf));
     }
+
+    // 10. the result and a failure's cause come from the job's details (/api/jobs/<id>): Comfy Cloud no longer serves
+    // /api/history (the user's first live run, 2026-10-03: the job ran, its result never came back)
+    cloud._clearNodeList();
+    s = fakeCloud({ classes: all, outputs: () => ({ [saveId]: { images: [{ filename: "jobs.png" }] } }) });
+    const jo = await cloud.edit(reqOf(), { key: "k-jobs", fetch: s.fetch, sleep: async () => {} });
+    check("the result is read from /api/jobs/<id>, never from /api/history", tagOf(jo.bytes) === "RESULT jobs.png" && s.calls.includes("GET /api/jobs/p1") && !s.calls.some((c) => c.includes("/api/history")), short(s.calls));
+    const why = await cloud.failureDetail({ key: "k", fetch: fakeCloud({ jobError: "Value not in list" }).fetch }, "p1", "error", {});
+    check("a failure without a cause in its status: the job's execution_error names the node and the exception", why === "error - UNETLoader: ValueError: Value not in list", why);
 
     fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
