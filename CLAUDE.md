@@ -218,9 +218,13 @@ prepared locally.
 The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27 night).
 - **The Store listing is live** (the user, 2026-09-30: https://apps.microsoft.com/detail/9NDBTNNMXF2R, signed by
   Microsoft; identity `DenRakEiw.Scumble`). The README links it (Install (Windows): Store or GitHub), the website hub too since 0.1.38
-  (2026-10-03, with the post). Which version the Store holds was not checked.
-- **Not started:** B3, the macOS build (`docs/PLAN_0_1_24.md`); the Store package per release (`npm run dist:store`,
-  `docs/STORE.md`; coupling it to GitHub releases only on the user's word); Comfy Router
+  (2026-10-03, with the post). Submission 1 (2026-09-30) held the first Store version; **0.1.41 was submitted
+  2026-10-04 (submission 2, the user in Partner Center: the MSIX built here, the What's new text, the trailer
+  "Scumble explained" with `dist/store-listing/hero-1920x1080.png` as its thumbnail), certification pending.**
+  **Store updates only after essential changes, on the user's word** (the user, 2026-10-04: "nicht bei jeder
+  version... nur nach essenziellen änderungen"; the submission API needs a company account, the user's is not one):
+  then `npm run dist:store`, a What's new text, the user's three steps in Partner Center (`docs/RELEASING.md`).
+- **Not started:** B3, the macOS build (`docs/PLAN_0_1_24.md`); Comfy Router
   live runs beyond GPT Image 2, Nano Banana 2 (2026-09-23) and FLUX 3 Image (2026-10-03; the key in `dist/live-keys`); Linux built by CI, never run; types stage 3 (`docs/PLAN_TYPES.md`);
   the manual's empty assistant and log screenshots and a missing colour-match figure (`docs/MANUAL.md` is the one
   source, the website copies it via `tools/manual_sync.js`); the node repo is behind (build it only when a node version

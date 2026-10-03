@@ -15,6 +15,16 @@ profile (`bash tools/run_gates.sh <label> --offline --exe dist/win-unpacked/Scum
 
 ## The release channel, signing and the Store
 
+**A Store update goes only with essential changes** (the user, 2026-10-04), never with every release: the GitHub
+copy updates itself, the Store copy follows when a fix or feature matters (0.1.41, after the Comfy Cloud fix of 0.1.40).
+The Store submission API needs a company account in Partner Center (an Entra app with the Manager role; "Individual
+accounts do not support multiple users"), so the submission stays by hand. When the user asks for one: `npm run
+dist:store` (`dist/Scumble-<version>.msix`, built from the release's tag state), a short "What's new in this version"
+text in English, and the user's part in Partner Center (https://partner.microsoft.com/dashboard): Apps and games ›
+Scumble › Start update; Packages: drop the new MSIX in, delete the old one, leave gradual rollout and mandatory off,
+save; Store listings › English › What's new in this version, save; Submit for certification. Certification takes hours
+to about three working days; the Store then updates its users by itself.
+
 - Release channel: **GitHub Releases** of `DenRakEiw/scumble` (public since 2026-09-09).
   `electron-updater` reads `latest.yml` there; `.github/workflows/build.yml` builds the
   installer on `windows-latest` and publishes a **draft** release on a `v<version>` tag
