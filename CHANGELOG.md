@@ -16,6 +16,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   View › Edit Recipe in ComfyUI and each ComfyUI recipe under Settings › Recipes), opens that recipe's graph in the
   ComfyUI window, laid out by ComfyUI, with the result and the Settings rows wired to the Inpaint Canvas node as they
   run. The window's bar names the recipe, and says so when the page cannot take a graph.
+- **A graph as a recipe.** In the ComfyUI window, *Save to recipe* writes the graph you changed back into the recipe
+  the window holds, and *Save as new recipe* makes a new one under the name you type in the bar; either way the
+  editor selects it. A shipped recipe is saved as your own copy under the same name, which stands in for it; removing
+  the copy under Settings › Recipes brings the shipped one back. The recipe keeps ComfyUI's layout, so it opens next
+  time as you left it, and its Settings rows keep their names and values. A graph without an Inpaint Canvas node is
+  refused, and nothing is saved.
 
 ## 0.1.39 — 2026-10-03
 

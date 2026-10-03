@@ -698,6 +698,38 @@ function fromPrompt(src, objectInfo, meta, base) {
     return { kind: "comfy", mode, canvas: canvasId, result: resultLocal || resultApi, needs, settings, prompt, description: `Imported from ${meta.file} on ${meta.date}.` + (notes.length ? " " + notes.join("; ") + "." : ""), notes };
 }
 
+// What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
+const GRAPH_KEEPS = ["description", "family", "task", "refs", "models"];
+
+/**
+ * The graph of ComfyUI's page -> a recipe to save (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3). `output` is the API
+ * prompt and `workflow` the UI graph `app.graphToPrompt()` answered (untrusted: checked here); `base` the recipe the
+ * window held. Without `name` the recipe is `base` overwritten (Save to recipe: its id, name and the fields a graph
+ * does not hold stay); with `name` it is a new recipe under a fresh id among `ids` (Save as new recipe).
+ * @param {{ output: any, workflow: any, objectInfo?: any, base?: Recipe | null, name?: string, ids?: string[], date: string }} a
+ * @returns {Recipe}
+ */
+function fromGraph({ output, workflow, objectInfo, base, name, ids, date }) {
+    if (!looksLikePrompt(output)) throw new Error("ComfyUI's page answered no graph Scumble can read.");
+    const wf = workflow && typeof workflow === "object" && Array.isArray(workflow.nodes) && Array.isArray(workflow.links) ? workflow : null;
+    const fields = fromPrompt(output, objectInfo || {}, { file: "ComfyUI", date }, base || undefined);
+    const graph = { kind: "comfy", mode: fields.mode, canvas: fields.canvas, result: fields.result, needs: fields.needs, settings: fields.settings, prompt: fields.prompt, ...(wf ? { workflow: wf } : {}) };
+    /** @type {Record<string, any>} */
+    const kept = {};
+    if (base) for (const k of GRAPH_KEEPS) if (/** @type {any} */ (base)[k] !== undefined) kept[k] = /** @type {any} */ (base)[k];
+    if (!name) {
+        if (!base || !base.id) throw new Error("This window holds no recipe to save into: use Save as new recipe.");
+        return /** @type {Recipe} */ ({ id: base.id, name: base.name || base.id, ...kept, ...graph });
+    }
+    const clean = String(name).trim().slice(0, 80);
+    if (!clean) throw new Error("A new recipe needs a name.");
+    const taken = new Set(ids || []);
+    const stem = slug(clean);
+    let id = stem, n = 2;
+    while (taken.has(id) || id === "flux2_klein_local") id = `${stem}_${n++}`;
+    return /** @type {Recipe} */ ({ id, name: clean, ...kept, description: `Saved from ComfyUI on ${date}.`, ...graph });
+}
+
 /** A provider recipe names its variants in a `providers` map, or, in the old shape, one `provider`. */
 function hasVariants(data) {
     const p = data.providers;
@@ -745,4 +777,4 @@ async function importFile(file, objectInfo) {
     return normalize({ ...recipe, file: path.basename(saved), source: "user" });
 }
 
-module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, userDir, _normalize: normalize };
+module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, userDir, _normalize: normalize };

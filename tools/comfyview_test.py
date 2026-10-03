@@ -14,7 +14,12 @@ opener passes a stub's URL):
 - V2, a recipe as a graph: on a stub whose fake window.app records what it is given, a shipped ComfyUI recipe arrives
   as its API prompt with the result and the Settings rows wired to the canvas node, under the recipe's name, and the
   bar names it; a provider recipe is refused; a page without window.app and a load that throws say so in the bar;
-  with no target the start page names the recipe.
+  with no target the start page names the recipe;
+- V3, a graph as a recipe: the bar's Save to recipe overwrites the held recipe with the page's graph (a shipped one as
+  a user copy under its id, its Settings rows and labels kept, the UI graph stored) and the editor selects it; Save as
+  new recipe takes its name in the bar and makes a new recipe; a graph without the Inpaint Canvas node and an answer
+  that is no prompt are refused and save nothing. The recipes it saves are removed at the end; it refuses a profile
+  that holds a user recipe of the shipped id it overwrites.
 
 It refuses an instance connected to ComfyUI and a profile that holds a ComfyUI secret; the settings and the secret it
 writes are put back at the end whatever happens.
@@ -49,7 +54,8 @@ ws.onclose = (e) => { if (document.title !== 'open') document.title = 'closed ' 
 FAKE_APP = """<script>
 window.app = { graph: {},
   loadApiJson: async (prompt, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'api', prompt, name }; },
-  loadGraphData: async (workflow) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'graph', workflow }; } };
+  loadGraphData: async (workflow) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'graph', workflow }; },
+  graphToPrompt: async () => ({ workflow: window.__wf || { nodes: [], links: [] }, output: window.__out || (window.__loaded && window.__loaded.prompt) || {} }) };
 window.__throw = %s;
 </script>"""
 
@@ -97,6 +103,7 @@ class Stub:
         app.router.add_get("/ws", self.ws)
         app.router.add_get("/", self.page)
         app.router.add_get("/favicon.ico", lambda r: web.Response(status=404))
+        app.router.add_get("/object_info", lambda r: web.json_response({}))
         self.runner = web.AppRunner(app)
         await self.runner.setup()
         s = socket.socket()
@@ -361,6 +368,67 @@ class Gate:
         await self.close()
         return {"throws": i["recipeNote"], "noApp": i2["recipeNote"], "noTarget": b["why"][-90:]}
 
+    async def bar_click(self, js):
+        await on_target("comfybar.html", lambda c: c.eval("(() => { %s; return 1; })()" % js))
+
+    async def recipe_list(self):
+        return await self.js("return (await window.scumble.recipes.list()).map((r) => ({ id: r.id, name: r.name, source: r.source, settings: r.settings, mark: r.prompt && r.prompt.sigmas ? r.prompt.sigmas.inputs.gate_mark : undefined, workflow: r.workflow || null }))")
+
+    async def save_over(self):
+        await self.close()
+        self.stub.mode = "none"
+        self.stub.app = "ok"
+        shipped = next(r for r in await self.recipe_list() if r["id"] == "flux2_klein_local")
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": "flux2_klein_local"}))
+        i = await self.wait_info("i.recipeLoaded || i.recipeNote", 15000)
+        if not i.get("recipeLoaded") or not i.get("canSave"):
+            raise Exception("not ready to save: " + json.dumps(i))
+        await on_target(self.stub.url, lambda c: c.eval("""(() => { window.__out = JSON.parse(JSON.stringify(window.__loaded.prompt));
+            window.__out.sigmas.inputs.gate_mark = 7; window.__wf = { nodes: [{ id: 'canvas', type: 'InpaintCanvas' }], links: [], extra: { gate: 1 } }; return 1; })()"""))
+        await self.bar_click("document.getElementById('cb-save').click()")
+        i2 = await self.wait_info("i.saveNote", 10000)
+        if "Saved the graph" not in i2.get("saveNote", "") or "stands in for the shipped recipe" not in i2["saveNote"]:
+            raise Exception("Save to recipe: " + json.dumps(i2))
+        mine = next((r for r in await self.recipe_list() if r["id"] == "flux2_klein_local"), None)
+        if not mine or mine["source"] != "user" or mine["mark"] != 7 or (mine["workflow"] or {}).get("extra", {}).get("gate") != 1 or mine["settings"] != shipped["settings"]:
+            raise Exception("the saved recipe: " + json.dumps(mine)[:500])
+        sel = await self.js("for (let k = 0; k < 30 && !/Saved the graph/.test(document.body.textContent); k++) await wait(100); return document.getElementById('shell-recipe').value")
+        if sel != "flux2_klein_local":
+            raise Exception("the editor did not select the saved recipe: " + str(sel))
+        return {"note": i2["saveNote"][:120], "rows": len(mine["settings"])}
+
+    async def save_new(self):
+        await self.bar_click("document.getElementById('cb-save-new').click()")
+        await self.bar_click("document.getElementById('cb-name').value = 'Gate graph'; document.getElementById('cb-name-ok').click()")
+        i = await self.wait_info("i.saveNote && i.recipeId === 'gate_graph'", 10000)
+        new = next((r for r in await self.recipe_list() if r["id"] == "gate_graph"), None)
+        if not new or new["name"] != "Gate graph" or new["source"] != "user" or i.get("recipe") != "Gate graph":
+            raise Exception("Save as new recipe: " + json.dumps({"info": i, "recipe": new})[:500])
+        sel = await self.js("for (let k = 0; k < 30 && document.getElementById('shell-recipe').value !== 'gate_graph'; k++) await wait(100); return document.getElementById('shell-recipe').value")
+        b = await self.bar_text()
+        if sel != "gate_graph" or b["recipe"] != "Editing: Gate graph":
+            raise Exception(f"after the save: editor {sel}, bar {b}")
+        return {"id": new["id"], "bar": b["recipe"]}
+
+    async def save_refused(self):
+        out = {}
+        for what, js, want in (("no canvas", "window.__out = { x: { class_type: 'KSampler', inputs: {} } }", "no Inpaint Canvas node"),
+                               ("no prompt", "window.__out = { a: 1 }", "no graph Scumble can read")):
+            await on_target(self.stub.url, lambda c: c.eval("(() => { %s; return 1; })()" % js))
+            await self.bar_click("document.getElementById('cb-save-new').click()")
+            await self.bar_click("document.getElementById('cb-name').value = 'Gate bad'; document.getElementById('cb-name-ok').click()")
+            i = await self.wait_info("i.saveNote && i.saveNote.indexOf(%s) >= 0" % json.dumps(want), 8000)
+            if want not in i.get("saveNote", ""):
+                raise Exception(f"{what}: " + json.dumps(i))
+            out[what] = i["saveNote"]
+        if any(r["id"].startswith("gate_bad") for r in await self.recipe_list()):
+            raise Exception("a refused graph was saved")
+        return out
+
+    async def cleanup_recipes(self):
+        await self.js("""for (const r of await window.scumble.recipes.list()) if (r.source === 'user' && (r.id === 'flux2_klein_local' || /^gate_(graph|bad)/.test(r.id))) await window.scumble.recipes.remove(r.id);
+            const S = await import('./shell.js'); await S.loadRecipes(); S.selectRecipe('flux2_klein_local'); return 1""")
+
     async def unreachable(self):
         await self.close()
         s = socket.socket()
@@ -388,6 +456,9 @@ async def main():
         if keys.get("comfy-auth", {}).get("set"):
             raise SystemExit("refused: the profile holds a ComfyUI secret")
         saved = (await c.eval("window.scumble.settings.get()")).get("comfy")
+        mine = await c.eval("(async () => (await window.scumble.recipes.list()).filter((r) => r.source === 'user' && (r.id === 'flux2_klein_local' || /^gate_(graph|bad)/.test(r.id))).map((r) => r.id))()")
+        if mine:
+            raise SystemExit(f"refused: the profile holds user recipes this test would overwrite or remove: {mine}")
         g = Gate(c, stub, out)
         try:
             await g.close()
@@ -402,8 +473,12 @@ async def main():
             await g.step("V2: a recipe arrives as its graph, the bar names it, a second one replaces it", g.recipe_graph)
             await g.step("V2: a provider recipe is refused", g.recipe_refused)
             await g.step("V2: a load that throws, a page without window.app, no target", g.recipe_troubles)
+            await g.step("V3: Save to recipe overwrites the held recipe (a shipped one as a user copy), the editor selects it", g.save_over)
+            await g.step("V3: Save as new recipe, the name in the bar", g.save_new)
+            await g.step("V3: a graph without the node and an answer that is no prompt are refused", g.save_refused)
         finally:
             await g.close()
+            await g.cleanup_recipes()
             await c.eval("(async () => { const s = await window.scumble.settings.get(); await window.scumble.settings.set({ comfy: %s || s.comfy }); await window.scumble.keys.clear('comfy-auth'); return 1; })()" % json.dumps(saved))
         return g.results
 

@@ -96,6 +96,11 @@ drops them otherwise); basic, bearer and custom-header auth on the page and on `
 401 start page without a login loop; a dead server; V2: a fake `window.app` on the stub records the recipe's graph
 (the result and the Settings rows wired, the recipe's name), a second recipe replaces it, a provider recipe is
 refused, a load that throws and a page without `window.app` say so in the bar, the start page names the recipe;
+V3: the bar's Save to recipe overwrites the held recipe with the fake page's `graphToPrompt` answer (a shipped one as
+a user copy, its rows and labels kept, the UI graph stored) and the editor selects it, Save as new recipe takes the
+name in the bar, a graph without the node and an answer that is no prompt are refused; the recipes it saves are
+removed at the end, and it refuses a profile holding a user recipe it would overwrite; `tools/recipes_test.js`
+section 6 checks `recipes.fromGraph`;
 `tools/recipes_test.js` section 5 checks `fromPrompt(toPrompt(r))` on every shipped ComfyUI recipe), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
 view of item 24: real Tab and Escape presses over CDP; the chrome hidden, the view the window's size, full screen and a
 fitted picture while on, the view / rulers / chrome / window put back after; Tab ignored in a text field, a dialog, the

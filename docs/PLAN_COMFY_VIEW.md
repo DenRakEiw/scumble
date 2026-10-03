@@ -1,7 +1,8 @@
 # ComfyUI in Scumble: the graph behind a recipe, in the app (item 35; the user, 2026-10-03)
 
-**Status (2026-10-03, afternoon):** **V1 and V2 built** (the window, the bar, the start page, the auth, the *ComfyUI*
-button; a recipe opened as its graph: "V1 as built" and "V2 as built" under §3), V3-V5 not started. Five steps (V1-V5), one
+**Status (2026-10-03, afternoon):** **V1, V2 and V3 built** (the window, the bar, the start page, the auth, the
+*ComfyUI* button; a recipe opened as its graph; the graph saved as a recipe: "V1 / V2 / V3 as built" under §3), V4 and
+V5 not started. Five steps (V1-V5), one
 per session (the user's rule), **released together as one update** after V5. The user answered §6 the same day: a
 window of its own, Comfy Cloud API access yes, *Save to recipe* overwrites, all in one update; then the *ComfyUI*
 button after *Help* and *Assistant*, and **Scumble keeps working without any ComfyUI installed** (§2.5, a rule for
@@ -253,6 +254,19 @@ none of V1-V5 may change that:
   *Save as new recipe* (the name dialog), the `workflow` field kept, the selection afterwards. Tests: plain-Node (a recorded `graphToPrompt` answer of the user's frontend as a fixture ->
   recipe), the stub-page gate step; one round trip on the user's ComfyUI (open a recipe, move a node, save back, run it
   once) on the user's word.
+- **V3 as built (2026-10-03):** `recipes.fromGraph({ output, workflow, objectInfo, base, name, ids, date })` (plain,
+  tested in `tools/recipes_test.js` section 6): the API prompt checked with `looksLikePrompt`, `fromPrompt` with the
+  held recipe as `base`, the UI graph kept only with `nodes` and `links` arrays; without `name` the held recipe is
+  overwritten (its id, name, description, family, task, refs and models stay), with `name` a new id from `slug(name)`
+  that no listed recipe has (`_2`, `_3` ...). The window reads the page with `await app.graphToPrompt()` (`READ_JS`:
+  both parts as JSON text, at most 20 MB each, parsed in main), fetches `/object_info` from the server the page came
+  from (its headers, 15 s, `{}` when it fails), and main's `saveComfyGraph` saves the recipe, tells the editor
+  (`comfyview:saved`: the recipes reloaded, the saved one selected, the message in the status line) and hands the
+  window the saved recipe (it is held from then on). *Save as new recipe* takes the name in the bar itself (an input
+  with Save / Cancel, Enter / Escape): a `<dialog>` would be clipped to the bar's 36 px view. The note beside the
+  buttons says what happened. The UI graph stored may hold the Inpaint Canvas node's own widget values (its
+  `canvas_state`); harmless, the page shows it as the node had it. Not done: the round trip on the user's ComfyUI
+  (open a recipe, move a node, save back, run it once), on the user's word.
 - **V4, Comfy Cloud in the window:** the target switch, the login check, the refusal note. One look with the user's
   login.
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of

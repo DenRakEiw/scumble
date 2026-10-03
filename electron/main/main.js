@@ -872,6 +872,26 @@ async function comfyRecipe(id) {
     return { id: r.id, name: r.name || r.id, source: r.source, prompt: recipes.toPrompt(r), workflow: r.workflow && Array.isArray(r.workflow.nodes) ? r.workflow : null };
 }
 
+/**
+ * The ComfyUI window's Save to recipe / Save as new recipe (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3): the page's graph
+ * as a user recipe (a shipped recipe's id gets a user copy that stands in for it), its `needs` held against the node
+ * list of the server the graph came from; the editor's window reloads the recipes and selects it.
+ */
+async function saveComfyGraph({ output, workflow, objectInfo, heldId, name }) {
+    const list = await listRecipes();
+    const base = heldId ? list.find((r) => r.id === heldId && r.kind !== "provider") || null : null;
+    const recipe = recipes.fromGraph({ output, workflow, objectInfo, base, name, ids: list.map((r) => r.id), date: new Date().toISOString().slice(0, 10) });
+    await recipes.save(recipe);
+    const info = objectInfo && Object.keys(objectInfo).length ? objectInfo : null;
+    const missing = info ? (recipe.needs || []).filter((c) => !info[c]) : [];
+    const shadows = !name && base && base.source === "builtin";
+    const message = `Saved the graph as the recipe "${recipe.name}"`
+        + (shadows ? ": your copy stands in for the shipped recipe, and removing it under Settings › Recipes brings the shipped one back" : "")
+        + (missing.length ? `. Nodes the server does not list: ${missing.join(", ")}` : "") + ".";
+    send("comfyview:saved", { id: recipe.id, message });
+    return { recipe: { id: recipe.id, name: recipe.name || recipe.id, prompt: recipes.toPrompt(recipe), workflow: recipe.workflow || null }, message };
+}
+
 /** The ComfyUI window, or nothing when no editor window was ever made (an agent's headless start has no button for it). */
 let comfyView = null;
 function openComfyView(opts) {
@@ -1175,6 +1195,7 @@ function startApp() {
         origin: ORIGIN, preload: path.join(__dirname, "..", "comfybar_preload.js"),
         icon: fs.existsSync(ICON) ? ICON : undefined, background: () => skins.backgroundFor(currentSkin()),
         openSettings: () => { showWindow(); send("menu", "settings-comfy"); },
+        saveRecipe: saveComfyGraph,
     });
     buildMenu();
     createWindow();

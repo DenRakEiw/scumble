@@ -2682,6 +2682,13 @@ if (helpButton) helpButton.addEventListener("click", () => toggleHelp());
 // the ComfyUI of Settings › ComfyUI, or on its start page when there is none to show
 const comfyButton = $("shell-comfy");
 if (comfyButton) comfyButton.addEventListener("click", () => window.scumble.comfyView.open().catch((err) => console.warn("comfyui window:", err.message)));
+// a graph saved from the ComfyUI window (item 35 V3): the recipes again, and the saved one selected
+window.scumble.comfyView.onSaved(async ({ id, message }) => {
+    await loadRecipes();
+    if (ui.settings.open) renderRecipeList();
+    selectRecipe(id);
+    if (host.editor && message) host.editor.setStatus(message);
+});
 const comfyEditButton = $("shell-comfy-edit");
 if (comfyEditButton) comfyEditButton.addEventListener("click", () => openRecipeInComfy(ui.recipe.value));
 

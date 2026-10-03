@@ -391,6 +391,40 @@ async function main() {
             !!(await thrown(() => recipes.toPrompt({ kind: "provider", id: "p" }))) && !!(await thrown(() => recipes.toPrompt({ ...r0, result: "nope:0" }))));
     });
 
+    // ---- 6. a graph from ComfyUI's page as a recipe (item 35 V3) --------------------------
+    await section("6. the page's graph saved as a recipe", async () => {
+        const all = await recipes.list(RECIPES);
+        const base = all.find((r) => r.id === "flux2_klein_local");
+        const output = recipes.toPrompt(base);
+        output.sigmas.inputs.denoise = 0.9;   // a change made in the page
+        const workflow = { nodes: [{ id: 1, type: "InpaintCanvas" }], links: [], extra: {} };
+        const date = "2026-10-03";
+        const over = recipes.fromGraph({ output, workflow, objectInfo: {}, base, date });
+        check("Save to recipe: the same id and name, the change in the graph, the rows and their labels kept, the UI graph stored",
+            over.id === base.id && over.name === base.name && over.prompt.sigmas.inputs.denoise === 0.9 && eq(over.settings, base.settings) && eq(over.workflow, workflow) && over.description === base.description && eq(over.models, base.models),
+            short({ id: over.id, denoise: over.prompt.sigmas.inputs.denoise, workflow: !!over.workflow }));
+        const ids = all.map((r) => r.id);
+        const fresh = recipes.fromGraph({ output, workflow, objectInfo: {}, base, name: "Flux.2 Klein (ComfyUI)", ids, date });
+        const again = recipes.fromGraph({ output, workflow, objectInfo: {}, base, name: "My graph", ids: [...ids, "my_graph"], date });
+        check("Save as new recipe: a fresh id from the name, never a shipped one's, a description of its own",
+            !ids.includes(fresh.id) && fresh.name === "Flux.2 Klein (ComfyUI)" && /Saved from ComfyUI on 2026-10-03/.test(fresh.description) && again.id === "my_graph_2", short({ fresh: fresh.id, again: again.id }));
+        const noWf = recipes.fromGraph({ output, workflow: { nodes: "x" }, objectInfo: {}, base, date });
+        check("a UI graph without nodes and links is not stored", noWf.workflow === undefined);
+        const noCanvas = JSON.parse(JSON.stringify(output));
+        delete noCanvas[base.canvas];
+        check("a graph without an Inpaint Canvas node, an answer that is no prompt, a save with no recipe held, an empty name: refused",
+            /no Inpaint Canvas node/.test(await thrown(() => recipes.fromGraph({ output: noCanvas, workflow, base, date })) || "")
+            && /no graph Scumble can read/.test(await thrown(() => recipes.fromGraph({ output: { a: 1 }, workflow, base, date })) || "")
+            && /holds no recipe/.test(await thrown(() => recipes.fromGraph({ output, workflow, base: null, date })) || "")
+            && /needs a name/.test(await thrown(() => recipes.fromGraph({ output, workflow, base, name: "  ", ids, date })) || ""));
+        await recipes.save(over);
+        const listed = (await recipes.list(RECIPES)).find((r) => r.id === base.id);
+        check("the saved copy of a shipped recipe stands in for it and keeps its graph", listed && listed.source === "user" && listed.prompt.sigmas.inputs.denoise === 0.9 && eq(listed.workflow, workflow), short(listed && listed.source));
+        await recipes.remove(base.id);
+        const back = (await recipes.list(RECIPES)).find((r) => r.id === base.id);
+        check("removing the copy brings the shipped recipe back", back && back.source === "builtin" && back.prompt.sigmas.inputs.denoise !== 0.9);
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

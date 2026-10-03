@@ -76,12 +76,12 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 afternoon: 0.1.39 is Latest; item 35 V1 and V2 built, V3 next)
+## Where things stand (2026-10-03 afternoon: 0.1.39 is Latest; item 35 V1 to V3 built, V4 next)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-03 afternoon): V1 and V2 of item 35 built (d69625c and the commit after), unreleased.** No workflow and no
+**This session (2026-10-03 afternoon): V1, V2 and V3 of item 35 built (d69625c, 3c5f37d and the commit after), unreleased.** No workflow and no
 agent (weekly limit at 92 %, the user: stop at 99 % at a committed state). The block before (items 34 and 35 planned,
 DLSS on the later list) is in `docs/HISTORY.md`.
 - **V1, the ComfyUI window** (`docs/PLAN_COMFY_VIEW.md` §3 "V1 as built"): `electron/main/comfyview.js`, the bar
@@ -98,9 +98,14 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   the window's `READY_JS` poll and `loadApiJson` / `loadGraphData`, *Edit in ComfyUI* (title row, *View*, *Settings ›
   Recipes*), the bar's "Editing: <recipe>" and its note. Gate `comfyview` 11 of 11, `recipes` (63 checks), `lint types
   help skins` PASS offline (`dist/gates/gates/cv2c`). Not run against a real ComfyUI.
-- **Next: V3 of item 35** (a graph as a recipe: `read()` = `await app.graphToPrompt()`, *Save to recipe* overwriting
-  with `fromPrompt(output, objectInfo, meta, base)` and the `workflow` kept, *Save as new recipe* with the name dialog,
-  the selection afterwards, `needs` against `/object_info` of the target; §2.3, §3 V3). V1-V5 ship as **one update**. Open from the list as before: the live checks of FLUX 3 on fal,
+- **V3, a graph as a recipe** (§3 "V3 as built"): `recipes.fromGraph`, the window's `READ_JS` (`graphToPrompt`, 20 MB
+  cap) and `/object_info` from the same target, main's `saveComfyGraph`, *Save to recipe* (overwrites; a shipped one
+  as a user copy) and *Save as new recipe* (the name typed in the bar), the editor reloading and selecting it. Gate
+  `comfyview` 14 of 14, `recipes` 69 checks, `lint types help` PASS offline (`dist/gates/gates/cv3`). The round trip
+  on the user's ComfyUI (open, move a node, save, run once) waits for the user's word.
+- **Next: V4 of item 35** (Comfy Cloud in the window: the bar's target switch *My ComfyUI* / *Comfy Cloud*, the login
+  in the page's partition, `will-navigate` for the cloud's login pages, the refusal note for a recipe with the Inpaint
+  Canvas node; §2.4, §3 V4; one look with the user's login). V1-V5 ship as **one update**. Open from the list as before: the live checks of FLUX 3 on fal,
   Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks"), item 30, 28 S4, 34 (`docs/PLAN_NEW_PRESETS.md`), B3 macOS.
   **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**; ask for Comfy's exact answer and
   re-read the challenge post (memory `comfy-dev-challenge`) before planning the entry with the user. The weekly limit
