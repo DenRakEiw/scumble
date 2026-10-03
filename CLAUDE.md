@@ -175,10 +175,16 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   built in a worktree with a `node_modules` junction, exe gates `--offline` on port 9561 both backends ALL PASS
   (`dist/gates/gates/rel40-exe`, `rel40-exe-canvas`), published 22:03, post live (`#v0-1-40`, website 58af1e5); no
   manual sync (MANUAL.md unchanged between the tags). Main's CHANGELOG has the 0.1.40 section (9b600c0); main's
-  `package.json` stays 0.1.39 until 0.1.41. Main is pushed to origin (the user's word, the same night). **Next (0.1.41, after the weekly reset):** the cleanup the user asked for: in cloud mode hide the
-  local-only controls (Free VRAM, Padding / Target / Feather / Multiple, Highres fix, the Settings hint about wiring
-  node outputs, the negative placeholder "local mode"), the Sample plugin off by default (tests that use it turn it on);
-  then the release of item 35 as 0.1.41. Old line kept below for the checks:
+  `package.json` stays 0.1.39 until 0.1.41. Main is pushed to origin (the user's word, the same night).
+- **The cleanup for 0.1.41, the same night (the user: "räume jetzt auf", no /clear at 41 % context):** measured first,
+  so the list changed: Padding / Feather (crop settings not auto), Target (Highres fix "target"), Highres fix (every
+  provider run) and Free VRAM (Scumble's own helpers) **do act in the comfy cloud mode** and stay. Fixed: the app's
+  empty Settings section says "This recipe has no settings of its own." (the shell sets `editor.noSettingsText`; no new
+  host member, the node keeps its wiring text), the cloud mode's negative placeholder (edd39e0); **the Sample plugin
+  keeps running but has no side panel** (a06cd5f; the user: "die funktion kann ja für mcp bleiben aber den panel
+  entfernen"; `sample_mean_color` is an AUTO tool of the assistant), commands_test checks the Boxes panel for the panel
+  API instead. Gates `comfyview generate lint types` (c041a) and `commands mcp assistant skins lint` (c041b) PASS
+  offline. **Next:** the ComfyUI window's round trip on the user's ComfyUI (the last look), then 0.1.41 with item 35. Old line kept below for the checks:
 - **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
   ist"): a recipe opened and saved back on the user's ComfyUI (queues nothing), the Comfy Cloud login in the window
   (which sign-ins work), one cloud run with the user's key (credits), a RunPod pod if the user starts one; then the
