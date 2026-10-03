@@ -981,7 +981,7 @@ function installIpc() {
         if (!fromEditor(e)) return null;
         const o = opts || {};
         const target = o.target === "cloud" || o.target === "comfy" ? o.target : undefined;
-        return openComfyView({ url: o.url ? String(o.url) : "", recipe: o.recipe ? await comfyRecipe(String(o.recipe)) : null, target });
+        return openComfyView({ url: o.url ? String(o.url) : "", recipe: o.recipe ? await comfyRecipe(String(o.recipe)) : null, target, leave: o.leave === "leave" || o.leave === "stay" ? o.leave : undefined });
     });
     ipcMain.handle("comfyview:info", () => (comfyView ? comfyView.info() : null));
     ipcMain.handle("comfyview:close", (e) => { if (fromEditor(e) && comfyView) comfyView.close(); return true; });

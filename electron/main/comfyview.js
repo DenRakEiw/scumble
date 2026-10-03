@@ -13,7 +13,7 @@
 // the window (§2.5): nothing retries by itself, Reload tries again.
 "use strict";
 
-const { BaseWindow, WebContentsView, session, shell, ipcMain } = require("electron");
+const { BaseWindow, WebContentsView, session, shell, ipcMain, dialog } = require("electron");
 const { CLOUD_URL, popupAction, navigationAllowed } = require("./comfyhosts");
 
 const BAR_H = 36;
@@ -130,9 +130,10 @@ class ComfyView {
      * graph the window then holds: loaded into the page as soon as it offers one, named in the bar either way. `target`
      * ("comfy" / "cloud") switches what the window shows, as the bar's select does.
      */
-    open({ url, recipe, target } = {}) {
+    open({ url, recipe, target, leave } = {}) {
         const test = this.offline && url ? String(url) : "";
         if (test) this.testUrl = test;
+        if (this.offline && (leave === "leave" || leave === "stay")) this.testLeave = leave;
         if (target === "comfy" || target === "cloud") this.storeTarget(target);
         else if (!this.isOpen) this.kind = (this.settings.get().comfyView || {}).target === "cloud" ? "cloud" : "comfy";
         if (recipe) { this.recipe = recipe; this.recipeNote = this.cloudRefusal(recipe); }
@@ -249,8 +250,25 @@ class ComfyView {
             if (b2 && !authInfo.isProxy && sameOrigin(details.url, this.shown.origin) && this.logins++ === 0) callback(b2.user, b2.password);
             else callback();
         });
+        // ComfyUI keeps the page while a workflow has unsaved changes (beforeunload): unanswered, Electron drops every
+        // load silently and the bar stayed on "Loading" (the user's first look, 2026-10-03). Ask, as a browser does
+        wc.on("will-prevent-unload", (e) => {
+            // a --no-comfy start's test answers in advance (open({ leave })); a native box would hold the gate
+            const leave = this.offline && this.testLeave ? this.testLeave === "leave" : dialog.showMessageBoxSync(this.win, {
+                type: "question", buttons: ["Leave", "Stay"], defaultId: 1, cancelId: 1, noLink: true,
+                message: "Leave this ComfyUI page?",
+                detail: "The page says a workflow has changes it has not saved. ComfyUI keeps its open workflows itself; Stay keeps the page as it is.",
+            }) === 0;
+            if (leave) e.preventDefault();
+            else this.stayed();
+        });
         wc.on("did-fail-load", (_e, code, desc, url, isMainFrame) => {
-            if (!isMainFrame || code === -3) return;   // -3: aborted (a new load replaced it)
+            if (!isMainFrame) return;
+            if (code === -3) {
+                // aborted: a new load replaced it, or nothing did and the old page is still there
+                setTimeout(() => { if (this.isOpen && this.phase === "loading" && !wc.isLoading() && wc.getURL()) this.stayed(); }, 0);
+                return;
+            }
             this.fail(`ComfyUI at ${url || this.shown.url} does not answer (${desc || code}).`);
         });
         wc.on("did-navigate", (_e, url, status, statusText) => {
@@ -279,6 +297,7 @@ class ComfyView {
             try { this.session().webRequest.onBeforeSendHeaders(null); } catch (_) { /* gone */ }
             if (this.win === win) { this.win = null; this.bar = null; this.page = null; }
             this.testUrl = "";      // a test's stub belongs to the window it opened
+            this.testLeave = "";
             this.recipe = null;     // and so does the recipe it held
             this.recipeNote = "";
             this.saveNote = "";
@@ -319,6 +338,7 @@ class ComfyView {
         if (!t.url) { this.setPhase("none", t.why); return; }
         this.logins = 0;
         this.pageReady = false;
+        this.loadedBefore = this.loaded;    // the page may stay (beforeunload): then it still holds this
         this.loaded = null;
         this.saveNote = "";
         this.readyGen++;
@@ -338,7 +358,7 @@ class ComfyView {
     }
 
     /** Poll the loaded page for window.app (ComfyUI's frontend sets it up after its extensions); a new load cancels it. */
-    async waitReady() {
+    async waitReady({ give = true } = {}) {
         const gen = ++this.readyGen;
         const t0 = Date.now();
         let r = null;
@@ -350,7 +370,7 @@ class ComfyView {
             if (ok) {
                 this.pageReady = true;
                 this.can = { api: !!r.api, graphData: !!r.graphData, read: !!r.read };
-                if (this.recipe) await this.loadRecipe(); else this.sendState();
+                if (this.recipe && give) await this.loadRecipe(); else this.sendState();
                 return;
             }
             if (Date.now() - t0 > READY_MS) {
@@ -426,6 +446,14 @@ class ComfyView {
         } finally {
             clearTimeout(timer);
         }
+    }
+
+    /** A load that did not happen (the page stayed): the page as it was, ready to save again. */
+    stayed() {
+        if (!this.isOpen || this.phase !== "loading") return;
+        this.loaded = this.loadedBefore;
+        this.setPhase("page", "");
+        this.waitReady({ give: false });    // the page kept its graph: the held recipe is not loaded over it
     }
 
     fail(message) { this.setPhase("error", message); }

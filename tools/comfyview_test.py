@@ -27,7 +27,9 @@ opener passes a stub's URL):
   page names Comfy Cloud, and its Use Comfy Cloud switches. The target the profile had is put back;
 - V5c, Comfy Cloud recipes: Settings › Recipes' Cloud copy saves "<id>_cloud" and the editor selects it; that recipe
   opens on Comfy Cloud in the window as its graph without the node; a graph without the node saved from the window is
-  a new Comfy Cloud recipe, Save to recipe overwrites it, and a graph with the node is refused for it.
+  a new Comfy Cloud recipe, Save to recipe overwrites it, and a graph with the node is refused for it;
+- a page that keeps unsaved changes (beforeunload, as ComfyUI does): Reload asks, Stay ends on the page as it was
+  (ready to save, the window not stuck on "Loading"), Leave loads it again.
 
 It refuses an instance connected to ComfyUI and a profile that holds a ComfyUI secret; the settings and the secret it
 writes are put back at the end whatever happens.
@@ -77,6 +79,7 @@ class Stub:
         self.mode = "none"
         self.seen = []
         self.app = None     # None: no window.app; "ok": a fake one; "throw": one whose load fails
+        self.unload = False     # a beforeunload handler that keeps the page, as ComfyUI's with an unsaved workflow
 
     def ok(self, h):
         if self.mode == "basic":
@@ -94,7 +97,8 @@ class Stub:
             hdr = {"WWW-Authenticate": 'Basic realm="pod"'} if self.mode == "basic" else {}
             return web.Response(status=401, text="no", headers=hdr)
         app = (FAKE_APP % ("true" if self.app == "throw" else "false")) if self.app else ""
-        return web.Response(text=PAGE + app, content_type="text/html")
+        keep = "<script>addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = ''; });</script>" if self.unload else ""
+        return web.Response(text=PAGE + app + keep, content_type="text/html")
 
     async def ws(self, req):
         good = self.ok(req.headers)
@@ -550,6 +554,42 @@ class Gate:
         await self.close()
         return {"new": i["saveNote"][:90], "over": i2["saveNote"][:60], "refused": i3["saveNote"][:80]}
 
+    async def unsaved(self):
+        await self.close()
+        self.stub.mode = "none"
+        self.stub.app = "ok"
+        self.stub.unload = True
+        try:
+            await self.set_auth({"type": "none"}, "")
+            await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "leave": "stay"}))
+            await self.wait_info("i.phase === 'page' && i.canSaveNew", 15000)
+
+            async def touch(c):
+                # Chromium asks on beforeunload only after the user touched the page: a click gives it that
+                await c.call("Emulation.setFocusEmulationEnabled", enabled=True)
+                for typ in ("mousePressed", "mouseReleased"):
+                    await c.call("Input.dispatchMouseEvent", type=typ, x=20, y=20, button="left", clickCount=1)
+                await c.eval("window.__mark = 'kept'; 1")
+                await c.call("Emulation.setFocusEmulationEnabled", enabled=False)
+            await on_target(self.stub.url, touch)
+            await self.bar_click("document.getElementById('cb-reload').click()")
+            await asyncio.sleep(1.0)
+            i = await self.wait_info("i.phase === 'page' && i.canSaveNew", 8000)
+            mark = await on_target(self.stub.url, lambda c: c.eval("window.__mark || null"))
+            if i["phase"] != "page" or not i["canSaveNew"] or mark != "kept":
+                raise Exception("Stay: " + json.dumps({"phase": i["phase"], "canSaveNew": i["canSaveNew"], "mark": mark}))
+            await self.js("await window.scumble.comfyView.open({ leave: 'leave' }); return 1")
+            await self.bar_click("document.getElementById('cb-reload').click()")
+            await asyncio.sleep(1.0)
+            i2 = await self.wait_info("i.phase === 'page' && i.canSaveNew", 8000)
+            mark2 = await on_target(self.stub.url, lambda c: c.eval("window.__mark || null"))
+            if i2["phase"] != "page" or mark2 is not None:
+                raise Exception("Leave: " + json.dumps({"phase": i2["phase"], "mark": mark2}))
+            return {"stay": [i["phase"], mark], "leave": [i2["phase"], mark2]}
+        finally:
+            self.stub.unload = False
+            await self.close()
+
     async def unreachable(self):
         await self.close()
         s = socket.socket()
@@ -603,6 +643,7 @@ async def main():
             await g.step("V4: no Comfy Cloud to show, and Use Comfy Cloud", g.cloud_start)
             await g.step("V5c: Cloud copy in Settings, the copy opened on Comfy Cloud as its graph", g.cloud_copy)
             await g.step("V5c: a graph without the node saved as a Comfy Cloud recipe, overwritten, a graph with the node refused", g.cloud_save)
+            await g.step("a page with unsaved changes: Reload asks, Stay keeps it ready to save, Leave loads it again", g.unsaved)
         finally:
             await g.close()
             await g.cleanup_recipes()
