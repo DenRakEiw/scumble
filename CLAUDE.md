@@ -322,6 +322,18 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   every step (the user, the same day): **Scumble keeps working without any ComfyUI installed**, and **no ComfyUI
   install path is assumed** (users' installs differ; everything through the URL and `/object_info`): §2.5.
   `docs/PLAN_COMFY_VIEW.md`: what exists, the design, V1-V5 (one session each), the traps. Nothing built.
+- 36: a portable version as a `.zip`, from the release after 0.1.41 on (the user, 2026-10-03: "ab dem nächsten release
+  auch als portable version, ja, als .zip"; asked first whether it is usual: yes in Scumble's field, ComfyUI itself
+  ships as "windows portable", Blender / Krita / Inkscape offer zips). Agreed shape: the `win-unpacked` folder zipped
+  (not electron-builder's one-file `portable` target, which unpacks to a temp folder on every start); a marker next to
+  `Scumble.exe` puts every app-data path (settings, autosave, the file mirror, plugins, helper models, documents'
+  temps) into a folder beside it (`app.setPath("userData", ...)` before anything reads it, the single-instance pipe
+  follows the path); API keys stay bound to the Windows account (safeStorage / DPAPI), so another PC asks for them
+  again (the manual says so); no self-update (electron-updater does not do zips): item 32's dialog shows *Download*
+  with the release link instead of *Restart and update*; MCP registration names the exe's own path. CI: a zip asset in
+  `.github/workflows/build.yml` beside the installer; the installer stays the recommended download (README, website).
+  To test: the data folder (quit, document, autosave, settings gates on a portable layout), two portable copies side by
+  side, the update notice. About half a day to a day. Nothing built.
 
 ## Gate runner and flakes
 
