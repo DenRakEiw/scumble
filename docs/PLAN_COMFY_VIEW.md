@@ -2,8 +2,9 @@
 
 **Status (2026-10-03):** planned from one reading of the code and the docs; nothing built. Five steps (V1-V5), one
 per session (the user's rule), **released together as one update** after V5. The user answered §6 the same day: a
-window of its own, Comfy Cloud API access yes, *Save to recipe* overwrites, all in one update; §2.1 is written for
-the window, and where its buttons sit (§2.1 "Where it opens") is the proposal the user asked for.
+window of its own, Comfy Cloud API access yes, *Save to recipe* overwrites, all in one update; then the *ComfyUI*
+button after *Help* and *Assistant*, and **Scumble keeps working without any ComfyUI installed** (§2.5, a rule for
+every step).
 
 The user's ask (2026-10-03): "ist es möglich eine art browser in scumble zu öffnen in dem dann comfyui läuft?", then,
 to the answer that a plain browser is nice but the point is the connection to the recipes: "ja, genau darum geht es
@@ -75,11 +76,12 @@ Scumble's own dialogs and popups, and its rectangle has to follow every layout c
 - **Shortcuts:** the window has no menu on Windows and Linux (`setMenu(null)`), so Scumble's accelerators do not fire
   there and ComfyUI keeps its own Ctrl+S, Ctrl+Z, Ctrl+Enter; on macOS (B3) the menu is global, and
   `setIgnoreMenuShortcuts(true)` on the page does the same.
-- **Where it opens** (the user's question, 2026-10-03: "wo passt der button zum öffnen?"; proposed, the user decides in
-  V1):
+- **Where it opens** (the user's question, 2026-10-03: "wo passt der button zum öffnen?"; the title-row button decided
+  the same day, the rest proposed):
   - **a *ComfyUI* button in the title row**, after *Help* and *Assistant* (`renderer/index.html` `#shell-bar`): the
     three buttons that open something beside the picture. It opens the window on the target used last, or brings it to
-    the front. Its title names the target and the shortcut;
+    the front; with no target at all it opens the window's own start page (§2.5). Its title names the target and the
+    shortcut;
   - **a small *Edit in ComfyUI* button right of the title row's *Recipe* select** (`#shell-recipe`), shown only while
     the selected recipe is a ComfyUI recipe: it opens the window with that recipe's graph (V2);
   - the same two in the *View* menu, with a shortcut picked in V1 (Ctrl+U is Upsample), and *Edit in ComfyUI* per
@@ -147,12 +149,43 @@ with `nodes` and `links`), never evaluated. Three calls:
   in this form when it uses `LoadImage` nodes marked as crop / mask / reference (the marking, by node title, is part of
   V5).
 
+### 2.5 Without any ComfyUI (a rule for every step)
+
+The user, 2026-10-03: "wichtig scumble muss auch funktionieren weiterhin wenn kein lokales comfyui installiert ist".
+Scumble works today without a ComfyUI (the API providers, the in-app helpers, the editor, documents and export), and
+none of V1-V5 may change that:
+
+- **Nothing at start:** the window, its partition and its page are made only when the user opens it; no request to a
+  ComfyUI, to Comfy Cloud or to `/object_info` happens because the feature exists. A start without a ComfyUI shows no
+  new note, error or dialog.
+- **The window's start page:** when there is no target to show (no ComfyUI URL set, the server does not answer, or
+  Comfy Cloud chosen without a login yet), the bar's own page fills the window instead of the remote page: "No ComfyUI
+  to show." with *Connect a ComfyUI* (opens *Settings > ComfyUI*) and *Use Comfy Cloud* (switches the target, V4). An
+  unreachable server says so with its URL; nothing retries in a loop.
+- **The buttons stay usable:** the *ComfyUI* button always opens the window (the start page is the way to Comfy
+  Cloud); *Edit in ComfyUI* shows only for ComfyUI recipes, which need a ComfyUI anyway, and without one it opens the
+  start page with that recipe named.
+- **No new dependency of other paths:** provider recipes, Generate new, upscales and the helpers never wait on the
+  window or on a ComfyUI; V3's `needs` check reads the `/object_info` of the target the graph came from (the user's
+  server, or Comfy Cloud with its key in V5), never a server that is not there; V5's cloud recipes run through Comfy
+  Cloud alone, with no local ComfyUI.
+- **No install path:** the user's ComfyUI may sit anywhere, or on another machine (RunPod), so nothing in V1-V5 reads
+  a ComfyUI folder: the window and every check go through the URL (`settings.comfy.url`). Whether a node exists comes
+  from `/object_info` (as the recipe check does today), the frontend's version from the page itself, never from a file.
+  The facts of §1 about this machine (frontend 1.53.10, the RTX node, the portable install under `F:\Comfyui`) are this
+  machine's only. The only folder Scumble ever reads is the `models/` folder a user links under *Settings > Helpers*,
+  which stays as it is. A local ComfyUI is not always on 8188 (the desktop build of ComfyUI has its own default port,
+  to be checked in V1): the start page names the URL it tried and leads to the setting.
+- **Tested in every step:** the gates run `--offline` (`--no-comfy`) already; each step's gate step includes the
+  window opened with no target (the start page, no request made), and the existing offline gates stay green.
+
 ## 3. Steps (one session each)
 
 - **V1, the window:** `comfyview.js`, the bar (`comfybar.html` and its preload, the target and *Reload*; the save
   buttons disabled until V3), the page's partition, the auth headers, the navigation rules, no menu, its bounds kept,
-  create and destroy, the *ComfyUI* button and the *View* menu entry. Tests (Normal): a gate step against a stub HTTP
-  page started by the test (not the user's ComfyUI): the window opens and comes to the front on a second click, the
+  create and destroy, the *ComfyUI* button and the *View* menu entry, the start page without a target (§2.5). Tests
+  (Normal): a gate step against a stub HTTP page started by the test (not the user's ComfyUI), and one with no target
+  at all (the start page, no request made): the window opens and comes to the front on a second click, the
   page gets no `window.scumble`, Ctrl+S reaches the page and saves no document, the bar's calls are refused from the
   page, the window closes with the main window; one look in the app against the user's ComfyUI on the user's word
   (opening the page queues nothing).
@@ -190,8 +223,9 @@ V1 one session, V2 one, V3 one, V4 half, V5 one or two.
 
 ## 6. The user's answers (2026-10-03) and what is still open
 
-- The place: **a window of its own** ("Eigenes fenster"); where its buttons sit is §2.1 "Where it opens" (proposed;
-  the user decides at the latest in V1).
+- The place: **a window of its own** ("Eigenes fenster"), opened by **a *ComfyUI* button after *Help* and
+  *Assistant*** (decided the same day); the *Edit in ComfyUI* button and the menu entries of §2.1 are proposed.
+- **Scumble works without any ComfyUI installed** (the user, the same day): §2.5, a rule for every step.
 - Comfy Cloud: **the user's plan has API access** ("ja, habe api zugang"), so V5 can run live.
 - *Save to recipe*: **overwrites** ("überschreiben ist ok"), §2.3.
 - The order: **one update with all five steps** ("ist egal, soll alles in einem update sein"); V1-V5 in order, the

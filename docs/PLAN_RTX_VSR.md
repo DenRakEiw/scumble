@@ -40,4 +40,7 @@ The user's ask: "nvidia dlss upscaling bzw. dlls plugin ... gibts auch ne dlss a
    app sends a workflow, the node and `nvidia-vfx` belong to the user's ComfyUI. The open in-app route is U3 of
    `docs/PLAN_0_1_24.md` (Real-ESRGAN and others through ONNX on DirectML).
 
-A test run on the user's ComfyUI only on the user's word (a production machine).
+Other users' ComfyUI sits elsewhere, or on another machine, and may lack the pack: the recipe lists
+`RTXVideoSuperResolution` in `needs`, so the existing check against `/object_info` (and its offer to install through
+the Manager) says so; nothing reads a ComfyUI folder. Without an RTX card the node cannot run; the recipe's note says
+so. A test run on the user's ComfyUI only on the user's word (a production machine).

@@ -253,8 +253,10 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   bar on top), a recipe opened there as its graph and the graph saved back as a recipe; Comfy Cloud in the same window,
   and recipes without the Inpaint Canvas node (Comfy Cloud has none and takes no custom nodes) run there through
   `comfycloud.js`'s calls. The user's answers (2026-10-03): a window of its own, Comfy Cloud API access yes, *Save to
-  recipe* overwrites, all five steps in **one update**. `docs/PLAN_COMFY_VIEW.md`: what exists, the design (§2.1 the
-  proposed places of its buttons), V1-V5 (one session each), the traps. Nothing built.
+  recipe* overwrites, all five steps in **one update**, the *ComfyUI* button after *Help* and *Assistant*. Two rules for
+  every step (the user, the same day): **Scumble keeps working without any ComfyUI installed**, and **no ComfyUI
+  install path is assumed** (users' installs differ; everything through the URL and `/object_info`): §2.5.
+  `docs/PLAN_COMFY_VIEW.md`: what exists, the design, V1-V5 (one session each), the traps. Nothing built.
 
 ## Gate runner and flakes
 
