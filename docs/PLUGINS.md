@@ -315,7 +315,7 @@ the plugin is missing at load time; plugins load before the session is restored.
 
 ```js
 scumble.panels.register({
-    id: "info", title: "Sample", pane: "image" | "gen", open: false,
+    id: "info", title: "My panel", pane: "image" | "gen", open: false,
     build(container, doc, scumble) { container.appendChild(...); },
     destroy(container, doc) {},        // optional
 });

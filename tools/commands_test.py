@@ -262,10 +262,10 @@ editor.setTool("select");
 const keyHandled = H.pluginKey(editor, { shiftKey: false }, "k");
 if (!keyHandled || editor.tool !== "sample.probe") throw new Error("key K did not select the tool");
 editor.setTool("select");
-const panel = Array.from(editor.root.querySelectorAll("details > summary")).find((s) => s.textContent === "Sample");
-if (!panel) throw new Error("the Sample panel is missing");
+// the sample has no side panel since 2026-10-03 (the user); the Boxes plugin's panel stands for the panel API below
+if (Array.from(editor.root.querySelectorAll("details > summary")).some((s) => s.textContent === "Sample")) throw new Error("the Sample panel is back");
 const grp = editor.toolsEl.querySelector(".ipc-grp:last-of-type");
-return { status: editor.status, panel: !!panel, group: grp && grp.textContent };
+return { status: editor.status, group: grp && grp.textContent };
 """),
     ("export", """
 const r = await c("export", { format: "png", path: %s });
@@ -299,12 +299,18 @@ list = await c("list_plugins"); s = list.plugins.find((p) => p.id === "sample");
 if (s.loaded || s.enabled) throw new Error("still enabled");
 if (editor.toolButtons["sample.probe"]) throw new Error("tool button still there");
 if ((await c("filter_types")).filters.some((f) => f.id === "sample.posterize")) throw new Error("filter still registered");
-if (Array.from(editor.root.querySelectorAll("details > summary")).some((x) => x.textContent === "Sample")) throw new Error("panel still there");
 await P.setEnabled("sample", true);
 list = await c("list_plugins"); s = list.plugins.find((p) => p.id === "sample");
 if (!s.loaded) throw new Error("not loaded again: " + s.error);
 if (!editor.toolButtons["sample.probe"]) throw new Error("tool button not back");
 if ((await c("list_layers")).layers.length !== n0) throw new Error("layer count changed");
+// a plugin's side panel goes with the plugin and comes back with it (the Boxes plugin's, in the Generate pane)
+const boxesPanel = () => Array.from(editor.root.querySelectorAll("details > summary")).some((x) => x.textContent === "Boxes");
+if (!boxesPanel()) throw new Error("the Boxes panel is missing");
+await P.setEnabled("boxes", false);
+if (boxesPanel()) throw new Error("the Boxes panel is still there with the plugin off");
+await P.setEnabled("boxes", true);
+if (!boxesPanel()) throw new Error("the Boxes panel did not come back");
 return { loaded: s.loaded, registered: s.registered };
 """),
     # item 28 S2 (docs/PLAN_BOXES.md §9): a plugin's box source through the core's collectBoxes. The loopback provider

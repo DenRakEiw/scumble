@@ -1,9 +1,9 @@
 {
   "name": "Sample plugin",
   "version": "1.0.0",
-  "description": "Shows every extension point: a Posterize filter (CPU and WebGL2), a side panel, two menu actions, a colour probe tool, two commands and a box source for the prompt (off until sample.box switches it on). Copy this folder to start your own plugin.",
+  "description": "Shows the extension points: a Posterize filter (CPU and WebGL2), two menu actions, a colour probe tool, two commands and a box source for the prompt (off until sample.box switches it on). Copy this folder to start your own plugin; the Boxes plugin shows a side panel.",
   "author": "Scumble",
   "entry": "main.js",
-  "registers": ["filter", "panel", "action", "tool", "command", "generate"],
+  "registers": ["filter", "action", "tool", "command", "generate"],
   "enabledByDefault": true
 }

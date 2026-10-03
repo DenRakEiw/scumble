@@ -2,17 +2,16 @@
 // template. The `scumble` object is documented in docs/PLUGINS.md.
 //
 //   filter   Posterize (CPU code + a GLSL fragment for the WebGL2 path)
-//   panel    "Sample" in the Image pane: document facts and a Desaturate button
 //   actions  Desaturate active layer, Selection to new layer (Plugins menu)
 //   tool     Colour probe (K): hover to read the colour under the cursor
 //   command  sample.mean_color for scripts and MCP
 //   generate a box source (API 3): one box in the middle of the frame when sample.box switched it on
+// No side panel any more (the user, 2026-10-03: users do not need one in every tab); the Boxes plugin
+// (plugins/boxes) has one, and docs/PLUGINS.md "Panels" shows how.
 
 let probeCache = null;   // { doc, tiles: Map "tx,ty" -> ImageData } the flattened pixels of the 256 px squares the probe went over
 
 export function activate(scumble) {
-    const { ui } = scumble;
-
     // ---- filter: posterize --------------------------------------------------------------------
     scumble.filters.register({
         id: "posterize",
@@ -89,23 +88,6 @@ export function activate(scumble) {
         doc.status(`${layer.name} added (${w} × ${h}).`);
         return layer.id;
     }
-
-    // ---- panel ----------------------------------------------------------------------------------
-    scumble.panels.register({
-        id: "info",
-        title: "Sample",
-        pane: "image",
-        open: false,
-        build(box, doc) {
-            const line = ui.el("div", "shell-help", "");
-            const update = () => { line.textContent = doc.loaded ? `${doc.name}: ${doc.width} × ${doc.height}, ${doc.layers().length} layer${doc.layers().length === 1 ? "" : "s"}` : "No image loaded."; };
-            update();
-            box.appendChild(line);
-            box.appendChild(ui.button("Desaturate active layer", "Turns the active layer grey through getPixels / setPixels", () => desaturate(doc)));
-            box.appendChild(ui.button("Selection to new layer", "Copies the selected pixels of the flattened picture into a new layer", () => selectionToLayer(doc)));
-            scumble.events.on("changed", (ev) => { if (ev.doc && ev.doc.id === doc.id) update(); });
-        },
-    });
 
     // ---- actions (Plugins menu) ----------------------------------------------------------------
     scumble.actions.register({ id: "desaturate", label: "Desaturate active layer", run: (doc) => desaturate(doc) });

@@ -65,6 +65,9 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Clearer texts in the Generate pane.** A recipe without Settings rows now says so, instead of explaining how to wire
   the ComfyUI node; in the *comfy cloud* mode the negative prompt's placeholder says that an empty field keeps the
   recipe's own negative.
+- **No Sample panel in every tab.** The bundled Sample plugin no longer adds its panel to the Image pane. Its two
+  actions stay in the Plugins menu, its colour probe and Posterize filter stay, and so does its colour-reading command
+  that the assistant and agents use.
 
 ## 0.1.40 — 2026-10-03
 
