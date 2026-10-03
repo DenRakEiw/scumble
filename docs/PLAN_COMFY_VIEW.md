@@ -348,22 +348,35 @@ none of V1-V5 may change that:
   3. the model files of a cloud run checked against Comfy Cloud's node list before any upload (a missing
      file named, with a near name the cloud has). Only values with a file extension are model files: a plain
      `_name$` match also takes `sampler_name` ("euler", "dpmpp_2m"), as the reading of the exports below showed.
-     **Built 2026-10-03 (night):** `comfycloud.js` `checkModelFiles` after the node check, on the same cached node list:
-     every string value of the graph (a Settings row `<node>|<input>` over the graph's own) that ends in a model file's
-     extension (`MODEL_EXT`: safetensors, sft, ckpt, pt, pth, bin, gguf, onnx, pkl, pickle) must be one of the names its
-     input's combo gives (`choicesOf`: the older `[[names], {...}]` and the newer `["COMBO", { options }]`; no names,
-     no check). A missing one throws, all of them in one message, each with its node class and input and the nearest
-     name (`nearestFile`: the same base name in another folder, else an edit distance of at most a quarter of the stem,
-     at least 2). A value that matches a name once both use `/` goes out in the cloud's spelling (applied to the built
-     graph, so it wins over a Settings row); a same-named file in another folder is named, not swapped. Text runs
-     (Generate new) go through it too. **Measured before building** (Comfy Cloud's hosted MCP server on the user's
-     account, read-only, no credits): its node specs give the loaders' files as full combo lists (UNETLoader, CLIPLoader,
-     VAELoader, LoraLoaderModelOnly), and every model file of the 13 shipped recipes is in Comfy Cloud's model catalog;
-     the MCP's node specs lacked the Qwen Image 2.1 files its model catalog has, so the check reads the key's live
-     `/api/object_info` (as before) and a stale list there would refuse a run: the first live run says. Tests:
-     `cloudgraph_test.js` section 9 (24 checks in all): refused before any upload with the nearest name, the file listed
-     runs, `sampler_name` outside its combo and an empty list unchecked, a Settings row both ways, the backslash path, a
-     same-named file in another folder, the newer combo form, a Generate new run.
+     **Built 2026-10-03 (night), then changed by its review:** `comfycloud.js` `checkModelFiles` after the node check, on
+     the same cached node list: every string value (a Settings row `<node>|<input>` over the graph's own) that ends in a
+     model file's extension (`MODEL_EXT`: safetensors, sft, ckpt, pt, pth, bin, gguf, onnx, pkl, pickle), in a node that
+     leads to an output (`liveNodes`: back from `options.save` and the classes the list marks `output_node`; ComfyUI
+     checks no other node's values; without either, every node), is read against the names its input's combo gives
+     (`choicesOf`: the older `[[names], {...}]` and the newer `["COMBO", { options }]`; no names, no reading). A value
+     that matches a name once both use `/` goes out in the cloud's spelling (applied to the built graph). **A value the
+     list lacks does not stop the run** (the first build refused it; the review showed why not): it goes into
+     `missingNote`, which a refused prompt or a failed job appends to its error, each file with its node class and input
+     and the nearest listed name when one is close (`nearestFile`: the same base name in another folder, else an edit
+     distance of at most a quarter of the stem, at least 2), and such a failure drops the key's cached list so the next
+     run reads it again. **Why not refuse (the review, one workflow, 10 agents, each finding verified):** Comfy Cloud
+     resolves a loader's value through the account's model assets too; the user's account holds 16 imported models
+     (Comfy Cloud's MCP `search_models` with `owned`), none of them in the loaders' combos, and Comfy's own frontend says
+     the server's options "may not exist in the user's cloud asset library" and checks model inputs against `/api/assets`
+     instead (`useComboWidget.ts`, `missingModelScan.ts`). A hard refusal would have blocked every recipe on the user's
+     own LoRA with no way past it; a refusal would also have stuck for the cache's ten minutes after the user added a
+     file, and it read loaders that lead nowhere. Refuted by the review: that today's lists would refuse a shipped recipe
+     (the MCP's node specs lag its own catalog; the check reads the key's live list), and a wording note. A real check
+     before the uploads needs the assets listing (`GET /api/assets?include_tags=models&include_public=true`, paginated,
+     `loader_path`), not built: only after a live look at its answer on the user's key. **Measured before building**
+     (Comfy Cloud's hosted MCP server on the user's account, read-only, no credits): the loaders' files come as full combo
+     lists (UNETLoader, CLIPLoader, VAELoader, LoraLoaderModelOnly), and every model file of the 13 shipped recipes is in
+     Comfy Cloud's model catalog; the MCP's node specs lacked the Qwen Image 2.1 files its catalog has. Tests:
+     `cloudgraph_test.js` section 9 (27 checks in all; the stray-loader and the re-read checks fail under a mutation):
+     a failed job names the file with the nearest name, a missing file does not stop the run, the list re-read after
+     such a failure, `sampler_name` outside its combo and an empty list unread, a Settings row both ways, the backslash
+     path, a same-named file in another folder, the newer combo form, a loader that leads to no output, a refused prompt
+     on Generate new.
   4. **the user's picks, shipped as Comfy Cloud recipes (the user, 2026-10-03 evening, six image-edit exports from
      Comfy Cloud; `tools/refs/comfy_cloud/edit/`, MIT):** Boogu Image 0.1 Edit, Flux.2 Klein 9B base (one picture,
      and the multi-image variant: the same file with the other subgraph bypassed), Mage Flow Edit Turbo int8, Qwen

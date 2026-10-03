@@ -202,12 +202,14 @@ name is in Comfy Cloud's model catalog (looked up through Comfy Cloud's own MCP 
 
 Before a run Scumble checks every node of the graph against Comfy Cloud's node list (kept ten minutes per key) and
 names a missing one instead of uploading anything; a run with more pictures than the graph takes is refused before
-that. The model files go through the same list: a value ending in a model file's extension (`.safetensors`, `.sft`,
-`.ckpt`, `.pt`, `.pth`, `.bin`, `.gguf`, `.onnx`, `.pkl`) in an input whose combo the list gives must be one of its
-names, a Settings row's value over the graph's own; a missing one stops the run by name, with the nearest file the
-cloud has (the same file in another folder, else a name a few letters off). `sampler_name`, `scheduler` and the like are
-combos too but no files, and an input the list gives no names for is not checked. A value that differs from the cloud's
-file only in its path separators (a recipe saved on Windows) goes out in the cloud's spelling. The crop goes out at most 2048 px on a side in steps of 16 (a cloud
+that. The model files are read against the same list, but a file the list lacks does **not** stop the run: Comfy
+Cloud also resolves a loader's value through the account's own models (imported LoRAs and checkpoints), which its node
+list does not name. A run that fails names each file the list lacked, with the nearest one it has when one is close
+(the same file in another folder, else a name a few letters off), and the next run reads the list again. Counted are
+values ending in a model file's extension (`.safetensors`, `.sft`, `.ckpt`, `.pt`, `.pth`, `.bin`, `.gguf`, `.onnx`,
+`.pkl`), a Settings row's value over the graph's own, in nodes that lead to an output; `sampler_name`, `scheduler` and
+the like are combos too but no files, and an input the list gives no names for is not read. A value that differs from
+a listed file only in its path separators (a recipe saved on Windows) goes out in the cloud's spelling. The crop goes out at most 2048 px on a side in steps of 16 (a cloud
 copy keeps the node's target size and multiple).
 
 ## Provider recipes (`kind: "provider"`)

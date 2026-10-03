@@ -152,12 +152,15 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   `refs_layout` 695, gates `lint types recipes comfyview generate size transparent help document` PASS offline
   (`v6s5`, `v6s5b`). Not run live.
 - **V6 step 3, the same night (the user: "mache weiter", weekly limit at 95 %):** `comfycloud.js` `checkModelFiles`
-  after the node check: a graph value ending in a model file's extension (a Settings row over the graph's own) must be
-  a name of its input's combo in the key's `/api/object_info`; a missing one stops the run before any upload, named
-  with the nearest file the cloud has; a backslash path goes out in the cloud's spelling (docs/PLAN_COMFY_VIEW.md V6
-  step 3 "Built"). Measured first through Comfy Cloud's hosted MCP server (read-only): the loaders' files come as full
-  combo lists, and every model file of the 13 shipped recipes is in Comfy Cloud's model catalog. `cloudgraph` 24,
-  `comfyrouter` 135, `recipes` 117, `refs_layout` 695, eslint and tsc clean. Not run live.
+  after the node check reads a graph's model files (values ending in a model extension, in nodes that lead to an
+  output, a Settings row over the graph's own) against their combos in the key's `/api/object_info`. Built first as a
+  refusal (b891753); **its review (one workflow, 10 agents) showed a refusal is wrong**: Comfy Cloud resolves the
+  account's own imported models through `/api/assets`, which the combos do not list (the user has 16), so a missing
+  name now only explains a failed run (`missingNote`, the nearest listed name) and drops the cached list; a backslash
+  path goes out in the cloud's spelling. A real pre-upload check needs the assets listing, only after a live look
+  (docs/PLAN_COMFY_VIEW.md V6 step 3). Measured through Comfy Cloud's hosted MCP server (read-only): every model file
+  of the 13 shipped recipes is in Comfy Cloud's catalog. `cloudgraph` 27, `comfyrouter` 135, `recipes` 117,
+  `refs_layout` 695, eslint and tsc clean. Not run live.
 - **Next: the live checks** (the user's Comfy Cloud key: one edit and one Generate new run at least), then the
   release. Old line kept below for the checks:
 - **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
