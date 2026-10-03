@@ -121,7 +121,8 @@ other 20 Oxen recipes byte-identical but the seed); none on B6 (the same pattern
   hosts") with its picture (`v0-1-39-ideogram-boxes.jpg`: the two boxes, the answer with the boxes drawn); a new session
   rewrites both from this block and `dist/live-out/live_ideogram4_boxes.png` (boxes `[80, 680, 380, 960]` apple,
   `[500, 600, 950, 900]` sign, x0 y0 x1 y1 on 1024 x 1024).
-- **Next (on the user's word):** nothing planned in `docs/PLAN_0_1_38.md` is left. Open from the list: the live
+- **Next (on the user's word):** **item 35, ComfyUI in Scumble, is the most important update** (the user,
+  2026-10-03): `docs/PLAN_COMFY_VIEW.md`, its §6 questions first, then V1. Nothing planned in `docs/PLAN_0_1_38.md` is left. Open from the list: the live
   checks of FLUX 3 on fal, Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks", a key each), item 30 (Ideogram 4 as
   its own update), 28 S4, 34 (Generate new with presets and boxes, `docs/PLAN_NEW_PRESETS.md`), B3 macOS. **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**
   (the user, 2026-10-03, after the release); ask for Comfy's exact answer and re-read the challenge post
@@ -172,6 +173,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   (23a in 0.1.31, 23b for 0.1.32), 24 (the canvas-only view).
 - 5: the object tool's change A (the image-size label map, `dist/c6map/c/objects.md` §7-§9), parked.
 - 14: upscaling beyond the API upscalers (ComfyUI, ONNX, a desktop upscaler by CLI / MCP), parked, only listed.
+  Added 2026-10-03 for a later update (the user asked for DLSS): DLSS itself needs a game renderer's motion vectors
+  and depth and has no picture API; NVIDIA's RTX Video Super Resolution node is installed on the user's ComfyUI, so a
+  local upscale recipe on it, then the whole picture for local upscale recipes: `docs/PLAN_RTX_VSR.md`.
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
@@ -243,6 +247,13 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   (1:1 at first, then the last one), so boxes go stretched when it differs from the canvas (BFL: send the aspect the
   boxes were designed for); FLUX 3 takes only New boxes on a new image, and Generate new with boxes never ran live on
   FLUX 3. `docs/PLAN_NEW_PRESETS.md` (what exists, the trap, four steps, the open questions). Nothing built.
+- 35: ComfyUI in Scumble (the user, 2026-10-03: "ist es möglich eine art browser in scumble zu öffnen in dem dann
+  comfyui läuft?", the point being the connection to the recipes, "das ist erstmal das wichtigste update", and "auch
+  die option testen comfy.cloud in scumble"): ComfyUI's own page in a `WebContentsView` (a tab), a recipe opened there
+  as its graph and the graph saved back as a recipe; Comfy Cloud in the same view, and recipes without the Inpaint
+  Canvas node (Comfy Cloud has none and takes no custom nodes) run there through `comfycloud.js`'s calls.
+  `docs/PLAN_COMFY_VIEW.md`: what exists, the design, V1-V5 (one session each), the traps (the menu's accelerators beat
+  the page; the view covers Scumble's dialogs), the open questions. Nothing built.
 
 ## Gate runner and flakes
 
