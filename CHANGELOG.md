@@ -27,8 +27,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   refused, and nothing is saved.
 - **Comfy Cloud in the same window.** The window's *Show* picker switches between your ComfyUI and Comfy Cloud, and
   keeps the choice. You sign in on Comfy Cloud's own page (by email or GitHub; Google may refuse a sign-in from an app
-  window), and the sign-in stays for the next time. Comfy Cloud runs no custom nodes, so a recipe built on the Inpaint
-  Canvas node says so there instead of opening.
+  window), and the sign-in stays for the next time. Comfy Cloud runs no custom nodes, so *Edit in ComfyUI* opens a
+  recipe built on the Inpaint Canvas node on your own ComfyUI and a Comfy Cloud recipe on Comfy Cloud, whatever the
+  window showed last.
 - **Recipes that run on Comfy Cloud.** *Cloud copy* under Settings › Recipes turns a ComfyUI recipe into one without
   the Inpaint Canvas node that runs on your Comfy Cloud key: Scumble crops and stitches itself, and the graph takes the
   crop, the Original, the reference layers, the prompt and the seed through ComfyUI's own nodes. A workflow made on

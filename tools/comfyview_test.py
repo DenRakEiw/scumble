@@ -487,6 +487,29 @@ class Gate:
             raise Exception("switched to My ComfyUI: " + json.dumps({"info": i2, "stored": stored, "loaded": (got or {}).get("name")})[:600])
         return {"cloudNote": i["recipeNote"][:80], "switched": i2["title"]}
 
+    async def recipe_target(self):
+        """Edit in ComfyUI names no target: the recipe picks it, whatever the window showed last (the user, 2026-10-03:
+        a local recipe opened on Comfy Cloud). A recipe with the node goes to My ComfyUI, a Comfy Cloud recipe to the
+        cloud; the switch is kept, as the bar's select keeps it."""
+        await self.close()
+        self.stub.mode = "none"
+        self.stub.app = "ok"
+        await self.set_auth({"type": "none"}, "")
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "target": "cloud"}))
+        await self.wait_info("i.target === 'cloud' && i.phase === 'page'", 15000)
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": "flux2_klein_local"}))
+        i = await self.wait_info("i.target === 'comfy' && i.recipeLoaded", 15000)
+        stored = await self.js("return ((await window.scumble.settings.get()).comfyView || {}).target")
+        if i["target"] != "comfy" or not i.get("recipeLoaded") or i.get("recipeNote") or stored != "comfy":
+            raise Exception("a local recipe from the cloud view: " + json.dumps({"info": i, "stored": stored})[:600])
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": "cloud_z_image_turbo"}))
+        i2 = await self.wait_info("i.target === 'cloud' && i.recipeId === 'cloud_z_image_turbo' && (i.recipeLoaded || i.recipeNote)", 15000)
+        stored2 = await self.js("return ((await window.scumble.settings.get()).comfyView || {}).target")
+        if i2["target"] != "cloud" or not i2.get("recipeLoaded") or stored2 != "cloud":
+            raise Exception("a Comfy Cloud recipe from My ComfyUI: " + json.dumps({"info": i2, "stored": stored2})[:600])
+        await self.close()
+        return {"local": i["target"], "cloud": i2["target"]}
+
     async def cloud_start(self):
         await self.close()
         await self.js("await window.scumble.comfyView.open({ target: 'cloud' }); return 1")
@@ -729,6 +752,7 @@ async def main():
             await g.step("V4 / V5b: the sign-in hosts, and a detached recipe on a fake Comfy Cloud (plain Node)", g.hosts)
             await g.step("V4: Comfy Cloud refuses a recipe with the node and offers no save; the select switches back", g.cloud)
             await g.step("V4: no Comfy Cloud to show, and Use Comfy Cloud", g.cloud_start)
+            await g.step("Edit in ComfyUI: a recipe opens where it runs, whatever the window showed last", g.recipe_target)
             await g.step("V6: the editor's mode select has comfy cloud; with no Comfy Cloud recipe it says so and goes back", g.cloud_mode_none)
             await g.step("V5c: Cloud copy in Settings, the copy opened on Comfy Cloud as its graph", g.cloud_copy)
             await g.step("V5c: a graph without the node saved as a Comfy Cloud recipe, overwritten, a graph with the node refused", g.cloud_save)

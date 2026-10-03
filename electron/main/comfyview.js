@@ -133,17 +133,24 @@ class ComfyView {
      * Open the window, or bring it to the front. `url` is a test's stub page, taken in a --no-comfy start only (a
      * normal start always shows the ComfyUI of Settings › ComfyUI). `recipe` ({ id, name, prompt, workflow }) is the
      * graph the window then holds: loaded into the page as soon as it offers one, named in the bar either way. `target`
-     * ("comfy" / "cloud") switches what the window shows, as the bar's select does.
+     * ("comfy" / "cloud") switches what the window shows, as the bar's select does; without one, a recipe with the
+     * Inpaint Canvas node shows the user's ComfyUI and a Comfy Cloud recipe Comfy Cloud.
      */
     open({ url, recipe, target, leave } = {}) {
         const test = this.offline && url ? String(url) : "";
         if (test) this.testUrl = test;
         if (this.offline && (leave === "leave" || leave === "stay")) this.testLeave = leave;
-        if (target === "comfy" || target === "cloud") this.storeTarget(target);
+        const named = target === "comfy" || target === "cloud";
+        if (named) this.storeTarget(target);
         else if (!this.isOpen) this.kind = (this.settings.get().comfyView || {}).target === "cloud" ? "cloud" : "comfy";
+        // a recipe opens where it can run, whatever the window showed last (the user, 2026-10-03: a local recipe opened
+        // on Comfy Cloud): one with the Inpaint Canvas node on the user's ComfyUI, a Comfy Cloud recipe on Comfy Cloud
+        const fits = !named && recipe ? (recipe.cloud ? "cloud" : needsCanvasNode(recipe.prompt) ? "comfy" : null) : null;
+        const switched = !!fits && fits !== this.kind;
+        if (switched) this.storeTarget(fits);
         if (recipe) { this.recipe = recipe; this.recipeNote = this.cloudRefusal(recipe); }
         if (this.isOpen) {
-            if (target && !test) { this.front(); this.load(); return this.info(); }
+            if ((named || switched) && !test) { this.front(); this.load(); return this.info(); }
             this.front();
             if (test) this.load();
             else if (recipe && this.pageReady) this.loadRecipe();
