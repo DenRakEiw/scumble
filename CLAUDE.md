@@ -123,7 +123,9 @@ other 20 Oxen recipes byte-identical but the seed); none on B6 (the same pattern
   `[500, 600, 950, 900]` sign, x0 y0 x1 y1 on 1024 x 1024).
 - **Next (on the user's word):** nothing planned in `docs/PLAN_0_1_38.md` is left. Open from the list: the live
   checks of FLUX 3 on fal, Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks", a key each), item 30 (Ideogram 4 as
-  its own update), 28 S4, B3 macOS, the Comfy Dev Platform Challenge (Oct 5-19, waits for Comfy's answer). The
+  its own update), 28 S4, B3 macOS. **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**
+  (the user, 2026-10-03, after the release); ask for Comfy's exact answer and re-read the challenge post
+  (memory `comfy-dev-challenge`) before planning the entry with the user. The
   weekly limit was at 91 % (reset 2026-10-04 09:00Z): no workflows until then.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
