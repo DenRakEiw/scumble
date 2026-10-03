@@ -76,37 +76,34 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 midday: 0.1.38 is Latest; B2 built, Ideogram 4 takes boxes on fal, run live; next B4 on the user's word)
+## Where things stand (2026-10-03 afternoon: 0.1.38 is Latest; B2 and B4 built, FLUX 3 on fal not run live; next its live check or B5 on the user's word)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-03 midday, "weiter"): B2 built, Ideogram 4 takes the boxes as its JSON caption (fe9cd0e,
-pushed).** The 2026-10-03 morning block (B1 / B3 live, the 0.1.38 release) is in `docs/HISTORY.md`.
-- **Live check 6.4 first** (the fal key in `dist/live-keys`, `dist/live_ideogram4.py`, pictures `dist/live-out/
-  live_ideogram4_*.png`, five runs at a few cents each): fal passes a JSON caption to Ideogram 4 as written, the model
-  follows it and renders none of the JSON (a "SAUNA" Text box landed in its box). An edit with one box (background
-  empty) put a black cat in the grass of the selection, 109 s. New images: a written background gave an unasked panel
-  of made-up text in the free top right; an **empty background painted a transparency checkerboard** (real pixels, alpha
-  255) over the free half; the prompt as the background gave one coherent meadow. A box where a thing cannot be (an
-  apple floating in a meadow's sky) is ignored for a natural picture; the shipped path with the apple box on the ground
-  put apple and sign in their boxes (21 s).
-- **Built:** `providers/boxes.js` `captionIdeogram4` (`options.boxes: "ideogram4"`): `{ high_level_description: prompt,
-  compositional_deconstruction: { background: <prompt on a new image, "" on an edit>, elements } }`, New -> obj, Text ->
-  `{ type: "text", bbox, text, desc }`, Keep -> obj on an edit; Move / Remove / From (and a new image's Keep) left out
-  with one note; `expansion_model` sent as None with a note (applyBoxes returns `params`, index.js merges them); a note
-  when a new image's prompt is empty. A request box carries a Text box's words as `text` (renderer `pluginBoxes`, the
-  plugin's source); main composes FLUX 3's `text reading "..."` (rows unchanged). `host.boxSwitch` answers `schema`;
-  the Boxes panel names the boxes an Ideogram run leaves out; texts say "FLUX 3 Image, Ideogram 4". Recipe: the fal
-  variant takes boxes, the description says it ran live. Tests: `tools/boxes_test.js` (139, section 6b), the `boxes`
-  gate's new step `ideogram4_caption`; lint, types, recipes green (`dist/gates/gates/b2-ideo2`). Docs: CHANGELOG
-  Unreleased (two bullets), MANUAL (a paragraph in "Boxes in the prompt"), README, RECIPES "Ideogram 4", PLUGINS (the
-  `text` field), PLAN_BOXES §5 / §6.4, PLAN_0_1_38 B2.
-- **Not done:** *Copy rows* still writes FLUX 3's rows under an Ideogram recipe; no background box kind; the node
-  build not run (`renderer/editor/boxes.js` and `host.js` changed; build it only when a node version ships).
-- **Next (on the user's word): B4** FLUX 3 on fal (`docs/PLAN_FLUX3.md` "fal"), then B5 Oxen, B6 WaveSpeed, B7 the
-  0.1.39 release (the post tells the Ideogram live result; the meadow picture `live_ideogram4_boxes.png` is a candidate).
-  The weekly limit was at 90 % (reset 2026-10-04 09:00Z): no workflows until then.
+**This session (2026-10-03 afternoon, "weiter"): B4 built, FLUX 3 Image on fal (659b83c, pushed).** The 2026-10-03
+midday block (B2, Ideogram 4's JSON caption, live) is in `docs/HISTORY.md`. No workflow (weekly limit at 90 %).
+- **Built** as `docs/PLAN_FLUX3.md` "fal" planned (its new "Built" paragraph has the choices): `recipes/flux3.json`
+  variant `fal` after `bfl` (OpenRouter stays last before Comfy Router; `openrouter_test` checks that order):
+  `blackforestlabs/flux-3/edit-image` (edits, new images with references), `text.model` `.../text-to-image`;
+  `options` `sizing: "flux3"`, fal's 14 presets (no 9:21), `max_images` 10, `min_side` 256 / `max_pixels` 4,000,000,
+  `omit` num_images / seed / negative_prompt, `boxes: "flux3"`; variant `limits` 4 MP and the 14; rows Safety tolerance
+  and Prompt expansion (**on** by default: BFL direct always expands, the boxes ran live there with it). `fal.js`:
+  the `flux3` sizing branch (`flux3.shapeOf` with the presets as a parameter; tier by area, preset or none, `info.fit`;
+  safety 0-4, expansion a boolean via `flux3.switchOf`), `fitPictures` (references / the Original scaled, the crop
+  refused), `textLayout` takes `/edit-image`, the seed reported only where one went (every fal route now).
+- **Tests:** `tools/flux3_test.js` section 9 (28 checks; every body against fal's schemas, saved in `tools/refs/fal/`),
+  `recipes_test` §4 (102 with text.refs), `refs_layout_test`, every plain-Node test that touches fal; gates lint,
+  types, recipes (`dist/gates/gates/b4-fal`); one look in the app (FLUX 3 shows fal, both rows). Docs: CHANGELOG
+  Unreleased (a bullet, "not yet tried against the live service"), MANUAL (the FLUX 3 paragraph), RECIPES (the FLUX 3
+  section, the table, the option list), PLAN_0_1_38 B4.
+- **Not run live:** the fal key is in `dist/live-keys` (B2 used it); a live check is two 1k runs (an edit with the
+  selection as a box, a new image with one reference), about $0.05 at fal's launch price ($0.024 a 1k image until
+  October 8, then $0.048): on the user's word. After it: the CHANGELOG bullet and the recipe note say it ran, README's
+  verified list gains it, and the 4 MP reading (4,000,000 or 4,194,304) can be checked.
+- **Next (on the user's word):** the fal live check, then B5 Oxen (`docs/PLAN_FLUX3.md` "Oxen.ai"), B6 WaveSpeed, B7
+  the 0.1.39 release (the post tells the Ideogram live result; `live_ideogram4_boxes.png` is a candidate). The weekly
+  limit was at 90 % (reset 2026-10-04 09:00Z): no workflows until then.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
@@ -185,7 +182,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   sibling), WaveSpeed (the user's link was image-to-video; whether it has FLUX 3 Image is part of the research),
   OpenRouter (black-forest-labs/flux-3-image) and Oxen.ai (flux-3-image), as variants of `recipes/flux3.json` on the
   existing adapters. Researched: `docs/PLAN_FLUX3.md` "FLUX 3 Image on other providers". **Comfy Router (B1) and OpenRouter
-  (B3) built 2026-10-02 late night, run live and released in 0.1.38 (2026-10-03)**; fal, Oxen, WaveSpeed open.
+  (B3) built 2026-10-02 late night, run live and released in 0.1.38 (2026-10-03)**; **fal (B4) built 2026-10-03**,
+  under Unreleased, not run live; Oxen, WaveSpeed open.
 - 30: Ideogram 4 support as an update of its own (the user, 2026-10-02: "ein anderer release", not with item 28's
   boxes). Known so far (one web search, 2026-10-02): Ideogram 4.0 is Ideogram's first open-weight model (9.3B flow
   DiT, Qwen3-VL-8B text encoder, June 2026; weights non-commercial, 256-2048 px, aspects up to 6:1), structured JSON

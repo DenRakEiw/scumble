@@ -56,6 +56,35 @@ The paragraph of 2026-10-02 (item 31 docs) and the 0.1.36 "Released" block were 
 
 The 0.1.37 block of 2026-10-02 (night) was moved here the same night, when A1, A2, B1 and B3 of docs/PLAN_0_1_38.md were built.
 
+## 2026-10-03 (midday: B2 built, Ideogram 4's JSON caption, live; moved here when B4 was built)
+
+**This session (2026-10-03 midday, "weiter"): B2 built, Ideogram 4 takes the boxes as its JSON caption (fe9cd0e,
+pushed).** The 2026-10-03 morning block (B1 / B3 live, the 0.1.38 release) is in `docs/HISTORY.md`.
+- **Live check 6.4 first** (the fal key in `dist/live-keys`, `dist/live_ideogram4.py`, pictures `dist/live-out/
+  live_ideogram4_*.png`, five runs at a few cents each): fal passes a JSON caption to Ideogram 4 as written, the model
+  follows it and renders none of the JSON (a "SAUNA" Text box landed in its box). An edit with one box (background
+  empty) put a black cat in the grass of the selection, 109 s. New images: a written background gave an unasked panel
+  of made-up text in the free top right; an **empty background painted a transparency checkerboard** (real pixels, alpha
+  255) over the free half; the prompt as the background gave one coherent meadow. A box where a thing cannot be (an
+  apple floating in a meadow's sky) is ignored for a natural picture; the shipped path with the apple box on the ground
+  put apple and sign in their boxes (21 s).
+- **Built:** `providers/boxes.js` `captionIdeogram4` (`options.boxes: "ideogram4"`): `{ high_level_description: prompt,
+  compositional_deconstruction: { background: <prompt on a new image, "" on an edit>, elements } }`, New -> obj, Text ->
+  `{ type: "text", bbox, text, desc }`, Keep -> obj on an edit; Move / Remove / From (and a new image's Keep) left out
+  with one note; `expansion_model` sent as None with a note (applyBoxes returns `params`, index.js merges them); a note
+  when a new image's prompt is empty. A request box carries a Text box's words as `text` (renderer `pluginBoxes`, the
+  plugin's source); main composes FLUX 3's `text reading "..."` (rows unchanged). `host.boxSwitch` answers `schema`;
+  the Boxes panel names the boxes an Ideogram run leaves out; texts say "FLUX 3 Image, Ideogram 4". Recipe: the fal
+  variant takes boxes, the description says it ran live. Tests: `tools/boxes_test.js` (139, section 6b), the `boxes`
+  gate's new step `ideogram4_caption`; lint, types, recipes green (`dist/gates/gates/b2-ideo2`). Docs: CHANGELOG
+  Unreleased (two bullets), MANUAL (a paragraph in "Boxes in the prompt"), README, RECIPES "Ideogram 4", PLUGINS (the
+  `text` field), PLAN_BOXES §5 / §6.4, PLAN_0_1_38 B2.
+- **Not done:** *Copy rows* still writes FLUX 3's rows under an Ideogram recipe; no background box kind; the node
+  build not run (`renderer/editor/boxes.js` and `host.js` changed; build it only when a node version ships).
+- **Next (on the user's word): B4** FLUX 3 on fal (`docs/PLAN_FLUX3.md` "fal"), then B5 Oxen, B6 WaveSpeed, B7 the
+  0.1.39 release (the post tells the Ideogram live result; the meadow picture `live_ideogram4_boxes.png` is a candidate).
+  The weekly limit was at 90 % (reset 2026-10-04 09:00Z): no workflows until then.
+
 ## 2026-10-03 (morning: B1 / B3 live, the 0.1.38 release, moved here when B2 was built)
 
 **This session (2026-10-03 morning, "weiter"):** the live test of B1 / B3 and the 0.1.38 release (A3), all pushed.
