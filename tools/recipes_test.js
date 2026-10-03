@@ -535,6 +535,57 @@ async function main() {
         function all0() { return JSON.parse(JSON.stringify(rawFile("flux2_klein_local.json"))); }
     });
 
+    // ---- 9. Comfy's image-edit templates saved as they are (item 35 V6: the roles read from the graph) --------
+    await section("9. Comfy's image-edit templates without titles", async () => {
+        const dir = path.join(ROOT, "tools", "refs", "comfy_templates");
+        const info = JSON.parse(fs.readFileSync(path.join(dir, "object_info.json"), "utf8"));
+        const names = fs.readdirSync(dir).filter((n) => n.endsWith(".json") && n !== "object_info.json").sort();
+        check("the template fixtures are there (tools/template_fixtures.py)", names.length >= 20, `${names.length} templates`);
+        const out = {};
+        const refused = [];
+        let wrongSlot = [];
+        for (const n of names) {
+            const wf = JSON.parse(fs.readFileSync(path.join(dir, n), "utf8"));
+            const flat = recipes.fromWorkflow(wf, info, { file: n, date: "2026-10-03" }, { noCanvas: true }).prompt;
+            // the subgraph regression: a picture never lands on a model loader or a size input (slots by name, 2026-10-03)
+            for (const [id, node] of Object.entries(flat)) for (const [k, v] of Object.entries(node.inputs || {})) {
+                if (Array.isArray(v) && flat[v[0]] && flat[v[0]].class_type === "LoadImage" && /Loader$|EmptyLatentImage/.test(node.class_type)) wrongSlot.push(`${n}: ${node.class_type} ${id}.${k}`);
+            }
+            try { out[n] = { flat, r: recipes.fromCloudGraph({ output: flat, workflow: wf, name: n, ids: [], date: "2026-10-03", promoted: recipes.promotedOf(wf) }) }; }
+            catch (err) { refused.push(`${n}: ${err.message}`); }
+        }
+        check("no template's picture lands on a loader or a latent size (subgraph inputs by name)", !wrongSlot.length, short(wrongSlot));
+        check("every template but the one with two results reads without a title; that one asks for \"Scumble result\"",
+            refused.length === 1 && /instantx_inpainting/.test(refused[0]) && /several SaveImage/.test(refused[0]) && Object.keys(out).length === names.length - 1, short(refused));
+        const v = (n) => out[n].r.providers.comfycloud;
+        const g = (n) => v(n).options.graph;
+        const title = (n, id) => (g(n)[id]._meta || {}).title;
+        const q21 = "image_qwen_image_2_1_image_edit.json";
+        check("Qwen Image 2.1 edit: two pictures (470 the crop, 475 the second), the prompt through the subgraph's control into the switch and the prompt writer, the negative, the seed, SaveImageAdvanced",
+            v(q21).options.pictures === 2 && title(q21, "470") === "scumble:picture:0" && title(q21, "475") === "scumble:picture:1" && v(q21).options.save === "461"
+            && eq(v(q21).options.values.prompt.map((x) => x.join(".")).sort(), ["459:484.on_false", "459:500.prompt"]) && eq(v(q21).options.values.negative, [["459:474", "negative_prompt"]]) && v(q21).options.values.seed.some((x) => x.join(".") === "459:458.seed"),
+            short(v(q21).note));
+        const k9 = "image_flux2_klein_image_edit_9b_base.json";
+        check("Flux.2 Klein 9B: the bypassed second subgraph adds no node, the crop into ImageScaleToTotalPixels, prompt and seed of the live one",
+            !Object.keys(g(k9)).some((id) => id.startsWith("92:")) && title(k9, "76") === "scumble:picture:0" && eq(v(k9).options.values.prompt, [["75:74", "text"]]) && eq(v(k9).options.values.seed, [["75:73", "noise_seed"]]),
+            short(v(k9).note));
+        const cap = "Image_capybara_v0_1_image_edit.json";
+        check("Capybara: the negative encoder stays the negative (its first hop names it), the prompt the positive",
+            eq(v(cap).options.values.prompt, [["103:44", "text"]]) && eq(v(cap).options.values.negative, [["103:93", "text"]]), short(v(cap).note));
+        const rel = "image_qwen_image_edit_2509_relight.json";
+        check("Qwen 2509 relight: the prompt goes into the text node behind the fixed trigger word, not into the concatenation",
+            eq(v(rel).options.values.prompt, [["15", "value"]]) && g(rel)["14"].inputs.string_a !== "", short(v(rel).note));
+        const k11 = "image_qwen_image_edit_2511.json";
+        check("Qwen 2511: its second picture input becomes picture 1", v(k11).options.pictures === 2 && title(k11, "83") === "scumble:picture:1");
+        const noted = Object.values(out).every(({ r }) => /^Read from the graph: crop: LoadImage/.test(r.providers.comfycloud.note) && r.providers.comfycloud.options.save);
+        check("each recipe's note says what was read, beginning with the crop, and names its result", noted);
+        // a title still wins: the same graph with "Scumble crop" on the second picture takes that one
+        const flat = JSON.parse(JSON.stringify(out[q21].flat));
+        flat["475"]._meta = { title: "Scumble crop" };
+        const titled = recipes.fromCloudGraph({ output: flat, name: "t", ids: [], date: "2026-10-03" });
+        check("titles win over the reading: Scumble crop on the second LoadImage makes it the crop", titled.providers.comfycloud.options.graph["475"]._meta.title === "scumble:picture:0" && /A graph made for Comfy Cloud/.test(titled.providers.comfycloud.note));
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

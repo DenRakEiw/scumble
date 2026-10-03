@@ -910,16 +910,17 @@ async function saveComfyGraph({ output, workflow, objectInfo, heldId, name }) {
     const withCanvas = Object.values(output || {}).some((n) => n && n.class_type === "InpaintCanvas");
     const nodes = output && typeof output === "object" ? Object.values(output) : [];
     if (!nodes.length || !nodes.every((n) => n && typeof n === "object" && typeof n.class_type === "string")) throw new Error("ComfyUI's page answered no graph Scumble can read.");
-    if (!withCanvas && !nodes.some((n) => recipes.cloudMark(n._meta && n._meta.title))) {
-        throw new Error("This graph has no Inpaint Canvas node (a ComfyUI recipe needs one) and no node titled for Comfy Cloud (\"Scumble crop\" and more, docs/RECIPES.md).");
-    }
     if (!withCanvas) {
         // a graph without the node is a Comfy Cloud recipe (V5c): marked by node titles, run on the Comfy Cloud key
         if (!name && base && base.kind !== "provider") throw new Error(`"${base.name || base.id}" needs the Inpaint Canvas node, which this graph does not hold: save it as a new recipe instead (a Comfy Cloud recipe).`);
-        const made = recipes.fromCloudGraph({ output, workflow, base: !name ? base : null, name, ids, date });
+        let made;
+        try { made = recipes.fromCloudGraph({ output, workflow, base: !name ? base : null, name, ids, date }); }
+        catch (err) { throw new Error(`This graph has no Inpaint Canvas node, and Scumble could not read it as a Comfy Cloud graph: ${err.message}`); }
         await recipes.save(made);
         const v = made.providers.comfycloud;
-        const msg = `Saved the graph as the Comfy Cloud recipe "${made.name}": it runs on your Comfy Cloud key.`;
+        // what was read from an untitled graph (a Comfy template as it is), so a wrong guess shows before a run
+        const read = /^Read from the graph: /.test(v.note || "") ? " " + v.note : "";
+        const msg = `Saved the graph as the Comfy Cloud recipe "${made.name}": it runs on your Comfy Cloud key.${read}`;
         send("comfyview:saved", { id: made.id, message: msg });
         return { recipe: { id: made.id, name: made.name || made.id, cloud: true, prompt: v.options.graph, workflow: v.options.workflow || null }, message: msg };
     }

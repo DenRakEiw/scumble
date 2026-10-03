@@ -139,7 +139,19 @@ graph (docs/PLAN_COMFY_VIEW.md §3 "V5a / V5b / V5c as built"); it runs on the C
 - **Save as new recipe** in the ComfyUI window: a graph without the node becomes a Comfy Cloud recipe (Save to recipe
   overwrites a Comfy Cloud recipe the window opened).
 
-An imported or saved graph says by **node titles** where things go (any case; spaces, `:`, `_` or `-` between words):
+An imported or saved graph needs **no titles**: Scumble reads the roles from it (`recipes.detectRoles`). The LoadImage
+nodes in the order their consumers number them (`image_1`, `image1` or `image` before `image_2` ...) are the crop and
+the next pictures; a LoadImage whose MASK output is read is where the selection goes (Scumble's mask comes in as a
+picture of its own through `ImageToMask`); the prompt, the negative and the seed come from the subgraph controls of
+that name (a template's own controls), else from the encoders' text inputs (positive or negative by the first hop that
+reaches a "positive" or "negative" input; a text that comes in by link is followed to the text node at its end) and the
+`seed` / `noise_seed` inputs; the one SaveImage or SaveImageAdvanced is the result (of several, the one a sampler made).
+Muted and bypassed subgraphs add none of their nodes. The window's bar and the recipe's note say what was read; all 26
+image-edit templates of Comfy's template package read this way but one, which has two results
+(`tools/recipes_test.js` section 9 on `tools/refs/comfy_templates/`, MIT, made by `tools/template_fixtures.py`).
+
+Titles **correct** a wrong reading. When any node carries one, the graph is read by its titles alone (any case;
+spaces, `:`, `_` or `-` between words):
 
 | Title | On | What Scumble does |
 |---|---|---|

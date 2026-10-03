@@ -461,9 +461,37 @@ function fromWorkflow(wf, objectInfo, meta, opts) {
     const instances = new Map();   // flat id of a subgraph instance -> { def, prefix }
     const overrides = new Map();   // "<flat node id>|<input index>" -> promoted widget value
 
-    /** The promoted widget value of subgraph input k on an instance node (its widgets_values follow the widget inputs in order). */
-    function instanceWidgetValue(inst, k) {
+    /**
+     * The instance's input for subgraph input k. The newer subgraph format lists on the instance only the inputs it
+     * shows, in an order of its own (Comfy's image-edit templates, 2026-10: 19 of 30, reordered), so the input is found
+     * by the definition's name for slot k (none when the instance does not show it); a definition without names is read by
+     * position, as the older format was.
+     */
+    function instanceInput(inst, def, k) {
+        const name = def && Array.isArray(def.inputs) && def.inputs[k] ? def.inputs[k].name : null;
+        if (name != null) {
+            // a named slot the instance does not show takes its value from widgets_values, never another input's link
+            const byName = (inst.inputs || []).find((i) => i && i.name === name);
+            return byName || null;
+        }
+        return (inst.inputs || [])[k];
+    }
+
+    /**
+     * The promoted widget value of subgraph input k on an instance node. Newer instances keep one value per widget-typed
+     * input of the definition, in the definition's order (their widgets_values has exactly that many entries); older
+     * ones follow the instance's own widget inputs, with a slot after a seed for control_after_generate.
+     */
+    function instanceWidgetValue(inst, k, def) {
         const values = Array.isArray(inst.widgets_values) ? inst.widgets_values : [];
+        const defInputs = def && Array.isArray(def.inputs) ? def.inputs : null;
+        if (defInputs) {
+            const widgetSlots = defInputs.map((d, i) => (d && WIDGET_TYPES.has(String(d.type)) ? i : -1)).filter((i) => i >= 0);
+            if (widgetSlots.length && widgetSlots.length === values.length) {
+                const at = widgetSlots.indexOf(k);
+                return at >= 0 ? values[at] : undefined;
+            }
+        }
         let vi = 0;
         for (let i = 0; i < (inst.inputs || []).length; i++) {
             const inp = inst.inputs[i];
@@ -481,19 +509,19 @@ function fromWorkflow(wf, objectInfo, meta, opts) {
         return null;
     }
 
-    function addGraph(gNodes, gLinks, prefix, inst) {
+    function addGraph(gNodes, gLinks, prefix, inst, def) {
         const pid = (id) => prefix + String(id);
         for (const raw of gLinks || []) {
             const l = parseLink(raw);
             if (!l) continue;
             if (l.origin === "-10") {
                 // from the subgraph's input node: the instance's incoming link, else its promoted widget value
-                const inp = inst && (inst.inputs || [])[l.originSlot];
+                const inp = inst ? instanceInput(inst, def, l.originSlot) : null;
                 const outer = inp && inp.link != null ? links.get(inst._prefix + String(inp.link)) : null;
                 // the promoted widget on the instance holds the current value (the inner
                 // node's widgets_values can be stale); it is the input's value when nothing
                 // is linked, and the value a setting link replaced otherwise
-                const v = inst ? instanceWidgetValue(inst, l.originSlot) : undefined;
+                const v = inst ? instanceWidgetValue(inst, l.originSlot, def) : undefined;
                 if (v !== undefined) overrides.set(`${pid(l.target)}|${l.targetSlot}`, v);
                 if (!outer) continue;
                 l.origin = outer.origin; l.originSlot = outer.originSlot;
@@ -506,10 +534,12 @@ function fromWorkflow(wf, objectInfo, meta, opts) {
         for (const n of gNodes || []) {
             const node = { ...n, id: pid(n.id), _prefix: prefix };
             nodes.set(node.id, node);
-            if (defs.has(n.type)) {
+            // a muted or bypassed subgraph runs none of its inner nodes (Comfy's Flux.2 Klein templates hold a second,
+            // bypassed one): it stays a plain node, which the prompt skips and a link reads through as a bypass
+            if (defs.has(n.type) && n.mode !== 2 && n.mode !== 4) {
                 const def = defs.get(n.type);
                 instances.set(node.id, { def, prefix: node.id + ":" });
-                addGraph(def.nodes, def.links, node.id + ":", node);
+                addGraph(def.nodes, def.links, node.id + ":", node, def);
             }
         }
     }
@@ -776,10 +806,11 @@ function markedInput(node, names) {
  * A marked API prompt -> a Comfy Cloud recipe (the provider shape detach() makes: one variant, comfycloud, with
  * options.graph). `base` a cloud recipe it overwrites (its id, name, description and the Settings rows whose input is
  * still there), else `name` and `ids` give a new one. `workflow` (the UI graph) is kept to open it again as laid out.
- * @param {{ output: any, workflow?: any, base?: Recipe | null, name?: string, ids?: string[], date: string }} a
+ * `promoted` (promotedOf of the UI graph) tells a reading without titles the template's own controls.
+ * @param {{ output: any, workflow?: any, base?: Recipe | null, name?: string, ids?: string[], date: string, promoted?: { name: string, node: string, input: string }[] }} a
  * @returns {Recipe}
  */
-function fromCloudGraph({ output, workflow, base, name, ids, date }) {
+function fromCloudGraph({ output, workflow, base, name, ids, date, promoted }) {
     if (!looksLikePrompt(output)) throw new Error("This is no graph Scumble can read.");
     /** @type {Record<string, any>} */
     const prompt = JSON.parse(JSON.stringify(output));
@@ -790,7 +821,7 @@ function fromCloudGraph({ output, workflow, base, name, ids, date }) {
     const saves = [], marked = [];
     for (const [id, node] of Object.entries(prompt)) {
         const mark = cloudMark(node._meta && node._meta.title);
-        if (node.class_type === "SaveImage") saves.push({ id, result: !!(mark && mark.kind === "result") });
+        if (RESULT_NODES.has(node.class_type)) saves.push({ id, result: !!(mark && mark.kind === "result") });
         if (!mark || mark.kind === "result") continue;
         marked.push(`${mark.kind}${mark.k != null ? " " + mark.k : ""}`);
         if (mark.kind === "picture" || mark.kind === "mask") {
@@ -810,11 +841,39 @@ function fromCloudGraph({ output, workflow, base, name, ids, date }) {
         if (!input) throw new Error(`The node "${node._meta.title}" (${node.class_type}) has no input the ${mark.kind} can go into.`);
         (values[mark.kind] = values[mark.kind] || []).push([id, input]);
     }
-    if (!Object.values(prompt).some((n) => n._meta && n._meta.title === "scumble:picture:0")) {
-        throw new Error("No node is titled \"Scumble crop\": title the LoadImage that takes Scumble's crop so (see docs/RECIPES.md, Comfy Cloud recipes).");
+    let saveId = null, found = null;
+    if (!marked.length) {
+        // nobody titled it (a Comfy template as it is): the roles read from the graph (detectRoles), its subgraph
+        // controls first; the bar and the recipe's note say what was read, and titles correct a wrong guess
+        const d = detectRoles(prompt, promoted || promotedOf(workflow));
+        d.pictures.forEach((id, k) => {
+            prompt[id]._meta = { ...(prompt[id]._meta || {}), title: `scumble:picture:${k}` };
+            prompt[id].inputs = { ...(prompt[id].inputs || {}), image: "" };
+        });
+        maxPicture = d.pictures.length - 1;
+        if (d.maskFrom) {
+            // the graph read its mask from a picture's MASK output (painted in ComfyUI): Scumble's selection comes in as
+            // a picture of its own, white where to repaint, through ImageToMask
+            let lid = "scumble_mask_picture", n2 = 2;
+            while (prompt[lid]) lid = `scumble_mask_picture_${n2++}`;
+            prompt[lid] = { class_type: "LoadImage", inputs: { image: "" }, _meta: { title: "scumble:mask" } };
+            let mid = "scumble_mask", n3 = 2;
+            while (prompt[mid]) mid = `scumble_mask_${n3++}`;
+            prompt[mid] = { class_type: "ImageToMask", inputs: { image: [lid, 0], channel: "red" } };
+            for (const node of Object.values(prompt)) for (const [k, v] of Object.entries(node.inputs || {})) if (Array.isArray(v) && String(v[0]) === d.maskFrom && +v[1] === 1) node.inputs[k] = [mid, 0];
+            maskId = lid;
+        }
+        Object.assign(values, d.values);
+        saveId = d.save;
+        found = d.found;
+    } else {
+        if (!Object.values(prompt).some((n) => n._meta && n._meta.title === "scumble:picture:0")) {
+            throw new Error("No node is titled \"Scumble crop\": title the LoadImage that takes Scumble's crop so (see docs/RECIPES.md, Comfy Cloud recipes).");
+        }
+        const save = saves.find((s) => s.result) || (saves.length === 1 ? saves[0] : null);
+        if (!save) throw new Error(saves.length ? "The graph has several SaveImage nodes: title the one Scumble reads \"Scumble result\"." : "The graph has no SaveImage node, so no picture would come back.");
+        saveId = save.id;
     }
-    const save = saves.find((s) => s.result) || (saves.length === 1 ? saves[0] : null);
-    if (!save) throw new Error(saves.length ? "The graph has several SaveImage nodes: title the one Scumble reads \"Scumble result\"." : "The graph has no SaveImage node, so no picture would come back.");
     if (maskId) {
         // the mask picture is opaque, white where to repaint: what read the LoadImage's MASK output reads its red channel
         let mid = "scumble_mask", n = 2;
@@ -827,11 +886,11 @@ function fromCloudGraph({ output, workflow, base, name, ids, date }) {
     const wf = workflow && typeof workflow === "object" && Array.isArray(workflow.nodes) && Array.isArray(workflow.links) ? workflow : null;
     const keepRows = base && base.providers && base.providers.comfycloud && Array.isArray(base.providers.comfycloud.settings)
         ? base.providers.comfycloud.settings.filter((s) => { const i = String(s.key || "").indexOf("|"); return i > 0 && prompt[s.key.slice(0, i)]; }) : [];
-    const options = { graph: prompt, pictures: maxPicture + 1, mask: !!maskId, values, needs, save: save.id, ...(wf ? { workflow: wf } : {}) };
+    const options = { graph: prompt, pictures: maxPicture + 1, mask: !!maskId, values, needs, save: saveId, ...(wf ? { workflow: wf } : {}) };
     const variant = {
         model: "", input: maskId ? "fill" : "edit", options, settings: keepRows, limits: { ...LIMITS_DEFAULT },
         refs: { name: (base && base.providers && base.providers.comfycloud && base.providers.comfycloud.refs && base.providers.comfycloud.refs.name) || REF_NAME_DEFAULT },
-        note: `A graph made for Comfy Cloud: ${marked.join(", ")}.`,
+        note: found ? `Read from the graph: ${found.join("; ")}.` : `A graph made for Comfy Cloud: ${marked.join(", ")}.`,
     };
     if (base) {
         if (!base.providers || !base.providers.comfycloud || !base.providers.comfycloud.options || !base.providers.comfycloud.options.graph) throw new Error(`"${base.name || base.id}" is no Comfy Cloud recipe: save this graph as a new recipe.`);
@@ -849,13 +908,173 @@ function fromCloudGraph({ output, workflow, base, name, ids, date }) {
         providers: { comfycloud: { ...variant, model: clean } } });
 }
 
-/** Whether a UI workflow or an API prompt has a node titled for Scumble (cloudMark). */
-function marksCloud(data) {
-    if (looksLikePrompt(data)) return Object.values(data).some((n) => cloudMark(n && n._meta && n._meta.title));
-    const wf = data && Array.isArray(data.nodes) ? data : data && data.workflow;
-    if (!wf || !Array.isArray(wf.nodes)) return false;
-    const all = [...wf.nodes, ...(((wf.definitions && wf.definitions.subgraphs) || []).flatMap((d) => d.nodes || []))];
-    return all.some((n) => n && cloudMark(n.title));
+// ---- the roles of a graph nobody titled (item 35 V6): Comfy's image-edit templates saved as they are -----------------
+
+const OUTPUT_ONLY = /^(PreviewImage|PreviewAny|MaskPreview|ImageCompare|SaveImage|SaveImageAdvanced|SaveAnimatedWEBP|SaveAnimatedPNG)$/;
+const RESULT_NODES = new Set(["SaveImage", "SaveImageAdvanced"]);
+const naturally = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true });
+
+/**
+ * The controls a UI workflow's subgraphs show (their promoted inputs: a template's prompt, seed, steps ...), as
+ * { name, node, input } with the node's flat id ("<instance>:<inner>", as ComfyUI flattens a graph for a run) and the
+ * inner input the control drives. Muted and bypassed instances show none. Needs no node definitions.
+ */
+function promotedOf(wf) {
+    const out = [];
+    if (!wf || !Array.isArray(wf.nodes)) return out;
+    const defs = new Map(((wf.definitions && wf.definitions.subgraphs) || []).map((d) => [d.id, d]));
+    const walk = (nodes, prefix, depth) => {
+        if (depth > 8) return;
+        for (const n of nodes || []) {
+            const def = n && defs.get(n.type);
+            if (!def || n.mode === 2 || n.mode === 4) continue;
+            const inner = new Map((def.nodes || []).map((x) => [String(x.id), x]));
+            const at = `${prefix}${n.id}:`;
+            for (const raw of def.links || []) {
+                const l = Array.isArray(raw) ? { origin: raw[1], originSlot: raw[2], target: raw[3], targetSlot: raw[4] } : { origin: raw.origin_id, originSlot: raw.origin_slot, target: raw.target_id, targetSlot: raw.target_slot };
+                if (String(l.origin) !== "-10") continue;
+                const name = def.inputs && def.inputs[+l.originSlot] && def.inputs[+l.originSlot].name;
+                const tn = inner.get(String(l.target));
+                const input = tn && tn.inputs && tn.inputs[+l.targetSlot] && tn.inputs[+l.targetSlot].name;
+                if (name && input) out.push({ name: String(name), node: at + String(l.target), input: String(input) });
+            }
+            walk(def.nodes, at, depth + 1);
+        }
+    };
+    walk(wf.nodes, "", 0);
+    return out;
+}
+
+/**
+ * Where Scumble's pictures and values go in an API prompt nobody titled for it (cloudMark): the LoadImage nodes in the
+ * order their consumers number them (image_1 / image1 / image before image_2 ...; the node id breaks a tie) as pictures
+ * 0, 1, ...; a LoadImage whose MASK output is read as the mask; the prompt, the negative and the seed from the
+ * subgraph controls of that name (`promoted`, promotedOf), else from the encoders' text inputs (positive when their
+ * conditioning reaches a "positive" input or no "negative" one) and the seed inputs; the one SaveImage(Advanced) as the
+ * result. Returns { pictures, maskFrom, values, save, found } or throws with what it could not tell.
+ */
+function detectRoles(prompt, promoted) {
+    const ids = Object.keys(prompt);
+    const users = new Map();   // "<id>|<slot>" -> [{ node, cls, input }]
+    for (const [nid, n] of Object.entries(prompt)) {
+        for (const [k, v] of Object.entries((n && n.inputs) || {})) {
+            if (!Array.isArray(v)) continue;
+            const key = `${v[0]}|${+v[1]}`;
+            if (!users.has(key)) users.set(key, []);
+            users.get(key).push({ node: nid, cls: n.class_type, input: k });
+        }
+    }
+    const consumers = (id, slot) => users.get(`${id}|${slot}`) || [];
+    const anyConsumers = (id) => { const out = []; for (const [key, list] of users) if (key.startsWith(id + "|")) out.push(...list); return out; };
+    const found = [];
+    const label = (id) => `${prompt[id].class_type} ${id}`;
+
+    // the pictures
+    const rank = (id) => {
+        let best = Infinity;
+        for (const c of consumers(id, 0)) {
+            if (OUTPUT_ONLY.test(c.cls)) continue;
+            const m = /(\d+)$/.exec(c.input);
+            best = Math.min(best, m ? +m[1] : 1);
+        }
+        return best;
+    };
+    const loads = ids.filter((id) => prompt[id].class_type === "LoadImage" && (consumers(id, 0).some((c) => !OUTPUT_ONLY.test(c.cls)) || consumers(id, 1).length));
+    loads.sort((a, b) => rank(a) - rank(b) || naturally(a, b));
+    if (!loads.length) throw new Error("No LoadImage takes a picture into this graph, so Scumble cannot tell where its crop goes: title one \"Scumble crop\".");
+    loads.forEach((id, k) => found.push(`${k === 0 ? "crop" : "picture " + k}: ${label(id)}`));
+    const masks = loads.filter((id) => consumers(id, 1).length);
+    if (masks.length > 1) throw new Error(`Several LoadImage nodes give a mask (${masks.join(", ")}): title the one Scumble's selection goes into "Scumble mask".`);
+    if (masks.length) found.push(`mask: the MASK of ${label(masks[0])}`);
+
+    // the prompt, the negative, the seed: the template's own controls first
+    const promotedTo = (re, type) => (promoted || []).filter((p) => re.test(p.name) && prompt[p.node] && prompt[p.node].inputs && typeof prompt[p.node].inputs[p.input] === type).map((p) => [p.node, p.input]);
+    let pos = promotedTo(/^(prompt|text|positive|positive_prompt)$/i, "string");
+    let neg = promotedTo(/^(negative|negative_prompt)$/i, "string");
+    let seed = promotedTo(/^(noise_)?seed$/i, "number");
+    if (!pos.length) {
+        // where a linked text starts: four hops along string links at most, to a node holding the text itself
+        const textSource = (link) => {
+            let at = link;
+            for (let hop = 0; hop < 4 && Array.isArray(at) && prompt[at[0]]; hop++) {
+                const src = prompt[at[0]], inputs = src.inputs || {};
+                if (typeof inputs.value === "string") return [String(at[0]), "value"];
+                if (typeof inputs.text === "string" && !Object.values(inputs).some(Array.isArray)) return [String(at[0]), "text"];
+                at = Object.entries(inputs).filter(([kk, vv]) => Array.isArray(vv) && /^(string|text|value|prompt)/i.test(kk)).map(([, vv]) => vv).pop();
+            }
+            return null;
+        };
+        // the encoders' text inputs, by where their conditioning goes: the first hop that reaches an input named
+        // "positive" or "negative" decides (further on, a node's positive output reaches the sampler's positive input
+        // whatever came in as negative); positive when that hop holds both, or when none is ever reached
+        const side = (start) => {
+            let edge = [start];
+            const seen = new Set([start]);
+            for (let depth = 0; depth < 8 && edge.length; depth++) {
+                const next = [];
+                let positive = false, negative = false;
+                for (const id of edge) {
+                    for (const c of anyConsumers(id)) {
+                        if (c.input === "positive") positive = true;
+                        if (c.input === "negative") negative = true;
+                        if (!seen.has(c.node)) { seen.add(c.node); next.push(c.node); }
+                    }
+                }
+                if (positive) return "positive";
+                if (negative) return "negative";
+                edge = next;
+            }
+            return "positive";
+        };
+        for (const id of ids) {
+            const n = prompt[id];
+            if (!/Encode|Text/.test(n.class_type) || /Generate|Preview|Show|Note|Save/.test(n.class_type)) continue;
+            for (const [k, v] of Object.entries(n.inputs || {})) {
+                // a text that comes in by link (a text node, a concatenation of a fixed word and one): the text node at its end
+                const at = typeof v === "string" ? [id, k] : Array.isArray(v) && /^(text|prompt|positive)$/i.test(k) ? textSource(v) : null;
+                if (!at) continue;
+                if (/^negative(_prompt)?$/i.test(k)) { neg.push(at); continue; }
+                if (!/^(text|prompt|positive)$/i.test(k)) continue;
+                (side(id) === "positive" ? pos : neg).push(at);
+            }
+        }
+    }
+    if (!seed.length) for (const id of ids) for (const [k, v] of Object.entries(prompt[id].inputs || {})) if (/^(noise_)?seed$/.test(k) && typeof v === "number") seed.push([id, k]);
+    if (pos.length) found.push(`prompt: ${pos.map(([id, k]) => `${label(id)}.${k}`).join(", ")}`);
+    if (neg.length) found.push(`negative: ${neg.map(([id, k]) => `${label(id)}.${k}`).join(", ")}`);
+    if (seed.length) found.push(`seed: ${seed.map(([id, k]) => `${label(id)}.${k}`).join(", ")}`);
+
+    // the result
+    const saves = ids.filter((id) => RESULT_NODES.has(prompt[id].class_type));
+    const fed = (id) => { const v = prompt[id].inputs && prompt[id].inputs.images; return Array.isArray(v) && prompt[v[0]] && prompt[v[0]].class_type === "LoadImage"; };
+    const real = saves.filter((id) => !fed(id));
+    // several: the one a sampler made (a sampler within twelve hops upstream), when that is one
+    const sampled = (id) => {
+        let edge = [id];
+        const seen = new Set(edge);
+        for (let depth = 0; depth < 12 && edge.length; depth++) {
+            const next = [];
+            for (const x of edge) {
+                for (const v of Object.values((prompt[x] && prompt[x].inputs) || {})) {
+                    if (!Array.isArray(v) || seen.has(String(v[0])) || !prompt[v[0]]) continue;
+                    if (/Sampler/.test(prompt[v[0]].class_type)) return true;
+                    seen.add(String(v[0]));
+                    next.push(String(v[0]));
+                }
+            }
+            edge = next;
+        }
+        return false;
+    };
+    const made = real.length > 1 ? real.filter(sampled) : real;
+    const save = made.length === 1 ? made[0] : real.length === 1 ? real[0] : saves.length === 1 ? saves[0] : null;
+    if (!save) throw new Error(saves.length ? `The graph has several SaveImage nodes (${saves.join(", ")}): title the one Scumble reads "Scumble result".` : "The graph has no SaveImage node, so no picture would come back.");
+    found.push(`result: ${label(save)}`);
+    const values = {};
+    if (pos.length) values.prompt = pos;
+    if (neg.length) values.negative = neg;
+    if (seed.length) values.seed = seed;
+    return { pictures: loads, maskFrom: masks[0] || null, values, save, found };
 }
 
 /** Whether a UI workflow or an API prompt holds an Inpaint Canvas node (subgraph definitions included). */
@@ -994,7 +1213,7 @@ async function importFile(file, objectInfo, opts) {
     // a graph made for Comfy Cloud (item 35 V5c): no Inpaint Canvas node, its nodes marked by title
     const graphLike = data && (Array.isArray(data.nodes) || looksLikePrompt(data) || (data.workflow && Array.isArray(data.workflow.nodes)));
     if (graphLike && !data.kind && !holdsCanvas(data)) {
-        if (!marksCloud(data)) throw new Error("This graph has no Inpaint Canvas node. A graph made for Comfy Cloud needs its nodes titled for Scumble: \"Scumble crop\" on the LoadImage of the crop, and more (docs/RECIPES.md, Comfy Cloud recipes).");
+
         const stem0 = path.basename(file).replace(/\.json$/i, "");
         let output = data, wf = null;
         if (!looksLikePrompt(data)) {
@@ -1004,7 +1223,9 @@ async function importFile(file, objectInfo, opts) {
             output = fromWorkflow(wf, info, meta, { noCanvas: true }).prompt;
         }
         const ids = (await list(opts && opts.builtinDir ? opts.builtinDir : path.join(__dirname, "..", "..", "recipes"))).map((r) => r.id);
-        const made = fromCloudGraph({ output, workflow: wf, name: stem0, ids, date: meta.date });
+        let made;
+        try { made = fromCloudGraph({ output, workflow: wf, name: stem0, ids, date: meta.date, promoted: wf ? promotedOf(wf) : [] }); }
+        catch (err) { throw new Error(`This graph has no Inpaint Canvas node, and Scumble could not read it as a Comfy Cloud graph: ${err.message}`); }
         const savedCloud = await save(made);
         return normalize({ ...made, file: path.basename(savedCloud), source: "user" });
     }
@@ -1034,4 +1255,4 @@ async function importFile(file, objectInfo, opts) {
     return normalize({ ...recipe, file: path.basename(saved), source: "user" });
 }
 
-module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, fromCloudGraph, cloudMark, detach, userDir, _normalize: normalize };
+module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, fromCloudGraph, cloudMark, detectRoles, promotedOf, detach, userDir, _normalize: normalize };

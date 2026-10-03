@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 afternoon: 0.1.39 is Latest; item 35 V1-V5 built, live checks next, no release yet)
+## Where things stand (2026-10-03 afternoon: 0.1.39 is Latest; item 35 V1-V5 and V6 step 1 built, V6 steps 2-3 next, no release yet)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -119,7 +119,16 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   export): *Cloud copy* under *Settings › Recipes*, the import of a Comfy Cloud export and *Save as new recipe* in the
   window, both by node titles ("Scumble crop" and more, docs/RECIPES.md "Comfy Cloud recipes"). Gate `comfyview` 19 of
   19, `recipes` 92, `cloudgraph` 11, `lint types help` PASS. **Item 35 is built (V1-V5).**
-- **Next: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
+- **After the first looks (the same afternoon, the user at the machine):** sign-in popups as app windows on both
+  targets (a ComfyUI's Comfy account login, 18776ab); a page that keeps unsaved changes asks Leave / Stay instead of
+  hanging the bar on "Loading" (f402496); the save buttons on with the page, a save asks the page again (a ComfyUI with
+  many node packs is set up after 20 s, 706f60b); **Cancel for API runs** beside the title row's timer (4fc179a);
+  **V6 step 1**: Comfy's templates read without titles (`detectRoles`), the subgraph fixes in `fromWorkflow`
+  (docs/PLAN_COMFY_VIEW.md §3 V6). The local *Qwen Image Edit 2.1* recipe failed on the user's ComfyUI
+  (`TextEncodeQwenImage21: cannot reshape tensor of 0 elements`): not looked at yet.
+- **Next: V6 steps 2 and 3** (the Comfy Cloud mode in the switch, the model-file check), then the live checks, then the
+  release. Old line kept below for the checks:
+- **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
   ist"): a recipe opened and saved back on the user's ComfyUI (queues nothing), the Comfy Cloud login in the window
   (which sign-ins work), one cloud run with the user's key (credits), a RunPod pod if the user starts one; then the
   release chain (docs/RELEASING.md), only on the user's word. Pushed to origin/main, no tag. Open from the list as before: the live checks of FLUX 3 on fal,

@@ -35,6 +35,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   Comfy Cloud becomes a recipe too: import its exported `.json`, or save it from the ComfyUI window, after titling its
   nodes for Scumble ("Scumble crop", "Scumble prompt" and so on; docs/RECIPES.md lists them). Before a run Scumble
   checks that Comfy Cloud has every node of the graph and names a missing one.
+- **Comfy's templates as they are.** A workflow without the Inpaint Canvas node needs no titles any more: Scumble reads
+  which picture is the crop, where the prompt, the negative and the seed go and which node gives the result, and says
+  what it read when it saves the recipe. Comfy's image-edit templates (Qwen Image Edit, Flux.2 Klein and more) save
+  straight from the ComfyUI window this way; titles are only needed to correct a wrong reading.
+- **Importing workflows with subgraphs** reads them correctly: a newer subgraph's inputs are matched by name (before,
+  a picture could land on a model loader's input), and a muted or bypassed subgraph adds none of its nodes.
 
 ## 0.1.39 — 2026-10-03
 

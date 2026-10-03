@@ -321,6 +321,21 @@ none of V1-V5 may change that:
   Comfy Cloud (`comfyRecipe` reads `options.graph` and `options.workflow`; *Edit in ComfyUI* shows for it). The run
   reads `options.save` (the SaveImage the graph names) first. Tests: `recipes_test.js` section 8 (92 checks in all),
   `cloudgraph_test.js` 11, gate `comfyview` 19 of 19.
+- **V6, Comfy Cloud templates (the user, 2026-10-03, after the first looks):** the rendering runs on Comfy Cloud
+  ("das rendering soll aber nicht lokal laufen sondern in comfycloud"); Comfy's own templates are the way to a cloud
+  recipe, not copies of local recipes ("eher eins der comfyui cloud templates"); no retitling ("geht es nicht ohne
+  retitle?"); a switch local / api / Comfy Cloud in the editor ("wenn man den auswahl local/api/comfycloud auf comfy
+  cloud stellt und rezept wählt läuft das rendering in comfycloud"). Three steps:
+  1. **built 2026-10-03:** the roles read from a graph nobody titled (`recipes.detectRoles`, `promotedOf`; titles
+     still win), the fixes it needed in `fromWorkflow` (a newer subgraph's inputs by name and its promoted values by the
+     definition's order; muted / bypassed instances add no inner nodes), fixtures `tools/refs/comfy_templates/` (26
+     image-edit templates, MIT, and the node definitions they use), `recipes_test.js` section 9;
+  2. **next:** the third mode **Comfy Cloud** in the editor's local / api select (the cloud recipes there instead of
+     under api; the editor's mode list is shared with the node build, so the host offers the modes); the *Cloud copy*
+     button may go once ComfyUI recipes can be picked there (detached on the fly);
+  3. **next:** the model files of a cloud run checked against Comfy Cloud's node list before any upload (a missing
+     file named, with a near name the cloud has).
+  Open: which templates make sense as shipped Comfy Cloud recipes (the user offered to pick them, 2026-10-03).
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
   loopback run; one live run on Comfy Cloud with the user's key (credits). Possibly two sessions.
