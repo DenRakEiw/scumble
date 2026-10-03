@@ -639,7 +639,7 @@ the adapter builds a workflow from LoadImage, one Partner Node named in `options
 `ByteDanceSeedreamNodeV3`, `Flux2ImageNode`, `FluxProFillNode`, `QwenImageEditApi`) and
 SaveImage (only the pictures the node wires are uploaded; how many each node takes is in "Reference pictures"
 above), submits it to `/api/prompt`, polls `/api/job/<id>/status`, reads the image from
-`/api/history/<id>` and `/api/view`; settings keys are the node's full input keys, dotted
+`/api/jobs/<id>` (its `outputs`; Comfy Cloud stopped serving `/api/history` by 2026-10-03) and `/api/view`; settings keys are the node's full input keys, dotted
 for the model combos such as `model.quality`; needs a paid plan), **openrouter** (`POST
 /api/v1/images`, one synchronous request with the pictures inline as data URLs and the image back
 as base64; no mask input, so a `fill` variant sends the mask as a second picture as the Gemini

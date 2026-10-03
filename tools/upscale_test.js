@@ -211,7 +211,7 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
                 { match: (c) => c.url === "https://cloud.comfy.org/api/upload/image", answer: () => ({ name: "scumble-crop.png", subfolder: "" }) },
                 { match: (c) => c.url === "https://cloud.comfy.org/api/prompt", answer: (c) => { prompt = c.body.prompt; return { prompt_id: "p1" }; } },
                 { match: (c) => c.url.endsWith("/api/job/p1/status"), answer: () => ({ status: "success" }) },
-                { match: (c) => c.url.endsWith("/api/history/p1"), answer: () => ({ p1: { outputs: { 9: { images: [{ filename: "out.png", subfolder: "", type: "output" }] } } } }) },
+                { match: (c) => c.url.endsWith("/api/jobs/p1"), answer: () => ({ id: "p1", status: "completed", outputs: { 9: { images: [{ filename: "out.png", subfolder: "", type: "output" }] } } }) },
                 { match: (c) => c.url.startsWith("https://cloud.comfy.org/api/view"), answer: () => png(OUT) },
             ]);
             const out = await cc.upscale(req, { key: "cc-key-123456", fetch: s.fetch, log: () => {}, sleep: async () => {} });

@@ -3,6 +3,13 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.40 — 2026-10-03
+
+- **Comfy Cloud runs bring their result back again.** Comfy Cloud no longer answers the endpoint Scumble read the
+  finished picture from, so every run there (the partner models and the upscalers too) ended with "This endpoint is
+  not available on Comfy Cloud" after the job had run and been billed. Scumble now reads the result, and the cause of a
+  failed job, from the job's own details.
+
 ## 0.1.39 — 2026-10-03
 
 - **Boxes for Ideogram 4.** The boxes in the prompt now go with Ideogram 4 on fal too, as Ideogram's own structured

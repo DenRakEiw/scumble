@@ -9,7 +9,8 @@
 //
 // POST /api/upload/image (multipart image, type input) -> { name, subfolder }; POST /api/prompt
 // { prompt, client_id } -> { prompt_id }; GET /api/job/<id>/status until success / error;
-// GET /api/history/<id> -> outputs -> images [{ filename, subfolder, type }]; GET /api/view
+// GET /api/jobs/<id> -> outputs -> images [{ filename, subfolder, type }] (Comfy Cloud no longer serves
+// /api/history: "This endpoint is not available on Comfy Cloud", measured 2026-10-03); GET /api/view
 // answers 302 to a signed URL that must be fetched without the key (redirect: manual).
 //
 // A recipe variant names the partner node and its model choice; the adapter knows how each
@@ -239,29 +240,38 @@ async function download(ctx, file) {
     return { bytes: Buffer.from(await r.arrayBuffer()), mime: r.headers.get("content-type") || "image/png" };
 }
 
+/** The job's details (GET /api/jobs/<id>: status, outputs, execution_error); Comfy Cloud no longer serves /api/history. */
+function jobDetails(ctx, id) {
+    return ctx.fetch(`${BASE}/api/jobs/${id}`, { headers: { "X-API-Key": ctx.key } });
+}
+
 /**
- * Why a job failed. The status endpoint mostly says just "error"; the node's exception lives in
- * the job's history entry (status.messages, an execution_error with node_type,
- * exception_type, exception_message), so that is read when the status carries nothing.
+ * Why a job failed. The status endpoint mostly says just "error"; the node's exception lives in the job's details
+ * (execution_error with node_type, exception_type, exception_message; ComfyUI's history form, status.messages, is read
+ * too), so that is read when the status carries nothing.
  */
 async function failureDetail(ctx, id, status, info) {
     const brief = (v) => (typeof v === "string" ? v : JSON.stringify(v)).slice(0, 400);
+    const said = (e) => [e.node_type, e.exception_type, e.exception_message].filter(Boolean).join(": ") || brief(e);
     let detail = info.messages || info.execution_error || info.error || info.error_message || info.message || info.detail;
     if (!detail) {
         try {
-            const h = await ctx.fetch(`${BASE}/api/history/${id}`, { headers: { "X-API-Key": ctx.key } });
+            const h = await jobDetails(ctx, id);
             if (h.ok) {
-                const hist = await h.json();
-                const entry = hist[id] || hist;
-                const st = entry.status || {};
+                const job = await h.json();
+                const entry = (job && job[id]) || job || {};
+                const st = entry.status && typeof entry.status === "object" ? entry.status : {};
                 const msgs = Array.isArray(st.messages) ? st.messages : [];
                 const err = msgs.find((m) => Array.isArray(m) && /error/i.test(String(m[0])));
-                const e = err && err[1];
-                if (e && typeof e === "object") detail = [e.node_type, e.exception_type, e.exception_message].filter(Boolean).join(": ") || brief(e);
+                const e = entry.execution_error || (err && err[1]);
+                if (e && typeof e === "object") detail = said(e);
                 else if (st.status_str && st.status_str !== status) detail = st.status_str;
-                else if (Object.keys(entry).length) detail = "history " + brief(entry);
-            } else detail = `history ${h.status}`;
-        } catch (err) { detail = "history unreadable: " + (err.message || err); }
+                else {
+                    const { workflow: _w, ...rest } = entry;
+                    if (Object.keys(rest).length) detail = "job " + brief(rest);
+                }
+            } else detail = `job details ${h.status}`;
+        } catch (err) { detail = "job details unreadable: " + (err.message || err); }
     }
     const extra = Object.keys(info).filter((k) => k !== "status").length ? ` [status ${brief(info).slice(0, 200)}]` : "";
     return `${status}${detail ? " - " + brief(detail) : ""}${detail ? "" : extra}`;
@@ -307,13 +317,20 @@ async function run(req, ctx, waitMs) {
             status = String(info.status || "").toLowerCase();
         }
         if (status !== "success" && status !== "completed") throw new Error(`Comfy Cloud ${node}: ${await failureDetail(ctx, id, status, info)}`);
-        const h = await ctx.fetch(`${BASE}/api/history/${id}`, { headers: { "X-API-Key": ctx.key } });
-        if (!h.ok) throw new Error(`Comfy Cloud history: ${await readError(h)}`);
-        const hist = await h.json();
-        const entry = hist[id] || hist;
-        let file = null;
-        for (const out of Object.values(entry.outputs || {})) { if (out && Array.isArray(out.images) && out.images.length) { file = out.images[0]; break; } }
-        if (!file) throw new Error("Comfy Cloud: the job finished without an image (" + JSON.stringify(entry).slice(0, 300) + ")");
+        // the job's outputs (ComfyUI's outputs object, keyed by node); a job just finished may not list them yet
+        let file = null, entry = {};
+        for (let tries = 0; !file && tries < 4; tries++) {
+            if (tries) await pause(POLL_MS);
+            const h = await jobDetails(ctx, id);
+            if (!h.ok) throw new Error(`Comfy Cloud job: ${await readError(h)}`);
+            const job = await h.json();
+            entry = (job && job[id]) || job || {};
+            for (const out of Object.values(entry.outputs || {})) { if (out && Array.isArray(out.images) && out.images.length) { file = out.images[0]; break; } }
+        }
+        if (!file) {
+            const { workflow: _w, ...rest } = entry;
+            throw new Error("Comfy Cloud: the job finished without an image (" + JSON.stringify(rest).slice(0, 300) + ")");
+        }
         const got = await download(ctx, file);
         return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id } };
 }
