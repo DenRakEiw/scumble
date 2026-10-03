@@ -425,6 +425,51 @@ async function main() {
         check("removing the copy brings the shipped recipe back", back && back.source === "builtin" && back.prompt.sigmas.inputs.denoise !== 0.9);
     });
 
+    // ---- 7. the cloud form: a ComfyUI recipe without the node (item 35 V5) ---------------
+    await section("7. detach: a ComfyUI recipe without the Inpaint Canvas node", async () => {
+        const comfy = (await recipes.list(RECIPES)).filter((r) => r.kind !== "provider" && r.source === "builtin");
+        const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] } };
+        for (const r of comfy) {
+            const { recipe: d, notes, needs } = recipes.detach(r);
+            const v = d.providers.comfycloud;
+            const g = v.options.graph;
+            const dangling = [];
+            for (const [id, n] of Object.entries(g)) for (const [k, x] of Object.entries(n.inputs || {})) if (Array.isArray(x) && !g[x[0]]) dangling.push(`${id}.${k}`);
+            const pics = Object.values(g).filter((n) => n.class_type === "LoadImage" && /^scumble:picture:\d+$/.test((n._meta || {}).title || ""));
+            const save = Object.values(g).find((n) => n.class_type === "SaveImage");
+            const res = r.result.split(":");
+            const w = want[r.id] || {};
+            check(`${r.id}: no Inpaint Canvas node and nothing that points at it, a SaveImage on the result`,
+                !needs.includes("InpaintCanvas") && !Object.values(g).some((n) => n.class_type === "InpaintCanvas" || n.class_type === "ImageFromBatch") && !dangling.length && save && save.inputs.images[0] === res[0] && save.inputs.images[1] === +res[1],
+                short({ dangling, needs }));
+            check(`${r.id}: its pictures as LoadImage nodes (${w.pictures}), the run's values (${(w.values || []).join(", ") || "none"}), no mask`,
+                v.options.pictures === w.pictures && pics.length === w.pictures && eq(Object.keys(v.options.values).sort(), w.values) && v.options.mask === false && v.input === "edit" && !notes.length,
+                short({ pictures: v.options.pictures, values: v.options.values, notes }));
+            const n = recipes._normalize(JSON.parse(JSON.stringify(d)));
+            const rowsOk = v.settings.length === r.settings.length && v.settings.every((s, i) => s.key === `${r.settings[i].node}|${r.settings[i].input}` && s.label === r.settings[i].label && s.index === r.settings[i].index);
+            const cin = r.prompt[r.canvas].inputs;
+            check(`${r.id}: a provider recipe on Comfy Cloud, its Settings rows keyed by node and input, the crop limits from the node`,
+                n.kind === "provider" && eq(n.providerIds, ["comfycloud"]) && n.id === r.id + "_cloud" && rowsOk && n.providers.comfycloud.limits.max === (cin.target_size || 2048) && n.providers.comfycloud.limits.step === cin.multiple_of,
+                short({ ids: n.providerIds, limits: n.providers.comfycloud.limits, rows: v.settings.map((s) => s.key) }));
+            check(`${r.id}: the recipe itself is left as it was`, !!r.prompt[r.canvas] && r.prompt.img0 ? r.prompt.img0.class_type === "ImageFromBatch" : true);
+        }
+        const base = comfy.find((r) => r.id === "flux2_klein_local");
+        const withMask = JSON.parse(JSON.stringify(base));
+        withMask.prompt.extra = { class_type: "SetLatentNoiseMask", inputs: { samples: ["noise", 0], mask: [base.canvas, 1] } };
+        withMask.prompt.vae_enc = { class_type: "VAEEncode", inputs: { pixels: [base.canvas, 0], vae: ["vae", 0] } };
+        const dm = recipes.detach(withMask);
+        const gm = dm.recipe.providers.comfycloud.options.graph;
+        check("crop_mask becomes LoadImage + ImageToMask (a fill), crop_image used whole the crop alone with a note",
+            dm.recipe.providers.comfycloud.input === "fill" && gm[gm.extra.inputs.mask[0]].class_type === "ImageToMask" && gm[gm.vae_enc.inputs.pixels[0]]._meta.title === "scumble:picture:0" && dm.notes.length === 1,
+            short({ mask: gm.extra.inputs.mask, pixels: gm.vae_enc.inputs.pixels, notes: dm.notes }));
+        const bad = (patch) => { const x = JSON.parse(JSON.stringify(base)); patch(x); return thrown(() => recipes.detach(x)); };
+        const e1 = await bad((x) => { x.prompt.st = { class_type: "Stitch", inputs: { info: [x.canvas, 4] } }; });
+        const e2 = await bad((x) => { x.prompt.img0.inputs.length = 2; });
+        const e3 = await thrown(() => recipes.detach({ kind: "provider", id: "p", providers: {} }));
+        check("refused: the stitch_info output, a pick of two pictures at once, a provider recipe",
+            /stitch_info/.test(e1 || "") && /takes 2 pictures/.test(e2 || "") && /Only a ComfyUI recipe/.test(e3 || ""), short({ e1, e2, e3 }));
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

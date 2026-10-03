@@ -2,7 +2,8 @@
 
 **Status (2026-10-03, afternoon):** **V1 to V4 built** (the window, the bar, the start page, the auth, the *ComfyUI*
 button; a recipe opened as its graph; the graph saved as a recipe; Comfy Cloud in the window: "V1 ... V4 as built"
-under §3), V5 not started; the look with the user's Comfy Cloud login is open. Five steps (V1-V5), one
+under §3), V5 in parts: **V5a built** (`recipes.detach`), V5b (the run) and V5c (how a user gets a cloud recipe) next;
+the look with the user's Comfy Cloud login is open. Five steps (V1-V5), one
 per session (the user's rule), **released together as one update** after V5. The user answered §6 the same day: a
 window of its own, Comfy Cloud API access yes, *Save to recipe* overwrites, all in one update; then the *ComfyUI*
 button after *Help* and *Assistant*, and **Scumble keeps working without any ComfyUI installed** (§2.5, a rule for
@@ -281,6 +282,22 @@ none of V1-V5 may change that:
   no auth headers go to the cloud. A recipe with the Inpaint Canvas node is not loaded there (the bar's note says why)
   and the save buttons are off on the cloud until V5. A `--no-comfy` start shows the start page for the cloud as well,
   unless a test passes a stub's URL. Not done: the look with the user's login (which sign-ins work in the window).
+- **V5a as built (2026-10-03):** `recipes.detach(recipe)` -> `{ recipe, notes, needs }`, plain (tested in
+  `tools/recipes_test.js` section 7 on the three shipped ComfyUI recipes, a mask and a whole-batch case, three
+  refusals). The cloud form is **a provider recipe with one variant, `comfycloud`** (id `<id>_cloud`), so the whole
+  provider path (crop, picture layout, key, stitch) carries it: `options.graph` (the graph without the canvas node),
+  `options.pictures` (how many pictures it takes), `options.mask`, `options.values` ({ prompt, negative, seed,
+  denoise, mode, width, height } -> the [node, input] pairs the run writes), `options.needs`; Settings rows keyed
+  `"<node>|<input>"`; `limits` from the canvas node's `target_size` (else 2048) and `multiple_of`; `input` "fill" when
+  the graph reads `crop_mask`, else "edit". Each `ImageFromBatch` (one picture at index k) on `crop_image` becomes a
+  `LoadImage` titled `scumble:picture:<k>` **under the same node id** (what read the pick reads the picture); a picture
+  past the run's last is to be the last one (ImageFromBatch clamps); `crop_image` used whole gets picture 0 and a note;
+  `crop_mask` becomes `LoadImage` "scumble:mask" + `ImageToMask` (red). All three shipped recipes detach: Flux.2 Klein
+  takes 4 pictures (prompt, seed), Qwen Image Edit 2.1 takes 10 (prompt, negative, seed), the upscale model 1.
+  Open for V5b: `comfycloud.js` builds the run from `options.graph` (upload the crop, the references by picture
+  index, the mask; fill the titled LoadImage nodes; write the values and the rows), `layout(req)` for it, the
+  `/object_info` check per key. For V5c, the user's choice: how a cloud recipe comes about (a button per ComfyUI
+  recipe that saves `<id>_cloud`, or a Comfy Cloud provider offered on every ComfyUI recipe that detaches).
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
   loopback run; one live run on Comfy Cloud with the user's key (credits). Possibly two sessions.

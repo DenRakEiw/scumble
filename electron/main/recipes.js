@@ -730,6 +730,109 @@ function fromGraph({ output, workflow, objectInfo, base, name, ids, date }) {
     return /** @type {Recipe} */ ({ id, name: clean, ...kept, description: `Saved from ComfyUI on ${date}.`, ...graph });
 }
 
+// The Inpaint Canvas node's outputs (node repo nodes.py RETURN_NAMES) as detach() treats them
+const CANVAS_OUTPUTS = ["crop_image", "crop_mask", "image", "mask", "stitch_info", "crop_width", "crop_height", "prompt", "control_image", "denoise", "seed", "mode", "negative"];
+const DETACH_VALUES = /** @type {Record<number, string>} */ ({ 5: "width", 6: "height", 7: "prompt", 9: "denoise", 10: "seed", 11: "mode", 12: "negative" });
+const DETACH_DEFAULTS = /** @type {Record<string, any>} */ ({ width: 1024, height: 1024, prompt: "", negative: "", seed: 0, denoise: 1, mode: "" });
+
+/**
+ * A ComfyUI recipe in the cloud form (docs/PLAN_COMFY_VIEW.md §2.4, item 35 V5): the same graph without the Inpaint
+ * Canvas node, for a server that has none (Comfy Cloud, which takes no custom nodes). Scumble crops and stitches
+ * itself, as for every provider, and the graph takes the pictures through core nodes:
+ * - `crop_image` picked by `ImageFromBatch` (one picture at index k) -> that node becomes a `LoadImage` of picture k
+ *   (0 the crop, then the Original where it goes, then the references: the node's own batch order, which is also the
+ *   order the provider path sends them in); a picture past the run's last is the last one, as ImageFromBatch clamps;
+ *   `crop_image` used whole -> picture 0 (the batch holds the crop alone without references), with a note;
+ * - `crop_mask` -> `LoadImage` + `ImageToMask` (red: the mask picture is white where to repaint);
+ * - crop_width, crop_height, prompt, negative, seed, denoise, mode -> values the run writes into those inputs;
+ * - `image`, `mask` (full size), `stitch_info`, `control_image` -> refused by name;
+ * - the result -> a `SaveImage` the run reads back; the Settings rows -> provider rows keyed "<node>|<input>".
+ * The new nodes are titled "scumble:picture:<k>" and "scumble:mask" (the run finds them by title).
+ * @param {Recipe} recipe
+ * @returns {{ recipe: Recipe, notes: string[], needs: string[] }}
+ */
+function detach(recipe) {
+    if (!recipe || recipe.kind === "provider" || !recipe.prompt || !recipe.canvas || !recipe.prompt[recipe.canvas]) throw new Error("Only a ComfyUI recipe can be turned into a Comfy Cloud recipe.");
+    const canvasId = String(recipe.canvas);
+    /** @type {Record<string, any>} */
+    const prompt = JSON.parse(JSON.stringify(recipe.prompt));
+    delete prompt[canvasId];
+    const m = /^(.+):(\d+)$/.exec(String(recipe.result || ""));
+    if (!m || !prompt[m[1]]) throw new Error(`The recipe's result "${recipe.result || ""}" names no node of its graph.`);
+    const taken = new Set(Object.keys(recipe.prompt));
+    const newId = (/** @type {string} */ stem) => { let id = `scumble_${stem}`, n = 2; while (taken.has(id)) id = `scumble_${stem}_${n++}`; taken.add(id); return id; };
+    /** @type {Record<string, [string, string][]>} */
+    const values = {};
+    const notes = [];
+    let maxPicture = 0, maskLink = null;
+    const loadPicture = (k) => ({ class_type: "LoadImage", inputs: { image: "" }, _meta: { title: `scumble:picture:${k}` } });
+    let whole = null;
+    for (const [id, node] of Object.entries(recipe.prompt)) {
+        if (id === canvasId || !node || !node.inputs) continue;
+        for (const [name, v] of Object.entries(node.inputs)) {
+            if (!Array.isArray(v) || String(v[0]) !== canvasId) continue;
+            const slot = +v[1];
+            const what = CANVAS_OUTPUTS[slot] || `setting_${slot - FIXED_OUTPUTS + 1}`;
+            if (slot === 0) {
+                const pick = node.class_type === "ImageFromBatch" && name === "image";
+                const len = pick ? +(node.inputs.length == null ? 1 : node.inputs.length) : 0;
+                if (pick && len === 1 && Number.isFinite(+node.inputs.batch_index || 0)) {
+                    const k = Math.max(0, Math.round(+node.inputs.batch_index || 0));
+                    prompt[id] = loadPicture(k);     // same id: what read the pick reads the picture
+                    maxPicture = Math.max(maxPicture, k);
+                } else if (pick) {
+                    throw new Error(`The node ${id} (ImageFromBatch) takes ${len} pictures of crop_image at once; a Comfy Cloud recipe takes them one by one.`);
+                } else {
+                    if (!whole) { whole = newId("picture_0"); prompt[whole] = loadPicture(0); }
+                    prompt[id].inputs[name] = [whole, 0];
+                    notes.push(`${node.class_type} ${id} takes crop_image whole: it gets the crop alone`);
+                }
+            } else if (slot === 1) {
+                if (!maskLink) {
+                    const img = newId("mask_picture");
+                    prompt[img] = { class_type: "LoadImage", inputs: { image: "" }, _meta: { title: "scumble:mask" } };
+                    const mid = newId("mask");
+                    prompt[mid] = { class_type: "ImageToMask", inputs: { image: [img, 0], channel: "red" } };
+                    maskLink = [mid, 0];
+                }
+                prompt[id].inputs[name] = maskLink;
+            } else if (DETACH_VALUES[slot]) {
+                const key = DETACH_VALUES[slot];
+                (values[key] = values[key] || []).push([id, name]);
+                prompt[id].inputs[name] = DETACH_DEFAULTS[key];
+            } else {
+                throw new Error(`The node ${id} (${node.class_type}) reads the Inpaint Canvas node's ${what}, which a Comfy Cloud recipe cannot give.`);
+            }
+        }
+    }
+    const save = newId("save");
+    prompt[save] = { class_type: "SaveImage", inputs: { images: [m[1], +m[2]], filename_prefix: "scumble" } };
+    const canvasInputs = recipe.prompt[canvasId].inputs || {};
+    const step = +canvasInputs.multiple_of > 0 ? +canvasInputs.multiple_of : 16;
+    const max = +canvasInputs.target_size > 0 ? +canvasInputs.target_size : 2048;
+    const rows = (recipe.settings || []).filter((s) => s && s.node && s.input && prompt[s.node]).map((s) => ({ index: s.index, key: `${s.node}|${s.input}`, label: s.label || `${s.node} · ${s.input}`, ...(s.spec !== undefined ? { spec: s.spec } : {}) }));
+    const needs = Array.from(new Set(Object.values(prompt).map((n) => n.class_type)));
+    const name = recipe.name || recipe.id;
+    /** @type {Recipe} */
+    const out = {
+        id: `${recipe.id}_cloud`, name: `${name} (Comfy Cloud)`, kind: "provider",
+        description: `${name} without the Inpaint Canvas node, run on Comfy Cloud; Scumble crops and stitches.`,
+        ...(recipe.task ? { task: recipe.task } : {}),
+        default: "comfycloud",
+        providers: {
+            comfycloud: {
+                model: name, input: maskLink ? "fill" : "edit",
+                options: { graph: prompt, pictures: maxPicture + 1, mask: !!maskLink, values, needs },
+                settings: rows,
+                limits: { ...LIMITS_DEFAULT, max, step, aspects: [] },
+                refs: { name: (recipe.refs && recipe.refs.name) || REF_NAME_DEFAULT },
+                note: "A ComfyUI recipe without its Inpaint Canvas node, on Comfy Cloud's GPUs.",
+            },
+        },
+    };
+    return { recipe: out, notes, needs };
+}
+
 /** A provider recipe names its variants in a `providers` map, or, in the old shape, one `provider`. */
 function hasVariants(data) {
     const p = data.providers;
@@ -777,4 +880,4 @@ async function importFile(file, objectInfo) {
     return normalize({ ...recipe, file: path.basename(saved), source: "user" });
 }
 
-module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, userDir, _normalize: normalize };
+module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, detach, userDir, _normalize: normalize };
