@@ -115,8 +115,20 @@ fixes 8443bd9). The 0.1.37 block is in `docs/HISTORY.md`.
   lint, types; Node:
   updater, restart, quit, manual, boxes, flux3, comfyrouter, openrouter, recipes, refs_layout, ideogram45. No exe
   gates (that is the release's). One look at the update question in a dev instance (a screenshot, fine).
-- **Next:** the user's word on A3 (the 0.1.38 release, with or without B1/B3) and on B2 (its live check §6.4 needs
-  their fal key). Otherwise B4 fal, B5 Oxen, B6 WaveSpeed (`docs/PLAN_FLUX3.md` has the notes).
+- **Next (the user, 2026-10-03 morning): 0.1.38 is released WITH B1 and B3** ("kann ohne test released werden yolo",
+  then "ne, mach doch den test"): **first the live test of B1 / B3, then the A3 chain** (`docs/RELEASING.md`). Ready
+  for the test: the scratch profile `dist/live-keys` holds the Comfy key (from the Comfy Router test of 2026-09-23);
+  the **OpenRouter key the user types in themselves** (they were asked; whether they did is unknown: start the dev
+  instance on that profile, `./node_modules/.bin/electron . --remote-debugging-port=9555
+  --user-data-dir=F:/canvas/dist/live-keys --no-comfy`, Bash `run_in_background` with `timeout` 7200000 or it dies
+  after 30 min, and ask them to check Settings › API providers). The script `dist/live_flux3_hosts.py`
+  (`SCUMBLE_CDP_PORT=9555 python dist/live_flux3_hosts.py --dry`, then without `--dry`, or one run like
+  `openrouter:plain`): four 1k edits on `flux3_live_base.png` (copied into the profile), plain (cow -> white horse)
+  and with the selection as a box (a black cat in the grass) on each host, Paste "crop", exports to
+  `dist/live-out/`. The dry run passed. After it: the variant notes and CHANGELOG say what ran live, then the release
+  (title like "Scumble 0.1.38: An update question, FLUX 3 on OpenRouter and Comfy Router"), the post, the website
+  hub's Store link (A3). Ask once: closing the adm-zip PR, the BFL key in `rel36-exe`. B2 still needs the fal key;
+  B4 fal, B5 Oxen, B6 WaveSpeed wait for the open questions in `docs/PLAN_FLUX3.md`.
 - The weekly limit stood at 89 % all night (1d 11h to its reset at the end): one review workflow, no more.
 - Carried over: the small leftovers of A2 are done; the open items of the 0.1.37 block (the user's looks, the Store
   package, the gate profile key, the adm-zip PR) stand.
