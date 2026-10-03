@@ -76,42 +76,37 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 morning: 0.1.38 is Latest, FLUX 3 on OpenRouter and Comfy Router run live; next 0.1.39 on the user's word)
+## Where things stand (2026-10-03 midday: 0.1.38 is Latest; B2 built, Ideogram 4 takes boxes on fal, run live; next B4 on the user's word)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-03 morning, "weiter"):** the live test of B1 / B3 and the 0.1.38 release (A3), all pushed.
-The 2026-10-02 late-night block (A1, A2, B1, B3 built) is in `docs/HISTORY.md`.
-- **Live (cfa0a1e):** FLUX 3 Image on Comfy Router and OpenRouter, two edits at 2K on each (`apiSize` max sends a
-  512 crop at 2K), profile `dist/live-keys`, `dist/live_flux3_hosts.py`, exports in `dist/live-out/`: cow -> white
-  horse in place, the selection as a box -> a black cat in the box, on both hosts. Comfy Router 107 s / 40 s, credits
-  null (Comfy reports none); OpenRouter 69 s / 104 s, $0.05 each; seed null. The user typed the OpenRouter key into
-  the instance (it stays in `dist/live-keys`). **Found:** `generate` answered `seconds: 0.5` for every API run (its
-  clock started after `ed.generate()`, which awaits a provider run); fixed in `renderer/commands.js`, checked live.
-  The recipe notes say "run against the live API on 2026-10-03"; `comfyrouter_test.js` / `openrouter_test.js` keep a
-  per-model live list (FLUX 3 added); the `comfyrouter` gate's recipe list lacked flux3 since B1 (added).
-- **0.1.38 released** (b8062df, tag v0.1.38, published 2026-10-03 07:55Z, "Scumble 0.1.38: An update question,
-  FLUX 3 on OpenRouter and Comfy Router"): the update question and the FLUX 3 hosts lead the CHANGELOG section; README
-  lists FLUX 3 on both hosts as verified. Exe gates `--offline` green: `rel38-exe` (34, tiles) and `rel38-exe-canvas`
-  (21). Post live on the website (portfolio 11e1b9d, Vercel success: "An update that asks, and FLUX 3 on two more
-  hosts", the horse on both hosts as its picture), the manual synced, the hub links the Store copy and says a signed
-  copy is there (A3 done). Note in the post: 0.1.38 is the first version that asks, so the question shows from 0.1.39 on.
-- **Asked once, answered:** the adm-zip PR is closed with the agreed comment; the BFL key stays in the gate profile
-  `dist/gates/profiles/rel36-exe` (the user: it may stay in the test copy but must never be uploaded publicly;
-  checked: `dist/` is gitignored, the installer's `files` list never takes `dist/`, the asar holds no key file, CI
-  builds from the repo).
-- **YouTube descriptions** (the user, mid-session; a background agent wrote them): `dist/video/youtube_descriptions.md`
-  (uncommitted, `dist/`): titles, description, chapters, tags, two German lines for video 1, video 2 and the launch
-  video `C:/Users/schoeneberg/Downloads/Scumble_Launch_4x5_v4.mp4` (45 s, 4:5, a Short on YouTube). Open points at
-  its end (video 1's line about the user's own ComfyUI against the API recipe in its title bar; the creator name in 1
-  and 2; the part-one / part-two link placeholders; the synthetic-content box). The masters: `dist/video/edit/
-  01_scumble_explained_v1.mp4`, `dist/video/edit2/02_scumble_part_two_v2.mp4` (1080p); the thumbnails are the website
-  posters `F:/portfolio_web/public/scumble/videos/*.jpg` (1280 x 720).
-- **Next (on the user's word): 0.1.39** per `docs/PLAN_0_1_38.md`: B2 (Ideogram 4's JSON caption, live check 6.4
-  first; the profile `dist/live-keys` holds a fal key too), B4 fal, B5 Oxen, B6 WaveSpeed (open questions in
-  `docs/PLAN_FLUX3.md`), B7 the release. The weekly limit was at 90 % this morning (reset 2026-10-04 09:00Z): no
-  workflows until then.
+**This session (2026-10-03 midday, "weiter"): B2 built, Ideogram 4 takes the boxes as its JSON caption (fe9cd0e,
+local, not pushed).** The 2026-10-03 morning block (B1 / B3 live, the 0.1.38 release) is in `docs/HISTORY.md`.
+- **Live check 6.4 first** (the fal key in `dist/live-keys`, `dist/live_ideogram4.py`, pictures `dist/live-out/
+  live_ideogram4_*.png`, five runs at a few cents each): fal passes a JSON caption to Ideogram 4 as written, the model
+  follows it and renders none of the JSON (a "SAUNA" Text box landed in its box). An edit with one box (background
+  empty) put a black cat in the grass of the selection, 109 s. New images: a written background gave an unasked panel
+  of made-up text in the free top right; an **empty background painted a transparency checkerboard** (real pixels, alpha
+  255) over the free half; the prompt as the background gave one coherent meadow. A box where a thing cannot be (an
+  apple floating in a meadow's sky) is ignored for a natural picture; the shipped path with the apple box on the ground
+  put apple and sign in their boxes (21 s).
+- **Built:** `providers/boxes.js` `captionIdeogram4` (`options.boxes: "ideogram4"`): `{ high_level_description: prompt,
+  compositional_deconstruction: { background: <prompt on a new image, "" on an edit>, elements } }`, New -> obj, Text ->
+  `{ type: "text", bbox, text, desc }`, Keep -> obj on an edit; Move / Remove / From (and a new image's Keep) left out
+  with one note; `expansion_model` sent as None with a note (applyBoxes returns `params`, index.js merges them); a note
+  when a new image's prompt is empty. A request box carries a Text box's words as `text` (renderer `pluginBoxes`, the
+  plugin's source); main composes FLUX 3's `text reading "..."` (rows unchanged). `host.boxSwitch` answers `schema`;
+  the Boxes panel names the boxes an Ideogram run leaves out; texts say "FLUX 3 Image, Ideogram 4". Recipe: the fal
+  variant takes boxes, the description says it ran live. Tests: `tools/boxes_test.js` (139, section 6b), the `boxes`
+  gate's new step `ideogram4_caption`; lint, types, recipes green (`dist/gates/gates/b2-ideo2`). Docs: CHANGELOG
+  Unreleased (two bullets), MANUAL (a paragraph in "Boxes in the prompt"), README, RECIPES "Ideogram 4", PLUGINS (the
+  `text` field), PLAN_BOXES §5 / §6.4, PLAN_0_1_38 B2.
+- **Not done:** *Copy rows* still writes FLUX 3's rows under an Ideogram recipe; no background box kind; the node
+  build not run (`renderer/editor/boxes.js` and `host.js` changed; build it only when a node version ships).
+- **Next (on the user's word): B4** FLUX 3 on fal (`docs/PLAN_FLUX3.md` "fal"), then B5 Oxen, B6 WaveSpeed, B7 the
+  0.1.39 release (the post tells the Ideogram live result; the meadow picture `live_ideogram4_boxes.png` is a candidate).
+  The weekly limit was at 90 % (reset 2026-10-04 09:00Z): no workflows until then.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
@@ -178,7 +173,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   same night (the canvas tool X and the overlay), **S3c** the next session (the crop frame, the paste warning), **S3d**
   the session after (one Boxes switch under the prompt field, the first box turns it on), **S3e** the one after (the
   caption's place words, ids from the description, the warnings, the tool's hit order); none released, all under
-  Unreleased. The live checks §6.1-6.3 ran on 2026-10-02 night, released in 0.1.37 the same night; S4 / S5 optional.
+  Unreleased. The live checks §6.1-6.3 ran on 2026-10-02 night, released in 0.1.37 the same night; S4 optional. **S5 (Ideogram 4)
+  built 2026-10-03** after live check §6.4 (fal passes the caption), under Unreleased.
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended
@@ -195,9 +191,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   DiT, Qwen3-VL-8B text encoder, June 2026; weights non-commercial, 256-2048 px, aspects up to 6:1), structured JSON
   prompts with bounding boxes, Turbo / Default / Quality tiers on Ideogram's own API, a remote MCP server; on fal
   since September 2026. Scumble today: `recipes/ideogram_4.json` (fal `ideogram/v4/image-to-image`, Comfy Router and
-  Oxen text only), never run live. Open: Ideogram's own API as a direct adapter (the tiers, edit / remix with a
+  Oxen text only); fal ran live 2026-10-03 with the boxes as its JSON caption (B2, item 28 S5). Open: Ideogram's own API as a direct adapter (the tiers, edit / remix with a
   mask?), a local ComfyUI recipe on the open weights (the user has Ideogram 4 nodes), the JSON caption with the
-  boxes (item 28 S5), live checks. Not researched in depth, nothing planned.
+  boxes (item 28 S5, built 2026-10-03 on fal). Not researched in depth, nothing planned.
 - 31: Ideogram 4.5 (the user, 2026-10-02: "kannst du in diesem release noch ideogram 4.5 hinzufügen", then "nur über
   documentation hinzufügen, kein test nötig"): in the next release with item 28, built from the providers' docs only,
   no live run. Hosts: Replicate (`ideogram-ai/ideogram-4-5`), Comfy Router (the schema saved as

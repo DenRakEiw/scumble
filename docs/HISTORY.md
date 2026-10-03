@@ -56,6 +56,40 @@ The paragraph of 2026-10-02 (item 31 docs) and the 0.1.36 "Released" block were 
 
 The 0.1.37 block of 2026-10-02 (night) was moved here the same night, when A1, A2, B1 and B3 of docs/PLAN_0_1_38.md were built.
 
+## 2026-10-03 (morning: B1 / B3 live, the 0.1.38 release, moved here when B2 was built)
+
+**This session (2026-10-03 morning, "weiter"):** the live test of B1 / B3 and the 0.1.38 release (A3), all pushed.
+The 2026-10-02 late-night block (A1, A2, B1, B3 built) is in `docs/HISTORY.md`.
+- **Live (cfa0a1e):** FLUX 3 Image on Comfy Router and OpenRouter, two edits at 2K on each (`apiSize` max sends a
+  512 crop at 2K), profile `dist/live-keys`, `dist/live_flux3_hosts.py`, exports in `dist/live-out/`: cow -> white
+  horse in place, the selection as a box -> a black cat in the box, on both hosts. Comfy Router 107 s / 40 s, credits
+  null (Comfy reports none); OpenRouter 69 s / 104 s, $0.05 each; seed null. The user typed the OpenRouter key into
+  the instance (it stays in `dist/live-keys`). **Found:** `generate` answered `seconds: 0.5` for every API run (its
+  clock started after `ed.generate()`, which awaits a provider run); fixed in `renderer/commands.js`, checked live.
+  The recipe notes say "run against the live API on 2026-10-03"; `comfyrouter_test.js` / `openrouter_test.js` keep a
+  per-model live list (FLUX 3 added); the `comfyrouter` gate's recipe list lacked flux3 since B1 (added).
+- **0.1.38 released** (b8062df, tag v0.1.38, published 2026-10-03 07:55Z, "Scumble 0.1.38: An update question,
+  FLUX 3 on OpenRouter and Comfy Router"): the update question and the FLUX 3 hosts lead the CHANGELOG section; README
+  lists FLUX 3 on both hosts as verified. Exe gates `--offline` green: `rel38-exe` (34, tiles) and `rel38-exe-canvas`
+  (21). Post live on the website (portfolio 11e1b9d, Vercel success: "An update that asks, and FLUX 3 on two more
+  hosts", the horse on both hosts as its picture), the manual synced, the hub links the Store copy and says a signed
+  copy is there (A3 done). Note in the post: 0.1.38 is the first version that asks, so the question shows from 0.1.39 on.
+- **Asked once, answered:** the adm-zip PR is closed with the agreed comment; the BFL key stays in the gate profile
+  `dist/gates/profiles/rel36-exe` (the user: it may stay in the test copy but must never be uploaded publicly;
+  checked: `dist/` is gitignored, the installer's `files` list never takes `dist/`, the asar holds no key file, CI
+  builds from the repo).
+- **YouTube descriptions** (the user, mid-session; a background agent wrote them): `dist/video/youtube_descriptions.md`
+  (uncommitted, `dist/`): titles, description, chapters, tags, two German lines for video 1, video 2 and the launch
+  video `C:/Users/schoeneberg/Downloads/Scumble_Launch_4x5_v4.mp4` (45 s, 4:5, a Short on YouTube). Open points at
+  its end (video 1's line about the user's own ComfyUI against the API recipe in its title bar; the creator name in 1
+  and 2; the part-one / part-two link placeholders; the synthetic-content box). The masters: `dist/video/edit/
+  01_scumble_explained_v1.mp4`, `dist/video/edit2/02_scumble_part_two_v2.mp4` (1080p); the thumbnails are the website
+  posters `F:/portfolio_web/public/scumble/videos/*.jpg` (1280 x 720).
+- **Next (on the user's word): 0.1.39** per `docs/PLAN_0_1_38.md`: B2 (Ideogram 4's JSON caption, live check 6.4
+  first; the profile `dist/live-keys` holds a fal key too), B4 fal, B5 Oxen, B6 WaveSpeed (open questions in
+  `docs/PLAN_FLUX3.md`), B7 the release. The weekly limit was at 90 % this morning (reset 2026-10-04 09:00Z): no
+  workflows until then.
+
 ## 2026-10-02 (late night: A1, A2, B1 and B3 of PLAN_0_1_38 built, moved here at the 0.1.38 release)
 
 **This session (2026-10-02 late night, "baue weiter", then "mache noch ein paar schritte weiter ... ich gehe jetzt
