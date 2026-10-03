@@ -365,6 +365,32 @@ async function main() {
         }
     });
 
+    // ---- 5. recipe <-> graph (item 35 V2, docs/PLAN_COMFY_VIEW.md §2.3) ------------------
+    await section("5. a ComfyUI recipe as a graph and back", async () => {
+        const comfy = (await recipes.list(RECIPES)).filter((r) => r.kind !== "provider" && r.source === "builtin");
+        check("the shipped ComfyUI recipes are there", comfy.length >= 3, comfy.map((r) => r.id).join(", "));
+        for (const r of comfy) {
+            const p = recipes.toPrompt(r);
+            const c = p[r.canvas].inputs;
+            const res = r.result.split(":");
+            const wiredResult = eq(c[r.mode === "api" ? "result" : "result_local"], [res[0], +res[1]]);
+            const wiredSettings = (r.settings || []).every((s) => eq(p[s.node].inputs[s.input], [r.canvas, 12 + s.index]));
+            check(`${r.id}: toPrompt wires the result and every Settings row to the canvas node`, wiredResult && wiredSettings && !eq(p, r.prompt), short(c));
+            const back = recipes.fromPrompt(p, {}, { file: "graph", date: "2026-10-03" }, r);
+            const sameNeeds = eq([...back.needs].sort(), [...new Set(Object.values(r.prompt).map((n) => n.class_type))].sort());
+            check(`${r.id}: fromPrompt(toPrompt(r), {}, meta, r) gives the prompt, the Settings rows, the result, the mode and the canvas back`,
+                eq(back.prompt, r.prompt) && eq(back.settings, r.settings) && back.result === r.result && back.mode === r.mode && back.canvas === r.canvas && sameNeeds,
+                eq(back.prompt, r.prompt) ? short({ settings: back.settings, was: r.settings }) : short({ prompt: back.prompt }));
+            check(`${r.id}: toPrompt leaves the recipe as it was`, !Object.values(r.prompt[r.canvas].inputs).some(Array.isArray));
+        }
+        const r0 = comfy[0];
+        const noBase = recipes.fromPrompt(recipes.toPrompt(r0), {}, { file: "graph", date: "2026-10-03" });
+        check("without the recipe it came from, the rows keep their slots and the canvas node its four parameters",
+            eq(noBase.settings.map((s) => [s.index, s.node, s.input]), r0.settings.map((s) => [s.index, s.node, s.input])) && eq(noBase.prompt[r0.canvas].inputs, r0.prompt[r0.canvas].inputs), short(noBase.settings));
+        check("toPrompt refuses a provider recipe and a result that names no node",
+            !!(await thrown(() => recipes.toPrompt({ kind: "provider", id: "p" }))) && !!(await thrown(() => recipes.toPrompt({ ...r0, result: "nope:0" }))));
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

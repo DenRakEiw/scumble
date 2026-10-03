@@ -10,7 +10,11 @@ opener passes a stub's URL):
   navigation away from the stub's origin and a window.open are refused;
 - Ctrl+S in the page reaches the page and no menu command of Scumble's, also after Scumble's menu was built again;
 - the auth of Settings › ComfyUI reaches the page and its websocket: basic, bearer and a custom header; a wrong
-  password ends on the start page with the 401 (no prompt, no loop); a server that does not answer says so.
+  password ends on the start page with the 401 (no prompt, no loop); a server that does not answer says so;
+- V2, a recipe as a graph: on a stub whose fake window.app records what it is given, a shipped ComfyUI recipe arrives
+  as its API prompt with the result and the Settings rows wired to the canvas node, under the recipe's name, and the
+  bar names it; a provider recipe is refused; a page without window.app and a load that throws say so in the bar;
+  with no target the start page names the recipe.
 
 It refuses an instance connected to ComfyUI and a profile that holds a ComfyUI secret; the settings and the secret it
 writes are put back at the end whatever happens.
@@ -41,6 +45,14 @@ ws.onopen = () => { document.title = 'open'; };
 ws.onclose = (e) => { if (document.title !== 'open') document.title = 'closed ' + e.code; };
 </script><p>stub ComfyUI</p>"""
 
+# a fake ComfyUI frontend for V2: window.app records the graph it is given ("throw": its load fails)
+FAKE_APP = """<script>
+window.app = { graph: {},
+  loadApiJson: async (prompt, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'api', prompt, name }; },
+  loadGraphData: async (workflow) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'graph', workflow }; } };
+window.__throw = %s;
+</script>"""
+
 
 class Stub:
     """The page and its websocket; `mode` says what auth a request must carry."""
@@ -48,6 +60,7 @@ class Stub:
     def __init__(self):
         self.mode = "none"
         self.seen = []
+        self.app = None     # None: no window.app; "ok": a fake one; "throw": one whose load fails
 
     def ok(self, h):
         if self.mode == "basic":
@@ -64,7 +77,8 @@ class Stub:
         if not good:
             hdr = {"WWW-Authenticate": 'Basic realm="pod"'} if self.mode == "basic" else {}
             return web.Response(status=401, text="no", headers=hdr)
-        return web.Response(text=PAGE, content_type="text/html")
+        app = (FAKE_APP % ("true" if self.app == "throw" else "false")) if self.app else ""
+        return web.Response(text=PAGE + app, content_type="text/html")
 
     async def ws(self, req):
         good = self.ok(req.headers)
@@ -280,6 +294,73 @@ class Gate:
             raise Exception(f"the login was answered again and again: {len(self.stub.seen)} requests")
         return {"message": i["message"], "requests": len(self.stub.seen)}
 
+    async def bar_text(self):
+        async def read(c):
+            return await c.eval("""(async () => { const $ = (id) => document.getElementById(id);
+                for (let i = 0; i < 60 && !($('cb-recipe') && $('cb-recipe').textContent !== 'No recipe'); i++) await new Promise((r) => setTimeout(r, 100));
+                return { recipe: $('cb-recipe').textContent, note: $('cb-recipe-note').textContent, why: $('cb-why').textContent }; })()""")
+        return await on_target("comfybar.html", read)
+
+    async def wait_info(self, cond, ms=8000):
+        return await self.js("""const t0 = Date.now(); for (;;) { const i = await window.scumble.comfyView.info();
+            if (%s) return i; if (Date.now() - t0 > %d) return i; await wait(150); }""" % (cond, ms))
+
+    async def recipe_graph(self):
+        await self.close()
+        self.stub.mode = "none"
+        self.stub.app = "ok"
+        await self.set_auth({"type": "none"}, "")
+        r = await self.js("return (await window.scumble.recipes.list()).find((x) => x.id === 'flux2_klein_local')")
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": r["id"]}))
+        i = await self.wait_info("i.recipeLoaded || i.recipeNote", 15000)
+        if not i.get("recipeLoaded"):
+            raise Exception("the recipe did not load: " + json.dumps(i))
+        got = await on_target(self.stub.url, lambda c: c.eval("window.__loaded"))
+        p = got["prompt"]
+        res = r["result"].split(":")
+        wired = all(p[s["node"]]["inputs"][s["input"]] == [r["canvas"], 12 + s["index"]] for s in r["settings"])
+        if got["kind"] != "api" or got["name"] != r["name"] or p[r["canvas"]]["inputs"].get("result_local") != [res[0], int(res[1])] or not wired:
+            raise Exception("the page got: " + json.dumps(got)[:600])
+        b = await self.bar_text()
+        if b["recipe"] != "Editing: " + r["name"] or b["note"]:
+            raise Exception("the bar: " + json.dumps(b))
+        # the same window, a second recipe: it replaces the first
+        q = await self.js("return (await window.scumble.recipes.list()).find((x) => x.id === 'upscale_model_local')")
+        await self.js("await window.scumble.comfyView.open({ recipe: 'upscale_model_local' }); return 1")
+        i2 = await self.wait_info("i.recipeId === 'upscale_model_local' && (i.recipeLoaded || i.recipeNote)")
+        got2 = await on_target(self.stub.url, lambda c: c.eval("window.__loaded"))
+        if not i2.get("recipeLoaded") or got2["name"] != q["name"]:
+            raise Exception("the second recipe: " + json.dumps({"info": i2, "name": got2.get("name")}))
+        return {"name": got["name"], "nodes": len(p), "bar": b["recipe"], "second": got2["name"]}
+
+    async def recipe_refused(self):
+        err = await self.js("try { await window.scumble.comfyView.open({ recipe: 'flux3' }); return null; } catch (e) { return String(e.message || e); }")
+        if not err or "provider" not in err:
+            raise Exception(f"a provider recipe was not refused: {err}")
+        return {"error": err[-140:]}
+
+    async def recipe_troubles(self):
+        await self.close()
+        self.stub.app = "throw"
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": "flux2_klein_local"}))
+        i = await self.wait_info("i.recipeNote", 15000)
+        if "did not load" not in i.get("recipeNote", "") or "boom" not in i["recipeNote"] or i.get("recipeLoaded"):
+            raise Exception("a load that throws: " + json.dumps(i))
+        await self.close()
+        self.stub.app = None
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": "flux2_klein_local"}))
+        i2 = await self.wait_info("i.recipeNote", 30000)
+        if "no way to load a graph" not in i2.get("recipeNote", ""):
+            raise Exception("a page without window.app: " + json.dumps(i2))
+        await self.close()
+        await self.js("await window.scumble.comfyView.open({ recipe: 'flux2_klein_local' }); return 1")
+        i3 = await self.wait_info("i.phase === 'none'")
+        b = await self.bar_text()
+        if i3["phase"] != "none" or "Klein" not in b["recipe"] or "opens here once a ComfyUI answers" not in b["why"]:
+            raise Exception("no target with a recipe: " + json.dumps({"info": i3, "bar": b}))
+        await self.close()
+        return {"throws": i["recipeNote"], "noApp": i2["recipeNote"], "noTarget": b["why"][-90:]}
+
     async def unreachable(self):
         await self.close()
         s = socket.socket()
@@ -318,6 +399,9 @@ async def main():
             await g.step("a custom header on the page and /ws", lambda: g.auth("header", {"type": "header", "header": "X-Pod-Token"}))
             await g.step("a wrong password: the 401 on the start page, no loop", g.wrong_password)
             await g.step("a server that does not answer", g.unreachable)
+            await g.step("V2: a recipe arrives as its graph, the bar names it, a second one replaces it", g.recipe_graph)
+            await g.step("V2: a provider recipe is refused", g.recipe_refused)
+            await g.step("V2: a load that throws, a page without window.app, no target", g.recipe_troubles)
         finally:
             await g.close()
             await c.eval("(async () => { const s = await window.scumble.settings.get(); await window.scumble.settings.set({ comfy: %s || s.comfy }); await window.scumble.keys.clear('comfy-auth'); return 1; })()" % json.dumps(saved))

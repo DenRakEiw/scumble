@@ -93,7 +93,10 @@ second open, its bounds kept; the stub page without `window.scumble`, `window.co
 origin; Ctrl+S reaching the page and no Scumble menu command, also after the menu is built again, with a control key
 that must reach the menu in the editor's window first (keys go in over CDP with focus emulated: an occluded window
 drops them otherwise); basic, bearer and custom-header auth on the page and on `/ws`; a wrong password ending on the
-401 start page without a login loop; a dead server), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
+401 start page without a login loop; a dead server; V2: a fake `window.app` on the stub records the recipe's graph
+(the result and the Settings rows wired, the recipe's name), a second recipe replaces it, a provider recipe is
+refused, a load that throws and a page without `window.app` say so in the bar, the start page names the recipe;
+`tools/recipes_test.js` section 5 checks `fromPrompt(toPrompt(r))` on every shipped ComfyUI recipe), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
 view of item 24: real Tab and Escape presses over CDP; the chrome hidden, the view the window's size, full screen and a
 fitted picture while on, the view / rulers / chrome / window put back after; Tab ignored in a text field, a dialog, the
 editor's ask and with Shift; Escape cancels a pending transform or an open polygon first and never reaches the editor

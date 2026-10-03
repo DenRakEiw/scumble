@@ -656,6 +656,7 @@ function buildMenu() {
                 { label: "Assistant", accelerator: "CmdOrCtrl+Shift+A", click: () => send("menu", "assistant") },
                 // Ctrl+U is the editor's Upsample, and its check ignores Shift: Ctrl+Shift+U would do both
                 { label: "ComfyUI", accelerator: "CmdOrCtrl+Shift+K", click: () => openComfyView() },
+                { label: "Edit Recipe in ComfyUI", click: () => send("menu", "comfy-edit-recipe") },
                 { type: "separator" },
                 // the native menu is out of any skin's reach: Default always brings the default look back
                 { label: "Skin", submenu: skinMenu() },
@@ -860,6 +861,17 @@ function comfyTarget() {
     return { url: c.url || "", headers: authHeaders(auth, secret), basic: auth.type === "basic" ? { user: auth.user || "", password: String(secret || "") } : null };
 }
 
+/**
+ * A ComfyUI recipe as the ComfyUI window holds it (docs/PLAN_COMFY_VIEW.md §2.3): its graph as the API prompt the page
+ * loads (recipes.toPrompt), or the UI graph a recipe saved from the window keeps (V3). A provider recipe has no graph.
+ */
+async function comfyRecipe(id) {
+    const r = (await listRecipes()).find((x) => x.id === id);
+    if (!r) throw new Error(`There is no recipe "${id}".`);
+    if (r.kind === "provider") throw new Error(`"${r.name || r.id}" runs through a provider, not through ComfyUI: it has no graph to edit.`);
+    return { id: r.id, name: r.name || r.id, source: r.source, prompt: recipes.toPrompt(r), workflow: r.workflow && Array.isArray(r.workflow.nodes) ? r.workflow : null };
+}
+
 /** The ComfyUI window, or nothing when no editor window was ever made (an agent's headless start has no button for it). */
 let comfyView = null;
 function openComfyView(opts) {
@@ -901,7 +913,11 @@ function installIpc() {
     // the ComfyUI window (electron/main/comfyview.js): opened from the editor's window only; `url` is a test's stub
     // page, taken in a --no-comfy start alone
     const fromEditor = (e) => !!(win && !win.isDestroyed() && e.sender === win.webContents);
-    ipcMain.handle("comfyview:open", (e, opts) => (fromEditor(e) ? openComfyView({ url: opts && opts.url ? String(opts.url) : "" }) : null));
+    ipcMain.handle("comfyview:open", async (e, opts) => {
+        if (!fromEditor(e)) return null;
+        const o = opts || {};
+        return openComfyView({ url: o.url ? String(o.url) : "", recipe: o.recipe ? await comfyRecipe(String(o.recipe)) : null });
+    });
     ipcMain.handle("comfyview:info", () => (comfyView ? comfyView.info() : null));
     ipcMain.handle("comfyview:close", (e) => { if (fromEditor(e) && comfyView) comfyView.close(); return true; });
     ipcMain.handle("files:stats", () => mirror.stats());

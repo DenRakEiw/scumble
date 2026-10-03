@@ -1,7 +1,7 @@
 # ComfyUI in Scumble: the graph behind a recipe, in the app (item 35; the user, 2026-10-03)
 
-**Status (2026-10-03, afternoon):** **V1 built** (the window, the bar, the start page, the auth, the *ComfyUI* button;
-"V1 as built" under §3), V2-V5 not started. Five steps (V1-V5), one
+**Status (2026-10-03, afternoon):** **V1 and V2 built** (the window, the bar, the start page, the auth, the *ComfyUI*
+button; a recipe opened as its graph: "V1 as built" and "V2 as built" under §3), V3-V5 not started. Five steps (V1-V5), one
 per session (the user's rule), **released together as one update** after V5. The user answered §6 the same day: a
 window of its own, Comfy Cloud API access yes, *Save to recipe* overwrites, all in one update; then the *ComfyUI*
 button after *Help* and *Assistant*, and **Scumble keeps working without any ComfyUI installed** (§2.5, a rule for
@@ -234,6 +234,21 @@ none of V1-V5 may change that:
 - **V2, a recipe as a graph:** `toPrompt`, `load()`, `ready()`, *Edit in ComfyUI* (the button beside the title row's
   recipe select, the *View* menu, *Settings > Recipes*), the bar's "Editing: <recipe>". Tests: plain-Node `fromPrompt(toPrompt(r))` over every shipped ComfyUI
   recipe; a gate step with a stub page whose fake `window.app` records what it was given.
+- **V2 as built (2026-10-03):** `recipes.toPrompt(recipe)` (the canvas node's `result_local` / `result` wired to
+  `recipe.result`, each Settings row's input to `[canvas, 12 + index]`); `fromPrompt(src, objectInfo, meta, base)`
+  takes the recipe the graph came from and gives back each row's value, label and spec where the same input is still
+  wired to the same slot, and **keeps the canvas node's four parameters** (padding, target size, feather, multiple: a
+  change for every API-format import too; the run overwrites them from *Settings*, so nothing runs differently). The
+  round trip holds for the three shipped ComfyUI recipes (`tools/recipes_test.js` section 5). Main's `comfyRecipe(id)`
+  hands the window `{ id, name, prompt: toPrompt(r), workflow }` (a provider recipe is refused by name); the window
+  polls the loaded page for `window.app` with `graph` and `loadApiJson` / `loadGraphData` (`READY_JS`, 20 s, read as
+  booleans and a 40-character version), then calls `loadGraphData(workflow)` or `loadApiJson(prompt, name)`; the
+  answer is read as ok / a short error. The window holds the recipe until it closes, and gives it to the page again
+  after every load (Reload included). *Edit in ComfyUI* beside the recipe select (hidden for provider recipes), in
+  the provider-select cell of a ComfyUI row under *Settings › Recipes*, and *View › Edit Recipe in ComfyUI* (menu
+  command `comfy-edit-recipe`). The user's frontend 1.53.10 (its files on this machine, read only) has
+  `async loadApiJson(e, t, n = {})`, `window.app` and `window.__COMFYUI_FRONTEND_VERSION__`. Not run against a real
+  ComfyUI yet (the user's word: it loads a graph into their page, it queues nothing).
 - **V3, a graph as a recipe:** `read()`, *Save to recipe* (overwrite; a shipped recipe as a user recipe of its id) and
   *Save as new recipe* (the name dialog), the `workflow` field kept, the selection afterwards. Tests: plain-Node (a recorded `graphToPrompt` answer of the user's frontend as a fixture ->
   recipe), the stub-page gate step; one round trip on the user's ComfyUI (open a recipe, move a node, save back, run it

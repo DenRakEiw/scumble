@@ -12,9 +12,13 @@
         $("cb-host").textContent = s.host ? `My ComfyUI · ${s.host}` : "";
         $("cb-host").title = s.url || "";
         $("cb-recipe").textContent = s.recipe ? `Editing: ${s.recipe}` : "No recipe";
+        $("cb-recipe").title = s.recipe ? (s.recipeLoaded ? "This recipe's graph is loaded in the page" : "The graph goes into the page once ComfyUI is ready") : "";
+        $("cb-recipe-note").hidden = !s.recipeNote;
+        $("cb-recipe-note").textContent = s.recipeNote || "";
+        $("cb-recipe-note").title = s.recipeNote || "";
         $("cb-loading").hidden = s.phase !== "loading";
         $("cb-start").hidden = withPage;
-        $("cb-why").textContent = s.message || "";
+        $("cb-why").textContent = (s.message || "") + (s.recipe && !withPage ? ` The recipe "${s.recipe}" opens here once a ComfyUI answers.` : "");
         document.body.classList.toggle("cb-full", !withPage);
     }
 

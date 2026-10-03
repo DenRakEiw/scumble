@@ -6,6 +6,8 @@ html, body { margin: 0; height: 100%; background: var(--sc-bg, #181818); color: 
 .cb-field select { background: var(--sc-field, #111); color: var(--sc-fg, #ddd); border: 1px solid var(--sc-line, #333); border-radius: var(--sc-radius, 3px); padding: 3px 6px; font: inherit; }
 .cb-note { color: var(--sc-muted, #888); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .cb-spacer { flex: 1; }
+.cb-warn { color: var(--sc-warn, #f0c674); }
+#cb-recipe { color: var(--sc-fg, #ddd); }
 button { background: var(--sc-btn, #2d2d2d); color: var(--sc-fg, #ddd); border: 1px solid var(--sc-border, #444); border-radius: var(--sc-radius, 3px); padding: 3px 10px; font: inherit; cursor: pointer; }
 button:hover:not(:disabled) { background: var(--sc-btn-hover, #3a3a3a); }
 button:disabled { opacity: 0.5; cursor: default; }

@@ -624,8 +624,38 @@ function fromWorkflow(wf, objectInfo, meta) {
     };
 }
 
-/** An API-format prompt (Export (API), or the node's own saved prompt) -> recipe fields. */
-function fromPrompt(src, objectInfo, meta) {
+// The canvas node's own widgets a recipe keeps (the crop's padding, target size, feather and multiple); everything
+// else on it (canvas_state, the result sources, the run's values) is filled in at queue time (host.queueGenerate)
+const CANVAS_PARAMS = ["padding", "target_size", "feather", "multiple_of"];
+
+/**
+ * A ComfyUI recipe -> the API-format prompt ComfyUI's page loads as a graph (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V2):
+ * the inverse of fromPrompt. The canvas node's result input (`result_local` in mode local, else `result`) is wired back
+ * to `recipe.result`, every Settings row's input to the canvas node's `setting_<index>` output, the rest as stored.
+ * @param {Recipe} recipe
+ */
+function toPrompt(recipe) {
+    if (!recipe || !recipe.prompt || !recipe.canvas || !recipe.prompt[recipe.canvas]) throw new Error("This recipe is not a ComfyUI recipe (it holds no graph).");
+    const prompt = JSON.parse(JSON.stringify(recipe.prompt));
+    const canvasId = String(recipe.canvas);
+    const canvas = prompt[canvasId];
+    canvas.inputs = { ...(canvas.inputs || {}) };
+    const m = /^(.+):(\d+)$/.exec(String(recipe.result || ""));
+    if (!m || !prompt[m[1]]) throw new Error(`The recipe's result "${recipe.result || ""}" names no node of its graph.`);
+    canvas.inputs[recipe.mode === "api" ? "result" : "result_local"] = [m[1], +m[2]];
+    for (const s of recipe.settings || []) {
+        if (!s || !s.index || !prompt[s.node] || !s.input) continue;
+        prompt[s.node].inputs = { ...(prompt[s.node].inputs || {}), [s.input]: [canvasId, FIXED_OUTPUTS + s.index - 1] };
+    }
+    return prompt;
+}
+
+/**
+ * An API-format prompt (Export (API), the node's own saved prompt, or the graph of ComfyUI's page) -> recipe fields.
+ * `base`, the recipe the graph was opened from (item 35), gives back what an API prompt cannot hold: each Settings
+ * row's value, label and spec where the same node input is still wired to the same slot's output.
+ */
+function fromPrompt(src, objectInfo, meta, base) {
     const prompt = JSON.parse(JSON.stringify(src));
     const canvasIds = Object.keys(prompt).filter((id) => prompt[id] && prompt[id].class_type === "InpaintCanvas");
     if (!canvasIds.length) throw new Error("This prompt has no Inpaint Canvas node.");
@@ -636,17 +666,28 @@ function fromPrompt(src, objectInfo, meta) {
     const resultLocal = asRef(canvas.inputs.result_source_local) || asRef(canvas.inputs.result_local);
     const resultApi = asRef(canvas.inputs.result_source) || asRef(canvas.inputs.result);
     if (!resultLocal && !resultApi) throw new Error("The Inpaint Canvas node has no result_source / result_source_local; nothing would come back.");
-    canvas.inputs = {};
+    const kept = {};
+    for (const k of CANVAS_PARAMS) if (typeof canvas.inputs[k] === "number") kept[k] = canvas.inputs[k];
+    canvas.inputs = kept;
+    const baseRow = (id, name, index) => (base && Array.isArray(base.settings) ? base.settings.find((s) => s && String(s.node) === String(id) && s.input === name && s.index === index) : null);
+    const baseValue = (id, name) => {
+        const n = base && base.prompt && base.prompt[id];
+        const v = n && n.inputs ? n.inputs[name] : undefined;
+        return Array.isArray(v) ? undefined : v;
+    };
     const settings = [];
     for (const [id, node] of Object.entries(prompt)) {
         if (!node || !node.inputs) continue;
         for (const [name, v] of Object.entries(node.inputs)) {
             if (!Array.isArray(v) || String(v[0]) !== canvasId || +v[1] < FIXED_OUTPUTS) continue;
+            const index = +v[1] - FIXED_OUTPUTS + 1;
             const info = objectInfo[node.class_type];
             const spec = info && info.input && ((info.input.required && info.input.required[name]) || (info.input.optional && info.input.optional[name])) || null;
-            node.inputs[name] = specDefault(spec);
-            const stored = storedSpec(spec, node.inputs[name]);
-            settings.push({ index: +v[1] - FIXED_OUTPUTS + 1, node: id, input: name, label: `${(node._meta && node._meta.title) || node.class_type} · ${name}`, ...(stored ? { spec: stored } : {}) });
+            const was = baseRow(id, name, index);
+            const value = was ? baseValue(id, name) : undefined;
+            node.inputs[name] = value !== undefined ? value : specDefault(spec);
+            const stored = was && was.spec !== undefined ? was.spec : storedSpec(spec, node.inputs[name]);
+            settings.push({ index, node: id, input: name, label: was && was.label ? was.label : `${(node._meta && node._meta.title) || node.class_type} · ${name}`, ...(stored ? { spec: stored } : {}) });
         }
     }
     settings.sort((a, b) => a.index - b.index);
@@ -704,4 +745,4 @@ async function importFile(file, objectInfo) {
     return normalize({ ...recipe, file: path.basename(saved), source: "user" });
 }
 
-module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, userDir, _normalize: normalize };
+module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, userDir, _normalize: normalize };

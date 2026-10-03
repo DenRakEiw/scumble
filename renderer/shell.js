@@ -474,6 +474,8 @@ function selectRecipe(id, providerId) {
     ui.recipeNote.title = [r.description, r.note].filter(Boolean).join("\n") + via;
     ui.recipeNote.style.color = ks && !ks.ok ? "var(--sc-warn, #e0a05a)" : "";
     host.setRecipe(r);
+    const comfyEdit = $("shell-comfy-edit");
+    if (comfyEdit) comfyEdit.hidden = raw.kind === "provider";
     const byMode = { ...(settings.recipeByMode || {}), [modeOf(raw)]: raw.id };
     if (settings.recipe !== r.id || (settings.recipeByMode || {})[modeOf(raw)] !== raw.id) window.scumble.settings.set({ recipe: r.id, recipeByMode: byMode }).then((s) => { settings = s; });
     if (ui.settings.open) syncRecipeRows();
@@ -551,6 +553,12 @@ function renderRecipeList() {
                 if (host.recipe && host.recipe.id === r.id) selectRecipe(r.id); else syncRecipeRows();
             });
             row.appendChild(sel);
+        } else if (r.kind !== "provider") {
+            // a ComfyUI recipe has no provider to pick: its graph opens in the ComfyUI window (item 35 V2)
+            const edit = document.createElement("button");
+            edit.type = "button"; edit.textContent = "Edit in ComfyUI"; edit.title = "Open this recipe's graph in the ComfyUI window";
+            edit.addEventListener("click", () => openRecipeInComfy(r.id));
+            row.appendChild(edit);
         } else {
             row.appendChild(document.createElement("span"));
         }
@@ -2574,6 +2582,7 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "mcp-copied") host.editor && host.editor.setStatus("MCP registration copied. Paste it into your client; see docs/MCP.md.");
     else if (cmd === "settings-updates") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Updates"); if (h) h.scrollIntoView(); });
     else if (cmd === "settings-plugins") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Plugins"); if (h) h.scrollIntoView(); });
+    else if (cmd === "comfy-edit-recipe") openRecipeInComfy(ui.recipe.value);
     else if (cmd === "settings-comfy") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "ComfyUI"); if (h) h.scrollIntoView(); if (ui.setUrl) ui.setUrl.focus(); });
     else if (cmd === "settings-appearance") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Appearance"); if (h) h.scrollIntoView(); });
     else if (cmd.startsWith("plugin:")) plugins.runAction(cmd.slice(7)).catch(() => { /* reported by the plugin host */ });
@@ -2673,6 +2682,17 @@ if (helpButton) helpButton.addEventListener("click", () => toggleHelp());
 // the ComfyUI of Settings › ComfyUI, or on its start page when there is none to show
 const comfyButton = $("shell-comfy");
 if (comfyButton) comfyButton.addEventListener("click", () => window.scumble.comfyView.open().catch((err) => console.warn("comfyui window:", err.message)));
+const comfyEditButton = $("shell-comfy-edit");
+if (comfyEditButton) comfyEditButton.addEventListener("click", () => openRecipeInComfy(ui.recipe.value));
+
+/** A ComfyUI recipe's graph in the ComfyUI window (item 35 V2); a provider recipe has none, which the status line says. */
+function openRecipeInComfy(id) {
+    const r = recipes.find((x) => x.id === id);
+    const say = (text) => { if (host.editor) host.editor.setStatus(text); };
+    if (!r) return say("No recipe is selected.");
+    if (r.kind === "provider") return say(`"${r.name || r.id}" runs through a provider, not through ComfyUI: it has no graph to edit.`);
+    window.scumble.comfyView.open({ recipe: r.id }).catch((err) => say(String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, "")));
+}
 
 // ---- the console dialog: the log's ring buffer, filtered, growing live ----------------------
 

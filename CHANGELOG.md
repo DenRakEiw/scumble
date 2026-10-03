@@ -12,6 +12,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   there (Ctrl+S, Ctrl+Z, Ctrl+Enter), and Scumble's never fire from it. The page runs apart from Scumble: it cannot
   reach the editor, your keys or your files. With no ComfyUI to show, the window says why and leads to the setting;
   nothing connects anywhere until you open it, and Scumble needs no ComfyUI for anything else.
+- **A recipe as its graph.** *Edit in ComfyUI*, beside the recipe picker while a ComfyUI recipe is selected (also
+  View › Edit Recipe in ComfyUI and each ComfyUI recipe under Settings › Recipes), opens that recipe's graph in the
+  ComfyUI window, laid out by ComfyUI, with the result and the Settings rows wired to the Inpaint Canvas node as they
+  run. The window's bar names the recipe, and says so when the page cannot take a graph.
 
 ## 0.1.39 — 2026-10-03
 

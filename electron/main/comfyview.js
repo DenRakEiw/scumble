@@ -17,6 +17,20 @@ const { BaseWindow, WebContentsView, session, shell, ipcMain } = require("electr
 
 const BAR_H = 36;
 const PARTITION = "persist:comfyui";
+const READY_MS = 20000;     // how long a loaded page may take to offer window.app before the recipe is given up
+const READY_STEP_MS = 400;
+
+// What the page answers is untrusted data (§2.2): only these fields are read, as booleans or a short string
+const READY_JS = `(() => { const a = window.app; return { app: !!a, graph: !!(a && a.graph), api: !!(a && typeof a.loadApiJson === "function"),
+    graphData: !!(a && typeof a.loadGraphData === "function"), version: String(window.__COMFYUI_FRONTEND_VERSION__ || "").slice(0, 40) }; })()`;
+
+/** The script that hands a recipe's graph to the page: its UI graph when it has one, else the API prompt ComfyUI lays out. */
+function loadScript(recipe) {
+    const call = recipe.workflow
+        ? `await window.app.loadGraphData(${JSON.stringify(recipe.workflow)})`
+        : `await window.app.loadApiJson(${JSON.stringify(recipe.prompt)}, ${JSON.stringify(String(recipe.name || recipe.id))})`;
+    return `(async () => { try { ${call}; return { ok: true }; } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
+}
 
 /** The origin of an http(s) URL, or "" for anything else. */
 function originOf(url) {
@@ -68,6 +82,15 @@ class ComfyView {
         this.phase = "closed";      // closed | none (no target) | loading | page | error
         this.message = "";
         this.logins = 0;
+        // the recipe the window holds (V2): { id, name, prompt, workflow } from main (recipes.toPrompt), loaded into the
+        // page once it offers window.app; `recipeNote` says why it is not there
+        this.recipe = null;
+        this.recipeNote = "";
+        this.pageReady = false;
+        this.frontend = "";
+        this.readyGen = 0;
+        this.can = null;        // what the page's window.app offers: { api, graphData }
+        this.loaded = null;     // the id of the recipe the page was given last
         this.installIpc();
     }
 
@@ -84,14 +107,18 @@ class ComfyView {
 
     /**
      * Open the window, or bring it to the front. `url` is a test's stub page, taken in a --no-comfy start only (a
-     * normal start always shows the ComfyUI of Settings › ComfyUI).
+     * normal start always shows the ComfyUI of Settings › ComfyUI). `recipe` ({ id, name, prompt, workflow }) is the
+     * graph the window then holds: loaded into the page as soon as it offers one, named in the bar either way.
      */
-    open({ url } = {}) {
+    open({ url, recipe } = {}) {
         const test = this.offline && url ? String(url) : "";
         if (test) this.testUrl = test;
+        if (recipe) { this.recipe = recipe; this.recipeNote = ""; }
         if (this.isOpen) {
             this.front();
             if (test) this.load();
+            else if (recipe && this.pageReady) this.loadRecipe();
+            else this.sendState();
             return this.info();
         }
         this.create();
@@ -175,6 +202,8 @@ class ComfyView {
             // the keys go to the page, not to the bar (ComfyUI's own shortcuts), when the window is in front
             if (this.win && this.win.isFocused()) wc.focus();
         });
+        // the page's scripts ran: wait for window.app, then hand it the recipe the window holds
+        wc.on("did-finish-load", () => { if (this.phase === "page") this.waitReady(); });
         wc.on("render-process-gone", (_e, d) => this.fail(`The ComfyUI page stopped (${(d && d.reason) || "gone"}). Reload loads it again.`));
 
         win.on("resize", () => this.layout());
@@ -187,6 +216,10 @@ class ComfyView {
             try { this.session().webRequest.onBeforeSendHeaders(null); } catch (_) { /* gone */ }
             if (this.win === win) { this.win = null; this.bar = null; this.page = null; }
             this.testUrl = "";      // a test's stub belongs to the window it opened
+            this.recipe = null;     // and so does the recipe it held
+            this.recipeNote = "";
+            this.pageReady = false;
+            this.readyGen++;
             this.phase = "closed";
             this.message = "";
         });
@@ -217,6 +250,9 @@ class ComfyView {
         this.win.setTitle(host ? `ComfyUI · ${host}` : "ComfyUI");
         if (!t.url) { this.setPhase("none", t.why); return; }
         this.logins = 0;
+        this.pageReady = false;
+        this.loaded = null;
+        this.readyGen++;
         this.setPhase("loading", "");
         this.page.webContents.loadURL(t.url + "/").catch(() => { /* did-fail-load says why */ });
     }
@@ -230,6 +266,50 @@ class ComfyView {
             if (!sameOrigin(d.url, this.shown.origin)) { cb({}); return; }
             cb({ requestHeaders: { ...d.requestHeaders, ...this.shown.headers } });
         });
+    }
+
+    /** Poll the loaded page for window.app (ComfyUI's frontend sets it up after its extensions); a new load cancels it. */
+    async waitReady() {
+        const gen = ++this.readyGen;
+        const t0 = Date.now();
+        let r = null;
+        while (gen === this.readyGen && this.isOpen && this.phase === "page") {
+            try { r = await this.page.webContents.executeJavaScript(READY_JS, true); } catch (_) { r = null; }
+            if (gen !== this.readyGen || !this.isOpen) return;
+            const ok = !!(r && r.graph && (r.api || r.graphData));
+            this.frontend = r && typeof r.version === "string" ? r.version.slice(0, 40) : "";
+            if (ok) {
+                this.pageReady = true;
+                this.can = { api: !!r.api, graphData: !!r.graphData };
+                if (this.recipe) await this.loadRecipe(); else this.sendState();
+                return;
+            }
+            if (Date.now() - t0 > READY_MS) {
+                if (this.recipe) this.recipeNote = `This ComfyUI page offers no way to load a graph (frontend ${this.frontend || "unknown"}).`;
+                this.sendState();
+                return;
+            }
+            await new Promise((res) => setTimeout(res, READY_STEP_MS));
+        }
+    }
+
+    /** Hand the held recipe's graph to the page (§2.2 load); its answer is only read as ok / a short error. */
+    async loadRecipe() {
+        const recipe = this.recipe;
+        if (!recipe || !this.pageReady || !this.isOpen) return;
+        const can = this.can || {};
+        if (recipe.workflow ? !can.graphData : !can.api) {
+            this.recipeNote = `This ComfyUI page offers no way to load ${recipe.workflow ? "a saved graph" : "an API prompt"} (frontend ${this.frontend || "unknown"}).`;
+            this.sendState();
+            return;
+        }
+        const gen = this.readyGen;
+        let r = null;
+        try { r = await this.page.webContents.executeJavaScript(loadScript(recipe), true); } catch (err) { r = { ok: false, error: (err && err.message) || String(err) }; }
+        if (gen !== this.readyGen || recipe !== this.recipe) return;
+        this.recipeNote = r && r.ok === true ? "" : `The graph did not load: ${String((r && r.error) || "no answer").slice(0, 300)}`;
+        this.loaded = r && r.ok === true ? recipe.id : null;
+        this.sendState();
     }
 
     fail(message) { this.setPhase("error", message); }
@@ -254,7 +334,12 @@ class ComfyView {
     state() {
         let host = "";
         try { host = this.shown.url ? new URL(this.shown.url).host : ""; } catch (_) { /* none */ }
-        return { phase: this.phase, message: this.message, url: this.shown.url, host, target: "comfy", recipe: null, offline: this.offline };
+        const r = this.recipe;
+        return {
+            phase: this.phase, message: this.message, url: this.shown.url, host, target: "comfy", offline: this.offline,
+            recipe: r ? String(r.name || r.id) : null, recipeId: r ? r.id : null, recipeNote: this.recipeNote,
+            recipeLoaded: !!(r && this.loaded === r.id && this.pageReady), frontend: this.frontend,
+        };
     }
 
     sendState() {
