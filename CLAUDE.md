@@ -221,9 +221,12 @@ The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27
   (2026-10-03, with the post). Submission 1 (2026-09-30) held the first Store version; **0.1.41 was submitted
   2026-10-04 (submission 2, the user in Partner Center: the MSIX built here, the What's new text, the trailer
   "Scumble explained" with `dist/store-listing/hero-1920x1080.png` as its thumbnail), certification pending.**
-  **Store updates only after essential changes, on the user's word** (the user, 2026-10-04: "nicht bei jeder
-  version... nur nach essenziellen änderungen"; the submission API needs a company account, the user's is not one):
-  then `npm run dist:store`, a What's new text, the user's three steps in Partner Center (`docs/RELEASING.md`).
+  **A Store update with every release, clicked through in the user's Chrome** (the user, 2026-10-04: first "nur nach
+  essenziellen änderungen", then "wenn du es in chrome machen kannst dann doch jedes mal"; the submission API needs a
+  company account, the user's is not one): `npm run dist:store`, a What's new text, then Claude in Chrome in Partner
+  Center (the user logged in; the upload of the ~190 MB MSIX through the extension never tried yet; *Submit for
+  certification* only after the user's yes in chat each time). If the upload does not work: essential changes only,
+  the user's three steps by hand (`docs/RELEASING.md`).
 - **Not started:** B3, the macOS build (`docs/PLAN_0_1_24.md`); Comfy Router
   live runs beyond GPT Image 2, Nano Banana 2 (2026-09-23) and FLUX 3 Image (2026-10-03; the key in `dist/live-keys`); Linux built by CI, never run; types stage 3 (`docs/PLAN_TYPES.md`);
   the manual's empty assistant and log screenshots and a missing colour-match figure (`docs/MANUAL.md` is the one

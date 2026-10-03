@@ -15,10 +15,13 @@ profile (`bash tools/run_gates.sh <label> --offline --exe dist/win-unpacked/Scum
 
 ## The release channel, signing and the Store
 
-**A Store update goes only with essential changes** (the user, 2026-10-04), never with every release: the GitHub
-copy updates itself, the Store copy follows when a fix or feature matters (0.1.41, after the Comfy Cloud fix of 0.1.40).
-The Store submission API needs a company account in Partner Center (an Entra app with the Manager role; "Individual
-accounts do not support multiple users"), so the submission stays by hand. When the user asks for one: `npm run
+**A Store update goes with every release, clicked through in the user's Chrome** (the user, 2026-10-04): the Store
+submission API needs a company account in Partner Center (an Entra app with the Manager role; "Individual accounts do
+not support multiple users"), so Claude drives Partner Center in the user's logged-in Chrome (Claude in Chrome: Start
+update, the upload, the What's new text) and clicks *Submit for certification* only after the user's yes in chat.
+Never tried yet: the upload of the ~190 MB MSIX through the extension. If it does not work, the user's rule before:
+a Store update only with essential changes, by hand (0.1.41 went that way, after the Comfy Cloud fix of 0.1.40). The
+steps either way: `npm run
 dist:store` (`dist/Scumble-<version>.msix`, built from the release's tag state), a short "What's new in this version"
 text in English, and the user's part in Partner Center (https://partner.microsoft.com/dashboard): Apps and games ›
 Scumble › Start update; Packages: drop the new MSIX in, delete the old one, leave gradual rollout and mandatory off,
