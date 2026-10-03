@@ -76,13 +76,13 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 evening: 0.1.38 is Latest; 0.1.39 prepared locally (B2, B4, B5, B6), not pushed; the release chain on the user's word)
+## Where things stand (2026-10-03 midday: 0.1.39 is Latest, released with the post; next on the user's word)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-03 late afternoon, "weiter", then "ok, baue weiter"): B5 and B6 built, FLUX 3 Image on
-Oxen.ai (5159151) and WaveSpeedAI (3ab509a), not pushed.** The 2026-10-03 afternoon block (B4, FLUX 3 on fal) is in
+**This session (2026-10-03 late morning to midday, "weiter", then "ok, baue weiter", "ok"): B5 and B6 built, FLUX 3
+Image on Oxen.ai (5159151) and WaveSpeedAI (3ab509a), 0.1.39 released.** The 2026-10-03 B4 block (FLUX 3 on fal) is in
 `docs/HISTORY.md`. No workflow (weekly limit at 91 %); one review agent on the B5 diff (no defects: 135 requests of the
 other 20 Oxen recipes byte-identical but the seed); none on B6 (the same pattern, its guards checked by the tests).
 - **Built** as `docs/PLAN_FLUX3.md` "Oxen.ai" planned (its new "Built" paragraph has the choices): `recipes/flux3.json`
@@ -111,7 +111,8 @@ other 20 Oxen recipes byte-identical but the seed); none on B6 (the same pattern
   CHANGELOG, MANUAL, RECIPES, PLAN_FLUX3 "WaveSpeed", PLAN_0_1_38 B6.
 - **Not run live:** `oxen.js` has never run live for any model, WaveSpeed's FLUX 3 neither; the CHANGELOG bullets and
   the notes say both are untried. A live check (`docs/PLAN_FLUX3.md` "Live checks") only on the user's word and a key.
-- **0.1.39 prepared locally** (the user: "ne mach weiter ohne clear"; c72f142, not pushed): the CHANGELOG section
+- **0.1.39 released** (the user: "ne mach weiter ohne clear", then "ok"; tag on c72f142, published 2026-10-03 10:42Z,
+  CI green on Windows and Linux; the post and the manual sync in portfolio 8f40d6b, deployed, checked live): the CHANGELOG section
   `## 0.1.39 — 2026-10-03` (five bullets: Ideogram 4 boxes, Ideogram 4 live, FLUX 3 on fal, on Oxen with the Oxen seed,
   on WaveSpeed), `package.json` / `package-lock.json` 0.1.39, README (Ideogram 4 on fal verified), `npm run dist`
   (`dist/Scumble Setup 0.1.39.exe`), exe gates `--offline` green on both backends (`rel39-exe` 34 with `export` green
@@ -120,10 +121,10 @@ other 20 Oxen recipes byte-identical but the seed); none on B6 (the same pattern
   hosts") with its picture (`v0-1-39-ideogram-boxes.jpg`: the two boxes, the answer with the boxes drawn); a new session
   rewrites both from this block and `dist/live-out/live_ideogram4_boxes.png` (boxes `[80, 680, 380, 960]` apple,
   `[500, 600, 950, 900]` sign, x0 y0 x1 y1 on 1024 x 1024).
-- **Next (on the user's word, asked once):** the chain of `docs/RELEASING.md`: push, tag `v0.1.39`, watch the build,
-  publish the draft (title "Scumble 0.1.39: Boxes for Ideogram 4, FLUX 3 on fal, Oxen.ai and WaveSpeed"), manual sync,
-  the post (with `hub.version` 0.1.39), the live check. The weekly limit was at 91 % (reset 2026-10-04 09:00Z): no
-  workflows until then.
+- **Next (on the user's word):** nothing planned in `docs/PLAN_0_1_38.md` is left. Open from the list: the live
+  checks of FLUX 3 on fal, Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks", a key each), item 30 (Ideogram 4 as
+  its own update), 28 S4, B3 macOS, the Comfy Dev Platform Challenge (Oct 5-19, waits for Comfy's answer). The
+  weekly limit was at 91 % (reset 2026-10-04 09:00Z): no workflows until then.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
@@ -191,7 +192,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   the session after (one Boxes switch under the prompt field, the first box turns it on), **S3e** the one after (the
   caption's place words, ids from the description, the warnings, the tool's hit order); none released, all under
   Unreleased. The live checks §6.1-6.3 ran on 2026-10-02 night, released in 0.1.37 the same night; S4 optional. **S5 (Ideogram 4)
-  built 2026-10-03** after live check §6.4 (fal passes the caption), under Unreleased.
+  built 2026-10-03** after live check §6.4 (fal passes the caption), released in 0.1.39 the same day.
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended
@@ -203,7 +204,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   OpenRouter (black-forest-labs/flux-3-image) and Oxen.ai (flux-3-image), as variants of `recipes/flux3.json` on the
   existing adapters. Researched: `docs/PLAN_FLUX3.md` "FLUX 3 Image on other providers". **Comfy Router (B1) and OpenRouter
   (B3) built 2026-10-02 late night, run live and released in 0.1.38 (2026-10-03)**; **fal (B4), Oxen (B5) and WaveSpeed (B6) built 2026-10-03**,
-  under Unreleased, not run live.
+  released in 0.1.39 (2026-10-03), not run live.
 - 30: Ideogram 4 support as an update of its own (the user, 2026-10-02: "ein anderer release", not with item 28's
   boxes). Known so far (one web search, 2026-10-02): Ideogram 4.0 is Ideogram's first open-weight model (9.3B flow
   DiT, Qwen3-VL-8B text encoder, June 2026; weights non-commercial, 256-2048 px, aspects up to 6:1), structured JSON
