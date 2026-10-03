@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 night: 0.1.39 is Latest; item 35 V1-V6 built, the live checks next, no release yet)
+## Where things stand (2026-10-03 night: 0.1.40 is Latest, a hotfix; item 35 V1-V6 built and its Comfy Cloud live checks passed, the cleanup and its release 0.1.41 next)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -169,8 +169,17 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   template and test fixture; proposed: off by default), not decided.
 - **Live checks on Comfy Cloud passed** (the user, the same night): inpaint and Generate new, no error in the log.
   Still unlooked: the ComfyUI window's round trip on the user's own ComfyUI (open a recipe, save it back; queues
-  nothing). **Next:** the user's decision on the hotfix 0.1.40 (a branch off v0.1.39 with 67e7a8c alone) and the
-  cleanup (cloud mode hides the local-only controls, the Sample plugin off by default), then the release of item 35. Old line kept below for the checks:
+  nothing).
+- **0.1.40 released the same night (the user: "ja, mache noch den hotfix... aufräumen dann in 0.1.41"):** branch
+  `hotfix/0.1.40` off v0.1.39 with the `/api/jobs` fix alone (5b5edac, tag `v0.1.40` on the branch, never on main),
+  built in a worktree with a `node_modules` junction, exe gates `--offline` on port 9561 both backends ALL PASS
+  (`dist/gates/gates/rel40-exe`, `rel40-exe-canvas`), published 22:03, post live (`#v0-1-40`, website 58af1e5); no
+  manual sync (MANUAL.md unchanged between the tags). Main's CHANGELOG has the 0.1.40 section (9b600c0); main's
+  `package.json` stays 0.1.39 until 0.1.41. Main's commits since d4d137d are **not pushed** (the user was asked, no
+  answer yet). **Next (0.1.41, after the weekly reset):** the cleanup the user asked for: in cloud mode hide the
+  local-only controls (Free VRAM, Padding / Target / Feather / Multiple, Highres fix, the Settings hint about wiring
+  node outputs, the negative placeholder "local mode"), the Sample plugin off by default (tests that use it turn it on);
+  then the release of item 35 as 0.1.41. Old line kept below for the checks:
 - **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
   ist"): a recipe opened and saved back on the user's ComfyUI (queues nothing), the Comfy Cloud login in the window
   (which sign-ins work), one cloud run with the user's key (credits), a RunPod pod if the user starts one; then the
