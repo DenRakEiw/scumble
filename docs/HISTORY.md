@@ -56,6 +56,60 @@ The paragraph of 2026-10-02 (item 31 docs) and the 0.1.36 "Released" block were 
 
 The 0.1.37 block of 2026-10-02 (night) was moved here the same night, when A1, A2, B1 and B3 of docs/PLAN_0_1_38.md were built.
 
+## 2026-10-02 (late night: A1, A2, B1 and B3 of PLAN_0_1_38 built, moved here at the 0.1.38 release)
+
+**This session (2026-10-02 late night, "baue weiter", then "mache noch ein paar schritte weiter ... ich gehe jetzt
+schlafen"):** A1, A2, B1 and B3 of `docs/PLAN_0_1_38.md`, each its own commit, none pushed (main is ahead of origin by
+8: 7de1423 and 4d8dcde from before, then c3872b7, 03cd400, a2ba272, 77cd42d, the hand-over 5097a78 and the review
+fixes 8443bd9). The 0.1.37 block is in `docs/HISTORY.md`.
+- **A1, item 32 (c3872b7):** the update question (`renderer/shell.js` `announceUpdate`): *Restart and update* /
+  *Later* / *Skip this version*, once per start (`updater.announce`, IPC `update:announced`), one line per top-level
+  release-note bullet (`releaseHeadlines`), the focus on *Later* (`dialogs.ask` `focusId`), waits for a question, a
+  modal dialog, the assistant's card, the restore, an edit and 3 s of typing; `installUpdate()` asks before ending a
+  run (API or a local render, `_localRuns`), the assistant's turn or an agent's session (the title-row button and
+  Settings' Install too). **Found while building:** electron-updater installs a download on quit
+  (`autoInstallOnAppQuit`), so Skip turns that off in main (`setSkip` / `_applySkip`, read from settings at the start
+  and on every `settings:set`), adds the quit handler back when a skip is taken back, and `app:relaunch` skips it too.
+  `fullChangelog` on and the notes' cap 30,000 (0.1.37 alone is 8,300; it was cut at 4,000). A review workflow (16
+  findings, 12 held) drove most of the details; `docs/PLAN_0_1_38.md` A1 lists them. Tests: `tools/updater_test.js`
+  (new), platform gate step `the_update_question_asks_once`, a `restart_test` row. Not touched: README says the .deb
+  does not update itself, but electron-builder 26 ships it with `app-update.yml` (DebUpdater, pkexec; never run).
+- **A2 (03cd400):** `generate` reports the seed the model got (`host.js` `answeredSeed`; null for FLUX 3; the history
+  row says "no seed sent"; commands gate step with the loopback's `options.no_seed`); box ids from the last two words
+  of the first phrase (`black_cat_1`; an -ing verb ends the phrase, -ing nouns do not); the request carries
+  `cropAspect`, which `flux3.js` sends past the 3 % rounding slack.
+- **B1 (a2ba272) and B3 (77cd42d), built ahead, under CHANGELOG Unreleased:** FLUX 3 Image on Comfy Router
+  (`bfl/flux-3-image`, the `bfl` dialect calls `flux3.body`) and on OpenRouter (six variant options in
+  `openrouter.js`, each off unless set). **Ask the user whether 0.1.38 ships them** (the agreed 0.1.38 was small) or
+  holds them for 0.1.39 (then a branch or a revert before the release). Side effect of B3: every OpenRouter model whose
+  endpoints take no seed reports seed null now.
+- **Review of A2, B1, B3 (8443bd9):** six findings, all fixed: box ids end a phrase at a comma, a word of place or a
+  German article (`rote_lampe_1`), a Text box keeps its text's first two words; OpenAI, Gemini, ModelArk, ToAPIs,
+  Magnific and Comfy Router report the seed they sent (none when none went; fal and Replicate still fall back to the
+  editor's); FLUX 3 on Comfy Router checks what flux3.js sends, not the raw layers; an OpenRouter passthrough slug must
+  be a host slug (`__proto__`); the manual says OpenRouter has no Grounding switch. `docs/PLAN_0_1_38.md` has it.
+- Gates run (all `--offline`, tiles): platform, assistant, commands, boxes, openrouter, toapis, ark, magnific, recipes,
+  lint, types; Node:
+  updater, restart, quit, manual, boxes, flux3, comfyrouter, openrouter, recipes, refs_layout, ideogram45. No exe
+  gates (that is the release's). One look at the update question in a dev instance (a screenshot, fine).
+- **Next (the user, 2026-10-03 morning): 0.1.38 is released WITH B1 and B3** ("kann ohne test released werden yolo",
+  then "ne, mach doch den test"): **first the live test of B1 / B3, then the A3 chain** (`docs/RELEASING.md`). Ready
+  for the test: the scratch profile `dist/live-keys` holds the Comfy key (from the Comfy Router test of 2026-09-23);
+  the **OpenRouter key the user types in themselves** (they were asked; whether they did is unknown: start the dev
+  instance on that profile, `./node_modules/.bin/electron . --remote-debugging-port=9555
+  --user-data-dir=F:/canvas/dist/live-keys --no-comfy`, Bash `run_in_background` with `timeout` 7200000 or it dies
+  after 30 min, and ask them to check Settings › API providers). The script `dist/live_flux3_hosts.py`
+  (`SCUMBLE_CDP_PORT=9555 python dist/live_flux3_hosts.py --dry`, then without `--dry`, or one run like
+  `openrouter:plain`): four 1k edits on `flux3_live_base.png` (copied into the profile), plain (cow -> white horse)
+  and with the selection as a box (a black cat in the grass) on each host, Paste "crop", exports to
+  `dist/live-out/`. The dry run passed. After it: the variant notes and CHANGELOG say what ran live, then the release
+  (title like "Scumble 0.1.38: An update question, FLUX 3 on OpenRouter and Comfy Router"), the post, the website
+  hub's Store link (A3). Ask once: closing the adm-zip PR, the BFL key in `rel36-exe`. B2 still needs the fal key;
+  B4 fal, B5 Oxen, B6 WaveSpeed wait for the open questions in `docs/PLAN_FLUX3.md`.
+- The weekly limit stood at 89 % all night (1d 11h to its reset at the end): one review workflow, no more.
+- Carried over: the small leftovers of A2 are done; the open items of the 0.1.37 block (the user's looks, the Store
+  package, the gate profile key, the adm-zip PR) stand.
+
 ## 2026-10-02 (night: the 0.1.37 release, moved here when A1, A2, B1 and B3 were built)
 
 **This session (2026-10-02 night, "weiter ^^ was fehlt noch bis zum release ?", the twelfth of the day):** the 0.1.37

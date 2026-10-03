@@ -76,62 +76,42 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-02 late night: 0.1.37 is Latest; A1, A2, B1, B3 of docs/PLAN_0_1_38.md built; next A3 on the user's word)
+## Where things stand (2026-10-03 morning: 0.1.38 is Latest, FLUX 3 on OpenRouter and Comfy Router run live; next 0.1.39 on the user's word)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-02 late night, "baue weiter", then "mache noch ein paar schritte weiter ... ich gehe jetzt
-schlafen"):** A1, A2, B1 and B3 of `docs/PLAN_0_1_38.md`, each its own commit, none pushed (main is ahead of origin by
-8: 7de1423 and 4d8dcde from before, then c3872b7, 03cd400, a2ba272, 77cd42d, the hand-over 5097a78 and the review
-fixes 8443bd9). The 0.1.37 block is in `docs/HISTORY.md`.
-- **A1, item 32 (c3872b7):** the update question (`renderer/shell.js` `announceUpdate`): *Restart and update* /
-  *Later* / *Skip this version*, once per start (`updater.announce`, IPC `update:announced`), one line per top-level
-  release-note bullet (`releaseHeadlines`), the focus on *Later* (`dialogs.ask` `focusId`), waits for a question, a
-  modal dialog, the assistant's card, the restore, an edit and 3 s of typing; `installUpdate()` asks before ending a
-  run (API or a local render, `_localRuns`), the assistant's turn or an agent's session (the title-row button and
-  Settings' Install too). **Found while building:** electron-updater installs a download on quit
-  (`autoInstallOnAppQuit`), so Skip turns that off in main (`setSkip` / `_applySkip`, read from settings at the start
-  and on every `settings:set`), adds the quit handler back when a skip is taken back, and `app:relaunch` skips it too.
-  `fullChangelog` on and the notes' cap 30,000 (0.1.37 alone is 8,300; it was cut at 4,000). A review workflow (16
-  findings, 12 held) drove most of the details; `docs/PLAN_0_1_38.md` A1 lists them. Tests: `tools/updater_test.js`
-  (new), platform gate step `the_update_question_asks_once`, a `restart_test` row. Not touched: README says the .deb
-  does not update itself, but electron-builder 26 ships it with `app-update.yml` (DebUpdater, pkexec; never run).
-- **A2 (03cd400):** `generate` reports the seed the model got (`host.js` `answeredSeed`; null for FLUX 3; the history
-  row says "no seed sent"; commands gate step with the loopback's `options.no_seed`); box ids from the last two words
-  of the first phrase (`black_cat_1`; an -ing verb ends the phrase, -ing nouns do not); the request carries
-  `cropAspect`, which `flux3.js` sends past the 3 % rounding slack.
-- **B1 (a2ba272) and B3 (77cd42d), built ahead, under CHANGELOG Unreleased:** FLUX 3 Image on Comfy Router
-  (`bfl/flux-3-image`, the `bfl` dialect calls `flux3.body`) and on OpenRouter (six variant options in
-  `openrouter.js`, each off unless set). **Ask the user whether 0.1.38 ships them** (the agreed 0.1.38 was small) or
-  holds them for 0.1.39 (then a branch or a revert before the release). Side effect of B3: every OpenRouter model whose
-  endpoints take no seed reports seed null now.
-- **Review of A2, B1, B3 (8443bd9):** six findings, all fixed: box ids end a phrase at a comma, a word of place or a
-  German article (`rote_lampe_1`), a Text box keeps its text's first two words; OpenAI, Gemini, ModelArk, ToAPIs,
-  Magnific and Comfy Router report the seed they sent (none when none went; fal and Replicate still fall back to the
-  editor's); FLUX 3 on Comfy Router checks what flux3.js sends, not the raw layers; an OpenRouter passthrough slug must
-  be a host slug (`__proto__`); the manual says OpenRouter has no Grounding switch. `docs/PLAN_0_1_38.md` has it.
-- Gates run (all `--offline`, tiles): platform, assistant, commands, boxes, openrouter, toapis, ark, magnific, recipes,
-  lint, types; Node:
-  updater, restart, quit, manual, boxes, flux3, comfyrouter, openrouter, recipes, refs_layout, ideogram45. No exe
-  gates (that is the release's). One look at the update question in a dev instance (a screenshot, fine).
-- **Next (the user, 2026-10-03 morning): 0.1.38 is released WITH B1 and B3** ("kann ohne test released werden yolo",
-  then "ne, mach doch den test"): **first the live test of B1 / B3, then the A3 chain** (`docs/RELEASING.md`). Ready
-  for the test: the scratch profile `dist/live-keys` holds the Comfy key (from the Comfy Router test of 2026-09-23);
-  the **OpenRouter key the user types in themselves** (they were asked; whether they did is unknown: start the dev
-  instance on that profile, `./node_modules/.bin/electron . --remote-debugging-port=9555
-  --user-data-dir=F:/canvas/dist/live-keys --no-comfy`, Bash `run_in_background` with `timeout` 7200000 or it dies
-  after 30 min, and ask them to check Settings › API providers). The script `dist/live_flux3_hosts.py`
-  (`SCUMBLE_CDP_PORT=9555 python dist/live_flux3_hosts.py --dry`, then without `--dry`, or one run like
-  `openrouter:plain`): four 1k edits on `flux3_live_base.png` (copied into the profile), plain (cow -> white horse)
-  and with the selection as a box (a black cat in the grass) on each host, Paste "crop", exports to
-  `dist/live-out/`. The dry run passed. After it: the variant notes and CHANGELOG say what ran live, then the release
-  (title like "Scumble 0.1.38: An update question, FLUX 3 on OpenRouter and Comfy Router"), the post, the website
-  hub's Store link (A3). Ask once: closing the adm-zip PR, the BFL key in `rel36-exe`. B2 still needs the fal key;
-  B4 fal, B5 Oxen, B6 WaveSpeed wait for the open questions in `docs/PLAN_FLUX3.md`.
-- The weekly limit stood at 89 % all night (1d 11h to its reset at the end): one review workflow, no more.
-- Carried over: the small leftovers of A2 are done; the open items of the 0.1.37 block (the user's looks, the Store
-  package, the gate profile key, the adm-zip PR) stand.
+**This session (2026-10-03 morning, "weiter"):** the live test of B1 / B3 and the 0.1.38 release (A3), all pushed.
+The 2026-10-02 late-night block (A1, A2, B1, B3 built) is in `docs/HISTORY.md`.
+- **Live (cfa0a1e):** FLUX 3 Image on Comfy Router and OpenRouter, two edits at 2K on each (`apiSize` max sends a
+  512 crop at 2K), profile `dist/live-keys`, `dist/live_flux3_hosts.py`, exports in `dist/live-out/`: cow -> white
+  horse in place, the selection as a box -> a black cat in the box, on both hosts. Comfy Router 107 s / 40 s, credits
+  null (Comfy reports none); OpenRouter 69 s / 104 s, $0.05 each; seed null. The user typed the OpenRouter key into
+  the instance (it stays in `dist/live-keys`). **Found:** `generate` answered `seconds: 0.5` for every API run (its
+  clock started after `ed.generate()`, which awaits a provider run); fixed in `renderer/commands.js`, checked live.
+  The recipe notes say "run against the live API on 2026-10-03"; `comfyrouter_test.js` / `openrouter_test.js` keep a
+  per-model live list (FLUX 3 added); the `comfyrouter` gate's recipe list lacked flux3 since B1 (added).
+- **0.1.38 released** (b8062df, tag v0.1.38, published 2026-10-03 07:55Z, "Scumble 0.1.38: An update question,
+  FLUX 3 on OpenRouter and Comfy Router"): the update question and the FLUX 3 hosts lead the CHANGELOG section; README
+  lists FLUX 3 on both hosts as verified. Exe gates `--offline` green: `rel38-exe` (34, tiles) and `rel38-exe-canvas`
+  (21). Post live on the website (portfolio 11e1b9d, Vercel success: "An update that asks, and FLUX 3 on two more
+  hosts", the horse on both hosts as its picture), the manual synced, the hub links the Store copy and says a signed
+  copy is there (A3 done). Note in the post: 0.1.38 is the first version that asks, so the question shows from 0.1.39 on.
+- **Asked once, answered:** the adm-zip PR is closed with the agreed comment; the BFL key stays in the gate profile
+  `dist/gates/profiles/rel36-exe` (the user: it may stay in the test copy but must never be uploaded publicly;
+  checked: `dist/` is gitignored, the installer's `files` list never takes `dist/`, the asar holds no key file, CI
+  builds from the repo).
+- **YouTube descriptions** (the user, mid-session; a background agent wrote them): `dist/video/youtube_descriptions.md`
+  (uncommitted, `dist/`): titles, description, chapters, tags, two German lines for video 1, video 2 and the launch
+  video `C:/Users/schoeneberg/Downloads/Scumble_Launch_4x5_v4.mp4` (45 s, 4:5, a Short on YouTube). Open points at
+  its end (video 1's line about the user's own ComfyUI against the API recipe in its title bar; the creator name in 1
+  and 2; the part-one / part-two link placeholders; the synthetic-content box). The masters: `dist/video/edit/
+  01_scumble_explained_v1.mp4`, `dist/video/edit2/02_scumble_part_two_v2.mp4` (1080p); the thumbnails are the website
+  posters `F:/portfolio_web/public/scumble/videos/*.jpg` (1280 x 720).
+- **Next (on the user's word): 0.1.39** per `docs/PLAN_0_1_38.md`: B2 (Ideogram 4's JSON caption, live check 6.4
+  first; the profile `dist/live-keys` holds a fal key too), B4 fal, B5 Oxen, B6 WaveSpeed (open questions in
+  `docs/PLAN_FLUX3.md`), B7 the release. The weekly limit was at 90 % this morning (reset 2026-10-04 09:00Z): no
+  workflows until then.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
@@ -148,11 +128,11 @@ prepared locally.
 
 The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27 night).
 - **The Store listing is live** (the user, 2026-09-30: https://apps.microsoft.com/detail/9NDBTNNMXF2R, signed by
-  Microsoft; identity `DenRakEiw.Scumble`). The README links it (Install (Windows): Store or GitHub). Not done yet: the
-  link on the website hub and a post; which version the Store holds was not checked.
+  Microsoft; identity `DenRakEiw.Scumble`). The README links it (Install (Windows): Store or GitHub), the website hub too since 0.1.38
+  (2026-10-03, with the post). Which version the Store holds was not checked.
 - **Not started:** B3, the macOS build (`docs/PLAN_0_1_24.md`); the Store package per release (`npm run dist:store`,
   `docs/STORE.md`; coupling it to GitHub releases only on the user's word); Comfy Router
-  live runs (offered; the key in `dist/live-keys`); Linux built by CI, never run; types stage 3 (`docs/PLAN_TYPES.md`);
+  live runs beyond GPT Image 2, Nano Banana 2 (2026-09-23) and FLUX 3 Image (2026-10-03; the key in `dist/live-keys`); Linux built by CI, never run; types stage 3 (`docs/PLAN_TYPES.md`);
   the manual's empty assistant and log screenshots and a missing colour-match figure (`docs/MANUAL.md` is the one
   source, the website copies it via `tools/manual_sync.js`); the node repo is behind (build it only when a node version
   ships; `nodecopy` tests it); the assistant's A10 / A11 only on the user's word.
@@ -163,7 +143,7 @@ The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27
   says it is free; gates run `--offline`). Tune for 15k, not 30k. One-channel masks on ice; `inpaint_canvas.js` is
   split only where a subject is reworked anyway; the object tool's change A parked; tiles are the default, the canvas
   backend the escape hatch. A parked idea, not a plan: a mobile companion.
-- **Unverified:** ToAPIs and ModelArk live; OpenRouter beyond GPT Image 2.5 Flare / Sunburst; Magnific beyond the two
+- **Unverified:** ToAPIs and ModelArk live; OpenRouter beyond GPT Image 2.5 Flare / Sunburst and FLUX 3 Image (live 2026-10-03); Magnific beyond the two
   upscalers and Oxen (docs only); the Qwen Image Edit 2.1 local recipe (models not downloaded); a real SAM2 / RMBG model
   on the slice 6 code; the user's own 15k file. Deferred from 3f: the source's EXIF / XMP in exports, an ICC profile in
   PSD and TIFF. Not checked: a double click in Explorer on an installed build, TIFFs written by other image editors.
@@ -209,7 +189,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   sibling), WaveSpeed (the user's link was image-to-video; whether it has FLUX 3 Image is part of the research),
   OpenRouter (black-forest-labs/flux-3-image) and Oxen.ai (flux-3-image), as variants of `recipes/flux3.json` on the
   existing adapters. Researched: `docs/PLAN_FLUX3.md` "FLUX 3 Image on other providers". **Comfy Router (B1) and OpenRouter
-  (B3) built 2026-10-02 late night**, under Unreleased; fal, Oxen, WaveSpeed open.
+  (B3) built 2026-10-02 late night, run live and released in 0.1.38 (2026-10-03)**; fal, Oxen, WaveSpeed open.
 - 30: Ideogram 4 support as an update of its own (the user, 2026-10-02: "ein anderer release", not with item 28's
   boxes). Known so far (one web search, 2026-10-02): Ideogram 4.0 is Ideogram's first open-weight model (9.3B flow
   DiT, Qwen3-VL-8B text encoder, June 2026; weights non-commercial, 256-2048 px, aspects up to 6:1), structured JSON
@@ -235,10 +215,10 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   *Later* (maybe *Skip this version*); once per version, not on every start; not while a document is busy or unsaved
   without asking first (the restart path `restartPlan` exists); none in the Store copy (the Store updates it) and none
   for Linux packages that cannot update themselves. Small (about half a day); planned as `docs/PLAN_0_1_38.md` A1. **Built 2026-10-02 late night** (c3872b7), with a real
-  Skip (no install on quit), under Unreleased.
+  Skip (no install on quit), released in 0.1.38 (2026-10-03).
 - 33: every box its own colour and a double click that describes a box on the canvas (the user, 2026-10-02 night,
   with a screenshot of six green boxes: "jede neu box soll eine andere farbe haben", then "mit doppelklick auf die box
-  ... den prompt im canvas in die box schreiben"): built the same night (7de1423), under Unreleased for 0.1.38.
+  ... den prompt im canvas in die box schreiben"): built the same night (7de1423), released in 0.1.38 (2026-10-03).
 
 ## Gate runner and flakes
 
