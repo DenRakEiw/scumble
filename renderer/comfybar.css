@@ -1,0 +1,17 @@
+/* The ComfyUI window's bar and start page (renderer/comfybar.html): the shell's tokens, so a skin dresses it too. */
+@layer app {
+html, body { margin: 0; height: 100%; background: var(--sc-bg, #181818); color: var(--sc-fg, #ddd); font: 13px/1.3 var(--sc-font, system-ui, sans-serif); overflow: hidden; color-scheme: var(--sc-scheme, normal); accent-color: var(--sc-control, auto); }
+#cb-bar { display: flex; align-items: center; gap: 10px; padding: 0 10px; height: 36px; box-sizing: border-box; background: var(--sc-chrome, #1f1f1f); border-bottom: 1px solid var(--sc-chrome-edge, #000); white-space: nowrap; }
+.cb-field { display: flex; align-items: center; gap: 6px; color: var(--sc-fg-2, #aaa); }
+.cb-field select { background: var(--sc-field, #111); color: var(--sc-fg, #ddd); border: 1px solid var(--sc-line, #333); border-radius: var(--sc-radius, 3px); padding: 3px 6px; font: inherit; }
+.cb-note { color: var(--sc-muted, #888); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cb-spacer { flex: 1; }
+button { background: var(--sc-btn, #2d2d2d); color: var(--sc-fg, #ddd); border: 1px solid var(--sc-border, #444); border-radius: var(--sc-radius, 3px); padding: 3px 10px; font: inherit; cursor: pointer; }
+button:hover:not(:disabled) { background: var(--sc-btn-hover, #3a3a3a); }
+button:disabled { opacity: 0.5; cursor: default; }
+#cb-start { max-width: 560px; margin: 12vh auto 0; padding: 0 24px; }
+#cb-start h1 { font-size: 20px; font-weight: 600; color: var(--sc-fg-strong, #fff); margin: 0 0 10px; }
+#cb-why { color: var(--sc-warn, #f0c674); margin: 0 0 10px; word-break: break-word; }
+.cb-help { color: var(--sc-muted, #888); margin: 0 0 16px; }
+.cb-row { display: flex; gap: 8px; flex-wrap: wrap; }
+}

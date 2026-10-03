@@ -35,6 +35,7 @@ const { QuitGuard, CrashGuard, isCrash } = require("./quit");
 const { Documents, isDocumentPath, pathKey, documentArgs } = require("./documents");
 const docfile = require("./docfile");
 const registration = require("./mcp/registration");
+const { ComfyView } = require("./comfyview");
 
 // ---- command line -------------------------------------------------------------------------
 //
@@ -295,7 +296,7 @@ function createWindow() {
         settings.set({ window: { ...b, maximized: viewFullScreen && win.isFullScreen() ? maximizedBeforeView : win.isMaximized() } });
         // while an agent drives the app, closing the window only hides it; the app ends
         // with the MCP session (or stays when a script still talks to the socket)
-        if (agentMode) { e.preventDefault(); win.hide(); headless = true; return; }
+        if (agentMode) { e.preventDefault(); win.hide(); headless = true; if (comfyView) comfyView.close(); return; }
         // the window saves its last changes first (quit.js): the edited layers, the selection, the autosave
         const what = quitGuard.onClose();
         if (what === "allow") return;
@@ -310,6 +311,8 @@ function createWindow() {
             if (win && !win.isDestroyed()) win.close();
         });
     });
+    // the ComfyUI window goes with the editor's (docs/PLAN_COMFY_VIEW.md §2.1); its close never asks anything
+    win.on("closed", () => { if (comfyView) comfyView.close(); });
     // a page that goes away (a reload) answers no save any more
     win.webContents.on("did-start-navigation", (details) => {
         if (!details || details.isSameDocument || !details.isMainFrame) return;
@@ -651,6 +654,8 @@ function buildMenu() {
                 { label: "Canvas Only", accelerator: "Tab", registerAccelerator: false, click: () => send("menu", "canvas-only") },
                 { type: "separator" },
                 { label: "Assistant", accelerator: "CmdOrCtrl+Shift+A", click: () => send("menu", "assistant") },
+                // Ctrl+U is the editor's Upsample, and its check ignores Shift: Ctrl+Shift+U would do both
+                { label: "ComfyUI", accelerator: "CmdOrCtrl+Shift+K", click: () => openComfyView() },
                 { type: "separator" },
                 // the native menu is out of any skin's reach: Default always brings the default look back
                 { label: "Skin", submenu: skinMenu() },
@@ -678,6 +683,7 @@ function buildMenu() {
         },
     ];
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+    if (comfyView) comfyView.dropMenu();
 }
 
 /**
@@ -846,6 +852,21 @@ async function connectComfy(conn) {
     return comfy.connect(saved.url, authHeaders(saved.auth, keys.get(COMFY_SECRET)));
 }
 
+/** What the ComfyUI window loads (electron/main/comfyview.js): the stored address, its auth headers and, for basic, the login. */
+function comfyTarget() {
+    const c = settings.get().comfy || {};
+    const auth = c.auth || { type: "none" };
+    const secret = keys.get(COMFY_SECRET);
+    return { url: c.url || "", headers: authHeaders(auth, secret), basic: auth.type === "basic" ? { user: auth.user || "", password: String(secret || "") } : null };
+}
+
+/** The ComfyUI window, or nothing when no editor window was ever made (an agent's headless start has no button for it). */
+let comfyView = null;
+function openComfyView(opts) {
+    if (!comfyView) return null;
+    return comfyView.open(opts || {});
+}
+
 async function probeComfy(conn) {
     const saved = settings.get().comfy || {};
     const url = (conn && conn.url) || saved.url;
@@ -877,6 +898,12 @@ function installIpc() {
     ipcMain.handle("comfy:status", () => comfy.status);
     ipcMain.handle("comfy:clientId", () => comfy.clientId);
     ipcMain.handle("comfy:ensure", (_e, refs) => mirror.ensureOnServer(refs));
+    // the ComfyUI window (electron/main/comfyview.js): opened from the editor's window only; `url` is a test's stub
+    // page, taken in a --no-comfy start alone
+    const fromEditor = (e) => !!(win && !win.isDestroyed() && e.sender === win.webContents);
+    ipcMain.handle("comfyview:open", (e, opts) => (fromEditor(e) ? openComfyView({ url: opts && opts.url ? String(opts.url) : "" }) : null));
+    ipcMain.handle("comfyview:info", () => (comfyView ? comfyView.info() : null));
+    ipcMain.handle("comfyview:close", (e) => { if (fromEditor(e) && comfyView) comfyView.close(); return true; });
     ipcMain.handle("files:stats", () => mirror.stats());
     // the files the earlier autosave generations name stay too (autosave.js): they are what those states open
     ipcMain.handle("files:prune", (_e, args) => {
@@ -1126,6 +1153,13 @@ function startApp() {
     app.on("will-quit", () => { if (documents.busy) { documents.abortAll(); try { documents.sweep(); } catch (_) { /* the next start sweeps */ } } });
     installProtocol();
     installIpc();
+    // made now, opened only when the user asks (docs/PLAN_COMFY_VIEW.md §2.5: no request because the feature exists)
+    comfyView = new ComfyView({
+        target: comfyTarget, offline: process.argv.includes("--no-comfy"), settings,
+        origin: ORIGIN, preload: path.join(__dirname, "..", "comfybar_preload.js"),
+        icon: fs.existsSync(ICON) ? ICON : undefined, background: () => skins.backgroundFor(currentSkin()),
+        openSettings: () => { showWindow(); send("menu", "settings-comfy"); },
+    });
     buildMenu();
     createWindow();
     local.listen(app.getPath("userData"));

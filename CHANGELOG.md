@@ -3,6 +3,16 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- **Your ComfyUI in a window of its own.** A *ComfyUI* button in the top bar (Ctrl+Shift+K, also View › ComfyUI)
+  opens your ComfyUI's own page beside the editor, from the address and auth under Settings › ComfyUI: a local
+  install, a box in your network or a RunPod pod. Basic, bearer and custom-header auth reach the page and its live
+  connection; a wrong password shows the server's answer instead of a browser prompt. ComfyUI's own shortcuts work
+  there (Ctrl+S, Ctrl+Z, Ctrl+Enter), and Scumble's never fire from it. The page runs apart from Scumble: it cannot
+  reach the editor, your keys or your files. With no ComfyUI to show, the window says why and leads to the setting;
+  nothing connects anywhere until you open it, and Scumble needs no ComfyUI for anything else.
+
 ## 0.1.39 — 2026-10-03
 
 - **Boxes for Ideogram 4.** The boxes in the prompt now go with Ideogram 4 on fal too, as Ideogram's own structured

@@ -42,7 +42,8 @@ async def page_ws():
     async with aiohttp.ClientSession() as s:
         async with s.get(f"http://127.0.0.1:{PORT}/json") as r:
             targets = await r.json()
-    pages = [t for t in targets if t.get("type") == "page" and "scumble://" in t.get("url", "")]
+    # the editor's window; the ComfyUI window's bar (scumble://app/comfybar.html) is a scumble:// page too
+    pages = [t for t in targets if t.get("type") == "page" and "scumble://" in t.get("url", "") and "comfybar.html" not in t.get("url", "")]
     if not pages:
         raise SystemExit("no scumble page on port %d: %s" % (PORT, json.dumps([(t.get("type"), t.get("url")) for t in targets])))
     return pages[0]["webSocketDebuggerUrl"]

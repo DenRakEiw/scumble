@@ -68,6 +68,13 @@ contextBridge.exposeInMainWorld("scumble", {
         onEvent: (cb) => on("comfy:event", cb),
         onStatus: (cb) => on("comfy:status", cb),
     },
+    // ComfyUI's own page in a window of its own (electron/main/comfyview.js); `url` is a test's stub page, taken in a
+    // --no-comfy start only
+    comfyView: {
+        open: (opts) => ipcRenderer.invoke("comfyview:open", opts || {}),
+        info: () => ipcRenderer.invoke("comfyview:info"),
+        close: () => ipcRenderer.invoke("comfyview:close"),
+    },
     file: {
         open: () => ipcRenderer.invoke("file:open"),
         save: (args) => ipcRenderer.invoke("file:save", args),

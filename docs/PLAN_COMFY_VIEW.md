@@ -1,6 +1,7 @@
 # ComfyUI in Scumble: the graph behind a recipe, in the app (item 35; the user, 2026-10-03)
 
-**Status (2026-10-03):** planned from one reading of the code and the docs; nothing built. Five steps (V1-V5), one
+**Status (2026-10-03, afternoon):** **V1 built** (the window, the bar, the start page, the auth, the *ComfyUI* button;
+"V1 as built" under §3), V2-V5 not started. Five steps (V1-V5), one
 per session (the user's rule), **released together as one update** after V5. The user answered §6 the same day: a
 window of its own, Comfy Cloud API access yes, *Save to recipe* overwrites, all in one update; then the *ComfyUI*
 button after *Help* and *Assistant*, and **Scumble keeps working without any ComfyUI installed** (§2.5, a rule for
@@ -203,6 +204,33 @@ none of V1-V5 may change that:
   custom header on the page and on `/ws`); a look on a real RunPod pod when the user starts one (the first real pod of
   `docs/RUNPOD.md`, it costs pod time); one look in the app against the user's ComfyUI on the user's word
   (opening the page queues nothing).
+- **V1 as built (2026-10-03):** `electron/main/comfyview.js` (`ComfyView`: one `BaseWindow`, the bar and the page
+  as two `WebContentsView`s, made at the first open and destroyed at the close), `electron/comfybar_preload.js`,
+  `renderer/comfybar.html` / `.js` / `.css` (the shell's tokens, so skins reach it), the *ComfyUI* button after
+  *Assistant* (`#shell-comfy`), *View › ComfyUI* with **Ctrl+Shift+K** (Ctrl+Shift+U would also fire the editor's
+  Upsample: its Ctrl+U check ignores Shift), `settings.comfyView` (`bounds`, `maximized`), `menu` command
+  `settings-comfy` for the start page's *Connect a ComfyUI*. The page loads `settings.comfy.url` + "/"; in a
+  `--no-comfy` start it shows the start page unless the opener passes a stub's URL (`comfyView.open({ url })`, taken
+  there only, dropped when the window closes). Load errors, an HTTP status of 400 or more and a crashed page end on
+  the start page with the reason; nothing retries. The page gets the keyboard focus when it loads while the window is
+  in front. *Save to recipe*, *Save as new recipe* and *Use Comfy Cloud* are there, disabled (V3, V4). Gate
+  `comfyview` (`tools/comfyview_test.py`, 8 steps, offline, a stub server of its own).
+  Measured on the way (Electron 44.2.0):
+  - **Headers on the websocket:** `session.webRequest.onBeforeSendHeaders` reaches the page's `/ws` handshake for
+    bearer, a custom header and basic, **but only when the filter names the `ws://` (or `wss://`) origin too**; with
+    `http://host/*` alone the handshake went without the header (a stub server checking both). A `login` answer for
+    basic auth covers the websocket as well. So every auth type of *Settings › ComfyUI* shows the page; no refusal
+    note was needed. The `login` answer is given once per load: a wrong password ends on the 401 (two requests), no
+    loop and no browser prompt.
+  - **Scumble's menu reaches a BaseWindow:** without `setMenu(null)` and `setIgnoreMenuShortcuts(true)` a key in the
+    ComfyUI page fired Scumble's menu accelerator (Ctrl+Shift+L opened the editor's console), also after the menu
+    was built again; with them, Ctrl+S reached the page and no menu command (the gate). `buildMenu` drops the menu from the window again after every
+    `Menu.setApplicationMenu` (which sets it on every window on Windows and Linux).
+  - **Keys over CDP need focus emulation** in an occluded window (the gates run behind other windows: both views
+    report `visibilityState` "hidden" and drop `Input.dispatchKeyEvent`); a key into the editor's page reaches no
+    menu while the ComfyUI window has the focus, so the gate's control key runs with that window closed.
+  Not done in V1: the look on a real RunPod pod, the look against the user's ComfyUI (both on the user's word), the
+  desktop build of ComfyUI's default port (the start page names the URL it tried and leads to the setting).
 - **V2, a recipe as a graph:** `toPrompt`, `load()`, `ready()`, *Edit in ComfyUI* (the button beside the title row's
   recipe select, the *View* menu, *Settings > Recipes*), the bar's "Editing: <recipe>". Tests: plain-Node `fromPrompt(toPrompt(r))` over every shipped ComfyUI
   recipe; a gate step with a stub page whose fake `window.app` records what it was given.

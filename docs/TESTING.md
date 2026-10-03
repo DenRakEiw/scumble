@@ -87,7 +87,13 @@ Since then: `tools/document_test.py` / `document_ux_test.py` / `document_perf.py
 what an exported picture says about itself; `node tools/secret_names_test.js` the names it leaves out of an embedded
 recipe), `node tools/font_ref_test.js` (which file a text's font is loaded from), `node tools/pixel_memory_test.js`
 (the tile store at the renderer's typed-array limit, the refusal stood in for), `tools/tiff_test.js` with `tools/tiff_fixtures.py` and
-`tools/tiff_test.py` (gates `tiff`, `tiffperf:WxH`), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
+`tools/tiff_test.py` (gates `tiff`, `tiffperf:WxH`), `tools/comfyview_test.py` (gate `comfyview`, the ComfyUI window of
+item 35 V1 against a stub server it starts, offline only: the start page with no target and no load, one window on a
+second open, its bounds kept; the stub page without `window.scumble`, `window.comfybar` or `require`, kept on its
+origin; Ctrl+S reaching the page and no Scumble menu command, also after the menu is built again, with a control key
+that must reach the menu in the editor's window first (keys go in over CDP with focus emulated: an occluded window
+drops them otherwise); basic, bearer and custom-header auth on the page and on `/ws`; a wrong password ending on the
+401 start page without a login loop; a dead server), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
 view of item 24: real Tab and Escape presses over CDP; the chrome hidden, the view the window's size, full screen and a
 fitted picture while on, the view / rulers / chrome / window put back after; Tab ignored in a text field, a dialog, the
 editor's ask and with Shift; Escape cancels a pending transform or an open polygon first and never reaches the editor

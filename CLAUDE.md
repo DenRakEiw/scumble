@@ -76,34 +76,30 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 afternoon: 0.1.39 is Latest; item 35 planned, V1 next)
+## Where things stand (2026-10-03 afternoon: 0.1.39 is Latest; item 35 V1 built, V2 next)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-03 midday to afternoon, questions and plans, no code): items 34 and 35 planned, DLSS on the
-later list.** The B5 / B6 / 0.1.39 block is in `docs/HISTORY.md`. No workflow (weekly limit at 91 %), no agent.
-- **Item 34** (6c46f51): Generate new with presets (model, its aspects, 1k / 2k / 4k) so the canvas the boxes are
-  drawn on has the output's aspect; today the dialog keeps its own aspect and boxes go stretched when it differs.
-  `docs/PLAN_NEW_PRESETS.md`, its §5 questions unanswered.
-- **Item 14 extended** (8387021): DLSS cannot take a picture (it needs a renderer's motion vectors and depth); NVIDIA's
-  RTX Video Super Resolution node is installed on the user's ComfyUI (`/object_info` read, read only), so a local
-  upscale recipe on it, then the whole picture for local upscale recipes, later: `docs/PLAN_RTX_VSR.md`.
-- **Item 35 planned** (8387021, 762856e, 3262df7, 7bd6a41): ComfyUI in Scumble, `docs/PLAN_COMFY_VIEW.md`. The user's
-  answers, all in the plan: a window of its own (a `BaseWindow`, Scumble's bar on top, the page in its own partition
-  without a preload), opened by a *ComfyUI* button after *Help* and *Assistant*; Comfy Cloud API access yes; *Save to
-  recipe* overwrites; V1-V5 in **one update**; **Scumble keeps working without any ComfyUI** and **assumes no install
-  path** (§2.5); a RunPod pod is a target like any URL (§2.1, the auth types; the template never ran on a real pod).
-  Comfy Cloud has no Inpaint Canvas node and takes no custom nodes: V5 runs recipes without the node there.
-- **Next: V1 of item 35** (the user, 2026-10-03: "machen wir clear und dann weiter"; item 35 is the most important
-  update): `docs/PLAN_COMFY_VIEW.md` §2.1, §2.5 and §3 V1. Measure first whether `session.webRequest` headers reach
-  the websocket handshake (a stub server that checks them on `/ws`); the gates stay `--offline`, nothing queues on
-  the user's ComfyUI. Nothing planned in `docs/PLAN_0_1_38.md` is left. Open from the list: the live
-  checks of FLUX 3 on fal, Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks", a key each), item 30 (Ideogram 4 as
-  its own update), 28 S4, 34 (Generate new with presets and boxes, `docs/PLAN_NEW_PRESETS.md`), B3 macOS. **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**
-  (the user, 2026-10-03, after the release); ask for Comfy's exact answer and re-read the challenge post
-  (memory `comfy-dev-challenge`) before planning the entry with the user. The
-  weekly limit was at 91 % (reset 2026-10-04 09:00Z): no workflows until then.
+**This session (2026-10-03 afternoon): V1 of item 35 built, not committed to a release.** No workflow and no
+agent (weekly limit at 92 %, the user: stop at 99 % at a committed state). The block before (items 34 and 35 planned,
+DLSS on the later list) is in `docs/HISTORY.md`.
+- **V1, the ComfyUI window** (`docs/PLAN_COMFY_VIEW.md` §3 "V1 as built"): `electron/main/comfyview.js`, the bar
+  (`electron/comfybar_preload.js`, `renderer/comfybar.*`), the *ComfyUI* button after *Assistant*, *View › ComfyUI*
+  Ctrl+Shift+K, the start page without a target (§2.5), the auth headers for the target's origin, the bounds kept.
+  Measured first: `session.webRequest` headers reach the `/ws` handshake for all auth types **only with the `ws://`
+  pattern in the filter** (now a trap below); Scumble's menu reaches a `BaseWindow` unless dropped (mutation-checked).
+  Gate `comfyview` (8 steps, a stub server of its own) and `lint types canvasonly help skins` PASS offline on the
+  tiles backend (`dist/gates/gates/cv1`, `cv1b`); the manual got the shortcut row and a paragraph in *Recipes*, the
+  CHANGELOG an `Unreleased` line. Not looked at: a real RunPod pod, the user's own ComfyUI in the window (both on the
+  user's word; opening the page queues nothing).
+- **Next: V2 of item 35** (a recipe as a graph: `toPrompt`, `ready()` / `load()` over `executeJavaScript`, *Edit in
+  ComfyUI* beside the title row's recipe select, in *View* and in *Settings › Recipes*, the bar's "Editing: <recipe>";
+  §2.2, §2.3, §3 V2). V1-V5 ship as **one update**. Open from the list as before: the live checks of FLUX 3 on fal,
+  Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks"), item 30, 28 S4, 34 (`docs/PLAN_NEW_PRESETS.md`), B3 macOS.
+  **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**; ask for Comfy's exact answer and
+  re-read the challenge post (memory `comfy-dev-challenge`) before planning the entry with the user. The weekly limit
+  resets 2026-10-04 09:00Z.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
@@ -241,7 +237,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff canvasonly clip groups`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
@@ -286,6 +282,14 @@ there; add a new flake there, with the date and what was ruled out.
   workers' buffer and the GPU (B item 7 part 2). 572 MB go up in 0.1 s and come back in 0.2 s, on the main thread.
 
 **Electron and Windows**
+- `session.webRequest` headers reach a page's websocket handshake only when the URL filter names the `ws://` /
+  `wss://` origin beside the `http(s)://` one (measured 2026-10-03, Electron 44.2.0; a `login` answer covers the
+  websocket by itself). `Menu.setApplicationMenu` puts the menu on every window on Windows and Linux, a `BaseWindow`
+  included: a window that must not fire Scumble's accelerators drops it again after every `buildMenu` and sets
+  `setIgnoreMenuShortcuts(true)` on its views (`comfyview.js`).
+- An occluded window (a gate behind other windows) reports `visibilityState` "hidden" and drops keys sent with
+  CDP `Input.dispatchKeyEvent` unless `Emulation.setFocusEmulationEnabled` is on; a key into the editor's page
+  reaches no menu accelerator while another Scumble window has the focus.
 - electron-updater installs a downloaded update on every normal quit (`autoInstallOnAppQuit`, on by default) and adds
   that quit handler only when a download ends with the switch on: a Skip has to turn it off in main, and a Skip taken
   back has to add the handler (`updater.js` `_applySkip`, 6.8.9).
@@ -417,6 +421,11 @@ there; add a new flake there, with the date and what was ruled out.
   over `InMemoryTransport` -> the same `createServer` external agents get -> `bridge.js` with
   `meta` (the user-activity wait, the busy check, the turn and its undo step) -> `commands.call`.
   Chats under `<userData>/assistant/`, `docs/ASSISTANT.md`, the plan in `docs/PLAN_ASSISTANT.md`.
+- The ComfyUI window (item 35, `docs/PLAN_COMFY_VIEW.md`): `electron/main/comfyview.js` (a `BaseWindow` made at the
+  first open: the bar `scumble://app/comfybar.html` with `electron/comfybar_preload.js`, whose `comfyview:*` calls
+  main answers for the bar alone, over the page, a `WebContentsView` in `persist:comfyui` with no preload). The
+  auth of *Settings › ComfyUI* goes on as headers for the target's origin only; `--no-comfy` shows the start page
+  unless a test passes a stub's URL. `tools/cdp.py` skips the bar's target.
 - Documents (`.scumble`): `host.saveDocument` / `openDocument` (`renderer/editor/host.js`: `flushEditor` uploads the
   edited layers first, `documentDirty` / `settleKey` keep the "*", `rememberClosed` / `reopenClosed` the closed tabs)
   -> IPC `documents:*` -> `electron/main/documents.js` (a job per request, a lock per path, `idle()` for the quit) ->

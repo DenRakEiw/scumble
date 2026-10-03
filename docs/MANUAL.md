@@ -150,6 +150,8 @@ Generate new makes a new base picture from the prompt, locally or through a prov
 
 Prompt upsampling turns a short prompt into a long one through a language model — your own key, an OpenRouter, Oxen.ai or ToAPIs key, or a local Ollama or LM Studio that needs no key at all. Your own prompt-writing rules can be stored as Markdown templates, so upsampling follows your house style and not a generic one. Upsampling keeps the @img tokens: the language model is told which reference each one names and that it has to leave them as they are, and a token that names no shown reference (a hidden or deleted layer, one that is no longer a reference, or a number no reference holds) stops the upsampling until you show or restore the layer or take the token out. When a rewrite drops a token, adds one or names a picture by number ("image 3") instead, the status line says so, and Revert brings your prompt back. Upsample in the Generate new dialog does the same, and there the note under the prompt says so, next to its own Revert. A template of your own gets the names too; {references} puts them where you want them. With an API model or a local endpoint, upsampling also shows the language model the reference images the prompt names (up to six), as small pictures of at most 512 pixels, so the rewrite knows what each token is; they then go to that model's provider as well. Settings › Prompt templates has the switch to keep them back. A model that takes one picture at a time is asked again with the picture being edited alone, and the status line says "crop only".
 
+The *ComfyUI* button in the top bar (Ctrl+Shift+K, also View › ComfyUI) opens your ComfyUI's own page in a window of its own, from the address and auth under Settings › ComfyUI: a local install, a box in your network or a RunPod pod. ComfyUI's own shortcuts work there; Scumble's do not reach it. With no ComfyUI to show, the window says why and leads to the setting. Scumble needs no ComfyUI for anything else.
+
 ### Notes
 
 - Recipes are files. Copy a shipped one, change the model id or a default, and it appears in your picker alongside the originals.
@@ -583,6 +585,7 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | Ctrl+, | Settings |
 | F1 | This manual, and the chat on it |
 | Ctrl+Shift+A | The assistant |
+| Ctrl+Shift+K | Your ComfyUI's own page, in a window of its own |
 | Ctrl+Shift+L | The console and the log |
 | F11 | Full screen |
 | Ctrl+R | Reload the window: your last changes go into the session first, and the documents come back |

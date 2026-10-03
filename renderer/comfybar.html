@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' scumble://app; img-src 'self' scumble://app data:; style-src 'self' 'unsafe-inline'; font-src 'self' scumble://app data:; connect-src 'self'; script-src 'self'">
+<title>ComfyUI</title>
+<link rel="stylesheet" href="comfybar.css">
+<link id="skin-css" rel="stylesheet" href="skin.css">
+</head>
+<body>
+<div id="cb-bar">
+  <label class="cb-field">Show <select id="cb-target" title="Which ComfyUI this window shows">
+    <option value="comfy">My ComfyUI</option>
+    <option value="cloud" disabled>Comfy Cloud (coming)</option>
+  </select></label>
+  <span id="cb-host" class="cb-note"></span>
+  <span id="cb-recipe" class="cb-note">No recipe</span>
+  <span class="cb-spacer"></span>
+  <span id="cb-loading" class="cb-note" hidden>Loading ...</span>
+  <button id="cb-save" type="button" disabled title="Save this graph into the recipe it was opened from (comes with a later step)">Save to recipe</button>
+  <button id="cb-save-new" type="button" disabled title="Save this graph as a new recipe (comes with a later step)">Save as new recipe</button>
+  <button id="cb-reload" type="button" title="Load the page again, with the address and auth of Settings › ComfyUI">Reload</button>
+</div>
+<div id="cb-start" hidden>
+  <h1>No ComfyUI to show.</h1>
+  <p id="cb-why"></p>
+  <p class="cb-help">This window shows the page of the ComfyUI set under Settings › ComfyUI: a local install, a box in the network, or a RunPod pod. Scumble works without one; the API providers, the helpers and the editor need none.</p>
+  <div class="cb-row">
+    <button id="cb-connect" type="button">Connect a ComfyUI</button>
+    <button id="cb-cloud" type="button" disabled title="Comes with a later step">Use Comfy Cloud</button>
+    <button id="cb-retry" type="button">Try again</button>
+  </div>
+</div>
+<script src="comfybar.js"></script>
+</body>
+</html>

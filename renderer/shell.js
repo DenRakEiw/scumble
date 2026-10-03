@@ -290,6 +290,8 @@ function showStatus(st) {
     ui.statusText.textContent = st.message || st.state || "";
     ui.statusText.title = [st.url, st.devices, st.auth ? "with auth headers" : ""].filter(Boolean).join("\n");
     ui.setConn.textContent = st.message || st.state || "";
+    const comfyButton = document.getElementById("shell-comfy");
+    if (comfyButton) comfyButton.title = `ComfyUI's own page${st.url ? " at " + st.url : ""} in a window of its own (Ctrl+Shift+K)`;
     if (st.state === "connected" || st.state === "missing-node") host.onConnected(st).catch((err) => console.error(err));
 }
 
@@ -2572,6 +2574,7 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "mcp-copied") host.editor && host.editor.setStatus("MCP registration copied. Paste it into your client; see docs/MCP.md.");
     else if (cmd === "settings-updates") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Updates"); if (h) h.scrollIntoView(); });
     else if (cmd === "settings-plugins") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Plugins"); if (h) h.scrollIntoView(); });
+    else if (cmd === "settings-comfy") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "ComfyUI"); if (h) h.scrollIntoView(); if (ui.setUrl) ui.setUrl.focus(); });
     else if (cmd === "settings-appearance") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Appearance"); if (h) h.scrollIntoView(); });
     else if (cmd.startsWith("plugin:")) plugins.runAction(cmd.slice(7)).catch(() => { /* reported by the plugin host */ });
 });
@@ -2666,6 +2669,10 @@ if (assistantButton) assistantButton.addEventListener("click", () => toggleAssis
 initHelp({ openSettings }).catch((err) => console.warn("help:", err.message));
 const helpButton = $("shell-help");
 if (helpButton) helpButton.addEventListener("click", () => toggleHelp());
+// ComfyUI's own page in a window of its own (electron/main/comfyview.js, docs/PLAN_COMFY_VIEW.md §2.1): it opens on
+// the ComfyUI of Settings › ComfyUI, or on its start page when there is none to show
+const comfyButton = $("shell-comfy");
+if (comfyButton) comfyButton.addEventListener("click", () => window.scumble.comfyView.open().catch((err) => console.warn("comfyui window:", err.message)));
 
 // ---- the console dialog: the log's ring buffer, filtered, growing live ----------------------
 

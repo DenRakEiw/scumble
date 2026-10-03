@@ -58,6 +58,34 @@ The 0.1.37 block of 2026-10-02 (night) was moved here the same night, when A1, A
 
 The block of 2026-10-03 (midday: B5, B6, the 0.1.39 release) was moved here the same afternoon, when item 35 was planned.
 
+The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved here the same afternoon, when V1 of item 35 was built.
+
+## 2026-10-03 (midday to afternoon: items 34 and 35 planned, DLSS on the later list; moved here when V1 of item 35 was built)
+
+**This session (2026-10-03 midday to afternoon, questions and plans, no code): items 34 and 35 planned, DLSS on the
+later list.** The B5 / B6 / 0.1.39 block is in `docs/HISTORY.md`. No workflow (weekly limit at 91 %), no agent.
+- **Item 34** (6c46f51): Generate new with presets (model, its aspects, 1k / 2k / 4k) so the canvas the boxes are
+  drawn on has the output's aspect; today the dialog keeps its own aspect and boxes go stretched when it differs.
+  `docs/PLAN_NEW_PRESETS.md`, its §5 questions unanswered.
+- **Item 14 extended** (8387021): DLSS cannot take a picture (it needs a renderer's motion vectors and depth); NVIDIA's
+  RTX Video Super Resolution node is installed on the user's ComfyUI (`/object_info` read, read only), so a local
+  upscale recipe on it, then the whole picture for local upscale recipes, later: `docs/PLAN_RTX_VSR.md`.
+- **Item 35 planned** (8387021, 762856e, 3262df7, 7bd6a41): ComfyUI in Scumble, `docs/PLAN_COMFY_VIEW.md`. The user's
+  answers, all in the plan: a window of its own (a `BaseWindow`, Scumble's bar on top, the page in its own partition
+  without a preload), opened by a *ComfyUI* button after *Help* and *Assistant*; Comfy Cloud API access yes; *Save to
+  recipe* overwrites; V1-V5 in **one update**; **Scumble keeps working without any ComfyUI** and **assumes no install
+  path** (§2.5); a RunPod pod is a target like any URL (§2.1, the auth types; the template never ran on a real pod).
+  Comfy Cloud has no Inpaint Canvas node and takes no custom nodes: V5 runs recipes without the node there.
+- **Next: V1 of item 35** (the user, 2026-10-03: "machen wir clear und dann weiter"; item 35 is the most important
+  update): `docs/PLAN_COMFY_VIEW.md` §2.1, §2.5 and §3 V1. Measure first whether `session.webRequest` headers reach
+  the websocket handshake (a stub server that checks them on `/ws`); the gates stay `--offline`, nothing queues on
+  the user's ComfyUI. Nothing planned in `docs/PLAN_0_1_38.md` is left. Open from the list: the live
+  checks of FLUX 3 on fal, Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks", a key each), item 30 (Ideogram 4 as
+  its own update), 28 S4, 34 (Generate new with presets and boxes, `docs/PLAN_NEW_PRESETS.md`), B3 macOS. **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**
+  (the user, 2026-10-03, after the release); ask for Comfy's exact answer and re-read the challenge post
+  (memory `comfy-dev-challenge`) before planning the entry with the user. The
+  weekly limit was at 91 % (reset 2026-10-04 09:00Z): no workflows until then.
+
 ## 2026-10-03 (midday: B5 and B6 built, the 0.1.39 release; moved here when item 35 was planned)
 
 **This session (2026-10-03 late morning to midday, "weiter", then "ok, baue weiter", "ok"): B5 and B6 built, FLUX 3

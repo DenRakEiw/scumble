@@ -44,6 +44,7 @@ const DEFAULTS = {
     assistant: { ...require("./assistant/index.js").DEFAULTS, noticed: {} },
     appearance: { skin: "", refused: null },  // Settings › Appearance (docs/SKINS.md); "" = the default look
     window: null,
+    comfyView: null,   // the ComfyUI window (electron/main/comfyview.js): { bounds, maximized }
 };
 
 function file(name) {
