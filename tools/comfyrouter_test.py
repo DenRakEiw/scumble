@@ -46,7 +46,7 @@ NODE_TEST = os.path.join(ROOT, "tools", "comfyrouter_test.js")
 KEY = "test-comfyrouter-gate-0123456789"
 REAL_KEY = "comfyui-0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd"   # the shape of a Comfy key; never a real one
 OTHER_RECIPES = ["hy_image_3_5"]   # put back by the cleanup too
-RECIPES = ["flux1_fill", "flux2_max", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4",
+RECIPES = ["flux1_fill", "flux2_max", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4",
            "ideogram_4_5", "krea_2", "magnific_precision", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro"]
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 PROMPT = "a red car in the rain"

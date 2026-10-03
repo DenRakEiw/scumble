@@ -787,7 +787,9 @@ const COMMANDS = {
             if (!wired) throw new Error("the recipe has no result output for this mode: select a recipe first");
             ed.lastSentPrompt = null;
             ed.lastRunNotes = [];
-            // a refusal of this run (a token that cannot go, a missing key, ...) is said at once, not after the wait below
+            // a refusal of this run (a token that cannot go, a missing key, ...) is said at once, not after the wait below;
+            // a provider run is over when ed.generate() returns, so `seconds` counts from here
+            const started = Date.now();
             const run = await ed.generate();
             if (run && run.error) throw run.error;
             if (/^Error|failed/i.test(ed.status)) throw new Error(ed.status);
@@ -812,7 +814,7 @@ const COMMANDS = {
             const layer = ed.layers.find((l) => l.id === h.layerId);
             // prompt_sent: the prompt as the model got it, each @img token written as the model's name for its picture;
             // notes: what the route (or a local recipe's slots) left out; boxes: how many boxes went in the prompt
-            return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - t0) / 100) / 10, prompt_sent: ed.lastSentPrompt, notes: ed.lastRunNotes || [], boxes: ed.lastSentBoxes || 0 };
+            return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - started) / 100) / 10, prompt_sent: ed.lastSentPrompt, notes: ed.lastRunNotes || [], boxes: ed.lastSentBoxes || 0 };
         },
     },
 

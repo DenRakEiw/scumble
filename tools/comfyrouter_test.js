@@ -478,9 +478,11 @@ async function main() {
             if (upToRouter[upToRouter.length - 1] !== "comfyrouter") bad.push(`${r.id}: not the last provider before oxen / magnific (${r.providerIds})`);
             if (r.default !== raw.default || r.default === "comfyrouter") bad.push(`${r.id}: the default moved to ${r.default}`);
             if (!/Also on Comfy Router\./.test(r.description || "")) bad.push(`${r.id}: the description does not say Also on Comfy Router`);
-            // the live status, true per model: GPT Image 2 and Nano Banana 2 ran through the Router on 2026-09-23, the rest not
-            const ranLive = ["gpt_image_2", "nano_banana_2"].includes(r.id);
-            const opening = ranLive ? /^Runs on Comfy Router \(api\.comfy\.org\) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; run against the live API on 2026-09-23 / : /^Runs on Comfy Router \(api\.comfy\.org\) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet\./;
+            // the live status, true per model: GPT Image 2 and Nano Banana 2 ran through the Router on 2026-09-23, FLUX 3
+            // Image on 2026-10-03, the rest not
+            const ranOn = { gpt_image_2: "2026-09-23", nano_banana_2: "2026-09-23", flux3: "2026-10-03" }[r.id];
+            const ranLive = !!ranOn;
+            const opening = ranLive ? new RegExp(`^Runs on Comfy Router \\(api\\.comfy\\.org\\) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; run against the live API on ${ranOn} `) : /^Runs on Comfy Router \(api\.comfy\.org\) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet\./;
             if (!opening.test(v.note || "")) bad.push(`${r.id}: the note's opening sentence does not say ${ranLive ? "that it ran live" : "that it has not run live"}`);
             if (!/passes (them|it) to /.test(v.note || "")) bad.push(`${r.id}: the note does not say where the pictures go`);
             const prov = v.model.split("/")[0];

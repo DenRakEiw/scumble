@@ -23,12 +23,16 @@ the section for its version; `docs/` and the commit history hold the technical d
   Nano Banana and Seedream on their own APIs and on OpenRouter and Comfy Router; the Magnific and ToAPIs routes without
   one) answers `seed: null` to agents, and the result's row in the history says "no seed sent" instead of offering a
   seed it never used.
+- **`generate` says how long a run on an API took.** It answered about half a second for every API run, since its
+  clock started once the result was in; `seconds` now counts from the moment the run starts.
 - **FLUX 3 Image on OpenRouter and Comfy Router.** The FLUX 3 Image recipe has two more providers: OpenRouter, on
   its own key, and Comfy Router, on the Comfy key you may already have for Comfy Cloud and billed in Comfy credits.
   Both send the edits with up to nine more pictures, new images with up to ten references, and the boxes in the
   prompt. On OpenRouter the prompt goes as you wrote it, the crop's shape and size class are the same as on Black
-  Forest Labs' own API, and the safety tolerance row works; grounding cannot be switched there. Written from the
-  providers' documentation and schemas, not run against the live services yet.
+  Forest Labs' own API, and the safety tolerance row works; grounding cannot be switched there. Tried live before the
+  release, two edits at 2K on each: a cow turned into a white horse in the same place, and with the selection as a
+  box a black cat sat in the box (about 40 to 110 seconds a run; OpenRouter charged $0.05 an edit, Comfy did not
+  report its credits).
 - **FLUX 3 Image keeps the crop's shape.** A crop widened to one of the model's shapes now always asks for that
   shape; when the rounding of its size put it more than 3 % off, it went as "auto" and the answer was not fitted onto
   the crop exactly.
