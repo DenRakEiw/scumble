@@ -25,10 +25,15 @@ import * as dialogs from "../dialogs.js";
 const PROXY = "/comfy";
 
 /**
- * Whether a run of the recipe sends boxes (item 28): the variant's `options.boxes` names the rows' format, for Generate
- * and Generate new; Generate new with references may take its text route's own options.
+ * The format a run of the recipe sends boxes in (item 28), or null when it sends none: the variant's `options.boxes`
+ * ("flux3", "ideogram4"), for Generate and Generate new; Generate new with references may take its text route's own
+ * options.
  */
-const takesBoxes = (r) => !!(r && r.kind === "provider" && (typeof (r.options || {}).boxes === "string" || typeof ((r.text && r.text.refs && r.text.refs.options) || {}).boxes === "string"));
+const boxesSchema = (r) => {
+    if (!r || r.kind !== "provider") return null;
+    const own = (r.options || {}).boxes, text = ((r.text && r.text.refs && r.text.refs.options) || {}).boxes;
+    return typeof own === "string" ? own : typeof text === "string" ? text : null;
+};
 const SUBFOLDER = "inpaint_canvas";
 
 // How big the crop goes to an API provider. The app is for quality, so "max" is the default:
@@ -285,7 +290,7 @@ export const api = {
  * @property {boolean} removeSupported
  * @property {boolean} refTokens                                     @img1 in the prompt names a reference layer (docs/PLAN_REFS.md); the node has none yet
  * @property {(editor: any, over?: any, opts?: { keep?: boolean }) => Promise<any>} refLayout   the chosen route's name for each shown reference ({ names, over, none, local, cap, refuse, guess? }); the node answers null
- * @property {(editor: any) => { takes: boolean, count: number } | null} boxSwitch   the Boxes switch under the prompt (docs/PLAN_BOXES.md S3d): does the recipe send boxes, how many the document holds; the node answers null
+ * @property {(editor: any) => { takes: boolean, count: number, schema: string | null } | null} boxSwitch   the Boxes switch under the prompt (docs/PLAN_BOXES.md S3d): does the recipe send boxes, how many the document holds, in which format (flux3, ideogram4); the node answers null
  * @property {() => any} removeModel
  * @property {(editor: any, req: { image: Uint8Array, mask: Uint8Array }) => Promise<any>} removeInApp
  * @property {(editor: any) => Promise<any>} warmRemove
@@ -358,11 +363,13 @@ export const host = {
     /**
      * The Boxes switch under the prompt field (item 28 S3d, docs/PLAN_BOXES.md §10): `takes` says a run of the selected
      * recipe sends boxes (the row shows only then), `count` how many boxes the plugins hold for the document (its
-     * label). The switch itself is the document's `genSettings.boxes`: on, a run sends the boxes, or the selection as one
+     * label), `schema` the format they go in (the variant's `options.boxes`: "flux3", "ideogram4"; null when it takes
+     * none). The switch itself is the document's `genSettings.boxes`: on, a run sends the boxes, or the selection as one
      * box when there are none; off, none.
      */
     boxSwitch(editor) {
-        return { takes: takesBoxes(this.recipe), count: editor && this.plugins ? this.plugins.countBoxes(editor) : 0 };
+        const schema = boxesSchema(this.recipe);
+        return { takes: !!schema, count: editor && this.plugins ? this.plugins.countBoxes(editor) : 0, schema };
     },
 
     setApiSize(mode) {

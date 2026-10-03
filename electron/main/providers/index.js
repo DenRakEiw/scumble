@@ -205,6 +205,7 @@ async function edit(request) {
             else {
                 const a = boxes.applyBoxes(req, lay);
                 req.prompt = a.prompt;
+                if (a.params) req.params = { ...req.params, ...a.params };   // Ideogram 4: no prompt expansion over its caption
                 sentBoxes = a.rows.length;
                 for (const n of a.notes) notes.push(n);
             }

@@ -163,7 +163,8 @@ if (got.boxes.length !== 6 || got.notes.length) throw new Error("mapped: " + JSO
 if (!eq(by.dog_1.rect, [100 / 1200, 100 / 800, 400 / 1200, 300 / 800]) || by.dog_1.src !== null) throw new Error("dog_1: " + JSON.stringify(by.dog_1));
 if (by.log_1.kind !== "keep" || !eq(by.log_1.src, by.log_1.rect)) throw new Error("log_1: " + JSON.stringify(by.log_1));
 if (by.lamp_1.kind !== "from" || by.lamp_1.ref !== 2 || !eq(by.lamp_1.src, [0, 0, 1, 1])) throw new Error("lamp_1: " + JSON.stringify(by.lamp_1));
-if (by.sign_1.desc !== 'text reading "OPEN", red neon') throw new Error("sign_1 desc: " + by.sign_1.desc);
+if (by.sign_1.desc !== "red neon" || by.sign_1.text !== "OPEN") throw new Error("sign_1 desc / text: " + JSON.stringify(by.sign_1));
+if ("text" in by.dog_1) throw new Error("a box without words got text: " + JSON.stringify(by.dog_1));
 if (by.table_1.desc !== "put {@ref:2} on the table" || by.table_1.kind !== "from") throw new Error("table_1: " + JSON.stringify(by.table_1));
 // a smaller frame (a crop at 0, 0, 600 x 400): the boxes outside it are noted, the ones inside clamped
 const small = await P.collectBoxes(ed, { ...ctx, frame: { x: 0, y: 0, w: 600, h: 400 } }, []);
@@ -600,6 +601,49 @@ await c("undo", D());
 if ((await boxes()).length !== 6) throw new Error("the clear's undo");
 await c("close_document", { doc: window.__bDoc, force: true });
 return { boxes: after.length };
+"""),
+    ("ideogram4_caption", """
+// S5: a recipe whose variant takes boxes as Ideogram 4's caption (the loopback, no key): the prompt goes as the JSON
+// caption, a Text box as a text element with its words, a Move box left out with the run's note and the panel's line.
+// A document of its own; the recipe put back.
+const main = window.__bDoc;
+const prev = host.recipe;
+const LOOP = { id: "loopback_ideogram", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", name: "Loopback", settings: [], options: { boxes: "ideogram4" } };
+try {
+    const d = await c("new_document");
+    window.__bDoc = d.id;
+    const ed = ednow();
+    host.shell.activate(ed);
+    await c("new_canvas", { width: 1200, height: 800, doc: d.id });
+    host.setRecipe(LOOP);
+    const sw = host.boxSwitch(ed);
+    if (!sw.takes || sw.schema !== "ideogram4") throw new Error("boxSwitch under the Ideogram loopback: " + JSON.stringify(sw));
+    await c("boxes.add", { id: "sign_1", rect: [200, 200, 600, 400], text: "SAUNA", desc: "carved letters", doc: d.id });
+    await c("boxes.add", { id: "ox_1", kind: "move", rect: [700, 100, 900, 300], src: [700, 400, 900, 600], desc: "an ox", doc: d.id });
+    const list = await c("boxes.list", D());
+    if (list.recipe.schema !== "ideogram4") throw new Error("boxes.list's recipe: " + JSON.stringify(list.recipe));
+    await c("set_prompt", { text: "a sauna in the woods", doc: d.id });
+    await c("select_rect", { x: 0, y: 0, w: 1200, h: 800, doc: d.id });
+    const details = Array.from(ed.panes.gen.querySelectorAll("details")).find((x) => x.querySelector("summary") && x.querySelector("summary").textContent.trim() === "Boxes");
+    if (!details) throw new Error("no Boxes section");
+    details.open = true;
+    await wait(150);
+    const warns = Array.from(details.querySelectorAll(".boxes-warn-row")).map((r) => r.textContent);
+    if (!warns.some((w) => /^Box ox_1 does not go with Loopback: Ideogram 4 places New, Text and Keep boxes only/.test(w))) throw new Error("the panel's line for the Move box: " + JSON.stringify(warns));
+    const g = await c("generate", { timeout: 60 });
+    let cap = null;
+    try { cap = JSON.parse(String(g.prompt_sent)); } catch (_) { throw new Error("prompt_sent is not the JSON caption: " + g.prompt_sent); }
+    const els = cap.compositional_deconstruction && cap.compositional_deconstruction.elements;
+    if (Object.keys(cap).join() !== "high_level_description,compositional_deconstruction" || cap.high_level_description !== "a sauna in the woods" || cap.compositional_deconstruction.background !== "") throw new Error("the caption: " + g.prompt_sent);
+    if (!Array.isArray(els) || els.length !== 1 || Object.keys(els[0]).join() !== "type,bbox,text,desc" || els[0].type !== "text" || els[0].text !== "SAUNA" || els[0].desc !== "carved letters") throw new Error("the elements: " + JSON.stringify(els));
+    if (g.boxes !== 1 || !(g.notes || []).some((n) => /^Box ox_1 \\(Move\\) was not sent: Ideogram 4 places/.test(n))) throw new Error("boxes / notes: " + JSON.stringify({ boxes: g.boxes, notes: g.notes }));
+    return { prompt: g.prompt_sent, bbox: els[0].bbox };
+} finally {
+    if (window.__bDoc !== main) { try { await c("close_document", { doc: window.__bDoc, force: true }); } catch (_) { /* gone */ } }
+    window.__bDoc = main;
+    host.setRecipe(prev);
+    host.shell.activate(ednow());
+}
 """),
     ("each_box_its_own_colour_and_a_double_click_describes_it", """
 // 0.1.38: every box its own colour, kept through a change; a double click on a box opens its description on the canvas

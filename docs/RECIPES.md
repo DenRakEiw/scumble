@@ -708,7 +708,7 @@ the prompt as on BFL's API. Not run against the live Router either.
 - **Options** (the variant's `options`): `schema: "flux3"`; `accepts`, the optional fields that may go (default and
   shipped `["safety_tolerance", "grounding"]`; `resolution` is the only other one `flux3.js` knows); `max_images`
   (default 10); `images_field` (default `images`); `boxes: "flux3"`, the row format the route takes for boxes in
-  the prompt (below). The Settings rows: *Safety tolerance* 0 to 4 (default 2; 5 answers 422), *Grounding (web and
+  the prompt (below; the other format is `"ideogram4"`, "Ideogram 4" below). The Settings rows: *Safety tolerance* 0 to 4 (default 2; 5 answers 422), *Grounding (web and
   image search)*, a BOOLEAN row on by default as in the API: the model may research the prompt with web and image
   search before it renders; off keeps the prompt from going to search. `body()` copies only the keys `accepts` names,
   so a stray key from the app side never reaches the request. Boxes are not a Settings row: the Boxes switch under
@@ -752,6 +752,30 @@ the prompt as on BFL's API. Not run against the live Router either.
   4k "can take several minutes"; the poll waits up to 15 minutes.
 - **Not built:** Keep rows from the in-app objects (`docs/PLAN_BOXES.md` S4), the regional hosts (the docs name only
   `api.bfl.ai` for this endpoint), and any aggregator variant (item 29, `docs/PLAN_FLUX3.md`).
+
+**Ideogram 4** (`recipes/ideogram_4.json`). On fal (`ideogram/v4/image-to-image`, text `ideogram/v4`) image to image
+without a mask: the crop goes in whole at *Strength* and the stitch keeps the selection. **Boxes** (item 28 S5,
+`options.boxes: "ideogram4"`, `docs/PLAN_BOXES.md` §3): Ideogram 4 reads a structured caption, a JSON object that is
+the whole prompt, keys in this order: `{ "high_level_description": <the prompt>, "compositional_deconstruction": {
+"background", "elements": [...] } }` (the background empty on an edit, the prompt on a new image), an element `{ "type": "obj", "bbox", "desc" }` or `{ "type": "text", "bbox",
+"text", "desc" }`, `bbox` `[ymin, xmin, ymax, xmax]` on the 0 to 1000 grid of the crop (FLUX 3's grid). Main's
+`boxes.js` (`captionIdeogram4`) writes it after `resolveNames`: New boxes as objects, Text boxes as text elements (the
+words, their desc beside them), Keep boxes on an edit as objects where they stand; Move, Remove and From boxes have
+no counterpart in a caption that describes a picture and stay out with one note naming them ("Boxes ox_1 (Move) ...
+were not sent"), as Keep on a new image. With the switch on and no box held, the selection goes as one object (desc
+= the prompt). No element left: the prompt goes as written. While the caption goes, *Prompt expansion*
+(`expansion_model`) goes as None with a note when the row says otherwise (an expansion rewrites the prompt, the
+caption with it); no `style_description` (Kijai's caption builder writes one only when a style is chosen). **Live
+2026-10-03** (`docs/PLAN_BOXES.md` §6.4, the user's fal key, `dist/live_ideogram4.py`, pictures in `dist/live-out/`):
+fal passes the caption to the model as written and none of the JSON is rendered. An edit with one box put a black cat
+in the grass of the selection (109 s, background empty). New images, an apple box and a Text box "SAUNA": with a
+written background the sign sat in its box and the apple at the top left, an unasked panel of made-up text filling the
+empty top right; with the background empty the model painted a transparency checkerboard over the free half (hence
+the prompt as the background of a new image, and a note when the prompt is empty); with the prompt as the background
+the picture was one meadow, the sign in its box, the apple box at the top left ignored for an apple on the ground;
+the shipped path (the Boxes plugin, `captionIdeogram4`, expansion set to Medium and sent as None with the note) with
+the apple box on the ground put both where their boxes were (21 s). Comfy Router and Oxen send the prompt alone (text
+only) and take no boxes.
 
 **Ideogram 4.5** (`recipes/ideogram_4_5.json`; `docs/PLAN_IDEOGRAM45.md`). Ideogram's precise edit model: a real
 mask edit whose answer has the picture's own size and copies the pixels the edit does not touch. Written from the

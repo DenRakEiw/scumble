@@ -12,12 +12,14 @@
 // element as <id>. The docs: the instruction and the rows should agree and the caption should say where each element
 // goes, so a sentence is added for every box the prompt does not mention by its <id>, with its description and its
 // place in words (S3e: "Place a red scarf <red_scarf_1> at the top left.").
+//
+// Ideogram 4 (S5, `options.boxes: "ideogram4"`): the boxes become its JSON caption, the whole prompt (captionIdeogram4).
 "use strict";
 
 const { resolveMarkers, validRefName, REF_NAME_DEFAULT } = require("./refs");
 
 /** The schemas this file writes rows for, by the variant's `options.boxes`. */
-const SCHEMAS = new Set(["flux3"]);
+const SCHEMAS = new Set(["flux3", "ideogram4"]);
 
 /** The kinds a box may have. */
 const KINDS = new Set(["new", "keep", "move", "remove", "from"]);
@@ -42,7 +44,8 @@ const fracs = (v) => Array.isArray(v) && v.length === 4 && v.every((x) => typeof
 /**
  * The boxes of a request held to their shape: an array, each box an object with a well-formed and unique id, a known
  * kind, `rect` fractions in 0..1 with l < r and t < b, `src` the same for keep / move / remove / from and null for new,
- * `ref` an integer for from only, `desc` a string. Throws naming the box ("Box edit_1: ..: nothing was sent.").
+ * `ref` an integer for from only, `desc` a string, `text` (the words a Text box renders; its desc then says how they
+ * look) a string on a new box only. Throws naming the box ("Box edit_1: ..: nothing was sent.").
  */
 function checkBoxes(boxes) {
     if (boxes == null) return [];
@@ -62,6 +65,10 @@ function checkBoxes(boxes) {
         if (b.kind === "from") { if (!Number.isInteger(b.ref) || b.ref < 0) throw bad("a from box needs ref, the reference's index"); }
         else if (b.ref != null) throw bad("only a from box has a ref");
         if (b.desc != null && typeof b.desc !== "string") throw bad("desc is not a string");
+        if (b.text != null) {
+            if (typeof b.text !== "string") throw bad("text is not a string");
+            if (b.kind !== "new") throw bad("only a new box renders text");
+        }
     });
     return boxes;
 }
@@ -106,11 +113,17 @@ const fold = (s) => String(s == null ? "" : s).replace(/\s+/g, " ").trim().slice
 /** The pattern a request names its pictures by. */
 const patternOf = (req) => (req && validRefName(req.refName) ? req.refName : REF_NAME_DEFAULT);
 
-/** A box's desc with the {@ref:i} markers resolved to the route's names ("image 2"), folded to one line. */
-function descOf(req, lay, b) {
-    const r = resolveMarkers(fold(b.desc), lay.pictures, patternOf(req));
+/** `s` with the {@ref:i} markers resolved to the route's names ("image 2"), folded to one line; `b` names the box. */
+function resolved(req, lay, b, s) {
+    const r = resolveMarkers(fold(s), lay.pictures, patternOf(req));
     if (r.left.length) throw new Error(`Box ${b.id} names reference picture ${r.left[0].ref + 1}, which this run does not send: nothing was sent.`);
     return r.text;
+}
+
+/** A box's desc as a FLUX 3 row carries it: a Text box says what it reads (`text reading "SALE", red letters`). */
+function descOf(req, lay, b) {
+    const own = fold(b.desc);
+    return resolved(req, lay, b, b.text != null ? `text reading "${fold(b.text)}"${own ? ", " + own : ""}` : own);
 }
 
 /**
@@ -242,14 +255,72 @@ function instructionFlux3(prompt, boxes, lay, rows) {
     return captionFlux3(prompt, boxes, rows, frameName(lay));
 }
 
+// ---- Ideogram 4 (S5): the boxes as its JSON caption ------------------------------------------------------------------
+// docs/PLAN_BOXES.md §3 (Kijai's caption builder, read 2026-10-01): the whole prompt is one JSON object, its key order
+// fixed: { high_level_description, compositional_deconstruction: { background, elements } }, an element { type: "obj",
+// bbox, desc } or { type: "text", bbox, text, desc }, bbox [ymin, xmin, ymax, xmax] on the 0 to 1000 grid of the frame
+// (FLUX 3's grid). It describes a picture, not a change: no source box, no other picture, so Move, Remove and From have
+// no counterpart and stay out with a note; a Keep box is an element where it stands. No style_description: the builder
+// writes one only when a style is chosen, and then every key of it. Live 2026-10-03 on fal, expansion None
+// (docs/PLAN_BOXES.md §6.4): the model followed the caption, a sign's words in their box, and rendered none of the
+// JSON. The background: empty on an edit (the crop is the background; a cat went into the grass), the prompt on a new
+// image (an empty one painted a transparency checkerboard over the half the elements left free).
+
+/** The kinds Ideogram 4's caption places: New and Text everywhere, Keep on an edit (a new image has nothing to keep). */
+const placesIdeogram4 = (b, text) => b.kind === "new" || (b.kind === "keep" && !text);
+
+/** One element of the caption for a box it places: a Text box with its words, else an object; desc without the words. */
+function elementIdeogram4(req, lay, b) {
+    const desc = resolved(req, lay, b, b.desc);
+    if (b.kind === "keep") return { type: "obj", bbox: grid(b.src), desc };
+    return b.text != null ? { type: "text", bbox: grid(b.rect), text: fold(b.text), desc } : { type: "obj", bbox: grid(b.rect), desc };
+}
+
 /**
- * The prompt a request goes out with when its variant takes boxes: the instruction, a space and the JSON rows.
- * Returns { prompt, rows, notes }. Called by index.js after resolveNames (the markers already names in `req.prompt`)
- * and only when `req.boxes` holds something; a route without a schema does not get here (index.js drops the boxes
- * with a note).
+ * Ideogram 4's caption of a request's boxes: { prompt, rows, notes, params }. The prompt (markers already names) is the
+ * high_level_description (left out when empty, as the builder does) and, on a new image, the background too; the
+ * boxes it places are the elements, in the order sent. The boxes it cannot place are named in one note. No element left: the prompt goes as written, rows
+ * empty. While the caption goes, the Prompt expansion row (`expansion_model`) goes as None: an expansion rewrites the
+ * prompt, the caption with it.
+ */
+function captionIdeogram4(req, lay) {
+    const boxes = checkBoxes(req.boxes);
+    const text = req.kind === "text";
+    const placed = boxes.filter((b) => placesIdeogram4(b, text));
+    const left = boxes.filter((b) => !placesIdeogram4(b, text));
+    const notes = [];
+    if (left.length) {
+        const which = left.map((b) => `${b.id} (${b.kind === "from" ? "From reference" : b.kind.charAt(0).toUpperCase() + b.kind.slice(1)})`).join(", ");
+        notes.push(`${left.length === 1 ? "Box" : "Boxes"} ${which} ${left.length === 1 ? "was" : "were"} not sent: Ideogram 4 places New and Text boxes${text ? " on a new image" : " and Keep boxes"} only.`);
+    }
+    const elements = placed.map((b) => elementIdeogram4(req, lay, b));
+    if (!elements.length) return { prompt: req.prompt, rows: [], notes, params: null };
+    const bare = placed.filter((b, i) => b.kind === "new" && b.text == null && !elements[i].desc).map((b) => b.id);
+    if (bare.length) notes.push(`${bare.length === 1 ? "Box" : "Boxes"} ${bare.join(", ")} went without a description: the model guesses what goes there.`);
+    const caption = {};
+    const high = String(req.prompt == null ? "" : req.prompt).trim();
+    if (high) caption.high_level_description = high;
+    caption.compositional_deconstruction = { background: text ? high : "", elements };
+    if (text && !high) notes.push("The prompt is empty: Ideogram 4 takes it as the new image's background, and without one it may paint a transparency checkerboard around the boxes.");
+    let params = null;
+    const exp = req.params && req.params.expansion_model;
+    if (exp != null && exp !== "" && exp !== "None") {
+        params = { expansion_model: "None" };
+        notes.push(`Prompt expansion went as None (not ${exp}): an expansion would rewrite the boxes' caption.`);
+    }
+    return { prompt: JSON.stringify(caption), rows: elements, notes, params };
+}
+
+/**
+ * The prompt a request goes out with when its variant takes boxes: for FLUX 3 the instruction, a space and the JSON
+ * rows; for Ideogram 4 its JSON caption (captionIdeogram4). Returns { prompt, rows, notes, params } (`params`: values
+ * that replace the request's own while the boxes go, or null). Called by index.js after resolveNames (the markers
+ * already names in `req.prompt`) and only when `req.boxes` holds something; a route without a schema does not get here
+ * (index.js drops the boxes with a note).
  */
 function applyBoxes(req, lay) {
     const schema = schemaOf(req);
+    if (schema === "ideogram4") return captionIdeogram4(req, lay);
     if (schema !== "flux3") throw new Error(`Boxes: no row format for "${String(schema)}": nothing was sent.`);
     const boxes = checkBoxes(req.boxes);
     const rows = rowsFlux3(req, lay);
@@ -257,7 +328,7 @@ function applyBoxes(req, lay) {
     // a New box without a description leaves the model to guess what goes there (the panel warns of it before)
     const bare = rows.filter((r, i) => boxes[i].kind === "new" && !r.desc).map((r) => r.id);
     const notes = bare.length ? [`${bare.length === 1 ? "Box" : "Boxes"} ${bare.join(", ")} went without a description: the model guesses what goes there.`] : [];
-    return { prompt: `${prompt} ${JSON.stringify(rows)}`, rows, notes };
+    return { prompt: `${prompt} ${JSON.stringify(rows)}`, rows, notes, params: null };
 }
 
-module.exports = { SCHEMAS, KINDS, BOX_ID, DESC_MAX, schemaOf, checkBoxes, grid, frameName, pictureName, rowsFlux3, instructionFlux3, captionFlux3, whereWords, wayWords, applyBoxes, _descOf: descOf };
+module.exports = { SCHEMAS, KINDS, BOX_ID, DESC_MAX, schemaOf, checkBoxes, grid, frameName, pictureName, rowsFlux3, instructionFlux3, captionFlux3, captionIdeogram4, whereWords, wayWords, applyBoxes, _descOf: descOf };

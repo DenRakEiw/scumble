@@ -187,7 +187,7 @@ export function makeTool(scumble, api) {
     const tool = {
         id: "box",
         label: "Boxes",
-        title: "Boxes for the prompt (FLUX 3 Image): drag to draw a box, click to select, double-click to describe it, drag to move, the handles to resize; Delete removes, D duplicates, arrows nudge, Alt+click picks a box under another",
+        title: "Boxes for the prompt (FLUX 3 Image, Ideogram 4): drag to draw a box, click to select, double-click to describe it, drag to move, the handles to resize; Delete removes, D duplicates, arrows nudge, Alt+click picks a box under another",
         icon: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="11" height="9" rx="1"/><rect x="10" y="10" width="11" height="9" rx="1" stroke-dasharray="3 2"/></svg>',
         key: "X",
         hint: "Boxes: drag to draw a box, click to select, double-click to describe it, drag to move, handles resize; Delete removes, D duplicates, arrows nudge (Shift 10 px), Alt+click picks a box under another. The Generate pane's Boxes panel lists them all.",

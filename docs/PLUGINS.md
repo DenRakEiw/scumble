@@ -416,8 +416,12 @@ A box is in **image pixels** (the document's coordinates, `[l, t, r, b]`, right 
   rect: [l, t, r, b],                // where the element goes (for remove: where it was)
   src: [l, t, r, b] | null,          // keep / move / remove: where it is now; from: where it is in the reference layer (null: the whole layer)
   layer: "L12",                      // from only: the reference layer's id (doc.layers() has it)
-  desc: "..." }                      // what it is, at most 400 characters
+  desc: "...",                       // what it is, at most 400 characters (a Text box: how its words look)
+  text: "SALE" }                     // new only, optional: the words the box renders; the core writes them as each model takes words
 ```
+
+A box with `text` is a Text box: FLUX 3 gets its row as `text reading "SALE", <desc>`, Ideogram 4 a `text` element
+with the words and the desc beside them (`docs/RECIPES.md` "Ideogram 4").
 
 A desc may name a reference layer as `{@layer:<id>}` (the layer's id): the core turns it into the marker main resolves to the model's own name for that picture ("image 2"), or refuses the run when that layer is not sent; the Boxes plugin writes an `@img1` token of a description that way.
 

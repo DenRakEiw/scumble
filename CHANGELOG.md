@@ -3,6 +3,19 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- **Boxes for Ideogram 4.** The boxes in the prompt now go with Ideogram 4 on fal too, as Ideogram's own structured
+  caption: your prompt is the picture's summary, each New box an object in its place, each Text box the words it
+  renders, and on an edit each Keep box an element that stays. Move, Remove and From reference boxes have no place
+  in such a caption: they stay out of an Ideogram run, and the Boxes section and the status line say which. While the
+  boxes go, *Prompt expansion* goes as None, so nothing rewrites the caption. Tried live before the release: an edit
+  put a black cat into the grass of the selection, and a new image of a meadow put a red apple and a carved "SAUNA"
+  sign where their boxes were. On a new image the prompt also describes the background: without one, the model
+  painted a transparency checkerboard around the boxes, so Scumble says so when the prompt is empty.
+- **Ideogram 4 ran live on fal** for the first time (an edit and four new images), so its recipe no longer says it
+  is untried there.
+
 ## 0.1.38 — 2026-10-03
 
 - **A question when an update is ready.** Once Scumble has downloaded a new version in the background, it asks:

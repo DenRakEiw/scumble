@@ -65,10 +65,11 @@ press Generate. The recipe decides where it runs: your ComfyUI, or a provider wi
   reference layers, and transparent results from the OpenAI image models land as cut-outs.
 - Start from nothing: *Generate new* makes the base image from the prompt alone, locally
   or through a provider, and you edit it from there.
-- Boxes in the prompt for FLUX 3 Image: draw boxes on the picture with the Boxes tool (X) and say what each one
+- Boxes in the prompt for FLUX 3 Image and Ideogram 4 (on fal): draw boxes on the picture with the Boxes tool (X) and say what each one
   does (add something new, keep, move or remove an element, place a reference layer, render words); the run tells
   the model where each change goes. With no boxes drawn, the selection goes as one box. One switch under the prompt
-  turns them on and off, and the boxes are saved with the document.
+  turns them on and off, and the boxes are saved with the document. Ideogram 4 gets them as its structured caption
+  (new things, words and kept elements; it has no move, remove or reference boxes).
 - Prompt upsampling through a stored API key, an OpenRouter, Oxen.ai or ToAPIs key, or a local Ollama /
   LM Studio, with your own prompt-writing rules as Markdown templates.
 

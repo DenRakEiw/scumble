@@ -1,4 +1,4 @@
-// Boxes plugin (item 28 S3, docs/PLAN_BOXES.md §10): boxes in the prompt for a model that takes them (FLUX 3 Image).
+// Boxes plugin (item 28 S3, docs/PLAN_BOXES.md §10): boxes in the prompt for a model that takes them (FLUX 3 Image, Ideogram 4).
 // A box says where an element goes in the picture (New), which element stays (Keep), moves (Move) or goes (Remove),
 // and which reference layer, or a part of it, is placed in it (From reference); a Text box renders words. The boxes
 // live in the document's plugin data (scumble.documents.data: saved with the session and the .scumble file) in image
@@ -23,7 +23,7 @@ import { BOX_ID, KINDS, DESC_MAX, toFrame, idWords, smallBox, smallNote } from "
 import { clipboardText, fold } from "./format.js";
 import { makeTool, colourOf, colourSlot, nextColour } from "./tool.js";
 
-const HELP = "Boxes tell a model that takes them (FLUX 3 Image) where things go. New: what the description says, in the box. Keep: an element stays where it is. Move: from its source box to this one. Remove: taken out, the background filled. From reference: a reference layer (or a part of it) placed in the box. Text: the words rendered in the box. Positions are image pixels; a run measures the boxes in the crop it sends and leaves out one outside it. A box sets place and size, not a hard edge.";
+const HELP = "Boxes tell a model that takes them (FLUX 3 Image, Ideogram 4) where things go. New: what the description says, in the box. Keep: an element stays where it is. Move: from its source box to this one. Remove: taken out, the background filled. From reference: a reference layer (or a part of it) placed in the box. Text: the words rendered in the box. Positions are image pixels; a run measures the boxes in the crop it sends and leaves out one outside it. A box sets place and size, not a hard edge. Ideogram 4 takes New, Text and Keep boxes; Move, Remove and From reference stay out of its runs.";
 const KIND_LABELS = { new: "New", keep: "Keep", move: "Move", remove: "Remove", from: "From reference", text: "Text" };
 const TOKEN = /@img([1-9][0-9]*)\b/g;
 
@@ -128,27 +128,34 @@ export function activate(scumble) {
     }
 
     // ---- what a box says -----------------------------------------------------------------------------------------------
-    /** The desc a run gets: a text box says what it reads; an @img token becomes a {@layer:id} marker the app resolves. */
+    /**
+     * The desc a run gets: an @img token becomes a {@layer:id} marker the app resolves. A Text box's words go beside it
+     * as `text` (the app writes them as the model takes words), so its desc says only how they look.
+     */
     function descOf(doc, b) {
         const labels = new Map(doc.layers().filter((l) => l.label).map((l) => [l.label, l.id]));
-        const words = b.text != null ? `text reading "${b.text}"${b.desc ? ", " + b.desc : ""}` : b.desc || "";
-        return words.replace(TOKEN, (m, n) => (labels.has("img" + n) ? `{@layer:${labels.get("img" + n)}}` : m));
+        return (b.desc || "").replace(TOKEN, (m, n) => (labels.has("img" + n) ? `{@layer:${labels.get("img" + n)}}` : m));
     }
     /** The desc for the clipboard: an @img token as the model's picture name (<ref_image_k>, k the reference's number). */
     function clipDesc(doc, b) {
         const words = b.text != null ? `text reading "${b.text}"${b.desc ? ", " + b.desc : ""}` : b.desc || "";
         return words.replace(TOKEN, (m, n) => `<ref_image_${n}>`);
     }
-    /** The recipe's stand on boxes: { takes, name } (takes: the core's own test, the one the Boxes switch shows by). */
+    /**
+     * The recipe's stand on boxes: { takes, name, schema } (takes: the core's own test, the one the Boxes switch shows by;
+     * schema: the format they go in, "flux3" or "ideogram4").
+     */
     function recipeState() {
         const r = scumble.host.recipe;
         const s = scumble.host.boxSwitch(null);
-        return { takes: !!(s && s.takes), name: r ? r.name || r.id : null };
+        return { takes: !!(s && s.takes), name: r ? r.name || r.id : null, schema: (s && s.schema) || null };
     }
+    /** The boxes a run of the recipe leaves out by their kind: Ideogram 4's caption has no Move, Remove or From (main's boxes.js). */
+    const unplacedOf = (boxes, schema) => (schema === "ideogram4" ? boxes.filter((b) => b.kind === "move" || b.kind === "remove" || b.kind === "from").map((b) => b.id) : []);
 
     // ---- the Boxes switch under the prompt (S3d): the core's genSettings.boxes, per document ---------------------------
     const SWITCH_NOTE = "The Boxes switch under the prompt is on now: the boxes go with the next run.";
-    const SWITCH_LATER = "The Boxes switch is on for this document: the boxes go with a run of a recipe that takes them (FLUX 3 Image).";
+    const SWITCH_LATER = "The Boxes switch is on for this document: the boxes go with a run of a recipe that takes them (FLUX 3 Image, Ideogram 4).";
     const switched = new Map();   // document id -> the note of the switch the last add turned on, until its caller has said it
     const switchOf = (doc) => !!(doc.editor && doc.editor.genSettings && doc.editor.genSettings.boxes);
     /** The first box of a document turns its switch on, so a drawn box is not left out without a word. */
@@ -314,7 +321,7 @@ export function activate(scumble) {
         id: "document",
         count(doc) { return boxesOf(doc).length; },
         boxes(doc) {
-            return boxesOf(doc).map((b) => ({ id: b.id, kind: b.kind, rect: b.rect, src: b.kind === "new" ? undefined : b.src, layer: b.kind === "from" ? b.layer : undefined, desc: descOf(doc, b) }));
+            return boxesOf(doc).map((b) => ({ id: b.id, kind: b.kind, rect: b.rect, src: b.kind === "new" ? undefined : b.src, layer: b.kind === "from" ? b.layer : undefined, desc: descOf(doc, b), text: b.text != null ? b.text : undefined }));
         },
     });
 
@@ -361,8 +368,9 @@ export function activate(scumble) {
             // under the pointer is not replaced by a change elsewhere
             let warnKey = null;
             const names = (ids) => `${ids.length === 1 ? "Box" : "Boxes"} ${ids.join(", ")}`;
-            const renderWarnings = (chk, bare) => {
+            const renderWarnings = (chk, bare, unplaced = [], name = "") => {
                 const lines = [];
+                if (unplaced.length) lines.push([`${names(unplaced)} ${unplaced.length === 1 ? "does" : "do"} not go with ${name}: Ideogram 4 places New, Text and Keep boxes only (Keep on an edit).`, false]);
                 if (bare.length) lines.push([`${names(bare)} ${bare.length === 1 ? "has" : "have"} no description: the model does not know what goes there. Describe ${bare.length === 1 ? "it in its row" : "them in their rows"}.`, false]);
                 if (chk && chk.small.length) lines.push([smallNote(chk.small), false]);
                 if (chk && chk.out.length) lines.push([`${names(chk.out)} ${chk.out.length === 1 ? "lies" : "lie"} outside the crop Generate sends and ${chk.out.length === 1 ? "is" : "are"} left out.`, false]);
@@ -387,11 +395,11 @@ export function activate(scumble) {
                 const chk = rs.takes && on && doc.loaded ? cropCheck(doc, boxes) : null;
                 const at = chk ? ` Generate measures them in the crop it sends, ${chk.crop.w} × ${chk.crop.h} px at ${chk.crop.x}, ${chk.crop.y} (the frame the Boxes tool shows).` : "";
                 note.textContent = !rs.name ? ""
-                    : !rs.takes ? `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image) is selected.`
+                    : !rs.takes ? `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image, Ideogram 4) is selected.`
                     : !on ? `Not sent: the Boxes switch under the prompt is off. The boxes stay with the document; switch it on to send them with ${rs.name}.`
                     : boxes.length ? `${rs.name} sends these boxes with every Generate and Generate new run.${at}`
                     : `${rs.name} sends the selection as one box while the document has none (the Boxes switch is on).`;
-                renderWarnings(chk, rs.takes && on ? bareOf(boxes) : []);
+                renderWarnings(chk, rs.takes && on ? bareOf(boxes) : [], rs.takes && on ? unplacedOf(boxes, rs.schema) : [], rs.name || "");
                 const k = JSON.stringify([boxes, refs.map((l) => [l.id, l.name])]);
                 if (!force && k === key) return;
                 // a field being edited is not rebuilt under the user's cursor: the next change after it blurs does it
@@ -480,10 +488,10 @@ export function activate(scumble) {
     scumble.commands.register("list", {
         description: "The boxes of this document (image pixels), whether the selected recipe takes boxes and whether the document's Boxes switch is on (set_generation boxes): a run sends them only when both are.",
         params: {}, needsImage: true, scope: "doc",
-        run(doc) { const rs = recipeState(); return { boxes: boxesOf(doc).map(summary), count: boxesOf(doc).length, recipe: { name: rs.name, takes: rs.takes }, switch: switchOf(doc) }; },
+        run(doc) { const rs = recipeState(); return { boxes: boxesOf(doc).map(summary), count: boxesOf(doc).length, recipe: { name: rs.name, takes: rs.takes, schema: rs.schema }, switch: switchOf(doc) }; },
     });
     scumble.commands.register("add", {
-        description: "Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).",
+        description: "Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image; Ideogram 4 takes new, text and keep) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).",
         params: { id: { type: "string", description: "lowercase words and a number joined by underscores (knight_1, red_scarf_2); default made from the last two words of the description's first phrase (\"a red scarf\" -> red_scarf_1, \"a small black cat sitting in the grass\" -> black_cat_1), else the next free box_n" }, ...FIELDS },
         needsImage: true, scope: "doc",
         run(doc, a) { const b = add(doc, a); return { ...summary(b), ...(switchNote(doc) ? { switched_on: true } : {}) }; },

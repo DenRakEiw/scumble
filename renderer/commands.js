@@ -622,7 +622,7 @@ const COMMANDS = {
     },
     set_generation: {
         description: "Generation settings: mode api / local (the recipe decides what is available), seed, random seed, denoise, refine, and the document's Boxes switch (boxes).",
-        params: { mode: P.str("api or local", { enum: ["api", "local"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay") },
+        params: { mode: P.str("api or local", { enum: ["api", "local"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay") },
         async run(ed, a) {
             const g = ed.genSettings;
             if (a.mode != null) { if (!["api", "local"].includes(a.mode)) throw new Error("mode must be api or local"); g.mode = a.mode; }

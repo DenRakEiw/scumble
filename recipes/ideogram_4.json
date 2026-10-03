@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Ideogram 4",
   "family": "Ideogram",
-  "description": "Ideogram V4.0q, strong at typography and layout. Image to image without a mask: the crop goes in whole and the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on Comfy Router. Also on Oxen.ai.",
+  "description": "Ideogram V4.0q, strong at typography and layout. Image to image without a mask: the crop goes in whole and the stitch keeps the selection. On fal it takes boxes: they go as Ideogram's JSON caption. Model id from fal's model index on 2026-09-11; run against the live API on fal on 2026-10-03 (an edit and a new image, both with a caption). Also on Comfy Router. Also on Oxen.ai.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -11,6 +11,9 @@
       "input": "fill",
       "fields": {
         "mask": false
+      },
+      "options": {
+        "boxes": "ideogram4"
       },
       "text": {
         "model": "ideogram/v4"
@@ -61,7 +64,7 @@
           ]
         }
       ],
-      "note": "No mask input: the whole crop is rewritten at Strength and the stitch keeps the selection. Lower Strength to hold the composition. Ideogram 4 has no masked edit endpoint; fal-ai/ideogram/v3/edit is the older model that does."
+      "note": "No mask input: the whole crop is rewritten at Strength and the stitch keeps the selection. Lower Strength to hold the composition. Ideogram 4 has no masked edit endpoint; fal-ai/ideogram/v3/edit is the older model that does. With the Boxes switch on, the prompt goes as Ideogram's JSON caption (the prompt as its description, New and Text boxes as elements, Keep boxes on an edit; Move, Remove and From boxes stay out) and Prompt expansion as None, so nothing rewrites it."
     },
     "comfyrouter": {
       "model": "ideogram/ideogram-v4",

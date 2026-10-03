@@ -9,7 +9,8 @@
 //     rect: [l, t, r, b],               // fractions 0..1 of the frame: the target
 //     src: [l, t, r, b] | null,         // keep / move / remove: where it is in the frame; from: where it is in the reference
 //     ref: null | i,                    // from: the reference's index as the {@ref:i} markers count it (0-based, the Original included)
-//     desc: "..." }                     // at most DESC_MAX characters, newlines folded
+//     desc: "...",                      // at most DESC_MAX characters, newlines folded
+//     text: "SALE" }                    // new only, optional: the words a Text box renders (desc then says how they look)
 
 /**
  * The shape of a box id: lowercase words joined by underscores, then a number (the docs' `<knight_1>`, `red_scarf_2`);
@@ -135,8 +136,9 @@ const pxRect = (r) => Array.isArray(r) && r.length === 4 && r.every((v) => Numbe
  * A plugin's boxes (`scumble.generate.register`, docs/PLUGINS.md "Generate"; S2 of docs/PLAN_BOXES.md) mapped into
  * the request's shape. A plugin box is the request's shape with `rect` and `src` in **image pixels** ([l, t, r, b],
  * r and b exclusive) and, on a from box, `layer` (the reference layer's id) instead of `ref`; its `src` is then where
- * the element sits in that layer as it is placed in the picture (image pixels too; null = the whole picture).
- * `ctx.frame` is the run's frame ({ x, y, w, h }), `ctx.references` the pictures of this run as the {@ref:i} markers
+ * the element sits in that layer as it is placed in the picture (image pixels too; null = the whole picture). A new
+ * box may carry `text`, the words it renders (main writes them as each model takes words: FLUX 3 `text reading "..."`
+ * before the desc, Ideogram 4 a text element). `ctx.frame` is the run's frame ({ x, y, w, h }), `ctx.references` the pictures of this run as the {@ref:i} markers
  * count them ([{ index, layerId, frame }]). `opts.taken` holds the ids already used (boxes or strings): a duplicate
  * gets the next free number (edit_1 -> edit_2). Returns { boxes, notes }: a box (or its source) outside the frame is
  * dropped with a note naming it. Throws on a malformed box (`err.code` "shape": the plugin's bug) and on a from box
@@ -166,6 +168,8 @@ export function pluginBoxes(list, ctx, { taken = [], nameOf = null } = {}) {
         if (!KINDS.has(b.kind)) throw fail("shape", `${who}: the kind "${String(b.kind).slice(0, 20)}" is not new, keep, move, remove or from`);
         if (!pxRect(b.rect)) throw fail("shape", `${who}: rect is not [l, t, r, b] in image pixels with l < r and t < b`);
         if (b.desc != null && typeof b.desc !== "string") throw fail("shape", `${who}: desc is not a string`);
+        if (b.text != null && typeof b.text !== "string") throw fail("shape", `${who}: text is not a string`);
+        if (b.text != null && b.kind !== "new") throw fail("shape", `${who}: only a new box renders text`);
         let src = null, ref = null;
         if (b.kind === "from") {
             if (typeof b.layer !== "string" || !b.layer) throw fail("shape", `${who}: a from box needs layer, the reference layer's id`);
@@ -190,7 +194,7 @@ export function pluginBoxes(list, ctx, { taken = [], nameOf = null } = {}) {
             id = m[1] + n;
         }
         used.add(id);
-        out.push({ id, kind: b.kind, rect, src, ref, desc: descOf(b, who) });
+        out.push({ id, kind: b.kind, rect, src, ref, desc: descOf(b, who), ...(b.text != null ? { text: foldDesc(b.text) } : {}) });
     });
     return { boxes: out, notes };
 }

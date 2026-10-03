@@ -223,7 +223,13 @@ neither, so it would put every box in the wrong place and name the wrong picture
 5. **S5, Ideogram 4** once §6.4 says which route takes the caption (fal or a local recipe): `options.boxes:
    "ideogram4"` on that variant, a second formatter in `boxes.js` (the prompt as `high_level_description`, a box of
    kind `background` as `background`, the others as elements, `text` rows with the words), nothing new in the UI.
-   Not planned in detail here.
+   Not planned in detail here. **Built 2026-10-03** after §6.4 (fal): `captionIdeogram4` in `providers/boxes.js`
+   (New -> obj, Text -> text with the words, Keep -> obj on an edit; Move, Remove, From and a new image's Keep left
+   out with one note; the background the prompt on a new image, empty on an edit; `expansion_model` sent as None
+   with a note); a request box carries a Text box's words as `text` beside its desc (the plugin no longer writes
+   `text reading` itself; FLUX 3's rows read the same); `host.boxSwitch` answers the `schema`, the panel names the
+   boxes an Ideogram run leaves out; `recipes/ideogram_4.json` fal `options.boxes: "ideogram4"`. No background box
+   kind. Tests: `tools/boxes_test.js` 6b, the `boxes` gate's `ideogram4_caption` step.
 
 Live checks 6.1 to 6.3 come **after S1 and before S3**: if the box changes nothing by eye, S3 is not worth three days.
 
@@ -234,7 +240,12 @@ Live checks 6.1 to 6.3 come **after S1 and before S3**: if the box changes nothi
 2. A reference placed by a From-reference row vs. the plain instruction.
 3. A Remove row (an object in the selection removed, the background filled).
 4. Ideogram 4 on fal with a JSON caption, prompt expansion None: does it follow the boxes, or does fal / the model
-   read the JSON as text to render?
+   read the JSON as text to render? **Ran 2026-10-03** (`dist/live_ideogram4.py`, the user's fal key in
+   `dist/live-keys`): fal passes the caption as written, the model follows it and renders none of the JSON; a sign's
+   words landed in their box. An edit (one box, background empty) put a black cat in the grass of the selection; a new
+   image with the background empty painted a transparency checkerboard over the half the elements left free, so a new
+   image takes the prompt as its background. The route is fal: S5 built the same day (below, and `docs/RECIPES.md`
+   "Ideogram 4").
 FLUX 3 runs take one to two minutes; four or five runs are about 50 credits.
 
 ## 7. Open questions for the user

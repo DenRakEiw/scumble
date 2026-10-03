@@ -45,7 +45,7 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     check("the whole frame is [0, 0, 1000, 1000]", eq(boxes.grid([0, 0, 1, 1]), [0, 0, 1000, 1000]), "");
     check("rounding: 0.0004 is 0, 0.0005 is 1; a top that rounds to 1000 steps back to 999", eq(boxes.grid([0.0004, 0.9996, 0.0005, 1]), [999, 0, 1000, 1]), short(boxes.grid([0.0004, 0.9996, 0.0005, 1])));
     check("a box that rounds to nothing is widened to 1 cell (at the far edge, backwards)", eq(boxes.grid([0.3, 0.3, 0.3002, 0.3003]), [300, 300, 301, 301]) && eq(boxes.grid([0.9998, 0.9999, 1, 1]), [999, 999, 1000, 1000]), short([boxes.grid([0.3, 0.3, 0.3002, 0.3003]), boxes.grid([0.9998, 0.9999, 1, 1])]));
-    check("the schema: options.boxes 'flux3' is known, 'ideogram4' not yet, nothing without it", boxes.schemaOf(req()) === "flux3" && boxes.schemaOf({ options: { boxes: "ideogram4" } }) === null && boxes.schemaOf({ options: { schema: "flux3" } }) === null && boxes.schemaOf({}) === null, "");
+    check("the schema: options.boxes 'flux3' and 'ideogram4' are known, another not, nothing without it", boxes.schemaOf(req()) === "flux3" && boxes.schemaOf({ options: { boxes: "ideogram4" } }) === "ideogram4" && boxes.schemaOf({ options: { boxes: "qwen" } }) === null && boxes.schemaOf({ options: { schema: "flux3" } }) === null && boxes.schemaOf({}) === null, "");
 
     // ---- 2. the shape check ---------------------------------------------------------------------------------------------
     console.log("\n--- 2. the shape check ---");
@@ -179,6 +179,47 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     check("the shape check runs first", /^Box bad id: the id is not/.test(e), e);
     a = boxes.applyBoxes({ ...r2, prompt: "image 3 goes {@ref:1}", boxes: [box({ kind: "from", src: [0, 0, 1, 1], ref: 1, desc: "{@ref:1}" })] }, lay2);
     check("a marker left in the prompt stays (index.js resolved it before): the rows' desc is resolved", a.prompt.startsWith("image 3 goes {@ref:1}. In <ref_image_0>, place image 3 <edit_1> from <ref_image_2> in the middle. ") && a.rows[0].desc === "image 3", short(a.prompt));
+    // a Text box's words come beside its desc (S5): FLUX 3's row says what it reads, as the plugin wrote it before
+    rows = boxes.rowsFlux3({ ...r2, boxes: [box({ id: "sign_1", desc: "red neon", text: "OPEN" }), box({ id: "sale_1", desc: "", text: "SALE" })] }, lay2);
+    check("FLUX 3: a Text box's row reads text reading \"OPEN\", red neon (without a desc: the words alone)", rows[0].desc === 'text reading "OPEN", red neon' && rows[1].desc === 'text reading "SALE"', short(rows));
+    e = throws(() => boxes.checkBoxes([box({ kind: "keep", src: [0, 0, 1, 1], text: "OPEN" })]));
+    check("text on a box that is not new refuses", /^Box edit_1: only a new box renders text/.test(e), e);
+    e = throws(() => boxes.checkBoxes([box({ text: 7 })]));
+    check("text that is not a string refuses", /^Box edit_1: text is not a string/.test(e), e);
+
+    // ---- 6b. Ideogram 4's caption (S5) ---------------------------------------------------------------------------------
+    console.log("\n--- 6b. Ideogram 4's JSON caption ---");
+    const fal = require(path.join(PROV, "fal.js"));
+    const ri = (extra = {}) => ({
+        provider: "fal", model: "ideogram/v4/image-to-image", kind: "fill", fields: { mask: false }, options: { boxes: "ideogram4" },
+        params: { strength: 0.8, rendering_speed: "QUALITY", expansion_model: "None" }, prompt: "a black cat in the grass", negative: "",
+        image: PNG, references: [], original: 0, refName: "image {n}", boxes: [], ...extra,
+    });
+    const layI = fal.layout(ri());
+    const two = [box({ id: "cat_1", desc: "a black cat" }), box({ id: "sign_1", rect: [0.5, 0.6, 0.95, 0.9], desc: "carved letters", text: "SAUNA" })];
+    a = boxes.applyBoxes(ri({ boxes: two }), layI);
+    check("the caption: the prompt as high_level_description, an obj and a text element in the order sent, the keys in the documented order", a.prompt === '{"high_level_description":"a black cat in the grass","compositional_deconstruction":{"background":"","elements":[{"type":"obj","bbox":[250,250,750,750],"desc":"a black cat"},{"type":"text","bbox":[600,500,900,950],"text":"SAUNA","desc":"carved letters"}]}}' && a.rows.length === 2 && eq(a.notes, []) && a.params === null, short(a.prompt));
+    check("the caption parses back, its elements are the rows", eq(JSON.parse(a.prompt).compositional_deconstruction.elements, a.rows), "");
+    a = boxes.applyBoxes(ri({ boxes: [box({ id: "log_1", kind: "keep", src: [0.1, 0.2, 0.3, 0.4], desc: "a log" }), box({ id: "ox_1", kind: "move", src: [0, 0, 0.2, 0.2], desc: "an ox" }), box({ id: "cat_1", kind: "remove", src: [0.5, 0.5, 0.6, 0.6] }), box({ id: "lamp_1", kind: "from", src: [0, 0, 1, 1], ref: 0 })] }), layI);
+    check("an edit: Keep is an element where it stands; Move, Remove and From stay out with one note naming each", eq(a.rows, [{ type: "obj", bbox: [200, 100, 400, 300], desc: "a log" }]) && eq(a.notes, ["Boxes ox_1 (Move), cat_1 (Remove), lamp_1 (From reference) were not sent: Ideogram 4 places New and Text boxes and Keep boxes only."]), short([a.rows, a.notes]));
+    a = boxes.applyBoxes(ri({ kind: "text", model: "ideogram/v4", boxes: [box({ id: "cat_1" }), box({ id: "log_1", kind: "keep", src: [0.1, 0.2, 0.3, 0.4] })] }), layI);
+    check("a new image: Keep stays out too (nothing to keep), the note says so", a.rows.length === 1 && eq(a.notes, ["Box log_1 (Keep) was not sent: Ideogram 4 places New and Text boxes on a new image only."]), short(a.notes));
+    check("a new image: the prompt is the background too (an empty one painted a checkerboard live)", JSON.parse(a.prompt).compositional_deconstruction.background === "a black cat in the grass", short(a.prompt));
+    a = boxes.applyBoxes(ri({ kind: "text", model: "ideogram/v4", prompt: "", boxes: [box({ id: "cat_1" })] }), layI);
+    check("a new image without a prompt: an empty background and a note saying what it may do", JSON.parse(a.prompt).compositional_deconstruction.background === "" && a.notes.some((n) => /^The prompt is empty: Ideogram 4 takes it as the new image's background/.test(n)), short(a.notes));
+    a = boxes.applyBoxes(ri({ boxes: [box({ id: "ox_1", kind: "move", src: [0, 0, 0.2, 0.2] })] }), layI);
+    check("no element left: the prompt goes as written, no rows, the note", a.prompt === "a black cat in the grass" && eq(a.rows, []) && a.notes.length === 1 && a.params === null, short(a));
+    a = boxes.applyBoxes(ri({ prompt: "  ", boxes: [box({ id: "cat_1", desc: "" })] }), layI);
+    check("an empty prompt: no high_level_description (as the builder does); a bare New box gets its note", a.prompt === '{"compositional_deconstruction":{"background":"","elements":[{"type":"obj","bbox":[250,250,750,750],"desc":""}]}}' && eq(a.notes, ["Box cat_1 went without a description: the model guesses what goes there."]), short([a.prompt, a.notes]));
+    a = boxes.applyBoxes(ri({ params: { strength: 0.8, expansion_model: "Medium" }, boxes: two }), layI);
+    check("Prompt expansion Medium goes as None while the caption goes, with a note", eq(a.params, { expansion_model: "None" }) && a.notes.some((n) => /^Prompt expansion went as None \(not Medium\)/.test(n)), short([a.params, a.notes]));
+    a = boxes.applyBoxes(ri({ params: { strength: 0.8, expansion_model: "Medium" }, boxes: [box({ id: "ox_1", kind: "move", src: [0, 0, 0.2, 0.2] })] }), layI);
+    check("no caption, no change to the expansion", a.params === null, short(a));
+    a = boxes.applyBoxes(ri({ prompt: "line one\nline \"two\"", boxes: two }), layI);
+    check("the prompt's own quotes and newline are escaped by the JSON, not lost", JSON.parse(a.prompt).high_level_description === "line one\nline \"two\"", short(a.prompt));
+    e = throws(() => boxes.applyBoxes(ri({ boxes: [box({ id: "cat_1", desc: "a cat like {@ref:1}" })] }), layI));
+    check("a desc naming a picture this route does not send refuses (the image-to-image route takes the crop alone)", /^Box cat_1 names reference picture 2, which this run does not send/.test(e), e);
+    check("the selection's box (S1, desc = the prompt) as an element", boxes.applyBoxes(ri({ boxes: [box({ id: "black_cat_1", desc: "a black cat in the grass" })] }), layI).prompt === '{"high_level_description":"a black cat in the grass","compositional_deconstruction":{"background":"","elements":[{"type":"obj","bbox":[250,250,750,750],"desc":"a black cat in the grass"}]}}', "");
 
     // ---- 7. the renderer's module --------------------------------------------------------------------------------------
     console.log("\n--- 7. renderer/editor/boxes.js ---");
@@ -267,6 +308,11 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     try { R.pluginBoxes([{ id: "cat_1", kind: "new", rect: [300, 200, 500, 350], desc: "put {@layer:L9} here" }], pctx, { nameOf: (id) => `the layer "Dog" (${id})` }); } catch (e) { code = e.code; msg = e.message; }
     check("pluginBoxes: {@layer:} of a layer this run does not send refuses with the layer's name (code layer)", code === "layer" && /^Box cat_1 names the layer "Dog" \(L9\), which is not a reference picture of this run: nothing was sent\.$/.test(msg), msg);
     check("LAYER_MARK is exported and matches only the braces form", R.LAYER_MARK instanceof RegExp && "x {@layer:L12} y @img1".replace(R.LAYER_MARK, "<$1>") === "x <L12> y @img1", "");
+    pb = R.pluginBoxes([{ id: "sign_1", kind: "new", rect: [300, 200, 500, 350], desc: "red  neon", text: " OPEN\nNOW " }, { id: "cat_1", kind: "new", rect: [300, 200, 500, 350], desc: "a cat" }], pctx);
+    check("pluginBoxes: a Text box's words go beside its desc as text, folded to one line; a box without words has no text", pb.boxes[0].text === "OPEN NOW" && pb.boxes[0].desc === "red neon" && !("text" in pb.boxes[1]), short(pb.boxes));
+    code = null;
+    try { R.pluginBoxes([{ id: "log_1", kind: "keep", rect: [300, 200, 500, 350], src: [300, 200, 500, 350], desc: "", text: "OPEN" }], pctx); } catch (e) { code = e.code; msg = e.message; }
+    check("pluginBoxes: text on a box that is not new is the plugin's bug (code shape)", code === "shape" && /^Box log_1: only a new box renders text$/.test(msg), msg);
 
     // ---- 10. the Boxes plugin's clipboard formatter (plugins/boxes/format.js) against main's rows -------------------
     // the same boxes in image pixels, main's rows through the renderer's mapping (as a run does it) and the plugin's rows
