@@ -13,9 +13,18 @@
 // image list takes (the crop included); a run with more is refused before sending.
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
+// FLUX 3 Image (blackforestlabs/flux-3/edit-image and text-to-image; docs/PLAN_FLUX3.md "fal"): `options.sizing:
+// "flux3"` sends FLUX 3's shape instead of a size: `resolution` the tier by area (flux3.js: 1k / 2k / 4k), on a text
+// run `aspect_ratio` the nearest of `options.aspect_ratios` (fal's 14, no "9:21"), on an edit the preset the crop was
+// widened to or one within 3 % of it (info.fit "stretch" for the stitch), else none (fal's "auto", image 1's shape);
+// safety_tolerance goes as a whole number 0 to 4, enable_prompt_expansion as a boolean. `options.min_side` /
+// `max_pixels` (256 px, 4 MP): a reference layer or the Original outside them is scaled into them (ctx.resizePng), the
+// crop is refused. The seed reported is the one sent: none where `options.omit` keeps it home.
+//
 // text (kind "text", Generate new): the text-to-image route takes no picture. With reference layers the recipe's
-// `text.refs.model` sends the run to the edit route (".../edit"), which gets the references alone in its image list
-// (no crop, no mask) and the asked size as `options.sizing` says; textLayout(req) declares them (26f).
+// `text.refs.model` sends the run to the edit route (".../edit", FLUX 3's ".../edit-image"), which gets the references
+// alone in its image list (no crop, no mask) and the asked size as `options.sizing` says; textLayout(req) declares
+// them (26f).
 //
 // upscale (kind "upscale", docs/RECIPES.md "Upscale recipes"): { image_url, upscale_factor, output_format,
 // the variant's settings, prompt only when the variant takes one }. Topaz, Clarity and SeedVR2 name the
@@ -24,10 +33,13 @@
 // upscale waits up to 30 minutes in the queue, not 15.
 "use strict";
 
-const { dataUri, fetchImage, readError, sleep, num, fitPixels, closestAspect } = require("./util");
+const { dataUri, fetchImage, readError, sleep, num, fitPixels, closestAspect, pngSize } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
+const flux3 = require("./flux3");
 
 const QUEUE = "https://queue.fal.run/";
+/** The routes that take an image list besides the text route (FLUX 3 names its own ".../edit-image"). */
+const EDIT_ROUTE = /\/edit(-image)?$/;
 
 /**
  * The asked size inside an edit route's area range (`text.refs.options.pixels` [min, max]; Seedream 5 on fal: pro 1 to
@@ -40,6 +52,13 @@ function fittedSize(w, h, range) {
     return { width: fw, height: fh };
 }
 
+/** `sizing: "flux3"`: { aspect, resolution, fit } by FLUX 3's rules over the variant's presets (`options.aspect_ratios`). */
+function flux3Shape(req) {
+    const o = req.options || {};
+    const presets = Array.isArray(o.aspect_ratios) && o.aspect_ratios.length ? o.aspect_ratios.map(String) : flux3.FLUX3_ASPECTS;
+    return flux3.shapeOf({ ...req, options: {}, params: {} }, presets);
+}
+
 function inputFor(req) {
     const p = req.params;
     const input = { prompt: req.prompt || "", output_format: "png", num_images: 1 };
@@ -49,13 +68,19 @@ function inputFor(req) {
     // a text run with references on an edit route: the pictures are the references alone (textLayout)
     const refLay = req.kind === "text" && (req.references || []).length ? textLayout(req) : null;
     const withRefs = !!(refLay && !refLay.drops);
+    // FLUX 3: the tier by area; a text run always the nearest preset, an edit the crop's preset or none (auto)
+    const shape = sizing === "flux3" ? flux3Shape(req) : null;
+    if (shape) {
+        input.resolution = shape.resolution;
+        if (shape.aspect !== "auto") input.aspect_ratio = shape.aspect;
+    }
     if (req.kind === "text") {
         const o = req.options || {};
         if (sizing === "image_size") input.image_size = withRefs && Array.isArray(o.pixels) ? fittedSize(req.width, req.height, o.pixels) : { width: req.width, height: req.height };
-        else if (req.aspect) input.aspect_ratio = req.aspect;
+        else if (!shape && req.aspect) input.aspect_ratio = req.aspect;
         // a free size on an edit route that takes presets only: the closest one, not the first picture's shape
         // (`text.refs.options.aspect_ratios`; Nano Banana 2 and Pro)
-        else if (withRefs && Array.isArray(o.aspect_ratios) && o.aspect_ratios.length) input.aspect_ratio = closestAspect(req.width || 1, req.height || 1, o.aspect_ratios);
+        else if (!shape && withRefs && Array.isArray(o.aspect_ratios) && o.aspect_ratios.length) input.aspect_ratio = closestAspect(req.width || 1, req.height || 1, o.aspect_ratios);
         if (withRefs) {
             // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from sending one
             const n = countOf(refLay), max = refLay.max;
@@ -81,6 +106,15 @@ function inputFor(req) {
         if (k === "random_seed" || k === "model" || v === "" || v == null) continue;
         if (withRefs && (k === "image_size" || k === "aspect_ratio") && input[k] !== undefined && auto(v)) continue;
         input[k] = v;
+    }
+    if (sizing === "flux3") {
+        // the rows as FLUX 3's schema types them (an agent may give "3" or "on"); a safety that is no number goes as fal's 2
+        if (input.safety_tolerance !== undefined) {
+            const s = flux3.safetyOf(input.safety_tolerance);
+            if (s == null) delete input.safety_tolerance;
+            else input.safety_tolerance = s;
+        }
+        if (input.enable_prompt_expansion !== undefined) input.enable_prompt_expansion = flux3.switchOf(input.enable_prompt_expansion, "Prompt expansion");
     }
     // an edit route takes no negative prompt on an edit run, and a text run with references goes to that route
     if (req.negative && input.negative_prompt === undefined && req.kind !== "edit" && !withRefs) input.negative_prompt = req.negative;
@@ -113,7 +147,7 @@ function layout(req) {
  */
 function textLayout(req) {
     const f = req.fields || {}, o = req.options || {};
-    if (!/\/edit$/.test(String(req.model || "").replace(/\/+$/, ""))) return layoutOf({ drops: "This text-to-image endpoint takes no reference images" });
+    if (!EDIT_ROUTE.test(String(req.model || "").replace(/\/+$/, ""))) return layoutOf({ drops: "This text-to-image endpoint takes no reference images" });
     const F = f.images || "image_urls";
     return layoutOf({ seq: refRoles(req).map(([role, i]) => [role, `${F}[${i}]`, i]), max: +o.max_images > 0 ? +o.max_images : null });
 }
@@ -172,6 +206,39 @@ function modelOf(req) {
     return model;
 }
 
+/**
+ * `options.min_side` / `max_pixels` (FLUX 3 on fal: 256 px a side, 4 MP): a reference layer or the Original outside them
+ * is scaled into them through ctx.resizePng, the crop is refused (the selection and the variant's limits decide its
+ * size). Answers the request with the scaled references; throws, naming the picture, before anything is sent.
+ */
+async function fitPictures(req, ctx, model) {
+    const o = req.options || {};
+    const minSide = +o.min_side > 0 ? +o.min_side : 0, maxPx = +o.max_pixels > 0 ? +o.max_pixels : 0;
+    if (!minSide && !maxPx) return req;
+    const mp = (n) => `${+(n / 1e6).toFixed(1)} MP`;
+    const small = ([w, h]) => !!minSide && Math.min(w, h) < minSide;
+    const big = ([w, h]) => !!maxPx && w * h > maxPx;
+    const crop = req.kind !== "text" && req.image ? pngSize(Buffer.from(req.image)) : null;
+    if (crop && small(crop)) throw new Error(`fal.ai ${model} takes pictures of at least ${minSide} px a side; the crop is ${crop[0]} × ${crop[1]}: select a larger area or more context around it. Nothing was sent.`);
+    if (crop && big(crop)) throw new Error(`fal.ai ${model} takes pictures of at most ${mp(maxPx)}; the crop is ${crop[0]} × ${crop[1]}: select a smaller area or set Highres fix lower. Nothing was sent.`);
+    const roles = refRoles(req), orig = req.original ? 1 : 0;
+    const references = [];
+    for (const [i, bytes] of (req.references || []).entries()) {
+        const s = pngSize(Buffer.from(bytes || []));
+        if (!s || (!small(s) && !big(s))) { references.push(bytes); continue; }
+        const what = roles[i] && roles[i][0] === "original" ? "the Original" : `reference picture ${i + 1 - orig}`;
+        const [w, h] = s;
+        const k = big(s) ? Math.sqrt((maxPx * 0.995) / (w * h)) : minSide / Math.min(w, h);
+        const to = [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))];
+        if (small(to) || big(to)) throw new Error(`fal.ai ${model} takes pictures of ${minSide} px a side to ${mp(maxPx)}; ${what} is ${w} × ${h}, which no scale fits: use a less elongated layer. Nothing was sent.`);
+        const scaled = typeof ctx.resizePng === "function" ? await ctx.resizePng(Buffer.from(bytes), { width: to[0], height: to[1] }) : null;
+        if (!scaled || !scaled.length) throw new Error(`fal.ai ${model}: ${what} (${w} × ${h}) could not be scaled to ${to[0]} × ${to[1]}. Nothing was sent.`);
+        if (ctx.log) ctx.log(`${what} ${w} × ${h} scaled to ${to[0]} × ${to[1]}`);
+        references.push(Buffer.from(scaled));
+    }
+    return { ...req, references };
+}
+
 module.exports = {
     label: "fal.ai",
     keyUrl: "https://fal.ai/dashboard/keys",
@@ -183,12 +250,18 @@ module.exports = {
     textLayout,
     async edit(req, ctx) {
         const model = modelOf(req);
-        const out = await queued(model, inputFor(req), ctx, EDIT_WAIT_MS);
+        req = await fitPictures(req, ctx, model);
+        const input = inputFor(req);
+        const out = await queued(model, input, ctx, EDIT_WAIT_MS);
         const img = (out.images && out.images[0]) || out.image;
         if (!img || !img.url) throw new Error("fal.ai: no image in the result (" + JSON.stringify(out).slice(0, 200) + ")");
         if (Array.isArray(out.has_nsfw_concepts) && out.has_nsfw_concepts[0]) ctx.log("result flagged as nsfw by fal.ai, image may be blurred");
         const file = await fetchImage(img.url, ctx.fetch);
-        return { bytes: file.bytes, mime: img.content_type || file.mime, seed: num(out.seed, req.seed), info: { model, width: img.width, height: img.height } };
+        const flux = req.options && req.options.sizing === "flux3";
+        // FLUX 3: an edit sent at a preset comes back in its shape, which the stitch stretches onto the crop
+        const shape = flux ? { resolution: input.resolution || null, aspect_ratio: input.aspect_ratio || null, ...(req.kind !== "text" && input.aspect_ratio ? { fit: "stretch" } : {}) } : {};
+        // the seed sent (none where options.omit kept it home), or the one the answer names
+        return { bytes: file.bytes, mime: img.content_type || file.mime, seed: num(out.seed, "seed" in input ? req.seed : null), info: { model, width: img.width, height: img.height, ...shape } };
     },
     async upscale(req, ctx) {
         const model = modelOf(req);

@@ -307,6 +307,17 @@ After 1, the variant gets `"boxes": "flux3"` and the `selection_box` row (`bodyF
 
 ### fal
 
+**Built 2026-10-03** (docs/PLAN_0_1_38.md B4) as planned below, with these choices: the variant sits after `bfl`
+(OpenRouter stays the last before Comfy Router, the convention `tools/openrouter_test.js` checks); `omit` holds
+`negative_prompt` too (the schema has none; a new image would have sent the editor's); a) is the regex
+`/\/edit(-image)?$/`; b) reuses `flux3.shapeOf` with the presets as a parameter (`sizing: "flux3"`, "auto" is not
+sent); c) is `fitPictures` in `fal.js` with the variant's `min_side` / `max_pixels`; d) reports the seed only where one
+went (every fal route: a Recraft-style `omit: ["seed"]` reported the editor's). Open question 3: Prompt expansion
+**on** by default (BFL direct always expands, and the boxes ran live there with it); 4: 4,000,000 px until a live run
+says otherwise; 6: the boxes ship with the variant (`"boxes": "flux3"`), the prompt goes as written. The schemas are
+saved as `tools/refs/fal/blackforestlabs_flux-3_{edit-image,text-to-image}.json`; `tools/flux3_test.js` section 9
+checks every body against them. Not run live.
+
 | | |
 |---|---|
 | Endpoints | Under BFL's own namespace `blackforestlabs/`, not `fal-ai/`; both dated 2026-10-01. Edit: `blackforestlabs/flux-3/edit-image` (image-to-image). New image: `blackforestlabs/flux-3/text-to-image`. Queue `POST https://queue.fal.run/<id>`, then `GET .../requests/{request_id}/status`, `GET .../requests/{request_id}`, `PUT .../requests/{request_id}/cancel`; sync `POST https://fal.run/<id>`. No inpaint, fill or mask endpoint. The same prefix holds FLUX 3 **video** endpoints (`text-to-video`, `image-to-video`, ...): not for Scumble. Auth `Authorization: Key ...`. |

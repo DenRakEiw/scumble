@@ -16,6 +16,7 @@ const util = require(path.join(PROV, "util.js"));
 const SLEEPS = [];
 util.sleep = async (ms) => { SLEEPS.push(ms); };   // before bfl.js takes its copy
 const bfl = require(path.join(PROV, "bfl.js"));
+const fal = require(path.join(PROV, "fal.js"));
 const flux3 = require(path.join(PROV, "flux3.js"));
 const refs = require(path.join(PROV, "refs.js"));
 const boxes = require(path.join(PROV, "boxes.js"));
@@ -159,7 +160,7 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     // ---- 1. the recipe ------------------------------------------------------------------------------------------
     console.log("\n--- 1. recipes/flux3.json ---");
     // B1: Comfy Router serves the same body (tools/comfyrouter_test.js holds that variant)
-    check("the bfl variant, the home provider, an edit route, named FLUX 3 Image; OpenRouter and Comfy Router after it", eq(RECIPE.providerIds, ["bfl", "openrouter", "comfyrouter"]) && RECIPE.default === "bfl" && V.input === "edit" && V.edit === true && RECIPE.name === "FLUX 3 Image", short({ ids: RECIPE.providerIds, def: RECIPE.default, input: V.input, name: RECIPE.name }));
+    check("the bfl variant, the home provider, an edit route, named FLUX 3 Image; fal, OpenRouter and Comfy Router after it", eq(RECIPE.providerIds, ["bfl", "fal", "openrouter", "comfyrouter"]) && RECIPE.default === "bfl" && V.input === "edit" && V.edit === true && RECIPE.name === "FLUX 3 Image", short({ ids: RECIPE.providerIds, def: RECIPE.default, input: V.input, name: RECIPE.name }));
     check("the endpoint flux-3-image is the variant's model, and the variant declares the FLUX 3 schema", V.model === "flux-3-image" && V.options.schema === "flux3" && flux3.isFlux3({ options: V.options }, V.model), short({ model: V.model, options: V.options }));
     check("options: accepts safety_tolerance and grounding (the adapter's default too), 10 pictures, no images_field", eq(V.options.accepts, ["safety_tolerance", "grounding"]) && eq(flux3.FLUX3_ACCEPTS, V.options.accepts) && V.options.max_images === 10 && !("images_field" in V.options) && flux3.FLUX3_IMAGES_FIELD === "images", short(V.options));
     check("limits: 2048 long side in 16 px steps, 608 the smallest, the 15 aspect presets", V.limits.max === 2048 && V.limits.step === 16 && V.limits.min === 608 && eq(V.limits.aspects, flux3.FLUX3_ASPECTS) && V.limits.aspects.length === 15, short(V.limits));
@@ -413,6 +414,162 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     x = await run(f2({ references: [SMALL], prompt: "" }));
     check("the FLUX 3 checks stay FLUX 3's: a 200 x 200 reference and an empty prompt still go to FLUX.2", !x.err && tagOfB64(x.body.input_image_2) === "SMALL" && x.body.prompt === "", x.err || short(x.body && Object.keys(x.body)));
     check("flux-2-pro's layout is FLUX.2's (input_image .., max 8)", bfl.layout(f2()).max === 8 && bfl.layout(f2()).pictures[0].field === "input_image", "");
+
+    // ---- 9. FLUX 3 on fal (docs/PLAN_FLUX3.md "fal", docs/PLAN_0_1_38.md B4) ------------------------------------------
+    console.log("\n--- 9. FLUX 3 on fal ---");
+    const FV = RECIPE.providers.fal;
+    const FAL14 = flux3.FLUX3_ASPECTS.filter((a) => a !== "9:21");
+    check("the fal variant: edit-image, the text route by name, references on edit-image, 4 MP and fal's 14 presets as its limits, two rows (prompt expansion on)",
+        !!FV && FV.model === "blackforestlabs/flux-3/edit-image" && FV.input === "edit" && FV.text.model === "blackforestlabs/flux-3/text-to-image" && FV.text.refs && FV.text.refs.model === "blackforestlabs/flux-3/edit-image"
+        && FV.limits.pixels === 4000000 && eq(FV.limits.aspects, FAL14) && eq(FV.options.aspect_ratios, FAL14) && FV.limits.max === 2048
+        && eq(FV.settings.map((s) => s.key), ["safety_tolerance", "enable_prompt_expansion"]) && FV.settings[1].spec[1].default === true && eq(FV.text.settings.map((s) => s.key), ["safety_tolerance", "enable_prompt_expansion"]),
+        short(FV && { model: FV.model, text: FV.text, limits: FV.limits, settings: FV.settings.map((s) => s.key) }));
+    // the schema fal serves (tools/refs/fal, fetched 2026-10-03 without a key): every body below is checked against it
+    const falSchema = (id) => {
+        const j = require(path.join(ROOT, "tools", "refs", "fal", `blackforestlabs_flux-3_${id}.json`));
+        return Object.values(j.components.schemas).find((s) => s.properties && s.properties.prompt);
+    };
+    const FAL_SCHEMA = { "edit-image": falSchema("edit-image"), "text-to-image": falSchema("text-to-image") };
+    check("the saved schemas: fal's 14 presets plus auto, no seed, num_images or negative_prompt on either route",
+        ["edit-image", "text-to-image"].every((id) => eq(FAL_SCHEMA[id].properties.aspect_ratio.enum, ["auto", ...FAL14]) && !["seed", "num_images", "negative_prompt"].some((k) => k in FAL_SCHEMA[id].properties)),
+        short(Object.keys(FAL_SCHEMA["edit-image"].properties)));
+    const FAL_BODIES = [];
+    const falEdit = (extra = {}) => ({
+        provider: "fal", model: FV.model, kind: "edit", fields: null, options: FV.options, prompt: "make the door red", negative: "blurry", seed: 7,
+        image: CROP, mask: MASK, maskAlpha: MASK, width: 1024, height: 768, references: [], original: 0, params: defaults(FV.settings, FV.fixed),
+        refName: FV.refs.name, cropAspect: "4:3", ...extra,
+    });
+    const falText = (extra = {}) => ({
+        provider: "fal", model: FV.text.model, kind: "text", fields: null, options: FV.options, prompt: "a lighthouse at dusk", negative: "blurry", seed: 7,
+        image: null, mask: null, maskAlpha: null, width: 1344, height: 768, aspect: null, references: [], original: 0, params: defaults(FV.text.settings, FV.text.fixed),
+        refName: FV.refs.name, ...extra,
+    });
+    const FAL_RESIZED = [];
+    /** fal's queue as fal.js meets it: the submit, one status poll, the result, the CDN download. */
+    async function runFal(req, { ctx = {} } = {}) {
+        const calls = [];
+        let body = null;
+        FAL_RESIZED.length = 0;
+        async function fetch(url, init = {}) {
+            const u = new URL(String(url)), method = String(init.method || "GET").toUpperCase();
+            calls.push({ method, url: String(url), auth: (init.headers || {}).Authorization });
+            if (method === "POST") {
+                body = JSON.parse(init.body);
+                const base = `https://queue.fal.run${u.pathname}/requests/r1`;
+                return json(200, { request_id: "r1", status: "IN_QUEUE", status_url: base + "/status", response_url: base });
+            }
+            if (u.pathname.endsWith("/status")) return json(200, { status: "COMPLETED" });
+            if (u.hostname === "queue.fal.run") return json(200, { images: [{ url: "https://v3.fal.media/files/r1.png", content_type: "image/png", width: 1024, height: 768 }] });
+            if (u.hostname === "v3.fal.media") return new Response(RESULT, { status: 200, headers: { "content-type": "image/png" } });
+            return json(404, { detail: "no route " + u.pathname });
+        }
+        const context = {
+            key: "test-fal-key", fetch, log: () => {}, sleep: async () => {},
+            resizePng: async (b, to) => { FAL_RESIZED.push({ tag: tagOf(b), ...to }); return pngOf(to.width, to.height, "S-" + tagOf(b)); },
+            ...ctx,
+        };
+        let out = null, err = null;
+        try { out = await fal[req.kind === "text" ? "generate" : "edit"]({ ...req }, context); } catch (e) { err = String(e && e.message || e); }
+        if (body) FAL_BODIES.push({ route: calls[0].url.replace(/^.*\/flux-3\//, ""), body });
+        return { out, err, calls, body };
+    }
+    const tagsOfUri = (list) => (Array.isArray(list) ? list.map((s) => tagOfB64(String(s).replace(/^data:[^,]*,/, ""))) : list);
+
+    x = await runFal(falEdit());
+    check("an edit (1024 x 768 at 4:3) goes to edit-image with the crop, 1k, 4:3, the two rows; no seed, num_images or negative prompt",
+        !x.err && x.calls[0].url === "https://queue.fal.run/blackforestlabs/flux-3/edit-image" && x.calls[0].auth === "Key test-fal-key"
+        && eq(Object.keys(x.body).sort(), ["aspect_ratio", "enable_prompt_expansion", "image_urls", "output_format", "prompt", "resolution", "safety_tolerance"])
+        && eq(tagsOfUri(x.body.image_urls), ["CROP"]) && x.body.resolution === "1k" && x.body.aspect_ratio === "4:3" && x.body.output_format === "png"
+        && x.body.safety_tolerance === 2 && x.body.enable_prompt_expansion === true && x.body.prompt === "make the door red",
+        x.err || short(x.body && { ...x.body, image_urls: tagsOfUri(x.body.image_urls) }));
+    check("the answer: the seed null (none went), info with the tier, the preset and fit stretch for the stitch",
+        x.out && x.out.seed === null && x.out.info.resolution === "1k" && x.out.info.aspect_ratio === "4:3" && x.out.info.fit === "stretch" && x.out.info.model === FV.model,
+        short(x.out && { seed: x.out.seed, info: x.out.info }));
+    x = await runFal(falEdit({ image: pngOf(2000, 2000, "CROP2K"), width: 2000, height: 2000, cropAspect: "1:1" }));
+    check("the crop at the variant's cap (2000 x 2000, 4.0 MP) goes as 2k at 1:1", !x.err && x.body.resolution === "2k" && x.body.aspect_ratio === "1:1", x.err || short(x.body && [x.body.resolution, x.body.aspect_ratio]));
+    x = await runFal(falEdit({ image: pngOf(1100, 500, "WIDE"), width: 1100, height: 500, cropAspect: null }));
+    check("a crop near no preset (2.2:1) sends no aspect_ratio (fal's auto, image 1's shape) and no fit", !x.err && !("aspect_ratio" in x.body) && x.body.resolution === "1k" && x.out && !("fit" in x.out.info), x.err || short(x.body && Object.keys(x.body)));
+    x = await runFal(falEdit({ image: pngOf(432, 1008, "TALL"), width: 432, height: 1008, cropAspect: "9:21" }));
+    check("BFL's 9:21 is not fal's: a 9:21 crop planned so goes as auto, never 9:21", !x.err && !("aspect_ratio" in x.body), x.err || short(x.body && x.body.aspect_ratio));
+    x = await runFal(falEdit({ image: pngOf(1000, 700, "NEAR"), width: 1000, height: 700, cropAspect: null }));
+    check("a crop within 3 % of a preset (1000 x 700 against 7:5) sends that preset with fit stretch", !x.err && x.body.aspect_ratio === "7:5" && x.out.info.fit === "stretch", x.err || short(x.body && x.body.aspect_ratio));
+    x = await runFal(falEdit({ references: [REF[0], REF[1]], original: 1 }));
+    check("the Original and a reference go after the crop in image_urls (image 2, image 3)", !x.err && eq(tagsOfUri(x.body.image_urls), ["CROP", "REF0", "REF1"]), x.err || short(x.body && tagsOfUri(x.body.image_urls)));
+    const fl = fal.layout(falEdit({ references: [REF[0], REF[1]], original: 1 }));
+    check("fal.layout of the variant: the crop image_urls[0] (1), the Original [1] (2), the reference [2] (3), max 10", fl.max === 10 && eq(fl.pictures.map((p) => [p.role, p.field, p.n]), [["crop", "image_urls[0]", 1], ["original", "image_urls[1]", 2], ["reference", "image_urls[2]", 3]]), short(fl));
+
+    // the picture rules: 256 px a side to 4 MP, references scaled, the crop refused
+    x = await runFal(falEdit({ references: [SMALL, pngOf(3000, 2000, "SIXMP")], original: 1 }));
+    const scaledOk = FAL_RESIZED.length === 2 && FAL_RESIZED[0].tag === "SMALL" && FAL_RESIZED[0].width === 256 && FAL_RESIZED[0].height === 256 && FAL_RESIZED[1].tag === "SIXMP" && FAL_RESIZED[1].width * FAL_RESIZED[1].height <= 4000000 && FAL_RESIZED[1].width * FAL_RESIZED[1].height > 3900000;
+    check("a 200 x 200 Original is scaled up to 256 x 256, a 6 MP reference down under 4 MP; they go scaled, in place", !x.err && scaledOk && eq(tagsOfUri(x.body.image_urls), ["CROP", "S-SMALL", "S-SIXMP"]), x.err || short({ FAL_RESIZED, sent: x.body && tagsOfUri(x.body.image_urls) }));
+    x = await runFal(falEdit({ references: [pngOf(2000, 2000, "FOURMP")] }));
+    check("a reference of exactly 4,000,000 px goes as it is", !x.err && !FAL_RESIZED.length && eq(tagsOfUri(x.body.image_urls), ["CROP", "FOURMP"]), x.err || short(FAL_RESIZED));
+    for (const [what, img, w, h, re] of [["over 4 MP (2048 x 2048)", pngOf(2048, 2048, "C"), 2048, 2048, /at most 4 MP; the crop is 2048 × 2048/], ["under 256 px a side", pngOf(200, 300, "C"), 200, 300, /at least 256 px a side; the crop is 200 × 300/]]) {
+        x = await runFal(falEdit({ image: img, width: w, height: h, cropAspect: null }));
+        check(`a crop ${what} is refused before anything is sent`, !!x.err && re.test(x.err) && /Nothing was sent/.test(x.err) && !x.calls.length, x.err || "sent");
+    }
+    x = await runFal(falEdit({ references: [pngOf(300, 20000, "STRIP")] }));
+    check("a reference no scale fits (300 x 20000) is refused, named, nothing sent", !!x.err && /reference picture 1 is 300 × 20000, which no scale fits/.test(x.err) && !x.calls.length, x.err || "sent");
+    x = await runFal(falEdit({ references: [HUGE] }), { ctx: { resizePng: undefined } });
+    check("without ctx.resizePng an oversized reference is refused, not sent as it is", !!x.err && /could not be scaled/.test(x.err) && !x.calls.length, x.err || "sent");
+
+    // the rows as an agent may give them
+    const safeties = [];
+    for (const v of ["3", 9, -1, 2.6, "abc"]) { x = await runFal(falEdit({ params: { safety_tolerance: v, enable_prompt_expansion: true } })); safeties.push(x.body ? (x.body.safety_tolerance === undefined ? "none" : x.body.safety_tolerance) : x.err); }
+    check("safety tolerance as a whole number 0 to 4 (\"3\" -> 3, 9 -> 4, -1 -> 0, 2.6 -> 3); one that is no number stays home (fal's 2)", eq(safeties, [3, 4, 0, 3, "none"]), short(safeties));
+    const expansions = [];
+    for (const v of ["off", "on", 0, "yes", false]) { x = await runFal(falEdit({ params: { safety_tolerance: 2, enable_prompt_expansion: v } })); expansions.push(x.body ? x.body.enable_prompt_expansion : x.err); }
+    check("prompt expansion as a JSON boolean (off / on / 0 / yes / false)", eq(expansions, [false, true, false, true, false]), short(expansions));
+    x = await runFal(falEdit({ params: { safety_tolerance: 2, enable_prompt_expansion: "maybe" } }));
+    check("a prompt expansion that is neither on nor off is refused, nothing sent", !!x.err && /Prompt expansion is on or off/.test(x.err) && !x.calls.length, x.err || "sent");
+
+    // new images: the text route, or edit-image with the references alone
+    x = await runFal(falText());
+    check("a new image (1344 x 768) goes to text-to-image: no picture, the nearest of fal's presets (16:9), 1k, no negative prompt or seed",
+        !x.err && x.calls[0].url === "https://queue.fal.run/blackforestlabs/flux-3/text-to-image" && !("image_urls" in x.body) && x.body.aspect_ratio === "16:9" && x.body.resolution === "1k"
+        && !("negative_prompt" in x.body) && !("seed" in x.body) && !("num_images" in x.body) && x.out && x.out.seed === null && !("fit" in x.out.info),
+        x.err || short(x.body));
+    x = await runFal(falText({ aspect: "9:21", width: 768, height: 1792 }));
+    check("an agent's 9:21 for a new image goes as fal's nearest, 1:2", !x.err && x.body.aspect_ratio === "1:2", x.err || short(x.body && x.body.aspect_ratio));
+    const falTiers = [];
+    for (const [w, h] of [[2048, 2048], [2048, 1152], [4096, 4096], [1024, 1024]]) { x = await runFal(falText({ width: w, height: h })); falTiers.push(x.body && x.body.resolution); }
+    check("a new image's tier by area: 2048² 2k, 2048 x 1152 2k, 4096² 4k, 1024² 1k", eq(falTiers, ["2k", "2k", "4k", "1k"]), short(falTiers));
+    const withRefsReq = falText({ model: FV.text.refs.model, references: [REF[0], REF[1]], options: { ...FV.options, ...(FV.text.refs.options || {}) } });
+    const falTl = fal.textLayout(withRefsReq);
+    check("textLayout of edit-image (a new image with references): image_urls[0..1], no drop, max 10", !falTl.drops && falTl.max === 10 && eq(falTl.pictures.map((p) => p.field), ["image_urls[0]", "image_urls[1]"]), short(falTl));
+    check("textLayout of text-to-image drops references (a run with them goes to edit-image)", !!fal.textLayout(falText({ references: [REF[0]] })).drops, "");
+    x = await runFal(withRefsReq);
+    check("a new image with two references goes to edit-image with them alone, at the asked shape (16:9) and tier",
+        !x.err && x.calls[0].url === "https://queue.fal.run/blackforestlabs/flux-3/edit-image" && eq(tagsOfUri(x.body.image_urls), ["REF0", "REF1"]) && x.body.aspect_ratio === "16:9" && x.body.resolution === "1k" && !("negative_prompt" in x.body),
+        x.err || short(x.body && { ...x.body, image_urls: tagsOfUri(x.body.image_urls) }));
+
+    // other fal recipes keep their shape
+    x = await runFal({ ...falEdit(), model: "fal-ai/flux-2-pro/edit", options: { max_images: 9 }, params: {}, cropAspect: null });
+    check("FLUX.2 pro on fal unchanged: image_size of the crop, num_images 1, the seed sent and reported, no resolution",
+        !x.err && eq(x.body.image_size, { width: 1024, height: 768 }) && x.body.num_images === 1 && x.body.seed === 7 && !("resolution" in x.body) && !("aspect_ratio" in x.body) && x.out.seed === 7,
+        x.err || short(x.body && Object.keys(x.body)));
+    x = await runFal({ ...falEdit(), model: "fal-ai/recraft/v4/edit", options: { omit: ["seed"] }, params: {}, cropAspect: null });
+    check("a fal route whose omit keeps the seed home reports none (it reported the editor's)", !x.err && !("seed" in x.body) && x.out.seed === null, x.err || short(x.out && x.out.seed));
+
+    // every FLUX 3 body against the schema fal serves
+    const falOff = [];
+    for (const { route, body } of FAL_BODIES) {
+        const S = FAL_SCHEMA[route];
+        if (!S) continue;
+        const props = S.properties, keys = Object.keys(body);
+        for (const k of keys) if (!(k in props)) falOff.push(`${route}: ${k} not in the schema`);
+        for (const k of S.required || []) if (!(k in body)) falOff.push(`${route}: ${k} missing`);
+        for (const k of keys) {
+            const e = props[k] && props[k].enum;
+            if (e && !e.includes(body[k])) falOff.push(`${route}: ${k} ${body[k]} not in its enum`);
+        }
+        if ("safety_tolerance" in body && !(Number.isInteger(body.safety_tolerance) && body.safety_tolerance >= 0 && body.safety_tolerance <= 4)) falOff.push(`${route}: safety_tolerance ${body.safety_tolerance}`);
+        if ("enable_prompt_expansion" in body && typeof body.enable_prompt_expansion !== "boolean") falOff.push(`${route}: enable_prompt_expansion ${body.enable_prompt_expansion}`);
+        if ("image_urls" in body && !(Array.isArray(body.image_urls) && body.image_urls.length >= 1 && body.image_urls.length <= 10 && body.image_urls.every((s) => /^data:image\/png;base64,/.test(s)))) falOff.push(`${route}: image_urls`);
+        if (typeof body.prompt !== "string" || !/\S/.test(body.prompt)) falOff.push(`${route}: prompt`);
+    }
+    const falRoutes = new Set(FAL_BODIES.filter((b) => FAL_SCHEMA[b.route]).map((b) => b.route));
+    check(`every FLUX 3 body sent to fal (${FAL_BODIES.filter((b) => FAL_SCHEMA[b.route]).length}, both routes) holds only the saved schema's fields, required ones present, enums kept`, falRoutes.size === 2 && FAL_BODIES.length >= 20 && !falOff.length, falOff.slice(0, 5).join(" | ") || [...falRoutes].join(", "));
 
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

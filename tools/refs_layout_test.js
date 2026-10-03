@@ -1430,7 +1430,7 @@ async function main() {
             else if (url !== ENDPOINT[s.provider]) bad.push(`POSTs to ${url}, not ${ENDPOINT[s.provider]}`);
             if (tr.model && req.model !== tr.model) bad.push(`goes to ${req.model}, not text.refs.model ${tr.model}`);
             if (tr.model && tr.model !== s.variant.model) bad.push(`text.refs.model ${tr.model} is not the variant's edit model ${s.variant.model}`);
-            if (s.provider === "fal" && !/\/edit$/.test(req.model)) bad.push(`fal: ${req.model} is no /edit route`);
+            if (s.provider === "fal" && !/\/edit(-image)?$/.test(req.model)) bad.push(`fal: ${req.model} is no /edit route`);
             if (s.provider === "wavespeed" && !/(?:^|[/-])edit(?:[/-]|$)/.test(req.model)) bad.push(`WaveSpeed: ${req.model} is no edit route`);
             if (s.provider === "magnific" && !/^text-to-image\/flux-2-|-edit$/.test(req.model)) bad.push(`Magnific: ${req.model} is neither a flux-2 route nor an -edit route`);
             if (s.provider === "openai") {

@@ -74,13 +74,18 @@ function safetyOf(v) {
     return Number.isFinite(n) && String(v).trim() !== "" ? Math.max(0, Math.min(4, n)) : null;
 }
 
-/** grounding as a JSON boolean; a Settings checkbox gives one, an agent may give "on" / "no" .. Throws on anything else. */
-function groundingOf(v) {
+/** A switch row as a JSON boolean; a Settings checkbox gives one, an agent may give "on" / "no" .. Throws on anything else. */
+function switchOf(v, label) {
     if (v === true || v === 1) return true;
     if (v === false || v === 0) return false;
     if (/^(true|1|yes|on)$/i.test(String(v).trim())) return true;
     if (/^(false|0|no|off)$/i.test(String(v).trim())) return false;
-    throw new Error(`FLUX 3 Image: Grounding is on or off, not "${String(v).slice(0, 40)}". Nothing was sent.`);
+    throw new Error(`FLUX 3 Image: ${label} is on or off, not "${String(v).slice(0, 40)}". Nothing was sent.`);
+}
+
+/** grounding as a JSON boolean. */
+function groundingOf(v) {
+    return switchOf(v, "Grounding");
 }
 
 /** How many pictures one request may carry, the crop included. */
@@ -119,20 +124,20 @@ function withinOf(ratio, w, h, slack) {
  * (`req.cropAspect`, renderer/editor/stitch.js planFrame by the recipe's limits.aspects; the emitted size's rounding to
  * 16 px can put it a few % off), else the preset nearest the emitted crop when it is within 3 %, and "auto" otherwise,
  * which follows image 1, the crop; a text run always sends the nearest preset. The tier follows the size, or the
- * `resolution` row where the variant accepts one.
+ * `resolution` row where the variant accepts one. `presets` are the host's (fal has no "9:21").
  */
-function shapeOf(req) {
+function shapeOf(req, presets = FLUX3_ASPECTS) {
     const p = req.params || {};
     const o = optionsOf(req);
     let aspect, fit = null;
     if (req.kind === "text") {
         const [w, h] = textShape(req);
-        aspect = closestAspect(w, h, FLUX3_ASPECTS);
+        aspect = closestAspect(w, h, presets);
     } else {
         const w = +req.width || 1, h = +req.height || 1;
         // IPC input is never trusted: a preset of the list, near the size
-        const planned = FLUX3_ASPECTS.includes(String(req.cropAspect)) && withinOf(String(req.cropAspect), w, h, PLANNED_SLACK) ? String(req.cropAspect) : null;
-        const near = planned || closestAspect(w, h, FLUX3_ASPECTS);
+        const planned = presets.includes(String(req.cropAspect)) && withinOf(String(req.cropAspect), w, h, PLANNED_SLACK) ? String(req.cropAspect) : null;
+        const near = planned || closestAspect(w, h, presets);
         fit = planned ? "stretch" : fitFor(near, w, h);
         aspect = fit ? near : "auto";
     }
@@ -264,4 +269,6 @@ function textLayout(req) {
 module.exports = {
     FLUX3_BASE, FLUX3_ACCEPTS, FLUX3_PARAMS, FLUX3_MAX_IMAGES, FLUX3_IMAGES_FIELD, FLUX3_ASPECTS, FLUX3_TIERS, FLUX3_PICTURE,
     isFlux3, maxOf, body, infoOf, layout, textLayout, _tierOf: tierOf, _shapeOf: shapeOf,
+    // FLUX 3 on fal (fal.js `sizing: "flux3"`): the same rules with the host's presets
+    shapeOf, safetyOf, switchOf,
 };

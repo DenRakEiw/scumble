@@ -15,6 +15,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   painted a transparency checkerboard around the boxes, so Scumble says so when the prompt is empty.
 - **Ideogram 4 ran live on fal** for the first time (an edit and four new images), so its recipe no longer says it
   is untried there.
+- **FLUX 3 Image on fal.ai.** The FLUX 3 Image recipe has fal.ai as a provider, on the fal key: edits with up to nine
+  more pictures, new images with up to ten references, and the boxes in the prompt. fal takes pictures of at most 4
+  megapixels and fourteen shapes, so Scumble holds the crop to that size, scales larger reference layers down and
+  picks the shape among those fourteen. There is no Grounding switch on fal; a *Prompt expansion* switch, on by
+  default, lets the model rewrite the prompt first, as Black Forest Labs' own API always does. Written from fal's
+  documentation; not yet tried against the live service.
 
 ## 0.1.38 — 2026-10-03
 

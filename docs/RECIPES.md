@@ -160,7 +160,8 @@ instruction on the crop plus references), `settings` (Settings-panel controls, `
 the parameter the adapter sends), `fixed` (parameters sent as they are), `fields`
 (input names: Replicate and fal, `{ image, images, mask }`; fal takes `"mask": false` for
 an image-to-image endpoint that has no mask, such as Ideogram 4), `options` (adapter
-switches: fal `sizing: "none"` for endpoints without a free `image_size`, fal
+switches: fal `sizing: "none"` for endpoints without a free `image_size`, fal `sizing: "flux3"` with `min_side` /
+`max_pixels` for FLUX 3 ("FLUX 3 Image" below), fal
 `omit: ["output_format", ...]` for an endpoint that refuses the fields the other models
 take; ToAPIs' channels, sizes and tiers, below; OpenRouter's accepted parameters, presets, tiers and
 picture limits, below; ModelArk's pixel range, picture count, PNG switch and regions, below; Oxen.ai's accepted
@@ -559,7 +560,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   |---|---|---|
   | FLUX.2 [pro], [flex], [max] | BFL, Replicate, OpenRouter, ToAPIs (pro, flex), Comfy Router (pro, max), Oxen.ai (pro, flex), Magnific (pro, flex); fal and WaveSpeed (the `/edit` route) | - |
   | FLUX.2 [klein] | BFL, Oxen.ai (`max: 4`); fal and WaveSpeed (`/edit`) | - |
-  | FLUX 3 Image | BFL, OpenRouter, Comfy Router | - |
+  | FLUX 3 Image | BFL, OpenRouter, Comfy Router; fal (`edit-image`) | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, OpenRouter, Comfy Router, Oxen.ai; WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
@@ -665,6 +666,20 @@ takes body, `layout` and `textLayout` from `flux3.js` and keeps its own submit a
 `latest`), so `comfyrouter.js`'s `bfl` dialect calls `flux3.body`, `layout` and `textLayout` for that model, reads
 `result.sample`, and reports the seed the answer names or none (null, never the request's); the box rows ride in
 the prompt as on BFL's API. Not run against the live Router either.
+
+The **`fal` variant** (docs/PLAN_0_1_38.md B4, docs/PLAN_FLUX3.md "fal") goes through `fal.js`'s queue under BFL's own
+namespace there: `blackforestlabs/flux-3/edit-image` for an edit and for a new image with references (`text.refs.model`;
+`textLayout` takes `/edit-image` as an edit route), `blackforestlabs/flux-3/text-to-image` for a new image from the
+prompt alone (`text.model`, named since `textModelOf` strips only `/edit`). fal's schema (`tools/refs/fal/`, fetched
+2026-10-03) differs from BFL's: `image_urls` as data URIs, 14 presets (no 9:21), each picture 256 px a side to 4 MP,
+`enable_prompt_expansion` (default false there) instead of an expansion that always runs, no grounding, `output_format`
+(png). `options.sizing: "flux3"` sends the shape by `flux3.shapeOf` over the variant's `aspect_ratios` (the same tier
+and 3 % rules, `info.fit` too); `min_side` 256 / `max_pixels` 4,000,000 scale a reference layer or the Original
+(`ctx.resizePng`) and refuse the crop, which the variant's `limits` (`pixels` 4,000,000, `aspects` the 14) already hold
+there (a 2048 × 2048 crop goes at 2000 × 2000, still 2k); `omit` keeps `num_images`, `seed` and `negative_prompt`
+home, and the seed reported is none. The rows: Safety tolerance (a whole number 0 to 4) and Prompt expansion (on by
+default, as BFL's API always expands; a JSON boolean, "on" / "off" from an agent too). Boxes go in the prompt as on
+BFL's API. Not run against the live API yet.
 
 - **The body** is `{ prompt, images, aspect_ratio, resolution, safety_tolerance, grounding }` and nothing else. The
   schema is strict (an unknown field answers 422), so no `seed`, mask, `width` / `height`, `mode`, negative prompt or

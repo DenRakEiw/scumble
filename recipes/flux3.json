@@ -4,7 +4,7 @@
   "name": "FLUX 3 Image",
   "family": "Black Forest Labs",
   "refs": { "name": "image {n}" },
-  "description": "Black Forest Labs' FLUX 3 Image: instruction edits of the crop with up to nine more pictures, new images from the prompt with up to ten reference images. Adapter written from the provider's docs (2026-10-01). Also on OpenRouter. Also on Comfy Router.",
+  "description": "Black Forest Labs' FLUX 3 Image: instruction edits of the crop with up to nine more pictures, new images from the prompt with up to ten reference images. Adapter written from the provider's docs (2026-10-01). Also on OpenRouter. Also on Comfy Router. Also on fal.ai.",
   "default": "bfl",
   "providers": {
     "bfl": {
@@ -45,6 +45,57 @@
             "index": 2,
             "key": "grounding",
             "label": "Grounding (web and image search)",
+            "spec": ["BOOLEAN", { "default": true }]
+          }
+        ]
+      }
+    },
+    "fal": {
+      "model": "blackforestlabs/flux-3/edit-image",
+      "input": "edit",
+      "options": {
+        "sizing": "flux3",
+        "aspect_ratios": ["21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1", "4:5", "3:4", "5:7", "2:3", "9:16", "1:2"],
+        "max_images": 10,
+        "min_side": 256,
+        "max_pixels": 4000000,
+        "omit": ["num_images", "seed", "negative_prompt"],
+        "boxes": "flux3"
+      },
+      "limits": {
+        "pixels": 4000000,
+        "aspects": ["21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1", "4:5", "3:4", "5:7", "2:3", "9:16", "1:2"]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "safety_tolerance",
+          "label": "Safety tolerance",
+          "spec": ["INT", { "default": 2, "min": 0, "max": 4 }]
+        },
+        {
+          "index": 2,
+          "key": "enable_prompt_expansion",
+          "label": "Prompt expansion",
+          "spec": ["BOOLEAN", { "default": true }]
+        }
+      ],
+      "note": "Runs on fal.ai under Black Forest Labs' own name there (blackforestlabs/flux-3); written from fal's docs and schema (2026-10-02), not run against the live API yet. The pictures go inline in the request. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The crop is image 1, then the Original and the reference layers (image 2 ..), ten pictures at most, each 256 px a side to 4 MP on fal (a smaller or larger reference layer is scaled, the crop is held to 4 MP). The crop is widened to one of fal's 14 aspect presets (no 9:21) and sent as that shape; the size is a tier picked from the crop's area (1k about 1 MP, 2k about 4 MP). There is no seed, so two runs differ. Prompt expansion lets the model rewrite the prompt before it renders, as Black Forest Labs' own API always does; fal's default is off. Grounding (web and image search) cannot be set here. The Boxes switch under the prompt sends the document's boxes as bounding boxes in the prompt, as on Black Forest Labs' own API. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "text": {
+        "model": "blackforestlabs/flux-3/text-to-image",
+        "sizes": [1024, 2048, 4096],
+        "refs": { "model": "blackforestlabs/flux-3/edit-image" },
+        "settings": [
+          {
+            "index": 1,
+            "key": "safety_tolerance",
+            "label": "Safety tolerance",
+            "spec": ["INT", { "default": 2, "min": 0, "max": 4 }]
+          },
+          {
+            "index": 2,
+            "key": "enable_prompt_expansion",
+            "label": "Prompt expansion",
             "spec": ["BOOLEAN", { "default": true }]
           }
         ]
