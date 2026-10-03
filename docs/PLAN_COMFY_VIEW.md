@@ -345,9 +345,25 @@ none of V1-V5 may change that:
      is api), a document opened, reopened or restored keeps the selected recipe's mode (`host.keepRecipeMode` after
      `setValue`; only the mode, `settingsChanged` would reset the file's Settings values), and a snapshot keeps the
      current mode (both an older bug: a file's "local" planned a provider run's crop as a local refine pass);
-  3. **next:** the model files of a cloud run checked against Comfy Cloud's node list before any upload (a missing
+  3. the model files of a cloud run checked against Comfy Cloud's node list before any upload (a missing
      file named, with a near name the cloud has). Only values with a file extension are model files: a plain
      `_name$` match also takes `sampler_name` ("euler", "dpmpp_2m"), as the reading of the exports below showed.
+     **Built 2026-10-03 (night):** `comfycloud.js` `checkModelFiles` after the node check, on the same cached node list:
+     every string value of the graph (a Settings row `<node>|<input>` over the graph's own) that ends in a model file's
+     extension (`MODEL_EXT`: safetensors, sft, ckpt, pt, pth, bin, gguf, onnx, pkl, pickle) must be one of the names its
+     input's combo gives (`choicesOf`: the older `[[names], {...}]` and the newer `["COMBO", { options }]`; no names,
+     no check). A missing one throws, all of them in one message, each with its node class and input and the nearest
+     name (`nearestFile`: the same base name in another folder, else an edit distance of at most a quarter of the stem,
+     at least 2). A value that matches a name once both use `/` goes out in the cloud's spelling (applied to the built
+     graph, so it wins over a Settings row); a same-named file in another folder is named, not swapped. Text runs
+     (Generate new) go through it too. **Measured before building** (Comfy Cloud's hosted MCP server on the user's
+     account, read-only, no credits): its node specs give the loaders' files as full combo lists (UNETLoader, CLIPLoader,
+     VAELoader, LoraLoaderModelOnly), and every model file of the 13 shipped recipes is in Comfy Cloud's model catalog;
+     the MCP's node specs lacked the Qwen Image 2.1 files its model catalog has, so the check reads the key's live
+     `/api/object_info` (as before) and a stale list there would refuse a run: the first live run says. Tests:
+     `cloudgraph_test.js` section 9 (24 checks in all): refused before any upload with the nearest name, the file listed
+     runs, `sampler_name` outside its combo and an empty list unchecked, a Settings row both ways, the backslash path, a
+     same-named file in another folder, the newer combo form, a Generate new run.
   4. **the user's picks, shipped as Comfy Cloud recipes (the user, 2026-10-03 evening, six image-edit exports from
      Comfy Cloud; `tools/refs/comfy_cloud/edit/`, MIT):** Boogu Image 0.1 Edit, Flux.2 Klein 9B base (one picture,
      and the multi-image variant: the same file with the other subgraph bypassed), Mage Flow Edit Turbo int8, Qwen
@@ -376,7 +392,7 @@ none of V1-V5 may change that:
      14 (the Qwen 2509 recipe on the fake cloud, the negative kept and replaced), `refs_layout_test.js` 692 (its fake
      answers the node list, a graph recipe's pictures read by their titles), gates `lint types recipes comfyview generate
      size transparent` PASS offline (`dist/gates/gates/v6s4`, `v6s4b`), one look in the app (the six under *comfy cloud*).
-     Not done: a live run (the user's key, credits), step 3's model check.
+     Not done: a live run (the user's key, credits), step 3's model check (built later that night).
   5. **Generate new on Comfy Cloud (the user, the same evening, nine text-to-image exports, `tools/refs/comfy_cloud/
      t2i/`):** Anima base v1, Anima preview, Flux.2 dev, Flux.2 Klein 9B text-to-image, Ideogram 4, Krea 2 turbo, Mage
      Flow t2i int8, Qwen Image 2.1 t2i, Z-Image turbo. Today `fromCloudGraph` refuses eight of them ("No LoadImage
@@ -413,8 +429,9 @@ none of V1-V5 may change that:
      `recipes_test.js` 117, `cloudgraph_test.js` 16 (a text run, a partner refusal), `refs_layout_test.js` 695 (Comfy
      Cloud's text routes declare the reference drop), gates `lint types recipes comfyview generate size transparent help
      document` PASS offline (`v6s5`, `v6s5b`; the Generate new dialog in the comfyview gate), one look at the dialog.
-     Not done: a live run, step 3.
-  Open: Comfy Cloud's own model names for these templates (step 3 on the user's key).
+     Not done: a live run, step 3 (built later that night).
+  Comfy Cloud's own model names for these templates: all in its model catalog (step 3, 2026-10-03); a live run on
+  the user's key is still open.
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
   loopback run; one live run on Comfy Cloud with the user's key (credits). Possibly two sessions.

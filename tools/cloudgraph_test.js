@@ -5,7 +5,8 @@
 // URL); it keeps every graph it was given. Checked: the pictures go into the titled LoadImage nodes in the node's batch
 // order (a picture past the run's last is the last one), the prompt, the negative, the seed and the Settings rows land
 // in their inputs, the run's own SaveImage answers before another output, a node the cloud lacks stops the run before
-// any upload, a run past the graph's picture count is refused by the layout, a fill recipe takes the mask.
+// any upload, a run past the graph's picture count is refused by the layout, a fill recipe takes the mask, a model file
+// the cloud's node list lacks stops the run by name with the nearest file it has (V6 step 3).
 "use strict";
 
 const fs = require("node:fs");
@@ -37,8 +38,8 @@ const png = (tag) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0
 const tagOf = (b) => Buffer.from(b).slice(8).toString("latin1");
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 
-/** A fake cloud.comfy.org: `classes` the node list it offers, `outputs(graph)` what the finished job's history holds. */
-function fakeCloud({ classes, outputs } = {}) {
+/** A fake cloud.comfy.org: `classes` the node list it offers (or `info`, the node list itself), `outputs(graph)` what the finished job's history holds. */
+function fakeCloud({ classes, info, outputs } = {}) {
     const s = { uploads: [], prompts: [], calls: [] };
     s.fetch = async (url, init = {}) => {
         const u = new URL(String(url));
@@ -49,7 +50,7 @@ function fakeCloud({ classes, outputs } = {}) {
             s.uploads.push(tagOf(Buffer.from(await f.arrayBuffer())));
             return json(200, { name: `up${s.uploads.length}.png`, subfolder: "", type: "input" });
         }
-        if (u.pathname === "/api/object_info") return json(200, Object.fromEntries((classes || []).map((c) => [c, {}])));
+        if (u.pathname === "/api/object_info") return json(200, info || Object.fromEntries((classes || []).map((c) => [c, {}])));
         if (method === "POST" && u.pathname === "/api/prompt") { s.prompts.push(JSON.parse(init.body).prompt); return json(200, { prompt_id: "p1" }); }
         if (u.pathname === "/api/job/p1/status") return json(200, { status: "success" });
         if (u.pathname === "/api/history/p1") return json(200, { p1: { outputs: (outputs || (() => ({})))(s.prompts[s.prompts.length - 1]) } });
@@ -172,6 +173,57 @@ async function main() {
             short({ uploads: s.uploads, prompt: at("prompt"), seed: at("seed"), width: at("width"), height: at("height") }));
         const ez = await thrown(() => cloud.generate({ provider: "comfycloud", model: "Nano Banana Pro", kind: "text", options: { node: "GeminiImageNode" }, prompt: "x", width: 1024, height: 1024, references: [], params: {} }, { key: "k", fetch: fakeCloud({}).fetch }));
         check("a partner-node recipe: no new image on Comfy Cloud, said by name", /only through a Comfy Cloud recipe's own graph/.test(ez || ""), ez);
+    }
+
+    // 9. the model files against the node list (V6 step 3): a file the list lacks stops the run before any upload, named
+    // with the nearest file the cloud has; sampler_name ("euler") is a combo too but no file; an input the list gives no
+    // names for is not checked; a Settings row counts over the graph's value; a backslash path is the cloud's own file
+    if (qv) {
+        const UNET = "433:37";
+        const own = qv.options.graph[UNET].inputs.unet_name;
+        const infoWith = (unets, extra = {}) => ({
+            ...Object.fromEntries(qv.options.needs.map((c) => [c, {}])),
+            UNETLoader: { input: { required: { unet_name: [unets, {}], weight_dtype: [["default"], {}] } } },
+            KSampler: { input: { required: { sampler_name: [["dpmpp_2m"], {}], scheduler: [["simple"], {}] } } },
+            LoraLoaderModelOnly: { input: { required: { lora_name: ["COMBO", { options: ["Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors"] }] } } },
+            CLIPLoader: { input: { required: { clip_name: [[], {}] } } },
+            ...extra,
+        });
+        const runQ = async (unets, extra = {}) => {
+            cloud._clearNodeList();
+            const fc = fakeCloud({ info: infoWith(unets), outputs: () => ({ 469: { images: [{ filename: "q.png" }] } }) });
+            const err = await thrown(() => cloud.edit(reqOf({ options: qv.options, negative: "", params: {}, references: [png("ORIGINAL")], original: 1, ...extra }), { key: "k-files", fetch: fc.fetch, sleep: async () => {} }));
+            return { err, fc };
+        };
+        let r = await runQ(["qwen_image_edit_2509_fp8mixed.safetensors", "qwen_image_edit_2511_bf16.safetensors"]);
+        check("a model file the cloud lacks: refused before any upload, with the node, the input and the nearest file it has",
+            own === "qwen_image_edit_2509_fp8_e4m3fn.safetensors" && /^Comfy Cloud has no model file qwen_image_edit_2509_fp8_e4m3fn\.safetensors \(UNETLoader unet_name; it has qwen_image_edit_2509_fp8mixed\.safetensors\), so this recipe/.test(r.err || "") && !r.fc.uploads.length && !r.fc.prompts.length,
+            short({ err: r.err, uploads: r.fc.uploads, prompts: r.fc.prompts.length }));
+        r = await runQ(["qwen_image_edit_2509_fp8mixed.safetensors", own]);
+        check("the file listed: the run goes; sampler_name euler outside its combo and a loader whose list names nothing are not checked",
+            !r.err && r.fc.prompts.length === 1 && r.fc.prompts[0][UNET].inputs.unet_name === own && r.fc.prompts[0]["433:3"].inputs.sampler_name === "euler", short(r.err));
+        r = await runQ(["qwen_image_edit_2509_fp8mixed.safetensors"], { params: { [`${UNET}|unet_name`]: "qwen_image_edit_2509_fp8mixed.safetensors" } });
+        check("a Settings row with a file the cloud has counts over the graph's own", !r.err && r.fc.prompts[0][UNET].inputs.unet_name === "qwen_image_edit_2509_fp8mixed.safetensors", short(r.err));
+        r = await runQ([own], { params: { [`${UNET}|unet_name`]: "my_own_unet.safetensors" } });
+        check("a Settings row with a file the cloud lacks: refused by the row's file, no near name when none is close",
+            /no model file my_own_unet\.safetensors \(UNETLoader unet_name\), so/.test(r.err || "") && !r.fc.uploads.length, short(r.err));
+        r = await runQ(["qwen/" + own], { params: { [`${UNET}|unet_name`]: "qwen\\" + own } });
+        check("a path with backslashes (a recipe saved on Windows): the cloud's own spelling goes out", !r.err && r.fc.prompts[0][UNET].inputs.unet_name === "qwen/" + own, short(r.err || r.fc.prompts[0][UNET].inputs.unet_name));
+        r = await runQ(["qwen/" + own]);
+        check("the same file in another folder: named, not swapped", new RegExp(`it has qwen/${own.replace(/\./g, "\\.")}\\)`).test(r.err || "") && !r.fc.prompts.length, short(r.err));
+        const lora = await (async () => {
+            cloud._clearNodeList();
+            const fc = fakeCloud({ info: infoWith([own], { LoraLoaderModelOnly: { input: { required: { lora_name: ["COMBO", { options: ["other-lora.safetensors"] }] } } } }) });
+            return thrown(() => cloud.edit(reqOf({ options: qv.options, params: {}, references: [png("ORIGINAL")], original: 1 }), { key: "k-lora", fetch: fc.fetch, sleep: async () => {} }));
+        })();
+        check("the newer combo form (COMBO with options) is read too", /no model file Qwen-Image-Edit-2509-Lightning-4steps-V1\.0-bf16\.safetensors \(LoraLoaderModelOnly lora_name\)/.test(lora || ""), short(lora));
+    }
+    if (zv && zv.text) {
+        cloud._clearNodeList();
+        const info = { ...Object.fromEntries(zv.options.needs.map((c) => [c, {}])), VAELoader: { input: { required: { vae_name: [["flux2-vae.safetensors", "qwen_image_vae.safetensors"], {}] } } } };
+        s = fakeCloud({ info });
+        const ezf = await thrown(() => cloud.generate({ provider: "comfycloud", model: zv.text.model, kind: "text", options: zv.options, prompt: "x", negative: "", seed: 1, width: 1024, height: 1024, references: [], params: {} }, { key: "k-zf", fetch: s.fetch, sleep: async () => {} }));
+        check("Generate new is checked the same way: a VAE the cloud lacks stops the run before the prompt goes", /no model file ae\.safetensors \(VAELoader vae_name\), so/.test(ezf || "") && !s.prompts.length, short(ezf));
     }
 
     fs.rmSync(USERDATA, { recursive: true, force: true });

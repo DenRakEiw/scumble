@@ -34,7 +34,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   crop, the Original, the reference layers, the prompt and the seed through ComfyUI's own nodes. A workflow made on
   Comfy Cloud becomes a recipe too: import its exported `.json`, or save it from the ComfyUI window, after titling its
   nodes for Scumble ("Scumble crop", "Scumble prompt" and so on; docs/RECIPES.md lists them). Before a run Scumble
-  checks that Comfy Cloud has every node of the graph and names a missing one.
+  checks that Comfy Cloud has every node and every model file of the graph, before anything is uploaded, and names a
+  missing one (a model file with the nearest one Comfy Cloud has).
 - **Comfy's templates as they are.** A workflow without the Inpaint Canvas node needs no titles any more: Scumble reads
   which picture is the crop, where the prompt, the negative and the seed go and which node gives the result, and says
   what it read when it saves the recipe. Comfy's image-edit templates (Qwen Image Edit, Flux.2 Klein and more) save

@@ -197,11 +197,17 @@ subgraph live), `cloud_flux2_dev` (Comfy's Flux.2 dev image-edit template, filed
 `cloud_anima_preview`, `cloud_ideogram_4`, `cloud_krea_2_turbo`, `cloud_mage_flow`, `cloud_z_image_turbo`.
 `node tools/cloud_recipes.js` writes them from the exports (the widget values by name, the node list of
 `tools/refs/comfy_templates/object_info.json` for the rest), `--check` says whether a file still matches; each keeps
-the template's layout for the ComfyUI window. They have not run on Comfy Cloud from Scumble yet.
+the template's layout for the ComfyUI window. They have not run on Comfy Cloud from Scumble yet. Every model file they
+name is in Comfy Cloud's model catalog (looked up through Comfy Cloud's own MCP server on 2026-10-03).
 
 Before a run Scumble checks every node of the graph against Comfy Cloud's node list (kept ten minutes per key) and
 names a missing one instead of uploading anything; a run with more pictures than the graph takes is refused before
-that. The crop goes out at most 2048 px on a side in steps of 16 (a cloud
+that. The model files go through the same list: a value ending in a model file's extension (`.safetensors`, `.sft`,
+`.ckpt`, `.pt`, `.pth`, `.bin`, `.gguf`, `.onnx`, `.pkl`) in an input whose combo the list gives must be one of its
+names, a Settings row's value over the graph's own; a missing one stops the run by name, with the nearest file the
+cloud has (the same file in another folder, else a name a few letters off). `sampler_name`, `scheduler` and the like are
+combos too but no files, and an input the list gives no names for is not checked. A value that differs from the cloud's
+file only in its path separators (a recipe saved on Windows) goes out in the cloud's spelling. The crop goes out at most 2048 px on a side in steps of 16 (a cloud
 copy keeps the node's target size and multiple).
 
 ## Provider recipes (`kind: "provider"`)

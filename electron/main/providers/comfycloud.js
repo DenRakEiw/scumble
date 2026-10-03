@@ -174,7 +174,8 @@ async function upload(ctx, bytes, name) {
 // nodes titled "scumble:picture:<k>" (0 the crop, then the Original where it goes, then the references, the node's
 // batch order) and "scumble:mask", the run writes `options.values` (prompt, negative, seed, width, height) and the
 // Settings rows (keyed "<node>|<input>") into it, and its SaveImage answers. Before any upload the cloud's node list
-// (GET /api/object_info, kept ten minutes per key) must hold every node the graph needs.
+// (GET /api/object_info, kept ten minutes per key) must hold every node the graph needs and every model file it names
+// (checkModelFiles, V6 step 3).
 
 const INFO_TTL_MS = 10 * 60 * 1000;
 const infoCache = new Map();   // key -> { at, classes }
@@ -192,9 +193,90 @@ async function cloudInfo(ctx) {
     return entry;
 }
 
-/** The node types Comfy Cloud offers to this key. */
-async function cloudClasses(ctx) {
-    return (await cloudInfo(ctx)).classes;
+// The model files of a recipe graph (V6 step 3). The node list gives every file a loader takes as its combo; a value
+// it lacks would fail the job's own check after the uploads, so the run names it first, with the nearest file the
+// cloud has. Only values ending in a model file's extension count: sampler_name ("euler") and scheduler are combos
+// too, and a picture's ".png" is the run's own upload.
+const MODEL_EXT = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx|pkl|pickle)$/i;
+
+/** The names an input of `cls` takes by the node list (its combo), or null when the list gives none. */
+function choicesOf(info, cls, input) {
+    const def = info && info[cls] && info[cls].input;
+    const spec = def && ((def.required && def.required[input]) || (def.optional && def.optional[input]));
+    if (!Array.isArray(spec)) return null;
+    // the older form [[names], {...}] and the newer ["COMBO", { options: [names] }]
+    const list = Array.isArray(spec[0]) ? spec[0] : spec[0] === "COMBO" && spec[1] && Array.isArray(spec[1].options) ? spec[1].options : [];
+    const names = list.filter((x) => typeof x === "string");
+    return names.length ? names : null;
+}
+
+/** The model files a run of this graph asks for, a Settings row ("<node>|<input>") over the graph's own value. */
+function modelFiles(req) {
+    const graph = req.options.graph || {};
+    const at = new Map();
+    for (const [id, node] of Object.entries(graph)) {
+        for (const [input, v] of Object.entries((node && node.inputs) || {})) at.set(`${id}|${input}`, v);
+    }
+    for (const [k, v] of Object.entries(req.params || {})) {
+        const i = k.indexOf("|");
+        if (i > 0 && v !== "" && v != null && graph[k.slice(0, i)]) at.set(k, v);
+    }
+    const out = [];
+    for (const [k, v] of at) {
+        if (typeof v !== "string" || !MODEL_EXT.test(v)) continue;
+        const i = k.indexOf("|"), id = k.slice(0, i);
+        out.push({ id, input: k.slice(i + 1), cls: graph[id].class_type, value: v });
+    }
+    return out;
+}
+
+const fileBase = (s) => String(s).split(/[\\/]/).pop().toLowerCase();
+
+function editDistance(a, b) {
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+        const row = [i];
+        for (let j = 1; j <= b.length; j++) row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = row;
+    }
+    return prev[b.length];
+}
+
+/** The file of `names` nearest to a missing one: the same file in another folder, else a name a few letters off. */
+function nearestFile(value, names) {
+    const base = fileBase(value);
+    const same = names.find((n) => fileBase(n) === base);
+    if (same) return same;
+    const stem = base.replace(MODEL_EXT, "");
+    let best = null, bestD = Infinity;
+    for (const n of names) {
+        const d = editDistance(stem, fileBase(n).replace(MODEL_EXT, ""));
+        if (d < bestD) { bestD = d; best = n; }
+    }
+    return bestD <= Math.max(2, Math.floor(stem.length / 4)) ? best : null;
+}
+
+/**
+ * The model files of a recipe graph against the node list, before any upload: a missing one stops the run by name.
+ * A value that differs from the cloud's file only in its path separators (a recipe saved on Windows) is that file.
+ * @returns {Map<string, string>} "<node>|<input>" -> the cloud's spelling, for buildDetached's graph
+ */
+function checkModelFiles(req, info) {
+    const fixes = new Map(), missing = new Set();
+    for (const f of modelFiles(req)) {
+        const names = choicesOf(info, f.cls, f.input);
+        if (!names || names.includes(f.value)) continue;
+        const slash = f.value.replace(/\\/g, "/");
+        const same = names.find((n) => n.replace(/\\/g, "/") === slash);
+        if (same) { fixes.set(`${f.id}|${f.input}`, same); continue; }
+        const near = nearestFile(f.value, names);
+        missing.add(`${f.value} (${f.cls} ${f.input}${near ? `; it has ${near}` : ""})`);
+    }
+    if (missing.size) {
+        const list = [...missing];
+        throw new Error(`Comfy Cloud has no model file${list.length === 1 ? "" : "s"} ${list.join(", ")}, so this recipe cannot run there until its graph names a file Comfy Cloud has.`);
+    }
+    return fixes;
 }
 
 /** The pictures of a cloud-form graph: the crop as picture 0, then the Original and the references; the mask on its own. */
@@ -384,16 +466,22 @@ async function run(req, ctx, waitMs) {
         const node = detached ? "recipe graph" : String(req.options && req.options.node || "");
         if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
         const headers = { "X-API-Key": ctx.key, "Content-Type": "application/json" };
+        let fixes = null;
         if (detached) {
-            // what the graph refuses by itself, before any call; then every node it needs, before any upload (§2.4: a
-            // missing one stops the run by name)
+            // what the graph refuses by itself, before any call; then every node it needs and every model file it names,
+            // before any upload (§2.4, V6 step 3: a missing one stops the run by name)
             if (req.kind !== "text") detachedFits(req);
-            const have = await cloudClasses(ctx);
+            const { info, classes: have } = await cloudInfo(ctx);
             const needs = Array.isArray(req.options.needs) ? req.options.needs : Object.values(req.options.graph).map((n) => n && n.class_type);
             const missing = [...new Set(needs.filter((c) => c && !have.has(c)))];
             if (missing.length) throw new Error(`Comfy Cloud has no ${missing.join(", ")} node${missing.length === 1 ? "" : "s"}, so this recipe cannot run there.`);
+            fixes = checkModelFiles(req, info);
         }
         const graph = await buildGraph(req, ctx, node);
+        for (const [k, v] of fixes || []) {
+            const i = k.indexOf("|"), n = graph[k.slice(0, i)];
+            if (n && n.inputs) n.inputs[k.slice(i + 1)] = v;
+        }
         const saveId = !detached ? null : req.options.save && graph[req.options.save] ? String(req.options.save)
             : Object.keys(graph).find((id) => graph[id] && graph[id].class_type === "SaveImage" && /^scumble_save/.test(id));
         const submit = await ctx.fetch(BASE + "/api/prompt", { method: "POST", headers, body: JSON.stringify({ prompt: graph, client_id: "scumble" }) });
