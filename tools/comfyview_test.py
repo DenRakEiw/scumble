@@ -28,6 +28,10 @@ opener passes a stub's URL):
 - V5c, Comfy Cloud recipes: Settings › Recipes' Cloud copy saves "<id>_cloud" and the editor selects it; that recipe
   opens on Comfy Cloud in the window as its graph without the node; a graph without the node saved from the window is
   a new Comfy Cloud recipe, Save to recipe overwrites it, and a graph with the node is refused for it;
+- V6, the cloud mode: the editor's mode select offers api, local and cloud; with no Comfy Cloud recipe, cloud says so
+  and the select goes back; with the two the V5c steps made, cloud lists them alone (the negative shown, denoise not),
+  api lists none of them, and each mode comes back with the recipe last used in it; list_recipes and set_generation
+  know the mode;
 - a page that keeps unsaved changes (beforeunload, as ComfyUI does): Reload asks, Stay ends on the page as it was
   (ready to save, the window not stuck on "Loading"), Leave loads it again;
 - a page whose ComfyUI sets up after the wait gave up (many node packs): the save buttons are on with the page, a
@@ -558,6 +562,49 @@ class Gate:
         await self.close()
         return {"new": i["saveNote"][:90], "over": i2["saveNote"][:60], "refused": i3["saveNote"][:80]}
 
+    async def cloud_mode_none(self):
+        # V6: the editor's mode select has the app's third mode; with no Comfy Cloud recipe it says so and goes back
+        r = await self.js("""const S = await import('./shell.js');
+            const clouds = (await window.scumble.recipes.list()).filter((r) => r.providers && r.providers.comfycloud && r.providers.comfycloud.options && r.providers.comfycloud.options.graph).map((r) => r.id);
+            S.selectRecipe('flux2_klein_local');
+            const ed = window.editor, sel = ed.modeSel;
+            const opts = Array.from(sel.options).map((o) => o.value);
+            if (clouds.length) return { opts, skipped: clouds };
+            sel.value = 'cloud'; sel.dispatchEvent(new Event('change')); await wait(150);
+            return { opts, mode: ed.genSettings.mode, shown: sel.value, recipe: document.getElementById('shell-recipe').value, status: ed.status };""")
+        if r["opts"] != ["api", "local", "cloud"]:
+            raise Exception("the mode select: " + json.dumps(r))
+        if "skipped" in r:
+            return {"opts": r["opts"], "skipped (the profile has Comfy Cloud recipes)": r["skipped"]}
+        if r["mode"] != "local" or r["shown"] != "local" or r["recipe"] != "flux2_klein_local" or not str(r["status"]).startswith("No Comfy Cloud recipe yet"):
+            raise Exception("cloud with no Comfy Cloud recipe: " + json.dumps(r))
+        return {"opts": r["opts"], "status": r["status"][:60]}
+
+    async def cloud_mode(self):
+        # V6: the cloud mode lists the Comfy Cloud recipes alone (the two the V5c steps made), api lists none of them, and
+        # the select brings back the one last used in each mode; list_recipes and set_generation know the mode
+        r = await self.js("""const S = await import('./shell.js'), host = (await import('./editor/host.js')).host, { commands } = await import('./commands.js');
+            const ed = window.editor, sel = ed.modeSel, rs = document.getElementById('shell-recipe');
+            const look = () => ({ mode: ed.genSettings.mode, shown: sel.value, list: rs.dataset.mode, recipe: host.recipe && host.recipe.id, ids: Array.from(rs.options).map((o) => o.value), groups: Array.from(rs.querySelectorAll('optgroup')).map((g) => g.label), allCloud: Array.from(rs.options).every((o) => host.shell.modeOf(host.shell.recipes().find((x) => x.id === o.value)) === 'cloud'), negative: !ed.negativeInput.hidden, denoise: !ed.denoiseInput.parentElement.hidden });
+            const pick = async (m) => { sel.value = m; sel.dispatchEvent(new Event('change')); await wait(150); return look(); };
+            S.selectRecipe('gate_cloud'); await wait(50);
+            const cloud = look();
+            const api = await pick('api');
+            const back = await pick('cloud');
+            const listed = (await commands.run('list_recipes', {})).recipes.filter((x) => x.id === 'gate_cloud' || x.id === 'flux2_klein_local').map((x) => [x.id, x.mode]);
+            const set = await commands.run('set_generation', { mode: 'cloud' });
+            return { cloud, api, back, listed, set: set.mode };""")
+        c, a, b = r["cloud"], r["api"], r["back"]
+        if c["mode"] != "cloud" or c["shown"] != "cloud" or c["list"] != "cloud" or not {"flux2_klein_local_cloud", "gate_cloud"} <= set(c["ids"]) or not c["allCloud"] or c["groups"] != ["Comfy Cloud"] or not c["negative"] or c["denoise"]:
+            raise Exception("the cloud mode: " + json.dumps(c)[:600])
+        if a["mode"] != "api" or a["list"] != "api" or not a["ids"] or any(x in a["ids"] for x in ("gate_cloud", "flux2_klein_local_cloud")) or a["recipe"] in ("gate_cloud", "flux2_klein_local_cloud") or a["negative"]:
+            raise Exception("api after cloud: " + json.dumps({**a, "ids": a["ids"][:8]})[:600])
+        if b["recipe"] != "gate_cloud" or b["mode"] != "cloud" or b["shown"] != "cloud":
+            raise Exception("back to cloud: " + json.dumps(b)[:600])
+        if sorted(r["listed"]) != [["flux2_klein_local", "local"], ["gate_cloud", "cloud"]] or r["set"] != "cloud":
+            raise Exception("list_recipes / set_generation: " + json.dumps(r["listed"]) + " " + str(r["set"]))
+        return {"cloud": c["ids"], "api": len(a["ids"]), "back": b["recipe"]}
+
     async def unsaved(self):
         await self.close()
         self.stub.mode = "none"
@@ -670,8 +717,10 @@ async def main():
             await g.step("V4 / V5b: the sign-in hosts, and a detached recipe on a fake Comfy Cloud (plain Node)", g.hosts)
             await g.step("V4: Comfy Cloud refuses a recipe with the node and offers no save; the select switches back", g.cloud)
             await g.step("V4: no Comfy Cloud to show, and Use Comfy Cloud", g.cloud_start)
+            await g.step("V6: the editor's mode select has comfy cloud; with no Comfy Cloud recipe it says so and goes back", g.cloud_mode_none)
             await g.step("V5c: Cloud copy in Settings, the copy opened on Comfy Cloud as its graph", g.cloud_copy)
             await g.step("V5c: a graph without the node saved as a Comfy Cloud recipe, overwritten, a graph with the node refused", g.cloud_save)
+            await g.step("V6: the cloud mode lists the Comfy Cloud recipes alone, api none of them, each mode its last recipe", g.cloud_mode)
             await g.step("a page with unsaved changes: Reload asks, Stay keeps it ready to save, Leave loads it again", g.unsaved)
             await g.step("a page whose ComfyUI sets up late: saving asks the page again, no reload needed", g.late_app)
         finally:

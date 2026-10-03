@@ -11692,7 +11692,8 @@ class InpaintEditor {
             if (doc.negative !== undefined) this.setNegativeText(doc.negative);
             // the prompt came back with its layers: only what the snapshot does not hold is remapped
             this.refsRebuilt({ carry: true });
-            if (doc.gen) this.genSettings = JSON.parse(JSON.stringify(doc.gen));
+            // the mode stays: the recipe (the app) or the chain picked (the node) decides it, not a snapshot
+            if (doc.gen) this.genSettings = { ...JSON.parse(JSON.stringify(doc.gen)), mode: this.genSettings.mode };
             if (doc.crop) { this.cropSettings = JSON.parse(JSON.stringify(doc.crop)); this.syncCropControls(); }
             if (doc.settings) this.settings = JSON.parse(JSON.stringify(doc.settings));
             this.syncGenControls();
@@ -17920,7 +17921,9 @@ class InpaintEditor {
         this.syncBoxesRow();
         if (!this.modeSel) return;
         const local = this.genSettings.mode === "local";
-        this.modeSel.value = local ? "local" : "api";
+        // the app adds a third mode, cloud (Comfy Cloud recipes); a mode the select lacks shows as api
+        this.modeSel.value = this.genSettings.mode;
+        if (this.modeSel.value !== this.genSettings.mode) this.modeSel.value = local ? "local" : "api";
         this.denoiseInput.value = this.genSettings.denoise;
         if (this.denoiseVal) this.denoiseVal.textContent = (+this.genSettings.denoise || 1).toFixed(2);
         this.seedInput.value = this.genSettings.seed;
@@ -17928,7 +17931,8 @@ class InpaintEditor {
         this.refineBtn.classList.toggle("ipc-toggle-on", !!this.genSettings.refine);
         this.refineBtn.hidden = !local;
         this.denoiseInput.parentElement.hidden = !local;
-        if (this.negativeInput) this.negativeInput.hidden = !local;
+        // a Comfy Cloud graph takes the negative where it has one, as a local chain does
+        if (this.negativeInput) this.negativeInput.hidden = !(local || this.genSettings.mode === "cloud");
     }
 
     /**

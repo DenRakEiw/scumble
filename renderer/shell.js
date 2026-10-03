@@ -142,6 +142,7 @@ function newDocument(id) {
     applyHistoryDepth(editor);
     host.addEditor(editor);
     editor.open();
+    addCloudMode(editor);
     host.attachBrushTips(editor);      // the shared tip library and its save hook
     renderTabs();
     return editor;
@@ -279,7 +280,7 @@ function openInto(file) {
 host.createDocument = (id) => newDocument(id);
 host.onDocsChanged = () => renderTabs();
 // the command core (renderer/commands.js) reaches the shell through this
-host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, openSettings, openGenerateNew: (ed) => openGenerateNew(ed), openUpscale: (ed) => openUpscale(ed), genField: () => genField, genSyncRefs: () => genSyncRefs() };
+host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, modeOf: (r) => modeOf(r), openSettings, openGenerateNew: (ed) => openGenerateNew(ed), openUpscale: (ed) => openUpscale(ed), genField: () => genField, genSyncRefs: () => genSyncRefs() };
 ui.tabAdd.addEventListener("click", () => activate(newDocument()));
 
 // ---- connection --------------------------------------------------------------------------
@@ -387,10 +388,27 @@ ui.setUrl.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key ==
 let recipes = [];
 let providers = [];
 
-const FAMILY_ORDER = ["ComfyUI", "In-app", "Google", "OpenAI", "Black Forest Labs", "ByteDance", "Qwen"];
-const familyOf = (r) => (r.kind === "provider" ? (r.family || "API providers") : "ComfyUI");
-/** local = a ComfyUI recipe on the result_local chain, api = a provider recipe or a ComfyUI recipe of API nodes. */
-const modeOf = (r) => (r.kind === "provider" || r.mode === "api" ? "api" : "local");
+const FAMILY_ORDER = ["ComfyUI", "Comfy Cloud", "In-app", "Google", "OpenAI", "Black Forest Labs", "ByteDance", "Qwen"];
+/** A Comfy Cloud recipe running on Comfy Cloud: its graph variant is the chosen one (as the host's recipeMode reads it). */
+const cloudModeOf = (r) => cloudGraphOf(r) && chosenProvider(r) === "comfycloud";
+const familyOf = (r) => (cloudModeOf(r) ? "Comfy Cloud" : r.kind === "provider" ? (r.family || "API providers") : "ComfyUI");
+/**
+ * local = a ComfyUI recipe on the result_local chain, api = a provider recipe or a ComfyUI recipe of API nodes, cloud =
+ * a Comfy Cloud recipe, a graph of its own run on Comfy Cloud (item 35 V6).
+ */
+const modeOf = (r) => (cloudModeOf(r) ? "cloud" : r.kind === "provider" || r.mode === "api" ? "api" : "local");
+
+/**
+ * The editor's local / api select gets the app's third mode, cloud (item 35 V6): the select is built by the editor,
+ * which the node shares, so the option is added here once the editor is open.
+ */
+function addCloudMode(editor) {
+    const sel = editor.modeSel;
+    if (!sel || Array.from(sel.options).some((o) => o.value === "cloud")) return;
+    sel.add(new Option("comfy cloud", "cloud"));
+    sel.title = "Which recipes the picker in the title row lists: local = ComfyUI recipes on your ComfyUI, api = model providers, comfy cloud = Comfy Cloud recipes (they run on Comfy Cloud with your Comfy Cloud key).";
+    editor.syncGenControls();
+}
 
 async function loadRecipes() {
     recipes = await window.scumble.recipes.list();
@@ -401,7 +419,7 @@ async function loadRecipes() {
     renderRecipeOptions(cur ? modeOf(cur) : (ui.recipe.dataset.mode || "local"));
 }
 
-/** The recipe select lists the recipes of one mode: the editor's local / api select switches between them. */
+/** The recipe select lists the recipes of one mode: the editor's local / api / cloud select switches between them. */
 function renderRecipeOptions(mode) {
     ui.recipe.innerHTML = "";
     ui.recipe.dataset.mode = mode;
@@ -482,7 +500,7 @@ function selectRecipe(id, providerId) {
 }
 ui.recipe.addEventListener("change", () => selectRecipe(ui.recipe.value));
 
-// The editor's local / api select: switch to the recipe last used in that mode (else the first one).
+// The editor's local / api / cloud select: switch to the recipe last used in that mode (else the first one).
 host.onModeChanged = (mode, editor) => {
     const cur = recipes.find((x) => x.id === ui.recipe.value);
     if (cur && modeOf(cur) === mode) return;
@@ -490,7 +508,9 @@ host.onModeChanged = (mode, editor) => {
     const r = recipes.find((x) => x.id === want && modeOf(x) === mode) || recipes.find((x) => modeOf(x) === mode);
     if (r) { selectRecipe(r.id); return; }
     if (cur) { editor.genSettings.mode = modeOf(cur); editor.syncGenControls(); }
-    editor.setStatus(mode === "api" ? "No API recipe: add a provider key in Settings (Ctrl+,) › API providers." : "No ComfyUI recipe installed.");
+    editor.setStatus(mode === "api" ? "No API recipe: add a provider key in Settings (Ctrl+,) › API providers."
+        : mode === "cloud" ? "No Comfy Cloud recipe yet: open a workflow or one of Comfy's templates in the ComfyUI window on Comfy Cloud and Save as new recipe, or import one exported from Comfy Cloud (Settings › Recipes)."
+        : "No ComfyUI recipe installed.");
 };
 
 /** Update the meta text and the provider selects of the recipe rows without rebuilding them. */

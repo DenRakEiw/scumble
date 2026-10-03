@@ -39,6 +39,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   which picture is the crop, where the prompt, the negative and the seed go and which node gives the result, and says
   what it read when it saves the recipe. Comfy's image-edit templates (Qwen Image Edit, Flux.2 Klein and more) save
   straight from the ComfyUI window this way; titles are only needed to correct a wrong reading.
+- **A Comfy Cloud mode.** The mode picker next to Generate has a third choice, *comfy cloud*, beside *local* and
+  *api*: the recipe picker then lists your Comfy Cloud recipes alone, and they run on Comfy Cloud with your Comfy
+  Cloud key. The negative prompt field shows there as in *local*; a graph with a negative takes it. Each mode comes back with the recipe you
+  last used in it; with no Comfy Cloud recipe yet, the status line says how to make one.
 - **Importing workflows with subgraphs** reads them correctly: a newer subgraph's inputs are matched by name (before,
   a picture could land on a model loader's input), and a muted or bypassed subgraph adds none of its nodes.
 

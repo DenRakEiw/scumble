@@ -318,17 +318,17 @@ Set the prompt (and the negative prompt, used by local chains). @img1, @img2 ...
 
 ### `set_generation`
 
-Generation settings: mode api / local (the recipe decides what is available), seed, random seed, denoise, refine, and the document's Boxes switch (boxes).
+Generation settings: mode api / local / cloud (the recipe decides what is available; select_recipe switches between the modes' recipes), seed, random seed, denoise, refine, and the document's Boxes switch (boxes).
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `mode` | string | api or local (one of `api`, `local`) |
+| `mode` | string | api, local or cloud (Comfy Cloud recipes) (one of `api`, `local`, `cloud`) |
 | `seed` | integer | a fixed seed (turns random off) |
 | `seed_random` | boolean | a new seed per run |
 | `denoise` | number | 0.05..1 |
 | `refine` | boolean | refine pass |
-| `boxes` | boolean | the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay |
+| `boxes` | boolean | the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay |
 
 ### `set_crop`
 
@@ -366,7 +366,7 @@ Let the language model the editor is set to rewrite the prompt with the image in
 
 ### `generate` *(image)*
 
-Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out.
+Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out; seed is the seed the model got, null when the route sends none (FLUX 3 Image).
 
 | param | type | description |
 |---|---|---|
@@ -911,12 +911,12 @@ The boxes of this document (image pixels), whether the selected recipe takes box
 
 ### `boxes.add` *(plugin boxes)*
 
-Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).
+Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image; Ideogram 4 takes new, text and keep) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `id` | string | lowercase words and a number joined by underscores (knight_1, red_scarf_2); default made from the description's first two telling words ("a red scarf" -> red_scarf_1), else the next free box_n |
+| `id` | string | lowercase words and a number joined by underscores (knight_1, red_scarf_2); default made from the last two words of the description's first phrase ("a red scarf" -> red_scarf_1, "a small black cat sitting in the grass" -> black_cat_1), else the next free box_n |
 | `kind` | string | new (an element added in the box), keep, move, remove (an element of the picture), from (a reference layer placed in the box) (one of `new`, `keep`, `move`, `remove`, `from`) |
 | `rect` | array | [left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was |
 | `src` | array | keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer) |

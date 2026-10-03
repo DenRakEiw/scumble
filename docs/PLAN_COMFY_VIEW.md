@@ -330,12 +330,53 @@ none of V1-V5 may change that:
      still win), the fixes it needed in `fromWorkflow` (a newer subgraph's inputs by name and its promoted values by the
      definition's order; muted / bypassed instances add no inner nodes), fixtures `tools/refs/comfy_templates/` (26
      image-edit templates, MIT, and the node definitions they use), `recipes_test.js` section 9;
-  2. **next:** the third mode **Comfy Cloud** in the editor's local / api select (the cloud recipes there instead of
-     under api; the editor's mode list is shared with the node build, so the host offers the modes); the *Cloud copy*
-     button may go once ComfyUI recipes can be picked there (detached on the fly);
+  2. **built 2026-10-03 (evening):** the third mode in the editor's mode select, value `cloud`, label "comfy cloud".
+     The editor builds the select (shared with the node), so the shell adds the option once the editor is open
+     (`addCloudMode`, after `editor.open()` in `newDocument`; no new host member, the node offers api and local);
+     `syncGenControls` shows a mode the select has and api for one it lacks, and shows the negative in cloud as in
+     local (denoise and refine stay local's). A cloud recipe is a provider recipe whose `comfycloud` variant holds
+     `options.graph` (`cloudGraphOf`): the shell's `modeOf` gives it `cloud` and `familyOf` "Comfy Cloud" (after
+     ComfyUI in the order), the host's `applyRecipe` sets the mode from the resolved recipe, `settings.recipeByMode`
+     keeps the last one per mode, a switch to cloud with none says how to make one and goes back. `list_recipes`
+     reports the shell's mode (`host.shell.modeOf`), `set_generation` takes `cloud`. Generate new is unchanged (cloud
+     recipes have no text route). The *Cloud copy* button stays: the user's way to a cloud recipe is Comfy's
+     templates, so no ComfyUI recipe is detached on the fly. Gate `comfyview` two steps (V6). From the review: the
+     mode goes by the chosen variant (`cloudModeOf`: a hand-made recipe with a cloud graph and another provider chosen
+     is api), a document opened, reopened or restored keeps the selected recipe's mode (`host.keepRecipeMode` after
+     `setValue`; only the mode, `settingsChanged` would reset the file's Settings values), and a snapshot keeps the
+     current mode (both an older bug: a file's "local" planned a provider run's crop as a local refine pass);
   3. **next:** the model files of a cloud run checked against Comfy Cloud's node list before any upload (a missing
-     file named, with a near name the cloud has).
-  Open: which templates make sense as shipped Comfy Cloud recipes (the user offered to pick them, 2026-10-03).
+     file named, with a near name the cloud has). Only values with a file extension are model files: a plain
+     `_name$` match also takes `sampler_name` ("euler", "dpmpp_2m"), as the reading of the exports below showed.
+  4. **the user's picks, shipped as Comfy Cloud recipes (the user, 2026-10-03 evening, six image-edit exports from
+     Comfy Cloud; `tools/refs/comfy_cloud/edit/`, MIT):** Boogu Image 0.1 Edit, Flux.2 Klein 9B base (one picture,
+     and the multi-image variant: the same file with the other subgraph bypassed), Mage Flow Edit Turbo int8, Qwen
+     Image 2.1 edit, Qwen Image Edit 2509. Read on the day through `fromWorkflow` + `fromCloudGraph` with the
+     fixtures' node list (plain Node): **all six read without titles**, the roles right (Boogu: crop 32, prompt
+     45:36, seed 45:21, SaveImage 44; Klein 9B one picture: crop 76, prompt 75:74, seed 75:73, SaveImage 9; Klein
+     multi: crop 76, picture 1 81, prompt 92:113, seed 92:105, SaveImage 94; Mage Flow: crop 7, picture 1 32, prompt
+     12:5, seed 12:6, SaveImageAdvanced 10; Qwen 2.1: crop 470, picture 1 475, prompt / negative / seed through its
+     controls, SaveImageAdvanced 461; Qwen 2509: crop 78, picture 1 470, prompt 433:111, seed 433:3,
+     SaveImageAdvanced 469). Qwen 2509 has no negative read (its negative encoder takes the subgraph's `prompt_1`
+     control, empty: worth a look). The exports carry `widgets_values_named` (the cloud's frontend 1.54.16), which
+     `fromWorkflow` does not read yet; the fixtures' node list knew every class here. To build: the recipe files
+     (`recipes/<id>_cloud.json`, family "Comfy Cloud", the graph from the export, `options.workflow` kept so the
+     window shows the template's layout), a `recipes_test.js` section on them, then step 3's check and one live run
+     each on the user's key before the release.
+  5. **Generate new on Comfy Cloud (the user, the same evening, nine text-to-image exports, `tools/refs/comfy_cloud/
+     t2i/`):** Anima base v1, Anima preview, Flux.2 dev, Flux.2 Klein 9B text-to-image, Ideogram 4, Krea 2 turbo, Mage
+     Flow t2i int8, Qwen Image 2.1 t2i, Z-Image turbo. Today `fromCloudGraph` refuses eight of them ("No LoadImage
+     takes a picture into this graph"), and cloud recipes have no text route, so Generate new never lists them. Needed:
+     a text route for a cloud recipe (`providers.comfycloud.text`: its graph, the values prompt / negative / seed and
+     **width / height** read from the latent node or `ResolutionSelector`, its result), `fromCloudGraph` taking a graph
+     without pictures as a text graph, `genProviderIds` listing it, the run writing the size. Pairs with step 4 where
+     the same model has both (Flux.2 Klein 9B, Mage Flow, Qwen 2.1: one recipe, the edit graph and the text graph),
+     the rest text-only (`edit: false`). Found on the way: "Flux.2 dev" has a live LoadImage into its subgraph (a
+     reference picture), so it reads as an edit graph with one picture; `ResolutionSelector` (five exports) and
+     Ideogram 4's own nodes (`Ideogram4Scheduler`, `DualModelGuider`, `CFGOverride`, `CustomCombo`,
+     `JsonExtractString`, `StringReplace`) are not in the fixtures' node list: read them from the cloud's
+     `/api/object_info` or from `widgets_values_named`.
+  Open: Comfy Cloud's own model names for these templates (step 3 on the user's key).
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
   loopback run; one live run on Comfy Cloud with the user's key (credits). Possibly two sessions.

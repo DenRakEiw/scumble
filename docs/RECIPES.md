@@ -89,12 +89,14 @@ picking a preset writes the files back into the controls, the select shows `(cus
 while the current files match no preset. A file that is not on the server is skipped
 with a note in the status line. Presets are per recipe id and shared by all documents.
 
-### The local / api select
+### The local / api / comfy cloud select
 
 The recipe select in the top bar lists the recipes of one mode: ComfyUI recipes on the
 `result_local` chain under *local*, provider recipes (and ComfyUI recipes with `mode:
-"api"`) under *api*. The editor's local / api select next to Generate switches between
-the two groups and picks the recipe last used in that mode (`settings.recipeByMode`).
+"api"`) under *api*, Comfy Cloud recipes (below) under *comfy cloud* (`cloud`). The
+editor's mode select next to Generate switches between the groups and picks the recipe
+last used in that mode (`settings.recipeByMode`). The third mode is the app's: the node
+build of the editor offers api and local only.
 
 ### Import
 
@@ -128,7 +130,8 @@ stores one value per slot, so two rows on one slot send that one value under bot
 Comfy Cloud runs no custom nodes, so the Inpaint Canvas node is not there. A recipe for it is the graph without the
 node: Scumble crops and stitches itself, as for every provider, and the graph takes Scumble's pictures and values
 through core nodes. Such a recipe is a provider recipe with one variant, `comfycloud`, whose `options.graph` holds the
-graph (docs/PLAN_COMFY_VIEW.md §3 "V5a / V5b / V5c as built"); it runs on the Comfy Cloud key. Three ways to one:
+graph (docs/PLAN_COMFY_VIEW.md §3 "V5a / V5b / V5c as built"); it runs on the Comfy Cloud key and is listed under
+*comfy cloud* in the editor's mode select, not under *api* (list_recipes gives it `mode: "cloud"`). Three ways to one:
 
 - **Cloud copy** (Settings › Recipes, on a ComfyUI recipe): the recipe without its node, saved as `<id>_cloud`. Each
   `ImageFromBatch` pick of `crop_image` becomes a `LoadImage` of that picture, `crop_mask` a `LoadImage` and an

@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 afternoon: 0.1.39 is Latest; item 35 V1-V5 and V6 step 1 built, V6 steps 2-3 next, no release yet)
+## Where things stand (2026-10-03 evening: 0.1.39 is Latest; item 35 V1-V5 and V6 steps 1-2 built, V6 steps 3-5 next, no release yet)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -126,7 +126,22 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   **V6 step 1**: Comfy's templates read without titles (`detectRoles`), the subgraph fixes in `fromWorkflow`
   (docs/PLAN_COMFY_VIEW.md §3 V6). The local *Qwen Image Edit 2.1* recipe failed on the user's ComfyUI
   (`TextEncodeQwenImage21: cannot reshape tensor of 0 elements`): not looked at yet.
-- **Next: V6 steps 2 and 3** (the Comfy Cloud mode in the switch, the model-file check), then the live checks, then the
+- **V6 step 2 (the evening session, one review workflow at 93 % weekly):** the editor's mode select has a third mode,
+  *comfy cloud* (`cloud`), added by the shell after `editor.open()` (`addCloudMode`; the node keeps api / local, no new
+  host member); a Comfy Cloud recipe (`cloudGraphOf`) is listed there alone (`modeOf`, family "Comfy Cloud"), the
+  negative shows there, `recipeByMode` brings each mode's last recipe back, `list_recipes` reports `mode: "cloud"`,
+  `set_generation` takes it; *Cloud copy* stays (docs/PLAN_COMFY_VIEW.md V6 step 2). The review workflow's five low
+  findings are fixed: a document opened, reopened or restored keeps the recipe's mode (`host.keepRecipeMode`, an old
+  bug: a file's "local" planned a provider crop as a refine pass), a snapshot keeps the current mode, the mode goes by
+  the chosen variant (`cloudModeOf`), COMMANDS.md regenerated, the CHANGELOG line and the gate's list check. Gates
+  `lint types document commands` PASS and `comfyview` 23 of 23 offline (`dist/gates/gates/v6s2d`, `v6s2e`; the
+  listed Ctrl+S focus flake in between).
+  The user sent their picks the same evening, exported from Comfy Cloud: six image-edit and nine text-to-image
+  workflows, now fixtures in `tools/refs/comfy_cloud/` (MIT). The six edits read without titles; the text-to-image
+  ones need a text route for cloud recipes (Generate new). Both are planned as V6 steps 4 and 5 in
+  docs/PLAN_COMFY_VIEW.md, with what the reading found.
+- **Next: V6 step 3** (the model-file check against Comfy Cloud before a run), then step 4 (the six edit templates
+  as shipped cloud recipes) and step 5 (text-to-image cloud recipes for Generate new), then the live checks, then the
   release. Old line kept below for the checks:
 - **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
   ist"): a recipe opened and saved back on the user's ComfyUI (queues nothing), the Comfy Cloud login in the window

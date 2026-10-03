@@ -437,7 +437,7 @@ const COMMANDS = {
             const cur = host.recipe;
             return { selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null, recipes: host.shell.recipes().map((r) => {
                 const v = host.shell.resolveRecipe(r);
-                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: r.mode || (r.kind === "provider" ? "api" : "local"), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, textRefs: r.task === "upscale" ? undefined : r.kind === "provider" ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots), description: r.description || "", source: r.source || "builtin" };
+                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, textRefs: r.task === "upscale" ? undefined : r.kind === "provider" ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots), description: r.description || "", source: r.source || "builtin" };
             }) };
         },
     },
@@ -621,11 +621,11 @@ const COMMANDS = {
         },
     },
     set_generation: {
-        description: "Generation settings: mode api / local (the recipe decides what is available), seed, random seed, denoise, refine, and the document's Boxes switch (boxes).",
-        params: { mode: P.str("api or local", { enum: ["api", "local"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay") },
+        description: "Generation settings: mode api / local / cloud (the recipe decides what is available; select_recipe switches between the modes' recipes), seed, random seed, denoise, refine, and the document's Boxes switch (boxes).",
+        params: { mode: P.str("api, local or cloud (Comfy Cloud recipes)", { enum: ["api", "local", "cloud"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay") },
         async run(ed, a) {
             const g = ed.genSettings;
-            if (a.mode != null) { if (!["api", "local"].includes(a.mode)) throw new Error("mode must be api or local"); g.mode = a.mode; }
+            if (a.mode != null) { if (!["api", "local", "cloud"].includes(a.mode)) throw new Error("mode must be api, local or cloud"); g.mode = a.mode; }
             if (a.seed != null) { g.seed = Math.max(0, Math.floor(+a.seed) || 0); g.seedRandom = false; }
             if (a.seed_random != null) g.seedRandom = !!a.seed_random;
             if (a.denoise != null) g.denoise = Math.min(1, Math.max(0.05, +a.denoise || 1));

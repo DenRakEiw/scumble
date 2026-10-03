@@ -892,7 +892,7 @@ export const host = {
         try {
             for (const { editor: ed, state } of pending) {
                 if (!this._editors.includes(ed)) continue;
-                try { await ed.setValue(state); if (ed.base) ed.setStatus("Last session restored."); } catch (err) { console.warn("restore failed", err); }
+                try { await ed.setValue(state); this.keepRecipeMode(ed); if (ed.base) ed.setStatus("Last session restored."); } catch (err) { console.warn("restore failed", err); }
                 if (ed.base) this._rawStates.delete(ed);
             }
         } finally {
@@ -929,7 +929,7 @@ export const host = {
                 ed.docFile = f && typeof f.path === "string" ? { ...f } : null;
                 ed.pluginData = plainObject(doc.plugins) ? JSON.parse(JSON.stringify(doc.plugins)) : {};
                 ed.docExtra = plainObject(doc.extra) ? { ...doc.extra } : {};
-                try { await ed.setValue(doc.state); } catch (err) { console.warn("restore from the mirror failed", err); }
+                try { await ed.setValue(doc.state); this.keepRecipeMode(ed); } catch (err) { console.warn("restore from the mirror failed", err); }
                 if (ed.base && ed.docFile) settle.push(ed);
                 if (ed.base) { ed.setStatus("Last session restored."); any = true; }
                 else if (!this.connected) { this._pendingStates.push({ editor: ed, state: doc.state }); this._rawStates.set(ed, doc.state); ed.setStatus("This document will be restored once ComfyUI is connected (its files are not in the local store)."); }
@@ -1057,11 +1057,31 @@ export const host = {
         editor.setStatus(missing.length ? `Preset "${preset.name}": ${missing.join(", ")} not on the server, kept the current choice there.` : `Preset "${preset.name}" applied.`);
     },
 
-    /** The recipe decides the mode (local / api) and the Settings panel of every editor. */
+    /**
+     * The mode a (resolved) recipe runs in: cloud for a Comfy Cloud recipe, its own graph run on Comfy Cloud (item 35
+     * V6; the shell's modeOf), api for a provider recipe or a ComfyUI recipe of API nodes, else local.
+     */
+    recipeMode(r) {
+        return r.kind === "provider" && r.provider === "comfycloud" && r.options && r.options.graph ? "cloud"
+            : r.kind === "provider" || r.mode === "api" ? "api" : "local";
+    },
+
+    /**
+     * A document opened, reopened or restored keeps the selected recipe's mode, not the one its file holds: the recipe
+     * is the app's, and a file saved under another one would plan the crop for that mode (a local refine pass for a
+     * provider run). Only the mode: the Settings values stay as the file has them.
+     */
+    keepRecipeMode(ed) {
+        if (!this.recipe) return;
+        const mode = this.recipeMode(this.recipe);
+        if (ed.genSettings.mode !== mode) { ed.genSettings.mode = mode; ed.syncGenControls(); }
+    },
+
+    /** The recipe decides the mode (local / api / cloud) and the Settings panel of every editor. */
     applyRecipe(ed) {
         const r = this.recipe;
         if (!r) return;
-        const mode = r.kind === "provider" || r.mode === "api" ? "api" : "local";
+        const mode = this.recipeMode(r);
         if (ed.genSettings.mode !== mode) { ed.genSettings.mode = mode; ed.syncGenControls(); }
         ed.settingsChanged();
         ed.syncBoxesRow();
