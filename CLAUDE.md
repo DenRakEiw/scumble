@@ -76,14 +76,15 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 late afternoon: 0.1.38 is Latest; B2, B4 and B5 built, FLUX 3 on fal and Oxen from the docs, not run live; next B6 on the user's word)
+## Where things stand (2026-10-03 evening: 0.1.38 is Latest; B2, B4, B5 and B6 built, FLUX 3 on fal, Oxen and WaveSpeed from the docs, not run live; next B7, the 0.1.39 release, on the user's word)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-03 late afternoon, "weiter"): B5 built, FLUX 3 Image on Oxen.ai (5159151, not pushed).** The
-2026-10-03 afternoon block (B4, FLUX 3 on fal) is in `docs/HISTORY.md`. No workflow (weekly limit at 91 %); one review
-agent on the diff (no defects: 135 requests of the other 20 Oxen recipes byte-identical but the seed).
+**This session (2026-10-03 late afternoon, "weiter", then "ok, baue weiter"): B5 and B6 built, FLUX 3 Image on
+Oxen.ai (5159151) and WaveSpeedAI (3ab509a), not pushed.** The 2026-10-03 afternoon block (B4, FLUX 3 on fal) is in
+`docs/HISTORY.md`. No workflow (weekly limit at 91 %); one review agent on the B5 diff (no defects: 135 requests of the
+other 20 Oxen recipes byte-identical but the seed); none on B6 (the same pattern, its guards checked by the tests).
 - **Built** as `docs/PLAN_FLUX3.md` "Oxen.ai" planned (its new "Built" paragraph has the choices): `recipes/flux3.json`
   variant `oxen` **last** (Oxen's convention, `oxen_test` §10; not after `bfl` as the plan said), one id `flux-3-image`
   (edits and new images with references to `/images/edit`, the prompt alone to `/images/generate`); `options` `sizing:
@@ -98,13 +99,22 @@ agent on the diff (no defects: 135 requests of the other 20 Oxen recipes byte-id
   types, recipes, oxen, openrouter (`dist/gates/gates/b5-oxen`, `b5-oxen2`); one look in the app (FLUX 3 shows Oxen.ai,
   both rows). Docs: CHANGELOG Unreleased, MANUAL (the FLUX 3 paragraph), RECIPES (the FLUX 3 section, the table, the
   option list, the Oxen section), PLAN_0_1_38 B5.
-- **Not run live:** `oxen.js` has never run live for any model; the CHANGELOG bullet and the note say FLUX 3 there is
-  untried. A live check (`docs/PLAN_FLUX3.md` "Live checks": data URLs, `/images/generate` for a text run, the 300 s
-  header limit, grounding both ways) only on the user's word and an Oxen key.
-- **Next (on the user's word):** push 5159151 and this hand-over; B6 WaveSpeed (`docs/PLAN_FLUX3.md` "WaveSpeed": the
-  seed fix touches every WaveSpeed recipe), B7 the 0.1.39 release (the post tells the Ideogram live result;
-  `live_ideogram4_boxes.png` is a candidate). The weekly limit was at 91 % (reset 2026-10-04 09:00Z): no workflows
-  until then.
+- **B6 built** as `docs/PLAN_FLUX3.md` "WaveSpeed" planned (its "Built" paragraph has the choices), on WaveSpeed's
+  **renamed** edit route `black-forest-labs/flux-3/image-edit` (`.../edit` answers "Model not found" since 2026-10-03):
+  the variant `wavespeed` after `fal`, before OpenRouter, `text.model` `.../text-to-image`; `wavespeed.js` gained
+  `sizing: "flux3"` (`flux3.shapeOf` over the 14 presets; no `aspect_ratio` where the crop fits none, as WaveSpeed has
+  no "auto"; `info.fit`; expansion a boolean; a blank prompt refused) and `fitPictures` (`openrouter.sizeRules`, 256 px
+  / 4 MP, before the first upload); `accepts` the four schema keys keeps the seed home (the plan's seed fix fell away;
+  the other WaveSpeed recipes are unchanged); limits 4 MP and the 14; one row, Prompt expansion (on); boxes. Tests:
+  `tools/flux3_test.js` section 11 (29 checks; the schemas saved in `tools/refs/wavespeed/`), `recipes_test` §4 (104),
+  `refs_layout_test` (680); gates lint, types, recipes (`dist/gates/gates/b6-wavespeed`); one look in the app. Docs:
+  CHANGELOG, MANUAL, RECIPES, PLAN_FLUX3 "WaveSpeed", PLAN_0_1_38 B6.
+- **Not run live:** `oxen.js` has never run live for any model, WaveSpeed's FLUX 3 neither; the CHANGELOG bullets and
+  the notes say both are untried. A live check (`docs/PLAN_FLUX3.md` "Live checks") only on the user's word and a key.
+- **Next (on the user's word):** push 5159151, 3ab509a and this hand-over; B7 the 0.1.39 release (`docs/RELEASING.md`;
+  CHANGELOG Unreleased has five bullets: Ideogram 4 boxes, Ideogram 4 live, FLUX 3 on fal, on Oxen (with the Oxen
+  seed), on WaveSpeed; the post tells the Ideogram live result, `live_ideogram4_boxes.png` is a candidate). The weekly limit was
+  at 91 % (reset 2026-10-04 09:00Z): no workflows until then.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
@@ -183,8 +193,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   sibling), WaveSpeed (the user's link was image-to-video; whether it has FLUX 3 Image is part of the research),
   OpenRouter (black-forest-labs/flux-3-image) and Oxen.ai (flux-3-image), as variants of `recipes/flux3.json` on the
   existing adapters. Researched: `docs/PLAN_FLUX3.md` "FLUX 3 Image on other providers". **Comfy Router (B1) and OpenRouter
-  (B3) built 2026-10-02 late night, run live and released in 0.1.38 (2026-10-03)**; **fal (B4) and Oxen (B5) built 2026-10-03**,
-  under Unreleased, not run live; WaveSpeed open.
+  (B3) built 2026-10-02 late night, run live and released in 0.1.38 (2026-10-03)**; **fal (B4), Oxen (B5) and WaveSpeed (B6) built 2026-10-03**,
+  under Unreleased, not run live.
 - 30: Ideogram 4 support as an update of its own (the user, 2026-10-02: "ein anderer release", not with item 28's
   boxes). Known so far (one web search, 2026-10-02): Ideogram 4.0 is Ideogram's first open-weight model (9.3B flow
   DiT, Qwen3-VL-8B text encoder, June 2026; weights non-commercial, 256-2048 px, aspects up to 6:1), structured JSON
