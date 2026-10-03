@@ -123,7 +123,7 @@ other 20 Oxen recipes byte-identical but the seed); none on B6 (the same pattern
   `[500, 600, 950, 900]` sign, x0 y0 x1 y1 on 1024 x 1024).
 - **Next (on the user's word):** nothing planned in `docs/PLAN_0_1_38.md` is left. Open from the list: the live
   checks of FLUX 3 on fal, Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks", a key each), item 30 (Ideogram 4 as
-  its own update), 28 S4, B3 macOS. **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**
+  its own update), 28 S4, 34 (Generate new with presets and boxes, `docs/PLAN_NEW_PRESETS.md`), B3 macOS. **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**
   (the user, 2026-10-03, after the release); ask for Comfy's exact answer and re-read the challenge post
   (memory `comfy-dev-challenge`) before planning the entry with the user. The
   weekly limit was at 91 % (reset 2026-10-04 09:00Z): no workflows until then.
@@ -236,6 +236,13 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 33: every box its own colour and a double click that describes a box on the canvas (the user, 2026-10-02 night,
   with a screenshot of six green boxes: "jede neu box soll eine andere farbe haben", then "mit doppelklick auf die box
   ... den prompt im canvas in die box schreiben"): built the same night (7de1423), released in 0.1.38 (2026-10-03).
+- 34: Generate new with presets and boxes (the user, 2026-10-03: "wie können wir flux3 bbox prompting als 'generate
+  new' nutzen? macht es sinn presets für 'new' zu nehmen ... aspect ratio und model auswahl ... 1k, 2k, 4k"): a New
+  dialog with the model, its own aspect presets and its size classes makes the canvas the boxes are drawn on in the
+  output's aspect; Generate new follows the document's aspect while boxes go. Today the dialog's aspect is its own
+  (1:1 at first, then the last one), so boxes go stretched when it differs from the canvas (BFL: send the aspect the
+  boxes were designed for); FLUX 3 takes only New boxes on a new image, and Generate new with boxes never ran live on
+  FLUX 3. `docs/PLAN_NEW_PRESETS.md` (what exists, the trap, four steps, the open questions). Nothing built.
 
 ## Gate runner and flakes
 
