@@ -86,9 +86,21 @@ Scumble's own dialogs and popups, and its rectangle has to follow every layout c
     the selected recipe is a ComfyUI recipe: it opens the window with that recipe's graph (V2);
   - the same two in the *View* menu, with a shortcut picked in V1 (Ctrl+U is Upsample), and *Edit in ComfyUI* per
     recipe in *Settings > Recipes*.
-- **The target:** the connected server (`settings.comfy.url`), or Comfy Cloud (V4). Auth for a remote server: the
-  same headers `comfy.js` sends, set by `session.webRequest.onBeforeSendHeaders` for that origin only (whether it
-  covers the websocket handshake is checked in V1; a basic-auth 401 can fall back to the `login` event).
+- **The target:** the connected server (`settings.comfy.url`), or Comfy Cloud (V4). *My ComfyUI* is whatever that
+  URL names: a local install, a box in the network, or **a RunPod pod** (the user, 2026-10-03: "es kann dort auch ein
+  runpod server laufen"; `docs/RUNPOD.md`: `https://<pod-id>-8188.proxy.runpod.net`, the app side built, the template
+  never run on a real pod). The bar shows the host ("My ComfyUI · abc123-8188.proxy.runpod.net"). Auth for a remote
+  server, by the types *Settings > ComfyUI* already has:
+  - *none* (the pod's URL alone): nothing to add;
+  - *basic* (the template's proxy): the header for that origin, and the page's `login` event answered with the stored
+    user and password, so a 401 never shows a browser prompt; Chromium then reuses the credentials for the origin,
+    the websocket included;
+  - *bearer* / *custom header* (a token check): only by setting the header, `session.webRequest.onBeforeSendHeaders`
+    for that origin only; **whether it reaches the websocket handshake is the first thing V1 measures** (a stub server
+    that checks the header on `/ws`). If it does not, the window says that this auth type cannot show the page, and the
+    pod's basic auth is the way; the app's own runs (through `comfy.js`) are not affected either way.
+  A pod that is stopped or still starting answers the proxy's error page: the start page (§2.5) says the server does
+  not answer, with the URL and *Reload*.
 - **Navigation:** links to other origins open in the system browser (`setWindowOpenHandler`); `will-navigate` stays
   on the target origin (and, for Cloud, its login pages, V4). A crashed page (`render-process-gone`) is loaded again
   by *Reload*; it never touches the main window's crash guard. Closing the main window closes this one; this one's
@@ -187,7 +199,9 @@ none of V1-V5 may change that:
   (Normal): a gate step against a stub HTTP page started by the test (not the user's ComfyUI), and one with no target
   at all (the start page, no request made): the window opens and comes to the front on a second click, the
   page gets no `window.scumble`, Ctrl+S reaches the page and saves no document, the bar's calls are refused from the
-  page, the window closes with the main window; one look in the app against the user's ComfyUI on the user's word
+  page, the window closes with the main window, the stub's auth checks (basic with the `login` answer, a bearer and a
+  custom header on the page and on `/ws`); a look on a real RunPod pod when the user starts one (the first real pod of
+  `docs/RUNPOD.md`, it costs pod time); one look in the app against the user's ComfyUI on the user's word
   (opening the page queues nothing).
 - **V2, a recipe as a graph:** `toPrompt`, `load()`, `ready()`, *Edit in ComfyUI* (the button beside the title row's
   recipe select, the *View* menu, *Settings > Recipes*), the bar's "Editing: <recipe>". Tests: plain-Node `fromPrompt(toPrompt(r))` over every shipped ComfyUI
