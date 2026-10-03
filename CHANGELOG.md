@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.41 — 2026-10-03
 
 - **Cancel an API run.** While a run waits on a provider, a *Cancel* button sits beside the timer in the title row.
   Pressed while the selection is still being prepared, nothing is sent; pressed later, Scumble stops waiting at once
@@ -23,8 +23,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   the window holds, and *Save as new recipe* makes a new one under the name you type in the bar; either way the
   editor selects it. A shipped recipe is saved as your own copy under the same name, which stands in for it; removing
   the copy under Settings › Recipes brings the shipped one back. The recipe keeps ComfyUI's layout, so it opens next
-  time as you left it, and its Settings rows keep their names and values. A graph without an Inpaint Canvas node is
-  refused, and nothing is saved.
+  time as you left it, and its Settings rows keep their names and values. A graph without an Inpaint Canvas node cannot
+  replace a ComfyUI recipe; saved as a new recipe, it becomes a Comfy Cloud recipe (below).
 - **Comfy Cloud in the same window.** The window's *Show* picker switches between your ComfyUI and Comfy Cloud, and
   keeps the choice. You sign in on Comfy Cloud's own page (by email or GitHub; Google may refuse a sign-in from an app
   window), and the sign-in stays for the next time. Comfy Cloud runs no custom nodes, so *Edit in ComfyUI* opens a
@@ -33,8 +33,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Recipes that run on Comfy Cloud.** *Cloud copy* under Settings › Recipes turns a ComfyUI recipe into one without
   the Inpaint Canvas node that runs on your Comfy Cloud key: Scumble crops and stitches itself, and the graph takes the
   crop, the Original, the reference layers, the prompt and the seed through ComfyUI's own nodes. A workflow made on
-  Comfy Cloud becomes a recipe too: import its exported `.json`, or save it from the ComfyUI window, after titling its
-  nodes for Scumble ("Scumble crop", "Scumble prompt" and so on; docs/RECIPES.md lists them). Before a run Scumble
+  Comfy Cloud becomes a recipe too: import its exported `.json`, or save it from the ComfyUI window. Before a run Scumble
   checks that Comfy Cloud has every node of the graph and names a missing one. When a run fails, the message also names
   any model file Comfy Cloud's node list does not show, with a close name it does show where there is one.
 - **Comfy's templates as they are.** A workflow without the Inpaint Canvas node needs no titles any more: Scumble reads
@@ -47,8 +46,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   last used in it; with no Comfy Cloud recipe yet, the status line says how to make one.
 - **Thirteen Comfy Cloud recipes come with Scumble**, from Comfy's own templates. Image edits: Boogu Image 0.1 Edit,
   Flux.2 Klein 9B base (one picture, or two), Flux.2 dev, Mage Flow Edit Turbo, Qwen Image 2.1 Edit and Qwen Image Edit
-  2509. Pick *comfy cloud* and one of them, add your Comfy Cloud key, and the selection renders there. They have not
-  run on Comfy Cloud from Scumble yet.
+  2509. Pick *comfy cloud* and one of them, add your Comfy Cloud key, and the selection renders there. Tried live
+  before the release: Qwen Image 2.1 Edit on a selection and a Generate new run; the others are built the same way.
 - **Generate new on Comfy Cloud.** The Generate new dialog has a *Comfy Cloud* choice with Comfy's text-to-image
   templates: Anima base and preview, Flux.2 Klein 9B, Ideogram 4, Krea 2 Turbo, Mage Flow, Qwen Image 2.1 and Z-Image
   Turbo, at 768 to 2048 px on the long side. A text-to-image workflow saved from the ComfyUI window or imported from
