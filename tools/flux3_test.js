@@ -18,6 +18,7 @@ util.sleep = async (ms) => { SLEEPS.push(ms); };   // before bfl.js takes its co
 const bfl = require(path.join(PROV, "bfl.js"));
 const fal = require(path.join(PROV, "fal.js"));
 const oxen = require(path.join(PROV, "oxen.js"));
+const wavespeed = require(path.join(PROV, "wavespeed.js"));
 const flux3 = require(path.join(PROV, "flux3.js"));
 const refs = require(path.join(PROV, "refs.js"));
 const boxes = require(path.join(PROV, "boxes.js"));
@@ -161,7 +162,7 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     // ---- 1. the recipe ------------------------------------------------------------------------------------------
     console.log("\n--- 1. recipes/flux3.json ---");
     // B1: Comfy Router serves the same body (tools/comfyrouter_test.js holds that variant)
-    check("the bfl variant, the home provider, an edit route, named FLUX 3 Image; fal, OpenRouter, Comfy Router and Oxen.ai after it", eq(RECIPE.providerIds, ["bfl", "fal", "openrouter", "comfyrouter", "oxen"]) && RECIPE.default === "bfl" && V.input === "edit" && V.edit === true && RECIPE.name === "FLUX 3 Image", short({ ids: RECIPE.providerIds, def: RECIPE.default, input: V.input, name: RECIPE.name }));
+    check("the bfl variant, the home provider, an edit route, named FLUX 3 Image; fal, WaveSpeed, OpenRouter, Comfy Router and Oxen.ai after it", eq(RECIPE.providerIds, ["bfl", "fal", "wavespeed", "openrouter", "comfyrouter", "oxen"]) && RECIPE.default === "bfl" && V.input === "edit" && V.edit === true && RECIPE.name === "FLUX 3 Image", short({ ids: RECIPE.providerIds, def: RECIPE.default, input: V.input, name: RECIPE.name }));
     check("the endpoint flux-3-image is the variant's model, and the variant declares the FLUX 3 schema", V.model === "flux-3-image" && V.options.schema === "flux3" && flux3.isFlux3({ options: V.options }, V.model), short({ model: V.model, options: V.options }));
     check("options: accepts safety_tolerance and grounding (the adapter's default too), 10 pictures, no images_field", eq(V.options.accepts, ["safety_tolerance", "grounding"]) && eq(flux3.FLUX3_ACCEPTS, V.options.accepts) && V.options.max_images === 10 && !("images_field" in V.options) && flux3.FLUX3_IMAGES_FIELD === "images", short(V.options));
     check("limits: 2048 long side in 16 px steps, 608 the smallest, the 15 aspect presets", V.limits.max === 2048 && V.limits.step === 16 && V.limits.min === 608 && eq(V.limits.aspects, flux3.FLUX3_ASPECTS) && V.limits.aspects.length === 15, short(V.limits));
@@ -732,6 +733,172 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     }
     const oxRoutes = new Set(oxFlux3.map((b) => b.route));
     check(`every FLUX 3 body sent to Oxen (${oxFlux3.length}, both routes) holds only the saved schema's fields, required ones present, enums kept`, oxRoutes.size === 2 && oxFlux3.length >= 20 && !oxOff.length, oxOff.slice(0, 5).join(" | ") || [...oxRoutes].join(", "));
+
+    // ---- 11. FLUX 3 on WaveSpeedAI (docs/PLAN_FLUX3.md "WaveSpeed", docs/PLAN_0_1_38.md B6) ----------------------------
+    console.log("\n--- 11. FLUX 3 on WaveSpeedAI ---");
+    const WV = RECIPE.providers.wavespeed;
+    const WS14 = flux3.FLUX3_ASPECTS.filter((a) => a !== "9:21");
+    const ids = RECIPE.providerIds;
+    check("the wavespeed variant: image-edit (renamed from /edit since the research), the text route by name, references on image-edit, after fal and before OpenRouter, 4 MP and the 14 presets, one row (prompt expansion on)",
+        !!WV && WV.model === "black-forest-labs/flux-3/image-edit" && WV.input === "edit" && WV.text.model === "black-forest-labs/flux-3/text-to-image" && WV.text.refs && WV.text.refs.model === WV.model
+        && ids.indexOf("wavespeed") === ids.indexOf("fal") + 1 && ids.indexOf("openrouter") === ids.indexOf("wavespeed") + 1
+        && WV.options.sizing === "flux3" && eq(WV.options.aspect_ratios, WS14) && WV.options.max_images === 10 && WV.options.min_side === 256 && WV.options.max_pixels === 4000000 && WV.options.negative === false
+        && eq(WV.options.accepts, ["aspect_ratio", "resolution", "output_format", "enable_prompt_expansion"]) && boxes.schemaOf({ options: WV.options }) === "flux3"
+        && WV.limits.pixels === 4000000 && eq(WV.limits.aspects, WS14) && eq(WV.settings.map((s) => s.key), ["enable_prompt_expansion"]) && WV.settings[0].spec[1].default === true
+        && eq(WV.text.settings.map((s) => s.key), ["enable_prompt_expansion"]) && eq(WV.text.sizes, [1024, 2048, 4096]),
+        short(WV && { model: WV.model, text: WV.text.model, ids, options: WV.options, limits: WV.limits }));
+    // the schemas WaveSpeed serves (tools/refs/wavespeed, fetched 2026-10-03 without a key): every body below is checked against them
+    const wsSchema = (id) => require(path.join(ROOT, "tools", "refs", "wavespeed", `black-forest-labs_flux-3_${id}.json`)).components.schemas.Input;
+    const WS_SCHEMA = { "image-edit": wsSchema("image-edit"), "text-to-image": wsSchema("text-to-image") };
+    check("the saved schemas: the 14 presets (no auto, no 9:21), 1k to 4k, a strict input, no seed, safety, grounding or negative prompt; image-edit takes 1 to 10 images, text-to-image none",
+        ["image-edit", "text-to-image"].every((id) => eq(WS_SCHEMA[id].properties.aspect_ratio.enum, WS14) && eq(WS_SCHEMA[id].properties.resolution.enum, ["1k", "2k", "4k"]) && WS_SCHEMA[id].additionalProperties === false
+            && !["seed", "safety_tolerance", "grounding", "negative_prompt"].some((k) => k in WS_SCHEMA[id].properties))
+        && WS_SCHEMA["image-edit"].properties.images.maxItems === 10 && eq(WS_SCHEMA["image-edit"].required, ["prompt", "images"]) && !("images" in WS_SCHEMA["text-to-image"].properties),
+        short(Object.keys(WS_SCHEMA["image-edit"].properties)));
+    const WS_BODIES = [], WS_RESIZED = [];
+    const wsEdit = (extra = {}) => ({
+        provider: "wavespeed", model: WV.model, kind: "edit", fields: null, options: WV.options, prompt: "make the door red", negative: "blurry", seed: 7,
+        image: CROP, mask: MASK, maskAlpha: MASK, width: 1024, height: 768, references: [], original: 0, params: defaults(WV.settings, WV.fixed),
+        refName: WV.refs.name, cropAspect: "4:3", ...extra,
+    });
+    const wsText = (extra = {}) => ({
+        provider: "wavespeed", model: WV.text.model, kind: "text", fields: null, options: WV.options, prompt: "a lighthouse at dusk", negative: "blurry", seed: 7,
+        image: null, mask: null, maskAlpha: null, width: 1344, height: 768, aspect: null, references: [], original: 0, params: defaults(WV.text.settings, WV.text.fixed),
+        refName: WV.refs.name, ...extra,
+    });
+    /** api.wavespeed.ai as wavespeed.js meets it: an upload ticket and a presigned PUT per picture, the submit (done at once), the CDN download. */
+    async function runWs(req, { ctx = {} } = {}) {
+        const calls = [], stored = new Map();
+        let body = null, route = null, k = 0;
+        WS_RESIZED.length = 0;
+        async function fetch(url, init = {}) {
+            const u = new URL(String(url)), method = String(init.method || "GET").toUpperCase();
+            calls.push({ method, url: String(url), auth: (init.headers || {}).Authorization });
+            if (method === "POST" && u.pathname === "/api/v3/media/uploads") {
+                const n = ++k;
+                return json(200, { code: 200, data: { download_url: `https://cdn.wavespeed.test/u${n}`, upload: { url: `https://put.wavespeed.test/u${n}`, method: "PUT" } } });
+            }
+            if (method === "PUT" && u.hostname === "put.wavespeed.test") { stored.set(`https://cdn.wavespeed.test${u.pathname}`, tagOf(Buffer.from(init.body))); return new Response(null, { status: 200 }); }
+            if (method === "POST" && u.hostname === "api.wavespeed.ai") {
+                body = JSON.parse(init.body);
+                route = u.pathname.replace(/^\/api\/v3\//, "");
+                return json(200, { code: 200, data: { id: "p1", status: "completed", urls: { get: "https://api.wavespeed.ai/api/v3/predictions/p1/result" }, outputs: ["https://cdn.wavespeed.test/out.png"], timings: { inference: 900 } } });
+            }
+            if (u.hostname === "cdn.wavespeed.test") return new Response(RESULT, { status: 200, headers: { "content-type": "image/png" } });
+            return json(404, { code: 404, message: "no route " + u.pathname });
+        }
+        const context = {
+            key: "test-ws-key", fetch, log: () => {},
+            resizePng: async (b, to) => { WS_RESIZED.push({ tag: tagOf(b), ...to }); return pngOf(to.width, to.height, "S-" + tagOf(b)); },
+            ...ctx,
+        };
+        let out = null, err = null;
+        try { out = await wavespeed[req.kind === "text" ? "generate" : "edit"]({ ...req }, context); } catch (e) { err = String(e && e.message || e); }
+        if (body) WS_BODIES.push({ route: route.replace(/^.*\/flux-3\//, ""), body });
+        const tags = body && Array.isArray(body.images) ? body.images.map((dl) => stored.get(dl) || dl) : null;
+        return { out, err, calls, body, route, tags };
+    }
+
+    x = await runWs(wsEdit());
+    check("an edit (1024 x 768 at 4:3) goes to image-edit with the crop uploaded, 1k, 4:3, expansion on, png, the prompt as written; no seed, negative prompt, safety or grounding",
+        !x.err && x.route === "black-forest-labs/flux-3/image-edit" && x.calls.find((c) => c.url.endsWith("/flux-3/image-edit")).auth === "Bearer test-ws-key"
+        && eq(Object.keys(x.body).sort(), ["aspect_ratio", "enable_prompt_expansion", "images", "output_format", "prompt", "resolution"])
+        && eq(x.tags, ["CROP"]) && x.body.resolution === "1k" && x.body.aspect_ratio === "4:3" && x.body.enable_prompt_expansion === true && x.body.output_format === "png" && x.body.prompt === "make the door red",
+        x.err || short({ route: x.route, body: x.body && { ...x.body, images: x.tags } }));
+    check("the answer: no seed (none went), info with the tier, the preset and fit stretch for the stitch",
+        x.out && x.out.seed == null && x.out.info.resolution === "1k" && x.out.info.aspect_ratio === "4:3" && x.out.info.fit === "stretch" && x.out.info.model === WV.model && tagOf(x.out.bytes) === "RESULT",
+        short(x.out && { seed: x.out.seed, info: x.out.info }));
+    x = await runWs(wsEdit({ image: pngOf(2000, 2000, "CROP2K"), width: 2000, height: 2000, cropAspect: "1:1" }));
+    check("the crop at the variant's cap (2000 x 2000, 4.0 MP) goes as 2k at 1:1", !x.err && x.body.resolution === "2k" && x.body.aspect_ratio === "1:1", x.err || short(x.body && [x.body.resolution, x.body.aspect_ratio]));
+    x = await runWs(wsEdit({ image: pngOf(1100, 500, "WIDE"), width: 1100, height: 500, cropAspect: null }));
+    check("a crop near no preset (2.2:1) sends no aspect_ratio (the route follows image 1) and no fit", !x.err && !("aspect_ratio" in x.body) && x.body.resolution === "1k" && x.out && !("fit" in x.out.info), x.err || short(x.body && Object.keys(x.body)));
+    x = await runWs(wsEdit({ image: pngOf(432, 1008, "TALL"), width: 432, height: 1008, cropAspect: "9:21" }));
+    check("BFL's 9:21 is not WaveSpeed's: a 9:21 crop planned so goes without an aspect_ratio, never 9:21", !x.err && !("aspect_ratio" in x.body), x.err || short(x.body && x.body.aspect_ratio));
+    x = await runWs(wsEdit({ image: pngOf(1000, 700, "NEAR"), width: 1000, height: 700, cropAspect: null }));
+    check("a crop within 3 % of a preset (1000 x 700 against 7:5) sends that preset with fit stretch", !x.err && x.body.aspect_ratio === "7:5" && x.out.info.fit === "stretch", x.err || short(x.body && x.body.aspect_ratio));
+    x = await runWs(wsEdit({ references: [REF[0], REF[1]], original: 1 }));
+    check("the Original and a reference go after the crop in images (image 2, image 3)", !x.err && eq(x.tags, ["CROP", "REF0", "REF1"]), x.err || short(x.tags));
+    const wl = wavespeed.layout(wsEdit({ references: [REF[0], REF[1]], original: 1 }));
+    check("wavespeed.layout of the variant: the crop images[0] (1), the Original [1] (2), the reference [2] (3), max 10", wl.max === 10 && eq(wl.pictures.map((p) => [p.role, p.field, p.n]), [["crop", "images[0]", 1], ["original", "images[1]", 2], ["reference", "images[2]", 3]]), short(wl));
+    x = await runWs(wsEdit({ references: REF.slice(0, 10) }));
+    check("eleven pictures (the crop and ten references) are refused before any upload", !!x.err && /takes at most 10 pictures; this run has 11/.test(x.err) && !x.calls.length, x.err || "sent");
+
+    // the picture rules: 256 px a side to 4 MP, references scaled, the crop refused, all before the first upload
+    x = await runWs(wsEdit({ references: [SMALL, pngOf(3000, 2000, "SIXMP")], original: 1 }));
+    const wsScaled = WS_RESIZED.length === 2 && WS_RESIZED[0].tag === "SMALL" && WS_RESIZED[0].width === 256 && WS_RESIZED[0].height === 256 && WS_RESIZED[1].tag === "SIXMP" && WS_RESIZED[1].width * WS_RESIZED[1].height <= 4000000 && WS_RESIZED[1].width * WS_RESIZED[1].height > 3900000;
+    check("a 200 x 200 Original is scaled up to 256 x 256, a 6 MP reference down under 4 MP; they go scaled, in place", !x.err && wsScaled && eq(x.tags, ["CROP", "S-SMALL", "S-SIXMP"]), x.err || short({ WS_RESIZED, sent: x.tags }));
+    x = await runWs(wsEdit({ references: [pngOf(2000, 2000, "FOURMP")] }));
+    check("a reference of exactly 4,000,000 px goes as it is", !x.err && !WS_RESIZED.length && eq(x.tags, ["CROP", "FOURMP"]), x.err || short(WS_RESIZED));
+    for (const [what, img, w, h, re] of [["over 4 MP (2048 x 2048)", pngOf(2048, 2048, "C"), 2048, 2048, /at most 4 MP; the crop is 2048 × 2048/], ["under 256 px a side", pngOf(200, 300, "C"), 200, 300, /at least 256 px a side; the crop is 200 × 300/]]) {
+        x = await runWs(wsEdit({ image: img, width: w, height: h, cropAspect: null }));
+        check(`a crop ${what} is refused before any upload`, !!x.err && re.test(x.err) && !x.calls.length, x.err || "sent");
+    }
+    x = await runWs(wsEdit({ references: [pngOf(300, 20000, "STRIP")] }));
+    check("a reference no scale fits (300 x 20000) is refused, named, nothing uploaded", !!x.err && /the reference 1 is 300 × 20000, which no scale fits/.test(x.err) && !x.calls.length, x.err || "sent");
+    x = await runWs(wsEdit({ references: [HUGE] }), { ctx: { resizePng: undefined } });
+    check("without ctx.resizePng an oversized reference is refused, not sent as it is", !!x.err && /at most 4 MP; the reference 1 is 5000 × 4000/.test(x.err) && !x.calls.length, x.err || "sent");
+
+    // the row as an agent may give it, and the prompt
+    const wsExp = [];
+    for (const v of ["off", "on", 0, "yes", false]) { x = await runWs(wsEdit({ params: { enable_prompt_expansion: v } })); wsExp.push(x.body ? x.body.enable_prompt_expansion : x.err); }
+    check("prompt expansion as a JSON boolean (off / on / 0 / yes / false)", eq(wsExp, [false, true, false, true, false]), short(wsExp));
+    x = await runWs(wsEdit({ params: { enable_prompt_expansion: "maybe" } }));
+    check("a prompt expansion that is neither on nor off is refused, nothing uploaded", !!x.err && /Prompt expansion is on or off/.test(x.err) && !x.calls.some((c) => c.method === "POST" && c.url.includes("/flux-3/")), x.err || "sent");
+    x = await runWs(wsEdit({ prompt: "  " }));
+    check("a blank prompt is refused before any upload (the schema's minLength 1)", !!x.err && /needs a prompt/.test(x.err) && !x.calls.length, x.err || "sent");
+
+    // the boxes: index.js writes the rows after resolveNames, numbered by WaveSpeed's layout
+    let wsBoxed = wsEdit({ references: [REF[0], REF[1]], original: 1, prompt: "put {@ref:1} here", boxes: [{ id: "edit_1", kind: "from", rect: [0.5, 0, 1, 0.5], src: [0, 0, 1, 1], ref: 1, desc: "put {@ref:1} here" }] });
+    const wsLay = wavespeed.layout(wsBoxed);
+    const wsNamed = refs.resolveMarkers(wsBoxed.prompt, wsLay.pictures, wsBoxed.refName);
+    wsBoxed = { ...wsBoxed, prompt: boxes.applyBoxes({ ...wsBoxed, prompt: wsNamed.text }, wsLay).prompt };
+    x = await runWs(wsBoxed);
+    check("a from box with the Original: the reference is ref_image_2 by WaveSpeed's layout, named 'image 3', the rows at the prompt's end as on BFL", !x.err && x.body.prompt === 'put image 3 here. In <ref_image_0>, <ref_image_2> goes in <edit_1> at the top right. Leave the rest of the picture as it is. [{"id":"edit_1","from":"ref_image_2","src_bbox":[0,0,1000,1000],"tgt_bbox":[0,500,500,1000],"desc":"put image 3 here"}]' && eq(x.tags, ["CROP", "REF0", "REF1"]), x.err || short(x.body && x.body.prompt));
+
+    // new images: the text route, or image-edit with the references alone
+    x = await runWs(wsText());
+    check("a new image (1344 x 768) goes to text-to-image: no picture, the nearest of the 14 (16:9), 1k, expansion on; no negative prompt or seed",
+        !x.err && x.route === "black-forest-labs/flux-3/text-to-image" && !("images" in x.body) && x.body.aspect_ratio === "16:9" && x.body.resolution === "1k" && x.body.enable_prompt_expansion === true
+        && !("negative_prompt" in x.body) && !("seed" in x.body) && x.out && x.out.seed == null && !("fit" in x.out.info) && !x.calls.some((c) => c.url.includes("/media/")),
+        x.err || short(x.body));
+    x = await runWs(wsText({ aspect: "9:21", width: 768, height: 1792 }));
+    check("an agent's 9:21 for a new image goes as WaveSpeed's nearest, 1:2", !x.err && x.body.aspect_ratio === "1:2", x.err || short(x.body && x.body.aspect_ratio));
+    const wsTiers = [];
+    for (const [w, h] of [[2048, 2048], [2048, 1152], [4096, 4096], [1024, 1024]]) { x = await runWs(wsText({ width: w, height: h })); wsTiers.push(x.body && x.body.resolution); }
+    check("a new image's tier by area: 2048² 2k, 2048 x 1152 2k, 4096² 4k, 1024² 1k", eq(wsTiers, ["2k", "2k", "4k", "1k"]), short(wsTiers));
+    const wsRefs = wsText({ model: WV.text.refs.model, references: [REF[0], REF[1]], options: { ...WV.options, ...(WV.text.refs.options || {}) } });
+    const wsTl = wavespeed.textLayout(wsRefs);
+    check("textLayout of image-edit (a new image with references): images[0..1], no drop, max 10", !wsTl.drops && wsTl.max === 10 && eq(wsTl.pictures.map((p) => p.field), ["images[0]", "images[1]"]), short(wsTl));
+    check("textLayout of text-to-image drops references (a run with them goes to image-edit)", !!wavespeed.textLayout(wsText({ references: [REF[0]] })).drops, "");
+    x = await runWs(wsRefs);
+    check("a new image with two references goes to image-edit with them alone, at the asked shape (16:9) and tier, no fit",
+        !x.err && x.route === "black-forest-labs/flux-3/image-edit" && eq(x.tags, ["REF0", "REF1"]) && x.body.aspect_ratio === "16:9" && x.body.resolution === "1k" && !("fit" in x.out.info),
+        x.err || short(x.body && { ...x.body, images: x.tags }));
+
+    // other WaveSpeed recipes keep their shape
+    x = await runWs({ ...wsEdit(), model: "google/nano-banana-2/edit", options: { aspect_ratios: ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"], max_images: 14 }, params: {}, cropAspect: null, image: pngOf(1000, 700, "NB"), width: 1000, height: 700 });
+    check("Nano Banana 2 on WaveSpeed unchanged: the closest preset always, the seed sent and reported, no resolution or fit",
+        !x.err && x.body.aspect_ratio === "3:2" && x.body.seed === 7 && x.out.seed === 7 && !("resolution" in x.body) && !("fit" in x.out.info) && eq(x.tags, ["NB"]),
+        x.err || short(x.body && { aspect: x.body.aspect_ratio, seed: x.body.seed, res: x.body.resolution }));
+
+    // every FLUX 3 body against the schema WaveSpeed serves (strict: additionalProperties false)
+    const wsOff = [];
+    for (const { route, body } of WS_BODIES) {
+        const S = WS_SCHEMA[route];
+        if (!S) continue;
+        const props = S.properties, keys = Object.keys(body);
+        for (const k of keys) if (!(k in props)) wsOff.push(`${route}: ${k} not in the schema`);
+        for (const k of S.required || []) if (!(k in body)) wsOff.push(`${route}: ${k} missing`);
+        for (const k of keys) {
+            const e = props[k] && props[k].enum;
+            if (e && !e.includes(body[k])) wsOff.push(`${route}: ${k} ${body[k]} not in its enum`);
+        }
+        if ("enable_prompt_expansion" in body && typeof body.enable_prompt_expansion !== "boolean") wsOff.push(`${route}: enable_prompt_expansion ${body.enable_prompt_expansion}`);
+        if ("images" in body && !(Array.isArray(body.images) && body.images.length >= 1 && body.images.length <= 10 && body.images.every((s) => /^https:\/\//.test(s)))) wsOff.push(`${route}: images`);
+        if (typeof body.prompt !== "string" || !/\S/.test(body.prompt)) wsOff.push(`${route}: prompt`);
+    }
+    const wsRoutes = new Set(WS_BODIES.filter((b) => WS_SCHEMA[b.route]).map((b) => b.route));
+    check(`every FLUX 3 body sent to WaveSpeed (${WS_BODIES.filter((b) => WS_SCHEMA[b.route]).length}, both routes) holds only the saved schema's fields, required ones present, enums kept`, wsRoutes.size === 2 && WS_BODIES.length >= 20 && !wsOff.length, wsOff.slice(0, 5).join(" | ") || [...wsRoutes].join(", "));
 
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

@@ -416,6 +416,19 @@ building), then `tools/oxen_test.js` §3 checks every body against it; `tools/re
 
 ### WaveSpeed
 
+**Built 2026-10-03** (docs/PLAN_0_1_38.md B6), with these changes to the plan below: **WaveSpeed renamed the edit
+route** after the research, `black-forest-labs/flux-3/edit` answers "Model not found" (its schema URL too), the
+collection lists `black-forest-labs/flux-3/image-edit` with the same schema; the variant and `text.refs.model` use
+it, and `EDIT_ROUTE` already takes `-edit` as an edit route. The seed point fell away: since item 31 I2 the `accepts`
+allowlist keeps the seed home for any variant that has one (the other WaveSpeed recipes without a seed field and
+without `accepts` are unchanged; a separate fix if a live run refuses them). The sizing is fal's `sizing: "flux3"`
+(the tier by area, the planned or 3 % preset with `info.fit`, else no `aspect_ratio`, which follows image 1, since
+WaveSpeed has no "auto"), not a Resolution row; the picture rules reuse `openrouter.sizeRules` before the first upload;
+a blank prompt is refused. Prompt expansion **on** by default (as fal, open question 3); the boxes ship with the
+variant (as fal and Oxen, open question 6). The schemas are saved as `tools/refs/wavespeed/black-forest-labs_flux-3_
+{image-edit,text-to-image}.json`; `tools/flux3_test.js` section 11 (29 checks) checks every body against them. Not
+run live.
+
 | | |
 |---|---|
 | Endpoints | The FLUX 3 collection (`wavespeed.ai/collections/flux-3`) has 12 models, two of them images: `black-forest-labs/flux-3/text-to-image` and `black-forest-labs/flux-3/edit`, each `POST https://api.wavespeed.ai/api/v3/<id>`; result `GET https://api.wavespeed.ai/api/v3/predictions/{id}/result`. The other ten (including the user's link, `image-to-video`) are video. `black-forest-labs/flux-3` alone does not exist. Schemas (OpenAPI 3.0, no key): `https://wavespeed.ai/center/default/api/v1/model_schema/black-forest-labs/flux-3/edit` and `.../text-to-image`. Auth `Authorization: Bearer ...`. Who runs the model behind WaveSpeed is not stated. |

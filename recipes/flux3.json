@@ -4,7 +4,7 @@
   "name": "FLUX 3 Image",
   "family": "Black Forest Labs",
   "refs": { "name": "image {n}" },
-  "description": "Black Forest Labs' FLUX 3 Image: instruction edits of the crop with up to nine more pictures, new images from the prompt with up to ten reference images. Adapter written from the provider's docs (2026-10-01). Also on OpenRouter. Also on Comfy Router. Also on fal.ai. Also on Oxen.ai.",
+  "description": "Black Forest Labs' FLUX 3 Image: instruction edits of the crop with up to nine more pictures, new images from the prompt with up to ten reference images. Adapter written from the provider's docs (2026-10-01). Also on OpenRouter. Also on Comfy Router. Also on fal.ai. Also on Oxen.ai. Also on WaveSpeedAI.",
   "default": "bfl",
   "providers": {
     "bfl": {
@@ -94,6 +94,46 @@
           },
           {
             "index": 2,
+            "key": "enable_prompt_expansion",
+            "label": "Prompt expansion",
+            "spec": ["BOOLEAN", { "default": true }]
+          }
+        ]
+      }
+    },
+    "wavespeed": {
+      "model": "black-forest-labs/flux-3/image-edit",
+      "input": "edit",
+      "options": {
+        "sizing": "flux3",
+        "aspect_ratios": ["21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1", "4:5", "3:4", "5:7", "2:3", "9:16", "1:2"],
+        "max_images": 10,
+        "min_side": 256,
+        "max_pixels": 4000000,
+        "negative": false,
+        "accepts": ["aspect_ratio", "resolution", "output_format", "enable_prompt_expansion"],
+        "boxes": "flux3"
+      },
+      "limits": {
+        "pixels": 4000000,
+        "aspects": ["21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1", "4:5", "3:4", "5:7", "2:3", "9:16", "1:2"]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "enable_prompt_expansion",
+          "label": "Prompt expansion",
+          "spec": ["BOOLEAN", { "default": true }]
+        }
+      ],
+      "note": "Runs on WaveSpeedAI; written from WaveSpeed's docs and schemas (2026-10-03), not run against the live API yet. The pictures are uploaded to WaveSpeed's media store first (kept 7 days) and sent by URL. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The crop is image 1, then the Original and the reference layers (image 2 ..), ten pictures at most, each 256 px a side to 4 MP on WaveSpeed (a smaller or larger reference layer is scaled, the crop is held to 4 MP). The crop is widened to one of WaveSpeed's 14 aspect presets (no 9:21) and sent as that shape; near no preset the shape follows the crop. The size is a tier picked from the crop's area (1k about 1 MP, 2k about 4 MP). There is no seed, so two runs differ. Prompt expansion lets the model rewrite the prompt before it renders, as Black Forest Labs' own API always does; WaveSpeed's default is off. Neither Safety tolerance nor Grounding can be set here. The Boxes switch under the prompt sends the document's boxes as bounding boxes in the prompt, as on Black Forest Labs' own API. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". List price $0.05 at 1k, $0.12 at 2k, $0.65 at 4k (2026-10-03).",
+      "text": {
+        "model": "black-forest-labs/flux-3/text-to-image",
+        "sizes": [1024, 2048, 4096],
+        "refs": { "model": "black-forest-labs/flux-3/image-edit" },
+        "settings": [
+          {
+            "index": 1,
             "key": "enable_prompt_expansion",
             "label": "Prompt expansion",
             "spec": ["BOOLEAN", { "default": true }]

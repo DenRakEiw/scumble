@@ -27,6 +27,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   off). The pictures go inline in the request, and Oxen keeps every picture it makes in your Oxen account. Written
   from Oxen's documentation and model list; not yet tried against the live service. A run on Oxen.ai with a model
   that takes no seed no longer reports the editor's seed as if it had been used.
+- **FLUX 3 Image on WaveSpeedAI.** The FLUX 3 Image recipe has WaveSpeedAI as a provider too, on the WaveSpeed key:
+  edits with up to nine more pictures, new images with up to ten references, and the boxes in the prompt. Like fal,
+  WaveSpeed takes pictures of at most 4 megapixels and fourteen shapes, so Scumble holds the crop to that size and
+  scales larger reference layers down; when the crop fits none of the shapes, the answer keeps the crop's own. The
+  *Prompt expansion* switch is on by default; there is no Grounding or Safety tolerance switch there. Written from
+  WaveSpeed's documentation; not yet tried against the live service.
 
 ## 0.1.38 — 2026-10-03
 

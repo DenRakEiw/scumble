@@ -170,7 +170,8 @@ parameters, picture field, mask convention, aspect rule, tiers and presets, with
 `seed_max`, `negative: false`, `sizes` and `text_values` for Ideogram 4.5, with `fields.references` for a fill's
 unnumbered references and `max_ratio` / `max_bytes` checks, "Ideogram 4.5" below; WaveSpeed's `mask: "black"`,
 `negative: false`, `accepts` / `text_accepts` (the allowlist of optional keys per route), `tiers`, `text_values`,
-`fields.references`, `max_ratio` / `max_bytes` for the same model; Comfy Router's `seed_max`, `resolutions` (Ideogram's
+`fields.references`, `max_ratio` / `max_bytes` for the same model, `sizing: "flux3"` with `min_side` / `max_pixels`
+for FLUX 3 ("FLUX 3 Image" below); Comfy Router's `seed_max`, `resolutions` (Ideogram's
 1K / 2K presets) and `text_values` for it, beside the `max_images`, `max_ratio` and `max_bytes` every Router variant
 may set (its ideogram dialect knows the mask and the references itself); Magnific takes none, its route table knows each route's rules),
 `limits` (the size ceiling, below), `edit: false` (the variant makes images from
@@ -561,7 +562,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   |---|---|---|
   | FLUX.2 [pro], [flex], [max] | BFL, Replicate, OpenRouter, ToAPIs (pro, flex), Comfy Router (pro, max), Oxen.ai (pro, flex), Magnific (pro, flex); fal and WaveSpeed (the `/edit` route) | - |
   | FLUX.2 [klein] | BFL, Oxen.ai (`max: 4`); fal and WaveSpeed (`/edit`) | - |
-  | FLUX 3 Image | BFL, OpenRouter, Comfy Router, Oxen.ai; fal (`edit-image`) | - |
+  | FLUX 3 Image | BFL, OpenRouter, Comfy Router, Oxen.ai; fal (`edit-image`), WaveSpeed (`image-edit`) | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, OpenRouter, Comfy Router, Oxen.ai; WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
@@ -630,7 +631,8 @@ references go through the media upload first; `options.aspect_ratios` picks the 
 closest to the crop (never on a fill), `options.size = "star"` sends `W*H` for the fill models; `options.accepts`
 (`text_accepts` for a text run) lists the optional keys a route takes and keeps every other key but the prompt and
 the pictures home, seed and `output_format` included (a variant without the list sends what it always sent);
-Ideogram 4.5's inverted mask, unnumbered references and text tiers from `options`, "Ideogram 4.5" below; the key link
+Ideogram 4.5's inverted mask, unnumbered references and text tiers from `options`, "Ideogram 4.5" below; FLUX 3's
+shape, picture rules and blank-prompt refusal from `options.sizing: "flux3"`, "FLUX 3 Image" below; the key link
 carries the WaveSpeed referral code), **comfycloud** (Comfy Cloud API with `X-API-Key`:
 the adapter builds a workflow from LoadImage, one Partner Node named in `options.node`
 (`OpenAIGPTImageNodeV2`, `GeminiNanoBanana2V2`, `GeminiImage2Node`, `GeminiImageNode`,
@@ -693,6 +695,22 @@ over the variant's `ratios` (the same tier and 3 % rules, `info.fit` too; an edi
 `min_side` 256 / `max_pixels` 16,000,000 (BFL's; Oxen states none) scale a reference layer or the Original and refuse
 the crop (`openrouter.sizeRules`). The rows: Safety tolerance and Grounding, on by default as on BFL's API (the row
 always sends it, so Oxen's own default never applies). The seed reported is none. Not run against the live API yet.
+
+The **`wavespeed` variant** (docs/PLAN_0_1_38.md B6, docs/PLAN_FLUX3.md "WaveSpeed") sits after `fal`, before
+OpenRouter. WaveSpeed renamed its edit route after the research: `black-forest-labs/flux-3/image-edit` (the old
+`.../edit` answers "Model not found" since 2026-10-03; `EDIT_ROUTE` takes the new name as an edit route), for an edit
+and a new image with references (`text.refs.model`); `black-forest-labs/flux-3/text-to-image` for the prompt alone
+(`text.model`). The schemas (`tools/refs/wavespeed/`, fetched 2026-10-03) are strict (`additionalProperties: false`):
+`images` as URLs (the adapter's upload), 14 presets with **neither 9:21 nor "auto"** (left out, an edit follows image
+1; a new image defaults to 1:1), `resolution` 1k / 2k / 4k, each picture 256 px a side to 4 MP, `enable_prompt_expansion`
+(default false there), `output_format`; no seed, safety tolerance or grounding. `options.sizing: "flux3"` sends the
+shape by `flux3.shapeOf` over the variant's `aspect_ratios` (an edit near no preset sends none, `info.fit` where one
+goes) instead of the closest preset; `min_side` 256 / `max_pixels` 4,000,000 scale a reference layer or the Original
+(`openrouter.sizeRules`) and refuse the crop before the first upload, which the variant's `limits` (`pixels` 4,000,000,
+`aspects` the 14) already hold; a blank prompt is refused (the schemas' `minLength` 1). `accepts` (`aspect_ratio`,
+`resolution`, `output_format`, `enable_prompt_expansion`) keeps the seed and the negative prompt home, and the seed
+reported is none. The row: Prompt expansion, on by default as on fal (a JSON boolean). Boxes go in the prompt as on
+BFL's API. Price $0.05 / $0.12 / $0.65 at 1k / 2k / 4k (2026-10-03). Not run against the live API yet.
 
 - **The body** is `{ prompt, images, aspect_ratio, resolution, safety_tolerance, grounding }` and nothing else. The
   schema is strict (an unknown field answers 422), so no `seed`, mask, `width` / `height`, `mode`, negative prompt or
@@ -857,7 +875,7 @@ I1), WaveSpeedAI (I2) and Comfy Router (I3).
   `quality`, `aspect_ratio`, `resolution`, `enable_prompt_expansion` for a new image. Everything else the adapter
   would add (seed, `output_format`, a negative prompt) and a Settings row the route lacks stays home: a new image gets
   the edit's Settings rows (`host.providerParams`), so *Edit precision* reaches the text run and is dropped there.
-  The list is the allowlist `docs/PLAN_FLUX3.md` F4 needs for FLUX 3 on WaveSpeed.
+  The list is the allowlist `docs/PLAN_FLUX3.md` F4 needs for FLUX 3 on WaveSpeed (used there since B6).
 - **Settings:** *Quality* very_low / low / medium / high (default medium), also the billed rate; Replicate `fixed`
   `num_images: 1`, the Router's dialect sends `num_images: 1` in every body (WaveSpeed has no such field). **Price**
   (2026-10-02): an edit $0.008 / $0.03 / $0.06 / $0.22 per image on Replicate and WaveSpeed; a new image $0.03 / $0.06

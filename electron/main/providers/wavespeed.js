@@ -29,11 +29,21 @@
 // Seedream 5 lite and Qwen edit-plus, sends no shape, so the route may follow the first reference's).
 // layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3).
 //
+// FLUX 3 Image (black-forest-labs/flux-3/image-edit and text-to-image; docs/PLAN_FLUX3.md "WaveSpeed"): `options.sizing:
+// "flux3"` sends FLUX 3's shape instead of the closest preset: `resolution` the tier by area (flux3.js: 1k / 2k / 4k), on
+// a text run `aspect_ratio` the nearest of `aspect_ratios` (WaveSpeed's 14, no "9:21" and no "auto"), on an edit the
+// preset the crop was widened to or one within 3 % of it (info.fit "stretch" for the stitch), else none (the route then
+// follows image 1); enable_prompt_expansion goes as a boolean, and a blank prompt is refused (the schema's minLength 1).
+// `options.min_side` / `max_pixels` (256 px, 4 MP): a reference layer or the Original outside them is scaled into them
+// (ctx.resizePng), the crop is refused, before the first upload.
+//
 // Referral: the key link (keyUrl) carries DenRakEiw's WaveSpeed referral code.
 "use strict";
 
 const { fetchImage, readError, sleep, num, closestAspect, tierFor, checkRatio, withinBytes, ideogramMask } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
+const flux3 = require("./flux3");
+const openrouter = require("./openrouter");
 
 const BASE = "https://api.wavespeed.ai/api/v3/";
 const POLL_MS = 2000;
@@ -77,6 +87,27 @@ function acceptsOf(req) {
     const o = req.options || {};
     const list = req.kind === "text" && Array.isArray(o.text_accepts) ? o.text_accepts : o.accepts;
     return Array.isArray(list) ? list : null;
+}
+
+/** `sizing: "flux3"`: { aspect, resolution, fit } by FLUX 3's rules over the variant's presets (`options.aspect_ratios`). */
+function flux3Shape(req) {
+    const o = req.options || {};
+    const presets = Array.isArray(o.aspect_ratios) && o.aspect_ratios.length ? o.aspect_ratios.map(String) : flux3.FLUX3_ASPECTS;
+    return flux3.shapeOf({ ...req, options: {}, params: {} }, presets);
+}
+
+/**
+ * `options.min_side` / `max_pixels` (FLUX 3 on WaveSpeed: 256 px a side, 4 MP): a reference layer or the Original outside
+ * them is scaled into them through ctx.resizePng, the crop is refused; OpenRouter's rules on the same picture list.
+ * Answers the request with the pictures as they go; throws, naming the picture, before the first upload.
+ */
+async function fitPictures(req, ctx, model) {
+    const o = req.options || {};
+    if (!(+o.min_side > 0) && !(+o.max_pixels > 0)) return req;
+    const text = req.kind === "text";
+    const pics = [...(text ? [] : [{ what: "crop", bytes: Buffer.from(req.image) }]), ...(req.references || []).map((r, i) => ({ what: `reference ${i + 1}`, bytes: Buffer.from(r) }))];
+    await openrouter.sizeRules(pics, o, ctx, model, "WaveSpeed");
+    return text ? { ...req, references: pics.map((x) => x.bytes) } : { ...req, image: pics[0].bytes, references: pics.slice(1).map((x) => x.bytes) };
 }
 
 /** The input of a run; what the answer's info should say about it goes into `info`. */
@@ -144,8 +175,20 @@ async function inputFor(req, ctx, info = {}) {
         if (k === "random_seed" || k === "model" || v === "" || v == null || v === "auto") continue;
         input[k] = v;
     }
+    if (o.sizing === "flux3") {
+        // FLUX 3: the tier by area; a text run the nearest preset, an edit the crop's preset or none (image 1's shape)
+        const shape = flux3Shape(req);
+        if (input.resolution == null) input.resolution = shape.resolution;
+        if (input.aspect_ratio == null && shape.aspect !== "auto") input.aspect_ratio = shape.aspect;
+        // the row as the schema types it (an agent may give "on" / "off")
+        if (input.enable_prompt_expansion !== undefined) input.enable_prompt_expansion = flux3.switchOf(input.enable_prompt_expansion, "Prompt expansion");
+        info.resolution = input.resolution;
+        info.aspect_ratio = input.aspect_ratio || null;
+        // an edit sent at a preset comes back in its shape, which the stitch stretches onto the crop
+        if (req.kind !== "text" && input.aspect_ratio) info.fit = "stretch";
+    }
     // a fill answers at the crop's size: no aspect preset (Ideogram 4.5's edit refuses one beside a mask)
-    if (!fill && Array.isArray(o.aspect_ratios) && o.aspect_ratios.length && input.aspect_ratio == null) input.aspect_ratio = closestAspect(req.width, req.height, o.aspect_ratios);
+    if (!fill && o.sizing !== "flux3" && Array.isArray(o.aspect_ratios) && o.aspect_ratios.length && input.aspect_ratio == null) input.aspect_ratio = closestAspect(req.width, req.height, o.aspect_ratios);
     if (req.kind === "text") {
         // a value the text route does not take becomes the one the variant names for it (a new image gets the edit's
         // Settings rows, host.providerParams)
@@ -213,6 +256,9 @@ module.exports = {
     async edit(req, ctx) {
         const model = String(req.model || "").replace(/^\/+|\/+$/g, "");
         if (!model) throw new Error("WaveSpeed recipe has no model id.");
+        // FLUX 3's schema takes no blank prompt (minLength 1): refused before the first upload
+        if ((req.options || {}).sizing === "flux3" && !String(req.prompt || "").trim()) throw new Error(`WaveSpeed ${model} needs a prompt: say what to make or change.`);
+        req = await fitPictures(req, ctx, model);
         const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" };
         const sent = {};
         const input = await inputFor(req, ctx, sent);
