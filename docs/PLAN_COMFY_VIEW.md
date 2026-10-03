@@ -2,7 +2,8 @@
 
 **Status (2026-10-03, afternoon):** **V1 to V4 built** (the window, the bar, the start page, the auth, the *ComfyUI*
 button; a recipe opened as its graph; the graph saved as a recipe; Comfy Cloud in the window: "V1 ... V4 as built"
-under §3), V5 in parts: **V5a built** (`recipes.detach`), V5b (the run) and V5c (how a user gets a cloud recipe) next;
+under §3), V5 in parts: **V5a and V5b built** (`recipes.detach`, the run in `comfycloud.js`), V5c (how a user gets a
+cloud recipe) next;
 the look with the user's Comfy Cloud login is open. Five steps (V1-V5), one
 per session (the user's rule), **released together as one update** after V5. The user answered §6 the same day: a
 window of its own, Comfy Cloud API access yes, *Save to recipe* overwrites, all in one update; then the *ComfyUI*
@@ -298,6 +299,15 @@ none of V1-V5 may change that:
   index, the mask; fill the titled LoadImage nodes; write the values and the rows), `layout(req)` for it, the
   `/object_info` check per key. For V5c, the user's choice: how a cloud recipe comes about (a button per ComfyUI
   recipe that saves `<id>_cloud`, or a Comfy Cloud provider offered on every ComfyUI recipe that detaches).
+- **V5b as built (2026-10-03):** `comfycloud.js` takes `options.graph`: `layout(req)` numbers the crop, the Original
+  and the references as pictures 1.. (fields `scumble:picture:<k>`) with `max` = `options.pictures` and the mask in a
+  field of its own; `buildDetached` uploads the crop, the references the layout wires and the mask (a fill recipe
+  without one is refused), sets each titled `LoadImage` (a picture past the run's last gets the last file, as
+  `ImageFromBatch` clamps), writes prompt, negative, seed, width and height into `options.values`' inputs and every
+  `"<node>|<input>"` param into its input; `run()` checks `options.needs` against `GET /api/object_info` (kept ten
+  minutes per key) **before any upload** and refuses a missing node by name, and reads the job's own `scumble_save`
+  output before any other. Denoise and mode keep the graph's values (the provider request carries neither).
+  `tools/cloudgraph_test.js` (10 checks, plain Node, a fake cloud). Not run live.
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
   loopback run; one live run on Comfy Cloud with the user's key (credits). Possibly two sessions.

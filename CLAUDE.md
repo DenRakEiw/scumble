@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 afternoon: 0.1.39 is Latest; item 35 V1 to V4 and V5a built, V5b next)
+## Where things stand (2026-10-03 afternoon: 0.1.39 is Latest; item 35 V1 to V4, V5a and V5b built, V5c next)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -112,9 +112,12 @@ DLSS on the later list) is in `docs/HISTORY.md`.
 - **V5a, `recipes.detach`** (§3 "V5a as built"): a ComfyUI recipe as a provider recipe on `comfycloud` without the
   canvas node (`options.graph`, pictures as titled `LoadImage` nodes, the run's values, rows keyed `node|input`); all
   three shipped recipes detach; `recipes_test.js` 83 checks.
-- **Next: V5b** (the run in `comfycloud.js` from `options.graph`, a loopback test), then **V5c** (the user's choice of
-  how a cloud recipe comes about, the `/object_info` check per key), then one live run with the user's key on the
-  user's word. V1-V5 ship as **one update**. Open from the list as before: the live checks of FLUX 3 on fal,
+- **V5b, the run** (§3 "V5b as built"): `comfycloud.js` builds a detached recipe's run (`options.graph`): the titled
+  LoadImage nodes, the values, the rows, the node list checked per key before any upload, its own SaveImage first;
+  `tools/cloudgraph_test.js` 10 checks against a fake cloud, `comfyrouter_test.js` 134 still pass.
+- **Next: V5c** (the user's choice of how a cloud recipe comes about: a button per ComfyUI recipe that saves
+  `<id>_cloud`, or Comfy Cloud offered as a provider on every ComfyUI recipe that detaches; ask first), then one live
+  run with the user's key on the user's word. V1-V5 ship as **one update**. Open from the list as before: the live checks of FLUX 3 on fal,
   Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks"), item 30, 28 S4, 34 (`docs/PLAN_NEW_PRESETS.md`), B3 macOS.
   **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**; ask for Comfy's exact answer and
   re-read the challenge post (memory `comfy-dev-challenge`) before planning the entry with the user. The weekly limit

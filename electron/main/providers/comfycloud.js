@@ -168,7 +168,73 @@ async function upload(ctx, bytes, name) {
     return d.subfolder ? `${d.subfolder}/${d.name}` : d.name;
 }
 
+// ---- the cloud form of a ComfyUI recipe (recipes.detach, docs/PLAN_COMFY_VIEW.md §2.4, item 35 V5) ----------------
+//
+// `options.graph` is the recipe's own graph without the Inpaint Canvas node: its pictures come in through LoadImage
+// nodes titled "scumble:picture:<k>" (0 the crop, then the Original where it goes, then the references, the node's
+// batch order) and "scumble:mask", the run writes `options.values` (prompt, negative, seed, width, height) and the
+// Settings rows (keyed "<node>|<input>") into it, and its SaveImage answers. Before any upload the cloud's node list
+// (GET /api/object_info, kept ten minutes per key) must hold every node the graph needs.
+
+const INFO_TTL_MS = 10 * 60 * 1000;
+const infoCache = new Map();   // key -> { at, classes }
+
+/** The node types Comfy Cloud offers to this key. */
+async function cloudClasses(ctx) {
+    const hit = infoCache.get(ctx.key);
+    if (hit && Date.now() - hit.at < INFO_TTL_MS) return hit.classes;
+    const r = await ctx.fetch(BASE + "/api/object_info", { headers: { "X-API-Key": ctx.key } });
+    if (!r.ok) throw new Error(`Comfy Cloud node list: ${await readError(r)}`);
+    const j = await r.json();
+    const classes = new Set(Object.keys(j && typeof j === "object" ? j : {}));
+    infoCache.set(ctx.key, { at: Date.now(), classes });
+    return classes;
+}
+
+/** The pictures of a cloud-form graph: the crop as picture 0, then the Original and the references; the mask on its own. */
+function graphLayout(req) {
+    const o = req.options || {};
+    const seq = [["crop", "scumble:picture:0"], ...refRoles(req).map(([role, i]) => [role, `scumble:picture:${i + 1}`, i])];
+    return layoutOf({ seq, own: o.mask && req.mask ? [["mask", "scumble:mask"]] : [], max: Math.max(1, Math.round(+o.pictures || 1)) });
+}
+
+async function buildDetached(req, ctx) {
+    const o = req.options;
+    const lay = graphLayout(req);
+    const max = lay.max, count = countOf(lay);
+    if (count > max) throw new Error(`This Comfy Cloud recipe takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${count}: hide reference layers or turn Original off.`);
+    if (o.mask && !req.mask) throw new Error("This Comfy Cloud recipe needs a selection mask.");
+    const graph = JSON.parse(JSON.stringify(o.graph || {}));
+    const stamp = Date.now().toString(36);
+    const files = [await upload(ctx, req.image, `scumble-${stamp}-crop.png`)];
+    for (const p of lay.pictures.filter((x) => x.ref != null && x.n != null).sort((a, b) => a.n - b.n)) {
+        files.push(await upload(ctx, req.references[p.ref], `scumble-${stamp}-ref${p.ref + 1}.png`));
+    }
+    const maskFile = o.mask ? await upload(ctx, req.mask, `scumble-${stamp}-mask.png`) : null;
+    for (const node of Object.values(graph)) {
+        const title = String((node && node._meta && node._meta.title) || "");
+        const m = /^scumble:picture:(\d+)$/.exec(title);
+        // a picture past the run's last is the last one, as the node's ImageFromBatch clamps
+        if (m) node.inputs.image = files[Math.min(+m[1], files.length - 1)];
+        else if (title === "scumble:mask") node.inputs.image = maskFile;
+    }
+    const seed = req.seed != null && !(req.params && req.params.random_seed) ? (req.seed >>> 0) : Math.floor(Math.random() * 2147483647);
+    const vals = { prompt: req.prompt || "", negative: req.negative || "", seed, width: req.width, height: req.height };
+    for (const [name, pairs] of Object.entries(o.values || {})) {
+        if (!Object.prototype.hasOwnProperty.call(vals, name) || vals[name] == null) continue;   // denoise, mode: the graph's own
+        for (const [id, input] of Array.isArray(pairs) ? pairs : []) if (graph[id] && graph[id].inputs) graph[id].inputs[input] = vals[name];
+    }
+    for (const [k, v] of Object.entries(req.params || {})) {
+        const i = k.indexOf("|");
+        if (i <= 0 || v === "" || v == null) continue;
+        const id = k.slice(0, i), input = k.slice(i + 1);
+        if (graph[id] && graph[id].inputs) graph[id].inputs[input] = v;
+    }
+    return graph;
+}
+
 async function buildGraph(req, ctx, node) {
+    if (req.options && req.options.graph) return buildDetached(req, ctx);
     // the layout first: it refuses what the node cannot take (no node, Fill without a mask) before any upload
     const lay = layout(req);
     const max = +lay.max > 0 ? +lay.max : null, count = countOf(lay);
@@ -217,6 +283,7 @@ async function buildGraph(req, ctx, node) {
 
 /** Where each picture of an edit goes: buildGraph's node and mask rule, then LAYOUTS; refused with run()'s and buildGraph's words. */
 function layout(req) {
+    if (req.options && req.options.graph) return graphLayout(req);
     const node = String(req.options && req.options.node || "");
     if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
     if (!Object.prototype.hasOwnProperty.call(LAYOUTS, node)) throw new Error(`Comfy Cloud: no wiring for the node ${node} (known: ${Object.keys(SHAPES).join(", ")})`);
@@ -282,14 +349,24 @@ module.exports = {
     },
     failureDetail,   // for tests
     _buildGraph: buildGraph,
+    _clearNodeList: () => infoCache.clear(),
 };
 
 async function run(req, ctx, waitMs) {
         const pause = ctx.sleep || sleep;
-        const node = String(req.options && req.options.node || "");
+        const detached = !!(req.options && req.options.graph);
+        const node = detached ? "recipe graph" : String(req.options && req.options.node || "");
         if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
         const headers = { "X-API-Key": ctx.key, "Content-Type": "application/json" };
+        if (detached) {
+            // every node the graph needs, before any upload (§2.4: a missing one stops the run by name)
+            const have = await cloudClasses(ctx);
+            const needs = Array.isArray(req.options.needs) ? req.options.needs : Object.values(req.options.graph).map((n) => n && n.class_type);
+            const missing = [...new Set(needs.filter((c) => c && !have.has(c)))];
+            if (missing.length) throw new Error(`Comfy Cloud has no ${missing.join(", ")} node${missing.length === 1 ? "" : "s"}, so this recipe cannot run there.`);
+        }
         const graph = await buildGraph(req, ctx, node);
+        const saveId = detached ? Object.keys(graph).find((id) => graph[id] && graph[id].class_type === "SaveImage" && /^scumble_save/.test(id)) : null;
         const submit = await ctx.fetch(BASE + "/api/prompt", { method: "POST", headers, body: JSON.stringify({ prompt: graph, client_id: "scumble" }) });
         if (!submit.ok) throw new Error(`Comfy Cloud prompt: ${await readError(submit)}`);
         const job = await submit.json();
@@ -312,7 +389,10 @@ async function run(req, ctx, waitMs) {
         const hist = await h.json();
         const entry = hist[id] || hist;
         let file = null;
-        for (const out of Object.values(entry.outputs || {})) { if (out && Array.isArray(out.images) && out.images.length) { file = out.images[0]; break; } }
+        // a recipe graph may hold more image outputs (a preview): its own SaveImage answers first
+        const own = saveId && entry.outputs && entry.outputs[saveId];
+        if (own && Array.isArray(own.images) && own.images.length) file = own.images[0];
+        for (const out of Object.values(entry.outputs || {})) { if (file) break; if (out && Array.isArray(out.images) && out.images.length) { file = out.images[0]; break; } }
         if (!file) throw new Error("Comfy Cloud: the job finished without an image (" + JSON.stringify(entry).slice(0, 300) + ")");
         const got = await download(ctx, file);
         return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id } };

@@ -103,7 +103,10 @@ removed at the end, and it refuses a profile holding a user recipe it would over
 section 6 checks `recipes.fromGraph`; V4: `tools/comfyhosts_test.js` (the sign-in hosts, popups and navigation in plain
 Node), then with the stub standing in for the cloud the window titled Comfy Cloud refuses a recipe with the node and
 offers no save, the bar's select switches back and the recipe loads, the target is kept, the start page names Comfy
-Cloud and its Use Comfy Cloud switches; the target the profile had is put back;
+Cloud and its Use Comfy Cloud switches; the target the profile had is put back; V5b: `tools/cloudgraph_test.js` runs
+the Flux.2 Klein recipe's cloud form through `comfycloud.js` against a fake cloud.comfy.org (pictures into the titled
+LoadImage nodes in batch order, the last one repeated, the values and rows in their inputs, the own SaveImage first,
+the node list once per key, a missing node refused before any upload, a fill recipe's mask);
 `tools/recipes_test.js` section 5 checks `fromPrompt(toPrompt(r))` on every shipped ComfyUI recipe), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
 view of item 24: real Tab and Escape presses over CDP; the chrome hidden, the view the window's size, full screen and a
 fitted picture while on, the view / rulers / chrome / window put back after; Tab ignored in a text field, a dialog, the

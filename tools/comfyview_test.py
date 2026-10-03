@@ -436,12 +436,16 @@ class Gate:
             const S = await import('./shell.js'); await S.loadRecipes(); S.selectRecipe('flux2_klein_local'); return 1""")
 
     async def hosts(self):
+        # plain Node: the sign-in hosts (V4) and a detached recipe run through the Comfy Cloud adapter (V5b)
         root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-        r = subprocess.run(["node", os.path.join(root, "tools", "comfyhosts_test.js")], cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
-        tail = r.stdout.strip()
-        if r.returncode != 0 or not tail.endswith("PASS"):
-            raise Exception("tools/comfyhosts_test.js: " + (tail + r.stderr)[-800:])
-        return {"checks": tail.count("[ok]")}
+        out = {}
+        for name in ("comfyhosts_test.js", "cloudgraph_test.js"):
+            r = subprocess.run(["node", os.path.join(root, "tools", name)], cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=120)
+            tail = r.stdout.strip()
+            if r.returncode != 0 or not tail.endswith("PASS"):
+                raise Exception(f"tools/{name}: " + (tail + r.stderr)[-800:])
+            out[name] = tail.count("[ok]")
+        return out
 
     async def cloud(self):
         await self.close()
@@ -532,7 +536,7 @@ async def main():
             await g.step("V3: Save to recipe overwrites the held recipe (a shipped one as a user copy), the editor selects it", g.save_over)
             await g.step("V3: Save as new recipe, the name in the bar", g.save_new)
             await g.step("V3: a graph without the node and an answer that is no prompt are refused", g.save_refused)
-            await g.step("V4: the sign-in hosts, popups and navigation (plain Node)", g.hosts)
+            await g.step("V4 / V5b: the sign-in hosts, and a detached recipe on a fake Comfy Cloud (plain Node)", g.hosts)
             await g.step("V4: Comfy Cloud refuses a recipe with the node and offers no save; the select switches back", g.cloud)
             await g.step("V4: no Comfy Cloud to show, and Use Comfy Cloud", g.cloud_start)
         finally:
