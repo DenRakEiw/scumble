@@ -62,6 +62,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   fall away on *Save to recipe* or *Save as new recipe*.
 - **Importing workflows with subgraphs** reads them correctly: a newer subgraph's inputs are matched by name (before,
   a picture could land on a model loader's input), and a muted or bypassed subgraph adds none of its nodes.
+
+## 0.1.40 — 2026-10-03
+
 - **Comfy Cloud runs bring their result back again.** Comfy Cloud no longer answers the endpoint Scumble read the
   finished picture from, so every run there (the partner models and the upscalers too) ended with "This endpoint is
   not available on Comfy Cloud" after the job had run and been billed. Scumble now reads the result, and the cause of a
