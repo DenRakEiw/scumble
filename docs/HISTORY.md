@@ -56,6 +56,30 @@ The paragraph of 2026-10-02 (item 31 docs) and the 0.1.36 "Released" block were 
 
 The 0.1.37 block of 2026-10-02 (night) was moved here the same night, when A1, A2, B1 and B3 of docs/PLAN_0_1_38.md were built.
 
+## 2026-10-03 (afternoon: B4 built, FLUX 3 Image on fal, not run live; moved here when B5 was built)
+
+**This session (2026-10-03 afternoon, "weiter"): B4 built, FLUX 3 Image on fal (659b83c, pushed).** The 2026-10-03
+midday block (B2, Ideogram 4's JSON caption, live) is in `docs/HISTORY.md`. No workflow (weekly limit at 90 %).
+- **Built** as `docs/PLAN_FLUX3.md` "fal" planned (its new "Built" paragraph has the choices): `recipes/flux3.json`
+  variant `fal` after `bfl` (OpenRouter stays last before Comfy Router; `openrouter_test` checks that order):
+  `blackforestlabs/flux-3/edit-image` (edits, new images with references), `text.model` `.../text-to-image`;
+  `options` `sizing: "flux3"`, fal's 14 presets (no 9:21), `max_images` 10, `min_side` 256 / `max_pixels` 4,000,000,
+  `omit` num_images / seed / negative_prompt, `boxes: "flux3"`; variant `limits` 4 MP and the 14; rows Safety tolerance
+  and Prompt expansion (**on** by default: BFL direct always expands, the boxes ran live there with it). `fal.js`:
+  the `flux3` sizing branch (`flux3.shapeOf` with the presets as a parameter; tier by area, preset or none, `info.fit`;
+  safety 0-4, expansion a boolean via `flux3.switchOf`), `fitPictures` (references / the Original scaled, the crop
+  refused), `textLayout` takes `/edit-image`, the seed reported only where one went (every fal route now).
+- **Tests:** `tools/flux3_test.js` section 9 (28 checks; every body against fal's schemas, saved in `tools/refs/fal/`),
+  `recipes_test` §4 (102 with text.refs), `refs_layout_test`, every plain-Node test that touches fal; gates lint,
+  types, recipes (`dist/gates/gates/b4-fal`); one look in the app (FLUX 3 shows fal, both rows). Docs: CHANGELOG
+  Unreleased (a bullet, "not yet tried against the live service"), MANUAL (the FLUX 3 paragraph), RECIPES (the FLUX 3
+  section, the table, the option list), PLAN_0_1_38 B4.
+- **Not run live, by the user's decision** (2026-10-03: "nein, fal ohne test"): FLUX 3 on fal ships from the docs;
+  the CHANGELOG bullet and the recipe note say it is untried. No live check unless the user asks again.
+- **Next (on the user's word):** B5 Oxen (`docs/PLAN_FLUX3.md` "Oxen.ai"), B6 WaveSpeed, B7
+  the 0.1.39 release (the post tells the Ideogram live result; `live_ideogram4_boxes.png` is a candidate). The weekly
+  limit was at 90 % (reset 2026-10-04 09:00Z): no workflows until then.
+
 ## 2026-10-03 (midday: B2 built, Ideogram 4's JSON caption, live; moved here when B4 was built)
 
 **This session (2026-10-03 midday, "weiter"): B2 built, Ideogram 4 takes the boxes as its JSON caption (fe9cd0e,

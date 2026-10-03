@@ -76,32 +76,35 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 afternoon: 0.1.38 is Latest; B2 and B4 built, FLUX 3 on fal from the docs, no live test (the user); next B5 on the user's word)
+## Where things stand (2026-10-03 late afternoon: 0.1.38 is Latest; B2, B4 and B5 built, FLUX 3 on fal and Oxen from the docs, not run live; next B6 on the user's word)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-03 afternoon, "weiter"): B4 built, FLUX 3 Image on fal (659b83c, pushed).** The 2026-10-03
-midday block (B2, Ideogram 4's JSON caption, live) is in `docs/HISTORY.md`. No workflow (weekly limit at 90 %).
-- **Built** as `docs/PLAN_FLUX3.md` "fal" planned (its new "Built" paragraph has the choices): `recipes/flux3.json`
-  variant `fal` after `bfl` (OpenRouter stays last before Comfy Router; `openrouter_test` checks that order):
-  `blackforestlabs/flux-3/edit-image` (edits, new images with references), `text.model` `.../text-to-image`;
-  `options` `sizing: "flux3"`, fal's 14 presets (no 9:21), `max_images` 10, `min_side` 256 / `max_pixels` 4,000,000,
-  `omit` num_images / seed / negative_prompt, `boxes: "flux3"`; variant `limits` 4 MP and the 14; rows Safety tolerance
-  and Prompt expansion (**on** by default: BFL direct always expands, the boxes ran live there with it). `fal.js`:
-  the `flux3` sizing branch (`flux3.shapeOf` with the presets as a parameter; tier by area, preset or none, `info.fit`;
-  safety 0-4, expansion a boolean via `flux3.switchOf`), `fitPictures` (references / the Original scaled, the crop
-  refused), `textLayout` takes `/edit-image`, the seed reported only where one went (every fal route now).
-- **Tests:** `tools/flux3_test.js` section 9 (28 checks; every body against fal's schemas, saved in `tools/refs/fal/`),
-  `recipes_test` §4 (102 with text.refs), `refs_layout_test`, every plain-Node test that touches fal; gates lint,
-  types, recipes (`dist/gates/gates/b4-fal`); one look in the app (FLUX 3 shows fal, both rows). Docs: CHANGELOG
-  Unreleased (a bullet, "not yet tried against the live service"), MANUAL (the FLUX 3 paragraph), RECIPES (the FLUX 3
-  section, the table, the option list), PLAN_0_1_38 B4.
-- **Not run live, by the user's decision** (2026-10-03: "nein, fal ohne test"): FLUX 3 on fal ships from the docs;
-  the CHANGELOG bullet and the recipe note say it is untried. No live check unless the user asks again.
-- **Next (on the user's word):** B5 Oxen (`docs/PLAN_FLUX3.md` "Oxen.ai"), B6 WaveSpeed, B7
-  the 0.1.39 release (the post tells the Ideogram live result; `live_ideogram4_boxes.png` is a candidate). The weekly
-  limit was at 90 % (reset 2026-10-04 09:00Z): no workflows until then.
+**This session (2026-10-03 late afternoon, "weiter"): B5 built, FLUX 3 Image on Oxen.ai (5159151, not pushed).** The
+2026-10-03 afternoon block (B4, FLUX 3 on fal) is in `docs/HISTORY.md`. No workflow (weekly limit at 91 %); one review
+agent on the diff (no defects: 135 requests of the other 20 Oxen recipes byte-identical but the seed).
+- **Built** as `docs/PLAN_FLUX3.md` "Oxen.ai" planned (its new "Built" paragraph has the choices): `recipes/flux3.json`
+  variant `oxen` **last** (Oxen's convention, `oxen_test` §10; not after `bfl` as the plan said), one id `flux-3-image`
+  (edits and new images with references to `/images/edit`, the prompt alone to `/images/generate`); `options` `sizing:
+  "flux3"` (fal's branch in `oxen.js`: `flux3.shapeOf` over `ratios`, BFL's 15 presets with 9:21, "auto" sent
+  explicitly, `info.fit`; safety via `flux3.safetyOf`, grounding via `flux3.switchOf`), `prompt: "as_written"` (a blank
+  prompt refused), `min_side` 256 / `max_pixels` 16,000,000 (`openrouter.sizeRules`, now exported with a host label),
+  `max_images` 10, `boxes: "flux3"`; rows Safety tolerance and Grounding (**on**, as BFL direct; Oxen's default off).
+  Every Oxen recipe without `seed` in `accepts` now reports seed null (CHANGELOG says so).
+- **Tests:** `tools/flux3_test.js` section 10 (30 checks; every body against the model entry saved as
+  `tools/refs/oxen/flux-3-image.json`, fetched 2026-10-03 without a key), `oxen_test.js` §3 / §10, `oxen_test.py` (its
+  recipe list), `recipes_test` §4 (103 with text.refs), every plain-Node test that touches a provider; gates lint,
+  types, recipes, oxen, openrouter (`dist/gates/gates/b5-oxen`, `b5-oxen2`); one look in the app (FLUX 3 shows Oxen.ai,
+  both rows). Docs: CHANGELOG Unreleased, MANUAL (the FLUX 3 paragraph), RECIPES (the FLUX 3 section, the table, the
+  option list, the Oxen section), PLAN_0_1_38 B5.
+- **Not run live:** `oxen.js` has never run live for any model; the CHANGELOG bullet and the note say FLUX 3 there is
+  untried. A live check (`docs/PLAN_FLUX3.md` "Live checks": data URLs, `/images/generate` for a text run, the 300 s
+  header limit, grounding both ways) only on the user's word and an Oxen key.
+- **Next (on the user's word):** push 5159151 and this hand-over; B6 WaveSpeed (`docs/PLAN_FLUX3.md` "WaveSpeed": the
+  seed fix touches every WaveSpeed recipe), B7 the 0.1.39 release (the post tells the Ideogram live result;
+  `live_ideogram4_boxes.png` is a candidate). The weekly limit was at 91 % (reset 2026-10-04 09:00Z): no workflows
+  until then.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
@@ -180,8 +183,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   sibling), WaveSpeed (the user's link was image-to-video; whether it has FLUX 3 Image is part of the research),
   OpenRouter (black-forest-labs/flux-3-image) and Oxen.ai (flux-3-image), as variants of `recipes/flux3.json` on the
   existing adapters. Researched: `docs/PLAN_FLUX3.md` "FLUX 3 Image on other providers". **Comfy Router (B1) and OpenRouter
-  (B3) built 2026-10-02 late night, run live and released in 0.1.38 (2026-10-03)**; **fal (B4) built 2026-10-03**,
-  under Unreleased, not run live; Oxen, WaveSpeed open.
+  (B3) built 2026-10-02 late night, run live and released in 0.1.38 (2026-10-03)**; **fal (B4) and Oxen (B5) built 2026-10-03**,
+  under Unreleased, not run live; WaveSpeed open.
 - 30: Ideogram 4 support as an update of its own (the user, 2026-10-02: "ein anderer release", not with item 28's
   boxes). Known so far (one web search, 2026-10-02): Ideogram 4.0 is Ideogram's first open-weight model (9.3B flow
   DiT, Qwen3-VL-8B text encoder, June 2026; weights non-commercial, 256-2048 px, aspects up to 6:1), structured JSON
