@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 afternoon: 0.1.38 is Latest; B2 and B4 built, FLUX 3 on fal not run live; next its live check or B5 on the user's word)
+## Where things stand (2026-10-03 afternoon: 0.1.38 is Latest; B2 and B4 built, FLUX 3 on fal from the docs, no live test (the user); next B5 on the user's word)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -97,11 +97,9 @@ midday block (B2, Ideogram 4's JSON caption, live) is in `docs/HISTORY.md`. No w
   types, recipes (`dist/gates/gates/b4-fal`); one look in the app (FLUX 3 shows fal, both rows). Docs: CHANGELOG
   Unreleased (a bullet, "not yet tried against the live service"), MANUAL (the FLUX 3 paragraph), RECIPES (the FLUX 3
   section, the table, the option list), PLAN_0_1_38 B4.
-- **Not run live:** the fal key is in `dist/live-keys` (B2 used it); a live check is two 1k runs (an edit with the
-  selection as a box, a new image with one reference), about $0.05 at fal's launch price ($0.024 a 1k image until
-  October 8, then $0.048): on the user's word. After it: the CHANGELOG bullet and the recipe note say it ran, README's
-  verified list gains it, and the 4 MP reading (4,000,000 or 4,194,304) can be checked.
-- **Next (on the user's word):** the fal live check, then B5 Oxen (`docs/PLAN_FLUX3.md` "Oxen.ai"), B6 WaveSpeed, B7
+- **Not run live, by the user's decision** (2026-10-03: "nein, fal ohne test"): FLUX 3 on fal ships from the docs;
+  the CHANGELOG bullet and the recipe note say it is untried. No live check unless the user asks again.
+- **Next (on the user's word):** B5 Oxen (`docs/PLAN_FLUX3.md` "Oxen.ai"), B6 WaveSpeed, B7
   the 0.1.39 release (the post tells the Ideogram live result; `live_ideogram4_boxes.png` is a candidate). The weekly
   limit was at 90 % (reset 2026-10-04 09:00Z): no workflows until then.
 
