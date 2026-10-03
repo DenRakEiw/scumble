@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 evening: 0.1.38 is Latest; B2, B4, B5 and B6 built, FLUX 3 on fal, Oxen and WaveSpeed from the docs, not run live; next B7, the 0.1.39 release, on the user's word)
+## Where things stand (2026-10-03 evening: 0.1.38 is Latest; 0.1.39 prepared locally (B2, B4, B5, B6), not pushed; the release chain on the user's word)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -111,10 +111,19 @@ other 20 Oxen recipes byte-identical but the seed); none on B6 (the same pattern
   CHANGELOG, MANUAL, RECIPES, PLAN_FLUX3 "WaveSpeed", PLAN_0_1_38 B6.
 - **Not run live:** `oxen.js` has never run live for any model, WaveSpeed's FLUX 3 neither; the CHANGELOG bullets and
   the notes say both are untried. A live check (`docs/PLAN_FLUX3.md` "Live checks") only on the user's word and a key.
-- **Next (on the user's word):** push 5159151, 3ab509a and this hand-over; B7 the 0.1.39 release (`docs/RELEASING.md`;
-  CHANGELOG Unreleased has five bullets: Ideogram 4 boxes, Ideogram 4 live, FLUX 3 on fal, on Oxen (with the Oxen
-  seed), on WaveSpeed; the post tells the Ideogram live result, `live_ideogram4_boxes.png` is a candidate). The weekly limit was
-  at 91 % (reset 2026-10-04 09:00Z): no workflows until then.
+- **0.1.39 prepared locally** (the user: "ne mach weiter ohne clear"; c72f142, not pushed): the CHANGELOG section
+  `## 0.1.39 — 2026-10-03` (five bullets: Ideogram 4 boxes, Ideogram 4 live, FLUX 3 on fal, on Oxen with the Oxen seed,
+  on WaveSpeed), `package.json` / `package-lock.json` 0.1.39, README (Ideogram 4 on fal verified), `npm run dist`
+  (`dist/Scumble Setup 0.1.39.exe`), exe gates `--offline` green on both backends (`rel39-exe` 34 with `export` green
+  on the rerun `rel39-exe-rerun`, the known one-byte flake, recorded in `docs/TESTING.md`; `rel39-exe-canvas` 21). The
+  post is drafted in the session scratchpad (`post_v0-1-39.ts`, title "Boxes for Ideogram 4, and FLUX 3 on three more
+  hosts") with its picture (`v0-1-39-ideogram-boxes.jpg`: the two boxes, the answer with the boxes drawn); a new session
+  rewrites both from this block and `dist/live-out/live_ideogram4_boxes.png` (boxes `[80, 680, 380, 960]` apple,
+  `[500, 600, 950, 900]` sign, x0 y0 x1 y1 on 1024 x 1024).
+- **Next (on the user's word, asked once):** the chain of `docs/RELEASING.md`: push, tag `v0.1.39`, watch the build,
+  publish the draft (title "Scumble 0.1.39: Boxes for Ideogram 4, FLUX 3 on fal, Oxen.ai and WaveSpeed"), manual sync,
+  the post (with `hub.version` 0.1.39), the live check. The weekly limit was at 91 % (reset 2026-10-04 09:00Z): no
+  workflows until then.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
