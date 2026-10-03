@@ -3,8 +3,32 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.38 — 2026-10-03
 
+- **A question when an update is ready.** Once Scumble has downloaded a new version in the background, it asks:
+  *Restart and update* saves your documents, installs the new version and starts it with them; *Later* leaves it for
+  when you close Scumble, which installs it then; *Skip this version* leaves it out until a newer one comes, so
+  closing Scumble installs nothing (the *Update to ...* button in the title row and *Settings › Updates* still install
+  it). The question lists what changed since your version, one line per change, comes once per start, and waits
+  while you draw, type or answer another question, the assistant's included; a key you were typing when it opens
+  answers *Later*. Before a restart that would end a run in progress (on an API or on your ComfyUI), the assistant's
+  turn or an agent's session, it asks first; the button in the title row now does the same. It never asks after a
+  check you started in *Settings › Updates*, which shows the answer there, and never in the Microsoft Store copy,
+  which the Store updates.
+- **Settings › Updates shows the whole release notes**, of every version since yours: they were cut after 4,000
+  characters, and a jump over several versions showed only the newest one's. A check there now also looks again when
+  the downloaded version is one you skipped.
+- **FLUX 3 Image on OpenRouter and Comfy Router.** The FLUX 3 Image recipe has two more providers: OpenRouter, on
+  its own key, and Comfy Router, on the Comfy key you may already have for Comfy Cloud and billed in Comfy credits.
+  Both send the edits with up to nine more pictures, new images with up to ten references, and the boxes in the
+  prompt. On OpenRouter the prompt goes as you wrote it, the crop's shape and size class are the same as on Black
+  Forest Labs' own API, and the safety tolerance row works; grounding cannot be switched there. Tried live before the
+  release, two edits at 2K on each: a cow turned into a white horse in the same place, and with the selection as a
+  box a black cat sat in the box (about 40 to 110 seconds a run; OpenRouter charged $0.05 an edit, Comfy did not
+  report its credits).
+- **FLUX 3 Image keeps the crop's shape.** A crop widened to one of the model's shapes now always asks for that
+  shape; when the rounding of its size put it more than 3 % off, it went as "auto" and the answer was not fitted onto
+  the crop exactly.
 - **Boxes: every box its own colour.** A new box takes a colour no other box of the document has (ten in turn), keeps
   it through every change, and its row in the Boxes section has the same colour at its edge, so six New boxes are six
   colours now, not six greens. The kind shows in the shape and the tag instead: a Move box has a dashed source and an
@@ -25,30 +49,6 @@ the section for its version; `docs/` and the commit history hold the technical d
   seed it never used.
 - **`generate` says how long a run on an API took.** It answered about half a second for every API run, since its
   clock started once the result was in; `seconds` now counts from the moment the run starts.
-- **FLUX 3 Image on OpenRouter and Comfy Router.** The FLUX 3 Image recipe has two more providers: OpenRouter, on
-  its own key, and Comfy Router, on the Comfy key you may already have for Comfy Cloud and billed in Comfy credits.
-  Both send the edits with up to nine more pictures, new images with up to ten references, and the boxes in the
-  prompt. On OpenRouter the prompt goes as you wrote it, the crop's shape and size class are the same as on Black
-  Forest Labs' own API, and the safety tolerance row works; grounding cannot be switched there. Tried live before the
-  release, two edits at 2K on each: a cow turned into a white horse in the same place, and with the selection as a
-  box a black cat sat in the box (about 40 to 110 seconds a run; OpenRouter charged $0.05 an edit, Comfy did not
-  report its credits).
-- **FLUX 3 Image keeps the crop's shape.** A crop widened to one of the model's shapes now always asks for that
-  shape; when the rounding of its size put it more than 3 % off, it went as "auto" and the answer was not fitted onto
-  the crop exactly.
-- **A question when an update is ready.** Once Scumble has downloaded a new version in the background, it asks:
-  *Restart and update* saves your documents, installs the new version and starts it with them; *Later* leaves it for
-  when you close Scumble, which installs it then; *Skip this version* leaves it out until a newer one comes, so
-  closing Scumble installs nothing (the *Update to ...* button in the title row and *Settings › Updates* still install
-  it). The question lists what changed since your version, one line per change, comes once per start, and waits
-  while you draw, type or answer another question, the assistant's included; a key you were typing when it opens
-  answers *Later*. Before a restart that would end a run in progress (on an API or on your ComfyUI), the assistant's
-  turn or an agent's session, it asks first; the button in the title row now does the same. It never asks after a
-  check you started in *Settings › Updates*, which shows the answer there, and never in the Microsoft Store copy,
-  which the Store updates.
-- **Settings › Updates shows the whole release notes**, of every version since yours: they were cut after 4,000
-  characters, and a jump over several versions showed only the newest one's. A check there now also looks again when
-  the downloaded version is one you skipped.
 
 ## 0.1.37 — 2026-10-02
 

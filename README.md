@@ -39,7 +39,8 @@ Scumble is the standalone window around it, plus recipes, plugins, an MCP server
 Windows first (from the [Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R) or the installer below), a Linux build (AppImage, .deb) that has not been tried on Linux yet, macOS is planned. Free software, GPL-3.0.
 What has been verified so far: local rendering through ComfyUI, the in-app helper models,
 the film pack, the command core, the MCP server, the tile engine on large documents and
-auto-update, and among the API providers FLUX 3 Image on Black Forest Labs (with boxes in the prompt) and GPT Image 2.5 through OpenRouter; the
+auto-update, and among the API providers FLUX 3 Image on Black Forest Labs (with boxes in the prompt), OpenRouter and Comfy Router,
+and GPT Image 2.5 through OpenRouter; the
 other API providers and the assistant's model calls are untested against the live services.
 
 ## Features
@@ -150,8 +151,9 @@ Two ways to the same app:
 - **From GitHub:** download `Scumble Setup <version>.exe` from the
   [latest release](https://github.com/DenRakEiw/scumble/releases/latest) and run it. This
   installer is not code-signed, so SmartScreen shows "Windows protected your PC" once: click
-  *More info*, then *Run anyway*. Updates are downloaded by the app itself (Settings >
-  Updates), which also shows what changed, and do not go through SmartScreen again.
+  *More info*, then *Run anyway*. Updates are downloaded by the app itself, which then asks
+  whether to restart into the new version (*Settings > Updates* shows what changed), and do not
+  go through SmartScreen again.
 
 [CHANGELOG.md](CHANGELOG.md) lists every version. How releases are built, who approves
 them and what the app sends over the network is in the
