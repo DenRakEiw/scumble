@@ -82,7 +82,7 @@ Older hand-overs, the full text of the list and of the open threads are in `docs
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
 **This session (2026-10-03 midday, "weiter"): B2 built, Ideogram 4 takes the boxes as its JSON caption (fe9cd0e,
-local, not pushed).** The 2026-10-03 morning block (B1 / B3 live, the 0.1.38 release) is in `docs/HISTORY.md`.
+pushed).** The 2026-10-03 morning block (B1 / B3 live, the 0.1.38 release) is in `docs/HISTORY.md`.
 - **Live check 6.4 first** (the fal key in `dist/live-keys`, `dist/live_ideogram4.py`, pictures `dist/live-out/
   live_ideogram4_*.png`, five runs at a few cents each): fal passes a JSON caption to Ideogram 4 as written, the model
   follows it and renders none of the JSON (a "SAUNA" Text box landed in its box). An edit with one box (background
