@@ -142,10 +142,18 @@ function docMeta(ed, clean = false) {
 
 const plainObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
 
-/** One provider request (main's `provider:edit`); a refusal comes back without Electron's "Error invoking remote method" wrapper. */
-async function providerEdit(request) {
+/** A run's id, for main's Cancel (providers/index.js `cancel`). */
+const runIdOf = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+/**
+ * One provider request (main's `provider:edit`), under the run's id so the title row's Cancel can stop it; a refusal
+ * comes back without Electron's "Error invoking remote method" wrapper.
+ */
+async function providerEdit(request, token) {
+    // a Cancel while the crop was being made: nothing goes to the provider
+    if (token && token.cancelled) throw new Error("Cancelled before anything was sent to the provider.");
     try {
-        return await window.scumble.providers.edit(request);
+        return await window.scumble.providers.edit(token && token.runId ? { ...request, runId: token.runId } : request);
     } catch (err) {
         throw new Error(String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
     }
@@ -1426,7 +1434,7 @@ export const host = {
         editor.lastSentPrompt = null;
         editor.lastRunNotes = [];
         editor.lastSentBoxes = 0;
-        const token = { provider: r.provider, label, started: Date.now(), editor };
+        const token = { provider: r.provider, label, started: Date.now(), editor, runId: runIdOf() };
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
@@ -1484,7 +1492,7 @@ export const host = {
                 // the preset the crop was widened to (stitch.js planFrame), which FLUX 3 sends as its aspect_ratio
                 cropAspect: info.aspect || null,
             };
-            res = await providerEdit(request);
+            res = await providerEdit(request, token);
             editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
             editor.lastRunNotes = [...preNotes, ...(res.notes || [])];
         } finally {
@@ -1567,7 +1575,7 @@ export const host = {
         const slow = /topaz/i.test(`${r.id} ${r.model}`) ? " Topaz can take several minutes; the window stays usable."
             : /precision/i.test(r.model || "") && r.provider === "magnific" ? " Magnific Precision can take several minutes; the window stays usable." : "";
         const by = factor ? `${factor}×` : "the model's own factor";
-        const token = { provider: r.provider, label, started: Date.now(), editor };
+        const token = { provider: r.provider, label, started: Date.now(), editor, runId: runIdOf() };
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
@@ -1595,7 +1603,7 @@ export const host = {
                 Object.assign(request, { image, width: W, height: H });
                 editor.setStatus(`Upscaling the picture ${W} × ${H} by ${by} on ${label} ...${slow}`);
             }
-            res = await providerEdit(request);
+            res = await providerEdit(request, token);
         } finally {
             if (editor.providerPending === token) editor.providerPending = null;
             this._providerRuns.delete(token);
@@ -1681,7 +1689,7 @@ export const host = {
         }
         const refIds = takes ? snap.refIds : [];
         const tr = t.refs || {};
-        const token = { provider: r.provider, label, started: Date.now(), editor };
+        const token = { provider: r.provider, label, started: Date.now(), editor, runId: runIdOf() };
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
@@ -1723,7 +1731,7 @@ export const host = {
                 params: genParams,
                 boxes,
             };
-            res = await providerEdit(request);
+            res = await providerEdit(request, token);
         } finally {
             if (editor.providerPending === token) editor.providerPending = null;
             this._providerRuns.delete(token);
@@ -1886,6 +1894,14 @@ export const host = {
 
     _providerRuns: new Set(),
     onProviderRuns: null,   // set by the shell: (runs: [{provider, label, started, editor}]) => void
+
+    /** The title row's Cancel: stop waiting for every API run in progress (main aborts them; each says so in its tab). */
+    cancelProviderRuns() {
+        const runs = Array.from(this._providerRuns);
+        for (const t of runs) t.cancelled = true;
+        for (const t of runs) if (t.runId && window.scumble && window.scumble.providers && window.scumble.providers.cancel) window.scumble.providers.cancel(t.runId).catch(() => {});
+        return runs.length;
+    },
 
     notifyProviderRuns() {
         if (this.onProviderRuns) { try { this.onProviderRuns(Array.from(this._providerRuns)); } catch (err) { console.warn(err); } }

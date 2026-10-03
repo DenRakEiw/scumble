@@ -661,6 +661,22 @@ async function main() {
         asked.length = 0;
         const x1 = await viaIndex(base);
         check("index.edit: the key stored under comfycloud, settings.comfyrouter.base as the mock, the picture back", !x1.err && eq(asked, ["comfycloud"]) && x1.s.submits.length === 1 && x1.s.submits[0].url.startsWith(BASE + "/v2/models/openai/gpt-image-2/requests") && x1.s.submits[0].headers["x-api-key"] === KEY && tagOf(Buffer.from(x1.out.bytes)) === "RESULT", short({ err: x1.err, asked }));
+        // the title row's Cancel: a job that never finishes, stopped by its run id; the wait between polls ends at once
+        {
+            const never = fakeServer({ status: Array.from({ length: 500 }, () => () => json(200, { request_id: RID, status: "IN_PROGRESS", queue_position: 0 }, { "retry-after": "5" })) });
+            globalThis.fetch = never.fetch;
+            const t0 = Date.now();
+            let cErr = null;
+            try {
+                const run = index.edit({ ...base, runId: "run-cancel-1" }).then(() => null, (e) => String(e && e.message || e));
+                await new Promise((r) => setTimeout(r, 300));
+                const first = index.cancel("run-cancel-1");
+                cErr = await run;
+                check("index.cancel stops a run that waits on its provider: the run ends at once with a message, an unknown run id answers false",
+                    first === true && /^Cancelled after \d+\.\d s: Scumble stopped waiting for Comfy Router, which may still finish the job and charge it\.$/.test(cErr || "") && Date.now() - t0 < 3000 && index.cancel("run-cancel-1") === false && logged.some((l) => /cancelled after/.test(l.message || "")),
+                    short({ cErr, ms: Date.now() - t0 }));
+            } finally { globalThis.fetch = realFetch; }
+        }
         stored = {};
         const x2 = await viaIndex(base);
         check("without the Comfy Cloud key: refused before any call, naming Comfy Router", !!x2.err && /No API key for Comfy Router/.test(x2.err) && x2.s.calls.length === 0, x2.err);

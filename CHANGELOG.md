@@ -5,6 +5,9 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
+- **Cancel an API run.** While a run waits on a provider, a *Cancel* button sits beside the timer in the title row.
+  Pressed while the selection is still being prepared, nothing is sent; pressed later, Scumble stops waiting at once
+  and says so. The provider may still finish a job it already has and charge it.
 - **Your ComfyUI in a window of its own.** A *ComfyUI* button in the top bar (Ctrl+Shift+K, also View › ComfyUI)
   opens your ComfyUI's own page beside the editor, from the address and auth under Settings › ComfyUI: a local
   install, a box in your network or a RunPod pod. Basic, bearer and custom-header auth reach the page and its live

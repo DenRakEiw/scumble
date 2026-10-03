@@ -128,6 +128,8 @@ contextBridge.exposeInMainWorld("scumble", {
     providers: {
         list: () => ipcRenderer.invoke("providers:list"),
         edit: (request) => ipcRenderer.invoke("provider:edit", request),
+        // stop waiting for a run (request.runId): the title row's Cancel
+        cancel: (runId) => ipcRenderer.invoke("provider:cancel", runId),
         layout: (shape) => ipcRenderer.invoke("provider:layout", shape),
         balance: (id) => ipcRenderer.invoke("provider:balance", id),
     },

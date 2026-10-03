@@ -154,6 +154,7 @@ The *ComfyUI* button in the top bar (Ctrl+Shift+K, also View › ComfyUI) opens 
 
 ### Notes
 
+- While an API run waits, *Cancel* beside the timer in the title row stops it. Before anything is sent nothing goes out; after that Scumble stops waiting, and the provider may still finish the job and charge it.
 - Recipes are files. Copy a shipped one, change the model id or a default, and it appears in your picker alongside the originals.
 - The seed field has a dice next to it, and the status line keeps the seed of every run, so a result you liked can be repeated.
 - An API run's real size is shown before it goes out. Providers charge per picture, and a larger tier can cost more.

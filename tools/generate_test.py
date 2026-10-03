@@ -534,6 +534,43 @@ if (JSON.stringify(lay.names) !== JSON.stringify(["Image 3", "Image 4"]) || lay.
 return { prompt: res.info.prompt, refs: res.refs, refused: refused.slice(0, 80), names: lay.names, sent: lay.sent };
 """),
     *STEPS_26F,
+    # the title row's Cancel: an API run that waits on its provider (the loopback, 20 s) stops when it is pressed, ends
+    # with the message, and the button goes with the run
+    ("cancel_a_waiting_run", """
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("load_image", { doc: d.id, filename: "test_base.png", subfolder: "inpaint_canvas", type: "input" });
+const prev = host.recipe;
+host.setRecipe({ id: "loopback_slow", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", refs: { name: "image {n}" }, name: "Loopback slow", settings: [], fixed: { delay_ms: 20000 } });
+const btn = document.getElementById("shell-cancel");
+let msg = null, shown = false, late = null, lateMs = 0;
+const t0 = Date.now();
+try {
+    const p = host.runProvider(ed).then(() => "finished", (e) => String(e.message || e));
+    for (let k = 0; k < 50 && btn.hidden; k++) await wait(100);
+    shown = !btn.hidden;
+    if (shown) btn.click();
+    msg = await p;
+    // pressed once the request waits in main (the loopback's 20 s): main stops waiting at once
+    const t1 = Date.now();
+    const p2 = host.runProvider(ed).then(() => "finished", (e) => String(e.message || e));
+    await wait(1500);
+    btn.click();
+    late = await p2;
+    lateMs = Date.now() - t1;
+} finally { host.setRecipe(prev); }
+const ms = Date.now() - t0;
+if (!/^Cancelled after [0-9.]+ s: Scumble stopped waiting for Loopback/.test(late || "") || lateMs > 5000) throw new Error("pressed while it waits: " + late + " after " + lateMs + " ms");
+for (let k = 0; k < 20 && !btn.hidden; k++) await wait(100);
+try { await run("close_document", { doc: d.id, force: true }); } catch (_) { /* gone */ }
+if (!shown) throw new Error("no Cancel button while the run waits");
+// pressed while the crop is made, nothing is sent; once sent, main stops waiting
+if (!/^Cancelled (after [0-9.]+ s: Scumble stopped waiting for Loopback|before anything was sent)/.test(msg || "")) throw new Error("the run ended with: " + msg);
+if (ms > 12000) throw new Error("the two cancels took " + ms + " ms");
+if (!btn.hidden) throw new Error("the Cancel button stays after the run");
+return { early: msg, late, lateMs };
+"""),
     ("dialog_escape_closes_the_picker_first", dialog_escape_closes_the_picker_first),
     *STEPS_26F_AFTER,
     ("cleanup", """

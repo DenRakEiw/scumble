@@ -111,7 +111,7 @@ module.exports = {
     },
     async edit(req, ctx) {
         const delay = Math.max(0, +req.params.delay_ms || 0);
-        if (delay) await new Promise((r) => setTimeout(r, delay));
+        if (delay) await (ctx && ctx.sleep ? ctx.sleep(delay) : new Promise((r) => setTimeout(r, delay)));   // ctx.sleep: Cancel ends it
         if (req.params.fail) throw new Error("loopback failure requested");
         // what arrived, so a gate can read the prompt after main resolved its reference names
         const info = { width: req.width, height: req.height, references: req.references.length, mask: !!req.mask, background: transparent(req) ? "transparent" : "auto", prompt: req.prompt || "", negative: req.negative == null ? null : req.negative, original: req.original ? 1 : 0 };
@@ -123,7 +123,7 @@ module.exports = {
     // with a 4 px magenta frame as the marker that it went through the upscaler (tools/upscale_test.py)
     async upscale(req, ctx) {
         const delay = Math.max(0, +req.params.delay_ms || 0);
-        if (delay) await new Promise((r) => setTimeout(r, delay));
+        if (delay) await (ctx && ctx.sleep ? ctx.sleep(delay) : new Promise((r) => setTimeout(r, delay)));   // ctx.sleep: Cancel ends it
         if (req.params.fail) throw new Error("loopback failure requested");
         const { nativeImage } = require("electron");
         const img = nativeImage.createFromBuffer(Buffer.from(req.image));
@@ -145,7 +145,7 @@ module.exports = {
     },
     async generate(req, ctx) {
         const delay = Math.max(0, +req.params.delay_ms || 0);
-        if (delay) await new Promise((r) => setTimeout(r, delay));
+        if (delay) await (ctx && ctx.sleep ? ctx.sleep(delay) : new Promise((r) => setTimeout(r, delay)));   // ctx.sleep: Cancel ends it
         if (req.params.fail) throw new Error("loopback failure requested");
         const w = Math.max(16, Math.min(4096, req.width | 0)), h = Math.max(16, Math.min(4096, req.height | 0));
         const bytes = transparent(req) ? discPng(w, h, req.seed || 0) : rampPng(w, h, req.seed || 0);

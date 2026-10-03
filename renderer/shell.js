@@ -1791,8 +1791,12 @@ api.addEventListener("execution_interrupted", () => { if (!host._providerRuns.si
 api.addEventListener("executed", () => setTimeout(renderTabs, 50));
 
 let providerTimer = null;
+const cancelButton = $("shell-cancel");
+// the title row's Cancel (an API run that does not come back): main stops waiting, the tab's status line says so
+if (cancelButton) cancelButton.addEventListener("click", () => { cancelButton.disabled = true; host.cancelProviderRuns(); });
 host.onProviderRuns = (runs) => {
     clearInterval(providerTimer); providerTimer = null;
+    if (cancelButton) { cancelButton.hidden = !runs.length; cancelButton.disabled = false; }
     if (!runs.length) { ui.progress.hidden = true; ui.progress.classList.remove("indeterminate"); ui.progressBar.style.left = ""; renderTabs(); return; }
     ui.progress.hidden = false;
     ui.progress.classList.add("indeterminate");

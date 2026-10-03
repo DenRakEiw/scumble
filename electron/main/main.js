@@ -1041,6 +1041,7 @@ function installIpc() {
     ipcMain.handle("keys:clear", (_e, name) => keys.clear(name));
     ipcMain.handle("providers:list", () => providers.describeAll());
     ipcMain.handle("provider:edit", (_e, request) => providers.edit(request));
+    ipcMain.handle("provider:cancel", (_e, runId) => providers.cancel(runId));
     // where each picture of a request of this shape goes and what the model calls it (docs/PLAN_REFS.md C3)
     ipcMain.handle("provider:layout", (_e, shape) => providers.layout(shape));
     ipcMain.handle("provider:balance", (_e, id) => providers.balance(id));

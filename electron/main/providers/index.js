@@ -152,6 +152,24 @@ function resolveNames(p, req, lay, given) {
     return out;
 }
 
+// The runs waiting on a provider, by the renderer's run id: the title row's Cancel aborts one (cancel below). An
+// aborted run's fetch and its waits between polls end at once; the provider may still finish the job and charge it.
+const running = new Map();   // runId -> AbortController
+const cancelledEarly = new Set();   // a Cancel that came before its run reached edit(): that run stops at its start
+
+/** Stop waiting for a run (the renderer's Cancel); one that has not started yet stops when it does. */
+function cancel(runId) {
+    const id = String(runId || "");
+    if (!id) return false;
+    const ac = running.get(id);
+    if (ac) { ac.abort(); return true; }
+    if (cancelledEarly.size > 200) cancelledEarly.clear();
+    cancelledEarly.add(id);
+    return false;
+}
+
+const aborted = () => Object.assign(new Error("cancelled"), { name: "AbortError" });
+
 async function edit(request) {
     const id = String(request.provider || "");
     const p = Object.prototype.hasOwnProperty.call(PROVIDERS, id) ? PROVIDERS[id] : null;
@@ -179,7 +197,11 @@ async function edit(request) {
         boxes: Array.isArray(request.boxes) ? request.boxes : [],              // box geometry in fractions of the frame (item 28)
     };
     const t0 = Date.now();
-    const ctx = contextFor(id, p, key);
+    const runId = request.runId ? String(request.runId).slice(0, 80) : "";
+    const ac = new AbortController();
+    if (runId) running.set(runId, ac);
+    if (runId && cancelledEarly.delete(runId)) ac.abort();
+    const ctx = contextFor(id, p, key, ac.signal);
     // the request's shape for the log: never the key, never the pixels
     const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, boxes: req.boxes.length, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
     let out, named, lay, notes = [], sentBoxes = 0;
@@ -211,9 +233,17 @@ async function edit(request) {
             }
         }
         out = text ? await p.generate(req, ctx) : upscale ? await p.upscale(req, ctx) : await p.edit(req, ctx);
+        if (ac.signal.aborted) throw aborted();   // an adapter that finished its last call as Cancel came: dropped too
     } catch (err) {
-        log.record({ level: "error", source: id, message: `${p.label} ${verb} failed after ${((Date.now() - t0) / 1000).toFixed(1)} s: ${err && err.message || err}`, detail: { request: shape(), stack: err && err.stack } });
+        const secs = ((Date.now() - t0) / 1000).toFixed(1);
+        if (ac.signal.aborted) {
+            log.record({ source: id, message: `${p.label} ${verb} cancelled after ${secs} s`, detail: { request: shape() } });
+            throw new Error(`Cancelled after ${secs} s: Scumble stopped waiting for ${p.label}, which may still finish the job and charge it.`);
+        }
+        log.record({ level: "error", source: id, message: `${p.label} ${verb} failed after ${secs} s: ${err && err.message || err}`, detail: { request: shape(), stack: err && err.stack } });
         throw err;
+    } finally {
+        if (runId) running.delete(runId);
     }
     if (!out || !out.bytes) { log.record({ level: "error", source: id, message: p.label + " returned no image.", detail: shape() }); throw new Error(p.label + " returned no image."); }
     log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), boxes: sentBoxes, notes } });
@@ -314,11 +344,26 @@ function resizePng(png, size) {
     return img.resize({ width: Math.max(1, Math.round(size.width)), height: Math.max(1, Math.round(size.height)), quality: "best" }).toPNG();
 }
 
-function contextFor(id, p, key) {
-    return {
+function contextFor(id, p, key, signal) {
+    const ctx = {
         key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a), toJpeg, opaque, bitmap, fromBitmap, cropPng, resizePng,
         base: typeof p.baseUrl === "function" ? p.baseUrl(settings.get()) : undefined,
     };
+    if (signal) {
+        // a run's every request and every wait between its polls end when the run is cancelled; the fetch is read at
+        // call time (the tests put their fake in globalThis.fetch)
+        ctx.fetch = (url, init = {}) => {
+            if (signal.aborted) return Promise.reject(aborted());
+            return globalThis.fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, signal]) : signal });
+        };
+        ctx.sleep = (ms) => new Promise((resolve, reject) => {
+            if (signal.aborted) { reject(aborted()); return; }
+            const stop = () => { clearTimeout(t); reject(aborted()); };
+            const t = setTimeout(() => { signal.removeEventListener("abort", stop); resolve(); }, ms);
+            signal.addEventListener("abort", stop, { once: true });
+        });
+    }
+    return ctx;
 }
 
 /** What a key has left (the key row's "check balance"), for adapters that can ask for free. */
@@ -335,4 +380,4 @@ async function balance(id) {
     }
 }
 
-module.exports = { edit, layout, balance, describeAll, textProviders, upscaleProviders, PROVIDERS };
+module.exports = { edit, cancel, layout, balance, describeAll, textProviders, upscaleProviders, PROVIDERS };

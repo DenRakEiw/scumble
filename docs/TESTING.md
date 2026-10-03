@@ -30,7 +30,9 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   the switch through a `.scumble` save and open); no ComfyUI and no key needed. `node tools/boxes_test.js` is the
   plain-Node side (main's rows, the renderer's mapping, the plugin's clipboard formatter).
   `python tools/generate_test.py` covers "Generate new" (a base image from the prompt
-  alone) against the loopback provider, no ComfyUI and no key needed.
+  alone) against the loopback provider, no ComfyUI and no key needed; its step `cancel_a_waiting_run` presses the
+  title row's Cancel on a loopback run of 20 s, once while the crop is made (nothing sent) and once while the
+  request waits in main (stopped at once), and `tools/comfyrouter_test.js` section 8 checks `providers.cancel`.
   `python tools/shape_test.py` covers the shape tool: every kind, fill and outline, the
   corner radius, the clip to the selection and one undo step per shape.
   `python tools/size_test.py` covers the size a crop is emitted at for an API run: the
