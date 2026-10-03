@@ -17867,7 +17867,8 @@ class InpaintEditor {
         list.innerHTML = "";
         const targets = this.settingTargets();
         if (!targets.length) {
-            list.appendChild(el("span", null, "Wire a setting output of the node into any widget (lora_name, ckpt_name, steps ...) and it shows up here."));
+            // the app's rows come from the recipe, not from wiring: its shell sets its own text (noSettingsText)
+            list.appendChild(el("span", null, this.noSettingsText || "Wire a setting output of the node into any widget (lora_name, ckpt_name, steps ...) and it shows up here."));
             return;
         }
         host.renderPresets(this, list, targets);
@@ -17931,8 +17932,13 @@ class InpaintEditor {
         this.refineBtn.classList.toggle("ipc-toggle-on", !!this.genSettings.refine);
         this.refineBtn.hidden = !local;
         this.denoiseInput.parentElement.hidden = !local;
-        // a Comfy Cloud graph takes the negative where it has one, as a local chain does
-        if (this.negativeInput) this.negativeInput.hidden = !(local || this.genSettings.mode === "cloud");
+        // a Comfy Cloud graph takes the negative where it has one, as a local chain does; left empty, it keeps its own
+        if (this.negativeInput) {
+            const cloud = this.genSettings.mode === "cloud";
+            this.negativeInput.hidden = !(local || cloud);
+            if (this._negativeHint == null) this._negativeHint = this.negativeInput.placeholder;
+            this.negativeInput.placeholder = cloud ? "Negative prompt. Left empty, the recipe's graph keeps its own negative." : this._negativeHint;
+        }
     }
 
     /**

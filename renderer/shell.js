@@ -139,6 +139,8 @@ function applyHistoryDepth(ed) {
 function newDocument(id) {
     const editor = new InpaintEditor({ id: id || host.nextId++, title: "Scumble" });
     editor.atlasMB = atlasMB;
+    // a recipe brings its Settings rows here; the editor's own text speaks of wiring the node
+    editor.noSettingsText = "This recipe has no settings of its own.";
     applyHistoryDepth(editor);
     host.addEditor(editor);
     editor.open();

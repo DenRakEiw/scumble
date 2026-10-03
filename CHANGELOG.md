@@ -62,6 +62,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   fall away on *Save to recipe* or *Save as new recipe*.
 - **Importing workflows with subgraphs** reads them correctly: a newer subgraph's inputs are matched by name (before,
   a picture could land on a model loader's input), and a muted or bypassed subgraph adds none of its nodes.
+- **Clearer texts in the Generate pane.** A recipe without Settings rows now says so, instead of explaining how to wire
+  the ComfyUI node; in the *comfy cloud* mode the negative prompt's placeholder says that an empty field keeps the
+  recipe's own negative.
 
 ## 0.1.40 — 2026-10-03
 
