@@ -443,8 +443,14 @@ none of V1-V5 may change that:
      Cloud's text routes declare the reference drop), gates `lint types recipes comfyview generate size transparent help
      document` PASS offline (`v6s5`, `v6s5b`; the Generate new dialog in the comfyview gate), one look at the dialog.
      Not done: a live run, step 3 (built later that night).
-  Comfy Cloud's own model names for these templates: all in its model catalog (step 3, 2026-10-03); a live run on
-  the user's key is still open.
+  Comfy Cloud's own model names for these templates: all in its model catalog (step 3, 2026-10-03).
+  **First live run (the user, 2026-10-03 night, test instance on `dist/live-keys`):** Qwen Image 2.1 Edit (Comfy Cloud),
+  a 990 x 1024 crop, "change the dog to a cat": the result came back in about 90-100 s. The two runs before it had run
+  on Comfy Cloud and lost their result: Comfy Cloud no longer serves `/api/history` ("This endpoint is not available on
+  Comfy Cloud. Use /api/jobs/{prompt_id} instead."), fixed in 67e7a8c (`/api/jobs/<id>`, every Comfy Cloud run was
+  hit, released versions too). The Comfy Cloud page in the window once showed "Couldn't load your workspace"
+  (`/api/billing/status` 500, its remote config fetch aborted: Comfy Cloud's side; it loaded again later). Still open:
+  one Generate new run on Comfy Cloud.
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
   loopback run; one live run on Comfy Cloud with the user's key (credits). Possibly two sessions.

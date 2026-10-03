@@ -161,8 +161,13 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   (docs/PLAN_COMFY_VIEW.md V6 step 3). Measured through Comfy Cloud's hosted MCP server (read-only): every model file
   of the 13 shipped recipes is in Comfy Cloud's catalog. `cloudgraph` 27, `comfyrouter` 135, `recipes` 117,
   `refs_layout` 695, eslint and tsc clean. Not run live.
-- **Next: the live checks** (the user's Comfy Cloud key: one edit and one Generate new run at least), then the
-  release. Old line kept below for the checks:
+- **First live run, the same night (the user at a test instance on `dist/live-keys`):** Qwen Image 2.1 Edit (Comfy
+  Cloud) edited a crop in about 90-100 s, after a fix: **Comfy Cloud no longer serves `/api/history`**, so every Comfy
+  Cloud run (partner nodes and upscalers too, released versions included) ran, was billed and lost its result;
+  67e7a8c reads `/api/jobs/<id>` (CHANGELOG "Comfy Cloud runs bring their result back again"; a hotfix release only on
+  the user's word). The user's idea for a cleanup update: the Sample plugin's panel is not needed by users (plugin
+  template and test fixture; proposed: off by default), not decided.
+- **Next: the live checks** (one Generate new run on Comfy Cloud is still open), then the release. Old line kept below for the checks:
 - **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
   ist"): a recipe opened and saved back on the user's ComfyUI (queues nothing), the Comfy Cloud login in the window
   (which sign-ins work), one cloud run with the user's key (credits), a RunPod pod if the user starts one; then the
