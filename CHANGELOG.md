@@ -43,13 +43,22 @@ the section for its version; `docs/` and the commit history hold the technical d
   *api*: the recipe picker then lists your Comfy Cloud recipes alone, and they run on Comfy Cloud with your Comfy
   Cloud key. The negative prompt field shows there as in *local*; a graph with a negative takes it. Each mode comes back with the recipe you
   last used in it; with no Comfy Cloud recipe yet, the status line says how to make one.
-- **Six Comfy Cloud recipes come with Scumble**, from Comfy's own image-edit templates: Boogu Image 0.1 Edit, Flux.2
-  Klein 9B base (one picture, or two), Mage Flow Edit Turbo, Qwen Image 2.1 Edit and Qwen Image Edit 2509. Pick
-  *comfy cloud* and one of them, add your Comfy Cloud key, and the selection renders there. They have not run on Comfy
-  Cloud from Scumble yet.
+- **Thirteen Comfy Cloud recipes come with Scumble**, from Comfy's own templates. Image edits: Boogu Image 0.1 Edit,
+  Flux.2 Klein 9B base (one picture, or two), Flux.2 dev, Mage Flow Edit Turbo, Qwen Image 2.1 Edit and Qwen Image Edit
+  2509. Pick *comfy cloud* and one of them, add your Comfy Cloud key, and the selection renders there. They have not
+  run on Comfy Cloud from Scumble yet.
+- **Generate new on Comfy Cloud.** The Generate new dialog has a *Comfy Cloud* choice with Comfy's text-to-image
+  templates: Anima base and preview, Flux.2 Klein 9B, Ideogram 4, Krea 2 Turbo, Mage Flow, Qwen Image 2.1 and Z-Image
+  Turbo, at 768 to 2048 px on the long side. A text-to-image workflow saved from the ComfyUI window or imported from
+  Comfy Cloud becomes such a recipe by itself: Scumble finds where the prompt, the seed and the size go.
 - **Templates read more fully.** A template's negative prompt is found when its control shows that name, when its
   negative encoder has no control at all, or when the encoder has a negative field of its own; an empty negative in
-  the editor keeps the template's default instead of clearing it.
+  the editor keeps the template's default instead of clearing it. A prompt behind a switch or a prompt enhancer is
+  followed to the text you write. Widgets with sub-options (an image format and its bit depth) and nodes newer than
+  Scumble's own list are read from the export by name, so such a graph no longer fails on Comfy Cloud for a missing
+  input; previews and before / after compares stay out of a cloud run.
+- **A cloud copy keeps its wiring when saved back** from the ComfyUI window: its prompt, negative and seed no longer
+  fall away on *Save to recipe* or *Save as new recipe*.
 - **Importing workflows with subgraphs** reads them correctly: a newer subgraph's inputs are matched by name (before,
   a picture could land on a model loader's input), and a muted or bypassed subgraph adds none of its nodes.
 

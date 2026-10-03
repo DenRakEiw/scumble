@@ -165,17 +165,39 @@ spaces, `:`, `_` or `-` between words):
 | `Scumble seed` | any node | the seed into its `seed` (or `noise_seed`) input |
 | `Scumble result` | a SaveImage | the picture Scumble reads; needed only when the graph has more than one SaveImage |
 
-A control is read by its name or by the label it shows (Qwen Image Edit 2509's `prompt_1` shows `negative_prompt`).
+A control is read by its name or by the label it shows (Qwen Image Edit 2509's `prompt_1` shows `negative_prompt`); a
+label that names a prompt role decides alone (a control named `text` and labelled `negative_prompt` is the negative).
 When the controls name the prompt but no negative, the negative comes from the encoder whose conditioning reaches a
-`negative` input, else from a `negative_prompt` field of the encoder the prompt goes into (Mage Flow, Boogu). An empty
-negative in the editor keeps the graph's own (a template's default such as "worst quality, ..."); a set one replaces it.
+`negative` input (never the prompt's own encoder: Flux.1 Kontext zeroes it for its negative), else from a
+`negative_prompt` field of the encoder the prompt goes into (Mage Flow, Boogu). A prompt that reaches its encoder through
+a switch, a preview or a prompt enhancer is followed along the switch's live branch to the text the user writes (Krea 2).
+An empty negative in the editor keeps the graph's own (a template's default such as "worst quality, ..."); a set one
+replaces it.
 
-**Shipped:** six of Comfy's image-edit templates as Comfy Cloud exports them, picked by the user (MIT,
-`tools/refs/comfy_cloud/edit/`): `cloud_boogu_image_edit`, `cloud_flux2_klein_9b`, `cloud_flux2_klein_9b_multi` (the
-same template with its two-picture subgraph live), `cloud_mage_flow_edit_turbo`, `cloud_qwen_image_2_1_edit` and
-`cloud_qwen_image_edit_2509`. `node tools/cloud_recipes.js` writes them from the exports (the widget order from
-`tools/refs/comfy_templates/object_info.json`), `--check` says whether a file still matches; each keeps the template's
-layout for the ComfyUI window. They have not run on Comfy Cloud from Scumble yet.
+A UI export's widget values are read by name where it names them (Comfy Cloud's exports carry `widgets_values_named`):
+that covers a node the node list does not know (Ideogram 4's) and the widgets of a dynamic combo (SaveImageAdvanced's
+`format`, `format.bit_depth`); without names a dynamic combo's chosen option is read in place. Only what leads to the
+result stays in the recipe's graph: a preview, a before / after compare and what fed only them go, while every node
+Scumble writes into stays.
+
+**New images (Generate new).** A graph that takes no picture is a text-to-image graph: the prompt, the negative and the
+seed are read as above, and the size goes where its `width` and `height` controls point (by name or label), else into
+its Empty...Latent... node; a control fed by a resolution node means every input that node feeds, and the resolution
+node goes. Such a recipe is `edit: false` with `text: { model, sizes }` (Generate new alone); an edit recipe of the same
+model can carry one as its text route, `text: { model, options, sizes }` (`options` the text graph). `comfycloud.js`
+`generate()` runs only such a graph (a partner-node recipe makes no new image on Comfy Cloud): nothing is uploaded, the
+size goes in steps of 16. Generate new has a *Comfy Cloud* choice beside local and API.
+
+**Shipped:** thirteen of Comfy's templates as Comfy Cloud exports them, picked by the user (MIT,
+`tools/refs/comfy_cloud/edit/` and `t2i/`). Edits: `cloud_boogu_image_edit`, `cloud_flux2_klein_9b` (with the Flux.2
+Klein 9B text-to-image template as its text route), `cloud_flux2_klein_9b_multi` (the same template with its two-picture
+subgraph live), `cloud_flux2_dev` (Comfy's Flux.2 dev image-edit template, filed under text to image by the user),
+`cloud_mage_flow_edit_turbo`, `cloud_qwen_image_2_1_edit` (with its text-to-image template; its pictures named
+`<image{n}>`, sizes in steps of 32) and `cloud_qwen_image_edit_2509`. New images alone: `cloud_anima_base`,
+`cloud_anima_preview`, `cloud_ideogram_4`, `cloud_krea_2_turbo`, `cloud_mage_flow`, `cloud_z_image_turbo`.
+`node tools/cloud_recipes.js` writes them from the exports (the widget values by name, the node list of
+`tools/refs/comfy_templates/object_info.json` for the rest), `--check` says whether a file still matches; each keeps
+the template's layout for the ComfyUI window. They have not run on Comfy Cloud from Scumble yet.
 
 Before a run Scumble checks every node of the graph against Comfy Cloud's node list (kept ten minutes per key) and
 names a missing one instead of uploading anything; a run with more pictures than the graph takes is refused before

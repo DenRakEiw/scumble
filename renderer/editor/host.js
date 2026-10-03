@@ -1723,7 +1723,10 @@ export const host = {
             const withRefs = references.length > 0;
             editor.setStatus(`Asking ${label} for a new ${width} × ${height} image${withRefs ? ` with ${references.length} reference image${references.length > 1 ? "s" : ""}` : ""}${cutout ? " on a transparent ground" : ""} ...`);
             const model = (withRefs && tr.model) || t.model;
-            const options = withRefs && tr.options ? { ...(r.options || {}), ...tr.options } : r.options || null;
+            // the text route's own options where it has them (a Comfy Cloud recipe's text-to-image graph, item 35 V6),
+            // else the variant's
+            const own = t.options || r.options || null;
+            const options = withRefs && tr.options ? { ...(own || {}), ...tr.options } : own;
             // the plugins' boxes (item 28 S2) when the variant takes them and the document's Boxes switch is on (S3d): a
             // new image has no selection, so the boxes come from scumble.generate sources alone, drawn on the document
             // (the frame; the new image is made at the requested size, so the fractions carry over, stretched when the

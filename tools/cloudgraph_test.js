@@ -155,6 +155,25 @@ async function main() {
         check("a negative of the run replaces it", s.prompts[1]["433:110"].inputs.prompt === "blurry", s.prompts[1]["433:110"].inputs.prompt);
     }
 
+    // 8. Generate new on a shipped text-to-image recipe (V6 step 5): nothing uploaded, the prompt, the seed and the size
+    // (in steps of 16) into the graph, its SaveImage answers; a partner-node recipe makes no new image on Comfy Cloud
+    const z = list.find((r) => r.id === "cloud_z_image_turbo");
+    const zv = z && z.providers.comfycloud;
+    if (!zv || !zv.text) check("the shipped recipe cloud_z_image_turbo is listed with a text route", false);
+    else {
+        cloud._clearNodeList();
+        s = fakeCloud({ classes: zv.options.needs, outputs: () => ({ [zv.options.save]: { images: [{ filename: "z.png" }] } }) });
+        const zo = await cloud.generate({ provider: "comfycloud", model: zv.text.model, kind: "text", options: zv.options, prompt: "a lighthouse at dusk", negative: "", seed: 77,
+            width: 1000, height: 777, references: [], params: {} }, { key: "k-z", fetch: s.fetch, sleep: async () => {} });
+        const zg = s.prompts[0];
+        const at = (k) => zv.options.values[k].map(([id, input]) => zg[id].inputs[input]);
+        check("a text-to-image graph: nothing uploaded, the prompt and the seed in their inputs, 1000 x 777 asked as 1008 x 784, its SaveImage answers",
+            tagOf(zo.bytes) === "RESULT z.png" && !s.uploads.length && at("prompt").every((x) => x === "a lighthouse at dusk") && at("seed").every((x) => x === 77) && at("width").every((x) => x === 1008) && at("height").every((x) => x === 784),
+            short({ uploads: s.uploads, prompt: at("prompt"), seed: at("seed"), width: at("width"), height: at("height") }));
+        const ez = await thrown(() => cloud.generate({ provider: "comfycloud", model: "Nano Banana Pro", kind: "text", options: { node: "GeminiImageNode" }, prompt: "x", width: 1024, height: 1024, references: [], params: {} }, { key: "k", fetch: fakeCloud({}).fetch }));
+        check("a partner-node recipe: no new image on Comfy Cloud, said by name", /only through a Comfy Cloud recipe's own graph/.test(ez || ""), ez);
+    }
+
     fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

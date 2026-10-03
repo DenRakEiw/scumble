@@ -215,23 +215,28 @@ function detachedFits(req) {
 
 async function buildDetached(req, ctx) {
     const o = req.options;
-    const lay = detachedFits(req);
     const graph = JSON.parse(JSON.stringify(o.graph || {}));
-    const stamp = Date.now().toString(36);
-    const files = [await upload(ctx, req.image, `scumble-${stamp}-crop.png`)];
-    for (const p of lay.pictures.filter((x) => x.ref != null && x.n != null).sort((a, b) => a.n - b.n)) {
-        files.push(await upload(ctx, req.references[p.ref], `scumble-${stamp}-ref${p.ref + 1}.png`));
-    }
-    const maskFile = o.mask ? await upload(ctx, req.mask, `scumble-${stamp}-mask.png`) : null;
-    for (const node of Object.values(graph)) {
-        const title = String((node && node._meta && node._meta.title) || "");
-        const m = /^scumble:picture:(\d+)$/.exec(title);
-        // a picture past the run's last is the last one, as the node's ImageFromBatch clamps
-        if (m) node.inputs.image = files[Math.min(+m[1], files.length - 1)];
-        else if (title === "scumble:mask") node.inputs.image = maskFile;
+    // a new image (Generate new, a text-to-image graph, V6 step 5): no picture goes up, the size goes in steps of 16
+    const text = req.kind === "text";
+    if (!text) {
+        const lay = detachedFits(req);
+        const stamp = Date.now().toString(36);
+        const files = [await upload(ctx, req.image, `scumble-${stamp}-crop.png`)];
+        for (const p of lay.pictures.filter((x) => x.ref != null && x.n != null).sort((a, b) => a.n - b.n)) {
+            files.push(await upload(ctx, req.references[p.ref], `scumble-${stamp}-ref${p.ref + 1}.png`));
+        }
+        const maskFile = o.mask ? await upload(ctx, req.mask, `scumble-${stamp}-mask.png`) : null;
+        for (const node of Object.values(graph)) {
+            const title = String((node && node._meta && node._meta.title) || "");
+            const m = /^scumble:picture:(\d+)$/.exec(title);
+            // a picture past the run's last is the last one, as the node's ImageFromBatch clamps
+            if (m) node.inputs.image = files[Math.min(+m[1], files.length - 1)];
+            else if (title === "scumble:mask") node.inputs.image = maskFile;
+        }
     }
     const seed = req.seed != null && !(req.params && req.params.random_seed) ? (req.seed >>> 0) : Math.floor(Math.random() * 2147483647);
-    const vals = { prompt: req.prompt || "", negative: req.negative || "", seed, width: req.width, height: req.height };
+    const step16 = (v) => (v == null ? v : Math.max(64, Math.round(+v / 16) * 16));
+    const vals = { prompt: req.prompt || "", negative: req.negative || "", seed, width: text ? step16(req.width) : req.width, height: text ? step16(req.height) : req.height };
     for (const [name, pairs] of Object.entries(o.values || {})) {
         if (!Object.prototype.hasOwnProperty.call(vals, name) || vals[name] == null) continue;   // denoise, mode: the graph's own
         // an empty negative field keeps the graph's own negative (a template's default, "worst quality, ..."), not ""
@@ -356,6 +361,11 @@ module.exports = {
     keyUrl: "https://platform.comfy.org/profile/api-keys",
     keyHint: "API key from platform.comfy.org (Comfy Cloud needs a paid plan; Comfy Router and the Partner API run on the same key with credits only)",
     edit(req, ctx) { return run(req, ctx, EDIT_WAIT_MS); },
+    // Generate new: only a Comfy Cloud recipe's own text-to-image graph (V6 step 5); the partner nodes take no text run
+    generate(req, ctx) {
+        if (!(req.options && req.options.graph)) return Promise.reject(new Error("Comfy Cloud makes a new image only through a Comfy Cloud recipe's own graph; pick another provider for this model."));
+        return run({ ...req, image: null, mask: null, references: [] }, ctx, EDIT_WAIT_MS);
+    },
     layout,
     upscale(req, ctx) {
         if (!req.image) return Promise.reject(new Error("Comfy Cloud: no picture to upscale."));
@@ -377,7 +387,7 @@ async function run(req, ctx, waitMs) {
         if (detached) {
             // what the graph refuses by itself, before any call; then every node it needs, before any upload (§2.4: a
             // missing one stops the run by name)
-            detachedFits(req);
+            if (req.kind !== "text") detachedFits(req);
             const have = await cloudClasses(ctx);
             const needs = Array.isArray(req.options.needs) ? req.options.needs : Object.values(req.options.graph).map((n) => n && n.class_type);
             const missing = [...new Set(needs.filter((c) => c && !have.has(c)))];

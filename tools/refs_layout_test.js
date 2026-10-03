@@ -850,7 +850,17 @@ async function main() {
             // the first shipped variant whose text shape takes references (§12 runs every one); the loopback has its own
             const s = TEXT.find((x) => x.provider === id && x.takes && !x.channel) || TEXT.find((x) => x.provider === id && x.takes)
                 || (id === "loopback" ? { recipe: "(test)", provider: id, channel: null, takes: true, variant: { model: "loopback", refs: { name: "image {n}" }, text: { model: "loopback", settings: [], fixed: null, refs: { max: null, field: null, model: null, options: null, name: null } } } } : null);
-            if (!s) { check(`${id}: a shipped variant whose text shape takes references`, false, "none: add text.refs or drop generate"); continue; }
+            if (!s) {
+                // a provider whose text routes take no references (Comfy Cloud's text-to-image graphs, item 35 V6): a text
+                // run with references declares the drop
+                const plain = TEXT.find((x) => x.provider === id);
+                if (plain && idx && typeof idx.layout === "function") {
+                    const t = plain.variant.text || {};
+                    const l = await idx.layout({ provider: id, model: t.model, kind: "text", count: 2, options: t.options || plain.variant.options || null });
+                    check(`${id}: its text routes take no references (${plain.recipe}): a text run with two declares the drop`, !!l && eq(l.pictures, []) && !!l.drops, short(l));
+                } else check(`${id}: a shipped variant whose text shape takes references`, false, "none: add text.refs or drop generate");
+                continue;
+            }
             check(`${id}: exports textLayout(req) beside generate`, typeof p.textLayout === "function");
             // two references, or one on a route that takes one (Grok's edit id on Oxen)
             const cap = (() => { try { return p.textLayout({ ...textRequestFor(s, 1).req }).max; } catch (_) { return null; } })();
@@ -881,7 +891,7 @@ async function main() {
             check("layout of a text shape: refsMax lowers the route's max (8 to 1), over past it, the names by refName", !!l && l.max === 1 && l.over === true && l.sent === 2 && eq(l.names, ["Image 1", "Image 2"]), short(l));
             l = await idx.layout({ provider: "fal", model: "fal-ai/flux-2-pro/edit", kind: "text", count: 2, original: 1 });
             check("layout of a text shape ignores original: 1 (a new image has no Original): both counted as references", !!l && eq(l.names, ["image 1", "image 2"]) && l.pictures.every((x) => x.role === "reference"), short(l));
-            const e = await throws(() => idx.layout({ provider: "comfycloud", model: "Flux.2 [pro]", kind: "text", count: 1 }));
+            const e = await throws(() => idx.layout({ provider: "inapp", model: "lama", kind: "text", count: 1 }));
             check("layout of a text shape on a provider with no text-to-image endpoint throws", !!e && /no text-to-image endpoint/.test(e), e);
             idx.PROVIDERS.refsstub = { label: "Refs stub", needsKey: false, async generate() { return { bytes: RESULT, mime: "image/png", info: {} }; } };
             try { l = await idx.layout({ provider: "refsstub", model: "stub", kind: "text", count: 2 }); } finally { delete idx.PROVIDERS.refsstub; }

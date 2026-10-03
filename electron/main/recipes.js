@@ -69,6 +69,7 @@ const { REF_NAME_DEFAULT, validRefName } = require("./providers/refs");
  * @property {SettingRow[]} settings
  * @property {string} note
  * @property {TextRefs | null} refs   the reference layers go along to a new image (26f); null: the prompt alone
+ * @property {any} [options]   the route's own options instead of the variant's (a Comfy Cloud recipe's text-to-image graph)
  */
 
 /**
@@ -144,6 +145,8 @@ const { REF_NAME_DEFAULT, validRefName } = require("./providers/refs");
 const FIXED_OUTPUTS = 13;   // InpaintCanvas outputs before setting_1 (nodes.py RETURN_NAMES)
 const WIDGET_TYPES = new Set(["INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"]);
 const SKIP_TYPES = new Set(["Note", "MarkdownNote", "PrimitiveNode", "Reroute"]);
+/** Widgets of the frontend alone, which a named widget list carries and a run does not take. */
+const UI_WIDGETS = new Set(["control_after_generate", "control_before_generate", "upload"]);
 
 function userDir() {
     return path.join(app.getPath("userData"), "recipes");
@@ -175,6 +178,9 @@ async function readDir(dir, source) {
 // more than the name, so every magnific variant names its text route (or `text: false`); tools/magnific_test.js holds them to it.
 // Oxen.ai uses the same id on /images/generate (Grok Imagine's text model is another id: its variant names it).
 const TEXT_PROVIDERS = new Set(["toapis", "openai", "gemini", "bfl", "fal", "replicate", "wavespeed", "openrouter", "ark", "comfyrouter", "comfypartner", "oxen", "magnific", "loopback"]);
+// Providers whose text route a variant must name itself (`text: { model }`): Comfy Cloud makes new images only through a
+// recipe's own text-to-image graph (item 35 V6), so its partner-node variants get none by default.
+const TEXT_NAMED = new Set(["comfycloud"]);
 
 // The long sides a provider documents for a generated image. Gemini's image models take
 // 1K, 2K or 4K (imageConfig.imageSize), OpenAI's the three standard shapes at 1024 and 1536;
@@ -256,8 +262,8 @@ function textModelOf(providerId, model) {
  */
 function textVariant(providerId, v, where = providerId) {
     if (v.text === false) return null;
-    if (!TEXT_PROVIDERS.has(providerId)) return null;
     const t = v.text && typeof v.text === "object" ? v.text : {};
+    if (!TEXT_PROVIDERS.has(providerId) && !(TEXT_NAMED.has(providerId) && t.model)) return null;
     const model = t.model || textModelOf(providerId, v.model);
     if (!model && providerId !== "loopback") return null;
     return {
@@ -267,6 +273,7 @@ function textVariant(providerId, v, where = providerId) {
         settings: Array.isArray(t.settings) ? t.settings : (v.settings || []),
         note: t.note || "",
         refs: textRefsOf(t.refs, where),
+        ...(t.options && typeof t.options === "object" ? { options: t.options } : {}),
     };
 }
 
@@ -405,22 +412,37 @@ function slug(name) {
 
 // ---- conversion ----------------------------------------------------------------------
 
-/** Widget input names of a node class in widgets_values order, with the seed control slots marked. */
-function widgetNames(info) {
-    const out = [];
-    if (!info || !info.input) return out;
-    for (const group of ["required", "optional"]) {
-        for (const [name, spec] of Object.entries(info.input[group] || {})) {
-            if (!Array.isArray(spec)) continue;
-            const type = spec[0], opts = spec[1] || {};
-            const isWidget = Array.isArray(type) || WIDGET_TYPES.has(type);
-            if (!isWidget || opts.forceInput) continue;
-            out.push({ name, spec });
-            const control = opts.control_after_generate || ((type === "INT") && (name === "seed" || name === "noise_seed"));
-            if (control) out.push({ name: null, control: true });   // "randomize" / "fixed" takes one slot
+/**
+ * A node's widget values by name, read in `widgets_values` order from its class's inputs: a dynamic combo
+ * (COMFY_DYNAMICCOMBO_V3: SaveImageAdvanced's format, TextGenerate's sampling_mode) takes its slot and then the slots of
+ * the chosen option's own widgets, named "<combo>.<widget>" as a run takes them; a seed's control takes a slot.
+ * @param {any} info
+ * @param {any[]} values
+ */
+function readWidgets(info, values) {
+    /** @type {Record<string, any>} */
+    const inputs = {};
+    let at = 0;
+    const walk = (/** @type {any} */ groups, /** @type {string} */ prefix) => {
+        for (const group of ["required", "optional"]) {
+            for (const [name, spec] of Object.entries((groups && groups[group]) || {})) {
+                if (!Array.isArray(spec) || at >= values.length) continue;
+                const type = spec[0], opts = spec[1] || {}, key = prefix + name;
+                if (type === "COMFY_DYNAMICCOMBO_V3") {
+                    const v = values[at++];
+                    inputs[key] = v;
+                    const opt = (opts.options || []).find((/** @type {any} */ o) => o && o.key === v);
+                    if (opt) walk(opt.inputs, key + ".");
+                    continue;
+                }
+                if (!(Array.isArray(type) || WIDGET_TYPES.has(type)) || opts.forceInput) continue;
+                inputs[key] = values[at++];
+                if (opts.control_after_generate || (type === "INT" && (name === "seed" || name === "noise_seed"))) at++;   // "randomize" / "fixed"
+            }
         }
-    }
-    return out;
+    };
+    walk(info && info.input, "");
+    return inputs;
 }
 
 /** A spec for the recipe file: combo lists shrink to the chosen value (the live list comes from /object_info at run time). */
@@ -588,14 +610,13 @@ function fromWorkflow(wf, objectInfo, meta, opts) {
         if (!info) missingTypes.add(n.type);
         const inputs = {};
         if (id !== canvasId) {
-            const names = widgetNames(info);
-            const values = Array.isArray(n.widgets_values) ? n.widgets_values : [];
-            let vi = 0;
-            for (const w of names) {
-                if (vi >= values.length) break;
-                const v = values[vi++];
-                if (w.name) inputs[w.name] = v;
-            }
+            const named = n.widgets_values_named;
+            if (named && typeof named === "object" && !Array.isArray(named)) {
+                // a Comfy Cloud export names its widget values: they stand for themselves (a class the node list does
+                // not know, a dynamic combo's widgets); for a known class only what it declares goes
+                const declared = info && info.input ? new Set([...Object.keys(info.input.required || {}), ...Object.keys(info.input.optional || {})]) : null;
+                for (const [k, v] of Object.entries(named)) if (!UI_WIDGETS.has(k) && (!declared || declared.has(k.split(".")[0]))) inputs[k] = v;
+            } else Object.assign(inputs, readWidgets(info, Array.isArray(n.widgets_values) ? n.widgets_values : []));
             widgetValues.set(id, { ...inputs });
         }
         (n.inputs || []).forEach((inp, idx) => {
@@ -841,11 +862,21 @@ function fromCloudGraph({ output, workflow, base, name, ids, date, promoted }) {
         if (!input) throw new Error(`The node "${node._meta.title}" (${node.class_type}) has no input the ${mark.kind} can go into.`);
         (values[mark.kind] = values[mark.kind] || []).push([id, input]);
     }
-    let saveId = null, found = null;
+    let saveId = null, found = null, textOnly = false;
     if (!marked.length) {
         // nobody titled it (a Comfy template as it is): the roles read from the graph (detectRoles), its subgraph
-        // controls first; the bar and the recipe's note say what was read, and titles correct a wrong guess
-        const d = detectRoles(prompt, promoted || promotedOf(workflow));
+        // controls first; the bar and the recipe's note say what was read, and titles correct a wrong guess. A graph
+        // that takes no picture makes new images (V6 step 5): its size goes where its width and height controls point
+        const controls = promoted || promotedOf(workflow);
+        const d = detectRoles(prompt, controls, { text: true });
+        if (!d.pictures.length) {
+            textOnly = true;
+            const size = sizeTargets(prompt, controls);
+            if (!size.width.length || !size.height.length) throw new Error("This graph takes no picture (for an edit, title the LoadImage that takes Scumble's crop \"Scumble crop\"), and Scumble cannot tell where the size of a new image goes: give it width and height controls (a subgraph's) or an Empty Latent Image node.");
+            d.values.width = size.width;
+            d.values.height = size.height;
+            d.found.push(`size: ${size.width.concat(size.height).map(([id, k]) => `${prompt[id].class_type} ${id}.${k}`).join(", ")}`);
+        }
         d.pictures.forEach((id, k) => {
             prompt[id]._meta = { ...(prompt[id]._meta || {}), title: `scumble:picture:${k}` };
             prompt[id].inputs = { ...(prompt[id].inputs || {}), image: "" };
@@ -873,6 +904,19 @@ function fromCloudGraph({ output, workflow, base, name, ids, date, promoted }) {
         const save = saves.find((s) => s.result) || (saves.length === 1 ? saves[0] : null);
         if (!save) throw new Error(saves.length ? "The graph has several SaveImage nodes: title the one Scumble reads \"Scumble result\"." : "The graph has no SaveImage node, so no picture would come back.");
         saveId = save.id;
+        // Scumble's own titles (a cloud copy, an earlier save) mark only the pictures: a value no title names comes from
+        // the recipe saved before while its node and input are still there, else it is read as for an untitled graph
+        const was = (base && base.providers && base.providers.comfycloud && base.providers.comfycloud.options && base.providers.comfycloud.options.values) || {};
+        /** @type {Record<string, [string, string][]> | null} */
+        let read = null;
+        for (const k of ["prompt", "negative", "seed", "width", "height"]) {
+            if (values[k]) continue;
+            const keep = (Array.isArray(was[k]) ? was[k] : []).filter(([id, input]) => prompt[id] && prompt[id].inputs && input in prompt[id].inputs && !Array.isArray(prompt[id].inputs[input]));
+            if (keep.length) { values[k] = keep; continue; }
+            if (k === "width" || k === "height") continue;
+            if (read === null) { try { read = /** @type {Record<string, [string, string][]>} */ (detectRoles(prompt, promoted || promotedOf(workflow)).values || {}); } catch (_) { read = {}; } }
+            if (read[k]) values[k] = read[k];
+        }
     }
     if (maskId) {
         // the mask picture is opaque, white where to repaint: what read the LoadImage's MASK output reads its red channel
@@ -881,6 +925,22 @@ function fromCloudGraph({ output, workflow, base, name, ids, date, promoted }) {
         let used = false;
         for (const node of Object.values(prompt)) for (const [k, v] of Object.entries(node.inputs || {})) if (Array.isArray(v) && String(v[0]) === maskId && +v[1] === 1) { node.inputs[k] = [mid, 0]; used = true; }
         if (used) prompt[mid] = { class_type: "ImageToMask", inputs: { image: [maskId, 0], channel: "red" } };
+    }
+    // only what leads to the result stays (a preview, a before / after compare and what fed only them go): a run on
+    // Comfy Cloud computes the picture Scumble reads and nothing else, and a preview node's own widget (ImageCompare's
+    // compare_view) never fails the graph there; a value whose node went is dropped with it
+    if (saveId && prompt[saveId]) {
+        // (what Scumble writes stays, wired or not: its picture and mask nodes, which set the picture count, and every
+        // node a value goes into)
+        const marks = Object.keys(prompt).filter((id) => /^scumble:(picture:\d+|mask)$/.test(String((prompt[id]._meta || {}).title || "")) || Object.values(values).some((pairs) => pairs.some(([x]) => String(x) === id)));
+        const keep = new Set([String(saveId), ...marks]);
+        const todo = [String(saveId), ...marks];
+        while (todo.length) {
+            const n = prompt[todo.pop()];
+            for (const v of Object.values((n && n.inputs) || {})) if (Array.isArray(v) && prompt[v[0]] && !keep.has(String(v[0]))) { keep.add(String(v[0])); todo.push(String(v[0])); }
+        }
+        for (const id of Object.keys(prompt)) if (!keep.has(id)) delete prompt[id];
+        for (const k of Object.keys(values)) { values[k] = values[k].filter(([id]) => prompt[id]); if (!values[k].length) delete values[k]; }
     }
     const needs = Array.from(new Set(Object.values(prompt).map((n) => n.class_type)));
     const wf = workflow && typeof workflow === "object" && Array.isArray(workflow.nodes) && Array.isArray(workflow.links) ? workflow : null;
@@ -892,11 +952,13 @@ function fromCloudGraph({ output, workflow, base, name, ids, date, promoted }) {
         refs: { name: (base && base.providers && base.providers.comfycloud && base.providers.comfycloud.refs && base.providers.comfycloud.refs.name) || REF_NAME_DEFAULT },
         note: found ? `Read from the graph: ${found.join("; ")}.` : `A graph made for Comfy Cloud: ${marked.join(", ")}.`,
     };
+    // a text-to-image graph makes new images only (Generate new): its graph is the variant's, the text route names it
+    const shaped = (v) => (textOnly ? { ...v, edit: false, text: { model: v.model } } : v);
     if (base) {
         if (!base.providers || !base.providers.comfycloud || !base.providers.comfycloud.options || !base.providers.comfycloud.options.graph) throw new Error(`"${base.name || base.id}" is no Comfy Cloud recipe: save this graph as a new recipe.`);
         const was = base.providers.comfycloud;
         return /** @type {Recipe} */ ({ id: base.id, name: base.name || base.id, kind: "provider", ...(base.description ? { description: base.description } : {}), ...(base.task ? { task: base.task } : {}), default: "comfycloud",
-            providers: { comfycloud: { ...variant, model: was.model || base.name || base.id, limits: was.limits || variant.limits } } });
+            providers: { comfycloud: shaped({ ...variant, model: was.model || base.name || base.id, limits: was.limits || variant.limits }) } });
     }
     const clean = String(name || "").trim().slice(0, 80);
     if (!clean) throw new Error("A new recipe needs a name.");
@@ -905,7 +967,45 @@ function fromCloudGraph({ output, workflow, base, name, ids, date, promoted }) {
     let id = stem, k = 2;
     while (taken.has(id)) id = `${stem}_${k++}`;
     return /** @type {Recipe} */ ({ id, name: clean, kind: "provider", description: `Made for Comfy Cloud on ${date}.`, default: "comfycloud",
-        providers: { comfycloud: { ...variant, model: clean } } });
+        providers: { comfycloud: shaped({ ...variant, model: clean }) } });
+}
+
+/**
+ * Where the size of a new image goes in a text-to-image graph: the inputs its width and height controls drive (by name
+ * or label), else the width and height of its Empty...Latent... nodes. A control's input fed by a link (a resolution
+ * node) means every input that output feeds: each becomes a literal (1024 until a run writes its own) and the nodes
+ * left without a consumer go (a resolution selector the node list may not even know). Changes `prompt`.
+ * @param {Record<string, any>} prompt
+ * @param {{ name: string, label?: string, node: string, input: string }[]} promoted
+ */
+function sizeTargets(prompt, promoted) {
+    const out = { width: /** @type {[string, string][]} */ ([]), height: /** @type {[string, string][]} */ ([]) };
+    const fed = new Set();
+    for (const k of /** @type {("width" | "height")[]} */ (["width", "height"])) {
+        const re = new RegExp(`^${k}$`, "i");
+        let pairs = (promoted || []).filter((p) => (re.test(p.name) || (p.label && re.test(p.label))) && prompt[p.node] && prompt[p.node].inputs && p.input in prompt[p.node].inputs).map((p) => [p.node, p.input]);
+        if (!pairs.length) pairs = Object.keys(prompt).filter((id) => /^Empty.*Latent/i.test(prompt[id].class_type) && prompt[id].inputs && k in prompt[id].inputs).map((id) => [id, k]);
+        const all = new Map();
+        for (const [id, input] of pairs) {
+            const v = prompt[id].inputs[input];
+            if (!Array.isArray(v)) { all.set(`${id}|${input}`, [id, input]); continue; }
+            fed.add(String(v[0]));
+            for (const [nid, n] of Object.entries(prompt)) for (const [kk, vv] of Object.entries(n.inputs || {})) if (Array.isArray(vv) && String(vv[0]) === String(v[0]) && +vv[1] === +v[1]) all.set(`${nid}|${kk}`, [nid, kk]);
+        }
+        out[k] = Array.from(all.values());
+        for (const [id, input] of out[k]) if (Array.isArray(prompt[id].inputs[input])) prompt[id].inputs[input] = 1024;
+    }
+    // the size's former sources, and what fed only them, when nothing reads them any more
+    const used = (id) => Object.values(prompt).some((n) => Object.values(n.inputs || {}).some((v) => Array.isArray(v) && String(v[0]) === id));
+    const queue = Array.from(fed);
+    while (queue.length) {
+        const id = String(queue.pop());
+        if (!prompt[id] || OUTPUT_ONLY.test(prompt[id].class_type) || used(id)) continue;
+        const ups = Object.values(prompt[id].inputs || {}).filter(Array.isArray).map((v) => String(v[0]));
+        delete prompt[id];
+        queue.push(...ups);
+    }
+    return out;
 }
 
 // ---- the roles of a graph nobody titled (item 35 V6): Comfy's image-edit templates saved as they are -----------------
@@ -953,10 +1053,11 @@ function promotedOf(wf) {
  * 0, 1, ...; a LoadImage whose MASK output is read as the mask; the prompt, the negative and the seed from the
  * subgraph controls of that name or label (`promoted`, promotedOf), else from the encoders' text inputs (positive when
  * their conditioning reaches a "positive" input or no "negative" one) and the seed inputs; with no negative found, the
- * `negative_prompt` input of a node the prompt goes into; the one SaveImage(Advanced) as the result. Returns
+ * `negative_prompt` input of a node the prompt goes into; the one SaveImage(Advanced) as the result. `opts.text`: a
+ * graph that takes no picture is fine (a text-to-image graph, V6 step 5; `pictures` is empty). Returns
  * { pictures, maskFrom, values, save, found } or throws with what it could not tell.
  */
-function detectRoles(prompt, promoted) {
+function detectRoles(prompt, promoted, opts = {}) {
     const ids = Object.keys(prompt);
     const users = new Map();   // "<id>|<slot>" -> [{ node, cls, input }]
     for (const [nid, n] of Object.entries(prompt)) {
@@ -984,14 +1085,16 @@ function detectRoles(prompt, promoted) {
     };
     const loads = ids.filter((id) => prompt[id].class_type === "LoadImage" && (consumers(id, 0).some((c) => !OUTPUT_ONLY.test(c.cls)) || consumers(id, 1).length));
     loads.sort((a, b) => rank(a) - rank(b) || naturally(a, b));
-    if (!loads.length) throw new Error("No LoadImage takes a picture into this graph, so Scumble cannot tell where its crop goes: title one \"Scumble crop\".");
+    if (!loads.length && !opts.text) throw new Error("No LoadImage takes a picture into this graph, so Scumble cannot tell where its crop goes: title one \"Scumble crop\".");
     loads.forEach((id, k) => found.push(`${k === 0 ? "crop" : "picture " + k}: ${label(id)}`));
     const masks = loads.filter((id) => consumers(id, 1).length);
     if (masks.length > 1) throw new Error(`Several LoadImage nodes give a mask (${masks.join(", ")}): title the one Scumble's selection goes into "Scumble mask".`);
     if (masks.length) found.push(`mask: the MASK of ${label(masks[0])}`);
 
     // the prompt, the negative, the seed: the template's own controls first
-    const promotedTo = (re, type) => (promoted || []).filter((p) => (re.test(p.name) || (p.label && re.test(p.label))) && prompt[p.node] && prompt[p.node].inputs && typeof prompt[p.node].inputs[p.input] === type).map((p) => [p.node, p.input]);
+    // a control whose label names a prompt role is that role whatever its name ("text" shown as "negative_prompt")
+    const ROLE_LABEL = /^(prompt|text|positive|positive_prompt|negative|negative_prompt)$/i;
+    const promotedTo = (re, type) => (promoted || []).filter((p) => (p.label && ROLE_LABEL.test(p.label) ? re.test(p.label) : re.test(p.name) || (p.label && re.test(p.label))) && prompt[p.node] && prompt[p.node].inputs && typeof prompt[p.node].inputs[p.input] === type).map((p) => [p.node, p.input]);
     let pos = promotedTo(/^(prompt|text|positive|positive_prompt)$/i, "string");
     let neg = promotedTo(/^(negative|negative_prompt)$/i, "string");
     let seed = promotedTo(/^(noise_)?seed$/i, "number");
@@ -1000,13 +1103,23 @@ function detectRoles(prompt, promoted) {
     const negativeOnly = pos.length > 0;
     if (!pos.length || !neg.length) {
         // where a linked text starts: four hops along string links at most, to a node holding the text itself
+        // (a switch, ComfySwitchNode, is followed along the branch it takes: its literal, or a boolean primitive's value;
+        // a prompt enhancer along its prompt input; six hops at most)
+        const boolOf = (v) => (typeof v === "boolean" ? v : Array.isArray(v) && prompt[v[0]] && typeof (prompt[v[0]].inputs || {}).value === "boolean" ? prompt[v[0]].inputs.value : false);
         const textSource = (link) => {
             let at = link;
-            for (let hop = 0; hop < 4 && Array.isArray(at) && prompt[at[0]]; hop++) {
+            for (let hop = 0; hop < 6 && Array.isArray(at) && prompt[at[0]]; hop++) {
                 const src = prompt[at[0]], inputs = src.inputs || {};
                 if (typeof inputs.value === "string") return [String(at[0]), "value"];
                 if (typeof inputs.text === "string" && !Object.values(inputs).some(Array.isArray)) return [String(at[0]), "text"];
-                at = Object.entries(inputs).filter(([kk, vv]) => Array.isArray(vv) && /^(string|text|value|prompt)/i.test(kk)).map(([, vv]) => vv).pop();
+                if ("on_true" in inputs || "on_false" in inputs) {
+                    const pick = boolOf(inputs.switch) ? "on_true" : "on_false";
+                    if (typeof inputs[pick] === "string") return [String(at[0]), pick];
+                    at = inputs[pick];
+                    continue;
+                }
+                // (a text shown on its way: PreviewAny's source)
+                at = Object.entries(inputs).filter(([kk, vv]) => Array.isArray(vv) && /^(string|text|value|prompt|source)/i.test(kk)).map(([, vv]) => vv).pop();
             }
             return null;
         };
@@ -1041,6 +1154,9 @@ function detectRoles(prompt, promoted) {
                 if (!at) continue;
                 if (/^negative(_prompt)?$/i.test(k)) { neg.push(at); continue; }
                 if (!/^(text|prompt|positive)$/i.test(k)) continue;
+                // (the negative side alone never takes the prompt's own encoder: Flux.1 Kontext zeroes the prompt's
+                // conditioning for its negative, and a negative written there would replace the prompt)
+                if (negativeOnly && pos.some(([x, y]) => x === id || (x === at[0] && y === at[1]))) continue;
                 if (side(id) === "negative") neg.push(at);
                 else if (!negativeOnly) pos.push(at);
             }

@@ -998,9 +998,9 @@ async function genSyncRefs() {
     genField.refresh();
 }
 
-/** The recipes that can start from nothing, for the mode the dialog is on. */
+/** The recipes that can start from nothing, for the mode the dialog is on (cloud: the Comfy Cloud recipes, V6). */
 function genRecipesFor(mode) {
-    return recipes.filter((r) => (mode === "local" ? r.kind === "comfy" : r.kind === "provider" && genProviderIds(r).length));
+    return recipes.filter((r) => (mode === "local" ? r.kind === "comfy" : r.kind === "provider" && (mode === "cloud") === cloudModeOf(r) && genProviderIds(r).length));
 }
 
 /** The providers of a model recipe that have a text-to-image shape. */
@@ -1022,7 +1022,7 @@ function genFillRecipes() {
     if (!list.length) {
         const o = document.createElement("option");
         o.value = "";
-        o.textContent = mode === "local" ? "no ComfyUI recipe installed" : "no API model with a text-to-image endpoint";
+        o.textContent = mode === "local" ? "no ComfyUI recipe installed" : mode === "cloud" ? "no Comfy Cloud recipe makes new images" : "no API model with a text-to-image endpoint";
         ui.genRecipe.appendChild(o);
     }
     if (list.some((r) => r.id === keep)) ui.genRecipe.value = keep;
@@ -1197,9 +1197,10 @@ export async function openGenerateNew(editor) {
         }
         ui.genAspect.value = "1:1";
     }
-    ui.genMode.value = genRecipesFor(host.recipe && host.recipe.kind === "comfy" ? "local" : "api").length
-        ? (host.recipe && host.recipe.kind === "comfy" ? "local" : "api")
-        : (genRecipesFor("local").length ? "local" : "api");
+    // the dialog opens on the editor's mode (local, api or cloud) when that has a recipe for a new image
+    const curRaw = host.recipe && recipes.find((x) => x.id === host.recipe.id);
+    const curMode = curRaw ? (curRaw.kind === "comfy" ? "local" : modeOf(curRaw)) : "api";
+    ui.genMode.value = genRecipesFor(curMode).length ? curMode : (genRecipesFor("local").length ? "local" : "api");
     if (!ui.genResolution.options.length) ui.genResolution.value = "1024";
     genMountField();
     genInfo = null;

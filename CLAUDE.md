@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 evening: 0.1.39 is Latest; item 35 V1-V5 and V6 steps 1, 2 and 4 built, V6 steps 3 and 5 next, no release yet)
+## Where things stand (2026-10-03 evening: 0.1.39 is Latest; item 35 V1-V5 and V6 steps 1, 2, 4 and 5 built, V6 step 3 next, no release yet)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -143,9 +143,16 @@ DLSS on the later list) is in `docs/HISTORY.md`.
   encoder's own negative field) and an empty negative keeps the graph's own; a graph refuses too many pictures before
   any call. `recipes_test` 107, `cloudgraph` 14, `refs_layout` 692, gates `lint types recipes comfyview generate size
   transparent help` PASS offline (`v6s4`, `v6s4b`, `v6s4c`), one look (the six under *comfy cloud*). Not run live.
-- **Next: V6 step 5** (the nine text-to-image exports as cloud recipes for Generate new: a text route for cloud
-  recipes, width / height into the graph; docs/PLAN_COMFY_VIEW.md V6 step 5) and **step 3** (the model-file check
-  against Comfy Cloud before a run), then the live checks, then the
+- **V6 step 5 and the step 4 review, the same evening (the user: "machen wir hier weiter", no /clear):** 13 shipped
+  Comfy Cloud recipes (7 edits, 6 for Generate new alone; Flux.2 Klein 9B and Qwen 2.1 carry a text route), the
+  Generate new dialog's *Comfy Cloud* choice, `comfycloud.generate()` for recipe graphs. The review of step 4 caught
+  graphs Comfy Cloud would have refused (dynamic-combo widgets read by position: Boogu's resize node,
+  `SaveImageAdvanced`'s `format`): named widget values now stand for every node, previews are pruned from cloud graphs,
+  and four reading fixes (docs/PLAN_COMFY_VIEW.md V6 step 5 "Built"). `recipes_test` 117, `cloudgraph` 16,
+  `refs_layout` 695, gates `lint types recipes comfyview generate size transparent help document` PASS offline
+  (`v6s5`, `v6s5b`). Not run live.
+- **Next: V6 step 3** (the model-file check against Comfy Cloud before a run, values with a file extension only), then
+  the live checks (the user's Comfy Cloud key: one edit and one Generate new run at least), then the
   release. Old line kept below for the checks:
 - **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
   ist"): a recipe opened and saved back on the user's ComfyUI (queues nothing), the Comfy Cloud login in the window

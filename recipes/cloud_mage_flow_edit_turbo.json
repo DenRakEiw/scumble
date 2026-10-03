@@ -4,7 +4,7 @@
   "task": "edit",
   "name": "Mage Flow Edit Turbo (Comfy Cloud)",
   "family": "Comfy Cloud",
-  "description": "Mage-Flow-Edit Turbo, a 4B editor in four steps: the crop and a second picture (the Original or your first reference layer). Runs on your Comfy Cloud key; Scumble crops and stitches. Comfy's template as Comfy Cloud has it; not run on Comfy Cloud from Scumble yet.",
+  "description": "Mage-Flow-Edit Turbo, a 4B editor in four steps: the crop and a second picture (the Original or your first reference layer). Runs on your Comfy Cloud key. Scumble crops and stitches. Comfy's template as Comfy Cloud has it; not run on Comfy Cloud from Scumble yet.",
   "default": "comfycloud",
   "providers": {
     "comfycloud": {
@@ -25,6 +25,9 @@
             "class_type": "SaveImageAdvanced",
             "inputs": {
               "filename_prefix": "Mage_flow_edit_turbo",
+              "format": "png",
+              "format.bit_depth": "8-bit",
+              "format.input_color_space": "sRGB",
               "images": [
                 "12:8",
                 0

@@ -4,7 +4,7 @@
   "task": "edit",
   "name": "Flux.2 Klein 9B base, two pictures (Comfy Cloud)",
   "family": "Comfy Cloud",
-  "description": "FLUX.2 [klein] 9B base with a second picture: the crop and the Original or your first reference layer. Runs on your Comfy Cloud key; Scumble crops and stitches. Comfy's template as Comfy Cloud has it; not run on Comfy Cloud from Scumble yet.",
+  "description": "FLUX.2 [klein] 9B base with a second picture: the crop and the Original or your first reference layer. Runs on your Comfy Cloud key. Scumble crops and stitches. Comfy's template as Comfy Cloud has it; not run on Comfy Cloud from Scumble yet.",
   "default": "comfycloud",
   "providers": {
     "comfycloud": {

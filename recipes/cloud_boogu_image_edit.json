@@ -4,7 +4,7 @@
   "task": "edit",
   "name": "Boogu Image 0.1 Edit (Comfy Cloud)",
   "family": "Comfy Cloud",
-  "description": "Boogu's 10B image editor: objects in, out or replaced, materials, backgrounds, styles and in-picture text, from one picture (the crop). Runs on your Comfy Cloud key; Scumble crops and stitches. Comfy's template as Comfy Cloud has it; not run on Comfy Cloud from Scumble yet.",
+  "description": "Boogu's 10B image editor: objects in, out or replaced, materials, backgrounds, styles and in-picture text, from one picture (the crop). Runs on your Comfy Cloud key. Scumble crops and stitches. Comfy's template as Comfy Cloud has it; not run on Comfy Cloud from Scumble yet.",
   "default": "comfycloud",
   "providers": {
     "comfycloud": {
@@ -43,22 +43,11 @@
           "49": {
             "class_type": "ResizeImageMaskNode",
             "inputs": {
-              "scale_method": "scale total pixels",
+              "resize_type": "scale total pixels",
+              "resize_type.megapixels": 1,
+              "scale_method": "lanczos",
               "input": [
                 "32",
-                0
-              ]
-            }
-          },
-          "53": {
-            "class_type": "ImageCompare",
-            "inputs": {
-              "image_a": [
-                "32",
-                0
-              ],
-              "image_b": [
-                "44",
                 0
               ]
             }
@@ -219,7 +208,6 @@
           "SaveImage",
           "GetImageSize",
           "ResizeImageMaskNode",
-          "ImageCompare",
           "UNETLoader",
           "VAELoader",
           "EmptyLatentImage",

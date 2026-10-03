@@ -199,7 +199,7 @@ async function main() {
             nano_banana_2: "image {n}", nano_banana_2_lite: "image {n}", nano_banana_pro: "image {n}", grok_imagine: "image {n}", reve: "image {n}",
             gpt_image_2: "Image {n}", gpt_image_2_5_flare: "Image {n}", gpt_image_2_5_sunburst: "Image {n}",
             seedream_4_5: "Image {n}", seedream_5_lite: "Image {n}", seedream_5_pro: "Image {n}", qwen_image_edit: "Image {n}", hy_image_3_5: "Image {n}",
-            qwen_image_2_1: "<image{n}>",
+            qwen_image_2_1: "<image{n}>", cloud_qwen_image_2_1_edit: "<image{n}>",
         };
         const wrong = [];
         for (const name of fs.readdirSync(RECIPES).filter((n) => n.endsWith(".json"))) {
@@ -264,6 +264,9 @@ async function main() {
             flux1_fill: ["bfl", "fal", "replicate", "wavespeed"], ideogram_4: ["fal", "comfyrouter", "oxen"], krea_2: ["fal", "openrouter", "comfyrouter", "oxen"],
             recraft_v4: ["fal", "openrouter"], z_image: ["fal"], z_image_turbo: ["fal", "oxen", "magnific"], mystic: ["magnific"], reve: ["wavespeed"],
             qwen_image_edit: ["fal", "replicate"], grok_imagine: ["comfyrouter"], ideogram_4_5: ["replicate", "wavespeed", "comfyrouter"],
+            // Comfy Cloud's text-to-image graphs (item 35 V6 step 5): a template that takes no picture
+            cloud_anima_base: ["comfycloud"], cloud_anima_preview: ["comfycloud"], cloud_flux2_klein_9b: ["comfycloud"], cloud_ideogram_4: ["comfycloud"],
+            cloud_krea_2_turbo: ["comfycloud"], cloud_mage_flow: ["comfycloud"], cloud_qwen_image_2_1_edit: ["comfycloud"], cloud_z_image_turbo: ["comfycloud"],
         };
         const NULLS = { max: null, field: null, model: null, options: null, name: null };
         const list = await recipes.list(RECIPES);
@@ -479,7 +482,7 @@ async function main() {
             3: { class_type: "LoadImage", inputs: { image: "m.png" }, _meta: { title: "Scumble Mask" } },
             4: { class_type: "SetLatentNoiseMask", inputs: { samples: ["7", 0], mask: ["3", 1] } },
             5: { class_type: "CLIPTextEncode", inputs: { text: "old", clip: ["8", 0] }, _meta: { title: "Scumble prompt" } },
-            6: { class_type: "KSampler", inputs: { seed: 1, model: ["8", 0] }, _meta: { title: "Scumble seed" } },
+            6: { class_type: "KSampler", inputs: { seed: 1, model: ["8", 0], latent_image: ["4", 0] }, _meta: { title: "Scumble seed" } },
             7: { class_type: "VAEEncode", inputs: { pixels: ["1", 0], vae: ["8", 0] } },
             8: { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "x.safetensors" } },
             9: { class_type: "SaveImage", inputs: { images: ["6", 0], filename_prefix: "a" }, _meta: { title: "Scumble result" } },
@@ -589,6 +592,28 @@ async function main() {
         check("Qwen 2509: the negative through the control labelled negative_prompt", eq(v("image_qwen_image_edit_2509.json").options.values.negative, [["433:110", "prompt"]]), short(v("image_qwen_image_edit_2509.json").options.values));
         check("Flux.2 Klein 9B: the negative encoder without a control, by where its conditioning goes", eq(v(k9).options.values.negative, [["75:67", "text"]]), short(v(k9).options.values));
         check("Mage Flow: the negative field of the encoder the prompt goes into", eq(v("image_mage_flow_edit_turbo_int8.json").options.values.negative, [["12:5", "negative_prompt"]]), short(v("image_mage_flow_edit_turbo_int8.json").options.values));
+        // the prompt's own encoder is never the negative (Flux.1 Kontext zeroes the prompt's conditioning for its negative)
+        const kontext = {
+            1: { class_type: "LoadImage", inputs: { image: "a.png" } }, 2: { class_type: "VAEEncode", inputs: { pixels: ["1", 0], vae: ["9", 0] } },
+            3: { class_type: "CLIPTextEncode", inputs: { text: "a cat", clip: ["9", 0] } }, 4: { class_type: "ReferenceLatent", inputs: { conditioning: ["3", 0], latent: ["2", 0] } },
+            5: { class_type: "FluxGuidance", inputs: { conditioning: ["4", 0], guidance: 2.5 } }, 6: { class_type: "ConditioningZeroOut", inputs: { conditioning: ["3", 0] } },
+            7: { class_type: "KSampler", inputs: { seed: 1, model: ["9", 0], positive: ["5", 0], negative: ["6", 0], latent_image: ["2", 0] } },
+            8: { class_type: "VAEDecode", inputs: { samples: ["7", 0], vae: ["9", 0] } }, 9: { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "x" } },
+            10: { class_type: "SaveImage", inputs: { images: ["8", 0], filename_prefix: "k" } },
+        };
+        const kv = recipes.detectRoles(kontext, [{ name: "text", label: "prompt", node: "3", input: "text" }]).values;
+        check("a prompt whose conditioning is zeroed for the negative: the negative never takes the prompt's encoder", eq(kv.prompt, [["3", "text"]]) && !kv.negative, short(kv));
+        // a control whose label names the role: the label decides ("text" shown as "negative_prompt")
+        const twin = { ...JSON.parse(JSON.stringify(kontext)), 11: { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["9", 0] } } };
+        twin[7].inputs.negative = ["11", 0];
+        const tv = recipes.detectRoles(twin, [{ name: "text", label: "negative_prompt", node: "11", input: "text" }, { name: "text_1", label: "positive_prompt", node: "3", input: "text" }]).values;
+        check("a control named text and labelled negative_prompt is the negative, not the prompt as well", eq(tv.prompt, [["3", "text"]]) && eq(tv.negative, [["11", "text"]]), short(tv));
+        // a cloud copy saved back from the window (its titles mark only the pictures): the prompt and the seed stay wired
+        const kleinRaw = (await recipes.list(RECIPES)).find((r) => r.id === "flux2_klein_local");
+        const copy = recipes.detach(kleinRaw).recipe;
+        const back = recipes.fromCloudGraph({ output: copy.providers.comfycloud.options.graph, base: copy, date: "2026-10-03" }).providers.comfycloud.options.values;
+        const asNew = recipes.fromCloudGraph({ output: copy.providers.comfycloud.options.graph, name: "copy again", ids: [], date: "2026-10-03" }).providers.comfycloud.options.values;
+        check("a cloud copy saved back (Save to recipe, Save as new recipe) keeps its prompt and seed", eq(back.prompt, copy.providers.comfycloud.options.values.prompt) && eq(back.seed, copy.providers.comfycloud.options.values.seed) && !!(asNew.prompt && asNew.seed), short({ back, asNew }));
     });
 
     // ---- 10. the Comfy Cloud recipes Scumble ships (item 35 V6 step 4: the user's picks of Comfy's templates) ----------
@@ -598,20 +623,63 @@ async function main() {
         const stale = tool.MANIFEST.filter((m) => fs.readFileSync(path.join(RECIPES, `${m.id}.json`), "utf8") !== JSON.stringify(tool.build(m, info), null, 2) + "\n").map((m) => m.id);
         check("each shipped file is what its export gives (node tools/cloud_recipes.js)", !stale.length, short(stale));
         const list = await recipes.list(RECIPES);
-        const want = { cloud_boogu_image_edit: 1, cloud_flux2_klein_9b: 1, cloud_flux2_klein_9b_multi: 2, cloud_mage_flow_edit_turbo: 2, cloud_qwen_image_2_1_edit: 2, cloud_qwen_image_edit_2509: 2 };
+        // pictures of the edit graph (0: text to image alone), whether a text route goes with it, whether a negative is read
+        const want = {
+            cloud_boogu_image_edit: [1, false, true], cloud_flux2_klein_9b: [1, true, true], cloud_flux2_klein_9b_multi: [2, false, true], cloud_mage_flow_edit_turbo: [2, false, true],
+            cloud_qwen_image_2_1_edit: [2, true, true], cloud_qwen_image_edit_2509: [2, false, true], cloud_flux2_dev: [1, false, false],
+            cloud_anima_base: [0, true, true], cloud_anima_preview: [0, true, true], cloud_ideogram_4: [0, true, false], cloud_krea_2_turbo: [0, true, false],
+            cloud_mage_flow: [0, true, true], cloud_z_image_turbo: [0, true, false],
+        };
+        check("the manifest ships the thirteen", eq(tool.MANIFEST.map((m) => m.id).sort(), Object.keys(want).sort()), short(tool.MANIFEST.map((m) => m.id)));
         const bad = [];
-        for (const [id, pictures] of Object.entries(want)) {
+        const graphOk = (o, pictures) => {
+            const g = o && o.graph;
+            const titles = g ? Object.values(g).map((n) => (n._meta || {}).title).filter((t) => /^scumble:picture:/.test(t || "")) : [];
+            return !!g && o.pictures === pictures && titles.length === pictures && !!g[o.save] && /^SaveImage/.test(g[o.save].class_type) && o.values.prompt && o.values.prompt.length && o.values.seed
+                && !Object.values(g).some((n) => n.class_type === "InpaintCanvas" || n.class_type === "ResolutionSelector") && o.workflow && Array.isArray(o.workflow.nodes) && Array.isArray(o.needs)
+                && Object.values(g).every((n) => n.inputs && Object.keys(n.inputs).length);
+        };
+        for (const [id, [pictures, text, negative]] of Object.entries(want)) {
             const r = list.find((x) => x.id === id);
             const v = r && r.providers && r.providers.comfycloud;
-            const g = v && v.options && v.options.graph;
-            const titles = g ? Object.values(g).map((n) => (n._meta || {}).title).filter((t) => /^scumble:picture:/.test(t || "")) : [];
             const ok = r && r.source === "builtin" && r.kind === "provider" && r.default === "comfycloud" && eq(r.providerIds, ["comfycloud"]) && r.family === "Comfy Cloud"
-                && v.options.pictures === pictures && titles.length === pictures && g[v.options.save] && /^SaveImage/.test(g[v.options.save].class_type)
-                && v.options.values.prompt && v.options.values.prompt.length && v.options.values.negative && v.options.values.seed
-                && !Object.values(g).some((n) => n.class_type === "InpaintCanvas") && v.options.workflow && Array.isArray(v.options.workflow.nodes) && Array.isArray(v.options.needs);
+                && graphOk(v.options, pictures) && (pictures === 0 ? v.edit === false : v.edit !== false) && !!v.text === text
+                && !!v.options.values.negative === negative && (pictures === 0 ? !!(v.options.values.width && v.options.values.height) : !v.options.values.width)
+                && (!text || (v.text.model && Array.isArray(v.text.sizes) && v.text.refs === null && (pictures === 0 ? !v.text.options : graphOk(v.text.options, 0) && v.text.options.values.width && v.text.options.values.height)));
             if (!ok) bad.push(id);
         }
-        check("all six are listed as shipped Comfy Cloud recipes: their pictures titled, prompt, negative and seed read, their SaveImage, the template's layout kept", !bad.length, short(bad));
+        check("all thirteen are listed as shipped Comfy Cloud recipes: pictures titled, prompt and seed read (the negative where the template has one), their SaveImage, no node without inputs, the layout kept; the text-to-image ones (alone or as an edit recipe's text route) with their size", !bad.length, short(bad));
+        // what step 5 reads: a prompt behind a switch, a preview and a prompt enhancer (Krea 2), the size from a resolution
+        // node that goes (Anima base), the widget values a node list does not know (Ideogram 4)
+        const krea = list.find((x) => x.id === "cloud_krea_2_turbo").providers.comfycloud.options;
+        check("Krea 2: the prompt through the switch, the preview and the enhancer into the text the user writes", eq(krea.values.prompt, [["30:19", "value"]]), short(krea.values));
+        const anima = list.find((x) => x.id === "cloud_anima_base").providers.comfycloud.options;
+        check("Anima base: the size into the latent the resolution node fed, which is gone", eq(anima.values.width, [["90:74", "width"]]) && anima.graph["90:74"].inputs.width === 1024 && !anima.graph["91"], short(anima.values));
+        // every node of a shipped graph has the required inputs its class declares (a dynamic combo's chosen option
+        // included: SaveImageAdvanced's format); a growing input (images.image_1) counts by its prefix, and a
+        // text-to-image graph's encoder may take no picture at all
+        const missing = [];
+        for (const id of Object.keys(want)) {
+            const vv = list.find((x) => x.id === id).providers.comfycloud;
+            for (const o of [vv.options, vv.text && vv.text.options].filter(Boolean)) {
+                for (const [nid, n] of Object.entries(o.graph)) {
+                    const decl = info[n.class_type];
+                    for (const k of Object.keys((decl && decl.input && decl.input.required) || {})) {
+                        if (k in n.inputs || Object.keys(n.inputs).some((x) => x.startsWith(k + ".")) || (k === "images" && o.pictures === 0)) continue;
+                        missing.push(`${id} ${nid} ${n.class_type}.${k}`);
+                    }
+                }
+            }
+        }
+        check("every node of a shipped graph has its required inputs, dynamic combos read (SaveImageAdvanced's format, ResizeImageMaskNode's resize_type)", !missing.length, short(missing));
+        const saveAdv = list.find((x) => x.id === "cloud_qwen_image_edit_2509").providers.comfycloud.options.graph["469"].inputs;
+        const resize = list.find((x) => x.id === "cloud_boogu_image_edit").providers.comfycloud.options.graph["49"].inputs;
+        check("the named widget values: SaveImageAdvanced png 8-bit sRGB, ResizeImageMaskNode by total pixels at 1 MP with lanczos",
+            saveAdv.format === "png" && saveAdv["format.bit_depth"] === "8-bit" && resize.resize_type === "scale total pixels" && resize["resize_type.megapixels"] === 1 && resize.scale_method === "lanczos", short({ saveAdv, resize }));
+        const qwen = list.find((x) => x.id === "cloud_qwen_image_2_1_edit").providers.comfycloud;
+        check("Qwen Image 2.1 on Comfy Cloud: its pictures named <image1>, its sizes in steps of 32", qwen.refs.name === "<image{n}>" && qwen.limits.step === 32, short({ refs: qwen.refs, limits: qwen.limits }));
+        const ideo = list.find((x) => x.id === "cloud_ideogram_4").providers.comfycloud.options.graph;
+        check("Ideogram 4: the nodes the fixtures' node list lacks take the export's named widget values", ideo["98:156"].inputs.choice === "Default" && ideo["98:157"].inputs.cfg === 3 && ideo["98:155"].inputs.cfg === 7, short(ideo["98:156"].inputs));
     });
 
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });

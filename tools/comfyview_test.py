@@ -31,7 +31,7 @@ opener passes a stub's URL):
 - V6, the cloud mode: the editor's mode select offers api, local and cloud; with no Comfy Cloud recipe, cloud says so
   and the select goes back; with the two the V5c steps made, cloud lists them alone (the negative shown, denoise not),
   api lists none of them, and each mode comes back with the recipe last used in it; list_recipes and set_generation
-  know the mode;
+  know the mode; the Generate new dialog opens on Comfy Cloud and lists the recipes with a text route there alone;
 - a page that keeps unsaved changes (beforeunload, as ComfyUI does): Reload asks, Stay ends on the page as it was
   (ready to save, the window not stuck on "Loading"), Leave loads it again;
 - a page whose ComfyUI sets up after the wait gave up (many node packs): the save buttons are on with the page, a
@@ -593,7 +593,16 @@ class Gate:
             const back = await pick('cloud');
             const listed = (await commands.run('list_recipes', {})).recipes.filter((x) => x.id === 'gate_cloud' || x.id === 'flux2_klein_local').map((x) => [x.id, x.mode]);
             const set = await commands.run('set_generation', { mode: 'cloud' });
-            return { cloud, api, back, listed, set: set.mode };""")
+            // Generate new (V6 step 5): the dialog opens on comfy cloud, which lists the recipes with a text route alone
+            host.shell.openGenerateNew(ed); await wait(300);
+            const gm = document.getElementById('gen-mode'), gr = document.getElementById('gen-recipe');
+            const gen = { initial: gm.value, modes: Array.from(gm.options).map((o) => o.value) };
+            gm.value = 'cloud'; gm.dispatchEvent(new Event('change')); await wait(200);
+            gen.cloud = Array.from(gr.options).map((o) => o.value);
+            gm.value = 'api'; gm.dispatchEvent(new Event('change')); await wait(200);
+            gen.api = Array.from(gr.options).map((o) => o.value);
+            const gd = document.getElementById('gen-dialog'); if (gd && gd.open) gd.close();
+            return { cloud, api, back, listed, set: set.mode, gen };""")
         c, a, b = r["cloud"], r["api"], r["back"]
         if c["mode"] != "cloud" or c["shown"] != "cloud" or c["list"] != "cloud" or not {"flux2_klein_local_cloud", "gate_cloud"} <= set(c["ids"]) or not c["allCloud"] or c["groups"] != ["Comfy Cloud"] or not c["negative"] or c["denoise"]:
             raise Exception("the cloud mode: " + json.dumps(c)[:600])
@@ -603,7 +612,10 @@ class Gate:
             raise Exception("back to cloud: " + json.dumps(b)[:600])
         if sorted(r["listed"]) != [["flux2_klein_local", "local"], ["gate_cloud", "cloud"]] or r["set"] != "cloud":
             raise Exception("list_recipes / set_generation: " + json.dumps(r["listed"]) + " " + str(r["set"]))
-        return {"cloud": c["ids"], "api": len(a["ids"]), "back": b["recipe"]}
+        g = r["gen"]
+        if g["initial"] != "cloud" or "cloud" not in g["modes"] or not {"cloud_z_image_turbo", "cloud_flux2_klein_9b"} <= set(g["cloud"]) or "cloud_boogu_image_edit" in g["cloud"] or any(x.startswith("cloud_") for x in g["api"]):
+            raise Exception("Generate new on comfy cloud: " + json.dumps(g)[:600])
+        return {"cloud": c["ids"], "api": len(a["ids"]), "back": b["recipe"], "generate new": len(g["cloud"])}
 
     async def unsaved(self):
         await self.close()

@@ -60,8 +60,9 @@ press Generate. The recipe decides where it runs: your ComfyUI, or a provider wi
   provider it runs on (ToAPIs, its own API such as BytePlus ModelArk for Seedream, fal.ai, Replicate, WaveSpeedAI,
   Comfy Cloud, Comfy Router, OpenRouter, Oxen.ai, Magnific); import your own ComfyUI
   workflow as a recipe if it holds an Inpaint Canvas node, or a copy of a shipped model recipe with
-  a variant of your own. Six of Comfy's image-edit templates come as Comfy Cloud recipes (Boogu, Flux.2 Klein 9B,
-  Mage Flow, Qwen Image 2.1 and 2509), and a workflow from Comfy Cloud becomes one as it is.
+  a variant of your own. Thirteen of Comfy's templates come as Comfy Cloud recipes: image edits (Boogu, Flux.2 Klein
+  9B, Flux.2 dev, Mage Flow, Qwen Image 2.1 and 2509) and new images for Generate new (Anima, Flux.2 Klein 9B,
+  Ideogram 4, Krea 2 Turbo, Mage Flow, Qwen Image 2.1, Z-Image Turbo); a workflow from Comfy Cloud becomes one as it is.
 - API runs go out at the size the provider really takes (*Highres fix* picks the tier), with
   reference layers, and transparent results from the OpenAI image models land as cut-outs.
 - Start from nothing: *Generate new* makes the base image from the prompt alone, locally

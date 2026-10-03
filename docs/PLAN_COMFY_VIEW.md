@@ -390,6 +390,30 @@ none of V1-V5 may change that:
      Ideogram 4's own nodes (`Ideogram4Scheduler`, `DualModelGuider`, `CFGOverride`, `CustomCombo`,
      `JsonExtractString`, `StringReplace`) are not in the fixtures' node list: read them from the cloud's
      `/api/object_info` or from `widgets_values_named`.
+     **Built 2026-10-03 (evening, the same session as steps 2 and 4; the user: "machen wir hier weiter"):**
+     `fromCloudGraph` takes a graph without pictures as a text-to-image graph (`detectRoles(..., { text: true })`;
+     `sizeTargets`: width / height controls by name or label, else the Empty...Latent... node, a linked control means
+     every input of that output, which becomes a literal 1024, the resolution node left without a consumer goes) and
+     shapes it `edit: false` with `text: { model }`; `textVariant` keeps a Comfy Cloud text route only when the variant
+     names it (`TEXT_NAMED`, so the partner-node variants get none) and passes `text.options`; `comfycloud.generate()`
+     runs only a recipe graph (no uploads, the size in steps of 16); `host.runGenerate` takes `t.options` before the
+     variant's; the Generate new dialog's *Comfy Cloud* choice (`genRecipesFor("cloud")`, opened on the editor's mode).
+     `textSource` follows a switch's live branch, PreviewAny's `source` and six hops (Krea 2's prompt in `30:19.value`).
+     The manifest: Flux.2 Klein 9B and Qwen 2.1 carry their text-to-image template as `text.options`; Anima base,
+     Anima preview, Ideogram 4, Krea 2 Turbo, Mage Flow and Z-Image Turbo are text-only; Flux.2 dev (Comfy's "Image
+     Edit (Flux.2 Dev)", its size from the picture) ships as an edit recipe; the text routes offer 768-2048 (Anima to
+     1280). **The step 4 review (one workflow, 13 agents) found, all fixed here:** the positional widget reading missed
+     dynamic combos, so Boogu's `ResizeImageMaskNode` was shifted and three `SaveImageAdvanced` lacked `format` (Comfy
+     Cloud would have refused those graphs): a UI export's `widgets_values_named` now stand for every node (a known
+     class keeps only what it declares) and `readWidgets` reads a dynamic combo's chosen option in place; only what
+     leads to the result stays in a graph (previews and ImageCompare go, every value target stays); the negative-only
+     scan never takes the prompt's own encoder (Flux.1 Kontext, USO); a label naming a role decides alone; a cloud copy
+     saved back keeps its prompt / negative / seed (an older bug); Qwen 2.1's pictures are `<image{n}>` and its steps
+     32. Refuted: a second reference on a two-picture recipe is refused, as every route refuses past its count. Tests:
+     `recipes_test.js` 117, `cloudgraph_test.js` 16 (a text run, a partner refusal), `refs_layout_test.js` 695 (Comfy
+     Cloud's text routes declare the reference drop), gates `lint types recipes comfyview generate size transparent help
+     document` PASS offline (`v6s5`, `v6s5b`; the Generate new dialog in the comfyview gate), one look at the dialog.
+     Not done: a live run, step 3.
   Open: Comfy Cloud's own model names for these templates (step 3 on the user's key).
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
