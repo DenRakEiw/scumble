@@ -335,6 +335,10 @@ Known flakes; **re-run before believing any of these**:
   `rememberClosed`'s `saveAll` then encodes every open tab, this step's selection with `toCanvas()` among them, while
   the step counted every copy of the prototypes; with the heal and smudge rows of 0.1.32 it landed there every run.
   The step counts the copies its draws take now, and names their callers.)
+- `comfyview_test.py` "Ctrl+S reaches the page, not Scumble's menu" fails with "the control failed" (2026-10-03, twice):
+  its control key into the editor's page reaches no menu while another window has the focus, as when the user works in
+  a test instance of their own beside the gate (run it on another port, `SCUMBLE_CDP_PORT=9556`). Ruled out: the
+  ComfyUI window's guards (the step passed in the same session with the user away).
 - `commands_test.py` hangs after every step has printed `[ok]` (the runner's 420 s timeout, sometimes in
   `Page.captureScreenshot`).
 - `editor_test.py` `closed_tabs_are_collected` fails with the last tabs still alive, or against an instance with 50+ tabs

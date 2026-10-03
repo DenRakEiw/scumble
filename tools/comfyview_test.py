@@ -29,7 +29,9 @@ opener passes a stub's URL):
   opens on Comfy Cloud in the window as its graph without the node; a graph without the node saved from the window is
   a new Comfy Cloud recipe, Save to recipe overwrites it, and a graph with the node is refused for it;
 - a page that keeps unsaved changes (beforeunload, as ComfyUI does): Reload asks, Stay ends on the page as it was
-  (ready to save, the window not stuck on "Loading"), Leave loads it again.
+  (ready to save, the window not stuck on "Loading"), Leave loads it again;
+- a page whose ComfyUI sets up after the wait gave up (many node packs): the save buttons are on with the page, a
+  save before window.app says so, and once it is there the save works without a reload.
 
 It refuses an instance connected to ComfyUI and a profile that holds a ComfyUI secret; the settings and the secret it
 writes are put back at the end whatever happens.
@@ -383,7 +385,9 @@ class Gate:
         return {"throws": i["recipeNote"], "noApp": i2["recipeNote"], "noTarget": b["why"][-90:]}
 
     async def bar_click(self, js):
-        await on_target("comfybar.html", lambda c: c.eval("(() => { %s; return 1; })()" % js))
+        # the bar of a window just opened may still be loading: its buttons first
+        await on_target("comfybar.html", lambda c: c.eval("""(async () => { for (let k = 0; k < 60 && !(document.readyState === 'complete' && document.getElementById('cb-save')); k++) await new Promise((r) => setTimeout(r, 100));
+            %s; return 1; })()""" % js))
 
     async def recipe_list(self):
         return await self.js("return (await window.scumble.recipes.list()).map((r) => ({ id: r.id, name: r.name, source: r.source, settings: r.settings, mark: r.prompt && r.prompt.sigmas ? r.prompt.sigmas.inputs.gate_mark : undefined, workflow: r.workflow || null }))")
@@ -440,7 +444,7 @@ class Gate:
         return out
 
     async def cleanup_recipes(self):
-        await self.js("""for (const r of await window.scumble.recipes.list()) if (r.source === 'user' && (r.id === 'flux2_klein_local' || r.id === 'flux2_klein_local_cloud' || /^gate_(graph|bad|cloud)/.test(r.id))) await window.scumble.recipes.remove(r.id);
+        await self.js("""for (const r of await window.scumble.recipes.list()) if (r.source === 'user' && (r.id === 'flux2_klein_local' || r.id === 'flux2_klein_local_cloud' || /^gate_(graph|bad|cloud|late)/.test(r.id))) await window.scumble.recipes.remove(r.id);
             const S = await import('./shell.js'); await S.loadRecipes(); S.selectRecipe('flux2_klein_local'); return 1""")
 
     async def hosts(self):
@@ -590,6 +594,31 @@ class Gate:
             self.stub.unload = False
             await self.close()
 
+    async def late_app(self):
+        await self.close()
+        self.stub.mode = "none"
+        self.stub.app = None    # no window.app at first: the wait gives up after 20 s in a --no-comfy start
+        await self.set_auth({"type": "none"}, "")
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url}))
+        i = await self.wait_info("i.phase === 'page'", 10000)
+        if not i.get("canSaveNew"):
+            raise Exception("the save buttons are off with the page there: " + json.dumps(i))
+        await self.bar_click("document.getElementById('cb-save-new').click()")
+        await self.bar_click("document.getElementById('cb-name').value = 'Gate late'; document.getElementById('cb-name-ok').click()")
+        i1 = await self.wait_info("i.saveNote", 8000)
+        if "still setting this page up" not in i1.get("saveNote", ""):
+            raise Exception("a save before window.app: " + json.dumps(i1))
+        graph = {"1": {"class_type": "InpaintCanvas", "inputs": {"result_local": ["2", 0]}}, "2": {"class_type": "VAEDecode", "inputs": {}}}
+        await on_target(self.stub.url, lambda c: c.eval("(() => { window.app = { graph: {}, loadApiJson: async () => {}, loadGraphData: async () => {}, graphToPrompt: async () => ({ workflow: { nodes: [], links: [] }, output: %s }) }; return 1; })()" % json.dumps(graph)))
+        await self.bar_click("document.getElementById('cb-save-new').click()")
+        await self.bar_click("document.getElementById('cb-name').value = 'Gate late'; document.getElementById('cb-name-ok').click()")
+        i2 = await self.wait_info("i.recipeId === 'gate_late'", 10000)
+        r = next((x for x in await self.js("return await window.scumble.recipes.list()") if x["id"] == "gate_late"), None)
+        if not r or r.get("kind") == "provider" or i2.get("recipeId") != "gate_late":
+            raise Exception("the save once window.app is there: " + json.dumps({"info": i2, "recipe": (r or {}).get("id")})[:400])
+        await self.close()
+        return {"before": i1["saveNote"][:60], "after": i2["saveNote"][:60]}
+
     async def unreachable(self):
         await self.close()
         s = socket.socket()
@@ -618,7 +647,7 @@ async def main():
             raise SystemExit("refused: the profile holds a ComfyUI secret")
         saved = (await c.eval("window.scumble.settings.get()")).get("comfy")
         target0 = ((await c.eval("window.scumble.settings.get()")).get("comfyView") or {}).get("target")
-        mine = await c.eval("(async () => (await window.scumble.recipes.list()).filter((r) => r.source === 'user' && (r.id === 'flux2_klein_local' || r.id === 'flux2_klein_local_cloud' || /^gate_(graph|bad|cloud)/.test(r.id))).map((r) => r.id))()")
+        mine = await c.eval("(async () => (await window.scumble.recipes.list()).filter((r) => r.source === 'user' && (r.id === 'flux2_klein_local' || r.id === 'flux2_klein_local_cloud' || /^gate_(graph|bad|cloud|late)/.test(r.id))).map((r) => r.id))()")
         if mine:
             raise SystemExit(f"refused: the profile holds user recipes this test would overwrite or remove: {mine}")
         g = Gate(c, stub, out)
@@ -644,6 +673,7 @@ async def main():
             await g.step("V5c: Cloud copy in Settings, the copy opened on Comfy Cloud as its graph", g.cloud_copy)
             await g.step("V5c: a graph without the node saved as a Comfy Cloud recipe, overwritten, a graph with the node refused", g.cloud_save)
             await g.step("a page with unsaved changes: Reload asks, Stay keeps it ready to save, Leave loads it again", g.unsaved)
+            await g.step("a page whose ComfyUI sets up late: saving asks the page again, no reload needed", g.late_app)
         finally:
             await g.close()
             await g.cleanup_recipes()

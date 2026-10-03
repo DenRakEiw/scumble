@@ -18,7 +18,11 @@ const { CLOUD_URL, popupAction, navigationAllowed } = require("./comfyhosts");
 
 const BAR_H = 36;
 const PARTITION = "persist:comfyui";
-const READY_MS = 20000;     // how long a loaded page may take to offer window.app before the recipe is given up
+// How long a loaded page may take to offer window.app before the recipe is given up: a ComfyUI with many node packs
+// sets its graph up long after the page loaded (more than 20 s on the user's machine, 2026-10-03), so two minutes; a
+// --no-comfy start (the gates' stubs) waits 20 s. Saving never waits on this: a click asks the page again (checkReady)
+const READY_MS = 120000;
+const READY_MS_OFFLINE = 20000;
 const READY_STEP_MS = 400;
 const MAX_GRAPH = 20 * 1024 * 1024;   // the page's graph, as JSON text, at most (§2.2)
 
@@ -104,7 +108,8 @@ class ComfyView {
         this.pageReady = false;
         this.frontend = "";
         this.readyGen = 0;
-        this.can = null;        // what the page's window.app offers: { api, graphData }
+        this.can = null;        // what the page's window.app offers: { api, graphData, read }
+        this.waiting = false;   // waitReady is polling
         this.loaded = null;     // the id of the recipe the page was given last
         this.kind = "comfy";    // what the window shows: "comfy" (My ComfyUI) or "cloud" (Comfy Cloud, V4)
         this.children = new Set();   // Comfy Cloud's sign-in windows, closed with this one
@@ -142,6 +147,7 @@ class ComfyView {
             this.front();
             if (test) this.load();
             else if (recipe && this.pageReady) this.loadRecipe();
+            else if (recipe && this.phase === "page" && !this.waiting) this.waitReady();   // a wait that gave up: once more
             else this.sendState();
             return this.info();
         }
@@ -361,25 +367,39 @@ class ComfyView {
     async waitReady({ give = true } = {}) {
         const gen = ++this.readyGen;
         const t0 = Date.now();
-        let r = null;
-        while (gen === this.readyGen && this.isOpen && this.phase === "page") {
-            try { r = await this.page.webContents.executeJavaScript(READY_JS, true); } catch (_) { r = null; }
-            if (gen !== this.readyGen || !this.isOpen) return;
-            const ok = !!(r && r.graph && (r.api || r.graphData));
-            this.frontend = r && typeof r.version === "string" ? r.version.slice(0, 40) : "";
-            if (ok) {
-                this.pageReady = true;
-                this.can = { api: !!r.api, graphData: !!r.graphData, read: !!r.read };
-                if (this.recipe && give) await this.loadRecipe(); else this.sendState();
-                return;
+        const limit = this.offline ? READY_MS_OFFLINE : READY_MS;
+        this.waiting = true;
+        try {
+            while (gen === this.readyGen && this.isOpen && this.phase === "page") {
+                const ok = await this.checkReady();
+                if (gen !== this.readyGen || !this.isOpen) return;
+                if (ok) {
+                    if (this.recipe && give) await this.loadRecipe(); else this.sendState();
+                    return;
+                }
+                if (Date.now() - t0 > limit) {
+                    if (this.recipe) this.recipeNote = `This ComfyUI page offers no way to load a graph (frontend ${this.frontend || "unknown"}).`;
+                    this.sendState();
+                    return;
+                }
+                await new Promise((res) => setTimeout(res, READY_STEP_MS));
             }
-            if (Date.now() - t0 > READY_MS) {
-                if (this.recipe) this.recipeNote = `This ComfyUI page offers no way to load a graph (frontend ${this.frontend || "unknown"}).`;
-                this.sendState();
-                return;
-            }
-            await new Promise((res) => setTimeout(res, READY_STEP_MS));
+        } finally {
+            if (gen === this.readyGen) this.waiting = false;
         }
+    }
+
+    /** Ask the page once whether window.app is set up (READY_JS); true when it is, and what it offers is kept. */
+    async checkReady() {
+        if (!this.isOpen || this.phase !== "page") return false;
+        let r = null;
+        try { r = await this.page.webContents.executeJavaScript(READY_JS, true); } catch (_) { r = null; }
+        if (!this.isOpen) return false;
+        this.frontend = r && typeof r.version === "string" ? r.version.slice(0, 40) : this.frontend;
+        if (!(r && r.graph && (r.api || r.graphData))) return false;
+        this.pageReady = true;
+        this.can = { api: !!r.api, graphData: !!r.graphData, read: !!r.read };
+        return true;
     }
 
     /** Hand the held recipe's graph to the page (§2.2 load); its answer is only read as ok / a short error. */
@@ -409,7 +429,8 @@ class ComfyView {
      */
     async save({ asNew, name }) {
         const done = (ok, message) => { this.saveNote = message; this.sendState(); return { ok, message }; };
-        if (!this.isOpen || !this.pageReady) return done(false, "The page is not ready: wait until ComfyUI has loaded.");
+        if (!this.isOpen || this.phase !== "page") return done(false, "There is no ComfyUI page to save from.");
+        if (!this.pageReady && !(await this.checkReady())) return done(false, "ComfyUI is still setting this page up: try again in a moment.");
         if (!this.can || !this.can.read) return done(false, `This ComfyUI page offers no way to read its graph (frontend ${this.frontend || "unknown"}).`);
         if (!asNew && !this.recipe) return done(false, "This window holds no recipe: use Save as new recipe.");
         let r = null;
@@ -484,7 +505,8 @@ class ComfyView {
             recipe: r ? String(r.name || r.id) : null, recipeId: r ? r.id : null, recipeNote: this.recipeNote,
             recipeLoaded: !!(r && this.loaded === r.id && this.pageReady), frontend: this.frontend,
             // a graph without the Inpaint Canvas node becomes a Comfy Cloud recipe (main.js saveComfyGraph, V5c)
-            canSaveNew: !!(this.pageReady && this.can && this.can.read), canSave: !!(this.pageReady && this.can && this.can.read && r),
+            // on as soon as the page is there: a click asks the page again whether it is ready (save, checkReady)
+            canSaveNew: this.phase === "page", canSave: this.phase === "page" && !!r,
             saveNote: this.saveNote,
         };
     }
