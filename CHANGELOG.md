@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.39 — 2026-10-03
 
 - **Boxes for Ideogram 4.** The boxes in the prompt now go with Ideogram 4 on fal too, as Ideogram's own structured
   caption: your prompt is the picture's summary, each New box an object in its place, each Text box the words it

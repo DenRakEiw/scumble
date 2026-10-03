@@ -347,4 +347,7 @@ Known flakes; **re-run before believing any of these**:
   ("the run's patch differs between the window and the whole selection", one byte, one level; `stitch.js`'s
   `finishResult` was not touched since 0.1.33, only the reference reads) and `film_test` `panel_thumbnails` ("0 of 5
   rendered" 4 s into the gate; `plugins/` unchanged since 0.1.33). Neither had failed in an earlier recorded run; not
-  looked into further.
+  looked into further. The 0.1.39 exe gates on tiles (2026-10-03, `rel39-exe`, 34 gates) failed
+  `a_run_reads_its_box_and_a_window_of_the_selection` once more the same way (one byte, one level, at [1003, 341, 2])
+  and it passed at once on a fresh instance (`rel39-exe-rerun`); the release touched only provider adapters and
+  recipes, nothing under that step. Twice in the exe gates on tiles, never on canvas or a dev instance so far.
