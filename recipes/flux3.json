@@ -4,7 +4,7 @@
   "name": "FLUX 3 Image",
   "family": "Black Forest Labs",
   "refs": { "name": "image {n}" },
-  "description": "Black Forest Labs' FLUX 3 Image: instruction edits of the crop with up to nine more pictures, new images from the prompt with up to ten reference images. Adapter written from the provider's docs (2026-10-01). Also on OpenRouter. Also on Comfy Router. Also on fal.ai.",
+  "description": "Black Forest Labs' FLUX 3 Image: instruction edits of the crop with up to nine more pictures, new images from the prompt with up to ten reference images. Adapter written from the provider's docs (2026-10-01). Also on OpenRouter. Also on Comfy Router. Also on fal.ai. Also on Oxen.ai.",
   "default": "bfl",
   "providers": {
     "bfl": {
@@ -163,6 +163,53 @@
         }
       ],
       "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; run against the live API on 2026-10-03 (two edits at 2K, 40 and 107 s). The pictures go inline in the request to Comfy, which passes them to Black Forest Labs; the answer comes back through Comfy's storage. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The crop is image 1, then the Original and the reference layers (image 2 ..), ten pictures at most, each at least 256 px a side. The crop is widened to one of the model's 15 aspect presets; the size is a tier picked from the crop (1k about 1 MP, 2k about 4 MP). There is no seed, so two runs differ, and the model expands the prompt itself. Grounding lets it search the web and images for the prompt before it renders. The Boxes switch under the prompt sends the document's boxes as bounding boxes in the prompt, or the selection as one box when there are none (a New row with the prompt as its description; with an @img token, that reference placed in the box), so the model puts the change where the box is. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "text": {
+        "sizes": [1024, 2048, 4096],
+        "refs": {},
+        "settings": [
+          {
+            "index": 1,
+            "key": "safety_tolerance",
+            "label": "Safety tolerance",
+            "spec": ["INT", { "default": 2, "min": 0, "max": 4 }]
+          },
+          {
+            "index": 2,
+            "key": "grounding",
+            "label": "Grounding (web and image search)",
+            "spec": ["BOOLEAN", { "default": true }]
+          }
+        ]
+      }
+    },
+    "oxen": {
+      "model": "flux-3-image",
+      "input": "edit",
+      "options": {
+        "accepts": ["aspect_ratio", "resolution", "safety_tolerance", "grounding"],
+        "sizing": "flux3",
+        "ratios": ["21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1", "4:5", "3:4", "5:7", "2:3", "9:16", "1:2", "9:21"],
+        "max_images": 10,
+        "prompt": "as_written",
+        "min_side": 256,
+        "max_pixels": 16000000,
+        "boxes": "flux3"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "safety_tolerance",
+          "label": "Safety tolerance",
+          "spec": ["INT", { "default": 2, "min": 0, "max": 4 }]
+        },
+        {
+          "index": 2,
+          "key": "grounding",
+          "label": "Grounding (web and image search)",
+          "spec": ["BOOLEAN", { "default": true }]
+        }
+      ],
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-10-03). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which passes them to Black Forest Labs; Oxen keeps every generated image in your Oxen account. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The crop is image 1, then the Original and the reference layers (image 2 ..), ten pictures at most, each at least 256 px a side (a smaller or larger reference layer is scaled; Oxen states no limits, these are Black Forest Labs'). The crop is widened to one of the model's 15 aspect presets and sent as that shape; the size is a tier picked from the crop's area (1k about 1 MP, 2k about 4 MP). The prompt goes as written. There is no seed, so two runs differ. Grounding lets the model search the web and images for the prompt before it renders; Oxen's default is off, this row's is on, as on Black Forest Labs' own API. The Boxes switch under the prompt sends the document's boxes as bounding boxes in the prompt, as on Black Forest Labs' own API. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". List price $0.0624 at 1k, $0.13 at 2k (2026-10-03).",
       "text": {
         "sizes": [1024, 2048, 4096],
         "refs": {},

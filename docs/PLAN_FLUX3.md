@@ -357,6 +357,20 @@ Unchanged: `index.js` (`checkPictures`, `resolveNames`, the boxes), the queue co
 
 ### Oxen.ai
 
+**Built 2026-10-03** (docs/PLAN_0_1_38.md B5), with these choices: the variant sits **last**, after `comfyrouter`, not
+after `bfl` as planned below (every recipe with an Oxen variant has it last but for Magnific, which `tools/oxen_test.js`
+§10 checks; OpenRouter stays the last before Comfy Router). Point 3 is not the optional `edit_aspect` mode but fal's
+`sizing: "flux3"` in `oxen.js` (`flux3.shapeOf` over the variant's `ratios`: the tier by area with the 15 % slack, the
+planned or 3 % preset with `info.fit`, else "auto", sent explicitly as Oxen's enum has it); it also types the rows
+(point 6: grounding through `flux3.switchOf`, safety through `flux3.safetyOf`). Point 1 is `options.prompt:
+"as_written"` in `promptFor` for every run kind, a blank prompt refused; point 4 reuses `openrouter.sizeRules` (now
+exported with a host label) on Oxen's picture list, 256 px / 16,000,000 px; point 5 reports the seed sent, none where
+`accepts` has no seed (every Oxen recipe without a seed field changes the same way). Point 2 fell away with the
+`selection_box` row (S3d). Open question 5: Grounding **on** by default, as on BFL direct and Comfy Router. The model
+entry is saved as `tools/refs/oxen/flux-3-image.json` (fetched again 2026-10-03, the same schema as the research
+read); `tools/flux3_test.js` section 10 (30 checks) and `tools/oxen_test.js` §3 check every body against it. Not run
+live.
+
 | | |
 |---|---|
 | Endpoints | One id, `flux-3-image` (display name "FLUX 3 Image", developer `black_forest_labs`, `released_at` 2026-10-01; its list entry was created 2026-10-02 07:27 UTC). The public model page shows `POST https://hub.oxen.ai/api/ai/images/edit` for every call, even a text-only body; the model list gives `"endpoint": "/images/generate"`, as for every image model. Async: `POST https://hub.oxen.ai/api/ai/queue`, `GET .../queue/{id}` (not used by Scumble). No per-model docs page (`docs.oxen.ai/inference-api/reference/models/flux-3-image.md` answers 404). Auth `Authorization: Bearer ...`. |

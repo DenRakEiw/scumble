@@ -278,8 +278,9 @@ async function picturesFor(req, o, ctx, model) {
 /**
  * `options.min_side` / `max_pixels` (FLUX 3: 256 px, 16 MP): a reference layer or the Original outside them is scaled
  * into them through ctx.resizePng, the crop is refused (the selection decides its size). The mask is never touched.
+ * `label` names the host in the errors (Oxen's adapter runs the same rules on the same picture list).
  */
-async function sizeRules(pics, o, ctx, model) {
+async function sizeRules(pics, o, ctx, model, label = "OpenRouter") {
     const minSide = +o.min_side > 0 ? +o.min_side : 0, maxPx = +o.max_pixels > 0 ? +o.max_pixels : 0;
     if (!minSide && !maxPx) return;
     const mp = (n) => `${+(n / 1e6).toFixed(1)} MP`;
@@ -294,18 +295,18 @@ async function sizeRules(pics, o, ctx, model) {
             const k = big ? Math.sqrt((maxPx * 0.995) / (w * h)) : minSide / Math.min(w, h);
             const to = { width: Math.max(1, Math.round(w * k)), height: Math.max(1, Math.round(h * k)) };
             if ((minSide && Math.min(to.width, to.height) < minSide) || (maxPx && to.width * to.height > maxPx)) {
-                throw new Error(`OpenRouter ${model} takes pictures of ${minSide} px a side to ${mp(maxPx)}; the ${p.what} is ${w} × ${h}, which no scale fits: use a less elongated layer.`);
+                throw new Error(`${label} ${model} takes pictures of ${minSide} px a side to ${mp(maxPx)}; the ${p.what} is ${w} × ${h}, which no scale fits: use a less elongated layer.`);
             }
             const scaled = await ctx.resizePng(p.bytes, to);
-            if (!scaled || !scaled.length) throw new Error(`OpenRouter ${model}: the ${p.what} (${w} × ${h}) could not be scaled to ${to.width} × ${to.height}.`);
+            if (!scaled || !scaled.length) throw new Error(`${label} ${model}: the ${p.what} (${w} × ${h}) could not be scaled to ${to.width} × ${to.height}.`);
             ctx.log && ctx.log(`${p.what} ${w} × ${h} scaled to ${to.width} × ${to.height}`);
             p.bytes = Buffer.from(scaled);
             continue;
         }
         const fix = p.what === "crop" ? (small ? "select a larger area or more context around it" : "select a smaller area") : (small ? "use a larger layer" : "use a smaller layer");
         throw new Error(small
-            ? `OpenRouter ${model} takes pictures of at least ${minSide} px a side; the ${p.what} is ${w} × ${h}: ${fix}.`
-            : `OpenRouter ${model} takes pictures of at most ${mp(maxPx)}; the ${p.what} is ${w} × ${h}: ${fix}.`);
+            ? `${label} ${model} takes pictures of at least ${minSide} px a side; the ${p.what} is ${w} × ${h}: ${fix}.`
+            : `${label} ${model} takes pictures of at most ${mp(maxPx)}; the ${p.what} is ${w} × ${h}: ${fix}.`);
     }
 }
 
@@ -550,8 +551,10 @@ module.exports = {
     // llm.js: a failed chat request on the OpenRouter key is read and put in the same words
     explain,
     readFailure,
-    // providers/oxen.js: the same instruction for a model without a mask input, numbered by Oxen's own layout
+    // providers/oxen.js: the same instruction for a model without a mask input, numbered by Oxen's own layout, and
+    // FLUX 3's picture rules (min_side / max_pixels) on the same picture list
     promptFor,
+    sizeRules,
     // exported for tools/openrouter_test.js
     _allowedBase: allowedBase,
     _body: bodyFor,

@@ -17,6 +17,7 @@ const SLEEPS = [];
 util.sleep = async (ms) => { SLEEPS.push(ms); };   // before bfl.js takes its copy
 const bfl = require(path.join(PROV, "bfl.js"));
 const fal = require(path.join(PROV, "fal.js"));
+const oxen = require(path.join(PROV, "oxen.js"));
 const flux3 = require(path.join(PROV, "flux3.js"));
 const refs = require(path.join(PROV, "refs.js"));
 const boxes = require(path.join(PROV, "boxes.js"));
@@ -160,7 +161,7 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     // ---- 1. the recipe ------------------------------------------------------------------------------------------
     console.log("\n--- 1. recipes/flux3.json ---");
     // B1: Comfy Router serves the same body (tools/comfyrouter_test.js holds that variant)
-    check("the bfl variant, the home provider, an edit route, named FLUX 3 Image; fal, OpenRouter and Comfy Router after it", eq(RECIPE.providerIds, ["bfl", "fal", "openrouter", "comfyrouter"]) && RECIPE.default === "bfl" && V.input === "edit" && V.edit === true && RECIPE.name === "FLUX 3 Image", short({ ids: RECIPE.providerIds, def: RECIPE.default, input: V.input, name: RECIPE.name }));
+    check("the bfl variant, the home provider, an edit route, named FLUX 3 Image; fal, OpenRouter, Comfy Router and Oxen.ai after it", eq(RECIPE.providerIds, ["bfl", "fal", "openrouter", "comfyrouter", "oxen"]) && RECIPE.default === "bfl" && V.input === "edit" && V.edit === true && RECIPE.name === "FLUX 3 Image", short({ ids: RECIPE.providerIds, def: RECIPE.default, input: V.input, name: RECIPE.name }));
     check("the endpoint flux-3-image is the variant's model, and the variant declares the FLUX 3 schema", V.model === "flux-3-image" && V.options.schema === "flux3" && flux3.isFlux3({ options: V.options }, V.model), short({ model: V.model, options: V.options }));
     check("options: accepts safety_tolerance and grounding (the adapter's default too), 10 pictures, no images_field", eq(V.options.accepts, ["safety_tolerance", "grounding"]) && eq(flux3.FLUX3_ACCEPTS, V.options.accepts) && V.options.max_images === 10 && !("images_field" in V.options) && flux3.FLUX3_IMAGES_FIELD === "images", short(V.options));
     check("limits: 2048 long side in 16 px steps, 608 the smallest, the 15 aspect presets", V.limits.max === 2048 && V.limits.step === 16 && V.limits.min === 608 && eq(V.limits.aspects, flux3.FLUX3_ASPECTS) && V.limits.aspects.length === 15, short(V.limits));
@@ -570,6 +571,167 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     }
     const falRoutes = new Set(FAL_BODIES.filter((b) => FAL_SCHEMA[b.route]).map((b) => b.route));
     check(`every FLUX 3 body sent to fal (${FAL_BODIES.filter((b) => FAL_SCHEMA[b.route]).length}, both routes) holds only the saved schema's fields, required ones present, enums kept`, falRoutes.size === 2 && FAL_BODIES.length >= 20 && !falOff.length, falOff.slice(0, 5).join(" | ") || [...falRoutes].join(", "));
+
+    // ---- 10. FLUX 3 on Oxen.ai (docs/PLAN_FLUX3.md "Oxen.ai", docs/PLAN_0_1_38.md B5) --------------------------------
+    console.log("\n--- 10. FLUX 3 on Oxen.ai ---");
+    const OV = RECIPE.providers.oxen;
+    check("the oxen variant: flux-3-image for edits and new images, the last provider, BFL's 15 presets, 10 pictures of 256 px to 16 MP, the prompt as written, boxes, two rows (grounding on)",
+        !!OV && OV.model === "flux-3-image" && OV.input === "edit" && RECIPE.providerIds[RECIPE.providerIds.length - 1] === "oxen" && OV.text.model === OV.model
+        && eq(OV.options.accepts, ["aspect_ratio", "resolution", "safety_tolerance", "grounding"]) && OV.options.sizing === "flux3" && eq(OV.options.ratios, flux3.FLUX3_ASPECTS)
+        && OV.options.max_images === 10 && OV.options.prompt === "as_written" && OV.options.min_side === 256 && OV.options.max_pixels === 16000000 && boxes.schemaOf({ options: OV.options }) === "flux3"
+        && eq(OV.limits, V.limits) && eq(OV.settings.map((s) => s.key), ["safety_tolerance", "grounding"]) && OV.settings[1].spec[1].default === true
+        && eq(OV.text.settings.map((s) => s.key), ["safety_tolerance", "grounding"]) && eq(OV.text.sizes, [1024, 2048, 4096]),
+        short(OV && { model: OV.model, options: OV.options, settings: OV.settings.map((s) => s.key) }));
+    // the model entry Oxen serves (tools/refs/oxen, fetched 2026-10-03 without a key): every body below is checked against it
+    const OXEN_SCHEMA = require(path.join(ROOT, "tools", "refs", "oxen", "flux-3-image.json")).request_schema;
+    const OP = OXEN_SCHEMA.properties;
+    check("the saved schema: BFL's 15 presets plus auto, 768sq to 4k, grounding off by default, safety 0 to 4, ten pictures, no seed, negative prompt or count",
+        eq(OP.aspect_ratio.enum, ["auto", ...flux3.FLUX3_ASPECTS]) && eq(OP.resolution.enum, ["768sq", "1k", "2k", "4k"]) && OP.grounding.default === false && eq(OP.safety_tolerance.enum, [0, 1, 2, 3, 4])
+        && OP.input_image.maxItems === 10 && !["seed", "negative_prompt", "num_images"].some((k) => k in OP),
+        short(Object.keys(OP)));
+    const OXEN_BASE = "http://127.0.0.1:5561", OXEN_KEY = "test-oxen-0123456789ab";
+    const OXEN_BODIES = [], OXEN_RESIZED = [];
+    const oxenEdit = (extra = {}) => ({
+        provider: "oxen", model: OV.model, kind: "edit", fields: null, options: OV.options, prompt: "make the door red", negative: "blurry", seed: 7,
+        image: CROP, mask: MASK, maskAlpha: MASK, width: 1024, height: 768, references: [], original: 0, params: defaults(OV.settings, OV.fixed),
+        refName: OV.refs.name, cropAspect: "4:3", ...extra,
+    });
+    const oxenText = (extra = {}) => ({
+        provider: "oxen", model: OV.text.model, kind: "text", fields: null, options: OV.options, prompt: "a lighthouse at dusk", negative: "blurry", seed: 7,
+        image: null, mask: null, maskAlpha: null, width: 1344, height: 768, aspect: null, references: [], original: 0, params: defaults(OV.text.settings, OV.text.fixed),
+        refName: OV.refs.name, ...extra,
+    });
+    /** hub.oxen.ai as oxen.js meets it, at the loopback mock's address with a test key: one synchronous POST, b64_json back. */
+    async function runOxen(req, { ctx = {} } = {}) {
+        const calls = [];
+        let body = null;
+        OXEN_RESIZED.length = 0;
+        async function fetch(url, init = {}) {
+            const method = String(init.method || "GET").toUpperCase();
+            calls.push({ method, url: String(url), auth: (init.headers || {}).Authorization });
+            if (method === "POST") {
+                body = JSON.parse(init.body);
+                return json(200, { model: body.model, created: 1790926044, images: [{ b64_json: RESULT.toString("base64") }] });
+            }
+            return json(404, { error: { type: "resource_not_found", title: "no route", detail: "no route" } });
+        }
+        const context = {
+            key: OXEN_KEY, base: OXEN_BASE, fetch, log: () => {}, sleep: async () => {},
+            resizePng: async (b, to) => { OXEN_RESIZED.push({ tag: tagOf(b), ...to }); return pngOf(to.width, to.height, "S-" + tagOf(b)); },
+            ...ctx,
+        };
+        let out = null, err = null;
+        try { out = await oxen[req.kind === "text" ? "generate" : "edit"]({ ...req }, context); } catch (e) { err = String(e && e.message || e); }
+        if (body) OXEN_BODIES.push({ route: calls[0].url.replace(/^.*\/images\//, ""), body });
+        return { out, err, calls, body };
+    }
+
+    x = await runOxen(oxenEdit());
+    check("an edit (1024 x 768 at 4:3) goes to /images/edit with the crop as a data URL, 1k, 4:3, the two rows typed, the prompt as written; no seed, negative prompt or mask",
+        !x.err && x.calls.length === 1 && x.calls[0].url === OXEN_BASE + "/api/ai/images/edit" && x.calls[0].auth === "Bearer " + OXEN_KEY
+        && eq(Object.keys(x.body).sort(), ["aspect_ratio", "grounding", "input_image", "model", "prompt", "resolution", "response_format", "safety_tolerance"])
+        && x.body.model === "flux-3-image" && x.body.response_format === "b64_json" && eq(tagsOfUri(x.body.input_image), ["CROP"]) && /^data:image\/png;base64,/.test(x.body.input_image[0])
+        && x.body.resolution === "1k" && x.body.aspect_ratio === "4:3" && x.body.safety_tolerance === 2 && x.body.grounding === true && x.body.prompt === "make the door red",
+        x.err || short(x.body && { ...x.body, input_image: tagsOfUri(x.body.input_image) }));
+    check("the answer: the seed null (none went), info with the route, the tier, the preset and fit stretch for the stitch",
+        x.out && x.out.seed === null && x.out.info.route === "edit" && x.out.info.tier === "1k" && x.out.info.aspect_ratio === "4:3" && x.out.info.fit === "stretch" && tagOf(x.out.bytes) === "RESULT",
+        short(x.out && { seed: x.out.seed, info: x.out.info }));
+    x = await runOxen(oxenEdit({ image: pngOf(2048, 2048, "CROP2K"), width: 2048, height: 2048, cropAspect: "1:1" }));
+    check("a 2048 x 2048 crop (4.19 MP, within the 15 % slack) goes as 2k at 1:1", !x.err && x.body.resolution === "2k" && x.body.aspect_ratio === "1:1", x.err || short(x.body && [x.body.resolution, x.body.aspect_ratio]));
+    x = await runOxen(oxenEdit({ image: pngOf(1100, 500, "WIDE"), width: 1100, height: 500, cropAspect: null }));
+    check("a crop near no preset (2.2:1) sends aspect_ratio auto (image 1's shape) and no fit", !x.err && x.body.aspect_ratio === "auto" && x.body.resolution === "1k" && x.out && !("fit" in x.out.info), x.err || short(x.body && x.body.aspect_ratio));
+    x = await runOxen(oxenEdit({ image: pngOf(432, 1008, "TALL"), width: 432, height: 1008, cropAspect: "9:21" }));
+    check("9:21 is one of Oxen's presets (not fal's): a crop planned so goes as 9:21 with fit stretch", !x.err && x.body.aspect_ratio === "9:21" && x.out.info.fit === "stretch", x.err || short(x.body && x.body.aspect_ratio));
+    x = await runOxen(oxenEdit({ image: pngOf(1000, 700, "NEAR"), width: 1000, height: 700, cropAspect: null }));
+    check("a crop within 3 % of a preset (1000 x 700 against 7:5) sends that preset with fit stretch", !x.err && x.body.aspect_ratio === "7:5" && x.out.info.fit === "stretch", x.err || short(x.body && x.body.aspect_ratio));
+    x = await runOxen(oxenEdit({ references: [REF[0], REF[1]], original: 1 }));
+    check("the Original and a reference go after the crop in input_image (image 2, image 3), the prompt still as written", !x.err && eq(tagsOfUri(x.body.input_image), ["CROP", "REF0", "REF1"]) && x.body.prompt === "make the door red", x.err || short(x.body && { pics: tagsOfUri(x.body.input_image), prompt: x.body.prompt }));
+    const ol = oxen.layout(oxenEdit({ references: [REF[0], REF[1]], original: 1 }));
+    check("oxen.layout of the variant: the crop input_image[0] (1), the Original [1] (2), the reference [2] (3), max 10", ol.max === 10 && eq(ol.pictures.map((p) => [p.role, p.field, p.n]), [["crop", "input_image[0]", 1], ["original", "input_image[1]", 2], ["reference", "input_image[2]", 3]]), short(ol));
+    x = await runOxen(oxenEdit({ references: REF.slice(0, 10) }));
+    check("eleven pictures (the crop and ten references) are refused before sending", !!x.err && /takes at most 10 pictures; this run has 11/.test(x.err) && !x.calls.length, x.err || "sent");
+
+    // the picture rules: BFL's 256 px a side to 16 MP (Oxen states none), references scaled, the crop refused
+    x = await runOxen(oxenEdit({ references: [SMALL, HUGE], original: 1 }));
+    const oxScaled = OXEN_RESIZED.length === 2 && OXEN_RESIZED[0].tag === "SMALL" && OXEN_RESIZED[0].width === 256 && OXEN_RESIZED[0].height === 256 && OXEN_RESIZED[1].tag === "HUGE" && OXEN_RESIZED[1].width * OXEN_RESIZED[1].height <= 16000000 && OXEN_RESIZED[1].width * OXEN_RESIZED[1].height > 15800000;
+    check("a 200 x 200 Original is scaled up to 256 x 256, a 20 MP reference down under 16 MP; they go scaled, in place", !x.err && oxScaled && eq(tagsOfUri(x.body.input_image), ["CROP", "S-SMALL", "S-HUGE"]), x.err || short({ OXEN_RESIZED, sent: x.body && tagsOfUri(x.body.input_image) }));
+    x = await runOxen(oxenEdit({ references: [SIXTEEN] }));
+    check("a reference of exactly 16,000,000 px goes as it is", !x.err && !OXEN_RESIZED.length && eq(tagsOfUri(x.body.input_image), ["CROP", "SIXTEEN"]), x.err || short(OXEN_RESIZED));
+    for (const [what, img, w, h, re] of [["over 16 MP (4001 x 4000)", OVER16, 4001, 4000, /at most 16 MP; the crop is 4001 × 4000/], ["under 256 px a side", pngOf(200, 300, "C"), 200, 300, /at least 256 px a side; the crop is 200 × 300/]]) {
+        x = await runOxen(oxenEdit({ image: img, width: w, height: h, cropAspect: null }));
+        check(`a crop ${what} is refused before anything is sent`, !!x.err && re.test(x.err) && !x.calls.length, x.err || "sent");
+    }
+    x = await runOxen(oxenEdit({ references: [pngOf(260, 70000, "STRIP")] }));
+    check("a reference no scale fits (260 x 70000) is refused, named, nothing sent", !!x.err && /the reference 1 is 260 × 70000, which no scale fits/.test(x.err) && !x.calls.length, x.err || "sent");
+    x = await runOxen(oxenEdit({ references: [HUGE] }), { ctx: { resizePng: undefined } });
+    check("without ctx.resizePng an oversized reference is refused, not sent as it is", !!x.err && /at most 16 MP; the reference 1 is 5000 × 4000/.test(x.err) && !x.calls.length, x.err || "sent");
+
+    // the rows as an agent may give them, and the prompt
+    const oxSafeties = [];
+    for (const v of ["3", 9, -1, 2.6, "abc"]) { x = await runOxen(oxenEdit({ params: { safety_tolerance: v, grounding: true } })); oxSafeties.push(x.body ? (x.body.safety_tolerance === undefined ? "none" : x.body.safety_tolerance) : x.err); }
+    check("safety tolerance as a whole number 0 to 4 (\"3\" -> 3, 9 -> 4, -1 -> 0, 2.6 -> 3); one that is no number stays home (Oxen's 2)", eq(oxSafeties, [3, 4, 0, 3, "none"]), short(oxSafeties));
+    const groundings = [];
+    for (const v of ["off", "on", 0, "yes", false]) { x = await runOxen(oxenEdit({ params: { safety_tolerance: 2, grounding: v } })); groundings.push(x.body ? x.body.grounding : x.err); }
+    check("grounding as a JSON boolean (off / on / 0 / yes / false)", eq(groundings, [false, true, false, true, false]), short(groundings));
+    x = await runOxen(oxenEdit({ params: { safety_tolerance: 2, grounding: "maybe" } }));
+    check("a grounding that is neither on nor off is refused, nothing sent", !!x.err && /Grounding is on or off/.test(x.err) && !x.calls.length, x.err || "sent");
+    x = await runOxen(oxenEdit({ prompt: "   " }));
+    check("a blank prompt is refused before anything is sent (it goes as written)", !!x.err && /needs a prompt/.test(x.err) && !x.calls.length, x.err || "sent");
+
+    // the boxes: index.js writes the rows after resolveNames, numbered by Oxen's layout; the prompt keeps them at its end
+    let oxBoxed = oxenEdit({ references: [REF[0], REF[1]], original: 1, prompt: "put {@ref:1} here", boxes: [{ id: "edit_1", kind: "from", rect: [0.5, 0, 1, 0.5], src: [0, 0, 1, 1], ref: 1, desc: "put {@ref:1} here" }] });
+    const oxLay = oxen.layout(oxBoxed);
+    const oxNamed = refs.resolveMarkers(oxBoxed.prompt, oxLay.pictures, oxBoxed.refName);
+    oxBoxed = { ...oxBoxed, prompt: boxes.applyBoxes({ ...oxBoxed, prompt: oxNamed.text }, oxLay).prompt };
+    x = await runOxen(oxBoxed);
+    check("a from box with the Original: the reference is ref_image_2 by Oxen's layout, named 'image 3', the rows at the prompt's end as on BFL", !x.err && x.body.prompt === 'put image 3 here. In <ref_image_0>, <ref_image_2> goes in <edit_1> at the top right. Leave the rest of the picture as it is. [{"id":"edit_1","from":"ref_image_2","src_bbox":[0,0,1000,1000],"tgt_bbox":[0,500,500,1000],"desc":"put image 3 here"}]' && eq(tagsOfUri(x.body.input_image), ["CROP", "REF0", "REF1"]), x.err || short(x.body && x.body.prompt));
+
+    // new images: /images/generate, or /images/edit with the references alone
+    x = await runOxen(oxenText());
+    check("a new image (1344 x 768) goes to /images/generate: no picture, the nearest preset (16:9), 1k, the prompt as written, the rows; no negative prompt or seed",
+        !x.err && x.calls[0].url === OXEN_BASE + "/api/ai/images/generate" && !("input_image" in x.body) && x.body.aspect_ratio === "16:9" && x.body.resolution === "1k" && x.body.prompt === "a lighthouse at dusk"
+        && x.body.safety_tolerance === 2 && x.body.grounding === true && !("negative_prompt" in x.body) && !("seed" in x.body) && x.out && x.out.seed === null && !("fit" in x.out.info) && x.out.info.route === "generate",
+        x.err || short(x.body));
+    x = await runOxen(oxenText({ aspect: "9:21", width: 768, height: 1792 }));
+    check("an agent's 9:21 for a new image goes as 9:21 (one of Oxen's presets)", !x.err && x.body.aspect_ratio === "9:21", x.err || short(x.body && x.body.aspect_ratio));
+    const oxTiers = [];
+    for (const [w, h] of [[2048, 2048], [2048, 1152], [4096, 4096], [1024, 1024]]) { x = await runOxen(oxenText({ width: w, height: h })); oxTiers.push(x.body && x.body.resolution); }
+    check("a new image's tier by area: 2048² 2k, 2048 x 1152 2k, 4096² 4k, 1024² 1k (never 768sq)", eq(oxTiers, ["2k", "2k", "4k", "1k"]), short(oxTiers));
+    const oxRefs = oxenText({ model: OV.text.refs.model || OV.text.model, references: [REF[0], REF[1]], options: { ...OV.options, ...(OV.text.refs.options || {}) } });
+    const oxTl = oxen.textLayout(oxRefs);
+    check("textLayout of a new image with references: input_image[0..1], no drop, max 10", !oxTl.drops && oxTl.max === 10 && eq(oxTl.pictures.map((p) => p.field), ["input_image[0]", "input_image[1]"]), short(oxTl));
+    x = await runOxen(oxRefs);
+    check("a new image with two references goes to /images/edit with them alone, at the asked shape (16:9) and tier, the prompt as written (no sentence about them)",
+        !x.err && x.calls[0].url === OXEN_BASE + "/api/ai/images/edit" && eq(tagsOfUri(x.body.input_image), ["REF0", "REF1"]) && x.body.aspect_ratio === "16:9" && x.body.resolution === "1k" && x.body.prompt === "a lighthouse at dusk" && !("fit" in x.out.info),
+        x.err || short(x.body && { ...x.body, input_image: tagsOfUri(x.body.input_image) }));
+
+    // other Oxen recipes keep their shape; one whose schema takes no seed now reports none
+    const f2ox = { ...oxenEdit(), model: "flux-2-pro", options: { accepts: ["aspect_ratio", "resolution", "seed", "output_format"], edit_aspect: "match_input_image", ratios: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"], tiers: { "0.5 MP": 500000, "1 MP": 1000000, "2 MP": 2000000 }, tier_unit: "area", max_images: 8 }, params: { output_format: "png" }, cropAspect: null };
+    x = await runOxen(f2ox);
+    check("FLUX.2 pro on Oxen unchanged: the instruction around the prompt, match_input_image, its MP tier, the seed sent and reported, no fit",
+        !x.err && x.body.prompt === "Edit image 1 and keep its size and framing. make the door red" && x.body.aspect_ratio === "match_input_image" && x.body.resolution === "1 MP" && x.body.seed === 7 && x.out.seed === 7 && !("fit" in x.out.info),
+        x.err || short(x.body && { prompt: x.body.prompt, aspect: x.body.aspect_ratio, res: x.body.resolution, seed: x.out && x.out.seed }));
+    x = await runOxen({ ...f2ox, model: "gpt-image-2", options: { accepts: ["quality", "resolution", "aspect_ratio", "output_format"], edit_aspect: "auto", tiers: { "1K": 1024, "2K": 2048, "4K": 4096 } }, params: { quality: "high", output_format: "png" } });
+    check("an Oxen model whose schema takes no seed sends none and reports none (it reported the editor's)", !x.err && !("seed" in x.body) && x.out.seed === null, x.err || short(x.out && x.out.seed));
+
+    // every FLUX 3 body against the schema Oxen serves (model and response_format are Oxen's envelope, not the model's)
+    const oxOff = [];
+    const oxFlux3 = OXEN_BODIES.filter((b) => b.body.model === "flux-3-image");
+    for (const { route, body } of oxFlux3) {
+        const { model: _model, response_format, ...rest } = body;
+        if (response_format !== "b64_json") oxOff.push(`${route}: response_format ${response_format}`);
+        for (const k of Object.keys(rest)) if (!(k in OP)) oxOff.push(`${route}: ${k} not in the schema`);
+        for (const k of OXEN_SCHEMA.required || []) if (!(k in rest)) oxOff.push(`${route}: ${k} missing`);
+        for (const k of Object.keys(rest)) {
+            const e = OP[k] && OP[k].enum;
+            if (e && !e.includes(rest[k])) oxOff.push(`${route}: ${k} ${rest[k]} not in its enum`);
+        }
+        if ("grounding" in rest && typeof rest.grounding !== "boolean") oxOff.push(`${route}: grounding ${rest.grounding}`);
+        if ("input_image" in rest && !(Array.isArray(rest.input_image) && rest.input_image.length >= 1 && rest.input_image.length <= 10 && rest.input_image.every((s) => /^data:image\/png;base64,/.test(s)))) oxOff.push(`${route}: input_image`);
+        if (typeof rest.prompt !== "string" || !/\S/.test(rest.prompt)) oxOff.push(`${route}: prompt`);
+    }
+    const oxRoutes = new Set(oxFlux3.map((b) => b.route));
+    check(`every FLUX 3 body sent to Oxen (${oxFlux3.length}, both routes) holds only the saved schema's fields, required ones present, enums kept`, oxRoutes.size === 2 && oxFlux3.length >= 20 && !oxOff.length, oxOff.slice(0, 5).join(" | ") || [...oxRoutes].join(", "));
 
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

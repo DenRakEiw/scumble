@@ -1,0 +1,119 @@
+{
+  "id": "flux-3-image",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.0624,
+    "cost_per_image_grid": {
+      "high": {
+        "1k": 0.0624,
+        "2k": 0.13,
+        "4k": 0.7891,
+        "768sq": 0.0533
+      }
+    },
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "auto",
+        "enum": [
+          "auto",
+          "21:9",
+          "2:1",
+          "16:9",
+          "3:2",
+          "7:5",
+          "4:3",
+          "5:4",
+          "1:1",
+          "4:5",
+          "3:4",
+          "5:7",
+          "2:3",
+          "9:16",
+          "1:2",
+          "9:21"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-order": 2
+      },
+      "grounding": {
+        "default": false,
+        "description": "Search the web and images before generating, so real places, products and events come out right. Slower than generating from the prompt alone.",
+        "title": "Grounding",
+        "type": "boolean",
+        "x-order": 4
+      },
+      "input_image": {
+        "description": "Input images to edit or use as reference, up to 10. Reference them in the prompt as @Image1, @Image2, etc.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "maxItems": 10,
+        "nullable": true,
+        "title": "Reference Images",
+        "type": "array",
+        "x-order": 1
+      },
+      "prompt": {
+        "description": "Prompt for the generated image. Use @Image1, @Image2, etc. to reference the input images.",
+        "title": "Prompt",
+        "type": "string",
+        "x-bounding-boxes": {
+          "aspectRatioField": "aspect_ratio",
+          "format": "flux",
+          "imageField": "input_image"
+        },
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_image",
+              "pattern": "image {n}"
+            }
+          ]
+        },
+        "x-order": 0
+      },
+      "resolution": {
+        "default": "1k",
+        "enum": [
+          "768sq",
+          "1k",
+          "2k",
+          "4k"
+        ],
+        "title": "Resolution",
+        "type": "string",
+        "x-next-to": "aspect_ratio",
+        "x-order": 3
+      },
+      "safety_tolerance": {
+        "default": 2,
+        "description": "Safety filter strictness, 0 is strictest.",
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "renderType": "button-group",
+        "title": "Safety Tolerance",
+        "type": "integer",
+        "x-hidden": true,
+        "x-order": 5
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

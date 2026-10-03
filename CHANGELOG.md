@@ -21,6 +21,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   picks the shape among those fourteen. There is no Grounding switch on fal; a *Prompt expansion* switch, on by
   default, lets the model rewrite the prompt first, as Black Forest Labs' own API always does. Written from fal's
   documentation; not yet tried against the live service.
+- **FLUX 3 Image on Oxen.ai.** The FLUX 3 Image recipe has Oxen.ai as a provider too, on the Oxen key: edits with up
+  to nine more pictures, new images with up to ten references, the boxes in the prompt, and the same Safety
+  tolerance and Grounding switches as on Black Forest Labs' own API (Grounding on by default; Oxen's own default is
+  off). The pictures go inline in the request, and Oxen keeps every picture it makes in your Oxen account. Written
+  from Oxen's documentation and model list; not yet tried against the live service. A run on Oxen.ai with a model
+  that takes no seed no longer reports the editor's seed as if it had been used.
 
 ## 0.1.38 — 2026-10-03
 

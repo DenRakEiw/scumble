@@ -42,6 +42,15 @@
 //   prompt_max    an upscaler's longest prompt (Bloom: 1024 characters)
 //   text          options that replace these for Generate new (Grok's text model takes other fields); a new image with
 //                 reference layers goes to the edit model and keeps the edit's options
+// FLUX 3 Image's options (docs/PLAN_FLUX3.md "Oxen.ai", docs/PLAN_0_1_38.md B5), each off unless a variant sets it:
+//   sizing        "flux3": FLUX 3's shape instead of `tiers` and `edit_aspect` (flux3.js, as fal.js sends it): `resolution`
+//                 the tier by area (1k / 2k / 4k, 15 % slack), on a text run `aspect_ratio` the nearest of `ratios`, on an
+//                 edit the preset the crop was widened to or one within 3 % of it (info.fit "stretch" for the stitch),
+//                 else "auto" (image 1's shape); safety_tolerance goes as a whole number 0 to 4, grounding as a boolean
+//   prompt        "as_written": the prompt goes as the user wrote it, no instruction around it (the box rows stay at its end)
+//   min_side, max_pixels   each picture's size (BFL's 256 px and 16 MP; Oxen states none): a reference layer or the
+//                 Original outside them is scaled into them (ctx.resizePng), the crop is refused
+// The seed reported is the one sent: none (null) where `accepts` has no seed.
 //
 // The host is https://hub.oxen.ai, never a URL from a recipe; settings.oxen.base may name a loopback mock for the tests,
 // and then only a key that starts with "test-" goes there, while such a key never goes to hub.oxen.ai.
@@ -50,6 +59,7 @@
 const { fetchImage, sleep: realSleep, closestAspect } = require("./util");
 const { layoutOf, refRoles, instruction } = require("./refs");
 const openrouter = require("./openrouter");
+const flux3 = require("./flux3");
 
 const DEFAULT_ORIGIN = "https://hub.oxen.ai";
 const API = "/api/ai";
@@ -232,6 +242,8 @@ async function picturesFor(req, o, ctx, model) {
         const parts = ["the crop", ...(pics.some((p) => p.what === "mask") ? ["the mask"] : []), `${refs.length} reference${refs.length === 1 ? "" : "s"}`];
         throw new Error(`Oxen.ai ${model} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${pics.length} (${parts.join(", ")}): turn Original off or hide reference layers.`);
     }
+    // min_side / max_pixels (FLUX 3): references scaled into them, the crop refused; OpenRouter's rules, the same list
+    await openrouter.sizeRules(pics, o, ctx, model, "Oxen.ai");
     if (+o.max_ratio > 0) {
         for (const p of pics) {
             const s = pngSize(p.bytes);
@@ -335,11 +347,19 @@ function aspectFor(req, o, list, pictures) {
 /**
  * The prompt of an edit or fill: the OpenRouter adapter's instruction (its mask clause ran live there), numbered by
  * this adapter's own layout, so a mask that goes as mask_url is no picture of the sentence. A new image takes the
- * prompt as it is, followed by what its references are when it carries any.
+ * prompt as it is, followed by what its references are when it carries any. `options.prompt` "as_written" (FLUX 3)
+ * sends the prompt alone either way.
  */
 function promptFor(req) {
+    if (optionsOf(req).prompt === "as_written") return String(req.prompt || "");
     if (req.kind === "text") return textWithRefs(req) ? instruction(req, textLayout(req), req.prompt) : String(req.prompt || "");
     return openrouter.promptFor(req, layout(req));
+}
+
+/** `sizing: "flux3"`: { aspect, resolution, fit } by FLUX 3's rules over the variant's presets (`options.ratios`). */
+function flux3Shape(req, o) {
+    const presets = (Array.isArray(o.ratios) ? o.ratios : []).filter((r) => r && r !== "auto").map(String);
+    return flux3.shapeOf({ ...req, options: {}, params: {} }, presets.length ? presets : flux3.FLUX3_ASPECTS);
 }
 
 /** The JSON body of one request; `pics` and `mask` from picturesFor (a text run: its references, none without). */
@@ -366,6 +386,19 @@ function bodyFor(req, pics = [], mask = null) {
     }
     const w = Math.max(1, +req.width || 1024), h = Math.max(1, +req.height || 1024);
     const tierKey = o.tier_key || "resolution";
+    if (o.sizing === "flux3") {
+        // the rows as FLUX 3's schema types them (an agent may give "3" or "on"); a safety that is no number goes as Oxen's 2
+        if (body.safety_tolerance !== undefined) {
+            const s = flux3.safetyOf(body.safety_tolerance);
+            if (s == null) delete body.safety_tolerance;
+            else body.safety_tolerance = s;
+        }
+        if (body.grounding !== undefined) body.grounding = flux3.switchOf(body.grounding, "Grounding");
+        // the tier by area; a text run the nearest preset, an edit the crop's preset or "auto"
+        const shape = flux3Shape(req, o);
+        if (accepts.has(tierKey) && body[tierKey] == null) body[tierKey] = shape.resolution;
+        if (accepts.has("aspect_ratio") && body.aspect_ratio == null) body.aspect_ratio = shape.aspect;
+    }
     if (accepts.has(tierKey) && body[tierKey] == null) {
         const tier = tierFor(w, h, o.tiers, o.tier_unit);
         if (tier) body[tierKey] = tier;
@@ -519,6 +552,8 @@ async function run(req, ctx) {
     // an upscale sends the picture alone; a new image sends its references alone (26f)
     req = { ...req, references: upscale ? [] : (req.references || []), log: ctx.log };
     const o = optionsOf(req);
+    // a prompt that goes as written goes nowhere blank (FLUX 3 refuses one)
+    if (o.prompt === "as_written" && !String(req.prompt || "").trim()) throw new Error(`Oxen.ai ${model} needs a prompt: say what to make or change.`);
     // the text route takes no pictures: a new image with references goes to the edit route (text.refs.model)
     const bare = text && !textWithRefs(req);
     const { pics, mask } = bare ? { pics: [], mask: null } : await picturesFor(req, o, ctx, model);
@@ -530,10 +565,12 @@ async function run(req, ctx) {
     try { j = (await r.json()) || {}; } catch (_) { throw new Error(`Oxen.ai ${model}: the answer is not JSON.`); }
     const got = await readAnswer(j, ctx, model);
     const tierKey = o.tier_key || "resolution";
+    const accepted = new Set(Array.isArray(o.accepts) ? o.accepts : []);
     return {
         bytes: got.bytes,
         mime: got.mime,
-        seed: body.seed != null ? body.seed : req.seed,
+        // the seed sent; a model whose schema takes none got none
+        seed: body.seed != null ? body.seed : accepted.has("seed") ? req.seed : null,
         info: {
             model, route,
             pictures: pics.map((x) => `${x.what} ${x.mime === "image/jpeg" ? "jpeg" : "png"}`),
@@ -542,6 +579,8 @@ async function run(req, ctx) {
             tier: body[tierKey] != null ? body[tierKey] : null,
             factor: o.factor_key && body[o.factor_key] != null ? body[o.factor_key] : null,
             answer: got.answer,
+            // sizing "flux3": an edit sent at a preset comes back in its shape, which the stitch stretches onto the crop
+            ...(!text && o.sizing === "flux3" && body.aspect_ratio && body.aspect_ratio !== "auto" ? { fit: "stretch" } : {}),
         },
     };
 }

@@ -165,7 +165,8 @@ switches: fal `sizing: "none"` for endpoints without a free `image_size`, fal `s
 `omit: ["output_format", ...]` for an endpoint that refuses the fields the other models
 take; ToAPIs' channels, sizes and tiers, below; OpenRouter's accepted parameters, presets, tiers and
 picture limits, below; ModelArk's pixel range, picture count, PNG switch and regions, below; Oxen.ai's accepted
-parameters, picture field, mask convention, aspect rule, tiers and presets, below; Replicate's `mask: "black"`,
+parameters, picture field, mask convention, aspect rule, tiers and presets, with `sizing: "flux3"`, `prompt:
+"as_written"` and `min_side` / `max_pixels` for FLUX 3, below; Replicate's `mask: "black"`,
 `seed_max`, `negative: false`, `sizes` and `text_values` for Ideogram 4.5, with `fields.references` for a fill's
 unnumbered references and `max_ratio` / `max_bytes` checks, "Ideogram 4.5" below; WaveSpeed's `mask: "black"`,
 `negative: false`, `accepts` / `text_accepts` (the allowlist of optional keys per route), `tiers`, `text_values`,
@@ -560,7 +561,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   |---|---|---|
   | FLUX.2 [pro], [flex], [max] | BFL, Replicate, OpenRouter, ToAPIs (pro, flex), Comfy Router (pro, max), Oxen.ai (pro, flex), Magnific (pro, flex); fal and WaveSpeed (the `/edit` route) | - |
   | FLUX.2 [klein] | BFL, Oxen.ai (`max: 4`); fal and WaveSpeed (`/edit`) | - |
-  | FLUX 3 Image | BFL, OpenRouter, Comfy Router; fal (`edit-image`) | - |
+  | FLUX 3 Image | BFL, OpenRouter, Comfy Router, Oxen.ai; fal (`edit-image`) | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, OpenRouter, Comfy Router, Oxen.ai; WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
@@ -680,6 +681,18 @@ there (a 2048 × 2048 crop goes at 2000 × 2000, still 2k); `omit` keeps `num_im
 home, and the seed reported is none. The rows: Safety tolerance (a whole number 0 to 4) and Prompt expansion (on by
 default, as BFL's API always expands; a JSON boolean, "on" / "off" from an agent too). Boxes go in the prompt as on
 BFL's API. Not run against the live API yet.
+
+The **`oxen` variant** (docs/PLAN_0_1_38.md B5, docs/PLAN_FLUX3.md "Oxen.ai") is the last provider, as in every
+recipe Oxen.ai serves. One id, `flux-3-image`, for all three runs: an edit and a new image with references go to
+`/images/edit` with the pictures in `input_image` (data URLs, the crop first), a new image from the prompt alone to
+`/images/generate`. Oxen's schema (`tools/refs/oxen/flux-3-image.json`, fetched 2026-10-03) is BFL's but for the
+envelope: the 15 presets plus "auto", `resolution` 768sq / 1k / 2k / 4k, `safety_tolerance` 0 to 4, `grounding` (default
+false there), ten pictures, no seed, no negative prompt. `options.sizing: "flux3"` sends the shape by `flux3.shapeOf`
+over the variant's `ratios` (the same tier and 3 % rules, `info.fit` too; an edit near no preset sends "auto"),
+`prompt: "as_written"` the prompt without Oxen's usual instruction around it, so the box rows stay at its end, and
+`min_side` 256 / `max_pixels` 16,000,000 (BFL's; Oxen states none) scale a reference layer or the Original and refuse
+the crop (`openrouter.sizeRules`). The rows: Safety tolerance and Grounding, on by default as on BFL's API (the row
+always sends it, so Oxen's own default never applies). The seed reported is none. Not run against the live API yet.
 
 - **The body** is `{ prompt, images, aspect_ratio, resolution, safety_tolerance, grounding }` and nothing else. The
   schema is strict (an unknown field answers 422), so no `seed`, mask, `width` / `height`, `mode`, negative prompt or
@@ -2306,12 +2319,12 @@ steps for `aspects`; `tools/upscale_test.js` and `.py` still cover the upscalers
 [Oxen.ai](https://www.oxen.ai) runs many image and chat models behind one key. Sources, read on 2026-09-26: the docs
 index https://docs.oxen.ai/llms.txt and the pages it lists (inference overview, image editing, image generation,
 chat completions, async queue, model references), and the model list `GET https://hub.oxen.ai/api/ai/models`, which
-answers without a key and carries each model's `request_schema` and price; the schemas of the 21 models Scumble uses
-are copied into `tools/refs/oxen/` (`{ id, endpoint, pricing, request_schema }`). `electron/main/providers/oxen.js`
+answers without a key and carries each model's `request_schema` and price; the schemas of the 22 models Scumble uses
+are copied into `tools/refs/oxen/` (`{ id, endpoint, pricing, request_schema }`; FLUX 3 Image's on 2026-10-03). `electron/main/providers/oxen.js`
 is the adapter. **Nothing here has run against the live API**: there is no Oxen key (the user, 2026-09-26), so every
 variant is written from the docs and the model list and tested against a mock.
 
-**Where it shows up.** An `oxen` variant in twenty recipes, **after Comfy Router and before Magnific** (Magnific
+**Where it shows up.** An `oxen` variant in twenty-one recipes (FLUX 3 Image since B5), **after Comfy Router and before Magnific** (Magnific
 stays last), no default changed and "Also on Oxen.ai." in each description; one key row in Settings › API providers
 (between ModelArk and Magnific, no *check balance*); three prompt-upsampling rows and three assistant models on the
 same key (below). One recipe is new and runs on Oxen alone: **Qwen Image 2.1** (`recipes/qwen_image_2_1.json`,
@@ -2331,6 +2344,7 @@ Oxen serves `qwen-image-2-1`. Whether it is the same 2.1 as the local recipe's o
 | `seedream_5_lite` | `bytedance-seedream-5-lite` | edit | none (no aspect field) | `size` 2K / 3K / 4K | 14, 16:1 | $0.04 |
 | `flux2_pro` | `flux-2-pro` | edit | `match_input_image` | 0.5 / 1 / 2 MP by area | 8 (BFL's number) | $0.10 |
 | `flux2_flex` | `flux-2-flex` | edit, steps and guidance | `match_input_image` | as above | 8 | $0.12 |
+| `flux3` | `flux-3-image` | edit, the prompt as written, Safety tolerance and Grounding rows | the crop's preset (or one within 3 %), else `auto`; 15 presets | 1k / 2k / 4k by area (`sizing: "flux3"`) | 10, 256 px a side to 16 MP (BFL's) | $0.0624 at 1k, $0.13 at 2k, $0.7891 at 4k (2026-10-03) |
 | `flux2_klein` | `black-forest-labs-flux-2-klein-9b` | edit, steps, output quality | the closest of 5 presets | none | not stated (the schema's list has no `maxItems`; the adapter's default 16 holds, BFL's own klein takes 4; "Undocumented" above) | $0.02 |
 | `qwen_image_edit` | `qwen-image-3` (Qwen Image 3.0) | edit, `input_images`, negative prompt | `auto` with the crop alone, else the closest preset | 1K / 2K | 3 | $0.039 |
 | `qwen_image_2_1` | `qwen-image-2-1` | edit, `input_images`, negative prompt | the closest of 7 presets | 1K / 2K | 10 | $0.109 |
@@ -2405,8 +2419,12 @@ refused before sending),
 `max_ratio` (Seedream: 16), `factor_key` / `factor_form` (`upscale_factor: "4x"`, `scale: "6x"`), `prompt_max`
 (Bloom: 1024 characters, cut with a log line), and `text` (options that replace these for Generate new: Grok's text
 model takes `aspect_ratio` and `resolution`, its edit model neither; a Generate new with reference layers goes to the
-edit model and keeps the edit's options, 26f). A `seed` goes out where the schema takes one,
-reduced to 0..2147483647 (Qwen's range); `negative_prompt` where it takes one and it is not empty. Never sent:
+edit model and keeps the edit's options, 26f). FLUX 3 Image's variant adds three (B5): `sizing: "flux3"` (the tier
+by area and the preset by FLUX 3's rules over `ratios`, instead of `tiers` and `edit_aspect`; Safety tolerance as a
+whole number 0 to 4, Grounding as a JSON boolean), `prompt: "as_written"` (no instruction around the prompt; a blank
+one is refused) and `min_side` / `max_pixels` (a reference layer or the Original scaled into them, the crop refused). A `seed` goes out where the schema takes one,
+reduced to 0..2147483647 (Qwen's range), and the seed reported is the one sent: none where `accepts` has no seed
+(since B5; before, such a run reported the editor's); `negative_prompt` where it takes one and it is not empty. Never sent:
 `target_namespace`, `n`, `num_generations`, attribution headers.
 
 **Errors and retries.** Oxen's envelope is read for `detail` (else `title`, else `message`) and its `type`, and the

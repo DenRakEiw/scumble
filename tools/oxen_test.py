@@ -7,7 +7,7 @@ accepts) and a test key in the Oxen.ai row. The key starts with "test-": the ada
 base, and any other key never to one.
 
 - the lists: the Oxen.ai key row after ModelArk and before Magnific, with "get a key", no "check balance" and "no key";
-  oxen in the twenty recipes it joined, last but for Magnific, the defaults kept; "Oxen.ai (no key)" on the provider
+  oxen in the twenty-one recipes it joined (FLUX 3 Image since B5), last but for Magnific, the defaults kept; "Oxen.ai (no key)" on the provider
   selects until the key is stored; the three upsampling rows listed without a key and offered by none;
 - an instruction edit (Seedream 5.0 Pro) sends the crop as a data URL to /api/ai/images/edit, the preset closest to the
   crop, no watermark and no mask, and a result layer lands;
@@ -42,7 +42,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE_TEST = os.path.join(ROOT, "tools", "oxen_test.js")
 KEY = "test-oxen-gate-0123456789"
 REAL_KEY = "oxn_0123456789abcdefghijklmnopqrstuvwxyz"   # 40 characters; the real format is not documented
-RECIPES = ["flux2_flex", "flux2_klein", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4", "krea_2",
+RECIPES = ["flux2_flex", "flux2_klein", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4", "krea_2",
            "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_2_1", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro",
            "topaz_creative", "topaz_generative", "topaz_precision", "z_image_turbo"]
 CHAT = ["gemini-3-8-flash", "gpt-5-6-luna", "gemma-4-31b-it"]

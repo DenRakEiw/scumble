@@ -559,11 +559,12 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
 
     // ---- 10. the recipes ---------------------------------------------------------------------------------------------
     {
-        const WANT = ["flux2_flex", "flux2_klein", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4", "krea_2", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_2_1", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro", "topaz_creative", "topaz_generative", "topaz_precision", "z_image_turbo"];
+        const WANT = ["flux2_flex", "flux2_klein", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4", "krea_2", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_2_1", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro", "topaz_creative", "topaz_generative", "topaz_precision", "z_image_turbo"];
         const served = list.filter((r) => r.providers && r.providers.oxen);
-        check("twenty_recipes_carry_an_oxen_variant", eq(served.map((r) => r.id).sort(), WANT), served.map((r) => r.id).join(","));
+        check("twenty_one_recipes_carry_an_oxen_variant", eq(served.map((r) => r.id).sort(), WANT), served.map((r) => r.id).join(","));
         const bad = [];
-        const OPEN = /^Runs on Oxen\.ai \(one key for many models\); not run against the live API yet \(written from Oxen's docs and model list, 2026-09-26\)\./;
+        // FLUX 3 Image came later (B5, 2026-10-03)
+        const OPEN = /^Runs on Oxen\.ai \(one key for many models\); not run against the live API yet \(written from Oxen's docs and model list, (2026-09-26|2026-10-03)\)\./;
         const PRIV = /The pictures go inline \(data URLs, which Oxen's docs allow but do not recommend for production\) in the request to Oxen\.ai/;
         for (const r of served) {
             const v = r.providers.oxen;
