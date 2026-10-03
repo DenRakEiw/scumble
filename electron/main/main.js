@@ -832,7 +832,27 @@ async function importRecipe(file) {
     if (comfy.status.state === "connected" || comfy.status.state === "missing-node") {
         try { objectInfo = await comfy.json("/object_info"); } catch (err) { console.warn("object_info for the import:", err.message); }
     }
-    return recipes.importFile(file, objectInfo);
+    // a workflow exported from Comfy Cloud (item 35 V5c) is read with Comfy Cloud's own node list, on the stored key
+    const cloudObjectInfo = async () => {
+        const key = keys.get("comfycloud");
+        if (!key) return null;
+        try { return await require("./providers/comfycloud").objectInfo({ key, fetch: globalThis.fetch }); } catch (err) { console.warn("Comfy Cloud object_info for the import:", err.message); return null; }
+    };
+    return recipes.importFile(file, objectInfo, { cloudObjectInfo, builtinDir: RECIPES_DIR });
+}
+
+/**
+ * A ComfyUI recipe's Comfy Cloud copy (docs/PLAN_COMFY_VIEW.md §2.4, item 35 V5c): recipes.detach saved as the user
+ * recipe "<id>_cloud", which a new copy replaces. It runs on the Comfy Cloud key, through comfycloud.js.
+ */
+async function cloudCopy(id) {
+    const list = await listRecipes();
+    const r = list.find((x) => x.id === id);
+    if (!r) throw new Error(`There is no recipe "${id}".`);
+    const { recipe, notes } = recipes.detach(r);
+    const replaced = list.some((x) => x.id === recipe.id);
+    await recipes.save(recipe);
+    return { id: recipe.id, name: recipe.name, notes, replaced };
 }
 
 // ---- ComfyUI connection with auth ------------------------------------------------------
@@ -868,7 +888,13 @@ function comfyTarget() {
 async function comfyRecipe(id) {
     const r = (await listRecipes()).find((x) => x.id === id);
     if (!r) throw new Error(`There is no recipe "${id}".`);
-    if (r.kind === "provider") throw new Error(`"${r.name || r.id}" runs through a provider, not through ComfyUI: it has no graph to edit.`);
+    if (r.kind === "provider") {
+        // a Comfy Cloud recipe (V5c) holds its graph in the comfycloud variant; other provider recipes have none
+        const v = r.providers && r.providers.comfycloud;
+        if (!v || !v.options || !v.options.graph) throw new Error(`"${r.name || r.id}" runs through a provider, not through ComfyUI: it has no graph to edit.`);
+        const wf = v.options.workflow;
+        return { id: r.id, name: r.name || r.id, source: r.source, cloud: true, prompt: v.options.graph, workflow: wf && Array.isArray(wf.nodes) ? wf : null };
+    }
     return { id: r.id, name: r.name || r.id, source: r.source, prompt: recipes.toPrompt(r), workflow: r.workflow && Array.isArray(r.workflow.nodes) ? r.workflow : null };
 }
 
@@ -879,8 +905,26 @@ async function comfyRecipe(id) {
  */
 async function saveComfyGraph({ output, workflow, objectInfo, heldId, name }) {
     const list = await listRecipes();
-    const base = heldId ? list.find((r) => r.id === heldId && r.kind !== "provider") || null : null;
-    const recipe = recipes.fromGraph({ output, workflow, objectInfo, base, name, ids: list.map((r) => r.id), date: new Date().toISOString().slice(0, 10) });
+    const base = heldId ? list.find((r) => r.id === heldId) || null : null;
+    const ids = list.map((r) => r.id), date = new Date().toISOString().slice(0, 10);
+    const withCanvas = Object.values(output || {}).some((n) => n && n.class_type === "InpaintCanvas");
+    const nodes = output && typeof output === "object" ? Object.values(output) : [];
+    if (!nodes.length || !nodes.every((n) => n && typeof n === "object" && typeof n.class_type === "string")) throw new Error("ComfyUI's page answered no graph Scumble can read.");
+    if (!withCanvas && !nodes.some((n) => recipes.cloudMark(n._meta && n._meta.title))) {
+        throw new Error("This graph has no Inpaint Canvas node (a ComfyUI recipe needs one) and no node titled for Comfy Cloud (\"Scumble crop\" and more, docs/RECIPES.md).");
+    }
+    if (!withCanvas) {
+        // a graph without the node is a Comfy Cloud recipe (V5c): marked by node titles, run on the Comfy Cloud key
+        if (!name && base && base.kind !== "provider") throw new Error(`"${base.name || base.id}" needs the Inpaint Canvas node, which this graph does not hold: save it as a new recipe instead (a Comfy Cloud recipe).`);
+        const made = recipes.fromCloudGraph({ output, workflow, base: !name ? base : null, name, ids, date });
+        await recipes.save(made);
+        const v = made.providers.comfycloud;
+        const msg = `Saved the graph as the Comfy Cloud recipe "${made.name}": it runs on your Comfy Cloud key.`;
+        send("comfyview:saved", { id: made.id, message: msg });
+        return { recipe: { id: made.id, name: made.name || made.id, cloud: true, prompt: v.options.graph, workflow: v.options.workflow || null }, message: msg };
+    }
+    if (!name && base && base.kind === "provider") throw new Error(`"${base.name || base.id}" is a Comfy Cloud recipe, and this graph holds the Inpaint Canvas node: save it as a new recipe instead.`);
+    const recipe = recipes.fromGraph({ output, workflow, objectInfo, base: base && base.kind !== "provider" ? base : null, name, ids, date });
     await recipes.save(recipe);
     const info = objectInfo && Object.keys(objectInfo).length ? objectInfo : null;
     const missing = info ? (recipe.needs || []).filter((c) => !info[c]) : [];
@@ -990,6 +1034,7 @@ function installIpc() {
     ipcMain.handle("recipes:list", () => listRecipes());
     ipcMain.handle("recipes:import", (_e, file) => importRecipe(file));
     ipcMain.handle("recipes:remove", (_e, id) => recipes.remove(id));
+    ipcMain.handle("recipes:cloudCopy", (_e, id) => cloudCopy(String(id || "")));
     ipcMain.handle("recipes:openFolder", async () => { const r = recipes.userDir(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(msix.forExplorer(r)); });
     ipcMain.handle("keys:list", () => keys.list());
     ipcMain.handle("keys:set", (_e, { name, value }) => keys.set(name, value));

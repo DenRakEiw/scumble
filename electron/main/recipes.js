@@ -450,8 +450,11 @@ function specDefault(spec) {
  * inner node gets the id "<instance id>:<inner id>", links from the subgraph's input
  * node (-10) take the instance's incoming link (or its promoted widget value), links
  * into the output node (-20) are followed when something outside reads that output.
+ *
+ * `opts.noCanvas` (item 35 V5c, a graph exported from Comfy Cloud): a workflow without the Inpaint Canvas node is
+ * flattened too, and only { prompt, needs, notes } come back (fromCloudGraph makes the recipe).
  */
-function fromWorkflow(wf, objectInfo, meta) {
+function fromWorkflow(wf, objectInfo, meta, opts) {
     const defs = new Map(((wf.definitions && wf.definitions.subgraphs) || []).map((d) => [d.id, d]));
     const nodes = new Map();       // flat id -> node (with _prefix)
     const links = new Map();       // flat link id -> { id, origin, originSlot, target, targetSlot, type }
@@ -513,10 +516,11 @@ function fromWorkflow(wf, objectInfo, meta) {
     addGraph(wf.nodes, wf.links, "", null);
 
     const canvasNodes = Array.from(nodes.values()).filter((n) => n.type === "InpaintCanvas");
-    if (!canvasNodes.length) throw new Error("This workflow has no Inpaint Canvas node.");
+    const noCanvas = !!(opts && opts.noCanvas);
+    if (!canvasNodes.length && !noCanvas) throw new Error("This workflow has no Inpaint Canvas node.");
     if (canvasNodes.length > 1) throw new Error("This workflow has more than one Inpaint Canvas node; a recipe needs exactly one.");
-    const canvasNode = canvasNodes[0];
-    const canvasId = canvasNode.id;
+    const canvasNode = canvasNodes[0] || null;
+    const canvasId = canvasNode ? canvasNode.id : null;
 
     /** Follow a link back through reroutes, primitives, bypassed nodes and subgraph outputs to a real source. */
     function resolveLink(l, depth = 0) {
@@ -542,7 +546,7 @@ function fromWorkflow(wf, objectInfo, meta) {
         if (src.mode === 2) return { muted: true };
         return { id: l.origin, slot: l.originSlot };
     }
-    const resolve = (node, linkId) => resolveLink(links.get(node._prefix + String(linkId)));
+    const resolve = (/** @type {any} */ node, /** @type {any} */ linkId) => resolveLink(links.get(node._prefix + String(linkId)));
 
     const prompt = {};
     const widgetValues = new Map();   // flat id -> { input: widget value } before links replaced them
@@ -579,6 +583,12 @@ function fromWorkflow(wf, objectInfo, meta) {
     // links whose source was dropped (muted, unknown) leave dangling refs
     for (const node of Object.values(prompt)) {
         for (const [k, v] of Object.entries(node.inputs)) if (Array.isArray(v) && !prompt[v[0]]) delete node.inputs[k];
+    }
+    if (!canvasNode) {
+        const flatNotes = [];
+        if (missingTypes.size) flatNotes.push("node types unknown to the node list it was read with: " + Array.from(missingTypes).join(", "));
+        if (instances.size) flatNotes.push(`${instances.size} subgraph${instances.size > 1 ? "s" : ""} flattened`);
+        return { prompt, needs: Array.from(new Set(Object.values(prompt).map((n) => n.class_type))), notes: flatNotes };
     }
 
     const wired = (name) => {
@@ -730,6 +740,133 @@ function fromGraph({ output, workflow, objectInfo, base, name, ids, date }) {
     return /** @type {Recipe} */ ({ id, name: clean, ...kept, description: `Saved from ComfyUI on ${date}.`, ...graph });
 }
 
+// ---- a graph made for Comfy Cloud, marked by node titles (item 35 V5c, docs/RECIPES.md "Comfy Cloud recipes") -------
+//
+// A graph without the Inpaint Canvas node (exported from Comfy Cloud, or saved from the ComfyUI window there) becomes a
+// cloud recipe when its nodes say where Scumble's pictures and values go, by title (any case, ":" or spaces between):
+//   "Scumble crop"        a LoadImage: the crop (picture 0)
+//   "Scumble picture <n>" a LoadImage: picture n of the node's batch order (1 the Original when it goes, else the
+//                         first reference; then the references)
+//   "Scumble mask"        a LoadImage: the selection, white where to repaint (its MASK output is turned into
+//                         ImageToMask of the red channel, since the picture has no alpha)
+//   "Scumble prompt" / "Scumble negative"  the node whose text input takes the prompt / the negative prompt
+//   "Scumble seed"        the node whose seed (or noise_seed) input takes the seed
+//   "Scumble result"      the SaveImage Scumble reads (needed only when the graph has more than one)
+
+/** What a node title marks: { kind: "picture", k } / { kind: "mask" | "prompt" | "negative" | "seed" | "result" }, or null. */
+function cloudMark(title) {
+    const t = String(title || "").trim().toLowerCase().replace(/[\s:_-]+/g, " ");
+    if (!t.startsWith("scumble ")) return null;
+    const rest = t.slice(8).trim();
+    if (rest === "crop") return { kind: "picture", k: 0 };
+    const m = /^picture (\d{1,2})$/.exec(rest);
+    if (m) return { kind: "picture", k: +m[1] };
+    return ["mask", "prompt", "negative", "seed", "result"].includes(rest) ? { kind: rest } : null;
+}
+
+/** The input of a marked node a value goes into: the first of `names` it has, else its first string input. */
+function markedInput(node, names) {
+    const inputs = (node && node.inputs) || {};
+    for (const n of names) if (n in inputs && !Array.isArray(inputs[n])) return n;
+    if (names.includes("text")) for (const [k, v] of Object.entries(inputs)) if (typeof v === "string") return k;
+    return null;
+}
+
+/**
+ * A marked API prompt -> a Comfy Cloud recipe (the provider shape detach() makes: one variant, comfycloud, with
+ * options.graph). `base` a cloud recipe it overwrites (its id, name, description and the Settings rows whose input is
+ * still there), else `name` and `ids` give a new one. `workflow` (the UI graph) is kept to open it again as laid out.
+ * @param {{ output: any, workflow?: any, base?: Recipe | null, name?: string, ids?: string[], date: string }} a
+ * @returns {Recipe}
+ */
+function fromCloudGraph({ output, workflow, base, name, ids, date }) {
+    if (!looksLikePrompt(output)) throw new Error("This is no graph Scumble can read.");
+    /** @type {Record<string, any>} */
+    const prompt = JSON.parse(JSON.stringify(output));
+    if (Object.values(prompt).some((n) => n.class_type === "InpaintCanvas")) throw new Error("This graph holds the Inpaint Canvas node, which Comfy Cloud does not have: run it as a ComfyUI recipe (or make a cloud copy of that recipe).");
+    /** @type {Record<string, [string, string][]>} */
+    const values = {};
+    let maxPicture = -1, maskId = null;
+    const saves = [], marked = [];
+    for (const [id, node] of Object.entries(prompt)) {
+        const mark = cloudMark(node._meta && node._meta.title);
+        if (node.class_type === "SaveImage") saves.push({ id, result: !!(mark && mark.kind === "result") });
+        if (!mark || mark.kind === "result") continue;
+        marked.push(`${mark.kind}${mark.k != null ? " " + mark.k : ""}`);
+        if (mark.kind === "picture" || mark.kind === "mask") {
+            if (node.class_type !== "LoadImage") throw new Error(`The node "${node._meta.title}" (${node.class_type}) must be a LoadImage.`);
+            node.inputs = { ...(node.inputs || {}), image: "" };
+            if (mark.kind === "picture") {
+                node._meta.title = `scumble:picture:${mark.k}`;
+                maxPicture = Math.max(maxPicture, mark.k);
+            } else {
+                if (maskId) throw new Error("Only one node may be titled \"Scumble mask\".");
+                node._meta.title = "scumble:mask";
+                maskId = id;
+            }
+            continue;
+        }
+        const input = mark.kind === "seed" ? markedInput(node, ["seed", "noise_seed"]) : markedInput(node, ["text", "prompt", "positive", "negative"]);
+        if (!input) throw new Error(`The node "${node._meta.title}" (${node.class_type}) has no input the ${mark.kind} can go into.`);
+        (values[mark.kind] = values[mark.kind] || []).push([id, input]);
+    }
+    if (!Object.values(prompt).some((n) => n._meta && n._meta.title === "scumble:picture:0")) {
+        throw new Error("No node is titled \"Scumble crop\": title the LoadImage that takes Scumble's crop so (see docs/RECIPES.md, Comfy Cloud recipes).");
+    }
+    const save = saves.find((s) => s.result) || (saves.length === 1 ? saves[0] : null);
+    if (!save) throw new Error(saves.length ? "The graph has several SaveImage nodes: title the one Scumble reads \"Scumble result\"." : "The graph has no SaveImage node, so no picture would come back.");
+    if (maskId) {
+        // the mask picture is opaque, white where to repaint: what read the LoadImage's MASK output reads its red channel
+        let mid = "scumble_mask", n = 2;
+        while (prompt[mid]) mid = `scumble_mask_${n++}`;
+        let used = false;
+        for (const node of Object.values(prompt)) for (const [k, v] of Object.entries(node.inputs || {})) if (Array.isArray(v) && String(v[0]) === maskId && +v[1] === 1) { node.inputs[k] = [mid, 0]; used = true; }
+        if (used) prompt[mid] = { class_type: "ImageToMask", inputs: { image: [maskId, 0], channel: "red" } };
+    }
+    const needs = Array.from(new Set(Object.values(prompt).map((n) => n.class_type)));
+    const wf = workflow && typeof workflow === "object" && Array.isArray(workflow.nodes) && Array.isArray(workflow.links) ? workflow : null;
+    const keepRows = base && base.providers && base.providers.comfycloud && Array.isArray(base.providers.comfycloud.settings)
+        ? base.providers.comfycloud.settings.filter((s) => { const i = String(s.key || "").indexOf("|"); return i > 0 && prompt[s.key.slice(0, i)]; }) : [];
+    const options = { graph: prompt, pictures: maxPicture + 1, mask: !!maskId, values, needs, save: save.id, ...(wf ? { workflow: wf } : {}) };
+    const variant = {
+        model: "", input: maskId ? "fill" : "edit", options, settings: keepRows, limits: { ...LIMITS_DEFAULT },
+        refs: { name: (base && base.providers && base.providers.comfycloud && base.providers.comfycloud.refs && base.providers.comfycloud.refs.name) || REF_NAME_DEFAULT },
+        note: `A graph made for Comfy Cloud: ${marked.join(", ")}.`,
+    };
+    if (base) {
+        if (!base.providers || !base.providers.comfycloud || !base.providers.comfycloud.options || !base.providers.comfycloud.options.graph) throw new Error(`"${base.name || base.id}" is no Comfy Cloud recipe: save this graph as a new recipe.`);
+        const was = base.providers.comfycloud;
+        return /** @type {Recipe} */ ({ id: base.id, name: base.name || base.id, kind: "provider", ...(base.description ? { description: base.description } : {}), ...(base.task ? { task: base.task } : {}), default: "comfycloud",
+            providers: { comfycloud: { ...variant, model: was.model || base.name || base.id, limits: was.limits || variant.limits } } });
+    }
+    const clean = String(name || "").trim().slice(0, 80);
+    if (!clean) throw new Error("A new recipe needs a name.");
+    const taken = new Set(ids || []);
+    const stem = slug(clean);
+    let id = stem, k = 2;
+    while (taken.has(id)) id = `${stem}_${k++}`;
+    return /** @type {Recipe} */ ({ id, name: clean, kind: "provider", description: `Made for Comfy Cloud on ${date}.`, default: "comfycloud",
+        providers: { comfycloud: { ...variant, model: clean } } });
+}
+
+/** Whether a UI workflow or an API prompt has a node titled for Scumble (cloudMark). */
+function marksCloud(data) {
+    if (looksLikePrompt(data)) return Object.values(data).some((n) => cloudMark(n && n._meta && n._meta.title));
+    const wf = data && Array.isArray(data.nodes) ? data : data && data.workflow;
+    if (!wf || !Array.isArray(wf.nodes)) return false;
+    const all = [...wf.nodes, ...(((wf.definitions && wf.definitions.subgraphs) || []).flatMap((d) => d.nodes || []))];
+    return all.some((n) => n && cloudMark(n.title));
+}
+
+/** Whether a UI workflow or an API prompt holds an Inpaint Canvas node (subgraph definitions included). */
+function holdsCanvas(data) {
+    if (looksLikePrompt(data)) return Object.values(data).some((n) => n.class_type === "InpaintCanvas");
+    const wf = data && Array.isArray(data.nodes) ? data : data && data.workflow;
+    if (!wf || !Array.isArray(wf.nodes)) return false;
+    const all = [...wf.nodes, ...(((wf.definitions && wf.definitions.subgraphs) || []).flatMap((d) => d.nodes || []))];
+    return all.some((n) => n && n.type === "InpaintCanvas");
+}
+
 // The Inpaint Canvas node's outputs (node repo nodes.py RETURN_NAMES) as detach() treats them
 const CANVAS_OUTPUTS = ["crop_image", "crop_mask", "image", "mask", "stitch_info", "crop_width", "crop_height", "prompt", "control_image", "denoise", "seed", "mode", "negative"];
 const DETACH_VALUES = /** @type {Record<number, string>} */ ({ 5: "width", 6: "height", 7: "prompt", 9: "denoise", 10: "seed", 11: "mode", 12: "negative" });
@@ -822,7 +959,7 @@ function detach(recipe) {
         providers: {
             comfycloud: {
                 model: name, input: maskLink ? "fill" : "edit",
-                options: { graph: prompt, pictures: maxPicture + 1, mask: !!maskLink, values, needs },
+                options: { graph: prompt, pictures: maxPicture + 1, mask: !!maskLink, values, needs, save },
                 settings: rows,
                 limits: { ...LIMITS_DEFAULT, max, step, aspects: [] },
                 refs: { name: (recipe.refs && recipe.refs.name) || REF_NAME_DEFAULT },
@@ -848,12 +985,29 @@ function looksLikePrompt(obj) {
  * Import a workflow file. `objectInfo` comes from the connected server (null when
  * offline: API-format files still work, UI-format files need the widget order).
  */
-async function importFile(file, objectInfo) {
+async function importFile(file, objectInfo, opts) {
     const text = await fsp.readFile(file, "utf8");
     let data;
     try { data = JSON.parse(text); } catch (err) { throw new Error("Not a JSON file: " + err.message); }
     const meta = { file: path.basename(file), date: new Date().toISOString().slice(0, 10) };
     let recipe;
+    // a graph made for Comfy Cloud (item 35 V5c): no Inpaint Canvas node, its nodes marked by title
+    const graphLike = data && (Array.isArray(data.nodes) || looksLikePrompt(data) || (data.workflow && Array.isArray(data.workflow.nodes)));
+    if (graphLike && !data.kind && !holdsCanvas(data)) {
+        if (!marksCloud(data)) throw new Error("This graph has no Inpaint Canvas node. A graph made for Comfy Cloud needs its nodes titled for Scumble: \"Scumble crop\" on the LoadImage of the crop, and more (docs/RECIPES.md, Comfy Cloud recipes).");
+        const stem0 = path.basename(file).replace(/\.json$/i, "");
+        let output = data, wf = null;
+        if (!looksLikePrompt(data)) {
+            wf = Array.isArray(data.nodes) ? data : data.workflow;
+            const info = (opts && opts.cloudObjectInfo ? await opts.cloudObjectInfo() : null) || objectInfo;
+            if (!info) throw new Error("Reading a workflow saved from the ComfyUI UI needs the node definitions: store a Comfy Cloud key (or connect a ComfyUI), or export the workflow in API format.");
+            output = fromWorkflow(wf, info, meta, { noCanvas: true }).prompt;
+        }
+        const ids = (await list(opts && opts.builtinDir ? opts.builtinDir : path.join(__dirname, "..", "..", "recipes"))).map((r) => r.id);
+        const made = fromCloudGraph({ output, workflow: wf, name: stem0, ids, date: meta.date });
+        const savedCloud = await save(made);
+        return normalize({ ...made, file: path.basename(savedCloud), source: "user" });
+    }
     if (data && data.kind && data.prompt && data.canvas) {
         recipe = { ...data };            // a Scumble recipe file
     } else if (data && data.kind === "provider" && hasVariants(data)) {
@@ -880,4 +1034,4 @@ async function importFile(file, objectInfo) {
     return normalize({ ...recipe, file: path.basename(saved), source: "user" });
 }
 
-module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, detach, userDir, _normalize: normalize };
+module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, fromCloudGraph, cloudMark, detach, userDir, _normalize: normalize };

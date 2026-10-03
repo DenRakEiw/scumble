@@ -118,6 +118,21 @@ async function main() {
     const e5 = await thrown(() => cloud._buildGraph(reqOf({ options: fill.options, kind: "fill", mask: null }), fctx, "recipe graph"));
     check("a fill recipe without a mask: refused", /needs a selection mask/.test(e5 || ""), e5);
 
+    // 6. a graph made for Comfy Cloud (fromCloudGraph, V5c): its SaveImage titled "Scumble result" answers by id
+    const marked = {
+        1: { class_type: "LoadImage", inputs: { image: "x.png" }, _meta: { title: "Scumble crop" } },
+        2: { class_type: "CLIPTextEncode", inputs: { text: "" }, _meta: { title: "Scumble prompt" } },
+        3: { class_type: "ImageInvert", inputs: { image: ["1", 0] } },
+        9: { class_type: "SaveImage", inputs: { images: ["3", 0], filename_prefix: "a" }, _meta: { title: "Scumble result" } },
+        10: { class_type: "SaveImage", inputs: { images: ["1", 0], filename_prefix: "b" } },
+    };
+    const mv = recipes._normalize(JSON.parse(JSON.stringify(recipes.fromCloudGraph({ output: marked, name: "marked", ids: [], date: "2026-10-03" })))).providers.comfycloud;
+    cloud._clearNodeList();
+    s = fakeCloud({ classes: ["LoadImage", "CLIPTextEncode", "ImageInvert", "SaveImage"], outputs: () => ({ 10: { images: [{ filename: "other.png" }] }, 9: { images: [{ filename: "mine.png" }] } }) });
+    const mo = await cloud.edit(reqOf({ options: mv.options, params: {} }), { key: "k-marked", fetch: s.fetch, sleep: async () => {} });
+    check("a graph made for Comfy Cloud: the crop into its LoadImage, the prompt into its text, its Scumble result answers",
+        tagOf(mo.bytes) === "RESULT mine.png" && s.prompts[0][1].inputs.image === "up1.png" && s.prompts[0][2].inputs.text === "a red door", tagOf(mo.bytes));
+
     fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

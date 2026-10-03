@@ -179,16 +179,22 @@ async function upload(ctx, bytes, name) {
 const INFO_TTL_MS = 10 * 60 * 1000;
 const infoCache = new Map();   // key -> { at, classes }
 
-/** The node types Comfy Cloud offers to this key. */
-async function cloudClasses(ctx) {
+/** Comfy Cloud's node list for this key (its /api/object_info), kept ten minutes. */
+async function cloudInfo(ctx) {
     const hit = infoCache.get(ctx.key);
-    if (hit && Date.now() - hit.at < INFO_TTL_MS) return hit.classes;
+    if (hit && Date.now() - hit.at < INFO_TTL_MS) return hit;
     const r = await ctx.fetch(BASE + "/api/object_info", { headers: { "X-API-Key": ctx.key } });
     if (!r.ok) throw new Error(`Comfy Cloud node list: ${await readError(r)}`);
     const j = await r.json();
-    const classes = new Set(Object.keys(j && typeof j === "object" ? j : {}));
-    infoCache.set(ctx.key, { at: Date.now(), classes });
-    return classes;
+    const info = j && typeof j === "object" && !Array.isArray(j) ? j : {};
+    const entry = { at: Date.now(), info, classes: new Set(Object.keys(info)) };
+    infoCache.set(ctx.key, entry);
+    return entry;
+}
+
+/** The node types Comfy Cloud offers to this key. */
+async function cloudClasses(ctx) {
+    return (await cloudInfo(ctx)).classes;
 }
 
 /** The pictures of a cloud-form graph: the crop as picture 0, then the Original and the references; the mask on its own. */
@@ -350,6 +356,8 @@ module.exports = {
     failureDetail,   // for tests
     _buildGraph: buildGraph,
     _clearNodeList: () => infoCache.clear(),
+    // the node definitions for reading a UI workflow exported from Comfy Cloud (recipes.importFile, item 35 V5c)
+    async objectInfo(ctx) { return (await cloudInfo(ctx)).info; },
 };
 
 async function run(req, ctx, waitMs) {
@@ -366,7 +374,8 @@ async function run(req, ctx, waitMs) {
             if (missing.length) throw new Error(`Comfy Cloud has no ${missing.join(", ")} node${missing.length === 1 ? "" : "s"}, so this recipe cannot run there.`);
         }
         const graph = await buildGraph(req, ctx, node);
-        const saveId = detached ? Object.keys(graph).find((id) => graph[id] && graph[id].class_type === "SaveImage" && /^scumble_save/.test(id)) : null;
+        const saveId = !detached ? null : req.options.save && graph[req.options.save] ? String(req.options.save)
+            : Object.keys(graph).find((id) => graph[id] && graph[id].class_type === "SaveImage" && /^scumble_save/.test(id));
         const submit = await ctx.fetch(BASE + "/api/prompt", { method: "POST", headers, body: JSON.stringify({ prompt: graph, client_id: "scumble" }) });
         if (!submit.ok) throw new Error(`Comfy Cloud prompt: ${await readError(submit)}`);
         const job = await submit.json();

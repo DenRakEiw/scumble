@@ -116,6 +116,8 @@ contextBridge.exposeInMainWorld("scumble", {
         list: () => ipcRenderer.invoke("recipes:list"),
         import: (file) => ipcRenderer.invoke("recipes:import", file),
         remove: (id) => ipcRenderer.invoke("recipes:remove", id),
+        // a ComfyUI recipe without its Inpaint Canvas node, saved as "<id>_cloud" (item 35 V5c): { id, name, notes, replaced }
+        cloudCopy: (id) => ipcRenderer.invoke("recipes:cloudCopy", id),
         openFolder: () => ipcRenderer.invoke("recipes:openFolder"),
     },
     keys: {

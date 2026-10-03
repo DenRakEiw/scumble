@@ -79,6 +79,7 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 .shell-provider, .shell-recipe { display: grid; grid-template-columns: 130px 1fr auto auto; gap: 6px 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--sc-line, #2a2a2a); }
 .shell-recipe { grid-template-columns: 1fr auto auto auto; }
 #shell-comfy-edit { white-space: nowrap; flex: 0 0 auto; }
+.shell-recipe-actions { display: flex; gap: 6px; }
 .shell-recipe select { min-width: 150px; max-width: 190px; }
 .shell-recipe.active .shell-recipe-name { color: var(--sc-fg-strong, #fff); font-weight: 600; }
 .shell-provider:last-child, .shell-recipe:last-child { border-bottom: 0; }

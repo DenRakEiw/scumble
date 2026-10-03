@@ -475,7 +475,7 @@ function selectRecipe(id, providerId) {
     ui.recipeNote.style.color = ks && !ks.ok ? "var(--sc-warn, #e0a05a)" : "";
     host.setRecipe(r);
     const comfyEdit = $("shell-comfy-edit");
-    if (comfyEdit) comfyEdit.hidden = raw.kind === "provider";
+    if (comfyEdit) comfyEdit.hidden = raw.kind === "provider" && !cloudGraphOf(raw);
     const byMode = { ...(settings.recipeByMode || {}), [modeOf(raw)]: raw.id };
     if (settings.recipe !== r.id || (settings.recipeByMode || {})[modeOf(raw)] !== raw.id) window.scumble.settings.set({ recipe: r.id, recipeByMode: byMode }).then((s) => { settings = s; });
     if (ui.settings.open) syncRecipeRows();
@@ -554,11 +554,18 @@ function renderRecipeList() {
             });
             row.appendChild(sel);
         } else if (r.kind !== "provider") {
-            // a ComfyUI recipe has no provider to pick: its graph opens in the ComfyUI window (item 35 V2)
+            // a ComfyUI recipe has no provider to pick: its graph opens in the ComfyUI window (item 35 V2), and a copy
+            // without the Inpaint Canvas node runs on Comfy Cloud (V5c)
+            const cell = document.createElement("span");
+            cell.className = "shell-recipe-actions";
             const edit = document.createElement("button");
             edit.type = "button"; edit.textContent = "Edit in ComfyUI"; edit.title = "Open this recipe's graph in the ComfyUI window";
             edit.addEventListener("click", () => openRecipeInComfy(r.id));
-            row.appendChild(edit);
+            const copy = document.createElement("button");
+            copy.type = "button"; copy.textContent = "Cloud copy"; copy.title = "Save a copy without the Inpaint Canvas node that runs on Comfy Cloud (your Comfy Cloud key)";
+            copy.addEventListener("click", () => cloudCopyOf(r));
+            cell.append(edit, copy);
+            row.appendChild(cell);
         } else {
             row.appendChild(document.createElement("span"));
         }
@@ -576,6 +583,20 @@ function renderRecipeList() {
         ui.recipes.appendChild(row);
     }
     syncRecipeRows();
+}
+
+/** Settings › Recipes, Cloud copy: the recipe without its Inpaint Canvas node, as a Comfy Cloud recipe (item 35 V5c). */
+async function cloudCopyOf(r) {
+    ui.recipeNoteSet.textContent = "";
+    try {
+        const c = await window.scumble.recipes.cloudCopy(r.id);
+        await loadRecipes();
+        renderRecipeList();
+        selectRecipe(c.id);
+        ui.recipeNoteSet.textContent = `${c.replaced ? "Replaced" : "Saved"} "${c.name}": it runs on your Comfy Cloud key (API providers)` + (c.notes && c.notes.length ? ": " + c.notes.join("; ") : ".");
+    } catch (err) {
+        ui.recipeNoteSet.textContent = String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, "");
+    }
 }
 
 async function importRecipe(file) {
@@ -2692,13 +2713,23 @@ window.scumble.comfyView.onSaved(async ({ id, message }) => {
 const comfyEditButton = $("shell-comfy-edit");
 if (comfyEditButton) comfyEditButton.addEventListener("click", () => openRecipeInComfy(ui.recipe.value));
 
-/** A ComfyUI recipe's graph in the ComfyUI window (item 35 V2); a provider recipe has none, which the status line says. */
+/** Whether a provider recipe is a Comfy Cloud recipe with a graph of its own (item 35 V5). */
+function cloudGraphOf(r) {
+    const v = r && r.providers && r.providers.comfycloud;
+    return !!(v && v.options && v.options.graph);
+}
+
+/**
+ * A recipe's graph in the ComfyUI window: a ComfyUI recipe's (item 35 V2), or a Comfy Cloud recipe's, shown on Comfy
+ * Cloud (V5c); any other provider recipe has none, which the status line says.
+ */
 function openRecipeInComfy(id) {
     const r = recipes.find((x) => x.id === id);
     const say = (text) => { if (host.editor) host.editor.setStatus(text); };
     if (!r) return say("No recipe is selected.");
-    if (r.kind === "provider") return say(`"${r.name || r.id}" runs through a provider, not through ComfyUI: it has no graph to edit.`);
-    window.scumble.comfyView.open({ recipe: r.id }).catch((err) => say(String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, "")));
+    const cloud = r.kind === "provider" && cloudGraphOf(r);
+    if (r.kind === "provider" && !cloud) return say(`"${r.name || r.id}" runs through a provider, not through ComfyUI: it has no graph to edit.`);
+    window.scumble.comfyView.open(cloud ? { recipe: r.id, target: "cloud" } : { recipe: r.id }).catch((err) => say(String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, "")));
 }
 
 // ---- the console dialog: the log's ring buffer, filtered, growing live ----------------------

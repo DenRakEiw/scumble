@@ -470,6 +470,71 @@ async function main() {
             /stitch_info/.test(e1 || "") && /takes 2 pictures/.test(e2 || "") && /Only a ComfyUI recipe/.test(e3 || ""), short({ e1, e2, e3 }));
     });
 
+    // ---- 8. a graph made for Comfy Cloud, marked by node titles (item 35 V5c) -------------
+    await section("8. Comfy Cloud recipes from marked graphs", async () => {
+        const date = "2026-10-03";
+        const graph = () => ({
+            1: { class_type: "LoadImage", inputs: { image: "cloud.png" }, _meta: { title: "Scumble crop" } },
+            2: { class_type: "LoadImage", inputs: { image: "r.png" }, _meta: { title: "scumble picture 2" } },
+            3: { class_type: "LoadImage", inputs: { image: "m.png" }, _meta: { title: "Scumble Mask" } },
+            4: { class_type: "SetLatentNoiseMask", inputs: { samples: ["7", 0], mask: ["3", 1] } },
+            5: { class_type: "CLIPTextEncode", inputs: { text: "old", clip: ["8", 0] }, _meta: { title: "Scumble prompt" } },
+            6: { class_type: "KSampler", inputs: { seed: 1, model: ["8", 0] }, _meta: { title: "Scumble seed" } },
+            7: { class_type: "VAEEncode", inputs: { pixels: ["1", 0], vae: ["8", 0] } },
+            8: { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "x.safetensors" } },
+            9: { class_type: "SaveImage", inputs: { images: ["6", 0], filename_prefix: "a" }, _meta: { title: "Scumble result" } },
+            10: { class_type: "PreviewImage", inputs: { images: ["6", 0] } },
+        });
+        const made = recipes.fromCloudGraph({ output: graph(), workflow: { nodes: [], links: [] }, name: "My cloud graph", ids: ["my_cloud_graph"], date });
+        const v = made.providers.comfycloud, g = v.options.graph;
+        check("a marked graph: a Comfy Cloud recipe, the pictures retitled and emptied, picture 2 sets the count to 3, the mask a fill",
+            made.kind === "provider" && made.id === "my_cloud_graph_2" && v.options.pictures === 3 && v.input === "fill" && g[1]._meta.title === "scumble:picture:0" && g[1].inputs.image === "" && g[2]._meta.title === "scumble:picture:2" && g[3]._meta.title === "scumble:mask" && v.options.save === "9",
+            short({ id: made.id, pictures: v.options.pictures, save: v.options.save }));
+        check("the mask's MASK output read through ImageToMask of its red channel; the prompt and the seed inputs found",
+            g[g[4].inputs.mask[0]].class_type === "ImageToMask" && eq(g[g[4].inputs.mask[0]].inputs, { image: ["3", 0], channel: "red" }) && eq(v.options.values, { prompt: [["5", "text"]], seed: [["6", "seed"]] }),
+            short({ mask: g[4].inputs.mask, values: v.options.values }));
+        const norm = recipes._normalize(JSON.parse(JSON.stringify(made)));
+        check("it normalizes as a provider recipe on comfycloud and keeps the UI graph", eq(norm.providerIds, ["comfycloud"]) && !!v.options.workflow);
+        const over = recipes.fromCloudGraph({ output: graph(), base: { ...made, providers: { comfycloud: { ...v, settings: [{ index: 1, key: "8|ckpt_name", label: "Model" }, { index: 2, key: "99|gone", label: "Gone" }] } } }, date });
+        check("Save to recipe on a cloud recipe: its id and name, the rows whose node is still there", over.id === made.id && over.name === made.name && eq(over.providers.comfycloud.settings.map((s) => s.key), ["8|ckpt_name"]));
+        const bad = async (patch, opts = {}) => { const x = graph(); patch(x); return thrown(() => recipes.fromCloudGraph({ output: x, name: "x", date, ...opts })); };
+        const e1 = await bad((x) => { delete x[1]._meta; x[7].inputs.pixels = ["2", 0]; });
+        const e2 = await bad((x) => { delete x[9]._meta; x[11] = { class_type: "SaveImage", inputs: { images: ["6", 0] } }; });
+        const e3 = await bad((x) => { x[12] = { class_type: "InpaintCanvas", inputs: {} }; });
+        const e4 = await bad((x) => { x[5]._meta.title = "Scumble crop"; });
+        const e5 = await bad(() => {}, { name: "  " });
+        check("refused: no crop, two SaveImage nodes without a result title, the Inpaint Canvas node, a marked node that is no LoadImage, no name",
+            /Scumble crop/.test(e1 || "") && /several SaveImage/.test(e2 || "") && /Inpaint Canvas node/.test(e3 || "") && /must be a LoadImage/.test(e4 || "") && /needs a name/.test(e5 || ""), short({ e1, e2, e3, e4, e5 }));
+        check("a ComfyUI recipe is no base for a cloud graph", /no Comfy Cloud recipe/.test((await thrown(() => recipes.fromCloudGraph({ output: graph(), base: all0(), date }))) || ""));
+
+        // importFile: an API export and a UI export of Comfy Cloud
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-cloud-import-"));
+        try {
+            const api = await recipes.importFile(fileOf(dir, "cloud api.json", graph()), null, { builtinDir: RECIPES });
+            check("an API export without the canvas node imports as a Comfy Cloud recipe named after the file", api.kind === "provider" && api.name === "cloud api" && api.source === "user" && eq(api.providerIds, ["comfycloud"]) && api.providers.comfycloud.options.pictures === 3, short({ id: api.id, kind: api.kind }));
+            const ui = {
+                nodes: [
+                    { id: 1, type: "LoadImage", title: "Scumble crop", mode: 0, inputs: [], outputs: [{ name: "IMAGE", type: "IMAGE", links: [1] }, { name: "MASK", type: "MASK", links: [] }], widgets_values: ["c.png", "image"] },
+                    { id: 2, type: "SaveImage", mode: 0, inputs: [{ name: "images", type: "IMAGE", link: 1 }], outputs: [], widgets_values: ["scumble"] },
+                ],
+                links: [[1, 1, 0, 2, 0, "IMAGE"]],
+            };
+            const info = { LoadImage: { input: { required: { image: [["c.png"], { image_upload: true }] } } }, SaveImage: { input: { required: { images: ["IMAGE"], filename_prefix: ["STRING", { default: "ComfyUI" }] } } } };
+            const noInfo = await thrown(() => recipes.importFile(fileOf(dir, "cloud ui.json", ui), null, { builtinDir: RECIPES }));
+            let asked = 0;
+            const viaCloud = await recipes.importFile(fileOf(dir, "cloud ui.json", ui), null, { builtinDir: RECIPES, cloudObjectInfo: async () => { asked++; return info; } });
+            const vg = viaCloud.providers.comfycloud.options.graph;
+            check("a UI export: refused without a node list, read with Comfy Cloud's when there is one, the UI graph kept",
+                /store a Comfy Cloud key/.test(noInfo || "") && asked === 1 && vg[1]._meta.title === "scumble:picture:0" && eq(vg[2].inputs, { filename_prefix: "scumble", images: ["1", 0] }) && !!viaCloud.providers.comfycloud.options.workflow,
+                short({ noInfo, graph: vg }));
+            const plain = await thrown(() => recipes.importFile(fileOf(dir, "plain.json", { 1: { class_type: "LoadImage", inputs: { image: "a.png" } }, 2: { class_type: "SaveImage", inputs: { images: ["1", 0] } } }), null, { builtinDir: RECIPES }));
+            check("a graph with neither the canvas node nor the markers says how to mark it", /Scumble crop/.test(plain || ""), plain);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+        function all0() { return JSON.parse(JSON.stringify(rawFile("flux2_klein_local.json"))); }
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

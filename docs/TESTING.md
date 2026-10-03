@@ -106,7 +106,11 @@ offers no save, the bar's select switches back and the recipe loads, the target 
 Cloud and its Use Comfy Cloud switches; the target the profile had is put back; V5b: `tools/cloudgraph_test.js` runs
 the Flux.2 Klein recipe's cloud form through `comfycloud.js` against a fake cloud.comfy.org (pictures into the titled
 LoadImage nodes in batch order, the last one repeated, the values and rows in their inputs, the own SaveImage first,
-the node list once per key, a missing node refused before any upload, a fill recipe's mask);
+the node list once per key, a missing node refused before any upload, a fill recipe's mask, a marked graph's own
+result); V5c: Settings › Recipes' Cloud copy saves and selects `<id>_cloud`, which opens on Comfy Cloud as its graph,
+a graph without the node saved from the window is a Comfy Cloud recipe that Save to recipe overwrites, and a graph with
+the node is refused for it; `tools/recipes_test.js` section 8 checks `fromCloudGraph` and the import of an API and a UI
+export;
 `tools/recipes_test.js` section 5 checks `fromPrompt(toPrompt(r))` on every shipped ComfyUI recipe), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
 view of item 24: real Tab and Escape presses over CDP; the chrome hidden, the view the window's size, full screen and a
 fitted picture while on, the view / rulers / chrome / window put back after; Tab ignored in a text field, a dialog, the

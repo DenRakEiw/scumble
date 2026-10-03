@@ -123,6 +123,37 @@ Every settings row of a recipe needs a slot (`index`) of its own, 1 to 8: the ed
 stores one value per slot, so two rows on one slot send that one value under both keys
 (`node tools/recipes_test.js` checks every shipped recipe for it).
 
+### Comfy Cloud recipes
+
+Comfy Cloud runs no custom nodes, so the Inpaint Canvas node is not there. A recipe for it is the graph without the
+node: Scumble crops and stitches itself, as for every provider, and the graph takes Scumble's pictures and values
+through core nodes. Such a recipe is a provider recipe with one variant, `comfycloud`, whose `options.graph` holds the
+graph (docs/PLAN_COMFY_VIEW.md §3 "V5a / V5b / V5c as built"); it runs on the Comfy Cloud key. Three ways to one:
+
+- **Cloud copy** (Settings › Recipes, on a ComfyUI recipe): the recipe without its node, saved as `<id>_cloud`. Each
+  `ImageFromBatch` pick of `crop_image` becomes a `LoadImage` of that picture, `crop_mask` a `LoadImage` and an
+  `ImageToMask`, the prompt, negative, seed and crop size values the run writes, the result a `SaveImage`. A recipe
+  that reads `image`, `mask`, `stitch_info` or `control_image` of the node is refused by name.
+- **Import** a workflow exported from Comfy Cloud (Settings › Recipes › Import; API format, or the UI format read with
+  Comfy Cloud's node list on the stored key, else a connected ComfyUI's).
+- **Save as new recipe** in the ComfyUI window: a graph without the node becomes a Comfy Cloud recipe (Save to recipe
+  overwrites a Comfy Cloud recipe the window opened).
+
+An imported or saved graph says by **node titles** where things go (any case; spaces, `:`, `_` or `-` between words):
+
+| Title | On | What Scumble does |
+|---|---|---|
+| `Scumble crop` | a LoadImage | the crop (picture 0); required |
+| `Scumble picture 1`, `2`, ... | a LoadImage | the next pictures in the node's batch order: 1 is the Original when it goes, else the first reference; then the references. A picture past the run's last gets the last one |
+| `Scumble mask` | a LoadImage | the selection, white where to repaint; a link from its MASK output is turned into `ImageToMask` (red), since the picture has no alpha |
+| `Scumble prompt`, `Scumble negative` | any node | the prompt / negative prompt into its `text` (or `prompt`) input |
+| `Scumble seed` | any node | the seed into its `seed` (or `noise_seed`) input |
+| `Scumble result` | a SaveImage | the picture Scumble reads; needed only when the graph has more than one SaveImage |
+
+Before a run Scumble checks every node of the graph against Comfy Cloud's node list (kept ten minutes per key) and
+names a missing one instead of uploading anything. The crop goes out at most 2048 px on a side in steps of 16 (a cloud
+copy keeps the node's target size and multiple).
+
 ## Provider recipes (`kind: "provider"`)
 
 One call to an API provider; crop and stitch happen in the app

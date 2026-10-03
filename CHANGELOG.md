@@ -26,6 +26,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   keeps the choice. You sign in on Comfy Cloud's own page (by email or GitHub; Google may refuse a sign-in from an app
   window), and the sign-in stays for the next time. Comfy Cloud runs no custom nodes, so a recipe built on the Inpaint
   Canvas node says so there instead of opening.
+- **Recipes that run on Comfy Cloud.** *Cloud copy* under Settings › Recipes turns a ComfyUI recipe into one without
+  the Inpaint Canvas node that runs on your Comfy Cloud key: Scumble crops and stitches itself, and the graph takes the
+  crop, the Original, the reference layers, the prompt and the seed through ComfyUI's own nodes. A workflow made on
+  Comfy Cloud becomes a recipe too: import its exported `.json`, or save it from the ComfyUI window, after titling its
+  nodes for Scumble ("Scumble crop", "Scumble prompt" and so on; docs/RECIPES.md lists them). Before a run Scumble
+  checks that Comfy Cloud has every node of the graph and names a missing one.
 
 ## 0.1.39 — 2026-10-03
 

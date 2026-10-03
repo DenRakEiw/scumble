@@ -454,8 +454,8 @@ class ComfyView {
             phase: this.phase, message: this.message, url: this.shown.url, host, target: this.kind, offline: this.offline,
             recipe: r ? String(r.name || r.id) : null, recipeId: r ? r.id : null, recipeNote: this.recipeNote,
             recipeLoaded: !!(r && this.loaded === r.id && this.pageReady), frontend: this.frontend,
-            // a graph on Comfy Cloud has no Inpaint Canvas node, so it cannot become a recipe of today's kind
-            canSaveNew: !!(this.kind !== "cloud" && this.pageReady && this.can && this.can.read), canSave: !!(this.kind !== "cloud" && this.pageReady && this.can && this.can.read && r),
+            // a graph without the Inpaint Canvas node becomes a Comfy Cloud recipe (main.js saveComfyGraph, V5c)
+            canSaveNew: !!(this.pageReady && this.can && this.can.read), canSave: !!(this.pageReady && this.can && this.can.read && r),
             saveNote: this.saveNote,
         };
     }
