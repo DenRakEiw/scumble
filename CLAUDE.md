@@ -76,53 +76,29 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 midday: 0.1.39 is Latest, released with the post; next on the user's word)
+## Where things stand (2026-10-03 afternoon: 0.1.39 is Latest; item 35 planned, V1 next)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-03 late morning to midday, "weiter", then "ok, baue weiter", "ok"): B5 and B6 built, FLUX 3
-Image on Oxen.ai (5159151) and WaveSpeedAI (3ab509a), 0.1.39 released.** The 2026-10-03 B4 block (FLUX 3 on fal) is in
-`docs/HISTORY.md`. No workflow (weekly limit at 91 %); one review agent on the B5 diff (no defects: 135 requests of the
-other 20 Oxen recipes byte-identical but the seed); none on B6 (the same pattern, its guards checked by the tests).
-- **Built** as `docs/PLAN_FLUX3.md` "Oxen.ai" planned (its new "Built" paragraph has the choices): `recipes/flux3.json`
-  variant `oxen` **last** (Oxen's convention, `oxen_test` §10; not after `bfl` as the plan said), one id `flux-3-image`
-  (edits and new images with references to `/images/edit`, the prompt alone to `/images/generate`); `options` `sizing:
-  "flux3"` (fal's branch in `oxen.js`: `flux3.shapeOf` over `ratios`, BFL's 15 presets with 9:21, "auto" sent
-  explicitly, `info.fit`; safety via `flux3.safetyOf`, grounding via `flux3.switchOf`), `prompt: "as_written"` (a blank
-  prompt refused), `min_side` 256 / `max_pixels` 16,000,000 (`openrouter.sizeRules`, now exported with a host label),
-  `max_images` 10, `boxes: "flux3"`; rows Safety tolerance and Grounding (**on**, as BFL direct; Oxen's default off).
-  Every Oxen recipe without `seed` in `accepts` now reports seed null (CHANGELOG says so).
-- **Tests:** `tools/flux3_test.js` section 10 (30 checks; every body against the model entry saved as
-  `tools/refs/oxen/flux-3-image.json`, fetched 2026-10-03 without a key), `oxen_test.js` §3 / §10, `oxen_test.py` (its
-  recipe list), `recipes_test` §4 (103 with text.refs), every plain-Node test that touches a provider; gates lint,
-  types, recipes, oxen, openrouter (`dist/gates/gates/b5-oxen`, `b5-oxen2`); one look in the app (FLUX 3 shows Oxen.ai,
-  both rows). Docs: CHANGELOG Unreleased, MANUAL (the FLUX 3 paragraph), RECIPES (the FLUX 3 section, the table, the
-  option list, the Oxen section), PLAN_0_1_38 B5.
-- **B6 built** as `docs/PLAN_FLUX3.md` "WaveSpeed" planned (its "Built" paragraph has the choices), on WaveSpeed's
-  **renamed** edit route `black-forest-labs/flux-3/image-edit` (`.../edit` answers "Model not found" since 2026-10-03):
-  the variant `wavespeed` after `fal`, before OpenRouter, `text.model` `.../text-to-image`; `wavespeed.js` gained
-  `sizing: "flux3"` (`flux3.shapeOf` over the 14 presets; no `aspect_ratio` where the crop fits none, as WaveSpeed has
-  no "auto"; `info.fit`; expansion a boolean; a blank prompt refused) and `fitPictures` (`openrouter.sizeRules`, 256 px
-  / 4 MP, before the first upload); `accepts` the four schema keys keeps the seed home (the plan's seed fix fell away;
-  the other WaveSpeed recipes are unchanged); limits 4 MP and the 14; one row, Prompt expansion (on); boxes. Tests:
-  `tools/flux3_test.js` section 11 (29 checks; the schemas saved in `tools/refs/wavespeed/`), `recipes_test` §4 (104),
-  `refs_layout_test` (680); gates lint, types, recipes (`dist/gates/gates/b6-wavespeed`); one look in the app. Docs:
-  CHANGELOG, MANUAL, RECIPES, PLAN_FLUX3 "WaveSpeed", PLAN_0_1_38 B6.
-- **Not run live:** `oxen.js` has never run live for any model, WaveSpeed's FLUX 3 neither; the CHANGELOG bullets and
-  the notes say both are untried. A live check (`docs/PLAN_FLUX3.md` "Live checks") only on the user's word and a key.
-- **0.1.39 released** (the user: "ne mach weiter ohne clear", then "ok"; tag on c72f142, published 2026-10-03 10:42Z,
-  CI green on Windows and Linux; the post and the manual sync in portfolio 8f40d6b, deployed, checked live): the CHANGELOG section
-  `## 0.1.39 — 2026-10-03` (five bullets: Ideogram 4 boxes, Ideogram 4 live, FLUX 3 on fal, on Oxen with the Oxen seed,
-  on WaveSpeed), `package.json` / `package-lock.json` 0.1.39, README (Ideogram 4 on fal verified), `npm run dist`
-  (`dist/Scumble Setup 0.1.39.exe`), exe gates `--offline` green on both backends (`rel39-exe` 34 with `export` green
-  on the rerun `rel39-exe-rerun`, the known one-byte flake, recorded in `docs/TESTING.md`; `rel39-exe-canvas` 21). The
-  post is drafted in the session scratchpad (`post_v0-1-39.ts`, title "Boxes for Ideogram 4, and FLUX 3 on three more
-  hosts") with its picture (`v0-1-39-ideogram-boxes.jpg`: the two boxes, the answer with the boxes drawn); a new session
-  rewrites both from this block and `dist/live-out/live_ideogram4_boxes.png` (boxes `[80, 680, 380, 960]` apple,
-  `[500, 600, 950, 900]` sign, x0 y0 x1 y1 on 1024 x 1024).
-- **Next (on the user's word):** **item 35, ComfyUI in Scumble, is the most important update** (the user,
-  2026-10-03): `docs/PLAN_COMFY_VIEW.md`, its §6 questions first, then V1. Nothing planned in `docs/PLAN_0_1_38.md` is left. Open from the list: the live
+**This session (2026-10-03 midday to afternoon, questions and plans, no code): items 34 and 35 planned, DLSS on the
+later list.** The B5 / B6 / 0.1.39 block is in `docs/HISTORY.md`. No workflow (weekly limit at 91 %), no agent.
+- **Item 34** (6c46f51): Generate new with presets (model, its aspects, 1k / 2k / 4k) so the canvas the boxes are
+  drawn on has the output's aspect; today the dialog keeps its own aspect and boxes go stretched when it differs.
+  `docs/PLAN_NEW_PRESETS.md`, its §5 questions unanswered.
+- **Item 14 extended** (8387021): DLSS cannot take a picture (it needs a renderer's motion vectors and depth); NVIDIA's
+  RTX Video Super Resolution node is installed on the user's ComfyUI (`/object_info` read, read only), so a local
+  upscale recipe on it, then the whole picture for local upscale recipes, later: `docs/PLAN_RTX_VSR.md`.
+- **Item 35 planned** (8387021, 762856e, 3262df7, 7bd6a41): ComfyUI in Scumble, `docs/PLAN_COMFY_VIEW.md`. The user's
+  answers, all in the plan: a window of its own (a `BaseWindow`, Scumble's bar on top, the page in its own partition
+  without a preload), opened by a *ComfyUI* button after *Help* and *Assistant*; Comfy Cloud API access yes; *Save to
+  recipe* overwrites; V1-V5 in **one update**; **Scumble keeps working without any ComfyUI** and **assumes no install
+  path** (§2.5); a RunPod pod is a target like any URL (§2.1, the auth types; the template never ran on a real pod).
+  Comfy Cloud has no Inpaint Canvas node and takes no custom nodes: V5 runs recipes without the node there.
+- **Next: V1 of item 35** (the user, 2026-10-03: "machen wir clear und dann weiter"; item 35 is the most important
+  update): `docs/PLAN_COMFY_VIEW.md` §2.1, §2.5 and §3 V1. Measure first whether `session.webRequest` headers reach
+  the websocket handshake (a stub server that checks them on `/ws`); the gates stay `--offline`, nothing queues on
+  the user's ComfyUI. Nothing planned in `docs/PLAN_0_1_38.md` is left. Open from the list: the live
   checks of FLUX 3 on fal, Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks", a key each), item 30 (Ideogram 4 as
   its own update), 28 S4, 34 (Generate new with presets and boxes, `docs/PLAN_NEW_PRESETS.md`), B3 macOS. **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**
   (the user, 2026-10-03, after the release); ask for Comfy's exact answer and re-read the challenge post
