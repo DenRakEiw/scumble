@@ -100,7 +100,10 @@ V3: the bar's Save to recipe overwrites the held recipe with the fake page's `gr
 a user copy, its rows and labels kept, the UI graph stored) and the editor selects it, Save as new recipe takes the
 name in the bar, a graph without the node and an answer that is no prompt are refused; the recipes it saves are
 removed at the end, and it refuses a profile holding a user recipe it would overwrite; `tools/recipes_test.js`
-section 6 checks `recipes.fromGraph`;
+section 6 checks `recipes.fromGraph`; V4: `tools/comfyhosts_test.js` (the sign-in hosts, popups and navigation in plain
+Node), then with the stub standing in for the cloud the window titled Comfy Cloud refuses a recipe with the node and
+offers no save, the bar's select switches back and the recipe loads, the target is kept, the start page names Comfy
+Cloud and its Use Comfy Cloud switches; the target the profile had is put back;
 `tools/recipes_test.js` section 5 checks `fromPrompt(toPrompt(r))` on every shipped ComfyUI recipe), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
 view of item 24: real Tab and Escape presses over CDP; the chrome hidden, the view the window's size, full screen and a
 fitted picture while on, the view / rulers / chrome / window put back after; Tab ignored in a text field, a dialog, the

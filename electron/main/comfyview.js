@@ -14,6 +14,7 @@
 "use strict";
 
 const { BaseWindow, WebContentsView, session, shell, ipcMain } = require("electron");
+const { CLOUD_URL, popupAction, navigationAllowed } = require("./comfyhosts");
 
 const BAR_H = 36;
 const PARTITION = "persist:comfyui";
@@ -29,6 +30,11 @@ const READY_JS = `(() => { const a = window.app; return { app: !!a, graph: !!(a 
 const READ_JS = `(async () => { try { const p = await window.app.graphToPrompt();
     return { ok: true, workflow: JSON.stringify((p && p.workflow) || null), output: JSON.stringify((p && p.output) || null) }; }
     catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
+
+/** Whether a graph needs the Inpaint Canvas node (every ComfyUI recipe does; Comfy Cloud has none, §2.4). */
+function needsCanvasNode(prompt) {
+    return Object.values(prompt || {}).some((n) => n && n.class_type === "InpaintCanvas");
+}
 
 /** The script that hands a recipe's graph to the page: its UI graph when it has one, else the API prompt ComfyUI lays out. */
 function loadScript(recipe) {
@@ -100,6 +106,8 @@ class ComfyView {
         this.readyGen = 0;
         this.can = null;        // what the page's window.app offers: { api, graphData }
         this.loaded = null;     // the id of the recipe the page was given last
+        this.kind = "comfy";    // what the window shows: "comfy" (My ComfyUI) or "cloud" (Comfy Cloud, V4)
+        this.children = new Set();   // Comfy Cloud's sign-in windows, closed with this one
         this.installIpc();
     }
 
@@ -112,19 +120,24 @@ class ComfyView {
         ipcMain.handle("comfyview:state", (e) => (fromBar(e) ? this.state() : refuse()));
         ipcMain.handle("comfyview:reload", (e) => { if (!fromBar(e)) refuse(); this.load(); return this.state(); });
         ipcMain.handle("comfyview:settings", (e) => { if (!fromBar(e)) refuse(); this.openSettings(); return true; });
+        ipcMain.handle("comfyview:target", (e, kind) => { if (!fromBar(e)) refuse(); this.setTarget(kind); return this.state(); });
         ipcMain.handle("comfyview:save", (e, opts) => { if (!fromBar(e)) refuse(); const o = opts || {}; return this.save({ asNew: !!o.asNew, name: typeof o.name === "string" ? o.name.slice(0, 200) : "" }); });
     }
 
     /**
      * Open the window, or bring it to the front. `url` is a test's stub page, taken in a --no-comfy start only (a
      * normal start always shows the ComfyUI of Settings › ComfyUI). `recipe` ({ id, name, prompt, workflow }) is the
-     * graph the window then holds: loaded into the page as soon as it offers one, named in the bar either way.
+     * graph the window then holds: loaded into the page as soon as it offers one, named in the bar either way. `target`
+     * ("comfy" / "cloud") switches what the window shows, as the bar's select does.
      */
-    open({ url, recipe } = {}) {
+    open({ url, recipe, target } = {}) {
         const test = this.offline && url ? String(url) : "";
         if (test) this.testUrl = test;
-        if (recipe) { this.recipe = recipe; this.recipeNote = ""; }
+        if (target === "comfy" || target === "cloud") this.storeTarget(target);
+        else if (!this.isOpen) this.kind = (this.settings.get().comfyView || {}).target === "cloud" ? "cloud" : "comfy";
+        if (recipe) { this.recipe = recipe; this.recipeNote = this.cloudRefusal(recipe); }
         if (this.isOpen) {
+            if (target && !test) { this.front(); this.load(); return this.info(); }
             this.front();
             if (test) this.load();
             else if (recipe && this.pageReady) this.loadRecipe();
@@ -138,6 +151,25 @@ class ComfyView {
 
     close() {
         if (this.isOpen) this.win.close();
+    }
+
+    storeTarget(kind) {
+        this.kind = kind === "cloud" ? "cloud" : "comfy";
+        const cur = this.settings.get().comfyView || {};
+        if (cur.target !== this.kind) this.settings.set({ comfyView: { ...cur, target: this.kind } });
+    }
+
+    /** The bar's select and the start page's Use Comfy Cloud: the other target, loaded at once and kept for next time. */
+    setTarget(kind) {
+        this.storeTarget(kind);
+        if (this.recipe) this.recipeNote = this.cloudRefusal(this.recipe);
+        this.load();
+    }
+
+    /** On Comfy Cloud a recipe with the Inpaint Canvas node does not open: why, or "" when it can. */
+    cloudRefusal(recipe) {
+        if (this.kind !== "cloud" || !recipe || !needsCanvasNode(recipe.prompt)) return "";
+        return "Comfy Cloud has no Inpaint Canvas node and takes no custom nodes: this recipe opens on your own ComfyUI (Show: My ComfyUI).";
     }
 
     front() {
@@ -182,11 +214,29 @@ class ComfyView {
         bar.webContents.on("did-finish-load", () => this.sendState());
         bar.webContents.loadURL(barUrl).catch(() => { /* a reload or a close while it loads */ });
 
-        // the page: links to other origins go to the system browser; the page stays on the target's origin
+        // the page: links to other origins go to the system browser; the page stays on the target's origin, and on Comfy
+        // Cloud its sign-in opens as a child window in the same partition (electron/main/comfyhosts.js)
         const wc = page.webContents;
-        wc.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return { action: "deny" }; });
+        wc.setWindowOpenHandler(({ url }) => {
+            const act = popupAction(url, this.kind);
+            if (act === "child") {
+                return { action: "allow", overrideBrowserWindowOptions: {
+                    width: 520, height: 720, title: "Sign in to Comfy Cloud", autoHideMenuBar: true, backgroundColor: this.background(),
+                    webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
+                } };
+            }
+            if (act === "external") shell.openExternal(url);
+            return { action: "deny" };
+        });
+        wc.on("did-create-window", (child) => {
+            this.children.add(child);
+            child.on("closed", () => this.children.delete(child));
+            if (process.platform !== "darwin") child.setMenu(null);
+            child.webContents.setIgnoreMenuShortcuts(true);
+            child.webContents.setWindowOpenHandler(({ url }) => { if (popupAction(url, "cloud") !== "deny") shell.openExternal(url); return { action: "deny" }; });
+        });
         wc.on("will-navigate", (e, url) => {
-            if (sameOrigin(url, this.shown.origin)) return;
+            if (navigationAllowed(url, this.shown.origin, this.kind)) return;
             e.preventDefault();
             if (/^https?:\/\//.test(String(url))) shell.openExternal(url);
         });
@@ -222,6 +272,8 @@ class ComfyView {
             this.settings.set({ comfyView: { ...cur, bounds: win.getNormalBounds(), maximized: win.isMaximized() } });
         });
         win.on("closed", () => {
+            for (const c of this.children) { try { if (!c.isDestroyed()) c.close(); } catch (_) { /* gone */ } }
+            this.children.clear();
             for (const v of [bar, page]) { try { if (!v.webContents.isDestroyed()) v.webContents.close(); } catch (_) { /* gone */ } }
             try { this.session().webRequest.onBeforeSendHeaders(null); } catch (_) { /* gone */ }
             if (this.win === win) { this.win = null; this.bar = null; this.page = null; }
@@ -241,6 +293,10 @@ class ComfyView {
 
     /** What the window shows now: the test's stub, the user's ComfyUI, or nothing (and why). */
     resolve() {
+        if (this.kind === "cloud") {
+            if (this.offline && !this.testUrl) return { url: "", why: "This start of Scumble does not connect to Comfy Cloud (--no-comfy)." };
+            return { url: this.offline ? this.testUrl.replace(/\/+$/, "") : CLOUD_URL, headers: {}, basic: null };   // the sign-in happens in the page
+        }
         if (this.offline && !this.testUrl) return { url: "", why: "This start of Scumble does not connect to ComfyUI (--no-comfy)." };
         const t = this.target() || {};
         const url = String(this.offline ? this.testUrl : t.url || "").trim().replace(/\/+$/, "");
@@ -258,7 +314,7 @@ class ComfyView {
         this.applyHeaders();
         let host = "";
         try { host = t.url ? new URL(t.url).host : ""; } catch (_) { /* none */ }
-        this.win.setTitle(host ? `ComfyUI · ${host}` : "ComfyUI");
+        this.win.setTitle(this.kind === "cloud" ? "Comfy Cloud" : host ? `ComfyUI · ${host}` : "ComfyUI");
         if (!t.url) { this.setPhase("none", t.why); return; }
         this.logins = 0;
         this.pageReady = false;
@@ -309,6 +365,8 @@ class ComfyView {
     async loadRecipe() {
         const recipe = this.recipe;
         if (!recipe || !this.pageReady || !this.isOpen) return;
+        const refusal = this.cloudRefusal(recipe);
+        if (refusal) { this.recipeNote = refusal; this.sendState(); return; }
         const can = this.can || {};
         if (recipe.workflow ? !can.graphData : !can.api) {
             this.recipeNote = `This ComfyUI page offers no way to load ${recipe.workflow ? "a saved graph" : "an API prompt"} (frontend ${this.frontend || "unknown"}).`;
@@ -393,10 +451,11 @@ class ComfyView {
         try { host = this.shown.url ? new URL(this.shown.url).host : ""; } catch (_) { /* none */ }
         const r = this.recipe;
         return {
-            phase: this.phase, message: this.message, url: this.shown.url, host, target: "comfy", offline: this.offline,
+            phase: this.phase, message: this.message, url: this.shown.url, host, target: this.kind, offline: this.offline,
             recipe: r ? String(r.name || r.id) : null, recipeId: r ? r.id : null, recipeNote: this.recipeNote,
             recipeLoaded: !!(r && this.loaded === r.id && this.pageReady), frontend: this.frontend,
-            canSaveNew: !!(this.pageReady && this.can && this.can.read), canSave: !!(this.pageReady && this.can && this.can.read && r),
+            // a graph on Comfy Cloud has no Inpaint Canvas node, so it cannot become a recipe of today's kind
+            canSaveNew: !!(this.kind !== "cloud" && this.pageReady && this.can && this.can.read), canSave: !!(this.kind !== "cloud" && this.pageReady && this.can && this.can.read && r),
             saveNote: this.saveNote,
         };
     }

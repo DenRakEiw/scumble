@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("comfybar", {
     state: () => ipcRenderer.invoke("comfyview:state"),
     onState: (cb) => { const h = (_e, s) => cb(s); ipcRenderer.on("comfyview:state", h); return () => ipcRenderer.removeListener("comfyview:state", h); },
     reload: () => ipcRenderer.invoke("comfyview:reload"),
+    // "comfy" (My ComfyUI) or "cloud" (Comfy Cloud): loaded at once, kept for the next open
+    setTarget: (kind) => ipcRenderer.invoke("comfyview:target", kind),
     // the page's graph as a recipe: { asNew: false } overwrites the recipe the window holds, { asNew: true, name } makes one
     save: (opts) => ipcRenderer.invoke("comfyview:save", opts || {}),
     // Settings › ComfyUI in the main window

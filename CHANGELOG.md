@@ -22,6 +22,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   the copy under Settings › Recipes brings the shipped one back. The recipe keeps ComfyUI's layout, so it opens next
   time as you left it, and its Settings rows keep their names and values. A graph without an Inpaint Canvas node is
   refused, and nothing is saved.
+- **Comfy Cloud in the same window.** The window's *Show* picker switches between your ComfyUI and Comfy Cloud, and
+  keeps the choice. You sign in on Comfy Cloud's own page (by email or GitHub; Google may refuse a sign-in from an app
+  window), and the sign-in stays for the next time. Comfy Cloud runs no custom nodes, so a recipe built on the Inpaint
+  Canvas node says so there instead of opening.
 
 ## 0.1.39 — 2026-10-03
 

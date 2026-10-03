@@ -10,6 +10,10 @@
         if (!s) return;
         const withPage = s.phase === "page" || s.phase === "loading";
         $("cb-host").textContent = s.host || "";
+        $("cb-target").value = s.target === "cloud" ? "cloud" : "comfy";
+        $("cb-cloud").hidden = s.target === "cloud";
+        $("cb-connect").hidden = s.target === "cloud";
+        $("cb-start").querySelector("h1").textContent = s.target === "cloud" ? "No Comfy Cloud to show." : "No ComfyUI to show.";
         $("cb-host").title = s.url || "";
         $("cb-recipe").textContent = s.recipe ? `Editing: ${s.recipe}` : "No recipe";
         $("cb-recipe").title = s.recipe ? (s.recipeLoaded ? "This recipe's graph is loaded in the page" : "The graph goes into the page once ComfyUI is ready") : "";
@@ -52,6 +56,8 @@
     $("cb-reload").addEventListener("click", () => bar.reload().then(show, () => {}));
     $("cb-retry").addEventListener("click", () => bar.reload().then(show, () => {}));
     $("cb-connect").addEventListener("click", () => bar.openSettings().catch(() => {}));
+    $("cb-cloud").addEventListener("click", () => bar.setTarget("cloud").then(show, () => {}));
+    $("cb-target").addEventListener("change", () => bar.setTarget($("cb-target").value).then(show, () => {}));
     bar.onState(show);
     bar.state().then(show, () => {});
 })();

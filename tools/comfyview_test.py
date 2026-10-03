@@ -19,7 +19,11 @@ opener passes a stub's URL):
   a user copy under its id, its Settings rows and labels kept, the UI graph stored) and the editor selects it; Save as
   new recipe takes its name in the bar and makes a new recipe; a graph without the Inpaint Canvas node and an answer
   that is no prompt are refused and save nothing. The recipes it saves are removed at the end; it refuses a profile
-  that holds a user recipe of the shipped id it overwrites.
+  that holds a user recipe of the shipped id it overwrites;
+- V4, Comfy Cloud: tools/comfyhosts_test.js first (the sign-in hosts, popups, navigation); then, with the stub standing
+  in for the cloud, the window titled Comfy Cloud refuses a recipe with the Inpaint Canvas node and offers no save,
+  the bar's select switches to My ComfyUI and the held recipe loads there, the target is kept; with no target the start
+  page names Comfy Cloud, and its Use Comfy Cloud switches. The target the profile had is put back.
 
 It refuses an instance connected to ComfyUI and a profile that holds a ComfyUI secret; the settings and the secret it
 writes are put back at the end whatever happens.
@@ -34,6 +38,8 @@ import json
 import os
 import socket
 import sys
+
+import subprocess
 
 import aiohttp
 from aiohttp import web
@@ -429,6 +435,55 @@ class Gate:
         await self.js("""for (const r of await window.scumble.recipes.list()) if (r.source === 'user' && (r.id === 'flux2_klein_local' || /^gate_(graph|bad)/.test(r.id))) await window.scumble.recipes.remove(r.id);
             const S = await import('./shell.js'); await S.loadRecipes(); S.selectRecipe('flux2_klein_local'); return 1""")
 
+    async def hosts(self):
+        root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+        r = subprocess.run(["node", os.path.join(root, "tools", "comfyhosts_test.js")], cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+        tail = r.stdout.strip()
+        if r.returncode != 0 or not tail.endswith("PASS"):
+            raise Exception("tools/comfyhosts_test.js: " + (tail + r.stderr)[-800:])
+        return {"checks": tail.count("[ok]")}
+
+    async def cloud(self):
+        await self.close()
+        await self.cleanup_recipes()    # the V3 steps saved a copy of the shipped recipe with a UI graph of their own
+        self.stub.mode = "none"
+        self.stub.app = "ok"
+        await self.set_auth({"type": "none"}, "")
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": "flux2_klein_local", "target": "cloud"}))
+        i = await self.wait_info("i.phase === 'page' && i.recipeNote", 15000)
+        await asyncio.sleep(1.0)    # the page is ready by now: the recipe must still not be in it
+        loaded = await on_target(self.stub.url, lambda c: c.eval("window.__loaded || null"))
+        if i["target"] != "cloud" or i["title"] != "Comfy Cloud" or "no Inpaint Canvas node" not in i["recipeNote"] or i["canSave"] or i["canSaveNew"] or loaded:
+            raise Exception("Comfy Cloud: " + json.dumps({"info": i, "loaded": loaded})[:600])
+        sel = await on_target("comfybar.html", lambda c: c.eval("(async () => { for (let k = 0; k < 30 && document.getElementById('cb-target').value !== 'cloud'; k++) await new Promise((r) => setTimeout(r, 100)); return document.getElementById('cb-target').value; })()"))
+        if sel != "cloud":
+            raise Exception("the bar's select shows " + str(sel))
+        await on_target("comfybar.html", lambda c: c.eval("(() => { const s = document.getElementById('cb-target'); s.value = 'comfy'; s.dispatchEvent(new Event('change')); return 1; })()"))
+        i2 = await self.wait_info("i.target === 'comfy' && i.recipeLoaded", 15000)
+        got = await on_target(self.stub.url, lambda c: c.eval("window.__loaded || null"))
+        stored = await self.js("return ((await window.scumble.settings.get()).comfyView || {}).target")
+        if not i2.get("recipeLoaded") or not got or got.get("name") != "Flux.2 Klein 4B / 9B (ComfyUI)" or stored != "comfy" or i2["recipeNote"]:
+            raise Exception("switched to My ComfyUI: " + json.dumps({"info": i2, "stored": stored, "loaded": (got or {}).get("name")})[:600])
+        return {"cloudNote": i["recipeNote"][:80], "switched": i2["title"]}
+
+    async def cloud_start(self):
+        await self.close()
+        await self.js("await window.scumble.comfyView.open({ target: 'cloud' }); return 1")
+        i = await self.wait_info("i.phase === 'none'")
+        async def h1(c):
+            return await c.eval("(async () => { for (let k = 0; k < 40 && !(document.querySelector('#cb-start h1') && /Cloud/.test(document.querySelector('#cb-start h1').textContent)); k++) await new Promise((r) => setTimeout(r, 100)); return document.querySelector('#cb-start h1').textContent; })()")
+        head = await on_target("comfybar.html", h1)
+        if i["target"] != "cloud" or "Comfy Cloud (--no-comfy)" not in i["message"] or head != "No Comfy Cloud to show.":
+            raise Exception("no Comfy Cloud: " + json.dumps({"info": i, "h1": head}))
+        await self.js("await window.scumble.comfyView.open({ target: 'comfy' }); return 1")
+        await self.wait_info("i.target === 'comfy'")
+        await self.bar_click("document.getElementById('cb-cloud').click()")
+        i2 = await self.wait_info("i.target === 'cloud'")
+        if i2["target"] != "cloud":
+            raise Exception("Use Comfy Cloud did not switch: " + json.dumps(i2))
+        await self.close()
+        return {"message": i["message"], "h1": head}
+
     async def unreachable(self):
         await self.close()
         s = socket.socket()
@@ -456,6 +511,7 @@ async def main():
         if keys.get("comfy-auth", {}).get("set"):
             raise SystemExit("refused: the profile holds a ComfyUI secret")
         saved = (await c.eval("window.scumble.settings.get()")).get("comfy")
+        target0 = ((await c.eval("window.scumble.settings.get()")).get("comfyView") or {}).get("target")
         mine = await c.eval("(async () => (await window.scumble.recipes.list()).filter((r) => r.source === 'user' && (r.id === 'flux2_klein_local' || /^gate_(graph|bad)/.test(r.id))).map((r) => r.id))()")
         if mine:
             raise SystemExit(f"refused: the profile holds user recipes this test would overwrite or remove: {mine}")
@@ -476,9 +532,13 @@ async def main():
             await g.step("V3: Save to recipe overwrites the held recipe (a shipped one as a user copy), the editor selects it", g.save_over)
             await g.step("V3: Save as new recipe, the name in the bar", g.save_new)
             await g.step("V3: a graph without the node and an answer that is no prompt are refused", g.save_refused)
+            await g.step("V4: the sign-in hosts, popups and navigation (plain Node)", g.hosts)
+            await g.step("V4: Comfy Cloud refuses a recipe with the node and offers no save; the select switches back", g.cloud)
+            await g.step("V4: no Comfy Cloud to show, and Use Comfy Cloud", g.cloud_start)
         finally:
             await g.close()
             await g.cleanup_recipes()
+            await c.eval("(async () => { const s = await window.scumble.settings.get(); await window.scumble.settings.set({ comfyView: { ...(s.comfyView || {}), target: %s } }); return 1; })()" % json.dumps(target0 or "comfy"))
             await c.eval("(async () => { const s = await window.scumble.settings.get(); await window.scumble.settings.set({ comfy: %s || s.comfy }); await window.scumble.keys.clear('comfy-auth'); return 1; })()" % json.dumps(saved))
         return g.results
 

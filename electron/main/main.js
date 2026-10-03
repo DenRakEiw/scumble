@@ -936,7 +936,8 @@ function installIpc() {
     ipcMain.handle("comfyview:open", async (e, opts) => {
         if (!fromEditor(e)) return null;
         const o = opts || {};
-        return openComfyView({ url: o.url ? String(o.url) : "", recipe: o.recipe ? await comfyRecipe(String(o.recipe)) : null });
+        const target = o.target === "cloud" || o.target === "comfy" ? o.target : undefined;
+        return openComfyView({ url: o.url ? String(o.url) : "", recipe: o.recipe ? await comfyRecipe(String(o.recipe)) : null, target });
     });
     ipcMain.handle("comfyview:info", () => (comfyView ? comfyView.info() : null));
     ipcMain.handle("comfyview:close", (e) => { if (fromEditor(e) && comfyView) comfyView.close(); return true; });

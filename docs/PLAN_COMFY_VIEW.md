@@ -1,8 +1,8 @@
 # ComfyUI in Scumble: the graph behind a recipe, in the app (item 35; the user, 2026-10-03)
 
-**Status (2026-10-03, afternoon):** **V1, V2 and V3 built** (the window, the bar, the start page, the auth, the
-*ComfyUI* button; a recipe opened as its graph; the graph saved as a recipe: "V1 / V2 / V3 as built" under §3), V4 and
-V5 not started. Five steps (V1-V5), one
+**Status (2026-10-03, afternoon):** **V1 to V4 built** (the window, the bar, the start page, the auth, the *ComfyUI*
+button; a recipe opened as its graph; the graph saved as a recipe; Comfy Cloud in the window: "V1 ... V4 as built"
+under §3), V5 not started; the look with the user's Comfy Cloud login is open. Five steps (V1-V5), one
 per session (the user's rule), **released together as one update** after V5. The user answered §6 the same day: a
 window of its own, Comfy Cloud API access yes, *Save to recipe* overwrites, all in one update; then the *ComfyUI*
 button after *Help* and *Assistant*, and **Scumble keeps working without any ComfyUI installed** (§2.5, a rule for
@@ -269,6 +269,18 @@ none of V1-V5 may change that:
   (open a recipe, move a node, save back, run it once), on the user's word.
 - **V4, Comfy Cloud in the window:** the target switch, the login check, the refusal note. One look with the user's
   login.
+- **V4 as built (2026-10-03):** `electron/main/comfyhosts.js` (plain; `tools/comfyhosts_test.js`): Comfy Cloud is
+  `https://cloud.comfy.org`, its page signs in with Firebase's `signInWithPopup` (read from the cloud's bundle in the
+  built-in browser the same day, no sign-in: a `*.firebaseapp.com` auth domain, then Google or GitHub; the login page
+  itself is `/cloud/login` on the same origin). A popup to `cloud.comfy.org`, `*.comfy.org`, `*.firebaseapp.com`,
+  `accounts.google.com` or `github.com` (https, no credentials in the URL) opens on Comfy Cloud as a child window in
+  `persist:comfyui` (sandboxed, no preload, no menu, its own popups to the system browser), closed with the window;
+  the page may navigate to those hosts too (the redirect fallback). Nothing hides that this is an app window: Google
+  may refuse the sign-in there; email and GitHub are the ways the notes name. The target is `settings.comfyView.target`
+  (`comfy` / `cloud`), switched by the bar's *Show* select, the start page's *Use Comfy Cloud* or `open({ target })`;
+  no auth headers go to the cloud. A recipe with the Inpaint Canvas node is not loaded there (the bar's note says why)
+  and the save buttons are off on the cloud until V5. A `--no-comfy` start shows the start page for the cloud as well,
+  unless a test passes a stub's URL. Not done: the look with the user's login (which sign-ins work in the window).
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
   loopback run; one live run on Comfy Cloud with the user's key (credits). Possibly two sessions.
