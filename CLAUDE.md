@@ -249,11 +249,12 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   FLUX 3. `docs/PLAN_NEW_PRESETS.md` (what exists, the trap, four steps, the open questions). Nothing built.
 - 35: ComfyUI in Scumble (the user, 2026-10-03: "ist es möglich eine art browser in scumble zu öffnen in dem dann
   comfyui läuft?", the point being the connection to the recipes, "das ist erstmal das wichtigste update", and "auch
-  die option testen comfy.cloud in scumble"): ComfyUI's own page in a `WebContentsView` (a tab), a recipe opened there
-  as its graph and the graph saved back as a recipe; Comfy Cloud in the same view, and recipes without the Inpaint
-  Canvas node (Comfy Cloud has none and takes no custom nodes) run there through `comfycloud.js`'s calls.
-  `docs/PLAN_COMFY_VIEW.md`: what exists, the design, V1-V5 (one session each), the traps (the menu's accelerators beat
-  the page; the view covers Scumble's dialogs), the open questions. Nothing built.
+  die option testen comfy.cloud in scumble"): ComfyUI's own page in a window of its own (a `BaseWindow` with Scumble's
+  bar on top), a recipe opened there as its graph and the graph saved back as a recipe; Comfy Cloud in the same window,
+  and recipes without the Inpaint Canvas node (Comfy Cloud has none and takes no custom nodes) run there through
+  `comfycloud.js`'s calls. The user's answers (2026-10-03): a window of its own, Comfy Cloud API access yes, *Save to
+  recipe* overwrites, all five steps in **one update**. `docs/PLAN_COMFY_VIEW.md`: what exists, the design (§2.1 the
+  proposed places of its buttons), V1-V5 (one session each), the traps. Nothing built.
 
 ## Gate runner and flakes
 
