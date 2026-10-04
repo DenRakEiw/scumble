@@ -29,6 +29,8 @@ The block of 2026-09-28 (late night, package 5 complete) was moved here the same
 
 The block of 2026-10-03 (afternoon to night: item 35, 0.1.40, 0.1.41) was moved here on 2026-10-04, when R1 of 0.1.42 was built.
 
+The block of 2026-10-04 (R1 of 0.1.42) was moved here the same day, when R2a was built.
+
 
 The block of 2026-09-29 (morning, item 26 S1 built) was moved here at noon, when the eraser hotfix 0.1.33 was prepared.
 
@@ -61,6 +63,48 @@ The 0.1.37 block of 2026-10-02 (night) was moved here the same night, when A1, A
 The block of 2026-10-03 (midday: B5, B6, the 0.1.39 release) was moved here the same afternoon, when item 35 was planned.
 
 The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved here the same afternoon, when V1 of item 35 was built.
+
+## 2026-10-04 (R1 of 0.1.42 built: the Realism Pass recipe; moved here the same day when R2a was built)
+
+**This session (2026-10-04, R1 of 0.1.42): the Realism Pass recipe built, unreleased.** The user's answers came first
+(Q7 and Q8 as recommended; all six low-hanging fruits, now session **F1**); mid-session the user asked "schau auch noch
+ob noch mehr commands in den mcp aufgenommen werden können": session **F2**, its list in `docs/PLAN_MCP_COMMANDS.md`
+(a read-only workflow of 8 agents: 181 raw candidates, 94 merged, each verified; 28 worth adding, 6 of high value:
+`transform_layer`, `cancel_run`, `copy_to_layer`, readiness in `list_recipes`, `resize_image`, a region `screenshot`;
+the user picks).
+- **R1 as built** (docs/PLAN_0_1_42.md R1 "As built"): `recipes/realism_pass.json` (the user's template, model preset
+  L, one Settings row *DLSS model preset* with its spec and the **shipped presets L and M**; any recipe may now ship
+  presets, `recipes.js` `shippedPresets`, `host.renderPresets` shows them first and never deletes one),
+  `renderer/editor/realism.js` (app-only: `LABEL`, the server check on `/system_stats` os and devices plus
+  `/object_info`, `fits`, `passSettings`, `hint`, `fillValues`), `settings.realism` (Style, Strength, the switch
+  routes' preset L, timeout), `comfy.js` status `os` / `gpus`, `host.setServerStatus` for every status, task `pass`
+  in `queueGenerate` (refusals before any upload; the crop as an upscale's; `multiple_of` even), the pack's errors as
+  sentences (`execution_error` -> `realism.hint`, `editor.lastPassError`, which the `generate` command now stops on),
+  no Cloud copy (`detach` refuses), not in Generate new (which also stopped listing the local upscale recipe).
+  The pack's messages were read from its source (read only) into `tools/refs/dlss5/messages.json`.
+- **The review** (one workflow, 4 angles, each finding verified: 20 real, none high) changed the code: the size check
+  now takes `editor.cropRect()` and the node's span rule (`realism.fitSpan`; it had estimated box + 2 × padding and
+  missed the auto context), the pass sends `multiple_of` 2 (`realism.PASS_MULTIPLE`; the user's 64 shrank a
+  whole-picture crop and left a border without the pass with a hard seam), CUDA devices refuse only when none is an
+  RTX 30+ (ComfyUI lists torch devices, not nvidia-smi's lines), the crash and the preset refusal have their right
+  sentences, the fixtures are verbatim, *Save as new recipe* keeps presets only for kept rows and task `pass` only
+  with `DLSS5Settings`, the Preset row prefers the user's own preset. Details: R1 "As built" in the plan.
+- **Tests:** `tools/realism_test.js` 340 (now run by the `recipes` gate), `recipes_test.js` 160,
+  `settings_migration_test.js` 18; the `generate` step `the_realism_pass_recipe_queues_the_box_as_it_is` (non-default
+  crop, Style / Strength and multiple in, no `serializeForPrompt` on a refusal, the `generate` command stopping on a
+  pass error, a user preset with M's values) and a `comfyview` step (no *Cloud copy* on the pass row). Gates
+  `recipes generate commands mcp lint types` PASS offline on tiles (`dist/gates/gates/r1final`); `comfyview` 25 of 25
+  in `r1fix-cv2`, then 24 of 25 four times on the listed Ctrl+S focus flake, which the unchanged HEAD showed too (the
+  user's Scumble open beside the gates; `docs/TESTING.md`). `recipes_test.py` reads stdout alone now: Node's
+  ES-module note on stderr had made it fail. Full tier on
+  `settings.realism`: a mutation round on a copy, 17 of 17 killed, the restored copy PASS. One backend: no pixel path
+  changed.
+- **Not run on a real server; nothing queued on 8188.** The pack is installed on the user's machine (its `runtime/`
+  and `config.json` exist): the first live look is R5's, on the user's word.
+- **Answered after the commit:** Q3 as recommended; F2 the 12 the user picked from my recommendation (the six of
+  high value, the `set_crop` / `set_filter` fixes, `select_color`, `select_shape`, `list_settings`, `apply_preset`).
+  **Open:** the user's look in the app (the recipe in the local list, the Preset row with L and M, a refusal on a
+  server without the pack).
 
 ## 2026-10-03 (afternoon to night: item 35 V1-V6 built, 0.1.40 and 0.1.41 released, the cleanup; moved here on 2026-10-04 when R1 of 0.1.42 was built)
 

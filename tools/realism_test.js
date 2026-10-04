@@ -632,6 +632,191 @@ function nodeFitSpan(a0, a1, limit, m) {
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* a temp folder */ }
     }
 
+    // ---- 9b. the pass on a picture (R2a: passPrompt, evenPlan, the pixel helpers, runFailure) ----------------------
+    console.log("\n--- 9b. the pass on a picture (R2a) ---");
+    /** Key order is not part of a prompt: compare objects by their sorted entries. */
+    const sortedEntries = (o) => (o && typeof o === "object" && !Array.isArray(o) ? Object.keys(o).sort().map((k) => [k, o[k]]) : o);
+    const same = (a, b) => eq(sortedEntries(a), sortedEntries(b));
+    {
+        check("PASS_MODE is '1x (DLAA / native)', PASS_OUTPUT 'rp_out', FLATTEN_GREY 128", R.PASS_MODE === "1x (DLAA / native)" && R.PASS_OUTPUT === "rp_out" && R.FLATTEN_GREY === 128,
+            short([R.PASS_MODE, R.PASS_OUTPUT, R.FLATTEN_GREY]));
+        check("SETTINGS_DEFAULTS equals the recipe's rp_settings inputs (same keys, same values)", same(R.SETTINGS_DEFAULTS, rp), short(R.SETTINGS_DEFAULTS));
+        check("SETTINGS_DEFAULTS is frozen", Object.isFrozen(R.SETTINGS_DEFAULTS), "");
+        check("PASS_MODE equals the recipe's upscaling_mode", R.PASS_MODE === rp.upscaling_mode, short([R.PASS_MODE, rp.upscaling_mode]));
+    }
+    // evenPlan
+    for (const [w, h, w2, h2] of [[641, 481, 642, 482], [640, 480, 640, 480], [1, 1, 2, 2], [63, 41, 64, 42]]) {
+        const got = R.evenPlan(w, h);
+        check(`evenPlan(${w}, ${h}) is ${w2} x ${h2}`, eq(got, { w2, h2 }), short(got));
+    }
+    // passPrompt
+    {
+        const before = JSON.stringify(recipe);
+        const ref = { filename: "a.png", subfolder: "inpaint_canvas", type: "input" };
+        const p = R.passPrompt(recipe, { style: "Natural", intensity: 0.5, preset: "M" }, ref);
+        check("passPrompt makes exactly the four nodes rp_enhance, rp_in, rp_out, rp_settings", eq(Object.keys(p).sort(), ["rp_enhance", "rp_in", "rp_out", "rp_settings"]), short(Object.keys(p)));
+        check("the answer node is PASS_OUTPUT", R.PASS_OUTPUT in p, "");
+        check("each node's class_type: InpaintCanvasLoadRef, DLSS5Settings, DLSS5EnhanceImages, PreviewImage",
+            p.rp_in.class_type === "InpaintCanvasLoadRef" && p.rp_settings.class_type === "DLSS5Settings"
+            && p.rp_enhance.class_type === "DLSS5EnhanceImages" && p.rp_out.class_type === "PreviewImage",
+            short(Object.values(p).map((n) => n.class_type)));
+        check("rp_in's inputs are exactly the ref as JSON", eq(p.rp_in.inputs, { ref: '{"filename":"a.png","subfolder":"inpaint_canvas","type":"input"}' }), short(p.rp_in.inputs));
+        check("rp_enhance's inputs are exactly images, settings and verify_neural_rendering", eq(p.rp_enhance.inputs, { images: ["rp_in", 0], settings: ["rp_settings", 0], verify_neural_rendering: true }), short(p.rp_enhance.inputs));
+        check("rp_out's inputs are exactly the enhanced images", eq(p.rp_out.inputs, { images: ["rp_enhance", 0] }), short(p.rp_out.inputs));
+        check("rp_settings is SETTINGS_DEFAULTS with nr_style Natural, nr_intensity 0.5, dlss_model_preset M",
+            same(p.rp_settings.inputs, { ...R.SETTINGS_DEFAULTS, nr_style: "Natural", nr_intensity: 0.5, dlss_model_preset: "M" }), short(p.rp_settings.inputs));
+        check("passPrompt does not mutate the recipe", JSON.stringify(recipe) === before, "");
+
+        const e0 = R.passPrompt(recipe, {}, ref);
+        check("values {}: rp_settings equals the recipe's inputs", same(e0.rp_settings.inputs, rp), short(e0.rp_settings.inputs));
+        const e1 = R.passPrompt(recipe, undefined, ref);
+        check("values undefined: rp_settings equals the recipe's inputs", same(e1.rp_settings.inputs, rp), short(e1.rp_settings.inputs));
+        const n0 = R.passPrompt(null, {}, ref);
+        check("recipe null: rp_settings equals SETTINGS_DEFAULTS", same(n0.rp_settings.inputs, R.SETTINGS_DEFAULTS), short(n0.rp_settings.inputs));
+        const n1 = R.passPrompt(null, undefined, ref);
+        check("recipe null and values undefined: rp_settings equals SETTINGS_DEFAULTS", same(n1.rp_settings.inputs, R.SETTINGS_DEFAULTS), short(n1.rp_settings.inputs));
+
+        // a user's copy: the DLSS5Settings node under another id, set to 2x, its strength wired to a node, its own runtime
+        const user = JSON.parse(JSON.stringify(recipe));
+        const node = user.prompt.rp_settings;
+        delete user.prompt.rp_settings;
+        user.prompt["12"] = { ...node, inputs: { ...node.inputs, upscaling_mode: "2x (Performance)", nr_intensity: ["x", 0], runtime_dir: "D:/rt" } };
+        const userBefore = JSON.stringify(user);
+        const u = R.passPrompt(user, {}, ref).rp_settings.inputs;
+        check("a user copy at 2x: upscaling_mode back to PASS_MODE", u.upscaling_mode === R.PASS_MODE, short(u.upscaling_mode));
+        check("a user copy with nr_intensity wired to a node (an array): back to the default 1", u.nr_intensity === 1, short(u.nr_intensity));
+        check("a user copy's runtime_dir 'D:/rt' is kept", u.runtime_dir === "D:/rt", short(u.runtime_dir));
+        check("a user copy: every other input is the recipe's", same(u, { ...rp, runtime_dir: "D:/rt" }), short(u));
+        check("a user copy is not mutated", JSON.stringify(user) === userBefore, "");
+        const u2 = R.passPrompt(user, { intensity: 0.3 }, ref).rp_settings.inputs;
+        check("a user copy with the strength wired: values' intensity 0.3 is written", u2.nr_intensity === 0.3, short(u2.nr_intensity));
+
+        const b = R.passPrompt(recipe, {}, { filename: "b.png" });
+        check("a ref without subfolder and type: subfolder '' and type 'input'", eq(b.rp_in.inputs, { ref: '{"filename":"b.png","subfolder":"","type":"input"}' }), short(b.rp_in.inputs));
+        const ex = keep(throws(() => R.passPrompt(recipe, { preset: "X" }, ref)));
+        check("values { preset: 'X' } throws, naming the label", !!ex && ex.includes(L), ex);
+        const c = R.passPrompt(recipe, { intensity: 1.5 }, ref).rp_settings.inputs;
+        check("values { intensity: 1.5 } is clamped to 1", c.nr_intensity === 1, short(c.nr_intensity));
+    }
+    // hasAlpha
+    {
+        const opaque = new Uint8ClampedArray([10, 20, 30, 255, 40, 50, 60, 255, 70, 80, 90, 255]);
+        check("hasAlpha on an all-opaque picture is false", R.hasAlpha(opaque) === false, "");
+        const one = Uint8ClampedArray.from(opaque);
+        one[7] = 254;
+        check("hasAlpha with one alpha of 254 is true", R.hasAlpha(one) === true, "");
+        const rgbLow = Uint8ClampedArray.from(opaque);
+        rgbLow[0] = 0; rgbLow[5] = 0;
+        check("hasAlpha reads only the alpha bytes (low colour bytes are not alpha)", R.hasAlpha(rgbLow) === false, "");
+        check("hasAlpha on an empty array is false", R.hasAlpha(new Uint8ClampedArray(0)) === false, "");
+    }
+    // prepPixels
+    {
+        // a 3 x 3 picture, a distinct colour per pixel, opaque
+        const src = new Uint8ClampedArray(3 * 3 * 4);
+        for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) {
+            const i = (y * 3 + x) * 4;
+            src[i] = 10 + x * 30 + y * 7; src[i + 1] = 200 - x * 11 - y * 40; src[i + 2] = 50 + x * 3 + y * 60; src[i + 3] = 255;
+        }
+        const srcBefore = Array.from(src);
+        const r = R.prepPixels(src, 3, 3, false);
+        check("prepPixels(3 x 3): padded to 4 x 4, a Uint8ClampedArray of 4 x 4 x 4", r.w2 === 4 && r.h2 === 4 && r.data instanceof Uint8ClampedArray && r.data.length === 64, short([r.w2, r.h2, r.data && r.data.length]));
+        let bad = null;
+        for (let y = 0; y < 4 && !bad; y++) for (let x = 0; x < 4 && !bad; x++) {
+            const s = (Math.min(y, 2) * 3 + Math.min(x, 2)) * 4, d = (y * 4 + x) * 4;
+            const got = Array.from(r.data.slice(d, d + 4)), want = [src[s], src[s + 1], src[s + 2], 255];
+            if (!eq(got, want)) bad = { x, y, got, want };
+        }
+        check("prepPixels(3 x 3): every pixel is the source's at (min(x, 2), min(y, 2)), opaque (the last column and row repeated)", !bad, short(bad));
+        check("prepPixels does not mutate the source", eq(Array.from(src), srcBefore), "");
+
+        // flatten onto the grey: a 3 x 1 picture, opaque, transparent, half
+        const fl = new Uint8ClampedArray([200, 100, 50, 255, 200, 100, 50, 0, 200, 100, 50, 128]);
+        const f = R.prepPixels(fl, 3, 1, true);
+        const px = (i) => Array.from(f.data.slice(i * 4, i * 4 + 4));
+        const a = 128 / 255;
+        const half = new Uint8ClampedArray(4);
+        half[0] = 200 * a + R.FLATTEN_GREY * (1 - a); half[1] = 100 * a + R.FLATTEN_GREY * (1 - a); half[2] = 50 * a + R.FLATTEN_GREY * (1 - a); half[3] = 255;
+        check("prepPixels(3 x 1, flatten): padded to 4 x 2", f.w2 === 4 && f.h2 === 2 && f.data.length === 32, short([f.w2, f.h2, f.data.length]));
+        check("flatten: an opaque pixel keeps its colour (200, 100, 50, 255)", eq(px(0), [200, 100, 50, 255]), short(px(0)));
+        check("flatten: a transparent pixel becomes the grey (128, 128, 128, 255)", eq(px(1), [128, 128, 128, 255]), short(px(1)));
+        check(`flatten: a half-transparent pixel is c * a + 128 * (1 - a), opaque (${Array.from(half)})`, eq(px(2), Array.from(half)), short(px(2)));
+        check("flatten: the pad column (pixel 3) equals pixel 2", eq(px(3), px(2)), short(px(3)));
+        check("flatten: the pad row (row 1) equals row 0", eq(Array.from(f.data.slice(16, 32)), Array.from(f.data.slice(0, 16))), short(Array.from(f.data.slice(16, 32))));
+
+        // an even 2 x 2 picture: same size, the colours copied, every alpha opaque (no flatten)
+        const ev = new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 0, 7, 8, 9, 128, 250, 251, 252, 255]);
+        const e = R.prepPixels(ev, 2, 2, false);
+        let rgbSame = e.data.length === 16;
+        for (let i = 0; i < 4 && rgbSame; i++) rgbSame = e.data[i * 4] === ev[i * 4] && e.data[i * 4 + 1] === ev[i * 4 + 1] && e.data[i * 4 + 2] === ev[i * 4 + 2];
+        check("prepPixels(2 x 2): unchanged in size, the same RGB", e.w2 === 2 && e.h2 === 2 && rgbSame, short([e.w2, e.h2, Array.from(e.data)]));
+        check("prepPixels(2 x 2) without flatten: every alpha 255, the colours under transparent pixels copied as they are", [3, 7, 11, 15].every((i) => e.data[i] === 255), short(Array.from(e.data)));
+    }
+    // putAlphaBack
+    {
+        // the answer 4 x 2, a distinct RGB per pixel, opaque
+        const ans = new Uint8ClampedArray(4 * 2 * 4);
+        for (let y = 0; y < 2; y++) for (let x = 0; x < 4; x++) {
+            const i = (y * 4 + x) * 4;
+            ans[i] = 11 + x * 20 + y * 100; ans[i + 1] = 22 + x * 20 + y * 100; ans[i + 2] = 33 + x * 20 + y * 100; ans[i + 3] = 255;
+        }
+        const source = new Uint8ClampedArray([1, 1, 1, 0, 2, 2, 2, 128, 3, 3, 3, 255]);
+        const out = R.putAlphaBack(ans, 4, 2, source, 3, 1);
+        check("putAlphaBack(4 x 2 answer, 3 x 1 source): a Uint8ClampedArray of 3 x 1 x 4", out instanceof Uint8ClampedArray && out.length === 12, short(out && out.length));
+        const rgb = [0, 1, 2].map((x) => Array.from(out.slice(x * 4, x * 4 + 3)));
+        // alpha 0 and 255 keep the answer's colour; alpha 128 gets prepPixels' grey taken out: (p - 128 (1 - k)) / k
+        const k = 128 / 255, unmix = (p) => { const c = new Uint8ClampedArray(1); c[0] = (p - 128 * (1 - k)) / k; return c[0]; };
+        const wantRgb = [0, 1, 2].map((x) => Array.from(ans.slice(x * 4, x * 4 + 3)).map((p) => (x === 1 ? unmix(p) : p)));
+        check("putAlphaBack: the RGB is the answer's row 0, columns 0 to 2, the half-transparent one with the grey taken out", eq(rgb, wantRgb), short([rgb, wantRgb]));
+        // the round trip: what prepPixels flattened comes back as the source's own colour when the pass changes nothing
+        const src2 = new Uint8ClampedArray([200, 30, 30, 0, 30, 200, 90, 128, 250, 10, 60, 1, 17, 34, 51, 255, 90, 180, 240, 200, 5, 5, 5, 64]);
+        const flat = R.prepPixels(src2, 3, 2, true);
+        const back = R.putAlphaBack(flat.data, flat.w2, flat.h2, src2, 3, 2);
+        let worst = 0;
+        for (let i = 0; i < 6; i++) {
+            const a = src2[i * 4 + 3];
+            // alpha 0 carries no colour, alpha 1 almost none (8-bit rounding of c / 255)
+            if (a < 8) continue;
+            for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(back[i * 4 + c] - src2[i * 4 + c]));
+        }
+        check("putAlphaBack after prepPixels with an unchanged answer: the colours of pixels with alpha 64 to 255 come back within 1 level", worst <= 1, String(worst));
+        const ab = [0, 1, 2, 3, 4, 5].map((i) => back[i * 4 + 3]);
+        check("putAlphaBack after prepPixels: the alpha is the source's", eq(ab, [0, 128, 1, 255, 200, 64]), short(ab));
+        const alpha = [0, 1, 2].map((x) => out[x * 4 + 3]);
+        check("putAlphaBack: the alpha is the source's [0, 128, 255]", eq(alpha, [0, 128, 255]), short(alpha));
+        const e = keep(throws(() => R.putAlphaBack(ans, 2, 2, source, 3, 1)));
+        check("putAlphaBack with an answer narrower than the source (2 < 3) throws, naming the label", !!e && e.includes(L), e);
+        const e2 = keep(throws(() => R.putAlphaBack(ans, 4, 1, new Uint8ClampedArray(3 * 2 * 4), 3, 2)));
+        check("putAlphaBack with an answer lower than the source (1 < 2) throws, naming the label", !!e2 && e2.includes(L), e2);
+    }
+    // runFailure
+    {
+        const tm = `${L}: no answer from your ComfyUI within 300 seconds.`;
+        const t = keep(R.runFailure({ kind: "timeout", message: tm }));
+        check("runFailure of a timeout whose message holds the label: the message unchanged", t === tm, JSON.stringify(t));
+        const rtMsg = "No DLSS 5 runtime was found. Searched:\n x";
+        const r1 = keep(R.runFailure({ kind: "error", message: rtMsg }));
+        check("runFailure of kind 'error': hint(message)", r1 === R.hint(rtMsg) && r1.includes("runtime is not installed"), JSON.stringify(r1));
+        const r2 = keep(R.runFailure({ kind: "cancelled", message: "ComfyUI cancelled." }));
+        check("runFailure of a kind other than 'error' without the label: falls back to hint", r2 === R.hint("ComfyUI cancelled."), JSON.stringify(r2));
+        const r3 = keep(R.runFailure(new Error("boom")));
+        check("runFailure of a plain Error('boom'): hint('boom')", r3 === R.hint("boom"), JSON.stringify(r3));
+        // the runner's own kind 'error' texts start with the label: not wrapped a second time
+        const own = `${L}: the answer could not be fetched from your ComfyUI (404).`;
+        const r4 = keep(R.runFailure({ kind: "error", message: own }));
+        check("runFailure of kind 'error' whose message starts with the label: the message unchanged (no doubled label)", r4 === own && r4.split(L).length === 2, JSON.stringify(r4));
+        const r5 = keep(R.runFailure({ kind: "error", message: `The worker said: ${L}` }));
+        check("runFailure of a message that holds the label later on: hint", r5 === R.hint(`The worker said: ${L}`), JSON.stringify(r5));
+    }
+    // presetFallbackNote, versionAtLeast
+    {
+        const n = keep(R.presetFallbackNote("M"));
+        check("presetFallbackNote: names the refused preset, Default and the recipe's own row", n.startsWith(`${L}: the runtime on your ComfyUI refused DLSS model preset M`) && n.includes("Default from now on") && n.includes("recipe keeps its own DLSS model preset row"), JSON.stringify(n));
+        const cases = [["0.38.0", true], ["0.3.57", true], ["v0.3.57", true], ["0.3.56", false], ["0.3.9", false], ["0.4.0", true], ["1.0", true], ["", false], [undefined, false], ["dev", false]];
+        const bad = cases.filter(([v, want]) => R.versionAtLeast(v, "0.3.57") !== want);
+        check("versionAtLeast(v, 0.3.57) for 10 versions (an unknown one is not)", bad.length === 0, short(bad));
+    }
+
     // ---- 10. the label in every text ------------------------------------------------------------------------------
     console.log("\n--- 10. the label in every text ---");
     const missing = texts.filter((t) => !t.includes(EXACT_LABEL));

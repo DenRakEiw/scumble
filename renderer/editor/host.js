@@ -327,7 +327,7 @@ export const host = {
     connected: false,
     // the ComfyUI status as the shell last showed it (setServerStatus): `connected` above is never set back, the
     // Realism Pass's check needs the live state and the server's own system and cards
-    server: { state: "disconnected", os: "", gpus: [], remote: false },
+    server: { state: "disconnected", os: "", gpus: [], remote: false, url: "", version: "" },
     // settings.realism as stored (the renderer's copy, like nodeParams); realismValues() fills it per key
     realismStored: null,
     _pendingStates: [],
@@ -363,6 +363,9 @@ export const host = {
             os: typeof st.os === "string" ? st.os : (this.server && this.server.os) || "",
             gpus: Array.isArray(st.gpus) ? st.gpus.map(String) : (this.server && this.server.gpus) || [],
             remote: !!st.remote,
+            // which server (a picture run ends when another one is connected) and its version (cancelComfyPrompt)
+            url: typeof st.url === "string" ? st.url : (this.server && this.server.url) || "",
+            version: typeof st.version === "string" ? st.version : (this.server && this.server.version) || "",
         };
     },
 
@@ -884,7 +887,8 @@ export const host = {
     editorByPrompt(promptId) {
         if (!promptId) return null;
         return this._editors.find((e) => e.lastPromptId === promptId || e.segmentPromptId === promptId || e.objectsPromptId === promptId
-            || e.upsamplePromptId === promptId || e.cutoutPromptId === promptId) || null;
+            || e.upsamplePromptId === promptId || e.cutoutPromptId === promptId)
+            || (this._pictureRuns.has(promptId) ? this._pictureRuns.get(promptId).editor : null) || null;
     },
 
     mount(rootEl) {
@@ -1991,6 +1995,348 @@ export const host = {
         if (this.onProviderRuns) { try { this.onProviderRuns(Array.from(this._providerRuns)); } catch (err) { console.warn(err); } }
     },
 
+    // ---- a picture in, a picture out on the user's ComfyUI (docs/PLAN_0_1_42.md R2a; the pass, U2's upscale) ----
+
+    /** The mirror's ensure behind a host member: a gate stubs it (window.scumble is read-only from the page). */
+    async ensureRefs(refs) {
+        return window.scumble.comfy.ensure(refs);
+    },
+
+    /**
+     * Store a picture in the mirror's input folder and make sure the server holds it: the mirror's forward can fail with
+     * a warning only, so the ensure is not optional. -> { filename, subfolder, type: "input" }
+     */
+    async uploadInput(blob, filename) {
+        const form = new FormData();
+        form.append("image", new File([blob], filename, { type: "image/png" }));
+        form.append("subfolder", SUBFOLDER);
+        form.append("type", "input");
+        const resp = await api.fetchApi("/upload/image", { method: "POST", body: form });
+        if (resp.status !== 200) throw new Error("storing the picture failed (" + resp.status + ")");
+        const data = await resp.json();
+        const ref = { filename: data.name, subfolder: data.subfolder || SUBFOLDER, type: "input" };
+        let report;
+        try { report = await this.ensureRefs([ref]); } catch (err) { throw new Error(`Your ComfyUI did not take the picture: ${String((err && err.message) || err)}`); }
+        if (report && report.missing && report.missing.length) throw new Error("Your ComfyUI did not take the picture.");
+        return ref;
+    },
+
+    // prompt id -> { editor, output, label, answer(image), ended(), fail(kind, message, extra) } of each picture run
+    _pictureRuns: new Map(),
+    // the ids of picture runs that ended (answered, failed, cancelled, lost): their late events are swallowed, so a pass
+    // error of a run Scumble gave up on never lands in a tab's status (the newest 64)
+    _endedPictureRuns: new Set(),
+
+    /**
+     * Run an API-format prompt that answers one picture and wait for it: `output` is the node whose first image is the
+     * answer. Queued at the front (`front`), as the helpers are; never interrupts a running job of the user's. The id
+     * counts as an open render of `editor` (a turn of the picture and Generate new wait for it). The wait ends on the
+     * node's `executed`, on `execution_success` (the answer read from /history), on an error or interrupt, on the
+     * timeout and on `token.cancelled` (both take the job off the server, cancelComfyPrompt, before the call rejects),
+     * and when the server is disconnected or another server is connected ("connecting", a re-Connect, is a pause). The
+     * timeout counts the time the job is not waiting in the queue: a wait behind the user's jobs, shown with its position
+     * from /queue every 2 s, does not use it up. A job that is neither queued nor running twice in a row is read from
+     * /history (the socket missed its events), or ends as "dropped". Rejects with an Error whose `kind` is "error" (the
+     * server's message, `nodeType`), "interrupted", "timeout", "cancelled", "lost" or "dropped".
+     * -> { bytes, mime, seconds, promptId }
+     */
+    async comfyPictureRun(editor, prompt, output, { label = "ComfyUI", token = null, timeoutMs = 300000, front = true } = {}) {
+        const stop = (kind, message, extra) => Object.assign(new Error(message), { kind }, extra || {});
+        if (token && token.cancelled) throw stop("cancelled", `${label} cancelled.`);
+        const t0 = Date.now();
+        const url0 = (this.server && this.server.url) || "";
+        let queued;
+        try {
+            queued = await api.queuePrompt(front ? -1 : 0, { output: prompt, workflow: { nodes: [], links: [], version: 0.4, extra: { inpaint_canvas_helper: true } } });
+        } catch (err) {
+            throw stop("error", String((err && err.message) || err));
+        }
+        const id = queued && queued.prompt_id;
+        if (!id) throw stop("error", `${label}: your ComfyUI gave the job no id.`);
+        const runs = editor ? (editor._localRuns || (editor._localRuns = new Set())) : null;
+        if (runs) runs.add(id);
+        let entry = null;
+        const interrupted = `${label} was interrupted on your ComfyUI.`;
+        // what /history says about a job that ended without an `executed` for `output`
+        const fromHistory = (got) => {
+            if (got.image) entry.answer(got.image);
+            else if (got.interrupted) entry.fail("interrupted", interrupted);
+            else if (got.error) entry.fail("error", got.error.message, { nodeType: got.error.nodeType });
+            else if (got.found) entry.fail("error", `${label}: your ComfyUI finished without a picture.`);
+            else return false;
+            return true;
+        };
+        const wait = new Promise((resolve, reject) => {
+            let settled = false;
+            const settle = (fn, v) => { if (!settled) { settled = true; fn(v); } };
+            entry = {
+                editor, output, label, interrupted,
+                get settled() { return settled; },
+                answer: (image) => settle(resolve, image),
+                fail: (kind, message, extra) => settle(reject, stop(kind, message, extra)),
+                // the prompt ended: its answer from /history, when no `executed` brought it (another server may not
+                // re-send one for a cached output)
+                ended: async () => {
+                    if (settled) return;
+                    try {
+                        if (!fromHistory(await this.pictureFromHistory(id, output))) entry.fail("error", `${label}: your ComfyUI finished without a picture.`);
+                    } catch (err) {
+                        entry.fail("error", `${label}: the answer could not be read from your ComfyUI (${String((err && err.message) || err)}).`);
+                    }
+                },
+            };
+        });
+        this._pictureRuns.set(id, entry);
+        // the timeout's clock: reset whenever /queue shows the job still pending
+        let clock = t0, lastQueue = t0, polling = false, gone = 0, shown = "", cleanup = null, timer = null;
+        // a cancel or the timeout ends the wait at once; the job goes off the server meanwhile, awaited before the call
+        // rejects (at most 5 s), so a stalled request never holds the Cancel
+        const giveUp = (kind, message) => {
+            cleanup = this.cancelComfyPrompt(id).catch((err) => console.warn("picture run cancel", err));
+            entry.fail(kind, message);
+        };
+        const poll = async () => {
+            // the position; no answer (no server under --no-comfy) shows none and does not end the wait
+            const q = await this.queuePosition(id);
+            if (!q || entry.settled) return;
+            if (q.running || q.pending) {
+                gone = 0;
+                if (q.pending) clock = Date.now();
+                const text = q.running ? `${label} runs on your ComfyUI ...` : `${label} waits for your ComfyUI (${q.ahead} job${q.ahead === 1 ? "" : "s"} ahead) ...`;
+                if (text !== shown && editor && editor.setStatus) { shown = text; editor.setStatus(text); }
+                return;
+            }
+            if (++gone < 2) return;
+            // neither queued nor running twice: it ended while the socket was away, or someone cleared the queue; a
+            // /history that does not answer is asked again at the next poll
+            let got;
+            try { got = await this.pictureFromHistory(id, output); } catch (_) { gone = 1; return; }
+            if (!entry.settled && !fromHistory(got)) entry.fail("dropped", `${label}: your ComfyUI no longer holds its job (was the queue cleared?).`);
+        };
+        const tick = () => {
+            if (entry.settled) return;
+            const s = this.server || { state: "", url: "" };
+            if (s.state === "disconnected" || s.state === "error" || (url0 && s.url && s.url !== url0)) {
+                // the job stays on that server; taken off in the background in case it is still reachable
+                this.cancelComfyPrompt(id).catch(() => { /* unreachable */ });
+                entry.fail("lost", `${label}: the connection to your ComfyUI was lost.`);
+                return;
+            }
+            if (token && token.cancelled) { giveUp("cancelled", `${label} cancelled.`); return; }
+            if (Date.now() - clock > timeoutMs) { giveUp("timeout", `${label}: no answer from your ComfyUI within ${Math.round(timeoutMs / 1000)} s; its job was taken off the queue.`); return; }
+            if (polling || Date.now() - lastQueue < 2000) return;
+            lastQueue = Date.now();
+            polling = true;
+            poll().catch((err) => console.warn("picture run", err)).finally(() => { polling = false; });
+        };
+        try {
+            timer = setInterval(tick, 250);
+            const image = await wait;
+            const q = new URLSearchParams({ filename: image.filename, subfolder: image.subfolder || "", type: image.type || "output" });
+            const r = await api.fetchApi("/view?" + q.toString(), { signal: AbortSignal.timeout(Math.max(60000, timeoutMs)) });
+            if (r.status !== 200) throw stop("error", `${label}: the answer could not be fetched from your ComfyUI (${r.status}).`);
+            const bytes = new Uint8Array(await r.arrayBuffer());
+            const mime = (r.headers.get("Content-Type") || "image/png").split(";")[0].trim() || "image/png";
+            return { bytes, mime, seconds: (Date.now() - t0) / 1000, promptId: id };
+        } finally {
+            clearInterval(timer);
+            this._pictureRuns.delete(id);
+            this._endedPictureRuns.add(id);
+            for (const old of this._endedPictureRuns) { if (this._endedPictureRuns.size <= 64) break; this._endedPictureRuns.delete(old); }
+            if (runs) runs.delete(id);
+            if (cleanup) await Promise.race([cleanup, new Promise((r) => setTimeout(r, 5000))]);
+        }
+    },
+
+    /**
+     * A server event for a picture run (the listeners below): true when `detail` belongs to one, which then answers, or
+     * to one that ended (its late events go nowhere).
+     */
+    pictureRunEvent(type, detail) {
+        const id = detail && detail.prompt_id;
+        const e = id ? this._pictureRuns.get(id) : null;
+        if (!e) return !!id && this._endedPictureRuns.has(id);
+        if (type === "executed") {
+            const images = detail.output && detail.output.images;
+            if ((detail.node === e.output || detail.display_node === e.output) && Array.isArray(images) && images[0]) e.answer(images[0]);
+        } else if (type === "success") e.ended();
+        else if (type === "error") e.fail("error", detail.exception_message || "execution failed", { nodeType: detail.node_type || "" });
+        else if (type === "interrupted") e.fail("interrupted", e.interrupted);
+        return true;
+    },
+
+    /**
+     * Where prompt `id` stands in ComfyUI's /queue: { running, pending, ahead }, or null when /queue gave no answer.
+     * The pending list is the server's heap, not sorted: the jobs ahead are those with a smaller number.
+     */
+    async queuePosition(id) {
+        let q;
+        try {
+            const r = await api.fetchApi("/queue", { signal: AbortSignal.timeout(15000) });
+            if (r.status !== 200) return null;
+            q = await r.json();
+        } catch (_) { return null; }
+        const running = Array.isArray(q && q.queue_running) ? q.queue_running : [];
+        const pending = Array.isArray(q && q.queue_pending) ? q.queue_pending : [];
+        if (running.some((it) => Array.isArray(it) && it[1] === id)) return { running: true, pending: false, ahead: 0 };
+        const mine = pending.find((it) => Array.isArray(it) && it[1] === id);
+        if (!mine) return { running: false, pending: false, ahead: 0 };
+        const ahead = running.length + pending.filter((it) => Array.isArray(it) && it[1] !== id && +it[0] < +mine[0]).length;
+        return { running: false, pending: true, ahead };
+    },
+
+    /**
+     * Prompt `id` in /history: { found, image } (the first image of `output`), { found, interrupted }, or
+     * { found, error: { message, nodeType } }; throws when /history does not answer.
+     * @returns {Promise<{ found: boolean, image?: any, interrupted?: boolean, error?: { message: string, nodeType: string } | null }>}
+     */
+    async pictureFromHistory(id, output) {
+        const r = await api.fetchApi("/history/" + encodeURIComponent(id), { signal: AbortSignal.timeout(15000) });
+        if (r.status !== 200) throw new Error("/history answered " + r.status);
+        const all = await r.json();
+        const h = all && all[id];
+        if (!h) return { found: false };
+        const images = h.outputs && h.outputs[output] && h.outputs[output].images;
+        if (Array.isArray(images) && images[0]) return { found: true, image: images[0] };
+        const msgs = (h.status && h.status.messages) || [];
+        const err = msgs.find((m) => Array.isArray(m) && m[0] === "execution_error");
+        if (err) return { found: true, error: { message: (err[1] && err[1].exception_message) || "execution failed", nodeType: (err[1] && err[1].node_type) || "" } };
+        if (msgs.some((m) => Array.isArray(m) && m[0] === "execution_interrupted")) return { found: true, interrupted: true };
+        return { found: true };
+    },
+
+    /**
+     * Take Scumble's own prompt `id` off ComfyUI, never another job. A current server cancels it by id in one step
+     * (POST /api/jobs/<id>/cancel: dequeued if pending, interrupted only while it is the running one, atomically). An
+     * older one: deleted from the queue, then interrupted by its id only when /queue shows it running and the server is
+     * 0.3.57 or later (before that /interrupt ignored the id and stopped whatever ran; the short job then finishes on its
+     * own). Never a bare /interrupt. -> whether a running job was interrupted (or the server cancelled it)
+     */
+    async cancelComfyPrompt(id) {
+        if (!id) return false;
+        const post = (path, body) => api.fetchApi(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
+        try {
+            const r = await post("/api/jobs/" + encodeURIComponent(id) + "/cancel", {});
+            if (r.status === 200) {
+                let d = null;
+                try { d = await r.json(); } catch (_) { d = null; }
+                return !!(d && d.cancelled);
+            }
+            if (r.status !== 404 && r.status !== 405) console.warn("job cancel answered", r.status);
+        } catch (err) { console.warn("job cancel", err); }
+        try { await post("/queue", { delete: [id] }); } catch (err) { console.warn("queue delete", err); }
+        if (!realism.versionAtLeast((this.server && this.server.version) || "", "0.3.57")) return false;
+        const q = await this.queuePosition(id);
+        if (!q || !q.running) return false;
+        try { await post("/interrupt", { prompt_id: id }); } catch (err) { console.warn("interrupt", err); }
+        return true;
+    },
+
+    /** Write settings.realism whole (settings.set() stores a top-level key as given): the filled values with `patch`. */
+    async setRealismValues(patch) {
+        const next = realism.fillValues({ ...this.realismValues(), ...(patch || {}) });
+        this.realismStored = next;
+        try { await window.scumble.settings.set({ realism: next }); } catch (err) { console.warn("settings.realism not saved", err); }
+        return next;
+    },
+
+    /**
+     * The Realism Pass on a picture (docs/PLAN_0_1_42.md R2a; R2b's answers, R4's layer): `bytes` (any picture the
+     * window decodes) through DLSS 5 on the user's ComfyUI at 1x, with settings.realism's Style, Strength and model
+     * preset. An odd side is padded by repeating the last column or row and the answer cropped back; a picture with
+     * transparency goes flattened onto mid-grey and gets its alpha back. A refused model preset makes settings.realism
+     * use Default from then on and tries once more. Throws an Error whose `hint` is the sentence (§3.4, §3.5) and whose
+     * `unsupported` says the server cannot run the pass at all.
+     * -> { bytes, mime: "image/png", width, height, seconds, note }
+     */
+    async passPicture(editor, bytes, mime, { token = null } = {}) {
+        const L = realism.LABEL;
+        const fail = (text, extra) => Object.assign(new Error(text), { hint: text }, extra || {});
+        const support = this.realismSupport();
+        if (!support.ok) throw fail(support.reason, { unsupported: true });
+        if (token && token.cancelled) throw fail(`${L} cancelled.`, { kind: "cancelled" });
+        let img;
+        try { img = await bytesToImage(bytes, mime); } catch (_) { throw fail(`${L}: the picture could not be decoded.`); }
+        const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (!(w > 0 && h > 0)) throw fail(`${L}: the picture is empty.`);
+        const { w2, h2 } = realism.evenPlan(w, h);
+        const refusal = realism.fits(w2, h2);
+        if (refusal) throw fail(refusal.replace(`${w2} × ${h2}`, `${w} × ${h}`));
+        // the one readback of the source (the acceleration-latch trap): its alpha is reused for the answer
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const cx = c.getContext("2d", { willReadFrequently: true });
+        cx.imageSmoothingEnabled = false;
+        cx.drawImage(img, 0, 0);
+        const source = cx.getImageData(0, 0, w, h).data;
+        const keepAlpha = realism.hasAlpha(source);
+        const prep = realism.prepPixels(source, w, h, keepAlpha);
+        c.width = w2; c.height = h2;
+        cx.putImageData(new ImageData(prep.data, w2, h2), 0, 0);
+        const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
+        const ref = await this.uploadInput(new Blob([await canvasBytes(c)], { type: "image/png" }), `n${editor ? editor.node.id : 0}_pass_${stamp}.png`);
+        c.width = c.height = 0;
+        const notes = [];
+        if (support.note) notes.push(support.note);
+        let values = this.realismValues();
+        let res = null, fellBack = "";
+        while (!res) {
+            const prompt = realism.passPrompt(this.realismRecipe(), values, ref);
+            try {
+                res = await this.comfyPictureRun(editor, prompt, realism.PASS_OUTPUT, { label: L, token, timeoutMs: values.timeout * 1000 });
+            } catch (err) {
+                // the runtime refused the asked model preset: Default from now on, and once more with it (a refusal of
+                // Default ends it). The recipe's own DLSS model preset row is not settings.realism and stays as it is
+                if (err && err.kind === "error" && realism.isPresetRefusal(err.message) && values.preset !== "Default") {
+                    fellBack = realism.presetFallbackNote(values.preset);
+                    values = await this.setRealismValues({ preset: "Default" });
+                    notes.push(fellBack);
+                    if (editor && editor.setStatus) editor.setStatus(fellBack);
+                    continue;
+                }
+                // a failure after the fallback still says that settings.realism changed
+                const text = realism.runFailure(err);
+                throw fail(fellBack ? `${text} ${fellBack}` : text, { kind: (err && err.kind) || "error" });
+            }
+        }
+        // the answer cropped back to w × h at 0, 0; with transparency the source's alpha written back
+        let out;
+        try { img = await bytesToImage(res.bytes, res.mime); } catch (_) { throw fail(`${L}: your ComfyUI's answer could not be decoded.`); }
+        const aw = img.naturalWidth || img.width, ah = img.naturalHeight || img.height;
+        if (aw < w || ah < h) throw fail(`${L}: your ComfyUI answered ${aw} × ${ah} for a picture of ${w} × ${h}.`);
+        if (!keepAlpha && aw === w && ah === h) out = res.bytes;
+        else {
+            c.width = w; c.height = h;
+            cx.imageSmoothingEnabled = false;
+            cx.drawImage(img, 0, 0, w, h, 0, 0, w, h);
+            if (keepAlpha) {
+                const answer = cx.getImageData(0, 0, w, h).data;
+                cx.putImageData(new ImageData(realism.putAlphaBack(answer, w, h, source, w, h), w, h), 0, 0);
+            }
+            out = await canvasBytes(c);
+            c.width = c.height = 0;
+        }
+        return { bytes: out, mime: out === res.bytes ? res.mime : "image/png", width: w, height: h, seconds: res.seconds, note: notes.join(" ") };
+    },
+
+    /**
+     * The pass after an API or Comfy Cloud answer (R2b's routes), while the document's Realism Pass switch is on: the
+     * passed bytes, or the plain ones with a note that says why. A paid answer is never thrown away.
+     * -> { bytes, mime, note, passed }
+     */
+    async realismAfter(editor, res, { token = null } = {}) {
+        if (!editor || !editor.genSettings || !editor.genSettings.realism) return { bytes: res.bytes, mime: res.mime, note: "", passed: false };
+        try {
+            const out = await this.passPicture(editor, res.bytes, res.mime, { token });
+            return { bytes: out.bytes, mime: out.mime, note: out.note || "", passed: true };
+        } catch (err) {
+            const text = String((err && err.hint) || realism.runFailure(err));
+            const L = realism.LABEL;
+            const note = err && err.unsupported ? `${L} skipped: ${text.startsWith(L) ? text.slice(L.length).replace(/^:?\s*/, "") : text}` : `${text} The plain result was kept.`;
+            return { bytes: res.bytes, mime: res.mime, note, passed: false };
+        }
+    },
+
     /**
      * Fill the recipe with the editor state and queue it. Called by editor.generate(); `opts.refs` is the click's
      * reference snapshot (docs/PLAN_REFS.md C3; a caller without one gets the references of now).
@@ -2138,7 +2484,7 @@ export const host = {
     async ensureOnServer(stateJson, editor) {
         const refs = this.stateRefs(stateJson);
         if (!refs.length) return null;
-        const report = await window.scumble.comfy.ensure(refs);
+        const report = await this.ensureRefs(refs);
         if (report && report.uploaded.length && editor) editor.setStatus(`Uploaded ${report.uploaded.length} file${report.uploaded.length > 1 ? "s" : ""} to the server. Waiting for the result ...`);
         if (report && report.missing.length) throw new Error("These files are neither on the server nor in the local store: " + report.missing.join(", "));
         return report;
@@ -3042,6 +3388,8 @@ export const host = {
 window.scumble.comfy.onEvent((ev) => api.dispatch(ev.type, ev.data));
 
 api.addEventListener("executed", ({ detail }) => {
+    // a picture run (the Realism Pass, an upscale of the whole picture) takes its own answer
+    if (host.pictureRunEvent("executed", detail)) return;
     const out = detail && detail.output;
     if (!out) return;
     // Results: the recipe's canvas node id is the same for every tab, so the prompt id
@@ -3066,8 +3414,8 @@ function localRunEnded(detail) {
     const id = detail && detail.prompt_id;
     for (const ed of host.editors()) if (ed._localRuns) { if (id) ed._localRuns.delete(id); else ed._localRuns.clear(); }
 }
-api.addEventListener("execution_success", ({ detail }) => localRunEnded(detail));
-api.addEventListener("execution_interrupted", ({ detail }) => localRunEnded(detail));
+api.addEventListener("execution_success", ({ detail }) => { localRunEnded(detail); host.pictureRunEvent("success", detail); });
+api.addEventListener("execution_interrupted", ({ detail }) => { localRunEnded(detail); host.pictureRunEvent("interrupted", detail); });
 api.addEventListener("status", ({ detail }) => {
     const info = detail && detail.status && detail.status.exec_info;
     if (info && info.queue_remaining === 0) for (const ed of host.editors()) if (ed._localRuns) ed._localRuns.clear();
@@ -3076,6 +3424,8 @@ api.addEventListener("status", ({ detail }) => {
 api.addEventListener("execution_error", ({ detail }) => {
     localRunEnded(detail);
     if (!detail) return;
+    // a picture run's failure goes to its caller (passPicture's sentence), not into the tab's status
+    if (host.pictureRunEvent("error", detail)) return;
     const ed = host.editorByPrompt(detail.prompt_id) || host.editor;
     if (!ed) return;
     const msg = detail.exception_message || "execution failed";

@@ -239,3 +239,128 @@ export function hint(message) {
 export function isPassNode(nodeType) {
     return NODES.includes(String(nodeType || ""));
 }
+
+// ---- the pass on a picture (R2a: host.passPicture, which R2b and R4 call) ----------------------------------------
+
+/** The pass on a picture always runs at 1x: the answer is cropped back to the picture's own size. */
+export const PASS_MODE = "1x (DLAA / native)";
+/** recipes/realism_pass.json's DLSS5Settings inputs: a prompt of the pass when no recipe holds that node. */
+export const SETTINGS_DEFAULTS = Object.freeze({
+    upscaling_mode: PASS_MODE, nr_preset: "Default", nr_style: "Default", nr_intensity: 1.0,
+    local_tone_strength: 1.0, local_structure_strength: 1.5, skin_structure_strength: 2.0,
+    automatic_mask: true, dlss_model_preset: "L", motion: "auto", scene_change_threshold: 0.24,
+    warmup_frames: 0, runtime_dir: "",
+});
+/** The node of passPrompt whose picture is the answer. */
+export const PASS_OUTPUT = "rp_out";
+
+/** The even size a w × h picture is padded to before the pass (the pack would add a black column or resample). */
+export function evenPlan(w, h) {
+    w = Math.max(1, Math.round(+w || 0)); h = Math.max(1, Math.round(+h || 0));
+    return { w2: w + (w & 1), h2: h + (h & 1) };
+}
+
+/**
+ * The prompt of a pass on one uploaded picture (`ref`: { filename, subfolder, type }): four nodes, every input
+ * explicit. The DLSS5Settings inputs are the recipe's (a user copy's) with Style, Strength and the model preset from
+ * `values` (settings.realism), always at 1x; an input a user's copy wired to another node goes back to the default.
+ * PreviewImage writes a temp file, so nothing is left in the user's output folder.
+ */
+export function passPrompt(recipe, values, ref) {
+    const node = recipe && recipe.prompt ? Object.values(recipe.prompt).find((n) => n && n.class_type === "DLSS5Settings") : null;
+    const inputs = { ...SETTINGS_DEFAULTS };
+    for (const [k, v] of Object.entries((node && node.inputs) || {})) if (!Array.isArray(v)) inputs[k] = v;
+    inputs.upscaling_mode = PASS_MODE;
+    const v = values || {};
+    return {
+        rp_in: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" }) } },
+        rp_settings: { class_type: "DLSS5Settings", inputs: passSettings(inputs, { style: v.style, intensity: v.intensity, preset: v.preset }) },
+        rp_enhance: { class_type: "DLSS5EnhanceImages", inputs: { images: ["rp_in", 0], settings: ["rp_settings", 0], verify_neural_rendering: true } },
+        [PASS_OUTPUT]: { class_type: "PreviewImage", inputs: { images: ["rp_enhance", 0] } },
+    };
+}
+
+/** Whether any pixel of RGBA bytes is less than opaque. */
+export function hasAlpha(data) {
+    for (let i = 3; i < data.length; i += 4) if (data[i] < 255) return true;
+    return false;
+}
+
+/** The grey a transparent picture is flattened onto, so colours hidden under transparent pixels do not bleed. */
+export const FLATTEN_GREY = 128;
+
+/**
+ * The bytes that go to the pass: the w × h RGBA picture padded to evenPlan's size by repeating its last column and row,
+ * opaque; with `flatten` its colours composited over mid-grey first (the alpha is put back afterwards, putAlphaBack).
+ * -> { data: Uint8ClampedArray, w2, h2 }
+ */
+export function prepPixels(data, w, h, flatten) {
+    const { w2, h2 } = evenPlan(w, h);
+    const out = new Uint8ClampedArray(w2 * h2 * 4);
+    for (let y = 0; y < h2; y++) {
+        const sy = Math.min(y, h - 1);
+        for (let x = 0; x < w2; x++) {
+            const s = (sy * w + Math.min(x, w - 1)) * 4, d = (y * w2 + x) * 4;
+            if (flatten) {
+                const a = data[s + 3] / 255, g = FLATTEN_GREY * (1 - a);
+                out[d] = data[s] * a + g; out[d + 1] = data[s + 1] * a + g; out[d + 2] = data[s + 2] * a + g;
+            } else {
+                out[d] = data[s]; out[d + 1] = data[s + 1]; out[d + 2] = data[s + 2];
+            }
+            out[d + 3] = 255;
+        }
+    }
+    return { data: out, w2, h2 };
+}
+
+/**
+ * The answer (`answer`, aw × ah RGBA, at least w × h) cropped back to w × h at 0, 0, with the source's alpha
+ * (`source`, w × h RGBA) written back and prepPixels' flatten undone: a pixel of alpha a went as c·a + grey·(1 − a), so
+ * its colour comes back as (p − grey·(1 − a)) / a. A pixel the pass left alone gets its own colour back, and over the
+ * grey the layer shows exactly what the pass made; without the undo the alpha would weigh the colour twice (a grey
+ * fringe on every soft edge). Fully transparent and opaque pixels keep the answer's colour.
+ * -> Uint8ClampedArray of w × h × 4
+ */
+export function putAlphaBack(answer, aw, ah, source, w, h) {
+    if (aw < w || ah < h) throw new Error(`${LABEL}: your ComfyUI answered ${aw} × ${ah} for a picture of ${w} × ${h}.`);
+    const out = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const a = (y * aw + x) * 4, d = (y * w + x) * 4, alpha = source[d + 3];
+            if (alpha === 0 || alpha === 255) {
+                out[d] = answer[a]; out[d + 1] = answer[a + 1]; out[d + 2] = answer[a + 2];
+            } else {
+                const k = alpha / 255, g = FLATTEN_GREY * (1 - k);
+                out[d] = (answer[a] - g) / k; out[d + 1] = (answer[a + 1] - g) / k; out[d + 2] = (answer[a + 2] - g) / k;
+            }
+            out[d + 3] = alpha;
+        }
+    }
+    return out;
+}
+
+/**
+ * The sentence a failed picture run ends with (host.comfyPictureRun's error: `kind` "error" carries the server's
+ * message, the other kinds a text of their own that already names the pass).
+ */
+export function runFailure(err) {
+    const msg = String((err && err.message) || err || "");
+    // the runner's own texts (a cancel, the timeout, an answer it could not fetch) already name the pass; the pack's
+    // and the server's messages never start with Scumble's label
+    if (msg.startsWith(LABEL)) return msg;
+    return hint(msg);
+}
+
+/** What the user reads when the runtime refused the asked model preset and settings.realism took Default. */
+export function presetFallbackNote(asked) {
+    return `${LABEL}: the runtime on your ComfyUI refused DLSS model preset ${asked}, so the pass uses Default from now on (the Realism Pass recipe keeps its own DLSS model preset row).`;
+}
+
+/** Whether a ComfyUI version ("0.38.0", "v0.3.57") is at least `min`; an unknown one is not. */
+export function versionAtLeast(version, min) {
+    const parts = (v) => (/^v?(\d+)\.(\d+)(?:\.(\d+))?/.exec(String(v || "").trim()) || []).slice(1).map((n) => +(n || 0));
+    const a = parts(version), b = parts(min);
+    if (a.length < 3 || b.length < 3) return false;
+    for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+    return true;
+}

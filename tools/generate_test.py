@@ -275,6 +275,487 @@ try {
 ]
 
 
+# docs/PLAN_0_1_42.md R2a: the picture runner (host.comfyPictureRun) and the pass on a picture (host.passPicture,
+# host.realismAfter), against stubs: nothing reaches a server. The queue, /queue, /history, /interrupt and the ensure
+# are caught in the page; the upload and /view go to the gate profile's own mirror, which serves test_base.png
+# (run_gates.sh puts it there). The answers are dispatched server events. Raw strings: the JS keeps its backslashes.
+R2A_STUBS = r"""
+const LABEL = "Realism Pass (Windows only, RTX only)";
+const { api } = await import("./editor/host.js");
+const nodeInfo = () => ({ input: { required: {} } });
+const OI = { InpaintCanvas: nodeInfo(), InpaintCanvasLoadRef: nodeInfo(), DLSS5Settings: nodeInfo(), DLSS5EnhanceImages: nodeInfo() };
+const GOOD = { state: "connected", os: "win32", gpus: ["cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync"], url: "http://127.0.0.1:8188", version: "0.38.0" };
+const BASE = { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input" };
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensureRefs: host.ensureRefs, queue: api.queuePrompt, fetchApi: api.fetchApi, server: { ...(host.server || {}) }, realism: host.realismStored, run: host.comfyPictureRun };
+// what the page sent (queued prompts, ensured refs, POSTs to /queue and /interrupt) and what /queue and /history answer;
+// T.queue null: /queue shows the last queued prompt running; T.onQueued(id, body, n) runs 300 ms after each queueing;
+// T.jobs null: the server has no POST /api/jobs/<id>/cancel (404, an older ComfyUI), else the ids it was asked to cancel;
+// T.historyFails: that many /history reads answer 502 first
+const T = { ids: [], queued: [], ensured: [], deletes: [], interrupts: [], queue: null, history: {}, onQueued: null, jobs: null, historyFails: 0 };
+const json = (v) => Promise.resolve(new Response(JSON.stringify(v), { status: 200, headers: { "Content-Type": "application/json" } }));
+const stubAll = () => {
+    host.connected = true;
+    host.objectInfo = OI;
+    host.setServerStatus(GOOD);
+    host.ensureRefs = async (refs) => { T.ensured.push(...refs); return { checked: 0, uploaded: [], missing: [] }; };
+    api.queuePrompt = async (n, body) => {
+        const id = T.ids.shift() || ("rp-test-x" + T.queued.length);
+        T.queued.push({ n, body, id });
+        const n1 = T.queued.length;
+        if (T.onQueued) { const f = T.onQueued; setTimeout(() => f(id, body, n1), 300); }
+        return { prompt_id: id };
+    };
+    api.fetchApi = (path, init) => {
+        const p = String(path), post = !!(init && init.method === "POST");
+        if (p === "/queue" && post) { T.deletes.push(JSON.parse(init.body)); return json({}); }
+        if (p === "/queue") return json(T.queue || { queue_running: T.queued.length ? [[0, T.queued[T.queued.length - 1].id, {}, {}, []]] : [], queue_pending: [] });
+        if (p === "/interrupt") { T.interrupts.push(init && init.body ? JSON.parse(init.body) : null); return json({}); }
+        const job = /^\/api\/jobs\/([^/]+)\/cancel$/.exec(p);
+        if (job && post) {
+            if (!T.jobs) return Promise.resolve(new Response("404: Not Found", { status: 404 }));
+            T.jobs.push(decodeURIComponent(job[1]));
+            return json({ cancelled: true });
+        }
+        if (p.startsWith("/history/")) {
+            if (T.historyFails > 0) { T.historyFails--; return Promise.resolve(new Response("bad gateway", { status: 502 })); }
+            return json(T.history);
+        }
+        return saved.fetchApi.call(api, path, init);
+    };
+};
+const unstubAll = () => {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureRefs = saved.ensureRefs;
+    api.queuePrompt = saved.queue; api.fetchApi = saved.fetchApi; host.realismStored = saved.realism; host.comfyPictureRun = saved.run;
+    host.setServerStatus({ state: saved.server.state || "disconnected", os: saved.server.os || "", gpus: saved.server.gpus || [], remote: !!saved.server.remote, url: saved.server.url || "", version: saved.server.version || "" });
+};
+const bytesOf = async (ref) => new Uint8Array(await (await saved.fetchApi.call(api, "/view?" + new URLSearchParams({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" }).toString())).arrayBuffer());
+const sameBytes = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
+const pixelsOf = async (bytes) => {
+    const img = await new Promise((res, rej) => { const u = URL.createObjectURL(new Blob([bytes], { type: "image/png" })); const i = new Image(); i.onload = () => { URL.revokeObjectURL(u); res(i); }; i.onerror = () => rej(new Error("not a picture")); i.src = u; });
+    const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(img, 0, 0);
+    const d = x.getImageData(0, 0, c.width, c.height).data; c.width = c.height = 0;
+    return { w: img.naturalWidth, h: img.naturalHeight, d };
+};
+const pngOf = async (w, h, fill) => {
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const x = c.getContext("2d", { willReadFrequently: true }); const im = x.createImageData(w, h);
+    for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) im.data.set(fill(xx, y), (y * w + xx) * 4);
+    x.putImageData(im, 0, 0);
+    const b = await new Promise((r) => c.toBlob(r, "image/png")); c.width = c.height = 0;
+    return new Uint8Array(await b.arrayBuffer());
+};
+const failed = (p) => p.then(() => null, (e) => e);
+const sorted = (o) => JSON.stringify(Object.keys(o || {}).sort().map((k) => [k, o[k]]));
+let doc = null;
+"""
+
+R2A_END = r"""
+} finally {
+    unstubAll();
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""
+
+STEPS_R2A = [
+    # the runner: queued at the front as a helper, an open render of the tab while it waits; it ends on the node's
+    # executed, on execution_success (/history), on an error, an interrupt, the timeout, a lost connection, a job the
+    # server no longer holds; the position from /queue; a 400 from /prompt
+    ("the_picture_runner_answers", R2A_STUBS + r"""
+try {
+    stubAll();
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    const out = {};
+    const prompt = { rp_out: { class_type: "PreviewImage", inputs: { images: ["x", 0] } } };
+    const want = await bytesOf(BASE);
+    // (1) the node's executed answers; another node's of the same prompt does not
+    T.ids = ["rp-test-1"];
+    const n0 = ed.layers.length;
+    const p1 = host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 20000 });
+    await wait(300);
+    const q1 = T.queued[0];
+    if (!q1 || q1.n !== -1 || q1.body.output !== prompt || !(q1.body.workflow && q1.body.workflow.extra && q1.body.workflow.extra.inpaint_canvas_helper)) throw new Error("the queued prompt: " + JSON.stringify(q1 && { n: q1.n, wf: q1.body.workflow }));
+    if (!ed._localRuns || !ed._localRuns.has("rp-test-1")) throw new Error("the run is no open render of the tab while it waits");
+    if (host.editorByPrompt("rp-test-1") !== ed) throw new Error("editorByPrompt does not know the picture run");
+    if (!ed.turnBlocked()) throw new Error("a turn of the picture is not blocked while the run waits");
+    api.dispatch("executed", { prompt_id: "rp-test-1", node: "other", output: { images: [{ filename: "nope.png", subfolder: "inpaint_canvas", type: "input" }] } });
+    api.dispatch("executed", { prompt_id: "rp-test-1", node: "rp_out", output: { images: [BASE] } });
+    const r1 = await p1;
+    if (!sameBytes(r1.bytes, want) || r1.promptId !== "rp-test-1" || !/^image\//.test(r1.mime)) throw new Error("the answer: " + JSON.stringify({ n: r1.bytes.length, want: want.length, id: r1.promptId, mime: r1.mime }));
+    if (ed._localRuns.has("rp-test-1") || host._pictureRuns.size) throw new Error("the run stays open after its answer");
+    if (ed.layers.length !== n0) throw new Error("the picture run's answer landed in the tab");
+    out.answer = { bytes: r1.bytes.length, seconds: r1.seconds };
+    // (2) execution_success without an executed: the answer from /history
+    T.ids = ["rp-test-2"];
+    T.history = { "rp-test-2": { outputs: { rp_out: { images: [BASE] } }, status: { status_str: "success", messages: [] } } };
+    const p2 = host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 20000 });
+    await wait(300);
+    api.dispatch("execution_success", { prompt_id: "rp-test-2" });
+    if (!sameBytes((await p2).bytes, want)) throw new Error("execution_success: not the /history answer");
+    // (3) an error goes to the caller with the server's text and node type; the tab's status stays as it was
+    T.ids = ["rp-test-3"];
+    ed.setStatus("before the error");
+    ed.lastPassError = null;
+    const p3 = failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 20000 }));
+    await wait(300);
+    api.dispatch("execution_error", { prompt_id: "rp-test-3", node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: "No DLSS 5 runtime was found. Searched: x" });
+    const e3 = await p3;
+    if (!e3 || e3.kind !== "error" || e3.nodeType !== "DLSS5EnhanceImages" || !/No DLSS 5 runtime/.test(e3.message)) throw new Error("the error: " + JSON.stringify(e3 && { kind: e3.kind, nodeType: e3.nodeType, message: e3.message }));
+    if (ed.status !== "before the error" || ed.lastPassError) throw new Error("the error went into the tab: " + ed.status + " / " + ed.lastPassError);
+    if (ed._localRuns.has("rp-test-3")) throw new Error("the run stays open after its error");
+    // (4) interrupted
+    T.ids = ["rp-test-4"];
+    const p4 = failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 20000 }));
+    await wait(300);
+    api.dispatch("execution_interrupted", { prompt_id: "rp-test-4", node_id: "rp_enhance", node_type: "DLSS5EnhanceImages" });
+    const e4 = await p4;
+    if (!e4 || e4.kind !== "interrupted" || e4.message !== LABEL + " was interrupted on your ComfyUI.") throw new Error("interrupted: " + JSON.stringify(e4 && { kind: e4.kind, message: e4.message }));
+    // (5) the timeout takes the job off the queue
+    T.ids = ["rp-test-5"]; T.deletes = []; T.interrupts = [];
+    const e5 = await failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 1000 }));
+    if (!e5 || e5.kind !== "timeout" || e5.message !== LABEL + ": no answer from your ComfyUI within 1 s; its job was taken off the queue.") throw new Error("the timeout: " + JSON.stringify(e5 && { kind: e5.kind, message: e5.message }));
+    if (JSON.stringify(T.deletes) !== JSON.stringify([{ delete: ["rp-test-5"] }]) || JSON.stringify(T.interrupts) !== JSON.stringify([{ prompt_id: "rp-test-5" }])) throw new Error("the timeout's cancel: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
+    // (5b) the wait behind the user's jobs does not count: pending for about 6.5 s at a 3 s timeout, then running
+    T.ids = ["rp-test-5b"];
+    T.queue = { queue_running: [[5, "user-job", {}, {}, []]], queue_pending: [[-1, "rp-test-5b", {}, {}, []]] };
+    let e5b = null;
+    const t5b = Date.now();
+    const p5b = failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 3000 })).then((e) => { e5b = e; return e; });
+    await wait(6500);
+    if (e5b) throw new Error("the pending wait counted: " + JSON.stringify({ kind: e5b.kind, after: Date.now() - t5b }));
+    T.queue = { queue_running: [[-1, "rp-test-5b", {}, {}, []]], queue_pending: [] };
+    await p5b;
+    const ms5b = Date.now() - t5b;
+    T.queue = null;
+    if (!e5b || e5b.kind !== "timeout" || ms5b < 6500 || ms5b > 14000) throw new Error("the timeout after the wait: " + JSON.stringify({ kind: e5b && e5b.kind, ms: ms5b }));
+    out.pendingThenTimeout = ms5b;
+    // (6) the connection lost while it waits
+    T.ids = ["rp-test-6"];
+    const p6 = failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 20000 }));
+    await wait(300);
+    host.setServerStatus({ state: "disconnected" });
+    const e6 = await p6;
+    host.setServerStatus(GOOD);
+    if (!e6 || e6.kind !== "lost" || e6.message !== LABEL + ": the connection to your ComfyUI was lost.") throw new Error("lost: " + JSON.stringify(e6 && { kind: e6.kind, message: e6.message }));
+    // its late error (the job ran on) lands nowhere: not in the tab's status, not as the pass error a command stops on
+    ed.setStatus("after the loss"); ed.lastPassError = null;
+    api.dispatch("execution_error", { prompt_id: "rp-test-6", node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: "No DLSS 5 runtime was found. Searched: x" });
+    if (ed.status !== "after the loss" || ed.lastPassError) throw new Error("a late error of a run given up on: " + ed.status);
+    // (6b) a re-Connect ("connecting" for a moment) is a pause, not a loss
+    T.ids = ["rp-test-6b"];
+    const p6b = host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 20000 });
+    await wait(300);
+    host.setServerStatus({ ...GOOD, state: "connecting" });
+    await wait(700);
+    host.setServerStatus(GOOD);
+    api.dispatch("executed", { prompt_id: "rp-test-6b", node: "rp_out", output: { images: [BASE] } });
+    if (!sameBytes((await p6b).bytes, want)) throw new Error("a re-Connect: not the answer");
+    // (6c) another server connected meanwhile: lost
+    T.ids = ["rp-test-6c"];
+    const p6c = failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 20000 }));
+    await wait(300);
+    host.setServerStatus({ ...GOOD, url: "http://192.168.1.20:8188" });
+    const e6c = await p6c;
+    host.setServerStatus(GOOD);
+    if (!e6c || e6c.kind !== "lost") throw new Error("another server: " + JSON.stringify(e6c && { kind: e6c.kind, message: e6c.message }));
+    // (7) the position from /queue every 2 s: one job running and one queued at the front before it, then running
+    T.ids = ["rp-test-7"];
+    T.queue = { queue_running: [[5, "user-job", {}, {}, []]], queue_pending: [[7, "user-next", {}, {}, []], [-1, "rp-test-7", {}, {}, []], [-3, "other-front", {}, {}, []]] };
+    const p7 = host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 30000 });
+    let waits = "", runs = "";
+    for (let k = 0; k < 40 && !waits; k++) { await wait(150); if (/waits for your ComfyUI/.test(ed.status)) waits = ed.status; }
+    if (waits !== LABEL + " waits for your ComfyUI (2 jobs ahead) ...") throw new Error("the position: " + ed.status);
+    T.queue = { queue_running: [[-1, "rp-test-7", {}, {}, []]], queue_pending: [[7, "user-next", {}, {}, []]] };
+    for (let k = 0; k < 40 && !runs; k++) { await wait(150); if (/runs on your ComfyUI/.test(ed.status)) runs = ed.status; }
+    if (runs !== LABEL + " runs on your ComfyUI ...") throw new Error("running: " + ed.status);
+    api.dispatch("executed", { prompt_id: "rp-test-7", node: "rp_out", output: { images: [BASE] } });
+    await p7;
+    out.position = [waits, runs];
+    // (8) neither queued nor running twice in a row: the answer from /history, or the job is gone
+    T.queue = { queue_running: [], queue_pending: [] };
+    T.ids = ["rp-test-8"]; T.history = { "rp-test-8": { outputs: { rp_out: { images: [BASE] } } } };
+    const t8 = Date.now();
+    const r8 = await host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 30000 });
+    if (!sameBytes(r8.bytes, want)) throw new Error("a missed answer: not read from /history");
+    T.ids = ["rp-test-9"]; T.history = {};
+    const e9 = await failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 30000 }));
+    if (!e9 || e9.kind !== "dropped" || !e9.message.includes(LABEL)) throw new Error("dropped: " + JSON.stringify(e9 && { kind: e9.kind, message: e9.message }));
+    // a /history that fails once is asked again, not taken for a dropped job
+    T.ids = ["rp-test-9b"]; T.history = { "rp-test-9b": { outputs: { rp_out: { images: [BASE] } } } }; T.historyFails = 1;
+    const r9b = await host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 30000 });
+    if (!sameBytes(r9b.bytes, want) || T.historyFails) throw new Error("a failed /history read ended the run");
+    // an interrupt from ComfyUI's own window while the socket was away: interrupted, not an error
+    T.ids = ["rp-test-9c"]; T.history = { "rp-test-9c": { outputs: {}, status: { status_str: "error", messages: [["execution_start", {}], ["execution_interrupted", { prompt_id: "rp-test-9c" }]] } } };
+    const e9c = await failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 30000 }));
+    if (!e9c || e9c.kind !== "interrupted") throw new Error("interrupted in /history: " + JSON.stringify(e9c && { kind: e9c.kind, message: e9c.message }));
+    out.missed = Date.now() - t8;
+    T.queue = null;
+    // (9) a 400 from /prompt: the server's text, nothing waits
+    const q0 = api.queuePrompt;
+    api.queuePrompt = async () => { throw new Error("DLSS5Settings: Value not in list: dlss_model_preset: 'M' not in ['Default']"); };
+    const e10 = await failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL }));
+    api.queuePrompt = q0;
+    if (!e10 || e10.kind !== "error" || !/Value not in list/.test(e10.message) || host._pictureRuns.size) throw new Error("a 400: " + JSON.stringify(e10 && { kind: e10.kind, message: e10.message }));
+    return out;
+""" + R2A_END),
+    # the title row's Cancel during the wait: only Scumble's own prompt goes, interrupted only when it is the running one
+    ("cancel_removes_only_its_own_prompt", R2A_STUBS + r"""
+try {
+    stubAll();
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    const prompt = { rp_out: { class_type: "PreviewImage", inputs: { images: ["x", 0] } } };
+    // (1) it runs: deleted from the queue, then interrupted by its own id
+    T.ids = ["rp-test-1"];
+    const token = { cancelled: false };
+    const p1 = failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, token }));
+    await wait(300);
+    token.cancelled = true;
+    const e1 = await p1;
+    if (!e1 || e1.kind !== "cancelled" || e1.message !== LABEL + " cancelled.") throw new Error("the cancel: " + JSON.stringify(e1 && { kind: e1.kind, message: e1.message }));
+    if (JSON.stringify(T.deletes) !== JSON.stringify([{ delete: ["rp-test-1"] }]) || JSON.stringify(T.interrupts) !== JSON.stringify([{ prompt_id: "rp-test-1" }])) throw new Error("running: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
+    if (ed._localRuns && ed._localRuns.has("rp-test-1")) throw new Error("the run stays open after its cancel");
+    // (2) another job runs: deleted from the queue, no interrupt at all
+    T.deletes = []; T.interrupts = []; T.ids = ["rp-test-2"];
+    T.queue = { queue_running: [[3, "user-job", {}, {}, []]], queue_pending: [[-1, "rp-test-2", {}, {}, []]] };
+    const token2 = { cancelled: false };
+    const p2 = failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, token: token2 }));
+    await wait(300);
+    token2.cancelled = true;
+    const e2 = await p2;
+    if (!e2 || e2.kind !== "cancelled") throw new Error("pending: " + (e2 && e2.message));
+    if (JSON.stringify(T.deletes) !== JSON.stringify([{ delete: ["rp-test-2"] }]) || T.interrupts.length) throw new Error("pending: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
+    T.queue = null;
+    // (3) cancelled before it was queued: nothing goes out
+    T.queued = [];
+    const e3 = await failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, token: { cancelled: true } }));
+    if (!e3 || e3.kind !== "cancelled" || T.queued.length) throw new Error("before queueing: " + JSON.stringify({ kind: e3 && e3.kind, queued: T.queued.length }));
+    // (4) the pass on a picture: the sentence names the pass, its job taken off the queue
+    T.deletes = []; T.interrupts = []; T.ids = ["rp-test-4"];
+    const token4 = { cancelled: false };
+    const p4 = failed(host.passPicture(ed, await bytesOf(BASE), "image/png", { token: token4 }));
+    for (let k = 0; k < 50 && !T.queued.length; k++) await wait(100);
+    if (!T.queued.length) throw new Error("the pass queued nothing");
+    token4.cancelled = true;
+    const e4 = await p4;
+    if (!e4 || e4.hint !== LABEL + " cancelled." || e4.kind !== "cancelled") throw new Error("the pass's cancel: " + JSON.stringify(e4 && { hint: e4.hint, kind: e4.kind }));
+    if (JSON.stringify(T.deletes) !== JSON.stringify([{ delete: ["rp-test-4"] }]) || JSON.stringify(T.interrupts) !== JSON.stringify([{ prompt_id: "rp-test-4" }])) throw new Error("the pass's cancel: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
+    // (5) a server older than 0.3.57 ignores the id of /interrupt and would stop whatever runs: deleted, never interrupted
+    T.deletes = []; T.interrupts = []; T.ids = ["rp-test-5"];
+    host.setServerStatus({ ...GOOD, version: "0.3.56" });
+    const token5 = { cancelled: false };
+    const p5 = failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, token: token5 }));
+    await wait(300);
+    token5.cancelled = true;
+    const e5 = await p5;
+    host.setServerStatus(GOOD);
+    if (!e5 || e5.kind !== "cancelled" || JSON.stringify(T.deletes) !== JSON.stringify([{ delete: ["rp-test-5"] }]) || T.interrupts.length) throw new Error("an old server: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
+    // (6) a current server cancels the job by its id in one step: nothing else is sent
+    T.deletes = []; T.interrupts = []; T.jobs = []; T.ids = ["rp-test-6"];
+    const token6 = { cancelled: false };
+    const p6 = failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, token: token6 }));
+    await wait(300);
+    token6.cancelled = true;
+    const e6 = await p6;
+    if (!e6 || e6.kind !== "cancelled" || JSON.stringify(T.jobs) !== JSON.stringify(["rp-test-6"]) || T.deletes.length || T.interrupts.length) throw new Error("the job route: " + JSON.stringify({ jobs: T.jobs, deletes: T.deletes, interrupts: T.interrupts }));
+    T.jobs = null;
+    return { old: "deleted only", jobs: "one cancel by id" };
+""" + R2A_END),
+    # a runtime that refuses the asked model preset: settings.realism takes Default (written whole) and the pass tries once
+    # more; a second refusal ends it. The stored settings are put back afterwards
+    ("the_preset_refusal_falls_back_once", R2A_STUBS + r"""
+const before = (await window.scumble.settings.get()).realism;
+const mine = { style: "Natural", intensity: 0.7, preset: "M", timeout: 120 };
+const REFUSED = (p) => "The worker applied DLSS model preset Default (0) instead of the requested " + p + ". This runtime does not support that model. Set dlss_model_preset to Default.";
+const presetOf = (q) => q.body.output.rp_settings.inputs.dlss_model_preset;
+try {
+    stubAll();
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    const base = await bytesOf(BASE);
+    await window.scumble.settings.set({ realism: mine });
+    host.realismStored = { ...mine };
+    // (1) refused, then answered: one retry with Default
+    T.onQueued = (id, body, n) => {
+        if (n === 1) api.dispatch("execution_error", { prompt_id: id, node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: REFUSED(body.output.rp_settings.inputs.dlss_model_preset) });
+        else api.dispatch("executed", { prompt_id: id, node: "rp_out", output: { images: [BASE] } });
+    };
+    const r1 = await host.passPicture(ed, base, "image/png", {});
+    const presets = T.queued.map(presetOf);
+    if (JSON.stringify(presets) !== JSON.stringify(["M", "Default"])) throw new Error("the tries asked for " + JSON.stringify(presets));
+    const s0 = T.queued[0].body.output.rp_settings.inputs, s1 = T.queued[1].body.output.rp_settings.inputs;
+    if (s0.nr_style !== "Natural" || s0.nr_intensity !== 0.7 || sorted({ ...s0, dlss_model_preset: "Default" }) !== sorted(s1)) throw new Error("the retry changed more than the preset: " + JSON.stringify([s0, s1]));
+    if (T.queued[0].body.output.rp_in.inputs.ref !== T.queued[1].body.output.rp_in.inputs.ref) throw new Error("the retry uploaded the picture again");
+    const stored = (await window.scumble.settings.get()).realism;
+    const wantStored = { ...mine, preset: "Default" };
+    if (sorted(stored) !== sorted(wantStored)) throw new Error("settings.realism stored: " + JSON.stringify(stored));
+    if (sorted(host.realismStored) !== sorted(wantStored) || sorted(host.realismValues()) !== sorted(wantStored)) throw new Error("the window's copy: " + JSON.stringify(host.realismStored));
+    if (!r1.note.includes(LABEL + ": the runtime on your ComfyUI refused DLSS model preset M, so the pass uses Default from now on")) throw new Error("the note: " + r1.note);
+    if (!sameBytes(r1.bytes, base)) throw new Error("the answer of the retry is not what came back");
+    // (2) refused twice: no third try, the second refusal's sentence
+    await window.scumble.settings.set({ realism: mine });
+    host.realismStored = { ...mine };
+    T.queued = [];
+    let tries = 0;
+    const q0 = api.queuePrompt;
+    api.queuePrompt = async (n, body) => { if (++tries > 2) throw new Error("a third try"); return q0(n, body); };
+    T.onQueued = (id, body) => api.dispatch("execution_error", { prompt_id: id, node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: REFUSED(body.output.rp_settings.inputs.dlss_model_preset) });
+    const e2 = await failed(host.passPicture(ed, base, "image/png", {}));
+    api.queuePrompt = q0;
+    if (tries !== 2) throw new Error(tries + " tries");
+    if (!e2 || !e2.hint || !e2.hint.startsWith(LABEL + ": the runtime on your ComfyUI does not support DLSS model preset Default")) throw new Error("the second refusal: " + (e2 && (e2.hint || e2.message)));
+    const stored2 = (await window.scumble.settings.get()).realism;
+    if (sorted(stored2) !== sorted(wantStored)) throw new Error("settings.realism after two refusals: " + JSON.stringify(stored2));
+    // (3) the stored preset is Default already: one try, nothing written, no fallback sentence
+    await window.scumble.settings.set({ realism: wantStored });
+    host.realismStored = { ...wantStored };
+    T.queued = []; tries = 0;
+    api.queuePrompt = async (n, body) => { if (++tries > 1) throw new Error("a second try"); return q0(n, body); };
+    const e3 = await failed(host.passPicture(ed, base, "image/png", {}));
+    api.queuePrompt = q0;
+    if (tries !== 1 || !e3 || !e3.hint || e3.hint.includes("from now on") || !e3.hint.includes("DLSS model preset Default")) throw new Error("a refusal of Default: " + JSON.stringify({ tries, hint: e3 && e3.hint }));
+    // (4) refused, then the retry fails otherwise: the failure still says that settings.realism changed
+    await window.scumble.settings.set({ realism: mine });
+    host.realismStored = { ...mine };
+    T.queued = [];
+    T.onQueued = (id, body, n) => api.dispatch("execution_error", { prompt_id: id, node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: n === 1 ? REFUSED("M") : "No DLSS 5 runtime was found. Searched: x" });
+    const e4 = await failed(host.passPicture(ed, base, "image/png", {}));
+    if (!e4 || !e4.hint || !e4.hint.startsWith(LABEL + ": the DLSS 5 runtime is not installed") || !e4.hint.includes("so the pass uses Default from now on") || T.queued.length !== 2) throw new Error("a failed retry: " + (e4 && e4.hint));
+    return { presets, stored, note: r1.note.slice(0, 120), second: e2.hint.slice(0, 100), failedRetry: e4.hint.slice(0, 160) };
+} finally {
+    T.onQueued = null;
+    try { await window.scumble.settings.set({ realism: before }); } catch (_) { /* restored below as far as it goes */ }
+    unstubAll();
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""),
+    # a picture with transparency goes flattened onto mid-grey and padded to even sides, and comes back with its own size
+    # and alpha; an opaque picture cropped back; one at the answer's size as the answer's bytes; refusals before the upload
+    ("alpha_comes_back", R2A_STUBS + r"""
+try {
+    stubAll();
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    const out = {};
+    // odd sides above the pack's 64 px minimum: padded to 96 x 72
+    const W = 95, H = 71;
+    // left: transparent, then half transparent, then opaque with colours by position
+    const src = (x, y) => x < 20 ? [200, 30, 30, 0] : x < 31 ? [30, 200, 30, 128] : [(x * 4) & 255, (y * 6) & 255, 90, 255];
+    const answerPx = (x, y) => [(x * 3 + 7) & 255, (y * 5 + 11) & 255, 200, 255];
+    const answer = await pngOf(96, 72, answerPx);
+    let asked = null;
+    host.comfyPictureRun = async (e, prompt, output, o) => { asked = { prompt, output, o }; return { bytes: answer, mime: "image/png", seconds: 0.1, promptId: "rp-alpha" }; };
+    const srcBytes = await pngOf(W, H, src);
+    const r = await host.passPicture(ed, srcBytes, "image/png", {});
+    const got = await pixelsOf(r.bytes), s = await pixelsOf(srcBytes);
+    if (got.w !== W || got.h !== H || r.width !== W || r.height !== H) throw new Error("the result is " + got.w + " x " + got.h);
+    let alphaOff = 0, colourOff = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        if (got.d[i + 3] !== s.d[i + 3]) alphaOff++;
+        if (s.d[i + 3] === 255) { const a = answerPx(x, y); if (got.d[i] !== a[0] || got.d[i + 1] !== a[1] || got.d[i + 2] !== a[2]) colourOff++; }
+    }
+    if (alphaOff || colourOff) throw new Error(alphaOff + " alpha bytes differ from the source, " + colourOff + " opaque pixels not the answer's");
+    // a half-transparent pixel: the answer's colour with the grey of the flatten taken out, (p - 128 (1 - k)) / k
+    const k = s.d[(5 * W + 25) * 4 + 3] / 255, ap = answerPx(25, 5), gp = Array.from(got.d.slice((5 * W + 25) * 4, (5 * W + 25) * 4 + 3));
+    const wantHalf = ap.slice(0, 3).map((p) => Math.max(0, Math.min(255, Math.round((p - 128 * (1 - k)) / k))));
+    if (gp.some((v, i) => Math.abs(v - wantHalf[i]) > 3)) throw new Error("a half-transparent pixel came back as " + JSON.stringify(gp) + ", want " + JSON.stringify(wantHalf));
+    // what went to the pass: 96 x 72, opaque, mid-grey under the transparent part, the last column and row repeated
+    if (!asked || asked.output !== "rp_out" || asked.o.label !== LABEL || asked.o.timeoutMs !== 300000) throw new Error("the run: " + JSON.stringify(asked && { output: asked.output, o: asked.o }));
+    const ref = JSON.parse(asked.prompt.rp_in.inputs.ref);
+    if (ref.type !== "input" || ref.subfolder !== "inpaint_canvas" || !T.ensured.some((x) => x.filename === ref.filename)) throw new Error("the upload: " + JSON.stringify({ ref, ensured: T.ensured }));
+    if (asked.prompt.rp_settings.inputs.upscaling_mode !== "1x (DLAA / native)" || asked.prompt.rp_settings.inputs.dlss_model_preset !== host.realismValues().preset) throw new Error("rp_settings: " + JSON.stringify(asked.prompt.rp_settings.inputs));
+    const up = await pixelsOf(await bytesOf(ref));
+    if (up.w !== 96 || up.h !== 72) throw new Error("the upload is " + up.w + " x " + up.h);
+    const px = (p, x, y) => Array.from(p.d.slice((y * p.w + x) * 4, (y * p.w + x) * 4 + 4));
+    let notOpaque = 0, padOff = 0;
+    for (let y = 0; y < 72; y++) for (let x = 0; x < 96; x++) if (px(up, x, y)[3] !== 255) notOpaque++;
+    for (let y = 0; y < 72; y++) if (JSON.stringify(px(up, 95, y)) !== JSON.stringify(px(up, 94, y))) padOff++;
+    for (let x = 0; x < 96; x++) if (JSON.stringify(px(up, x, 71)) !== JSON.stringify(px(up, x, 70))) padOff++;
+    if (notOpaque || padOff) throw new Error(notOpaque + " upload pixels not opaque, " + padOff + " pad pixels not repeated");
+    if (JSON.stringify(px(up, 5, 5)) !== JSON.stringify([128, 128, 128, 255])) throw new Error("under a transparent pixel: " + JSON.stringify(px(up, 5, 5)));
+    const half = px(up, 25, 5);
+    if (Math.abs(half[0] - 79) > 2 || Math.abs(half[1] - 164) > 2 || Math.abs(half[2] - 79) > 2) throw new Error("a half transparent pixel went as " + JSON.stringify(half));
+    if (JSON.stringify(px(up, 40, 7)) !== JSON.stringify(src(40, 7))) throw new Error("an opaque pixel went as " + JSON.stringify(px(up, 40, 7)));
+    out.transparent = { result: [got.w, got.h], upload: [up.w, up.h], half };
+    // the round trip: a pass that changes nothing gives the source back, soft edges included (no grey fringe)
+    host.comfyPictureRun = async (e, prompt) => ({ bytes: await bytesOf(JSON.parse(prompt.rp_in.inputs.ref)), mime: "image/png", seconds: 0.1, promptId: "rp-same" });
+    const same = await pixelsOf((await host.passPicture(ed, srcBytes, "image/png", {})).bytes);
+    let worst = 0;
+    for (let i = 0; i < W * H * 4; i += 4) {
+        if (s.d[i + 3] === 0) continue;
+        if (same.d[i + 3] !== s.d[i + 3]) worst = 999;
+        for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(same.d[i + c] - s.d[i + c]));
+    }
+    if (worst > 3) throw new Error("an unchanged answer came back up to " + worst + " levels off the source");
+    out.roundTrip = worst;
+    host.comfyPictureRun = async (e, prompt, output, o) => { asked = { prompt, output, o }; return { bytes: answer, mime: "image/png", seconds: 0.1, promptId: "rp-alpha" }; };
+    // an opaque odd picture: the answer cropped back
+    const r2 = await host.passPicture(ed, await pngOf(W, H, () => [10, 20, 30, 255]), "image/png", {});
+    const g2 = await pixelsOf(r2.bytes);
+    let off2 = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (JSON.stringify(Array.from(g2.d.slice((y * W + x) * 4, (y * W + x) * 4 + 4))) !== JSON.stringify(answerPx(x, y))) off2++;
+    if (g2.w !== W || g2.h !== H || off2) throw new Error("opaque, odd: " + g2.w + " x " + g2.h + ", " + off2 + " pixels off");
+    // an opaque picture at the answer's size: the answer's own bytes
+    const r3 = await host.passPicture(ed, await pngOf(96, 72, () => [1, 2, 3, 255]), "image/png", {});
+    if (!sameBytes(r3.bytes, answer)) throw new Error("opaque, even: the answer was encoded again");
+    // refusals before anything is uploaded or queued: a server on Linux, too small, too large
+    const refused = async (what, bytes, re, setup, teardown) => {
+        T.ensured = []; asked = null;
+        if (setup) setup();
+        let e;
+        try { e = await failed(host.passPicture(ed, bytes, "image/png", {})); } finally { if (teardown) teardown(); }
+        if (!e || !e.hint || !e.hint.includes(LABEL) || !re.test(e.hint)) throw new Error(what + ": " + (e ? e.hint || e.message : "not refused"));
+        if (T.ensured.length || asked) throw new Error(what + ": refused after the upload");
+        return e;
+    };
+    const linux = await refused("Linux", await pngOf(64, 64, () => [0, 0, 0, 255]), /runs only on a ComfyUI on Windows; this one runs on linux\./, () => host.setServerStatus({ ...GOOD, os: "linux" }), () => host.setServerStatus(GOOD));
+    if (!linux.unsupported) throw new Error("Linux is not marked unsupported");
+    const small = await refused("40 x 40", await pngOf(40, 40, () => [0, 0, 0, 255]), /needs at least 64 px a side; this is 40 × 40\./);
+    const large = await refused("7681 x 64", await pngOf(7681, 64, () => [0, 0, 0, 255]), /takes at most 7680 × 4320 \(long × short side\); this is 7681 × 64\./);
+    if (small.unsupported || large.unsupported) throw new Error("a size refusal is marked unsupported");
+    out.refusals = [linux.hint.slice(0, 60), small.hint, large.hint];
+    return out;
+""" + R2A_END),
+    # the pass after an answer (R2b's routes): off, the answer as it is; a server that cannot, skipped; a failure, the plain
+    # answer kept; the pass's answer when it works
+    ("realism_after_keeps_the_plain_answer", R2A_STUBS + r"""
+let ed = null, had = false, prevFlag;
+try {
+    stubAll();
+    doc = (await run("new_document")).id;
+    ed = ednow(doc);
+    had = Object.prototype.hasOwnProperty.call(ed.genSettings, "realism");
+    prevFlag = ed.genSettings.realism;
+    const res = { bytes: await bytesOf(BASE), mime: "image/png" };
+    ed.genSettings.realism = false;
+    const a = await host.realismAfter(ed, res);
+    if (a.bytes !== res.bytes || a.note !== "" || a.passed || T.queued.length) throw new Error("switched off: " + JSON.stringify({ note: a.note, passed: a.passed, queued: T.queued.length }));
+    ed.genSettings.realism = true;
+    host.setServerStatus({ ...GOOD, os: "linux" });
+    const b = await host.realismAfter(ed, res);
+    host.setServerStatus(GOOD);
+    if (b.bytes !== res.bytes || b.passed || b.note !== LABEL + " skipped: runs only on a ComfyUI on Windows; this one runs on linux." || T.queued.length) throw new Error("Linux: " + b.note);
+    T.onQueued = (id) => api.dispatch("execution_error", { prompt_id: id, node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: "No DLSS 5 runtime was found. Searched: x" });
+    const c = await host.realismAfter(ed, res);
+    if (c.bytes !== res.bytes || c.passed || !c.note.startsWith(LABEL + ": the DLSS 5 runtime is not installed") || !c.note.endsWith(" The plain result was kept.")) throw new Error("a failed pass: " + c.note);
+    // the pass answers with the picture it was sent (the upload itself)
+    let answered = null;
+    T.onQueued = (id, body) => { answered = JSON.parse(body.output.rp_in.inputs.ref); api.dispatch("executed", { prompt_id: id, node: "rp_out", output: { images: [answered] } }); };
+    const d = await host.realismAfter(ed, res);
+    if (!d.passed || !answered || !sameBytes(d.bytes, await bytesOf(answered))) throw new Error("the pass's answer: " + JSON.stringify({ passed: d.passed, note: d.note }));
+    return { skipped: b.note, failed: c.note.slice(0, 90), passed: d.passed };
+} finally {
+    T.onQueued = null;
+    if (ed) { if (had) ed.genSettings.realism = prevFlag; else delete ed.genSettings.realism; }
+    unstubAll();
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""),
+]
+
+
 STEPS = [
     ("api_text_to_image", """
 const d = await run("new_document");
@@ -815,6 +1296,7 @@ try {
     }
 }
 """),
+    *STEPS_R2A,
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";
