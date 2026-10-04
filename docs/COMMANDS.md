@@ -77,7 +77,7 @@ Open a .scumble file as a tab (the tab that already holds it is activated instea
 
 ### `list_recipes` *(app)*
 
-The recipes (ComfyUI workflows and API providers) and which one is selected. textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone.
+The recipes (ComfyUI workflows and API providers) and which one is selected. textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. The Realism Pass (Windows only, RTX only) recipe (task "pass") says whether the connected ComfyUI can run it: ready, the reason when not, a note (RTX 30); status has the same for a document (its runs, its size).
 
 (no parameters)
 
@@ -126,7 +126,7 @@ The filter layer types (built-in and from plugins) with their parameters; `fill:
 
 ### `status`
 
-What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory.
+What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (Realism Pass (Windows only, RTX only)) would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320), note (RTX 30), and the app's style, strength and preset it sends.
 
 | param | type | description |
 |---|---|---|
@@ -384,6 +384,15 @@ Upscale with the selected upscale recipe (list_recipes: task "upscale"; select_r
 | `factor` | number | how many times larger; the recipe's default when left out (list_recipes shows each recipe's factors); ignored by a model that picks its own |
 | `prompt` | string | guidance for the added detail, for an upscaler that takes one (list_recipes: usesPrompt true, e.g. Clarity, Magnific Creative); the document's prompt when left out, ignored by the others |
 | `timeout` | integer | seconds to wait for the result (default 1800) (default `1800`) |
+
+### `realism_pass` *(image)*
+
+Realism Pass (Windows only, RTX only): the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once at its own size through DLSS 5 Neural Rendering at 1x on the user's own ComfyUI and comes back as a new layer named "Realism Pass (Windows only, RTX only)": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › Realism Pass (Windows only, RTX only)). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, or the picture is past 7680 × 4320 (status's realism says so beforehand). Waits for the answer; `timeout` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was).
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `timeout` | integer | seconds to wait for the result (default 570) (default `570`) |
 
 ## Layers
 

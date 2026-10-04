@@ -23,7 +23,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   selection the recipe's Preset row picks it), and a preset the runtime refused shows as Default there and can be set
   back. The dialog says why the pass cannot run before anything is sent (the requirements above, or a picture larger
   than 7680 × 4320). The title row's timer shows the pass and its *Cancel* ends it; closing the tab ends it too.
-  Agents run it with the `realism_pass` command.
+  Agents run it with the `realism_pass` command; `list_recipes` says whether the connected ComfyUI can run it and
+  `status` whether it can run on the document, with the reason when not. The in-app assistant asks before it runs
+  the pass, its card showing Style, Strength and the model preset; where the pass cannot run it gets the reason
+  instead and no card is shown.
 - While an API Generate, an API upscale or the Realism Pass (Windows only, RTX only) runs on a document, until its
   result is in, a second Generate with an API model, an upscale or Generate new on it is refused with a note instead
   of starting beside it (Generate new with a recipe on your own ComfyUI used to clear the document before it was

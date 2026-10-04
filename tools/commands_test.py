@@ -1063,7 +1063,48 @@ try {
     host.setServerStatus({ state: "disconnected" });
     out.offline = await refused({ timeout: 10 }, (m) => m.startsWith(LABEL + " needs your own ComfyUI: connect it under Settings › ComfyUI"));
     if (ed.layers.length !== n0 || ed.providerPending) throw new Error("a refusal added a layer or left the document busy");
+    // R4: list_recipes (the server) and status (the server and the document) say beforehand whether it can run, and
+    // status the app's values it sends
+    const readiness = async () => {
+        const rec = (await c("list_recipes")).recipes.find((x) => x.id === "realism_pass");
+        const st = (await c("status", { doc })).realism;
+        const other = (await c("list_recipes")).recipes.find((x) => x.id !== "realism_pass");
+        if (!rec || !st || other.ready !== undefined) throw new Error("readiness missing, or on another recipe: " + JSON.stringify({ rec, st, other: other && other.id }));
+        return { rec, st };
+    };
+    const v0 = host.realismValues();
+    const off = await readiness();
+    if (off.rec.ready !== false || off.rec.reason !== out.offline || off.st.ready !== false || off.st.reason !== out.offline
+        || off.st.style !== v0.style || off.st.strength !== v0.intensity || off.st.preset !== v0.preset) throw new Error("offline readiness: " + JSON.stringify(off));
     host.connected = true; host.objectInfo = OI; host.setServerStatus(GOOD);
+    const on = await readiness();
+    if (on.rec.ready !== true || on.rec.reason !== null || on.rec.note !== null || on.st.ready !== true || on.st.reason !== null) throw new Error("ready readiness: " + JSON.stringify(on));
+    // a local render still on the server (it never takes providerPending) or the document still loading: status says
+    // not ready with realism_pass's own sentence, list_recipes (the server alone) stays ready
+    const RUNNING = LABEL + ": a run is still going on this document.";
+    // nothing may reach a server if the refusal broke (the finally below puts the real one back)
+    host.passPicture = async () => { throw new Error("the pass ran during a local render"); };
+    (ed._localRuns || (ed._localRuns = new Set())).add("user-render");
+    let renderSt, localRec;
+    try {
+        renderSt = (await c("status", { doc })).realism;
+        localRec = (await c("list_recipes")).recipes.find((x) => x.id === "realism_pass");
+        out.localRender = await refused({ timeout: 10 }, (m) => m === RUNNING);
+    } finally { ed._localRuns.delete("user-render"); }
+    if (renderSt.ready !== false || renderSt.reason !== RUNNING || localRec.ready !== true) throw new Error("readiness during a local render: " + JSON.stringify({ renderSt, localRec }));
+    ed._loading = true;
+    let loading;
+    try { loading = (await c("status", { doc })).realism; } finally { ed._loading = false; }
+    if (loading.ready !== false || loading.reason !== LABEL + ": the document is still loading.") throw new Error("readiness while loading: " + JSON.stringify(loading));
+    if ((await c("status", { doc })).realism.ready !== true) throw new Error("not ready again after the render and the load");
+    host.setServerStatus({ ...GOOD, gpus: ["cuda:0 NVIDIA GeForce RTX 3090 : cudaMallocAsync"] });
+    const ampere = await readiness();
+    if (ampere.rec.ready !== true || !/RTX 30 cards need the pack's experimental runtime pair/.test(ampere.rec.note || "") || ampere.st.note !== ampere.rec.note) throw new Error("RTX 30 note: " + JSON.stringify(ampere));
+    host.setServerStatus({ ...GOOD, os: "linux" });
+    const linux = await readiness();
+    if (linux.rec.ready !== false || linux.rec.reason !== LABEL + " runs only on a ComfyUI on Windows; this one runs on linux." || linux.st.reason !== linux.rec.reason) throw new Error("linux readiness: " + JSON.stringify(linux));
+    host.setServerStatus(GOOD);
+    out.readiness = { offline: off.st.reason.slice(0, 60), linux: linux.st.reason.slice(0, 60), values: [on.st.style, on.st.strength, on.st.preset] };
     const calls = [];
     host.passPicture = async (e, bytes, mime, o) => { calls.push({ e, n: bytes.length, mime, deadline: o && o.deadline, busy: !!e.providerPending }); return { bytes, mime, width: e.width, height: e.height, seconds: 2.34, note: "a note of the run" }; };
     const t0 = Date.now();

@@ -258,7 +258,19 @@ export function status(ed) {
         connected: !!host.connected, status: ed.status || "",
         // the pixel backend of this document (docs/PLAN_BCE.md §C2 step b) and what chose it
         pixels: { tiles: !!ed.tileMode, from: ed.tileModeFrom || null },
+        realism: realismState(ed),
     };
+}
+
+/**
+ * The Realism Pass on this document (docs/PLAN_0_1_42.md R4): whether realism_pass would start now
+ * (host.realismWholeRefusal: the refusals host.realismWhole makes before anything is read), the reason when not, the
+ * server's note (RTX 30) and the app's values it sends.
+ */
+function realismState(ed) {
+    const v = host.realismValues();
+    const reason = host.realismWholeRefusal(ed) || null;
+    return { ready: !reason, reason, note: host.realismSupport().note || null, style: v.style, strength: v.intensity, preset: v.preset };
 }
 
 /**
@@ -432,13 +444,15 @@ const COMMANDS = {
         async run(ed) { const id = ed.node.id; host.shell.closeDocument(ed, { force: true }); return { closed: id, documents: host.editors().map(docSummary) }; },
     },
     list_recipes: {
-        scope: "app", description: "The recipes (ComfyUI workflows and API providers) and which one is selected. textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone.",
+        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. The ${REALISM_LABEL} recipe (task "pass") says whether the connected ComfyUI can run it: ready, the reason when not, a note (RTX 30); status has the same for a document (its runs, its size).`,
         params: {},
         async run() {
             const cur = host.recipe;
+            const support = host.realismSupport();
             return { selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null, recipes: host.shell.recipes().map((r) => {
                 const v = host.shell.resolveRecipe(r);
-                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, textRefs: r.task === "upscale" || r.task === "pass" ? undefined : r.kind === "provider" ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots), description: r.description || "", source: r.source || "builtin" };
+                const pass = r.task === "pass";
+                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, textRefs: r.task === "upscale" || pass ? undefined : r.kind === "provider" ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots), ready: pass ? support.ok : undefined, reason: pass ? support.reason || null : undefined, note: pass ? support.note || null : undefined, description: r.description || "", source: r.source || "builtin" };
             }) };
         },
     },
@@ -466,7 +480,7 @@ const COMMANDS = {
 
     // -- document --
     status: {
-        description: "What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory.",
+        description: `What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320), note (RTX 30), and the app's style, strength and preset it sends.`,
         params: {},
         async run(ed) {
             const s = status(ed);
@@ -786,7 +800,7 @@ const COMMANDS = {
     },
     realism_pass: {
         needsImage: true,
-        description: `${REALISM_LABEL}: the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once at its own size through DLSS 5 Neural Rendering at 1x on the user's own ComfyUI and comes back as a new layer named "${REALISM_LABEL}": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › ${REALISM_LABEL}). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, or the picture is past 7680 × 4320. Waits for the answer; \`timeout\` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was).`,
+        description: `${REALISM_LABEL}: the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once at its own size through DLSS 5 Neural Rendering at 1x on the user's own ComfyUI and comes back as a new layer named "${REALISM_LABEL}": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › ${REALISM_LABEL}). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, or the picture is past 7680 × 4320 (status's realism says so beforehand). Waits for the answer; \`timeout\` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was).`,
         params: { timeout: P.timeout(570) },
         async run(ed, a) {
             // an epoch time in ms, comfyPictureRun's hard end (the queue's wait included): the job is taken off the

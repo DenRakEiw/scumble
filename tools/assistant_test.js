@@ -1256,6 +1256,84 @@ async function main() {
         check("undo_steps_are_named_for_the_calls_that_push_none", !badSteps.length, badSteps.join("; ") || `${steps.length} calls`);
 
         {
+            // docs/PLAN_0_1_42.md R4: realism_pass is a run (it asks, a busy document refuses it), its row is its own (a
+            // command without one asks too, with "not in the assistant's table"), status's realism refuses it with the
+            // reason when it cannot run and fills the card with what it sends; the upscale's 1800 s; no shell undo step
+            // read from the source, not imported: an ES module import warns on stderr, after the PASS the gate's node step
+            // wants last (tools/assistant_test.py node_step)
+            const LABEL = (/export const LABEL = "([^"]+)";/.exec(require("node:fs").readFileSync(path.join(ROOT, "renderer", "editor", "realism.js"), "utf8")) || [])[1];
+            const f = (extra) => { const x = facts(extra); x.tools.add("realism_pass"); return x; };
+            const ready = { ready: true, reason: null, note: null, style: "Cinematic", strength: 0.75, preset: "M" };
+            const linux = `${LABEL} runs only on a ComfyUI on Windows; this one runs on linux.`;
+            const asked = policy.decide({ name: "realism_pass", args: { timeout: 1800 } }, f({ realism: ready }));
+            const blind = policy.decide({ name: "realism_pass", args: {} }, f());
+            const notReady = policy.decide({ name: "realism_pass", args: {} }, f({ realism: { ...ready, ready: false, reason: linux } }));
+            const busy = policy.decide({ name: "realism_pass", args: {} }, f({ busy: true, realism: ready }));
+            check("realism_pass_is_a_run_with_its_own_row",
+                policy.RUNS.has("realism_pass") && Object.prototype.hasOwnProperty.call(policy.POLICY, "realism_pass")
+                && asked.action === "ask" && asked.reason === `runs ${LABEL} on your ComfyUI: it queues there and adds a layer`
+                && eq(asked.card, { settings: { style: "Cinematic", strength: 0.75, preset: "M" } })
+                && blind.action === "ask" && blind.reason === asked.reason && blind.card && blind.card.settings === null,
+                JSON.stringify({ asked, blind }));
+            check("realism_pass_is_refused_with_the_reason_when_it_cannot_run",
+                notReady.action === "refuse" && notReady.reason === linux && busy.action === "refuse" && /already rendering/.test(busy.reason),
+                JSON.stringify({ notReady, busy }));
+            check("realism_pass_waits_1800_s_and_pushes_no_shell_step",
+                policy.clamp({ name: "realism_pass", args: {} }).args.timeout === 1800
+                && policy.clamp({ name: "realism_pass", args: { timeout: 99999 } }).args.timeout === 3600
+                && policy.timeoutOf(policy.clamp({ name: "realism_pass", args: {} })) === 1800
+                && policy.undoStep({ name: "realism_pass", args: {} }) === null,
+                JSON.stringify(policy.clamp({ name: "realism_pass", args: {} }).args));
+            check("the_policys_realism_label_is_the_renderers", policy.REALISM_LABEL === LABEL, policy.REALISM_LABEL);
+
+            // a whole turn: the card shows the values status answers, the call goes out with 1800 s and no undo step of
+            // the shell's, and the layer it adds is the chat's (the opacity change on it asks nothing)
+            class PassEditor extends FakeEditor {
+                async describe() {
+                    return ALL_COMMANDS.concat([{ name: "realism_pass", description: "The pass.", needsImage: true, params: { doc: { type: "integer", description: "document id" }, timeout: { type: "integer", description: "seconds" } } }]);
+                }
+                async run(name, args, meta) {
+                    if (name === "status") {
+                        this.calls.push({ name, args });
+                        this.metas.push(meta || null);
+                        return { width: 1200, height: 800, realism: { ready: true, reason: null, note: null, style: "Natural", strength: 0.5, preset: "L" } };
+                    }
+                    if (name === "realism_pass") {
+                        this.calls.push({ name, args });
+                        this.metas.push(meta || null);
+                        const id = this.newId();
+                        for (const l of this.layersOf(1)) l.active = false;
+                        this.layersOf(1).unshift({ id, name: LABEL, kind: "image", active: true });
+                        return { layer: { id, name: LABEL }, seconds: 3, notes: [], changed: false, status: "ran" };
+                    }
+                    return super.run(name, args, meta);
+                }
+            }
+            const editor = new PassEditor();
+            const { a, events } = assistantOn(editor, [
+                anthropicStream([{ type: "tool_use", id: "c1", name: "realism_pass", input: { doc: 1 } }]),
+                anthropicStream([{ type: "tool_use", id: "c2", name: "set_layer", input: { doc: 1, layer: "active", opacity: 60 } }]),
+                anthropicStream([{ type: "text", text: "passed and softened" }]),
+            ]);
+            const stop = answerAsks(a, events, true);
+            const out = await a.send("run the realism pass and soften it");
+            stop();
+            const asks = events.filter((e) => e.type === "ask");
+            const at = editor.calls.findIndex((c) => c.name === "realism_pass");
+            const call = editor.calls[at];
+            const meta = editor.metas[at];
+            const layer = editor.layersOf(1)[0];
+            const softened = editor.calls.find((c) => c.name === "set_layer");
+            check("a_turn_runs_the_pass_with_its_card_and_owns_its_layer",
+                out.reason === "end" && asks.length === 1 && asks[0].name === "realism_pass"
+                && eq(asks[0].card, { settings: { style: "Natural", strength: 0.5, preset: "L" } })
+                && call && call.args.timeout === 1800 && meta && meta.undo === null && meta.refuseBusy === true
+                && layer.name === LABEL && a.setOf(a.chat.owned, 1).has(layer.id) && softened && softened.args.layer === layer.id,
+                JSON.stringify({ reason: out.reason, asks: asks.map((e) => [e.name, e.card]), args: call && call.args, meta: meta && { undo: meta.undo, refuseBusy: meta.refuseBusy }, owned: [...a.setOf(a.chat.owned, 1)] }));
+            await a.close();
+        }
+
+        {
             // the leading example: three regions, one ask each, and the match on the chat's own result
             const editor = new FakeEditor();
             const { a, events } = assistantOn(editor, [

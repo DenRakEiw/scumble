@@ -38,6 +38,8 @@ whole-picture refiner).
 
 The block of 2026-10-04 (night, R3a of 0.1.42) was moved here the same night, when R3b was built.
 
+The block of 2026-10-04 (night, R3b of 0.1.42) was moved here the same night, when R4 was built.
+
 
 The block of 2026-09-29 (morning, item 26 S1 built) was moved here at noon, when the eraser hotfix 0.1.33 was prepared.
 
@@ -72,6 +74,31 @@ The block of 2026-10-03 (midday: B5, B6, the 0.1.39 release) was moved here the 
 The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved here the same afternoon, when V1 of item 35 was built.
 
 The block of 2026-10-04 (evening: R3 dropped, the Realism Pass redesigned as a refiner, the MCP listings) was moved here the same night, when R3a was built.
+
+## 2026-10-04 (night: R3b of 0.1.42 built, the Upscale entry, the menu and the command; moved here the same night when R4 was built)
+
+**This session (2026-10-04 night, R3b of 0.1.42): the Realism Pass in the Upscale dialog, the Image menu and the
+`realism_pass` command, unreleased.** Said to the user first, in one sentence: Upscale (and *Image › Realism Pass
+(Windows only, RTX only)...*) offers the pass at 1× on the whole picture only, with Style / Strength / Preset, and lands
+R3a's layer; while a run holds a document a second API Generate or upscale on it is refused (local Generates queue).
+- **The dialog** (`renderer/shell.js` `upSyncPass`, `upFillPassRow`, `upFactorOptions`, `upLastFactor`,
+  `upScopeBeforePass`, the exported `menuCommand`): the entry selects no recipe, writes no `settings.upscaleRecipe` and
+  runs `realism_pass` with 1800 s; `realism.wholeRefusal` is shared with `realismWhole`; a host event `realism` (server
+  status, node list, `setRealismValues`) re-syncs the open dialog.
+- **One run per document**: `RUN_GOING` in `runProvider` / `runUpscale`; the API runs (`runGenerate` too) hold
+  `providerPending` until their result has landed (`endRunRow` when the answer is in, `endRun` after the landing);
+  `host.generateNewBlocked` refuses `generate_new` before its local route's `newCanvas` could wipe a busy document (an
+  older data-loss path the review found, common with a minutes-long pass).
+- **`realism_pass`**: `P.timeout(570)` (inside the bridge's own 600 s), answers `{ layer, seconds, notes, changed,
+  status }`. The assistant still asks for it ("not in the assistant's table") until R4.
+- **Tests**: `tools/realism_test.js` §9d (433 checks), `upscale` `the_realism_pass_entry` (11 entries), `commands`
+  `realism_pass`, `generate` `an_api_run_during_a_pass_is_refused` and `an_api_run_holds_the_document_until_it_landed`.
+  Gates `--offline` on tiles: `upscale commands generate transparent magnific oxen openrouter toapis ark help lint
+  types` ALL PASS (no pixel path changed, so no canvas run; no mutation round, Normal tier). Review: a workflow of four
+  lenses plus a verifier per finding (15 agents): eleven findings, nine real and fixed (the pass's 1× kept as the next
+  upscaler's factor; Generate new wiping a busy document; API runs giving the document back before their landing; the
+  dialog not following the server; the default deadline without margin; two CHANGELOG sentences; two test gaps), two
+  refuted. Details in the plan's R3b "As built".
 
 ## 2026-10-04 (night: R3a of 0.1.42 built, the whole picture as a layer; moved here the same night when R3b was built)
 

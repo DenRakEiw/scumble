@@ -20,7 +20,7 @@ GROUPS = [
     ("App", ["ping", "list_commands", "list_documents", "new_document", "activate_document", "close_document", "open_document", "list_recipes", "select_recipe", "set_node_params", "list_plugins", "run_action", "filter_types"]),
     ("Document and files", ["status", "new_canvas", "load_image", "add_image_layer", "save_document", "get_state", "set_status"]),
     ("Selection", ["select_rect", "select_all", "select_none", "select_invert", "select_feather", "select_grow", "select_from_layer", "select_mask", "select_by_text", "select_point"]),
-    ("Prompt and generation", ["set_prompt", "set_generation", "set_crop", "set_settings", "upsample_prompt", "generate", "upscale"]),
+    ("Prompt and generation", ["set_prompt", "set_generation", "set_crop", "set_settings", "upsample_prompt", "generate", "upscale", "realism_pass"]),
     ("Layers", ["list_layers", "set_active_layer", "set_layer", "add_paint_layer", "remove_layer", "duplicate_layer", "merge_down", "move_layer", "flip_layer", "center_layer", "align_layers", "group_layers", "ungroup_layers", "set_group", "flatten", "cutout_layer", "set_mask"]),
     ("Filters and text", ["add_filter", "set_filter", "add_text", "set_text"]),
     ("History and canvas", ["undo", "redo", "list_history", "take_snapshot", "restore_snapshot", "delete_snapshot", "compare", "extend_canvas", "rotate_canvas", "flip_canvas", "straighten_canvas"]),

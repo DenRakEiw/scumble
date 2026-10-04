@@ -18,7 +18,10 @@ const READS = new Set([
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
-const RUNS = new Set(["generate", "generate_new", "upscale", "select_by_text", "cutout_layer", "upsample_prompt"]);
+const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "select_by_text", "cutout_layer", "upsample_prompt"]);
+
+/** The Realism Pass's name, verbatim wherever the feature is named (renderer/editor/realism.js LABEL). */
+const REALISM_LABEL = "Realism Pass (Windows only, RTX only)";
 
 /** The fields of `set_layer` that the editor records no undo step for (§5). */
 const SET_LAYER_SOFT = ["name", "visible", "opacity", "blend", "role", "match", "match_source", "alpha_lock"];
@@ -128,6 +131,9 @@ const POLICY = {
     upscale: (call, facts) => ASK(call.args && call.args.scope === "document"
         ? "upscales the whole picture on a paid model: every layer is scaled along"
         : "upscales the selection: this costs money, or queues on your ComfyUI", renderCard(call, facts)),
+    // the whole visible picture at 1x on the user's own ComfyUI, never an API; `status` says whether it can run on the
+    // document (the server, the size), and its values are the app's (no command sets them)
+    realism_pass: (call, facts) => realismRow(facts),
 
     // ---- replace, close, tabs -----------------------------------------------------------
     load_image: () => ASK("replaces the image and clears the undo history"),
@@ -220,6 +226,14 @@ function renderCard(call, facts) {
     };
 }
 
+/** realism_pass: refused with `status`'s reason when it cannot run, else asked with the values it sends on the card. */
+function realismRow(facts) {
+    const r = facts && facts.realism;
+    if (r && r.ready === false) return REFUSE(String(r.reason || `${REALISM_LABEL} cannot run on this document`));
+    return ASK(`runs ${REALISM_LABEL} on your ComfyUI: it queues there and adds a layer`,
+        { settings: r ? { style: r.style, strength: r.strength, preset: r.preset } : null });
+}
+
 function exportRow(call, facts, fallback, fixedPng) {
     const args = call.args || {};
     const path = args.path === undefined || args.path === null ? "" : String(args.path);
@@ -277,7 +291,7 @@ function clampInt(value, min, max, fallback) {
 }
 
 /** The command's own default `timeout`, filled in so the Bridge's timer is long enough (§5). */
-const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, generate: 600, generate_new: 600, upscale: 1800 };
+const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, generate: 600, generate_new: 600, upscale: 1800, realism_pass: 1800 };
 
 /**
  * The arguments as they are sent: a screenshot small enough to be cheap, a log page bounded, and
@@ -353,6 +367,8 @@ function undoStep(call, facts = {}) {
     if (name === "film_apply_look") return addsLayer(facts) ? "layers" : null;
     // the selection's upscale adds a result layer as generate does; the whole picture's pushes its own `canvas` step
     if (name === "upscale") return args.scope === "document" ? null : "layers";
+    // the pass pushes its own "layers" step for the layer it adds (a second one would be an empty step)
+    if (name === "realism_pass") return null;
     if (name === "set_filter") return hasParams(call) && !args.type ? "filter" : null;
     // an angle turns the mask with the text, which only a "layers" step holds
     if (name === "set_text") return args.angle !== undefined ? "layers" : "text";
@@ -375,6 +391,6 @@ function addsLayer(facts) {
 
 module.exports = {
     EXCLUDED, READS, RUNS, POLICY, decide, clamp, clampInt, timeoutOf, undoStep,
-    SET_LAYER_SOFT, SET_LAYER_GEOMETRY, TIMEOUT_DEFAULTS,
+    SET_LAYER_SOFT, SET_LAYER_GEOMETRY, TIMEOUT_DEFAULTS, REALISM_LABEL,
     _layerOf: layerOf, _owns: owns, _extMatches: extMatches,
 };

@@ -847,6 +847,14 @@ class Assistant {
             facts.recipe = chat.recipe || null;
             facts.changedByChat = [...(chat.changedSettings || [])];
         }
+        if (call.name === "realism_pass") {
+            // whether the pass can run on this document (refused with the reason, no card), and what the card shows:
+            // the app's Style, Strength and model preset (no command sets them)
+            try {
+                const answer = await this.read("status", { doc });
+                facts.realism = (answer && answer.realism) || null;
+            } catch (_) { facts.realism = null; }
+        }
         if (/^export/.test(call.name) && call.args.path && this.deps.statFile) {
             facts.file = this.deps.statFile(String(call.args.path));
         }
@@ -949,7 +957,7 @@ function idsNamedBy(name, result) {
     const out = [];
     const add = (v) => { if (typeof v === "string" && v) out.push(v); };
     if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "duplicate_layer", "film_apply_look"].includes(name)) add(result.id);
-    if (name === "generate" || name === "upscale" || name === "glb_place") { add(result.layer && result.layer.id); add(result.depthLayer && result.depthLayer.id); }
+    if (name === "generate" || name === "upscale" || name === "realism_pass" || name === "glb_place") { add(result.layer && result.layer.id); add(result.depthLayer && result.depthLayer.id); }
     if (name === "film_add_point") add(result.layer);
     return out;
 }

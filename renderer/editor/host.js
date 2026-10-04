@@ -2403,6 +2403,22 @@ export const host = {
     },
 
     /**
+     * "" when realismWhole would start on this document now, else the sentence it refuses with, before anything is read
+     * or sent: the server, a run going on the document (an API run, the pass, a local render still on the server), the
+     * document still loading, no picture, past 7680 × 4320 (the size before anything is read: a 15k document is refused
+     * without its flatten). `status`'s realism answers from it too, so an agent is never told ready for a refused pass.
+     */
+    realismWholeRefusal(editor) {
+        const L = realism.LABEL;
+        const support = this.realismSupport();
+        if (!support.ok) return support.reason;
+        if (editor.providerPending || (editor._localRuns && editor._localRuns.size)) return `${L}: a run is still going on this document.`;
+        if (editor._loading) return `${L}: the document is still loading.`;
+        if (!editor.base || !editor.width || !editor.height) return `${L}: load an image first.`;
+        return realism.wholeRefusal(editor.width, editor.height);
+    },
+
+    /**
      * The Realism Pass over the whole picture (docs/PLAN_0_1_42.md R3a; the Upscale dialog's entry and the realism_pass
      * command call it, R3b): the visible composite as a run sees it (every visible layer with its filters and blend
      * modes, without reference and control layers) up to the top run of filter layers goes once, at its own size,
@@ -2417,15 +2433,9 @@ export const host = {
     async realismWhole(editor, { deadline = 0 } = {}) {
         const L = realism.LABEL;
         const say = (text) => { editor.setStatus(text); return new Error(text); };
-        const support = this.realismSupport();
-        if (!support.ok) throw say(support.reason);
-        if (editor.providerPending || (editor._localRuns && editor._localRuns.size)) throw say(`${L}: a run is still going on this document.`);
-        if (editor._loading) throw say(`${L}: the document is still loading.`);
-        if (!editor.base || !editor.width || !editor.height) throw say(`${L}: load an image first.`);
-        // the size before anything is read: a 15k document is refused without its flatten
+        const refusal = this.realismWholeRefusal(editor);
+        if (refusal) throw say(refusal);
         const W = editor.width, H = editor.height;
-        const size = realism.wholeRefusal(W, H);
-        if (size) throw say(size);
         const token = { provider: "comfyui", label: L, started: Date.now(), editor };
         editor.providerPending = token;
         this._providerRuns.add(token);

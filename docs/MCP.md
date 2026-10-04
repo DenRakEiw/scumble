@@ -199,8 +199,8 @@ agent sees the user's last documents.
 ## Testing
 
 `python tools/mcp_test.py [--exe dist/win-unpacked/Scumble.exe]` talks to the server with
-the Python `mcp` client: instructions, the tools with valid names and schemas (96 on a fresh
-profile on 2026-10-04: 79 core commands and 17 from the built-in plugins), `ping`
+the Python `mcp` client: instructions, the tools with valid names and schemas (97 on a fresh
+profile on 2026-10-04: 80 core commands and 17 from the built-in plugins), `ping`
 (reports the mode), `new_document`, `load_image` by path, `select_rect`, `add_filter`
 (`sample.posterize`, WebGL2 in the hidden window), `sample_mean_color`, `screenshot` as
 image content (`dist/smoke/mcp_screenshot.jpg`), `export` to a path, an error case, an

@@ -76,39 +76,33 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-04 night: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1, R2a, R2b, R3a and R3b built, next R4)
+## Where things stand (2026-10-04 night: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1-R4 built, next R5)
 
-**Next session: R4 of `docs/PLAN_0_1_42.md`** (agents and the assistant: `realism_pass` in the assistant's policy,
-`RUNS`, an ASK row, `TIMEOUT_DEFAULTS` 1800, `undoStep` null; its layer among the owned ones; readiness in
-`list_recipes` / `status`; `docs/COMMANDS.md` regenerated, and with it the command counts in `docs/MCP.md` and the
-README, 80 core now). Read R3b's "As built" and R4 first; anchors drift, grep the names. **F2 is picked**:
-the 12 marked ✓ in `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
+**Next session: R5 of `docs/PLAN_0_1_42.md`** (the manual chapter *Realism Pass (Windows only, RTX only)*, the
+About dialog's line, README / `docs/MCP.md` / `docs/RECIPES.md` lines; Q11 and Q12 of §5 are open: ask first, with the
+recommendations). Its live look only after the user writes in chat that 8188 is free (DLSS pack and runtime installed by
+the user); without that word the chapter's numbers wait. Read R4's "As built" and R5 first. **F2 is picked**: the 12
+marked ✓ in `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-04 night, R3b of 0.1.42): the Realism Pass in the Upscale dialog, the Image menu and the
-`realism_pass` command, unreleased.** Said to the user first, in one sentence: Upscale (and *Image › Realism Pass
-(Windows only, RTX only)...*) offers the pass at 1× on the whole picture only, with Style / Strength / Preset, and lands
-R3a's layer; while a run holds a document a second API Generate or upscale on it is refused (local Generates queue).
-- **The dialog** (`renderer/shell.js` `upSyncPass`, `upFillPassRow`, `upFactorOptions`, `upLastFactor`,
-  `upScopeBeforePass`, the exported `menuCommand`): the entry selects no recipe, writes no `settings.upscaleRecipe` and
-  runs `realism_pass` with 1800 s; `realism.wholeRefusal` is shared with `realismWhole`; a host event `realism` (server
-  status, node list, `setRealismValues`) re-syncs the open dialog.
-- **One run per document**: `RUN_GOING` in `runProvider` / `runUpscale`; the API runs (`runGenerate` too) hold
-  `providerPending` until their result has landed (`endRunRow` when the answer is in, `endRun` after the landing);
-  `host.generateNewBlocked` refuses `generate_new` before its local route's `newCanvas` could wipe a busy document (an
-  older data-loss path the review found, common with a minutes-long pass).
-- **`realism_pass`**: `P.timeout(570)` (inside the bridge's own 600 s), answers `{ layer, seconds, notes, changed,
-  status }`. The assistant still asks for it ("not in the assistant's table") until R4.
-- **Tests**: `tools/realism_test.js` §9d (433 checks), `upscale` `the_realism_pass_entry` (11 entries), `commands`
-  `realism_pass`, `generate` `an_api_run_during_a_pass_is_refused` and `an_api_run_holds_the_document_until_it_landed`.
-  Gates `--offline` on tiles: `upscale commands generate transparent magnific oxen openrouter toapis ark help lint
-  types` ALL PASS (no pixel path changed, so no canvas run; no mutation round, Normal tier). Review: a workflow of four
-  lenses plus a verifier per finding (15 agents): eleven findings, nine real and fixed (the pass's 1× kept as the next
-  upscaler's factor; Generate new wiping a busy document; API runs giving the document back before their landing; the
-  dialog not following the server; the default deadline without margin; two CHANGELOG sentences; two test gaps), two
-  refuted. Details in the plan's R3b "As built".
+**This session (2026-10-04 night, R4 of 0.1.42): the Realism Pass for agents and the assistant, unreleased.**
+- **The assistant** (`electron/main/assistant/policy.js`): `realism_pass` in `RUNS`, its own row `realismRow` (asks
+  "runs {LABEL} on your ComfyUI: it queues there and adds a layer", the card `settings: { style, strength, preset }`;
+  refuses with `status`'s reason, no card, when `realism.ready` is false), `TIMEOUT_DEFAULTS` 1800, `undoStep` null,
+  `REALISM_LABEL`; `index.js` `factsFor` reads `status` for it, `idsNamedBy` owns its layer.
+- **Readiness**: `host.realismWholeRefusal(editor)` (new) holds `realismWhole`'s refusals before anything is read, in
+  order (server, a run going on the document incl. a local render in `_localRuns`, loading, no picture, the size);
+  `realismWhole` and `status`'s `realism: { ready, reason, note, style, strength, preset }` both call it.
+  `list_recipes` gives the pass recipe `ready` / `reason` / `note` of the server alone (the keys F2a's readiness reuses).
+- **Docs**: `docs/COMMANDS.md` regenerated (97: 80 core, 17 plugin), counts in `docs/MCP.md` and the README,
+  `docs/ASSISTANT.md` row, CHANGELOG sentence. The MCP listings (Registry, TensorBlock PR #3084 in review, the others)
+  still say 96 tools: update them in the release's listing pass.
+- **Tests**: `tools/assistant_test.js` §6 (249 checks), `commands` `realism_pass` (readiness offline / ready / RTX 30 /
+  linux / during a local render / while loading). Gates `--offline` on tiles: `commands assistant upscale lint types
+  help` PASS (Light / Normal tier, no pixel path). Review: a workflow of three lenses plus a verifier per finding
+  (8 agents): three findings, one defect (status said ready during a local render or a load), fixed; two refuted.
 - **The user asked mid-session** whether a GitHub community setup makes sense (Discussions with Showcase / Ideas / Q&A /
   Workflow recipes, a Now / Next / Later / Won't do roadmap, 3-5 good first issues, CONTRIBUTING / issue templates /
   SECURITY, a pinned "Share your workflow" thread). Answered: yes to Discussions, the templates, CONTRIBUTING and
@@ -184,7 +178,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   and the portable zip (item 36): `docs/PLAN_0_1_42.md`; research in `docs/PLAN_RTX_VSR.md`'s last section. **R1 (the
   recipe, the server check, the hints, shipped presets L and M) built 2026-10-04**, not run live; R2a and R2b the
   same day; **redesigned that evening as a refiner** (the whole picture at 1x as a new layer, never a Generate result:
-  plan §1 "The Realism Pass is a refiner"); **R3a and R3b built the same night** (`host.realismWhole`; the Upscale entry, the Image menu, `realism_pass`), next R4.
+  plan §1 "The Realism Pass is a refiner"); **R3a, R3b and R4 built the same night** (`host.realismWhole`; the Upscale entry, the Image menu, `realism_pass`; the assistant's row and readiness in `status` / `list_recipes`), next R5.
 - 38: new commands for MCP agents (the user, 2026-10-04: "schau auch noch ob noch mehr commands in den mcp aufgenommen
   werden können"): 28 verified candidates in `docs/PLAN_MCP_COMMANDS.md`; **the user picked 12** (marked ✓) for 0.1.42,
   sessions F2a / F2b after the six fixes of F1 (all six picked from `docs/BUGS.md` the same day). The other 16 wait
