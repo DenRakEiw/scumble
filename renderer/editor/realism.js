@@ -20,6 +20,19 @@ export const MAX_LONG = 7680;
 export const MAX_SHORT = 4320;
 export const MIN_SIDE = 64;
 /**
+ * The output's area cap, which the pack does not know: measured live on 2026-10-04 (RTX 5090, ComfyUI 0.38.0, pack
+ * 1.1.0, runtime v3.0, one photo at several sizes, at 1×, 1.5× and 2×), every answer up to 30.4 MP came back right
+ * (7040 × 4320, 7680 × 3960, 6400 × 3600) and every one from 31.8 MP up (7360 × 4320, 7520 × 4320, 7672 × 4320,
+ * 7680 × 4320) with broken colours, the pack raising no error. Neither side alone is the cause (7680 wide and 4320 high
+ * both work at 30.4 MP), so the cap is the area: 7040 × 4320, the largest output measured correct
+ * (docs/PLAN_0_1_42.md R-U "Live look").
+ */
+export const MAX_AREA = 30412800;
+/** MAX_AREA as the texts name it: "30.4 megapixels". */
+const AREA_TEXT = `${(MAX_AREA / 1e6).toFixed(1)} megapixels`;
+/** The output cap as the texts name it: "7680 × 4320 and 30.4 megapixels". */
+export const CAP_TEXT = `${MAX_LONG} × ${MAX_SHORT} and ${AREA_TEXT}`;
+/**
  * The canvas node's multiple_of for a pass: DLSS needs even sides only, and a larger multiple shrinks a whole-picture
  * crop to the multiple below the picture's side, which leaves a border without the pass (6000 × 4000 at 64: 5952 × 3968).
  */
@@ -131,18 +144,24 @@ export function outputSize(w, h, factor = 1) {
     return { w: even(w * factor), h: even(h * factor) };
 }
 
+/** Whether an output size is within the pack's 7680 × 4320 (long × short side) and the measured MAX_AREA. */
+function outputFits(o) {
+    return Math.max(o.w, o.h) <= MAX_LONG && Math.min(o.w, o.h) <= MAX_SHORT && o.w * o.h <= MAX_AREA;
+}
+
 /**
- * "" when the pack takes a w × h picture at `factor`, else the refusal (§3.5): both sides at least 64 px, the output at
- * most 7680 on the long and 4320 on the short side.
+ * "" when the pass takes a w × h picture at `factor`, else the refusal (§3.5): both sides at least 64 px, the output at
+ * most 7680 on the long and 4320 on the short side (the pack's cap) and at most MAX_AREA (the measured one); one
+ * sentence for both caps.
  */
 export function fits(w, h, factor = 1) {
     w = Math.round(+w || 0); h = Math.round(+h || 0);
     if (Math.min(w, h) < MIN_SIDE) return `${LABEL} needs at least ${MIN_SIDE} px a side; this is ${w} × ${h}.`;
     const o = outputSize(w, h, factor);
-    if (Math.max(o.w, o.h) > MAX_LONG || Math.min(o.w, o.h) > MAX_SHORT) {
+    if (!outputFits(o)) {
         // at 1x the user's own size; an upscale names the output it would make
         const shown = factor === 1 ? `${w} × ${h}` : `${o.w} × ${o.h}`;
-        return `${LABEL} takes at most ${MAX_LONG} × ${MAX_SHORT} (long × short side); this is ${shown}.`;
+        return `${LABEL} takes at most ${MAX_LONG} × ${MAX_SHORT} (long × short side) and ${AREA_TEXT}; this is ${shown}.`;
     }
     return "";
 }
@@ -277,7 +296,8 @@ export function factorRefusal(factor) {
  * (w × h itself when it fits): the user's DLSS5 Fit Input Size node's fit_size, written out (checked there against the
  * pack's resolve_output_size on 100,000 sizes; tools/refs/dlss5/fit_cases.json holds its answers): the scale
  * min(7680 / (F · long), 4320 / (F · short)), both sides floored to even, then 2 px off the long side (the short one
- * after the aspect) while the output does not fit. Only the cap: the 64 px minimum is the caller's (fitPlan).
+ * after the aspect) while the output does not fit. Only the pack's cap (the 64 px minimum is the caller's, and so is
+ * MAX_AREA: fitAreaSize applies it after this, fitPlan calls that).
  * -> { w, h }
  */
 export function fitSize(w, h, F) {
@@ -294,15 +314,38 @@ export function fitSize(w, h, F) {
     return { w: nw, h: nh };
 }
 
+/**
+ * fitSize, then MAX_AREA (the measured cap, which the pack and the user's node do not know): when the fit's output
+ * passes it, the fit shrunk by sqrt(MAX_AREA / that area), both sides floored to even, then 2 px off the long side (the
+ * short one after the aspect of w × h) while the output does not fit, as fitSize steps. Only the caps: the 64 px
+ * minimum is the caller's (fitPlan).
+ * -> { w, h }
+ */
+export function fitAreaSize(w, h, F) {
+    const f = fitSize(w, h, F);
+    const o = outputSize(f.w, f.h, F);
+    if (!(f.w > 0 && f.h > 0) || o.w * o.h <= MAX_AREA) return f;
+    w = Math.round(+w || 0); h = Math.round(+h || 0);
+    const s = Math.sqrt(MAX_AREA / (o.w * o.h));
+    let nw = Math.max(2, Math.floor(f.w * s / 2 + 1e-9) * 2);
+    let nh = Math.max(2, Math.floor(f.h * s / 2 + 1e-9) * 2);
+    while (!outputFits(outputSize(nw, nh, F)) && nw > 2 && nh > 2) {
+        if (nw >= nh) { nw -= 2; nh = Math.max(2, Math.floor(h * nw / w / 2) * 2); }
+        else { nh -= 2; nw = Math.max(2, Math.floor(w * nh / h / 2) * 2); }
+    }
+    return { w: nw, h: nh };
+}
+
 /** The status sentence of a picture scaled down before the pass (the user's words, docs/PLAN_0_1_42.md §1). */
 export function scaledDownNote(w, h) {
-    return `${LABEL} scaled the picture down to ${w} × ${h} first: its output is capped at ${MAX_LONG} × ${MAX_SHORT}.`;
+    return `${LABEL} scaled the picture down to ${w} × ${h} first: its output is capped at ${CAP_TEXT}.`;
 }
 
 /**
  * How a w × h picture goes through the pass at `factor` (the dialog's; R-U): the even size it is padded to goes when
- * the pack takes it at the mode's F; otherwise the picture is scaled down to fitSize of that padded size (even sides,
- * nothing padded), so the answer comes back as large as the pack allows. 1× keeps its refusal past the cap
+ * the pass takes it at the mode's F; otherwise the picture is scaled down to fitAreaSize of that padded size (the
+ * pack's cap, then MAX_AREA; even sides, nothing padded), so the answer comes back as large as the pass allows
+ * (at most 30.4 MP). 1× keeps its refusal past the caps
  * (wholeRefusal: shrinking there would lose the picture's own size). Refused: a factor no mode has, a picture under
  * 64 px a side, a fit under 64 px a side, and a fit whose answer would not be larger than the picture.
  * -> { mode, refusal, scaled, fit: [w, h] (the picture before padding), sent: [w, h] (what goes), out: [w, h] (the
@@ -322,14 +365,14 @@ export function fitPlan(w, h, factor) {
         plan.out = [w2, h2];
         return plan;
     }
-    if (Math.min(w2, h2) < MIN_SIDE) return { ...plan, refusal: fits(w2, h2, mode.F).replace(`${w2} × ${h2}`, `${w} × ${h}`) };
-    const f = fitSize(w2, h2, mode.F);
+    if (Math.min(w2, h2) < MIN_SIDE) return { ...plan, refusal: fits(w2, h2, mode.F).replace(`this is ${w2} × ${h2}.`, `this is ${w} × ${h}.`) };
+    const f = fitAreaSize(w2, h2, mode.F);
     if (f.w !== w2 || f.h !== h2) {
         plan.scaled = true;
         plan.fit = [f.w, f.h];
         plan.sent = [f.w, f.h];
         if (Math.min(f.w, f.h) < MIN_SIDE) {
-            return { ...plan, refusal: `${LABEL} needs at least ${MIN_SIDE} px a side: at ${mode.text} the ${w} × ${h} picture would go at ${f.w} × ${f.h} (its output is capped at ${MAX_LONG} × ${MAX_SHORT}).` };
+            return { ...plan, refusal: `${LABEL} needs at least ${MIN_SIDE} px a side: at ${mode.text} the ${w} × ${h} picture would go at ${f.w} × ${f.h} (its output is capped at ${CAP_TEXT}).` };
         }
     }
     const o = outputSize(plan.sent[0], plan.sent[1], mode.F);
@@ -337,7 +380,7 @@ export function fitPlan(w, h, factor) {
     plan.keep = [Math.round(plan.fit[0] * o.w / plan.sent[0]), Math.round(plan.fit[1] * o.h / plan.sent[1])];
     plan.doc = [plan.keep[0], Math.max(1, Math.round(h * plan.keep[0] / w))];
     if (plan.doc[0] <= w) {
-        plan.refusal = `${LABEL} cannot make the ${w} × ${h} picture larger at ${mode.text}: its output is capped at ${MAX_LONG} × ${MAX_SHORT}.`;
+        plan.refusal = `${LABEL} cannot make the ${w} × ${h} picture larger at ${mode.text}: its output is capped at ${CAP_TEXT}.`;
     }
     return plan;
 }
@@ -497,7 +540,8 @@ export function topFilterRun(layers, isFill = () => false, skip = () => false) {
 export function wholeRefusal(w, h) {
     const { w2, h2 } = evenPlan(w, h);
     const refusal = fits(w2, h2);
-    return refusal ? refusal.replace(`${w2} × ${h2}`, `${Math.round(+w || 0)} × ${Math.round(+h || 0)}`) : "";
+    // "this is" names the size: the cap's own 7680 × 4320 comes first in the sentence and must stay
+    return refusal ? refusal.replace(`this is ${w2} × ${h2}.`, `this is ${Math.round(+w || 0)} × ${Math.round(+h || 0)}.`) : "";
 }
 
 /**

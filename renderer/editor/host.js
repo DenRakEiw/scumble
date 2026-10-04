@@ -2476,7 +2476,7 @@ export const host = {
      * the pass at all.
      * `factor` (R-U; the dialog's 1, 1.5, 1.7, 2 or 3): above 1 the pack's mode of that factor (realism.MODES), the answer
      * not cropped back but kept larger (only the padding's share comes off), the alpha scaled with it; a picture whose
-     * output would pass 7680 × 4320 is scaled down first (realism.fitPlan, the browser's high-quality resampling, as the
+     * output would pass 7680 × 4320 or 30.4 MP is scaled down first (realism.fitPlan, the browser's high-quality resampling, as the
      * editor's Resize scales), and the note says so. 1 keeps the refusal past the cap.
      * -> { bytes, mime: "image/png", width, height, seconds, note, factor, sent: [w, h], scaled: [w, h] | null }
      */
@@ -2583,7 +2583,7 @@ export const host = {
     /**
      * "" when realismWhole would start on this document now, else the sentence it refuses with, before anything is read
      * or sent: the server, a run going on the document (an API run, the pass, a local render still on the server), the
-     * document still loading, no picture, past 7680 × 4320 (the size before anything is read: a 15k document is refused
+     * document still loading, no picture, past 7680 × 4320 or 30.4 MP (the size before anything is read: a 15k document is refused
      * without its flatten). `status`'s realism answers from it too, so an agent is never told ready for a refused pass.
      * `factor` (R-U): a factor no mode has first; above 1× the document is resized when the answer lands, so not while
      * a job would land where the picture was (turnBlocked, as for an upscale of the whole picture), and the size is
@@ -2618,8 +2618,8 @@ export const host = {
      * `factor` (R-U, docs/PLAN_0_1_42.md Q29): above 1 (1.5, 1.7, 2, 3) the document becomes that many times larger
      * (the base and every layer, mask and the selection scaled as Resize scales them) and the pass, at the pack's mode
      * of that factor, lands on top of it as the same new layer at the new size, both in one undo step; a picture whose
-     * output would pass 7680 × 4320 is scaled down before it goes, so the answer, and the document, come back as large
-     * as the pack allows. The landing goes through resizeImage's `base` path while the run slot is held.
+     * output would pass 7680 × 4320 or 30.4 MP (realism.MAX_AREA, measured) is scaled down before it goes, so the answer,
+     * and the document, come back as large as the pass allows. The landing goes through resizeImage's `base` path while the run slot is held.
      * -> { layer, seconds, note, changed, factor, from: [W, H], width, height } (layer null when the tab was closed
      *    meanwhile)
      */

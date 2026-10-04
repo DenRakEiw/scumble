@@ -724,7 +724,7 @@ try {
     const linux = await refused("Linux", await pngOf(64, 64, () => [0, 0, 0, 255]), /runs only on a ComfyUI on Windows; this one runs on linux\./, () => host.setServerStatus({ ...GOOD, os: "linux" }), () => host.setServerStatus(GOOD));
     if (!linux.unsupported) throw new Error("Linux is not marked unsupported");
     const small = await refused("40 x 40", await pngOf(40, 40, () => [0, 0, 0, 255]), /needs at least 64 px a side; this is 40 × 40\./);
-    const large = await refused("7681 x 64", await pngOf(7681, 64, () => [0, 0, 0, 255]), /takes at most 7680 × 4320 \(long × short side\); this is 7681 × 64\./);
+    const large = await refused("7681 x 64", await pngOf(7681, 64, () => [0, 0, 0, 255]), /takes at most 7680 × 4320 \(long × short side\) and 30\.4 megapixels; this is 7681 × 64\./);
     if (small.unsupported || large.unsupported) throw new Error("a size refusal is marked unsupported");
     out.refusals = [linux.hint.slice(0, 60), small.hint, large.hint];
     return out;
@@ -1001,7 +1001,7 @@ try {
     const big = (await run("new_document")).id;
     extra.push(big);
     await run("new_canvas", { doc: big, width: 7681, height: 100 });
-    out.size = await refused("past the cap", ednow(big), LABEL + " takes at most 7680 × 4320 (long × short side); this is 7681 × 100.");
+    out.size = await refused("past the cap", ednow(big), LABEL + " takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 7681 × 100.");
     const empty = (await run("new_document")).id;
     extra.push(empty);
     out.empty = await refused("no picture", ednow(empty), LABEL + ": load an image first.");
@@ -1226,7 +1226,7 @@ try {
 
 # docs/PLAN_0_1_42.md R-U: the Realism Pass Upscale. Above 1x the document becomes that many times larger (the base and
 # every layer scaled as Resize scales them) and the pass lands on top as a layer at the new size, one undo step for
-# both; a picture whose output would pass 7680 x 4320 is scaled down before it goes. The R2a stubs stand in for the
+# both; a picture whose output would pass 7680 x 4320 or 30.4 MP is scaled down before it goes. The R2a stubs stand in for the
 # server; each pass answers one colour at the pack's output size of what it was sent (_even(side x F)).
 RU_PRE = r"""
 const even = (v) => Math.max(2, Math.floor(v / 2 + 0.5) * 2);
@@ -1352,8 +1352,23 @@ try {
     const rs = T.queued[0].body.output.rp_settings.inputs;
     if (!sent || sent.w !== 2560 || sent.h !== 170 || rs.upscaling_mode !== "3x (Ultra Performance)") throw new Error("what went at 3x: " + JSON.stringify({ sent: sent && [sent.w, sent.h], mode: rs.upscaling_mode }));
     if (a.e.width !== 7680 || a.e.height !== 512 || out.layer.w !== 7680 || out.layer.h !== 512 || out.layer.px.width !== 7680 || out.layer.px.height !== 512 || out.width !== 7680) throw new Error("at 3x: " + JSON.stringify({ size: [a.e.width, a.e.height], layer: [out.layer.w, out.layer.h, out.layer.px.width, out.layer.px.height] }));
-    const note = LABEL + " scaled the picture down to 2560 × 170 first: its output is capped at 7680 × 4320.";
+    const note = LABEL + " scaled the picture down to 2560 × 170 first: its output is capped at 7680 × 4320 and 30.4 megapixels.";
     if (!a.e.status.includes(" s at 3×: 3000 × 200 is now 7680 × 512, every layer scaled along") || !a.e.status.endsWith(note) || out.note !== note) throw new Error("the status at 3x: " + a.e.status + " / note " + out.note);
+    // past the area alone (R-U's live look: answers above 30.4 MP came back broken): 3840 x 2160 at 2x would answer
+    // 7680 x 4320 (33.2 MP), within the pack's cap; it goes at 3676 x 2068 and the answer is 7352 x 4136 (30.4 MP)
+    const k = await blank(3840, 2160);
+    extra.push(k.id);
+    T.queued = [];
+    let sent4k = null;
+    T.onQueued = answerUp([90, 90, 220], 2, (id, ref, p) => { sent4k = p; });
+    const out4k = await host.realismWhole(k.e, { factor: 2 });
+    if (T.err) throw T.err;
+    const rs4k = T.queued[0].body.output.rp_settings.inputs;
+    if (!sent4k || sent4k.w !== 3676 || sent4k.h !== 2068 || rs4k.upscaling_mode !== "2x (Performance)" || even(sent4k.w * 2) * even(sent4k.h * 2) > 30412800) throw new Error("what went at 2x: " + JSON.stringify({ sent: sent4k && [sent4k.w, sent4k.h], mode: rs4k.upscaling_mode }));
+    if (k.e.width !== 7352 || k.e.height !== 4136 || out4k.layer.w !== 7352 || out4k.layer.h !== 4136 || out4k.layer.px.width !== 7352 || out4k.width !== 7352 || out4k.height !== 4136) throw new Error("at 2x: " + JSON.stringify({ size: [k.e.width, k.e.height], layer: [out4k.layer.w, out4k.layer.h, out4k.layer.px.width] }));
+    const note4k = LABEL + " scaled the picture down to 3676 × 2068 first: its output is capped at 7680 × 4320 and 30.4 megapixels.";
+    if (!k.e.status.includes(" s at 2×: 3840 × 2160 is now 7352 × 4136, every layer scaled along") || !k.e.status.endsWith(note4k) || out4k.note !== note4k) throw new Error("the status at 2x: " + k.e.status + " / note " + out4k.note);
+    await run("close_document", { doc: k.id, force: true });
     const b = await blank(4600, 100);
     extra.push(b.id);
     T.queued = [];
@@ -1365,7 +1380,7 @@ try {
     if (!sent17 || sent17.w !== 4454 || sent17.h !== 96 || rs17.upscaling_mode !== "1.724x (Balanced)") throw new Error("what went at 1.7x: " + JSON.stringify({ sent: sent17 && [sent17.w, sent17.h], mode: rs17.upscaling_mode }));
     if (b.e.width !== 7678 || b.e.height !== 167 || out17.layer.w !== 7678 || out17.factor !== 1.7) throw new Error("at 1.7x: " + JSON.stringify({ size: [b.e.width, b.e.height], layer: out17.layer.w, factor: out17.factor }));
     if (!b.e.status.includes(LABEL + " scaled the picture down to 4454 × 96 first")) throw new Error("the status at 1.7x: " + b.e.status);
-    return { at3: [a.e.width, a.e.height], at17: [b.e.width, b.e.height], note };
+    return { at3: [a.e.width, a.e.height], at17: [b.e.width, b.e.height], at2area: [7352, 4136], note };
 } finally {
     for (const id of extra) { try { await run("close_document", { doc: id, force: true }); } catch (_) { /* gone */ } }
 """ + RU_END_TAIL),
@@ -1392,12 +1407,17 @@ try {
     };
     const out = {};
     const a = await blank(4600, 100);
-    out.small = await refused("a fit under 64 px", a.e, 3, LABEL + " needs at least 64 px a side: at 3× the 4600 × 100 picture would go at 2560 × 54 (its output is capped at 7680 × 4320).");
+    out.small = await refused("a fit under 64 px", a.e, 3, LABEL + " needs at least 64 px a side: at 3× the 4600 × 100 picture would go at 2560 × 54 (its output is capped at 7680 × 4320 and 30.4 megapixels).");
     out.factor = await refused("factor 2.5", a.e, 2.5, LABEL + " takes the factors 1, 1.5, 1.7, 2 and 3, not 2.5.");
     out.cutout = await refused("a cutout going", a.e, 2, LABEL + ": Wait for the running job to finish: it would land where the picture was before the turn.", () => { a.e.cutoutPending = true; }, () => { a.e.cutoutPending = false; });
     const b = await blank(7680, 4320);
     extra.push(b.id);
-    out.notLarger = await refused("7680 x 4320 at 2x", b.e, 2, LABEL + " cannot make the 7680 × 4320 picture larger at 2×: its output is capped at 7680 × 4320.");
+    out.notLarger = await refused("7680 x 4320 at 2x", b.e, 2, LABEL + " cannot make the 7680 × 4320 picture larger at 2×: its output is capped at 7680 × 4320 and 30.4 megapixels.");
+    // 7680 x 4320 at 1x: within the pack's cap, past the area (its answer came back broken live), refused; status says so
+    const big1 = LABEL + " takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 7680 × 4320.";
+    out.area1x = await refused("7680 x 4320 at 1x", b.e, 1, big1);
+    const stBig = (await run("status", { doc: b.id })).realism;
+    if (!stBig || stBig.ready !== false || stBig.reason !== big1) throw new Error("status of 7680 x 4320: " + JSON.stringify(stBig));
     // status (factor 1) is unchanged in shape and reads the 1x refusals: a cutout does not hold a 1x pass
     a.e.cutoutPending = true;
     let st;

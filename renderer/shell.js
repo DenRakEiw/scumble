@@ -1579,7 +1579,7 @@ function upSyncPass(ed) {
         : support.reason;
     const rest = `no colour match; a second run stacks. ${L} runs over the whole picture: the selection is not used.`;
     ui.upSizeNote.textContent = size || (plan
-        ? `${W} × ${H} goes out at ${mode.text}${plan.scaled ? `, scaled down to ${plan.fit[0]} × ${plan.fit[1]} first (its output is capped at ${realism.MAX_LONG} × ${realism.MAX_SHORT})` : ""}: the picture becomes ${plan.doc[0]} × ${plan.doc[1]}, every layer scaled along, and the pass comes back as a new layer above it (under the filter layers at the top, which stay live), ${rest} One Ctrl+Z takes both back.`
+        ? `${W} × ${H} goes out at ${mode.text}${plan.scaled ? `, scaled down to ${plan.fit[0]} × ${plan.fit[1]} first (its output is capped at ${realism.CAP_TEXT})` : ""}: the picture becomes ${plan.doc[0]} × ${plan.doc[1]}, every layer scaled along, and the pass comes back as a new layer above it (under the filter layers at the top, which stay live), ${rest} One Ctrl+Z takes both back.`
         : `${W} × ${H} goes out at 1× and comes back as a new layer above the picture (under the filter layers at the top, which stay live), ${rest}`);
     ui.upGo.disabled = !support.ok || !!size;
 }

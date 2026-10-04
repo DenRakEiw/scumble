@@ -11,7 +11,7 @@ the section for its version; `docs/` and the commit history hold the technical d
   ComfyUI-DLSS5-Enhancer with its runtime, installed there by you; Scumble ships none of it. The recipe comes with two
   presets, L (the default) and M, for the DLSS model. Before anything is sent, Scumble checks the server and says why
   it cannot run there (not Windows, no supported card, the pack missing, the selection with its surroundings smaller
-  than 64 px or larger than 7680 × 4320); RTX 30 cards run with a note. The pack's own errors come back as plain
+  than 64 px or larger than 7680 × 4320 or 30.4 megapixels); RTX 30 cards run with a note. The pack's own errors come back as plain
   sentences that say what to do. There is no Comfy Cloud version of the pass. The manual has a chapter of the same
   name: what the pass needs, how to install the pack and its runtime on your ComfyUI (with the workaround for the
   runtime installer's download address and the antivirus exclusion the pack's README advises), and what each message
@@ -25,7 +25,7 @@ the section for its version; `docs/` and the commit history hold the technical d
   row and count for the recipe on a selection too; the row's DLSS model preset is the whole-picture pass's own (on a
   selection the recipe's Preset row picks it), and a preset the runtime refused shows as Default there and can be set
   back. The dialog says why the pass cannot run before anything is sent (the requirements above, or a picture larger
-  than 7680 × 4320). The title row's timer shows the pass and its *Cancel* ends it; closing the tab ends it too.
+  than 7680 × 4320 or 30.4 megapixels: larger DLSS answers came back with broken colours when it was measured). The title row's timer shows the pass and its *Cancel* ends it; closing the tab ends it too.
   Agents run it with the `realism_pass` command; `list_recipes` says whether the connected ComfyUI can run it and
   `status` whether it can run on the document, with the reason when not. The in-app assistant asks before it runs
   the pass, its card showing Style, Strength and the model preset; where the pass cannot run it gets the reason
@@ -48,9 +48,9 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Realism Pass (Windows only, RTX only) at 1.5× to 3×.** The pass's factor in the Upscale dialog now also offers
   1.5×, 1.7×, 2× and 3× (DLSS 5's own modes; 1.7× is its Balanced mode, 1.724 times). The document is made that many
   times larger, the base and every layer, mask and the selection scaled along as Resize scales them, and the pass
-  comes back on top as a new layer at the new size, in one undo step with the enlargement. DLSS answers at most
-  7680 × 4320: a picture whose answer would be larger is scaled down first, so it comes back as large as DLSS allows,
-  and the dialog and the status line say to what. 1× stays a refiner at the picture's own size. Agents pass `factor`
+  comes back on top as a new layer at the new size, in one undo step with the enlargement. The pass answers at most
+  7680 × 4320 and 30.4 megapixels: a picture whose answer would be larger is scaled down first, so it comes back as
+  large as the pass allows, and the dialog and the status line say to what. 1× stays a refiner at the picture's own size. Agents pass `factor`
   to `realism_pass`; the assistant's question names it.
 - **Recipes can ship presets.** The Preset row in the Settings section shows a recipe's own presets first, then
   yours; the shipped ones cannot be deleted.

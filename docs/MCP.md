@@ -145,11 +145,12 @@ of filter layers, one undo step; it takes no prompt and no selection. `factor` 1
 refines at the picture's own size; `factor` 1.5, 1.7 (DLSS's 1.724x Balanced), 2 or 3 also makes the
 document that many times larger first (the base and every layer, mask and the selection scaled
 along) and the layer comes at the new size, in the same undo step; a picture whose output would
-pass 7680 × 4320 is scaled down before it goes (a note says to what), so the document grows as far
-as DLSS allows. Any other factor is refused. Before calling it, read
+pass 7680 × 4320 or 30.4 megapixels (measured: larger answers came back with broken colours) is
+scaled down before it goes (a note says to what), so the document grows as far as the pass allows.
+Any other factor is refused. Before calling it, read
 `status`'s `realism: { ready, reason, note, style, strength, preset }`, which answers for factor 1:
 `ready` false gives the sentence the command would refuse with (the server, a run going on the
-document, still loading, no picture, past 7680 × 4320; above factor 1 that last reason does not
+document, still loading, no picture, past 7680 × 4320 or 30.4 megapixels; above factor 1 that last reason does not
 hold, and a picture that cannot get larger or would be scaled under 64 px a side is refused
 instead), and `note` the RTX 30 one. `list_recipes` gives the pass recipe (task
 `pass`) `ready` / `reason` / `note` for the connected server alone. Style, Strength and the model

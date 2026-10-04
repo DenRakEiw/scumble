@@ -1084,8 +1084,13 @@ try {
     ed.width = 7681; ed.height = 100;
     resync();
     const capNote = $("up-size-note").textContent, capGo = $("up-go").disabled;
+    // 7680 x 4320 at 1x: within the pack's cap, past the measured 30.4 MP (its answer came back broken live)
+    ed.width = 7680; ed.height = 4320;
+    resync();
+    const areaNote = $("up-size-note").textContent, areaGo = $("up-go").disabled;
     ed.width = w0; ed.height = h0;
-    if (!capGo || capNote !== LABEL + " takes at most 7680 × 4320 (long × short side); this is 7681 × 100.") throw new Error("past the cap: " + capNote);
+    if (!capGo || capNote !== LABEL + " takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 7681 × 100.") throw new Error("past the cap: " + capNote);
+    if (!areaGo || areaNote !== LABEL + " takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 7680 × 4320.") throw new Error("past the area at 1x: " + areaNote);
     out.cap = capNote;
     resync();
     if ($("up-go").disabled) throw new Error("Upscale stays greyed after the size came back: " + $("up-size-note").textContent);
@@ -1102,8 +1107,8 @@ try {
     factor("3");
     const smallNote = $("up-size-note").textContent, smallGo = $("up-go").disabled;
     ed.width = w0; ed.height = h0;
-    if (scaledGo || !scaledNote.startsWith("5000 × 3000 goes out at 2×, scaled down to 3600 × 2160 first (its output is capped at 7680 × 4320): the picture becomes 7200 × 4320")) throw new Error("past the cap at 2x: " + scaledNote);
-    if (!smallGo || smallNote !== LABEL + " needs at least 64 px a side: at 3× the 7681 × 100 picture would go at 2560 × 32 (its output is capped at 7680 × 4320).") throw new Error("a fit under 64 px at 3x: " + smallNote);
+    if (scaledGo || !scaledNote.startsWith("5000 × 3000 goes out at 2×, scaled down to 3558 × 2134 first (its output is capped at 7680 × 4320 and 30.4 megapixels): the picture becomes 7116 × 4270")) throw new Error("past the cap at 2x: " + scaledNote);
+    if (!smallGo || smallNote !== LABEL + " needs at least 64 px a side: at 3× the 7681 × 100 picture would go at 2560 × 32 (its output is capped at 7680 × 4320 and 30.4 megapixels).") throw new Error("a fit under 64 px at 3x: " + smallNote);
     out.factors = { at2: note2.slice(0, 70), scaled: scaledNote.slice(0, 90), small: smallNote.slice(39, 120) };
     factor("2");
     if ($("up-go").disabled) throw new Error("Upscale stays greyed at 2x after the size came back: " + $("up-size-note").textContent);

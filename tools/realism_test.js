@@ -3,7 +3,7 @@
 // renderer/editor/realism.js (an ES module, imported as tools/boxes_test.js imports renderer/editor/boxes.js) is the
 // API under test: the GPU generation by the pack's rule, the server check of plan table 3.3 on ComfyUI's torch devices
 // (only cuda devices count; none listed is left to the pack), the size check of 3.5 against the pack's even rounding
-// and its 7680 x 4320 cap, the crop span the canvas node makes at the pass's multiple of 2 (fitSpan against the node's
+// and its 7680 x 4320 cap, plus the measured 30.4 MP area cap (MAX_AREA, R-U's live look), the crop span the canvas node makes at the pass's multiple of 2 (fitSpan against the node's
 // _fit_span_to_multiple written out here), the DLSS5Settings inputs of a run, the hint for every message of the pack
 // (tools/refs/dlss5/messages.json, verbatim to the pack's f-strings at HEAD 796ed59), the per-key fill of
 // settings.realism, and the label every text carries. The defaults are checked against recipes/realism_pass.json and
@@ -35,6 +35,13 @@ function packAccepts(w, h, factor) {
     if (Math.min(w, h) < 64) return false;
     const ow = packEven(w * factor), oh = packEven(h * factor);
     return Math.max(ow, oh) <= 7680 && Math.min(ow, oh) <= 4320;
+}
+/**
+ * What the pass takes: the pack's rule and the output's area at most 30,412,800 px (7040 x 4320, the largest output
+ * measured correct on 2026-10-04; from 31.8 MP up the runtime answered broken colours without an error).
+ */
+function passAccepts(w, h, factor) {
+    return packAccepts(w, h, factor) && packEven(w * factor) * packEven(h * factor) <= 30412800;
 }
 /**
  * The canvas node's _fit_span_to_multiple (ComfyUI-InpaintCanvas nodes.py:502-521), written out here with Python's
@@ -72,6 +79,7 @@ function nodeFitSpan(a0, a1, limit, m) {
     check("STYLES are the pack's table", eq(R.STYLES, ["Default", "Natural", "Cinematic"]), short(R.STYLES));
     check("MODEL_PRESETS are the pack's table", eq(R.MODEL_PRESETS, ["Default", "J", "K", "L", "M"]), short(R.MODEL_PRESETS));
     check("the caps: 7680 long, 4320 short, 64 the smallest side", R.MAX_LONG === 7680 && R.MAX_SHORT === 4320 && R.MIN_SIDE === 64, short([R.MAX_LONG, R.MAX_SHORT, R.MIN_SIDE]));
+    check("the area cap: 30,412,800 px (7040 x 4320, measured), named '7680 × 4320 and 30.4 megapixels'", R.MAX_AREA === 30412800 && R.MAX_AREA === 7040 * 4320 && R.CAP_TEXT === "7680 × 4320 and 30.4 megapixels", short([R.MAX_AREA, R.CAP_TEXT]));
     check("PASS_MULTIPLE is 2 (DLSS needs even sides only; the pass's canvas multiple_of)", R.PASS_MULTIPLE === 2, String(R.PASS_MULTIPLE));
     check("realismDefaults are style Default, intensity 1, preset L, timeout 300", eq(R.realismDefaults, { style: "Default", intensity: 1, preset: "L", timeout: 300 }), short(R.realismDefaults));
     check("realismDefaults are frozen", Object.isFrozen(R.realismDefaults), "");
@@ -296,28 +304,35 @@ function nodeFitSpan(a0, a1, limit, m) {
     console.log("\n--- 4. fits (plan 3.5) ---");
     const fit = (w, h, f) => keep(f === undefined ? R.fits(w, h) : R.fits(w, h, f));
     const small = (w, h) => `${L} needs at least 64 px a side; this is ${w} × ${h}.`;
-    const large = (w, h) => `${L} takes at most 7680 × 4320 (long × short side); this is ${w} × ${h}.`;
+    const large = (w, h) => `${L} takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is ${w} × ${h}.`;
     const fitCases = [
         [63, 100, undefined, small(63, 100)],
         [100, 63, undefined, small(100, 63)],
         [64, 64, undefined, ""],
-        [7680, 4320, undefined, ""],
-        [4320, 7680, undefined, ""],
+        [7680, 4320, undefined, large(7680, 4320)],        // within the pack's cap, past the area (33.2 MP)
+        [4320, 7680, undefined, large(4320, 7680)],
+        [7040, 4320, undefined, ""],                       // the area cap itself (30.4 MP)
+        [4320, 7040, undefined, ""],
+        [7680, 3960, undefined, ""],                       // 7680 wide at 30.4 MP
+        [7041, 4320, undefined, large(7041, 4320)],        // padded to 7042: past the area
         [4320, 4320, undefined, ""],
         [7681, 100, undefined, large(7681, 100)],
         [100, 7681, undefined, large(100, 7681)],
         [4321, 4321, undefined, large(4321, 4321)],
         [7680, 4321, undefined, large(7680, 4321)],
-        [7679, 4319, undefined, ""],                       // the pack rounds them up to 7680 x 4320: still in
+        [7679, 4319, undefined, large(7679, 4319)],        // the pack rounds them up to 7680 x 4320: past the area
         [64, 64, 1, ""],
         [7681, 100, 1, large(7681, 100)],
-        [3840, 2160, 2, ""],
-        [3840, 2160, 3, large(11520, 6480)],               // an upscale names the output it would make
-        [2560, 1440, 3, ""],
+        [3840, 2160, 2, large(7680, 4320)],                // an upscale names the output it would make
+        [3520, 2160, 2, ""],                               // 7040 x 4320
+        [3840, 2160, 3, large(11520, 6480)],
+        [2560, 1440, 3, large(7680, 4320)],
+        [2346, 1440, 3, ""],                               // 7038 x 4320
         [2561, 1440, 3, large(7684, 4320)],
-        [5120, 2880, 1.5, ""],
+        [5120, 2880, 1.5, large(7680, 4320)],
         [5121, 2880, 1.5, large(7682, 4320)],              // 7681.5 rounds to 7682 the pack's way
-        [5119, 2880, 1.5, ""],                             // 7678.5 rounds to 7678
+        [5119, 2880, 1.5, large(7678, 4320)],              // 7678.5 rounds to 7678: the pack's cap holds, the area not
+        [4693, 2880, 1.5, ""],                             // 7040 x 4320 (7039.5 rounds up)
         [3841, 2160, 2, large(7682, 4320)],
         [32, 32, 2, small(32, 32)],                        // the smallest side is the picture's, not the output's
         [63, 1000, 3, small(63, 1000)],
@@ -332,13 +347,25 @@ function nodeFitSpan(a0, a1, limit, m) {
             for (const w of [62, 63, 64, 65, 100, 1000, 2559, 2560, 2561, 3839, 3840, 3841, 4319, 4320, 4321, 4455, 4456, 5119, 5120, 5121, 7679, 7680, 7681, 8000]) {
                 for (const h of [63, 64, 65, 1439, 1440, 1441, 2159, 2160, 2161, 2505, 2506, 2879, 2880, 2881, 4319, 4320, 4321, 7680, 7681]) {
                     const got = R.fits(w, h, f) === "";
-                    if (got !== packAccepts(w, h, f)) { bad = [w, h, f, R.fits(w, h, f)]; break; }
+                    if (got !== passAccepts(w, h, f)) { bad = [w, h, f, R.fits(w, h, f)]; break; }
                 }
                 if (bad) break;
             }
             if (bad) break;
         }
-        check("fits agrees with the pack's own rule (even rounding, 7680 x 4320, 64 px) over a grid of sizes at 1, 1.5, 1.724, 2 and 3", !bad, short(bad));
+        check("fits agrees with the pack's own rule (even rounding, 7680 x 4320, 64 px) plus the 30.4 MP area over a grid of sizes at 1, 1.5, 1.724, 2 and 3", !bad, short(bad));
+    }
+    {
+        // the live look of 2026-10-04 (RTX 5090, ComfyUI 0.38.0, pack 1.1.0, runtime v3.0): [output w, h, the picture
+        // that made it, the factor, the answer was right]; fits takes exactly the outputs that came back right
+        const live = [
+            [5456, 3072, 5456, 3072, 1, true], [6400, 3600, 3200, 1800, 2, true], [7040, 3960, 3520, 1980, 2, true],
+            [7680, 3960, 3840, 1980, 2, true], [7040, 4320, 3520, 2160, 2, true], [7360, 4320, 3680, 2160, 2, false],
+            [7520, 4320, 3760, 2160, 2, false], [7672, 4320, 5114, 2880, 1.5, false], [7680, 4320, 3840, 2160, 2, false],
+            [7680, 4320, 7680, 4320, 1, false],
+        ];
+        const off = live.filter(([ow, oh, w, h, f, right]) => !eq(R.outputSize(w, h, f), { w: ow, h: oh }) || (R.fits(w, h, f) === "") !== right);
+        check("fits takes the live look's right answers and refuses its broken ones (from 31.8 MP up)", off.length === 0, short(off));
     }
     {
         const got = keep(R.fits(undefined, 100));
@@ -401,7 +428,7 @@ function nodeFitSpan(a0, a1, limit, m) {
         const got2 = pass(7700, 4000, 7700, 4000);
         check("a whole 7700 x 4000 picture at m 2: 7700 x 4000, refused at 1x (the long side 7700 > 7680)", R.fitSpan(7700, 7700, 2) === 7700 && R.fitSpan(4000, 4000, 2) === 4000 && got2 === large(7700, 4000), JSON.stringify(got2));
         const w64 = R.fitSpan(7700, 7700, 64), h64 = R.fitSpan(4000, 4000, 64);
-        check("the same picture at the old m 64 would be 7680 x 3968 and fit: the pass's m 2 refuses where m 64 accepted", w64 === 7680 && h64 === 3968 && R.fits(w64, h64) === "" && got2 !== "", `${w64} x ${h64}, fits '${R.fits(w64, h64)}'`);
+        check("the same picture at the old m 64 would be 7680 x 3968, which the pack's caps take (the 30.4 MP area does not since R-U's live look): the pass's m 2 refuses", w64 === 7680 && h64 === 3968 && packAccepts(w64, h64, 1) && R.fits(w64, h64) === large(7680, 3968) && got2 !== "", `${w64} x ${h64}, fits '${R.fits(w64, h64)}'`);
         const got3 = pass(6000, 4000, 6000, 4000);
         check("a whole 6000 x 4000 picture at m 2: 6000 x 4000, fits (no border; at m 64 it would be 5952 x 3968)", got3 === "" && R.fitSpan(6000, 6000) === 6000 && R.fitSpan(4000, 4000) === 4000
             && R.fitSpan(6000, 6000, 64) === 5952 && R.fitSpan(4000, 4000, 64) === 3968, JSON.stringify(got3));
@@ -878,14 +905,18 @@ function nodeFitSpan(a0, a1, limit, m) {
     console.log("\n--- 9d. wholeRefusal (R3b) ---");
     {
         const cases = [
-            ["7680 x 4320 fits", 7680, 4320, ""],
-            ["4320 x 7680 (portrait) fits", 4320, 7680, ""],
-            ["an odd 7679 x 4319 fits (padded to 7680 x 4320)", 7679, 4319, ""],
+            ["7680 x 4320 is past the area (33.2 MP: its answer came back broken)", 7680, 4320, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 7680 × 4320.`],
+            ["7360 x 4320 is past the area (31.8 MP)", 7360, 4320, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 7360 × 4320.`],
+            ["4320 x 7680 (portrait) is past the area", 4320, 7680, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 4320 × 7680.`],
+            ["an odd 7679 x 4319 (padded to 7680 x 4320) is past the area", 7679, 4319, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 7679 × 4319.`],
+            ["7040 x 4320 fits (the area cap itself)", 7040, 4320, ""],
+            ["7680 x 3960 fits (30.4 MP)", 7680, 3960, ""],
+            ["an odd 7039 x 4319 fits (padded to 7040 x 4320)", 7039, 4319, ""],
             ["64 x 64 fits", 64, 64, ""],
             ["an odd 63 x 100 fits (padded to 64 x 100)", 63, 100, ""],
-            ["7681 x 100 is past the long side", 7681, 100, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side); this is 7681 × 100.`],
-            ["5000 x 4321 is past the short side", 5000, 4321, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side); this is 5000 × 4321.`],
-            ["15000 x 10000 is past both", 15000, 10000, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side); this is 15000 × 10000.`],
+            ["7681 x 100 is past the long side", 7681, 100, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 7681 × 100.`],
+            ["5000 x 4321 is past the short side", 5000, 4321, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 5000 × 4321.`],
+            ["15000 x 10000 is past both", 15000, 10000, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 15000 × 10000.`],
             ["62 x 500 is too small", 62, 500, `${EXACT_LABEL} needs at least 64 px a side; this is 62 × 500.`],
         ];
         for (const [what, w, h, want] of cases) {
@@ -900,7 +931,7 @@ function nodeFitSpan(a0, a1, limit, m) {
                 n++;
                 const { w2, h2 } = R.evenPlan(w, h);
                 const r = R.fits(w2, h2);
-                if (R.wholeRefusal(w, h) === (r ? r.replace(`${w2} × ${h2}`, `${w} × ${h}`) : "")) same++;
+                if (R.wholeRefusal(w, h) === (r ? r.replace(`this is ${w2} × ${h2}.`, `this is ${w} × ${h}.`) : "")) same++;
             }
         }
         check(`wholeRefusal equals evenPlan + fits on ${n} sizes`, same === n, `${n - same} differ`);
@@ -968,6 +999,30 @@ function nodeFitSpan(a0, a1, limit, m) {
         check("at 1.7 the fit would be 4516 x 1964, whose output the pack refuses at 1.724 (fits with F)", eq(at17, { w: 4516, h: 1964 }) && R.fits(4516, 1964, 1.724) !== "" && R.fits(4516, 1964, 1.7) === "" && R.fits(4454, 1936, 1.724) === "", short([at17, R.fits(4516, 1964, 1.724)]));
         check("fitSize keeps a picture that fits (1920 x 1080 at 3)", eq(R.fitSize(1920, 1080, 3), { w: 1920, h: 1080 }));
 
+        // fitAreaSize: fitSize, then the 30.4 MP area (R-U's live look); fitSize itself stays the node's rule
+        check("fitAreaSize(5456, 3072) at 1.5 is 4898 x 2758 (fitSize's 5114 x 2880 answered 7672 x 4320, broken live)", eq(R.fitAreaSize(5456, 3072, 1.5), { w: 4898, h: 2758 }), short(R.fitAreaSize(5456, 3072, 1.5)));
+        check("fitAreaSize(3840, 2160) at 2 is 3676 x 2068 (fitSize keeps 3840 x 2160, whose 7680 x 4320 is past the area)", eq(R.fitSize(3840, 2160, 2), { w: 3840, h: 2160 }) && eq(R.fitAreaSize(3840, 2160, 2), { w: 3676, h: 2068 }), short(R.fitAreaSize(3840, 2160, 2)));
+        check("fitAreaSize keeps what fitSize gives when its output is within the area (3000 x 200 at 3, 1920 x 1080 at 3)", eq(R.fitAreaSize(3000, 200, 3), R.fitSize(3000, 200, 3)) && eq(R.fitAreaSize(1920, 1080, 3), { w: 1920, h: 1080 }));
+        {
+            let aBad = null, aN = 0;
+            seed = 5;
+            for (let i = 0; i < 20000 && !aBad; i++) {
+                const w = rnd(2, 24000), h = rnd(2, 24000);
+                for (const m of R.MODES) {
+                    aN++;
+                    const f = R.fitSize(w, h, m.F), a = R.fitAreaSize(w, h, m.F), o = R.outputSize(a.w, a.h, m.F), of = R.outputSize(f.w, f.h, m.F);
+                    const within = of.w * of.h <= R.MAX_AREA;
+                    if (within ? !eq(a, f) : (a.w > f.w || a.h > f.h || a.w % 2 || a.h % 2)) { aBad = [w, h, m.F, "against fitSize", f, a]; break; }
+                    if (a.w > 2 && a.h > 2 && (o.w * o.h > R.MAX_AREA || !packAccepts(Math.max(64, a.w), Math.max(64, a.h), m.F) && Math.min(a.w, a.h) >= 64)) { aBad = [w, h, m.F, "not taken", a, o]; break; }
+                    // the aspect: each side floored to even twice at most (fitSize, then the area), so within 4 px a side
+                    if (!within && Math.min(a.w, a.h) >= 64 && Math.abs(a.h - a.w * h / w) > 4 + 4 * h / w + 1e-9) { aBad = [w, h, m.F, "aspect", a]; break; }
+                    // as large as the area allows: the next even size up of the same aspect would pass a cap
+                    if (!within && Math.min(a.w, a.h) >= 64 && o.w * o.h < R.MAX_AREA * 0.97) { aBad = [w, h, m.F, "too small", a, o.w * o.h]; break; }
+                }
+            }
+            check(`fitAreaSize on ${aN} random sizes and every mode: fitSize's answer when its output is within 30.4 MP, else smaller, even, taken at F with an output of at most 30.4 MP, the aspect kept, within 3 % of the area`, aN === 100000 && !aBad, short(aBad));
+        }
+
         // fitPlan: the even size, the scale-down, the answer kept, the document after, the refusals
         const plan = (w, h, f) => { const p = R.fitPlan(w, h, f); if (p.refusal) texts.push(p.refusal); return p; };
         const p2 = plan(320, 240, 2);
@@ -980,19 +1035,27 @@ function nodeFitSpan(a0, a1, limit, m) {
         check("fitPlan(4600, 100, 1.7): scaled down with the pack's 1.724 to 4454 x 96 (1.7 would give 4516 x 98)", !p17.refusal && p17.scaled && eq(p17.sent, [4454, 96]) && eq(p17.out, [7678, 166]) && eq(p17.doc, [7678, 167]) && p17.mode.label === "1.724x (Balanced)" && eq(R.fitSize(4600, 100, 1.7), { w: 4516, h: 98 }), short(p17));
         // an odd side that fits unpadded but not padded (4455 x 2506 at 1.724: 4456 would answer 7682): the padded size is fitted
         const pEdge = plan(4455, 2506, 1.7);
-        check("fitPlan(4455, 2506, 1.7): the padded 4456 x 2506 is past the cap, so it is scaled to 4454 x 2504", !pEdge.refusal && pEdge.scaled && eq(pEdge.sent, [4454, 2504]) && packAccepts(4454, 2504, 1.724) && !packAccepts(4456, 2506, 1.724), short(pEdge));
+        check("fitPlan(4455, 2506, 1.7): the padded 4456 x 2506 is past the pack's cap and its fit 4454 x 2504 past the area, so it goes at 4266 x 2398", !pEdge.refusal && pEdge.scaled && eq(pEdge.sent, [4266, 2398]) && eq(R.fitSize(4456, 2506, 1.724), { w: 4454, h: 2504 }) && packAccepts(4454, 2504, 1.724) && !passAccepts(4454, 2504, 1.724) && !packAccepts(4456, 2506, 1.724) && passAccepts(4266, 2398, 1.724), short(pEdge));
         const pUser = plan(5456, 3072, 1.5);
-        check("fitPlan(5456, 3072, 1.5): the user's picture goes at 5114 x 2880 and comes back 7672 x 4320", !pUser.refusal && pUser.scaled && eq(pUser.sent, [5114, 2880]) && eq(pUser.out, [7672, 4320]) && eq(pUser.doc, [7672, 4320]), short(pUser));
+        check("fitPlan(5456, 3072, 1.5): the user's picture goes at 4898 x 2758 and comes back 7348 x 4138 (30.4 MP; the pack's own fit 5114 x 2880 answered 7672 x 4320, broken live)", !pUser.refusal && pUser.scaled && eq(pUser.sent, [4898, 2758]) && eq(pUser.out, [7348, 4138]) && eq(pUser.doc, [7348, 4137]) && pUser.out[0] * pUser.out[1] <= R.MAX_AREA, short(pUser));
+        const p4k = plan(3840, 2160, 2);
+        check("fitPlan(3840, 2160, 2): within the pack's cap but past the area, so it goes at 3676 x 2068 and comes back 7352 x 4136", !p4k.refusal && p4k.scaled && eq(p4k.sent, [3676, 2068]) && eq(p4k.out, [7352, 4136]) && eq(p4k.doc, [7352, 4136]), short(p4k));
+        const p1080 = plan(1920, 1080, 2);
+        check("fitPlan(1920, 1080, 2): not scaled, 3840 x 2160 back (the live look's 2x)", !p1080.refusal && !p1080.scaled && eq(p1080.out, [3840, 2160]) && eq(p1080.doc, [3840, 2160]), short(p1080));
         const small = plan(4600, 100, 3);
-        check("fitPlan(4600, 100, 3): the fit 2560 x 54 is under 64 px, refused", small.refusal === `${EXACT_LABEL} needs at least 64 px a side: at 3× the 4600 × 100 picture would go at 2560 × 54 (its output is capped at 7680 × 4320).`, small.refusal);
+        check("fitPlan(4600, 100, 3): the fit 2560 x 54 is under 64 px, refused", small.refusal === `${EXACT_LABEL} needs at least 64 px a side: at 3× the 4600 × 100 picture would go at 2560 × 54 (its output is capped at 7680 × 4320 and 30.4 megapixels).`, small.refusal);
         const tiny = plan(50, 63, 2);
         check("fitPlan(50, 63, 2): the picture itself is under 64 px, refused with its own size", tiny.refusal === `${EXACT_LABEL} needs at least 64 px a side; this is 50 × 63.`, tiny.refusal);
         const same = plan(7680, 4320, 2);
-        check("fitPlan(7680, 4320, 2): the output cannot be larger than the picture, refused", same.refusal === `${EXACT_LABEL} cannot make the 7680 × 4320 picture larger at 2×: its output is capped at 7680 × 4320.` && same.scaled, same.refusal);
+        check("fitPlan(7680, 4320, 2): the output cannot be larger than the picture, refused", same.refusal === `${EXACT_LABEL} cannot make the 7680 × 4320 picture larger at 2×: its output is capped at 7680 × 4320 and 30.4 megapixels.` && same.scaled, same.refusal);
         const big = plan(15000, 10000, 2);
         check("fitPlan(15000, 10000, 2): a picture past the cap at 2× that would shrink is refused", /cannot make the 15000 × 10000 picture larger at 2×/.test(big.refusal), big.refusal);
         const one = plan(7681, 100, 1);
         check("fitPlan at 1×: the refiner's refusal past the cap (no downscale)", one.refusal === R.wholeRefusal(7681, 100) && !one.scaled && one.refusal !== "", one.refusal);
+        const big1 = [[7680, 4320], [7360, 4320]].map(([w, h]) => plan(w, h, 1));
+        check("fitPlan at 1×: 7680 x 4320 and 7360 x 4320 refused (their answers came back broken), never scaled", big1.every((p, i) => !p.scaled && p.refusal === `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is ${[7680, 7360][i]} × 4320.`), short(big1.map((p) => p.refusal)));
+        const ok1 = plan(7040, 4320, 1);
+        check("fitPlan(7040, 4320, 1): the largest output measured right goes at its own size", !ok1.refusal && !ok1.scaled && eq(ok1.sent, [7040, 4320]) && eq(ok1.doc, [7040, 4320]), short(ok1));
         const oneOk = plan(641, 481, 1);
         check("fitPlan(641, 481, 1): 642 x 482 goes, the picture's size kept", !oneOk.refusal && eq(oneOk.sent, [642, 482]) && eq(oneOk.doc, [641, 481]), short(oneOk));
         const badF = plan(320, 240, 2.5);
@@ -1006,12 +1069,28 @@ function nodeFitSpan(a0, a1, limit, m) {
                 const p = R.fitPlan(w, h, m.factor);
                 if (p.refusal) continue;
                 plans++;
-                if (!packAccepts(p.sent[0], p.sent[1], m.F) || p.sent[0] % 2 || p.sent[1] % 2 || !(p.doc[0] > w) || Math.abs(p.doc[1] / p.doc[0] - h / w) > 1 / p.doc[0] + 1e-9) { planBad = [w, h, m.factor, p]; break; }
+                if (!passAccepts(p.sent[0], p.sent[1], m.F) || p.out[0] * p.out[1] > R.MAX_AREA || p.sent[0] % 2 || p.sent[1] % 2 || !(p.doc[0] > w) || Math.abs(p.doc[1] / p.doc[0] - h / w) > 1 / p.doc[0] + 1e-9) { planBad = [w, h, m.factor, p]; break; }
                 if (!p.scaled && (p.sent[0] - w > 1 || p.sent[1] - h > 1)) { planBad = [w, h, m.factor, "padded more than 1 px", p]; break; }
             }
         }
-        check(`fitPlan on ${plans} sizes: what goes is even and taken at F, the document larger at the picture's aspect`, plans > 2000 && !planBad, short(planBad));
-        check("scaledDownNote is the user's sentence", R.scaledDownNote(2560, 170) === `${EXACT_LABEL} scaled the picture down to 2560 × 170 first: its output is capped at 7680 × 4320.`, R.scaledDownNote(2560, 170));
+        check(`fitPlan on ${plans} sizes: what goes is even and taken at F, its output never past 30.4 MP, the document larger at the picture's aspect`, plans > 2000 && !planBad, short(planBad));
+        {
+            // every picture size the dialog meets at every factor, refused or not: no plan sends an output past the area
+            let over = null, nAll = 0;
+            seed = 13;
+            const sizes = [[5456, 3072], [3840, 2160], [1920, 1080], [7680, 4320], [7040, 4320], [5114, 2880], [4096, 4096], [8000, 2000], [100, 7000]];
+            for (let i = 0; i < 3000; i++) sizes.push([rnd(1, 20000), rnd(1, 20000)]);
+            for (const [w, h] of sizes) {
+                for (const m of R.MODES) {
+                    nAll++;
+                    const p = R.fitPlan(w, h, m.factor);
+                    if (!p.refusal && p.out[0] * p.out[1] > R.MAX_AREA) { over = [w, h, m.factor, p]; break; }
+                }
+                if (over) break;
+            }
+            check(`fitPlan never sends an output past MAX_AREA (${nAll} plans, every factor, 1x included)`, !over && nAll === 3009 * 5, short(over));
+        }
+        check("scaledDownNote is the user's sentence, with both caps", R.scaledDownNote(2560, 170) === `${EXACT_LABEL} scaled the picture down to 2560 × 170 first: its output is capped at 7680 × 4320 and 30.4 megapixels.`, R.scaledDownNote(2560, 170));
         texts.push(R.scaledDownNote(2560, 170));
 
         // passPrompt takes the mode; 1x by default; an unknown label throws with the label

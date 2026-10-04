@@ -1286,9 +1286,9 @@ async function main() {
                 JSON.stringify(policy.clamp({ name: "realism_pass", args: {} }).args));
             check("the_policys_realism_label_is_the_renderers", policy.REALISM_LABEL === LABEL, policy.REALISM_LABEL);
             // R-U: above 1x the question and the card name the factor and the document made larger; status (which answers
-            // for 1x) refusing only for the size past 7680 x 4320 does not refuse there (the pass scales down), any other
-            // reason still does; at 1x the size refuses as before
-            const cap = { ...ready, ready: false, reason: `${LABEL} takes at most 7680 × 4320 (long × short side); this is 9000 × 5000.` };
+            // for 1x) refusing only for the size past 7680 x 4320 or 30.4 MP does not refuse there (the pass scales down),
+            // any other reason still does; at 1x the size refuses as before (both caps' sentence: realism.fits)
+            const cap = { ...ready, ready: false, reason: `${LABEL} takes at most 7680 × 4320 (long × short side) and 30.4 megapixels; this is 7680 × 4320.` };
             const up2 = policy.decide({ name: "realism_pass", args: { factor: 2 } }, f({ realism: ready }));
             const upCap = policy.decide({ name: "realism_pass", args: { factor: 1.7 } }, f({ realism: cap }));
             const oneCap = policy.decide({ name: "realism_pass", args: { factor: 1 } }, f({ realism: cap }));
