@@ -4,7 +4,8 @@
 // upscale bodies for every shipped fal upscaler (golden), the two ComfyUI upscalers (a fixed factor, and RTX Video
 // Super Resolution's factor input and size limits), the Magnific adapter (electron/main/providers/magnific.js:
 // both routes' bodies, the factor rules, the 25.3 MP cap, the host and test-key rules, the task poll, the retry, the
-// errors without the key), the Comfy Cloud graphs around the four upscaler Partner Nodes, the dispatch in providers/index.js and the assistant's policy row. A scripted fetch plays
+// errors without the key), the Comfy Cloud graphs around the four upscaler Partner Nodes and RTX Video Super Resolution (its factor,
+// Quality and answer cap, limits.out), the dispatch in providers/index.js and the assistant's policy row. A scripted fetch plays
 // fal's queue, Magnific's task routes, Comfy Cloud's job routes and a result host; ctx.sleep records its waits instead of waiting. The facts are
 // fal's OpenAPI schemas (queue/openapi.json per endpoint) and Magnific's API reference, both read 2026-09-22; nothing
 // here talks to a live API.
@@ -74,7 +75,10 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
     const recipes = withElectron(() => require(P("electron", "main", "recipes.js")));
     const rawOf = (id) => JSON.parse(fs.readFileSync(P("recipes", id + ".json"), "utf8"));
     const norm = (id) => recipes._normalize ? recipes._normalize(rawOf(id)) : null;
-    const SHIPPED = ["topaz_precision", "topaz_creative", "topaz_generative", "clarity_upscaler", "seedvr2", "recraft_crisp", "recraft_creative", "magnific_precision", "magnific_creative"];
+    const SHIPPED = ["topaz_precision", "topaz_creative", "topaz_generative", "clarity_upscaler", "seedvr2", "recraft_crisp", "recraft_creative", "magnific_precision", "magnific_creative", "rtx_vsr_cloud"];
+    // the crop at its own size from 32 to 4096 px; RTX Video Super Resolution on Comfy Cloud (docs/PLAN_0_1_42.md U3) from
+    // 64, and its answer at most 8192 px on the long side (`out`)
+    const LIMITS = { rtx_vsr_cloud: { min: 64, max: 4096, step: 1, out: 8192 } };
 
     await section("the recipe format", async () => {
         check("recipes.js exports _normalize for the test", typeof recipes._normalize === "function");
@@ -86,10 +90,27 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
             for (const [pid, v] of Object.entries(r.providers)) {
                 if (v.text !== null) bad.push(pid + " has a Generate new shape");
                 if (!v.factor) bad.push(pid + " has no factor");
-                if (v.limits.step !== 1 || v.limits.max !== 4096 || v.limits.min !== 32) bad.push(pid + " limits " + JSON.stringify(v.limits));
+                const lw = LIMITS[id] || { min: 32, max: 4096, step: 1 };
+                if (v.limits.step !== lw.step || v.limits.max !== lw.max || v.limits.min !== lw.min || v.limits.out !== lw.out) bad.push(pid + " limits " + JSON.stringify(v.limits));
             }
             check(`${id} is an upscale recipe without a Generate new shape, the crop at its own size`, !bad.length, bad.join("; "));
         }
+        // editLimits keeps an answer cap as a whole positive number and drops anything else
+        const outOf = (out) => recipes._normalize({ id: "o", kind: "provider", task: "upscale", limits: { out }, providers: { comfycloud: { model: "m" } } }).providers.comfycloud.limits;
+        const outs = { kept: outOf(8192).out, rounded: outOf("8191.6").out, zero: outOf(0), negative: outOf(-5), word: outOf("big"), none: outOf(null) };
+        check("limits.out: kept and rounded; 0, negative, a word or null leave no out at all",
+            outs.kept === 8192 && outs.rounded === 8192 && ["zero", "negative", "word", "none"].every((k) => !Object.prototype.hasOwnProperty.call(outs[k], "out")), short(outs));
+        const variantOut = recipes._normalize({ id: "o", kind: "provider", task: "upscale", limits: { out: 8192 }, providers: { a: { model: "m", limits: { out: 4096 } }, b: { model: "m" } } });
+        check("a variant's own limits.out wins over the recipe's, the other variant keeps the recipe's", variantOut.providers.a.limits.out === 4096 && variantOut.providers.b.limits.out === 8192, short(variantOut.providers));
+        const plainOut = norm("recraft_crisp").providers.comfycloud.limits;
+        check("an upscaler without an answer cap has no out", !Object.prototype.hasOwnProperty.call(plainOut, "out"), short(plainOut));
+        const rv = norm("rtx_vsr_cloud");
+        const rc = rv.providers.comfycloud;
+        check("rtx_vsr_cloud: Comfy Cloud alone and its default, family Upscale, 1 to 4 (2 by default), no prompt, Quality LOW to ULTRA (ULTRA by default)",
+            eq(rv.providerIds, ["comfycloud"]) && rv.default === "comfycloud" && rv.name === "RTX Video Super Resolution (Comfy Cloud)" && rc.model === "RTXVideoSuperResolution" && rc.options.node === "RTXVideoSuperResolution"
+            && rc.factor.default === 2 && rc.factor.min === 1 && rc.factor.max === 4 && rc.factor.steps === null && rc.factor.fixed === false && rc.usesPrompt === false
+            && rc.settings.length === 1 && rc.settings[0].key === "quality" && rc.settings[0].label === "Quality" && eq(rc.settings[0].spec[0], ["LOW", "MEDIUM", "HIGH", "ULTRA"]) && rc.settings[0].spec[1].default === "ULTRA",
+            short({ ids: rv.providerIds, factor: rc.factor, settings: rc.settings }));
         const f = norm("magnific_creative").providers.magnific.factor;
         check("Magnific Creative offers 2, 4, 8, 16 only", eq(f.steps, [2, 4, 8, 16]) && f.default === 2 && !f.fixed, short(f));
         const mp = norm("magnific_precision").providers.magnific.factor;
@@ -307,6 +328,37 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         for (const [id, node] of [["recraft_crisp", "RecraftCrispUpscaleNode"], ["recraft_creative", "RecraftCreativeUpscaleNode"]]) {
             const r = await run(reqOf(id, "comfycloud"));
             check(`${node}: the picture alone`, eq(partner(r.prompt), { class_type: node, inputs: { image: ["1", 0] } }), short(partner(r.prompt)));
+        }
+        // RTX Video Super Resolution (docs/PLAN_0_1_42.md U3): no Partner Node, the factor inside its dynamic combo as the
+        // dotted key (get_node RTXVideoSuperResolution on Comfy Cloud, 2026-10-04), Quality copied by its key
+        const rtx = await run(reqOf("rtx_vsr_cloud", "comfycloud", { factor: 3, params: { quality: "HIGH" }, width: 100, height: 80 }));
+        check("RTX Video Super Resolution: LoadImage -> the node (images, scale by multiplier, scale 3, quality HIGH) -> SaveImage, the answer the view's bytes",
+            eq(rtx.prompt, { 1: { class_type: "LoadImage", inputs: { image: "scumble-crop.png" } }, 2: { class_type: "RTXVideoSuperResolution", inputs: { images: ["1", 0], resize_type: "scale by multiplier", "resize_type.scale": 3, quality: "HIGH" } }, 3: { class_type: "SaveImage", inputs: { images: ["2", 0], filename_prefix: "scumble" } } })
+            && Buffer.compare(Buffer.from(rtx.out.bytes), OUT) === 0 && rtx.out.info.node === "RTXVideoSuperResolution", short(rtx.prompt));
+        check("RTX Video Super Resolution: the key goes with every Comfy Cloud call, one upload, one prompt", rtx.calls.filter((c) => c.url.startsWith("https://cloud.comfy.org/")).every((c) => c.headers["X-API-Key"] === "cc-key-123456")
+            && rtx.calls.filter((c) => c.url.endsWith("/api/upload/image")).length === 1 && rtx.calls.filter((c) => c.url.endsWith("/api/prompt")).length === 1);
+        const rtxDefault = await run(reqOf("rtx_vsr_cloud", "comfycloud"));
+        check("RTX Video Super Resolution with the recipe's defaults: 2x, ULTRA", partner(rtxDefault.prompt).inputs["resize_type.scale"] === 2 && partner(rtxDefault.prompt).inputs.quality === "ULTRA", short(partner(rtxDefault.prompt)));
+        const rtxFrac = await run(reqOf("rtx_vsr_cloud", "comfycloud", { factor: 2.5 }));
+        check("RTX Video Super Resolution takes a factor between whole numbers (the node's scale is a float)", partner(rtxFrac.prompt).inputs["resize_type.scale"] === 2.5, short(partner(rtxFrac.prompt)));
+        const rtxLay = cc.layout(reqOf("rtx_vsr_cloud", "comfycloud", { references: [IMG] }));
+        check("RTX Video Super Resolution's layout: the crop alone, as images, at most one picture, the references declared dropped",
+            eq(rtxLay.pictures.filter((p) => p.role === "crop"), [{ role: "crop", field: "images", n: 1 }]) && rtxLay.max === 1 && !!rtxLay.drops, short(rtxLay));
+        // the answer's cap: refused before any upload or prompt, with the size from the request or the PNG's own header
+        const nothingSent = async (req, re) => {
+            const s = scripted([{ match: () => true, answer: () => ({ name: "x.png", prompt_id: "p1" }) }]);
+            const t = await throwsWith(() => cc.upscale(req, { key: "cc-key-123456", fetch: s.fetch, log: () => {}, sleep: async () => {} }), re);
+            return { ok: t.ok && s.calls.length === 0, msg: `${t.msg} (${s.calls.length} calls)` };
+        };
+        const capSized = await nothingSent(reqOf("rtx_vsr_cloud", "comfycloud", { factor: 4, width: 2100, height: 100 }), /^The picture is 2100 × 100; at 4× the answer would pass 8192 px on the long side\. Pick a smaller factor or a smaller picture\.$/);
+        check("RTX Video Super Resolution: 2100 px at 4x is refused with the renderer's words, nothing uploaded or queued", capSized.ok, capSized.msg);
+        const capPng = await nothingSent(reqOf("rtx_vsr_cloud", "comfycloud", { factor: 3, image: pngOf(3000, 200, "big") }), /^The picture is 3000 × 200; at 3× the answer would pass 8192/);
+        check("RTX Video Super Resolution called without a size: the PNG's header gives it, refused the same", capPng.ok, capPng.msg);
+        const capEdge = await run(reqOf("rtx_vsr_cloud", "comfycloud", { factor: 4, width: 2048, height: 1000 }));
+        check("RTX Video Super Resolution: 2048 px at 4x answers exactly 8192 and runs", partner(capEdge.prompt).inputs["resize_type.scale"] === 4);
+        for (const f of [0.5, 5, "x", null]) {
+            const t = await nothingSent(reqOf("rtx_vsr_cloud", "comfycloud", { factor: f }), /upscales by 1 to 4, not /);
+            check(`RTX Video Super Resolution refuses the factor ${JSON.stringify(f)} before anything is sent`, t.ok, t.msg);
         }
         const bad = await throwsWith(() => run(reqOf("magnific_precision", "comfycloud", { factor: 3 })), /2, 4, 8 or 16, not 3/);
         check("Magnific on Comfy Cloud refuses 3x before anything is sent", bad.ok, bad.msg);

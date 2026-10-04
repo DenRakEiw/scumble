@@ -1066,7 +1066,12 @@ while the recipe is selected (then on the selection). The recipe select lists th
   recipe. Every other upscaler gets no prompt.
 - `text: null` (an upscaler has no *Generate new* shape) and its `limits` as any variant. The shipped recipes set
   `limits: { min: 32, max: 4096, step: 1 }`: the crop goes out at its own size (the size mode `crop`, whatever the
-  *Highres fix* select says), never pushed up to the model's maximum and never rounded to a multiple.
+  *Highres fix* select says), never pushed up to the model's maximum and never rounded to a multiple. An upscaler
+  whose answer has a cap sets `limits.out`, the answer's long side (`rtx_vsr_cloud`: 64 / 4096 / step 1, `out`
+  8192; `editLimits` keeps it as a whole positive number, else drops it): the sent long side times the factor may not
+  pass it, checked before anything is sent by `host.upscaleOutRefusal` (the last rule of `upscaleSizeRefusal`) on the
+  whole picture and on the selection's box as it goes out (held to `limits.max` first, so a 4400 px box goes out at
+  4096 and is checked at that size), and by the Upscale dialog, which greys *Upscale* with the same words.
 
 The two modes (`host.runUpscale(editor, { scope, factor })` in `renderer/editor/host.js`):
 
@@ -1137,7 +1142,13 @@ whose choices are numbers written as a list, and a row set to `auto` is left out
 **Comfy Cloud** (`comfycloud.js`): LoadImage -> one of `MagnificImageUpscalerPreciseV2Node`,
 `MagnificImageUpscalerCreativeNode`, `RecraftCrispUpscaleNode`, `RecraftCreativeUpscaleNode` -> SaveImage, the
 Magnific factor as `"4x"` and `auto_downscale: false` (Scumble refuses an oversized picture itself), the settings by
-input key; their inputs were read from a ComfyUI's `/object_info` on 2026-09-22. The hidden **loopback** answers the
+input key; their inputs were read from a ComfyUI's `/object_info` on 2026-09-22. `RTXVideoSuperResolution`
+(`rtx_vsr_cloud`, 0.1.42 U3; no Partner Node but a node Comfy Cloud runs on its own GPUs, its inputs read with Comfy
+Cloud's `get_node` on 2026-10-04) takes the picture as `images`, `resize_type: "scale by multiplier"` with the factor as
+`"resize_type.scale"` (the dotted key of the dynamic combo, 1 to 4, a float) and `quality` (LOW / MEDIUM / HIGH /
+ULTRA, the Quality row by its key); its answer may be at most 8192 px on the long side, which `buildGraph` checks before
+any upload (`BEFORE_UPLOAD`, the size from the request or the PNG's header) and the SHAPE again, with the renderer's
+words, so a direct call is refused before the prompt is sent too. The hidden **loopback** answers the
 picture resampled by the factor (2 when the model picks) with a 4 px magenta frame, which is what
 `tools/upscale_test.py` looks for.
 
@@ -1164,6 +1175,7 @@ The shipped recipes (written from the providers' schemas; the three named above 
 | `recraft_creative` Recraft Creative | fal `fal-ai/recraft/upscale/creative`, Comfy Cloud | the model's | none |
 | `magnific_precision` Magnific Precision | Magnific `image-upscaler-precision-v2`, Comfy Cloud, Comfy Router `freepik/ai-image-upscaler-precision-v2` | 2 to 16 (Comfy Cloud 2, 4, 8, 16) | Flavor, Sharpen, Smart grain, Ultra detail |
 | `magnific_creative` Magnific Creative | Magnific `image-upscaler`, Comfy Cloud | 2, 4, 8, 16 (at most 25.3 MP out) | Optimized for, Engine, Creativity, HDR, Resemblance, Fractality; the prompt goes along |
+| `rtx_vsr_cloud` RTX Video Super Resolution (Comfy Cloud) | Comfy Cloud `RTXVideoSuperResolution` (not run live yet) | 1 to 4 (at most 8192 px out) | Quality (ULTRA by default) |
 
 **Who else serves an upscaler** (the survey of 2026-09-22; only lists that answer without a key could be read, and
 **no key but BFL's is stored in this install**, so Replicate, WaveSpeed and ToAPIs stay open): OpenRouter's

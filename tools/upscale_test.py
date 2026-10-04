@@ -13,7 +13,9 @@ picture N times larger with a 4 px magenta frame as its marker (electron/main/pr
 - the Upscale button in the top bar opens the dialog, which lists the shipped upscale recipes, offers each one's
   factors and refuses a picture above the model's limit before anything is sent;
 - list_recipes names the task and the factors; the shipped recipes' settings reach the Settings panel; the
-  Magnific key row exists.
+  Magnific key row exists;
+- RTX Video Super Resolution on Comfy Cloud: its answer cap (limits.out, 8192) in the dialog and the host, for the box
+  as it goes out and the whole picture (the host's runs on the loopback with the same cap; nothing goes to Comfy Cloud).
 
     python tools/upscale_test.py
 
@@ -162,7 +164,7 @@ return { layer: out.layer.id, status: ed.status };
     ("the_shipped_recipes_are_listed_with_their_task_and_factors", """
 const list = await run("list_recipes");
 const ups = list.recipes.filter((r) => r.task === "upscale");
-const want = ["clarity_upscaler", "magnific_creative", "magnific_precision", "recraft_creative", "recraft_crisp", "rtx_vsr_local", "seedvr2", "topaz_creative", "topaz_generative", "topaz_precision", "upscale_model_local"];
+const want = ["clarity_upscaler", "magnific_creative", "magnific_precision", "recraft_creative", "recraft_crisp", "rtx_vsr_cloud", "rtx_vsr_local", "seedvr2", "topaz_creative", "topaz_generative", "topaz_precision", "upscale_model_local"];
 const ids = ups.map((r) => r.id).sort();
 if (JSON.stringify(ids) !== JSON.stringify(want)) throw new Error("upscale recipes: " + ids.join(", "));
 const mc = ups.find((r) => r.id === "magnific_creative");
@@ -173,6 +175,9 @@ const rtx = ups.find((r) => r.id === "rtx_vsr_local"), um = ups.find((r) => r.id
 if (rtx.mode !== "local" || rtx.provider !== null || !rtx.factor || rtx.factor.fixed !== false || rtx.factor.default !== 2 || rtx.factor.min !== 1 || rtx.factor.max !== 4 || JSON.stringify(rtx.limits) !== JSON.stringify({ min: 64, max: 4096, out: 8192 })) throw new Error("RTX Video Super Resolution: " + JSON.stringify(rtx));
 if (!um.factor || um.factor.fixed !== true || JSON.stringify(um.limits) !== JSON.stringify({ picture: 2048 })) throw new Error("Upscale model: " + JSON.stringify({ factor: um.factor, limits: um.limits }));
 if (mc.limits !== undefined) throw new Error("an API upscaler names ComfyUI limits: " + JSON.stringify(mc.limits));
+// RTX Video Super Resolution on Comfy Cloud (U3): an API upscaler under the family Upscale, 1 to 4
+const rc = ups.find((r) => r.id === "rtx_vsr_cloud");
+if (rc.mode !== "api" || rc.provider !== "comfycloud" || JSON.stringify(rc.providers) !== '["comfycloud"]' || rc.family !== "Upscale" || !rc.factor || rc.factor.fixed !== false || rc.factor.default !== 2 || rc.factor.min !== 1 || rc.factor.max !== 4 || rc.usesPrompt !== false || rc.limits !== undefined) throw new Error("RTX Video Super Resolution (Comfy Cloud): " + JSON.stringify(rc));
 if (list.recipes.some((r) => r.task !== "upscale" && r.factor !== undefined)) throw new Error("an edit recipe carries a factor");
 const gen = list.recipes.filter((r) => r.task === "edit").length;
 const provs = await window.scumble.providers.list();
@@ -213,8 +218,9 @@ await wait(60);
 const dlg = document.getElementById("up-dialog");
 if (!dlg.open) throw new Error("the dialog did not open");
 const recs = Array.from(document.getElementById("up-recipe").options).map((o) => o.value);
-// the eleven upscale recipes (RTX Video Super Resolution since U1) and the Realism Pass (task "pass", R3b)
-if (recs.length !== 12 || !recs.includes("realism_pass") || !recs.includes("rtx_vsr_local")) throw new Error("the dialog lists " + recs.length + " recipes: " + recs.join(", "));
+// the twelve upscale recipes (RTX Video Super Resolution on ComfyUI since U1, on Comfy Cloud since U3) and the Realism
+// Pass (task "pass", R3b)
+if (recs.length !== 13 || !recs.includes("realism_pass") || !recs.includes("rtx_vsr_local") || !recs.includes("rtx_vsr_cloud")) throw new Error("the dialog lists " + recs.length + " recipes: " + recs.join(", "));
 if (document.getElementById("up-recipe").value !== "topaz_precision") throw new Error("the selected upscale recipe is not preselected");
 if (!document.getElementById("up-scope-sel").checked) throw new Error("with a selection the dialog does not start on it");
 const pick = (id) => { const s = document.getElementById("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); };
@@ -593,6 +599,123 @@ try {
     if (recipe0 && (!host.recipe || host.recipe.id !== recipe0.id)) host.shell.selectRecipe(recipe0.id, recipe0.kind === "provider" ? recipe0.provider : undefined);
 }
 """),
+    # docs/PLAN_0_1_42.md U3: RTX Video Super Resolution on Comfy Cloud, an API upscaler whose answer may be at most 8192
+    # px on the long side (its variant's limits.out). The shipped recipe selected (Quality in the Settings panel) and in the
+    # dialog (1 to 4; the cap greys Upscale for the box as it would go out, held to 4096, and for the whole picture). The
+    # host's refusals and its let-through at exactly 8192 run on the loopback upscaler with the same cap: a run of the
+    # shipped recipe would go to Comfy Cloud, which a gate never does.
+    ("rtx_video_super_resolution_on_comfy_cloud_caps_the_answer", """
+const ed = ednow(window.__u);
+const $ = (id) => document.getElementById(id);
+const pick = (id) => { const s = $("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); };
+const setFactor = (v) => { $("up-factor").value = String(v); $("up-factor").dispatchEvent(new Event("change")); };
+const setScope = (doc) => { const r = doc ? $("up-scope-doc") : $("up-scope-sel"); r.checked = true; r.dispatchEvent(new Event("change")); };
+const note = () => ({ text: $("up-size-note").textContent, go: !$("up-go").disabled });
+const recipe0 = host.recipe;
+const saved = { np: host.nodeParams };
+const capped = { ...%(LOOP)s, id: "loopback_up_out", name: "Loopback upscale (8192 cap)", limits: { min: 64, max: 4096, step: 1, pixels: 0, minPixels: 0, ratio: 0, out: 8192 } };
+const out = {};
+let wide = null;
+const refused = async (args, re) => {
+    try { await run("upscale", { doc: wide, timeout: 30, ...args }); } catch (err) { const m = String(err.message || err); if (!re.test(m)) throw new Error("wrong refusal for " + JSON.stringify(args) + ": " + m); return m; }
+    throw new Error("not refused: " + JSON.stringify(args));
+};
+try {
+    // the shipped recipe selected: Comfy Cloud, its limits with the answer cap, Quality at ULTRA
+    host.shell.selectRecipe("rtx_vsr_cloud");
+    if (!host.recipe || host.recipe.id !== "rtx_vsr_cloud" || host.recipe.provider !== "comfycloud" || ed.genSettings.mode !== "api") throw new Error("not selected: " + JSON.stringify(host.recipe && { id: host.recipe.id, provider: host.recipe.provider, mode: ed.genSettings.mode }));
+    const lim = host.recipe.limits || {};
+    if (lim.out !== 8192 || lim.min !== 64 || lim.max !== 4096 || lim.step !== 1) throw new Error("the limits: " + JSON.stringify(lim));
+    const rows = host.settingTargets(ed).map((x) => x.node.title);
+    if (JSON.stringify(rows) !== '["Quality"]' || host.providerParams(ed).quality !== "ULTRA") throw new Error("the Settings rows: " + JSON.stringify({ rows, params: host.providerParams(ed) }));
+
+    // a wide picture, no context around the selection
+    const d2 = await run("new_document");
+    wide = d2.id;
+    const ew = ednow(wide);
+    host.shell.activate(ew);
+    const c = document.createElement("canvas");
+    c.width = 4400; c.height = 240;
+    const g = c.getContext("2d");
+    g.fillStyle = "rgb(60, 120, 90)"; g.fillRect(0, 0, 4400, 240);
+    await ew.setBaseFromCanvas(c);
+    if (ew.width !== 4400 || ew.height !== 240) throw new Error("the wide base: " + ew.width + "x" + ew.height);
+    await run("set_crop", { doc: wide, context: 0, feather: 0 });
+    host.nodeParams = { ...saved.np, padding: 0 };
+
+    // the dialog on the box: 3000 px goes out as it is (6000 at 2x, 9000 at 3x); the whole width is held to 4096 x 223
+    // first (8192 at 2x, 12288 at 3x)
+    await run("select_rect", { doc: wide, x: 0, y: 0, w: 3000, h: 200 });
+    host.shell.openUpscale(ew);
+    pick("rtx_vsr_cloud");
+    const factors = Array.from($("up-factor").options).map((o) => +o.value);
+    if ($("up-factor-row").hidden || JSON.stringify(factors) !== "[1,2,3,4]" || $("up-factor").value !== "2") throw new Error("the factor row: " + JSON.stringify({ hidden: $("up-factor-row").hidden, factors, value: $("up-factor").value }));
+    if (!$("up-provider-row").hidden || !$("up-prompt-row").hidden || $("up-scope-doc").disabled) throw new Error("the rows: " + JSON.stringify({ provider: $("up-provider-row").hidden, prompt: $("up-prompt-row").hidden, doc: $("up-scope-doc").disabled }));
+    setScope(false);
+    const sel2 = note();
+    setFactor(3);
+    const sel3 = note();
+    if (!sel2.go || !/goes out at its own size, up to 4096 px/.test(sel2.text)) throw new Error("the box at 2x: " + JSON.stringify(sel2));
+    if (sel3.go || sel3.text !== "The selection's box goes out at 3000 × 200; at 3× the answer would pass 8192 px on the long side. Pick a smaller factor or a smaller area.") throw new Error("the box at 3x: " + JSON.stringify(sel3));
+    await run("select_rect", { doc: wide, x: 0, y: 0, w: 4400, h: 240 });
+    setFactor(3);
+    const all3 = note();
+    setFactor(2);
+    const all2 = note();
+    if (all3.go || !/^The selection's box goes out at 4096 × 223; at 3× the answer would pass 8192 px/.test(all3.text)) throw new Error("the held box at 3x: " + JSON.stringify(all3));
+    if (!all2.go) throw new Error("the held box at 2x (8192): " + JSON.stringify(all2));
+    out.dialogBox = sel3.text;
+    $("up-cancel").click();
+    await wait(60);
+
+    // the host on the same boxes, with the loopback upscaler capped the same: refused before anything is sent, 8192 let
+    // through and landed
+    host.setRecipe(capped);
+    const layers0 = ew.layers.length, hist0 = ew.history.length;
+    await run("select_rect", { doc: wide, x: 0, y: 0, w: 3000, h: 200 });
+    out.box3 = await refused({ scope: "selection", factor: 3 }, /^The selection's box goes out at 3000 × 200; at 3× the answer would pass 8192 px on the long side\\. Pick a smaller factor or a smaller area\\.$/);
+    await run("select_rect", { doc: wide, x: 0, y: 0, w: 4400, h: 240 });
+    out.held3 = await refused({ scope: "selection", factor: 3 }, /^The selection's box goes out at 4096 × 223; at 3× the answer would pass 8192 px/);
+    if (ew.layers.length !== layers0 || ew.history.length !== hist0 || ew.providerPending) throw new Error("a refusal went on: " + JSON.stringify({ layers: ew.layers.length - layers0, history: ew.history.length - hist0, busy: !!ew.providerPending }));
+    const got = await run("upscale", { doc: wide, scope: "selection", factor: 2, timeout: 60 });
+    if (!got.info || JSON.stringify(got.info.from) !== "[4096,223]" || got.info.width !== 8192 || ew.layers.length !== layers0 + 1) throw new Error("8192 was not let through: " + JSON.stringify({ info: got.info, layers: ew.layers.length - layers0 }));
+    out.held2 = got.info.from;
+
+    // the whole picture: 2100 x 100 at 4x is 8400, refused in the dialog and by the host; 3x (6300) goes (the new base
+    // drops the result layer above)
+    const c2 = document.createElement("canvas");
+    c2.width = 2100; c2.height = 100;
+    c2.getContext("2d").fillRect(0, 0, 2100, 100);
+    await ew.setBaseFromCanvas(c2);
+    if (ew.width !== 2100 || ew.height !== 100) throw new Error("the second base: " + ew.width + "x" + ew.height);
+    host.shell.openUpscale(ew);
+    pick("rtx_vsr_cloud");
+    setScope(true);
+    setFactor(4);
+    const doc4 = note();
+    setFactor(3);
+    const doc3 = note();
+    $("up-cancel").click();
+    await wait(60);
+    if (doc4.go || doc4.text !== "The picture is 2100 × 100; at 4× the answer would pass 8192 px on the long side. Pick a smaller factor or a smaller picture.") throw new Error("the whole picture at 4x: " + JSON.stringify(doc4));
+    if (!doc3.go || !/2100 × 100 goes out, about 6300 × 300 comes back/.test(doc3.text)) throw new Error("the whole picture at 3x: " + JSON.stringify(doc3));
+    host.setRecipe(capped);
+    out.doc4 = await refused({ scope: "document", factor: 4 }, /^The picture is 2100 × 100; at 4× the answer would pass 8192 px on the long side\\. Pick a smaller factor or a smaller picture\\.$/);
+    if (ew.width !== 2100 || ew.providerPending) throw new Error("the refusal changed the picture or left it busy");
+    const whole = await run("upscale", { doc: wide, scope: "document", factor: 3, timeout: 60 });
+    if (ew.width !== 6300 || ew.height !== 300 || whole.width !== 6300) throw new Error("3x was not let through: " + JSON.stringify({ size: [ew.width, ew.height], whole }));
+    return out;
+} finally {
+    if ($("up-dialog").open) $("up-cancel").click();
+    host.nodeParams = saved.np;
+    if (wide) { try { await run("close_document", { doc: wide }); } catch (_) { /* gone */ } }
+    host.shell.activate(ed);
+    // the window's recipe as the step found it: a shipped one through the shell (CLAUDE.md: a gate that switches a recipe
+    // puts it back), the earlier steps' loopback as it was
+    if (recipe0 && host.shell.recipes().some((x) => x.id === recipe0.id)) host.shell.selectRecipe(recipe0.id, recipe0.kind === "provider" ? recipe0.provider : undefined);
+    else if (recipe0) host.setRecipe(recipe0);
+}
+""" % {"LOOP": LOOP}),
     # docs/PLAN_0_1_42.md U2: the whole picture on a ComfyUI upscaler. The dialog offers it with what goes out, what
     # comes back and the transparency line, and greys Upscale for what refuses it; its run goes out as the recipe's graph
     # with the canvas node as a loader of the uploaded base (queued at the back, a PreviewImage on the result, the factor

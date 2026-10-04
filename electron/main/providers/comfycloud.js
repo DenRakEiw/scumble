@@ -23,7 +23,10 @@
 // Partner Nodes (Magnific Precise V2 and Creative, Recraft Crisp and Creative; their inputs read from a
 // ComfyUI's /object_info on 2026-09-22). Magnific's nodes take the factor as "2x" .. "16x" and are told not to
 // downscale the picture on their own (auto_downscale false: Scumble refuses a picture above the variant's
-// limit instead); Recraft's take the picture alone.
+// limit instead); Recraft's take the picture alone. RTX Video Super Resolution (recipes/rtx_vsr_cloud.json,
+// docs/PLAN_0_1_42.md U3) is no Partner Node but a node Comfy Cloud runs on its own GPUs: the picture, the
+// factor in its dynamic combo ("resize_type": "scale by multiplier", "resize_type.scale": 1 to 4) and Quality;
+// its answer may pass at most 8192 px on the long side (RTX_OUT), refused before the prompt is sent.
 //
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3) and how many pictures the node takes
 // (NODE_PICTURES); buildGraph uploads only the pictures the layout wires and refuses a run past that count.
@@ -104,6 +107,10 @@ const SHAPES = {
     },
     RecraftCrispUpscaleNode(g) { g.set("image", g.crop); },
     RecraftCreativeUpscaleNode(g) { g.set("image", g.crop); },
+    RTXVideoSuperResolution(g, v) {
+        const f = rtxFactor(v);
+        g.set("images", g.crop); g.set("resize_type", "scale by multiplier"); g.set("resize_type.scale", f); g.set("quality", "ULTRA");
+    },
     QwenImageEditApi(g, v) {
         g.set("model", v.model); g.set("model.prompt", v.prompt); g.set("model.negative_prompt", v.negative || "");
         g.set("size", "match input"); g.set("n", 1); g.set("seed", v.seed); g.set("prompt_extend", true); g.set("watermark", false);
@@ -147,6 +154,7 @@ const LAYOUTS = {
     MagnificImageUpscalerCreativeNode: () => cropOnly("image"),
     RecraftCrispUpscaleNode: () => cropOnly("image"),
     RecraftCreativeUpscaleNode: () => cropOnly("image"),
+    RTXVideoSuperResolution: () => cropOnly("images"),
     QwenImageEditApi: (req) => list("QwenImageEditApi", req),
 };
 
@@ -156,6 +164,34 @@ function magnificFactor(f) {
     if (![2, 4, 8, 16].includes(n)) throw new Error(`Magnific on Comfy Cloud upscales by 2, 4, 8 or 16, not ${f}.`);
     return `${n}x`;
 }
+
+// RTX Video Super Resolution's answer: at most 8192 px on the long side (the node's target mode takes 64 to 8192 a side;
+// the recipe's limits.out, which the renderer checks first, host.upscaleOutRefusal)
+const RTX_OUT = 8192;
+
+/** A PNG's width and height from its IHDR, or null (the crop of a direct call that names no size). */
+function pngSize(b) {
+    if (!b || b.length < 24 || b.toString("latin1", 12, 16) !== "IHDR") return null;
+    return [b.readUInt32BE(16), b.readUInt32BE(20)];
+}
+
+/**
+ * RTX Video Super Resolution's factor: 1 to 4 (the node's `resize_type.scale`), refused when the picture's long side
+ * times it passes RTX_OUT, with the renderer's words (host.upscaleOutRefusal), so a direct call is refused before the
+ * prompt is sent too.
+ */
+function rtxFactor(v) {
+    const f = +v.factor;
+    if (!(f >= 1 && f <= 4)) throw new Error(`RTX Video Super Resolution on Comfy Cloud upscales by 1 to 4, not ${v.factor}.`);
+    const size = v.width > 0 && v.height > 0 ? [v.width, v.height] : pngSize(v.image);
+    if (size && Math.round(Math.max(size[0], size[1]) * f) > RTX_OUT) {
+        throw new Error(`The picture is ${size[0]} × ${size[1]}; at ${f}× the answer would pass ${RTX_OUT} px on the long side. Pick a smaller factor or a smaller picture.`);
+    }
+    return f;
+}
+
+/** The nodes whose own numbers buildGraph checks before it uploads anything (the SHAPE checks them again). */
+const BEFORE_UPLOAD = { RTXVideoSuperResolution: rtxFactor };
 
 async function upload(ctx, bytes, name) {
     const fd = new FormData();
@@ -365,6 +401,9 @@ async function buildGraph(req, ctx, node) {
     const max = +lay.max > 0 ? +lay.max : null, count = countOf(lay);
     // index.js refuses a run past the node's count before this; the check keeps a direct call from uploading one
     if (max != null && count > max) throw new Error(`Comfy Cloud ${node} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${count}: hide reference layers or turn Original off.`);
+    const vals = { prompt: req.prompt || "", negative: req.negative || "", model: req.model, seed: req.seed != null && !req.params.random_seed ? (req.seed >>> 0) : Math.floor(Math.random() * 2147483647), width: req.width, height: req.height, factor: req.factor, image: req.image };
+    // what a node refuses by its own numbers, before any upload (its SHAPE checks the same as it wires them)
+    if (BEFORE_UPLOAD[node]) BEFORE_UPLOAD[node](vals);
     const stamp = Date.now().toString(36);
     const graph = {};
     let n = 0;
@@ -397,7 +436,7 @@ async function buildGraph(req, ctx, node) {
     };
     const shape = SHAPES[node];
     if (!shape) throw new Error(`Comfy Cloud: no wiring for the node ${node} (known: ${Object.keys(SHAPES).join(", ")})`);
-    shape(g, { prompt: req.prompt || "", negative: req.negative || "", model: req.model, seed: req.seed != null && !req.params.random_seed ? (req.seed >>> 0) : Math.floor(Math.random() * 2147483647), width: req.width, height: req.height, factor: req.factor });
+    shape(g, vals);
     // recipe settings and fixed values by input key (the settings' keys are the full input keys)
     for (const [k, v] of Object.entries(req.params)) { if (k === "random_seed" || k === "model" || v === "" || v == null || v === "auto") continue; partner.inputs[k] = v; }
     const pid = String(++n);

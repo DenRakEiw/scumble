@@ -1527,14 +1527,22 @@ function upSyncNote() {
     const doc = ui.upScopeDoc.checked;
     const f = v.factor && !v.factor.fixed ? +ui.upFactor.value || v.factor.default : null;
     const max = (v.limits && v.limits.max) || 2048;
+    // an answer cap (limits.out: RTX Video Super Resolution on Comfy Cloud), refused here as host.runUpscale refuses it
+    const capped = { limits: v.limits };
     let text = "", ok = true;
     if (ed && ed.width) {
         if (doc) {
             const long = Math.max(ed.width, ed.height);
+            const over = host.upscaleOutRefusal(capped, ed.width, ed.height, f, "picture");
             if (long > max) { ok = false; text = `The picture is ${ed.width} × ${ed.height}; this model takes at most ${max} px on the long side. Upscale a selection instead.`; }
+            else if (over) { ok = false; text = over; }
             else text = f ? `${ed.width} × ${ed.height} goes out, about ${Math.round(ed.width * f)} × ${Math.round(ed.height * f)} comes back and becomes the picture.` : `${ed.width} × ${ed.height} goes out; the model picks the size that comes back.`;
         } else {
-            text = `The selection's box (with its context) goes out at its own size, up to ${max} px on the long side, and the sharper answer is fitted back into it.`;
+            // the box as runUpscale will send it (held to the limits), only where the answer has a cap
+            const fr = v.limits && v.limits.out && f != null ? host.upscaleFrame(ed, v.limits) : null;
+            const over = fr ? host.upscaleOutRefusal(capped, fr.emitted[0], fr.emitted[1], f, "sent") : "";
+            if (over) { ok = false; text = over; }
+            else text = `The selection's box (with its context) goes out at its own size, up to ${max} px on the long side, and the sharper answer is fitted back into it.`;
         }
     }
     ui.upSizeNote.textContent = text;

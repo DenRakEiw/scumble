@@ -173,6 +173,13 @@ function answeredSeed(res) {
     return Number.isFinite(n) ? n : null;
 }
 
+/** How an upscaler's size refusal names the picture (host.upscaleSizeRefusal's `what`) and what to pick instead. */
+function upscaleWords(w, h, what) {
+    if (what === "picture") return { the: `The picture is ${w} × ${h}`, smaller: "a smaller picture" };
+    if (what === "sent") return { the: `The selection's box goes out at ${w} × ${h}`, smaller: "a smaller area" };
+    return { the: `The box (the selection with its context) is ${w} × ${h}`, smaller: "a smaller area" };
+}
+
 /** "a", "a and b", "a, b and c" */
 function listWords(items) {
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
@@ -1658,18 +1665,34 @@ export const host = {
      * "" when a ComfyUI upscaler (`r.limits`: `min` the input's short side, `max` its long side, `out` the answer's
      * long side; `picture` the whole picture's long side alone, upscale_model_local's 2048, Q14) takes a w × h picture at
      * `factor` (null: the model picks its own, so `out` is not checked), else the refusal. `what` names the picture:
-     * "box" (the selection with its context) or "picture" (the whole one).
+     * "box" (the selection with its context), "picture" (the whole one) or "sent" (the selection's box as an API
+     * upscaler gets it, held to the variant's limits).
      */
     upscaleSizeRefusal(r, w, h, factor, what = "box") {
         const l = (r && r.limits) || {};
         const name = (r && (r.name || r.id)) || "The upscaler";
-        const the = what === "box" ? `The box (the selection with its context) is ${w} × ${h}` : `The picture is ${w} × ${h}`;
-        const smaller = what === "box" ? "a smaller area" : "a smaller picture";
+        const { the, smaller } = upscaleWords(w, h, what);
         if (l.min && Math.min(w, h) < l.min) return `${the}; ${name} needs at least ${l.min} px a side.`;
         const max = what === "picture" && l.picture ? Math.min(l.picture, l.max || Infinity) : l.max;
         if (max && Math.max(w, h) > max) return `${the}; ${name} takes at most ${max} px on the long side. Pick ${smaller}.`;
-        if (l.out && factor != null && Math.round(Math.max(w, h) * factor) > l.out) return `${the}; at ${factor}× the answer would pass ${l.out} px on the long side. Pick a smaller factor or ${smaller}.`;
-        return "";
+        return this.upscaleOutRefusal(r, w, h, factor, what);
+    },
+
+    /**
+     * upscaleSizeRefusal's last rule alone, for an API upscaler (its variant's `limits.out`: RTX Video Super Resolution
+     * on Comfy Cloud, 8192; docs/PLAN_0_1_42.md U3), whose input limits the crop is held to instead of refused: "" when
+     * the long side of w × h times `factor` stays within `out` (or there is no `out`, or the model picks its factor).
+     */
+    upscaleOutRefusal(r, w, h, factor, what = "box") {
+        const out = r && r.limits && r.limits.out;
+        if (!out || factor == null || Math.round(Math.max(w, h) * factor) <= out) return "";
+        const { the, smaller } = upscaleWords(w, h, what);
+        return `${the}; at ${factor}× the answer would pass ${out} px on the long side. Pick a smaller factor or ${smaller}.`;
+    },
+
+    /** The crop an upscale on an API variant (`limits` its EditLimits) would send now: runUpscale's plan (mode "crop"). */
+    upscaleFrame(editor, limits) {
+        return planFrame(editor, this.nodeParams, limits ? { ...limits, mode: "crop" } : null);
     },
 
     /**
@@ -1678,7 +1701,8 @@ export const host = {
      * answer is fitted back into it by the stitch, a result layer like Generate's: a detail pass at the
      * document's resolution. `scope` "document": the base image alone goes out, the answer becomes the new base
      * at its own size, and every layer, mask and the selection are scaled along (`resizeImage` with the new base,
-     * one `canvas` undo step); a picture above the variant's `limits.max` is refused.
+     * one `canvas` undo step); a picture above the variant's `limits.max` is refused, and on either scope a picture
+     * whose answer would pass the variant's `limits.out` (upscaleOutRefusal), before anything is sent.
      */
     async runUpscale(editor, opts = {}) {
         const r = this.recipe;
@@ -1697,6 +1721,10 @@ export const host = {
         if (scope === "document" && Math.max(editor.width, editor.height) > max) {
             throw new Error(`The picture is ${editor.width} × ${editor.height}; ${r.name || r.id} on ${label} takes at most ${max} px on the long side. Upscale a selection instead.`);
         }
+        // an answer past the variant's cap (limits.out, RTX Video Super Resolution on Comfy Cloud) is refused before anything
+        // is paid: the whole picture here, the selection's box once its crop is planned (it is sent held to the limits)
+        const over = scope === "document" ? this.upscaleOutRefusal(r, editor.width, editor.height, factor, "picture") : "";
+        if (over) throw new Error(over);
         const params = this.providerParams(editor);
         // an upscale sends no reference picture: a token is written as its layer's name, in the request only
         // (the texts of the click's snapshot, or of now, unless the dialog or the command brings its own prompt)
@@ -1722,6 +1750,8 @@ export const host = {
             if (scope === "selection") {
                 // the crop as it is (mode "crop", up to the model's max), without a fill or the reference layers
                 prep = await prepareCropAsync(editor, this.nodeParams, { ...r.limits, mode: "crop" }, { crop: { fill: "none", withOriginal: false }, references: false });
+                const boxOver = this.upscaleOutRefusal(r, prep.width, prep.height, factor, "sent");
+                if (boxOver) throw new Error(boxOver);
                 const [x, y, w, h] = prep.info.bbox;
                 Object.assign(request, { image: prep.image, width: prep.width, height: prep.height, references: prep.references });
                 editor.setStatus(`Upscaling the selection's box ${w} × ${h} at ${x}, ${y} (${prep.width} × ${prep.height} sent) by ${by} on ${label} ...${slow}`);

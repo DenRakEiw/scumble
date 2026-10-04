@@ -58,6 +58,8 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {number} minPixels   area floor, 0 = none
  * @property {number} ratio       the steepest crop the model takes, 0 = any
  * @property {string[]} aspects   aspect presets the model renders ("W:H"); the crop's context is widened to the nearest one, [] = any
+ * @property {number} [out]       an upscaler's answer: the long side it may pass at most (the sent long side times the
+ *                                factor; RTX Video Super Resolution on Comfy Cloud: 8192), absent = no cap
  */
 
 /**
@@ -234,6 +236,8 @@ function editLimits(r, v) {
     l.ratio = Number.isFinite(+l.ratio) && +l.ratio >= 1 ? +l.ratio : 0;
     // `aspects`: the only shapes the model renders (Seedream and GPT Image 2 on Magnific), as "W:H"; [] = any
     l.aspects = Array.isArray(l.aspects) ? [...new Set(l.aspects.filter((x) => /^\d+(\.\d+)?:\d+(\.\d+)?$/.test(String(x))).map(String))] : [];
+    // `out`: an upscaler's answer cap on the long side (host.upscaleOutRefusal); kept only as a whole positive number
+    if (l.out !== undefined) { const o = Math.round(+l.out); if (Number.isFinite(o) && o > 0) l.out = o; else delete l.out; }
     return l;
 }
 

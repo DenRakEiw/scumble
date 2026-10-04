@@ -42,6 +42,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   comes back opaque on this route, black where it was transparent. For the whole picture the *Upscale model (ComfyUI)* recipe takes at most 2048 px on
   the long side, so a 4× model answers at most 8192 px; a selection has no such cap. While it runs, the title row's timer shows it and its *Cancel* takes the job off
   your ComfyUI.
+- **RTX Video Super Resolution on Comfy Cloud.** The same upscaler on Comfy Cloud on your Comfy key, for the selection
+  or the whole picture, 1 to 4 times, with the Quality setting; a picture whose answer would pass 8192 px is refused
+  before anything is sent.
 - **Recipes can ship presets.** The Preset row in the Settings section shows a recipe's own presets first, then
   yours; the shipped ones cannot be deleted.
 - Generate new no longer offers the local upscale recipe, which makes nothing from a prompt.
