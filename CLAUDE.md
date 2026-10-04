@@ -76,48 +76,44 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-04: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1 and R2a built, next R2b)
+## Where things stand (2026-10-04: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1, R2a and R2b built, next R3)
 
-**Next session: R2b of `docs/PLAN_0_1_42.md`** (the pass after API and Comfy Cloud runs: `realismAfter` in
-`runProvider` and `runGenerate`, the timer's label, a failed pass keeps the paid answer). Read the plan's §1 ("The
-user's answers after the plan", with "How the shipped presets work") and the "As built" notes of R1 and R2a first.
+**Next session: R3 of `docs/PLAN_0_1_42.md`** (the switch in the Generate pane, the pass inside local runs, the
+switch saved with the document; Full tier on the document, autosave and settings). Read the plan's §1 ("The user's
+answers after the plan", with "How the shipped presets work"), R3's preconditions and the "As built" notes of R1,
+R2a and R2b first.
 **Q3 is answered** (the user, 2026-10-04: as recommended, no upscales, transparent answers passed with the alpha put
 back). **F2 is picked**: the 12 marked ✓ in `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-04, R2a of 0.1.42): the picture runner and the pass on a picture, unreleased.** Nothing new on
-screen: R2b, R3, R4 and U2 call it.
-- **R2a as built** (docs/PLAN_0_1_42.md R2a "As built"): in `renderer/editor/host.js` `comfyPictureRun` (a prompt that
-  answers one picture: queued at the front, an open render of the tab, answered by `executed`, `execution_success` +
-  /history, or the /queue poll + /history when the socket missed the events; errors, interrupts, the timeout, Cancel,
-  a lost or switched server, a dropped job each end it with a `kind`), `cancelComfyPrompt` (`POST
-  /api/jobs/<id>/cancel` first, then the queue delete, `/interrupt {prompt_id}` only when running and the server is
-  0.3.57+; never a bare /interrupt), `uploadInput` + `ensureRefs`, `passPicture` (the server check, the size check,
-  the even pad, transparency flattened onto grey and undone on the way back, the preset fallback once),
-  `realismAfter` (R2b's: the plain answer kept, " The plain result was kept." or "{LABEL} skipped: ...") and
-  `setRealismValues` (writes `settings.realism` whole); in `realism.js` `passPrompt` (four nodes, `PreviewImage`),
-  `evenPlan`, `prepPixels`, `putAlphaBack`, `runFailure`, `presetFallbackNote`, `versionAtLeast`.
-- **The review** (one workflow, 4 angles, each finding verified: 15 real, two medium, none high) changed the code: the
-  alpha was weighed twice (a grey fringe on soft edges; now undone, an unchanged answer comes back 0 levels off),
-  Cancel and the timeout waited behind any slow request (now at once, the take-off awaited at most 5 s, 15 s
-  `AbortSignal`s), the cancel route by id and the version check (an old server's /interrupt stops whatever runs),
-  `connecting` is a pause, late events of an ended run are swallowed, a failed /history read is asked again, the
-  doubled label, the fallback sentence names the route and survives a failed retry. **A reading taken without the
-  user:** the timeout (300 s) counts only the time the job is not waiting in the queue (§3.5 names no start point;
-  a pass behind a long job of the user's waits with its position shown, Cancel works). Say so if that is wrong.
-- **Tests:** `tools/realism_test.js` 399 (section 9b written by a background agent against the stated API); five
-  `generate` steps (`the_picture_runner_answers`, `cancel_removes_only_its_own_prompt`,
-  `the_preset_refusal_falls_back_once`, `alpha_comes_back`, `realism_after_keeps_the_plain_answer`), all against
-  stubs, nothing queued anywhere. Gates `generate transparent upscale recipes lint types` PASS offline on tiles
-  (`r2a-fix-tiles`, `r2a-fix-tiles2`), `generate transparent upscale` on the canvas backend (`r2a-fix-canvas`).
-  Full tier on the preset write: a mutation round on a copy, 14 of 14 killed (7 on the write and the retry, 7 on
-  the alpha, the cancel, the clock, the loss and late events), the restored copy PASS. `build_node.py --check` shows only
-  the known drift of the node's `js/` (34 files behind, CLAUDE.md "the node repo is behind"), no missing host member;
-  nothing under `electron/main/providers` changed.
-- **For R3:** the switch row must show `settings.realism.preset` and let the user set it back (the fallback writes
-  Default there); noted in R3's preconditions.
+**This session (2026-10-04, R2b of 0.1.42): the pass after API and Comfy Cloud runs, unreleased.** Nothing new on
+screen until R3 (the switch): with `editor.genSettings.realism` on (only a test sets it today), an API or Comfy Cloud
+answer of Generate and Generate new goes through the pass on the user's ComfyUI before it is stitched or becomes the base.
+- **R2b as built** (docs/PLAN_0_1_42.md R2b "As built"): `host.passAnswer` inside the try of `runProvider` and
+  `runGenerate`, right after `providerEdit` (the run stays busy, the title row's Cancel reaches the pass): the status
+  "<label> answered after N s. {LABEL} on your ComfyUI ...", the timer's label and seconds the pass's, then the run's
+  again; a pass that ran adds "{LABEL} ran on your ComfyUI in N s.", a failure "... The plain result was kept." (the
+  paid answer always lands). `runUpscale` unchanged (Q3); nothing under `electron/main/providers` changed.
+- **The review** (one workflow, 4 angles, each finding verified: 5 real, two medium, 1 uncertain) changed the code: the
+  generate command now bounds the pass (`ed.runDeadline` from its timeout, `opts.deadline` for generate_new; the
+  runner's new `deadline` counts the queue's wait too, at least 30 s after the answer), so an agent's call answers before
+  the bridge's 600 s; it refuses a second run while one is going on the document (a retry no longer pays twice); the
+  pass's upload ends at a Cancel and at the timeout; the generate command no longer reads a kept answer's "failed"
+  sentence as a failed run; the gate steps were sharpened (the alpha, what the pass was sent, a failing test answer).
+  **A reading taken without the user:** the in-app LaMa fill (provider `inapp`: offline, no server) never goes through
+  the pass; the plan names API and Comfy Cloud runs only, R3's tooltip "every result". Say so if LaMa should be passed.
+- **Tests:** six `generate` steps (`a_provider_answer_goes_through_the_realism_pass`,
+  `a_failed_pass_keeps_the_paid_answer`, `an_unsupported_server_skips_the_pass`,
+  `cancel_during_the_pass_keeps_the_plain_answer`, `the_pass_ends_at_the_commands_timeout`,
+  `generate_new_goes_through_the_pass`), the loopback provider and stubs, nothing queued anywhere. Gates `generate
+  transparent upscale lint types` PASS offline on tiles (`r2b-fix-tiles`, types `r2b-fix-types`), `generate
+  transparent` on the canvas backend (`r2b-fix-canvas`). `build_node.py --check`: only the known drift (34 files).
+- **Asked mid-session, answered in chat, nothing done:** the README for reach (a GIF on top, install buttons, a
+  comparison table, topics, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, and how to post
+  on Show HN. Each waits for the user's word; the comparison table names other products (the user's rule of
+  2026-09-29), topics and Discussions are repository settings.
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in

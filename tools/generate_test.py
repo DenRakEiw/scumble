@@ -755,6 +755,278 @@ try {
 """),
 ]
 
+# docs/PLAN_0_1_42.md R2b: an API run's answer (the loopback provider: the crop handed back, a ramp for Generate new)
+# through the pass on the stubbed ComfyUI while the document's switch is on, before it is stitched or becomes the base.
+# Nothing goes to a provider or a server. Colour match is off, so a layer's pixels are the answer's.
+R2B_PRE = r"""
+const LOOP = { id: "loopback_rp", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", text: { model: "loopback" }, refs: { name: "image {n}" }, name: "Loopback", settings: [] };
+const prevRecipe = host.recipe;
+const onRuns0 = host.onProviderRuns;
+// the title row's timer as the shell is told: the label of each run, at every change
+const seen = [];
+host.onProviderRuns = (runs) => { seen.push(runs.map((r) => r.label).join("|")); onRuns0(runs); };
+const R0 = host.realismRecipe();
+// the stubs, and the pass's shortest timeout (the other values the defaults: Style Default, Strength 1, model preset L),
+// so an answer that never comes ends a step well inside its eval's 240 s
+const stubR2b = () => { stubAll(); host.realismStored = { timeout: 30 }; };
+// a tab with a white 320 x 240 picture (new_canvas) and a selection, the switch on, the loopback recipe; no fill, so
+// the loopback's answer (the crop handed back) is white
+const plain = async () => {
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    host.shell.activate(ed);
+    await run("new_canvas", { doc, width: 320, height: 240 });
+    await run("select_rect", { doc, x: 80, y: 60, w: 160, h: 120 });
+    ed.cropSettings.fill = "none";
+    ed.cropSettings.colorMatch = false;
+    ed.genSettings.realism = true;
+    host.setRecipe(LOOP);
+    return ed;
+};
+// the pass answers a picture of one colour at the size it was sent, stored in the mirror as ComfyUI's answer would be;
+// a failure of this helper ends the run (and the step says why)
+const fails = (id, message) => api.dispatch("execution_error", { prompt_id: id, node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: message });
+const answerWith = (rgb, first) => (id, body) => (async () => {
+    const ref = JSON.parse(body.output.rp_in.inputs.ref);
+    if (first) first(id, ref);
+    const p = await pixelsOf(await bytesOf(ref));
+    const png = await pngOf(p.w, p.h, () => [rgb[0], rgb[1], rgb[2], 255]);
+    const ans = await host.uploadInput(new Blob([png], { type: "image/png" }), "rp_answer_" + id + ".png");
+    api.dispatch("executed", { prompt_id: id, node: "rp_out", output: { images: [ans] } });
+})().catch((e) => { T.err = e; fails(id, "the test's answer failed: " + String((e && e.message) || e)); });
+const at = (px, x, y) => Array.from(px.readRect(x, y, 1, 1).data);
+const centreOf = (l) => at(l.px, l.px.width >> 1, l.px.height >> 1);
+const near = (a, b, tol) => [0, 1, 2].every((i) => Math.abs(a[i] - b[i]) <= tol);
+const layerOf = (ed, out) => (out && out.layer ? ed.layers.find((x) => x.id === out.layer.id) : null);
+"""
+
+R2B_END = r"""
+} finally {
+    T.onQueued = null;
+    host.onProviderRuns = onRuns0;
+    host.setRecipe(prevRecipe);
+    unstubAll();
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""
+
+STEPS_R2B = [
+    # the answer goes to the pass before the stitch: the layer is the pass's answer, the pass got the provider's answer with
+    # the defaults, the timer names the pass while it runs and the run's own label afterwards, the run stays busy and
+    # cancellable meanwhile; a transparent answer comes back with its alpha
+    ("a_provider_answer_goes_through_the_realism_pass", R2A_STUBS + R2B_PRE + r"""
+try {
+    stubR2b();
+    const ed = await plain();
+    const n0 = ed.layers.length;
+    let during = null, sentRef = null;
+    T.onQueued = answerWith([30, 200, 60], (id, ref) => {
+        sentRef = ref;
+        during = { status: ed.status, timer: document.getElementById("shell-progress-text").textContent, busy: !!ed.providerPending && !!(ed._localRuns && ed._localRuns.has(id)), cancel: !document.getElementById("shell-cancel").hidden };
+    });
+    seen.length = 0;
+    // the size the crop goes out at, which is the loopback's answer's (the pass pads an odd side)
+    const em = host.cropFrame(ed).emitted;
+    const out = await run("generate", { doc, timeout: 60 });
+    if (T.err) throw T.err;
+    if (T.queued.length !== 1 || !sentRef) throw new Error(T.queued.length + " passes queued");
+    // what went to the pass: the provider's answer (the white crop, at its size; not the stitched patch, whose border is
+    // transparent and goes flattened grey) as an input the server holds, with the defaults
+    if (sentRef.type !== "input" || sentRef.subfolder !== "inpaint_canvas" || !T.ensured.some((x) => x.filename === sentRef.filename)) throw new Error("rp_in: " + JSON.stringify({ sentRef, ensured: T.ensured.length }));
+    const up = await pixelsOf(await bytesOf(sentRef));
+    const pxOf = (p, x, y) => Array.from(p.d.slice((y * p.w + x) * 4, (y * p.w + x) * 4 + 4));
+    const upMid = pxOf(up, up.w >> 1, up.h >> 1), upCorner = pxOf(up, 1, 1);
+    if (up.w !== em[0] + (em[0] % 2) || up.h !== em[1] + (em[1] % 2) || !near(upMid, [255, 255, 255], 2) || !near(upCorner, [255, 255, 255], 2)) throw new Error("the pass was not sent the provider's answer: " + JSON.stringify({ size: [up.w, up.h], emitted: em, mid: upMid, corner: upCorner }));
+    const rs = T.queued[0].body.output.rp_settings.inputs;
+    if (sorted(rs) !== sorted(R0.prompt.rp_settings.inputs) || rs.dlss_model_preset !== "L" || rs.nr_style !== "Default" || rs.nr_intensity !== 1 || rs.upscaling_mode !== "1x (DLAA / native)") throw new Error("rp_settings: " + JSON.stringify(rs));
+    // while it ran: the status, the timer, the run busy and cancellable
+    if (!during || !/^Loopback answered after \d+ s\. /.test(during.status) || !during.status.endsWith(LABEL + " on your ComfyUI ...")) throw new Error("the status during the pass: " + (during && during.status));
+    if (!during.timer.startsWith(LABEL + " · ") || !during.busy || !during.cancel) throw new Error("during the pass: " + JSON.stringify(during));
+    if (JSON.stringify(seen) !== JSON.stringify(["Loopback", LABEL, "Loopback", ""])) throw new Error("the timer's labels: " + JSON.stringify(seen));
+    // the layer is the pass's answer, and the notes and the status say the pass ran
+    const l = layerOf(ed, out);
+    if (ed.layers.length !== n0 + 1 || !l) throw new Error("no result layer: " + ed.status);
+    if (!near(centreOf(l), [30, 200, 60], 2)) throw new Error("the layer is not the pass's answer: " + JSON.stringify(centreOf(l)));
+    const ran = (out.notes || []).find((n) => n.startsWith(LABEL + " ran on your ComfyUI in "));
+    if (!ran || !ed.status.includes(ran)) throw new Error("the notes: " + JSON.stringify(out.notes) + " / " + ed.status);
+    if (!document.getElementById("shell-progress").hidden || host._providerRuns.size || (ed._localRuns && ed._localRuns.size)) throw new Error("the run stays open");
+    // a transparent answer (the loopback's disc on a transparent ground): the pass gets it flattened onto grey, and the
+    // layer keeps the answer's alpha. The whole picture selected, so the layer's alpha is the answer's alone (no feather)
+    await run("select_all", { doc });
+    T.queued = []; T.ensured = [];
+    let sentAlpha = null;
+    T.onQueued = answerWith([30, 200, 60], (id, ref) => { sentAlpha = ref; });
+    const tr = await host.runProvider(ed, { background: "transparent" });
+    if (T.err) throw T.err;
+    const lt = ed.layers[ed.layers.length - 1];
+    const tc = centreOf(lt), corner = at(lt.px, 2, 2), ground = at(lt.px, 10, 120);
+    if (T.queued.length !== 1 || !tr.cutout || tc[3] < 250 || !near(tc, [30, 200, 60], 2) || corner[3] !== 0 || ground[3] > 2) throw new Error("transparent: " + JSON.stringify({ queued: T.queued.length, cutout: tr.cutout, centre: tc, corner, ground }));
+    // what went to the pass: the disc's colour in the middle (its blue is the seed's), the transparent ground as grey
+    const ua = await pixelsOf(await bytesOf(sentAlpha));
+    const uaMid = pxOf(ua, ua.w >> 1, ua.h >> 1), uaCorner = pxOf(ua, 1, 1);
+    if (Math.abs(uaMid[0] - 230) > 2 || Math.abs(uaMid[1] - 90) > 2 || uaMid[3] !== 255 || !near(uaCorner, [128, 128, 128], 1) || uaCorner[3] !== 255) throw new Error("the transparent answer went as " + JSON.stringify({ mid: uaMid, corner: uaCorner }));
+    return { status: during.status, timer: during.timer, labels: seen, layer: centreOf(l), note: ran, transparent: { centre: tc, corner, ground, sent: [uaMid, uaCorner] } };
+""" + R2B_END),
+    # a pass that fails keeps the paid answer: the plain layer lands and the status says why; a sentence that reads
+    # "failed" does not make the generate command fail a run whose layer is in
+    ("a_failed_pass_keeps_the_paid_answer", R2A_STUBS + R2B_PRE + r"""
+try {
+    stubR2b();
+    const ed = await plain();
+    const n0 = ed.layers.length;
+    const kept = async (what, message, setup) => {
+        T.queued = [];
+        T.onQueued = message ? (id) => fails(id, message) : null;
+        if (setup) setup();
+        ed.lastPassError = null;
+        const out = await run("generate", { doc, timeout: 60 });
+        const l = layerOf(ed, out);
+        if (!l || !near(centreOf(l), [255, 255, 255], 3)) throw new Error(what + ": the plain answer did not land: " + (l ? JSON.stringify(centreOf(l)) : ed.status));
+        const note = (out.notes || []).find((n) => n.includes(LABEL));
+        if (!note || !note.endsWith(" The plain result was kept.") || !ed.status.includes(note)) throw new Error(what + ": " + JSON.stringify(out.notes) + " / " + ed.status);
+        if (T.queued.length !== 1 || ed.lastPassError) throw new Error(what + ": " + JSON.stringify({ queued: T.queued.length, passError: ed.lastPassError }));
+        return note;
+    };
+    const runtime = await kept("no runtime", "No DLSS 5 runtime was found. Searched: x");
+    if (!runtime.startsWith(LABEL + ": the DLSS 5 runtime is not installed")) throw new Error("no runtime: " + runtime);
+    const odd = await kept("an unknown error", "Something unexpected happened\nTraceback (most recent call last): x");
+    if (odd !== LABEL + " failed on your ComfyUI: Something unexpected happened. The plain result was kept.") throw new Error("an unknown error: " + odd);
+    // the server lost the job (the queue cleared): read from /history, gone
+    const dropped = await kept("dropped", null, () => { T.queue = { queue_running: [], queue_pending: [] }; T.history = {}; });
+    T.queue = null;
+    if (!dropped.startsWith(LABEL + ": your ComfyUI no longer holds its job")) throw new Error("dropped: " + dropped);
+    if (ed.layers.length !== n0 + 3) throw new Error(ed.layers.length - n0 + " layers for three runs");
+    return { runtime, odd, dropped };
+""" + R2B_END),
+    # a server that cannot run the pass: nothing is queued, the plain layer lands, the note says why; switched off, no
+    # word of the pass anywhere
+    ("an_unsupported_server_skips_the_pass", R2A_STUBS + R2B_PRE + r"""
+try {
+    stubR2b();
+    const ed = await plain();
+    const skipped = async (what, status) => {
+        T.queued = [];
+        host.setServerStatus(status);
+        let out;
+        try { out = await run("generate", { doc, timeout: 60 }); } finally { host.setServerStatus(GOOD); }
+        const l = layerOf(ed, out);
+        if (!l || !near(centreOf(l), [255, 255, 255], 3) || T.queued.length) throw new Error(what + ": " + JSON.stringify({ layer: !!l, queued: T.queued.length, status: ed.status }));
+        const note = (out.notes || []).find((n) => n.startsWith(LABEL + " skipped: "));
+        if (!note || !ed.status.includes(note)) throw new Error(what + ": " + JSON.stringify(out.notes));
+        return note;
+    };
+    const linux = await skipped("Linux", { ...GOOD, os: "linux" });
+    if (linux !== LABEL + " skipped: runs only on a ComfyUI on Windows; this one runs on linux.") throw new Error("Linux: " + linux);
+    const away = await skipped("not connected", { state: "disconnected" });
+    if (!away.startsWith(LABEL + " skipped: needs your own ComfyUI")) throw new Error("not connected: " + away);
+    // switched off: the answer as it is, nothing queued, the timer never names the pass
+    ed.genSettings.realism = false;
+    T.queued = []; seen.length = 0;
+    const off = await run("generate", { doc, timeout: 60 });
+    if (!layerOf(ed, off) || T.queued.length || (off.notes || []).some((n) => n.includes(LABEL)) || ed.status.includes(LABEL) || seen.includes(LABEL)) throw new Error("switched off: " + JSON.stringify({ queued: T.queued.length, notes: off.notes, seen }));
+    // an in-app model's fill (LaMa: offline, no server) never goes to the pass, switch on or not
+    ed.genSettings.realism = true;
+    T.queued = []; seen.length = 0;
+    const resIn = { bytes: await bytesOf(BASE), mime: "image/png", seconds: 1 };
+    const inapp = await host.passAnswer(ed, resIn, { provider: "inapp", label: "In-app", started: Date.now() }, "In-app");
+    if (inapp.res !== resIn || inapp.notes.length || T.queued.length || seen.length) throw new Error("in-app: " + JSON.stringify({ notes: inapp.notes, queued: T.queued.length, seen }));
+    return { linux, away: away.slice(0, 90) };
+""" + R2B_END),
+    # the title row's Cancel while the pass runs: the pass's job goes off the queue, the plain answer lands
+    ("cancel_during_the_pass_keeps_the_plain_answer", R2A_STUBS + R2B_PRE + r"""
+try {
+    stubR2b();
+    const ed = await plain();
+    const n0 = ed.layers.length;
+    const btn = document.getElementById("shell-cancel");
+    let shown = false, pressedAt = 0, id0 = null;
+    T.onQueued = (id) => { id0 = id; shown = !btn.hidden; pressedAt = Date.now(); btn.click(); };
+    const out = await run("generate", { doc, timeout: 60 });
+    const ms = Date.now() - pressedAt;
+    if (!shown || !id0) throw new Error("no Cancel while the pass waited");
+    const l = layerOf(ed, out);
+    if (ed.layers.length !== n0 + 1 || !l || !near(centreOf(l), [255, 255, 255], 3)) throw new Error("the plain answer did not land: " + ed.status);
+    const note = (out.notes || []).find((n) => n.includes(LABEL));
+    if (note !== LABEL + " cancelled. The plain result was kept." || !ed.status.includes(note)) throw new Error("the note: " + JSON.stringify(out.notes));
+    // the job taken off the server by its id (this stub has no /api/jobs route: deleted, then interrupted as the running one)
+    if (JSON.stringify(T.deletes) !== JSON.stringify([{ delete: [id0] }]) || JSON.stringify(T.interrupts) !== JSON.stringify([{ prompt_id: id0 }])) throw new Error("the cancel: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
+    if (ms > 5000) throw new Error("the run took " + ms + " ms after the Cancel");
+    for (let k = 0; k < 20 && !btn.hidden; k++) await wait(100);
+    if (!btn.hidden) throw new Error("the Cancel button stays after the run");
+    return { note, ms };
+""" + R2B_END),
+    # an agent's generate answers within its own timeout even when the pass waits behind the user's jobs: the pass ends
+    # (its job taken off the queue, never interrupted while pending) and the paid answer lands; a second generate while a
+    # run is going on the document is refused at once
+    ("the_pass_ends_at_the_commands_timeout", R2A_STUBS + R2B_PRE + r"""
+try {
+    stubR2b();
+    const ed = await plain();
+    const n0 = ed.layers.length;
+    const WAITING = (id) => ({ queue_running: [[5, "user-job", {}, {}, []]], queue_pending: [[-1, id, {}, {}, []]] });
+    // (1) the runner's hard end counts the queue's wait, which its own timeout does not
+    const prompt = { rp_out: { class_type: "PreviewImage", inputs: { images: ["x", 0] } } };
+    T.ids = ["rp-deadline-1"];
+    T.queue = WAITING("rp-deadline-1");
+    const t1 = Date.now();
+    const e1 = await failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 20000, deadline: t1 + 1500 }));
+    const ms1 = Date.now() - t1;
+    T.queue = null;
+    if (!e1 || e1.kind !== "timeout" || !/^Realism Pass \(Windows only, RTX only\): no answer from your ComfyUI within \d+ s; its job was taken off the queue\.$/.test(e1.message) || ms1 < 1400 || ms1 > 5000) throw new Error("the deadline: " + JSON.stringify({ kind: e1 && e1.kind, message: e1 && e1.message, ms: ms1 }));
+    if (JSON.stringify(T.deletes) !== JSON.stringify([{ delete: ["rp-deadline-1"] }]) || T.interrupts.length) throw new Error("the deadline's cancel: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
+    // (2) generate with a 5 s timeout: the answer's pass waits behind the user's job and ends 30 s after the answer
+    // (the pass's floor), the plain answer lands, the command answers then instead of after the bridge's 600 s
+    T.deletes = [];
+    let during = 0;
+    T.onQueued = (id) => { T.queue = WAITING(id); during = ed.runDeadline; };
+    const t2 = Date.now();
+    const out = await run("generate", { doc, timeout: 5 });
+    const ms2 = Date.now() - t2;
+    T.queue = null;
+    const l = layerOf(ed, out);
+    if (ed.layers.length !== n0 + 1 || !l || !near(centreOf(l), [255, 255, 255], 3)) throw new Error("the plain answer did not land: " + ed.status);
+    const note = (out.notes || []).find((n) => n.includes(LABEL));
+    if (!note || !/: no answer from your ComfyUI within \d+ s; its job was taken off the queue\. The plain result was kept\.$/.test(note)) throw new Error("the note: " + JSON.stringify(out.notes));
+    if (ms2 < 29000 || ms2 > 45000) throw new Error("the command answered after " + ms2 + " ms");
+    if (!(during >= t2 + 5000 && during <= t2 + 6000) || ed.runDeadline) throw new Error("the command's deadline: " + JSON.stringify({ during: during - t2, after: ed.runDeadline }));
+    if (T.deletes.length !== 1 || T.interrupts.length) throw new Error("the pass's job: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
+    // (3) a run going on the document: the next generate is refused before anything starts
+    T.queued = [];
+    ed.providerPending = { provider: "loopback", label: "Loopback", started: Date.now() };
+    let refused = "";
+    try { await run("generate", { doc, timeout: 5 }); } catch (err) { refused = String(err.message || err); } finally { ed.providerPending = null; }
+    if (refused !== "a run is still going on this document" || T.queued.length || ed.layers.length !== n0 + 1) throw new Error("a second run: " + (refused || "not refused"));
+    return { deadline: { ms: ms1, message: e1.message }, command: { ms: ms2, note }, refused };
+""" + R2B_END),
+    # Generate new: the loopback's new picture through the pass before it becomes the base
+    ("generate_new_goes_through_the_pass", R2A_STUBS + R2B_PRE + r"""
+try {
+    stubR2b();
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    host.shell.activate(ed);
+    ed.genSettings.realism = true;
+    host.setRecipe(LOOP);
+    let sentRef = null;
+    T.onQueued = answerWith([200, 40, 160], (id, ref) => { sentRef = ref; });
+    seen.length = 0;
+    const out = await run("generate_new", { doc, prompt: "a lighthouse", width: 256, height: 192, seed: 5 });
+    if (T.err) throw T.err;
+    if (T.queued.length !== 1 || !sentRef) throw new Error(T.queued.length + " passes queued");
+    // the pass was sent the loopback's ramp (its dark border), and its answer is the new base
+    const up = await pixelsOf(await bytesOf(sentRef));
+    const upCorner = Array.from(up.d.slice((up.w + 1) * 4, (up.w + 1) * 4 + 4));
+    if (up.w !== 256 || up.h !== 192 || !near(upCorner, [20, 20, 20], 1)) throw new Error("what went to the pass: " + JSON.stringify({ w: up.w, h: up.h, corner: upCorner }));
+    if (ed.width !== 256 || ed.height !== 192) throw new Error("the base is " + ed.width + " x " + ed.height);
+    const mid = at(ed.basePx, 128, 96), corner = at(ed.basePx, 1, 1);
+    if (!near(mid, [200, 40, 160], 2) || !near(corner, [200, 40, 160], 2)) throw new Error("the base is not the pass's answer: " + JSON.stringify({ mid, corner }));
+    const ran = (out.notes || []).find((n) => n.startsWith(LABEL + " ran on your ComfyUI in "));
+    if (!ran || !ed.status.includes(ran)) throw new Error("the notes: " + JSON.stringify(out.notes) + " / " + ed.status);
+    if (JSON.stringify(seen) !== JSON.stringify(["Loopback", LABEL, "Loopback", ""])) throw new Error("the timer's labels: " + JSON.stringify(seen));
+    return { base: [ed.width, ed.height], mid, note: ran };
+""" + R2B_END),
+]
+
 
 STEPS = [
     ("api_text_to_image", """
@@ -1297,6 +1569,7 @@ try {
 }
 """),
     *STEPS_R2A,
+    *STEPS_R2B,
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";

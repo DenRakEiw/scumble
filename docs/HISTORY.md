@@ -31,6 +31,8 @@ The block of 2026-10-03 (afternoon to night: item 35, 0.1.40, 0.1.41) was moved 
 
 The block of 2026-10-04 (R1 of 0.1.42) was moved here the same day, when R2a was built.
 
+The block of 2026-10-04 (R2a of 0.1.42) was moved here the same day, when R2b was built.
+
 
 The block of 2026-09-29 (morning, item 26 S1 built) was moved here at noon, when the eraser hotfix 0.1.33 was prepared.
 
@@ -63,6 +65,40 @@ The 0.1.37 block of 2026-10-02 (night) was moved here the same night, when A1, A
 The block of 2026-10-03 (midday: B5, B6, the 0.1.39 release) was moved here the same afternoon, when item 35 was planned.
 
 The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved here the same afternoon, when V1 of item 35 was built.
+
+## 2026-10-04 (R2a of 0.1.42 built: the picture runner; moved here the same day when R2b was built)
+
+**This session (2026-10-04, R2a of 0.1.42): the picture runner and the pass on a picture, unreleased.** Nothing new on
+screen: R2b, R3, R4 and U2 call it.
+- **R2a as built** (docs/PLAN_0_1_42.md R2a "As built"): in `renderer/editor/host.js` `comfyPictureRun` (a prompt that
+  answers one picture: queued at the front, an open render of the tab, answered by `executed`, `execution_success` +
+  /history, or the /queue poll + /history when the socket missed the events; errors, interrupts, the timeout, Cancel,
+  a lost or switched server, a dropped job each end it with a `kind`), `cancelComfyPrompt` (`POST
+  /api/jobs/<id>/cancel` first, then the queue delete, `/interrupt {prompt_id}` only when running and the server is
+  0.3.57+; never a bare /interrupt), `uploadInput` + `ensureRefs`, `passPicture` (the server check, the size check,
+  the even pad, transparency flattened onto grey and undone on the way back, the preset fallback once),
+  `realismAfter` (R2b's: the plain answer kept, " The plain result was kept." or "{LABEL} skipped: ...") and
+  `setRealismValues` (writes `settings.realism` whole); in `realism.js` `passPrompt` (four nodes, `PreviewImage`),
+  `evenPlan`, `prepPixels`, `putAlphaBack`, `runFailure`, `presetFallbackNote`, `versionAtLeast`.
+- **The review** (one workflow, 4 angles, each finding verified: 15 real, two medium, none high) changed the code: the
+  alpha was weighed twice (a grey fringe on soft edges; now undone, an unchanged answer comes back 0 levels off),
+  Cancel and the timeout waited behind any slow request (now at once, the take-off awaited at most 5 s, 15 s
+  `AbortSignal`s), the cancel route by id and the version check (an old server's /interrupt stops whatever runs),
+  `connecting` is a pause, late events of an ended run are swallowed, a failed /history read is asked again, the
+  doubled label, the fallback sentence names the route and survives a failed retry. **A reading taken without the
+  user:** the timeout (300 s) counts only the time the job is not waiting in the queue (§3.5 names no start point;
+  a pass behind a long job of the user's waits with its position shown, Cancel works). Say so if that is wrong.
+- **Tests:** `tools/realism_test.js` 399 (section 9b written by a background agent against the stated API); five
+  `generate` steps (`the_picture_runner_answers`, `cancel_removes_only_its_own_prompt`,
+  `the_preset_refusal_falls_back_once`, `alpha_comes_back`, `realism_after_keeps_the_plain_answer`), all against
+  stubs, nothing queued anywhere. Gates `generate transparent upscale recipes lint types` PASS offline on tiles
+  (`r2a-fix-tiles`, `r2a-fix-tiles2`), `generate transparent upscale` on the canvas backend (`r2a-fix-canvas`).
+  Full tier on the preset write: a mutation round on a copy, 14 of 14 killed (7 on the write and the retry, 7 on
+  the alpha, the cancel, the clock, the loss and late events), the restored copy PASS. `build_node.py --check` shows only
+  the known drift of the node's `js/` (34 files behind, CLAUDE.md "the node repo is behind"), no missing host member;
+  nothing under `electron/main/providers` changed.
+- **For R3:** the switch row must show `settings.realism.preset` and let the user set it back (the fallback writes
+  Default there); noted in R3's preconditions.
 
 ## 2026-10-04 (R1 of 0.1.42 built: the Realism Pass recipe; moved here the same day when R2a was built)
 
