@@ -78,10 +78,12 @@ code.
 
 ## Where things stand (2026-10-04 night: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1-R4 and R5's docs built, next U1)
 
-**Next session: U1 of `docs/PLAN_0_1_42.md`** (RTX VSR as a local upscale recipe; Q13 and Q15 of §5 are open: ask
-first, with the recommendations). **R5's live look** (one whole-picture pass, one box run, one transparent picture on
-the user's ComfyUI; the chapter's numbers and a screenshot) only after the user writes in chat that 8188 is free; it
-goes before U1 when the user says so. Read R5's "As built" and U1 first. **F2 is picked**: the 12 marked ✓ in
+**The user, 2026-10-04 night (after R5): the whole rest of `docs/PLAN_0_1_42.md` in this one sitting, no `/clear`
+(compaction instead: keep this block current after every commit), then REL with the Store step in the user's Chrome
+(authorised).** All open questions as recommended (Q13-Q19, Q21-Q23, Q29; §1 of the plan); 8188 may be used whenever
+`/queue` is empty, one RTX VSR run on Comfy Cloud too. **Done so far: R5 incl. its live look** (5361018: 8 s for
+16.7 MP on the user's RTX 5090, +4.6 GB; the pass layer's match source is *underneath*). **Next: U1**, then U2, U3,
+R-U, F1, F2a, F2b, P1, P2, P3, REL. Read each row's text in the plan first. **F2 is picked**: the 12 marked ✓ in
 `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
@@ -101,10 +103,7 @@ verbatim). Check `gh release list` before believing any release state written do
   {LABEL}"; the OpenCV hint now names OpenCV (the pack's `requirements.txt` leaves it out on purpose);
   `renderer/help.css` lets code break anywhere (the `--url` address made the whole Help panel scroll sideways).
 - **Review** (14 agents: three lenses, a refuter per finding): three defects fixed (the match slider, the OpenCV advice,
-  the dialog's 1800 s end), four refuted. **Open for the user:** the pass layer is added with the match source
-  *surroundings*, where its Match slider finds nothing (a layer the size of the picture); the docs now say to switch
-  the source to *underneath*. One word in `host.realismWhole` (`source: "underneath"`, strength stays 0, so Q25's
-  "off" holds) would make the slider work as it is: asked, not done.
+  the dialog's 1800 s end), four refuted. The pass layer's match source is now *underneath* (the user's answer).
 - **Tests**: `manual_test.js`, `realism_test.js` (433), `recipes_test.js` (160) PASS; gates `--offline` on tiles:
   `help` (21 chapters) and `lint` PASS; one look in a dev instance (the About line, the chapter in the panel).
 - **The user asked earlier** whether a GitHub community setup makes sense (Discussions with Showcase / Ideas / Q&A /
