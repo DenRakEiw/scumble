@@ -3,6 +3,20 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- **Realism Pass (Windows only, RTX only).** A new local recipe sends the selection's box at its own size through
+  DLSS 5 Neural Rendering on your own ComfyUI and lays the answer over it as a layer, so generated skin, hair and
+  fabric look less waxy. It needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the community node pack
+  ComfyUI-DLSS5-Enhancer with its runtime, installed there by you; Scumble ships none of it. The recipe comes with two
+  presets, L (the default) and M, for the DLSS model. Before anything is sent, Scumble checks the server and says why
+  it cannot run there (not Windows, no supported card, the pack missing, the selection with its surroundings smaller
+  than 64 px or larger than 7680 × 4320); RTX 30 cards run with a note. The pack's own errors come back as plain sentences that say what to do.
+  There is no Comfy Cloud version of the pass.
+- **Recipes can ship presets.** The Preset row in the Settings section shows a recipe's own presets first, then
+  yours; the shipped ones cannot be deleted.
+- Generate new no longer offers the local upscale recipe, which makes nothing from a prompt.
+
 ## 0.1.41 — 2026-10-03
 
 - **Cancel an API run.** While a run waits on a provider, a *Cancel* button sits beside the timer in the title row.

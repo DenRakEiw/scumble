@@ -1,0 +1,122 @@
+{
+  "_source": "ComfyUI-DLSS5-Enhancer (MIT, Copyright (c) 2026 Blueforcer), read only at HEAD 796ed59 on 2026-10-04. Each text is str(exc) of the exception the pack raises, verbatim to the f-string at \"from\", with example values in its fields (paths under an example portable install, example SHA-256 values, driver 591.44). ComfyUI's execution_error carries exception_message = \"{}\\n{}\".format(ex, tips) (execution.py, execute()): str(exc) plus a newline, tips being empty for these exceptions; realism_test.js checks each text with that newline too. The log lines after a blank line are examples in ReShade's log form built from the pack's own FEATURE_18_MARKERS (diagnostics.py:23-27); the native worker's own stderr wording is not in the pack's source, so worker_exit's log line is an example only. realism.hint() matches stable substrings of these; tools/realism_test.js checks every entry.",
+  "messages": [
+    {
+      "key": "runtime_missing",
+      "from": "dlss5/paths.py:164-177 (find_runtime; SETUP_HINT at 34-38)",
+      "note": "find_runtime takes the first candidate folder that holds the worker nvngx.dll (paths.py WORKER_NAME); here no DLSS5_RUNTIME_DIR, no config.json, and the pack's own runtime folder lacks it.",
+      "text": "No DLSS 5 runtime was found. Searched:\n  C:\\ComfyUI_windows_portable\\ComfyUI\\custom_nodes\\ComfyUI-DLSS5-Enhancer\\runtime\n\nInstall it with:\n    python_embeded/python.exe ComfyUI/custom_nodes/ComfyUI-DLSS5-Enhancer/install_runtime.py\nor point the node at an existing DLSS 5 Visual Enhancer install:\n    python ... install_runtime.py --runtime-dir <path>/bin/runtime\nor set the DLSS5_RUNTIME_DIR environment variable."
+    },
+    {
+      "key": "runtime_incomplete",
+      "from": "dlss5/paths.py:86-99 (RuntimeLayout.validate; REQUIRED_RUNTIME_FILES at 26-32, SETUP_HINT at 34-38)",
+      "note": "validate runs only on a folder that holds the worker nvngx.dll, so the list never names it; the missing files come in REQUIRED_RUNTIME_FILES order.",
+      "text": "The DLSS 5 runtime in C:\\ComfyUI_windows_portable\\ComfyUI\\custom_nodes\\ComfyUI-DLSS5-Enhancer\\runtime is incomplete. Missing:\n  C:\\ComfyUI_windows_portable\\ComfyUI\\custom_nodes\\ComfyUI-DLSS5-Enhancer\\runtime\\dxgi.dll\n  C:\\ComfyUI_windows_portable\\ComfyUI\\custom_nodes\\ComfyUI-DLSS5-Enhancer\\runtime\\renodx-dlss5.addon64\n  C:\\ComfyUI_windows_portable\\ComfyUI\\custom_nodes\\ComfyUI-DLSS5-Enhancer\\runtime\\nvngx_dlssnr.dll\n\nInstall it with:\n    python_embeded/python.exe ComfyUI/custom_nodes/ComfyUI-DLSS5-Enhancer/install_runtime.py\nor point the node at an existing DLSS 5 Visual Enhancer install:\n    python ... install_runtime.py --runtime-dir <path>/bin/runtime\nor set the DLSS5_RUNTIME_DIR environment variable.",
+      "files": ["dxgi.dll", "renodx-dlss5.addon64", "nvngx_dlssnr.dll"]
+    },
+    {
+      "key": "no_driver",
+      "from": "dlss5/diagnostics.py:121-124",
+      "text": "nvidia-smi is unavailable; DLSS 5 needs an NVIDIA RTX GPU with a current driver."
+    },
+    {
+      "key": "gpu_outside",
+      "from": "dlss5/diagnostics.py:126-134",
+      "text": "NVIDIA GeForce RTX 2080 is outside the supported RTX 30/40/50 scope.",
+      "gpu": "NVIDIA GeForce RTX 2080"
+    },
+    {
+      "key": "gpu_none",
+      "from": "dlss5/diagnostics.py:143",
+      "text": "No supported NVIDIA RTX GPU was detected."
+    },
+    {
+      "key": "ampere_pair",
+      "from": "dlss5/diagnostics.py:167-176 (ensure_supported; the hashes are file_sha256's upper-case hex, not the EXPECTED_AMPERE pair)",
+      "text": "NVIDIA GeForce RTX 3090 needs the tested experimental Ampere pair (RenoDX DLSS5 v4.70 + DLSS NR 310.8.SF-v2). Installed hashes are add-on 9A81D6474ECF448842B1C70CB2025CF653069A2383531284ECF17A47A0A49920 and neural runtime C854CF0D63D8C2DDF7EE1F91300AAADB5272FCD8B2BC4F99947510F38E0E40F3."
+    },
+    {
+      "key": "worker_blocked",
+      "from": "dlss5/session.py:66-80 (layout.worker is root / WORKER_NAME, paths.py:24 and 65-67; {exc} is Python's OSError text for ERROR_VIRUS_INFECTED, trailing period stripped)",
+      "text": "The native DLSS worker at C:\\ComfyUI_windows_portable\\ComfyUI\\custom_nodes\\ComfyUI-DLSS5-Enhancer\\runtime\\nvngx.dll could not be started: [WinError 225] Operation did not complete successfully because the file contains a virus or potentially unwanted software. It is an executable despite the .dll name, so antivirus software often quarantines or blocks it. Add the runtime folder to the exclusion list."
+    },
+    {
+      "key": "protocol_setup",
+      "from": "dlss5/session.py:115-125 (no worker log: details is 'The worker produced no output.')",
+      "text": "The native worker failed during DLSS setup or does not speak the version-4 protocol (exit 1):\nThe worker produced no output."
+    },
+    {
+      "key": "protocol_response",
+      "from": "dlss5/protocol.py:85-91 (SetupResponse.unpack, called outside session.py's try)",
+      "text": "The native worker did not answer with a version-4 setup response. The installed runtime is incompatible with this node."
+    },
+    {
+      "key": "ngx_size",
+      "from": "dlss5/session.py:128-136 (mode name of 1x is DLAA, settings.py:31; no worker log, so no details line)",
+      "text": "DLSS DLAA is unavailable for 4096x2160 (NGX 0xBAD00005). Pick a lower upscaling mode or update the NVIDIA driver.",
+      "size": "4096 × 2160"
+    },
+    {
+      "key": "preset_refused",
+      "from": "dlss5/session.py:143-150 (_preset_name(0) is 'Default (0)', session.py:25-30; the requested one is the widget's name)",
+      "text": "The worker applied DLSS model preset Default (0) instead of the requested M. This runtime does not support that model. Set dlss_model_preset to Default.",
+      "preset": "M"
+    },
+    {
+      "key": "preset_refused_l",
+      "from": "dlss5/session.py:143-150 (as preset_refused, the recipe's default preset L asked)",
+      "text": "The worker applied DLSS model preset Default (0) instead of the requested L. This runtime does not support that model. Set dlss_model_preset to Default.",
+      "preset": "L"
+    },
+    {
+      "key": "feature18_unverified",
+      "from": "dlss5/diagnostics.py:195-209 (verify_feature_18 via nodes/common.py confirm_feature_18; the names are FEATURE_18_MARKERS', diagnostics.py:23-27; an empty ReShade log adds no evidence block)",
+      "text": "The frames were rendered, but signed DLSSNR feature-18 execution was not verified. Missing evidence:\n  signed DLSSNR runtime initialized\n  feature 18 created\n  feature 18 evaluated"
+    },
+    {
+      "key": "feature18_failed",
+      "from": "dlss5/session.py:256-259",
+      "text": "Feature-18 evaluation failed on frame 0: 0xBAD00001"
+    },
+    {
+      "key": "feature18_crash",
+      "from": "dlss5/diagnostics.py:224-261 (describe_worker_failure via session.py:206-222; exit code 3221225477 is 0xC0000005, an access violation; an RTX 40 card, so the driver hint)",
+      "text": "The native DLSS worker crashed inside feature-18 evaluation (access violation) on frame 0.\nUpdate the NVIDIA driver and make sure the runtime files come from a matching RenoDX DLSS5 / DLSS NR release.\nGPU: NVIDIA GeForce RTX 4090 (driver 591.44)\nAdd-on: 4DA24542726FCAC638903B57A5AB4A212FF32666B4106E0F5353483DCA6F442F\nNeural runtime: 2108F51031B6D01EA9233FF91BC7CE3E18621D3A2E77D150B22C7D93054861AB\n\n13:52:07:418 [14872] | INFO  | signed DLSSNR 310.8.0 D3D12 runtime initialized\n13:52:07:502 [14872] | INFO  | feature 18 created via the signed snippet"
+    },
+    {
+      "key": "feature18_crash_rtx30",
+      "from": "dlss5/diagnostics.py:224-261 (as feature18_crash on an RTX 30 card: the experimental-path hint; ensure_supported lets an RTX 30 through only with the tested pair, so the hashes are EXPECTED_AMPERE_ADDON_SHA256 and EXPECTED_AMPERE_NEURAL_SHA256, diagnostics.py:18-19)",
+      "text": "The native DLSS worker crashed inside feature-18 evaluation (access violation) on frame 0.\nRTX 30 is the experimental path; the RenoDX/DLSS-NR pair must match exactly and may still be unstable.\nGPU: NVIDIA GeForce RTX 3080 (driver 591.44)\nAdd-on: D5ADF82EB44B065F4C590AC91FE824BAB07AFEA0EB9F994BDE936710C8593952\nNeural runtime: 6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927\n\n13:52:07:418 [14872] | INFO  | signed DLSSNR 310.8.0 D3D12 runtime initialized\n13:52:07:502 [14872] | INFO  | feature 18 created via the signed snippet"
+    },
+    {
+      "key": "too_large",
+      "from": "dlss5/settings.py:84-105 (a 7681 x 4321 source at 1x; no factor fits, so the second hint)",
+      "text": "A 7682x4322 output exceeds the supported 7680x4320 boundary. The source alone already exceeds the supported boundary."
+    },
+    {
+      "key": "too_small",
+      "from": "dlss5/session.py:151-155",
+      "text": "DLSS returned an unusable render size 40x60; both edges must be at least 64 pixels."
+    },
+    {
+      "key": "opencv",
+      "from": "dlss5/imaging.py:14-19",
+      "text": "OpenCV is required for frame scaling and motion estimation. Install opencv-python, or opencv-contrib-python if you already use it."
+    },
+    {
+      "key": "other",
+      "from": "dlss5/diagnostics.py:224-261 (describe_worker_failure without an access violation: exit 3, no hint line)",
+      "text": "The native DLSS worker stopped on frame 0 (exit 3).\nGPU: NVIDIA GeForce RTX 4090 (driver 591.44)\nAdd-on: 4DA24542726FCAC638903B57A5AB4A212FF32666B4106E0F5353483DCA6F442F\nNeural runtime: 2108F51031B6D01EA9233FF91BC7CE3E18621D3A2E77D150B22C7D93054861AB\n\n13:52:07:418 [14872] | INFO  | signed DLSSNR 310.8.0 D3D12 runtime initialized"
+    },
+    {
+      "key": "worker_exit",
+      "from": "dlss5/session.py:290-294 (close(): a non-zero exit after the last frame; the log line is an example of the worker's stderr)",
+      "text": "The native DLSS worker exited with code 3:\nshutdown: NGX release returned 0xBAD00001"
+    },
+    {
+      "key": "worker_timeout",
+      "from": "dlss5/session.py:279-286 (close(): the worker still running after 60 s)",
+      "text": "The native DLSS worker did not exit within 60 seconds and was killed."
+    }
+  ]
+}

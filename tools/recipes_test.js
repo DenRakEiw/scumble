@@ -10,12 +10,17 @@
 // Then the reference names (docs/PLAN_REFS.md): §3 each variant's refs.name, §4 each text shape's text.refs (26f,
 // Generate new with references) against the table of 26f sub-task 1 and the takes-none list, and how normalize() reads
 // a hand-made text.refs (true, false, a bad field, a bad value).
+// The Realism Pass (docs/PLAN_0_1_42.md R1): §5 its recipe through the graph round trip (its name pinned to
+// realism.LABEL; fromGraph keeps its presets only for the Settings rows the saved graph has, task "pass" only while
+// the graph holds DLSS5Settings), §7 detach refuses it, §11 normalize's task "pass" and the presets a recipe file
+// ships (shippedPresets; a node id may hold colons, "57:12:unet_name").
 "use strict";
 
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const Module = require("node:module");
+const { pathToFileURL } = require("node:url");
 
 const ROOT = path.join(__dirname, "..");
 const RECIPES = path.join(ROOT, "recipes");
@@ -392,6 +397,94 @@ async function main() {
             eq(noBase.settings.map((s) => [s.index, s.node, s.input]), r0.settings.map((s) => [s.index, s.node, s.input])) && eq(noBase.prompt[r0.canvas].inputs, r0.prompt[r0.canvas].inputs), short(noBase.settings));
         check("toPrompt refuses a provider recipe and a result that names no node",
             !!(await thrown(() => recipes.toPrompt({ kind: "provider", id: "p" }))) && !!(await thrown(() => recipes.toPrompt({ ...r0, result: "nope:0" }))));
+
+        // the Realism Pass (docs/PLAN_0_1_42.md R1): in the sweep above, and what the sweep does not look at
+        const realism = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "realism.js")).href);
+        const rp = comfy.find((r) => r.id === realism.RECIPE_ID);
+        check("the Realism Pass is a shipped ComfyUI recipe, swept above", !!rp && rp.kind === "comfy" && rp.mode === "local", short(rp && { id: rp.id, kind: rp.kind, mode: rp.mode }));
+        if (rp) {
+            check("its name is exactly realism.LABEL (the user: the recipe says \"Realism Pass (Windows only, RTX only)\")", rp.name === realism.LABEL && realism.LABEL === "Realism Pass (Windows only, RTX only)", short({ name: rp.name, label: realism.LABEL }));
+            check("normalize keeps its task \"pass\" and gives it no upscale factor", rp.task === "pass" && rp.factor === undefined, short({ task: rp.task, factor: rp.factor }));
+            const classes = [...new Set(Object.values(rp.prompt).map((n) => n.class_type))].sort();
+            check("its needs list exactly the node types of its prompt (the pack's two nodes among them)", eq([...(rp.needs || [])].sort(), classes) && realism.NODES.every((n) => classes.includes(n)), short({ needs: rp.needs, classes }));
+            const p = recipes.toPrompt(rp);
+            const row = (rp.settings || [])[0] || {};
+            check("toPrompt: result_local on rp_enhance:0, the DLSS model preset row on the canvas node's first setting output, the template's other values kept",
+                eq(p[rp.canvas].inputs.result_local, ["rp_enhance", 0]) && p[rp.canvas].inputs.result === undefined && rp.settings.length === 1
+                && row.node === "rp_settings" && row.input === "dlss_model_preset" && eq(p.rp_settings.inputs.dlss_model_preset, [rp.canvas, 12 + row.index])
+                && p.rp_settings.inputs.nr_style === rp.prompt.rp_settings.inputs.nr_style && eq(p.rp_enhance.inputs, rp.prompt.rp_enhance.inputs),
+                short({ canvas: p[rp.canvas].inputs, settings: p.rp_settings.inputs }));
+            const back = recipes.fromPrompt(p, {}, { file: "graph", date: "2026-10-04" }, rp);
+            check("fromPrompt with the recipe as base: the row's label and spec (Default, J, K, L, M) and the stored L come back",
+                eq(back.settings, rp.settings) && row.label === "DLSS model preset" && eq(row.spec && row.spec[0], realism.MODEL_PRESETS) && back.prompt.rp_settings.inputs.dlss_model_preset === "L",
+                short({ settings: back.settings, preset: back.prompt.rp_settings.inputs.dlss_model_preset }));
+            // the fields a graph does not hold come back from the recipe the window opened (GRAPH_KEEPS): task and presets too
+            const workflow = { nodes: [{ id: 1, type: "InpaintCanvas" }], links: [], extra: {} };
+            const over = recipes.fromGraph({ output: p, workflow, objectInfo: {}, base: rp, date: "2026-10-04" });
+            const fresh = recipes.fromGraph({ output: p, workflow, objectInfo: {}, base: rp, name: "My pass", ids: [rp.id], date: "2026-10-04" });
+            check("Save to recipe keeps its id, its name, its task \"pass\", its presets and its row",
+                over.id === rp.id && over.name === realism.LABEL && over.task === "pass" && eq(over.presets, rp.presets) && eq(over.settings, rp.settings),
+                short({ id: over.id, task: over.task, presets: over.presets }));
+            check("Save as new recipe keeps the task and the presets under its own id", fresh.id === "my_pass" && fresh.task === "pass" && eq(fresh.presets, rp.presets), short({ id: fresh.id, task: fresh.task, presets: fresh.presets }));
+            check("Save to recipe with its own graph: presets L and M in that order and task \"pass\", as the file ships them",
+                eq(over.presets && over.presets.map((q) => q.name), ["L", "M"]) && eq(over.presets, rawFile("realism_pass.json").presets) && over.task === "pass",
+                short({ task: over.task, presets: over.presets }));
+
+            // a graph that no longer holds the pack's settings node (rp_settings gone, the pass swapped for a plain
+            // scale): the row it drove is gone with it, so the presets have nothing left to set and the task is no pass
+            const noPass = recipes.toPrompt(rp);
+            delete noPass.rp_settings;
+            noPass.rp_enhance = { class_type: "ImageScaleBy", inputs: { image: ["rp_one", 0], upscale_method: "lanczos", scale_by: 1 } };
+            const plain = recipes.fromGraph({ output: noPass, workflow, objectInfo: {}, base: rp, name: "My scale", ids: [rp.id], date: "2026-10-04" });
+            check("Save as new recipe from the Realism Pass with a graph without DLSS5Settings and without the preset row: no presets field, no task \"pass\"",
+                plain.id === "my_scale" && !Object.prototype.hasOwnProperty.call(plain, "presets") && plain.task === undefined && plain.settings.length === 0
+                && !Object.values(plain.prompt).some((n) => n.class_type === "DLSS5Settings"),
+                short({ id: plain.id, task: plain.task, presets: plain.presets, settings: plain.settings }));
+            const plainOver = recipes.fromGraph({ output: noPass, workflow, objectInfo: {}, base: rp, date: "2026-10-04" });
+            check("Save to recipe of the Realism Pass with that graph: its id and name stay, the presets field and task \"pass\" do not",
+                plainOver.id === rp.id && plainOver.name === realism.LABEL && !Object.prototype.hasOwnProperty.call(plainOver, "presets") && plainOver.task === undefined,
+                short({ id: plainOver.id, task: plainOver.task, presets: plainOver.presets }));
+            const plainBack = recipes._normalize(JSON.parse(JSON.stringify(plain)));
+            check("that copy reads back through normalize as an ordinary ComfyUI recipe (no pass, no presets)", plainBack.task !== "pass" && plainBack.presets === undefined, short({ task: plainBack.task, presets: plainBack.presets }));
+
+            // the settings node kept but its preset row unwired (the value typed into the node): the task stays, the presets go
+            const unwired = recipes.toPrompt(rp);
+            unwired.rp_settings.inputs.dlss_model_preset = "M";
+            const keepTask = recipes.fromGraph({ output: unwired, workflow, objectInfo: {}, base: rp, name: "Fixed M", ids: [rp.id], date: "2026-10-04" });
+            check("a graph that keeps DLSS5Settings but not the preset row: task \"pass\" kept, no presets field",
+                keepTask.task === "pass" && !Object.prototype.hasOwnProperty.call(keepTask, "presets") && keepTask.settings.length === 0 && keepTask.prompt.rp_settings.inputs.dlss_model_preset === "M",
+                short({ task: keepTask.task, presets: keepTask.presets, settings: keepTask.settings }));
+
+            // a base whose presets name one row the graph keeps and one it has not: only the kept value stays, and a
+            // preset left with no value at all is dropped
+            const mixedBase = { ...rp, presets: [
+                { name: "L", values: { "rp_settings:dlss_model_preset": "L", "rp_settings:nr_intensity": 0.5 } },
+                { name: "Gone", values: { "rp_settings:nr_style": "Default", "nowhere:x": 1 } },
+                { name: "M", values: { "rp_settings:dlss_model_preset": "M" } },
+            ] };
+            const mixed = recipes.fromGraph({ output: recipes.toPrompt(mixedBase), workflow, objectInfo: {}, base: mixedBase, date: "2026-10-04" });
+            check("a base preset with one kept row and one dropped row keeps only the kept value; a preset with no kept row is dropped",
+                eq(mixed.presets, [{ name: "L", values: { "rp_settings:dlss_model_preset": "L" } }, { name: "M", values: { "rp_settings:dlss_model_preset": "M" } }]) && mixed.task === "pass",
+                short(mixed.presets));
+            check("fromGraph leaves the base's presets as they were", mixedBase.presets[0].values["rp_settings:nr_intensity"] === 0.5 && mixedBase.presets.length === 3, short(mixedBase.presets));
+
+            // a node id holding colons (a flattened subgraph's "57:12"): its preset key "57:12:<input>" matches its row
+            const sub = JSON.parse(JSON.stringify(rp.prompt));
+            sub["57:12"] = sub.rp_settings;
+            delete sub.rp_settings;
+            sub.rp_enhance.inputs.settings = ["57:12", 0];
+            const subBase = { ...rp, prompt: sub, settings: rp.settings.map((s) => ({ ...s, node: "57:12" })), presets: [{ name: "L", values: { "57:12:dlss_model_preset": "L" } }, { name: "M", values: { "57:12:dlss_model_preset": "M" } }] };
+            const subSaved = recipes.fromGraph({ output: recipes.toPrompt(subBase), workflow, objectInfo: {}, base: subBase, date: "2026-10-04" });
+            check("a preset key on a node id with colons (\"57:12:dlss_model_preset\") is kept for the row of node \"57:12\"",
+                eq(subSaved.presets, subBase.presets) && subSaved.settings.length === 1 && subSaved.settings[0].node === "57:12" && subSaved.task === "pass",
+                short({ presets: subSaved.presets, settings: subSaved.settings }));
+            await recipes.save(over);
+            const listed = (await recipes.list(RECIPES)).find((r) => r.id === rp.id);
+            check("the saved copy, read back through list(), is still a pass with its presets and its row", !!listed && listed.source === "user" && listed.task === "pass" && eq(listed.presets, rp.presets) && eq(listed.settings, rp.settings), short(listed && { source: listed.source, task: listed.task, presets: listed.presets }));
+            await recipes.remove(rp.id);
+            const builtinAgain = (await recipes.list(RECIPES)).find((r) => r.id === rp.id);
+            check("removing the copy brings the shipped one back", !!builtinAgain && builtinAgain.source === "builtin");
+        }
     });
 
     // ---- 6. a graph from ComfyUI's page as a recipe (item 35 V3) --------------------------
@@ -431,8 +524,23 @@ async function main() {
     // ---- 7. the cloud form: a ComfyUI recipe without the node (item 35 V5) ---------------
     await section("7. detach: a ComfyUI recipe without the Inpaint Canvas node", async () => {
         const comfy = (await recipes.list(RECIPES)).filter((r) => r.kind !== "provider" && r.source === "builtin");
-        const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] } };
+        // refused: the Realism Pass runs on the user's own ComfyUI only (the user: "nein, kein anderes comfy cloud rezept")
+        const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] }, realism_pass: { refused: /Cloud copy/ } };
+        const unlisted = comfy.map((r) => r.id).filter((id) => !want[id]);
+        check("every shipped ComfyUI recipe has its row in the table", !unlisted.length, unlisted.join(", "));
+        const realism = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "realism.js")).href);
         for (const r of comfy) {
+            const w0 = want[r.id] || {};
+            if (w0.refused) {
+                const before = JSON.stringify(r);
+                const err = await thrown(() => recipes.detach(r));
+                check(`${r.id}: detach refuses it (${w0.refused}), in words that hold the label (${realism.LABEL}), and leaves the recipe as it was`,
+                    !!err && w0.refused.test(err) && err.includes(realism.LABEL) && JSON.stringify(r) === before, err);
+                const copy = JSON.parse(JSON.stringify(r));
+                delete copy.task;
+                check(`${r.id}: the refusal goes by task "pass": the same graph without it detaches`, !(await thrown(() => recipes.detach(copy))));
+                continue;
+            }
             const { recipe: d, notes, needs } = recipes.detach(r);
             const v = d.providers.comfycloud;
             const g = v.options.graph;
@@ -680,6 +788,67 @@ async function main() {
         check("Qwen Image 2.1 on Comfy Cloud: its pictures named <image1>, its sizes in steps of 32", qwen.refs.name === "<image{n}>" && qwen.limits.step === 32, short({ refs: qwen.refs, limits: qwen.limits }));
         const ideo = list.find((x) => x.id === "cloud_ideogram_4").providers.comfycloud.options.graph;
         check("Ideogram 4: the nodes the fixtures' node list lacks take the export's named widget values", ideo["98:156"].inputs.choice === "Default" && ideo["98:157"].inputs.cfg === 3 && ideo["98:155"].inputs.cfg === 7, short(ideo["98:156"].inputs));
+    });
+
+    // ---- 11. task "pass" and the presets a recipe file ships (docs/PLAN_0_1_42.md R1) -----------------------------
+    await section("11. normalize: task \"pass\" and shipped presets", async () => {
+        const comfyOf = (extra) => recipes._normalize({ id: "t_pass", kind: "comfy", mode: "local", canvas: "1", result: "2:0", prompt: { 1: { class_type: "InpaintCanvas", inputs: {} }, 2: { class_type: "KSampler", inputs: {} } }, ...extra });
+        const pass = comfyOf({ task: "pass" });
+        check("a ComfyUI recipe keeps task \"pass\", with no upscale factor", pass.task === "pass" && pass.factor === undefined, short({ task: pass.task, factor: pass.factor }));
+        const odd = comfyOf({ task: "bogus" });
+        const none = comfyOf({});
+        const up = comfyOf({ task: "upscale" });
+        check("an unknown task still becomes \"edit\", no task stays none, an upscaler keeps its fixed factor", odd.task === "edit" && none.task === undefined && up.task === "upscale" && !!up.factor && up.factor.fixed === true, short({ odd: odd.task, none: none.task, up: up.factor }));
+        const prov = recipes._normalize({ id: "t_pass_p", kind: "provider", task: "pass", providers: { loopback: { model: "m" } } });
+        check("a provider recipe has no pass: its task \"pass\" becomes \"edit\"", prov.task === "edit", prov.task);
+
+        // shippedPresets, through normalize: each entry a name and "<node>:<input>" keys with plain values
+        const presetsOf = (list) => { const r = comfyOf(list === undefined ? {} : { presets: list }); return { has: Object.prototype.hasOwnProperty.call(r, "presets"), presets: r.presets }; };
+        const good = { name: "L", values: { "rp_settings:dlss_model_preset": "L" } };
+        let x = presetsOf([good, { name: "M", values: { "rp_settings:dlss_model_preset": "M", "rp_settings:nr_intensity": 0.5, "rp_enhance:verify_neural_rendering": false } }]);
+        check("well-formed presets come through as they are (string, number and boolean values)", eq(x.presets, [good, { name: "M", values: { "rp_settings:dlss_model_preset": "M", "rp_settings:nr_intensity": 0.5, "rp_enhance:verify_neural_rendering": false } }]), short(x));
+        x = presetsOf(undefined);
+        const xEmpty = presetsOf([]);
+        check("no presets, or an empty list: no presets key at all", !x.has && !xEmpty.has, short({ x, xEmpty }));
+        const notLists = ["L", 3, true, null, { name: "L", values: { "a:b": 1 } }].map((v) => presetsOf(v));
+        check("presets that are no array (a string, a number, true, null, one preset object): the key removed", notLists.every((y) => !y.has), short(notLists));
+        x = presetsOf([null, "L", 7, [good], { values: { "a:b": 1 } }, { name: "", values: { "a:b": 1 } }, { name: "   ", values: { "a:b": 1 } }, { name: 5, values: { "a:b": 1 } }, good]);
+        check("entries that are no object, or have no name (missing, empty, blank, not a string), are dropped", eq(x.presets, [good]), short(x));
+        x = presetsOf([{ name: "A", values: "L" }, { name: "B", values: null }, { name: "C", values: ["a:b"] }, { name: "D" }, { name: "E", values: 1 }, good]);
+        check("entries whose values are no object (a string, null, an array, missing, a number) are dropped", eq(x.presets, [good]), short(x));
+        x = presetsOf([{ name: "K", values: { preset: "L", "no colon": 1, ":b": 1, ":x": 1, "a:": 1, "x:": 1, "": 1, "a:b": "kept" } }]);
+        check("keys that are not \"<node>:<input>\" (no colon, an empty node, an empty input, empty) are dropped, the good one kept", eq(x.presets, [{ name: "K", values: { "a:b": "kept" } }]), short(x));
+        // a node id may hold colons itself (a flattened subgraph's "57:12"): the input is what follows the last colon
+        x = presetsOf([{ name: "K", values: { "a:b:c": 1, "57:12:unet_name": "flux.safetensors", "57:12:": 1, "a:b": "kept" } }]);
+        check("a key whose node id holds colons is kept (\"a:b:c\" = node \"a:b\", input \"c\"; \"57:12:unet_name\" = node \"57:12\", input \"unet_name\"), one ending in a colon is not",
+            eq(x.presets, [{ name: "K", values: { "a:b:c": 1, "57:12:unet_name": "flux.safetensors", "a:b": "kept" } }]), short(x));
+        x = presetsOf([{ name: "K", values: { "a:o": { x: 1 }, "a:arr": [1], "a:nul": null, "a:und": undefined, "a:fn": () => 1, "a:s": "s", "a:n": 2, "a:t": true } }]);
+        check("object, array, null, undefined and function values are dropped; strings, numbers and booleans kept", eq(x.presets, [{ name: "K", values: { "a:s": "s", "a:n": 2, "a:t": true } }]), short(x));
+        x = presetsOf([{ name: "K", values: { preset: "L", "a:o": { x: 1 } } }, { name: "Z", values: {} }]);
+        check("an entry left with no value at all is dropped, and with none left the key goes", !x.has, short(x));
+        x = presetsOf([good, { name: "L", values: { "rp_settings:dlss_model_preset": "M" } }, { name: " L ", values: { "a:b": 1 } }, { name: "M", values: { "a:b": 2 } }]);
+        check("a later preset of a name already taken is dropped (the first wins, names trimmed)", eq(x.presets, [good, { name: "M", values: { "a:b": 2 } }]), short(x));
+        x = presetsOf([{ name: "L", values: { nope: 1 } }, good]);
+        check("a dropped entry takes no name: a later well-formed one of the same name is kept", eq(x.presets, [good]), short(x));
+        x = presetsOf([{ name: "  L2  ", values: { "a:b": 1 } }]);
+        check("a name is trimmed", eq(x.presets, [{ name: "L2", values: { "a:b": 1 } }]), short(x));
+        const src = [{ name: "L", values: { "a:b": 1, bad: 2 } }];
+        const srcCopy = JSON.parse(JSON.stringify(src));
+        presetsOf(src);
+        check("the file's own list is not changed in place", eq(src, srcCopy), short(src));
+
+        // the shipped recipe: L and M on its one Settings row, through list() as they are in the file
+        const raw = rawFile("realism_pass.json");
+        const rp = (await recipes.list(RECIPES)).find((r) => r.id === "realism_pass");
+        check("realism_pass: its presets come through normalize unchanged, L first, then M", !!rp && eq(rp.presets, raw.presets) && eq(rp.presets.map((p) => p.name), ["L", "M"]), short(rp && rp.presets));
+        const rowKeys = new Set(((rp && rp.settings) || []).map((s) => `${s.node}:${s.input}`));
+        const choices = ((rp && rp.settings) || [])[0] && rp.settings[0].spec ? rp.settings[0].spec[0] : [];
+        const strays = ((rp && rp.presets) || []).flatMap((p) => Object.entries(p.values).filter(([k, v]) => !rowKeys.has(k) || !choices.includes(v)).map(([k, v]) => `${p.name}: ${k}=${v}`));
+        check("realism_pass: every preset value names its Settings row and one of the row's choices; L is the prompt's own value",
+            !strays.length && !!rp && rp.prompt.rp_settings.inputs.dlss_model_preset === "L" && rp.presets[0].values["rp_settings:dlss_model_preset"] === "L", short(strays));
+        const once = recipes._normalize(JSON.parse(JSON.stringify(raw)));
+        const twice = recipes._normalize(JSON.parse(JSON.stringify(once)));
+        check("realism_pass: normalize twice gives the same recipe (a saved copy reads back the same)", eq(once, twice), short({ once: once.presets, twice: twice.presets }));
     });
 
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });

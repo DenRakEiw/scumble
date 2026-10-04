@@ -149,7 +149,7 @@ carry is laid down and picked up per dab), so a pen's smudge would change: the u
 The ones that were part of `docs/PLAN_0_1_29.md` §3 (the skipped flush on quit, TIFF, the PNG metadata) are fixed:
 "Fixed, waiting for its release".
 
-- **The film look "None (adjustments only)" still adds grain**: `plugins/film/filters.js` ~387 falls back to
+- **The film look "None (adjustments only)" still adds grain** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)*: `plugins/film/filters.js` ~387 falls back to
   `{ amount: 25, ... }` when there is no stock.
 
 ### Found in the .scumble review (2026-09-26, read, not run)
@@ -275,28 +275,28 @@ the code and checked line by line, not reported and not run; none is fixed. The 
 that the assistant changes nothing external agents see ("nein, soll primär für externe agenten sein, in app
 agent ist nur add on"), so the assistant's plan does not fix them; each is its own item when the user says so.
 
-- **`flip_layer` axis x flips vertically.** The command passes `"x"` / `"y"` (`renderer/commands.js:652`),
+- **`flip_layer` axis x flips vertically.** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)* The command passes `"x"` / `"y"` (`renderer/commands.js:652`),
   `flipLayer` mirrors horizontally only for `"h"` and vertically for anything else
   (`renderer/editor/inpaint_canvas.js:3496`, `:3502`), so both axes flip vertically, against the command's
   own description ("horizontally (axis x)"). The toolbar buttons pass `"h"` / `"v"` (`:2193-2194`) and work.
   The fix is one line in `commands.js` (outside the node build); external agents that compensated would get
   the other flip.
-- **`remove_layer` reports success on a locked layer.** `removeLayer` only sets the status line for a locked
+- **`remove_layer` reports success on a locked layer.** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)* `removeLayer` only sets the status line for a locked
   layer and returns (`inpaint_canvas.js:9479`); the command returns `{removed: id}` regardless
   (`commands.js:636`). The built-in plugins call the same command (ailabel's Add / Remove label,
   `plugins/ailabel/main.js:101`, `:111`; glb's Edit dropping a depth layer, `plugins/glb/main.js:117`).
   `flip_layer` and `center_layer` are silent no-ops on locked or filter layers in the same way.
-- **The compat key goes to any URL `llm:models` is given.** `compatModels(url)` sends `keys.get("compat")`
+- **The compat key goes to any URL `llm:models` is given.** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)* `compatModels(url)` sends `keys.get("compat")`
   as a Bearer token to whatever base it is called with (`electron/main/llm.js:73-78`, IPC `llm:models` at
   `electron/main/main.js:459`); the renderer, a plugin included, can call it with any URL. The key is meant
   for the saved `settings.llm.compat.url` only.
-- **The MCP annotations are incomplete.** `READ_ONLY` (`electron/main/mcp/server.js:31`) is tested against
+- **The MCP annotations are incomplete.** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)* `READ_ONLY` (`electron/main/mcp/server.js:31`) is tested against
   dotted command names and misses `read_log`, `film.looks`, `glb.info`, `ailabel.info` and
   `sample.mean_color`; its `describe` alternative matches no command. `destructiveHint` (`:63`) misses
   `generate_new`, `flatten`, `merge_down`, `extend_canvas`, `export*` (silent overwrite), `undo`, `redo`,
   `select_recipe`, `set_node_params` and `ailabel.add`, and marks `new_document`, which destroys nothing.
   External MCP clients that gate on these hints get the wrong picture.
-- **Ctrl+Enter starts a second provider run while one is running.** `generate()` disables the button for the
+- **Ctrl+Enter starts a second provider run while one is running.** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)* `generate()` disables the button for the
   length of `host.queueGenerate` (`inpaint_canvas.js:12043`, `:12054`), but the shortcut calls `generate()`
   directly (`:2788`) and nothing checks `providerPending`; `runProvider` then replaces the token
   (`renderer/editor/host.js:858`). **Not known:** whether the first run's result still lands, and whether a

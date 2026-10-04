@@ -36,6 +36,18 @@ const { REF_NAME_DEFAULT, validRefName } = require("./providers/refs");
  */
 
 /**
+ * A preset a recipe file ships (the Realism Pass's L and M): values for Settings rows, keyed "<node>:<input>" as the
+ * user's own presets in settings.recipePresets are. Shown first in the Preset row; the user cannot delete one.
+ *
+ * @typedef {Object} ShippedPreset
+ * @property {string} name
+ * @property {Record<string, any>} values
+ */
+
+/** The Realism Pass's label (renderer/editor/realism.js LABEL; tools/recipes_test.js checks they agree). */
+const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
+
+/**
  * The biggest crop an edit variant takes, filled in for every variant by editLimits().
  *
  * @typedef {Object} EditLimits
@@ -117,7 +129,8 @@ const { REF_NAME_DEFAULT, validRefName } = require("./providers/refs");
  * @property {"comfy" | "provider"} [kind]
  * @property {string} [file]
  * @property {"builtin" | "user"} [source]
- * @property {"edit" | "upscale"} [task]
+ * @property {"edit" | "upscale" | "pass"} [task]   pass: the Realism Pass (ComfyUI recipes only)
+ * @property {ShippedPreset[]} [presets]       presets the recipe file ships for its Settings rows
  * @property {Record<string, ProviderVariant>} [providers]
  * @property {string[]} [providerIds]
  * @property {string} [default]               the provider id a run takes without a choice
@@ -351,11 +364,14 @@ function comfyRefs(r) {
  * @returns {Recipe}
  */
 function normalize(r) {
+    r.presets = shippedPresets(r.presets);
+    if (!r.presets.length) delete r.presets;
     if (r.kind !== "provider") {
         // a ComfyUI recipe may be an upscaler too (recipes/upscale_model_local.json): the model picks its own
-        // factor, and only the selection mode exists (the node's stitch fits the answer back into the box)
+        // factor, and only the selection mode exists (the node's stitch fits the answer back into the box);
+        // or the Realism Pass (task "pass", recipes/realism_pass.json): the box at its own size through DLSS 5
         if (r.task === "upscale") r.factor = { ...FACTOR_DEFAULT, fixed: true };
-        else if (r.task !== undefined) r.task = "edit";
+        else if (r.task !== undefined && r.task !== "pass") r.task = "edit";
         comfyRefs(r);
         return r;
     }
@@ -383,6 +399,34 @@ function normalize(r) {
     r.providerIds = Object.keys(r.providers);
     if (!r.default || !r.providers[r.default]) r.default = r.providerIds[0];
     return r;
+}
+
+/**
+ * A recipe file's `presets`, checked: each a name and a values object of "<node>:<input>" keys with plain values;
+ * a malformed entry is dropped, a later one of the same name too.
+ * @param {any} list
+ * @returns {ShippedPreset[]}
+ */
+function shippedPresets(list) {
+    if (!Array.isArray(list)) return [];
+    /** @type {ShippedPreset[]} */
+    const out = [];
+    const seen = new Set();
+    for (const p of list) {
+        if (!p || typeof p !== "object") continue;
+        const name = typeof p.name === "string" ? p.name.trim() : "";
+        if (!name || seen.has(name) || !p.values || typeof p.values !== "object" || Array.isArray(p.values)) continue;
+        /** @type {Record<string, any>} */
+        const values = {};
+        for (const [k, v] of Object.entries(p.values)) {
+            // "<node>:<input>": a node id may hold colons itself (a flattened subgraph's "57:12"), an input name none
+            if (/^.+:[^:]+$/.test(k) && ["string", "number", "boolean"].includes(typeof v)) values[k] = v;
+        }
+        if (!Object.keys(values).length) continue;
+        seen.add(name);
+        out.push({ name, values });
+    }
+    return out;
 }
 
 async function list(builtinDir) {
@@ -760,7 +804,7 @@ function fromPrompt(src, objectInfo, meta, base) {
 }
 
 // What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
-const GRAPH_KEEPS = ["description", "family", "task", "refs", "models"];
+const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets"];
 
 /**
  * The graph of ComfyUI's page -> a recipe to save (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3). `output` is the API
@@ -778,6 +822,15 @@ function fromGraph({ output, workflow, objectInfo, base, name, ids, date }) {
     /** @type {Record<string, any>} */
     const kept = {};
     if (base) for (const k of GRAPH_KEEPS) if (/** @type {any} */ (base)[k] !== undefined) kept[k] = /** @type {any} */ (base)[k];
+    // what the held recipe's fields say must still hold for the graph saved: its shipped presets only for the rows the
+    // graph keeps, and the Realism Pass's task only while the graph still holds the pack's settings node
+    if (kept.presets) {
+        const rows = new Set((fields.settings || []).map((s) => `${s.node}:${s.input}`));
+        const presets = shippedPresets(kept.presets).map((p) => ({ name: p.name, values: Object.fromEntries(Object.entries(p.values).filter(([k]) => rows.has(k))) }))
+            .filter((p) => Object.keys(p.values).length);
+        if (presets.length) kept.presets = presets; else delete kept.presets;
+    }
+    if (kept.task === "pass" && !Object.values(fields.prompt || {}).some((n) => n && n.class_type === "DLSS5Settings")) delete kept.task;
     if (!name) {
         if (!base || !base.id) throw new Error("This window holds no recipe to save into: use Save as new recipe.");
         return /** @type {Recipe} */ ({ id: base.id, name: base.name || base.id, ...kept, ...graph });
@@ -1234,6 +1287,8 @@ const DETACH_DEFAULTS = /** @type {Record<string, any>} */ ({ width: 1024, heigh
  */
 function detach(recipe) {
     if (!recipe || recipe.kind === "provider" || !recipe.prompt || !recipe.canvas || !recipe.prompt[recipe.canvas]) throw new Error("Only a ComfyUI recipe can be turned into a Comfy Cloud recipe.");
+    // the user: "nein, kein anderes comfy cloud rezept" (docs/PLAN_0_1_42.md §1)
+    if (recipe.task === "pass") throw new Error(`${PASS_LABEL} runs on your own ComfyUI only: it has no Cloud copy.`);
     const canvasId = String(recipe.canvas);
     /** @type {Record<string, any>} */
     const prompt = JSON.parse(JSON.stringify(recipe.prompt));

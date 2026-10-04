@@ -106,7 +106,7 @@ ui.url.value = (settings.comfy && settings.comfy.url) || "http://127.0.0.1:8188"
 
 // ---- documents (tabs) --------------------------------------------------------------------
 
-host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize, embedRecipe: settings.embedRecipe, llmRefPictures: refPicturesOn(settings) });
+host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize, embedRecipe: settings.embedRecipe, llmRefPictures: refPicturesOn(settings), realism: settings.realism });
 
 /** settings.llm.refPictures: the reference pictures go to the upsampling model unless it is false (absent = on, 26d2). */
 function refPicturesOn(set) {
@@ -295,6 +295,8 @@ function showStatus(st) {
     ui.setConn.textContent = st.message || st.state || "";
     const comfyButton = document.getElementById("shell-comfy");
     if (comfyButton) comfyButton.title = `ComfyUI's own page${st.url ? " at " + st.url : ""} in a window of its own (Ctrl+Shift+K)`;
+    // every status, not only connected ones: the Realism Pass checks the live state (host.connected is never set back)
+    host.setServerStatus(st);
     if (st.state === "connected" || st.state === "missing-node") host.onConnected(st).catch((err) => console.error(err));
 }
 
@@ -586,7 +588,8 @@ function renderRecipeList() {
             const copy = document.createElement("button");
             copy.type = "button"; copy.textContent = "Cloud copy"; copy.title = "Save a copy without the Inpaint Canvas node that runs on Comfy Cloud (your Comfy Cloud key)";
             copy.addEventListener("click", () => cloudCopyOf(r));
-            cell.append(edit, copy);
+            // the Realism Pass runs on the user's own ComfyUI only (docs/PLAN_0_1_42.md §1): no Cloud copy
+            if (r.task === "pass") cell.append(edit); else cell.append(edit, copy);
             row.appendChild(cell);
         } else {
             row.appendChild(document.createElement("span"));
@@ -1002,7 +1005,8 @@ async function genSyncRefs() {
 
 /** The recipes that can start from nothing, for the mode the dialog is on (cloud: the Comfy Cloud recipes, V6). */
 function genRecipesFor(mode) {
-    return recipes.filter((r) => (mode === "local" ? r.kind === "comfy" : r.kind === "provider" && (mode === "cloud") === cloudModeOf(r) && genProviderIds(r).length));
+    // an upscaler or the Realism Pass makes nothing from a prompt: both work on a picture
+    return recipes.filter((r) => (mode === "local" ? r.kind === "comfy" && r.task !== "upscale" && r.task !== "pass" : r.kind === "provider" && (mode === "cloud") === cloudModeOf(r) && genProviderIds(r).length));
 }
 
 /** The providers of a model recipe that have a text-to-image shape. */

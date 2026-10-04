@@ -27,6 +27,8 @@ The block of 2026-09-28 (evening, package 5 step 4) was moved here at night, whe
 
 The block of 2026-09-28 (late night, package 5 complete) was moved here the same night, when 0.1.32 was prepared.
 
+The block of 2026-10-03 (afternoon to night: item 35, 0.1.40, 0.1.41) was moved here on 2026-10-04, when R1 of 0.1.42 was built.
+
 
 The block of 2026-09-29 (morning, item 26 S1 built) was moved here at noon, when the eraser hotfix 0.1.33 was prepared.
 
@@ -59,6 +61,129 @@ The 0.1.37 block of 2026-10-02 (night) was moved here the same night, when A1, A
 The block of 2026-10-03 (midday: B5, B6, the 0.1.39 release) was moved here the same afternoon, when item 35 was planned.
 
 The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved here the same afternoon, when V1 of item 35 was built.
+
+## 2026-10-03 (afternoon to night: item 35 V1-V6 built, 0.1.40 and 0.1.41 released, the cleanup; moved here on 2026-10-04 when R1 of 0.1.42 was built)
+
+**This session (2026-10-03 afternoon): V1 to V4 of item 35 built (d69625c, 3c5f37d, 70b4ac0 and the commit after), unreleased.** No workflow and no
+agent (weekly limit at 92 %, the user: stop at 99 % at a committed state). The block before (items 34 and 35 planned,
+DLSS on the later list) is in `docs/HISTORY.md`.
+- **V1, the ComfyUI window** (`docs/PLAN_COMFY_VIEW.md` §3 "V1 as built"): `electron/main/comfyview.js`, the bar
+  (`electron/comfybar_preload.js`, `renderer/comfybar.*`), the *ComfyUI* button after *Assistant*, *View › ComfyUI*
+  Ctrl+Shift+K, the start page without a target (§2.5), the auth headers for the target's origin, the bounds kept.
+  Measured first: `session.webRequest` headers reach the `/ws` handshake for all auth types **only with the `ws://`
+  pattern in the filter** (now a trap below); Scumble's menu reaches a `BaseWindow` unless dropped (mutation-checked).
+  Gate `comfyview` (8 steps, a stub server of its own) and `lint types canvasonly help skins` PASS offline on the
+  tiles backend (`dist/gates/gates/cv1`, `cv1b`); the manual got the shortcut row and a paragraph in *Recipes*, the
+  CHANGELOG an `Unreleased` line. Not looked at: a real RunPod pod, the user's own ComfyUI in the window (both on the
+  user's word; opening the page queues nothing).
+- **V2, a recipe as its graph** (§3 "V2 as built"): `recipes.toPrompt`, `fromPrompt(..., base)` (the round trip holds
+  for the three shipped ComfyUI recipes; `fromPrompt` now keeps the canvas node's four parameters on every import),
+  the window's `READY_JS` poll and `loadApiJson` / `loadGraphData`, *Edit in ComfyUI* (title row, *View*, *Settings ›
+  Recipes*), the bar's "Editing: <recipe>" and its note. Gate `comfyview` 11 of 11, `recipes` (63 checks), `lint types
+  help skins` PASS offline (`dist/gates/gates/cv2c`). Not run against a real ComfyUI.
+- **V3, a graph as a recipe** (§3 "V3 as built"): `recipes.fromGraph`, the window's `READ_JS` (`graphToPrompt`, 20 MB
+  cap) and `/object_info` from the same target, main's `saveComfyGraph`, *Save to recipe* (overwrites; a shipped one
+  as a user copy) and *Save as new recipe* (the name typed in the bar), the editor reloading and selecting it. Gate
+  `comfyview` 14 of 14, `recipes` 69 checks, `lint types help` PASS offline (`dist/gates/gates/cv3`). The round trip
+  on the user's ComfyUI (open, move a node, save, run once) waits for the user's word.
+- **V4, Comfy Cloud in the window** (§3 "V4 as built"): `electron/main/comfyhosts.js` (the sign-in hosts, read from
+  cloud.comfy.org's bundle: Firebase popups to `*.firebaseapp.com`, Google, GitHub), sign-in child windows in
+  `persist:comfyui`, the *Show* select and *Use Comfy Cloud*, `settings.comfyView.target`, the refusal note for a
+  recipe with the node, no saving on the cloud yet. Gate `comfyview` 17 of 17 (`dist/gates/gates/cv4b`). **Open: the
+  look with the user's Comfy Cloud login** (which sign-ins work; Google may refuse an app window, and nothing here
+  fakes the browser).
+- **V5a, `recipes.detach`** (§3 "V5a as built"): a ComfyUI recipe as a provider recipe on `comfycloud` without the
+  canvas node (`options.graph`, pictures as titled `LoadImage` nodes, the run's values, rows keyed `node|input`); all
+  three shipped recipes detach; `recipes_test.js` 83 checks.
+- **V5b, the run** (§3 "V5b as built"): `comfycloud.js` builds a detached recipe's run (`options.graph`): the titled
+  LoadImage nodes, the values, the rows, the node list checked per key before any upload, its own SaveImage first;
+  `tools/cloudgraph_test.js` 10 checks against a fake cloud, `comfyrouter_test.js` 134 still pass.
+- **V5c, the ways to a cloud recipe** (§3 "V5c as built"; the user chose the button per recipe and added the Comfy Cloud
+  export): *Cloud copy* under *Settings › Recipes*, the import of a Comfy Cloud export and *Save as new recipe* in the
+  window, both by node titles ("Scumble crop" and more, docs/RECIPES.md "Comfy Cloud recipes"). Gate `comfyview` 19 of
+  19, `recipes` 92, `cloudgraph` 11, `lint types help` PASS. **Item 35 is built (V1-V5).**
+- **After the first looks (the same afternoon, the user at the machine):** sign-in popups as app windows on both
+  targets (a ComfyUI's Comfy account login, 18776ab); a page that keeps unsaved changes asks Leave / Stay instead of
+  hanging the bar on "Loading" (f402496); the save buttons on with the page, a save asks the page again (a ComfyUI with
+  many node packs is set up after 20 s, 706f60b); **Cancel for API runs** beside the title row's timer (4fc179a);
+  **V6 step 1**: Comfy's templates read without titles (`detectRoles`), the subgraph fixes in `fromWorkflow`
+  (docs/PLAN_COMFY_VIEW.md §3 V6). The local *Qwen Image Edit 2.1* recipe failed on the user's ComfyUI
+  (`TextEncodeQwenImage21: cannot reshape tensor of 0 elements`): not looked at yet.
+- **V6 step 2 (the evening session, one review workflow at 93 % weekly):** the editor's mode select has a third mode,
+  *comfy cloud* (`cloud`), added by the shell after `editor.open()` (`addCloudMode`; the node keeps api / local, no new
+  host member); a Comfy Cloud recipe (`cloudGraphOf`) is listed there alone (`modeOf`, family "Comfy Cloud"), the
+  negative shows there, `recipeByMode` brings each mode's last recipe back, `list_recipes` reports `mode: "cloud"`,
+  `set_generation` takes it; *Cloud copy* stays (docs/PLAN_COMFY_VIEW.md V6 step 2). The review workflow's five low
+  findings are fixed: a document opened, reopened or restored keeps the recipe's mode (`host.keepRecipeMode`, an old
+  bug: a file's "local" planned a provider crop as a refine pass), a snapshot keeps the current mode, the mode goes by
+  the chosen variant (`cloudModeOf`), COMMANDS.md regenerated, the CHANGELOG line and the gate's list check. Gates
+  `lint types document commands` PASS and `comfyview` 23 of 23 offline (`dist/gates/gates/v6s2d`, `v6s2e`; the
+  listed Ctrl+S focus flake in between).
+  The user sent their picks the same evening, exported from Comfy Cloud: six image-edit and nine text-to-image
+  workflows, now fixtures in `tools/refs/comfy_cloud/` (MIT), and asked for all of them as recipes in the installer.
+- **V6 step 4 built the same evening:** the six edits ship as `recipes/cloud_*.json`, written by
+  `tools/cloud_recipes.js` (`--check`); the reading grew (a control by its label, the negative side alone, an
+  encoder's own negative field) and an empty negative keeps the graph's own; a graph refuses too many pictures before
+  any call. `recipes_test` 107, `cloudgraph` 14, `refs_layout` 692, gates `lint types recipes comfyview generate size
+  transparent help` PASS offline (`v6s4`, `v6s4b`, `v6s4c`), one look (the six under *comfy cloud*). Not run live.
+- **V6 step 5 and the step 4 review, the same evening (the user: "machen wir hier weiter", no /clear):** 13 shipped
+  Comfy Cloud recipes (7 edits, 6 for Generate new alone; Flux.2 Klein 9B and Qwen 2.1 carry a text route), the
+  Generate new dialog's *Comfy Cloud* choice, `comfycloud.generate()` for recipe graphs. The review of step 4 caught
+  graphs Comfy Cloud would have refused (dynamic-combo widgets read by position: Boogu's resize node,
+  `SaveImageAdvanced`'s `format`): named widget values now stand for every node, previews are pruned from cloud graphs,
+  and four reading fixes (docs/PLAN_COMFY_VIEW.md V6 step 5 "Built"). `recipes_test` 117, `cloudgraph` 16,
+  `refs_layout` 695, gates `lint types recipes comfyview generate size transparent help document` PASS offline
+  (`v6s5`, `v6s5b`). Not run live.
+- **V6 step 3, the same night (the user: "mache weiter", weekly limit at 95 %):** `comfycloud.js` `checkModelFiles`
+  after the node check reads a graph's model files (values ending in a model extension, in nodes that lead to an
+  output, a Settings row over the graph's own) against their combos in the key's `/api/object_info`. Built first as a
+  refusal (b891753); **its review (one workflow, 10 agents) showed a refusal is wrong**: Comfy Cloud resolves the
+  account's own imported models through `/api/assets`, which the combos do not list (the user has 16), so a missing
+  name now only explains a failed run (`missingNote`, the nearest listed name) and drops the cached list; a backslash
+  path goes out in the cloud's spelling. A real pre-upload check needs the assets listing, only after a live look
+  (docs/PLAN_COMFY_VIEW.md V6 step 3). Measured through Comfy Cloud's hosted MCP server (read-only): every model file
+  of the 13 shipped recipes is in Comfy Cloud's catalog. `cloudgraph` 27, `comfyrouter` 135, `recipes` 117,
+  `refs_layout` 695, eslint and tsc clean. Not run live.
+- **First live run, the same night (the user at a test instance on `dist/live-keys`):** Qwen Image 2.1 Edit (Comfy
+  Cloud) edited a crop in about 90-100 s, after a fix: **Comfy Cloud no longer serves `/api/history`**, so every Comfy
+  Cloud run (partner nodes and upscalers too, released versions included) ran, was billed and lost its result;
+  67e7a8c reads `/api/jobs/<id>` (CHANGELOG "Comfy Cloud runs bring their result back again"; a hotfix release only on
+  the user's word). The user's idea for a cleanup update: the Sample plugin's panel is not needed by users (plugin
+  template and test fixture; proposed: off by default), not decided.
+- **Live checks on Comfy Cloud passed** (the user, the same night): inpaint and Generate new, no error in the log.
+  Still unlooked: the ComfyUI window's round trip on the user's own ComfyUI (open a recipe, save it back; queues
+  nothing).
+- **0.1.40 released the same night (the user: "ja, mache noch den hotfix... aufräumen dann in 0.1.41"):** branch
+  `hotfix/0.1.40` off v0.1.39 with the `/api/jobs` fix alone (5b5edac, tag `v0.1.40` on the branch, never on main),
+  built in a worktree with a `node_modules` junction, exe gates `--offline` on port 9561 both backends ALL PASS
+  (`dist/gates/gates/rel40-exe`, `rel40-exe-canvas`), published 22:03, post live (`#v0-1-40`, website 58af1e5); no
+  manual sync (MANUAL.md unchanged between the tags). Main's CHANGELOG has the 0.1.40 section (9b600c0); main's
+  `package.json` stays 0.1.39 until 0.1.41. Main is pushed to origin (the user's word, the same night).
+- **The cleanup for 0.1.41, the same night (the user: "räume jetzt auf", no /clear at 41 % context):** measured first,
+  so the list changed: Padding / Feather (crop settings not auto), Target (Highres fix "target"), Highres fix (every
+  provider run) and Free VRAM (Scumble's own helpers) **do act in the comfy cloud mode** and stay. Fixed: the app's
+  empty Settings section says "This recipe has no settings of its own." (the shell sets `editor.noSettingsText`; no new
+  host member, the node keeps its wiring text), the cloud mode's negative placeholder (edd39e0); **the Sample plugin
+  keeps running but has no side panel** (a06cd5f; the user: "die funktion kann ja für mcp bleiben aber den panel
+  entfernen"; `sample_mean_color` is an AUTO tool of the assistant), commands_test checks the Boxes panel for the panel
+  API instead. Gates `comfyview generate lint types` (c041a) and `commands mcp assistant skins lint` (c041b) PASS
+  offline. The user's last look passed: a recipe opened in the ComfyUI window and saved back; it found that Edit in
+  ComfyUI kept Comfy Cloud when the window had shown it last (fixed, 1de5acb, a comfyview gate step).
+- **0.1.41 released the same night (the user: "mache den release jetzt")**: item 35 (ComfyUI in Scumble, Comfy Cloud
+  recipes and mode, Generate new on Comfy Cloud), Cancel for API runs, the cleanup; three stale CHANGELOG lines fixed
+  first. Exe gates `--offline` on port 9561 both backends ALL PASS (`rel41-exe` 35 with comfyview, `rel41-exe-canvas`
+  22); tag `v0.1.41` on 220feb6 (the built commit; 5a18579 after it is CLAUDE.md alone), published 23:56, manual synced
+  and post live (`#v0-1-41`, website e26563f). **Next:** item 36 (the portable zip) on the user's word; the Store
+  package per release is still only on the user's word; the Comfy Dev Platform Challenge (Oct 5-19) to plan with the
+  user (memory `comfy-dev-challenge`). Old line kept below for the checks:
+- **Then: the live checks of item 35, then the release** (the user, 2026-10-03: "kein release erst wenn alles fertig
+  ist"): a recipe opened and saved back on the user's ComfyUI (queues nothing), the Comfy Cloud login in the window
+  (which sign-ins work), one cloud run with the user's key (credits), a RunPod pod if the user starts one; then the
+  release chain (docs/RELEASING.md), only on the user's word. Pushed to origin/main, no tag. Open from the list as before: the live checks of FLUX 3 on fal,
+  Oxen and WaveSpeed (`docs/PLAN_FLUX3.md` "Live checks"), item 30, 28 S4, 34 (`docs/PLAN_NEW_PRESETS.md`), B3 macOS.
+  **The Comfy Dev Platform Challenge (Oct 5-19): Comfy said Scumble may take part**; ask for Comfy's exact answer and
+  re-read the challenge post (memory `comfy-dev-challenge`) before planning the entry with the user. The weekly limit
+  resets 2026-10-04 09:00Z.
 
 ## 2026-10-03 (midday to afternoon: items 34 and 35 planned, DLSS on the later list; moved here when V1 of item 35 was built)
 

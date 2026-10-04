@@ -29,6 +29,8 @@ layer, exactly like in the ComfyUI node.
                                                   // "Reference images named in the prompt (local)"
   "settings": [ { "index": 1, "node": "unet", "input": "unet_name", "label": "Model",
                   "spec": [["file.safetensors"], {}] } ],   // spec optional: /object_info wins when connected
+  "presets": [ { "name": "L", "values": { "rp_settings:dlss_model_preset": "L" } } ],   // optional, see "Presets"
+  "task": "edit" | "upscale" | "pass",                      // optional, edit when left out; see below
   "models": { "diffusion_models": ["..."] },                // informational
   "prompt": { "<id>": { "class_type": "...", "inputs": { ... } }, ... }
 }
@@ -38,6 +40,14 @@ layer, exactly like in the ComfyUI node.
 node's `setting_n` outputs), `node`/`input` where the value goes. The control's type
 comes from the server's `/object_info` when connected, else from `spec` (ComfyUI's
 input spec format: `["INT", {default, min, max}]`, `[["a", "b"], {}]` for a combo).
+
+`task` says what a ComfyUI recipe does with the selection: `edit` (the default) renders into it, `upscale` is an
+upscale model (see "Upscale recipes"), and `pass` is the Realism Pass (`realism_pass` below): the selection's box goes
+out like an upscale's (at its own size, `target_size` 0, no fill, no Original, no reference layers, no refine pass,
+`multiple_of` 2: DLSS needs even sides only, and a larger multiple would shrink a whole-picture crop and leave a border
+without the pass) and comes back at the same size. A `pass` recipe has no *Cloud copy* (`detach` refuses it:
+the pass runs on the user's own ComfyUI only), is not offered by Generate new, and `list_recipes` reports it with
+`task: "pass"`, mode `local`. Any other task is read as `edit`.
 
 ### The shipped ComfyUI recipes
 
@@ -78,6 +88,22 @@ input spec format: `["INT", {default, min, max}]`, `[["a", "b"], {}]` for a comb
   (`nodes.py` `InpaintCanvasStitch`, `_resize_image(src, w, h)`), so it is a sharper detail pass at the document's
   resolution. Checked against the user's `/object_info` on 2026-09-22 (both classes, their inputs and outputs);
   **not run** (the user's ComfyUI was not free).
+- `realism_pass`, **Realism Pass (Windows only, RTX only)** (0.1.42, `docs/PLAN_0_1_42.md` R1; the name is the
+  user's, held by `renderer/editor/realism.js` `LABEL` and pinned by `tools/recipes_test.js`): `InpaintCanvas` ->
+  `ImageFromBatch` (the crop only) -> `DLSS5Settings` -> `DLSS5EnhanceImages` -> `result_local`, task `pass`. DLSS 5
+  Neural Rendering from the community node pack ComfyUI-DLSS5-Enhancer, which the user installs on their ComfyUI with
+  its runtime; Scumble ships none of it. The prompt holds the user's own template (1x DLAA, model preset L, the pack's
+  other defaults pinned), the one Settings row is *DLSS model preset* (with its `spec`, so it shows unconnected) with
+  the shipped presets L and M. Style and Strength come from `settings.realism` (app-wide; the Generate pane's row in a
+  later session), written into every `DLSS5Settings` node. Before anything is uploaded the run checks the server
+  (`/system_stats` os and devices, `/object_info`): no Windows, CUDA devices none of which is an RTX 30 / 40 / 50 by
+  the pack's name rule, or the pack's nodes missing refuse with the reason (a server that reports no os or no CUDA
+  device is left to the pack's own check); an RTX 30 runs with a note (the pack needs its experimental Ampere runtime
+  pair there); a crop (the selection with its context, as the node cuts it) under 64 px a side or past 7680 × 4320 is
+  refused. *Save as new recipe* from it keeps the presets only for rows the new graph has, and the task only while
+  the graph holds `DLSS5Settings`. The pack's own errors come back as
+  sentences (`realism.hint`, fixtures in `tools/refs/dlss5/messages.json`). No Comfy Cloud alternative (the user's
+  decision). **Not run** on a real server.
 
 ### Presets
 
@@ -88,6 +114,14 @@ combos (inputs named `*_name` whose options are files: `unet_name`, `ckpt_name`,
 picking a preset writes the files back into the controls, the select shows `(custom)`
 while the current files match no preset. A file that is not on the server is skipped
 with a note in the status line. Presets are per recipe id and shared by all documents.
+
+A recipe file may also **ship presets** (`"presets": [{ "name", "values": { "<node>:<input>": value } }]`, for any
+Settings row, not only file combos; ComfyUI recipes): the row then shows them first, then the user's own, and Save
+stores the rows the shipped presets name plus the file combos. A shipped preset cannot be deleted; a user preset of
+the same name replaces it in the list, and one with a shipped one's values is shown as the user's (so it can be
+deleted). `recipes.js` drops a malformed entry (no name, a duplicate name, values that
+are not plain strings, numbers or booleans, keys without `node:input`; the node id may hold colons, as a flattened
+subgraph's `57:12` does). The Realism Pass ships L and M.
 
 ### The local / api / comfy cloud select
 

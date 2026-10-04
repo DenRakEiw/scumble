@@ -19,6 +19,7 @@ import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES } from "./edit
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { fontList } from "./editor/inpaint_text.js";
 import { parse, remap } from "./editor/reftokens.js";
+import { LABEL as REALISM_LABEL } from "./editor/realism.js";
 
 const VERSION = 2;   // 1 = the node's bridge
 
@@ -437,7 +438,7 @@ const COMMANDS = {
             const cur = host.recipe;
             return { selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null, recipes: host.shell.recipes().map((r) => {
                 const v = host.shell.resolveRecipe(r);
-                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, textRefs: r.task === "upscale" ? undefined : r.kind === "provider" ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots), description: r.description || "", source: r.source || "builtin" };
+                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, textRefs: r.task === "upscale" || r.task === "pass" ? undefined : r.kind === "provider" ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots), description: r.description || "", source: r.source || "builtin" };
             }) };
         },
     },
@@ -706,6 +707,7 @@ const COMMANDS = {
         async run(ed, a) {
             const r = host.recipe;
             if (!r) throw new Error("no recipe selected");
+            if (r.task === "pass") throw new Error(`${REALISM_LABEL} works on a picture: select an area and Generate (generate).`);
             let w = clampInt(a.width, 64, 8192, 1024), h = clampInt(a.height, 64, 8192, 1024);
             if (a.aspect) {
                 const [aw, ah] = sizeForAspect(a.aspect, clampInt(a.resolution, 64, 8192, 1024));
@@ -787,19 +789,22 @@ const COMMANDS = {
             if (!wired) throw new Error("the recipe has no result output for this mode: select a recipe first");
             ed.lastSentPrompt = null;
             ed.lastRunNotes = [];
+            ed.lastPassError = null;
+            // a failure of the run: the status reads Error / failed, or is the Realism Pass's sentence for the pack's error
+            const failed = () => /^Error|failed/i.test(ed.status || "") || (!!ed.lastPassError && ed.status === ed.lastPassError);
             // a refusal of this run (a token that cannot go, a missing key, ...) is said at once, not after the wait below;
             // a provider run is over when ed.generate() returns, so `seconds` counts from here
             const started = Date.now();
             const run = await ed.generate();
             if (run && run.error) throw run.error;
-            if (/^Error|failed/i.test(ed.status)) throw new Error(ed.status);
+            if (failed()) throw new Error(ed.status);
             const t0 = Date.now(), limit = clampInt(a.timeout, 5, 3600, 600) * 1000;
             const provider = host.recipe && host.recipe.kind === "provider";
             let idleSince = 0;
             while (Date.now() - t0 < limit) {
                 await wait(500);
                 if (ed.history.length > n0) break;
-                if (/^Error|failed/i.test(ed.status || "")) throw new Error(ed.status);
+                if (failed()) throw new Error(ed.status);
                 if (provider) { if (!ed.providerPending) break; continue; }
                 // the queue went idle without a result: the run failed elsewhere in the graph
                 try {
@@ -808,7 +813,7 @@ const COMMANDS = {
                     if (idle && Date.now() - t0 > 3000) { idleSince = idleSince || Date.now(); if (Date.now() - idleSince > 2500) break; } else idleSince = 0;
                 } catch (_) { /* ignore */ }
             }
-            await until(() => ed.history.length > n0 || /^Error|failed/i.test(ed.status || ""), Math.max(30000, Math.min(limit - (Date.now() - t0), 180000)), 250);
+            await until(() => ed.history.length > n0 || failed(), Math.max(30000, Math.min(limit - (Date.now() - t0), 180000)), 250);
             if (ed.history.length <= n0) throw new Error("no result arrived: " + (ed.status || "the run produced nothing"));
             const h = ed.history[ed.history.length - 1];
             const layer = ed.layers.find((l) => l.id === h.layerId);

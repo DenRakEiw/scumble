@@ -346,7 +346,9 @@ Known flakes; **re-run before believing any of these**:
 - `comfyview_test.py` "Ctrl+S reaches the page, not Scumble's menu" fails with "the control failed" (2026-10-03, twice):
   its control key into the editor's page reaches no menu while another window has the focus, as when the user works in
   a test instance of their own beside the gate (run it on another port, `SCUMBLE_CDP_PORT=9556`). Ruled out: the
-  ComfyUI window's guards (the step passed in the same session with the user away).
+  ComfyUI window's guards (the step passed in the same session with the user away). Again on 2026-10-04 (R1 of
+  0.1.42): four of six runs, the user's own Scumble open with this session's MCP server attached; port 9556 did not
+  help, and the unchanged HEAD (3d89bd3, a worktree on port 9571) failed the same way, so R1 is ruled out.
 - `commands_test.py` hangs after every step has printed `[ok]` (the runner's 420 s timeout, sometimes in
   `Page.captureScreenshot`).
 - `editor_test.py` `closed_tabs_are_collected` fails with the last tabs still alive, or against an instance with 50+ tabs

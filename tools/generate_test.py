@@ -573,6 +573,248 @@ return { early: msg, late, lateMs };
 """),
     ("dialog_escape_closes_the_picker_first", dialog_escape_closes_the_picker_first),
     *STEPS_26F_AFTER,
+    # docs/PLAN_0_1_42.md R1: the shipped Realism Pass recipe through Generate, the prompt caught before it leaves (nothing
+    # is queued on any server; the server is stubbed as a Windows ComfyUI with an RTX 5090 and the pack's nodes): the box
+    # at its own size (multiple_of 2 whatever nodeParams says; no fill, Original, references or refine whatever the tab
+    # holds), the shipped presets and a user's own in the Settings row, Style and Strength from settings.realism, the
+    # refusals before anything is serialized or uploaded (the server, the size, the selection), the pack's error as a
+    # sentence (the event, and the generate command that stops its wait on it), list_recipes and generate_new
+    ("the_realism_pass_recipe_queues_the_box_as_it_is", """
+const LABEL = "Realism Pass (Windows only, RTX only)";
+const { api } = await import("./editor/host.js");
+const r0 = host.shell.recipes().find((x) => x.id === "realism_pass");
+if (!r0) throw new Error("the shipped Realism Pass recipe is not listed");
+if (r0.task !== "pass" || r0.kind === "provider" || r0.name !== LABEL) throw new Error("not the pass: " + JSON.stringify({ task: r0.task, kind: r0.kind, name: r0.name }));
+const presetM = (r0.presets || []).find((p) => p.name === "M");
+if (!presetM) throw new Error("the recipe ships no preset M: " + JSON.stringify(r0.presets));
+const prev = host.recipe ? host.recipe.id : null;
+const prevProvider = host.recipe && host.recipe.kind === "provider" ? host.recipe.provider : undefined;
+// selectRecipe also stores the local mode's last recipe (recipeByMode): that one goes back first
+let prevLocal = null;
+try { prevLocal = ((await window.scumble.settings.get()).recipeByMode || {}).local || null; } catch (_) { /* none */ }
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, fetchApi: api.fetchApi, server: { ...(host.server || {}) }, realism: host.realismStored, multiple: host.nodeParams.multiple_of };
+const nodeInfo = () => ({ input: { required: {} } });
+const OI = { InpaintCanvas: nodeInfo(), ImageFromBatch: nodeInfo(), DLSS5Settings: nodeInfo(), DLSS5EnhanceImages: nodeInfo() };
+const GOOD = { state: "connected", os: "win32", gpus: ["cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync"] };
+let sent = null, uploads = 0, doc = null, ed = null, crop0 = null, refine0 = false, failure = null, restored = true;
+// the prompt id the stubbed queue answers, and a callback it runs about 1 s after a prompt was queued
+let nextId = "rp-test-1", onQueued = null;
+const out = {};
+const presetSel = () => ed.settingsList.querySelector(".ipc-preset-row select");
+const presetDel = () => Array.from(ed.settingsList.querySelectorAll(".ipc-preset-row button")).find((b) => b.textContent === "Delete");
+const modelSel = () => {
+    const lab = Array.from(ed.settingsList.children).find((l) => l.tagName === "LABEL" && /^DLSS model preset/.test((l.childNodes[0] && l.childNodes[0].textContent) || ""));
+    return lab ? lab.querySelector("select") : null;
+};
+const pickPreset = (name) => { const s = presetSel(); s.value = name; s.dispatchEvent(new Event("change")); };
+const sorted = (o) => JSON.stringify(Object.keys(o || {}).sort().map((k) => [k, o[k]]));
+try {
+    host.connected = true;
+    host.objectInfo = OI;
+    host.setServerStatus(GOOD);
+    host.ensureOnServer = async () => { uploads++; return null; };
+    api.queuePrompt = async (n, body) => {
+        sent = body;
+        const id = nextId;
+        if (onQueued) { const f = onQueued; onQueued = null; setTimeout(() => f(id), 1000); }
+        return { prompt_id: id };
+    };
+    // the generate command asks ComfyUI's /queue while it waits: busy with this run (nothing leaves the app)
+    api.fetchApi = (path, init) => String(path).startsWith("/queue")
+        ? Promise.resolve(new Response(JSON.stringify({ queue_running: [[0, nextId]], queue_pending: [] }), { status: 200, headers: { "Content-Type": "application/json" } }))
+        : saved.fetchApi.call(api, path, init);
+    const d = await run("new_document");
+    doc = d.id;
+    ed = ednow(doc);
+    host.shell.activate(ed);
+    await run("load_image", { doc, filename: "test_base.png", subfolder: "inpaint_canvas", type: "input" });
+    host.shell.selectRecipe("realism_pass");
+    if (!host.recipe || host.recipe.id !== "realism_pass") throw new Error("the recipe was not selected");
+    if (ed.genSettings.mode !== "local") throw new Error("the pass runs in mode " + ed.genSettings.mode);
+    const sup = host.realismSupport();
+    if (!sup.ok || sup.generation !== 50 || sup.note) throw new Error("the stubbed server: " + JSON.stringify(sup));
+    // ComfyUI's torch devices decide: no CUDA device listed (CPU, DirectML) is left to the pack, a mix runs on its RTX
+    for (const [gpus, gen] of [[["cpu"], 0], [["privateuseone:0 AMD Radeon RX 7900"], 0], [["cuda:0 NVIDIA GeForce RTX 2080 : cudaMallocAsync", "cuda:1 NVIDIA GeForce RTX 4090 : cudaMallocAsync"], 40]]) {
+        host.setServerStatus({ ...GOOD, gpus });
+        const s = host.realismSupport();
+        if (!s.ok || s.generation !== gen) throw new Error("devices " + JSON.stringify(gpus) + ": " + JSON.stringify(s));
+    }
+    host.setServerStatus(GOOD);
+    // (1) the Settings section: the shipped presets L and M in the Preset row (not deletable), the model preset row reads L
+    if (!presetSel()) throw new Error("no Preset row in the Settings section");
+    const opts = Array.from(presetSel().options).map((o) => o.value);
+    if (!opts.includes("L") || !opts.includes("M")) throw new Error("the Preset row holds " + JSON.stringify(opts));
+    if (!presetDel() || !presetDel().disabled) throw new Error("a shipped preset can be deleted");
+    if (!modelSel() || modelSel().value !== "L" || presetSel().value !== "L") throw new Error("before a pick: the row reads " + (modelSel() && modelSel().value) + ", the preset " + presetSel().value);
+    pickPreset("M");
+    if (!modelSel() || modelSel().value !== "M" || presetSel().value !== "M" || !ed.settings["1"] || ed.settings["1"].value !== "M") throw new Error("preset M: the row reads " + (modelSel() && modelSel().value) + ", the stored value " + JSON.stringify(ed.settings["1"]));
+    out.presets = opts;
+    // a user's own preset with M's values: the row names it (the user's first, not the shipped M), and it can be deleted
+    const own0 = ((host.presets || {}).realism_pass || []).filter((p) => p.name !== "mine");
+    try {
+        await host.savePresets("realism_pass", own0.concat([{ name: "mine", values: { ...presetM.values } }]));
+        ed.renderSettings();
+        pickPreset("L");
+        if (presetSel().value !== "L" || modelSel().value !== "L") throw new Error("preset L beside mine: the select shows " + presetSel().value + ", the row " + modelSel().value);
+        pickPreset("mine");
+        const del = presetDel();
+        if (presetSel().value !== "mine" || modelSel().value !== "M" || !del || del.disabled) throw new Error("the user's preset: the select shows " + presetSel().value + ", the row " + modelSel().value + ", Delete " + (del ? (del.disabled ? "disabled" : "enabled") : "missing"));
+        out.mine = { shown: presetSel().value, row: modelSel().value };
+    } finally {
+        await host.savePresets("realism_pass", own0);
+        ed.renderSettings();
+    }
+    if (presetSel().value !== "M" || modelSel().value !== "M" || !presetDel() || !presetDel().disabled) throw new Error("mine removed: the select shows " + presetSel().value + ", the row " + modelSel().value);
+    // (2) Generate: the box at its own size; what the tab holds does not go along (a multiple_of of 7, the green fill, the
+    // Original, a refine pass, references); the row's model preset M, Style and Strength from settings.realism (its
+    // preset K is the switch routes' and does not go), every other input as the recipe has it
+    await run("select_rect", { doc, x: 64, y: 64, w: 200, h: 150 });
+    crop0 = { fill: ed.cropSettings.fill, withOriginal: ed.cropSettings.withOriginal };
+    refine0 = ed.genSettings.refine;
+    ed.cropSettings.fill = "green";
+    ed.cropSettings.withOriginal = true;
+    ed.genSettings.refine = true;
+    host.nodeParams.multiple_of = 7;
+    host.realismStored = { style: "Cinematic", intensity: 0.4, preset: "K", timeout: 300 };
+    sent = null; uploads = 0;
+    const res = await ed.generate();
+    if (res && res.error) throw new Error("Generate refused: " + res.error.message);
+    if (!sent) throw new Error("nothing was queued: " + ed.status);
+    if (uploads !== 1) throw new Error("ensureOnServer ran " + uploads + " times");
+    const P = sent.output, cv = P.canvas.inputs, st = JSON.parse(cv.canvas_state);
+    if (cv.target_size !== 0) throw new Error("the crop is scaled before the pass: target_size " + cv.target_size);
+    if (cv.multiple_of !== 2) throw new Error("multiple_of " + cv.multiple_of + " (nodeParams says 7, the pass sends 2)");
+    if (cv.result_source_local !== "rp_enhance:0" || cv.result_source !== undefined) throw new Error("the result input: " + JSON.stringify({ local: cv.result_source_local, api: cv.result_source }));
+    if (!st.crop || st.crop.fill !== "none" || st.crop.withOriginal !== false) throw new Error("the crop goes out filled: " + JSON.stringify(st.crop));
+    if (!Array.isArray(st.references) || st.references.length) throw new Error("references went along: " + JSON.stringify(st.references));
+    if (!st.gen || st.gen.refine !== false) throw new Error("a refine pass went along: " + JSON.stringify(st.gen && st.gen.refine));
+    if (ed.cropSettings.fill !== "green" || ed.cropSettings.withOriginal !== true || ed.genSettings.refine !== true) throw new Error("the run changed the tab's own settings");
+    const want = { ...r0.prompt.rp_settings.inputs, dlss_model_preset: "M", nr_style: "Cinematic", nr_intensity: 0.4 };
+    if (sorted(P.rp_settings.inputs) !== sorted(want)) throw new Error("rp_settings: " + JSON.stringify(P.rp_settings.inputs) + " want " + JSON.stringify(want));
+    if (sorted(P.rp_one.inputs) !== sorted(r0.prompt.rp_one.inputs) || sorted(P.rp_enhance.inputs) !== sorted(r0.prompt.rp_enhance.inputs)) throw new Error("the pack's nodes changed: " + JSON.stringify([P.rp_one.inputs, P.rp_enhance.inputs]));
+    if (r0.prompt.rp_settings.inputs.dlss_model_preset !== "L" || r0.prompt.rp_settings.inputs.nr_style !== "Default") throw new Error("the run wrote into the recipe: " + JSON.stringify(r0.prompt.rp_settings.inputs));
+    if (ed.lastPromptId !== "rp-test-1") throw new Error("lastPromptId " + ed.lastPromptId);
+    out.sent = { target_size: cv.target_size, multiple_of: cv.multiple_of, fill: st.crop.fill, withOriginal: st.crop.withOriginal, refine: st.gen.refine, preset: P.rp_settings.inputs.dlss_model_preset, style: P.rp_settings.inputs.nr_style, intensity: P.rp_settings.inputs.nr_intensity };
+    // an RTX 30 card runs, with the note about the pack's experimental runtime pair after the queueing
+    host.setServerStatus({ ...GOOD, gpus: ["cuda:0 NVIDIA GeForce RTX 3090 : cudaMallocAsync"] });
+    sent = null;
+    const res30 = await ed.generate();
+    host.setServerStatus(GOOD);
+    if ((res30 && res30.error) || !sent) throw new Error("an RTX 3090 did not run: " + ed.status);
+    if (!String(ed.status).includes("experimental runtime pair") || !String(ed.status).includes(LABEL)) throw new Error("no RTX 30 note: " + ed.status);
+    // (3) five refusals, each before the tab is serialized, anything uploaded or queued, each naming the pass
+    const refused = async (what, re, setup, teardown) => {
+        sent = null; uploads = 0;
+        let serials = 0;
+        const ownSer = Object.prototype.hasOwnProperty.call(ed, "serializeForPrompt");
+        const ser0 = ed.serializeForPrompt;
+        ed.serializeForPrompt = function (...a) { serials++; return ser0.apply(this, a); };
+        setup();
+        let r;
+        try { r = await ed.generate(); } finally {
+            teardown();
+            if (ownSer) ed.serializeForPrompt = ser0; else delete ed.serializeForPrompt;
+        }
+        const msg = r && r.error ? String(r.error.message) : "";
+        if (!msg) throw new Error(what + ": not refused (" + ed.status + ")");
+        if (!msg.includes(LABEL) || !String(ed.status).includes(LABEL) || !re.test(msg)) throw new Error(what + ": " + msg + " / status " + ed.status);
+        if (sent || uploads || serials) throw new Error(what + ": refused after " + (sent ? "queueing" : uploads ? "an upload" : serials + " serializeForPrompt call(s)"));
+        return msg;
+    };
+    out.linux = await refused("os linux", /on Windows; this one runs on linux/, () => host.setServerStatus({ ...GOOD, os: "linux" }), () => host.setServerStatus(GOOD));
+    out.rtx20 = await refused("an RTX 2080", /it shows NVIDIA GeForce RTX 2080\\./, () => host.setServerStatus({ ...GOOD, gpus: ["cuda:0 NVIDIA GeForce RTX 2080 : cudaMallocAsync"] }), () => host.setServerStatus(GOOD));
+    out.nodes = await refused("no DLSS5Settings", /lacks its nodes .DLSS5Settings/, () => { const o = { ...OI }; delete o.DLSS5Settings; host.objectInfo = o; }, () => { host.objectInfo = OI; });
+    // the size check reads the crop the node makes (the box with its context): a 40 x 60 crop is too small
+    const ownCrop = Object.prototype.hasOwnProperty.call(ed, "cropRect"), crop1 = ed.cropRect;
+    out.size = await refused("a 40 x 60 crop", /needs at least 64 px a side; this is 40 \\u00d7 60\\./, () => { ed.cropRect = () => [0, 0, 40, 60]; }, () => { if (ownCrop) ed.cropRect = crop1; else delete ed.cropRect; });
+    await run("select_none", { doc });
+    out.noSelection = await refused("no selection", /^Select an area first/, () => {}, () => {});
+    // (4) a failure inside the pack comes back as the sentence, not "Error in DLSS5EnhanceImages: ..."
+    ed.lastPassError = null;
+    api.dispatch("execution_error", { prompt_id: "rp-test-1", node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: "No DLSS 5 runtime was found. Searched:\\n  x" });
+    if (!String(ed.status).includes("runtime is not installed") || !String(ed.status).includes(LABEL)) throw new Error("the pack's error reads: " + ed.status);
+    if (ed.lastPassError !== ed.status) throw new Error("lastPassError: " + ed.lastPassError);
+    if (ed._localRuns && ed._localRuns.has("rp-test-1")) throw new Error("the run stays open after its error");
+    out.hint = ed.status;
+    // (4b) the generate command waits for the run and stops on the pack's error, long before its timeout: the error
+    // comes about 1 s after the prompt was queued (from the stubbed queue's setTimeout), while the command waits
+    await run("select_rect", { doc, x: 64, y: 64, w: 200, h: 150 });
+    nextId = "rp-test-cmd";
+    let dispatchedAt = 0;
+    onQueued = (id) => { dispatchedAt = Date.now(); api.dispatch("execution_error", { prompt_id: id, node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: "No DLSS 5 runtime was found. Searched:\\n  x" }); };
+    sent = null;
+    const n0 = ed.history.length, tc = Date.now();
+    let cmdErr = "";
+    try { await run("generate", { doc, timeout: 30 }); cmdErr = "it resolved"; } catch (err) { cmdErr = String(err.message || err); }
+    const tEnd = Date.now();
+    onQueued = null;
+    if (!sent || !dispatchedAt) throw new Error("the command queued nothing or the error never came: " + cmdErr);
+    if (!cmdErr.includes("runtime is not installed") || !cmdErr.includes(LABEL)) throw new Error("the command ended with: " + cmdErr);
+    if (tEnd - tc > 5000) throw new Error("the command took " + (tEnd - tc) + " ms to stop on the error (timeout 30 s)");
+    if (ed.history.length !== n0) throw new Error("the failed run left a result");
+    if (ed._localRuns && ed._localRuns.has("rp-test-cmd")) throw new Error("the command's run stays open after its error");
+    out.command = { ms: tEnd - tc, afterError: tEnd - dispatchedAt, error: cmdErr.slice(0, 80) };
+    // (5) the commands: list_recipes reports the pass as it is, generate_new refuses it and leaves the tab alone
+    const listed = await run("list_recipes");
+    const rp = (listed.recipes || []).find((x) => x.id === "realism_pass");
+    if (!rp || rp.task !== "pass" || rp.mode !== "local" || rp.name !== LABEL || rp.textRefs !== undefined || rp.factor !== undefined) throw new Error("list_recipes: " + JSON.stringify(rp));
+    if (listed.selected !== "realism_pass") throw new Error("list_recipes selected " + listed.selected);
+    const w0 = ed.width, h0 = ed.height, ln0 = ed.layers.length;
+    sent = null;
+    let gn = "";
+    try { await run("generate_new", { doc, prompt: "a portrait", width: 512, height: 512 }); } catch (err) { gn = String(err.message || err); }
+    if (!gn.includes(LABEL) || ed.width !== w0 || ed.height !== h0 || ed.layers.length !== ln0 || sent) throw new Error("generate_new: " + (gn || "not refused") + ", " + ed.width + "x" + ed.height);
+    out.generateNew = gn;
+    out.list = { task: rp.task, mode: rp.mode, name: rp.name };
+    return out;
+} catch (err) {
+    failure = err;
+    throw err;
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; api.fetchApi = saved.fetchApi;
+    host.realismStored = saved.realism;
+    host.nodeParams.multiple_of = saved.multiple;
+    onQueued = null;
+    if (ed) {
+        if (crop0) { ed.cropSettings.fill = crop0.fill; ed.cropSettings.withOriginal = crop0.withOriginal; ed.genSettings.refine = refine0; }
+        try { if (presetSel() && presetSel().value !== "L") pickPreset("L"); } catch (_) { /* gone */ }
+        if (ed._localRuns) ed._localRuns.clear();
+    }
+    host.setServerStatus({ state: saved.server.state || "disconnected", os: saved.server.os || "", gpus: saved.server.gpus || [], remote: !!saved.server.remote });
+    // the window's recipes back through the shell (a gate that leaves it changed makes the next one red). selectRecipe
+    // writes recipeByMode from the window's copy of the settings, which its own write updates only later: two calls in a
+    // row left recipeByMode.local = realism_pass on disk, so each one waits until the stored settings show it
+    const localOf = (s) => (s && s.recipeByMode && s.recipeByMode.local) || null;
+    const settled = async (pred) => {
+        for (let k = 0; k < 100; k++) {
+            let s = null;
+            try { s = await window.scumble.settings.get(); } catch (_) { /* again */ }
+            if (s && pred(s)) return true;
+            await wait(50);
+        }
+        return false;
+    };
+    const known = (id) => host.shell.recipes().find((x) => x.id === id) || null;
+    const localBack = prevLocal && prevLocal !== "realism_pass" && known(prevLocal) ? prevLocal
+        : (host.shell.recipes().find((x) => x.id !== "realism_pass" && host.shell.modeOf(x) === "local") || {}).id || null;
+    if (localBack) {
+        host.shell.selectRecipe(localBack);
+        restored = await settled((s) => localOf(s) === localBack);
+        await wait(100);   // the shell's copy takes the write's answer
+    } else restored = false;
+    if (prev && known(prev)) {
+        host.shell.selectRecipe(prev, prevProvider);
+        const wantLocal = host.shell.modeOf(known(prev)) === "local" ? prev : localBack;
+        restored = (await settled((s) => s.recipe === prev && localOf(s) === wantLocal)) && restored;
+    }
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+    if (!restored && !failure) {
+        let s = null;
+        try { s = await window.scumble.settings.get(); } catch (_) { /* none */ }
+        throw new Error("the recipes were not restored: recipe " + (s && s.recipe) + ", recipeByMode " + JSON.stringify(s && s.recipeByMode) + " (want " + prev + " / local " + localBack + ")");
+    }
+}
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";

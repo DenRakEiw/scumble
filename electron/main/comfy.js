@@ -185,12 +185,15 @@ class ComfyClient {
             let node = false;
             try { const r = await this.fetch("/object_info/InpaintCanvas"); node = r.status === 200 && Object.keys(await r.json()).length > 0; } catch (_) { node = false; }
             const version = stats && stats.system ? stats.system.comfyui_version : "?";
-            const devices = ((stats && stats.devices) || []).map((d) => d.name).join(", ");
+            const gpus = ((stats && stats.devices) || []).map((d) => String((d && d.name) || "")).filter(Boolean);
+            const devices = gpus.join(", ");
+            // the server's own system and cards (the Realism Pass checks the ComfyUI machine, not this one)
+            const os = stats && stats.system && typeof stats.system.os === "string" ? stats.system.os : "";
             this.wsWanted = true;
             this.retry = 0;
             this.openSocket();
             const remote = !/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(this.url);
-            this.setStatus({ state: node ? "connected" : "missing-node", version, devices, node, remote, auth: !!Object.keys(this.headers).length,
+            this.setStatus({ state: node ? "connected" : "missing-node", version, devices, gpus, os, node, remote, auth: !!Object.keys(this.headers).length,
                 message: node ? `ComfyUI ${version}` : `ComfyUI ${version}, Inpaint Canvas node pack not installed` });
         } catch (err) {
             this.setStatus({ state: "error", message: "cannot reach " + this.url + ": " + (err.message || err) });

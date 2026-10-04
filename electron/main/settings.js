@@ -14,6 +14,10 @@ const DEFAULTS = {
     recipeProviders: {},   // recipe id -> chosen provider id for model recipes with several providers
     // InpaintCanvas node widgets, filled into the recipe's canvas node on every run
     nodeParams: { padding: 64, target_size: 1024, feather: 16, multiple_of: 64 },
+    // the Realism Pass (docs/PLAN_0_1_42.md, renderer/editor/realism.js realismDefaults): Style and Strength of every
+    // route, the DLSS model preset of the switch routes (the recipe has its own row), the wait in seconds. The
+    // renderer fills a stored object per key (realism.fillValues): get() merges only the top level
+    realism: { style: "Default", intensity: 1, preset: "L", timeout: 300 },
     // in-app helper models (electron/main/onnx): device auto|gpu|cpu, model folder (null =
     // <userData>/models, or a ComfyUI models folder), the SAM2, matting and inpaint (Remove) model ids
     helpers: { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama" },

@@ -45,9 +45,16 @@ PRE = """(async () => {
 def node_step():
     r = subprocess.run(["node", os.path.join(ROOT, "tools", "recipes_test.js")], cwd=ROOT,
                        capture_output=True, text=True, encoding="utf-8", timeout=120)
-    tail = (r.stdout + r.stderr).strip()
+    # stdout alone: since R1 (0.1.42) stderr carries Node's note that it read renderer/editor/realism.js as an ES module
+    tail = r.stdout.strip()
     if r.returncode != 0 or not tail.endswith("PASS"):
-        raise Exception("tools/recipes_test.js: " + tail[-1500:])
+        raise Exception("tools/recipes_test.js: " + (tail + r.stderr)[-1500:])
+    # tools/realism_test.js (0.1.42 R1): the Realism Pass's server check, sizes, hints and settings, plain Node
+    p = subprocess.run(["node", os.path.join(ROOT, "tools", "realism_test.js")], cwd=ROOT,
+                       capture_output=True, text=True, encoding="utf-8", timeout=120)
+    ptail = p.stdout.strip()
+    if p.returncode != 0 or not ptail.endswith("PASS"):
+        raise Exception("tools/realism_test.js: " + (ptail + p.stderr)[-1500:])
     # tools/comfyrefs_test.js (item 26 step 26e): stderr carries Node's note that it read comfyrefs.js as an ES module
     c = subprocess.run(["node", os.path.join(ROOT, "tools", "comfyrefs_test.js")], cwd=ROOT,
                        capture_output=True, text=True, encoding="utf-8", timeout=120)
@@ -55,7 +62,7 @@ def node_step():
     if c.returncode != 0 or not ctail.endswith("PASS"):
         raise Exception("tools/comfyrefs_test.js: " + (ctail + c.stderr)[-1500:])
     last = lambda t: (t.splitlines()[-2:-1] or [""])[0]  # noqa: E731  the "N of M checks passed" line
-    return {"checks": tail.count("[ok]"), "comfyrefs_checks": ctail.count("[ok]"), "tails": [last(tail), last(ctail)]}
+    return {"checks": tail.count("[ok]"), "comfyrefs_checks": ctail.count("[ok]"), "realism_checks": ptail.count("[ok]"), "tails": [last(tail), last(ctail), last(ptail)]}
 
 
 def write_files(dirname):

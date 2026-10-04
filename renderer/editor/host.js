@@ -20,6 +20,7 @@ import { withoutSecrets } from "./redact.js";
 import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
 import { comfyRefSpec, comfyLayout, trimSlots, refName, resolveMarkers as resolveComfyMarkers } from "./comfyrefs.js";
 import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from "./boxes.js";
+import * as realism from "./realism.js";
 import * as dialogs from "../dialogs.js";
 
 const PROXY = "/comfy";
@@ -324,6 +325,11 @@ export const host = {
     apiSize: "max",        // how big the crop goes to an API provider: max | x2 | x4 | target | crop
     embedRecipe: true,     // settings.embedRecipe: exported PNGs carry the prompt, seed and recipe (docs/PLAN_0_1_29.md 3f; on since 0.1.32)
     connected: false,
+    // the ComfyUI status as the shell last showed it (setServerStatus): `connected` above is never set back, the
+    // Realism Pass's check needs the live state and the server's own system and cards
+    server: { state: "disconnected", os: "", gpus: [], remote: false },
+    // settings.realism as stored (the renderer's copy, like nodeParams); realismValues() fills it per key
+    realismStored: null,
     _pendingStates: [],
     // quit safety (docs/PLAN_0_1_29.md §3): while documents are restored, an autosave would write only those restored so
     // far (a later one not created yet, the one loading with part of its layers) over the whole state. Saves wait.
@@ -336,15 +342,47 @@ export const host = {
 
     /**
      * Shell setup: where editors mount and the persisted node params.
-     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string, embedRecipe?: boolean, llmRefPictures?: boolean }} [opts]
+     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string, embedRecipe?: boolean, llmRefPictures?: boolean, realism?: any }} [opts]
      */
-    configure({ mount, nodeParams, apiSize, embedRecipe, llmRefPictures } = {}) {
+    configure({ mount, nodeParams, apiSize, embedRecipe, llmRefPictures, realism: realismStored } = {}) {
         this.mountEl = mount || document.body;
         if (nodeParams) this.nodeParams = { ...this.nodeParams, ...nodeParams };
         if (API_SIZES.some(([id]) => id === apiSize)) this.apiSize = apiSize;
         if (typeof embedRecipe === "boolean") this.embedRecipe = embedRecipe;
         if (typeof llmRefPictures === "boolean") this.llmRefPictures = llmRefPictures;
+        if (realismStored !== undefined) this.realismStored = realismStored;
     },
+
+    // ---- the Realism Pass (docs/PLAN_0_1_42.md, renderer/editor/realism.js) ----
+
+    /** The shell's ComfyUI status, every one of them (connected, missing-node, connecting, disconnected, error). */
+    setServerStatus(st) {
+        if (!st || typeof st !== "object") return;
+        this.server = {
+            state: String(st.state || "disconnected"),
+            os: typeof st.os === "string" ? st.os : (this.server && this.server.os) || "",
+            gpus: Array.isArray(st.gpus) ? st.gpus.map(String) : (this.server && this.server.gpus) || [],
+            remote: !!st.remote,
+        };
+    },
+
+    /** Whether the connected server can run the pass, and what the user reads when not (realism.serverSupport). */
+    realismSupport() {
+        const s = this.server || { state: "disconnected", os: "", gpus: [] };
+        return realism.serverSupport({ state: s.state, os: s.os, gpus: s.gpus, objectInfo: this.objectInfo });
+    },
+
+    /** The Realism Pass recipe (a user copy wins, as for any recipe), or null. */
+    realismRecipe() {
+        const list = this.shell && this.shell.recipes ? this.shell.recipes() : [];
+        return list.find((r) => r.id === realism.RECIPE_ID) || null;
+    },
+
+    /** settings.realism, filled per key from the defaults (a stored object from an older build replaces them whole). */
+    realismValues() {
+        return realism.fillValues(this.realismStored);
+    },
+
 
     /**
      * The size rules for an API run: the chosen provider variant's limits plus the app's
@@ -977,20 +1015,34 @@ export const host = {
         try { await window.scumble.settings.set({ recipePresets: this.presets }); } catch (err) { console.warn("presets", err); }
     },
 
-    /** The preset row at the top of the editor's Settings section (called by renderSettings). */
+    /**
+     * The preset row at the top of the editor's Settings section (called by renderSettings): a ComfyUI recipe's shipped
+     * presets (its file's `presets`, any row: the Realism Pass's L and M) first, then the user's own; without shipped
+     * ones the row needs two file combos (model / text encoder / VAE).
+     */
     renderPresets(editor, list, targets) {
         const r = this.recipe;
         if (!r || r.kind === "provider") return;
-        const pts = this.presetTargets(editor, targets);
-        if (pts.length < 2) return;
         const keyOf = (t) => `${t.node.id}:${t.inputName}`;
+        const shipped = Array.isArray(r.presets) ? r.presets : [];
+        const files = this.presetTargets(editor, targets);
+        const shippedKeys = new Set(shipped.flatMap((p) => Object.keys(p.values || {})));
+        const pts = shipped.length ? targets.filter((t) => shippedKeys.has(keyOf(t)) || files.includes(t)) : files;
+        if (!pts.length || (!shipped.length && pts.length < 2)) return;
         const current = {};
         for (const t of pts) { const e = editor.settings[String(t.index)]; if (e) current[keyOf(t)] = String(e.value); }
-        const presets = (this.presets || {})[r.id] || [];
-        const matching = presets.find((p) => Object.entries(p.values || {}).every(([k, v]) => current[k] === String(v)));
+        // the user's own (settings.recipePresets); one of a shipped one's name replaces it in the list
+        const own = (this.presets || {})[r.id] || [];
+        const ownNames = new Set(own.map((p) => p.name));
+        const presets = [...shipped.filter((p) => !ownNames.has(p.name)).map((p) => ({ ...p, shipped: true })), ...own];
+        // the user's own first: one saved with a shipped one's values stays theirs to pick and delete
+        const holds = (p) => Object.entries(p.values || {}).every(([k, v]) => current[k] === String(v));
+        const matching = own.find(holds) || presets.find(holds);
         const lab = document.createElement("label");
         lab.textContent = "Preset";
-        lab.title = `A saved combination of ${pts.map((t) => t.node.title || t.inputName).join(" / ")} for this recipe. Pick the files above, then Save.`;
+        lab.title = shipped.length
+            ? `${shipped.map((p) => p.name).join(" and ")} come with this recipe; Save keeps your own combination of ${pts.map((t) => t.node.title || t.inputName).join(" / ")} beside them.`
+            : `A saved combination of ${pts.map((t) => t.node.title || t.inputName).join(" / ")} for this recipe. Pick the files above, then Save.`;
         const row = document.createElement("div");
         row.className = "ipc-preset-row";
         const sel = document.createElement("select");
@@ -1005,7 +1057,8 @@ export const host = {
         const save = document.createElement("button");
         save.type = "button"; save.className = "ipc-ib"; save.textContent = "Save"; save.title = "Save the current combination under a name (Enter saves, Escape cancels).";
         const del = document.createElement("button");
-        del.type = "button"; del.className = "ipc-ib"; del.textContent = "Delete"; del.disabled = !matching; del.title = matching ? `Delete the preset "${matching.name}"` : "Delete the selected preset";
+        del.type = "button"; del.className = "ipc-ib"; del.textContent = "Delete"; del.disabled = !matching || !!matching.shipped;
+        del.title = matching && matching.shipped ? `"${matching.name}" comes with the recipe and stays` : matching ? `Delete the preset "${matching.name}"` : "Delete the selected preset";
         save.addEventListener("click", () => {
             // the select becomes a name field: the first file's stem is the suggestion
             const first = pts[0] && editor.settings[String(pts[0].index)];
@@ -1017,7 +1070,7 @@ export const host = {
                 if (ok && name) {
                     const values = {};
                     for (const t of pts) { const e = editor.settings[String(t.index)]; if (e) values[keyOf(t)] = e.value; }
-                    const next = presets.filter((p) => p.name !== name).concat([{ name, values }]).sort((a, b) => a.name.localeCompare(b.name));
+                    const next = own.filter((p) => p.name !== name).concat([{ name, values }]).sort((a, b) => a.name.localeCompare(b.name));
                     await this.savePresets(r.id, next);
                     for (const ed of this._editors) { try { ed.renderSettings(); } catch (_) { /* not built */ } }
                     editor.setStatus(`Preset "${name}" saved for ${r.name || r.id}.`);
@@ -1033,8 +1086,8 @@ export const host = {
             input.focus(); input.select();
         });
         del.addEventListener("click", async () => {
-            if (!matching || del.textContent !== "Delete") return;
-            await this.savePresets(r.id, presets.filter((p) => p.name !== matching.name));
+            if (!matching || matching.shipped || del.textContent !== "Delete") return;
+            await this.savePresets(r.id, own.filter((p) => p.name !== matching.name));
             for (const ed of this._editors) { try { ed.renderSettings(); } catch (_) { /* not built */ } }
             editor.setStatus(`Preset "${matching.name}" deleted.`);
         });
@@ -1045,16 +1098,23 @@ export const host = {
 
     applyPreset(editor, targets, preset) {
         const missing = [];
-        for (const t of this.presetTargets(editor, targets)) {
+        let rows = 0;
+        // every row the preset names (a shipped one may name any row, a user's names the rows it was saved from)
+        for (const t of targets) {
             const v = (preset.values || {})[`${t.node.id}:${t.inputName}`];
             const e = editor.settings[String(t.index)];
             if (v == null || !e) continue;
+            rows++;
             const k = editor.settingKind(t);
-            if (k.options.map(String).includes(String(v))) e.value = v; else missing.push(String(v));
+            if (k.kind === "combo") { if (k.options.map(String).includes(String(v))) e.value = v; else missing.push(String(v)); }
+            else if (k.kind === "number") e.value = +v;
+            else if (k.kind === "boolean") e.value = !!v;
+            else e.value = String(v);
         }
         editor.renderSettings();
         editor.notifyChanged();
-        editor.setStatus(missing.length ? `Preset "${preset.name}": ${missing.join(", ")} not on the server, kept the current choice there.` : `Preset "${preset.name}" applied.`);
+        editor.setStatus(!rows ? `Preset "${preset.name}" names no Settings row of this recipe: nothing changed.`
+            : missing.length ? `Preset "${preset.name}": ${missing.join(", ")} not on the server, kept the current choice there.` : `Preset "${preset.name}" applied.`);
     },
 
     /**
@@ -1361,6 +1421,7 @@ export const host = {
         }
         if (text && !over) info = blank(`${r.name || r.id} makes new images from the prompt alone: the reference layers stay in the tab, none go along.`);
         else if (r.kind !== "provider" && r.task === "upscale") info = blank("An upscale sends the picture alone: reference images are left out.", true);
+        else if (r.kind !== "provider" && r.task === "pass") info = blank(`${realism.LABEL} sends the picture alone: reference images are left out.`, true);
         else if (r.kind !== "provider") {
             // a local recipe: the names its graph gives the pictures of the node's batch, worked out here (comfyrefs.js)
             // `over.state`: the run a caller has in mind (Generate new's white canvas, all of it selected), else the editor now
@@ -1940,16 +2001,31 @@ export const host = {
         if (r.kind === "provider" && r.task === "upscale") return this.runUpscale(editor, { scope: "selection", refs: opts.refs });
         if (r.kind === "provider") return this.runProvider(editor, { refs: opts.refs });
         if (!r.prompt) throw new Error("No recipe selected.");
-        const upscale = r.task === "upscale";
+        // the Realism Pass (task "pass") goes out like an upscale: the box as it is, no fill, no references, no refine
+        const pass = r.task === "pass";
+        const upscale = r.task === "upscale" || pass;
         // An upscaler sends no reference picture and may not read the prompt at all: its tokens go as names where a
         // layer has one, and nothing refuses it. Any other recipe names each token's picture the way its graph numbers
         // the node's batch (26e): checked here against the editor now, before anything is uploaded, and again below
         // against the canvas state the node will read.
         const snap = opts.refs || editor.refSnapshot();
         let texts, early = null;
+        // the pass refuses before anything is uploaded: the server (§3.3), the selection, the size (§3.5)
+        const support = pass ? this.realismSupport() : null;
+        if (pass) {
+            if (!support.ok) throw new Error(support.reason);
+            const b = editor.getBounds && editor.getBounds();
+            if (!b) throw new Error(`Select an area first: ${realism.LABEL} works on the selection's box (Select All for the whole picture).`);
+            // the crop the node makes: the box with its context (cropRect mirrors the node's manual or auto padding, the
+            // auto minimum span and the clamp to the picture), then each side to the pass's multiple the node's way
+            const [, , cw, ch] = editor.cropRect();
+            const refusal = realism.fits(realism.fitSpan(cw, editor.width), realism.fitSpan(ch, editor.height));
+            if (refusal) throw new Error(refusal);
+        }
         if (upscale) {
             const p = this.refNames(editor, snap.prompt), n = this.refNames(editor, snap.negative);
-            texts = { prompt: p.text, negative: n.text, note: p.note || n.note ? "Upscale sends no reference images: the prompt's @img tokens were written as layer names." : "" };
+            // the pass's graph reads no prompt at all, so its tokens need no note
+            texts = { prompt: p.text, negative: n.text, note: !pass && (p.note || n.note) ? "Upscale sends no reference images: the prompt's @img tokens were written as layer names." : "" };
         } else {
             early = this.comfyPlan(editor, r, snap.refIds.length);
             texts = this.refPrompt(editor, snap, "comfy", { recipe: r, comfy: early });
@@ -1957,7 +2033,7 @@ export const host = {
         if (!this.connected) throw new Error("Not connected to ComfyUI.");
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
-        if (upscale && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
+        if (upscale && !pass && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
         editor.lastSentPrompt = null;
         editor.lastRunNotes = [];
         editor.lastSentBoxes = 0;   // a local recipe takes no boxes (docs/PLAN_BOXES.md: FLUX 3 Image and Ideogram 4 only)
@@ -1993,6 +2069,9 @@ export const host = {
         canvas.inputs = { ...(canvas.inputs || {}), ...this.nodeParams, canvas_state: state };
         // an upscaler sees the crop at its native size: the node grows the box to a multiple instead of scaling it
         if (upscale) canvas.inputs.target_size = 0;
+        // the pack rounds odd sides (a 1-px black column, or a resample) and a larger multiple shrinks a whole-picture
+        // crop, leaving a border without the pass: the pass's crop is even and loses at most 1 px of an odd side
+        if (pass) canvas.inputs.multiple_of = realism.PASS_MULTIPLE;
         delete canvas.inputs.result; delete canvas.inputs.result_local;
         delete canvas.inputs.result_source; delete canvas.inputs.result_source_local;
         canvas.inputs[r.mode === "api" ? "result_source" : "result_source_local"] = r.result;
@@ -2001,8 +2080,18 @@ export const host = {
             const node = prompt[s.node];
             if (entry && entry.value != null && node && node.inputs) node.inputs[s.input] = entry.value;
         }
+        if (pass) {
+            // Style and Strength are app-wide (settings.realism, R3's row); the DLSS model preset is the recipe's own
+            // Settings row (its shipped presets L and M), so it is not taken from settings.realism here. A user copy
+            // without an rp_settings node gets them in every DLSS5Settings node it holds.
+            const v = this.realismValues();
+            for (const node of Object.values(prompt)) {
+                if (node && node.class_type === "DLSS5Settings") node.inputs = realism.passSettings(node.inputs, { style: v.style, intensity: v.intensity });
+            }
+        }
         const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo() });
         editor.lastPromptId = res && res.prompt_id;
+        if (pass && support.note) editor.setStatus(`${editor.status} ${support.note}`);
         if (plan) {
             const named = texts.pairs.filter((p) => p.name).map((p) => `${p.label} → ${p.name}`);
             if (named.length) editor.setStatus(`${editor.status} Named in the prompt: ${named.join(", ")}.`);
@@ -3002,6 +3091,12 @@ api.addEventListener("execution_error", ({ detail }) => {
     } else if (ed.cutoutPromptId && detail.prompt_id === ed.cutoutPromptId) {
         ed.cutoutPending = null; ed.renderLayers();
         ed.setStatus("Background removal failed: " + msg);
+    } else if (realism.isPassNode(detail.node_type)) {
+        // the DLSS pack's failures as sentences (docs/PLAN_0_1_42.md §3.4), not "Error in DLSS5EnhanceImages: ...";
+        // marked, since a sentence need not read "failed" (the generate command stops its wait on it)
+        const text = realism.hint(msg);
+        ed.lastPassError = text;
+        ed.setStatus(text);
     } else {
         ed.setStatus("Error in " + (detail.node_type || detail.node_id || "the graph") + ": " + msg);
     }

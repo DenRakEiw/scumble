@@ -27,7 +27,8 @@ opener passes a stub's URL):
   page names Comfy Cloud, and its Use Comfy Cloud switches. The target the profile had is put back;
 - V5c, Comfy Cloud recipes: Settings › Recipes' Cloud copy saves "<id>_cloud" and the editor selects it; that recipe
   opens on Comfy Cloud in the window as its graph without the node; a graph without the node saved from the window is
-  a new Comfy Cloud recipe, Save to recipe overwrites it, and a graph with the node is refused for it;
+  a new Comfy Cloud recipe, Save to recipe overwrites it, and a graph with the node is refused for it; the Realism
+  Pass's row (docs/PLAN_0_1_42.md) has Edit in ComfyUI and no Cloud copy, a ComfyUI recipe's row has both;
 - V6, the cloud mode: the editor's mode select offers api, local and cloud; with no Comfy Cloud recipe, cloud says so
   and the select goes back; with the two the V5c steps made, cloud lists them alone (the negative shown, denoise not),
   api lists none of them, and each mode comes back with the recipe last used in it; list_recipes and set_generation
@@ -510,6 +511,28 @@ class Gate:
         await self.close()
         return {"local": i["target"], "cloud": i2["target"]}
 
+    async def recipe_buttons(self):
+        """Settings › Recipes: the Realism Pass's row has Edit in ComfyUI and no Cloud copy (it runs on the user's own
+        ComfyUI alone, docs/PLAN_0_1_42.md §1), a ComfyUI recipe's row has both."""
+        await self.close()
+        r = await self.js("""const S = await import('./shell.js'); await S.openSettings();
+            const rowOf = (id) => document.querySelector('.shell-recipe[data-id="' + id + '"]');
+            for (let k = 0; k < 30 && !(rowOf('realism_pass') && rowOf('flux2_klein_local')); k++) await wait(100);
+            const buttons = (id) => { const row = rowOf(id); return row ? Array.from(row.querySelectorAll('button')).map((b) => b.textContent) : null; };
+            const out = { pass: buttons('realism_pass'), local: buttons('flux2_klein_local') };
+            const d = document.querySelector('dialog[open]'); if (d) d.close();
+            await wait(50);
+            out.open = !!document.querySelector('dialog[open]');
+            return out;""")
+        p, loc = r["pass"], r["local"]
+        if p is None or "Edit in ComfyUI" not in p or "Cloud copy" in p:
+            raise Exception("the Realism Pass's row: " + json.dumps(r))
+        if loc is None or "Edit in ComfyUI" not in loc or "Cloud copy" not in loc:
+            raise Exception("flux2_klein_local's row: " + json.dumps(r))
+        if r["open"]:
+            raise Exception("the Settings dialog stays open")
+        return {"realism_pass": p, "flux2_klein_local": loc}
+
     async def cloud_start(self):
         await self.close()
         await self.js("await window.scumble.comfyView.open({ target: 'cloud' }); return 1")
@@ -753,6 +776,7 @@ async def main():
             await g.step("V4: Comfy Cloud refuses a recipe with the node and offers no save; the select switches back", g.cloud)
             await g.step("V4: no Comfy Cloud to show, and Use Comfy Cloud", g.cloud_start)
             await g.step("Edit in ComfyUI: a recipe opens where it runs, whatever the window showed last", g.recipe_target)
+            await g.step("Settings › Recipes: the Realism Pass has Edit in ComfyUI and no Cloud copy, a ComfyUI recipe both", g.recipe_buttons)
             await g.step("V6: the editor's mode select has comfy cloud; with no Comfy Cloud recipe it says so and goes back", g.cloud_mode_none)
             await g.step("V5c: Cloud copy in Settings, the copy opened on Comfy Cloud as its graph", g.cloud_copy)
             await g.step("V5c: a graph without the node saved as a Comfy Cloud recipe, overwritten, a graph with the node refused", g.cloud_save)
