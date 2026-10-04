@@ -1049,15 +1049,22 @@ export const host = {
      * presets (its file's `presets`, any row: the Realism Pass's L and M) first, then the user's own; without shipped
      * ones the row needs two file combos (model / text encoder / VAE).
      */
-    renderPresets(editor, list, targets) {
+    /**
+     * The Preset row's data, or null when the recipe shows none (an API recipe; no shipped presets and fewer than two
+     * file combos): `pts` the rows a preset stores, `presets` the list as the select shows it (the shipped ones first,
+     * then the user's own; one of the user's with a shipped one's name replaces it), `matching` the one the rows hold
+     * now (the user's own first), `own` the user's list, `shipped` the recipe file's. The commands list_settings and
+     * apply_preset read the same (docs/PLAN_0_1_42.md F2b).
+     */
+    presetRow(editor, targets) {
         const r = this.recipe;
-        if (!r || r.kind === "provider") return;
+        if (!r || r.kind === "provider") return null;
         const keyOf = (t) => `${t.node.id}:${t.inputName}`;
         const shipped = Array.isArray(r.presets) ? r.presets : [];
         const files = this.presetTargets(editor, targets);
         const shippedKeys = new Set(shipped.flatMap((p) => Object.keys(p.values || {})));
         const pts = shipped.length ? targets.filter((t) => shippedKeys.has(keyOf(t)) || files.includes(t)) : files;
-        if (!pts.length || (!shipped.length && pts.length < 2)) return;
+        if (!pts.length || (!shipped.length && pts.length < 2)) return null;
         const current = {};
         for (const t of pts) { const e = editor.settings[String(t.index)]; if (e) current[keyOf(t)] = String(e.value); }
         // the user's own (settings.recipePresets); one of a shipped one's name replaces it in the list
@@ -1066,7 +1073,14 @@ export const host = {
         const presets = [...shipped.filter((p) => !ownNames.has(p.name)).map((p) => ({ ...p, shipped: true })), ...own];
         // the user's own first: one saved with a shipped one's values stays theirs to pick and delete
         const holds = (p) => Object.entries(p.values || {}).every(([k, v]) => current[k] === String(v));
-        const matching = own.find(holds) || presets.find(holds);
+        const matching = own.find(holds) || presets.find(holds) || null;
+        return { recipe: r, keyOf, shipped, own, presets, pts, matching };
+    },
+
+    renderPresets(editor, list, targets) {
+        const row0 = this.presetRow(editor, targets);
+        if (!row0) return;
+        const { recipe: r, keyOf, shipped, own, presets, pts, matching } = row0;
         const lab = document.createElement("label");
         lab.textContent = "Preset";
         lab.title = shipped.length
@@ -1125,6 +1139,7 @@ export const host = {
         list.appendChild(lab);
     },
 
+    /** A preset's values into the document's Settings rows; `{ rows, missing }` (rows named, files the server lacks). */
     applyPreset(editor, targets, preset) {
         const missing = [];
         let rows = 0;
@@ -1144,6 +1159,7 @@ export const host = {
         editor.notifyChanged();
         editor.setStatus(!rows ? `Preset "${preset.name}" names no Settings row of this recipe: nothing changed.`
             : missing.length ? `Preset "${preset.name}": ${missing.join(", ")} not on the server, kept the current choice there.` : `Preset "${preset.name}" applied.`);
+        return { rows, missing };
     },
 
     /**

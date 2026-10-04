@@ -97,8 +97,9 @@ card that says why:
   document (the assistant always passes it) it runs without asking: it cancels that document's runs, as
   the title row's *Cancel* does; a provider may still charge a job it already had.
 - Editing a layer the assistant made itself (a transform or a cut included), a copy onto a new layer in the same
-  tab, and the per-document fields (prompt, generation settings, crop, the recipe's settings), run **without**
-  asking.
+  tab, the selections (`select_color`, the magic wand; `select_shape`, an ellipse or a polygon), and the
+  per-document fields (prompt, generation settings, crop, the recipe's settings, a preset of them with
+  `apply_preset`; `list_settings` reads them), run **without** asking.
 
 Neither button of an ask card is the default, and Enter in the chat field never answers one. An
 export without a path, or with an extension that does not match the format, is refused outright.
@@ -106,8 +107,9 @@ export without a path, or with an extension that does not match the format, is r
 ## Taking it back
 
 - **Ctrl+Z undoes each step**, including the ones the editor records no step for by itself: a new
-  layer, `set_layer`'s name, visibility, opacity, blend, role or colour match, `set_filter`'s
-  parameters, `set_text`. For those the assistant pushes the editor's own step before the call.
+  layer, `set_layer`'s name, visibility, opacity, blend, role or colour match, `set_text`. For those
+  the assistant pushes the editor's own step before the call (`set_filter` pushes its own since
+  0.1.42).
   A `set_layer` that also moves the layer ends as two steps, so it takes two Ctrl+Z.
 - **"Undo this turn"** appears on the turn's card when it changed something. It takes every
   document the turn touched back to what it was **before the turn's first change there** - the

@@ -83,6 +83,23 @@ the section for its version; `docs/` and the commit history hold the technical d
   takes a region of the picture at up to full resolution, the picture without its layers, and the selection or a
   layer's mask in black and white. The in-app assistant asks before it transforms or cuts a layer you made, pastes into
   another tab or resizes the picture.
+- Agents: four more commands. `select_color` selects the area of similar colour at a point as the Magic wand does
+  (tolerance, contiguous or every similar pixel, the visible picture or one layer's own pixels), in the app with no
+  model or server. `select_shape` selects an ellipse, or a polygon or lasso through a list of points, with replace, add
+  or subtract and an optional soft edge, without sending a whole mask. `list_settings` gives the recipe's Settings
+  section as data: each row's kind, its choices (model files, samplers) or range, the value and whether it is valid,
+  and the Preset row's presets with their values. `apply_preset` applies one of them, the recipe's own (the Realism
+  Pass's L and M) or one you saved; it is refused with nothing changed when your ComfyUI lacks a file it names.
+- Agents: `set_crop` stores its switches as true or false and its choices as one of the Crop section's: `"false"`
+  used to be stored as text and read as on, and any other value was kept unchecked. Context and feather take auto or
+  manual; a number is refused with a pointer to `set_node_params`, which holds the pixels manual uses (a number used to
+  be stored and ignored). `status` reports the crop as the editor reads it.
+- Agents: `add_filter` and `set_filter` apply a preset the way the layer list does: a film stock of the grain filter
+  sets its grain values and look, a colour filter of the black-and-white film its hue and strength, and the layer is
+  named after it (before, only the preset's name was stored and nothing else changed). A slider that changes a
+  preset's value turns it to custom, as dragging it does. `set_filter` is now one undo step (an undo after it used to
+  take back the step before), and a refused parameter changes nothing, nor does `add_filter` then add a layer.
+  `filter_types` gives each option its label and group.
 
 ## 0.1.41 — 2026-10-03
 

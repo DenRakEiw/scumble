@@ -117,12 +117,13 @@ def data_of(res):
 # The tool hints (docs/PLAN_0_1_42.md F1): from the commands' readOnly / destructive flags; the names below were wrong
 # before (the dotted plugin commands never matched the name test, new_document was destructive, the rest was missing)
 HINT_READ = ["ping", "status", "list_layers", "list_history", "screenshot", "filter_types", "read_log",
-             "film_looks", "glb_info", "ailabel_info", "sample_mean_color", "boxes_list"]
+             "film_looks", "glb_info", "ailabel_info", "sample_mean_color", "boxes_list", "list_settings"]
 HINT_DESTRUCTIVE = ["close_document", "remove_layer", "new_canvas", "load_image", "generate_new", "flatten", "merge_down",
                     "extend_canvas", "export", "export_layer", "export_mask", "undo", "redo", "select_recipe",
                     "set_node_params", "ailabel_add", "resize_image"]
 HINT_NEITHER = ["new_document", "select_rect", "generate", "set_layer", "add_filter", "sample_box",
-                "transform_layer", "copy_to_layer", "cancel_run"]
+                "transform_layer", "copy_to_layer", "cancel_run", "select_color", "select_shape", "apply_preset", "set_crop",
+                "set_filter"]
 # a plugin command that sets no flag: judged by its own name (the part after the plugin id), never destructive
 HINT_FALLBACK = (
     "const { toTool } = require('./electron/main/mcp/server');"

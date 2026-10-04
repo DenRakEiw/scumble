@@ -14,7 +14,7 @@ const EXCLUDED = new Set(["list_commands", "run_action", "set_status", "ailabel_
 const READS = new Set([
     "ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips",
     "filter_types", "status", "get_state", "read_log", "film_looks", "glb_info", "sample_mean_color",
-    "screenshot", "compare", "list_history", "boxes_list",
+    "screenshot", "compare", "list_history", "boxes_list", "list_settings",
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
@@ -47,10 +47,14 @@ const POLICY = {
     // ---- selection ----------------------------------------------------------------------
     select_rect: AUTO, select_all: AUTO, select_none: AUTO, select_invert: AUTO, select_feather: AUTO,
     select_grow: AUTO, select_from_layer: AUTO, select_mask: AUTO, select_point: AUTO,
+    // docs/PLAN_0_1_42.md F2b: the magic wand and the ellipse / polygon tools, in the app, one selection step each
+    select_color: AUTO, select_shape: AUTO,
     select_by_text: () => ASK("a SAM3 helper run goes to the front of your ComfyUI queue"),
 
     // ---- the document's generation fields -----------------------------------------------
     set_prompt: AUTO, set_generation: AUTO, set_crop: AUTO, set_settings: AUTO,
+    // the Settings rows as data, and a preset of them into this document's rows (as set_settings, nothing global)
+    list_settings: AUTO, apply_preset: AUTO,
 
     // ---- layers -------------------------------------------------------------------------
     add_paint_layer: AUTO, add_filter: AUTO, add_text: AUTO, set_active_layer: AUTO,
@@ -68,9 +72,8 @@ const POLICY = {
         ? ASK("switches the sample plugin's box source for every document; the setting is saved")
         : AUTO()),
 
-    set_filter: (call) => (hasParams(call) && !call.args.type
-        ? AUTO("a filter's parameters; the shell pushes the undo step")
-        : AUTO()),
+    // one undo step of its own since F2b (the type's, or the parameters' as the layer row pushes it)
+    set_filter: AUTO,
 
     set_text: (call, facts) => (owns(call, facts)
         ? AUTO()
@@ -183,11 +186,6 @@ const POLICY = {
 };
 
 // ---- helpers the rows use ----------------------------------------------------------------
-
-function hasParams(call) {
-    const p = call.args && call.args.params;
-    return !!p && typeof p === "object" && Object.keys(p).length > 0;
-}
 
 function positive(args) {
     return ["left", "right", "top", "bottom"].some((k) => Number(args && args[k]) > 0);
@@ -409,7 +407,7 @@ function undoStep(call, facts = {}) {
     if (name === "upscale") return args.scope === "document" ? null : "layers";
     // the pass pushes its own "layers" step for the layer it adds (a second one would be an empty step)
     if (name === "realism_pass") return null;
-    if (name === "set_filter") return hasParams(call) && !args.type ? "filter" : null;
+    // set_filter pushes its own "filter" step since docs/PLAN_0_1_42.md F2b (a second one would be an empty step)
     // an angle turns the mask with the text, which only a "layers" step holds
     if (name === "set_text") return args.angle !== undefined ? "layers" : "text";
     if (name === "set_layer") {

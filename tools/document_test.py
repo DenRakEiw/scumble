@@ -208,7 +208,8 @@ await must("set_layer", { layer: img.id, alpha_lock: true });
 await must("set_layer", { layer: text.id, blend: "screen" });
 // generation and crop settings
 await must("set_generation", { seed: 424242, denoise: 0.8 });
-await must("set_crop", { context: "64", feather: "12" });
+// manual (set_crop refuses pixels since 0.1.42 F2b: manual takes them from set_node_params)
+await must("set_crop", { context: "manual", feather: "manual" });
 // two saved selections, then a feathered selection; guides
 await must("select_rect", { x: 10, y: 10, w: 100, h: 100 }); ed.saveSelection();
 await must("select_rect", { x: 800, y: 500, w: 200, h: 120 }); ed.saveSelection();

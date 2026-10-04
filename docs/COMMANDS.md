@@ -120,7 +120,7 @@ Run a plugin action (a Plugins menu entry) on the document.
 
 ### `filter_types` *(app)* *(read-only)*
 
-The filter layer types (built-in and from plugins) with their parameters; `fill: true` marks a fill layer's type (fill: a colour, gradient: two colours with their opacities), which covers what is below instead of filtering it.
+The filter layer types (built-in and from plugins) with their parameters; `fill: true` marks a fill layer's type (fill: a colour, gradient: two colours with their opacities), which covers what is below instead of filtering it. A select's options are {id, label, group}; a select with key "preset" (a grain's film stock, a black-and-white film's colour filter) fills the other parameters with the option's values when add_filter / set_filter set it, as picking it in the layer list does; `offset: true` marks a slider that is an offset on the preset (the others turn the preset to custom when they change it).
 
 (no parameters)
 
@@ -305,6 +305,37 @@ Select what SAM2 (in-app) sees at a point; needs a downloaded SAM2 model (Settin
 | `box` | object | optional [x0, y0, x1, y1] box prompt |
 | `mode` | string | replace, add or subtract (default `"replace"`; one of `replace`, `add`, `subtract`) |
 
+### `select_color` *(image)*
+
+Magic wand: select the area of similar colour at x, y, as the Magic wand tool (W) does. tolerance: how far each channel may differ (0..255); contiguous: only the area connected to x, y (false: every similar pixel of the picture); sample: image (the visible picture) or layer (one layer's own pixels; that layer becomes the active one). Runs in the app, no model or server needed: flat backgrounds, skies, studio walls. One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `x` | number | x in image pixels (required) |
+| `y` | number | y in image pixels (required) |
+| `tolerance` | integer | 0..255 per channel (default `32`) |
+| `contiguous` | boolean | only the area connected to x, y (default `true`) |
+| `sample` | string | image or layer (default `"image"`; one of `image`, `layer`) |
+| `layer` | string | with sample layer: the layer whose pixels are read (default `"active"`) |
+| `mode` | string | replace, add or subtract (default `"replace"`; one of `replace`, `add`, `subtract`) |
+
+### `select_shape` *(image)*
+
+Select an ellipse (x, y, w, h: its bounding box) or a polygon / lasso (points: three or more [x, y] in image pixels, closed from the last back to the first), as the Ellipse, Polygon and Lasso tools do, with replace, add or subtract. feather softens the new shape's edge by a gaussian blur of that radius (the rest of the selection keeps its own edge). Saves sending a whole mask through select_mask. One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `shape` | string | ellipse, or polygon / lasso (the same: a closed outline through the points) (required; one of `ellipse`, `polygon`, `lasso`) |
+| `x` | number | ellipse: left of its box |
+| `y` | number | ellipse: top of its box |
+| `w` | number | ellipse: width (alias width) |
+| `h` | number | ellipse: height (alias height) |
+| `points` | object | polygon / lasso: [[x, y], ...], at least three |
+| `feather` | number | radius of the soft edge in pixels, 0..512 (default `0`) |
+| `mode` | string | replace, add or subtract (default `"replace"`; one of `replace`, `add`, `subtract`) |
+
 ## Prompt and generation
 
 ### `set_prompt`
@@ -334,19 +365,19 @@ Generation settings: mode api / local / cloud (the recipe decides what is availa
 
 ### `set_crop`
 
-Crop settings for the round trip: context ("auto" or pixels), feather ("auto" or pixels), fill, colorMatch, extendFill, withOriginal, align, paste.
+The Generate tab's Crop section for this document (what a run sends and how its result is pasted back). context: auto sizes the surroundings from the selection (at least 512 px), manual takes set_node_params padding (pixels, the same for every tab); feather: auto grows and feathers the mask edge from the selection's size, manual blurs it by set_node_params feather. fill: how the selected area looks in the picture the model gets (green: for edit models told to fill the green area). colorMatch: the result's colours matched to the surroundings. withOriginal: with a fill, the crop before the fill goes along as one more picture. align: the result is moved onto the crop before it is pasted. paste: selection (soft edge along the selection) or crop (the whole returned rectangle). extendFill: what extend_canvas fills the new border with. Only the keys given change; the answer is every key and the pixels manual uses.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `context` | string | auto or a number of pixels of surroundings |
-| `feather` | string | auto or pixels |
-| `fill` | string | fill mode outside the image |
-| `colorMatch` | string | colour match of the result |
-| `extendFill` | string | fill for canvas extensions |
-| `withOriginal` | boolean |  |
-| `align` | string |  |
-| `paste` | string |  |
+| `context` | string | auto or manual (manual: set_node_params padding) (one of `auto`, `manual`) |
+| `feather` | string | auto or manual (manual: set_node_params feather) (one of `auto`, `manual`) |
+| `fill` | string | how the selected area is filled in the picture the model gets (one of `none`, `neutral`, `blur`, `border`, `green`) |
+| `colorMatch` | boolean | match the result's colours to the surroundings |
+| `extendFill` | string | what extend_canvas fills the new border with (one of `stretch edges`, `average color`, `grey`, `green`, `black`, `noise`) |
+| `withOriginal` | boolean | with a fill: send the crop before the fill as one more picture |
+| `align` | boolean | move the result onto the crop before pasting it |
+| `paste` | string | selection or crop (the whole returned rectangle) (one of `selection`, `crop`) |
 
 ### `set_settings`
 
@@ -356,6 +387,25 @@ Values for the recipe's Settings panel (the editable inputs of the workflow, or 
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `values` | object | object of setting index (or label) -> value (required) |
+
+### `list_settings` *(read-only)*
+
+The selected recipe's Settings section for this document, as data: per row its index, label, input, kind (number, combo, boolean or string), for a number integer / min / max / step / default, for a combo its options (model files, LoRAs, samplers; at most max_options of them, options_total says how many there are), the value the document holds and valid (false: a combo value the list does not offer, a number out of range). presets: the Preset row's presets in its order (shipped with the recipe first, then the ones the user saved), each with its values by row and missing (files the server lacks); preset: the one the rows hold now. set_settings changes a row, apply_preset applies a preset. Combo options come from the connected ComfyUI (or the recipe file without one).
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `filter` | string | only the rows whose label or input contains this (any case) |
+| `max_options` | integer | the most options listed per combo row (0: none) (default `200`) |
+
+### `apply_preset`
+
+Apply a preset of the Settings section's Preset row to this document's rows, as picking it there does: one the recipe ships (the Realism Pass's L and M) or one the user saved (list_settings lists them with their values). Refused with nothing changed when the recipe has no presets, the name is none of them, it names no row of the recipe, or the server lacks a file it names. Saving and deleting presets stay in the app.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `name` | string | the preset's name (list_settings: presets) (required) |
 
 ### `upsample_prompt` *(image)*
 
@@ -619,18 +669,18 @@ Change a layer's mask (white = the layer shows): invert it; reveal (all) or hide
 
 ### `add_filter` *(image)*
 
-Add a non-destructive filter layer on top of the stack (see filter_types for types and params). A fill layer is one too: type "fill" (params color "#rrggbb") or "gradient" (shape linear / reflected / radial, from, to, from_opacity, to_opacity, angle, scale, x, y); it covers what is below, and set_layer's opacity, blend and a mask let the picture through.
+Add a non-destructive filter layer on top of the stack (see filter_types for types and params). A fill layer is one too: type "fill" (params color "#rrggbb") or "gradient" (shape linear / reflected / radial, from, to, from_opacity, to_opacity, angle, scale, x, y); it covers what is below, and set_layer's opacity, blend and a mask let the picture through. params.preset (a film stock of the grain, a colour filter of black-and-white film) sets the preset's values and names the layer as the layer list does; the other params are applied after it. Nothing is added when a parameter is refused.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `type` | string | filter type id (default `"grain"`) |
 | `params` | object | parameter values {key: value} |
-| `name` | string | layer name |
+| `name` | string | layer name (default the type, or the preset's name) |
 
 ### `set_filter`
 
-Change a filter layer's parameters (or its type).
+Change a filter layer's parameters (or its type), in one undo step as the layer list's controls make one. params.preset (a film stock of the grain, a colour filter of black-and-white film) sets the preset's values and names the layer, then the other params are applied; a slider that is no offset on the preset turns it to custom when it changes the value (filter_types: offset). A new type starts from its defaults, then params. Nothing changes when a parameter is refused.
 
 | param | type | description |
 |---|---|---|
@@ -746,7 +796,7 @@ Toggle the before / after split view.
 
 ### `extend_canvas` *(image)* *(destructive)*
 
-Extend (positive) or crop (negative) the canvas on each side, in pixels.
+Extend (positive) or crop (negative) the canvas on each side, in pixels. An extension bakes every visible layer into the base and fills the new border as set_crop's extendFill says (average color unless set).
 
 | param | type | description |
 |---|---|---|

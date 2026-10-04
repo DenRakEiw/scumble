@@ -318,7 +318,7 @@ export function status(ed) {
         doc: ed.node.id, name: docName(ed), loaded: !!ed.base, width: ed.width || 0, height: ed.height || 0,
         base: ed.base ? ed.base.ref : null, prompt: ed.promptText || "", negative: ed.negativeText || "",
         generation: { mode: ed.genSettings.mode, seed: ed.genSettings.seed, seed_random: !!ed.genSettings.seedRandom, denoise: ed.genSettings.denoise, boxes: !!ed.genSettings.boxes },
-        crop: { ...ed.cropSettings }, selection: bounds(ed), active_layer: ed.activeLayerId,
+        crop: cropView(ed), selection: bounds(ed), active_layer: ed.activeLayerId,
         layers: ed.layers.map((l) => layerSummary(ed, l)), results: results.length, history: ed.history.length,
         // every reference layer top first: its label (what @img<n> names; null while hidden) and, from the `status`
         // command, the name the chosen route sends its picture as
@@ -409,6 +409,96 @@ const P = {
 };
 /** The operations of `set_mask` (the editor's `maskOp`). */
 const MASK_OPS = ["invert", "reveal", "hide", "from_selection", "hide_selection", "enable", "disable", "apply", "remove"];
+/** How a new selection combines with the one there is. */
+const SEL_MODES = ["replace", "add", "subtract"];
+function selMode(v) {
+    const m = v == null || v === "" ? "replace" : String(v);
+    if (!SEL_MODES.includes(m)) throw new Error(`mode must be replace, add or subtract, not ${JSON.stringify(v)}`);
+    return m;
+}
+
+/** set_crop's keys and the Crop section's choices (inpaint_modal.js buildCrop, the Canvas section's Fill). */
+const CROP_KEYS = ["context", "feather", "fill", "colorMatch", "extendFill", "withOriginal", "align", "paste"];
+const CROP_FILLS = ["none", "neutral", "blur", "border", "green"];
+const EXTEND_FILLS = ["stretch edges", "average color", "grey", "green", "black", "noise"];
+
+/**
+ * One set_crop value as the Crop section stores it (docs/PLAN_0_1_42.md F2b): the switches as booleans (the strings
+ * "true" / "false" too), the selects as one of their choices. A number for context or feather is refused: the editor
+ * reads any value but "auto" as manual and takes the pixels from the node parameters, so 200 was stored and ignored.
+ */
+function cropValue(k, v) {
+    const s = typeof v === "string" ? v.trim().toLowerCase() : v;
+    if (k === "colorMatch" || k === "withOriginal" || k === "align") {
+        if (s === true || s === "true" || s === 1) return true;
+        if (s === false || s === "false" || s === 0) return false;
+        throw new Error(`${k} takes true or false, not ${JSON.stringify(v)}`);
+    }
+    if (k === "context" || k === "feather") {
+        if (s === "auto" || s === "manual") return s;
+        const param = k === "context" ? "padding" : "feather";
+        if (s !== "" && s != null && Number.isFinite(+s)) throw new Error(`${k} takes "auto" or "manual", not a number: manual uses set_node_params ${param} (now ${host.nodeParams[param]} px, the same for every tab)`);
+        throw new Error(`${k} takes "auto" or "manual", not ${JSON.stringify(v)}`);
+    }
+    if (k === "fill") { if (CROP_FILLS.includes(s)) return s; throw new Error(`fill must be one of ${CROP_FILLS.join(", ")}, not ${JSON.stringify(v)}`); }
+    if (k === "extendFill") { if (EXTEND_FILLS.includes(s)) return s; throw new Error(`extendFill must be one of ${EXTEND_FILLS.join(", ")}, not ${JSON.stringify(v)}`); }
+    // paste: the select's label "whole crop" is the stored "crop"
+    if (s === "selection") return "selection";
+    if (s === "crop" || s === "whole crop") return "crop";
+    throw new Error(`paste must be selection or crop, not ${JSON.stringify(v)}`);
+}
+
+/** The crop settings as the editor reads them (stitch.js, cropRect): an old document's "64" is manual, "false" a true colour match. */
+function cropView(ed) {
+    const cs = ed.cropSettings || {};
+    return {
+        context: cs.context === "auto" ? "auto" : "manual", feather: cs.feather === "auto" ? "auto" : "manual", fill: cs.fill || "none",
+        colorMatch: !!cs.colorMatch, extendFill: cs.extendFill || "average color", withOriginal: !!cs.withOriginal, align: cs.align !== false, paste: cs.paste === "crop" ? "crop" : "selection",
+    };
+}
+
+/**
+ * One row of the Settings section as list_settings gives it: the editor's own reading of the input (settingKind), the
+ * value the document holds, and whether the row would take it (a combo's options, a number's range).
+ */
+function settingRow(ed, t, maxOptions) {
+    const k = ed.settingKind(t);
+    const e = ed.settings[String(t.index)];
+    const value = e ? e.value : undefined;
+    const out = { index: t.index, label: t.node.title || t.inputName, input: t.inputName, kind: k.kind, value };
+    const o = k.opts || {};
+    const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+    if (k.kind === "number") {
+        Object.assign(out, { integer: k.type === "INT", min: num(o.min), max: num(o.max), step: num(o.step), default: num(o.default) });
+        const v = +value;
+        out.valid = value !== undefined && value !== null && value !== "" && Number.isFinite(v) && !(num(o.min) !== undefined && v < o.min) && !(num(o.max) !== undefined && v > o.max);
+    } else if (k.kind === "combo") {
+        const opts = (k.options || []).map(String);
+        out.options = opts.slice(0, maxOptions);
+        out.options_total = opts.length;
+        out.valid = !opts.length || opts.includes(String(value));
+    } else if (k.kind === "boolean") {
+        out.valid = typeof value === "boolean";
+    } else {
+        out.valid = value === undefined || value === null || typeof value === "string" || typeof value === "number";
+    }
+    return out;
+}
+
+/** A preset of the Preset row (host.presetRow) with its values by row and the files of it the row's options lack. */
+function presetSummary(ed, targets, row, p) {
+    const values = [], missing = [];
+    for (const [key, v] of Object.entries(p.values || {})) {
+        const t = targets.find((x) => row.keyOf(x) === key);
+        if (!t) { values.push({ index: null, label: null, key, value: v }); continue; }   // a row this recipe does not have
+        values.push({ index: t.index, label: t.node.title || t.inputName, value: v });
+        const k = ed.settingKind(t);
+        // host.applyPreset's own test: a combo keeps its choice for a value it does not offer
+        if (k.kind === "combo" && !(k.options || []).map(String).includes(String(v))) missing.push(String(v));
+    }
+    return { name: p.name, shipped: !!p.shipped, current: !!(row.matching && row.matching.name === p.name), values, missing };
+}
+
 /** The modes of `transform_layer`: the move tool's Rotate, Distort and Warp, and its quarter turns. */
 const TRANSFORM_MODES = ["rotate", "rotate90", "distort", "warp"];
 
@@ -811,6 +901,94 @@ const COMMANDS = {
             return { selection: bounds(ed), score };
         },
     },
+    // docs/PLAN_0_1_42.md F2b: the magic wand and the ellipse / polygon / lasso tools without a pointer
+    select_color: {
+        needsImage: true,
+        description: "Magic wand: select the area of similar colour at x, y, as the Magic wand tool (W) does. tolerance: how far each channel may differ (0..255); contiguous: only the area connected to x, y (false: every similar pixel of the picture); sample: image (the visible picture) or layer (one layer's own pixels; that layer becomes the active one). Runs in the app, no model or server needed: flat backgrounds, skies, studio walls. One undo step.",
+        params: {
+            x: P.num("x in image pixels", { required: true }), y: P.num("y in image pixels", { required: true }),
+            tolerance: P.int("0..255 per channel", { default: 32 }),
+            contiguous: P.bool("only the area connected to x, y", { default: true }),
+            sample: P.str("image or layer", { enum: ["image", "layer"], default: "image" }),
+            layer: P.layer("with sample layer: the layer whose pixels are read"),
+            mode: P.str("replace, add or subtract", { enum: SEL_MODES, default: "replace" }),
+        },
+        async run(ed, a) {
+            const x = +a.x, y = +a.y;
+            if (a.x == null || a.y == null || !Number.isFinite(x) || !Number.isFinite(y)) throw new Error("pass x and y in image pixels");
+            if (x < 0 || y < 0 || x >= ed.width || y >= ed.height) throw new Error(`${x}, ${y} is outside the ${ed.width} × ${ed.height} picture`);
+            const mode = selMode(a.mode);
+            const tol = a.tolerance == null || a.tolerance === "" ? 32 : +a.tolerance;
+            if (!Number.isFinite(tol) || tol < 0 || tol > 255) throw new Error(`tolerance must be 0..255, not ${JSON.stringify(a.tolerance)}`);
+            const contiguous = a.contiguous == null ? true : a.contiguous === true || a.contiguous === "true" ? true : a.contiguous === false || a.contiguous === "false" ? false : null;
+            if (contiguous == null) throw new Error(`contiguous takes true or false, not ${JSON.stringify(a.contiguous)}`);
+            const sample = a.sample == null || a.sample === "" ? "image" : String(a.sample);
+            if (sample !== "image" && sample !== "layer") throw new Error(`sample must be image or layer, not ${JSON.stringify(a.sample)}`);
+            let layer = null;
+            if (sample === "layer") {
+                layer = findLayer(ed, a.layer);
+                if (layer.kind === "filter") throw new Error(`${layer.name} is a filter layer: it has no pixels of its own (sample image reads what it does to the picture)`);
+            } else if (a.layer != null && a.layer !== "" && a.layer !== "active") throw new Error("layer goes with sample layer; sample image reads the visible picture");
+            // the wand reads the active layer for sample layer while it floods, so that layer stays active (select_from_layer
+            // does the same); the options are the tool's own for the call only: wandSelect takes them before its first await
+            if (layer && ed.activeLayerId !== layer.id) { ed.activeLayerId = layer.id; ed.renderLayers(); }
+            const keep = ed.fillOpts;
+            let job;
+            try { ed.fillOpts = { ...(keep || {}), tolerance: Math.round(tol), contiguous, sample }; job = ed.wandSelect(x, y, mode); } finally { ed.fillOpts = keep; }
+            await job;
+            return { selection: bounds(ed), status: ed.status, layer: layer ? layer.id : undefined };
+        },
+    },
+    select_shape: {
+        needsImage: true,
+        description: "Select an ellipse (x, y, w, h: its bounding box) or a polygon / lasso (points: three or more [x, y] in image pixels, closed from the last back to the first), as the Ellipse, Polygon and Lasso tools do, with replace, add or subtract. feather softens the new shape's edge by a gaussian blur of that radius (the rest of the selection keeps its own edge). Saves sending a whole mask through select_mask. One undo step.",
+        params: {
+            shape: P.str("ellipse, or polygon / lasso (the same: a closed outline through the points)", { required: true, enum: ["ellipse", "polygon", "lasso"] }),
+            x: P.num("ellipse: left of its box"), y: P.num("ellipse: top of its box"), w: P.num("ellipse: width (alias width)"), h: P.num("ellipse: height (alias height)"),
+            points: P.obj("polygon / lasso: [[x, y], ...], at least three"),
+            feather: P.num("radius of the soft edge in pixels, 0..512", { default: 0 }),
+            mode: P.str("replace, add or subtract", { enum: SEL_MODES, default: "replace" }),
+        },
+        async run(ed, a) {
+            const shape = String(a.shape || "");
+            const mode = selMode(a.mode);
+            const feather = a.feather == null || a.feather === "" ? 0 : +a.feather;
+            if (!Number.isFinite(feather) || feather < 0 || feather > 512) throw new Error(`feather must be 0..512 pixels, not ${JSON.stringify(a.feather)}`);
+            const W = ed.width, H = ed.height;
+            let path, box, label;
+            if (shape === "ellipse") {
+                const x = +a.x, y = +a.y, w = +(a.w != null ? a.w : a.width), h = +(a.h != null ? a.h : a.height);
+                if (a.x == null || a.y == null || ![x, y, w, h].every(Number.isFinite) || !(w > 0) || !(h > 0)) throw new Error("an ellipse needs x, y, w and h (its bounding box; w and h above 0)");
+                box = [x, y, x + w, y + h]; label = "Ellipse selection";
+                path = (ctx) => { ctx.beginPath(); ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); };
+            } else if (shape === "polygon" || shape === "lasso") {
+                const pts = pointList(a.points, "points");
+                if (pts.length < 3) throw new Error(`a ${shape} needs at least three points`);
+                if (pts.length > 100000) throw new Error(`a ${shape} takes at most 100,000 points`);
+                box = [Infinity, Infinity, -Infinity, -Infinity];
+                for (const [px, py] of pts) { box[0] = Math.min(box[0], px); box[1] = Math.min(box[1], py); box[2] = Math.max(box[2], px); box[3] = Math.max(box[3], py); }
+                label = shape === "lasso" ? "Lasso selection" : "Polygon selection";
+                path = (ctx) => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath(); };
+            } else throw new Error(`shape must be ellipse, polygon or lasso, not ${JSON.stringify(a.shape)}`);
+            // drawn into a canvas of the shape's box on the picture (with room for the blur), never one of the picture's size
+            const reach = feather > 0 ? Math.ceil(feather * 3) + 2 : 0;
+            const X0 = Math.max(0, Math.floor(box[0] - reach)), Y0 = Math.max(0, Math.floor(box[1] - reach));
+            const X1 = Math.min(W, Math.ceil(box[2] + reach)), Y1 = Math.min(H, Math.ceil(box[3] + reach));
+            if (X1 <= X0 || Y1 <= Y0) throw new Error(`the ${shape} lies outside the ${W} × ${H} picture`);
+            const c = makeCanvas(X1 - X0, Y1 - Y0);
+            const ctx = c.getContext("2d");
+            if (feather > 0) ctx.filter = `blur(${feather}px)`;
+            ctx.translate(-X0, -Y0);
+            ctx.fillStyle = "#ff0000";
+            path(ctx);
+            ctx.fill();
+            // the ellipse's own box is its extent (as the tool's drag gives it); a polygon's and a soft edge's are scanned
+            ed.applyShapeToSelection(c, mode, shape === "ellipse" && !feather ? box : null, [X0, Y0], label);
+            const sel = bounds(ed);
+            ed.setStatus(`${label.replace(/ selection$/, "")} ${mode === "replace" ? "selected" : mode === "add" ? "added" : "subtracted"}${feather ? `, its edge feathered by ${feather} px` : ""}.`);
+            return { selection: sel };
+        },
+    },
 
     // -- prompt and generation --
     set_prompt: {
@@ -842,14 +1020,29 @@ const COMMANDS = {
         },
     },
     set_crop: {
-        description: "Crop settings for the round trip: context (\"auto\" or pixels), feather (\"auto\" or pixels), fill, colorMatch, extendFill, withOriginal, align, paste.",
-        params: { context: P.str("auto or a number of pixels of surroundings"), feather: P.str("auto or pixels"), fill: P.str("fill mode outside the image"), colorMatch: P.str("colour match of the result"), extendFill: P.str("fill for canvas extensions"), withOriginal: P.bool(""), align: P.str(""), paste: P.str("") },
+        description: "The Generate tab's Crop section for this document (what a run sends and how its result is pasted back). context: auto sizes the surroundings from the selection (at least 512 px), manual takes set_node_params padding (pixels, the same for every tab); feather: auto grows and feathers the mask edge from the selection's size, manual blurs it by set_node_params feather. fill: how the selected area looks in the picture the model gets (green: for edit models told to fill the green area). colorMatch: the result's colours matched to the surroundings. withOriginal: with a fill, the crop before the fill goes along as one more picture. align: the result is moved onto the crop before it is pasted. paste: selection (soft edge along the selection) or crop (the whole returned rectangle). extendFill: what extend_canvas fills the new border with. Only the keys given change; the answer is every key and the pixels manual uses.",
+        params: {
+            context: P.str("auto or manual (manual: set_node_params padding)", { enum: ["auto", "manual"] }),
+            feather: P.str("auto or manual (manual: set_node_params feather)", { enum: ["auto", "manual"] }),
+            fill: P.str("how the selected area is filled in the picture the model gets", { enum: CROP_FILLS }),
+            colorMatch: P.bool("match the result's colours to the surroundings"),
+            extendFill: P.str("what extend_canvas fills the new border with", { enum: EXTEND_FILLS }),
+            withOriginal: P.bool("with a fill: send the crop before the fill as one more picture"),
+            align: P.bool("move the result onto the crop before pasting it"),
+            paste: P.str("selection or crop (the whole returned rectangle)", { enum: ["selection", "crop"] }),
+        },
         async run(ed, a) {
-            const allowed = ["context", "feather", "fill", "colorMatch", "extendFill", "withOriginal", "align", "paste"];
-            for (const [k, v] of Object.entries(a || {})) { if (k === "doc") continue; if (!allowed.includes(k)) throw new Error(`unknown crop setting "${k}" (${allowed.join(", ")})`); ed.cropSettings[k] = v; }
+            // every value is checked before any is stored: a refused call changes nothing
+            const next = {};
+            for (const [k, v] of Object.entries(a || {})) {
+                if (k === "doc" || v === undefined) continue;
+                if (!CROP_KEYS.includes(k)) throw new Error(`unknown crop setting "${k}" (${CROP_KEYS.join(", ")})`);
+                next[k] = cropValue(k, v);
+            }
+            Object.assign(ed.cropSettings, next);
             if (ed.syncCropControls) ed.syncCropControls();
-            ed.renderInfo(); ed.notifyChanged();
-            return { ...ed.cropSettings };
+            ed.renderInfo(); ed.draw(); ed.notifyChanged();
+            return { ...cropView(ed), changed: Object.keys(next), pixels: { padding: host.nodeParams.padding, feather: host.nodeParams.feather } };
         },
     },
     set_node_params: {
@@ -876,6 +1069,46 @@ const COMMANDS = {
             if (ed.settingsChanged) ed.settingsChanged();
             ed.notifyChanged();
             return { set: out, settings: targets.map((t) => ({ index: t.index, label: t.node.title, input: t.inputName, value: (ed.settings[String(t.index)] || {}).value })) };
+        },
+    },
+    // docs/PLAN_0_1_42.md F2b: the Settings section as data, and its Preset row
+    list_settings: {
+        readOnly: true,
+        description: "The selected recipe's Settings section for this document, as data: per row its index, label, input, kind (number, combo, boolean or string), for a number integer / min / max / step / default, for a combo its options (model files, LoRAs, samplers; at most max_options of them, options_total says how many there are), the value the document holds and valid (false: a combo value the list does not offer, a number out of range). presets: the Preset row's presets in its order (shipped with the recipe first, then the ones the user saved), each with its values by row and missing (files the server lacks); preset: the one the rows hold now. set_settings changes a row, apply_preset applies a preset. Combo options come from the connected ComfyUI (or the recipe file without one).",
+        params: { filter: P.str("only the rows whose label or input contains this (any case)"), max_options: P.int("the most options listed per combo row (0: none)", { default: 200 }) },
+        async run(ed, a) {
+            const r = host.recipe;
+            const targets = host.settingTargets(ed);
+            const max = a.max_options == null || a.max_options === "" ? 200 : clampInt(a.max_options, 0, 100000, 200);
+            const f = a.filter != null && String(a.filter).trim() ? String(a.filter).trim().toLowerCase() : null;
+            const rows = targets.filter((t) => !f || String(t.node.title || "").toLowerCase().includes(f) || String(t.inputName).toLowerCase().includes(f)).map((t) => settingRow(ed, t, max));
+            const row = host.presetRow(ed, targets);
+            return {
+                recipe: r ? r.id : null, provider: r && r.kind === "provider" ? r.provider : null, settings: rows,
+                presets: row ? row.presets.map((p) => presetSummary(ed, targets, row, p)) : [], preset: row && row.matching ? row.matching.name : null,
+            };
+        },
+    },
+    apply_preset: {
+        description: "Apply a preset of the Settings section's Preset row to this document's rows, as picking it there does: one the recipe ships (the Realism Pass's L and M) or one the user saved (list_settings lists them with their values). Refused with nothing changed when the recipe has no presets, the name is none of them, it names no row of the recipe, or the server lacks a file it names. Saving and deleting presets stay in the app.",
+        params: { name: P.str("the preset's name (list_settings: presets)", { required: true }) },
+        async run(ed, a) {
+            const r = host.recipe;
+            if (!r) throw new Error("no recipe selected");
+            const rn = r.name || r.id;
+            if (r.kind === "provider") throw new Error(`${rn} is an API recipe: its Settings have no presets (set_settings sets a row)`);
+            const targets = host.settingTargets(ed);
+            const row = host.presetRow(ed, targets);
+            if (!row || !row.presets.length) throw new Error(`${rn} has no presets${row ? ": the user saves one in its Preset row" : ""}`);
+            const name = String(a.name == null ? "" : a.name).trim();
+            const ci = row.presets.filter((x) => x.name.toLowerCase() === name.toLowerCase());
+            const p = row.presets.find((x) => x.name === name) || (ci.length === 1 ? ci[0] : null);
+            if (!p) throw new Error(`no preset "${name}" for ${rn} (${row.presets.map((x) => x.name).join(", ")})`);
+            const s = presetSummary(ed, targets, row, p);
+            if (!s.values.some((v) => v.index != null)) throw new Error(`preset "${p.name}" names no Settings row of ${rn}: nothing changed`);
+            if (s.missing.length) throw new Error(`the server lacks ${s.missing.join(", ")}, which preset "${p.name}" names: nothing changed`);
+            const res = host.applyPreset(ed, targets, p);
+            return { applied: p.name, shipped: !!p.shipped, rows: res ? res.rows : s.values.length, status: ed.status, settings: targets.map((t) => ({ index: t.index, label: t.node.title, input: t.inputName, value: (ed.settings[String(t.index)] || {}).value })) };
         },
     },
     upsample_prompt: {
@@ -1394,32 +1627,57 @@ const COMMANDS = {
     // -- filters --
     filter_types: {
         readOnly: true,
-        scope: "app", description: "The filter layer types (built-in and from plugins) with their parameters; `fill: true` marks a fill layer's type (fill: a colour, gradient: two colours with their opacities), which covers what is below instead of filtering it.",
+        scope: "app", description: "The filter layer types (built-in and from plugins) with their parameters; `fill: true` marks a fill layer's type (fill: a colour, gradient: two colours with their opacities), which covers what is below instead of filtering it. A select's options are {id, label, group}; a select with key \"preset\" (a grain's film stock, a black-and-white film's colour filter) fills the other parameters with the option's values when add_filter / set_filter set it, as picking it in the layer list does; `offset: true` marks a slider that is an offset on the preset (the others turn the preset to custom when they change it).",
         params: {},
-        async run() { return { filters: Object.entries(FILTERS).map(([id, f]) => ({ id, label: f.label, plugin: f.plugin || null, ...(f.over ? { fill: true } : {}), params: (f.params || []).map((p) => ({ key: p.key, label: p.label, type: p.type || "number", min: p.min, max: p.max, default: p.type === "custom" ? undefined : p.default, options: p.options ? p.options.map((o) => (o.id != null ? o.id : o)) : undefined })) })) }; },
+        async run() {
+            const option = (o) => (o && typeof o === "object" ? { id: o.id, label: o.label != null ? String(o.label) : String(o.id), ...(o.group ? { group: o.group } : {}) } : { id: o, label: String(o) });
+            return {
+                filters: Object.entries(FILTERS).map(([id, f]) => {
+                    const hasPreset = (f.params || []).some((p) => p.key === "preset" && p.type === "select");
+                    return {
+                        id, label: f.label, plugin: f.plugin || null, ...(f.over ? { fill: true } : {}),
+                        params: (f.params || []).map((p) => ({
+                            key: p.key, label: p.label, type: p.type || "number", min: p.min, max: p.max, default: p.type === "custom" ? undefined : p.default,
+                            options: p.options ? p.options.map(option) : undefined,
+                            offset: hasPreset && p.key !== "preset" && p.keepPreset ? true : undefined,
+                        })),
+                    };
+                }),
+            };
+        },
     },
     add_filter: {
-        needsImage: true, description: "Add a non-destructive filter layer on top of the stack (see filter_types for types and params). A fill layer is one too: type \"fill\" (params color \"#rrggbb\") or \"gradient\" (shape linear / reflected / radial, from, to, from_opacity, to_opacity, angle, scale, x, y); it covers what is below, and set_layer's opacity, blend and a mask let the picture through.",
-        params: { type: P.str("filter type id", { default: "grain" }), params: P.obj("parameter values {key: value}"), name: P.str("layer name") },
+        needsImage: true, description: "Add a non-destructive filter layer on top of the stack (see filter_types for types and params). A fill layer is one too: type \"fill\" (params color \"#rrggbb\") or \"gradient\" (shape linear / reflected / radial, from, to, from_opacity, to_opacity, angle, scale, x, y); it covers what is below, and set_layer's opacity, blend and a mask let the picture through. params.preset (a film stock of the grain, a colour filter of black-and-white film) sets the preset's values and names the layer as the layer list does; the other params are applied after it. Nothing is added when a parameter is refused.",
+        params: { type: P.str("filter type id", { default: "grain" }), params: P.obj("parameter values {key: value}"), name: P.str("layer name (default the type, or the preset's name)") },
         async run(ed, a) {
             const type = String(a.type || "grain");
             if (!FILTERS[type]) throw new Error(`unknown filter "${type}" (${Object.keys(FILTERS).join(", ")})`);
+            const vals = a.params != null ? checkParams(type, a.params) : null;
             const l = ed.addFilterLayer(type);
             if (!l) throw new Error(ed.status);
+            if (vals) writeParams(ed, l, vals);
             if (a.name) l.name = String(a.name);
-            if (a.params) applyParams(ed, l, a.params);
             touch(ed);
             return layerSummary(ed, l);
         },
     },
     set_filter: {
-        description: "Change a filter layer's parameters (or its type).",
+        description: "Change a filter layer's parameters (or its type), in one undo step as the layer list's controls make one. params.preset (a film stock of the grain, a colour filter of black-and-white film) sets the preset's values and names the layer, then the other params are applied; a slider that is no offset on the preset turns it to custom when it changes the value (filter_types: offset). A new type starts from its defaults, then params. Nothing changes when a parameter is refused.",
         params: { layer: P.layer("", { required: true }), type: P.str("new filter type id"), params: P.obj("parameter values {key: value}") },
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
             if (l.kind !== "filter") throw new Error(`${l.name} is not a filter layer`);
-            if (a.type && a.type !== l.filter) ed.setFilterType(l, String(a.type));
-            if (a.params) applyParams(ed, l, a.params);
+            const type = a.type != null && a.type !== "" ? String(a.type) : null;
+            if (type && !FILTERS[type]) throw new Error(`unknown filter "${type}" (${Object.keys(FILTERS).join(", ")})`);
+            // a fill layer stays a fill and a filter a filter, as the type select offers them
+            if (type && FILTERS[l.filter] && !!FILTERS[type].over !== !!FILTERS[l.filter].over) throw new Error(`${l.name} is a ${FILTERS[l.filter].over ? "fill" : "filter"} layer: its type is one of the ${FILTERS[l.filter].over ? "fills" : "filters"} (filter_types: fill)`);
+            const vals = a.params != null ? checkParams(type || l.filter, a.params) : null;
+            const keys = vals ? Object.keys(vals) : [];
+            const retype = !!type && type !== l.filter;
+            // the type select pushes its own step ("Filter type"), which holds the parameters as they were too
+            if (retype) ed.setFilterType(l, type);
+            else if (keys.length) ed.pushUndo({ kind: "filter", id: l.id, label: filterStepLabel(l.filter, keys) });
+            if (keys.length) writeParams(ed, l, vals);
             touch(ed);
             return layerSummary(ed, l);
         },
@@ -1532,7 +1790,7 @@ const COMMANDS = {
     compare: { description: "Toggle the before / after split view.", params: { enabled: P.bool("on or off; toggles when omitted") }, async run(ed, a) { const want = a.enabled == null ? !ed.compare : !!a.enabled; if (want !== !!ed.compare) ed.toggleCompare(); return { compare: !!ed.compare, status: ed.status }; } },
     extend_canvas: {
         destructive: true,
-        needsImage: true, description: "Extend (positive) or crop (negative) the canvas on each side, in pixels.",
+        needsImage: true, description: "Extend (positive) or crop (negative) the canvas on each side, in pixels. An extension bakes every visible layer into the base and fills the new border as set_crop's extendFill says (average color unless set).",
         params: { left: P.int("", { default: 0 }), top: P.int("", { default: 0 }), right: P.int("", { default: 0 }), bottom: P.int("", { default: 0 }) },
         async run(ed, a) {
             const v = { left: Math.round(+a.left || 0), top: Math.round(+a.top || 0), right: Math.round(+a.right || 0), bottom: Math.round(+a.bottom || 0) };
@@ -1765,27 +2023,81 @@ function setFont(t, family) {
     t.fontRef = f && f.ref ? f.ref : null;
 }
 
-function applyParams(ed, l, params) {
-    if (!FILTERS[l.filter]) throw new Error(`filter "${l.filter}" is not installed (its plugin is off or missing): its settings are kept as they are`);
-    const spec = FILTERS[l.filter].params || [];
+/** A select's option ids (an option is `{ id, label, group, ...fields }` or a plain value). */
+const optionIds = (p) => (p.options || []).map((o) => (o && typeof o === "object" ? o.id : o));
+
+/**
+ * A filter type's parameter values checked against its spec, before anything is written (docs/PLAN_0_1_42.md F2b): a
+ * refused call changes nothing, and add_filter adds no layer for it. Returns `{ key: value }` as the layer stores them.
+ */
+function checkParams(filterId, params) {
+    if (!FILTERS[filterId]) throw new Error(`filter "${filterId}" is not installed (its plugin is off or missing): its settings are kept as they are`);
+    if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("params must be an object {key: value} (filter_types lists the keys)");
+    const spec = FILTERS[filterId].params || [];
+    const out = {};
     for (const [k, v] of Object.entries(params)) {
         const p = spec.find((x) => x.key === k);
-        if (!p) throw new Error(`filter "${l.filter}" has no parameter "${k}" (${spec.map((x) => x.key).join(", ")})`);
+        if (!p) throw new Error(`filter "${filterId}" has no parameter "${k}" (${spec.map((x) => x.key).join(", ")})`);
         if (p.type === "select") {
-            const ids = (p.options || []).map((o) => (o.id != null ? o.id : o));
+            const ids = optionIds(p);
             if (!ids.includes(v)) throw new Error(`"${v}" is not an option of ${k} (${ids.join(", ")})`);
-            l.params[k] = v;
+            out[k] = v;
         }
-        else if (p.type === "bool") l.params[k] = !!v;
-        else if (p.type === "custom") l.params[k] = v;
+        else if (p.type === "bool") {
+            if (v === true || v === "true") out[k] = true;
+            else if (v === false || v === "false") out[k] = false;
+            else throw new Error(`${k} takes true or false, not ${JSON.stringify(v)}`);
+        }
+        else if (p.type === "custom") out[k] = v;
         else if (p.type === "color") {
             const m = /^#?([0-9a-f]{6})$/i.exec(String(v).trim());
             if (!m) throw new Error(`${k} takes a colour as "#rrggbb", not "${v}"`);
-            l.params[k] = "#" + m[1].toLowerCase();
+            out[k] = "#" + m[1].toLowerCase();
         }
-        else l.params[k] = Math.min(p.max, Math.max(p.min, +v));
+        else {
+            if (v === null || v === "" || typeof v === "boolean" || !Number.isFinite(+v)) throw new Error(`${k} takes a number (${p.min}..${p.max}), not ${JSON.stringify(v)}`);
+            out[k] = Math.min(Number.isFinite(p.max) ? p.max : Infinity, Math.max(Number.isFinite(p.min) ? p.min : -Infinity, +v));
+        }
+    }
+    return out;
+}
+
+/**
+ * Checked values into a filter layer, as its row in the layer list writes them (inpaint_canvas.js buildFilterControls):
+ * the select named "preset" first, which copies its option's fields (a grain stock's amount, size, speckle, chroma and
+ * look; a black-and-white colour filter's hue and strength), drops a look the option does not carry and names the
+ * layer after the option; then the other values. A slider that is no offset on the preset (no `keepPreset`) turns the
+ * preset to "custom" when its value moves, as dragging it does. No undo step: the caller pushes one.
+ */
+function writeParams(ed, l, vals) {
+    const spec = FILTERS[l.filter].params || [];
+    const presetP = spec.find((p) => p.key === "preset" && p.type === "select");
+    if (presetP && "preset" in vals) {
+        const o = (presetP.options || []).find((x) => (x && typeof x === "object" ? x.id : x) === vals.preset);
+        l.params.preset = vals.preset;
+        if (o && typeof o === "object") {
+            for (const [k, v] of Object.entries(o)) if (k !== "id" && k !== "label" && k !== "group") l.params[k] = v;
+            // a stock's colour look goes with it (the row sets null on every type; only one that held a look has one to drop)
+            if (!("look" in o) && l.params.look != null) l.params.look = null;
+            l.name = o.id === "custom" ? `${FILTERS[l.filter].label} ${ed.filterCounter}` : String(o.label).replace(/ \(.*\)$/, "");
+        }
+    }
+    const custom = !!presetP && optionIds(presetP).includes("custom");
+    for (const [k, v] of Object.entries(vals)) {
+        if (presetP && k === "preset") continue;
+        const p = spec.find((x) => x.key === k);
+        const moved = JSON.stringify(l.params[k]) !== JSON.stringify(v);
+        l.params[k] = v;
+        if (custom && moved && !p.keepPreset && (!p.type || p.type === "number") && l.params.preset !== "custom") l.params.preset = "custom";
     }
     ed.markFilterChanged(l);
+}
+
+/** The Undo history's name of a filter change, as the layer row names one control's step. */
+function filterStepLabel(filterId, keys) {
+    const def = FILTERS[filterId];
+    const p = keys.length === 1 ? (def.params || []).find((x) => x.key === keys[0]) : null;
+    return p && p.label ? `${def.label}: ${p.label}` : def.label;
 }
 
 async function withExportPath(path, fn) {

@@ -1372,7 +1372,8 @@ Every OpenRouter variant's note says which of the two it is and names the compan
 as a reference: the four brand marks of the tutorial picture were removed in the app this way (docs/TUTORIAL.md).
 **A crop whose context reaches bare skin can be refused** by OpenAI's safety system through OpenRouter
 (`safety_violations=[sexual]` for a crop of a handbag that took in the legs around it); the same selection with
-a tighter context (`set_crop { context: "24" }`, or *Context* in the Crop panel) went through. The refusal
+a tighter context (*Context* manual in the Crop panel with a small padding; for an agent `set_crop { context: "manual" }`
+and `set_node_params { padding: 24 }`) went through. The refusal
 reaches the user as the provider's own sentence.
 
 **Where it shows up.** The key row comes after Comfy Cloud in Settings › API providers (`PROVIDERS` in

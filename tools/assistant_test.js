@@ -1186,6 +1186,10 @@ async function main() {
             ["resize_image", { percent: 50 }, "ask"],
             ["cancel_run", { doc: 1 }, "auto"], ["cancel_run", {}, "ask"],
             ["list_recipes", {}, "auto"], ["screenshot", { what: "mask", box: [0, 0, 10, 10] }, "auto"],
+            // F2b: the wand and the shapes select, the Settings rows read and a preset applied to them run; a crop setting runs
+            ["select_color", { x: 5, y: 5, tolerance: 20 }, "auto"], ["select_color", { x: 5, y: 5, sample: "layer", layer: "Lyours" }, "auto"],
+            ["select_shape", { shape: "ellipse", x: 0, y: 0, w: 10, h: 10 }, "auto"], ["select_shape", { shape: "polygon", points: [[0, 0], [9, 0], [0, 9]], mode: "subtract" }, "auto"],
+            ["list_settings", {}, "auto"], ["apply_preset", { name: "M" }, "auto"], ["set_crop", { fill: "green", colorMatch: false }, "auto"],
             ["a_user_plugins_tool", {}, "ask"],
         ];
         const wrong = [];
@@ -1238,7 +1242,7 @@ async function main() {
         }
         check("screenshot_max_size_is_clamped", eq(policy.clamp({ name: "screenshot", args: { max_size: 4096, quality: 0.99 } }).args, { max_size: 1024, quality: 0.85 }));
         {
-            const readOnly = ["ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips", "status", "get_state", "filter_types", "screenshot"];
+            const readOnly = ["ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips", "status", "get_state", "filter_types", "screenshot", "list_settings"];
             const f = facts();
             for (const n of readOnly) f.tools.add(n);
             const asks = readOnly.filter((n) => policy.decide({ name: n, args: {} }, f).action !== "auto");
@@ -1252,13 +1256,16 @@ async function main() {
             ["add_paint_layer", {}, "layers"], ["add_filter", {}, "layers"], ["generate", {}, "layers"],
             ["set_layer", { match: 60 }, "match"], ["set_layer", { match: 60, match_source: "below" }, "match"],
             ["set_layer", { match: 60, opacity: 50 }, "layers"], ["set_layer", { x: 10 }, null],
-            ["set_filter", { params: { a: 1 } }, "filter"], ["set_filter", { type: "blur", params: { a: 1 } }, null],
+            // F2b: set_filter pushes its own step (the type's, or the parameters')
+            ["set_filter", { params: { a: 1 } }, null], ["set_filter", { type: "blur", params: { a: 1 } }, null],
             ["set_text", { text: "x" }, "text"], ["set_text", { angle: 30 }, "layers"], ["set_prompt", { prompt: "x" }, null],
             ["list_layers", {}, null], ["screenshot", {}, null],
             // they push their own step
             ["duplicate_layer", {}, null], ["frequency_separation", {}, null], ["dodge_burn_layer", {}, null],
             // F2a: the transform, the paste and the resize push their own; a cancel changes no document
             ["transform_layer", { mode: "rotate", angle: 10 }, null], ["copy_to_layer", { cut: true }, null], ["resize_image", { percent: 50 }, null], ["cancel_run", {}, null],
+            // F2b: the selections push their own selection step; a preset and a read change no layer
+            ["select_color", { x: 5, y: 5 }, null], ["select_shape", { shape: "ellipse" }, null], ["apply_preset", { name: "M" }, null], ["list_settings", {}, null],
         ];
         const badSteps = [];
         for (const [name, args, want] of steps) {

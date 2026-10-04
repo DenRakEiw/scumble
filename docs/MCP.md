@@ -195,6 +195,24 @@ black and white). `transform_layer` rotates, distorts, warps or quarter-turns on
 another, the user's clipboard untouched); `resize_image` resizes the whole document as Image › Canvas
 › Resize. Each is one undo step.
 
+**Selections, the Settings rows, crop and filter values** (docs/PLAN_0_1_42.md F2b). `select_color` is
+the Magic wand at a point (`tolerance` 0..255, `contiguous`, `sample` image or layer), in the app with
+no model or server; `select_shape` selects an ellipse (`x`, `y`, `w`, `h`) or a polygon / lasso
+(`points`), with `mode` and an optional `feather` of the new shape's edge, without a whole mask going
+through `select_mask`. Each is one selection undo step. `list_settings` gives the selected recipe's
+Settings rows (index, label, input, `kind` number / combo / boolean / string, a combo's `options` up to
+`max_options` with `options_total`, a number's `integer` / `min` / `max` / `step`, the `value` and
+`valid`) and the Preset row's `presets` (the recipe's shipped ones first, then the user's, each with
+its values by row and the files the server lacks); `apply_preset` applies one by name, and is refused
+with nothing changed when the server lacks a file it names; saving and deleting presets stay in the
+app. `set_crop` takes its switches as booleans and its choices from their lists (`context` / `feather`
+auto or manual: the pixels manual uses are `set_node_params` padding / feather, so a number is
+refused), checks every key before it stores any, and answers with the crop as the editor reads it,
+as `status` does. `add_filter` / `set_filter` apply `params.preset` as the layer list does (its
+values, the layer named after it; a slider that is no offset on the preset, `filter_types`' `offset`,
+turns it to custom when it changes the value), refuse a bad value before anything changes, and
+`set_filter` is one undo step of its own; `filter_types` gives each option `{id, label, group}`.
+
 ## How it works
 
 ```
@@ -257,8 +275,8 @@ agent sees the user's last documents.
 ## Testing
 
 `python tools/mcp_test.py [--exe dist/win-unpacked/Scumble.exe]` talks to the server with
-the Python `mcp` client: instructions, the tools with valid names and schemas (101 on a fresh
-profile on 2026-10-05: 84 core commands and 17 from the built-in plugins), `ping`
+the Python `mcp` client: instructions, the tools with valid names and schemas (105 on a fresh
+profile on 2026-10-05: 88 core commands and 17 from the built-in plugins), `ping`
 (reports the mode), `new_document`, `load_image` by path, `select_rect`, `add_filter`
 (`sample.posterize`, WebGL2 in the hidden window), `sample_mean_color`, `screenshot` as
 image content (`dist/smoke/mcp_screenshot.jpg`), `export` to a path, an error case, an

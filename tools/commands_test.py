@@ -1706,6 +1706,252 @@ try {
     await c("activate_document", { doc: window.__testDoc });
 }
 """),
+    # docs/PLAN_0_1_42.md F2b: set_crop stores booleans and choices, refuses the rest before changing anything, and status
+    # reports the crop as the editor reads it
+    ("set_crop_checks", """
+const { host } = await import("./editor/host.js");
+const d = await c("new_document");
+await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });
+const ed = host.editorById(d.id);
+const out = {};
+try {
+    const r1 = await c("set_crop", { doc: d.id, colorMatch: false, align: "false", withOriginal: "true", fill: "Green", paste: "whole crop", extendFill: "black", context: "manual", feather: "auto" });
+    const cs = ed.cropSettings;
+    if (cs.colorMatch !== false || cs.align !== false || cs.withOriginal !== true || cs.fill !== "green" || cs.paste !== "crop" || cs.extendFill !== "black" || cs.context !== "manual" || cs.feather !== "auto") throw new Error("stored: " + JSON.stringify(cs));
+    if (r1.colorMatch !== false || r1.align !== false || r1.paste !== "crop" || r1.changed.length !== 8 || typeof r1.pixels.padding !== "number") throw new Error("the answer: " + JSON.stringify(r1));
+    // the controls follow: extend_canvas reads the Canvas section's fill select
+    if (ed.extendFillSel && ed.extendFillSel.value !== "black") throw new Error("the extend fill select: " + ed.extendFillSel.value);
+    if (ed.cropColorMatch && ed.cropColorMatch.checked) throw new Error("the colour match box is still on");
+    const before = JSON.stringify(ed.cropSettings);
+    const refused = async (args, re) => { let m = ""; try { await c("set_crop", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); } if (!re.test(m) || JSON.stringify(ed.cropSettings) !== before) throw new Error("set_crop " + JSON.stringify(args) + ": " + (m || "not refused") + " / " + JSON.stringify(ed.cropSettings)); return m; };
+    out.refused = [
+        await refused({ context: "200" }, /^context takes "auto" or "manual", not a number: manual uses set_node_params padding/),
+        await refused({ feather: 12 }, /^feather takes "auto" or "manual", not a number: manual uses set_node_params feather/),
+        await refused({ fill: "neutral", colorMatch: "maybe" }, /^colorMatch takes true or false/),
+        await refused({ fill: "purple" }, /^fill must be one of none, neutral, blur, border, green/),
+        await refused({ extendFill: "white" }, /^extendFill must be one of/),
+        await refused({ paste: "all" }, /^paste must be selection or crop/),
+        await refused({ zoom: 2 }, /^unknown crop setting "zoom"/),
+    ];
+    // an old document's raw values: status reads them as the editor does
+    ed.cropSettings.context = "64"; ed.cropSettings.colorMatch = "false";
+    const st = (await c("status", { doc: d.id })).crop;
+    if (st.context !== "manual" || st.colorMatch !== true) throw new Error("status of raw values: " + JSON.stringify(st));
+    // the whole object status gives goes back in
+    await c("set_crop", { doc: d.id, ...st });
+    if (ed.cropSettings.context !== "manual" || ed.cropSettings.colorMatch !== true) throw new Error("status passed back: " + JSON.stringify(ed.cropSettings));
+    return out;
+} finally {
+    await c("close_document", { doc: d.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
+    # set_filter / add_filter apply a preset's values as the layer row does, refuse before anything changes, and set_filter
+    # pushes one undo step of its own; filter_types gives the options' labels and groups
+    ("filter_presets", """
+const { host } = await import("./editor/host.js");
+const d = await c("new_document");
+await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });
+const ed = host.editorById(d.id);
+const out = {};
+try {
+    const types = (await c("filter_types")).filters;
+    const grain = types.find((f) => f.id === "grain");
+    const pp = grain.params.find((p) => p.key === "preset");
+    const p400 = pp.options.find((o) => o.id === "portra400");
+    if (!p400 || p400.label !== "Kodak Portra 400" || p400.group !== "Colour negative") throw new Error("the preset option: " + JSON.stringify(p400));
+    if (grain.params.find((p) => p.key === "look_strength").offset !== true || grain.params.find((p) => p.key === "amount").offset !== undefined) throw new Error("offset flags: " + JSON.stringify(grain.params));
+    const n0 = ed.layers.length;
+    let bad = "";
+    try { await c("add_filter", { doc: d.id, type: "grain", params: { preset: "portra400", amount: "lots" } }); } catch (e) { bad = String(e.message || e); }
+    if (!/^amount takes a number/.test(bad) || ed.layers.length !== n0) throw new Error("a refused add_filter: " + (bad || "not refused") + ", layers " + ed.layers.length);
+    const g = await c("add_filter", { doc: d.id, type: "grain", params: { preset: "portra400" } });
+    const L = ed.layers.find((l) => l.id === g.id);
+    if (L.params.amount !== 18 || L.params.size !== 1.5 || L.params.chroma !== 30 || !L.params.look || L.params.look.warmth !== 9 || L.name !== "Kodak Portra 400") throw new Error("the preset's values: " + JSON.stringify({ name: L.name, params: L.params }));
+    // a slider that is no offset turns the preset to custom; one undo step, named as the row names it
+    const u0 = ed.undo.length;
+    await c("set_filter", { doc: d.id, layer: g.id, params: { amount: 30 } });
+    if (L.params.amount !== 30 || L.params.preset !== "custom" || ed.undo.length !== u0 + 1 || ed.undo[ed.undo.length - 1].label !== "Film / Grain: Grain") throw new Error("amount: " + JSON.stringify({ p: L.params, steps: ed.undo.length - u0, label: ed.undo[ed.undo.length - 1].label }));
+    await c("undo", { doc: d.id });
+    const L1 = ed.layers.find((l) => l.id === g.id);
+    if (L1.params.amount !== 18 || L1.params.preset !== "portra400") throw new Error("one undo: " + JSON.stringify(L1.params));
+    // an offset keeps the preset; the same value moves nothing
+    await c("set_filter", { doc: d.id, layer: g.id, params: { look_strength: 50, size: 1.5 } });
+    if (L1.params.preset !== "portra400" || L1.params.look_strength !== 50) throw new Error("an offset: " + JSON.stringify(L1.params));
+    // Custom drops the stock's look and names the layer after the type
+    await c("set_filter", { doc: d.id, layer: g.id, params: { preset: "custom" } });
+    if (L1.params.look !== null || !/^Film . Grain [0-9]+$/.test(L1.name)) throw new Error("custom: " + JSON.stringify({ name: L1.name, look: L1.params.look }));
+    // refused before anything changes, and no step
+    const u1 = ed.undo.length, p1 = JSON.stringify(L1.params);
+    const refused = async (args, re) => { let m = ""; try { await c("set_filter", { doc: d.id, layer: g.id, ...args }); } catch (e) { m = String(e.message || e); } if (!re.test(m) || JSON.stringify(L1.params) !== p1 || ed.undo.length !== u1 || L1.filter !== "grain") throw new Error("set_filter " + JSON.stringify(args) + ": " + (m || "not refused")); return m; };
+    out.refused = [
+        await refused({ params: { amount: 10, size: "x" } }, /^size takes a number/),
+        await refused({ params: { preset: "velvia9000" } }, /is not an option of preset/),
+        await refused({ type: "nope" }, /^unknown filter "nope"/),
+        await refused({ type: "fill" }, /is a filter layer: its type is one of the filters/),
+        await refused({ params: { chroma: true } }, /^chroma takes a number/),
+    ];
+    // a new type and its params: the type's own step alone
+    await c("set_filter", { doc: d.id, layer: g.id, type: "blur", params: { radius: 3 } });
+    if (L1.filter !== "blur" || L1.params.radius !== 3 || ed.undo.length !== u1 + 1 || ed.undo[ed.undo.length - 1].label !== "Filter type") throw new Error("type and params: " + JSON.stringify({ f: L1.filter, p: L1.params, steps: ed.undo.length - u1 }));
+    // the black-and-white film's colour filter, when the film plugin is on
+    if (types.some((f) => f.id === "film.bw")) {
+        const bw = await c("add_filter", { doc: d.id, type: "film.bw", params: { preset: "red" } });
+        const B = ed.layers.find((l) => l.id === bw.id);
+        if (B.params.filter_hue !== 10 || B.params.filter_strength !== 90 || B.name !== "Red filter" || "look" in B.params) throw new Error("film.bw red: " + JSON.stringify({ name: B.name, p: B.params }));
+        await c("set_filter", { doc: d.id, layer: bw.id, params: { filter_hue: 20 } });
+        if (B.params.preset !== "custom" || B.params.filter_strength !== 90) throw new Error("film.bw hue: " + JSON.stringify(B.params));
+        await c("set_filter", { doc: d.id, layer: bw.id, params: { tone: "sepia" } });
+        if (B.params.preset !== "custom" || B.params.tone !== "sepia") throw new Error("film.bw toning: " + JSON.stringify(B.params));
+        out.bw = B.params.preset;
+    }
+    out.steps = ed.undo.length - u0;
+    return out;
+} finally {
+    await c("close_document", { doc: d.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
+    # select_color: the magic wand by command (contiguous or not, add, a layer's own pixels), the tool's options left as
+    # they were; select_shape: an ellipse, a polygon added, an ellipse subtracted, a feathered edge. Both backends.
+    ("select_color_and_shape", """
+const { host } = await import("./editor/host.js");
+const d = await c("new_document");
+await c("new_canvas", { width: 400, height: 300, doc: d.id });
+const ed = host.editorById(d.id);
+const base = document.createElement("canvas"); base.width = 400; base.height = 300;
+{ const x = base.getContext("2d"); x.fillStyle = "#c03020"; x.fillRect(0, 0, 200, 300); x.fillStyle = "#2040c0"; x.fillRect(200, 0, 200, 300); x.fillStyle = "#c03020"; x.fillRect(300, 100, 40, 40); }
+Object.defineProperty(base, "naturalWidth", { value: 400 });
+Object.defineProperty(base, "naturalHeight", { value: 300 });
+await ed.setBase({ filename: "wand.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+if (ed.mipsSettled) await ed.mipsSettled();
+const eq = (b, x, y, w, h) => b && b.x === x && b.y === y && b.w === w && b.h === h;
+const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
+const out = { tiles: !!ed.tileMode };
+try {
+    const opts0 = JSON.stringify(ed.fillOpts);
+    const u0 = ed.undo.length;
+    const a1 = await c("select_color", { doc: d.id, x: 50, y: 50, tolerance: 10 });
+    if (!eq(a1.selection, 0, 0, 200, 300) || ed.undo.length !== u0 + 1 || ed.undo[ed.undo.length - 1].label !== "Magic wand") throw new Error("contiguous red: " + JSON.stringify(a1));
+    if (!at(10, 10) || at(250, 50) || at(310, 110)) throw new Error("contiguous: the island or the blue is selected");
+    const a2 = await c("select_color", { doc: d.id, x: 50, y: 50, tolerance: 10, contiguous: false });
+    if (!eq(a2.selection, 0, 0, 340, 300) || !at(310, 110) || at(250, 50)) throw new Error("every similar pixel: " + JSON.stringify(a2.selection));
+    const a3 = await c("select_color", { doc: d.id, x: 250, y: 50, tolerance: 10, mode: "add" });
+    if (!eq(a3.selection, 0, 0, 400, 300) || !at(250, 50)) throw new Error("add the blue: " + JSON.stringify(a3.selection));
+    const a4 = await c("select_color", { doc: d.id, x: 310, y: 110, tolerance: 10, mode: "subtract" });
+    if (at(310, 110) || !at(250, 50) || !at(10, 10)) throw new Error("subtract the island");
+    if (JSON.stringify(ed.fillOpts) !== opts0) throw new Error("the wand's options changed: " + JSON.stringify(ed.fillOpts));
+    // a layer's own pixels: a green square on a transparent layer
+    const P = await import("./plugins.js");
+    const img = new ImageData(50, 50);
+    for (let i = 0; i < img.data.length; i += 4) { img.data[i] = 40; img.data[i + 1] = 210; img.data[i + 2] = 60; img.data[i + 3] = 255; }
+    const made = new P.Document(ed).addLayer(img, { name: "Wand probe", x: 100, y: 100 });
+    const top = (await c("add_paint_layer", { doc: d.id, name: "Above" })).id;
+    if (ed.activeLayerId !== top) throw new Error("the paint layer is not active");
+    const a5 = await c("select_color", { doc: d.id, x: 120, y: 120, sample: "layer", layer: made.id, tolerance: 5 });
+    if (!eq(a5.selection, 100, 100, 50, 50) || ed.activeLayerId !== made.id || a5.layer !== made.id) throw new Error("the layer's pixels: " + JSON.stringify(a5));
+    const filt = await c("add_filter", { doc: d.id, type: "blur" });
+    const refusedC = async (args, re) => { let m = ""; try { await c("select_color", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); } if (!re.test(m)) throw new Error("select_color " + JSON.stringify(args) + ": " + (m || "not refused")); return m; };
+    out.refusedColor = [
+        await refusedC({ x: 400, y: 10 }, /^400, 10 is outside the 400 . 300 picture/),
+        await refusedC({ x: 10 }, /^pass x and y/),
+        await refusedC({ x: 10, y: 10, tolerance: 300 }, /^tolerance must be 0..255/),
+        await refusedC({ x: 10, y: 10, sample: "layer", layer: filt.id }, /is a filter layer/),
+        await refusedC({ x: 10, y: 10, layer: made.id }, /^layer goes with sample layer/),
+        await refusedC({ x: 10, y: 10, mode: "xor" }, /^mode must be replace, add or subtract/),
+    ];
+    // shapes
+    const u1 = ed.undo.length;
+    const e1 = await c("select_shape", { doc: d.id, shape: "ellipse", x: 100, y: 50, w: 200, h: 100 });
+    if (!eq(e1.selection, 100, 50, 200, 100) || !at(200, 100) || !at(110, 100) || at(104, 54) || at(50, 100)) throw new Error("the ellipse: " + JSON.stringify(e1.selection));
+    if (ed.undo[ed.undo.length - 1].label !== "Ellipse selection") throw new Error("the ellipse's step: " + ed.undo[ed.undo.length - 1].label);
+    const p1 = await c("select_shape", { doc: d.id, shape: "polygon", points: [[10, 10], [110, 10], [10, 110]], mode: "add" });
+    if (!at(20, 20) || at(80, 80) || !at(200, 100) || !eq(p1.selection, 10, 10, 290, 140)) throw new Error("the polygon added: " + JSON.stringify(p1.selection));
+    await c("select_shape", { doc: d.id, shape: "ellipse", x: 180, y: 80, w: 40, h: 40, mode: "subtract" });
+    if (at(200, 100) || !at(150, 100) || !at(20, 20)) throw new Error("the ellipse subtracted");
+    if (ed.undo.length !== u1 + 3) throw new Error("one step per shape: " + (ed.undo.length - u1));
+    const lasso = await c("select_shape", { doc: d.id, shape: "lasso", points: [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 60 }, { x: 0, y: 60 }] });
+    if (!eq(lasso.selection, 0, 0, 60, 60)) throw new Error("the lasso: " + JSON.stringify(lasso.selection));
+    // a soft edge: half way at the shape's edge, a tail outside it, nothing three radii out; the bounds are the editor's
+    // (where the selection is more than half on), so the shape's own box
+    const f1 = await c("select_shape", { doc: d.id, shape: "ellipse", x: 100, y: 50, w: 200, h: 100, feather: 8 });
+    const edge = at(100, 100), tail = at(90, 100), far = at(70, 100), mid = at(200, 100);
+    if (mid < 250 || edge < 70 || edge > 190 || tail < 1 || tail > 60 || far > 2 || Math.abs(f1.selection.x - 100) > 3 || Math.abs(f1.selection.w - 200) > 6) throw new Error("the feathered edge: " + JSON.stringify({ mid, edge, tail, far, sel: f1.selection }));
+    const refusedS = async (args, re) => { let m = ""; try { await c("select_shape", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); } if (!re.test(m)) throw new Error("select_shape " + JSON.stringify(args) + ": " + (m || "not refused")); return m; };
+    const u2 = ed.undo.length;
+    out.refusedShape = [
+        await refusedS({ shape: "polygon", points: [[0, 0], [5, 5]] }, /^a polygon needs at least three points/),
+        await refusedS({ shape: "polygon", points: [[0, 0], [5, 5], [5]] }, /^points.2. is no .x, y. point/),
+        await refusedS({ shape: "ellipse", x: 0, y: 0, w: 0, h: 10 }, /^an ellipse needs x, y, w and h/),
+        await refusedS({ shape: "ellipse", x: 500, y: 0, w: 20, h: 10 }, /^the ellipse lies outside the 400 . 300 picture/),
+        await refusedS({ shape: "ellipse", x: 0, y: 0, w: 20, h: 10, feather: 1000 }, /^feather must be 0..512/),
+        await refusedS({ shape: "star" }, /^shape must be ellipse, polygon or lasso/),
+    ];
+    if (ed.undo.length !== u2) throw new Error("a refused shape pushed a step");
+    out.feather = { edge, tail, far };
+    return out;
+} finally {
+    await c("close_document", { doc: d.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
+    # list_settings: the Settings rows as data (kind, options, range, valid); apply_preset: the Preset row's presets (the
+    # Realism Pass's shipped L and M, the user's own, one of theirs replacing a shipped one of its name), refused with
+    # nothing changed for a file the server lacks or a name it does not have; an API recipe has none
+    ("list_settings_and_presets", """
+const { host } = await import("./editor/host.js");
+const d = await c("new_document");
+await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });
+const ed = host.editorById(d.id);
+const prev = host.recipe, prevPresets = host.presets;
+const raw0 = host.shell.recipes().find((x) => x.id === "realism_pass");
+if (!raw0) throw new Error("no realism_pass recipe to try the shipped presets on");
+const out = {};
+const KEY = "rp_settings:dlss_model_preset";
+try {
+    host.setRecipe(host.shell.resolveRecipe(raw0));
+    const s0 = await c("list_settings", { doc: d.id });
+    const row = s0.settings[0];
+    if (s0.recipe !== "realism_pass" || s0.settings.length !== 1 || row.index !== 1 || row.kind !== "combo" || row.options.join() !== "Default,J,K,L,M" || row.options_total !== 5 || row.valid !== true || row.input !== "dlss_model_preset") throw new Error("the row: " + JSON.stringify(s0));
+    if (s0.presets.map((p) => p.name + (p.shipped ? "*" : "")).join() !== "L*,M*" || s0.presets[0].values[0].index !== 1 || s0.presets[0].values[0].value !== "L") throw new Error("the shipped presets: " + JSON.stringify(s0.presets));
+    const m = await c("apply_preset", { doc: d.id, name: "M" });
+    if (m.applied !== "M" || m.shipped !== true || m.rows !== 1 || ed.settings["1"].value !== "M") throw new Error("apply M: " + JSON.stringify(m));
+    const s1 = await c("list_settings", { doc: d.id });
+    if (s1.preset !== "M" || !s1.presets.find((p) => p.name === "M").current || s1.settings[0].value !== "M") throw new Error("after M: " + JSON.stringify(s1));
+    await c("apply_preset", { doc: d.id, name: "l" });
+    if (ed.settings["1"].value !== "L") throw new Error("a name in another case: " + ed.settings["1"].value);
+    // the user's own: one named L replaces the shipped L, and one naming a file the row lacks is refused
+    host.presets = { ...(prevPresets || {}), realism_pass: [{ name: "Gone", values: { [KEY]: "Z" } }, { name: "L", values: { [KEY]: "J" } }, { name: "Mine", values: { [KEY]: "K" } }] };
+    const s2 = await c("list_settings", { doc: d.id });
+    if (s2.presets.map((p) => p.name + (p.shipped ? "*" : "")).join() !== "M*,Gone,L,Mine" || JSON.stringify(s2.presets.find((p) => p.name === "Gone").missing) !== JSON.stringify(["Z"])) throw new Error("the user's presets: " + JSON.stringify(s2.presets));
+    await c("apply_preset", { doc: d.id, name: "L" });
+    if (ed.settings["1"].value !== "J") throw new Error("the user's L: " + ed.settings["1"].value);
+    const refused = async (args, re) => { let msg = ""; const v = ed.settings["1"].value; try { await c("apply_preset", { doc: d.id, ...args }); } catch (e) { msg = String(e.message || e); } if (!re.test(msg) || ed.settings["1"].value !== v) throw new Error("apply_preset " + JSON.stringify(args) + ": " + (msg || "not refused")); return msg; };
+    out.refused = [
+        await refused({ name: "Gone" }, /^the server lacks Z, which preset "Gone" names: nothing changed/),
+        await refused({ name: "Q" }, /^no preset "Q" for .* .M, Gone, L, Mine./),
+    ];
+    // an API recipe: its rows with their kinds, ranges and options; no presets
+    host.setRecipe({ id: "loopback_settings", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", name: "Loopback settings",
+        settings: [{ index: 1, key: "steps", label: "Steps", spec: ["INT", { min: 1, max: 50, step: 1, default: 20 }] }, { index: 2, key: "quality", label: "Quality", spec: [["low", "high"], {}] }] });
+    const s3 = await c("list_settings", { doc: d.id, max_options: 1 });
+    const st = s3.settings.find((x) => x.label === "Steps"), q = s3.settings.find((x) => x.label === "Quality");
+    if (s3.provider !== "loopback" || s3.presets.length || s3.preset !== null || st.kind !== "number" || st.integer !== true || st.min !== 1 || st.max !== 50 || st.value !== 20 || st.valid !== true) throw new Error("the API rows: " + JSON.stringify(s3));
+    if (q.kind !== "combo" || q.options.join() !== "low" || q.options_total !== 2 || q.valid !== true) throw new Error("the combo row: " + JSON.stringify(q));
+    // a number out of its range is not valid (the Settings section puts a combo value it lacks back on its first option)
+    await c("set_settings", { doc: d.id, values: { Steps: 80 } });
+    const s4 = await c("list_settings", { doc: d.id, filter: "QUAL" });
+    if (s4.settings.length !== 1 || s4.settings[0].label !== "Quality") throw new Error("the filter: " + JSON.stringify(s4.settings));
+    if ((await c("list_settings", { doc: d.id, filter: "steps" })).settings[0].valid !== false) throw new Error("80 steps out of range is valid");
+    out.refused.push(await refused({ name: "M" }, /^Loopback settings is an API recipe: its Settings have no presets/));
+    return out;
+} finally {
+    host.presets = prevPresets;
+    host.setRecipe(prev);
+    await c("close_document", { doc: d.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
     ("close", """
 const before = (await c("list_documents")).documents.length;
 const r = await c("close_document", { doc: window.__testDoc });
