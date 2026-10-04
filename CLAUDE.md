@@ -82,8 +82,8 @@ code.
 (compaction instead: keep this block current after every commit), then REL with the Store step in the user's Chrome
 (authorised).** All open questions as recommended (Q13-Q19, Q21-Q23, Q29; §1 of the plan); 8188 may be used whenever
 `/queue` is empty, one RTX VSR run on Comfy Cloud too. **Done so far: R5 incl. its live look** (5361018: 8 s for
-16.7 MP on the user's RTX 5090, +4.6 GB; the pass layer's match source is *underneath*). **Next: U1**, then U2, U3,
-R-U, F1, F2a, F2b, P1, P2, P3, REL. Read each row's text in the plan first. **F2 is picked**: the 12 marked ✓ in
+16.7 MP on the user's RTX 5090, +4.6 GB; the pass layer's match source is *underneath*), **U1** (1b2cbda).
+**Next: U2**, then U3, R-U, F1, F2a, F2b, P1, P2, P3, REL. Read each row's text in the plan first. **F2 is picked**: the 12 marked ✓ in
 `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
