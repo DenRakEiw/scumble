@@ -641,7 +641,11 @@ function makeApi(entry) {
             run: (name, args) => commands.run(name, args),
             call: (name, args) => commands.call(name, args),
             list: () => commands.describe(),
-            /** Add a command: { description, params, scope, needsImage, run(doc, args) }; the editor is wrapped as a Document. */
+            /**
+             * Add a command: { description, params, scope, needsImage, readOnly, destructive, run(doc, args) }; the editor
+             * is wrapped as a Document. readOnly / destructive are the MCP hints (optional booleans): a command that sets
+             * neither is judged by its name (electron/main/mcp/server.js).
+             */
             register(name, def) {
                 const id = fullId(entry, name);
                 commands.register(id, { ...def, run: (ed, args) => def.run(docOf(ed), args, api) }, entry.id);

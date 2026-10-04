@@ -143,6 +143,7 @@ export function activate(scumble) {
         description: "The film stocks of the film look filter: id, label, group, ISO, grain character, tone curve class.",
         params: { group: { type: "string", description: "only this group (Colour negative, Slide, Black & white, Cine, Special & artistic)" } },
         scope: "app",
+        readOnly: true,
         run(doc, a) {
             const list = STOCKS.filter((s) => !a.group || s.group.toLowerCase() === String(a.group).toLowerCase());
             return { stocks: list.map((s) => ({ id: s.id, label: s.label, group: s.group, iso: s.iso, grain: s.grain, toe: s.toe, shoulder: s.shoulder, halation: s.halation })), note: TRADEMARK };

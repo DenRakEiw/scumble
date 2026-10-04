@@ -86,6 +86,20 @@ if (bad.length) throw new Error(bad.join("; "));
 return { cases: Object.keys(out).length, gl: GL.glFiltersAvailable(), worst: Math.max(...Object.values(out).map((o) => o.max)) };
 """),
     ("look_commands", """
+// docs/PLAN_0_1_42.md F1: "None (adjustments only)" adds no grain (it fell back to grain 25 without a stock). Its Grain
+// slider at 0, at its default and at 200 % gives the same bytes, on the CPU and on the GPU path
+const F = await import("./editor/inpaint_filters.js");
+const src = editor.flattenToCanvas({ forRun: true });
+const W = src.width, H = src.height;
+const noneGrain = {};
+for (const cpu of [true, false]) {
+    const at = (grain) => F.applyFilter("film.look", src, { ...F.filterDefaults("film.look"), preset: "none", ...(grain == null ? {} : { grain }) }, { cpu, scale: 1, seed: 7, cache: {} }).getContext("2d").getImageData(0, 0, W, H).data;
+    const a = at(0), b = at(null), d = at(200);
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i] || a[i] !== d[i]) diff++;
+    noneGrain[cpu ? "cpu" : "gpu"] = diff;
+    if (diff) throw new Error(`None's grain slider changed ${diff} bytes on the ${cpu ? "CPU" : "GPU"} path: None adds grain`);
+}
 const looks = await c("film.looks");
 if (!looks.stocks || looks.stocks.length < 40) throw new Error("film.looks: " + JSON.stringify(looks).slice(0, 100));
 const bw = await c("film.looks", { group: "Black & white" });
@@ -106,7 +120,7 @@ await c("undo");
 const back = (await c("list_layers")).layers.find((l) => l.id === l1.id);
 if (!back || back.params.preset !== "portra400") throw new Error("undo: " + JSON.stringify(back && back.params));
 await c("remove_layer", { layer: l1.id });
-return { stocks: looks.stocks.length, bw: bw.stocks.length };
+return { stocks: looks.stocks.length, bw: bw.stocks.length, noneGrain };
 """),
     ("add_point_command", """
 // C6 (c1): a point's colour is the 3 x 3 mean under it of the points layer's input (everything below that layer) at

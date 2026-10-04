@@ -11,6 +11,44 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### The six the user picked for 0.1.42 - fixed for 0.1.42 (F1 of docs/PLAN_0_1_42.md, 2026-10-05)
+
+**Picked** 2026-10-04 ("alle sechs"). Five were found by reading while planning the in-app assistant (2026-09-19), the
+film look's grain by the gap review of 2026-09-26; none had been reported or run.
+
+- **`flip_layer` axis x flipped vertically.** The command passed `"x"` / `"y"`, and `flipLayer` mirrors horizontally
+  only for `"h"`. Now x is `"h"` (left to right), y `"v"` (top to bottom), and the description says so; an agent that
+  compensated gets the other flip (the CHANGELOG says so). Test: `commands` step `layer_flip_and_refusals` (a probe
+  layer's bytes against its mirror by x, by y, by the default axis; the three undo steps' labels).
+- **`remove_layer` reported success on a locked layer**, and `flip_layer` / `center_layer` were silent no-ops on a
+  locked or a filter layer. The commands refuse before the editor is called (`refuseLayer` in `renderer/commands.js`):
+  "layer <name> is locked: unlock it first (set_layer locked false)", "... locked by its group: unlock the group first
+  (set_group locked false)", "layer <name> is a filter layer: it cannot be flipped / centred". The ailabel and glb
+  plugins get the refusal as an error (ailabel's Add no longer adds a second label beside a locked one). Test: the
+  same step (each command on a locked layer, a group's lock, a filter layer; nothing changes).
+- **The compat key went to any URL `llm:models` was given.** `compatModels` sends the key only when the URL makes the
+  same base (`compatBase`) as the saved `settings.llm.compat.url`; any other URL, or any URL without a saved one, is
+  asked without it. The Test button saves the URL before it asks. Test: `tools/llm_images_test.js` section 9 (plain
+  Node, a stub fetch; the `llm` gate runs it).
+- **Ctrl+Enter started a second provider run while one was running.** `generate()` (shared with the node) refuses a
+  run that needs the document's slot (the app host's `resultInputState` now says `provider: true` for a provider
+  recipe) while `providerPending` is set, before the seed is rolled or the button is freed under the first run: "A run
+  is still going: wait for it, or Cancel." A recipe on the user's ComfyUI takes no slot and keeps queueing, also while
+  a pass or an upscale holds it; the node's host says no `provider` and has no slot. (Since R2a `runProvider` itself
+  refused a second run, but only after `generate()` had rolled the seed and re-enabled the button.) Test: `editor` step
+  `ctrl_enter_waits_for_the_api_run` (a stub run that never answers; the editor's keys and the prompt field; the
+  ComfyUI recipe queueing while the slot is held; the API recipe again after the run).
+- **The film look "None (adjustments only)" added grain** (`plugins/film/filters.js` fell back to `amount: 25`
+  without a stock): the fallback is `amount: 0`. Test: the `film` gate's `look_commands` step (None's Grain slider at
+  0, default and 200 % gives the same bytes on the CPU and the GPU path).
+- **The MCP annotations were incomplete.** The command definitions carry `readOnly` / `destructive`
+  (`renderer/commands.js`, the plugins through `commands.register`), `describe()` hands them on (null for a plugin
+  command that sets none) and `electron/main/mcp/server.js` reads them; a plugin command without flags is judged by
+  its name after the plugin id (read-only for `list...`, `get_...`, `info`, `status`; never destructive). The plan's
+  names plus `save_document`, `delete_snapshot`, `straighten_canvas` and `ailabel.remove` (destructive) and
+  `boxes.list` (read-only), which the 2026-09-19 reading predates or missed. Test: `mcp_test.py`'s tool list checks the
+  hints by name and the fallback through `toTool`; `docs/MCP.md` "Hints", `docs/COMMANDS.md` shows them.
+
 ### A headless MCP instance of the dev tree took the user's profile - fixed for 0.1.36
 
 **Reported** 2026-09-16 ("wieso kann ich die app nicht starten?"), during a Claude Code session in `F:\canvas`.
@@ -143,15 +181,6 @@ are new in 0.1.32. The same treatment as `layerStroke` would fix it (the move's 
 path past the start, one `touchSourceRect` over the move's box), but the smudge's look depends on its dab count (the
 carry is laid down and picked up per dab), so a pen's smudge would change: the user's eye first.
 
-### Found by reading on 2026-09-26 (not yet measured)
-
-**Written** 2026-09-26 by a gap review of the whole app (read, not run). Each has to be measured before it is fixed.
-The ones that were part of `docs/PLAN_0_1_29.md` §3 (the skipped flush on quit, TIFF, the PNG metadata) are fixed:
-"Fixed, waiting for its release".
-
-- **The film look "None (adjustments only)" still adds grain** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)*: `plugins/film/filters.js` ~387 falls back to
-  `{ amount: 25, ... }` when there is no stock.
-
 ### Found in the .scumble review (2026-09-26, read, not run)
 
 **Written** 2026-09-26 when `docs/DOCUMENTS.md` was written from the code (package 3b). The other findings of that
@@ -268,40 +297,6 @@ start, no helper, no update. What is known to need a look on a real Linux deskto
 - **Helpers:** CPU only (no CUDA provider in the build, `docs/HELPERS.md`); the first session logs a failed `cuda`
   attempt before it falls back.
 - **The single-instance lock and the named pipe** become a unix socket (`local.js`); never exercised.
-
-
-**Written** 2026-09-19 while planning the in-app assistant (`docs/PLAN_ASSISTANT.md`). Found by reading
-the code and checked line by line, not reported and not run; none is fixed. The user decided on 2026-09-19
-that the assistant changes nothing external agents see ("nein, soll primär für externe agenten sein, in app
-agent ist nur add on"), so the assistant's plan does not fix them; each is its own item when the user says so.
-
-- **`flip_layer` axis x flips vertically.** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)* The command passes `"x"` / `"y"` (`renderer/commands.js:652`),
-  `flipLayer` mirrors horizontally only for `"h"` and vertically for anything else
-  (`renderer/editor/inpaint_canvas.js:3496`, `:3502`), so both axes flip vertically, against the command's
-  own description ("horizontally (axis x)"). The toolbar buttons pass `"h"` / `"v"` (`:2193-2194`) and work.
-  The fix is one line in `commands.js` (outside the node build); external agents that compensated would get
-  the other flip.
-- **`remove_layer` reports success on a locked layer.** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)* `removeLayer` only sets the status line for a locked
-  layer and returns (`inpaint_canvas.js:9479`); the command returns `{removed: id}` regardless
-  (`commands.js:636`). The built-in plugins call the same command (ailabel's Add / Remove label,
-  `plugins/ailabel/main.js:101`, `:111`; glb's Edit dropping a depth layer, `plugins/glb/main.js:117`).
-  `flip_layer` and `center_layer` are silent no-ops on locked or filter layers in the same way.
-- **The compat key goes to any URL `llm:models` is given.** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)* `compatModels(url)` sends `keys.get("compat")`
-  as a Bearer token to whatever base it is called with (`electron/main/llm.js:73-78`, IPC `llm:models` at
-  `electron/main/main.js:459`); the renderer, a plugin included, can call it with any URL. The key is meant
-  for the saved `settings.llm.compat.url` only.
-- **The MCP annotations are incomplete.** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)* `READ_ONLY` (`electron/main/mcp/server.js:31`) is tested against
-  dotted command names and misses `read_log`, `film.looks`, `glb.info`, `ailabel.info` and
-  `sample.mean_color`; its `describe` alternative matches no command. `destructiveHint` (`:63`) misses
-  `generate_new`, `flatten`, `merge_down`, `extend_canvas`, `export*` (silent overwrite), `undo`, `redo`,
-  `select_recipe`, `set_node_params` and `ailabel.add`, and marks `new_document`, which destroys nothing.
-  External MCP clients that gate on these hints get the wrong picture.
-- **Ctrl+Enter starts a second provider run while one is running.** *(Picked for 0.1.42, session F1 of docs/PLAN_0_1_42.md; the user, 2026-10-04.)* `generate()` disables the button for the
-  length of `host.queueGenerate` (`inpaint_canvas.js:12043`, `:12054`), but the shortcut calls `generate()`
-  directly (`:2788`) and nothing checks `providerPending`; `runProvider` then replaces the token
-  (`renderer/editor/host.js:858`). **Not known:** whether the first run's result still lands, and whether a
-  second run is ever wanted (local runs queue on ComfyUI on purpose). An editor change, so it ships to the
-  node.
 
 ### What phase N1 found on the way
 

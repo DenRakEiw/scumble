@@ -18071,6 +18071,16 @@ class InpaintEditor {
     async generate() {
         this.lastRunError = null;
         if (!this.base) { this.setStatus("Load an image first."); return; }
+        // One API run per document: the host holds `providerPending` until its result has landed, and the button stays
+        // disabled while the run is awaited. Ctrl+Enter (the editor's keys and the prompt field) reaches here directly, so
+        // a run that needs that slot (the host's resultInputState says `provider`) is refused here, before the seed is
+        // rolled or the button freed under the first run. A recipe on the user's ComfyUI takes no slot and keeps
+        // queueing (ComfyUI queues on purpose), also while a pass or an upscale holds it; the node's host has no slot.
+        if (this.providerPending && this.resultInputState().provider) {
+            this.lastRunError = new Error("A run is still going: wait for it, or Cancel.");
+            this.setStatus(this.lastRunError.message);
+            return { error: this.lastRunError };
+        }
         // the prompt and the references as they are at the click (docs/PLAN_REFS.md C3): a later hide or move does not
         // change what this run sends
         const refs = this.refSnapshot();

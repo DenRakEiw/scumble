@@ -286,6 +286,7 @@ export function activate(scumble) {
         description: "The 3D object layers of this document with their parameters, and the parameter defaults.",
         params: {},
         scope: "doc",
+        readOnly: true,
         run(doc) {
             return { defaults: DEFAULTS, objects: doc.loaded ? objectsOf(doc).map(({ layer, entry }) => ({ layer: layer.id, name: layer.name, file: entry.ref.filename, params: entry.params, depthLayer: entry.depthId || null })) : [], renderer: renderer ? { maxSide: renderer.maxSide } : null };
         },

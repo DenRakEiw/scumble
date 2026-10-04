@@ -56,6 +56,19 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Recipes can ship presets.** The Preset row in the Settings section shows a recipe's own presets first, then
   yours; the shipped ones cannot be deleted.
 - Generate new no longer offers the local upscale recipe, which makes nothing from a prompt.
+- Ctrl+Enter no longer starts a second Generate while an API run is going on the document: it is refused with a note,
+  as the Generate button is, and the seed stays as it was. Generate with a recipe on your own ComfyUI still queues.
+- The film look *None (adjustments only)* adds no grain any more; it used to add a light grain of its own.
+- The key of the local OpenAI-compatible endpoint goes only to the URL saved under *Settings › Local /
+  OpenAI-compatible endpoint* (the Test button saves it first); any other address is asked without it.
+- Agents: `flip_layer` with axis x now mirrors the layer left to right, as its description says (both axes used to
+  flip it top to bottom); an agent that asked for the other axis to get a left-to-right mirror now gets the other flip.
+  `remove_layer`, `flip_layer` and `center_layer` refuse a locked layer with the reason (`flip_layer` and
+  `center_layer` a filter layer too) instead of answering as if done.
+- Agents: every MCP tool says correctly whether it only reads and whether it can lose something (a closed document, a
+  deleted layer, layers merged, a crop, a file written over, the recipe's settings), from flags on the commands
+  themselves; plugin commands can set them (`docs/PLUGINS.md`). Until now the plugins' reads were not marked read-only,
+  most commands that lose something were not marked destructive, and New document was.
 
 ## 0.1.41 — 2026-10-03
 

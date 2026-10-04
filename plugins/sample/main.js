@@ -130,6 +130,7 @@ export function activate(scumble) {
         description: "Mean colour of the selection (or the whole picture) as rgb and hex.",
         params: {},
         needsImage: true,
+        readOnly: true,   // the MCP hint; without it the server would judge the command by its name
         run(doc) {
             // with a selection only its bounds are read (the whole picture without one)
             const got = selectionBox(doc);

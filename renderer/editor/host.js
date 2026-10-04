@@ -1222,7 +1222,9 @@ export const host = {
     resultInputState(editor) {
         const r = this.recipe;
         if (!r) return { name: "result_local", wired: false, fallback: false };
-        if (r.kind === "provider") return { name: "result", wired: true, fallback: editor.genSettings.mode === "local" };
+        // `provider`: the run goes through runProvider / runUpscale and needs the document's run slot (`providerPending`);
+        // the editor's generate() refuses it while the slot is held (the node's host never says so)
+        if (r.kind === "provider") return { name: "result", wired: true, fallback: editor.genSettings.mode === "local", provider: true };
         const want = editor.genSettings.mode === "local" ? "result_local" : "result";
         const has = r.mode === "api" ? "result" : "result_local";
         return { name: has, wired: !!r.result, fallback: want !== has };

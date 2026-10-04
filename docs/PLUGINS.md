@@ -373,14 +373,18 @@ and font sizes by `scale` (times `dpr`); it runs while the tool is active, or al
 ```js
 scumble.commands.register("mean_color", {
     description: "...", params: { radius: { type: "number", description: "...", default: 8 } },
-    needsImage: true, scope: "doc",
+    needsImage: true, scope: "doc", readOnly: true,
     run(doc, args, scumble) { return { ... }; },
 });
 ```
 
 Registered as `<plugin>.<name>`, listed by `list_commands`, callable by other plugins, tests
 and MCP (`docs/MCP.md`; the tool name replaces `.` with `_`). `params` is the same schema the built-in commands use (`type`,
-`description`, `default`, `required`, `enum`).
+`description`, `default`, `required`, `enum`). `readOnly` and `destructive` (optional booleans) are the hints an MCP
+client reads (`readOnlyHint`, `destructiveHint`; `docs/MCP.md` "Hints"): `readOnly` for a command that changes nothing,
+`destructive` for one that can lose something (a layer, a file written over). A command that sets neither is judged by
+its name after the plugin id (`list...`, `get_...`, `info`, `status` read-only, nothing destructive). The flags are no
+new API member: an app before 0.1.42 ignores them, so a plugin needs no version check for them.
 
 ## Generate
 

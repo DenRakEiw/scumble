@@ -96,10 +96,26 @@ defaults in the description; `object` params such as `select_mask`'s `mask` acce
 Document commands take `doc`; without it the active tab is used. `screenshot` returns image
 content (JPEG) plus a text block with the metadata, so the model sees the picture. Errors
 come back as the command core's message with `isError`, never as protocol errors, so an
-agent can act on "no layer X (layers: ...)". Read-only commands (`ping`, `list_*`, `status`,
-`get_state`, `filter_types`, `screenshot`) carry `readOnlyHint`. When plugins are reloaded
+agent can act on "no layer X (layers: ...)". When plugins are reloaded
 the server sends `tools/list_changed`. `ping` adds `mcp: {mode, pid}` with mode `proxy`
 (driving another process), `headless` or `window`.
+
+**Hints.** Every tool carries `readOnlyHint`, `destructiveHint` and `openWorldHint: false`, from
+flags on the command's own definition (`readOnly` / `destructive` in `renderer/commands.js`, and
+in a plugin's `scumble.commands.register`; `list_commands` and `docs/COMMANDS.md` show them).
+Read-only: `ping`, the `list_*` commands, `status`, `get_state`, `filter_types`, `screenshot`,
+`read_log`, `film_looks`, `glb_info`, `ailabel_info`, `boxes_list`, `sample_mean_color`.
+Destructive (the call can lose something: a document, a layer, layers merged or flattened, a crop,
+a file written over without asking, the recipe or its settings, an undo or redo step):
+`close_document`, `new_canvas`, `load_image`, `generate_new`, `remove_layer`, `merge_down`,
+`flatten`, `extend_canvas`, `straighten_canvas`, `save_document`, `export`, `export_layer`,
+`export_mask`, `delete_snapshot`, `undo`, `redo`, `select_recipe`, `set_node_params`,
+`ailabel_add` (it replaces the label layer) and `ailabel_remove`. Everything else changes the
+document additively or in one undo step and carries neither. A plugin command that sets no flag
+is judged by its own name, the part after the plugin id: a `list...`, `get_...`, `info` or
+`status` command is read-only, and none is destructive. Until 0.1.42 the hints came from the names
+alone: the plugins' reads and `read_log` were not marked read-only, `new_document` was marked
+destructive, and of the destructive commands above only the first three and `remove_layer` were.
 
 The server's instructions text (what the model reads at connect) describes the round trip:
 load_image → select_rect / select_by_text → set_prompt → generate → screenshot →

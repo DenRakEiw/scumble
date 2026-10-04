@@ -113,10 +113,15 @@ function customHasKey(row) {
     return !!keys.describe(row.provider).set;
 }
 
-/** The model ids the endpoint serves (GET <base>/models); used by the Test button. */
+/**
+ * The model ids the endpoint serves (GET <base>/models); used by the Test button (which saves the URL first). The key
+ * goes only to the saved endpoint, compared as the request makes its base: any other URL the renderer (or a plugin)
+ * names is asked without it.
+ */
 async function compatModels(url) {
-    const base = compatBase(url || compatConfig().url);
-    const key = keys.get("compat");
+    const saved = compatConfig().url;
+    const base = compatBase(url || saved);
+    const key = saved && base === compatBase(saved) ? keys.get("compat") : "";
     let r;
     try {
         r = await fetch(base + "/models", { headers: key ? { Authorization: "Bearer " + key } : {}, signal: AbortSignal.timeout(15000) });

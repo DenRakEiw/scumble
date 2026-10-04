@@ -178,6 +178,7 @@ export function activate(scumble) {
         },
         needsImage: true,
         scope: "doc",
+        destructive: true,   // the MCP hint: an existing label layer is removed
         run: (doc, a) => add(doc, a),
     });
     scumble.commands.register("remove", {
@@ -185,12 +186,14 @@ export function activate(scumble) {
         params: {},
         needsImage: true,
         scope: "doc",
+        destructive: true,
         run: (doc) => remove(doc),
     });
     scumble.commands.register("info", {
         description: "The label variants, positions and the current defaults, plus where the icons come from.",
         params: {},
         scope: "app",
+        readOnly: true,
         run: () => ({ labels: Object.fromEntries(Object.entries(LABELS).map(([k, v]) => [k, v.label])), styles: Object.keys(STYLES), grounds: Object.keys(GROUNDS), anchors: ANCHORS, defaults: settings(), source: SOURCE, note: "A disclosure mark, not a certificate of compliance." }),
     });
 

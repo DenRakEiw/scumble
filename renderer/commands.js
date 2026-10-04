@@ -148,6 +148,17 @@ export function findLayer(ed, key, { allowActive = true } = {}) {
     return l;
 }
 
+/**
+ * A change the editor refuses with no more than its status line (a locked layer, by its own lock or a group's; with
+ * `what`, a filter layer, which has no pixels or place of its own): said as an error before the editor is called, so an
+ * agent does not read the answer as done.
+ */
+function refuseLayer(ed, l, what) {
+    const name = l.name || l.id;
+    if (what && l.kind === "filter") throw new Error(`layer ${name} is a filter layer: it cannot be ${what}`);
+    if (ed.isLocked(l)) throw new Error(l.locked ? `layer ${name} is locked: unlock it first (set_layer locked false)` : `layer ${name} is locked by its group: unlock the group first (set_group locked false)`);
+}
+
 /** After a change made outside the editor's own handlers: caches off, lists and canvas fresh. */
 export function touch(ed, { layers = true } = {}) {
     ed.uploaded.baseHash = null;
@@ -345,6 +356,9 @@ const FILE_PARAMS = {
  * @property {Record<string, CommandParam>} params
  * @property {"app" | "doc"} [scope]
  * @property {boolean} [needsImage]     refuse when the document has no picture
+ * @property {boolean} [readOnly]       changes nothing (the MCP hint readOnlyHint); unset: false for a built-in
+ * @property {boolean} [destructive]    may lose something: a document, a layer, layers merged, a crop, a file written
+ *                                      over, the recipe's settings (the MCP hint destructiveHint); unset: false for a built-in
  * @property {string} [owner]           the plugin that registered it, unset for the built-ins
  * @property {(ed: any, args: any) => any} run
  */
@@ -358,6 +372,8 @@ const FILE_PARAMS = {
  * @property {"app" | "doc"} scope
  * @property {boolean} needsImage
  * @property {string | null} plugin
+ * @property {boolean | null} readOnly     null: a plugin command that declares none (the MCP server judges it by its name)
+ * @property {boolean | null} destructive  null: as readOnly
  * @property {Record<string, CommandParam>} params
  */
 
@@ -378,22 +394,25 @@ const FILE_PARAMS = {
 
 // ---- the commands ----------------------------------------------------------------------------
 //
-// { description, params, scope?: "app" | "doc" (default doc), needsImage?, run(ed, args) }
+// { description, params, scope?: "app" | "doc" (default doc), needsImage?, readOnly?, destructive?, run(ed, args) }
 
 /** @satisfies {Record<string, Command>} */
 const COMMANDS = {
     // -- app --
     ping: {
+        readOnly: true,
         scope: "app", description: "Whether the app answers: version, the open documents, the recipe, the connection.",
         params: {},
         async run() { return appInfo(); },
     },
     list_commands: {
+        readOnly: true,
         scope: "app", description: "Every command with its parameters (this table).",
         params: {},
         async run() { return { version: VERSION, commands: describe() }; },
     },
     list_documents: {
+        readOnly: true,
         scope: "app", description: "The open tabs: id, name, size, layer count, which one is active.",
         params: {},
         async run() { return { active: host.editor ? host.editor.node.id : null, documents: host.editors().map(docSummary) }; },
@@ -409,6 +428,7 @@ const COMMANDS = {
         async run(ed) { host.shell.activate(ed); return docSummary(ed); },
     },
     save_document: {
+        destructive: true,
         needsImage: true,
         description: "Save the document as a .scumble file that reopens fully editable (layers, masks, filters, text, 3D objects, selection, prompts, result history). Without `path` it saves to the tab's file (an error when it has none); with `path` it is Save As, and the tab follows the new file unless `copy` is true. Nothing is asked: a file changed on disk is overwritten.",
         params: {
@@ -440,11 +460,13 @@ const COMMANDS = {
         },
     },
     close_document: {
+        destructive: true,
         description: "Close a tab without asking (unsaved changes are not written to its .scumble file). File › Reopen Closed Tab brings it back in this session; the document's files stay in the local store.",
         params: {},
         async run(ed) { const id = ed.node.id; host.shell.closeDocument(ed, { force: true }); return { closed: id, documents: host.editors().map(docSummary) }; },
     },
     list_recipes: {
+        readOnly: true,
         scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. The ${REALISM_LABEL} recipe (task "pass") says whether the connected ComfyUI can run it: ready, the reason when not, a note (RTX 30); status has the same for a document (its runs, its size).`,
         params: {},
         async run() {
@@ -458,6 +480,7 @@ const COMMANDS = {
         },
     },
     select_recipe: {
+        destructive: true,
         scope: "app", description: "Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark, oxen, magnific; list_recipes has each recipe's own), else the remembered or default one.",
         params: { id: P.str("recipe id (from list_recipes)", { required: true }), provider: P.str("provider id for a model recipe (one of its providers from list_recipes)") },
         async run(_, a) {
@@ -469,6 +492,7 @@ const COMMANDS = {
         },
     },
     list_plugins: {
+        readOnly: true,
         scope: "app", description: "The plugins (built-in and from the user's plugin folder), their state and what they registered.",
         params: {},
         async run() { return { plugins: host.plugins ? host.plugins.list() : [] }; },
@@ -481,6 +505,7 @@ const COMMANDS = {
 
     // -- document --
     status: {
+        readOnly: true,
         description: `What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; above factor 1 a picture past that size is scaled down instead), note (RTX 30), and the app's style, strength and preset it sends.`,
         params: {},
         async run(ed) {
@@ -492,6 +517,7 @@ const COMMANDS = {
         },
     },
     new_canvas: {
+        destructive: true,
         description: "Start a new white canvas of the given size in this tab (discards its image and layers).",
         params: { width: P.int("width in pixels (16..16384)", { default: 1024 }), height: P.int("height in pixels", { default: 1024 }) },
         async run(ed, a) {
@@ -502,6 +528,7 @@ const COMMANDS = {
         },
     },
     load_image: {
+        destructive: true,
         description: "Load an image as the base image of this tab (replaces its image, layers and history). From a local path, or by file name from the local store. An SVG is rasterised on the way in: at width x height when given (one of them keeps the aspect), else at its own declared size, else 2048 px on the long side.",
         params: { ...FILE_PARAMS, width: P.int("SVG only: the pixel width to rasterise at"), height: P.int("SVG only: the pixel height to rasterise at") },
         async run(ed, a) {
@@ -666,6 +693,7 @@ const COMMANDS = {
         },
     },
     set_node_params: {
+        destructive: true,
         scope: "app", description: "The Inpaint Canvas node parameters every run uses: padding, target_size, feather, multiple_of.",
         params: { padding: P.int("context pixels around the selection"), target_size: P.int("long side of the crop sent to the model, 0 = own size"), feather: P.int("stitch feather in pixels"), multiple_of: P.int("crop size rounding (64 for Flux / SDXL)") },
         async run(_, a) {
@@ -706,6 +734,7 @@ const COMMANDS = {
         },
     },
     generate_new: {
+        destructive: true,
         description: "Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture (\"image 1\"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first.",
         params: {
             prompt: P.str("what to make; the tab's current prompt when left out. An @img token names a shown reference layer; a model that makes new images from the prompt alone refuses it"),
@@ -888,7 +917,7 @@ const COMMANDS = {
     },
 
     // -- layers --
-    list_layers: { description: "All layers bottom to top with their properties; `selected` lists the layers selected with the active one; `groups` the folders (a layer's `group` is the innermost it is in, `parent` a group's).", params: {}, async run(ed) { return { active: ed.activeLayerId, selected: ed.selectedLayers ? ed.selectedLayers().map((l) => l.id) : [], layers: ed.layers.map((l) => layerSummary(ed, l)), groups: (ed.groups || []).map((g) => groupSummary(ed, g)) }; } },
+    list_layers: { readOnly: true, description: "All layers bottom to top with their properties; `selected` lists the layers selected with the active one; `groups` the folders (a layer's `group` is the innermost it is in, `parent` a group's).", params: {}, async run(ed) { return { active: ed.activeLayerId, selected: ed.selectedLayers ? ed.selectedLayers().map((l) => l.id) : [], layers: ed.layers.map((l) => layerSummary(ed, l)), groups: (ed.groups || []).map((g) => groupSummary(ed, g)) }; } },
     set_active_layer: {
         description: "Make a layer the active one, or select several (`layers`: they move and scale together with the move tool, merge with Ctrl+E, delete together; the first becomes active).",
         params: { layer: P.layer("the layer: id, name or unique name fragment", { default: "" }), layers: { type: "array", items: { type: "string" }, description: "several layers (ids, names or unique name fragments) to select together" } },
@@ -955,7 +984,7 @@ const COMMANDS = {
         params: { name: P.str("layer name") },
         async run(ed, a) { const l = ed.addPaintLayer(); if (!l) throw new Error(ed.status); if (a.name) { l.name = String(a.name); touch(ed); } return layerSummary(ed, l); },
     },
-    remove_layer: { description: "Delete a layer.", params: { layer: P.layer("", { required: true }) }, async run(ed, a) { const l = findLayer(ed, a.layer); ed.removeLayer(l.id); return { removed: l.id, layers: ed.layers.length }; } },
+    remove_layer: { destructive: true, description: "Delete a layer. Refused on a locked layer.", params: { layer: P.layer("", { required: true }) }, async run(ed, a) { const l = findLayer(ed, a.layer); refuseLayer(ed, l); ed.removeLayer(l.id); return { removed: l.id, layers: ed.layers.length }; } },
     frequency_separation: {
         description: "Frequency separation of the selection's box (or of the whole picture up to 16 MP): two layers on top, 'Low frequency' (its blur of radius px, normal) and 'High frequency' (the detail, linear light), which together give the picture back. One undo step; the high layer becomes active.",
         params: { radius: P.num("the blur radius in pixels (default: 0.4 % of the picture's short side)") },
@@ -967,7 +996,7 @@ const COMMANDS = {
         async run(ed, a) { const l = ed.dodgeBurnLayer({ grey: !!a.grey }); if (!l) throw new Error(ed.status); return layerSummary(ed, l); },
     },
     duplicate_layer: { description: "Duplicate a layer (the copy sits above it).", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); const c = ed.duplicateLayer(l); if (!c) throw new Error(ed.status); return layerSummary(ed, c); } },
-    merge_down: { description: "Merge a layer into the one below it (into the base image if it is the lowest).", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); const n = ed.layers.length; await ed.mergeDown(l); if (ed.layers.length === n && ed.layers.includes(l)) throw new Error(ed.status); return { layers: ed.layers.map((x) => layerSummary(ed, x)), status: ed.status }; } },
+    merge_down: { destructive: true, description: "Merge a layer into the one below it (into the base image if it is the lowest).", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); const n = ed.layers.length; await ed.mergeDown(l); if (ed.layers.length === n && ed.layers.includes(l)) throw new Error(ed.status); return { layers: ed.layers.map((x) => layerSummary(ed, x)), status: ed.status }; } },
     move_layer: {
         description: "Reorder a layer: to = up, down, top, bottom, or delta = ±n. A step goes past the next layer, into a group next to it or out of its own group at its end; top and bottom leave every group.",
         params: { layer: P.layer("", { required: true }), to: P.str("up, down, top or bottom", { enum: ["up", "down", "top", "bottom"] }), delta: P.int("steps up (positive) or down") },
@@ -981,8 +1010,9 @@ const COMMANDS = {
             return { index: ed.layers.indexOf(l), group: l.group || null, layers: ed.layers.map((x) => x.name) };
         },
     },
-    flip_layer: { description: "Mirror a layer horizontally (axis x) or vertically (axis y).", params: { layer: P.layer(), axis: P.str("x or y", { enum: ["x", "y"], default: "x" }) }, async run(ed, a) { const l = findLayer(ed, a.layer); ed.activeLayerId = l.id; ed.flipLayer(a.axis === "y" || a.axis === "vertical" ? "y" : "x"); return layerSummary(ed, l); } },
-    center_layer: { description: "Centre a layer on the canvas.", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); ed.activeLayerId = l.id; ed.centerLayer(); return layerSummary(ed, l); } },
+    // axis x is the editor's "h" (left to right), y its "v": until 0.1.42 both reached the editor as a vertical flip
+    flip_layer: { description: "Mirror a layer: axis x mirrors it left to right (horizontally), axis y top to bottom (vertically). Refused on a locked or a filter layer.", params: { layer: P.layer(), axis: P.str("x (left to right) or y (top to bottom)", { enum: ["x", "y"], default: "x" }) }, async run(ed, a) { const l = findLayer(ed, a.layer); refuseLayer(ed, l, "flipped"); ed.activeLayerId = l.id; ed.flipLayer(a.axis === "y" || a.axis === "vertical" ? "v" : "h"); return layerSummary(ed, l); } },
+    center_layer: { description: "Centre a layer on the canvas. Refused on a locked or a filter layer.", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); refuseLayer(ed, l, "centred"); ed.activeLayerId = l.id; ed.centerLayer(); return layerSummary(ed, l); } },
     align_layers: {
         description: "Align the selected layers (or `layers`, which get selected) on an edge or a centre, or distribute them with equal gaps, within the box around them or within the canvas (one layer aligns to the canvas). Filter and locked layers stay put. One undo step.",
         params: {
@@ -1031,7 +1061,7 @@ const COMMANDS = {
             return groupSummary(ed, ed.groupById(g.id) || g);
         },
     },
-    flatten: { needsImage: true, description: "Flatten all visible layers into the base image.", params: {}, async run(ed) { await ed.flatten(); return { layers: ed.layers.length, status: ed.status }; } },
+    flatten: { destructive: true, needsImage: true, description: "Flatten all visible layers into the base image.", params: {}, async run(ed) { await ed.flatten(); return { layers: ed.layers.length, status: ed.status }; } },
     cutout_layer: {
         description: "Remove the background of a layer with the cutout model the editor is set to (in-app when a matting model is downloaded); the mask becomes the layer's transparency.",
         params: { layer: P.layer(), timeout: P.timeout(300) },
@@ -1070,6 +1100,7 @@ const COMMANDS = {
 
     // -- filters --
     filter_types: {
+        readOnly: true,
         scope: "app", description: "The filter layer types (built-in and from plugins) with their parameters; `fill: true` marks a fill layer's type (fill: a colour, gradient: two colours with their opacities), which covers what is below instead of filtering it.",
         params: {},
         async run() { return { filters: Object.entries(FILTERS).map(([id, f]) => ({ id, label: f.label, plugin: f.plugin || null, ...(f.over ? { fill: true } : {}), params: (f.params || []).map((p) => ({ key: p.key, label: p.label, type: p.type || "number", min: p.min, max: p.max, default: p.type === "custom" ? undefined : p.default, options: p.options ? p.options.map((o) => (o.id != null ? o.id : o)) : undefined })) })) }; },
@@ -1152,16 +1183,19 @@ const COMMANDS = {
 
     // -- history, canvas --
     undo: {
+        destructive: true,
         description: "Undo the last step, or `steps` of them (list_history shows what each one is).",
         params: { steps: P.int("how many steps (default 1)", { default: 1 }) },
         async run(ed, a) { const stepped = await ed.stepHistory(-Math.max(1, Math.round(+a.steps || 1))); return { undo: ed.undo.length, redo: ed.redo.length, stepped, status: ed.status }; },
     },
     redo: {
+        destructive: true,
         description: "Redo the last undone step, or `steps` of them.",
         params: { steps: P.int("how many steps (default 1)", { default: 1 }) },
         async run(ed, a) { const stepped = await ed.stepHistory(Math.max(1, Math.round(+a.steps || 1))); return { undo: ed.undo.length, redo: ed.redo.length, stepped, status: ed.status }; },
     },
     list_history: {
+        readOnly: true,
         description: "The undo history, oldest first: one row per state, named by the edit that led to it; `current` is the picture now, `future` rows are undone steps a redo brings back. `steps` is what undo (negative) or redo (positive) takes to get to a row. Also the named snapshots and the history's depth.",
         params: {},
         async run(ed) {
@@ -1194,6 +1228,7 @@ const COMMANDS = {
         },
     },
     delete_snapshot: {
+        destructive: true,
         description: "Delete a named snapshot. The picture does not change.",
         params: { name: P.str("the snapshot's name", { required: true }) },
         async run(ed, a) {
@@ -1203,6 +1238,7 @@ const COMMANDS = {
     },
     compare: { description: "Toggle the before / after split view.", params: { enabled: P.bool("on or off; toggles when omitted") }, async run(ed, a) { const want = a.enabled == null ? !ed.compare : !!a.enabled; if (want !== !!ed.compare) ed.toggleCompare(); return { compare: !!ed.compare, status: ed.status }; } },
     extend_canvas: {
+        destructive: true,
         needsImage: true, description: "Extend (positive) or crop (negative) the canvas on each side, in pixels.",
         params: { left: P.int("", { default: 0 }), top: P.int("", { default: 0 }), right: P.int("", { default: 0 }), bottom: P.int("", { default: 0 }) },
         async run(ed, a) {
@@ -1238,6 +1274,7 @@ const COMMANDS = {
         },
     },
     straighten_canvas: {
+        destructive: true,
         needsImage: true, description: "Straighten the whole picture: turn it by any angle (degrees clockwise, -45..45) about its centre and crop it to a frame inside the turned picture, in one undo step. Without x / y / width / height the frame is the largest one of `aspect` (original: the picture's own; free; 1:1, 4:3, 3:2, 16:9, 5:4 or W:H) centred in the turned picture. x / y / width / height set the frame in the turned picture's coordinates (the picture's own at 0 degrees). The base, every layer and mask and the selection are resampled once; text stays editable (its angle grows); guides stay where they are on the screen, shifted by the crop. Refused while a render or another job of the document runs.",
         params: {
             angle: P.num("degrees clockwise, -45..45", { required: true }), aspect: P.str("original, free, 1:1, 4:3, 3:2, 16:9, 5:4 or W:H", { default: "original" }),
@@ -1262,6 +1299,7 @@ const COMMANDS = {
 
     // -- export --
     export: {
+        destructive: true,
         needsImage: true, description: "Save the flattened image (png, jpg, webp, tiff, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; `canvas_width` / `canvas_height` put it in a frame of that size (bigger: a margin of `fill`, smaller: cropped) at `anchor`; PSD and ORA always keep the full size. A PNG carries the prompt, seed and recipe only when `metadata` is true, or when it is left out and the Export section's switch is on (on by default).",
         params: { format: P.str("png, jpg, webp, tiff, psd or ora", { enum: ["png", "jpg", "webp", "tiff", "psd", "ora"], default: "png" }), name: P.str("file name stem for the dialog"), path: P.str("absolute target path (no dialog)"), scale: P.num("percent of the document size, 1..400"), width: P.int("width in pixels (the height follows the aspect ratio)"), height: P.int("height in pixels (the width follows the aspect ratio)"), quality: P.num("JPEG / WebP quality 0.1..1", { default: 0.92 }),
             canvas_width: P.int("frame width in pixels (default the picture's)"), canvas_height: P.int("frame height in pixels"), anchor: P.str("where the picture sits in the frame: tl, tc, tr, ml, mc, mr, bl, bc, br", { default: "mc" }), fill: P.str("transparent, white, black or #rrggbb around the picture", { default: "transparent" }),
@@ -1283,16 +1321,19 @@ const COMMANDS = {
         },
     },
     export_layer: {
+        destructive: true,
         description: "Save one layer as a PNG with transparency.",
         params: { layer: P.layer(), path: P.str("absolute target path (no dialog)") },
         async run(ed, a) { const l = findLayer(ed, a.layer); ed.activeLayerId = l.id; const saved = await withExportPath(a.path, () => ed.exportLayerPng()); if (!saved) throw new Error(ed.status); return { file: saved, status: ed.status }; },
     },
     export_mask: {
+        destructive: true,
         needsImage: true, description: "Save the selection as a black and white mask PNG.",
         params: { path: P.str("absolute target path (no dialog)") },
         async run(ed, a) { const saved = await withExportPath(a.path, () => ed.exportMaskPng()); if (!saved) throw new Error(ed.status); return { file: saved, status: ed.status }; },
     },
     screenshot: {
+        readOnly: true,
         needsImage: true, description: "A JPEG of the image (what = image: the flattened picture; editor: with hidden helpers; layer: one layer alone), base64 in `data`.",
         params: { what: P.str("image, editor or layer", { enum: ["image", "editor", "layer"], default: "image" }), layer: P.layer("for what = layer"), max_size: P.int("long side in pixels (64..4096)", { default: 1024 }), quality: P.num("JPEG quality 0.3..0.95", { default: 0.85 }), show_selection: P.bool("tint and outline the selection", { default: true }), show_layers: P.bool("outline and label the layers", { default: false }) },
         async run(ed, a) {
@@ -1306,11 +1347,12 @@ const COMMANDS = {
             return { width: w, height: h, scale: s, image_width: src.w, image_height: src.h, mime: "image/jpeg", data: url.slice(url.indexOf(",") + 1) };
         },
     },
-    get_state: { description: "The document's state JSON (the node's canvas_state without the selection bitmaps).", params: {}, async run(ed) { const v = JSON.parse(ed.getValue() || "{}"); delete v.selection; delete v.selections; return v; } },
+    get_state: { readOnly: true, description: "The document's state JSON (the node's canvas_state without the selection bitmaps).", params: {}, async run(ed) { const v = JSON.parse(ed.getValue() || "{}"); delete v.selection; delete v.selections; return v; } },
     set_status: { description: "Write a line into the document's status bar.", params: { text: P.str("", { required: true }) }, async run(ed, a) { ed.setStatus(String(a.text)); return { status: ed.status }; } },
 
     // -- log --
     read_log: {
+        readOnly: true,
         scope: "app",
         description: "The app's log (what the app, its providers and helpers reported; errors carry the request shape and the stack): the last entries, newest last. Also in Help > Console and in <userData>/logs/scumble.log.",
         params: { level: P.str("all, warn (warnings and errors) or error", { enum: ["all", "warn", "error"], default: "all" }), after: P.int("only entries with an id above this (from an earlier call)", { default: 0 }), limit: P.int("at most this many entries (default 200)", { default: 200 }) },
@@ -1325,6 +1367,7 @@ const COMMANDS = {
 
     // -- brush --
     list_brush_tips: {
+        readOnly: true,
         description: "The brush tips available under Tip: the built-in round dab and the imported ones (from Photoshop .abr files or images), with the active one and the brush settings of this document.",
         params: {},
         async run(ed) {
@@ -1422,8 +1465,12 @@ function appInfo() {
  * @returns {CommandDescriptor[]}
  */
 export function describe() {
+    // the MCP hints: a built-in that sets no flag is false; a plugin command that sets none stays null, and the MCP
+    // server judges it by its name (electron/main/mcp/server.js)
+    const flag = (v, owner) => (typeof v === "boolean" ? v : owner ? null : false);
     return Object.entries(COMMANDS).map(([name, c]) => ({
         name, description: c.description, scope: c.scope || "doc", needsImage: !!c.needsImage, plugin: c.owner || null,
+        readOnly: flag(c.readOnly, c.owner), destructive: flag(c.destructive, c.owner),
         params: { ...(c.scope === "app" ? {} : { doc: P.int("document id (default the active tab)") }), ...c.params },
     }));
 }

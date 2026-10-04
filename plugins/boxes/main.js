@@ -487,7 +487,7 @@ export function activate(scumble) {
     const summary = (b) => ({ ...b });
     scumble.commands.register("list", {
         description: "The boxes of this document (image pixels), whether the selected recipe takes boxes and whether the document's Boxes switch is on (set_generation boxes): a run sends them only when both are.",
-        params: {}, needsImage: true, scope: "doc",
+        params: {}, needsImage: true, scope: "doc", readOnly: true,
         run(doc) { const rs = recipeState(); return { boxes: boxesOf(doc).map(summary), count: boxesOf(doc).length, recipe: { name: rs.name, takes: rs.takes, schema: rs.schema }, switch: switchOf(doc) }; },
     });
     scumble.commands.register("add", {

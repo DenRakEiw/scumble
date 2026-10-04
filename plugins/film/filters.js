@@ -384,7 +384,8 @@ export function makeFilters(scumble) {
                 const longSide = info.full ? Math.max(info.full[0], info.full[1]) : Math.max(src.width, src.height);
                 out = halationStage(run, out, { thr: 0.62, sigma: longSide * 0.012, strength: hal * 0.9, tint: hueRgb(12).map((v) => mix(1, v, 0.85)) }, info);
             }
-            const g = stock ? stock.grain : { amount: 25, size: 1.5, speckle: 25, chroma: 0 };
+            // "None (adjustments only)" (no stock) adds no grain: the Grain slider scales a stock's grain, and there is none
+            const g = stock ? stock.grain : { amount: 0, size: 1.5, speckle: 25, chroma: 0 };
             const gp = pct(p.grain, 100) * strength * (1 + 0.35 * push);
             if (gp > 0) out = grainStage(out, { amount: g.amount * gp, size: g.size * (1 + 0.12 * push), speckle: g.speckle, chroma: g.chroma }, { ...info, cache });
             return out;

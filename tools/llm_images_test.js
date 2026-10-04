@@ -5,7 +5,8 @@
 // plays OpenAI's Responses API, Gemini, Anthropic and the OpenAI-compatible Chat Completions servers (the local
 // endpoint, ToAPIs, a Chat provider row). It checks the exact part sequence each builder sends, that a request
 // without reference pictures is the request from before them, the cap of six, the switch, `vision: false`, the
-// compatible client's steps (all pictures, the crop, the text) with their notes, and the labels on one line.
+// compatible client's steps (all pictures, the crop, the text) with their notes, and the labels on one line. Section 9:
+// the local endpoint's key reaches the saved URL only (compatModels, docs/PLAN_0_1_42.md F1).
 "use strict";
 
 const os = require("node:os");
@@ -313,6 +314,42 @@ async function main() {
         const r2 = await ask("gemini:gemini-3.8-flash", { image: CROP, images: refs(2) });
         check("the log line: crop only with no picture count after a step down, \"2 reference pictures\" when they went",
             /, crop only$/.test(r.logs.join("\n")) && !/reference picture/.test(r.logs.join("\n")) && /, 2 reference pictures$/.test(r2.logs.join("\n")), short([r.logs, r2.logs]));
+    }
+
+    // 9. the local endpoint's key goes to the saved URL only (docs/PLAN_0_1_42.md F1): compatModels, the Test button's
+    //    IPC llm:models, compares the URL it is given with settings.llm.compat.url as compatBase makes both a base; any
+    //    other URL (a plugin may name one) is asked without the key
+    {
+        KEYS.compat = "sk-compat-0123456789abcdef";
+        const bearer = "Bearer " + KEYS.compat;
+        const models = async (url) => {
+            const calls = [];
+            globalThis.fetch = async (u, init = {}) => {
+                calls.push({ url: String(u), auth: (init.headers && init.headers.Authorization) || null });
+                return json(200, { data: [{ id: "m1" }, { id: "m2" }] });
+            };
+            try { return { calls, ids: await llm.compatModels(url) }; }
+            catch (err) { return { calls, err: String(err && err.message || err) }; }
+            finally { globalThis.fetch = realFetch; }
+        };
+        const one = (r, url, auth) => r.calls.length === 1 && r.calls[0].url === url && r.calls[0].auth === auth && eq(r.ids, ["m1", "m2"]);
+        try {
+            const forms = [COMPAT.url, COMPAT.url + "/", COMPAT.url + "/v1", "  " + COMPAT.url + "/v1/  ", undefined];
+            const keyed = [];
+            for (const u of forms) keyed.push(await models(u));
+            check("the saved URL gets the key, in every form compatBase makes the same base (and without a URL)",
+                keyed.every((r) => one(r, COMPAT.url + "/v1/models", bearer)), short(keyed));
+            const others = [];
+            for (const u of ["http://evil.example:5999", "http://127.0.0.1:6000", "https://127.0.0.1:5999", COMPAT.url + "/proxy", COMPAT.url + "/v2"]) others.push(await models(u));
+            check("another host, port, scheme or path is asked without the key",
+                others.every((r) => r.calls.length === 1 && r.calls[0].auth === null && eq(r.ids, ["m1", "m2"])) && others[0].calls[0].url === "http://evil.example:5999/v1/models", short(others));
+            state.settings.llm.compat.url = "";
+            const unsaved = await models(COMPAT.url);
+            check("no saved URL: no key for any URL", one(unsaved, COMPAT.url + "/v1/models", null), short(unsaved));
+        } finally {
+            delete KEYS.compat;
+            reset();
+        }
     }
 
     const failed = results.filter((x) => !x).length;

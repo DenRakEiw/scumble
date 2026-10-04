@@ -11137,6 +11137,74 @@ try {
 return out;
 """),
     # item 26 step 26c1: the prompt field with its reference chips (tools/prompt_field_steps.py)
+    ("ctrl_enter_waits_for_the_api_run", """
+// docs/PLAN_0_1_42.md F1: Ctrl+Enter reached generate() past the disabled button and started a second API run while one
+// was going (and freed the button under it). With an API recipe selected, a stub run that never answers holds the
+// document's slot (`providerPending`, as host.runProvider does): Ctrl+Enter on the editor and in the prompt field are
+// refused with the reason, nothing is queued, the seed is not rolled and the button stays disabled. A recipe on the
+// user's ComfyUI takes no slot and still queues on every press while the slot is held (a pass or an upscale holds it
+// too), and once the run is over the API recipe goes again.
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+const q0 = host.queueGenerate, random0 = ed.genSettings.seedRandom, prev = host.recipe;
+if (!prev || prev.kind === "provider") throw new Error("the profile's recipe is not one on ComfyUI: " + (prev && prev.id));
+const LOOP = { id: "loopback_f1", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", name: "Loopback", settings: [] };
+const calls = [];
+let hold = true, release = null, first = null;
+const WORDS = "A run is still going: wait for it, or Cancel.";
+host.queueGenerate = (e) => {
+    calls.push(host.recipe && host.recipe.id);
+    if (!hold) return Promise.resolve();
+    hold = false;
+    const token = { provider: "stub", label: "Stub", started: Date.now(), editor: e };
+    e.providerPending = token;
+    return new Promise((r) => { release = () => { if (e.providerPending === token) e.providerPending = null; r(); }; });
+};
+const ctrlEnter = (target) => target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+try {
+    await run("new_canvas", { width: 320, height: 200, doc: d.id });
+    host.setRecipe(LOOP);
+    ed.genSettings.seedRandom = true;
+    first = ed.generate();
+    await wait(50);
+    if (calls.length !== 1 || !ed.providerPending || !ed.generateBtn.disabled) throw new Error("the stub run did not start: " + JSON.stringify({ calls: calls.length, busy: !!ed.providerPending, disabled: ed.generateBtn.disabled }));
+    const seed = ed.genSettings.seed;
+    for (const [where, target] of [["editor", document.body], ["prompt field", ed.promptInput]]) {
+        ed.setStatus("");
+        ctrlEnter(target);
+        await wait(80);
+        out[where] = { calls: calls.length, status: ed.status, seed: ed.genSettings.seed === seed, disabled: ed.generateBtn.disabled };
+        if (calls.length !== 1) throw new Error(`Ctrl+Enter in the ${where} started a second run while one was going`);
+        if (ed.status !== WORDS || !ed.lastRunError || ed.lastRunError.message !== WORDS) throw new Error(`Ctrl+Enter in the ${where} was not refused with the reason: ${ed.status}`);
+        if (ed.genSettings.seed !== seed) throw new Error(`the refused Ctrl+Enter in the ${where} rolled the seed`);
+        if (!ed.generateBtn.disabled) throw new Error(`the refused Ctrl+Enter in the ${where} freed the button under the running run`);
+    }
+    // the recipe on ComfyUI queues while the slot is held
+    host.setRecipe(prev);
+    ctrlEnter(document.body); await wait(80);
+    ctrlEnter(ed.promptInput); await wait(80);
+    out.comfyWhileHeld = calls.slice(1);
+    if (calls.length !== 3 || calls[1] !== prev.id || calls[2] !== prev.id) throw new Error(`two Ctrl+Enter with ${prev.id} while the slot was held queued ${JSON.stringify(calls.slice(1))}`);
+    release();
+    await first;
+    if (ed.providerPending || ed.generateBtn.disabled) throw new Error("the run's end left the slot or the button: " + JSON.stringify({ busy: !!ed.providerPending, disabled: ed.generateBtn.disabled }));
+    // the run is over: the API recipe goes again
+    host.setRecipe(LOOP);
+    ctrlEnter(document.body); await wait(80);
+    out.apiAfter = calls.slice(3);
+    if (calls.length !== 4 || calls[3] !== LOOP.id) throw new Error("Ctrl+Enter after the run queued " + JSON.stringify(calls.slice(3)));
+} finally {
+    host.queueGenerate = q0;
+    if (release) release();
+    ed.providerPending = null;
+    ed.genSettings.seedRandom = random0;
+    host.setRecipe(prev);
+    try { await run("close_document", { doc: d.id }); } catch (_) { /* gone */ }
+}
+return out;
+"""),
     *[(name, (lambda f: lambda c: f(c, PRE))(f)) for name, f in PROMPT_FIELD_STEPS],
     # item 26 step 26c2: the @ picker, the reference bar, the hover card, the swap menu, the chip drag (tools/ref_picker_steps.py)
     *[(name, (lambda f: lambda c: f(c, PRE))(f)) for name, f in REF_PICKER_STEPS],

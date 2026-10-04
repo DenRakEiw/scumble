@@ -114,6 +114,51 @@ def data_of(res):
         return t
 
 
+# The tool hints (docs/PLAN_0_1_42.md F1): from the commands' readOnly / destructive flags; the names below were wrong
+# before (the dotted plugin commands never matched the name test, new_document was destructive, the rest was missing)
+HINT_READ = ["ping", "status", "list_layers", "list_history", "screenshot", "filter_types", "read_log",
+             "film_looks", "glb_info", "ailabel_info", "sample_mean_color", "boxes_list"]
+HINT_DESTRUCTIVE = ["close_document", "remove_layer", "new_canvas", "load_image", "generate_new", "flatten", "merge_down",
+                    "extend_canvas", "export", "export_layer", "export_mask", "undo", "redo", "select_recipe",
+                    "set_node_params", "ailabel_add"]
+HINT_NEITHER = ["new_document", "select_rect", "generate", "set_layer", "add_filter", "sample_box"]
+# a plugin command that sets no flag: judged by its own name (the part after the plugin id), never destructive
+HINT_FALLBACK = (
+    "const { toTool } = require('./electron/main/mcp/server');"
+    "const a = (name, f) => toTool({ name, plugin: 'x', params: {}, readOnly: null, destructive: null, ...(f || {}) }).annotations;"
+    "process.stdout.write(JSON.stringify({ list: a('x.list'), listing: a('x.list_things'), info: a('x.info'), paint: a('x.paint'),"
+    " remove: a('x.remove'), flagged: a('x.list', { readOnly: false, destructive: true }), builtin: a('list_layers', { plugin: null }) }));"
+)
+
+
+def hints_check(tools):
+    by = {t.name: t for t in tools}
+
+    def ann(n):
+        a = by[n].annotations
+        return (bool(a.readOnlyHint), bool(a.destructiveHint)) if a else None
+
+    missing = [n for n in HINT_READ + HINT_DESTRUCTIVE + HINT_NEITHER if n not in by]
+    if missing:
+        raise RuntimeError("tools missing for the hint check: " + ", ".join(missing))
+    wrong = [f"{n} {ann(n)}" for n in HINT_READ if ann(n) != (True, False)]
+    wrong += [f"{n} {ann(n)}" for n in HINT_DESTRUCTIVE if ann(n) != (False, True)]
+    wrong += [f"{n} {ann(n)}" for n in HINT_NEITHER if ann(n) != (False, False)]
+    if wrong:
+        raise RuntimeError("tool hints (readOnly, destructive) wrong: " + "; ".join(wrong))
+    p = subprocess.run(["node", "-e", HINT_FALLBACK], cwd=ROOT, capture_output=True, text=True, timeout=120)
+    if p.returncode != 0:
+        raise RuntimeError("the hint fallback check did not run: " + p.stderr[-300:])
+    fb = {k: (v.get("readOnlyHint"), v.get("destructiveHint")) for k, v in json.loads(p.stdout).items()}
+    want = {"list": (True, False), "listing": (True, False), "info": (True, False), "paint": (False, False),
+            "remove": (False, False), "flagged": (False, True), "builtin": (True, False)}
+    if fb != want:
+        raise RuntimeError(f"the hint fallback for a plugin without flags: {fb}, not {want}")
+    reads = sum(1 for t in tools if t.annotations and t.annotations.readOnlyHint)
+    gone = sum(1 for t in tools if t.annotations and t.annotations.destructiveHint)
+    return f"{reads} read-only, {gone} destructive; the named {len(HINT_READ)} / {len(HINT_DESTRUCTIVE)} / {len(HINT_NEITHER)} and the fallback right"
+
+
 async def call(session, name, arguments=None, expect_error=False):
     res = await session.call_tool(name, arguments or {})
     if bool(res.isError) != expect_error:
@@ -148,6 +193,7 @@ async def main():
             if "doc" in next(t for t in tools if t.name == "ping").inputSchema["properties"]:
                 raise RuntimeError("ping is an app command, no doc")
             report["tools"] = len(names)
+            report["hints"] = hints_check(tools)
 
             ping = data_of(await call(session, "ping"))
             report["mode"] = ping.get("mcp", {}).get("mode")

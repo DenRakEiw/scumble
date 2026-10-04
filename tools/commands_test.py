@@ -143,6 +143,85 @@ const after = (await c("list_layers")).layers.length;
 if (after !== before + 2) throw new Error(`layer count ${after}, expected ${before + 2}`);
 return { paint: p.id, text: t2.id, layers: after };
 """),
+    ("layer_flip_and_refusals", """
+// docs/PLAN_0_1_42.md F1: flip_layer axis x mirrors left to right (it reached the editor as a vertical flip), y top to
+// bottom, one undo step each. remove_layer, flip_layer and center_layer refuse a locked layer (its own lock or its
+// group's), flip_layer and center_layer a filter layer, with the reason and before the editor is called (it only set
+// its status line, and the commands answered as if done)
+const P = await import("./plugins.js");
+const doc = new P.Document(editor);
+const W = 40, H = 20;
+const img = new ImageData(W, H);
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    // the left 10 columns red, the top 5 rows of the rest green, the rest blue; small ramps in green and blue, opaque
+    const i = (y * W + x) * 4, c = x < 10 ? [255, 0, 0] : y < 5 ? [0, 255, 0] : [0, 0, 255];
+    img.data[i] = c[0]; img.data[i + 1] = c[1] ^ (x & 7); img.data[i + 2] = c[2] ^ (y & 7); img.data[i + 3] = 255;
+}
+const made = doc.addLayer(img, { name: "Flip probe", x: 30, y: 40 });
+const L = () => editor.layers.find((l) => l.id === made.id);
+const read = () => Array.from(L().px.readRect(0, 0, W, H).data);
+const mirror = (d, axis) => {
+    const o = new Array(d.length);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const sx = axis === "x" ? W - 1 - x : x, sy = axis === "y" ? H - 1 - y : y;
+        for (let k = 0; k < 4; k++) o[(y * W + x) * 4 + k] = d[(sy * W + sx) * 4 + k];
+    }
+    return o;
+};
+const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+const p0 = read();
+if (same(p0, mirror(p0, "x")) || same(p0, mirror(p0, "y"))) throw new Error("the probe is symmetric: it proves nothing");
+const out = {};
+const u0 = editor.undo.length;
+await c("flip_layer", { layer: made.id, axis: "x" });
+const px = read();
+if (!same(px, mirror(p0, "x"))) throw new Error("flip_layer axis x is not a left to right mirror" + (same(px, mirror(p0, "y")) ? " (it flipped vertically)" : ""));
+await c("flip_layer", { layer: made.id, axis: "y" });
+if (!same(read(), mirror(mirror(p0, "x"), "y"))) throw new Error("flip_layer axis y is not a top to bottom mirror");
+await c("flip_layer", { layer: made.id });   // the default axis is x
+if (!same(read(), mirror(p0, "y"))) throw new Error("flip_layer's default axis is not x");
+const labels = editor.undo.slice(-3).map((s) => s.label);
+if (JSON.stringify(labels) !== JSON.stringify(["Flip horizontally", "Flip vertically", "Flip horizontally"])) throw new Error("the three flips' undo steps: " + JSON.stringify(labels) + " (" + (editor.undo.length - u0) + " pushed)");
+out.flips = labels;
+// locked: each command refuses with the reason, and nothing changes (pixels, place, the stack, the undo steps)
+await c("set_layer", { layer: made.id, locked: true });
+const refused = async (name, args, re) => {
+    const p1 = read(), u1 = editor.undo.length, n1 = editor.layers.length, at = [L().x, L().y];
+    let msg = "";
+    try { await c(name, args); } catch (e) { msg = String(e.message || e); }
+    if (!re.test(msg)) throw new Error(`${name} on a locked layer was not refused with the reason: ${msg || "it answered as done"}`);
+    const now = L() && { layers: editor.layers.length - n1, pixels: same(read(), p1), at: [L().x - at[0], L().y - at[1]], undo: editor.undo.length - u1, last: editor.undo.slice(-2).map((s) => s.label + "/" + s.kind) };
+    if (!now || now.layers || !now.pixels || now.at[0] || now.at[1] || now.undo) throw new Error(`${name} refused but changed the layer: ${JSON.stringify(now)}`);
+    return msg;
+};
+out.locked = {
+    remove: await refused("remove_layer", { layer: made.id }, /^layer Flip probe is locked: unlock it first/),
+    flip: await refused("flip_layer", { layer: made.id, axis: "x" }, /^layer Flip probe is locked/),
+    center: await refused("center_layer", { layer: made.id }, /^layer Flip probe is locked/),
+};
+// a group's lock counts too
+await c("set_layer", { layer: made.id, locked: false });
+const g = await c("group_layers", { layers: [made.id], name: "Probe group" });
+await c("set_group", { group: g.id, locked: true });
+out.groupLocked = await refused("remove_layer", { layer: made.id }, /^layer Flip probe is locked by its group: unlock the group first/);
+await c("set_group", { group: g.id, locked: false });
+await c("ungroup_layers", { group: g.id });
+// a filter layer has no pixels to flip and no place to centre
+const fl = await c("add_filter", { type: "curves", name: "Probe filter" });
+for (const [name, word] of [["flip_layer", "flipped"], ["center_layer", "centred"]]) {
+    let msg = "";
+    try { await c(name, { layer: fl.id }); } catch (e) { msg = String(e.message || e); }
+    if (msg !== `layer Probe filter is a filter layer: it cannot be ${word}`) throw new Error(`${name} on a filter layer: ${msg || "it answered as done"}`);
+    out[name + "_filter"] = msg;
+}
+await c("remove_layer", { layer: fl.id });
+// unlocked again: centre and remove go through
+const ce = await c("center_layer", { layer: made.id });
+if (ce.x !== Math.round((editor.width - W) / 2) || ce.y !== Math.round((editor.height - H) / 2)) throw new Error("center_layer: " + JSON.stringify(ce));
+const rm = await c("remove_layer", { layer: made.id });
+if (rm.removed !== made.id || L()) throw new Error("remove_layer after the unlock: " + JSON.stringify(rm));
+return out;
+"""),
     ("posterize_filter", """
 const types = await c("filter_types");
 const f = types.filters.find((x) => x.id === "sample.posterize");

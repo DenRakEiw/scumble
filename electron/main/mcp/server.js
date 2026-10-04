@@ -33,7 +33,16 @@ new image and keeps the reference layers; upscale writes a token as its layer's 
 after a change you cannot judge from numbers. Selections, layers and settings persist in the
 editor between calls; the user may be looking at the same window.`;
 
-const READ_ONLY = /^(ping|list_|status$|get_|filter_types|screenshot|describe)/;
+// The tool hints come from the command's own flags (commands.describe(): readOnly / destructive, set on the definitions in
+// renderer/commands.js and by plugins through commands.register). A plugin command that sets none (null) is judged by its
+// own name, the part after "<plugin>.": a read by its verb, never destructive (an additive change, as before 0.1.42).
+const READ_ONLY = /^(ping$|list|get_|status$|info$|filter_types$|screenshot$|read_log$)/;
+
+/** One hint: the command's flag when it sets one, else the fallback on its name. */
+function hint(flag, name, fallback) {
+    if (typeof flag === "boolean") return flag;
+    return fallback ? fallback.test(String(name).replace(/^[^.]*\./, "")) : false;
+}
 
 function jsonType(t) {
     return ["string", "number", "integer", "boolean", "array"].includes(t) ? t : null;   // "object" params take anything (masks are arrays or strings)
@@ -66,7 +75,7 @@ function toTool(c) {
         name: toolName(c.name),
         description,
         inputSchema: { type: "object", properties, ...(required.length ? { required } : {}) },
-        annotations: { readOnlyHint: READ_ONLY.test(c.name), destructiveHint: /^(close_document|remove_layer|new_canvas|new_document|load_image)$/.test(c.name), openWorldHint: false },
+        annotations: { readOnlyHint: hint(c.readOnly, c.name, READ_ONLY), destructiveHint: hint(c.destructive, c.name, null), openWorldHint: false },
     };
     return tool;
 }
