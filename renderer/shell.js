@@ -1497,7 +1497,7 @@ function upSyncNote() {
             const W = (ed && ed.width) || 0, H = (ed && ed.height) || 0;
             const refusal = shape || (!(ed && ed.base && W && H) ? "Load an image first." : host.upscaleSizeRefusal(r, W, H, f, "picture"));
             const back = f != null ? `about ${Math.round(W * f)} × ${Math.round(H * f)} comes back` : "the model's larger answer comes back";
-            ui.upSizeNote.textContent = refusal || `${W} × ${H} (the base picture alone) goes out to your ComfyUI, ${back} and becomes the picture; every layer, mask and the selection scale along. A cut-out picture comes back without its transparency on this route.`;
+            ui.upSizeNote.textContent = refusal || `${W} × ${H} (the base picture alone) goes out to your ComfyUI, ${back} and becomes the picture; every layer, mask and the selection scale along. A cut-out picture comes back opaque on this route, black where it was transparent.`;
             ui.upGo.disabled = !!why || !!refusal;
             return;
         }

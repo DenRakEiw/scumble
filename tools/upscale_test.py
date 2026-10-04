@@ -702,7 +702,7 @@ try {
     if ($("up-scope-doc").disabled || !$("up-scope-sel").checked) throw new Error("the whole picture is greyed, or the selection not chosen");
     scopeDoc(); setFactor(2);
     const note = $("up-size-note").textContent;
-    if ($("up-go").disabled || !note.startsWith("640 × 480 (the base picture alone) goes out to your ComfyUI, about 1280 × 960 comes back and becomes the picture; every layer, mask and the selection scale along.") || !/A cut-out picture comes back without its transparency on this route\\./.test(note)) throw new Error("the note: " + note + " / Upscale greyed " + $("up-go").disabled);
+    if ($("up-go").disabled || !note.startsWith("640 × 480 (the base picture alone) goes out to your ComfyUI, about 1280 × 960 comes back and becomes the picture; every layer, mask and the selection scale along.") || !/A cut-out picture comes back opaque on this route, black where it was transparent\\./.test(note)) throw new Error("the note: " + note + " / Upscale greyed " + $("up-go").disabled);
     out.note = note;
     pick("upscale_model_local"); scopeDoc();
     const umNote = $("up-size-note").textContent;
