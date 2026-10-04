@@ -4,7 +4,7 @@
   "task": "upscale",
   "name": "RTX Video Super Resolution (Comfy Cloud)",
   "family": "Upscale",
-  "description": "NVIDIA's RTX Video Super Resolution on Comfy Cloud, on your Comfy key: compression artefacts out, edges cleaner, no invented detail. 1 to 4 times; the answer may be at most 8192 px on the long side.",
+  "description": "NVIDIA's RTX Video Super Resolution on Comfy Cloud, on your Comfy key: compression artefacts out, edges cleaner, no invented detail. 1 to 4 times; the answer may be at most 8192 px on the long side. A cut-out picture comes back opaque, black where it was transparent.",
   "default": "comfycloud",
   "factor": { "default": 2, "min": 1, "max": 4 },
   "limits": { "min": 64, "max": 4096, "out": 8192, "step": 1 },
