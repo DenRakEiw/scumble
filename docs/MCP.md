@@ -137,18 +137,26 @@ named as picture 2 there (3 when the Original goes too); it returns `prompt_sent
 comes first, which `generate_new` replaces while the reference stays (`role: "none"` there is
 still refused with "no image loaded").
 
-**`realism_pass`** (docs/PLAN_0_1_42.md, R3b / R4). The Realism Pass (Windows only, RTX only) runs on
+**`realism_pass`** (docs/PLAN_0_1_42.md, R3b / R4 / R-U). The Realism Pass (Windows only, RTX only) runs on
 the user's own ComfyUI only: Windows, an RTX 30, 40 or 50 card, the community node pack
 ComfyUI-DLSS5-Enhancer and its runtime, which the user installs there (the manual's chapter of the
-same name). It sends the whole visible picture at 1× and adds the answer as a new layer under the
-top run of filter layers, one undo step; it takes no prompt and no selection. Before calling it, read
-`status`'s `realism: { ready, reason, note, style, strength, preset }`: `ready` false gives the
-sentence the command would refuse with (the server, a run going on the document, still loading, no
-picture, past 7680 × 4320), and `note` the RTX 30 one. `list_recipes` gives the pass recipe (task
+same name). It sends the whole visible picture and adds the answer as a new layer under the top run
+of filter layers, one undo step; it takes no prompt and no selection. `factor` 1 (the default)
+refines at the picture's own size; `factor` 1.5, 1.7 (DLSS's 1.724x Balanced), 2 or 3 also makes the
+document that many times larger first (the base and every layer, mask and the selection scaled
+along) and the layer comes at the new size, in the same undo step; a picture whose output would
+pass 7680 × 4320 is scaled down before it goes (a note says to what), so the document grows as far
+as DLSS allows. Any other factor is refused. Before calling it, read
+`status`'s `realism: { ready, reason, note, style, strength, preset }`, which answers for factor 1:
+`ready` false gives the sentence the command would refuse with (the server, a run going on the
+document, still loading, no picture, past 7680 × 4320; above factor 1 that last reason does not
+hold, and a picture that cannot get larger or would be scaled under 64 px a side is refused
+instead), and `note` the RTX 30 one. `list_recipes` gives the pass recipe (task
 `pass`) `ready` / `reason` / `note` for the connected server alone. Style, Strength and the model
 preset are the user's (the Upscale dialog's row); there is no command argument for them. The
 command waits for the answer (`timeout`, 570 s by default, ends the job on the server too) and
-returns `layer`, `seconds`, `notes` and `changed` (the picture changed while the pass ran). The pass
+returns `layer`, `seconds`, `notes`, `changed` (the picture changed while the pass ran), `factor`, and
+`from` / `width` / `height` (the document's size before and after). The pass
 recipe itself runs through `generate` on a selection's box; `generate_new` refuses it.
 
 ## How it works

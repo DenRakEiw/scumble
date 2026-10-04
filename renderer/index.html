@@ -241,7 +241,7 @@
 <dialog id="up-dialog">
   <form method="dialog">
     <h2>Upscale</h2>
-    <p class="shell-help">An upscale model makes the picture larger and sharper. On the selection the answer comes back into it at the document's resolution, as a detail pass on a new layer. On the whole picture the base image is replaced by the upscaled one and every layer, mask and the selection are scaled along (one undo step). The Realism Pass (Windows only, RTX only) refines instead: the whole visible picture goes through DLSS 5 on your own ComfyUI at 1× and comes back as a new layer above it.</p>
+    <p class="shell-help">An upscale model makes the picture larger and sharper. On the selection the answer comes back into it at the document's resolution, as a detail pass on a new layer. On the whole picture the base image is replaced by the upscaled one and every layer, mask and the selection are scaled along (one undo step). The Realism Pass (Windows only, RTX only) refines instead: the whole visible picture goes through DLSS 5 on your own ComfyUI and comes back as a new layer above it, at 1× at the picture's own size, or at 1.5× to 3× with the picture made that much larger first (one undo step takes both back).</p>
     <div class="shell-grid">
       <label class="shell-field">Model <select id="up-recipe"></select></label>
       <label class="shell-field" id="up-provider-row">Provider <select id="up-provider"></select></label>

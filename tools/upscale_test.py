@@ -994,10 +994,12 @@ try {
     if (recipe0 && (!host.recipe || host.recipe.id !== recipe0.id)) host.shell.selectRecipe(recipe0.id, recipe0.kind === "provider" ? recipe0.provider : undefined);
 }
 """),
-    # docs/PLAN_0_1_42.md R3b: the Realism Pass entry. 1x only, the whole picture only (the selection greyed with its
-    # reason, usable again for the next entry), its Style / Strength / Preset row writing settings.realism whole, the
-    # note and a greyed Upscale for a server or a size that refuses it, Upscale running realism_pass (host.realismWhole
-    # stubbed: nothing is read or sent) without selecting the recipe, and the Image menu's item opening it chosen
+    # docs/PLAN_0_1_42.md R3b: the Realism Pass entry. The whole picture only (the selection greyed with its reason,
+    # usable again for the next entry), its Style / Strength / Preset row writing settings.realism whole, the note and a
+    # greyed Upscale for a server or a size that refuses it, Upscale running realism_pass (host.realismWhole stubbed:
+    # nothing is read or sent) without selecting the recipe, and the Image menu's item opening it chosen. R-U: the
+    # factors 1x (refine), 1.5x, 1.7x, 2x, 3x, 1x shown first (an upscaler's factor never carries over), the size note
+    # naming the document after the landing and a scale-down past the cap, a fit under 64 px greyed, the factor sent
     ("the_realism_pass_entry", """
 const ed = ednow(window.__u);
 const LABEL = "Realism Pass (Windows only, RTX only)";
@@ -1033,9 +1035,10 @@ try {
     $("up-factor").dispatchEvent(new Event("change"));
     pick("clarity_upscaler");
     pick("realism_pass");
-    // 1x only, the whole picture only, no provider and no prompt, the pass row
+    // 1x to 3x, 1x shown (Topaz's larger factor before does not carry over), the whole picture only, no provider and
+    // no prompt, the pass row
     const factors = Array.from($("up-factor").options).map((o) => [o.value, o.textContent]);
-    if (JSON.stringify(factors) !== JSON.stringify([["1", "1× (refine)"]]) || $("up-factor-row").hidden) throw new Error("the factors: " + JSON.stringify(factors));
+    if (JSON.stringify(factors) !== JSON.stringify([["1", "1× (refine)"], ["1.5", "1.5×"], ["1.7", "1.7×"], ["2", "2×"], ["3", "3×"]]) || $("up-factor-row").hidden || $("up-factor").value !== "1") throw new Error("the factors: " + JSON.stringify(factors) + " shown " + $("up-factor").value);
     const selLabel = $("up-scope-sel").parentElement;
     if (!$("up-scope-sel").disabled || !$("up-scope-doc").checked || $("up-scope-doc").disabled || selLabel.title !== LABEL + " runs over the whole picture.") throw new Error("the scope: " + JSON.stringify({ sel: $("up-scope-sel").disabled, doc: $("up-scope-doc").checked, title: selLabel.title }));
     if (!$("up-provider-row").hidden || !$("up-prompt-row").hidden || $("up-pass-row").hidden) throw new Error("the rows: " + JSON.stringify({ provider: $("up-provider-row").hidden, prompt: $("up-prompt-row").hidden, pass: $("up-pass-row").hidden }));
@@ -1086,14 +1089,34 @@ try {
     out.cap = capNote;
     resync();
     if ($("up-go").disabled) throw new Error("Upscale stays greyed after the size came back: " + $("up-size-note").textContent);
+    // R-U: 2x names the document after the landing; past the cap it says what the picture is scaled down to; a fit
+    // under 64 px greys Upscale with its reason
+    const factor = (v) => { $("up-factor").value = v; $("up-factor").dispatchEvent(new Event("change")); };
+    factor("2");
+    const note2 = $("up-size-note").textContent;
+    if ($("up-go").disabled || !note2.startsWith("640 × 480 goes out at 2×: the picture becomes 1280 × 960, every layer scaled along, and the pass comes back as a new layer above it") || !note2.endsWith("One Ctrl+Z takes both back.")) throw new Error("at 2x: " + note2);
+    ed.width = 5000; ed.height = 3000;
+    resync();
+    const scaledNote = $("up-size-note").textContent, scaledGo = $("up-go").disabled;
+    ed.width = 7681; ed.height = 100;
+    factor("3");
+    const smallNote = $("up-size-note").textContent, smallGo = $("up-go").disabled;
+    ed.width = w0; ed.height = h0;
+    if (scaledGo || !scaledNote.startsWith("5000 × 3000 goes out at 2×, scaled down to 3600 × 2160 first (its output is capped at 7680 × 4320): the picture becomes 7200 × 4320")) throw new Error("past the cap at 2x: " + scaledNote);
+    if (!smallGo || smallNote !== LABEL + " needs at least 64 px a side: at 3× the 7681 × 100 picture would go at 2560 × 32 (its output is capped at 7680 × 4320).") throw new Error("a fit under 64 px at 3x: " + smallNote);
+    out.factors = { at2: note2.slice(0, 70), scaled: scaledNote.slice(0, 90), small: smallNote.slice(39, 120) };
+    factor("2");
+    if ($("up-go").disabled) throw new Error("Upscale stays greyed at 2x after the size came back: " + $("up-size-note").textContent);
     // another entry: the selection usable again and chosen as before the pass, the pass row gone, the factor its own
     pick("topaz_precision");
     if ($("up-scope-sel").disabled || !$("up-scope-sel").checked || selLabel.title || !$("up-pass-row").hidden) throw new Error("after the pass: " + JSON.stringify({ disabled: $("up-scope-sel").disabled, checked: $("up-scope-sel").checked, title: selLabel.title, row: $("up-pass-row").hidden }));
     if (+$("up-factor").value !== topazPick) throw new Error("the upscaler after the pass shows " + $("up-factor").value + "x, not its " + topazPick + "x");
     pick("upscale_model_local");
     if ($("up-scope-sel").disabled || !$("up-pass-row").hidden) throw new Error("a ComfyUI upscaler after the pass");
-    // Upscale runs realism_pass on this document, with the dialog's long timeout; the window's recipe stays
+    // Upscale runs realism_pass on this document at the factor shown (2x, kept for the pass while the upscalers were
+    // shown), with the dialog's long timeout; the window's recipe stays
     pick("realism_pass");
+    if ($("up-factor").value !== "2") throw new Error("the pass's factor was not kept: " + $("up-factor").value);
     const calls = [];
     host.realismWhole = async (e, o) => { calls.push({ e, o, at: Date.now() }); e.setStatus("stubbed pass"); return { layer: null, seconds: 0, note: "", changed: false }; };
     commands.run = async (n, a) => { seen.push({ n, a }); return saved.run.call(commands, n, a); };
@@ -1103,18 +1126,18 @@ try {
     const left = calls[0].o.deadline - calls[0].at;
     if (!(left > 1790000 && left <= 1800000)) throw new Error("the deadline: " + left + " ms");
     const ran = seen.filter((x) => x.n === "realism_pass" || x.n === "upscale");
-    if (ran.length !== 1 || ran[0].n !== "realism_pass" || JSON.stringify(ran[0].a) !== JSON.stringify({ doc: window.__u, timeout: 1800 })) throw new Error("the command: " + JSON.stringify(ran));
+    if (ran.length !== 1 || ran[0].n !== "realism_pass" || JSON.stringify(ran[0].a) !== JSON.stringify({ doc: window.__u, timeout: 1800, factor: 2 }) || calls[0].o.factor !== 2) throw new Error("the command: " + JSON.stringify(ran) + " / factor " + calls[0].o.factor);
     if ($("up-dialog").open) throw new Error("the dialog stayed open");
     if (host.recipe !== recipe0) throw new Error("the pass selected a recipe: " + (host.recipe && host.recipe.id));
     if ((await window.scumble.settings.get()).upscaleRecipe !== saved.upscaleRecipe) throw new Error("the pass was remembered as the upscaler");
     out.deadline = left;
-    // the Image menu's item: the dialog with the pass chosen and its one factor, whatever the window's upscaler is; the
-    // upscaler's dialog opened afterwards shows its own factor, not the pass's 1x
+    // the Image menu's item: the dialog with the pass chosen and its factors, whatever the window's upscaler is; the
+    // upscaler's dialog opened afterwards shows its own factor, not the pass's
     host.shell.selectRecipe("topaz_precision");
     shell.menuCommand("realism-pass");
     await wait(60);
     const menuFactors = JSON.stringify(Array.from($("up-factor").options).map((o) => [o.value, o.textContent]));
-    if (!$("up-dialog").open || $("up-recipe").value !== "realism_pass" || $("up-pass-row").hidden || !$("up-scope-sel").disabled || menuFactors !== JSON.stringify([["1", "1× (refine)"]]) || $("up-factor-row").hidden) throw new Error("the menu item: " + JSON.stringify({ open: $("up-dialog").open, value: $("up-recipe").value, factors: menuFactors }));
+    if (!$("up-dialog").open || $("up-recipe").value !== "realism_pass" || $("up-pass-row").hidden || !$("up-scope-sel").disabled || menuFactors !== JSON.stringify([["1", "1× (refine)"], ["1.5", "1.5×"], ["1.7", "1.7×"], ["2", "2×"], ["3", "3×"]]) || $("up-factor-row").hidden) throw new Error("the menu item: " + JSON.stringify({ open: $("up-dialog").open, value: $("up-recipe").value, factors: menuFactors }));
     $("up-cancel").click();
     await wait(60);
     host.shell.openUpscale(ed);

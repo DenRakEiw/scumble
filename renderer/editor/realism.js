@@ -242,8 +242,132 @@ export function isPassNode(nodeType) {
 
 // ---- the pass on a picture (R2a: host.passPicture, which the whole-picture pass calls, R3a) ----------------------
 
-/** The pass on a picture always runs at 1x: the answer is cropped back to the picture's own size. */
+/** The refiner's mode (1x): the answer is cropped back to the picture's own size. */
 export const PASS_MODE = "1x (DLAA / native)";
+
+/**
+ * The factors the Upscale dialog and realism_pass offer (R-U) and the pack's upscaling modes behind them
+ * (dlss5/settings.py UPSCALING_MODES at 796ed59): `factor` is what the dialog shows and the command takes, `F` the
+ * pack's own factor of the mode (its output is the input times F, each side rounded to even), `label` the mode's
+ * DLSS5Settings value. The dialog's 1.7 is the pack's 1.724x Balanced: every size is counted with F, never with 1.7
+ * (at 1.7 a 4600 × 2000 picture would fit to 4516 × 1964, whose output at 1.724 is 7786 px long and refused).
+ */
+export const MODES = Object.freeze([
+    Object.freeze({ factor: 1, F: 1, label: PASS_MODE, text: "1× (refine)" }),
+    Object.freeze({ factor: 1.5, F: 1.5, label: "1.5x (Quality)", text: "1.5×" }),
+    Object.freeze({ factor: 1.7, F: 1.724, label: "1.724x (Balanced)", text: "1.7×" }),
+    Object.freeze({ factor: 2, F: 2, label: "2x (Performance)", text: "2×" }),
+    Object.freeze({ factor: 3, F: 3, label: "3x (Ultra Performance)", text: "3×" }),
+]);
+
+/** The mode of a factor (the dialog's 1, 1.5, 1.7, 2, 3; the pack's 1.724 is taken for 1.7 too), or null. */
+export function modeFor(factor) {
+    const v = factor === undefined || factor === null || factor === "" ? 1 : +factor;
+    if (!Number.isFinite(v)) return null;
+    return MODES.find((m) => Math.abs(m.factor - v) < 1e-6 || Math.abs(m.F - v) < 1e-6) || null;
+}
+
+/** The refusal of a factor no mode has. */
+export function factorRefusal(factor) {
+    return `${LABEL} takes the factors ${MODES.map((m) => m.factor).join(", ").replace(/, (\d+)$/, " and $1")}, not ${factor}.`;
+}
+
+/**
+ * The largest even size of a w × h picture's aspect whose output at the pack's factor `F` stays within 7680 × 4320
+ * (w × h itself when it fits): the user's DLSS5 Fit Input Size node's fit_size, written out (checked there against the
+ * pack's resolve_output_size on 100,000 sizes; tools/refs/dlss5/fit_cases.json holds its answers): the scale
+ * min(7680 / (F · long), 4320 / (F · short)), both sides floored to even, then 2 px off the long side (the short one
+ * after the aspect) while the output does not fit. Only the cap: the 64 px minimum is the caller's (fitPlan).
+ * -> { w, h }
+ */
+export function fitSize(w, h, F) {
+    w = Math.round(+w || 0); h = Math.round(+h || 0);
+    const ok = (a, b) => { const o = outputSize(a, b, F); return Math.max(o.w, o.h) <= MAX_LONG && Math.min(o.w, o.h) <= MAX_SHORT; };
+    if (!(w > 0 && h > 0) || ok(w, h)) return { w, h };
+    const s = Math.min(MAX_LONG / (F * Math.max(w, h)), MAX_SHORT / (F * Math.min(w, h)));
+    let nw = Math.max(2, Math.floor(w * s / 2 + 1e-9) * 2);
+    let nh = Math.max(2, Math.floor(h * s / 2 + 1e-9) * 2);
+    while (!ok(nw, nh) && nw > 2 && nh > 2) {
+        if (nw >= nh) { nw -= 2; nh = Math.max(2, Math.floor(h * nw / w / 2) * 2); }
+        else { nh -= 2; nw = Math.max(2, Math.floor(w * nh / h / 2) * 2); }
+    }
+    return { w: nw, h: nh };
+}
+
+/** The status sentence of a picture scaled down before the pass (the user's words, docs/PLAN_0_1_42.md §1). */
+export function scaledDownNote(w, h) {
+    return `${LABEL} scaled the picture down to ${w} × ${h} first: its output is capped at ${MAX_LONG} × ${MAX_SHORT}.`;
+}
+
+/**
+ * How a w × h picture goes through the pass at `factor` (the dialog's; R-U): the even size it is padded to goes when
+ * the pack takes it at the mode's F; otherwise the picture is scaled down to fitSize of that padded size (even sides,
+ * nothing padded), so the answer comes back as large as the pack allows. 1× keeps its refusal past the cap
+ * (wholeRefusal: shrinking there would lose the picture's own size). Refused: a factor no mode has, a picture under
+ * 64 px a side, a fit under 64 px a side, and a fit whose answer would not be larger than the picture.
+ * -> { mode, refusal, scaled, fit: [w, h] (the picture before padding), sent: [w, h] (what goes), out: [w, h] (the
+ *      pack's answer), keep: [w, h] (the answer's part that is the picture, the padding's share off), doc: [w, h]
+ *      (the document after the landing: keep's width, the picture's aspect) }
+ */
+export function fitPlan(w, h, factor) {
+    w = Math.round(+w || 0); h = Math.round(+h || 0);
+    const mode = modeFor(factor);
+    const plan = { mode, refusal: "", scaled: false, fit: [w, h], sent: [w, h], out: [w, h], keep: [w, h], doc: [w, h] };
+    if (!mode) return { ...plan, refusal: factorRefusal(factor) };
+    const { w2, h2 } = evenPlan(w, h);
+    plan.sent = [w2, h2];
+    if (mode.factor === 1) {
+        // the refiner: the picture's own size or a refusal, never a downscale
+        plan.refusal = wholeRefusal(w, h);
+        plan.out = [w2, h2];
+        return plan;
+    }
+    if (Math.min(w2, h2) < MIN_SIDE) return { ...plan, refusal: fits(w2, h2, mode.F).replace(`${w2} × ${h2}`, `${w} × ${h}`) };
+    const f = fitSize(w2, h2, mode.F);
+    if (f.w !== w2 || f.h !== h2) {
+        plan.scaled = true;
+        plan.fit = [f.w, f.h];
+        plan.sent = [f.w, f.h];
+        if (Math.min(f.w, f.h) < MIN_SIDE) {
+            return { ...plan, refusal: `${LABEL} needs at least ${MIN_SIDE} px a side: at ${mode.text} the ${w} × ${h} picture would go at ${f.w} × ${f.h} (its output is capped at ${MAX_LONG} × ${MAX_SHORT}).` };
+        }
+    }
+    const o = outputSize(plan.sent[0], plan.sent[1], mode.F);
+    plan.out = [o.w, o.h];
+    plan.keep = [Math.round(plan.fit[0] * o.w / plan.sent[0]), Math.round(plan.fit[1] * o.h / plan.sent[1])];
+    plan.doc = [plan.keep[0], Math.max(1, Math.round(h * plan.keep[0] / w))];
+    if (plan.doc[0] <= w) {
+        plan.refusal = `${LABEL} cannot make the ${w} × ${h} picture larger at ${mode.text}: its output is capped at ${MAX_LONG} × ${MAX_SHORT}.`;
+    }
+    return plan;
+}
+
+/**
+ * The alpha of `source` (w × h RGBA) scaled to ow × oh (bilinear on the pixel centres, the edges held): the alpha an
+ * answer at a larger size gets back (putAlphaBack takes it as its `source`). Colour bytes are 0.
+ * -> Uint8ClampedArray of ow × oh × 4
+ */
+export function scaleAlpha(source, w, h, ow, oh) {
+    const out = new Uint8ClampedArray(ow * oh * 4);
+    if (ow === w && oh === h) {
+        for (let i = 3; i < out.length; i += 4) out[i] = source[i];
+        return out;
+    }
+    const sx = w / ow, sy = h / oh;
+    for (let y = 0; y < oh; y++) {
+        const fy = Math.min(h - 1, Math.max(0, (y + 0.5) * sy - 0.5));
+        const y0 = Math.floor(fy), y1 = Math.min(h - 1, y0 + 1), ty = fy - y0;
+        for (let x = 0; x < ow; x++) {
+            const fx = Math.min(w - 1, Math.max(0, (x + 0.5) * sx - 0.5));
+            const x0 = Math.floor(fx), x1 = Math.min(w - 1, x0 + 1), tx = fx - x0;
+            const a00 = source[(y0 * w + x0) * 4 + 3], a10 = source[(y0 * w + x1) * 4 + 3];
+            const a01 = source[(y1 * w + x0) * 4 + 3], a11 = source[(y1 * w + x1) * 4 + 3];
+            const top = a00 + (a10 - a00) * tx, bottom = a01 + (a11 - a01) * tx;
+            out[(y * ow + x) * 4 + 3] = Math.round(top + (bottom - top) * ty);
+        }
+    }
+    return out;
+}
 /** recipes/realism_pass.json's DLSS5Settings inputs: a prompt of the pass when no recipe holds that node. */
 export const SETTINGS_DEFAULTS = Object.freeze({
     upscaling_mode: PASS_MODE, nr_preset: "Default", nr_style: "Default", nr_intensity: 1.0,
@@ -263,14 +387,16 @@ export function evenPlan(w, h) {
 /**
  * The prompt of a pass on one uploaded picture (`ref`: { filename, subfolder, type }): four nodes, every input
  * explicit. The DLSS5Settings inputs are the recipe's (a user copy's) with Style, Strength and the model preset from
- * `values` (settings.realism), always at 1x; an input a user's copy wired to another node goes back to the default.
+ * `values` (settings.realism), at `mode` (a MODES label: 1x unless the Upscale dialog or realism_pass asks for more,
+ * R-U; the recipe's own mode never counts); an input a user's copy wired to another node goes back to the default.
  * PreviewImage writes a temp file, so nothing is left in the user's output folder.
  */
-export function passPrompt(recipe, values, ref) {
+export function passPrompt(recipe, values, ref, mode = PASS_MODE) {
+    if (!MODES.some((m) => m.label === mode)) throw new Error(`${LABEL}: unknown upscaling mode "${mode}" (${MODES.map((m) => m.label).join(", ")}).`);
     const node = recipe && recipe.prompt ? Object.values(recipe.prompt).find((n) => n && n.class_type === "DLSS5Settings") : null;
     const inputs = { ...SETTINGS_DEFAULTS };
     for (const [k, v] of Object.entries((node && node.inputs) || {})) if (!Array.isArray(v)) inputs[k] = v;
-    inputs.upscaling_mode = PASS_MODE;
+    inputs.upscaling_mode = mode;
     const v = values || {};
     return {
         rp_in: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" }) } },

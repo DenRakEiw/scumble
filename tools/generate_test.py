@@ -1224,6 +1224,193 @@ try {
 ]
 
 
+# docs/PLAN_0_1_42.md R-U: the Realism Pass Upscale. Above 1x the document becomes that many times larger (the base and
+# every layer scaled as Resize scales them) and the pass lands on top as a layer at the new size, one undo step for
+# both; a picture whose output would pass 7680 x 4320 is scaled down before it goes. The R2a stubs stand in for the
+# server; each pass answers one colour at the pack's output size of what it was sent (_even(side x F)).
+RU_PRE = r"""
+const even = (v) => Math.max(2, Math.floor(v / 2 + 0.5) * 2);
+// a flat picture, fast at 4K and more (no per-pixel calls)
+const flatPng = async (w, h, rgb) => {
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const x = c.getContext("2d"); x.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`; x.fillRect(0, 0, w, h);
+    const b = await new Promise((r) => c.toBlob(r, "image/png")); c.width = c.height = 0;
+    return new Uint8Array(await b.arrayBuffer());
+};
+// the pass answers one colour at even(w x F) x even(h x F) of the picture it got; `first(id, ref, sent)` sees what went
+const answerUp = (rgb, F, first) => (id, body) => (async () => {
+    const ref = JSON.parse(body.output.rp_in.inputs.ref);
+    const p = await pixelsOf(await bytesOf(ref));
+    if (first) first(id, ref, p, body);
+    const png = await flatPng(even(p.w * F), even(p.h * F), rgb);
+    const ans = await host.uploadInput(new Blob([png], { type: "image/png" }), "rp_answer_" + id + ".png");
+    api.dispatch("executed", { prompt_id: id, node: "rp_out", output: { images: [ans] } });
+})().catch((e) => { T.err = e; fails(id, "the test's answer failed: " + String((e && e.message) || e)); });
+const blank = async (w, h) => {
+    const id = (await run("new_document")).id;
+    doc = doc || id;
+    const e = ednow(id);
+    host.shell.activate(e);
+    await run("new_canvas", { doc: id, width: w, height: h });
+    if (e.width !== w || e.height !== h) throw new Error("the canvas: " + e.width + "x" + e.height);
+    return { id, e };
+};
+"""
+
+# R3A_END without its "} finally {": a step with a finally of its own goes on with these lines
+RU_END_TAIL = R3A_END.split("} finally {\n", 1)[1]
+
+STEPS_RU = [
+    # 2x: the composite up to the look goes out at its own size at the pack's 2x mode; the document becomes 640 x 480
+    # (the base, the picture layer, the look and the reference scaled along), the pass layer lands at 640 x 480 under the
+    # look; one undo takes both back, one redo brings both again
+    ("the_pass_at_2x_resizes_the_document_and_adds_the_layer", R2A_STUBS + R3A_PRE + RU_PRE + r"""
+try {
+    stubR3a();
+    const ed = await scene();
+    const ids0 = ed.layers.map((l) => l.id);
+    const geo = (n) => { const l = ed.layers.find((x) => x.name === n); return l && [l.x, l.y, l.w, l.h]; };
+    const ref0 = geo("ref");
+    const want = flatOf(ed, 1);
+    let sent = null, during = null;
+    T.onQueued = answerUp([30, 200, 60], 2, (id, ref, p) => {
+        sent = p;
+        during = { timer: document.getElementById("shell-progress-text").textContent, busy: !!ed.providerPending };
+    });
+    seen.length = 0;
+    const u0 = ed.undo.length;
+    const out = await host.realismWhole(ed, { factor: 2 });
+    if (T.err) throw T.err;
+    if (T.queued.length !== 1 || !sent) throw new Error(T.queued.length + " passes queued");
+    const d = diffOf(sent, want);
+    if (d.size || d.max > 1 || d.frac > 0.02) throw new Error("the sent picture is not the composite up to the filter at its own size: " + JSON.stringify(d));
+    const rs = T.queued[0].body.output.rp_settings.inputs;
+    if (rs.upscaling_mode !== "2x (Performance)" || sorted({ ...rs, upscaling_mode: 0 }) !== sorted({ ...R0.prompt.rp_settings.inputs, upscaling_mode: 0 })) throw new Error("rp_settings: " + JSON.stringify(rs));
+    if (!during || !during.timer.startsWith(LABEL + " · ") || !during.busy || JSON.stringify(seen) !== JSON.stringify([LABEL, ""])) throw new Error("during the pass: " + JSON.stringify({ during, seen }));
+    // the document and every layer at 2x
+    if (ed.width !== 640 || ed.height !== 480 || ed.base.px.width !== 640 || ed.base.px.height !== 480) throw new Error("the document: " + ed.width + "x" + ed.height + " / base " + ed.base.px.width + "x" + ed.base.px.height);
+    if (JSON.stringify(geo("picture")) !== JSON.stringify([0, 0, 640, 480]) || JSON.stringify(geo("look")) !== JSON.stringify([0, 0, 640, 480]) || JSON.stringify(geo("ref")) !== JSON.stringify(ref0.map((v) => v * 2))) throw new Error("the layers were not scaled: " + JSON.stringify({ picture: geo("picture"), look: geo("look"), ref: geo("ref") }));
+    // the pass layer: the label, full size at 0, 0, the answer's pixels, stored, under the look, no colour match
+    const l = out.layer;
+    if (!l || l.name !== LABEL || l.kind !== "image" || l.x !== 0 || l.y !== 0 || l.w !== 640 || l.h !== 480 || l.px.width !== 640 || l.px.height !== 480 || l.match.strength !== 0 || l.match.source !== "underneath") throw new Error("the layer: " + JSON.stringify(l && { name: l.name, x: l.x, y: l.y, w: l.w, h: l.h, pw: l.px.width, ph: l.px.height, match: l.match }));
+    if (!l.ref || l.dirty || !near(centreOf(l), [30, 200, 60], 2) || !near(at(l.px, 639, 479), [30, 200, 60], 2)) throw new Error("the layer's pixels: " + JSON.stringify({ ref: !!l.ref, dirty: l.dirty, centre: centreOf(l) }));
+    const order = ed.layers.map((x) => x.name);
+    if (JSON.stringify(order) !== JSON.stringify(["picture", LABEL, "look", "ref"])) throw new Error("the stack: " + JSON.stringify(order));
+    if (out.factor !== 2 || JSON.stringify(out.from) !== "[320,240]" || out.width !== 640 || out.height !== 480 || out.changed) throw new Error("the answer: " + JSON.stringify({ factor: out.factor, from: out.from, width: out.width, height: out.height, changed: out.changed }));
+    const status = ed.status;
+    if (!status.startsWith(LABEL + " ran on your ComfyUI in ") || !status.includes(" s at 2×: 320 × 240 is now 640 × 480, every layer scaled along, and the pass is a new layer above the picture, under the filter layers (Ctrl+Z takes both back).") || status.includes("scaled the picture down")) throw new Error("the status: " + status);
+    if (ed.providerPending || host._providerRuns.size || (ed._localRuns && ed._localRuns.size)) throw new Error("the run stays open");
+    // one undo step for the resize and the layer, named the label
+    if (ed.undo.length !== u0 + 1 || ed.undo[ed.undo.length - 1].label !== LABEL || ed.undo[ed.undo.length - 1].kind !== "canvas") throw new Error("the undo steps: " + JSON.stringify(ed.undo.slice(u0).map((s) => [s.kind, s.label])));
+    await run("undo", { doc });
+    if (ed.width !== 320 || ed.height !== 240 || JSON.stringify(ed.layers.map((x) => x.id)) !== JSON.stringify(ids0) || JSON.stringify(geo("picture")) !== JSON.stringify([0, 0, 320, 240])) throw new Error("after one undo: " + JSON.stringify({ size: [ed.width, ed.height], stack: ed.layers.map((x) => x.name), picture: geo("picture") }));
+    await run("redo", { doc });
+    if (ed.width !== 640 || ed.height !== 480 || JSON.stringify(ed.layers.map((x) => x.name)) !== JSON.stringify(["picture", LABEL, "look", "ref"]) || !ed.layers.some((x) => x.id === l.id)) throw new Error("after the redo: " + JSON.stringify({ size: [ed.width, ed.height], stack: ed.layers.map((x) => x.name) }));
+    // a second pass at 2x stacks: it reads the first pass layer, the document 1280 x 960
+    let sent2 = null;
+    T.onQueued = answerUp([200, 40, 160], 2, (id, ref, p) => { sent2 = p; });
+    const out2 = await host.realismWhole(ed, { factor: 2 });
+    if (T.err) throw T.err;
+    if (!sent2 || sent2.w !== 640 || !near(pxAt(sent2, 320, 240), [30, 200, 60], 1) || ed.width !== 1280 || ed.height !== 960) throw new Error("a second pass: " + JSON.stringify({ sent: sent2 && [sent2.w, sent2.h], size: [ed.width, ed.height] }));
+    const order2 = ed.layers.map((x) => x.name);
+    if (JSON.stringify(order2) !== JSON.stringify(["picture", LABEL, LABEL, "look", "ref"]) || ed.layers[2] !== out2.layer || ed.layers[1].w !== 1280 || out2.layer.w !== 1280) throw new Error("the stack after a second pass: " + JSON.stringify(order2));
+    return { sent: d, status: status.slice(0, 160), stack: order, second: [ed.width, ed.height], backend: ed.tileMode ? "tiles" : "canvas" };
+""" + R3A_END),
+    # a transparent picture at 2x: it goes flattened onto grey as at 1x, and the layer gets the composite's alpha scaled
+    # with the answer (the transparent strip, the half-transparent band, the opaque rest)
+    ("the_pass_at_2x_keeps_the_alpha", R2A_STUBS + R3A_PRE + RU_PRE + r"""
+try {
+    stubR3a();
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    host.shell.activate(ed);
+    const png = await pngOf(320, 240, (x) => (x >= 300 ? [0, 0, 0, 0] : x >= 280 ? [200, 100, 50, 128] : [255, 255, 255, 255]));
+    const src = await host.uploadInput(new Blob([png], { type: "image/png" }), "rp_alpha_scene_ru.png");
+    await run("load_image", { doc, filename: src.filename, subfolder: src.subfolder, type: src.type });
+    let sent = null;
+    T.onQueued = answerUp([30, 200, 60], 2, (id, ref, p) => { sent = p; });
+    const out = await host.realismWhole(ed, { factor: 2 });
+    if (T.err) throw T.err;
+    if (!sent || sent.w !== 320 || !near(pxAt(sent, 310, 120), [128, 128, 128], 1) || !near(pxAt(sent, 290, 120), [164, 114, 89], 2)) throw new Error("what went: " + JSON.stringify({ size: sent && [sent.w, sent.h], strip: sent && pxAt(sent, 310, 120), band: sent && pxAt(sent, 290, 120) }));
+    const l = out.layer;
+    if (!l || l.w !== 640 || l.px.width !== 640 || ed.width !== 640) throw new Error("the layer: " + JSON.stringify(l && [l.w, l.h, l.px.width]));
+    const inside = at(l.px, 300, 240), band = at(l.px, 580, 240), strip = at(l.px, 620, 240), edge = at(l.px, 599, 240);
+    if (!near(inside, [30, 200, 60], 2) || inside[3] !== 255 || Math.abs(band[3] - 128) > 1 || strip[3] !== 0 || !(edge[3] > 0 && edge[3] < 128)) throw new Error("the layer's alpha: " + JSON.stringify({ inside, band, strip, edge }));
+    return { inside, band, strip, edge };
+""" + R3A_END),
+    # past the cap: 3000 x 200 at 3x goes at 2560 x 170 (its output 7680 x 510) and the document becomes 7680 x 512; at
+    # 1.7x the fit is counted with the pack's 1.724 (4600 x 100 goes at 4454 x 96, not the 4516 x 98 of 1.7)
+    ("a_picture_past_the_cap_is_scaled_down_first", R2A_STUBS + R3A_PRE + RU_PRE + r"""
+const extra = [];
+try {
+    stubR3a();
+    const a = await blank(3000, 200);
+    let sent = null;
+    T.onQueued = answerUp([90, 90, 220], 3, (id, ref, p) => { sent = p; });
+    const out = await host.realismWhole(a.e, { factor: 3 });
+    if (T.err) throw T.err;
+    const rs = T.queued[0].body.output.rp_settings.inputs;
+    if (!sent || sent.w !== 2560 || sent.h !== 170 || rs.upscaling_mode !== "3x (Ultra Performance)") throw new Error("what went at 3x: " + JSON.stringify({ sent: sent && [sent.w, sent.h], mode: rs.upscaling_mode }));
+    if (a.e.width !== 7680 || a.e.height !== 512 || out.layer.w !== 7680 || out.layer.h !== 512 || out.layer.px.width !== 7680 || out.layer.px.height !== 512 || out.width !== 7680) throw new Error("at 3x: " + JSON.stringify({ size: [a.e.width, a.e.height], layer: [out.layer.w, out.layer.h, out.layer.px.width, out.layer.px.height] }));
+    const note = LABEL + " scaled the picture down to 2560 × 170 first: its output is capped at 7680 × 4320.";
+    if (!a.e.status.includes(" s at 3×: 3000 × 200 is now 7680 × 512, every layer scaled along") || !a.e.status.endsWith(note) || out.note !== note) throw new Error("the status at 3x: " + a.e.status + " / note " + out.note);
+    const b = await blank(4600, 100);
+    extra.push(b.id);
+    T.queued = [];
+    let sent17 = null;
+    T.onQueued = answerUp([90, 90, 220], 1.724, (id, ref, p) => { sent17 = p; });
+    const out17 = await host.realismWhole(b.e, { factor: 1.7 });
+    if (T.err) throw T.err;
+    const rs17 = T.queued[0].body.output.rp_settings.inputs;
+    if (!sent17 || sent17.w !== 4454 || sent17.h !== 96 || rs17.upscaling_mode !== "1.724x (Balanced)") throw new Error("what went at 1.7x: " + JSON.stringify({ sent: sent17 && [sent17.w, sent17.h], mode: rs17.upscaling_mode }));
+    if (b.e.width !== 7678 || b.e.height !== 167 || out17.layer.w !== 7678 || out17.factor !== 1.7) throw new Error("at 1.7x: " + JSON.stringify({ size: [b.e.width, b.e.height], layer: out17.layer.w, factor: out17.factor }));
+    if (!b.e.status.includes(LABEL + " scaled the picture down to 4454 × 96 first")) throw new Error("the status at 1.7x: " + b.e.status);
+    return { at3: [a.e.width, a.e.height], at17: [b.e.width, b.e.height], note };
+} finally {
+    for (const id of extra) { try { await run("close_document", { doc: id, force: true }); } catch (_) { /* gone */ } }
+""" + RU_END_TAIL),
+    # refused before anything is read or sent: a fit under 64 px (4600 x 100 at 3x: 2560 x 54), a picture that cannot get
+    # larger, a factor no mode has, a job that would land in the old geometry (a cutout going; 1x is not held by it)
+    ("upscale_refusals_send_nothing", R2A_STUBS + R3A_PRE + RU_PRE + r"""
+const extra = [];
+const spied = [];
+try {
+    stubR3a();
+    const refused = async (what, e, factor, want, setup, teardown) => {
+        const c = { reads: 0 };
+        e.flattenToCanvas = function (...a) { c.reads++; return Object.getPrototypeOf(this).flattenToCanvas.apply(this, a); };
+        e.encodeComposite = function (...a) { c.reads++; return Object.getPrototypeOf(this).encodeComposite.apply(this, a); };
+        spied.push(e);
+        const n0 = e.layers.length, w0 = e.width;
+        T.queued = [];
+        if (setup) setup();
+        let err;
+        try { err = await failed(host.realismWhole(e, { factor })); } finally { if (teardown) teardown(); }
+        if (!err || err.message !== want || e.status !== want) throw new Error(what + ": " + (err ? err.message : "not refused") + " / status " + e.status);
+        if (T.queued.length || c.reads || e.layers.length !== n0 || e.width !== w0 || e.providerPending) throw new Error(what + ": " + JSON.stringify({ queued: T.queued.length, reads: c.reads }));
+        return err.message;
+    };
+    const out = {};
+    const a = await blank(4600, 100);
+    out.small = await refused("a fit under 64 px", a.e, 3, LABEL + " needs at least 64 px a side: at 3× the 4600 × 100 picture would go at 2560 × 54 (its output is capped at 7680 × 4320).");
+    out.factor = await refused("factor 2.5", a.e, 2.5, LABEL + " takes the factors 1, 1.5, 1.7, 2 and 3, not 2.5.");
+    out.cutout = await refused("a cutout going", a.e, 2, LABEL + ": Wait for the running job to finish: it would land where the picture was before the turn.", () => { a.e.cutoutPending = true; }, () => { a.e.cutoutPending = false; });
+    const b = await blank(7680, 4320);
+    extra.push(b.id);
+    out.notLarger = await refused("7680 x 4320 at 2x", b.e, 2, LABEL + " cannot make the 7680 × 4320 picture larger at 2×: its output is capped at 7680 × 4320.");
+    // status (factor 1) is unchanged in shape and reads the 1x refusals: a cutout does not hold a 1x pass
+    a.e.cutoutPending = true;
+    let st;
+    try { st = (await run("status", { doc: a.id })).realism; } finally { a.e.cutoutPending = false; }
+    if (!st || st.ready !== true || JSON.stringify(Object.keys(st).sort()) !== JSON.stringify(["note", "preset", "ready", "reason", "strength", "style"])) throw new Error("status: " + JSON.stringify(st));
+    return out;
+} finally {
+    for (const e of spied) { delete e.flattenToCanvas; delete e.encodeComposite; }
+    for (const id of extra) { try { await run("close_document", { doc: id, force: true }); } catch (_) { /* gone */ } }
+""" + RU_END_TAIL),
+]
+
+
 STEPS = [
     ("api_text_to_image", """
 const d = await run("new_document");
@@ -1766,6 +1953,7 @@ try {
 """),
     *STEPS_R2A,
     *STEPS_R3A,
+    *STEPS_RU,
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";

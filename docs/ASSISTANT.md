@@ -81,8 +81,10 @@ card that says why:
   whole picture is one undo step of its own, as *Resize* is.
 - **`realism_pass`** (Realism Pass (Windows only, RTX only)) - it queues on your ComfyUI and adds a layer, one undo
   step. The card shows the Style, Strength and model preset it sends (the Upscale dialog's Realism Pass row; the
-  assistant cannot change them). Where the pass cannot run on the document (the server, the picture's size) the
-  assistant gets the reason instead and no card is shown.
+  assistant cannot change them). Above `factor` 1 the question says the document becomes about that many times larger
+  (every layer scaled along) and the card shows the factor first. Where the pass cannot run on the document (the
+  server, the picture's size) the assistant gets the reason instead and no card is shown; above factor 1 a picture
+  past 7680 × 4320 is no such reason (the pass scales it down first).
 - **`flatten`, `extend_canvas`, `new_canvas`, `load_image`** - they clear the undo stack or bake
   every layer into the base.
 - **Removing, merging or editing a layer (or its mask) that is not the assistant's own**, unlocking a layer you

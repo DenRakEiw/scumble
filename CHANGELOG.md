@@ -45,6 +45,13 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **RTX Video Super Resolution on Comfy Cloud.** The same upscaler on Comfy Cloud on your Comfy key, for the selection
   or the whole picture, 1 to 4 times, with the Quality setting; a picture whose answer would pass 8192 px is refused
   before anything is sent.
+- **Realism Pass (Windows only, RTX only) at 1.5× to 3×.** The pass's factor in the Upscale dialog now also offers
+  1.5×, 1.7×, 2× and 3× (DLSS 5's own modes; 1.7× is its Balanced mode, 1.724 times). The document is made that many
+  times larger, the base and every layer, mask and the selection scaled along as Resize scales them, and the pass
+  comes back on top as a new layer at the new size, in one undo step with the enlargement. DLSS answers at most
+  7680 × 4320: a picture whose answer would be larger is scaled down first, so it comes back as large as DLSS allows,
+  and the dialog and the status line say to what. 1× stays a refiner at the picture's own size. Agents pass `factor`
+  to `realism_pass`; the assistant's question names it.
 - **Recipes can ship presets.** The Preset row in the Settings section shows a recipe's own presets first, then
   yours; the shipped ones cannot be deleted.
 - Generate new no longer offers the local upscale recipe, which makes nothing from a prompt.

@@ -1355,8 +1355,10 @@ let upScopeBeforePass = null;
 // how the prompt's @img tokens go to an upscaler (as the layers' names); the pass sends no prompt, so it shows none
 let upRefNote = "";
 // the factor last shown for an upscaler: the pass's 1× would otherwise be kept as the next upscaler's factor (a paid run
-// that enlarges nothing)
+// that enlarges nothing); the pass keeps its own (1× until another is picked: an upscaler's 2× never carries over to
+// the pass, which would make the document larger)
 let upLastFactor = 0;
+let upPassFactor = 1;
 
 /**
  * The dialog's entries, in the recipe list's order: the upscale recipes (`task: "upscale"`: API models and upscale
@@ -1424,8 +1426,8 @@ function upFillProviders() {
 
 /** An entry's factors as [value, text] pairs: none when the model picks its own. */
 function upFactorOptions(r, v) {
-    // the Realism Pass refines at the picture's own size (R-U adds 1.5× to 3×)
-    if (isPassRecipe(r)) return [[1, "1× (refine)"]];
+    // the Realism Pass refines at the picture's own size, or makes it larger by DLSS's modes (R-U: 1.7× is its 1.724x)
+    if (isPassRecipe(r)) return realism.MODES.map((m) => [m.factor, m.text]);
     // a ComfyUI upscaler has no variant: an upscale model picks its own factor (none shown), RTX Video Super Resolution
     // takes one (its recipe's `factor.input`); the stitch fits the answer to the box either way
     const comfy = !v && r && r.kind !== "provider" && r.factor && !r.factor.fixed ? { factor: r.factor } : null;
@@ -1435,7 +1437,7 @@ function upFactorOptions(r, v) {
 function upFillFactors() {
     const { r, v } = upVariant();
     const list = upFactorOptions(r, v);
-    const keep = ui.upFactor.dataset.pass ? upLastFactor : +ui.upFactor.value || 0;
+    const keep = isPassRecipe(r) ? upPassFactor : ui.upFactor.dataset.pass ? upLastFactor : +ui.upFactor.value || 0;
     ui.upFactor.innerHTML = "";
     for (const [f, text] of list) {
         const o = document.createElement("option");
@@ -1452,9 +1454,11 @@ function upFillFactors() {
     upSyncNote();
 }
 
-/** Remember an upscaler's factor (never the pass's), for the next upscaler shown after the pass. */
+/** Remember an upscaler's factor and the pass's apart, so neither carries over to the other. */
 function upNoteFactor() {
-    if (!ui.upFactor.dataset.pass && ui.upFactor.options.length) upLastFactor = +ui.upFactor.value || 0;
+    if (!ui.upFactor.options.length) return;
+    if (ui.upFactor.dataset.pass) upPassFactor = +ui.upFactor.value || 1;
+    else upLastFactor = +ui.upFactor.value || 0;
 }
 
 /** The open dialog's Realism Pass entry again, as the server, its node list or settings.realism are now. */
@@ -1550,9 +1554,10 @@ function upSyncNote() {
 }
 
 /**
- * The Realism Pass entry (docs/PLAN_0_1_42.md R3b): the whole picture only, at 1×, its Style / Strength / Preset row
- * (settings.realism, the app's), and Upscale greyed with the reason the server (§3.3) or the picture's size (§3.5) gives;
- * host.realismWhole refuses the same before anything is read.
+ * The Realism Pass entry (docs/PLAN_0_1_42.md R3b, R-U): the whole picture only, at 1× (refine) or 1.5× to 3× (the
+ * picture made larger first), its Style / Strength / Preset row (settings.realism, the app's), and Upscale greyed with
+ * the reason the server (§3.3) or the picture's size gives (1×: §3.5's cap; above: realism.fitPlan, a picture past the
+ * cap scaled down instead, the note says to what); host.realismWhole refuses the same before anything is read.
  */
 function upSyncPass(ed) {
     const L = realism.LABEL;
@@ -1566,11 +1571,16 @@ function upSyncPass(ed) {
     upFillPassRow();
     const support = host.realismSupport();
     const W = (ed && ed.width) || 0, H = (ed && ed.height) || 0;
-    const size = !(ed && ed.base && W && H) ? `${L}: load an image first.` : realism.wholeRefusal(W, H);
+    const mode = realism.modeFor(+ui.upFactor.value || 1) || realism.MODES[0];
+    const plan = mode.factor > 1 && W && H ? realism.fitPlan(W, H, mode.factor) : null;
+    const size = !(ed && ed.base && W && H) ? `${L}: load an image first.` : plan ? plan.refusal : realism.wholeRefusal(W, H);
     ui.upNote.textContent = support.ok
         ? [`DLSS 5 Neural Rendering over the whole visible picture, on your own ComfyUI: generated skin, hair and fabric look less waxy.`, support.note].filter(Boolean).join(" ")
         : support.reason;
-    ui.upSizeNote.textContent = size || `${W} × ${H} goes out at 1× and comes back as a new layer above the picture (under the filter layers at the top, which stay live), no colour match; a second run stacks. ${L} runs over the whole picture: the selection is not used.`;
+    const rest = `no colour match; a second run stacks. ${L} runs over the whole picture: the selection is not used.`;
+    ui.upSizeNote.textContent = size || (plan
+        ? `${W} × ${H} goes out at ${mode.text}${plan.scaled ? `, scaled down to ${plan.fit[0]} × ${plan.fit[1]} first (its output is capped at ${realism.MAX_LONG} × ${realism.MAX_SHORT})` : ""}: the picture becomes ${plan.doc[0]} × ${plan.doc[1]}, every layer scaled along, and the pass comes back as a new layer above it (under the filter layers at the top, which stay live), ${rest} One Ctrl+Z takes both back.`
+        : `${W} × ${H} goes out at 1× and comes back as a new layer above the picture (under the filter layers at the top, which stay live), ${rest}`);
     ui.upGo.disabled = !support.ok || !!size;
 }
 
@@ -1639,7 +1649,7 @@ ui.upGo.addEventListener("click", async () => {
         if (!pass && settings.upscaleRecipe !== id) window.scumble.settings.set({ upscaleRecipe: id }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
         const args = { doc: ed.node.id, timeout: 1800 };
         if (!pass) args.scope = ui.upScopeDoc.checked ? "document" : "selection";
-        if (!pass && !ui.upFactorRow.hidden) args.factor = +ui.upFactor.value;
+        if (!ui.upFactorRow.hidden) args.factor = +ui.upFactor.value;
         if (!pass && !ui.upPromptRow.hidden) args.prompt = (ui.upPrompt.value || "").trim();
         // the dialog closes as soon as the run starts; the status line and the busy marker (the title row's timer, its
         // Cancel) follow it. A person waits: the pass gets 1800 s, past the command's default made for agents

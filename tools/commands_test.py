@@ -1137,6 +1137,27 @@ try {
     ed.providerPending = { provider: "loopback", label: "Loopback", started: Date.now() };
     try { out.busy = await refused({ timeout: 10 }, (m) => m === LABEL + ": a run is still going on this document."); } finally { ed.providerPending = null; }
     if (calls.length) throw new Error("a refused pass ran");
+    // R-U: factor 2 makes the document twice as large and the layer comes at the new size (the pass stubbed: it answers
+    // a picture of twice the size), one undo takes both back; a factor no mode has is refused before anything is read
+    const w0 = ed.width, h0 = ed.height, u0 = ed.undo.length;
+    const ups = [];
+    host.passPicture = async (e, bytes, mime, o) => {
+        ups.push({ factor: o && o.factor, busy: !!e.providerPending });
+        const cv = document.createElement("canvas"); cv.width = w0 * 2; cv.height = h0 * 2;
+        cv.getContext("2d").fillRect(0, 0, cv.width, cv.height);
+        const b = new Uint8Array(await (await new Promise((r) => cv.toBlob(r, "image/png"))).arrayBuffer());
+        cv.width = cv.height = 0;
+        return { bytes: b, mime: "image/png", width: w0 * 2, height: h0 * 2, seconds: 1.2, note: "" };
+    };
+    const r2 = await c("realism_pass", { doc, factor: 2, timeout: 60 });
+    if (ups.length !== 1 || ups[0].factor !== 2 || !ups[0].busy || r2.factor !== 2 || JSON.stringify(r2.from) !== JSON.stringify([w0, h0]) || r2.width !== w0 * 2 || r2.height !== h0 * 2) throw new Error("factor 2: " + JSON.stringify({ ups, factor: r2.factor, from: r2.from, width: r2.width, height: r2.height }));
+    if (ed.width !== w0 * 2 || ed.height !== h0 * 2 || !r2.layer || r2.layer.name !== LABEL || r2.layer.w !== w0 * 2 || r2.layer.h !== h0 * 2 || ed.undo.length !== u0 + 1) throw new Error("factor 2's landing: " + JSON.stringify({ size: [ed.width, ed.height], layer: r2.layer, steps: ed.undo.length - u0 }));
+    if (!r2.status.includes(" s at 2×: " + w0 + " × " + h0 + " is now " + (w0 * 2) + " × " + (h0 * 2) + ", every layer scaled along")) throw new Error("factor 2's status: " + r2.status);
+    await c("undo", { doc });
+    if (ed.width !== w0 || ed.height !== h0 || ed.layers.length !== n0) throw new Error("one undo did not take factor 2 back: " + JSON.stringify({ size: [ed.width, ed.height], layers: ed.layers.length - n0 }));
+    out.factor2 = { from: r2.from, to: [r2.width, r2.height] };
+    out.badFactor = await refused({ factor: 2.5, timeout: 10 }, (m) => m === LABEL + " takes the factors 1, 1.5, 1.7, 2 and 3, not 2.5.");
+    if (ups.length !== 1 || ed.layers.length !== n0) throw new Error("a refused factor ran");
     // generate_new with a local recipe while a run holds the document (or a render of it is queued): refused before its
     // new canvas would wipe the layers, the results history and the undo steps
     const local = host.shell.recipes().find((x) => x.id === "flux2_klein_local");

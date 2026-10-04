@@ -22,6 +22,8 @@ const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "se
 
 /** The Realism Pass's name, verbatim wherever the feature is named (renderer/editor/realism.js LABEL). */
 const REALISM_LABEL = "Realism Pass (Windows only, RTX only)";
+/** The factors realism_pass takes: renderer/editor/realism.js MODES' dialog factors and the pack's own F (1.724). */
+const REALISM_FACTORS = [1, 1.5, 1.7, 1.724, 2, 3];
 
 /** The fields of `set_layer` that the editor records no undo step for (§5). */
 const SET_LAYER_SOFT = ["name", "visible", "opacity", "blend", "role", "match", "match_source", "alpha_lock"];
@@ -131,9 +133,10 @@ const POLICY = {
     upscale: (call, facts) => ASK(call.args && call.args.scope === "document"
         ? "upscales the whole picture (a paid model or your ComfyUI): every layer is scaled along"
         : "upscales the selection: this costs money, or queues on your ComfyUI", renderCard(call, facts)),
-    // the whole visible picture at 1x on the user's own ComfyUI, never an API; `status` says whether it can run on the
-    // document (the server, the size), and its values are the app's (no command sets them)
-    realism_pass: (call, facts) => realismRow(facts),
+    // the whole visible picture on the user's own ComfyUI, never an API (1x, or above it the document made larger);
+    // `status` says whether it can run on the document (the server, the size), and its values are the app's (no
+    // command sets them)
+    realism_pass: (call, facts) => realismRow(call, facts),
 
     // ---- replace, close, tabs -----------------------------------------------------------
     load_image: () => ASK("replaces the image and clears the undo history"),
@@ -226,12 +229,29 @@ function renderCard(call, facts) {
     };
 }
 
-/** realism_pass: refused with `status`'s reason when it cannot run, else asked with the values it sends on the card. */
-function realismRow(facts) {
+/**
+ * realism_pass: refused with `status`'s reason when it cannot run, else asked with the values it sends on the card.
+ * `status` answers for factor 1; above it (1.5, 1.7, 2, 3) a picture past 7680 × 4320 is scaled down instead of
+ * refused, so that one reason does not refuse there (the command refuses a fit it cannot make with its own sentence),
+ * and the question and the card name the factor and the document made larger.
+ */
+function realismRow(call, facts) {
     const r = facts && facts.realism;
-    if (r && r.ready === false) return REFUSE(String(r.reason || `${REALISM_LABEL} cannot run on this document`));
-    return ASK(`runs ${REALISM_LABEL} on your ComfyUI: it queues there and adds a layer`,
-        { settings: r ? { style: r.style, strength: r.strength, preset: r.preset } : null });
+    const raw = call && call.args ? call.args.factor : undefined;
+    const factor = raw === undefined || raw === null || raw === "" ? 1 : Number(raw);
+    // a factor the pass has no mode for is refused here, as the command would refuse it, instead of asked first
+    if (!REALISM_FACTORS.some((f) => Math.abs(f - factor) < 1e-6)) {
+        return REFUSE(`${REALISM_LABEL} takes the factors 1, 1.5, 1.7, 2 and 3, not ${raw}.`);
+    }
+    const up = factor > 1;
+    const capOnly = up && r && typeof r.reason === "string" && r.reason.startsWith(`${REALISM_LABEL} takes at most `);
+    if (r && r.ready === false && !capOnly) return REFUSE(String(r.reason || `${REALISM_LABEL} cannot run on this document`));
+    const values = r ? { style: r.style, strength: r.strength, preset: r.preset } : null;
+    if (up) {
+        return ASK(`runs ${REALISM_LABEL} at ${factor}× on your ComfyUI: the document becomes about ${factor} times larger (every layer scaled along) and the pass adds a layer; it queues there`,
+            { settings: { factor: `${factor}×`, ...(values || {}) } });
+    }
+    return ASK(`runs ${REALISM_LABEL} on your ComfyUI: it queues there and adds a layer`, { settings: values });
 }
 
 function exportRow(call, facts, fallback, fixedPng) {
@@ -391,6 +411,6 @@ function addsLayer(facts) {
 
 module.exports = {
     EXCLUDED, READS, RUNS, POLICY, decide, clamp, clampInt, timeoutOf, undoStep,
-    SET_LAYER_SOFT, SET_LAYER_GEOMETRY, TIMEOUT_DEFAULTS, REALISM_LABEL,
+    SET_LAYER_SOFT, SET_LAYER_GEOMETRY, TIMEOUT_DEFAULTS, REALISM_LABEL, REALISM_FACTORS,
     _layerOf: layerOf, _owns: owns, _extMatches: extMatches,
 };

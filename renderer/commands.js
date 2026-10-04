@@ -263,9 +263,10 @@ export function status(ed) {
 }
 
 /**
- * The Realism Pass on this document (docs/PLAN_0_1_42.md R4): whether realism_pass would start now
+ * The Realism Pass on this document (docs/PLAN_0_1_42.md R4): whether realism_pass at factor 1 would start now
  * (host.realismWholeRefusal: the refusals host.realismWhole makes before anything is read), the reason when not, the
- * server's note (RTX 30) and the app's values it sends.
+ * server's note (RTX 30) and the app's values it sends. Above 1 (R-U) a picture past 7680 × 4320 is scaled down
+ * instead of refused; the assistant's row reads that size reason as no refusal there.
  */
 function realismState(ed) {
     const v = host.realismValues();
@@ -480,7 +481,7 @@ const COMMANDS = {
 
     // -- document --
     status: {
-        description: `What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320), note (RTX 30), and the app's style, strength and preset it sends.`,
+        description: `What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320; above factor 1 a picture past that size is scaled down instead), note (RTX 30), and the app's style, strength and preset it sends.`,
         params: {},
         async run(ed) {
             const s = status(ed);
@@ -818,19 +819,23 @@ const COMMANDS = {
     },
     realism_pass: {
         needsImage: true,
-        description: `${REALISM_LABEL}: the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once at its own size through DLSS 5 Neural Rendering at 1x on the user's own ComfyUI and comes back as a new layer named "${REALISM_LABEL}": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › ${REALISM_LABEL}). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, or the picture is past 7680 × 4320 (status's realism says so beforehand). Waits for the answer; \`timeout\` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was).`,
-        params: { timeout: P.timeout(570) },
+        description: `${REALISM_LABEL}: the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once through DLSS 5 Neural Rendering on the user's own ComfyUI and comes back as a new layer named "${REALISM_LABEL}": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. factor 1 (the default) refines at the picture's own size. factor 1.5, 1.7 (DLSS's 1.724x Balanced), 2 or 3 also makes the document that many times larger first (the base and every layer, mask and the selection scaled along, as Resize does) and the pass layer comes at the new size, both in the same undo step; a picture whose output would pass 7680 × 4320 is scaled down before it goes (the notes say so), so the answer and the document come back as large as DLSS allows. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › ${REALISM_LABEL}). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, at factor 1 the picture is past 7680 × 4320, above 1 a job would land in the old geometry, the scaled-down picture would be under 64 px a side or not get larger (status's realism says beforehand whether factor 1 can run). Waits for the answer; \`timeout\` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was). from / width / height: the document's size before and after.`,
+        params: {
+            factor: P.num("1 (the default: refine at the picture's own size), 1.5, 1.7, 2 or 3: above 1 the document becomes that many times larger and the pass layer comes at the new size"),
+            timeout: P.timeout(570),
+        },
         async run(ed, a) {
             // an epoch time in ms, comfyPictureRun's hard end (the queue's wait included): the job is taken off the
             // server when it passes, so no race is needed here. Without `timeout` the bridge waits its own 600 s, counted
             // from before this call: the default ends the pass 30 s inside it, room for the landing and the cancel, so an
             // agent hears the pass's own sentence and no layer lands after the bridge gave up
             const deadline = Date.now() + clampInt(a.timeout, 5, 3600, 570) * 1000;
-            const out = await host.realismWhole(ed, { deadline });
+            const out = await host.realismWhole(ed, { deadline, factor: a.factor === undefined || a.factor === null ? 1 : a.factor });
             if (out.layer) ed.notifyChanged();
             return {
                 layer: out.layer ? layerSummary(ed, out.layer) : null, seconds: Math.round((out.seconds || 0) * 10) / 10,
                 notes: out.note ? [out.note] : [], changed: !!out.changed,
+                factor: out.factor, from: out.from || null, width: out.width == null ? null : out.width, height: out.height == null ? null : out.height,
                 // the tab was closed while the pass ran: the job was taken off the server, nothing was added
                 status: out.layer ? ed.status : "The document was closed while the pass ran; nothing was added.",
             };

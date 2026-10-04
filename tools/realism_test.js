@@ -906,6 +906,157 @@ function nodeFitSpan(a0, a1, limit, m) {
         check(`wholeRefusal equals evenPlan + fits on ${n} sizes`, same === n, `${n - same} differ`);
     }
 
+    // ---- 9e. the Realism Pass Upscale (R-U: the modes, fitSize, fitPlan, passPrompt's mode, scaleAlpha) ----------
+    console.log("\n--- 9e. the Realism Pass Upscale (R-U) ---");
+    {
+        // the pack's UPSCALING_MODES (dlss5/settings.py at 796ed59), written out here: factor -> label
+        const PACK = [[1.0, "1x (DLAA / native)"], [1.5, "1.5x (Quality)"], [1.724, "1.724x (Balanced)"], [2.0, "2x (Performance)"], [3.0, "3x (Ultra Performance)"]];
+        check("MODES are the pack's five modes in its order, labels and factors verbatim", eq(R.MODES.map((m) => [m.F, m.label]), PACK), short(R.MODES));
+        check("MODES' dialog factors are 1, 1.5, 1.7, 2, 3 and their texts", eq(R.MODES.map((m) => [m.factor, m.text]), [[1, "1× (refine)"], [1.5, "1.5×"], [1.7, "1.7×"], [2, "2×"], [3, "3×"]]), short(R.MODES));
+        check("the 1x mode is PASS_MODE", R.MODES[0].label === R.PASS_MODE);
+        const modeCases = [[1, 1], [undefined, 1], [null, 1], ["", 1], [1.5, 1.5], [1.7, 1.724], [1.724, 1.724], ["2", 2], [2, 2], [3, 3]];
+        for (const [f, F] of modeCases) {
+            const m = R.modeFor(f);
+            check(`modeFor(${JSON.stringify(f)}) is the mode of F ${F}`, !!m && m.F === F, short(m));
+        }
+        for (const f of [2.5, 4, 0, -1, 1.72, "x", NaN, Infinity]) check(`modeFor(${String(f)}) is null`, R.modeFor(f) === null);
+        const fr = R.factorRefusal(2.5);
+        texts.push(fr);
+        check("factorRefusal names the factors", fr === `${EXACT_LABEL} takes the factors 1, 1.5, 1.7, 2 and 3, not 2.5.`, fr);
+
+        // fitSize: the user's DLSS5 Fit Input Size node (fit_size), its answers on 2500 cases (tools/refs/dlss5/fit_cases.json,
+        // run on a verbatim copy of the node's functions), and a port of it on 100,000 more sizes
+        const fx = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "dlss5", "fit_cases.json"), "utf8"));
+        let bad = null, n = 0;
+        for (const [w, h, F, nw, nh] of fx.cases) {
+            n++;
+            const g = R.fitSize(w, h, F);
+            if (g.w !== nw || g.h !== nh) { bad = [w, h, F, nw, nh, g]; break; }
+        }
+        check(`fitSize equals the node's fit_size on its ${n} fixture cases`, n === 2500 && !bad, short(bad));
+        const nodeFit = (w, h, F) => {
+            const ev = packEven;
+            const ok = (a, b) => { const ow = ev(a * F), oh = ev(b * F); return Math.max(ow, oh) <= 7680 && Math.min(ow, oh) <= 4320; };
+            if (ok(w, h)) return [w, h];
+            const s = Math.min(7680 / (F * Math.max(w, h)), 4320 / (F * Math.min(w, h)));
+            let nw = Math.max(2, Math.floor(w * s / 2.0 + 1e-9) * 2), nh = Math.max(2, Math.floor(h * s / 2.0 + 1e-9) * 2);
+            while (!ok(nw, nh) && nw > 2 && nh > 2) {
+                if (nw >= nh) { nw -= 2; nh = Math.max(2, Math.floor(h * nw / w / 2.0) * 2); } else { nh -= 2; nw = Math.max(2, Math.floor(w * nh / h / 2.0) * 2); }
+            }
+            return [nw, nh];
+        };
+        let seed = 7;
+        const rnd = (a, b) => { seed = (seed * 1103515245 + 12345) % 2147483648; return a + (seed % (b - a + 1)); };
+        let diff = null, notFit = null, notEven = null, k = 0;
+        for (let i = 0; i < 25000 && !diff; i++) {
+            const w = rnd(1, 24000), h = rnd(1, 24000);
+            for (const m of R.MODES.slice(1)) {
+                k++;
+                const g = R.fitSize(w, h, m.F), want = nodeFit(w, h, m.F);
+                if (g.w !== want[0] || g.h !== want[1]) { diff = [w, h, m.F, want, g]; break; }
+                if ((g.w !== w || g.h !== h) && (g.w % 2 || g.h % 2)) notEven = notEven || [w, h, m.F, g];
+                if (g.w > 2 && g.h > 2 && !packAccepts(Math.max(64, g.w), Math.max(64, g.h), m.F) && Math.min(g.w, g.h) >= 64) notFit = notFit || [w, h, m.F, g];
+            }
+        }
+        check(`fitSize equals the node's rule on ${k} random sizes`, k === 100000 && !diff, short(diff));
+        check("a scaled fitSize has even sides", !notEven, short(notEven));
+        check("every fitSize of 64 px a side or more is taken by the pack at F", !notFit, short(notFit));
+        // the user's picture, and the plan's case: F is the pack's 1.724, never the dialog's 1.7
+        check("fitSize(5456, 3072) at 1.5 is 5114 x 2880 (the user's picture)", eq(R.fitSize(5456, 3072, 1.5), { w: 5114, h: 2880 }), short(R.fitSize(5456, 3072, 1.5)));
+        check("fitSize(4600, 2000) at 1.724 is 4454 x 1936", eq(R.fitSize(4600, 2000, 1.724), { w: 4454, h: 1936 }));
+        const at17 = R.fitSize(4600, 2000, 1.7);
+        check("at 1.7 the fit would be 4516 x 1964, whose output the pack refuses at 1.724 (fits with F)", eq(at17, { w: 4516, h: 1964 }) && R.fits(4516, 1964, 1.724) !== "" && R.fits(4516, 1964, 1.7) === "" && R.fits(4454, 1936, 1.724) === "", short([at17, R.fits(4516, 1964, 1.724)]));
+        check("fitSize keeps a picture that fits (1920 x 1080 at 3)", eq(R.fitSize(1920, 1080, 3), { w: 1920, h: 1080 }));
+
+        // fitPlan: the even size, the scale-down, the answer kept, the document after, the refusals
+        const plan = (w, h, f) => { const p = R.fitPlan(w, h, f); if (p.refusal) texts.push(p.refusal); return p; };
+        const p2 = plan(320, 240, 2);
+        check("fitPlan(320, 240, 2): not scaled, 640 x 480 back and the document 640 x 480", !p2.refusal && !p2.scaled && eq(p2.sent, [320, 240]) && eq(p2.out, [640, 480]) && eq(p2.keep, [640, 480]) && eq(p2.doc, [640, 480]) && p2.mode.label === "2x (Performance)", short(p2));
+        const pOdd = plan(1001, 601, 1.5);
+        check("fitPlan(1001, 601, 1.5): padded to 1002 x 602, the padding's share off the answer (1502 x 902 of 1504 x 904)", !pOdd.refusal && eq(pOdd.sent, [1002, 602]) && eq(pOdd.out, [1504, 904]) && eq(pOdd.keep, [1502, 902]) && eq(pOdd.doc, [1502, 902]), short(pOdd));
+        const p3 = plan(3000, 200, 3);
+        check("fitPlan(3000, 200, 3): scaled down to 2560 x 170, 7680 x 510 back, the document 7680 x 512", !p3.refusal && p3.scaled && eq(p3.fit, [2560, 170]) && eq(p3.sent, [2560, 170]) && eq(p3.out, [7680, 510]) && eq(p3.keep, [7680, 510]) && eq(p3.doc, [7680, 512]), short(p3));
+        const p17 = plan(4600, 100, 1.7);
+        check("fitPlan(4600, 100, 1.7): scaled down with the pack's 1.724 to 4454 x 96 (1.7 would give 4516 x 98)", !p17.refusal && p17.scaled && eq(p17.sent, [4454, 96]) && eq(p17.out, [7678, 166]) && eq(p17.doc, [7678, 167]) && p17.mode.label === "1.724x (Balanced)" && eq(R.fitSize(4600, 100, 1.7), { w: 4516, h: 98 }), short(p17));
+        // an odd side that fits unpadded but not padded (4455 x 2506 at 1.724: 4456 would answer 7682): the padded size is fitted
+        const pEdge = plan(4455, 2506, 1.7);
+        check("fitPlan(4455, 2506, 1.7): the padded 4456 x 2506 is past the cap, so it is scaled to 4454 x 2504", !pEdge.refusal && pEdge.scaled && eq(pEdge.sent, [4454, 2504]) && packAccepts(4454, 2504, 1.724) && !packAccepts(4456, 2506, 1.724), short(pEdge));
+        const pUser = plan(5456, 3072, 1.5);
+        check("fitPlan(5456, 3072, 1.5): the user's picture goes at 5114 x 2880 and comes back 7672 x 4320", !pUser.refusal && pUser.scaled && eq(pUser.sent, [5114, 2880]) && eq(pUser.out, [7672, 4320]) && eq(pUser.doc, [7672, 4320]), short(pUser));
+        const small = plan(4600, 100, 3);
+        check("fitPlan(4600, 100, 3): the fit 2560 x 54 is under 64 px, refused", small.refusal === `${EXACT_LABEL} needs at least 64 px a side: at 3× the 4600 × 100 picture would go at 2560 × 54 (its output is capped at 7680 × 4320).`, small.refusal);
+        const tiny = plan(50, 63, 2);
+        check("fitPlan(50, 63, 2): the picture itself is under 64 px, refused with its own size", tiny.refusal === `${EXACT_LABEL} needs at least 64 px a side; this is 50 × 63.`, tiny.refusal);
+        const same = plan(7680, 4320, 2);
+        check("fitPlan(7680, 4320, 2): the output cannot be larger than the picture, refused", same.refusal === `${EXACT_LABEL} cannot make the 7680 × 4320 picture larger at 2×: its output is capped at 7680 × 4320.` && same.scaled, same.refusal);
+        const big = plan(15000, 10000, 2);
+        check("fitPlan(15000, 10000, 2): a picture past the cap at 2× that would shrink is refused", /cannot make the 15000 × 10000 picture larger at 2×/.test(big.refusal), big.refusal);
+        const one = plan(7681, 100, 1);
+        check("fitPlan at 1×: the refiner's refusal past the cap (no downscale)", one.refusal === R.wholeRefusal(7681, 100) && !one.scaled && one.refusal !== "", one.refusal);
+        const oneOk = plan(641, 481, 1);
+        check("fitPlan(641, 481, 1): 642 x 482 goes, the picture's size kept", !oneOk.refusal && eq(oneOk.sent, [642, 482]) && eq(oneOk.doc, [641, 481]), short(oneOk));
+        const badF = plan(320, 240, 2.5);
+        check("fitPlan with a factor no mode has: refused", badF.refusal === R.factorRefusal(2.5), badF.refusal);
+        // the plan against the pack on many sizes: what goes is taken at F, the document gets larger, the aspect kept
+        let planBad = null, plans = 0;
+        seed = 11;
+        for (let i = 0; i < 4000 && !planBad; i++) {
+            const w = rnd(64, 16000), h = rnd(64, 16000);
+            for (const m of R.MODES.slice(1)) {
+                const p = R.fitPlan(w, h, m.factor);
+                if (p.refusal) continue;
+                plans++;
+                if (!packAccepts(p.sent[0], p.sent[1], m.F) || p.sent[0] % 2 || p.sent[1] % 2 || !(p.doc[0] > w) || Math.abs(p.doc[1] / p.doc[0] - h / w) > 1 / p.doc[0] + 1e-9) { planBad = [w, h, m.factor, p]; break; }
+                if (!p.scaled && (p.sent[0] - w > 1 || p.sent[1] - h > 1)) { planBad = [w, h, m.factor, "padded more than 1 px", p]; break; }
+            }
+        }
+        check(`fitPlan on ${plans} sizes: what goes is even and taken at F, the document larger at the picture's aspect`, plans > 2000 && !planBad, short(planBad));
+        check("scaledDownNote is the user's sentence", R.scaledDownNote(2560, 170) === `${EXACT_LABEL} scaled the picture down to 2560 × 170 first: its output is capped at 7680 × 4320.`, R.scaledDownNote(2560, 170));
+        texts.push(R.scaledDownNote(2560, 170));
+
+        // passPrompt takes the mode; 1x by default; an unknown label throws with the label
+        const ref = { filename: "x.png", subfolder: "inpaint_canvas", type: "input" };
+        const rp = JSON.parse(fs.readFileSync(path.join(ROOT, "recipes", "realism_pass.json"), "utf8"));
+        for (const m of R.MODES) {
+            const s = R.passPrompt(rp, {}, ref, m.label).rp_settings.inputs;
+            check(`passPrompt at ${m.label}: upscaling_mode written, the rest as at 1x`, s.upscaling_mode === m.label && eq({ ...s, upscaling_mode: 0 }, { ...R.passPrompt(rp, {}, ref).rp_settings.inputs, upscaling_mode: 0 }), short(s));
+        }
+        check("passPrompt without a mode is 1x", R.passPrompt(rp, {}, ref).rp_settings.inputs.upscaling_mode === R.PASS_MODE);
+        const pm = throws(() => R.passPrompt(rp, {}, ref, "1.7x (Balanced)"));
+        check("passPrompt with a label the pack does not have throws with the label", !!pm && pm.includes(EXACT_LABEL) && pm.includes("1.7x (Balanced)"), pm);
+        if (pm) texts.push(pm);
+
+        // scaleAlpha: the alpha of the sent picture at the answer's size (bilinear), colours 0
+        const rgba = (w, h, f) => { const d = new Uint8ClampedArray(w * h * 4); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) d[(y * w + x) * 4 + 3] = f(x, y); return d; };
+        const alphaAt = (d, w, x, y) => d[(y * w + x) * 4 + 3];
+        const flat = R.scaleAlpha(rgba(10, 6, () => 77), 10, 6, 20, 12);
+        let flatOk = flat.length === 20 * 12 * 4;
+        for (let i = 0; i < flat.length; i += 4) if (flat[i + 3] !== 77 || flat[i] || flat[i + 1] || flat[i + 2]) flatOk = false;
+        check("scaleAlpha keeps a constant alpha at 2x, colour bytes 0", flatOk);
+        const sameSize = R.scaleAlpha(rgba(5, 4, (x, y) => x * 40 + y), 5, 4, 5, 4);
+        check("scaleAlpha at the same size gives the alpha back byte for byte", [...Array(20).keys()].every((i) => sameSize[i * 4 + 3] === (i % 5) * 40 + Math.floor(i / 5)));
+        // a step: opaque left half, transparent right half of 8 px; at 2x the edges hold, the middle ramps
+        const step = R.scaleAlpha(rgba(8, 2, (x) => (x < 4 ? 255 : 0)), 8, 2, 16, 4);
+        const row = [...Array(16).keys()].map((x) => alphaAt(step, 16, x, 1));
+        check("scaleAlpha of a step at 2x: 255 far left, 0 far right, one ramp between, never rising", row[0] === 255 && row[5] === 255 && row[10] === 0 && row[15] === 0 && row.every((v, i) => i === 0 || v <= row[i - 1]) && row.some((v) => v > 0 && v < 255), short(row));
+        // at 1.5x on an odd size (a 3 x 1 picture to 5 x 1: the centre sample is the middle pixel's)
+        const odd = R.scaleAlpha(rgba(3, 1, (x) => [0, 100, 200][x]), 3, 1, 5, 1);
+        check("scaleAlpha of 0 / 100 / 200 at 5/3x: 0 at the left edge, 100 in the middle, 200 at the right edge", alphaAt(odd, 5, 0, 0) === 0 && alphaAt(odd, 5, 2, 0) === 100 && alphaAt(odd, 5, 4, 0) === 200, short([...Array(5).keys()].map((x) => alphaAt(odd, 5, x, 0))));
+        // putAlphaBack with the scaled alpha undoes the flatten at the larger size: a picture of colour c, alpha a, sent
+        // as c·a + 128·(1 − a), comes back as c where the pass changed nothing (here: an answer made by upscaling the sent
+        // picture by pixel repetition)
+        const sw = 6, sh = 4, ow = 12, oh = 8;
+        const src = new Uint8ClampedArray(sw * sh * 4);
+        for (let i = 0; i < sw * sh; i++) { src[i * 4] = 200; src[i * 4 + 1] = 40; src[i * 4 + 2] = 90; src[i * 4 + 3] = 128; }
+        const sent = R.prepPixels(src, sw, sh, true).data;
+        const ans = new Uint8ClampedArray(ow * oh * 4);
+        for (let y = 0; y < oh; y++) for (let x = 0; x < ow; x++) ans.set(sent.slice(((y >> 1) * sw + (x >> 1)) * 4, ((y >> 1) * sw + (x >> 1)) * 4 + 4), (y * ow + x) * 4);
+        const back = R.putAlphaBack(ans, ow, oh, R.scaleAlpha(src, sw, sh, ow, oh), ow, oh);
+        let worst = 0;
+        for (let i = 0; i < ow * oh; i++) worst = Math.max(worst, Math.abs(back[i * 4] - 200), Math.abs(back[i * 4 + 1] - 40), Math.abs(back[i * 4 + 2] - 90), Math.abs(back[i * 4 + 3] - 128));
+        check("putAlphaBack with scaleAlpha at 2x: the colour and the alpha come back within 2 levels", worst <= 2, `worst ${worst}`);
+    }
+
     // ---- 10. the label in every text ------------------------------------------------------------------------------
     console.log("\n--- 10. the label in every text ---");
     const missing = texts.filter((t) => !t.includes(EXACT_LABEL));

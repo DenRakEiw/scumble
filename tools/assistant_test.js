@@ -1285,6 +1285,32 @@ async function main() {
                 && policy.undoStep({ name: "realism_pass", args: {} }) === null,
                 JSON.stringify(policy.clamp({ name: "realism_pass", args: {} }).args));
             check("the_policys_realism_label_is_the_renderers", policy.REALISM_LABEL === LABEL, policy.REALISM_LABEL);
+            // R-U: above 1x the question and the card name the factor and the document made larger; status (which answers
+            // for 1x) refusing only for the size past 7680 x 4320 does not refuse there (the pass scales down), any other
+            // reason still does; at 1x the size refuses as before
+            const cap = { ...ready, ready: false, reason: `${LABEL} takes at most 7680 × 4320 (long × short side); this is 9000 × 5000.` };
+            const up2 = policy.decide({ name: "realism_pass", args: { factor: 2 } }, f({ realism: ready }));
+            const upCap = policy.decide({ name: "realism_pass", args: { factor: 1.7 } }, f({ realism: cap }));
+            const oneCap = policy.decide({ name: "realism_pass", args: { factor: 1 } }, f({ realism: cap }));
+            const upLinux = policy.decide({ name: "realism_pass", args: { factor: 3 } }, f({ realism: { ...ready, ready: false, reason: linux } }));
+            const upBlind = policy.decide({ name: "realism_pass", args: { factor: 2 } }, f());
+            check("realism_pass_above_1x_names_the_factor_and_scales_down_past_the_cap",
+                up2.action === "ask" && up2.reason === `runs ${LABEL} at 2× on your ComfyUI: the document becomes about 2 times larger (every layer scaled along) and the pass adds a layer; it queues there`
+                && eq(up2.card, { settings: { factor: "2×", style: "Cinematic", strength: 0.75, preset: "M" } })
+                && upCap.action === "ask" && /at 1\.7× on your ComfyUI/.test(upCap.reason) && upCap.card.settings.factor === "1.7×"
+                && oneCap.action === "refuse" && oneCap.reason === cap.reason
+                && upLinux.action === "refuse" && upLinux.reason === linux
+                && upBlind.action === "ask" && eq(upBlind.card, { settings: { factor: "2×" } }),
+                JSON.stringify({ up2, upCap, oneCap, upLinux, upBlind }));
+            // a factor no mode has is refused before the user is asked; the policy's factors are realism.js MODES'
+            const src = require("node:fs").readFileSync(path.join(ROOT, "renderer", "editor", "realism.js"), "utf8");
+            const modes = [...src.matchAll(/factor: ([\d.]+), F: ([\d.]+), label:/g)].flatMap((m) => [+m[1], +m[2]]);
+            const want = [...new Set(modes)].sort((a, b) => a - b);
+            const badF = policy.decide({ name: "realism_pass", args: { factor: 2.5 } }, f({ realism: ready }));
+            check("realism_pass_refuses_a_factor_no_mode_has",
+                badF.action === "refuse" && badF.reason === `${LABEL} takes the factors 1, 1.5, 1.7, 2 and 3, not 2.5.`
+                && eq([...policy.REALISM_FACTORS].sort((a, b) => a - b), want) && want.length === 6,
+                JSON.stringify({ badF, factors: policy.REALISM_FACTORS, want }));
 
             // a whole turn: the card shows the values status answers, the call goes out with 1800 s and no undo step of
             // the shell's, and the layer it adds is the chat's (the opacity change on it asks nothing)

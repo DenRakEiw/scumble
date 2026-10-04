@@ -49,8 +49,9 @@ without the pass) and comes back at the same size. A `pass` recipe has no *Cloud
 the pass runs on the user's own ComfyUI only), is not offered by Generate new, and `list_recipes` reports it with
 `task: "pass"`, mode `local`. The *Upscale* dialog lists a `pass` recipe as its Realism Pass entry (`docs/PLAN_0_1_42.md`
 R3b): that entry does not run the recipe's graph and selects no recipe, it runs the `realism_pass` command
-(`host.realismWhole`: the whole visible picture at 1x through a prompt of its own, `realism.passPrompt`, which takes the
-recipe's `DLSS5Settings` inputs, and a new layer above the picture). Any other task is read as `edit`.
+(`host.realismWhole`: the whole visible picture at 1x, or at 1.5x to 3x with the document resized by the factor,
+through a prompt of its own, `realism.passPrompt`, which takes the recipe's `DLSS5Settings` inputs with the mode's
+`upscaling_mode`, and a new layer above the picture). Any other task is read as `edit`.
 
 ### The shipped ComfyUI recipes
 
@@ -1127,9 +1128,12 @@ mode), without a server connection, when the server lacks a node type of the cho
 a refusal of the size or the graph.
 
 **The Realism Pass entry** (a `pass` recipe, `realism_pass` above) is listed in the same dialog but is no upscale:
-its factor is *1× (refine)*, its scope is always the whole picture, and *Upscale* runs the `realism_pass` command
-(the whole visible picture through `realism.passPrompt`, a new layer above it) instead of the recipe's graph. The
-dialog greys *Upscale* with `realism.serverSupport`'s reason or the size refusal (`realism.wholeRefusal`).
+its factors are *1× (refine)*, *1.5×*, *1.7×*, *2×* and *3×* (`realism.MODES`, the pack's upscaling modes; 1.7× is
+its 1.724x Balanced), its scope is always the whole picture, and *Upscale* runs the `realism_pass` command (the whole
+visible picture through `realism.passPrompt` at the mode, a new layer above it; above 1× the document resized by the
+factor first, one undo step) instead of the recipe's graph. The dialog greys *Upscale* with `realism.serverSupport`'s
+reason or the size refusal (`realism.wholeRefusal` at 1×, `realism.fitPlan` above, which scales a picture past the
+output cap down instead and says to what).
 
 The adapters: `upscale(req, ctx)` beside `edit` / `generate`; `providers/index.js` sends `kind: "upscale"` there
 and refuses a provider without one by name. **fal** (`fal.js`): `{ image_url, upscale_factor, output_format:

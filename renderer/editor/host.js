@@ -2474,30 +2474,44 @@ export const host = {
      * use Default from then on and tries once more. `deadline` (ms, 0 for none): comfyPictureRun's hard end, the upload's
      * too. Throws an Error whose `hint` is the sentence (§3.4, §3.5) and whose `unsupported` says the server cannot run
      * the pass at all.
-     * -> { bytes, mime: "image/png", width, height, seconds, note }
+     * `factor` (R-U; the dialog's 1, 1.5, 1.7, 2 or 3): above 1 the pack's mode of that factor (realism.MODES), the answer
+     * not cropped back but kept larger (only the padding's share comes off), the alpha scaled with it; a picture whose
+     * output would pass 7680 × 4320 is scaled down first (realism.fitPlan, the browser's high-quality resampling, as the
+     * editor's Resize scales), and the note says so. 1 keeps the refusal past the cap.
+     * -> { bytes, mime: "image/png", width, height, seconds, note, factor, sent: [w, h], scaled: [w, h] | null }
      */
-    async passPicture(editor, bytes, mime, { token = null, deadline = 0 } = {}) {
+    async passPicture(editor, bytes, mime, { token = null, deadline = 0, factor = 1 } = {}) {
         const L = realism.LABEL;
         const fail = (text, extra) => Object.assign(new Error(text), { hint: text }, extra || {});
         const support = this.realismSupport();
         if (!support.ok) throw fail(support.reason, { unsupported: true });
         if (token && token.cancelled) throw fail(`${L} cancelled.`, { kind: "cancelled" });
+        const mode = realism.modeFor(factor);
+        if (!mode) throw fail(realism.factorRefusal(factor));
+        const up = mode.factor > 1;
         let img;
         try { img = await bytesToImage(bytes, mime); } catch (_) { throw fail(`${L}: the picture could not be decoded.`); }
         const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
         if (!(w > 0 && h > 0)) throw fail(`${L}: the picture is empty.`);
-        const { w2, h2 } = realism.evenPlan(w, h);
-        const refusal = realism.fits(w2, h2);
-        if (refusal) throw fail(refusal.replace(`${w2} × ${h2}`, `${w} × ${h}`));
+        // what goes: the picture at its own size padded to even sides, or (above 1×, past the cap) scaled down first
+        const plan = realism.fitPlan(w, h, mode.factor);
+        if (plan.refusal) throw fail(plan.refusal);
+        const [fw, fh] = plan.fit, [w2, h2] = plan.sent;
         // the one readback of the source (the acceleration-latch trap): its alpha is reused for the answer
         const c = document.createElement("canvas");
-        c.width = w; c.height = h;
+        c.width = fw; c.height = fh;
         const cx = c.getContext("2d", { willReadFrequently: true });
-        cx.imageSmoothingEnabled = false;
-        cx.drawImage(img, 0, 0);
-        const source = cx.getImageData(0, 0, w, h).data;
+        if (plan.scaled) {
+            cx.imageSmoothingEnabled = true;
+            cx.imageSmoothingQuality = "high";
+            cx.drawImage(img, 0, 0, fw, fh);
+        } else {
+            cx.imageSmoothingEnabled = false;
+            cx.drawImage(img, 0, 0);
+        }
+        const source = cx.getImageData(0, 0, fw, fh).data;
         const keepAlpha = realism.hasAlpha(source);
-        const prep = realism.prepPixels(source, w, h, keepAlpha);
+        const prep = realism.prepPixels(source, fw, fh, keepAlpha);
         c.width = w2; c.height = h2;
         cx.putImageData(new ImageData(prep.data, w2, h2), 0, 0);
         const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
@@ -2518,9 +2532,10 @@ export const host = {
         });
         const notes = [];
         if (support.note) notes.push(support.note);
+        if (plan.scaled) notes.push(realism.scaledDownNote(fw, fh));
         let res = null, fellBack = "";
         while (!res) {
-            const prompt = realism.passPrompt(this.realismRecipe(), values, ref);
+            const prompt = realism.passPrompt(this.realismRecipe(), values, ref, mode.label);
             try {
                 res = await this.comfyPictureRun(editor, prompt, realism.PASS_OUTPUT, { label: L, token, timeoutMs: values.timeout * 1000, deadline });
             } catch (err) {
@@ -2538,24 +2553,31 @@ export const host = {
                 throw fail(fellBack ? `${text} ${fellBack}` : text, { kind: (err && err.kind) || "error" });
             }
         }
-        // the answer cropped back to w × h at 0, 0; with transparency the source's alpha written back
+        // the answer cropped back to w × h at 0, 0 (1×), or above 1× to the part that is the picture (the padding's
+        // share off, the answer's own scale kept); with transparency the source's alpha written back, scaled with it
         let out;
         try { img = await bytesToImage(res.bytes, res.mime); } catch (_) { throw fail(`${L}: your ComfyUI's answer could not be decoded.`); }
         const aw = img.naturalWidth || img.width, ah = img.naturalHeight || img.height;
-        if (aw < w || ah < h) throw fail(`${L}: your ComfyUI answered ${aw} × ${ah} for a picture of ${w} × ${h}.`);
-        if (!keepAlpha && aw === w && ah === h) out = res.bytes;
+        if (!up && (aw < w || ah < h)) throw fail(`${L}: your ComfyUI answered ${aw} × ${ah} for a picture of ${w} × ${h}.`);
+        if (up && (aw <= w2 || ah <= h2)) throw fail(`${L}: your ComfyUI answered ${aw} × ${ah} for a picture of ${w2} × ${h2} at ${mode.text}.`);
+        const kw = up ? Math.round(fw * aw / w2) : w, kh = up ? Math.round(fh * ah / h2) : h;
+        if (!keepAlpha && aw === kw && ah === kh) out = res.bytes;
         else {
-            c.width = w; c.height = h;
+            c.width = kw; c.height = kh;
             cx.imageSmoothingEnabled = false;
-            cx.drawImage(img, 0, 0, w, h, 0, 0, w, h);
+            cx.drawImage(img, 0, 0, kw, kh, 0, 0, kw, kh);
             if (keepAlpha) {
-                const answer = cx.getImageData(0, 0, w, h).data;
-                cx.putImageData(new ImageData(realism.putAlphaBack(answer, w, h, source, w, h), w, h), 0, 0);
+                const answer = cx.getImageData(0, 0, kw, kh).data;
+                const alpha = up ? realism.scaleAlpha(source, fw, fh, kw, kh) : source;
+                cx.putImageData(new ImageData(realism.putAlphaBack(answer, kw, kh, alpha, kw, kh), kw, kh), 0, 0);
             }
             out = await canvasBytes(c);
             c.width = c.height = 0;
         }
-        return { bytes: out, mime: out === res.bytes ? res.mime : "image/png", width: w, height: h, seconds: res.seconds, note: notes.join(" ") };
+        return {
+            bytes: out, mime: out === res.bytes ? res.mime : "image/png", width: kw, height: kh, seconds: res.seconds, note: notes.join(" "),
+            factor: mode.factor, sent: [w2, h2], scaled: plan.scaled ? [fw, fh] : null,
+        };
     },
 
     /**
@@ -2563,15 +2585,24 @@ export const host = {
      * or sent: the server, a run going on the document (an API run, the pass, a local render still on the server), the
      * document still loading, no picture, past 7680 × 4320 (the size before anything is read: a 15k document is refused
      * without its flatten). `status`'s realism answers from it too, so an agent is never told ready for a refused pass.
+     * `factor` (R-U): a factor no mode has first; above 1× the document is resized when the answer lands, so not while
+     * a job would land where the picture was (turnBlocked, as for an upscale of the whole picture), and the size is
+     * realism.fitPlan's (a picture past the cap is scaled down instead; a fit under 64 px, or one that would not get
+     * larger, is refused). `status` asks at 1×.
      */
-    realismWholeRefusal(editor) {
+    realismWholeRefusal(editor, { factor = 1 } = {}) {
         const L = realism.LABEL;
+        const mode = realism.modeFor(factor);
+        if (!mode) return realism.factorRefusal(factor);
         const support = this.realismSupport();
         if (!support.ok) return support.reason;
         if (editor.providerPending || (editor._localRuns && editor._localRuns.size)) return `${L}: a run is still going on this document.`;
         if (editor._loading) return `${L}: the document is still loading.`;
         if (!editor.base || !editor.width || !editor.height) return `${L}: load an image first.`;
-        return realism.wholeRefusal(editor.width, editor.height);
+        if (mode.factor === 1) return realism.wholeRefusal(editor.width, editor.height);
+        const blocked = editor.turnBlocked ? editor.turnBlocked() : "";
+        if (blocked) return `${L}: ${blocked}`;
+        return realism.fitPlan(editor.width, editor.height, mode.factor).refusal;
     },
 
     /**
@@ -2584,14 +2615,23 @@ export const host = {
      * ends it; closing the tab ends it too and adds nothing. Refused before anything is read or sent (the server, a run
      * going on the document, no picture, the size); a failure adds nothing. Each sentence is the status and the thrown
      * Error's message. `deadline` (a time in ms, 0 for none): comfyPictureRun's hard end, the queue's wait included.
-     * -> { layer, seconds, note, changed } (layer null when the tab was closed meanwhile)
+     * `factor` (R-U, docs/PLAN_0_1_42.md Q29): above 1 (1.5, 1.7, 2, 3) the document becomes that many times larger
+     * (the base and every layer, mask and the selection scaled as Resize scales them) and the pass, at the pack's mode
+     * of that factor, lands on top of it as the same new layer at the new size, both in one undo step; a picture whose
+     * output would pass 7680 × 4320 is scaled down before it goes, so the answer, and the document, come back as large
+     * as the pack allows. The landing goes through resizeImage's `base` path while the run slot is held.
+     * -> { layer, seconds, note, changed, factor, from: [W, H], width, height } (layer null when the tab was closed
+     *    meanwhile)
      */
-    async realismWhole(editor, { deadline = 0 } = {}) {
+    async realismWhole(editor, { deadline = 0, factor = 1 } = {}) {
         const L = realism.LABEL;
         const say = (text) => { editor.setStatus(text); return new Error(text); };
-        const refusal = this.realismWholeRefusal(editor);
+        const refusal = this.realismWholeRefusal(editor, { factor });
         if (refusal) throw say(refusal);
         const W = editor.width, H = editor.height;
+        const mode = realism.modeFor(factor);
+        const up = mode.factor > 1;
+        const plan = up ? realism.fitPlan(W, H, mode.factor) : null;
         const token = { provider: "comfyui", label: L, started: Date.now(), editor };
         editor.providerPending = token;
         this._providerRuns.add(token);
@@ -2632,41 +2672,86 @@ export const host = {
                 const c = editor.flattenToCanvas({ forRun: true, upTo });
                 try { bytes = await canvasBytes(c); } finally { c.width = c.height = 0; }
             }
-            editor.setStatus(`${L}: sending the picture (${W} × ${H}) to your ComfyUI ...`);
-            const out = await this.passPicture(editor, bytes, "image/png", { token, deadline });
+            const goes = !up ? `${W} × ${H}` : plan.scaled ? `${W} × ${H}, scaled down to ${plan.fit[0]} × ${plan.fit[1]}, at ${mode.text}` : `${W} × ${H} at ${mode.text}`;
+            editor.setStatus(`${L}: sending the picture (${goes}) to your ComfyUI ...`);
+            const out = await this.passPicture(editor, bytes, "image/png", { token, deadline, factor: mode.factor });
             bytes = null;
-            if (gone()) return { layer: null, seconds: out.seconds || 0, note: "", changed: false };
+            const none = { layer: null, seconds: out.seconds || 0, note: "", changed: false, factor: mode.factor, from: [W, H], width: null, height: null };
+            if (gone()) return none;
             // the title row's Cancel stays until the layer is in: pressed after the answer, nothing lands either
             if (token.cancelled) throw cancelled();
             const img = await bytesToImage(out.bytes, out.mime);
             const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+            // above 1×: the document's new size (the answer's width, the picture's aspect, as an upscale of the whole
+            // picture lands); the layer's pixels the answer as it is, or stretched by the pixel or two the pack's even
+            // rounding moved its height
+            const nw = up ? w : W, nh = up ? Math.max(1, Math.round(H * w / W)) : H;
+            if (up && nw <= W) throw new Error(`${L}: your ComfyUI answered ${w} × ${h}, which is not larger than the picture (${W} × ${H}).`);
+            let lbytes = out.bytes, lmime = out.mime, lcanvas = null;
+            if (up && h !== nh) {
+                lcanvas = document.createElement("canvas");
+                lcanvas.width = nw; lcanvas.height = nh;
+                const lx = lcanvas.getContext("2d");
+                lx.imageSmoothingEnabled = true;
+                lx.imageSmoothingQuality = "high";
+                lx.drawImage(img, 0, 0, nw, nh);
+                lbytes = await canvasBytes(lcanvas);
+                lmime = "image/png";
+            }
             // stored as a result is: its PNG in the mirror, so neither a save nor the autosave encodes it again; when the
             // mirror fails, an unsaved layer, which they upload
             let ref = null;
-            if (out.mime === "image/png") {
+            if (lmime === "image/png") {
                 const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
-                try { ref = await this.uploadResult(new Blob([out.bytes], { type: "image/png" }), `n${editor.node.id}_realism_${stamp}.png`); }
+                try { ref = await this.uploadResult(new Blob([lbytes], { type: "image/png" }), `n${editor.node.id}_realism_${stamp}.png`); }
                 catch (err) { console.warn("the Realism Pass layer stays unsaved until the next save", err); }
             }
-            if (gone()) return { layer: null, seconds: out.seconds || 0, note: "", changed: false };
-            if (token.cancelled) throw cancelled();
+            lbytes = null;
+            if (gone()) { if (lcanvas) lcanvas.width = lcanvas.height = 0; return none; }
+            if (token.cancelled) { if (lcanvas) lcanvas.width = lcanvas.height = 0; throw cancelled(); }
             // under the top run of filter layers as the stack is now (layers may have come or gone during the run): what
-            // lies under that index now against what was read
+            // lies under that index now against what was read (before a resize, which moves every layer)
+            const at0 = realism.topFilterRun(editor.layers, isFill, skip);
+            const changed = readSig(at0) !== sig0;
+            // (the canvas backend's layer keeps the canvas it is made from: it is not emptied here)
+            const px = lcanvas ? editor.pixels.Layer.fromCanvas(lcanvas) : editor.pixels.Layer.fromImage(img);
+            if (up) {
+                // the document by the factor (Q29): the base scaled as Resize scales it, given as the new base so the
+                // landing goes through while this run holds the slot (resizeImage's `base`); every layer, mask and the
+                // selection scale along, one `canvas` undo step, which the pass layer below joins (no step of its own)
+                const nb = document.createElement("canvas");
+                nb.width = nw; nb.height = nh;
+                const nctx = nb.getContext("2d");
+                nctx.imageSmoothingEnabled = true;
+                nctx.imageSmoothingQuality = "high";
+                editor.drawBaseInto(nctx, 0, 0, nw, nh);
+                const u0 = editor.undo.length;
+                try { await editor.resizeImage(nw, nh, { base: nb }); } finally { nb.width = nb.height = 0; }
+                // the landing is under way: a Cancel pressed now no longer stops it (half of it is in), a closed tab does
+                if (gone()) return none;
+                if (editor.width !== nw || editor.height !== nh) throw new Error(editor.status || `${L}: the picture could not be resized.`);
+                // the Undo history names the pass, not "Upscale image"
+                const step = editor.undo.length > u0 ? editor.undo[editor.undo.length - 1] : null;
+                if (step && step.kind === "canvas") { step.label = L; if (editor.historyChanged) editor.historyChanged(); }
+            } else {
+                editor.pushUndo({ kind: "layers", label: L });
+            }
             const at = realism.topFilterRun(editor.layers, isFill, skip);
-            const changed = readSig(at) !== sig0;
-            const px = editor.pixels.Layer.fromImage(img);
-            editor.pushUndo({ kind: "layers", label: L });
-            const layer = editor.addLayer({ name: L, kind: "image", ref, dirty: !ref, px, x: 0, y: 0, w, h, match: { strength: 0, source: "underneath" } });
+            const layer = editor.addLayer({ name: L, kind: "image", ref, dirty: !ref, px, x: 0, y: 0, w: nw, h: nh, match: { strength: 0, source: "underneath" } });
             // the move is part of the undo step above
             const top = editor.layers.length - 1;
             if (at < top) editor.moveLayer(layer.id, at - top, { undo: false });
-            const parts = [`${L} ran on your ComfyUI in ${Math.max(1, Math.round(out.seconds || 0))} s: a new layer above the picture${at < top ? ", under the filter layers" : ""}.`];
+            const where = `a new layer above the picture${at < top ? ", under the filter layers" : ""}`;
+            const secs = Math.max(1, Math.round(out.seconds || 0));
+            const parts = [up
+                ? `${L} ran on your ComfyUI in ${secs} s at ${mode.text}: ${W} × ${H} is now ${nw} × ${nh}, every layer scaled along, and the pass is ${where} (Ctrl+Z takes both back).`
+                : `${L} ran on your ComfyUI in ${secs} s: ${where}.`];
             if (changed) parts.push("The picture changed while the pass ran: the layer shows it as it was when the pass started.");
             if (out.note) parts.push(out.note);
             editor.setStatus(parts.join(" "));
-            return { layer, seconds: out.seconds || 0, note: out.note || "", changed };
+            return { layer, seconds: out.seconds || 0, note: out.note || "", changed, factor: mode.factor, from: [W, H], width: nw, height: nh };
         } catch (err) {
-            if (gone()) return { layer: null, seconds: 0, note: "", changed: false };
+            if (gone()) return { layer: null, seconds: 0, note: "", changed: false, factor: mode.factor, from: [W, H], width: null, height: null };
             const msg = String((err && err.message) || err);
             throw say(err && err.hint ? String(err.hint) : msg.startsWith(L) ? msg : `${L}: ${msg}`);
         } finally {
