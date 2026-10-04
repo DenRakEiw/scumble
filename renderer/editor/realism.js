@@ -25,7 +25,7 @@ export const MIN_SIDE = 64;
  */
 export const PASS_MULTIPLE = 2;
 
-/** settings.realism: Style and Strength (R3's row), the model preset of the switch routes, the wait. */
+/** settings.realism: Style, Strength and model preset of the whole-picture pass (Upscale's row, R3b), the wait. */
 export const realismDefaults = Object.freeze({ style: "Default", intensity: 1, preset: "L", timeout: 300 });
 
 const TIMEOUT_MIN = 30;
@@ -149,7 +149,7 @@ export function fits(w, h, factor = 1) {
 
 /**
  * The DLSS5Settings inputs of a run: the recipe node's inputs with Style and Strength from `values` and, when `values`
- * names one, the model preset (the switch routes; the recipe route keeps its Settings row's). A bad value throws.
+ * names one, the model preset (the whole-picture pass; the recipe route keeps its Settings row's). A bad value throws.
  */
 export function passSettings(inputs, values = {}) {
     const next = { ...(inputs || {}) };
@@ -240,7 +240,7 @@ export function isPassNode(nodeType) {
     return NODES.includes(String(nodeType || ""));
 }
 
-// ---- the pass on a picture (R2a: host.passPicture, which R2b and R4 call) ----------------------------------------
+// ---- the pass on a picture (R2a: host.passPicture, which the whole-picture pass calls, R3a) ----------------------
 
 /** The pass on a picture always runs at 1x: the answer is cropped back to the picture's own size. */
 export const PASS_MODE = "1x (DLAA / native)";
@@ -337,6 +337,31 @@ export function putAlphaBack(answer, aw, ah, source, w, h) {
         }
     }
     return out;
+}
+
+// ---- the whole picture (R3a: host.realismWhole) ------------------------------------------------------------------
+
+/**
+ * Where the top run of filter layers starts in `layers` (the editor's stack, bottom first): the pass reads the layers
+ * below this index and its layer lands at it, so a film look or grain at the top of the stack stays live above the
+ * pass and is not sent (DLSS would smooth grain as noise). Walking down from the top, the layers in no group that
+ * draw nothing in a run (`skip`: reference and control layers, hidden layers that are no filter, such as a rejected
+ * result) are passed over; a filter layer belongs to the run when it is in no group, not clipped (its look depends on
+ * the layer under it) and no fill layer (`isFill`: it gives pixels of its own); hidden filters count (shown later they
+ * still belong above the pass). Any other layer ends the run.
+ * `layers.length` when the top layer that counts is no such filter. Exclusive, as the editor's `upTo` is.
+ */
+export function topFilterRun(layers, isFill = () => false, skip = () => false) {
+    const list = Array.isArray(layers) ? layers : [];
+    let start = list.length;
+    for (let i = list.length - 1; i >= 0; i--) {
+        const l = list[i];
+        if (!l) break;
+        if (!l.group && skip(l)) continue;
+        if (l.kind === "filter" && !l.group && !l.clip && !isFill(l)) { start = i; continue; }
+        break;
+    }
+    return start;
 }
 
 /**

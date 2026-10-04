@@ -719,8 +719,7 @@ const COMMANDS = {
             if (a.seed != null) { ed.genSettings.seed = Math.abs(Math.round(+a.seed)) >>> 0; ed.genSettings.seedRandom = false; if (ed.seedInput) ed.seedInput.value = ed.genSettings.seed; }
             const t0 = Date.now();
             if (r.kind === "provider") {
-                // the document's Realism Pass on the answer ends at this command's timeout, the paid answer kept
-                const out = await host.runGenerate(ed, { width: w, height: h, aspect: a.aspect || null, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed, background: a.background || null, deadline: t0 + clampInt(a.timeout, 5, 3600, 600) * 1000 });
+                const out = await host.runGenerate(ed, { width: w, height: h, aspect: a.aspect || null, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed, background: a.background || null });
                 ed.notifyChanged();
                 return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, prompt_sent: out.prompt, references: out.references, kept: out.kept, dropped: out.dropped, notes: out.notes || [], info: out.info || null, boxes: out.boxes || 0, status: ed.status };
             }
@@ -797,15 +796,10 @@ const COMMANDS = {
             // a provider run is over when ed.generate() returns, so `seconds` counts from here
             if (ed.providerPending) throw new Error("a run is still going on this document");
             const started = Date.now(), limit = clampInt(a.timeout, 5, 3600, 600) * 1000;
-            // an API run's answer may wait for the document's Realism Pass behind the user's own ComfyUI jobs: the pass ends
-            // at this command's timeout (its job taken off the queue, the paid answer kept), so the command answers before
-            // the bridge gives up and a retry pays twice (host.passAnswer)
-            ed.runDeadline = started + limit;
-            let run;
-            try { run = await ed.generate(); } finally { ed.runDeadline = 0; }
+            const run = await ed.generate();
             if (run && run.error) throw run.error;
-            // a provider run has landed its layer when generate() returns: a note in its status ("... failed on your
-            // ComfyUI: ... The plain result was kept.", the Realism Pass after the answer) is no failure of the run
+            // a provider run has landed its layer when generate() returns: a sentence in its status that reads "failed"
+            // (a note of the route) is no failure of the run
             if (ed.history.length <= n0 && failed()) throw new Error(ed.status);
             const t0 = Date.now();
             const provider = host.recipe && host.recipe.kind === "provider";

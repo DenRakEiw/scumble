@@ -817,6 +817,63 @@ function nodeFitSpan(a0, a1, limit, m) {
         check("versionAtLeast(v, 0.3.57) for 10 versions (an unknown one is not)", bad.length === 0, short(bad));
     }
 
+    // ---- 9c. topFilterRun (R3a: where the whole-picture pass reads up to and lands) -----------------------------------
+    console.log("\n--- 9c. topFilterRun (R3a) ---");
+    {
+        // the editor's rules stood in for: a fill layer is a filter whose type gives pixels; references and control
+        // layers are what a run leaves out
+        const FILLS = new Set(["solid", "gradient"]);
+        const isFill = (l) => l.kind === "filter" && FILLS.has(l.filter);
+        const skip = (l) => l.role === "reference" || (!!l.role && l.role !== "none");
+        const img = (extra) => ({ kind: "image", role: "none", ...(extra || {}) });
+        const fx = (extra) => ({ kind: "filter", filter: "film", role: "none", ...(extra || {}) });
+        const ref = () => ({ kind: "image", role: "reference" });
+        const ctl = (extra) => ({ kind: "image", role: "depth", ...(extra || {}) });
+        const at = (layers) => R.topFilterRun(layers, isFill, skip);
+        const cases = [
+            ["no layers", [], 0],
+            ["no list at all", null, 0],
+            ["a top image layer", [img(), fx(), img()], 3],
+            ["one top filter", [img(), fx()], 1],
+            ["two top filters", [img(), img(), fx(), fx({ filter: "grain" })], 2],
+            ["only filters", [fx(), fx()], 0],
+            ["a fill layer at the top is no filter", [img(), fx(), fx({ filter: "solid" })], 3],
+            ["a fill layer inside the run ends it", [img(), fx(), fx({ filter: "gradient" }), fx()], 3],
+            ["a filter under an image layer does not count", [fx(), img()], 2],
+            ["hidden top filters count", [img(), fx({ visible: false }), fx()], 1],
+            ["a group at the top ends the run", [img(), fx(), img({ group: "G1" }), fx({ group: "G1" })], 4],
+            ["a filter in a group above an ungrouped one: the run is only the ungrouped top", [img(), fx({ group: "G1" }), fx()], 2],
+            ["a clipped filter at the top is no part of the run", [img(), fx({ clip: true })], 2],
+            ["a reference above the top filter run is passed over", [img(), fx(), ref()], 1],
+            ["a reference between two filters is passed over", [img(), fx(), ref(), fx()], 1],
+            ["references alone at the top: the length", [img(), ref(), ref()], 3],
+            ["a control layer at the top is passed over", [img(), fx(), ctl()], 1],
+            ["a control layer in a group ends the run", [img(), fx(), ctl({ group: "G2" })], 3],
+        ];
+        for (const [what, layers, want] of cases) {
+            const got = at(layers);
+            check(`topFilterRun: ${what} -> ${want}`, got === want, `got ${got}`);
+        }
+        // the host's skip also passes over hidden layers that are no filter (a rejected result on top draws nothing)
+        const skipH = (l) => skip(l) || (l.kind !== "filter" && l.visible === false);
+        const hidden = [
+            ["a hidden image layer above the top filter is passed over", [img(), fx(), img({ visible: false })], 1],
+            ["a hidden image layer between two filters is passed over", [img(), fx(), img({ visible: false }), fx()], 1],
+            ["a hidden image layer in a group ends the run", [img(), fx(), img({ visible: false, group: "G3" })], 3],
+            ["a hidden image layer alone at the top: the length", [img(), img({ visible: false })], 2],
+        ];
+        for (const [what, layers, want] of hidden) {
+            const got = R.topFilterRun(layers, isFill, skipH);
+            check(`topFilterRun (host's skip): ${what} -> ${want}`, got === want, `got ${got}`);
+        }
+        // the defaults (no isFill, no skip): every top-level unclipped filter counts, nothing is passed over
+        check("topFilterRun without isFill and skip: a fill counts, a reference ends the run", R.topFilterRun([img(), fx({ filter: "solid" })]) === 1 && R.topFilterRun([img(), fx(), ref()]) === 3);
+        // the index is exclusive, as the editor's upTo: the layers below it are what the pass reads
+        const stack = [img({ name: "base-ish" }), img({ name: "paint" }), fx({ name: "look" }), ref()];
+        const i = at(stack);
+        check("topFilterRun's index splits the stack: paint read, the look and the reference above", i === 2 && stack.slice(0, i).map((l) => l.name).join() === "base-ish,paint", `got ${i}`);
+    }
+
     // ---- 10. the label in every text ------------------------------------------------------------------------------
     console.log("\n--- 10. the label in every text ---");
     const missing = texts.filter((t) => !t.includes(EXACT_LABEL));

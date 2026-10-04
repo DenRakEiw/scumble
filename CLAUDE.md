@@ -76,41 +76,39 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-04 evening: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1, R2a and R2b built, R3-R5 redesigned, next R3a)
+## Where things stand (2026-10-04 night: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1, R2a, R2b and R3a built, next R3b)
 
-**Next session: R3a of `docs/PLAN_0_1_42.md`** (Generate is never passed: R2b's routes out; the whole visible picture
-through the pass at 1x as a new layer, `host.realismWhole`). Read the plan's §1 "The Realism Pass is a refiner" (the
-user's answers of 2026-10-04 evening), §3.2 and R3a first; the anchors in R3a were checked against the code the same
-evening. **F2 is picked**: the 12 marked ✓ in `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
+**Next session: R3b of `docs/PLAN_0_1_42.md`** (the Upscale dialog's Realism Pass entry at 1x, *Image › Realism Pass
+...*, the `realism_pass` command over `host.realismWhole`; the CHANGELOG line). Read the plan's §1 "The Realism Pass is a
+refiner", R3a's "As built" and R3b first; R3b's anchors are from 2026-10-04 evening, grep the names. **F2 is picked**:
+the 12 marked ✓ in `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-04 evening): R3 built, shown to the user, dropped; the Realism Pass redesigned as a refiner.
-Nothing of R3 committed; this commit is the plan.**
-- **R3 as first planned** (a switch in the Generate pane that passed every Generate and Generate new result, in a local
-  run's own graph or after an API answer, saved with the document) was built, reviewed (11 findings, fixed) and tested
-  (gates PASS, a mutation round 5 of 5). Told what it does, the user: "nein... es hat ja auch einen color shift... der
-  reality pass soll immer über das gesamte bild laufen, nicht über inpaintings... wie ein upscaler... aber als 1x".
-  The code was reverted; its diff is at `dist/r3_switch_dropped_2026-10-04.patch` (git-ignored; the Style / Strength /
-  Preset controls and the test patterns are reusable, the switch and the in-graph injection are not wanted).
-- **The user's answers** (plan §1 "The Realism Pass is a refiner"): the whole visible picture at 1x as a new layer on
-  top; R2b's pass comes out of Generate (R3a); **no colour match** on the layer, **a second run stacks** and **the R1
-  recipe stays** beside it (all three against the recommendation); the pass goes under the top run of filter layers.
-  The plan: R3a, R3b (the Upscale dialog's entry, the Image menu, `realism_pass`), R4 (agents), R5 (manual, live look)
-  rewritten, R-U added (1.5x-3x on the same entry, after U2), Q25-Q29; checked against the code by two agents (29
-  points, fixed: the deadline's unit, the landing index, reference layers above the filters, `intensity` not
-  `strength`, the dialog's `upScopeDoc`, the menu handler, leftovers of the switch).
-- **The Realism Pass Upscale scales down instead of refusing** (the user: "ja", the rule of the DLSS5 Fit Input Size
-  node built for the user's ComfyUI that day): plan §1; F is the pack's factor (1.724 for Balanced, not 1.7).
-- **MCP registries and a Reddit post** (the user, mid-session: "Trage es in alle MCP registrys ein" with a pasted
-  channel list, then "schreibe auch einen reddit post für r/modelcontextprotocol"): **submitted the same evening** (the user: "ja, reiche ein",
-  free only, `schoenebergde@gmail.com`, "ich poste selber"): **the official MCP Registry is live**
-  (`io.github.DenRakEiw/scumble` 0.1.41, metadata only, `server.json` in the repo root; every release publishes a new
-  version, `docs/RELEASING.md`), mcpservers.org, MCPMarket (free queue), mcp.directory, mcp.so (as the free issue
-  chatmcp/mcpso#4711), TensorBlock (issue #3083); topics added; `docs/MCP.md` and the README fixed and pushed. Glama,
-  punkpeye's list, Smithery and GitHub's registry need a Docker check or an `.mcpb` (not planned). The user posts on
-  Reddit. Everything in `docs/PLAN_MCP_LISTINGS.md`.
+**This session (2026-10-04 night, R3a of 0.1.42): Generate is never passed; the whole picture as a layer, unreleased.**
+Nothing new on screen yet (R3b adds the entry). Said to the user first, in one sentence: Generate and Generate new are
+never passed any more; the whole visible picture goes through DLSS 5 at 1x and lands as a new layer named
+`Realism Pass (Windows only, RTX only)` on top, under the top filter layers, no colour match, a second run stacks.
+- **R2b out**: `runProvider`, `runGenerate`, generate and generate_new are back to before R2b (kept: the "a run is
+  still going" refusal, "a landed layer is no failure", `comfyPictureRun`'s deadline, `passPicture`'s upload race);
+  `realismAfter`, `passAnswer`, `runDeadline` gone; comments that named the switch reworded.
+- **`realism.topFilterRun`** (where the read stops and the layer lands) and **`host.realismWhole(editor, { deadline })`**
+  (refusals before any read, the busy token like an upscale's, the read through the tile workers or a flatten,
+  `passPicture`, the layer stored like a result, one undo step, the move under the filter run as the stack is at the
+  landing, "the picture changed" note from a signature of the read, closing the tab or a Cancel at any point ends the
+  job and lands nothing). Readings taken beyond the plan, in its "As built": clipped filters and grouped layers end the
+  run, hidden non-filter layers are passed over, `_loading` refuses.
+- **Measured at 7680 × 4320** (a noisy photo, server stubbed, fresh instance): 2.3 s in Scumble, main thread blocked at
+  most 378 ms, JS heap +330 MB; not optimised. A warm instance took 7.7-8.5 s (the restart-before-benchmarks trap).
+- **Tests**: `tools/realism_test.js` §9c (423 checks), `tools/generate_test.py` `STEPS_R3A` (eight steps, R2b's six out),
+  both backends; gates `--offline`: `generate` both backends, `commands transparent upscale lint types` tiles: PASS.
+  Review: a workflow of four lenses plus a verifier per finding (15 agents): ten findings, five real and fixed (a Cancel
+  after the answer still landed the layer; the "changed" note fired for Compare redraws and the live filters; a hidden
+  layer on top stopped the filter run; the closed-tab test passed by the timeout; a stale comment), three test gaps
+  closed anyway, two mutations red; one is for R3b, written into its plan text (an API Generate during a pass clears
+  the pass's busy token, as it does an upscale's today). New: `SCUMBLE_GENERATE_ONLY=name,name` runs a subset of the
+  generate gate.
 - **Asked earlier, still waiting for the user's word:** the README for reach (a GIF, install buttons, a comparison
   table, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, how to post on Show HN (the
   comparison table names other products, the user's rule of 2026-09-29).
@@ -180,7 +178,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   and the portable zip (item 36): `docs/PLAN_0_1_42.md`; research in `docs/PLAN_RTX_VSR.md`'s last section. **R1 (the
   recipe, the server check, the hints, shipped presets L and M) built 2026-10-04**, not run live; R2a and R2b the
   same day; **redesigned that evening as a refiner** (the whole picture at 1x as a new layer, never a Generate result:
-  plan §1 "The Realism Pass is a refiner"), next R3a.
+  plan §1 "The Realism Pass is a refiner"); **R3a built the same night** (`host.realismWhole`, R2b's routes out), next R3b.
 - 38: new commands for MCP agents (the user, 2026-10-04: "schau auch noch ob noch mehr commands in den mcp aufgenommen
   werden können"): 28 verified candidates in `docs/PLAN_MCP_COMMANDS.md`; **the user picked 12** (marked ✓) for 0.1.42,
   sessions F2a / F2b after the six fixes of F1 (all six picked from `docs/BUGS.md` the same day). The other 16 wait

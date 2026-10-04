@@ -69,6 +69,39 @@ The block of 2026-10-03 (midday: B5, B6, the 0.1.39 release) was moved here the 
 
 The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved here the same afternoon, when V1 of item 35 was built.
 
+The block of 2026-10-04 (evening: R3 dropped, the Realism Pass redesigned as a refiner, the MCP listings) was moved here the same night, when R3a was built.
+
+## 2026-10-04 (evening: R3 dropped, the Realism Pass redesigned as a refiner, the MCP listings; moved here the same night when R3a was built)
+
+**This session (2026-10-04 evening): R3 built, shown to the user, dropped; the Realism Pass redesigned as a refiner.
+Nothing of R3 committed; this commit is the plan.**
+- **R3 as first planned** (a switch in the Generate pane that passed every Generate and Generate new result, in a local
+  run's own graph or after an API answer, saved with the document) was built, reviewed (11 findings, fixed) and tested
+  (gates PASS, a mutation round 5 of 5). Told what it does, the user: "nein... es hat ja auch einen color shift... der
+  reality pass soll immer über das gesamte bild laufen, nicht über inpaintings... wie ein upscaler... aber als 1x".
+  The code was reverted; its diff is at `dist/r3_switch_dropped_2026-10-04.patch` (git-ignored; the Style / Strength /
+  Preset controls and the test patterns are reusable, the switch and the in-graph injection are not wanted).
+- **The user's answers** (plan §1 "The Realism Pass is a refiner"): the whole visible picture at 1x as a new layer on
+  top; R2b's pass comes out of Generate (R3a); **no colour match** on the layer, **a second run stacks** and **the R1
+  recipe stays** beside it (all three against the recommendation); the pass goes under the top run of filter layers.
+  The plan: R3a, R3b (the Upscale dialog's entry, the Image menu, `realism_pass`), R4 (agents), R5 (manual, live look)
+  rewritten, R-U added (1.5x-3x on the same entry, after U2), Q25-Q29; checked against the code by two agents (29
+  points, fixed: the deadline's unit, the landing index, reference layers above the filters, `intensity` not
+  `strength`, the dialog's `upScopeDoc`, the menu handler, leftovers of the switch).
+- **The Realism Pass Upscale scales down instead of refusing** (the user: "ja", the rule of the DLSS5 Fit Input Size
+  node built for the user's ComfyUI that day): plan §1; F is the pack's factor (1.724 for Balanced, not 1.7).
+- **MCP registries and a Reddit post** (the user, mid-session: "Trage es in alle MCP registrys ein" with a pasted
+  channel list, then "schreibe auch einen reddit post für r/modelcontextprotocol"): **submitted the same evening** (the user: "ja, reiche ein",
+  free only, `schoenebergde@gmail.com`, "ich poste selber"): **the official MCP Registry is live**
+  (`io.github.DenRakEiw/scumble` 0.1.41, metadata only, `server.json` in the repo root; every release publishes a new
+  version, `docs/RELEASING.md`), mcpservers.org, MCPMarket (free queue), mcp.directory, mcp.so (as the free issue
+  chatmcp/mcpso#4711), TensorBlock (issue #3083); topics added; `docs/MCP.md` and the README fixed and pushed. Glama,
+  punkpeye's list, Smithery and GitHub's registry need a Docker check or an `.mcpb` (not planned). The user posts on
+  Reddit. Everything in `docs/PLAN_MCP_LISTINGS.md`.
+- **Asked earlier, still waiting for the user's word:** the README for reach (a GIF, install buttons, a comparison
+  table, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, how to post on Show HN (the
+  comparison table names other products, the user's rule of 2026-09-29).
+
 ## 2026-10-04 (R2b of 0.1.42 built: the pass after API and Comfy Cloud runs; moved here the same evening when R3 was redesigned)
 
 **This session (2026-10-04, R2b of 0.1.42): the pass after API and Comfy Cloud runs, unreleased.** Nothing new on

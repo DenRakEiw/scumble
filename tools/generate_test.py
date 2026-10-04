@@ -275,8 +275,8 @@ try {
 ]
 
 
-# docs/PLAN_0_1_42.md R2a: the picture runner (host.comfyPictureRun) and the pass on a picture (host.passPicture,
-# host.realismAfter), against stubs: nothing reaches a server. The queue, /queue, /history, /interrupt and the ensure
+# docs/PLAN_0_1_42.md R2a: the picture runner (host.comfyPictureRun) and the pass on a picture (host.passPicture),
+# against stubs: nothing reaches a server. The queue, /queue, /history, /interrupt and the ensure
 # are caught in the page; the upload and /view go to the gate profile's own mirror, which serves test_base.png
 # (run_gates.sh puts it there). The answers are dispatched server events. Raw strings: the JS keeps its backslashes.
 R2A_STUBS = r"""
@@ -347,6 +347,17 @@ const pngOf = async (w, h, fill) => {
 };
 const failed = (p) => p.then(() => null, (e) => e);
 const sorted = (o) => JSON.stringify(Object.keys(o || {}).sort().map((k) => [k, o[k]]));
+// the pass answers a picture of one colour at the size it was sent, stored in the mirror as ComfyUI's answer would be;
+// a failure of this helper ends the run (and the step says why)
+const fails = (id, message) => api.dispatch("execution_error", { prompt_id: id, node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: message });
+const answerWith = (rgb, first) => (id, body) => (async () => {
+    const ref = JSON.parse(body.output.rp_in.inputs.ref);
+    if (first) first(id, ref);
+    const p = await pixelsOf(await bytesOf(ref));
+    const png = await pngOf(p.w, p.h, () => [rgb[0], rgb[1], rgb[2], 255]);
+    const ans = await host.uploadInput(new Blob([png], { type: "image/png" }), "rp_answer_" + id + ".png");
+    api.dispatch("executed", { prompt_id: id, node: "rp_out", output: { images: [ans] } });
+})().catch((e) => { T.err = e; fails(id, "the test's answer failed: " + String((e && e.message) || e)); });
 let doc = null;
 """
 
@@ -718,47 +729,12 @@ try {
     out.refusals = [linux.hint.slice(0, 60), small.hint, large.hint];
     return out;
 """ + R2A_END),
-    # the pass after an answer (R2b's routes): off, the answer as it is; a server that cannot, skipped; a failure, the plain
-    # answer kept; the pass's answer when it works
-    ("realism_after_keeps_the_plain_answer", R2A_STUBS + r"""
-let ed = null, had = false, prevFlag;
-try {
-    stubAll();
-    doc = (await run("new_document")).id;
-    ed = ednow(doc);
-    had = Object.prototype.hasOwnProperty.call(ed.genSettings, "realism");
-    prevFlag = ed.genSettings.realism;
-    const res = { bytes: await bytesOf(BASE), mime: "image/png" };
-    ed.genSettings.realism = false;
-    const a = await host.realismAfter(ed, res);
-    if (a.bytes !== res.bytes || a.note !== "" || a.passed || T.queued.length) throw new Error("switched off: " + JSON.stringify({ note: a.note, passed: a.passed, queued: T.queued.length }));
-    ed.genSettings.realism = true;
-    host.setServerStatus({ ...GOOD, os: "linux" });
-    const b = await host.realismAfter(ed, res);
-    host.setServerStatus(GOOD);
-    if (b.bytes !== res.bytes || b.passed || b.note !== LABEL + " skipped: runs only on a ComfyUI on Windows; this one runs on linux." || T.queued.length) throw new Error("Linux: " + b.note);
-    T.onQueued = (id) => api.dispatch("execution_error", { prompt_id: id, node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: "No DLSS 5 runtime was found. Searched: x" });
-    const c = await host.realismAfter(ed, res);
-    if (c.bytes !== res.bytes || c.passed || !c.note.startsWith(LABEL + ": the DLSS 5 runtime is not installed") || !c.note.endsWith(" The plain result was kept.")) throw new Error("a failed pass: " + c.note);
-    // the pass answers with the picture it was sent (the upload itself)
-    let answered = null;
-    T.onQueued = (id, body) => { answered = JSON.parse(body.output.rp_in.inputs.ref); api.dispatch("executed", { prompt_id: id, node: "rp_out", output: { images: [answered] } }); };
-    const d = await host.realismAfter(ed, res);
-    if (!d.passed || !answered || !sameBytes(d.bytes, await bytesOf(answered))) throw new Error("the pass's answer: " + JSON.stringify({ passed: d.passed, note: d.note }));
-    return { skipped: b.note, failed: c.note.slice(0, 90), passed: d.passed };
-} finally {
-    T.onQueued = null;
-    if (ed) { if (had) ed.genSettings.realism = prevFlag; else delete ed.genSettings.realism; }
-    unstubAll();
-    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
-}
-"""),
 ]
 
-# docs/PLAN_0_1_42.md R2b: an API run's answer (the loopback provider: the crop handed back, a ramp for Generate new)
-# through the pass on the stubbed ComfyUI while the document's switch is on, before it is stitched or becomes the base.
-# Nothing goes to a provider or a server. Colour match is off, so a layer's pixels are the answer's.
-R2B_PRE = r"""
+# docs/PLAN_0_1_42.md R3a: the whole-picture pass (host.realismWhole) on the stubbed ComfyUI: the visible composite up to
+# the top run of filter layers goes out, the answer lands as a layer under that run; Generate and Generate new are never
+# passed. Nothing goes to a provider or a server. The R2a stubs answer each pass with a picture of one colour.
+R3A_PRE = r"""
 const LOOP = { id: "loopback_rp", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", text: { model: "loopback" }, refs: { name: "image {n}" }, name: "Loopback", settings: [] };
 const prevRecipe = host.recipe;
 const onRuns0 = host.onProviderRuns;
@@ -768,10 +744,48 @@ host.onProviderRuns = (runs) => { seen.push(runs.map((r) => r.label).join("|"));
 const R0 = host.realismRecipe();
 // the stubs, and the pass's shortest timeout (the other values the defaults: Style Default, Strength 1, model preset L),
 // so an answer that never comes ends a step well inside its eval's 240 s
-const stubR2b = () => { stubAll(); host.realismStored = { timeout: 30 }; };
-// a tab with a white 320 x 240 picture (new_canvas) and a selection, the switch on, the loopback recipe; no fill, so
-// the loopback's answer (the crop handed back) is white
-const plain = async () => {
+const stubR3a = () => { stubAll(); host.realismStored = { timeout: 30 }; };
+const at = (px, x, y) => Array.from(px.readRect(x, y, 1, 1).data);
+const centreOf = (l) => at(l.px, l.px.width >> 1, l.px.height >> 1);
+const near = (a, b, tol) => [0, 1, 2].every((i) => Math.abs(a[i] - b[i]) <= tol);
+const pxAt = (p, x, y) => Array.from(p.d.slice((y * p.w + x) * 4, (y * p.w + x) * 4 + 4));
+// what a run reads up to `upTo` (null: everything), as the whole flatten gives it
+const flatOf = (ed, upTo) => {
+    const c = ed.flattenToCanvas({ forRun: true, upTo });
+    const d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+    const r = { w: c.width, h: c.height, d: new Uint8ClampedArray(d) };
+    c.width = c.height = 0;
+    return r;
+};
+// how far two RGBA pictures are apart: the bytes off, the largest difference, their share of all bytes
+const diffOf = (a, b) => {
+    if (a.w !== b.w || a.h !== b.h) return { size: [a.w, a.h, b.w, b.h] };
+    let off = 0, max = 0;
+    for (let i = 0; i < a.d.length; i++) { const v = Math.abs(a.d[i] - b.d[i]); if (v) { off++; if (v > max) max = v; } }
+    return { off, max, frac: Math.round((off / a.d.length) * 10000) / 10000 };
+};
+// a white 320 x 240 picture, a picture layer at its own size over it (a half-transparent red square: not scaled, so the
+// tile workers composite the read), an inverting filter at the top and a reference above that: the pass reads the
+// picture and its layer; the filter stays live above the pass layer and the reference is left out
+const scene = async () => {
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    host.shell.activate(ed);
+    await run("new_canvas", { doc, width: 320, height: 240 });
+    const square = await pngOf(320, 240, (x, y) => (x >= 60 && x < 260 && y >= 40 && y < 200 ? [200, 60, 40, 200] : [0, 0, 0, 0]));
+    const sq = await host.uploadInput(new Blob([square], { type: "image/png" }), "rp_scene_square.png");
+    await run("add_image_layer", { doc, filename: sq.filename, subfolder: sq.subfolder, type: sq.type, name: "picture", x: 0, y: 0 });
+    const pic = ed.layers[ed.layers.length - 1];
+    if (pic.w !== 320 || pic.h !== 240 || pic.px.width !== 320 || pic.px.height !== 240) throw new Error("the picture layer is scaled: " + JSON.stringify({ w: pic.w, h: pic.h, pw: pic.px.width, ph: pic.px.height }));
+    await run("add_filter", { doc, type: "invert", name: "look" });
+    await run("add_image_layer", { doc, filename: BASE.filename, subfolder: BASE.subfolder, role: "reference", name: "ref" });
+    const names = ed.layers.map((l) => l.name);
+    if (JSON.stringify(names) !== JSON.stringify(["picture", "look", "ref"]) || ed.layers[2].role !== "reference") throw new Error("the scene: " + JSON.stringify(names));
+    return ed;
+};
+// a tab with a white 320 x 240 picture and a selection, the loopback recipe, no fill and no colour match: a Generate's
+// layer is the loopback's answer (the crop handed back, white)
+const loopTab = async () => {
     doc = (await run("new_document")).id;
     const ed = ednow(doc);
     host.shell.activate(ed);
@@ -779,28 +793,13 @@ const plain = async () => {
     await run("select_rect", { doc, x: 80, y: 60, w: 160, h: 120 });
     ed.cropSettings.fill = "none";
     ed.cropSettings.colorMatch = false;
-    ed.genSettings.realism = true;
     host.setRecipe(LOOP);
     return ed;
 };
-// the pass answers a picture of one colour at the size it was sent, stored in the mirror as ComfyUI's answer would be;
-// a failure of this helper ends the run (and the step says why)
-const fails = (id, message) => api.dispatch("execution_error", { prompt_id: id, node_id: "rp_enhance", node_type: "DLSS5EnhanceImages", exception_message: message });
-const answerWith = (rgb, first) => (id, body) => (async () => {
-    const ref = JSON.parse(body.output.rp_in.inputs.ref);
-    if (first) first(id, ref);
-    const p = await pixelsOf(await bytesOf(ref));
-    const png = await pngOf(p.w, p.h, () => [rgb[0], rgb[1], rgb[2], 255]);
-    const ans = await host.uploadInput(new Blob([png], { type: "image/png" }), "rp_answer_" + id + ".png");
-    api.dispatch("executed", { prompt_id: id, node: "rp_out", output: { images: [ans] } });
-})().catch((e) => { T.err = e; fails(id, "the test's answer failed: " + String((e && e.message) || e)); });
-const at = (px, x, y) => Array.from(px.readRect(x, y, 1, 1).data);
-const centreOf = (l) => at(l.px, l.px.width >> 1, l.px.height >> 1);
-const near = (a, b, tol) => [0, 1, 2].every((i) => Math.abs(a[i] - b[i]) <= tol);
 const layerOf = (ed, out) => (out && out.layer ? ed.layers.find((x) => x.id === out.layer.id) : null);
 """
 
-R2B_END = r"""
+R3A_END = r"""
 } finally {
     T.onQueued = null;
     host.onProviderRuns = onRuns0;
@@ -810,221 +809,318 @@ R2B_END = r"""
 }
 """
 
-STEPS_R2B = [
-    # the answer goes to the pass before the stitch: the layer is the pass's answer, the pass got the provider's answer with
-    # the defaults, the timer names the pass while it runs and the run's own label afterwards, the run stays busy and
-    # cancellable meanwhile; a transparent answer comes back with its alpha
-    ("a_provider_answer_goes_through_the_realism_pass", R2A_STUBS + R2B_PRE + r"""
+STEPS_R3A = [
+    # the composite up to the top filter (the reference left out) goes out once at its own size; the answer lands as a
+    # layer named the label, full size at 0, 0, no colour match, under the filter and above the picture layer; the timer
+    # names the pass while it runs, the document is busy and cancellable; one undo takes it back
+    ("the_whole_picture_lands_as_a_layer", R2A_STUBS + R3A_PRE + r"""
 try {
-    stubR2b();
-    const ed = await plain();
-    const n0 = ed.layers.length;
-    let during = null, sentRef = null;
+    stubR3a();
+    const ed = await scene();
+    const ids0 = ed.layers.map((l) => l.id);
+    // what the pass must get: the picture and its layer, not the look (it inverts) and not the reference
+    const want = flatOf(ed, 1), withLook = flatOf(ed, null);
+    const lookDiff = diffOf(want, withLook);
+    if (!(lookDiff.frac > 0.5)) throw new Error("the look changes nothing: " + JSON.stringify(lookDiff));
+    let sentRef = null, during = null;
     T.onQueued = answerWith([30, 200, 60], (id, ref) => {
         sentRef = ref;
-        during = { status: ed.status, timer: document.getElementById("shell-progress-text").textContent, busy: !!ed.providerPending && !!(ed._localRuns && ed._localRuns.has(id)), cancel: !document.getElementById("shell-cancel").hidden };
+        during = { timer: document.getElementById("shell-progress-text").textContent, busy: !!ed.providerPending && !!(ed._localRuns && ed._localRuns.has(id)), cancel: !document.getElementById("shell-cancel").hidden };
     });
     seen.length = 0;
-    // the size the crop goes out at, which is the loopback's answer's (the pass pads an odd side)
-    const em = host.cropFrame(ed).emitted;
-    const out = await run("generate", { doc, timeout: 60 });
+    const u0 = ed.undo.length;
+    // which read it took: the workers' (tiles) or the flatten (canvases)
+    const enc = { calls: 0, got: 0 };
+    ed.encodeComposite = async function (...a) { enc.calls++; const r = await Object.getPrototypeOf(this).encodeComposite.apply(this, a); if (r) enc.got++; return r; };
+    let out;
+    try { out = await host.realismWhole(ed); } finally { delete ed.encodeComposite; }
     if (T.err) throw T.err;
+    if (enc.calls !== 1 || enc.got !== (ed.tileMode ? 1 : 0)) throw new Error("the read: " + JSON.stringify({ ...enc, tiles: ed.tileMode }));
     if (T.queued.length !== 1 || !sentRef) throw new Error(T.queued.length + " passes queued");
-    // what went to the pass: the provider's answer (the white crop, at its size; not the stitched patch, whose border is
-    // transparent and goes flattened grey) as an input the server holds, with the defaults
+    // what went: the composite up to the look, as an input the server holds, with the defaults
     if (sentRef.type !== "input" || sentRef.subfolder !== "inpaint_canvas" || !T.ensured.some((x) => x.filename === sentRef.filename)) throw new Error("rp_in: " + JSON.stringify({ sentRef, ensured: T.ensured.length }));
-    const up = await pixelsOf(await bytesOf(sentRef));
-    const pxOf = (p, x, y) => Array.from(p.d.slice((y * p.w + x) * 4, (y * p.w + x) * 4 + 4));
-    const upMid = pxOf(up, up.w >> 1, up.h >> 1), upCorner = pxOf(up, 1, 1);
-    if (up.w !== em[0] + (em[0] % 2) || up.h !== em[1] + (em[1] % 2) || !near(upMid, [255, 255, 255], 2) || !near(upCorner, [255, 255, 255], 2)) throw new Error("the pass was not sent the provider's answer: " + JSON.stringify({ size: [up.w, up.h], emitted: em, mid: upMid, corner: upCorner }));
+    const sent = await pixelsOf(await bytesOf(sentRef));
+    const d = diffOf(sent, want);
+    if (d.size || d.max > 1 || d.frac > 0.02) throw new Error("the sent picture is not the composite up to the filter: " + JSON.stringify(d));
     const rs = T.queued[0].body.output.rp_settings.inputs;
     if (sorted(rs) !== sorted(R0.prompt.rp_settings.inputs) || rs.dlss_model_preset !== "L" || rs.nr_style !== "Default" || rs.nr_intensity !== 1 || rs.upscaling_mode !== "1x (DLAA / native)") throw new Error("rp_settings: " + JSON.stringify(rs));
-    // while it ran: the status, the timer, the run busy and cancellable
-    if (!during || !/^Loopback answered after \d+ s\. /.test(during.status) || !during.status.endsWith(LABEL + " on your ComfyUI ...")) throw new Error("the status during the pass: " + (during && during.status));
-    if (!during.timer.startsWith(LABEL + " · ") || !during.busy || !during.cancel) throw new Error("during the pass: " + JSON.stringify(during));
-    if (JSON.stringify(seen) !== JSON.stringify(["Loopback", LABEL, "Loopback", ""])) throw new Error("the timer's labels: " + JSON.stringify(seen));
-    // the layer is the pass's answer, and the notes and the status say the pass ran
-    const l = layerOf(ed, out);
-    if (ed.layers.length !== n0 + 1 || !l) throw new Error("no result layer: " + ed.status);
-    if (!near(centreOf(l), [30, 200, 60], 2)) throw new Error("the layer is not the pass's answer: " + JSON.stringify(centreOf(l)));
-    const ran = (out.notes || []).find((n) => n.startsWith(LABEL + " ran on your ComfyUI in "));
-    if (!ran || !ed.status.includes(ran)) throw new Error("the notes: " + JSON.stringify(out.notes) + " / " + ed.status);
-    if (!document.getElementById("shell-progress").hidden || host._providerRuns.size || (ed._localRuns && ed._localRuns.size)) throw new Error("the run stays open");
-    // a transparent answer (the loopback's disc on a transparent ground): the pass gets it flattened onto grey, and the
-    // layer keeps the answer's alpha. The whole picture selected, so the layer's alpha is the answer's alone (no feather)
-    await run("select_all", { doc });
-    T.queued = []; T.ensured = [];
-    let sentAlpha = null;
-    T.onQueued = answerWith([30, 200, 60], (id, ref) => { sentAlpha = ref; });
-    const tr = await host.runProvider(ed, { background: "transparent" });
+    // while it ran
+    if (!during || !during.timer.startsWith(LABEL + " · ") || !during.busy || !during.cancel) throw new Error("during the pass: " + JSON.stringify(during));
+    if (JSON.stringify(seen) !== JSON.stringify([LABEL, ""])) throw new Error("the timer's labels: " + JSON.stringify(seen));
+    // the layer
+    const l = out.layer;
+    if (!l || l.name !== LABEL || l.kind !== "image" || l.role !== "none" || l.x !== 0 || l.y !== 0 || l.w !== 320 || l.h !== 240 || !l.match || l.match.strength !== 0) throw new Error("the layer: " + JSON.stringify(l && { name: l.name, kind: l.kind, role: l.role, x: l.x, y: l.y, w: l.w, h: l.h, match: l.match }));
+    if (!l.ref || l.dirty) throw new Error("the layer is not stored in the mirror: " + JSON.stringify({ ref: l.ref, dirty: l.dirty }));
+    const order = ed.layers.map((x) => x.name);
+    if (JSON.stringify(order) !== JSON.stringify(["picture", LABEL, "look", "ref"])) throw new Error("the stack: " + JSON.stringify(order));
+    if (!near(centreOf(l), [30, 200, 60], 2) || !near(at(l.px, 1, 1), [30, 200, 60], 2)) throw new Error("the layer is not the answer: " + JSON.stringify(centreOf(l)));
+    const status = ed.status;
+    if (!status.startsWith(LABEL + " ran on your ComfyUI in ") || !status.includes(" s: a new layer above the picture, under the filter layers.") || out.changed) throw new Error("the status: " + status + " / changed " + out.changed);
+    if (ed.providerPending || host._providerRuns.size || (ed._localRuns && ed._localRuns.size) || !document.getElementById("shell-progress").hidden) throw new Error("the run stays open");
+    // one undo step takes it back, the stack as before
+    if (ed.undo.length !== u0 + 1 || ed.undo[ed.undo.length - 1].label !== LABEL) throw new Error("the undo steps: " + JSON.stringify(ed.undo.slice(u0).map((s) => s.label)));
+    await run("undo", { doc });
+    if (JSON.stringify(ed.layers.map((x) => x.id)) !== JSON.stringify(ids0)) throw new Error("after one undo: " + JSON.stringify(ed.layers.map((x) => x.name)));
+    // a hidden layer on top (a rejected result) draws nothing: passed over, the look still stays live above the pass
+    await run("add_image_layer", { doc, filename: BASE.filename, subfolder: BASE.subfolder, name: "rejected" });
+    await run("set_layer", { doc, layer: "rejected", visible: false });
+    let sentHidden = null;
+    T.onQueued = answerWith([30, 200, 60], (id, ref) => { sentHidden = ref; });
+    await host.realismWhole(ed);
     if (T.err) throw T.err;
-    const lt = ed.layers[ed.layers.length - 1];
-    const tc = centreOf(lt), corner = at(lt.px, 2, 2), ground = at(lt.px, 10, 120);
-    if (T.queued.length !== 1 || !tr.cutout || tc[3] < 250 || !near(tc, [30, 200, 60], 2) || corner[3] !== 0 || ground[3] > 2) throw new Error("transparent: " + JSON.stringify({ queued: T.queued.length, cutout: tr.cutout, centre: tc, corner, ground }));
-    // what went to the pass: the disc's colour in the middle (its blue is the seed's), the transparent ground as grey
-    const ua = await pixelsOf(await bytesOf(sentAlpha));
-    const uaMid = pxOf(ua, ua.w >> 1, ua.h >> 1), uaCorner = pxOf(ua, 1, 1);
-    if (Math.abs(uaMid[0] - 230) > 2 || Math.abs(uaMid[1] - 90) > 2 || uaMid[3] !== 255 || !near(uaCorner, [128, 128, 128], 1) || uaCorner[3] !== 255) throw new Error("the transparent answer went as " + JSON.stringify({ mid: uaMid, corner: uaCorner }));
-    return { status: during.status, timer: during.timer, labels: seen, layer: centreOf(l), note: ran, transparent: { centre: tc, corner, ground, sent: [uaMid, uaCorner] } };
-""" + R2B_END),
-    # a pass that fails keeps the paid answer: the plain layer lands and the status says why; a sentence that reads
-    # "failed" does not make the generate command fail a run whose layer is in
-    ("a_failed_pass_keeps_the_paid_answer", R2A_STUBS + R2B_PRE + r"""
+    const dh = diffOf(await pixelsOf(await bytesOf(sentHidden)), want);
+    const orderH = ed.layers.map((x) => x.name);
+    if (dh.size || dh.max > 1 || dh.frac > 0.02 || JSON.stringify(orderH) !== JSON.stringify(["picture", LABEL, "look", "ref", "rejected"])) throw new Error("a hidden layer on top: " + JSON.stringify({ sent: dh, stack: orderH }));
+    return { sent: d, layer: centreOf(l), status: status.slice(0, 140), stack: order, hidden: orderH, backend: ed.tileMode ? "tiles" : "canvas" };
+""" + R3A_END),
+    # no filter at the top: the whole stack is read, a reference layer inside the range included, and the read leaves it
+    # out as a run does (forRun); the pass layer lands at the top
+    ("a_reference_in_the_read_is_left_out", R2A_STUBS + R3A_PRE + r"""
 try {
-    stubR2b();
-    const ed = await plain();
-    const n0 = ed.layers.length;
-    const kept = async (what, message, setup) => {
+    stubR3a();
+    const ed = await scene();
+    await run("remove_layer", { doc, layer: "look" });
+    if (JSON.stringify(ed.layers.map((x) => x.name)) !== JSON.stringify(["picture", "ref"])) throw new Error("the scene: " + JSON.stringify(ed.layers.map((x) => x.name)));
+    const want = flatOf(ed, null);
+    const c = ed.flattenToCanvas({ forRun: false });
+    const drawn = { w: c.width, h: c.height, d: new Uint8ClampedArray(c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data) };
+    c.width = c.height = 0;
+    const refDiff = diffOf(want, drawn);
+    if (!(refDiff.frac > 0.05)) throw new Error("the reference changes nothing in the picture: " + JSON.stringify(refDiff));
+    let sentRef = null;
+    T.onQueued = answerWith([30, 200, 60], (id, ref) => { sentRef = ref; });
+    const out = await host.realismWhole(ed);
+    if (T.err) throw T.err;
+    const d = diffOf(await pixelsOf(await bytesOf(sentRef)), want);
+    if (d.size || d.max > 1 || d.frac > 0.02) throw new Error("the reference went along: " + JSON.stringify(d));
+    const order = ed.layers.map((x) => x.name);
+    if (JSON.stringify(order) !== JSON.stringify(["picture", "ref", LABEL]) || ed.layers[2] !== out.layer || ed.status.includes("under the filter layers")) throw new Error("the stack: " + JSON.stringify(order) + " / " + ed.status);
+    return { sent: d, withRef: refDiff, stack: order };
+""" + R3A_END),
+    # a second run reads everything visible, the first pass layer included, and lands above it
+    ("a_second_pass_stacks", R2A_STUBS + R3A_PRE + r"""
+try {
+    stubR3a();
+    const ed = await scene();
+    // changes above the read during the first run (the live look's opacity, the reference hidden) leave what was read as
+    // it is: no "changed" note, although the editor's compositeVersion moves
+    const cv0 = ed.compositeVersion;
+    T.onQueued = (id, body) => { run("set_layer", { doc, layer: "look", opacity: 0.7 }).then(() => run("set_layer", { doc, layer: "ref", visible: false })).then(() => answerWith([30, 200, 60])(id, body), (e) => { T.err = e; fails(id, "set_layer failed"); }); };
+    const first = await host.realismWhole(ed);
+    if (T.err) throw T.err;
+    if (ed.compositeVersion === cv0) throw new Error("the changes above the read did not move compositeVersion: the check proves nothing");
+    if (first.changed || ed.status.includes("changed")) throw new Error("the first run: " + ed.status);
+    // the picture changes while the second run waits (after its picture went): the layer lands, the status says so
+    let sentRef = null;
+    T.onQueued = (id, body) => { sentRef = JSON.parse(body.output.rp_in.inputs.ref); run("set_layer", { doc, layer: "picture", opacity: 0.5 }).then(() => answerWith([200, 40, 160])(id, body), (e) => { T.err = e; fails(id, "set_layer failed"); }); };
+    const second = await host.realismWhole(ed);
+    if (T.err) throw T.err;
+    if (!second.changed || !ed.status.includes(" The picture changed while the pass ran: the layer shows it as it was when the pass started.")) throw new Error("a change during the run: " + JSON.stringify({ changed: second.changed, status: ed.status }));
+    if (T.queued.length !== 2 || !sentRef) throw new Error(T.queued.length + " passes queued");
+    // the first pass layer covers the picture, so it is what the second read sent
+    const sent = await pixelsOf(await bytesOf(sentRef));
+    const mid = pxAt(sent, sent.w >> 1, sent.h >> 1), corner = pxAt(sent, 1, 1);
+    if (!near(mid, [30, 200, 60], 1) || !near(corner, [30, 200, 60], 1)) throw new Error("the second pass was not sent the first pass layer: " + JSON.stringify({ mid, corner }));
+    const order = ed.layers.map((x) => x.name);
+    if (JSON.stringify(order) !== JSON.stringify(["picture", LABEL, LABEL, "look", "ref"]) || ed.layers[1] !== first.layer || ed.layers[2] !== second.layer) throw new Error("the stack: " + JSON.stringify(order));
+    if (!near(centreOf(second.layer), [200, 40, 160], 2) || !near(centreOf(first.layer), [30, 200, 60], 2)) throw new Error("the layers' pixels: " + JSON.stringify([centreOf(first.layer), centreOf(second.layer)]));
+    // the landing follows the stack as it is when the answer comes: an image layer added on top during the run ends the
+    // top filter run, so the third pass layer lands at the very top (the read's index would have put it under the look)
+    T.onQueued = (id, body) => { run("add_image_layer", { doc, filename: BASE.filename, subfolder: BASE.subfolder, name: "late" }).then(() => answerWith([90, 90, 220])(id, body), (e) => { T.err = e; fails(id, "the late layer failed"); }); };
+    const third = await host.realismWhole(ed);
+    if (T.err) throw T.err;
+    const after = ed.layers.map((x) => x.name);
+    if (JSON.stringify(after) !== JSON.stringify(["picture", LABEL, LABEL, "look", "ref", "late", LABEL]) || ed.layers[ed.layers.length - 1] !== third.layer) throw new Error("a layer added during the run: " + JSON.stringify(after));
+    return { sent: [mid, corner], stack: order, late: after };
+""" + R3A_END),
+    # a picture with transparent areas: the pass gets it flattened onto grey, the layer gets the composite's alpha back
+    ("the_whole_picture_keeps_its_alpha", R2A_STUBS + R3A_PRE + r"""
+try {
+    stubR3a();
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    host.shell.activate(ed);
+    // a 320 x 240 picture: white, a half-transparent band (x 280-299) and a transparent strip (x 300-319)
+    const png = await pngOf(320, 240, (x) => (x >= 300 ? [0, 0, 0, 0] : x >= 280 ? [200, 100, 50, 128] : [255, 255, 255, 255]));
+    const src = await host.uploadInput(new Blob([png], { type: "image/png" }), "rp_alpha_scene.png");
+    await run("load_image", { doc, filename: src.filename, subfolder: src.subfolder, type: src.type });
+    const comp = flatOf(ed, null);
+    const strip = pxAt(comp, 310, 120), band = pxAt(comp, 290, 120), inside = pxAt(comp, 150, 120);
+    if (comp.w !== 320 || strip[3] !== 0 || Math.abs(band[3] - 128) > 1 || inside[3] !== 255) throw new Error("the scene has no transparent strip: " + JSON.stringify({ w: comp.w, strip, band, inside }));
+    let sentRef = null;
+    T.onQueued = answerWith([30, 200, 60], (id, ref) => { sentRef = ref; });
+    const out = await host.realismWhole(ed);
+    if (T.err) throw T.err;
+    const sent = await pixelsOf(await bytesOf(sentRef));
+    // the band went as its colour over grey (200·0.5 + 128·0.5 ...), the strip as grey
+    const sStrip = pxAt(sent, 310, 120), sBand = pxAt(sent, 290, 120), sInside = pxAt(sent, 150, 120);
+    if (!near(sStrip, [128, 128, 128], 1) || sStrip[3] !== 255 || !near(sBand, [164, 114, 89], 2) || !near(sInside, [255, 255, 255], 1)) throw new Error("what went to the pass: " + JSON.stringify({ strip: sStrip, band: sBand, inside: sInside }));
+    const l = out.layer;
+    const la = l.px.readRect(0, 0, 320, 240).data;
+    let off = 0;
+    for (let i = 3; i < la.length; i += 4) if (la[i] !== comp.d[i]) off++;
+    if (off) throw new Error(off + " alpha bytes of the layer differ from the composite's");
+    if (!near(at(l.px, 150, 120), [30, 200, 60], 2) || at(l.px, 310, 120)[3] !== 0 || Math.abs(at(l.px, 290, 120)[3] - band[3]) > 0) throw new Error("the layer's pixels: " + JSON.stringify({ inside: at(l.px, 150, 120), band: at(l.px, 290, 120), strip: at(l.px, 310, 120) }));
+    return { sent: [sStrip, sBand, sInside], layer: [at(l.px, 150, 120), at(l.px, 290, 120), at(l.px, 310, 120)] };
+""" + R3A_END),
+    # refused before anything is read or sent: a server that cannot, a run going on the document, a picture past the cap,
+    # no picture; each says why in the status, nothing is queued, read or added
+    ("refusals_send_nothing", R2A_STUBS + R3A_PRE + r"""
+const extra = [];
+let spied = null;
+try {
+    stubR3a();
+    const ed = await scene();
+    const spy = (e) => {
+        const c = { reads: 0 };
+        e.flattenToCanvas = function (...a) { c.reads++; return Object.getPrototypeOf(this).flattenToCanvas.apply(this, a); };
+        e.encodeComposite = function (...a) { c.reads++; return Object.getPrototypeOf(this).encodeComposite.apply(this, a); };
+        spied = spied || [];
+        spied.push(e);
+        return c;
+    };
+    const refused = async (what, e, want, setup, teardown) => {
+        const c = spy(e);
+        const n0 = e.layers.length;
         T.queued = [];
-        T.onQueued = message ? (id) => fails(id, message) : null;
         if (setup) setup();
-        ed.lastPassError = null;
-        const out = await run("generate", { doc, timeout: 60 });
-        const l = layerOf(ed, out);
-        if (!l || !near(centreOf(l), [255, 255, 255], 3)) throw new Error(what + ": the plain answer did not land: " + (l ? JSON.stringify(centreOf(l)) : ed.status));
-        const note = (out.notes || []).find((n) => n.includes(LABEL));
-        if (!note || !note.endsWith(" The plain result was kept.") || !ed.status.includes(note)) throw new Error(what + ": " + JSON.stringify(out.notes) + " / " + ed.status);
-        if (T.queued.length !== 1 || ed.lastPassError) throw new Error(what + ": " + JSON.stringify({ queued: T.queued.length, passError: ed.lastPassError }));
-        return note;
+        let err;
+        try { err = await failed(host.realismWhole(e)); } finally { if (teardown) teardown(); }
+        if (!err) throw new Error(what + ": not refused");
+        const ok = typeof want === "string" ? err.message === want : want.test(err.message);
+        if (!ok || e.status !== err.message) throw new Error(what + ": " + err.message + " / status " + e.status);
+        if (T.queued.length || c.reads || e.layers.length !== n0 || e.providerPending) throw new Error(what + ": " + JSON.stringify({ queued: T.queued.length, reads: c.reads, layers: e.layers.length - n0 }));
+        return err.message;
     };
-    const runtime = await kept("no runtime", "No DLSS 5 runtime was found. Searched: x");
-    if (!runtime.startsWith(LABEL + ": the DLSS 5 runtime is not installed")) throw new Error("no runtime: " + runtime);
-    const odd = await kept("an unknown error", "Something unexpected happened\nTraceback (most recent call last): x");
-    if (odd !== LABEL + " failed on your ComfyUI: Something unexpected happened. The plain result was kept.") throw new Error("an unknown error: " + odd);
-    // the server lost the job (the queue cleared): read from /history, gone
-    const dropped = await kept("dropped", null, () => { T.queue = { queue_running: [], queue_pending: [] }; T.history = {}; });
-    T.queue = null;
-    if (!dropped.startsWith(LABEL + ": your ComfyUI no longer holds its job")) throw new Error("dropped: " + dropped);
-    if (ed.layers.length !== n0 + 3) throw new Error(ed.layers.length - n0 + " layers for three runs");
-    return { runtime, odd, dropped };
-""" + R2B_END),
-    # a server that cannot run the pass: nothing is queued, the plain layer lands, the note says why; switched off, no
-    # word of the pass anywhere
-    ("an_unsupported_server_skips_the_pass", R2A_STUBS + R2B_PRE + r"""
+    const out = {};
+    out.linux = await refused("Linux", ed, LABEL + " runs only on a ComfyUI on Windows; this one runs on linux.", () => host.setServerStatus({ ...GOOD, os: "linux" }), () => host.setServerStatus(GOOD));
+    out.away = await refused("not connected", ed, /^Realism Pass \(Windows only, RTX only\) needs your own ComfyUI/, () => host.setServerStatus({ state: "disconnected" }), () => host.setServerStatus(GOOD));
+    out.busy = await refused("a run going", ed, LABEL + ": a run is still going on this document.", () => { ed.providerPending = { provider: "loopback", label: "Loopback", started: Date.now() }; }, () => { ed.providerPending = null; });
+    out.render = await refused("a render on ComfyUI", ed, LABEL + ": a run is still going on this document.", () => { (ed._localRuns || (ed._localRuns = new Set())).add("user-render"); }, () => { ed._localRuns.delete("user-render"); });
+    // past the cap: refused before the 7681 x 100 picture is read
+    const big = (await run("new_document")).id;
+    extra.push(big);
+    await run("new_canvas", { doc: big, width: 7681, height: 100 });
+    out.size = await refused("past the cap", ednow(big), LABEL + " takes at most 7680 × 4320 (long × short side); this is 7681 × 100.");
+    const empty = (await run("new_document")).id;
+    extra.push(empty);
+    out.empty = await refused("no picture", ednow(empty), LABEL + ": load an image first.");
+    return out;
+} finally {
+    for (const e of spied || []) { delete e.flattenToCanvas; delete e.encodeComposite; }
+    for (const id of extra) { try { await run("close_document", { doc: id, force: true }); } catch (_) { /* gone */ } }
+    T.onQueued = null;
+    host.onProviderRuns = onRuns0;
+    host.setRecipe(prevRecipe);
+    unstubAll();
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""),
+    # the title row's Cancel while the pass waits: its job goes off the queue, nothing is added; the tab closed while it
+    # waits: the job goes too, no layer lands anywhere and nothing throws
+    ("cancel_and_a_closed_tab_add_nothing", R2A_STUBS + R3A_PRE + r"""
 try {
-    stubR2b();
-    const ed = await plain();
-    const skipped = async (what, status) => {
-        T.queued = [];
-        host.setServerStatus(status);
-        let out;
-        try { out = await run("generate", { doc, timeout: 60 }); } finally { host.setServerStatus(GOOD); }
-        const l = layerOf(ed, out);
-        if (!l || !near(centreOf(l), [255, 255, 255], 3) || T.queued.length) throw new Error(what + ": " + JSON.stringify({ layer: !!l, queued: T.queued.length, status: ed.status }));
-        const note = (out.notes || []).find((n) => n.startsWith(LABEL + " skipped: "));
-        if (!note || !ed.status.includes(note)) throw new Error(what + ": " + JSON.stringify(out.notes));
-        return note;
-    };
-    const linux = await skipped("Linux", { ...GOOD, os: "linux" });
-    if (linux !== LABEL + " skipped: runs only on a ComfyUI on Windows; this one runs on linux.") throw new Error("Linux: " + linux);
-    const away = await skipped("not connected", { state: "disconnected" });
-    if (!away.startsWith(LABEL + " skipped: needs your own ComfyUI")) throw new Error("not connected: " + away);
-    // switched off: the answer as it is, nothing queued, the timer never names the pass
-    ed.genSettings.realism = false;
-    T.queued = []; seen.length = 0;
-    const off = await run("generate", { doc, timeout: 60 });
-    if (!layerOf(ed, off) || T.queued.length || (off.notes || []).some((n) => n.includes(LABEL)) || ed.status.includes(LABEL) || seen.includes(LABEL)) throw new Error("switched off: " + JSON.stringify({ queued: T.queued.length, notes: off.notes, seen }));
-    // an in-app model's fill (LaMa: offline, no server) never goes to the pass, switch on or not
-    ed.genSettings.realism = true;
-    T.queued = []; seen.length = 0;
-    const resIn = { bytes: await bytesOf(BASE), mime: "image/png", seconds: 1 };
-    const inapp = await host.passAnswer(ed, resIn, { provider: "inapp", label: "In-app", started: Date.now() }, "In-app");
-    if (inapp.res !== resIn || inapp.notes.length || T.queued.length || seen.length) throw new Error("in-app: " + JSON.stringify({ notes: inapp.notes, queued: T.queued.length, seen }));
-    return { linux, away: away.slice(0, 90) };
-""" + R2B_END),
-    # the title row's Cancel while the pass runs: the pass's job goes off the queue, the plain answer lands
-    ("cancel_during_the_pass_keeps_the_plain_answer", R2A_STUBS + R2B_PRE + r"""
-try {
-    stubR2b();
-    const ed = await plain();
+    stubR3a();
+    const ed = await scene();
     const n0 = ed.layers.length;
     const btn = document.getElementById("shell-cancel");
-    let shown = false, pressedAt = 0, id0 = null;
-    T.onQueued = (id) => { id0 = id; shown = !btn.hidden; pressedAt = Date.now(); btn.click(); };
-    const out = await run("generate", { doc, timeout: 60 });
-    const ms = Date.now() - pressedAt;
-    if (!shown || !id0) throw new Error("no Cancel while the pass waited");
-    const l = layerOf(ed, out);
-    if (ed.layers.length !== n0 + 1 || !l || !near(centreOf(l), [255, 255, 255], 3)) throw new Error("the plain answer did not land: " + ed.status);
-    const note = (out.notes || []).find((n) => n.includes(LABEL));
-    if (note !== LABEL + " cancelled. The plain result was kept." || !ed.status.includes(note)) throw new Error("the note: " + JSON.stringify(out.notes));
-    // the job taken off the server by its id (this stub has no /api/jobs route: deleted, then interrupted as the running one)
-    if (JSON.stringify(T.deletes) !== JSON.stringify([{ delete: [id0] }]) || JSON.stringify(T.interrupts) !== JSON.stringify([{ prompt_id: id0 }])) throw new Error("the cancel: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
-    if (ms > 5000) throw new Error("the run took " + ms + " ms after the Cancel");
+    let id0 = null, shown = false;
+    T.onQueued = (id) => { id0 = id; shown = !btn.hidden; btn.click(); };
+    const e1 = await failed(host.realismWhole(ed));
+    if (!e1 || e1.message !== LABEL + " cancelled." || ed.status !== e1.message) throw new Error("the cancel: " + (e1 ? e1.message : "no error") + " / " + ed.status);
+    if (!shown || !id0 || ed.layers.length !== n0) throw new Error("the cancel: " + JSON.stringify({ shown, id0, layers: ed.layers.length - n0 }));
+    // this stub has no /api/jobs route: deleted, then interrupted as the running one
+    if (JSON.stringify(T.deletes) !== JSON.stringify([{ delete: [id0] }]) || JSON.stringify(T.interrupts) !== JSON.stringify([{ prompt_id: id0 }])) throw new Error("the cancel's take-off: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
     for (let k = 0; k < 20 && !btn.hidden; k++) await wait(100);
-    if (!btn.hidden) throw new Error("the Cancel button stays after the run");
-    return { note, ms };
-""" + R2B_END),
-    # an agent's generate answers within its own timeout even when the pass waits behind the user's jobs: the pass ends
-    # (its job taken off the queue, never interrupted while pending) and the paid answer lands; a second generate while a
-    # run is going on the document is refused at once
-    ("the_pass_ends_at_the_commands_timeout", R2A_STUBS + R2B_PRE + r"""
+    if (!btn.hidden || ed.providerPending || host._providerRuns.size) throw new Error("the run stays open after the cancel");
+    // Cancel pressed after the answer, while the layer is being stored: nothing lands either
+    const upRes0 = host.uploadResult;
+    let pressedLate = false;
+    host.uploadResult = async function (...a) { pressedLate = !btn.hidden && !btn.disabled; btn.click(); return upRes0.apply(this, a); };
+    T.onQueued = answerWith([30, 200, 60]);
+    let e1b;
+    try { e1b = await failed(host.realismWhole(ed)); } finally { host.uploadResult = upRes0; }
+    if (T.err) throw T.err;
+    if (!pressedLate || !e1b || e1b.message !== LABEL + " cancelled." || ed.status !== e1b.message || ed.layers.length !== n0) throw new Error("a Cancel after the answer: " + JSON.stringify({ pressedLate, message: e1b && e1b.message, layers: ed.layers.length - n0 }));
+    for (let k = 0; k < 20 && !btn.hidden; k++) await wait(100);
+    // the tab closed while the pass waits
+    T.deletes = []; T.interrupts = [];
+    let id1 = null;
+    const closing = doc;
+    let closedAt = 0;
+    T.onQueued = (id) => { id1 = id; closedAt = Date.now(); run("close_document", { doc: closing, force: true }); };
+    const r2 = await host.realismWhole(ed);
+    const msClosed = Date.now() - closedAt;
+    doc = null;
+    if (msClosed > 5000) throw new Error("the closed tab's pass ended " + msClosed + " ms after the close (the timeout, not the close)");
+    if (!r2 || r2.layer !== null) throw new Error("a closed tab: " + JSON.stringify(r2 && { layer: !!r2.layer }));
+    if (host.editors().includes(ed) || host.editors().some((e) => e.layers.some((l) => l.name === LABEL))) throw new Error("a pass layer landed after the tab was closed");
+    if (!id1 || !T.deletes.some((x) => (x.delete || []).includes(id1))) throw new Error("the closed tab's job was not taken off: " + JSON.stringify(T.deletes));
+    if (host._providerRuns.size) throw new Error("the closed tab's run stays open");
+    // the call's deadline (the realism_pass command's timeout, R3b) ends a pass that waits behind the user's jobs
+    const ed3 = await scene();
+    T.deletes = []; T.interrupts = [];
+    T.onQueued = (id) => { T.queue = { queue_running: [[5, "user-job", {}, {}, []]], queue_pending: [[-1, id, {}, {}, []]] }; };
+    const t3 = Date.now();
+    const e3 = await failed(host.realismWhole(ed3, { deadline: t3 + 1500 }));
+    const ms3 = Date.now() - t3;
+    T.queue = null;
+    if (!e3 || !/^Realism Pass \(Windows only, RTX only\): no answer from your ComfyUI within \d+ s; its job was taken off the queue\.$/.test(e3.message) || ms3 > 6000 || ed3.layers.some((l) => l.name === LABEL)) throw new Error("the deadline: " + JSON.stringify({ message: e3 && e3.message, ms: ms3 }));
+    if (T.deletes.length !== 1 || T.interrupts.length) throw new Error("the deadline's take-off: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
+    return { cancelled: e1.message, closed: msClosed, deadline: ms3 };
+""" + R3A_END),
+    # Generate and Generate new are never passed, whatever an R2b-era flag says: nothing is queued on the stub, the plain
+    # answer lands, the label is nowhere
+    ("generate_is_never_passed", R2A_STUBS + R3A_PRE + r"""
+let ed = null;
 try {
-    stubR2b();
-    const ed = await plain();
+    stubR3a();
+    ed = await loopTab();
+    ed.genSettings.realism = true;
+    seen.length = 0;
     const n0 = ed.layers.length;
-    const WAITING = (id) => ({ queue_running: [[5, "user-job", {}, {}, []]], queue_pending: [[-1, id, {}, {}, []]] });
-    // (1) the runner's hard end counts the queue's wait, which its own timeout does not
+    const g = await run("generate", { doc, timeout: 60 });
+    const l = layerOf(ed, g);
+    if (!l || ed.layers.length !== n0 + 1 || !near(centreOf(l), [255, 255, 255], 3)) throw new Error("Generate: the plain answer did not land: " + ed.status);
+    const said = (out) => (out.notes || []).some((n) => n.includes(LABEL)) || ed.status.includes(LABEL) || seen.includes(LABEL);
+    if (T.queued.length || said(g)) throw new Error("Generate was passed: " + JSON.stringify({ queued: T.queued.length, notes: g.notes, seen }));
+    const gn = await run("generate_new", { doc, prompt: "a lighthouse", width: 256, height: 192, seed: 5 });
+    const corner = at(ed.basePx, 1, 1);
+    if (ed.width !== 256 || ed.height !== 192 || !near(corner, [20, 20, 20], 1)) throw new Error("Generate new: the plain answer is not the base: " + JSON.stringify({ w: ed.width, h: ed.height, corner }));
+    if (T.queued.length || said(gn)) throw new Error("Generate new was passed: " + JSON.stringify({ queued: T.queued.length, notes: gn.notes, seen }));
+    return { generate: centreOf(l), generateNew: corner, timer: seen };
+} finally {
+    if (ed) delete ed.genSettings.realism;
+    T.onQueued = null;
+    host.onProviderRuns = onRuns0;
+    host.setRecipe(prevRecipe);
+    unstubAll();
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""),
+    # kept from R2b: the runner's hard end counts the queue's wait, which its own timeout does not; a second generate
+    # while a run is going on the document is refused at once
+    ("the_runner_ends_at_its_deadline", R2A_STUBS + R3A_PRE + r"""
+try {
+    stubR3a();
+    const ed = await loopTab();
+    const n0 = ed.layers.length;
     const prompt = { rp_out: { class_type: "PreviewImage", inputs: { images: ["x", 0] } } };
     T.ids = ["rp-deadline-1"];
-    T.queue = WAITING("rp-deadline-1");
+    T.queue = { queue_running: [[5, "user-job", {}, {}, []]], queue_pending: [[-1, "rp-deadline-1", {}, {}, []]] };
     const t1 = Date.now();
     const e1 = await failed(host.comfyPictureRun(ed, prompt, "rp_out", { label: LABEL, timeoutMs: 20000, deadline: t1 + 1500 }));
     const ms1 = Date.now() - t1;
     T.queue = null;
     if (!e1 || e1.kind !== "timeout" || !/^Realism Pass \(Windows only, RTX only\): no answer from your ComfyUI within \d+ s; its job was taken off the queue\.$/.test(e1.message) || ms1 < 1400 || ms1 > 5000) throw new Error("the deadline: " + JSON.stringify({ kind: e1 && e1.kind, message: e1 && e1.message, ms: ms1 }));
     if (JSON.stringify(T.deletes) !== JSON.stringify([{ delete: ["rp-deadline-1"] }]) || T.interrupts.length) throw new Error("the deadline's cancel: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
-    // (2) generate with a 5 s timeout: the answer's pass waits behind the user's job and ends 30 s after the answer
-    // (the pass's floor), the plain answer lands, the command answers then instead of after the bridge's 600 s
-    T.deletes = [];
-    let during = 0;
-    T.onQueued = (id) => { T.queue = WAITING(id); during = ed.runDeadline; };
-    const t2 = Date.now();
-    const out = await run("generate", { doc, timeout: 5 });
-    const ms2 = Date.now() - t2;
-    T.queue = null;
-    const l = layerOf(ed, out);
-    if (ed.layers.length !== n0 + 1 || !l || !near(centreOf(l), [255, 255, 255], 3)) throw new Error("the plain answer did not land: " + ed.status);
-    const note = (out.notes || []).find((n) => n.includes(LABEL));
-    if (!note || !/: no answer from your ComfyUI within \d+ s; its job was taken off the queue\. The plain result was kept\.$/.test(note)) throw new Error("the note: " + JSON.stringify(out.notes));
-    if (ms2 < 29000 || ms2 > 45000) throw new Error("the command answered after " + ms2 + " ms");
-    if (!(during >= t2 + 5000 && during <= t2 + 6000) || ed.runDeadline) throw new Error("the command's deadline: " + JSON.stringify({ during: during - t2, after: ed.runDeadline }));
-    if (T.deletes.length !== 1 || T.interrupts.length) throw new Error("the pass's job: " + JSON.stringify({ deletes: T.deletes, interrupts: T.interrupts }));
-    // (3) a run going on the document: the next generate is refused before anything starts
     T.queued = [];
     ed.providerPending = { provider: "loopback", label: "Loopback", started: Date.now() };
     let refused = "";
     try { await run("generate", { doc, timeout: 5 }); } catch (err) { refused = String(err.message || err); } finally { ed.providerPending = null; }
-    if (refused !== "a run is still going on this document" || T.queued.length || ed.layers.length !== n0 + 1) throw new Error("a second run: " + (refused || "not refused"));
-    return { deadline: { ms: ms1, message: e1.message }, command: { ms: ms2, note }, refused };
-""" + R2B_END),
-    # Generate new: the loopback's new picture through the pass before it becomes the base
-    ("generate_new_goes_through_the_pass", R2A_STUBS + R2B_PRE + r"""
-try {
-    stubR2b();
-    doc = (await run("new_document")).id;
-    const ed = ednow(doc);
-    host.shell.activate(ed);
-    ed.genSettings.realism = true;
-    host.setRecipe(LOOP);
-    let sentRef = null;
-    T.onQueued = answerWith([200, 40, 160], (id, ref) => { sentRef = ref; });
-    seen.length = 0;
-    const out = await run("generate_new", { doc, prompt: "a lighthouse", width: 256, height: 192, seed: 5 });
-    if (T.err) throw T.err;
-    if (T.queued.length !== 1 || !sentRef) throw new Error(T.queued.length + " passes queued");
-    // the pass was sent the loopback's ramp (its dark border), and its answer is the new base
-    const up = await pixelsOf(await bytesOf(sentRef));
-    const upCorner = Array.from(up.d.slice((up.w + 1) * 4, (up.w + 1) * 4 + 4));
-    if (up.w !== 256 || up.h !== 192 || !near(upCorner, [20, 20, 20], 1)) throw new Error("what went to the pass: " + JSON.stringify({ w: up.w, h: up.h, corner: upCorner }));
-    if (ed.width !== 256 || ed.height !== 192) throw new Error("the base is " + ed.width + " x " + ed.height);
-    const mid = at(ed.basePx, 128, 96), corner = at(ed.basePx, 1, 1);
-    if (!near(mid, [200, 40, 160], 2) || !near(corner, [200, 40, 160], 2)) throw new Error("the base is not the pass's answer: " + JSON.stringify({ mid, corner }));
-    const ran = (out.notes || []).find((n) => n.startsWith(LABEL + " ran on your ComfyUI in "));
-    if (!ran || !ed.status.includes(ran)) throw new Error("the notes: " + JSON.stringify(out.notes) + " / " + ed.status);
-    if (JSON.stringify(seen) !== JSON.stringify(["Loopback", LABEL, "Loopback", ""])) throw new Error("the timer's labels: " + JSON.stringify(seen));
-    return { base: [ed.width, ed.height], mid, note: ran };
-""" + R2B_END),
+    if (refused !== "a run is still going on this document" || T.queued.length || ed.layers.length !== n0) throw new Error("a second run: " + (refused || "not refused"));
+    return { deadline: { ms: ms1, message: e1.message }, refused };
+""" + R3A_END),
 ]
 
 
@@ -1420,7 +1516,7 @@ try {
     if (presetSel().value !== "M" || modelSel().value !== "M" || !presetDel() || !presetDel().disabled) throw new Error("mine removed: the select shows " + presetSel().value + ", the row " + modelSel().value);
     // (2) Generate: the box at its own size; what the tab holds does not go along (a multiple_of of 7, the green fill, the
     // Original, a refine pass, references); the row's model preset M, Style and Strength from settings.realism (its
-    // preset K is the switch routes' and does not go), every other input as the recipe has it
+    // preset K is the whole-picture pass's and does not go), every other input as the recipe has it
     await run("select_rect", { doc, x: 64, y: 64, w: 200, h: 150 });
     crop0 = { fill: ed.cropSettings.fill, withOriginal: ed.cropSettings.withOriginal };
     refine0 = ed.genSettings.refine;
@@ -1569,7 +1665,7 @@ try {
 }
 """),
     *STEPS_R2A,
-    *STEPS_R2B,
+    *STEPS_R3A,
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";
@@ -1588,7 +1684,11 @@ PRE = """(async () => {
 async def run_all(c):
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
     ok = True
-    for name, body in STEPS:
+    # SCUMBLE_GENERATE_ONLY=name,name: the first step, those steps and the cleanup, for iterating on a few
+    only = set(filter(None, os.environ.get("SCUMBLE_GENERATE_ONLY", "").split(",")))
+    for i, (name, body) in enumerate(STEPS):
+        if only and i and name not in only and name != "cleanup":
+            continue
         try:
             # a step is JS for the page, or a Python function that drives real keys (26f's Escape in the dialog)
             res = await (body(c, PRE) if callable(body) else c.eval(PRE % body, timeout=240))

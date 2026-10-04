@@ -94,8 +94,8 @@ the pass runs on the user's own ComfyUI only), is not offered by Generate new, a
   Neural Rendering from the community node pack ComfyUI-DLSS5-Enhancer, which the user installs on their ComfyUI with
   its runtime; Scumble ships none of it. The prompt holds the user's own template (1x DLAA, model preset L, the pack's
   other defaults pinned), the one Settings row is *DLSS model preset* (with its `spec`, so it shows unconnected) with
-  the shipped presets L and M. Style and Strength come from `settings.realism` (app-wide; the Generate pane's row in a
-  later session), written into every `DLSS5Settings` node. Before anything is uploaded the run checks the server
+  the shipped presets L and M. Style and Strength come from `settings.realism` (app-wide; the Upscale dialog's Realism
+  Pass row, R3b), written into every `DLSS5Settings` node. Before anything is uploaded the run checks the server
   (`/system_stats` os and devices, `/object_info`): no Windows, CUDA devices none of which is an RTX 30 / 40 / 50 by
   the pack's name rule, or the pack's nodes missing refuse with the reason (a server that reports no os or no CUDA
   device is left to the pack's own check); an RTX 30 runs with a note (the pack needs its experimental Ampere runtime

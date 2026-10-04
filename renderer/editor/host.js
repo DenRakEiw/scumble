@@ -307,6 +307,16 @@ export const api = {
 
 // ---- host --------------------------------------------------------------------------------
 
+// an id per object, for signatures that must tell a replaced object from one of the same version (host.realismWhole)
+const objectIds = new WeakMap();
+let objectSeq = 0;
+function objectId(o) {
+    if (!o || typeof o !== "object") return 0;
+    let n = objectIds.get(o);
+    if (!n) { n = ++objectSeq; objectIds.set(o, n); }
+    return n;
+}
+
 export const host = {
     editor: null,          // the active editor
     _editors: [],          // every open editor, in tab order
@@ -1578,11 +1588,8 @@ export const host = {
                 cropAspect: info.aspect || null,
             };
             res = await providerEdit(request, token);
-            // the document's Realism Pass on the answer, before the stitch (R2b); a failed pass keeps the paid answer
-            const rp = await this.passAnswer(editor, res, token, label);
-            res = rp.res;
             editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
-            editor.lastRunNotes = [...preNotes, ...(res.notes || []), ...rp.notes];
+            editor.lastRunNotes = [...preNotes, ...(res.notes || [])];
         } finally {
             if (editor.providerPending === token) editor.providerPending = null;
             this._providerRuns.delete(token);
@@ -1749,8 +1756,7 @@ export const host = {
      * is written as the route's name for its picture ("image 1": there is no crop before them), a variant may send them
      * to another route (`text.refs.model`), and the reference layers stay in the tab over the new base. A variant
      * without it makes pictures from the prompt alone: a token there refuses the run. `opts.refs`: the click's snapshot
-     * (refSnapshot), else the references of now; `opts.prompt` / `opts.negative` replace its texts; `opts.deadline` (ms)
-     * ends the document's Realism Pass on the answer (the generate_new command's timeout, passAnswer).
+     * (refSnapshot), else the references of now; `opts.prompt` / `opts.negative` replace its texts.
      */
     async runGenerate(editor, opts = {}) {
         const r = this.recipe;
@@ -1784,7 +1790,7 @@ export const host = {
         this.notifyProviderRuns();
         const genParams = { ...this.providerParams(editor, opts.background ? { background: opts.background } : null), ...(t.fixed || {}) };
         const cutout = this.wantsTransparent(genParams);
-        let res, request, references = [], passNotes = [];
+        let res, request, references = [];
         const preNotes = [];
         try {
             // the pixels are read now, before the first await (referenceBytes)
@@ -1824,10 +1830,6 @@ export const host = {
                 boxes,
             };
             res = await providerEdit(request, token);
-            // the document's Realism Pass on the answer before it becomes the base (R2b); a failed pass keeps the paid one
-            const rp = await this.passAnswer(editor, res, token, label, opts.deadline || 0);
-            res = rp.res;
-            passNotes = rp.notes;
         } finally {
             if (editor.providerPending === token) editor.providerPending = null;
             this._providerRuns.delete(token);
@@ -1841,7 +1843,7 @@ export const host = {
         // the reference layers stay (they name what the prompt refers to), every other layer goes with the old base
         const swap = await editor.setBaseFromCanvas(c, { keepRefs: true });
         const gotAlpha = cutout && transparentPixels(c);
-        const notes = [...preNotes, ...(res.notes || []), ...passNotes];
+        const notes = [...preNotes, ...(res.notes || [])];
         const sentAs = named.pairs.map((p) => {
             const got = (res.refs || []).find((x) => x.ref === p.ref);
             return got ? `${p.label} → ${got.name}` : null;
@@ -2045,8 +2047,8 @@ export const host = {
      * timeout counts the time the job is not waiting in the queue: a wait behind the user's jobs, shown with its position
      * from /queue every 2 s, does not use it up. A job that is neither queued nor running twice in a row is read from
      * /history (the socket missed its events), or ends as "dropped". `deadline` (a time in ms, 0 for none) is a hard end
-     * that counts the queue's wait too: a command's own timeout (R2b), so an agent's call answers before its bridge gives
-     * up. Rejects with an Error whose `kind` is "error" (the server's message, `nodeType`), "interrupted", "timeout",
+     * that counts the queue's wait too: a command's own timeout (realism_pass, R3b), so an agent's call answers before its
+     * bridge gives up. Rejects with an Error whose `kind` is "error" (the server's message, `nodeType`), "interrupted", "timeout",
      * "cancelled", "lost" or "dropped".
      * -> { bytes, mime, seconds, promptId }
      */
@@ -2252,7 +2254,7 @@ export const host = {
     },
 
     /**
-     * The Realism Pass on a picture (docs/PLAN_0_1_42.md R2a; R2b's answers, R4's layer): `bytes` (any picture the
+     * The Realism Pass on a picture (docs/PLAN_0_1_42.md R2a; the whole picture's, realismWhole): `bytes` (any picture the
      * window decodes) through DLSS 5 on the user's ComfyUI at 1x, with settings.realism's Style, Strength and model
      * preset. An odd side is padded by repeating the last column or row and the answer cropped back; a picture with
      * transparency goes flattened onto mid-grey and gets its alpha back. A refused model preset makes settings.realism
@@ -2288,7 +2290,7 @@ export const host = {
         const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
         let values = this.realismValues();
         // the upload and the server's copy of it end at a Cancel and at the timeout too: a stalled forward to the server
-        // never holds the caller (R2b: a paid answer waits behind it). The request runs on and is ignored (a stray input)
+        // never holds the caller. The request runs on and is ignored (a stray input)
         const upload = this.uploadInput(new Blob([await canvasBytes(c)], { type: "image/png" }), `n${editor ? editor.node.id : 0}_pass_${stamp}.png`);
         c.width = c.height = 0;
         const ref = await new Promise((resolve, reject) => {
@@ -2344,45 +2346,111 @@ export const host = {
     },
 
     /**
-     * The pass after an API or Comfy Cloud answer (R2b's routes), while the document's Realism Pass switch is on: the
-     * passed bytes, or the plain ones with a note that says why. A paid answer is never thrown away.
-     * -> { bytes, mime, note, passed, seconds }
+     * The Realism Pass over the whole picture (docs/PLAN_0_1_42.md R3a; the Upscale dialog's entry and the realism_pass
+     * command call it, R3b): the visible composite as a run sees it (every visible layer with its filters and blend
+     * modes, without reference and control layers) up to the top run of filter layers goes once, at its own size,
+     * through DLSS 5 at 1x on the user's ComfyUI (passPicture) and lands as a new layer named the label: full size at
+     * 0, 0, no colour match, under that run of filters, one undo step. A second run reads an earlier pass layer with the
+     * rest and stacks its layer above it. Busy like a run while it works: the title row's timer names it and its Cancel
+     * ends it; closing the tab ends it too and adds nothing. Refused before anything is read or sent (the server, a run
+     * going on the document, no picture, the size); a failure adds nothing. Each sentence is the status and the thrown
+     * Error's message. `deadline` (a time in ms, 0 for none): comfyPictureRun's hard end, the queue's wait included.
+     * -> { layer, seconds, note, changed } (layer null when the tab was closed meanwhile)
      */
-    async realismAfter(editor, res, { token = null, deadline = 0 } = {}) {
-        if (!editor || !editor.genSettings || !editor.genSettings.realism) return { bytes: res.bytes, mime: res.mime, note: "", passed: false, seconds: 0 };
-        try {
-            const out = await this.passPicture(editor, res.bytes, res.mime, { token, deadline });
-            const ran = `${realism.LABEL} ran on your ComfyUI in ${Math.max(1, Math.round(out.seconds || 0))} s.`;
-            return { bytes: out.bytes, mime: out.mime, note: out.note ? `${ran} ${out.note}` : ran, passed: true, seconds: out.seconds || 0 };
-        } catch (err) {
-            const text = String((err && err.hint) || realism.runFailure(err));
-            const L = realism.LABEL;
-            const note = err && err.unsupported ? `${L} skipped: ${text.startsWith(L) ? text.slice(L.length).replace(/^:?\s*/, "") : text}` : `${text} The plain result was kept.`;
-            return { bytes: res.bytes, mime: res.mime, note, passed: false, seconds: 0 };
-        }
-    },
-
-    /**
-     * An API or Comfy Cloud run's answer through the pass (R2b), inside the run: the document stays busy, the title row's
-     * timer names the pass (its own seconds) and its Cancel reaches the pass's job; afterwards the timer is the run's
-     * again. Switched off, or an in-app model's fill (LaMa: no server, offline), the answer as it is. `deadline` (ms, or
-     * `editor.runDeadline`, which the generate command sets from its timeout) ends the pass, the queue's wait included,
-     * but not before 30 s after the answer. -> { res (the answer, its bytes and mime replaced), notes }
-     */
-    async passAnswer(editor, res, token, label, deadline = 0) {
-        if (!editor.genSettings || !editor.genSettings.realism || token.provider === "inapp") return { res, notes: [] };
-        editor.setStatus(`${label} answered after ${Math.round(res.seconds || 0)} s. ${realism.LABEL} on your ComfyUI ...`);
-        const end = deadline || editor.runDeadline || 0;
-        const run = { label: token.label, started: token.started };
-        token.label = realism.LABEL;
-        token.started = Date.now();
+    async realismWhole(editor, { deadline = 0 } = {}) {
+        const L = realism.LABEL;
+        const say = (text) => { editor.setStatus(text); return new Error(text); };
+        const support = this.realismSupport();
+        if (!support.ok) throw say(support.reason);
+        if (editor.providerPending || (editor._localRuns && editor._localRuns.size)) throw say(`${L}: a run is still going on this document.`);
+        if (editor._loading) throw say(`${L}: the document is still loading.`);
+        if (!editor.base || !editor.width || !editor.height) throw say(`${L}: load an image first.`);
+        // the size before anything is read: a 15k document is refused without its flatten
+        const W = editor.width, H = editor.height;
+        const { w2, h2 } = realism.evenPlan(W, H);
+        const size = realism.fits(w2, h2);
+        if (size) throw say(size.replace(`${w2} × ${h2}`, `${W} × ${H}`));
+        const token = { provider: "comfyui", label: L, started: Date.now(), editor };
+        editor.providerPending = token;
+        this._providerRuns.add(token);
         this.notifyProviderRuns();
+        // closing the tab ends the pass (its job taken off the server) and lands nothing
+        let closed = false;
+        const offRemoved = this.on("removed", (e) => { if (e && e.editor === editor) { closed = true; token.cancelled = true; } });
+        const gone = () => closed || !this._editors.includes(editor);
+        const isFill = (l) => editor.isFillLayer(l);
+        // what a run leaves out (references, control layers) and what it does not draw (a hidden layer, a rejected
+        // result on top): passed over, so a film look under them still counts as the top run of filters
+        const skip = (l) => editor.isReference(l) || editor.isControl(l) || (l.kind !== "filter" && !l.visible);
+        // what a read of the layers below `upTo` depends on: the "picture changed" note compares it, not the editor-wide
+        // compositeVersion, which also moves for the live filters above the cut, the references and every redraw in
+        // Compare. The global pixelVersion stays in as a net for a pixel write a layer's own version misses
+        const pv = (p) => (p ? `${objectId(p)}.${p.version || 0}` : "-");
+        const readSig = (upTo) => {
+            const parts = [editor.width, editor.height, editor.pixelVersion || 0, pv(editor.basePx), editor.compareShow || ""];
+            for (const l of editor.layers.slice(0, upTo)) {
+                if (editor.isReference(l) || editor.isControl(l)) continue;
+                parts.push(l.id, editor.shown(l) ? 1 : 0, l.opacity, l.blend || "", l.clip ? 1 : 0, l.group || "", l.x, l.y, l.w, l.h, l.kind,
+                    l.kind === "filter" ? `${l.filter}${JSON.stringify(l.params || {})}${objectId(l._lutData)}${objectId(l._plateImg)}` : "",
+                    pv(l.px), pv(l.maskPx), l.maskOff ? 1 : 0, l.match ? `${l.match.strength}:${l.match.source}` : "");
+            }
+            return parts.join("|");
+        };
+        const cancelled = () => Object.assign(new Error(`${L} cancelled.`), { hint: `${L} cancelled.` });
         try {
-            const rp = await this.realismAfter(editor, res, { token, deadline: end ? Math.max(end, token.started + 30000) : 0 });
-            return { res: { ...res, bytes: rp.bytes, mime: rp.mime }, notes: rp.note ? [rp.note] : [] };
+            const upTo = realism.topFilterRun(editor.layers, isFill, skip);
+            editor.setStatus(`${L}: reading the picture (${W} × ${H}) ...`);
+            // taken before the read, so a change during encodeComposite's await counts
+            const sig0 = readSig(upTo);
+            // as a run reads it: the workers' bands on tiles, else (the canvas backend, a stack they cannot hold) a flatten
+            let bytes;
+            const enc = await editor.encodeComposite({ forRun: true, upTo });
+            if (enc) bytes = new Uint8Array(await enc.blob.arrayBuffer());
+            else {
+                const c = editor.flattenToCanvas({ forRun: true, upTo });
+                try { bytes = await canvasBytes(c); } finally { c.width = c.height = 0; }
+            }
+            editor.setStatus(`${L}: sending the picture (${W} × ${H}) to your ComfyUI ...`);
+            const out = await this.passPicture(editor, bytes, "image/png", { token, deadline });
+            bytes = null;
+            if (gone()) return { layer: null, seconds: out.seconds || 0, note: "", changed: false };
+            // the title row's Cancel stays until the layer is in: pressed after the answer, nothing lands either
+            if (token.cancelled) throw cancelled();
+            const img = await bytesToImage(out.bytes, out.mime);
+            const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+            // stored as a result is: its PNG in the mirror, so neither a save nor the autosave encodes it again; when the
+            // mirror fails, an unsaved layer, which they upload
+            let ref = null;
+            if (out.mime === "image/png") {
+                const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
+                try { ref = await this.uploadResult(new Blob([out.bytes], { type: "image/png" }), `n${editor.node.id}_realism_${stamp}.png`); }
+                catch (err) { console.warn("the Realism Pass layer stays unsaved until the next save", err); }
+            }
+            if (gone()) return { layer: null, seconds: out.seconds || 0, note: "", changed: false };
+            if (token.cancelled) throw cancelled();
+            // under the top run of filter layers as the stack is now (layers may have come or gone during the run): what
+            // lies under that index now against what was read
+            const at = realism.topFilterRun(editor.layers, isFill, skip);
+            const changed = readSig(at) !== sig0;
+            const px = editor.pixels.Layer.fromImage(img);
+            editor.pushUndo({ kind: "layers", label: L });
+            const layer = editor.addLayer({ name: L, kind: "image", ref, dirty: !ref, px, x: 0, y: 0, w, h, match: { strength: 0, source: "surroundings" } });
+            // the move is part of the undo step above
+            const top = editor.layers.length - 1;
+            if (at < top) editor.moveLayer(layer.id, at - top, { undo: false });
+            const parts = [`${L} ran on your ComfyUI in ${Math.max(1, Math.round(out.seconds || 0))} s: a new layer above the picture${at < top ? ", under the filter layers" : ""}.`];
+            if (changed) parts.push("The picture changed while the pass ran: the layer shows it as it was when the pass started.");
+            if (out.note) parts.push(out.note);
+            editor.setStatus(parts.join(" "));
+            return { layer, seconds: out.seconds || 0, note: out.note || "", changed };
+        } catch (err) {
+            if (gone()) return { layer: null, seconds: 0, note: "", changed: false };
+            const msg = String((err && err.message) || err);
+            throw say(err && err.hint ? String(err.hint) : msg.startsWith(L) ? msg : `${L}: ${msg}`);
         } finally {
-            token.label = run.label;
-            token.started = run.started;
+            offRemoved();
+            if (editor.providerPending === token) editor.providerPending = null;
+            this._providerRuns.delete(token);
             this.notifyProviderRuns();
         }
     },
@@ -2477,9 +2545,9 @@ export const host = {
             if (entry && entry.value != null && node && node.inputs) node.inputs[s.input] = entry.value;
         }
         if (pass) {
-            // Style and Strength are app-wide (settings.realism, R3's row); the DLSS model preset is the recipe's own
-            // Settings row (its shipped presets L and M), so it is not taken from settings.realism here. A user copy
-            // without an rp_settings node gets them in every DLSS5Settings node it holds.
+            // Style and Strength are app-wide (settings.realism, the Upscale dialog's row); the DLSS model preset is the
+            // recipe's own Settings row (its shipped presets L and M), so it is not taken from settings.realism here. A
+            // user copy without an rp_settings node gets them in every DLSS5Settings node it holds.
             const v = this.realismValues();
             for (const node of Object.values(prompt)) {
                 if (node && node.class_type === "DLSS5Settings") node.inputs = realism.passSettings(node.inputs, { style: v.style, intensity: v.intensity });
