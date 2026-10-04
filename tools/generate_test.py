@@ -849,7 +849,7 @@ try {
     if (JSON.stringify(seen) !== JSON.stringify([LABEL, ""])) throw new Error("the timer's labels: " + JSON.stringify(seen));
     // the layer
     const l = out.layer;
-    if (!l || l.name !== LABEL || l.kind !== "image" || l.role !== "none" || l.x !== 0 || l.y !== 0 || l.w !== 320 || l.h !== 240 || !l.match || l.match.strength !== 0) throw new Error("the layer: " + JSON.stringify(l && { name: l.name, kind: l.kind, role: l.role, x: l.x, y: l.y, w: l.w, h: l.h, match: l.match }));
+    if (!l || l.name !== LABEL || l.kind !== "image" || l.role !== "none" || l.x !== 0 || l.y !== 0 || l.w !== 320 || l.h !== 240 || !l.match || l.match.strength !== 0 || l.match.source !== "underneath") throw new Error("the layer: " + JSON.stringify(l && { name: l.name, kind: l.kind, role: l.role, x: l.x, y: l.y, w: l.w, h: l.h, match: l.match }));
     if (!l.ref || l.dirty) throw new Error("the layer is not stored in the mirror: " + JSON.stringify({ ref: l.ref, dirty: l.dirty }));
     const order = ed.layers.map((x) => x.name);
     if (JSON.stringify(order) !== JSON.stringify(["picture", LABEL, "look", "ref"])) throw new Error("the stack: " + JSON.stringify(order));

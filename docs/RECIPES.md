@@ -108,8 +108,10 @@ recipe's `DLSS5Settings` inputs, and a new layer above the picture). Any other t
   sentences (`realism.hint`, fixtures in `tools/refs/dlss5/messages.json`), several of them pointing to the manual's
   chapter *Realism Pass (Windows only, RTX only)* (`docs/MANUAL.md`, slug `realism-pass`): what the pass needs, the
   pack's install steps with the runtime installer's `--url` workaround and the Defender exclusion (as the pack's README
-  had them on 2026-10-04), and what each message means. No Comfy Cloud alternative (the user's decision). **Not run**
-  on a real server.
+  had them on 2026-10-04), and what each message means. No Comfy Cloud alternative (the user's decision). **Run live on 2026-10-04** on the
+  user's RTX 5090 (ComfyUI 0.38.0, pack 1.1.0, runtime v3.0): a box of 1022 × 1022 in about 12 s; the whole-picture
+  pass on 5456 × 3072 in about 8 s on the server, +4.6 GB of graphics memory, and on a transparent 1024 × 1024 picture
+  with its alpha back exactly.
 
 ### Presets
 

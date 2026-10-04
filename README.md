@@ -40,7 +40,7 @@ Windows first (from the [Microsoft Store](https://apps.microsoft.com/detail/9NDB
 What has been verified so far: local rendering through ComfyUI, the in-app helper models,
 the film pack, the command core, the MCP server, the tile engine on large documents and
 auto-update, and among the API providers FLUX 3 Image on Black Forest Labs (with boxes in the prompt), OpenRouter and Comfy Router,
-GPT Image 2.5 through OpenRouter, and Ideogram 4 on fal.ai (with boxes); the
+GPT Image 2.5 through OpenRouter, Ideogram 4 on fal.ai (with boxes), and the Realism Pass on an RTX 5090; the
 other API providers and the assistant's model calls are untested against the live services.
 
 ## Features

@@ -2500,7 +2500,7 @@ export const host = {
             const changed = readSig(at) !== sig0;
             const px = editor.pixels.Layer.fromImage(img);
             editor.pushUndo({ kind: "layers", label: L });
-            const layer = editor.addLayer({ name: L, kind: "image", ref, dirty: !ref, px, x: 0, y: 0, w, h, match: { strength: 0, source: "surroundings" } });
+            const layer = editor.addLayer({ name: L, kind: "image", ref, dirty: !ref, px, x: 0, y: 0, w, h, match: { strength: 0, source: "underneath" } });
             // the move is part of the undo step above
             const top = editor.layers.length - 1;
             if (at < top) editor.moveLayer(layer.id, at - top, { undo: false });
