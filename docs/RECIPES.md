@@ -116,8 +116,8 @@ through a prompt of its own, `realism.passPrompt`, which takes the recipe's `DLS
   the pack's name rule, or the pack's nodes missing refuse with the reason (a server that reports no os or no CUDA
   device is left to the pack's own check); an RTX 30 runs with a note (the pack needs its experimental Ampere runtime
   pair there); a crop (the selection with its context, as the node cuts it) under 64 px a side or past 7680 × 4320 or
-  30.4 megapixels (`realism.MAX_AREA`: larger answers came back with broken colours when measured, 2026-10-04) is
-  refused. *Save as new recipe* from it keeps the presets only for rows the new graph has, and the task only while
+  27.9 megapixels (`realism.MAX_AREA`: answers near 30 megapixels sometimes came back with broken colours when
+  measured, 2026-10-04, so the cap keeps a margin) is refused. *Save as new recipe* from it keeps the presets only for rows the new graph has, and the task only while
   the graph holds `DLSS5Settings`. The pack's own errors come back as
   sentences (`realism.hint`, fixtures in `tools/refs/dlss5/messages.json`), several of them pointing to the manual's
   chapter *Realism Pass (Windows only, RTX only)* (`docs/MANUAL.md`, slug `realism-pass`): what the pass needs, the

@@ -21,16 +21,18 @@ export const MAX_SHORT = 4320;
 export const MIN_SIDE = 64;
 /**
  * The output's area cap, which the pack does not know: measured live on 2026-10-04 (RTX 5090, ComfyUI 0.38.0, pack
- * 1.1.0, runtime v3.0, one photo at several sizes, at 1×, 1.5× and 2×), every answer up to 30.4 MP came back right
- * (7040 × 4320, 7680 × 3960, 6400 × 3600) and every one from 31.8 MP up (7360 × 4320, 7520 × 4320, 7672 × 4320,
- * 7680 × 4320) with broken colours, the pack raising no error. Neither side alone is the cause (7680 wide and 4320 high
- * both work at 30.4 MP), so the cap is the area: 7040 × 4320, the largest output measured correct
+ * 1.1.0, runtime v3.0, one photo at several sizes, at 1×, 1.5× and 2×), every answer from 31.8 MP up (7360 × 4320,
+ * 7520 × 4320, 7672 × 4320, 7680 × 4320) came back with broken colours, the pack raising no error, and neither side
+ * alone is the cause (7680 wide and 4320 high both worked at 30.4 MP). At 30.4 MP it fails sometimes: 3840 × 2160 at
+ * 2× (7352 × 4136) came back broken once, and a repeat series judged on the raw answer was clean (7040 × 4320 3 of 3,
+ * 7352 × 4136 from a file 2 of 2, 6400 × 3600 3 of 3, 5456 × 3072 at 1× 3 of 3, 3840 × 2160 2 of 2), so about 1 run
+ * in 7 near 30.4 MP fails. The cap keeps a margin below that border: 7040 × 3960, 27.9 MP, measured clean
  * (docs/PLAN_0_1_42.md R-U "Live look").
  */
-export const MAX_AREA = 30412800;
-/** MAX_AREA as the texts name it: "30.4 megapixels". */
+export const MAX_AREA = 27878400;
+/** MAX_AREA as the texts name it: "27.9 megapixels". */
 const AREA_TEXT = `${(MAX_AREA / 1e6).toFixed(1)} megapixels`;
-/** The output cap as the texts name it: "7680 × 4320 and 30.4 megapixels". */
+/** The output cap as the texts name it: "7680 × 4320 and 27.9 megapixels". */
 export const CAP_TEXT = `${MAX_LONG} × ${MAX_SHORT} and ${AREA_TEXT}`;
 /**
  * The canvas node's multiple_of for a pass: DLSS needs even sides only, and a larger multiple shrinks a whole-picture
@@ -345,7 +347,7 @@ export function scaledDownNote(w, h) {
  * How a w × h picture goes through the pass at `factor` (the dialog's; R-U): the even size it is padded to goes when
  * the pass takes it at the mode's F; otherwise the picture is scaled down to fitAreaSize of that padded size (the
  * pack's cap, then MAX_AREA; even sides, nothing padded), so the answer comes back as large as the pass allows
- * (at most 30.4 MP). 1× keeps its refusal past the caps
+ * (at most 27.9 MP). 1× keeps its refusal past the caps
  * (wholeRefusal: shrinking there would lose the picture's own size). Refused: a factor no mode has, a picture under
  * 64 px a side, a fit under 64 px a side, and a fit whose answer would not be larger than the picture.
  * -> { mode, refusal, scaled, fit: [w, h] (the picture before padding), sent: [w, h] (what goes), out: [w, h] (the

@@ -231,7 +231,7 @@ function renderCard(call, facts) {
 
 /**
  * realism_pass: refused with `status`'s reason when it cannot run, else asked with the values it sends on the card.
- * `status` answers for factor 1; above it (1.5, 1.7, 2, 3) a picture past 7680 × 4320 or 30.4 MP is scaled down instead of
+ * `status` answers for factor 1; above it (1.5, 1.7, 2, 3) a picture past 7680 × 4320 or 27.9 MP is scaled down instead of
  * refused, so that one reason does not refuse there (the command refuses a fit it cannot make with its own sentence),
  * and the question and the card name the factor and the document made larger.
  */
