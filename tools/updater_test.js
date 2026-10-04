@@ -22,16 +22,23 @@ function assert(c, m) { if (!c) throw new Error(m); }
 
 // electron and electron-updater played by stubs: a packaged app at 0.1.37, an autoUpdater whose checkForUpdates
 // answers with the events the test scripts
-const fake = new EventEmitter();
-fake.autoDownload = false;
-fake.autoInstallOnAppQuit = true;
-fake.script = [];
-fake.installs = [];
-fake.checkForUpdates = async () => { for (const [ev, info] of fake.script) fake.emit(ev, info); return null; };
-fake.quitAndInstall = (silent, run) => fake.installs.push([silent, run]);
-// electron-updater's own: adds the quit handler once (BaseUpdater.addQuitHandler), counted here
-fake.quitHandlers = 0;
-fake.addQuitHandler = function () { if (this.quitHandlerAdded || !this.autoInstallOnAppQuit) return; this.quitHandlerAdded = true; this.quitHandlers += 1; };
+function makeFake() {
+    const f = new EventEmitter();
+    f.autoDownload = false;
+    f.autoInstallOnAppQuit = true;
+    f.script = [];
+    f.installs = [];
+    f.downloads = 0;
+    f.checkForUpdates = async () => { for (const [ev, info] of f.script) f.emit(ev, info); return null; };
+    f.downloadUpdate = async () => { f.downloads += 1; return []; };
+    f.quitAndInstall = (silent, run) => f.installs.push([silent, run]);
+    // electron-updater's own: adds the quit handler once (BaseUpdater.addQuitHandler), counted here
+    f.quitHandlers = 0;
+    f.addQuitHandler = function () { if (this.quitHandlerAdded || !this.autoInstallOnAppQuit) return; this.quitHandlerAdded = true; this.quitHandlers += 1; };
+    return f;
+}
+// replaced by a fresh one where a section must not hear the Updaters of the sections before (they stay subscribed)
+let fake = makeFake();
 // kept for the whole run: the Updater requires electron-updater only at its first check
 const orig = Module._load;
 Module._load = function (request, ...rest) {
@@ -39,7 +46,7 @@ Module._load = function (request, ...rest) {
     if (request === "electron-updater") return { autoUpdater: fake };
     return orig.call(this, request, ...rest);
 };
-const { Updater, releaseNotes, releaseHeadlines } = require(path.join(ROOT, "electron", "main", "updater.js"));
+const { Updater, releaseNotes, releaseHeadlines, releaseUrl } = require(path.join(ROOT, "electron", "main", "updater.js"));
 
 const feed = fs.readFileSync(path.join(ROOT, "tools", "refs", "updates", "release_0_1_37.html"), "utf8");
 
@@ -189,6 +196,78 @@ check("dev_and_not_downloaded_never_install", () => {
     u.setSkip("9.9.9");
     assert(u.status.state === "latest" && u.status.skip === "9.9.9", "setSkip changed the state");
     return "latest: refused";
+});
+
+// ---- notify mode: a copy that does not update itself (a portable zip, dist/win-unpacked; docs/PLAN_0_1_42.md P1) ----
+// electron-updater installs a download on every normal quit while autoInstallOnAppQuit is on, and `_applySkip` runs on
+// every status change: the switch (and autoDownload) must be off before the check and after every event.
+
+check("notify_mode_never_downloads_nor_installs_and_keeps_the_switch_off", () => {
+    fake = makeFake();
+    fake.autoDownload = true;            // electron-updater's own defaults
+    fake.autoInstallOnAppQuit = true;
+    const flags = [];
+    const at = (what) => flags.push([what, fake.autoDownload, fake.autoInstallOnAppQuit]);
+    // the scripted feed records both switches when the check starts and after each event the Updater handled; a
+    // download comes anyway at the end (it must not be asked for, and is not offered when it comes)
+    fake.checkForUpdates = async () => { at("check"); for (const [ev, x] of fake.script) { fake.emit(ev, x); at(ev); } return null; };
+    const u = new Updater({ mode: "notify" });
+    assert(u.status.mode === "notify" && u.status.state === "idle", "start: " + JSON.stringify(u.status));
+    u.setSkip("0.1.36");
+    fake.script = [["checking-for-update"], ["update-available", info("0.1.40")], ["download-progress", { percent: 50 }], ["update-downloaded", info("0.1.40")]];
+    return u.check().then(async () => {
+        const on = flags.filter(([, d, q]) => d !== false || q !== false);
+        assert(!on.length, "a switch on: " + JSON.stringify(on));
+        assert(u.status.state === "available" && u.status.version === "0.1.40" && u.status.percent === null, "state " + JSON.stringify(u.status));
+        assert(u.status.url === "https://github.com/DenRakEiw/scumble/releases/tag/v0.1.40", "url " + u.status.url);
+        assert(JSON.stringify(u.status.headlines) === JSON.stringify(["New in 0.1.40."]) && /New in 0\.1\.40/.test(u.status.notes), "notes " + JSON.stringify(u.status));
+        assert(fake.downloads === 0, "downloadUpdate was called");
+        assert(u.install() === false && fake.installs.length === 0, "install in notify mode");
+        // even with a download in hand (it never comes: update-downloaded is not taken in notify mode) install refuses
+        const kept = u.status;
+        u.status = { ...u.status, state: "downloaded" };
+        assert(u.install() === false && fake.installs.length === 0, "install of a download in notify mode");
+        await new Promise((r) => setImmediate(r));
+        assert(fake.installs.length === 0, "quitAndInstall ran in notify mode");
+        u.status = kept;
+        assert(u.skipped() === false, "skipped() on an offer");
+        // the skip is kept and the switch stays off through it, both ways; no quit handler, ever
+        u.setSkip("0.1.40");
+        assert(u.status.skip === "0.1.40" && fake.autoInstallOnAppQuit === false && fake.autoDownload === false, "skip: " + JSON.stringify([u.status.skip, fake.autoInstallOnAppQuit]));
+        u.setSkip(null);
+        assert(fake.autoInstallOnAppQuit === false && fake.autoDownload === false, "the skip taken back turned the switch on");
+        assert(fake.quitHandlers === 0, "a quit handler: " + fake.quitHandlers);
+        // a newer version and a manual check: offered again, still nothing downloaded
+        const first = flags.length;
+        flags.length = 0;
+        fake.script = [["checking-for-update"], ["update-available", info("0.1.41")]];
+        await u.check({ manual: true });
+        assert(u.status.state === "available" && u.status.version === "0.1.41" && u.status.manual === true, "the second check: " + JSON.stringify(u.status));
+        assert(flags.length === 3 && flags.every(([, d, q]) => d === false && q === false), "the second check's switches: " + JSON.stringify(flags));
+        // a restart with an offer is a plain restart (electron/main/restart.js)
+        const { restartPlan } = require(path.join(ROOT, "electron", "main", "restart.js"));
+        assert(!restartPlan({ argv: [], updateState: u.skipped() ? "skipped" : u.status.state }).install, "a restart installs in notify mode");
+        assert(fake.downloads === 0 && fake.quitHandlers === 0 && fake.installs.length === 0, "something was downloaded or installed");
+        return `${first + flags.length} switch readings, all off`;
+    });
+});
+
+check("the_release_page_and_the_other_modes", async () => {
+    assert(releaseUrl("0.1.42") === "https://github.com/DenRakEiw/scumble/releases/tag/v0.1.42", releaseUrl("0.1.42"));
+    assert(releaseUrl("v0.1.42") === releaseUrl("0.1.42"), "a v prefix");
+    assert(releaseUrl("") === "https://github.com/DenRakEiw/scumble/releases/latest" && releaseUrl("../x") === releaseUrl(null), "no version, or not a version");
+    // the default is today's: packaged, not the Store, an install
+    assert(new Updater().mode === "install" && new Updater().status.mode === "install", "the default mode");
+    fake = makeFake();
+    let asked = 0;
+    fake.checkForUpdates = async () => { asked += 1; return null; };
+    const dev = new Updater({ mode: "dev" });
+    const store = new Updater({ mode: "store" });
+    await dev.check();
+    await store.check({ manual: true });
+    assert(dev.status.state === "dev" && store.status.state === "store" && store.status.manual === true && asked === 0, "dev / store asked the feed: " + JSON.stringify([dev.status.state, store.status.state, asked]));
+    assert(dev.install() === false && store.install() === false, "dev / store install");
+    return "tag, latest, install by default, dev and store never ask";
 });
 
 check("main_reads_the_skip_and_electron_updater_reads_the_switch_at_quit", () => {

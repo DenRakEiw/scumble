@@ -240,5 +240,186 @@ check("chromium_keeps_english_and_german", () => {
     eq(pkg.build.electronLanguages, ["en-US", "de"], "electronLanguages");
 });
 
+// ---- a portable copy (electron/main/portable.js, docs/PLAN_0_1_42.md P1) ----------------------------------------
+//
+// The full tier: this resolver decides where every byte of a start lands. A wrong answer at a packaged start would
+// rotate the autosave of the user's %APPDATA%\Scumble and take its instance lock, so every rule is pinned here, and
+// main.js's use of it is read from the source (set before log.install, the one setPath, the refusal).
+
+const portable = require("../electron/main/portable");
+const ZIP = "D:\\Tools\\Scumble\\Scumble.exe";
+const has = (...files) => (p) => files.includes(p);
+const BASE = { packaged: true, platform: "win32", execPath: ZIP, store: false, userDataSwitch: false, appData: "C:\\Users\\u\\AppData\\Roaming", exists: has("D:\\Tools\\Scumble\\portable.txt") };
+
+check("a_marker_beside_the_exe_puts_the_data_beside_it", () => {
+    eq(portable.dataDir(BASE), "D:\\Tools\\Scumble\\data", "dataDir");
+    eq(portable.userData(BASE), { from: "portable", dir: "D:\\Tools\\Scumble\\data" }, "userData");
+    eq([portable.MARKER, portable.DATA, portable.UNINSTALLER], ["portable.txt", "data", "Uninstall Scumble.exe"], "names");
+});
+
+check("no_marker_dev_or_linux_keep_electrons_folder", () => {
+    eq(portable.dataDir({ ...BASE, exists: () => false }), null, "no marker");
+    eq(portable.userData({ ...BASE, exists: () => false }), { from: "default", dir: null }, "no marker: the default");
+    // the dev electron (node_modules\electron\dist\electron.exe) with a portable.txt beside it is still dev
+    eq(portable.dataDir({ ...BASE, packaged: false, exists: () => true }), null, "dev");
+    eq(portable.dataDir({ ...BASE, platform: "linux", execPath: "/opt/Scumble/scumble", exists: () => true }), null, "linux");
+    eq(portable.dataDir({ ...BASE, execPath: "" }), null, "no exe path");
+    // a marker that cannot be looked at is no marker
+    eq(portable.dataDir({ ...BASE, exists: () => { throw new Error("EACCES"); } }), null, "exists throws");
+    // only the marker beside the exe counts, not one in the data folder or above
+    eq(portable.dataDir({ ...BASE, exists: has("D:\\Tools\\portable.txt", "D:\\Tools\\Scumble\\data\\portable.txt") }), null, "elsewhere");
+});
+
+check("a_user_data_dir_wins_over_the_store_and_the_marker", () => {
+    eq(portable.dataDir({ ...BASE, userDataSwitch: true }), null, "dataDir");
+    eq(portable.userData({ ...BASE, userDataSwitch: true }), { from: "switch", dir: null }, "the switch");
+    eq(portable.userData({ ...BASE, userDataSwitch: true, store: true }), { from: "switch", dir: null }, "the switch over the Store");
+});
+
+check("the_store_wins_over_the_marker", () => {
+    eq(portable.dataDir({ ...BASE, store: true }), null, "dataDir");
+    eq(portable.userData({ ...BASE, store: true }), { from: "store", dir: "C:\\Users\\u\\AppData\\Roaming\\Scumble Store" }, "the Store's folder");
+    eq(portable.userData({ ...BASE, store: true, exists: () => false }), { from: "store", dir: msix.storeUserData(BASE.appData) }, "the Store without a marker");
+});
+
+check("one_spelling_of_the_folder_a_subst_drive_or_a_junction", () => {
+    // S: is a subst of D:\Tools: the marker is looked for, and the data put, where the folder really is (one pipe
+    // name, one instance lock); a realpath that fails keeps the spelling the exe was started by
+    const real = (p) => (p.toLowerCase() === "s:\\scumble" ? "D:\\Tools\\Scumble" : p);
+    eq(portable.dataDir({ ...BASE, execPath: "S:\\Scumble\\Scumble.exe", realpath: real }), "D:\\Tools\\Scumble\\data", "subst");
+    eq(portable.dataDir({ ...BASE, realpath: () => { throw new Error("EPERM"); } }), "D:\\Tools\\Scumble\\data", "realpath throws");
+    eq(portable.dataDir({ ...BASE, execPath: "S:\\Scumble\\Scumble.exe", exists: has("S:\\Scumble\\portable.txt"), realpath: () => { throw new Error("x"); } }), "S:\\Scumble\\data", "fallback spelling");
+});
+
+check("only_an_nsis_install_installs_updates_itself", () => {
+    const m = (o) => portable.updateMode({ packaged: true, store: false, portable: false, platform: "win32", installed: false, ...o });
+    eq(m({ installed: true }), "install", "the uninstaller beside the exe");
+    eq(m({}), "notify", "dist/win-unpacked, a zip with its marker deleted");
+    eq(m({ portable: true }), "notify", "a portable copy");
+    eq(m({ portable: true, installed: true }), "notify", "a marker put into an install folder");
+    eq(m({ store: true, installed: true }), "store", "the Store");
+    eq(m({ packaged: false, installed: true }), "dev", "dev");
+    eq(m({ platform: "linux" }), "install", "linux as before");
+    eq(portable.isInstalled("C:\\Users\\u\\AppData\\Local\\Programs\\Scumble\\Scumble.exe", has("C:\\Users\\u\\AppData\\Local\\Programs\\Scumble\\Uninstall Scumble.exe")), true, "installed");
+    eq(portable.isInstalled(ZIP, has("D:\\Tools\\Scumble\\portable.txt")), false, "a zip");
+    eq(portable.isInstalled(ZIP, () => { throw new Error("x"); }), false, "exists throws");
+});
+
+check("the_data_folder_is_made_and_proven_writable", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-portable-"));
+    try {
+        const data = path.join(dir, "Scumble", "data");
+        eq(portable.prepare(data, fs), null, "a folder that can be written");
+        if (!fs.statSync(data).isDirectory()) throw new Error("no data folder");
+        eq(fs.readdirSync(data), [], "the probe is left behind");
+        eq(portable.prepare(data, fs), null, "the second start");
+        // a data folder under a file cannot be made: the error comes back, nothing is thrown
+        fs.writeFileSync(path.join(dir, "file"), "x");
+        const err = portable.prepare(path.join(dir, "file", "data"), fs);
+        if (!err || !err.code) throw new Error("a folder under a file: " + JSON.stringify(err));
+        // a folder that exists but refuses the probe (an ACL that denies writing; accessSync(W_OK) would not see it)
+        const deny = { mkdirSync: () => {}, writeFileSync: () => { throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" }); }, unlinkSync: () => {} };
+        const e2 = portable.prepare("C:\\Program Files\\Scumble\\data", deny);
+        eq(e2 && e2.code, "EPERM", "the denied probe");
+        const box = portable.refusal("C:\\Program Files\\Scumble\\data", e2);
+        eq(box.title, "Scumble cannot use its folder", "title");
+        if (!box.text.includes("C:\\Program Files\\Scumble\\data") || !box.text.includes("(EPERM)") || !/Move the Scumble folder/.test(box.text)) throw new Error("the message: " + box.text);
+        // a probe that was written but cannot be removed still counts as writable
+        const sticky = { mkdirSync: () => {}, writeFileSync: () => {}, unlinkSync: () => { throw new Error("EBUSY"); } };
+        eq(portable.prepare("X:\\data", sticky), null, "the probe stays");
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+check("the_marker_text_says_what_the_file_does", () => {
+    const t = portable.MARKER_TEXT;
+    for (const s of ["\"data\" folder", "%APPDATA%\\Scumble", "type them again", "does not update itself", "unpack it over this folder", "Delete this file"]) if (!t.includes(s)) throw new Error("the marker lacks " + JSON.stringify(s));
+    if (/[^\x00-\x7F]/.test(t)) throw new Error("the marker is not plain ASCII");
+});
+
+check("main_sets_the_folder_from_the_resolver_before_anything_reads_it", () => {
+    const main = fs.readFileSync(path.join(ROOT, "electron", "main", "main.js"), "utf8");
+    const set = main.indexOf('app.setPath("userData", DATA_HOME.dir)');
+    const logAt = main.indexOf("log.install(");
+    const call = main.indexOf("portable.userData({");
+    if (set < 0 || call < 0) throw new Error("main.js does not set the folder from portable.userData");
+    if (!(call < set && set < logAt)) throw new Error(`the order: resolver ${call}, setPath ${set}, log.install ${logAt}`);
+    // one rule for the folder: no other setPath of userData, nothing reads it before
+    eq((main.match(/app\.setPath\("userData"/g) || []).length, 1, "setPath(userData) calls");
+    if (main.slice(0, set).includes('getPath("userData")')) throw new Error("the folder is read before it is set");
+    if (main.indexOf('require("./settings")') < set) throw new Error("settings is loaded before the folder is set");
+    const args = main.slice(call, main.indexOf("});", call));
+    for (const want of ["packaged: app.isPackaged", "platform: process.platform", "execPath: process.execPath", "store: msix.isStore()", 'userDataSwitch: app.commandLine.hasSwitch("user-data-dir")', 'appData: app.getPath("appData")', "exists: fs.existsSync", "realpath: fs.realpathSync.native"]) {
+        if (!args.includes(want)) throw new Error("the resolver is not given " + want);
+    }
+    // a folder that cannot be written stops the start, with the box, before setPath; no fall back
+    const guard = main.slice(call, set);
+    if (!/portable\.prepare\(DATA_HOME\.dir, fs\)/.test(guard) || !/dialog\.showErrorBox\(box\.title, box\.text\)/.test(guard) || !/process\.exit\(1\)/.test(guard)) throw new Error("no refusal before setPath");
+    // the updater's mode, the jump list and app:info
+    if (!/new Updater\(\{ mode: portable\.updateMode\(\{ packaged: app\.isPackaged, store: msix\.isStore\(\), portable: PORTABLE, platform: process\.platform, installed: portable\.isInstalled\(process\.execPath, fs\.existsSync\) \}\) \}\)/.test(main)) throw new Error("the updater is not given its mode");
+    if (!/if \(!PORTABLE\) \{ try \{ app\.addRecentDocument\(file\);/.test(main)) throw new Error("a portable copy adds jump list entries");
+    if (!/portable: PORTABLE, dataDir: PORTABLE \? DATA_HOME\.dir : null/.test(main)) throw new Error("app:info does not say portable");
+});
+
+// ---- a key stored on another PC or Windows account (electron/main/keys.js) ---------------------------------------
+
+check("a_key_this_account_cannot_decrypt_reads_as_stale_and_is_never_rewritten", () => {
+    const Module = require("node:module");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-keys-"));
+    const keysPath = require.resolve("../electron/main/keys");
+    const orig = Module._load;
+    // DPAPI played by a stub: this account reads "mine:" ciphertexts; another account's ("theirs:") throw as
+    // safeStorage.decryptString does ("Error while decrypting the ciphertext ...")
+    const safeStorage = {
+        isEncryptionAvailable: () => true,
+        encryptString: (v) => Buffer.from("mine:" + v),
+        decryptString: (b) => { const s = b.toString(); if (!s.startsWith("mine:")) throw new Error("Error while decrypting the ciphertext provided to safeStorage.decryptString."); return s.slice(5); },
+    };
+    Module._load = function (request, ...rest) {
+        if (request === "electron") return { app: { getPath: () => dir }, safeStorage };
+        return orig.call(this, request, ...rest);
+    };
+    delete require.cache[keysPath];
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+        const keys = require("../electron/main/keys");
+        const file = path.join(dir, "secrets.json");
+        const b64 = (s) => Buffer.from(s).toString("base64");
+        fs.writeFileSync(file, JSON.stringify({ fal: { data: b64("mine:fal-key-123456"), hint: "3456", time: 1 }, bfl: { data: b64("theirs:bfl-key-999999"), hint: "9999", time: 2 } }, null, 2) + "\n");
+        const before = fs.readFileSync(file);
+        eq(keys.describe("fal"), { name: "fal", set: true, hint: "3456", time: 1, stale: false }, "a key of this account");
+        eq(keys.describe("bfl"), { name: "bfl", set: true, hint: "9999", time: 2, stale: true }, "a key of another account");
+        eq(keys.describe("gemini"), { name: "gemini", set: false, hint: "", time: 0, stale: false }, "no key");
+        const l = keys.list();
+        eq([l.keys.fal.stale, l.keys.bfl.stale, l.backend], [false, true, process.platform === "win32" ? "dpapi" : process.platform === "linux" ? "unknown" : "keychain"], "list");
+        eq(keys.get("bfl"), "", "get of a stale key");
+        if (!fs.readFileSync(file).equals(before)) throw new Error("describe / list / get rewrote secrets.json");
+        // the run's text names it (providers/util.js noKeyText, what providers/index.js and llm.js throw)
+        const { noKeyText } = require("../electron/main/providers/util");
+        if (!/stored on another PC or Windows account, so it cannot be read here: type it again under Settings › API providers\./.test(noKeyText("Black Forest Labs", true))) throw new Error("the stale text: " + noKeyText("x", true));
+        eq(noKeyText("fal.ai", false), "No API key for fal.ai. Add it under Settings › API providers.", "the missing text");
+        // the user's new key replaces it, through set()
+        eq(keys.set("bfl", "bfl-new-key-123").stale, false, "a new key is read");
+        eq(keys.get("bfl"), "bfl-new-key-123", "the new key");
+        // with no credential store nothing can be told: not stale
+        safeStorage.isEncryptionAvailable = () => false;
+        fs.writeFileSync(file, before);
+        eq(keys.describe("bfl").stale, false, "no store");
+    } finally {
+        console.warn = warn;
+        Module._load = orig;
+        delete require.cache[keysPath];
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+    // every run that needs a key says so (no "No API key" text of their own left)
+    for (const f of [path.join("providers", "index.js"), "llm.js"]) {
+        const src = fs.readFileSync(path.join(ROOT, "electron", "main", f), "utf8");
+        if (/No API key for/.test(src)) throw new Error(f + " still writes its own no-key text");
+        if (!/noKeyText\([^)]*keys\.describe\([^)]*\)\)?\.stale\)/.test(src)) throw new Error(f + " does not ask for the stale flag");
+    }
+});
+
 console.log(failed ? "FAIL" : "PASS");
 process.exit(failed ? 1 : 0);

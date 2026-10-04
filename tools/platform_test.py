@@ -89,6 +89,115 @@ if (JSON.stringify(back) !== JSON.stringify(own)) throw new Error("the section d
 return { state: before.state, store: store.note };
 """))
 
+# a copy that does not update itself (a portable zip, any unpacked copy without the uninstaller; electron/main/portable.js
+# updateMode "notify", docs/PLAN_0_1_42.md P1): the Updates section and the title row offer Download, the question asks
+# Download / Later / Skip this version once per version, Download opens the release page (stubbed: shell.updateLinks)
+# and nothing ever offers a restart or an install. A raw string: its JS has \n escapes
+STEPS.append(("a_copy_that_does_not_update_itself_offers_the_release_page", r"""
+const dialogs = await import("./dialogs.js");
+const keep = (await window.scumble.settings.get()).updates || {};
+const boxes = () => Array.from(document.querySelectorAll("dialog.sc-dialog")).map((d) => d.querySelector("div").shadowRoot);
+const read = (r) => ({
+    title: (r.querySelector(".title") || {}).textContent || "",
+    message: (r.querySelector(".message") || {}).textContent || "",
+    detail: (r.querySelector(".detail") || {}).textContent || "",
+    buttons: Array.from(r.querySelectorAll("button")).map((b) => b.textContent),
+});
+const press = (r, label) => Array.from(r.querySelectorAll("button")).find((b) => b.textContent === label).click();
+const until = async (fn, ms = 8000) => { for (const end = Date.now() + ms; Date.now() < end; await wait(100)) { const v = fn(); if (v) return v; } return null; };
+const notAsked = (s) => Promise.race([shell.announceUpdate(s), wait(1500).then(() => "open")]);
+const TAG = (v) => "https://github.com/DenRakEiw/scumble/releases/tag/v" + v;
+// what main sends in notify mode (electron/main/updater.js), without the url: the window names the tag's page itself
+const fake = (version, more = {}) => ({ state: "available", mode: "notify", current: "0.1.42", version, percent: null, error: null, manual: false, skip: null, announced: null, notes: "• One. More.\n• Two. More.", headlines: ["One.", "Two."], ...more });
+if (dialogs.openCount()) throw new Error("a question is open before the step");
+for (const end = Date.now() + 30000; Date.now() < end && ["checking", "downloading"].includes((await window.scumble.updates.status()).state);) await wait(250);
+const opened = [];
+const was = shell.updateLinks.open;
+shell.updateLinks.open = (url) => { opened.push(url); };
+const out = {};
+try {
+    // the Updates section and the title row
+    await shell.openSettings();
+    await wait(300);
+    const $ = (id) => document.getElementById(id);
+    const section = () => ({
+        note: $("set-update-note").textContent, install: $("set-update-install").textContent, installHidden: $("set-update-install").hidden,
+        help: $("set-update-help").hidden, helpNotify: $("set-update-help-notify").hidden, notes: $("set-update-notes").hidden,
+        bar: $("shell-update").textContent, barHidden: $("shell-update").hidden,
+    });
+    const before = await window.scumble.updates.status();
+    const own = section();
+    shell.renderUpdate(fake("9.8.1"));
+    const n = section();
+    if (n.install !== "Download" || n.installHidden || n.bar !== "Download 9.8.1" || n.barHidden || n.notes) throw new Error("the section: " + JSON.stringify(n));
+    if (!n.help || n.helpNotify || !/Scumble 9\.8\.1 is out\. This copy does not update itself/.test(n.note)) throw new Error("the texts: " + JSON.stringify(n));
+    if (/Restart|install/i.test(n.install + n.bar + n.note)) throw new Error("an install is offered: " + JSON.stringify(n));
+    $("shell-update").click();
+    $("set-update-install").click();
+    await wait(100);
+    if (JSON.stringify(opened) !== JSON.stringify([TAG("9.8.1"), TAG("9.8.1")])) throw new Error("the buttons opened " + JSON.stringify(opened));
+    shell.renderUpdate(fake("9.8.1", { skip: "9.8.1" }));
+    if (!/You skipped it; Download still opens its release page/.test(section().note)) throw new Error("the skipped text: " + section().note);
+    shell.renderUpdate(before);
+    const back = section();
+    $("shell-settings").close();
+    if (JSON.stringify(back) !== JSON.stringify(own) || back.install !== "Restart and install" || back.help || !back.helpNotify) throw new Error("the section did not come back: " + JSON.stringify(back) + " against " + JSON.stringify(own));
+    out.section = n.bar;
+    // the question: asked once, Download opens the tag's page
+    const p1 = shell.announceUpdate(fake("9.8.2"));
+    const b1 = await until(() => boxes()[0]);
+    if (!b1) throw new Error("no question for a new version");
+    const r1 = read(b1);
+    if (r1.title !== "Scumble 9.8.2 is out" || JSON.stringify(r1.buttons) !== JSON.stringify(["Download", "Later", "Skip this version"])) throw new Error("the question: " + JSON.stringify(r1));
+    if (!/^This copy does not update itself\. Download the new zip and unpack it over this folder: the data folder stays\.$/.test(r1.message)) throw new Error("the message: " + r1.message);
+    if (!r1.detail.startsWith("What changed:\n• One.\n• Two.") || !/Later asks again at the next start/.test(r1.detail) || /Restart|installs/.test(JSON.stringify(r1))) throw new Error("the detail: " + JSON.stringify(r1));
+    const focused = b1.activeElement && b1.activeElement.textContent;
+    if (focused !== "Later") throw new Error("the focus is on " + focused);
+    press(b1, "Download");
+    if ((await p1) !== 0) throw new Error("Download did not answer 0");
+    if (opened[opened.length - 1] !== TAG("9.8.2")) throw new Error("Download opened " + JSON.stringify(opened));
+    if ((await window.scumble.updates.status()).announced !== "9.8.2") throw new Error("main does not keep the version asked about");
+    out.asked = r1.title;
+    // not again: the same version; an install-mode question's state in notify mode; a check the user started; a skip
+    const none = [fake("9.8.2"), fake("9.8.3", { state: "downloaded" }), fake("9.8.4", { manual: true }), fake("9.8.5", { skip: "9.8.5" })];
+    for (const s of none) {
+        const r = await notAsked(s);
+        if (r !== false || boxes().length) throw new Error("asked about " + JSON.stringify(s) + ": " + r);
+    }
+    // Later opens nothing; Skip writes the setting and main's status carries it
+    const count = opened.length;
+    const p2 = shell.announceUpdate(fake("9.8.6"));
+    const b2 = await until(() => boxes()[0]);
+    if (!b2) throw new Error("no question for 9.8.6");
+    press(b2, "Later");
+    if ((await p2) !== 1 || opened.length !== count) throw new Error("Later: " + JSON.stringify(opened.slice(count)));
+    const p3 = shell.announceUpdate(fake("9.8.7"));
+    const b3 = await until(() => boxes()[0]);
+    if (!b3) throw new Error("no question for 9.8.7");
+    press(b3, "Skip this version");
+    if ((await p3) !== 2) throw new Error("Skip did not answer 2");
+    const stored = (await window.scumble.settings.get()).updates || {};
+    if (stored.skip !== "9.8.7" || (await window.scumble.updates.status()).skip !== "9.8.7" || opened.length !== count) throw new Error("the skip: " + JSON.stringify(stored));
+    // the page main names is used when it is GitHub's release page, else the tag's
+    if (shell.releasePage(fake("1.2.3", { url: TAG("1.2.3") })) !== TAG("1.2.3") || shell.releasePage(fake("1.2.3", { url: "https://example.com/x" })) !== TAG("1.2.3") || shell.releasePage({}) !== "https://github.com/DenRakEiw/scumble/releases/latest") throw new Error("releasePage");
+    if (dialogs.openCount()) throw new Error("a question stayed open");
+    out.opened = opened.length;
+} finally {
+    shell.updateLinks.open = was;
+    shell.announceUpdate({ state: "idle" });
+    await wait(700);
+    dialogs.cancelAll();
+    const s = document.getElementById("shell-settings");
+    if (s.open) s.close();
+    shell.renderUpdate(await window.scumble.updates.status());
+    await shell.skipUpdate(keep.skip || null);
+    await window.scumble.updates.announced(null);
+}
+const back = (await window.scumble.settings.get()).updates || {};
+if (JSON.stringify(back) !== JSON.stringify(keep)) throw new Error("the settings did not come back: " + JSON.stringify(back) + " against " + JSON.stringify(keep));
+return out;
+"""))
+
 # the question when an update is downloaded (CLAUDE.md item 32, renderer/shell.js announceUpdate): once per version,
 # never after a check the user started, a version main says was asked about or a skipped one; Skip writes
 # settings.updates.skip and main's status carries it (the install on quit is tools/updater_test.js); the question waits

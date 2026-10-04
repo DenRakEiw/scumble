@@ -194,4 +194,14 @@ function ideogramMask(mask, image, ctx, who) {
     return m.edits === m.pixels ? null : m.png;
 }
 
-module.exports = { dataUri, b64, fetchImage, readError, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask };
+/**
+ * What a run says when it has no usable key. `stale` (keys.js describe): a key stored on another PC or Windows account,
+ * which DPAPI does not let this one read, is named as such and not as missing.
+ */
+function noKeyText(label, stale) {
+    return stale
+        ? `The ${label} key was stored on another PC or Windows account, so it cannot be read here: type it again under Settings › API providers.`
+        : `No API key for ${label}. Add it under Settings › API providers.`;
+}
+
+module.exports = { dataUri, b64, fetchImage, readError, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };

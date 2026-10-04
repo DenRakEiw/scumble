@@ -25,7 +25,7 @@
 
 const keys = require("./keys");
 const settings = require("./settings");
-const { b64, dataUri, readError } = require("./providers/util");
+const { b64, dataUri, readError, noKeyText } = require("./providers/util");
 const toapis = require("./providers/toapis");
 const openrouter = require("./providers/openrouter");
 const oxen = require("./providers/oxen");
@@ -443,7 +443,7 @@ async function ask(req) {
         const m = MODELS.find((x) => `${x.provider}:${x.model}` === id) || customModel(id);
         if (!m) throw new Error("Unknown language model: " + id);
         const key = keys.get(m.provider);
-        if (!key) throw new Error(`No API key for ${PROVIDER_LABEL[m.provider]}. Add it under Settings › API providers.`);
+        if (!key) throw new Error(noKeyText(PROVIDER_LABEL[m.provider], keys.describe(m.provider).stale));
         model = m.model;
         // a row the user marked as not seeing pictures gets none, the crop included, and no note: the user set it so
         if (m.vision === false) { image = null; images = []; }

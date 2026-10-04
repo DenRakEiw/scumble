@@ -145,6 +145,19 @@ announced, manual or skipped version, Skip stored and in main's status, the wait
 before a restart while an API run or a local render is in flight); `tools/restart_test.js` keeps a skipped version out of
 a restart.
 
+Item 36 (the portable copy, `docs/PLAN_0_1_42.md` P1): `node tools/platform_test.js` pins `electron/main/portable.js`
+(the data folder only for a packaged Windows copy with `portable.txt` beside the exe; `--user-data-dir`, then the Store,
+then the marker; one spelling through a subst drive; the folder made and proven by a probe write, the refusal's text;
+`updateMode`: only the uninstaller beside the exe installs, every other Windows copy is `notify`), reads main.js's use of
+it (the folder set before `log.install`, one `setPath`, the refusal before it, the updater's mode, no jump list entry,
+`app:info`), and runs `keys.js` over a stubbed safeStorage (a key another account stored reads `stale`, `secrets.json`
+byte-equal after describe / list / get). `tools/updater_test.js` runs notify mode: `autoDownload` and
+`autoInstallOnAppQuit` off before the check and after every event, state `available` with the tag's URL, no download,
+no install, no quit handler. The platform gate's `a_copy_that_does_not_update_itself_offers_the_release_page` drives the
+window: Download in the Updates section and the title row, the question once with Download / Later / Skip this version,
+Download opening the tag's page (`shell.updateLinks.open` stubbed). The packaged start on a marker is P3's `portable`
+gate.
+
 Item 26 (`docs/PLAN_REFS.md`, @img tokens for reference layers): `node tools/refs_layout_test.js` pins every adapter's
 `layout(req)` against the request its real builder sends (every shipped provider variant, every ToAPIs channel, 0 / 1 /
 3 references, the Original on and off; a fake fetch captures the picture-carrying request), the caps, and

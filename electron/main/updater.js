@@ -4,13 +4,27 @@
 // the user asks (or silently when the app quits). Only the windowed, packaged app checks on
 // its own; headless and agent-started instances and the dev electron never download anything.
 // The Microsoft Store package never does either: the Store updates its copy (electron/main/msix.js).
+// Modes (electron/main/portable.js updateMode): "install" is the above, for an NSIS install; "notify" is every other
+// unpacked Windows copy (a portable zip, dist/win-unpacked): it checks the same feed, never downloads and never
+// installs, and only says that a new version is out (state "available"; the window offers its release page).
 "use strict";
 
 const { app } = require("electron");
 const { isStore } = require("./msix");
 const { EventEmitter } = require("node:events");
 
-/** States: dev (not packaged), store (the Store updates it), idle, checking, latest, downloading, downloaded, error. */
+const RELEASES = "https://github.com/DenRakEiw/scumble/releases";
+
+/** A release's page on GitHub, what Download opens in a copy that does not update itself. */
+function releaseUrl(version) {
+    const v = String(version || "").replace(/^v/, "");
+    return /^[0-9A-Za-z.+-]+$/.test(v) ? `${RELEASES}/tag/v${v}` : `${RELEASES}/latest`;
+}
+
+/**
+ * States: dev (not packaged), store (the Store updates it), idle, checking, latest, downloading, downloaded,
+ * available (notify mode: a newer version is out, nothing downloaded), error.
+ */
 
 /** The longest notes the Updates section shows (a release of the size of 0.1.37 is about 8,300 characters). */
 const NOTES_MAX = 30000;
@@ -135,20 +149,24 @@ function entities(s) {
 }
 
 class Updater extends EventEmitter {
-    constructor() {
+    /** @param {{ mode?: "dev" | "store" | "notify" | "install" }} [o] main.js passes portable.updateMode(...) */
+    constructor({ mode } = {}) {
         super();
         this.au = null;
+        this.mode = mode || (!app.isPackaged ? "dev" : isStore() ? "store" : "install");
         // `skip`: the version the user skipped (settings.updates.skip): it is offered, never installed on quit.
         // `announced`: the version this start asked about (renderer/shell.js announceUpdate), kept here so a window
         // reloaded after a crash does not ask again; the next start asks again
-        this.status = { state: !app.isPackaged ? "dev" : isStore() ? "store" : "idle", current: app.getVersion(), version: null, percent: null, error: null, manual: false, skip: null, announced: null };
+        this.status = { state: this.mode === "dev" ? "dev" : this.mode === "store" ? "store" : "idle", mode: this.mode, current: app.getVersion(), version: null, percent: null, error: null, manual: false, skip: null, announced: null };
     }
 
     _load() {
         if (this.au) return this.au;
         const { autoUpdater } = require("electron-updater");
-        autoUpdater.autoDownload = true;
-        autoUpdater.autoInstallOnAppQuit = true;
+        const notify = this.mode === "notify";
+        // a copy that does not update itself never downloads, and never installs on quit: both off before any check
+        autoUpdater.autoDownload = !notify;
+        autoUpdater.autoInstallOnAppQuit = !notify;
         // the notes of every release since the installed one, not only the newest (releaseNotes)
         autoUpdater.fullChangelog = true;
         autoUpdater.logger = {
@@ -158,10 +176,13 @@ class Updater extends EventEmitter {
             debug: () => {},
         };
         autoUpdater.on("checking-for-update", () => this._set({ state: "checking", error: null }));
-        autoUpdater.on("update-available", (info) => this._set({ state: "downloading", version: info.version, percent: 0, notes: releaseNotes(info), headlines: releaseHeadlines(info) }));
+        autoUpdater.on("update-available", (info) => this._set(notify
+            ? { state: "available", version: info.version, percent: null, url: releaseUrl(info.version), notes: releaseNotes(info), headlines: releaseHeadlines(info) }
+            : { state: "downloading", version: info.version, percent: 0, notes: releaseNotes(info), headlines: releaseHeadlines(info) }));
         autoUpdater.on("update-not-available", (info) => this._set({ state: "latest", version: info && info.version, percent: null }));
-        autoUpdater.on("download-progress", (p) => this._set({ state: "downloading", percent: Math.round(p.percent) }));
-        autoUpdater.on("update-downloaded", (info) => this._set({ state: "downloaded", version: info.version, percent: 100, notes: releaseNotes(info), headlines: releaseHeadlines(info) }));
+        // notify mode asks for no download: one that came anyway is not offered for installing
+        autoUpdater.on("download-progress", (p) => { if (!notify) this._set({ state: "downloading", percent: Math.round(p.percent) }); });
+        autoUpdater.on("update-downloaded", (info) => { if (!notify) this._set({ state: "downloaded", version: info.version, percent: 100, notes: releaseNotes(info), headlines: releaseHeadlines(info) }); });
         autoUpdater.on("error", (err) => this._set({ state: "error", error: friendly(err) }));
         this.au = autoUpdater;
         this._applySkip();
@@ -179,9 +200,12 @@ class Updater extends EventEmitter {
      * download ends and again in its quit handler (6.8.9 BaseUpdater), so the switch follows the offered version and
      * the skip. It adds that handler once, when a download ends, and not at all while the switch is off: a skip taken
      * back after the download needs the handler now (`addQuitHandler` adds it once). Install still installs a skipped one.
+     * In notify mode the switch stays off whatever happens and the handler is never added: this runs on every status
+     * change, and turning the switch on here would install a download on the next quit.
      */
     _applySkip() {
         if (!this.au) return;
+        if (this.mode === "notify") { this.au.autoInstallOnAppQuit = false; this.au.autoDownload = false; return; }
         const on = !(this.status.skip && this.status.version === this.status.skip);
         this.au.autoInstallOnAppQuit = on;
         if (on && this.status.state === "downloaded" && typeof this.au.addQuitHandler === "function") this.au.addQuitHandler();
@@ -212,8 +236,8 @@ class Updater extends EventEmitter {
      * newer version may be out.
      */
     async check({ manual = false } = {}) {
-        if (!app.isPackaged) { this._set({ state: "dev", manual }); return this.status; }
-        if (this.status.state === "store") { this._set({ manual }); return this.status; }
+        if (this.mode === "dev" || !app.isPackaged) { this._set({ state: "dev", manual }); return this.status; }
+        if (this.mode === "store" || this.status.state === "store") { this._set({ manual }); return this.status; }
         const s = this.status.state;
         if (s === "checking" || s === "downloading" || (s === "downloaded" && !this.skipped())) {
             if (manual && !this.status.manual) this._set({ manual: true });
@@ -228,9 +252,9 @@ class Updater extends EventEmitter {
         return this.status;
     }
 
-    /** Quit and run the downloaded installer silently, then start the new version. */
+    /** Quit and run the downloaded installer silently, then start the new version. Never in notify mode. */
     install() {
-        if (this.status.state !== "downloaded" || !this.au) return false;
+        if (this.mode === "notify" || this.status.state !== "downloaded" || !this.au) return false;
         setImmediate(() => this.au.quitAndInstall(true, true));
         return true;
     }
@@ -243,4 +267,4 @@ function friendly(err) {
     return m.split("\n")[0].slice(0, 200);
 }
 
-module.exports = { Updater, releaseNotes, releaseHeadlines };
+module.exports = { Updater, releaseNotes, releaseHeadlines, releaseUrl };

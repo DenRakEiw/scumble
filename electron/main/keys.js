@@ -68,10 +68,20 @@ function clear(name) {
     return describe(name);
 }
 
-/** { set, hint } for one secret; never the value. */
+/**
+ * Whether a stored secret cannot be decrypted here: DPAPI binds it to the Windows account (and PC) that stored it, so
+ * a portable copy taken to another PC or account holds keys it cannot read. Only reads: a stale entry is never
+ * cleared or rewritten (the copy may go back to the PC that can read it); the user's new key replaces it through set().
+ */
+function stale(entry) {
+    if (!entry || !entry.data || !available()) return false;
+    try { safeStorage.decryptString(Buffer.from(entry.data, "base64")); return false; } catch (_) { return true; }
+}
+
+/** { set, hint, stale } for one secret; never the value. */
 function describe(name) {
     const entry = readAll()[name];
-    return { name, set: !!(entry && entry.data), hint: entry ? entry.hint || "" : "", time: entry ? entry.time : 0 };
+    return { name, set: !!(entry && entry.data), hint: entry ? entry.hint || "" : "", time: entry ? entry.time : 0, stale: stale(entry) };
 }
 
 function list() {

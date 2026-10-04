@@ -37,6 +37,7 @@ const keys = require("../keys");
 const settings = require("../settings");
 const { MARKER_ANY, TOKEN, REF_NAME_DEFAULT, validRefName, nameOf, refRoles, layoutOf, countOf, checkLayout, resolveMarkers, checkPictures } = require("./refs");
 const boxes = require("./boxes");   // the box rows of a prompt (item 28, docs/PLAN_BOXES.md)
+const { noKeyText } = require("./util");   // a key stored on another PC or Windows account says so (keys.js stale)
 
 // how much of a prompt goes into a log record
 const PROMPT_LOG = 500;
@@ -180,7 +181,7 @@ async function edit(request) {
     if (upscale && typeof p.upscale !== "function") throw new Error(`${p.label} has no upscaler in Scumble; pick another provider for this model.`);
     const verb = text ? "generate" : upscale ? "upscale" : "edit";
     const key = p.needsKey === false ? "" : keys.get(keyNameOf(id, p));
-    if (p.needsKey !== false && !key) throw new Error(`No API key for ${p.label}. Add it under Settings › API providers.`);
+    if (p.needsKey !== false && !key) throw new Error(noKeyText(p.label, keys.describe(keyNameOf(id, p)).stale));
     const given = (request.references || []).length;
     let req = {
         ...request,
@@ -371,7 +372,7 @@ async function balance(id) {
     const p = PROVIDERS[String(id || "")];
     if (!p || typeof p.balance !== "function") throw new Error(`${(p && p.label) || id} cannot report a balance.`);
     const key = keys.get(keyNameOf(id, p));
-    if (!key) throw new Error(`No API key for ${p.label}. Add it under Settings › API providers.`);
+    if (!key) throw new Error(noKeyText(p.label, keys.describe(keyNameOf(id, p)).stale));
     try {
         return await p.balance(contextFor(id, p, key));
     } catch (err) {

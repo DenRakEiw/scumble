@@ -93,7 +93,7 @@ const ui = {
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGens: $("set-gens"), setGensOpen: $("set-gens-open"), setGensNote: $("set-gens-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setUndoSteps: $("set-undo-steps"), setUndoMB: $("set-undo-mb"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
     setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
-    updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateHelp: $("set-update-help"), updateNotes: $("set-update-notes"),
+    updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateHelp: $("set-update-help"), updateHelpNotify: $("set-update-help-notify"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
 };
@@ -479,6 +479,7 @@ function providerKeyState(r) {
         return host.presentHelpers("inpaint").some((m) => m.id === r.model) ? { ok: true } : { ok: false, text: "the LaMa model is not downloaded yet: Settings (Ctrl+,) › Helpers (in-app models)" };
     }
     if (!p) return r.provider === "loopback" ? { ok: true } : { ok: false, text: `unknown provider "${r.provider}"` };
+    if (p.key && p.key.stale) return { ok: false, text: `the ${p.label} key was stored on another PC or Windows account: type it again in Settings (Ctrl+,) › API providers` };
     return p.key && p.key.set ? { ok: true } : { ok: false, text: `no ${p.label} key yet: Settings (Ctrl+,) › API providers` };
 }
 
@@ -685,9 +686,11 @@ async function renderProviders() {
         row.appendChild(clear);
         const state = document.createElement("span");
         const k = p.key || {};
-        state.className = "shell-key-state" + (k.set ? " set" : "");
+        // a key stored on another PC or Windows account (DPAPI cannot read it here, keys.js stale): kept, never cleared
+        // by itself, replaced by the one typed here
+        state.className = "shell-key-state" + (k.stale ? " shell-warn" : k.set ? " set" : "");
         clear.disabled = !k.set;
-        state.textContent = k.set ? `key set (…${k.hint})` : "no key";
+        state.textContent = k.stale ? "stored on another PC or Windows account: type it again" : k.set ? `key set (…${k.hint})` : "no key";
         if (p.keyUrl) {
             state.append(" · ");
             const a = document.createElement("a");
@@ -2167,7 +2170,7 @@ async function openSettings() {
     } catch (_) { ui.setGpuMem.textContent = ""; }
     try {
         const info = await window.scumble.info();
-        ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products. NVIDIA, RTX and DLSS are trademarks of NVIDIA Corporation; Scumble is not affiliated with or endorsed by NVIDIA, and the Realism Pass (Windows only, RTX only) runs only what you installed on your own ComfyUI.`;
+        ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}${info.portable ? " (portable copy)" : ""}. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products. NVIDIA, RTX and DLSS are trademarks of NVIDIA Corporation; Scumble is not affiliated with or endorsed by NVIDIA, and the Realism Pass (Windows only, RTX only) runs only what you installed on your own ComfyUI.`;
     } catch (_) { /* ignore */ }
     ui.updateAuto.checked = !(settings.updates && settings.updates.check === false);
     ui.promptRefPics.checked = refPicturesOn(settings);
@@ -2209,10 +2212,18 @@ ui.setPrune.addEventListener("click", async () => {
 });
 // ---- updates (electron/main/updater.js) ---------------------------------------------------
 
+/** A copy that does not update itself (a portable or other unpacked copy, electron/main/portable.js updateMode). */
+const notifyMode = (s) => !!(s && s.mode === "notify");
+
 function updateText(s) {
     if (!s) return "";
     if (s.state === "dev") return "Not packaged: updates are checked in the installed app only.";
     if (s.state === "store") return `Scumble ${s.current} from the Microsoft Store: the Store installs its updates.`;
+    if (s.state === "available") {
+        return s.skip && s.skip === s.version
+            ? `Scumble ${s.version} is out. You skipped it; Download still opens its release page.`
+            : `Scumble ${s.version} is out. This copy does not update itself: Download opens its release page.`;
+    }
     if (s.state === "checking") return "Checking for updates ...";
     if (s.state === "latest") return s.manual ? `Scumble ${s.current} is up to date.` : "";
     if (s.state === "downloading") return `Downloading Scumble ${s.version} ... ${s.percent == null ? "" : s.percent + "%"}`;
@@ -2225,22 +2236,53 @@ function updateText(s) {
     return "";
 }
 
+let shownUpdate = null;            // the status the Updates section and the title row show (what their buttons act on)
+const UPDATE_LABELS = { install: ui.updateInstall.textContent, barTitle: ui.updateBar.title };
+
 export function renderUpdate(s) {
+    shownUpdate = s || null;
     ui.updateNote.textContent = updateText(s);
+    // a copy that does not update itself offers the release page instead of an install (state "available")
+    const notify = notifyMode(s);
+    const offered = !!(s && (notify ? s.state === "available" : s.state === "downloaded"));
     // the release notes of the offered version, as text: they come from GitHub, so they
     // never touch innerHTML
-    const notes = s && s.notes && (s.state === "downloaded" || s.state === "downloading") ? s.notes : "";
+    const notes = s && s.notes && (s.state === "downloaded" || s.state === "downloading" || s.state === "available") ? s.notes : "";
     ui.updateNotes.textContent = notes;
     ui.updateNotes.hidden = !notes;
-    ui.updateInstall.hidden = !(s && s.state === "downloaded");
+    ui.updateInstall.hidden = !offered;
+    ui.updateInstall.textContent = notify ? "Download" : UPDATE_LABELS.install;
     ui.updateCheck.disabled = !!(s && (s.state === "checking" || s.state === "downloading"));
     // the Store copy is updated by the Store: no feed to check, nothing to switch off
     const store = !!(s && s.state === "store");
     ui.updateCheck.hidden = store;
     ui.updateAuto.parentElement.hidden = store;
-    ui.updateHelp.hidden = store;
-    ui.updateBar.hidden = !(s && s.state === "downloaded");
-    if (s && s.state === "downloaded") ui.updateBar.textContent = `Update to ${s.version}`;
+    ui.updateHelp.hidden = store || notify;
+    ui.updateHelpNotify.hidden = !notify;
+    ui.updateBar.hidden = !offered;
+    ui.updateBar.title = notify ? "A new version is out; this copy does not update itself: open its release page" : UPDATE_LABELS.barTitle;
+    ui.updateBar.textContent = !offered ? "" : notify ? `Download ${s.version}` : `Update to ${s.version}`;
+}
+
+/** The release page Download opens: the one main names (electron/main/updater.js releaseUrl), else the tag's. */
+export function releasePage(s) {
+    if (s && typeof s.url === "string" && /^https:\/\/github\.com\/DenRakEiw\/scumble\/releases\//.test(s.url)) return s.url;
+    const v = String((s && s.version) || "").replace(/^v/, "");
+    return /^[0-9A-Za-z.+-]+$/.test(v) ? `https://github.com/DenRakEiw/scumble/releases/tag/v${v}` : "https://github.com/DenRakEiw/scumble/releases/latest";
+}
+
+/** How Download opens the page (main allows http(s) only); a test replaces `open`. */
+export const updateLinks = { open: (url) => window.scumble.openExternal(url) };
+
+/** Download in a copy that does not update itself: the release page in the browser, nothing installed. */
+function downloadUpdate(s) {
+    try { updateLinks.open(releasePage(s)); } catch (_) { return false; }
+    return true;
+}
+
+/** The title row's button and Settings › Updates' Install / Download. */
+function updateAction() {
+    return notifyMode(shownUpdate) ? downloadUpdate(shownUpdate) : installUpdate();
 }
 
 // ---- the question when an update is ready (CLAUDE.md item 32, docs/PLAN_0_1_38.md A1) ----------------------------
@@ -2284,12 +2326,16 @@ export function updateQuestionDetail(s, { lines = 8, chars = 1500 } = {}) {
         }
         parts.push("What changed:\n" + text.slice(0, cut).trimEnd() + (cut < text.length ? "\n…, the rest in Settings › Updates." : ""));
     }
-    parts.push("Later installs it when you close Scumble. Skip this version leaves it out until a newer one comes; the Update button in the title row still installs it.");
+    parts.push(notifyMode(s)
+        ? "Later asks again at the next start. Skip this version leaves it out until a newer one comes; the Download button in the title row still opens its page."
+        : "Later installs it when you close Scumble. Skip this version leaves it out until a newer one comes; the Update button in the title row still installs it.");
     return parts.join("\n\n");
 }
 
 /**
- * Ask once when an update is downloaded: Restart and update, Later, Skip this version. Not after a check the user
+ * Ask once when an update is downloaded: Restart and update, Later, Skip this version. In a copy that does not update
+ * itself (`mode` "notify", a portable copy) ask once when a new version is out instead: Download (its release page in
+ * the browser), Later, Skip this version. Not after a check the user
  * started (Settings › Updates shows that answer), not for a version this start asked about or the user skipped, and
  * never over another question, a modal panel, the restore at start or an edit in progress: it waits for those, and
  * gives up when a newer status replaces this one meanwhile. The Store copy and dev never reach "downloaded". Resolves
@@ -2297,9 +2343,11 @@ export function updateQuestionDetail(s, { lines = 8, chars = 1500 } = {}) {
  */
 export async function announceUpdate(s) {
     if (s) lastUpdate = s;
-    const v = s && s.state === "downloaded" && !s.manual && s.version ? String(s.version) : null;
+    const notify = notifyMode(s);
+    const offered = (u) => !!(u && u.state === (notifyMode(u) ? "available" : "downloaded"));
+    const v = offered(s) && !s.manual && s.version ? String(s.version) : null;
     if (!v || updateAsking || updateAsked.has(v) || s.announced === v || s.skip === v || (settings.updates || {}).skip === v) return false;
-    const current = (u) => !!(u && u.state === "downloaded" && !u.manual && String(u.version) === v);
+    const current = (u) => !!(offered(u) && notifyMode(u) === notify && !u.manual && String(u.version) === v);
     updateAsking = true;
     try {
         while (updateQuestionWaits()) {
@@ -2309,6 +2357,21 @@ export async function announceUpdate(s) {
         const now = lastUpdate;
         updateAsked.add(v);
         window.scumble.updates.announced(v).catch(() => { /* this window still remembers it */ });
+        if (notify) {
+            const n = await dialogs.ask({
+                title: `Scumble ${v} is out`,
+                message: "This copy does not update itself. Download the new zip and unpack it over this folder: the data folder stays.",
+                detail: updateQuestionDetail(now),
+                buttons: ["Download", "Later", "Skip this version"],
+                defaultId: 0,
+                cancelId: 1,
+                // it opens unasked: a key the user was typing answers Later
+                focusId: 1,
+            });
+            if (n === 0) downloadUpdate(now);
+            else if (n === 2) await skipUpdate(v);
+            return n;
+        }
         const i = await dialogs.ask({
             title: `Scumble ${v} is ready`,
             message: `You have ${now.current}. Restart and update saves your documents, installs ${v} and starts it; the documents come back as they were.`,
@@ -2325,7 +2388,7 @@ export async function announceUpdate(s) {
     } finally {
         updateAsking = false;
         // a newer version arrived while this one waited or was asked
-        if (lastUpdate && lastUpdate !== s && lastUpdate.state === "downloaded" && String(lastUpdate.version) !== v) announceUpdate(lastUpdate);
+        if (lastUpdate && lastUpdate !== s && offered(lastUpdate) && String(lastUpdate.version) !== v) announceUpdate(lastUpdate);
     }
 }
 
@@ -2372,8 +2435,8 @@ window.scumble.updates.onStatus((s) => { renderUpdate(s); announceUpdate(s); });
 // a status from before this window listened (a window reloaded after a crash): main's `announced` says whether it asked
 window.scumble.updates.status().then((s) => { renderUpdate(s); announceUpdate(s); }, () => { /* no updater */ });
 ui.updateCheck.addEventListener("click", async () => { renderUpdate(await window.scumble.updates.check()); });
-ui.updateInstall.addEventListener("click", () => installUpdate());
-ui.updateBar.addEventListener("click", () => installUpdate());
+ui.updateInstall.addEventListener("click", () => updateAction());
+ui.updateBar.addEventListener("click", () => updateAction());
 ui.updateAuto.addEventListener("change", async () => { settings = await window.scumble.settings.set({ updates: { ...(settings.updates || {}), check: ui.updateAuto.checked } }); });
 /** A memory row's value as the row shows and stores it: a whole number of MB, at least `min`. */
 function wholeMB(v, min, fallback) {

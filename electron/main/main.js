@@ -7,9 +7,28 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const { app, BrowserWindow, protocol, net, ipcMain, dialog, Menu, shell, clipboard } = require("electron");
 const msix = require("./msix");
-// the Store package keeps its data apart from a GitHub copy's (electron/main/msix.js); before anything reads
-// the folder, and never over a --user-data-dir (the gates' profiles)
-if (msix.isStore() && !app.commandLine.hasSwitch("user-data-dir")) app.setPath("userData", msix.storeUserData(app.getPath("appData")));
+const portable = require("./portable");
+// where the data lives, in one order (electron/main/portable.js): a --user-data-dir (the gates' profiles), the Store
+// package's own folder (msix.js), a portable copy's data folder (portable.txt beside the exe), Electron's default.
+// Set before anything reads the folder: log.install below is the first
+const DATA_HOME = portable.userData({
+    packaged: app.isPackaged, platform: process.platform, execPath: process.execPath, store: msix.isStore(),
+    userDataSwitch: app.commandLine.hasSwitch("user-data-dir"), appData: app.getPath("appData"),
+    exists: fs.existsSync, realpath: fs.realpathSync.native,
+});
+const PORTABLE = DATA_HOME.from === "portable";
+if (PORTABLE) {
+    // a folder this copy cannot write to stops it here: no fall back to %APPDATA%\Scumble, which would mix this copy's
+    // data with an installed one's (docs/PLAN_0_1_42.md Q21)
+    const err = portable.prepare(DATA_HOME.dir, fs);
+    if (err) {
+        const box = portable.refusal(DATA_HOME.dir, err);
+        process.stderr.write(`scumble: ${box.text}\n`);
+        try { dialog.showErrorBox(box.title, box.text); } catch (_) { /* no desktop: the line above says it */ }
+        process.exit(1);
+    }
+}
+if (DATA_HOME.dir) app.setPath("userData", DATA_HOME.dir);
 const settings = require("./settings");
 const log = require("./log");
 log.install(require("node:path").join(app.getPath("userData"), "logs"));   // first: the console patch has to be in place before anything logs
@@ -562,7 +581,9 @@ function getHelp() {
 }
 
 let pluginActions = [];   // [{id, label, accelerator}] from renderer/plugins.js
-const updater = new Updater();
+// only an NSIS install (its uninstaller beside the exe) installs updates; a portable or other unpacked copy says that a
+// new version is out (electron/main/portable.js updateMode)
+const updater = new Updater({ mode: portable.updateMode({ packaged: app.isPackaged, store: msix.isStore(), portable: PORTABLE, platform: process.platform, installed: portable.isInstalled(process.execPath, fs.existsSync) }) });
 updater.on("status", (s) => send("update:status", s));
 
 /** View › Skin: the default look, one radio per usable skin, and the way to Settings › Appearance. */
@@ -780,7 +801,8 @@ function addRecent(file) {
     const list = recentDocuments().filter((r) => pathKey(r.path) !== pathKey(file));
     list.unshift({ path: file, name: path.basename(file), time: Date.now() });
     settings.set({ recentDocuments: list.slice(0, RECENT_MAX) });
-    try { app.addRecentDocument(file); } catch (_) { /* the jump list shows it once the file type is registered */ }
+    // a portable copy leaves no jump list entry on the PC it runs on (docs/PLAN_0_1_42.md Q22)
+    if (!PORTABLE) { try { app.addRecentDocument(file); } catch (_) { /* the jump list shows it once the file type is registered */ } }
     buildMenu();
 }
 
@@ -1160,7 +1182,7 @@ function installIpc() {
         settings.set({ assistant: a });
         return a.noticed;
     });
-    ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: msix.forExplorer(app.getPath("userData")), pluginDir: msix.forExplorer(plugins.userDir()), store: msix.isStore() }));
+    ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: msix.forExplorer(app.getPath("userData")), pluginDir: msix.forExplorer(plugins.userDir()), store: msix.isStore(), portable: PORTABLE, dataDir: PORTABLE ? DATA_HOME.dir : null }));
     ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
     // memory (docs/PHASE6_PLAN.md step 1a): the bytes that matter live in the GPU process, and
     // only the main process can see them. Sizes are KB, as Electron reports them.
