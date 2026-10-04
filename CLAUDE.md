@@ -85,8 +85,8 @@ code.
 16.7 MP on the user's RTX 5090, +4.6 GB; the pass layer's match source is *underneath*), **U1** (1b2cbda), **U2** (d3e951a, f8f8356; live look:
 RTX VSR whole picture 2x in 1.2 s, ESRGAN 4x to 7680 x 4320 in 6.5 s), **U3** (eb23385, a310a38; one paid run on Comfy
 Cloud: 21 s, works). **R-U** (6274013; the live look found the DLSS
-runtime returning broken colours from ~30.4 MP output: capped at 27.9 MP, b4f0410 / 16fb6e3, verified live). **Next:
-F1**, then F2a, F2b, P1, P2, P3, REL. Tell the user: their own DLSS5 Fit Input Size node allows 33 MP (can give broken
+runtime returning broken colours from ~30.4 MP output: capped at 27.9 MP, b4f0410 / 16fb6e3, verified live), **F1** (7412d5b).
+**Next: F2a**, then F2b, P1, P2, P3, REL. Tell the user: their own DLSS5 Fit Input Size node allows 33 MP (can give broken
 answers) and fits before padding (4455 x 2506 at 1.724x is refused by the pack); not changed in their folder. Read each row's text in the plan first. **F2 is picked**: the 12 marked ✓ in
 `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
 
