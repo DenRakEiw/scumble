@@ -105,7 +105,7 @@ blend mode, put filter layers and text on top. Nothing is baked in until you fla
 
 A chat column next to the canvas. It runs on your own API key, on Anthropic, OpenAI, Google
 or any OpenAI-compatible endpoint (OpenRouter, DeepSeek, Moonshot / Kimi, Z.ai / GLM,
-ToAPIs, WaveSpeed, Oxen.ai, or a local server), and drives the editor through the same 60+ commands
+ToAPIs, WaveSpeed, Oxen.ai, or a local server), and drives the editor through the same 90+ commands
 an external MCP client gets. Every call is a card you can open; everything that costs money,
 queues on your ComfyUI, clears the undo stack or touches a layer that is not its own asks
 first.
@@ -131,7 +131,7 @@ first.
   exports without freezing the window, and PNGs beyond the canvas limit (up to 65,535 px a
   side, a gigapixel) open and save in strips.
 - JavaScript plugins (filters with CPU and WebGL2 paths, panels, menu actions, tools,
-  commands) and a command core with 60+ documented commands ([docs/COMMANDS.md](docs/COMMANDS.md)).
+  commands) and a command core with 96 documented commands (79 core, 17 from the built-in plugins) ([docs/COMMANDS.md](docs/COMMANDS.md)).
 - MCP server: Claude Code, Claude Desktop or any MCP client can drive the editor (Help >
   Copy MCP registration puts the line for your client on the clipboard); `--headless` and
   `--cmd` for scripts ([docs/MCP.md](docs/MCP.md)).

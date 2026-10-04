@@ -1,0 +1,19 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.DenRakEiw/scumble",
+  "title": "Scumble",
+  "description": "Agents drive a layered AI inpainting editor: select by text, inpaint, mask, layers, PSD/ORA export.",
+  "version": "0.1.41",
+  "websiteUrl": "https://github.com/DenRakEiw/scumble/blob/main/docs/MCP.md",
+  "repository": {
+    "url": "https://github.com/DenRakEiw/scumble",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/DenRakEiw/scumble/main/build/icon.png",
+      "mimeType": "image/png",
+      "sizes": ["1024x1024"]
+    }
+  ]
+}
