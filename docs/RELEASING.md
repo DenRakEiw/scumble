@@ -13,6 +13,13 @@ blog post (the last section here; `time` is the release's `published_at` in Germ
 Before the tag: the exe gates `--offline` on both backends against `dist/win-unpacked/Scumble.exe`, each on its own
 profile (`bash tools/run_gates.sh <label> --offline --exe dist/win-unpacked/Scumble.exe --tiles on|off <gates>`).
 
+**The official MCP Registry** (listed since 2026-10-04, `docs/PLAN_MCP_LISTINGS.md`): after the release is published,
+`server.json`'s `version` set to the new version (and its description if the tools changed; at most 100 characters),
+committed, then `mcp-publisher validate` and `mcp-publisher publish` from the repo root (a published version is
+immutable; the login is the user's GitHub device code, `mcp-publisher login github`, the CLI from
+modelcontextprotocol/registry's releases, checksum against its `checksums.txt`). The tool count in `docs/MCP.md` and
+the README follows `list_commands`.
+
 ## The release channel, signing and the Store
 
 **A Store update goes with every release, clicked through in the user's Chrome** (the user, 2026-10-04): the Store

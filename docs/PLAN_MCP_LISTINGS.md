@@ -1,11 +1,24 @@
 # Listing Scumble's MCP server in registries and communities
 
-**Status (2026-10-04 evening): researched, nothing submitted, posted or changed.** The user, mid-session: "Trage es in
-alle MCP registrys ein in die du es eintragen kannst" (with a pasted list of channels), then "schreibe auch einen
-reddit post für r/modelcontextprotocol". Research by one read-only workflow (four agents, every channel's own pages
-read 2026-10-04; sources in the workflow journal of that session). **Every submission, post and repository setting
-waits for the user's yes, one at a time**; logins and accounts are the user's (Claude never signs in with a password
-or creates an account); a form that sends an email address uses the address the user names for it.
+**Status (2026-10-04 evening): submitted where it can go today.** The user, mid-session: "Trage es in alle MCP
+registrys ein in die du es eintragen kannst" (with a pasted list of channels), then "schreibe auch einen reddit post
+für r/modelcontextprotocol"; asked, the user: "ja, reiche ein", every step, the email `schoenebergde@gmail.com`,
+"kostenlos only", the registry CLI yes, "ich poste selber" (Reddit). Done the same evening:
+
+| Channel | State |
+| --- | --- |
+| GitHub | `docs/MCP.md` (96 tools, the Desktop JSON's escaped backslashes), the README's counts and `server.json` pushed; topics `mcp-server`, `model-context-protocol`, `image-editing`, `ai-image-editing` added (19 of 20) |
+| Official MCP Registry | **live**: `io.github.DenRakEiw/scumble` 0.1.41, metadata only (`server.json` in the repo root), published 2026-10-04 17:36 UTC with `mcp-publisher` v1.8.1 after the user's GitHub device login; PulseMCP and mcp.directory read it |
+| mcpservers.org | submitted (free, review within 2 weeks, mail on approval), category Design, the registry name given |
+| MCPMarket | submitted (free queue, submission 1162801, about 4-6 weeks) |
+| mcp.directory | submitted ("Server submitted for review!", within 24 h) |
+| mcp.so | the form is paid only now ($39): submitted free as an issue, chatmcp/mcpso#4711 (the repo was mcp-directory) |
+| TensorBlock | issue TensorBlock/awesome-mcp-servers#3083 (the template's label is dropped for an issue made through the API; maintainers triage) |
+| Reddit | the user posts the draft of §3 |
+| Glama, punkpeye's list, Smithery, GitHub's MCP registry | not submitted: blocked without a Docker check or an `.mcpb` (§2) |
+
+Every release: a new `server.json` version published (`docs/RELEASING.md`). Below, the research as it was before the
+submissions.
 
 ## 1. What Scumble's MCP server is (facts for every listing)
 

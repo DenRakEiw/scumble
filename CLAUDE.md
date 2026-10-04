@@ -104,12 +104,13 @@ Nothing of R3 committed; this commit is the plan.**
 - **The Realism Pass Upscale scales down instead of refusing** (the user: "ja", the rule of the DLSS5 Fit Input Size
   node built for the user's ComfyUI that day): plan §1; F is the pack's factor (1.724 for Balanced, not 1.7).
 - **MCP registries and a Reddit post** (the user, mid-session: "Trage es in alle MCP registrys ein" with a pasted
-  channel list, then "schreibe auch einen reddit post für r/modelcontextprotocol"): researched, **nothing submitted or posted**:
-  `docs/PLAN_MCP_LISTINGS.md` (every channel's route, login, cost and whether it takes a desktop stdio server; the
-  official registry takes a metadata-only `server.json`, which also feeds PulseMCP; Glama, punkpeye's list and Smithery
-  are blocked without a Docker check or an `.mcpb`; the texts and the Reddit draft). Every submission waits for the
-  user's yes one at a time; logins are the user's; first fix `docs/MCP.md` (73 tools -> 96, the Desktop JSON's single
-  backslashes) and the README's "60+". The pasted tool names do not exist (the real ones are in the plan).
+  channel list, then "schreibe auch einen reddit post für r/modelcontextprotocol"): **submitted the same evening** (the user: "ja, reiche ein",
+  free only, `schoenebergde@gmail.com`, "ich poste selber"): **the official MCP Registry is live**
+  (`io.github.DenRakEiw/scumble` 0.1.41, metadata only, `server.json` in the repo root; every release publishes a new
+  version, `docs/RELEASING.md`), mcpservers.org, MCPMarket (free queue), mcp.directory, mcp.so (as the free issue
+  chatmcp/mcpso#4711), TensorBlock (issue #3083); topics added; `docs/MCP.md` and the README fixed and pushed. Glama,
+  punkpeye's list, Smithery and GitHub's registry need a Docker check or an `.mcpb` (not planned). The user posts on
+  Reddit. Everything in `docs/PLAN_MCP_LISTINGS.md`.
 - **Asked earlier, still waiting for the user's word:** the README for reach (a GIF, install buttons, a comparison
   table, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, how to post on Show HN (the
   comparison table names other products, the user's rule of 2026-09-29).
