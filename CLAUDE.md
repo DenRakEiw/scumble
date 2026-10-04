@@ -264,7 +264,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
 - 22: a filter-suite update (an update of its own; `docs/PLAN_NIK9.md`, 34-46 days plus two folded packages), suggested
-  after B3.
+  after B3. **The build plan (Umbauplan) is `docs/PLAN_NIK9_BUILD.md`** (the user, 2026-10-04: "nur den plan ... als
+  eine art umbau plan .md", "detaillierter ... was später den umbau vereinfacht"; one workflow, 12 agents, anchors
+  read at b6c5238): foundations F1-F12 first, then 57 core sessions (61 / 66 with the optional ones), 48.5-55 days
+  inferred; release 4 (blend modes) and release 3 do not depend on release 1; the user's open questions in its §6.
+  Nothing built.
 - 25: the app's own dialogs instead of the native boxes: built 2026-10-01 (`renderer/dialogs.js`, main's `askWindow`
   with the native box as the fallback), released in 0.1.36.
 - FLUX 3 Image (not numbered; BFL's launch 2026-10-01): released in 0.1.36 the same night.

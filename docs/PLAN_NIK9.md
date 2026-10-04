@@ -5,6 +5,8 @@ A multi-agent brainstorm (four research reports, three designs, two judges, a cr
 code references were read on 2026-09-25 and will drift. Every time and every effort figure here is **inferred, not
 measured**. What is measured is marked so.
 
+Build plan: `docs/PLAN_NIK9_BUILD.md` (2026-10-04).
+
 ## What the user asked and answered
 
 The trigger: DxO Nik Collection 9's "Tiefenmasken" (https://www.dxo.com/de/nik-collection/whats-new/#depth-mask):
