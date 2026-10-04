@@ -66,7 +66,18 @@ DLSS 5 add-on, a worker exe that must be named `nvngx.dll`, flagged by Defender)
 `motion = none` for single pictures; Windows, RTX 30 / 40 / 50; on a 5090 about 4 s worker start, then ~10 frames/s.
 Its own README: "Install only components you are authorised to use".
 
-Status: **not installed on the user's ComfyUI** (only `Nvidia_RTX_Nodes_ComfyUI` there, 2026-10-04). Claude does not
+**Decided (the user, 2026-10-04):** the feature is the **Realism Pass**, labelled **"Realism Pass (Windows only, RTX
+only)"** in the recipe and the UI; it is the fix for the waxy "plastic skin" of generated pictures (the user's own
+tests with the pack); **no Comfy Cloud alternative** ("kein anderes comfy cloud rezept"); it is **the next feature**
+(0.1.42, `docs/PLAN_0_1_42.md`). Not on Linux or a server: the pack's worker is Windows-only (D3D12, ReShade, RenoDX),
+and NVIDIA's public DLSS SDK (310.9.1, 2026-09-08) has Linux libraries for Super Resolution, Ray Reconstruction and
+Frame Generation only, no Neural Rendering (checked 2026-10-04); a Linux port would wait for NVIDIA (or a question to
+NVIDIA, whose people sit in the Comfy challenge's jury). The pack's `install_runtime.py` default URL is broken (tag
+`3.0`, the release is `v3.0`): `--url .../releases/download/v3.0/DLSS.5.Visual.Enhancer.v3.0.zip`; the runtime is
+searched on every run, no ComfyUI restart needed.
+
+Status: **installed on the user's ComfyUI by the user** (2026-10-04, the runtime through the `--url` workaround); the
+user's own runs worked ("der ideale fix für das plastic skin problem"). Claude does not
 download or run the runtime (an unofficial binary source); the user installs the pack and runs `install_runtime.py`
 themselves. Proposed (not decided): a "post-pass" switch that sends each result through a picture-in / picture-out
 workflow of the user's ComfyUI (DLSS 5 at 1x, style and intensity in a small menu), plus "DLSS 5 on the active layer"

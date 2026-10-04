@@ -258,7 +258,13 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   local upscale recipe on it, then the whole picture for local upscale recipes: `docs/PLAN_RTX_VSR.md`. 2026-10-04: the
   user wants RTX VSR as a local **and** a Comfy Cloud upscaler (Comfy Cloud has the node; its API form is in the plan),
   and DLSS 5 Neural Rendering on pictures (the community pack `ComfyUI-DLSS5-Enhancer`, not installed yet: the user
-  installs it; the design and the jury question in the plan's last section).
+  installs it; the design and the jury question in the plan's last section). **Decided the same day: RTX VSR (local
+  and Comfy Cloud) goes into 0.1.42, and so does item 37.**
+- 37: the **Realism Pass** (the user, 2026-10-04: "der ideale fix für das plastic skin problem von flux"; the name is
+  the user's): DLSS 5 Neural Rendering through the community pack ComfyUI-DLSS5-Enhancer on the user's own ComfyUI,
+  labelled **"Realism Pass (Windows only, RTX only)"**, no Comfy Cloud alternative, local only (the worker is Windows
+  only; NVIDIA's SDK has no Neural Rendering, Linux or otherwise). **The next feature, release 0.1.42** with RTX VSR
+  and the portable zip (item 36): `docs/PLAN_0_1_42.md`; research in `docs/PLAN_RTX_VSR.md`'s last section.
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
