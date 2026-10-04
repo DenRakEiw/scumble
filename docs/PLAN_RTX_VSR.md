@@ -2,6 +2,14 @@
 
 **Status (2026-10-03):** researched once, on the list of later updates (the user: "erst das dlss auf die liste
 späterer updates"); nothing built.
+**2026-10-04 (the user):** RTX VSR as an upscaler on both sides: "den können wir als lokalen upscaler und cloud.comfy
+upscaler nutzen". **Comfy Cloud has the node** (`RTXVideoSuperResolution`, pack `comfyui_nvidia_rtx_nodes`, read
+through Comfy Cloud's MCP `get_node` 2026-10-04), so a Comfy Cloud upscale recipe (LoadImage -> RTX VSR -> SaveImage
+on the Comfy key) joins the local one. The API form of the dynamic combo is now known: `resize_type` ("scale by
+multiplier" / "target dimensions") with dotted sub-fields `resize_type.scale` (1-4, default 2) or `resize_type.width`
+/ `resize_type.height` (64-8192), and `quality` LOW / MEDIUM / HIGH / ULTRA (default ULTRA); flat sub-fields fail with
+required_input_missing. The cloud side needs the detached-graph run (`comfycloud.js` buildDetached) to take an upscale
+(today it runs edit and text recipes; upscale goes through the partner-node SHAPES).
 
 The user's ask: "nvidia dlss upscaling bzw. dlls plugin ... gibts auch ne dlss api? für i2i?"
 
@@ -44,3 +52,25 @@ Other users' ComfyUI sits elsewhere, or on another machine, and may lack the pac
 `RTXVideoSuperResolution` in `needs`, so the existing check against `/object_info` (and its offer to install through
 the Manager) says so; nothing reads a ComfyUI folder. Without an RTX card the node cannot run; the recipe's note says
 so. A test run on the user's ComfyUI only on the user's word (a production machine).
+
+## DLSS 5 Neural Rendering on pictures (the user, 2026-10-04: "es geht nicht um super resolution ... sondern um DLSS5")
+
+Not super resolution: the user wants DLSS 5's neural rendering look (skin, hair, fabric, light) on a picture, ideally an
+on / off switch in the Generate pane, and integrated because NVIDIA people sit in the Comfy Dev Platform Challenge's
+jury. The way found by the user: the community pack `Blueforcer/ComfyUI-DLSS5-Enhancer` (MIT code, created 2026-09-02,
+270 stars): nodes *DLSS5 Settings* and *DLSS5 Enhance Images* (category image/upscaling; `upscaling_mode` 1x (DLAA /
+native) up to 3x, `nr_style` Default / Natural / Cinematic, `nr_intensity`, local structure / tone strengths, an
+automatic skin mask and its strength, `dlss_model_preset`). It drives NGX feature 18 through a **community runtime**
+(`Merserk/dlss5-visual-enhancer` release 3.0, about 467 MB: NVIDIA's proprietary DLSS libraries, ReShade, the RenoDX
+DLSS 5 add-on, a worker exe that must be named `nvngx.dll`, flagged by Defender); motion vectors from optical flow,
+`motion = none` for single pictures; Windows, RTX 30 / 40 / 50; on a 5090 about 4 s worker start, then ~10 frames/s.
+Its own README: "Install only components you are authorised to use".
+
+Status: **not installed on the user's ComfyUI** (only `Nvidia_RTX_Nodes_ComfyUI` there, 2026-10-04). Claude does not
+download or run the runtime (an unofficial binary source); the user installs the pack and runs `install_runtime.py`
+themselves. Proposed (not decided): a "post-pass" switch that sends each result through a picture-in / picture-out
+workflow of the user's ComfyUI (DLSS 5 at 1x, style and intensity in a small menu), plus "DLSS 5 on the active layer"
+as a new layer; hidden when the connected ComfyUI lacks the nodes. Raised with the user: in front of NVIDIA judges an
+unofficial runtime around NVIDIA's libraries may read as a licence problem; the official RTX nodes are the clean
+showcase; the user may ask Comfy whether a DLSS 5 integration through the pack is welcome. First step after the
+user's install: one test picture without, Natural and Cinematic, on the user's ComfyUI when it is free.

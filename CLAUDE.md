@@ -255,7 +255,10 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 14: upscaling beyond the API upscalers (ComfyUI, ONNX, a desktop upscaler by CLI / MCP), parked, only listed.
   Added 2026-10-03 for a later update (the user asked for DLSS): DLSS itself needs a game renderer's motion vectors
   and depth and has no picture API; NVIDIA's RTX Video Super Resolution node is installed on the user's ComfyUI, so a
-  local upscale recipe on it, then the whole picture for local upscale recipes: `docs/PLAN_RTX_VSR.md`.
+  local upscale recipe on it, then the whole picture for local upscale recipes: `docs/PLAN_RTX_VSR.md`. 2026-10-04: the
+  user wants RTX VSR as a local **and** a Comfy Cloud upscaler (Comfy Cloud has the node; its API form is in the plan),
+  and DLSS 5 Neural Rendering on pictures (the community pack `ComfyUI-DLSS5-Enhancer`, not installed yet: the user
+  installs it; the design and the jury question in the plan's last section).
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
