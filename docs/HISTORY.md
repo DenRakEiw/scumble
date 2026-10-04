@@ -33,6 +33,9 @@ The block of 2026-10-04 (R1 of 0.1.42) was moved here the same day, when R2a was
 
 The block of 2026-10-04 (R2a of 0.1.42) was moved here the same day, when R2b was built.
 
+The block of 2026-10-04 (R2b of 0.1.42) was moved here the same evening, when R3 was redesigned (the pass as a
+whole-picture refiner).
+
 
 The block of 2026-09-29 (morning, item 26 S1 built) was moved here at noon, when the eraser hotfix 0.1.33 was prepared.
 
@@ -65,6 +68,35 @@ The 0.1.37 block of 2026-10-02 (night) was moved here the same night, when A1, A
 The block of 2026-10-03 (midday: B5, B6, the 0.1.39 release) was moved here the same afternoon, when item 35 was planned.
 
 The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved here the same afternoon, when V1 of item 35 was built.
+
+## 2026-10-04 (R2b of 0.1.42 built: the pass after API and Comfy Cloud runs; moved here the same evening when R3 was redesigned)
+
+**This session (2026-10-04, R2b of 0.1.42): the pass after API and Comfy Cloud runs, unreleased.** Nothing new on
+screen until R3 (the switch): with `editor.genSettings.realism` on (only a test sets it today), an API or Comfy Cloud
+answer of Generate and Generate new goes through the pass on the user's ComfyUI before it is stitched or becomes the base.
+- **R2b as built** (docs/PLAN_0_1_42.md R2b "As built"): `host.passAnswer` inside the try of `runProvider` and
+  `runGenerate`, right after `providerEdit` (the run stays busy, the title row's Cancel reaches the pass): the status
+  "<label> answered after N s. {LABEL} on your ComfyUI ...", the timer's label and seconds the pass's, then the run's
+  again; a pass that ran adds "{LABEL} ran on your ComfyUI in N s.", a failure "... The plain result was kept." (the
+  paid answer always lands). `runUpscale` unchanged (Q3); nothing under `electron/main/providers` changed.
+- **The review** (one workflow, 4 angles, each finding verified: 5 real, two medium, 1 uncertain) changed the code: the
+  generate command now bounds the pass (`ed.runDeadline` from its timeout, `opts.deadline` for generate_new; the
+  runner's new `deadline` counts the queue's wait too, at least 30 s after the answer), so an agent's call answers before
+  the bridge's 600 s; it refuses a second run while one is going on the document (a retry no longer pays twice); the
+  pass's upload ends at a Cancel and at the timeout; the generate command no longer reads a kept answer's "failed"
+  sentence as a failed run; the gate steps were sharpened (the alpha, what the pass was sent, a failing test answer).
+  **A reading taken without the user:** the in-app LaMa fill (provider `inapp`: offline, no server) never goes through
+  the pass; the plan names API and Comfy Cloud runs only, R3's tooltip "every result". Say so if LaMa should be passed.
+- **Tests:** six `generate` steps (`a_provider_answer_goes_through_the_realism_pass`,
+  `a_failed_pass_keeps_the_paid_answer`, `an_unsupported_server_skips_the_pass`,
+  `cancel_during_the_pass_keeps_the_plain_answer`, `the_pass_ends_at_the_commands_timeout`,
+  `generate_new_goes_through_the_pass`), the loopback provider and stubs, nothing queued anywhere. Gates `generate
+  transparent upscale lint types` PASS offline on tiles (`r2b-fix-tiles`, types `r2b-fix-types`), `generate
+  transparent` on the canvas backend (`r2b-fix-canvas`). `build_node.py --check`: only the known drift (34 files).
+- **Asked mid-session, answered in chat, nothing done:** the README for reach (a GIF on top, install buttons, a
+  comparison table, topics, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, and how to post
+  on Show HN. Each waits for the user's word; the comparison table names other products (the user's rule of
+  2026-09-29), topics and Discussions are repository settings.
 
 ## 2026-10-04 (R2a of 0.1.42 built: the picture runner; moved here the same day when R2b was built)
 

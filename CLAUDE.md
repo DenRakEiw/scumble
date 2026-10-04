@@ -76,44 +76,43 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-04: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1, R2a and R2b built, next R3)
+## Where things stand (2026-10-04 evening: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1, R2a and R2b built, R3-R5 redesigned, next R3a)
 
-**Next session: R3 of `docs/PLAN_0_1_42.md`** (the switch in the Generate pane, the pass inside local runs, the
-switch saved with the document; Full tier on the document, autosave and settings). Read the plan's §1 ("The user's
-answers after the plan", with "How the shipped presets work"), R3's preconditions and the "As built" notes of R1,
-R2a and R2b first.
-**Q3 is answered** (the user, 2026-10-04: as recommended, no upscales, transparent answers passed with the alpha put
-back). **F2 is picked**: the 12 marked ✓ in `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
+**Next session: R3a of `docs/PLAN_0_1_42.md`** (Generate is never passed: R2b's routes out; the whole visible picture
+through the pass at 1x as a new layer, `host.realismWhole`). Read the plan's §1 "The Realism Pass is a refiner" (the
+user's answers of 2026-10-04 evening), §3.2 and R3a first; the anchors in R3a were checked against the code the same
+evening. **F2 is picked**: the 12 marked ✓ in `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-04, R2b of 0.1.42): the pass after API and Comfy Cloud runs, unreleased.** Nothing new on
-screen until R3 (the switch): with `editor.genSettings.realism` on (only a test sets it today), an API or Comfy Cloud
-answer of Generate and Generate new goes through the pass on the user's ComfyUI before it is stitched or becomes the base.
-- **R2b as built** (docs/PLAN_0_1_42.md R2b "As built"): `host.passAnswer` inside the try of `runProvider` and
-  `runGenerate`, right after `providerEdit` (the run stays busy, the title row's Cancel reaches the pass): the status
-  "<label> answered after N s. {LABEL} on your ComfyUI ...", the timer's label and seconds the pass's, then the run's
-  again; a pass that ran adds "{LABEL} ran on your ComfyUI in N s.", a failure "... The plain result was kept." (the
-  paid answer always lands). `runUpscale` unchanged (Q3); nothing under `electron/main/providers` changed.
-- **The review** (one workflow, 4 angles, each finding verified: 5 real, two medium, 1 uncertain) changed the code: the
-  generate command now bounds the pass (`ed.runDeadline` from its timeout, `opts.deadline` for generate_new; the
-  runner's new `deadline` counts the queue's wait too, at least 30 s after the answer), so an agent's call answers before
-  the bridge's 600 s; it refuses a second run while one is going on the document (a retry no longer pays twice); the
-  pass's upload ends at a Cancel and at the timeout; the generate command no longer reads a kept answer's "failed"
-  sentence as a failed run; the gate steps were sharpened (the alpha, what the pass was sent, a failing test answer).
-  **A reading taken without the user:** the in-app LaMa fill (provider `inapp`: offline, no server) never goes through
-  the pass; the plan names API and Comfy Cloud runs only, R3's tooltip "every result". Say so if LaMa should be passed.
-- **Tests:** six `generate` steps (`a_provider_answer_goes_through_the_realism_pass`,
-  `a_failed_pass_keeps_the_paid_answer`, `an_unsupported_server_skips_the_pass`,
-  `cancel_during_the_pass_keeps_the_plain_answer`, `the_pass_ends_at_the_commands_timeout`,
-  `generate_new_goes_through_the_pass`), the loopback provider and stubs, nothing queued anywhere. Gates `generate
-  transparent upscale lint types` PASS offline on tiles (`r2b-fix-tiles`, types `r2b-fix-types`), `generate
-  transparent` on the canvas backend (`r2b-fix-canvas`). `build_node.py --check`: only the known drift (34 files).
-- **Asked mid-session, answered in chat, nothing done:** the README for reach (a GIF on top, install buttons, a
-  comparison table, topics, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, and how to post
-  on Show HN. Each waits for the user's word; the comparison table names other products (the user's rule of
-  2026-09-29), topics and Discussions are repository settings.
+**This session (2026-10-04 evening): R3 built, shown to the user, dropped; the Realism Pass redesigned as a refiner.
+Nothing of R3 committed; this commit is the plan.**
+- **R3 as first planned** (a switch in the Generate pane that passed every Generate and Generate new result, in a local
+  run's own graph or after an API answer, saved with the document) was built, reviewed (11 findings, fixed) and tested
+  (gates PASS, a mutation round 5 of 5). Told what it does, the user: "nein... es hat ja auch einen color shift... der
+  reality pass soll immer über das gesamte bild laufen, nicht über inpaintings... wie ein upscaler... aber als 1x".
+  The code was reverted; its diff is at `dist/r3_switch_dropped_2026-10-04.patch` (git-ignored; the Style / Strength /
+  Preset controls and the test patterns are reusable, the switch and the in-graph injection are not wanted).
+- **The user's answers** (plan §1 "The Realism Pass is a refiner"): the whole visible picture at 1x as a new layer on
+  top; R2b's pass comes out of Generate (R3a); **no colour match** on the layer, **a second run stacks** and **the R1
+  recipe stays** beside it (all three against the recommendation); the pass goes under the top run of filter layers.
+  The plan: R3a, R3b (the Upscale dialog's entry, the Image menu, `realism_pass`), R4 (agents), R5 (manual, live look)
+  rewritten, R-U added (1.5x-3x on the same entry, after U2), Q25-Q29; checked against the code by two agents (29
+  points, fixed: the deadline's unit, the landing index, reference layers above the filters, `intensity` not
+  `strength`, the dialog's `upScopeDoc`, the menu handler, leftovers of the switch).
+- **The Realism Pass Upscale scales down instead of refusing** (the user: "ja", the rule of the DLSS5 Fit Input Size
+  node built for the user's ComfyUI that day): plan §1; F is the pack's factor (1.724 for Balanced, not 1.7).
+- **MCP registries and a Reddit post** (the user, mid-session: "Trage es in alle MCP registrys ein" with a pasted
+  channel list, then "schreibe auch einen reddit post für r/modelcontextprotocol"): researched, **nothing submitted or posted**:
+  `docs/PLAN_MCP_LISTINGS.md` (every channel's route, login, cost and whether it takes a desktop stdio server; the
+  official registry takes a metadata-only `server.json`, which also feeds PulseMCP; Glama, punkpeye's list and Smithery
+  are blocked without a Docker check or an `.mcpb`; the texts and the Reddit draft). Every submission waits for the
+  user's yes one at a time; logins are the user's; first fix `docs/MCP.md` (73 tools -> 96, the Desktop JSON's single
+  backslashes) and the README's "60+". The pasted tool names do not exist (the real ones are in the plan).
+- **Asked earlier, still waiting for the user's word:** the README for reach (a GIF, install buttons, a comparison
+  table, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, how to post on Show HN (the
+  comparison table names other products, the user's rule of 2026-09-29).
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
@@ -178,7 +177,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   labelled **"Realism Pass (Windows only, RTX only)"**, no Comfy Cloud alternative, local only (the worker is Windows
   only; NVIDIA's SDK has no Neural Rendering, Linux or otherwise). **The next feature, release 0.1.42** with RTX VSR
   and the portable zip (item 36): `docs/PLAN_0_1_42.md`; research in `docs/PLAN_RTX_VSR.md`'s last section. **R1 (the
-  recipe, the server check, the hints, shipped presets L and M) built 2026-10-04**, not run live; next R2a.
+  recipe, the server check, the hints, shipped presets L and M) built 2026-10-04**, not run live; R2a and R2b the
+  same day; **redesigned that evening as a refiner** (the whole picture at 1x as a new layer, never a Generate result:
+  plan §1 "The Realism Pass is a refiner"), next R3a.
 - 38: new commands for MCP agents (the user, 2026-10-04: "schau auch noch ob noch mehr commands in den mcp aufgenommen
   werden können"): 28 verified candidates in `docs/PLAN_MCP_COMMANDS.md`; **the user picked 12** (marked ✓) for 0.1.42,
   sessions F2a / F2b after the six fixes of F1 (all six picked from `docs/BUGS.md` the same day). The other 16 wait
