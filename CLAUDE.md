@@ -76,7 +76,13 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-03 night: 0.1.41 is Latest, item 35 released; next: item 36, the portable zip)
+## Where things stand (2026-10-04: 0.1.41 is Latest and submitted to the Store; next: 0.1.42, `docs/PLAN_0_1_42.md`, session R1)
+
+**Next session: R1 of `docs/PLAN_0_1_42.md`** (the Realism Pass recipe from the user's template
+`tools/refs/realism_pass/user_template.json`, presets M and L shipped in the recipe file, L default; read the plan's
+"The user's answers after the plan" first). Ask Q7 / Q8 and the pick of low-hanging fruits before building if still
+unanswered. The 2026-10-03 / 10-04 session also wrote `docs/PLAN_NIK9_BUILD.md` (item 22's build plan) and moved the
+Store to "every release through Claude in Chrome" (`docs/RELEASING.md`).
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.

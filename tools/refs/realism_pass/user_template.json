@@ -1,0 +1,312 @@
+{
+ "id": "e018f076-50a4-4bec-9994-4a745ea0f221",
+ "revision": 0,
+ "last_node_id": 6,
+ "last_link_id": 7,
+ "nodes": [
+  {
+   "id": 3,
+   "type": "DLSS5Settings",
+   "pos": [
+    -144.68399353350668,
+    -400.13284612789664
+   ],
+   "size": [
+    304.56640625,
+    346
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "settings",
+     "type": "DLSS5_SETTINGS",
+     "links": [
+      5
+     ]
+    }
+   ],
+   "properties": {
+    "enableTabs": false,
+    "tabWidth": 65,
+    "tabXOffset": 10,
+    "hasSecondTab": false,
+    "secondTabText": "Send Back",
+    "secondTabOffset": 80,
+    "secondTabWidth": 65,
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "input_ue_unconnectable": {},
+     "version": "7.8"
+    },
+    "Node name for S&R": "DLSS5Settings"
+   },
+   "widgets_values": [
+    "1x (DLAA / native)",
+    "Default",
+    "Default",
+    1,
+    1,
+    1.5,
+    2,
+    true,
+    "L",
+    "auto",
+    0.24,
+    0,
+    ""
+   ],
+   "widgets_values_named": {
+    "upscaling_mode": "1x (DLAA / native)",
+    "nr_preset": "Default",
+    "nr_style": "Default",
+    "nr_intensity": 1,
+    "local_tone_strength": 1,
+    "local_structure_strength": 1.5,
+    "skin_structure_strength": 2,
+    "automatic_mask": true,
+    "dlss_model_preset": "L",
+    "motion": "auto",
+    "scene_change_threshold": 0.24,
+    "warmup_frames": 0,
+    "runtime_dir": ""
+   }
+  },
+  {
+   "id": 4,
+   "type": "DLSS5EnhanceImages",
+   "pos": [
+    258.6944293291949,
+    -518.3885221848992
+   ],
+   "size": [
+    297.119140625,
+    78
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 6
+    },
+    {
+     "name": "settings",
+     "type": "DLSS5_SETTINGS",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "links": [
+      7
+     ]
+    }
+   ],
+   "properties": {
+    "enableTabs": false,
+    "tabWidth": 65,
+    "tabXOffset": 10,
+    "hasSecondTab": false,
+    "secondTabText": "Send Back",
+    "secondTabOffset": 80,
+    "secondTabWidth": 65,
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "input_ue_unconnectable": {},
+     "version": "7.8"
+    },
+    "Node name for S&R": "DLSS5EnhanceImages"
+   },
+   "widgets_values": [
+    true
+   ],
+   "widgets_values_named": {
+    "verify_neural_rendering": true
+   }
+  },
+  {
+   "id": 6,
+   "type": "InpaintCanvas",
+   "pos": [
+    -629.3416060778269,
+    -590.7242819618101
+   ],
+   "size": [
+    340,
+    614
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "result",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "result_local",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "name": "crop_image",
+     "type": "IMAGE",
+     "links": [
+      6
+     ]
+    },
+    {
+     "name": "crop_mask",
+     "type": "MASK",
+     "links": null
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "mask",
+     "type": "MASK",
+     "links": null
+    },
+    {
+     "name": "stitch_info",
+     "type": "STRING",
+     "links": null
+    },
+    {
+     "name": "crop_width",
+     "type": "INT",
+     "links": null
+    },
+    {
+     "name": "crop_height",
+     "type": "INT",
+     "links": null
+    },
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "links": null
+    },
+    {
+     "name": "control_image",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "denoise",
+     "type": "FLOAT",
+     "links": null
+    },
+    {
+     "name": "seed",
+     "type": "INT",
+     "links": null
+    },
+    {
+     "name": "mode",
+     "type": "STRING",
+     "links": null
+    },
+    {
+     "name": "negative",
+     "type": "STRING",
+     "links": null
+    },
+    {
+     "label": "setting 1 (free)",
+     "name": "setting_1",
+     "type": "*",
+     "links": null
+    }
+   ],
+   "properties": {
+    "enableTabs": false,
+    "tabWidth": 65,
+    "tabXOffset": 10,
+    "hasSecondTab": false,
+    "secondTabText": "Send Back",
+    "secondTabOffset": 80,
+    "secondTabWidth": 65,
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "input_ue_unconnectable": {}
+    },
+    "Node name for S&R": "InpaintCanvas"
+   },
+   "widgets_values": [
+    64,
+    1024,
+    16,
+    64,
+    ""
+   ],
+   "widgets_values_named": {
+    "padding": 64,
+    "target_size": 1024,
+    "feather": 16,
+    "multiple_of": 64,
+    "canvas_state": ""
+   }
+  }
+ ],
+ "links": [
+  [
+   5,
+   3,
+   0,
+   4,
+   1,
+   "DLSS5_SETTINGS"
+  ],
+  [
+   6,
+   6,
+   0,
+   4,
+   0,
+   "IMAGE"
+  ],
+  [
+   7,
+   4,
+   0,
+   6,
+   1,
+   "IMAGE"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.9646149645000015,
+   "offset": [
+    1159.6306888019185,
+    954.4673629161571
+   ]
+  },
+  "ue_links": [],
+  "links_added_by_ue": [],
+  "frontendVersion": "1.53.10",
+  "VHS_latentpreview": false,
+  "VHS_latentpreviewrate": 0,
+  "VHS_MetadataImage": true,
+  "VHS_KeepIntermediate": true
+ },
+ "version": 0.4
+}
