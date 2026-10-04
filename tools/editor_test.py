@@ -11153,7 +11153,7 @@ if (!prev || prev.kind === "provider") throw new Error("the profile's recipe is 
 const LOOP = { id: "loopback_f1", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", name: "Loopback", settings: [] };
 const calls = [];
 let hold = true, release = null, first = null;
-const WORDS = "A run is still going: wait for it, or Cancel.";
+const WORDS = "A run is still going on this document: wait for it, or Cancel.";
 host.queueGenerate = (e) => {
     calls.push(host.recipe && host.recipe.id);
     if (!hold) return Promise.resolve();

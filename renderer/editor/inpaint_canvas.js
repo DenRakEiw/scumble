@@ -18077,7 +18077,7 @@ class InpaintEditor {
         // rolled or the button freed under the first run. A recipe on the user's ComfyUI takes no slot and keeps
         // queueing (ComfyUI queues on purpose), also while a pass or an upscale holds it; the node's host has no slot.
         if (this.providerPending && this.resultInputState().provider) {
-            this.lastRunError = new Error("A run is still going: wait for it, or Cancel.");
+            this.lastRunError = new Error("A run is still going on this document: wait for it, or Cancel.");
             this.setStatus(this.lastRunError.message);
             return { error: this.lastRunError };
         }
