@@ -14,6 +14,8 @@
 // realism.LABEL; fromGraph keeps its presets only for the Settings rows the saved graph has, task "pass" only while
 // the graph holds DLSS5Settings), §7 detach refuses it, §11 normalize's task "pass" and the presets a recipe file
 // ships (shippedPresets; a node id may hold colons, "57:12:unet_name").
+// RTX Video Super Resolution (docs/PLAN_0_1_42.md U1): §5 fromGraph keeps its factor (with its input) and limits, §7 its
+// Comfy Cloud copy runs at the factor its graph holds (fixed, with a note).
 "use strict";
 
 const fs = require("node:fs");
@@ -485,6 +487,55 @@ async function main() {
             const builtinAgain = (await recipes.list(RECIPES)).find((r) => r.id === rp.id);
             check("removing the copy brings the shipped one back", !!builtinAgain && builtinAgain.source === "builtin");
         }
+
+        // RTX Video Super Resolution (docs/PLAN_0_1_42.md U1): in the sweep above; its factor and limits are fields a graph
+        // does not hold, so Save to recipe keeps them from the recipe the window opened (GRAPH_KEEPS)
+        const rv = comfy.find((r) => r.id === "rtx_vsr_local");
+        check("RTX Video Super Resolution is a shipped ComfyUI upscaler, swept above", !!rv && rv.task === "upscale" && rv.mode === "local" && rv.kind === "comfy", short(rv && { id: rv.id, task: rv.task, kind: rv.kind }));
+        if (rv) {
+            const workflow = { nodes: [{ id: 1, type: "InpaintCanvas" }], links: [], extra: {} };
+            const date = "2026-10-04";
+            const p = recipes.toPrompt(rv);
+            check("toPrompt wires Quality to the canvas node's first setting output and leaves the factor's input a value of the graph",
+                eq(p.rtx.inputs.quality, [rv.canvas, 13]) && p.rtx.inputs["resize_type.scale"] === 2 && p.rtx.inputs.resize_type === "scale by multiplier", short(p.rtx.inputs));
+            const over = recipes.fromGraph({ output: p, workflow, objectInfo: {}, base: rv, date });
+            const fresh = recipes.fromGraph({ output: p, workflow, objectInfo: {}, base: rv, name: "My RTX", ids: [rv.id], date });
+            check("Save to recipe keeps its id, its task, its factor with the input and its limits",
+                over.id === rv.id && over.task === "upscale" && eq(over.factor, rv.factor) && eq(over.limits, rv.limits) && over.factor.input === "rtx|resize_type.scale" && eq(over.limits, { min: 64, max: 4096, out: 8192 }),
+                short({ id: over.id, task: over.task, factor: over.factor, limits: over.limits }));
+            check("Save as new recipe keeps the factor and the limits under its own id", fresh.id === "my_rtx" && eq(fresh.factor, rv.factor) && eq(fresh.limits, rv.limits), short({ id: fresh.id, factor: fresh.factor, limits: fresh.limits }));
+            const warned = [];
+            const w0 = console.warn;
+            console.warn = (...a) => { warned.push(a.join(" ")); };
+            try {
+                const back = recipes._normalize(JSON.parse(JSON.stringify(over)));
+                check("the saved copy reads back through normalize with the factor unfixed and the limits as they were",
+                    back.factor.fixed === false && back.factor.input === "rtx|resize_type.scale" && back.factor.default === 2 && eq(back.limits, rv.limits) && !warned.length, short({ factor: back.factor, limits: back.limits, warned }));
+                // a graph saved with the RTX node swapped for a plain scale: the kept factor names a node no longer there,
+                // so it reads back fixed (the stitch fits the answer anyway) and says so
+                const swapped = recipes.toPrompt(rv);
+                delete swapped.rtx;
+                swapped.up = { class_type: "ImageScaleBy", inputs: { image: ["img0", 0], upscale_method: "lanczos", scale_by: 2 } };
+                swapped[rv.canvas].inputs.result_local = ["up", 0];
+                const gone = recipes.fromGraph({ output: swapped, workflow, objectInfo: {}, base: rv, date });
+                const goneBack = recipes._normalize(JSON.parse(JSON.stringify(gone)));
+                check("a graph saved without the factor's node: the factor reads back fixed, with a warning that names its input",
+                    gone.result === "up:0" && goneBack.factor.fixed === true && goneBack.factor.input === undefined && warned.length === 1 && warned[0].includes("rtx|resize_type.scale"),
+                    short({ result: gone.result, factor: goneBack.factor, warned }));
+            } finally { console.warn = w0; }
+            const um = comfy.find((r) => r.id === "upscale_model_local");
+            const umSaved = um && recipes.fromGraph({ output: recipes.toPrompt(um), workflow, objectInfo: {}, base: um, date });
+            check("the upscale model's Save to recipe keeps its fixed factor and adds no limits", !!umSaved && umSaved.factor && umSaved.factor.fixed === true && !Object.prototype.hasOwnProperty.call(umSaved, "limits"), short(umSaved && { factor: umSaved.factor, limits: umSaved.limits }));
+            const klein = comfy.find((r) => r.id === "flux2_klein_local");
+            const kSaved = klein && recipes.fromGraph({ output: recipes.toPrompt(klein), workflow, objectInfo: {}, base: klein, date });
+            check("an edit recipe's Save to recipe gets no factor and no limits", !!kSaved && !Object.prototype.hasOwnProperty.call(kSaved, "factor") && !Object.prototype.hasOwnProperty.call(kSaved, "limits"), short(kSaved && { factor: kSaved.factor, limits: kSaved.limits }));
+            await recipes.save(over);
+            const listed = (await recipes.list(RECIPES)).find((r) => r.id === rv.id);
+            check("the saved copy, read back through list(), keeps the unfixed factor and the limits", !!listed && listed.source === "user" && eq(listed.factor, rv.factor) && eq(listed.limits, rv.limits), short(listed && { source: listed.source, factor: listed.factor, limits: listed.limits }));
+            await recipes.remove(rv.id);
+            const builtin = (await recipes.list(RECIPES)).find((r) => r.id === rv.id);
+            check("removing the copy brings the shipped one back", !!builtin && builtin.source === "builtin");
+        }
     });
 
     // ---- 6. a graph from ComfyUI's page as a recipe (item 35 V3) --------------------------
@@ -525,7 +576,10 @@ async function main() {
     await section("7. detach: a ComfyUI recipe without the Inpaint Canvas node", async () => {
         const comfy = (await recipes.list(RECIPES)).filter((r) => r.kind !== "provider" && r.source === "builtin");
         // refused: the Realism Pass runs on the user's own ComfyUI only (the user: "nein, kein anderes comfy cloud rezept")
-        const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] }, realism_pass: { refused: /Cloud copy/ } };
+        // `notes`: what detach says about the copy, in order (RTX Video Super Resolution's copy has no factor row: its
+        // graph's own 2× runs, docs/PLAN_0_1_42.md U1)
+        const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] },
+            rtx_vsr_local: { pictures: 1, values: [], notes: [/^the Comfy Cloud copy runs at the factor its graph holds \(2×\); change it in its graph$/] }, realism_pass: { refused: /Cloud copy/ } };
         const unlisted = comfy.map((r) => r.id).filter((id) => !want[id]);
         check("every shipped ComfyUI recipe has its row in the table", !unlisted.length, unlisted.join(", "));
         const realism = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "realism.js")).href);
@@ -550,13 +604,27 @@ async function main() {
             const save = Object.values(g).find((n) => n.class_type === "SaveImage");
             const res = r.result.split(":");
             const w = want[r.id] || {};
+            const wantNotes = w.notes || [];
+            const notesOk = notes.length === wantNotes.length && wantNotes.every((re, i) => re.test(notes[i]));
             check(`${r.id}: no Inpaint Canvas node and nothing that points at it, a SaveImage on the result`,
                 !needs.includes("InpaintCanvas") && !Object.values(g).some((n) => n.class_type === "InpaintCanvas" || n.class_type === "ImageFromBatch") && !dangling.length && save && save.inputs.images[0] === res[0] && save.inputs.images[1] === +res[1],
                 short({ dangling, needs }));
-            check(`${r.id}: its pictures as LoadImage nodes (${w.pictures}), the run's values (${(w.values || []).join(", ") || "none"}), no mask`,
-                v.options.pictures === w.pictures && pics.length === w.pictures && eq(Object.keys(v.options.values).sort(), w.values) && v.options.mask === false && v.input === "edit" && !notes.length,
+            check(`${r.id}: its pictures as LoadImage nodes (${w.pictures}), the run's values (${(w.values || []).join(", ") || "none"}), no mask, ${wantNotes.length ? "its note" : "no note"}`,
+                v.options.pictures === w.pictures && pics.length === w.pictures && eq(Object.keys(v.options.values).sort(), w.values) && v.options.mask === false && v.input === "edit" && notesOk,
                 short({ pictures: v.options.pictures, values: v.options.values, notes }));
             const n = recipes._normalize(JSON.parse(JSON.stringify(d)));
+            if (r.task === "upscale") {
+                // the copy has no factor row: the graph runs at what it holds (the RTX node's 2×, an upscale model's own)
+                check(`${r.id}: the Comfy Cloud copy's factor is fixed, as file and as normalized`,
+                    eq(d.factor, { fixed: true }) && n.task === "upscale" && n.providers.comfycloud.factor.fixed === true, short({ file: d.factor, normalized: n.providers.comfycloud.factor }));
+                const rtx = Object.values(g).find((x) => x.class_type === "RTXVideoSuperResolution");
+                if (r.id === "rtx_vsr_local") {
+                    check(`${r.id}: its graph keeps the RTX node with its own 2× and ULTRA, Quality a row of the copy`,
+                        !!rtx && rtx.inputs["resize_type.scale"] === 2 && rtx.inputs.resize_type === "scale by multiplier" && rtx.inputs.quality === "ULTRA" && eq(v.settings.map((s) => s.key), ["rtx|quality"]),
+                        short({ rtx, rows: v.settings.map((s) => s.key) }));
+                    check(`${r.id}: detach leaves the recipe's own factor and limits as they were`, r.factor.fixed === false && r.factor.input === "rtx|resize_type.scale" && eq(r.limits, { min: 64, max: 4096, out: 8192 }), short({ factor: r.factor, limits: r.limits }));
+                }
+            }
             const rowsOk = v.settings.length === r.settings.length && v.settings.every((s, i) => s.key === `${r.settings[i].node}|${r.settings[i].input}` && s.label === r.settings[i].label && s.index === r.settings[i].index);
             const cin = r.prompt[r.canvas].inputs;
             check(`${r.id}: a provider recipe on Comfy Cloud, its Settings rows keyed by node and input, the crop limits from the node`,

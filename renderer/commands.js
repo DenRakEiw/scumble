@@ -452,7 +452,7 @@ const COMMANDS = {
             return { selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null, recipes: host.shell.recipes().map((r) => {
                 const v = host.shell.resolveRecipe(r);
                 const pass = r.task === "pass";
-                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, textRefs: r.task === "upscale" || pass ? undefined : r.kind === "provider" ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots), ready: pass ? support.ok : undefined, reason: pass ? support.reason || null : undefined, note: pass ? support.note || null : undefined, description: r.description || "", source: r.source || "builtin" };
+                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, limits: r.task === "upscale" && r.kind !== "provider" ? r.limits || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, textRefs: r.task === "upscale" || pass ? undefined : r.kind === "provider" ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots), ready: pass ? support.ok : undefined, reason: pass ? support.reason || null : undefined, note: pass ? support.note || null : undefined, description: r.description || "", source: r.source || "builtin" };
             }) };
         },
     },
@@ -780,9 +780,15 @@ const COMMANDS = {
                 // there is only the selection mode, and it is a Generate with the crop at its native size
                 if (scope === "document") throw new Error(`${r.name || r.id} runs on ComfyUI, where the answer is fitted back into the selection's box: it cannot enlarge the whole picture. Select an area, or pick an API upscaler for the whole picture.`);
                 if (!(ed.getBounds && ed.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
-                const g = await COMMANDS.generate.run(ed, { timeout: clampInt(a.timeout, 5, 3600, 1800) });
+                // a factor (RTX Video Super Resolution) checked here, so a bad one is refused before the run starts
+                const factor = host.upscaleFactorFor(r, a.factor);
+                // generate() takes no arguments: the factor rides on the editor for host.queueGenerate, read once there
+                ed._comfyUpscaleFactor = factor == null ? undefined : factor;
+                ed.lastUpscaleFactor = null;
+                let g;
+                try { g = await COMMANDS.generate.run(ed, { timeout: clampInt(a.timeout, 5, 3600, 1800) }); } finally { ed._comfyUpscaleFactor = undefined; }
                 const l = g.layer;
-                return { scope, recipe: r.id, provider: null, factor: null, box: l ? { x: l.x, y: l.y, w: l.w, h: l.h } : null, layer: l, seconds: g.seconds, info: null, status: ed.status };
+                return { scope, recipe: r.id, provider: null, factor: ed.lastUpscaleFactor ?? factor, box: l ? { x: l.x, y: l.y, w: l.w, h: l.h } : null, layer: l, seconds: g.seconds, info: null, status: ed.status };
             }
             const n0 = ed.history.length;
             const limit = clampInt(a.timeout, 5, 3600, 1800) * 1000;

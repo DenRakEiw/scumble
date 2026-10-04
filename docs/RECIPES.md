@@ -91,6 +91,14 @@ recipe's `DLSS5Settings` inputs, and a new layer above the picture). Any other t
   (`nodes.py` `InpaintCanvasStitch`, `_resize_image(src, w, h)`), so it is a sharper detail pass at the document's
   resolution. Checked against the user's `/object_info` on 2026-09-22 (both classes, their inputs and outputs);
   **not run** (the user's ComfyUI was not free).
+- `rtx_vsr_local`, **RTX Video Super Resolution (ComfyUI)** (0.1.42, `docs/PLAN_0_1_42.md` U1): `InpaintCanvas` ->
+  `ImageFromBatch` (the crop only) -> `RTXVideoSuperResolution` (`resize_type` "scale by multiplier", its
+  `resize_type.scale` the factor, `quality` LOW / MEDIUM / HIGH / ULTRA as the *Quality* row, ULTRA by default) ->
+  `result_local`, task `upscale`. NVIDIA's RTX Video Super Resolution from the node pack Nvidia_RTX_Nodes_ComfyUI
+  (Comfy-Org, with its `nvidia-vfx` package), which the user installs on an RTX machine. 1 to 4 times (`factor.input`
+  `rtx|resize_type.scale`), `limits` 64 / 4096 / 8192 (the node's target mode takes 64 to 8192 a side; its output sides
+  are `int(w × scale)` rounded to a multiple of 8, which the stitch fits back anyway). Checked against the user's
+  `/object_info` on 2026-10-04 (inputs, combo, ranges).
 - `realism_pass`, **Realism Pass (Windows only, RTX only)** (0.1.42, `docs/PLAN_0_1_42.md` R1; the name is the
   user's, held by `renderer/editor/realism.js` `LABEL` and pinned by `tools/recipes_test.js`): `InpaintCanvas` ->
   `ImageFromBatch` (the crop only) -> `DLSS5Settings` -> `DLSS5EnhanceImages` -> `result_local`, task `pass`. DLSS 5
@@ -1072,7 +1080,14 @@ The two modes (`host.runUpscale(editor, { scope, factor })` in `renderer/editor/
 
 **On the user's ComfyUI** (`kind: "comfy"` with `"task": "upscale"`, e.g. `upscale_model_local`): `normalize()`
 gives the recipe `factor: { ..., fixed: true }` (the model picks its factor, the dialog shows none) and turns any
-other `task` into `edit`. There is **only the selection mode**: the node's stitch resizes every answer to the
+other `task` into `edit`. A recipe that names the input its factor goes into, `"factor": { "default", "min", "max",
+"input": "<node>|<input>" }` with the node in its graph (`rtx_vsr_local`: `"rtx|resize_type.scale"`, the dotted key of
+the node's dynamic combo, a flat key in the API prompt), keeps an unfixed factor: the dialog lists its whole steps, the
+`upscale` command's `factor` is checked against it, and `queueGenerate` writes it there (the factor rides on the
+editor as `_comfyUpscaleFactor`, read once, since `editor.generate()` takes no arguments). `"limits": { "min", "max",
+"out" }` (the input's short side, its long side, the answer's long side) are checked on the crop the node cuts before
+anything is uploaded (`host.upscaleSizeRefusal`); `*Save to recipe*` keeps `factor` and `limits`, and a *Cloud copy*
+runs at the factor its graph holds (its factor fixed, with a note). There is **only the selection mode**: the node's stitch resizes every answer to the
 crop box and has no way to replace the base (that would need the node to hand back the raw result, a node
 change). `host.queueGenerate` runs it like any ComfyUI recipe with three differences: it refuses without a
 selection, the canvas state it sends is `host.upscaleState(...)` (crop `fill: "none"` and `withOriginal: false`,

@@ -34,6 +34,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   result is in, a second Generate with an API model, an upscale or Generate new on it is refused with a note instead
   of starting beside it (Generate new with a recipe on your own ComfyUI used to clear the document before it was
   refused). Generate with a recipe on your own ComfyUI still queues.
+- **RTX Video Super Resolution on your ComfyUI.** A new upscale recipe on NVIDIA's RTX Video Super Resolution node
+  (the node pack Nvidia_RTX_Nodes_ComfyUI, which you install on your ComfyUI): 1 to 4 times, with a Quality setting.
+  The Upscale dialog shows the box's size and the answer's, and refuses a box whose answer would pass 8192 px.
 - **Recipes can ship presets.** The Preset row in the Settings section shows a recipe's own presets first, then
   yours; the shipped ones cannot be deleted.
 - Generate new no longer offers the local upscale recipe, which makes nothing from a prompt.

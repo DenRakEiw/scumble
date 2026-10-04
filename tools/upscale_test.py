@@ -162,11 +162,16 @@ return { layer: out.layer.id, status: ed.status };
     ("the_shipped_recipes_are_listed_with_their_task_and_factors", """
 const list = await run("list_recipes");
 const ups = list.recipes.filter((r) => r.task === "upscale");
-const want = ["clarity_upscaler", "magnific_creative", "magnific_precision", "recraft_creative", "recraft_crisp", "seedvr2", "topaz_creative", "topaz_generative", "topaz_precision", "upscale_model_local"];
+const want = ["clarity_upscaler", "magnific_creative", "magnific_precision", "recraft_creative", "recraft_crisp", "rtx_vsr_local", "seedvr2", "topaz_creative", "topaz_generative", "topaz_precision", "upscale_model_local"];
 const ids = ups.map((r) => r.id).sort();
 if (JSON.stringify(ids) !== JSON.stringify(want)) throw new Error("upscale recipes: " + ids.join(", "));
 const mc = ups.find((r) => r.id === "magnific_creative");
 if (JSON.stringify(mc.factor.steps) !== "[2,4,8,16]" || mc.provider !== "magnific") throw new Error("Magnific Creative: " + JSON.stringify(mc));
+// a ComfyUI upscaler names its factor and its limits (docs/PLAN_0_1_42.md U1); an upscale model picks its own and has none
+const rtx = ups.find((r) => r.id === "rtx_vsr_local"), um = ups.find((r) => r.id === "upscale_model_local");
+if (rtx.mode !== "local" || rtx.provider !== null || !rtx.factor || rtx.factor.fixed !== false || rtx.factor.default !== 2 || rtx.factor.min !== 1 || rtx.factor.max !== 4 || JSON.stringify(rtx.limits) !== JSON.stringify({ min: 64, max: 4096, out: 8192 })) throw new Error("RTX Video Super Resolution: " + JSON.stringify(rtx));
+if (!um.factor || um.factor.fixed !== true || um.limits !== null) throw new Error("Upscale model: " + JSON.stringify({ factor: um.factor, limits: um.limits }));
+if (mc.limits !== undefined) throw new Error("an API upscaler names ComfyUI limits: " + JSON.stringify(mc.limits));
 if (list.recipes.some((r) => r.task !== "upscale" && r.factor !== undefined)) throw new Error("an edit recipe carries a factor");
 const gen = list.recipes.filter((r) => r.task === "edit").length;
 const provs = await window.scumble.providers.list();
@@ -207,8 +212,8 @@ await wait(60);
 const dlg = document.getElementById("up-dialog");
 if (!dlg.open) throw new Error("the dialog did not open");
 const recs = Array.from(document.getElementById("up-recipe").options).map((o) => o.value);
-// the ten upscale recipes and the Realism Pass (task "pass", R3b)
-if (recs.length !== 11 || !recs.includes("realism_pass")) throw new Error("the dialog lists " + recs.length + " recipes: " + recs.join(", "));
+// the eleven upscale recipes (RTX Video Super Resolution since U1) and the Realism Pass (task "pass", R3b)
+if (recs.length !== 12 || !recs.includes("realism_pass") || !recs.includes("rtx_vsr_local")) throw new Error("the dialog lists " + recs.length + " recipes: " + recs.join(", "));
 if (document.getElementById("up-recipe").value !== "topaz_precision") throw new Error("the selected upscale recipe is not preselected");
 if (!document.getElementById("up-scope-sel").checked) throw new Error("with a selection the dialog does not start on it");
 const pick = (id) => { const s = document.getElementById("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); };
@@ -397,6 +402,187 @@ try {
     if (document.getElementById("up-dialog").open) document.getElementById("up-cancel").click();
     await run("set_crop", { doc: window.__u, fill: saved.crop.fill || "none", withOriginal: !!saved.crop.withOriginal });
     if (ref) { try { await run("remove_layer", { doc: window.__u, layer: ref.id }); } catch (_) { /* gone */ } }
+}
+"""),
+    # docs/PLAN_0_1_42.md U1: RTX Video Super Resolution, a ComfyUI upscaler that takes a factor. The dialog lists 1 to 4
+    # and names the box and the answer; factor 3 from the dialog reaches the RTX node's dotted input and Quality its
+    # quality; the command answers with the factor; a bad factor and a box past the limits (64 short side, 4096 long
+    # side, an answer of 8192) are refused with nothing uploaded or queued. The prompt is caught before it leaves (nothing
+    # is queued on any server); the "result" of the dialog's run is a history entry a stub of ed.generate pushes after the
+    # real one queued, so the command's wait ends.
+    ("rtx_video_super_resolution_takes_a_factor", """
+const ed = ednow(window.__u);
+const { api } = await import("./editor/host.js");
+const $ = (id) => document.getElementById(id);
+const pick = (id) => { const s = $("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); };
+const setFactor = (v) => { $("up-factor").value = String(v); $("up-factor").dispatchEvent(new Event("change")); };
+const factors = () => Array.from($("up-factor").options).map((o) => +o.value);
+const r0 = host.shell.recipes().find((x) => x.id === "rtx_vsr_local");
+if (!r0) throw new Error("the shipped RTX Video Super Resolution recipe is not listed");
+const f0 = r0.factor || {};
+if (r0.task !== "upscale" || r0.kind === "provider" || f0.fixed !== false || f0.input !== "rtx|resize_type.scale" || f0.default !== 2 || f0.min !== 1 || f0.max !== 4) throw new Error("not a ComfyUI upscaler with a factor: " + JSON.stringify({ task: r0.task, kind: r0.kind, factor: r0.factor }));
+const recipe0 = host.recipe;
+const ownGenerate = Object.prototype.hasOwnProperty.call(ed, "generate") ? ed.generate : null;
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, np: host.nodeParams, run: commands.run, crop: { context: ed.cropSettings.context, feather: ed.cropSettings.feather } };
+let sent = [], uploads = 0, fake = null, big = null;
+const pushed = [];
+const out = {};
+const refused = async (args, re) => {
+    try { await run("upscale", args); } catch (err) { const m = String(err.message || err); if (!re.test(m)) throw new Error("wrong refusal for " + JSON.stringify(args) + ": " + m); return m; }
+    throw new Error("not refused: " + JSON.stringify(args));
+};
+const hostRefuses = async (e, opts, re) => {
+    try { await host.queueGenerate(e, opts); } catch (err) { const m = String(err.message || err); if (!re.test(m)) throw new Error("wrong refusal for " + JSON.stringify(opts) + ": " + m); return m; }
+    throw new Error("the host queued: " + JSON.stringify(opts));
+};
+try {
+    host.connected = true;
+    const oi = {};
+    for (const n of r0.needs) oi[n] = { input: { required: {} } };
+    host.objectInfo = oi;
+    host.ensureOnServer = async () => { uploads++; return null; };
+    api.queuePrompt = async (n, body) => { sent.push(body); return { prompt_id: "gate-rtx" }; };
+    // no context around the selection and the node's multiple of 8: the box the node cuts is the selection, rounded up
+    host.nodeParams = { ...saved.np, padding: 0, multiple_of: 8 };
+    host.shell.selectRecipe("rtx_vsr_local");
+    if (!host.recipe || host.recipe.id !== "rtx_vsr_local" || ed.genSettings.mode !== "local") throw new Error("the recipe was not selected: " + (host.recipe && host.recipe.id) + " / " + ed.genSettings.mode);
+    const t = host.settingTargets(ed);
+    if (t.length !== 1 || t[0].node.title !== "Quality" || t[0].inputName !== "quality" || JSON.stringify(t[0].spec && t[0].spec[0]) !== JSON.stringify(["LOW", "MEDIUM", "HIGH", "ULTRA"])) throw new Error("the Settings rows: " + JSON.stringify(t.map((x) => [x.node.title, x.inputName, x.spec])));
+    if (!ed.settings["1"] || ed.settings["1"].value !== "ULTRA") throw new Error("Quality does not start at ULTRA: " + JSON.stringify(ed.settings["1"]));
+    await run("set_settings", { doc: window.__u, values: { Quality: "HIGH" } });
+    await run("set_crop", { doc: window.__u, context: 0, feather: 0 });
+    await run("select_rect", { doc: window.__u, x: 64, y: 64, w: 120, h: 90 });
+    const [, , cw, ch] = ed.cropRect();
+    const bw = Math.ceil(cw / 8) * 8, bh = Math.ceil(ch / 8) * 8;
+    if (cw !== 120 || ch !== 90) throw new Error("the crop with no context: " + cw + " x " + ch);
+    // the layer the dialog's "result" names (the run itself is caught before it leaves)
+    fake = await run("add_paint_layer", { doc: window.__u, name: "rtx gate answer" });
+    ed.generate = async function () {
+        const res = await Object.getPrototypeOf(this).generate.call(this);
+        if (!(res && res.error)) {
+            const L = this.layers.find((l) => l.id === fake.id);
+            const h = { key: "gate-rtx-" + pushed.length, name: "Result (gate)", ref: { filename: "none.png", subfolder: "", type: "input" }, x: L.x, y: L.y, w: L.w, h: L.h, prompt: "", layerId: L.id, time: Date.now() };
+            pushed.push(h);
+            this.history.push(h);
+        }
+        return res;
+    };
+
+    // the dialog: the factor row 1 to 4 (2 by default), the box and the answer in the size note, no whole picture
+    host.shell.openUpscale(ed);
+    if (!$("up-dialog").open) throw new Error("the dialog did not open");
+    if ($("up-recipe").value !== "rtx_vsr_local") throw new Error("the selected recipe is not preselected: " + $("up-recipe").value);
+    pick("upscale_model_local");
+    if (!$("up-factor-row").hidden) throw new Error("the upscale model shows a factor");
+    pick("rtx_vsr_local");
+    if ($("up-factor-row").hidden || JSON.stringify(factors()) !== "[1,2,3,4]" || $("up-factor").value !== "2") throw new Error("the factor row: " + JSON.stringify({ hidden: $("up-factor-row").hidden, factors: factors(), value: $("up-factor").value }));
+    if (!$("up-scope-doc").disabled || !$("up-scope-sel").checked || !$("up-provider-row").hidden || !$("up-prompt-row").hidden) throw new Error("the scope or the rows: " + JSON.stringify({ doc: $("up-scope-doc").disabled, sel: $("up-scope-sel").checked, provider: $("up-provider-row").hidden, prompt: $("up-prompt-row").hidden }));
+    const note2 = $("up-size-note").textContent;
+    if ($("up-go").disabled || !note2.includes("(" + bw + " × " + bh + ") comes back at about " + (bw * 2) + " × " + (bh * 2))) throw new Error("the note at 2x: " + note2);
+    setFactor(3);
+    const note3 = $("up-size-note").textContent;
+    if ($("up-go").disabled || !note3.includes("comes back at about " + (bw * 3) + " × " + (bh * 3))) throw new Error("the note at 3x: " + note3);
+    out.note = note3;
+
+    // Upscale at 3x: the dialog runs the command, the command hands the factor to the host, the host writes it
+    const seen = [];
+    commands.run = async (n, a) => {
+        if (n !== "upscale") return saved.run.call(commands, n, a);
+        try { const r = await saved.run.call(commands, n, a); seen.push({ args: a, out: r }); return r; } catch (err) { seen.push({ args: a, error: String(err.message || err) }); throw err; }
+    };
+    $("up-go").click();
+    for (let k = 0; k < 300 && !seen.length; k++) await wait(50);
+    commands.run = saved.run;
+    if (!seen.length) throw new Error("the dialog ran no upscale: " + ed.status);
+    const got = seen[0];
+    if (got.error) throw new Error("the dialog's run failed: " + got.error);
+    if (got.args.factor !== 3 || got.args.scope !== "selection") throw new Error("the dialog sent " + JSON.stringify(got.args));
+    if (got.out.factor !== 3 || got.out.recipe !== "rtx_vsr_local" || got.out.provider !== null || !got.out.layer || got.out.layer.id !== fake.id) throw new Error("the answer: " + JSON.stringify(got.out));
+    if ($("up-dialog").open) throw new Error("the dialog stayed open");
+    if (sent.length !== 1) throw new Error("queued " + sent.length + " prompts");
+    const P_ = sent[0].output, rtx = P_.rtx.inputs, cv = P_.canvas.inputs;
+    if (rtx["resize_type.scale"] !== 3 || rtx.resize_type !== "scale by multiplier" || rtx.quality !== "HIGH" || JSON.stringify(rtx.images) !== JSON.stringify(["img0", 0])) throw new Error("the RTX node got " + JSON.stringify(rtx));
+    if (cv.target_size !== 0 || cv.result_source_local !== "rtx:0") throw new Error("the canvas node: " + JSON.stringify({ target_size: cv.target_size, result: cv.result_source_local }));
+    if (ed._comfyUpscaleFactor !== undefined || ed.lastUpscaleFactor !== 3) throw new Error("the editor's factor fields: " + JSON.stringify({ oneShot: ed._comfyUpscaleFactor, last: ed.lastUpscaleFactor }));
+    if (host.recipe.prompt.rtx.inputs["resize_type.scale"] !== 2 || host.recipe.prompt.rtx.inputs.quality !== "ULTRA") throw new Error("the run wrote into the recipe's own graph: " + JSON.stringify(host.recipe.prompt.rtx.inputs));
+    out.sent = { scale: rtx["resize_type.scale"], quality: rtx.quality, uploads };
+    out.answer = { factor: got.out.factor, box: got.out.box };
+
+    // Generate (no factor asked): the recipe's default; the host's own factor argument
+    sent = [];
+    await host.queueGenerate(ed);
+    if (sent.length !== 1 || sent[0].output.rtx.inputs["resize_type.scale"] !== 2 || ed.lastUpscaleFactor !== 2) throw new Error("Generate without a factor: " + JSON.stringify(sent[0] && sent[0].output.rtx.inputs));
+    sent = [];
+    await host.queueGenerate(ed, { factor: 4 });
+    if (sent.length !== 1 || sent[0].output.rtx.inputs["resize_type.scale"] !== 4) throw new Error("the host's factor 4: " + JSON.stringify(sent[0] && sent[0].output.rtx.inputs));
+
+    // a factor the recipe does not take: refused by the command and by the host before anything goes
+    sent = []; uploads = 0;
+    const h0 = ed.history.length;
+    out.factor5 = await refused({ doc: window.__u, scope: "selection", factor: 5, timeout: 8 }, /1 to 4, not 5/);
+    out.factorHalf = await refused({ doc: window.__u, scope: "selection", factor: 0.5, timeout: 8 }, /1 to 4, not 0.5/);
+    out.hostFactor5 = await hostRefuses(ed, { factor: 5 }, /1 to 4, not 5/);
+    if (sent.length || uploads || ed.history.length !== h0 || ed._comfyUpscaleFactor !== undefined) throw new Error("a refused factor went on: " + JSON.stringify({ sent: sent.length, uploads, history: ed.history.length - h0, oneShot: ed._comfyUpscaleFactor }));
+
+    // the size limits, on a wide picture: refused before anything is serialized, uploaded or queued
+    const d2 = await run("new_document");
+    big = d2.id;
+    const eb = ednow(big);
+    host.shell.activate(eb);
+    const c = document.createElement("canvas");
+    c.width = 4400; c.height = 240;
+    const g = c.getContext("2d");
+    g.fillStyle = "rgb(120, 90, 60)"; g.fillRect(0, 0, 4400, 240);
+    await eb.setBaseFromCanvas(c);
+    if (eb.width !== 4400 || eb.height !== 240) throw new Error("the wide base: " + eb.width + "x" + eb.height);
+    await run("set_crop", { doc: big, context: 0, feather: 0 });
+    let serialized = 0;
+    const serialize = eb.serializeForPrompt;
+    eb.serializeForPrompt = async function (...a) { serialized++; return serialize.apply(this, a); };
+    sent = []; uploads = 0;
+    const layers0 = eb.layers.length, hist0 = eb.history.length;
+    // 3000 px at 4x passes 8192: the command and the host refuse it; 3x (9000) too
+    await run("select_rect", { doc: big, x: 0, y: 0, w: 3000, h: 200 });
+    out.out4 = await refused({ doc: big, scope: "selection", factor: 4, timeout: 8 }, /3000 × 200; at 4× the answer would pass 8192 px on the long side. Pick a smaller factor or a smaller area/);
+    out.out3 = await hostRefuses(eb, { factor: 3 }, /at 3× the answer would pass 8192 px/);
+    // the dialog says the same and greys Upscale; at 2x (6000) it is let through
+    host.shell.openUpscale(eb);
+    pick("rtx_vsr_local");
+    setFactor(4);
+    const bigNote = $("up-size-note").textContent, bigGo = $("up-go").disabled;
+    setFactor(2);
+    const okNote = $("up-size-note").textContent, okGo = $("up-go").disabled;
+    $("up-cancel").click();
+    await wait(60);
+    if (!bigGo || !/3000 × 200; at 4× the answer would pass 8192 px/.test(bigNote)) throw new Error("the dialog at 4x: " + bigGo + " " + bigNote);
+    if (okGo || !okNote.includes("comes back at about 6000 × 400")) throw new Error("the dialog at 2x: " + okGo + " " + okNote);
+    out.dialogRefusal = bigNote;
+    // past the long side the node takes (4096), and short of its 64 px
+    await run("select_rect", { doc: big, x: 0, y: 0, w: 4200, h: 200 });
+    out.max = await hostRefuses(eb, { factor: 1 }, /4200 × 200; .* takes at most 4096 px on the long side/);
+    await run("select_rect", { doc: big, x: 10, y: 10, w: 40, h: 30 });
+    out.min = await hostRefuses(eb, { factor: 2 }, /40 × 32; .* needs at least 64 px a side/);
+    // 2056 px at 4x is 8224: refused; 2048 at 4x is 8192 exactly: let through
+    await run("select_rect", { doc: big, x: 0, y: 0, w: 2056, h: 200 });
+    await hostRefuses(eb, { factor: 4 }, /at 4× the answer would pass 8192 px/);
+    if (sent.length || uploads || serialized || eb.layers.length !== layers0 || eb.history.length !== hist0) throw new Error("a refusal went on: " + JSON.stringify({ sent: sent.length, uploads, serialized, layers: eb.layers.length - layers0, history: eb.history.length - hist0 }));
+    await run("select_rect", { doc: big, x: 0, y: 0, w: 2048, h: 200 });
+    await host.queueGenerate(eb, { factor: 4 });
+    if (sent.length !== 1 || sent[0].output.rtx.inputs["resize_type.scale"] !== 4 || serialized !== 1) throw new Error("2048 at 4x (8192) was not let through: " + JSON.stringify({ sent: sent.length, serialized }));
+    out.edge = "2048 at 4x queued";
+    return out;
+} finally {
+    commands.run = saved.run;
+    if (ownGenerate) ed.generate = ownGenerate; else delete ed.generate;
+    for (const h of pushed) { const i = ed.history.indexOf(h); if (i >= 0) ed.history.splice(i, 1); }
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; host.nodeParams = saved.np;
+    if ($("up-dialog").open) $("up-cancel").click();
+    if (big) { try { await run("close_document", { doc: big }); } catch (_) { /* gone */ } }
+    host.shell.activate(ed);
+    if (fake) { try { await run("remove_layer", { doc: window.__u, layer: fake.id }); } catch (_) { /* gone */ } }
+    try { await run("set_crop", { doc: window.__u, context: saved.crop.context, feather: saved.crop.feather }); } catch (_) { /* gone */ }
+    // the window's recipe as the step found it, through the shell (CLAUDE.md: a gate that switches a recipe puts it back)
+    if (recipe0 && (!host.recipe || host.recipe.id !== recipe0.id)) host.shell.selectRecipe(recipe0.id, recipe0.kind === "provider" ? recipe0.provider : undefined);
 }
 """),
     # docs/PLAN_0_1_42.md R3b: the Realism Pass entry. 1x only, the whole picture only (the selection greyed with its

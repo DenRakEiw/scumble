@@ -1,7 +1,8 @@
 // Upscaling through the providers (docs/RECIPES.md "Upscale recipes"), in plain Node, no Electron and no key:
 //   node tools/upscale_test.js
 // The recipe format (`task: "upscale"`, `factor`, `usesPrompt`) as recipes.js normalizes it, the fal adapter's
-// upscale bodies for every shipped fal upscaler (golden), the Magnific adapter (electron/main/providers/magnific.js:
+// upscale bodies for every shipped fal upscaler (golden), the two ComfyUI upscalers (a fixed factor, and RTX Video
+// Super Resolution's factor input and size limits), the Magnific adapter (electron/main/providers/magnific.js:
 // both routes' bodies, the factor rules, the 25.3 MP cap, the host and test-key rules, the task poll, the retry, the
 // errors without the key), the Comfy Cloud graphs around the four upscaler Partner Nodes, the dispatch in providers/index.js and the assistant's policy row. A scripted fetch plays
 // fal's queue, Magnific's task routes, Comfy Cloud's job routes and a result host; ctx.sleep records its waits instead of waiting. The facts are
@@ -130,6 +131,82 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         check("a ComfyUI recipe with another task is an edit recipe", odd.task === "edit" && odd.factor === undefined, short(odd));
         const none = recipes._normalize({ prompt: {} });
         check("a ComfyUI recipe without a task stays as it was", none.task === undefined && none.factor === undefined, short(none));
+    });
+
+    // docs/PLAN_0_1_42.md U1: a ComfyUI upscaler whose factor goes into an input of its graph (`factor.input`
+    // "node|input"), with size limits of its own (`limits`: min short side, max long side, out the answer's long side)
+    await section("RTX Video Super Resolution on ComfyUI (recipes/rtx_vsr_local.json)", async () => {
+        const warned = [];
+        const quiet = (fn) => { const w = console.warn; console.warn = (...a) => { warned.push(a.join(" ")); }; try { return fn(); } finally { console.warn = w; } };
+        const raw = rawOf("rtx_vsr_local");
+        const copy = () => JSON.parse(JSON.stringify(raw));
+        const r = quiet(() => recipes._normalize(copy()));
+        check("it is a ComfyUI recipe (no kind), task upscale, local mode, no providers map, read without a warning",
+            r.kind === undefined && r.task === "upscale" && r.mode === "local" && r.providers === undefined && r.name === "RTX Video Super Resolution (ComfyUI)" && !warned.length,
+            short({ kind: r.kind, task: r.task, mode: r.mode, warned }));
+        const f = r.factor || {};
+        check("its factor is unfixed: 1 to 4, default 2, no steps, and it names the input it goes into",
+            f.fixed === false && f.default === 2 && f.min === 1 && f.max === 4 && f.steps === null && f.input === "rtx|resize_type.scale", short(f));
+        const P_ = r.prompt;
+        check("that input is a flat dotted key of the RTX node, next to its mode \"scale by multiplier\" (the API form of the dynamic combo)",
+            P_.rtx && P_.rtx.inputs["resize_type.scale"] === 2 && P_.rtx.inputs.resize_type === "scale by multiplier" && typeof P_.rtx.inputs.resize_type !== "object", short(P_.rtx));
+        check("its limits are kept as given: 64 short side, 4096 long side, an answer of at most 8192", eq(r.limits, { min: 64, max: 4096, out: 8192 }), short(r.limits));
+        check("the canvas node is an InpaintCanvas with target_size 0 (the crop at its native size)", P_[r.canvas] && P_[r.canvas].class_type === "InpaintCanvas" && P_[r.canvas].inputs.target_size === 0, short(P_[r.canvas]));
+        const [rid, rslot] = String(r.result).split(":");
+        check("the result is the RTX node's IMAGE, read from the crop's first picture",
+            rid === "rtx" && rslot === "0" && P_.rtx.class_type === "RTXVideoSuperResolution" && eq(P_.rtx.inputs.images, ["img0", 0])
+            && P_.img0.class_type === "ImageFromBatch" && eq(P_.img0.inputs.image, [r.canvas, 0]) && P_.img0.inputs.batch_index === 0 && P_.img0.inputs.length === 1, short(P_));
+        const links = [];
+        for (const [id, n] of Object.entries(P_)) for (const [k, v] of Object.entries(n.inputs || {})) if (Array.isArray(v)) links.push([id, k, v[0]]);
+        check("every link names a node of the prompt", links.every(([, , to]) => P_[to]), short(links.filter(([, , to]) => !P_[to])));
+        const classes = [...new Set(Object.values(P_).map((n) => n.class_type))].sort();
+        check("needs lists exactly the node types of the prompt", eq([...r.needs].sort(), classes), short({ needs: r.needs, classes }));
+        const row = (r.settings || [])[0] || {};
+        check("one setting, slot 1: the RTX node's quality as Quality, LOW to ULTRA, ULTRA by default (the graph's value too)",
+            r.settings.length === 1 && row.index === 1 && row.node === "rtx" && row.input === "quality" && row.label === "Quality"
+            && eq(row.spec && row.spec[0], ["LOW", "MEDIUM", "HIGH", "ULTRA"]) && row.spec[1].default === "ULTRA" && P_.rtx.inputs.quality === "ULTRA", short(r.settings));
+        // a recipe saved from the ComfyUI window carries the normalized factor and limits (GRAPH_KEEPS): read again, they hold
+        const again = quiet(() => recipes._normalize(JSON.parse(JSON.stringify(r))));
+        check("normalized twice, the factor and the limits stay as they were", eq(again.factor, r.factor) && eq(again.limits, r.limits) && !warned.length, short({ factor: again.factor, limits: again.limits }));
+
+        // the upscale model keeps a fixed factor: it names no input, and has no limits
+        const um = quiet(() => recipes._normalize(JSON.parse(JSON.stringify(rawOf("upscale_model_local")))));
+        check("upscale_model_local stays fixed, names no input, has no limits, and is read without a warning",
+            um.factor.fixed === true && um.factor.input === undefined && um.limits === undefined && !warned.length, short({ factor: um.factor, limits: um.limits, warned }));
+
+        // a factor.input that names no node of the graph (or is no "node|input"): fixed, with a warning that names it
+        for (const bad of ["nope|scale", "rtx", "|resize_type.scale", "rtx|", 5]) {
+            warned.length = 0;
+            const x = copy();
+            x.factor.input = bad;
+            const n = quiet(() => recipes._normalize(x));
+            check(`factor.input ${JSON.stringify(bad)}: the factor falls back to fixed, without the input, and a warning names it`,
+                n.factor.fixed === true && n.factor.input === undefined && warned.length === 1 && warned[0].includes("rtx_vsr_local") && warned[0].includes(JSON.stringify(bad)),
+                short({ factor: n.factor, warned }));
+        }
+        warned.length = 0;
+        const noInput = copy();
+        delete noInput.factor.input;
+        const ni = quiet(() => recipes._normalize(noInput));
+        check("a factor without an input on a ComfyUI upscaler is fixed (the model picks), without a warning", ni.factor.fixed === true && !warned.length, short({ factor: ni.factor, warned }));
+        const clamp = copy();
+        clamp.factor = { default: 9, min: 1, max: 4, input: "rtx|resize_type.scale" };
+        const cl = quiet(() => recipes._normalize(clamp));
+        check("a default past max is held to max, the factor stays unfixed", cl.factor.default === 4 && cl.factor.fixed === false && cl.factor.input === "rtx|resize_type.scale", short(cl.factor));
+
+        // limits: whole positive numbers only; a bad value is dropped, a limits with none left goes
+        const lim = (limits) => { const x = copy(); if (limits === undefined) delete x.limits; else x.limits = limits; return quiet(() => recipes._normalize(x)); };
+        const mixed = lim({ min: -5, max: "abc", out: 8192.4 });
+        check("a negative min and a max that is no number are dropped, out rounded", eq(mixed.limits, { out: 8192 }), short(mixed.limits));
+        const strings = lim({ min: "64", max: 2048.4 });
+        check("a number written as a string is taken, a fraction rounded; a missing out means no cap on the answer", eq(strings.limits, { min: 64, max: 2048 }) && strings.limits.out === undefined, short(strings.limits));
+        const empty = lim({ min: 0, max: null, out: "x" });
+        check("a limits with no usable value is removed", !Object.prototype.hasOwnProperty.call(empty, "limits"), short(empty.limits));
+        const notObj = lim("big");
+        check("a limits that is no object is removed", !Object.prototype.hasOwnProperty.call(notObj, "limits"), short(notObj.limits));
+        const absent = lim(undefined);
+        check("no limits stays no limits", absent.limits === undefined);
+        check("no warning from the limits", !warned.length, short(warned));
     });
 
     const fal = require(P("electron", "main", "providers", "fal.js"));

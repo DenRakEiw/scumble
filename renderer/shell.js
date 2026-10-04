@@ -1425,8 +1425,10 @@ function upFillProviders() {
 function upFactorOptions(r, v) {
     // the Realism Pass refines at the picture's own size (R-U adds 1.5× to 3×)
     if (isPassRecipe(r)) return [[1, "1× (refine)"]];
-    // a ComfyUI upscaler has no variant: its model picks the factor, and the stitch fits the answer to the box
-    return (v ? upFactors(v) : []).map((f) => [f, `${f}×`]);
+    // a ComfyUI upscaler has no variant: an upscale model picks its own factor (none shown), RTX Video Super Resolution
+    // takes one (its recipe's `factor.input`); the stitch fits the answer to the box either way
+    const comfy = !v && r && r.kind !== "provider" && r.factor && !r.factor.fixed ? { factor: r.factor } : null;
+    return (v ? upFactors(v) : comfy ? upFactors(comfy) : []).map((f) => [f, `${f}×`]);
 }
 
 function upFillFactors() {
@@ -1442,7 +1444,7 @@ function upFillFactors() {
     }
     ui.upFactorRow.hidden = !list.length;
     const values = list.map(([f]) => f);
-    const dflt = v && v.factor ? v.factor.default : values[0];
+    const dflt = v && v.factor ? v.factor.default : r && r.kind !== "provider" && r.factor && !r.factor.fixed ? r.factor.default : values[0];
     if (values.length) ui.upFactor.value = String(values.includes(keep) ? keep : (values.includes(dflt) ? dflt : values[0]));
     ui.upFactor.dataset.pass = isPassRecipe(r) ? "1" : "";
     upNoteFactor();
@@ -1483,10 +1485,22 @@ function upSyncNote() {
             : lacks.length ? ` The server lacks these node types: ${lacks.join(", ")}.` : "";
         ui.upNote.textContent = (r.description || "") + why;
         const sel = !!(ed && ed.getBounds && ed.getBounds());
-        ui.upSizeNote.textContent = sel
-            ? "The selection's box (with its context) goes out at its own size; the model's larger answer is fitted back into it by the node's stitch. The whole picture is not upscaled on ComfyUI."
-            : "Select an area first: on ComfyUI an upscale model sharpens the selection's box. The whole picture needs an API upscaler.";
-        ui.upGo.disabled = !sel || !!why;
+        // a factor the recipe takes (RTX Video Super Resolution): the box the node cuts, its answer and the size limits
+        const f = r.factor && !r.factor.fixed ? +ui.upFactor.value || r.factor.default : null;
+        let refusal = "", sized = "";
+        if (sel && f != null && ed.cropRect) {
+            const [, , cw, ch] = ed.cropRect();
+            const m = Math.max(1, +(host.nodeParams && host.nodeParams.multiple_of) || 8);
+            const bw = realism.fitSpan(cw, ed.width, m), bh = realism.fitSpan(ch, ed.height, m);
+            refusal = host.upscaleSizeRefusal(r, bw, bh, f, "box");
+            sized = ` The box with its context (${bw} × ${bh}) comes back at about ${Math.round(bw * f)} × ${Math.round(bh * f)} and is fitted back into it by the node's stitch.`;
+        }
+        ui.upSizeNote.textContent = !sel
+            ? "Select an area first: on ComfyUI an upscale model sharpens the selection's box. The whole picture needs an API upscaler."
+            : refusal || (f != null
+                ? `The selection's box (with its context) goes out at its own size.${sized} The whole picture is not upscaled on ComfyUI.`
+                : "The selection's box (with its context) goes out at its own size; the model's larger answer is fitted back into it by the node's stitch. The whole picture is not upscaled on ComfyUI.");
+        ui.upGo.disabled = !sel || !!why || !!refusal;
         return;
     }
     if (!r || !v) { ui.upNote.textContent = ""; ui.upSizeNote.textContent = ""; ui.upGo.disabled = true; return; }

@@ -261,6 +261,36 @@ function upscaleFactor(r, v) {
     return f;
 }
 
+/**
+ * A ComfyUI upscaler's factor: unfixed when the recipe names the input it goes into (`factor.input` "node|input", the
+ * node in its graph: RTX Video Super Resolution's `resize_type.scale`), else fixed (an upscale model picks its own).
+ * @param {Recipe} r
+ * @returns {UpscaleFactor & { input?: string }}
+ */
+function comfyFactor(r) {
+    const want = r.factor && typeof r.factor === "object" ? /** @type {any} */ (r.factor) : null;
+    const m = want && typeof want.input === "string" ? /^([^|]+)\|(.+)$/.exec(want.input) : null;
+    if (!m || !r.prompt || !r.prompt[m[1]]) {
+        if (want && want.input !== undefined) console.warn(`${r.id}: factor.input ${JSON.stringify(want.input)} names no node of its graph; the factor is fixed`);
+        return { ...FACTOR_DEFAULT, fixed: true };
+    }
+    const f = upscaleFactor(/** @type {Recipe} */ ({ id: r.id, factor: { ...want, fixed: false } }), /** @type {ProviderVariant} */ ({}));
+    return { ...f, input: want.input, fixed: false };
+}
+
+/**
+ * A ComfyUI upscaler's size limits, kept only as whole positive numbers: `min` the input's short side, `max` its long
+ * side, `out` the answer's long side (RTX Video Super Resolution: 64, 4096, 8192). A missing one is no limit.
+ * @param {Recipe} r
+ */
+function comfyLimits(r) {
+    const l = r.limits && typeof r.limits === "object" ? /** @type {any} */ (r.limits) : null;
+    /** @type {Record<string, number>} */
+    const out = {};
+    if (l) for (const k of ["min", "max", "out"]) { const v = Math.round(+l[k]); if (Number.isFinite(v) && v > 0) out[k] = v; }
+    if (Object.keys(out).length) r.limits = /** @type {any} */ (out); else delete r.limits;
+}
+
 function textModelOf(providerId, model) {
     const m = String(model || "");
     if (providerId === "fal" || providerId === "wavespeed") return m.replace(/\/(edit|inpaint|fill)$/, "");
@@ -370,7 +400,8 @@ function normalize(r) {
         // a ComfyUI recipe may be an upscaler too (recipes/upscale_model_local.json): the model picks its own
         // factor, and only the selection mode exists (the node's stitch fits the answer back into the box);
         // or the Realism Pass (task "pass", recipes/realism_pass.json): the box at its own size through DLSS 5
-        if (r.task === "upscale") r.factor = { ...FACTOR_DEFAULT, fixed: true };
+        // RTX Video Super Resolution (recipes/rtx_vsr_local.json) names the input its factor goes into
+        if (r.task === "upscale") { r.factor = comfyFactor(r); comfyLimits(r); }
         else if (r.task !== undefined && r.task !== "pass") r.task = "edit";
         comfyRefs(r);
         return r;
@@ -804,7 +835,7 @@ function fromPrompt(src, objectInfo, meta, base) {
 }
 
 // What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
-const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets"];
+const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits"];
 
 /**
  * The graph of ComfyUI's page -> a recipe to save (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3). `output` is the API
@@ -1349,11 +1380,19 @@ function detach(recipe) {
     const rows = (recipe.settings || []).filter((s) => s && s.node && s.input && prompt[s.node]).map((s) => ({ index: s.index, key: `${s.node}|${s.input}`, label: s.label || `${s.node} · ${s.input}`, ...(s.spec !== undefined ? { spec: s.spec } : {}) }));
     const needs = Array.from(new Set(Object.values(prompt).map((n) => n.class_type)));
     const name = recipe.name || recipe.id;
+    // the copy's graph has no factor row: an upscaler runs at what its graph holds (an upscale model at its own)
+    const ft = recipe.task === "upscale" && recipe.factor && typeof (/** @type {any} */ (recipe.factor)).input === "string" ? String((/** @type {any} */ (recipe.factor)).input) : "";
+    if (ft) {
+        const at = ft.indexOf("|"), node = prompt[ft.slice(0, at)];
+        const held = node && node.inputs ? node.inputs[ft.slice(at + 1)] : undefined;
+        notes.push(`the Comfy Cloud copy runs at the factor its graph holds${held != null ? ` (${held}×)` : ""}; change it in its graph`);
+    }
     /** @type {Recipe} */
     const out = {
         id: `${recipe.id}_cloud`, name: `${name} (Comfy Cloud)`, kind: "provider",
         description: `${name} without the Inpaint Canvas node, run on Comfy Cloud; Scumble crops and stitches.`,
         ...(recipe.task ? { task: recipe.task } : {}),
+        ...(recipe.task === "upscale" ? { factor: { fixed: true } } : {}),
         default: "comfycloud",
         providers: {
             comfycloud: {

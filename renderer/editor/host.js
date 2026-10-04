@@ -1654,6 +1654,22 @@ export const host = {
     },
 
     /**
+     * "" when a ComfyUI upscaler (`r.limits`: `min` the input's short side, `max` its long side, `out` the answer's
+     * long side) takes a w × h picture at `factor` (null: the model picks its own, so `out` is not checked), else the
+     * refusal. `what` names the picture: "box" (the selection with its context) or "picture" (the whole one).
+     */
+    upscaleSizeRefusal(r, w, h, factor, what = "box") {
+        const l = (r && r.limits) || {};
+        const name = (r && (r.name || r.id)) || "The upscaler";
+        const the = what === "box" ? `The box (the selection with its context) is ${w} × ${h}` : `The picture is ${w} × ${h}`;
+        const smaller = what === "box" ? "a smaller area" : "a smaller picture";
+        if (l.min && Math.min(w, h) < l.min) return `${the}; ${name} needs at least ${l.min} px a side.`;
+        if (l.max && Math.max(w, h) > l.max) return `${the}; ${name} takes at most ${l.max} px on the long side. Pick ${smaller}.`;
+        if (l.out && factor != null && Math.round(Math.max(w, h) * factor) > l.out) return `${the}; at ${factor}× the answer would pass ${l.out} px on the long side. Pick a smaller factor or ${smaller}.`;
+        return "";
+    },
+
+    /**
      * An upscale through the selected upscale recipe (`task: "upscale"`, docs/RECIPES.md "Upscale recipes").
      * `scope` "selection": the selection's box goes out at its own size (no fill, no references) and the larger
      * answer is fitted back into it by the stitch, a result layer like Generate's: a detail pass at the
@@ -2562,6 +2578,20 @@ export const host = {
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
         if (upscale && !pass && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
+        // a ComfyUI upscaler that takes a factor (RTX Video Super Resolution): the one the dialog or the command asked
+        // (editor.generate() takes no arguments and is shared with the node, so the factor travels on the editor, read
+        // once), and the size limits on the crop the node makes, before anything is uploaded
+        let factor = null;
+        if (upscale && !pass) {
+            const want = opts.factor !== undefined ? opts.factor : editor._comfyUpscaleFactor;
+            editor._comfyUpscaleFactor = undefined;
+            factor = this.upscaleFactorFor(r, want);
+            const [, , cw, ch] = editor.cropRect();
+            const m = Math.max(1, +(this.nodeParams && this.nodeParams.multiple_of) || 8);
+            const refusal = this.upscaleSizeRefusal(r, realism.fitSpan(cw, editor.width, m), realism.fitSpan(ch, editor.height, m), factor, "box");
+            if (refusal) throw new Error(refusal);
+        }
+        editor.lastUpscaleFactor = factor;
         editor.lastSentPrompt = null;
         editor.lastRunNotes = [];
         editor.lastSentBoxes = 0;   // a local recipe takes no boxes (docs/PLAN_BOXES.md: FLUX 3 Image and Ideogram 4 only)
@@ -2607,6 +2637,10 @@ export const host = {
             const entry = editor.settings[String(s.index)];
             const node = prompt[s.node];
             if (entry && entry.value != null && node && node.inputs) node.inputs[s.input] = entry.value;
+        }
+        if (factor != null && r.factor && r.factor.input) {
+            const at = r.factor.input.indexOf("|"), node = prompt[r.factor.input.slice(0, at)];
+            if (node && node.inputs) node.inputs[r.factor.input.slice(at + 1)] = factor;
         }
         if (pass) {
             // Style and Strength are app-wide (settings.realism, the Upscale dialog's row); the DLSS model preset is the

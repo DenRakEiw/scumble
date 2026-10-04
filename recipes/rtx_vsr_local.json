@@ -1,0 +1,20 @@
+{
+  "id": "rtx_vsr_local",
+  "name": "RTX Video Super Resolution (ComfyUI)",
+  "task": "upscale",
+  "description": "NVIDIA's RTX Video Super Resolution on your own ComfyUI: compression artefacts out, edges cleaner, no invented detail; fast. Needs an NVIDIA RTX card on the ComfyUI machine and the node pack Nvidia_RTX_Nodes_ComfyUI (with its nvidia-vfx package), which you install there. 1 to 4 times; the answer may be at most 8192 px on the long side.",
+  "mode": "local",
+  "canvas": "canvas",
+  "result": "rtx:0",
+  "needs": ["InpaintCanvas", "ImageFromBatch", "RTXVideoSuperResolution"],
+  "factor": { "default": 2, "min": 1, "max": 4, "input": "rtx|resize_type.scale" },
+  "limits": { "min": 64, "max": 4096, "out": 8192 },
+  "settings": [
+    { "index": 1, "node": "rtx", "input": "quality", "label": "Quality", "spec": [["LOW", "MEDIUM", "HIGH", "ULTRA"], { "default": "ULTRA" }] }
+  ],
+  "prompt": {
+    "canvas": { "class_type": "InpaintCanvas", "inputs": { "padding": 64, "target_size": 0, "feather": 16, "multiple_of": 8 } },
+    "img0": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 0, "length": 1 } },
+    "rtx": { "class_type": "RTXVideoSuperResolution", "inputs": { "images": ["img0", 0], "resize_type": "scale by multiplier", "resize_type.scale": 2, "quality": "ULTRA" } }
+  }
+}
