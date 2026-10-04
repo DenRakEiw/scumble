@@ -956,7 +956,7 @@ function idsNamedBy(name, result) {
     if (!result || typeof result !== "object") return [];
     const out = [];
     const add = (v) => { if (typeof v === "string" && v) out.push(v); };
-    if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "duplicate_layer", "film_apply_look"].includes(name)) add(result.id);
+    if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "duplicate_layer", "film_apply_look", "copy_to_layer"].includes(name)) add(result.id);
     if (name === "generate" || name === "upscale" || name === "realism_pass" || name === "glb_place") { add(result.layer && result.layer.id); add(result.depthLayer && result.depthLayer.id); }
     if (name === "film_add_point") add(result.layer);
     return out;

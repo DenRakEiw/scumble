@@ -285,7 +285,11 @@ function openInto(file) {
 host.createDocument = (id) => newDocument(id);
 host.onDocsChanged = () => renderTabs();
 // the command core (renderer/commands.js) reaches the shell through this
-host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, modeOf: (r) => modeOf(r), openSettings, openGenerateNew: (ed) => openGenerateNew(ed), openUpscale: (ed) => openUpscale(ed), genField: () => genField, genSyncRefs: () => genSyncRefs() };
+host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, modeOf: (r) => modeOf(r), openSettings, openGenerateNew: (ed) => openGenerateNew(ed), openUpscale: (ed) => openUpscale(ed), genField: () => genField, genSyncRefs: () => genSyncRefs(),
+    // list_recipes' readiness (docs/PLAN_0_1_42.md F2a): a resolved recipe's key or in-app model ({ ok, text } or null for
+    // a ComfyUI recipe), and the API providers with whether a key is stored, as booleans only (never the key's hint)
+    keyState: (r) => providerKeyState(r),
+    providerKeys: () => providers.map((p) => ({ id: p.id, label: p.label, key: !!(p.key && p.key.set), shares_key: p.sharesKey || null })) };
 ui.tabAdd.addEventListener("click", () => activate(newDocument()));
 
 // ---- connection --------------------------------------------------------------------------

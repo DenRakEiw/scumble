@@ -184,14 +184,27 @@ function requireImage(ed) {
 export async function shotCanvas(ed, a) {
     const max = clampInt(a.max_size, 64, 4096, 1024);
     const tiles = !!ed.tileMode;
-    const layer = a.what === "layer" ? findLayer(ed, a.layer) : null;
+    const what = a.what == null || a.what === "" ? "image" : String(a.what);
+    if (!SHOT_WHAT.includes(what)) throw new Error(`what must be one of ${SHOT_WHAT.join(", ")}`);
+    // F2a: a region of the picture (`box`), the base alone, a mask in black and white
+    const box = shotBox(ed, a.box);
+    if (box && what === "layer") throw new Error("box reads a region of the picture; what = layer shows the layer's own pixels whole (leave box out)");
+    const layer = what === "layer" ? findLayer(ed, a.layer) : null;
+    const masked = what === "mask" && a.layer != null && a.layer !== "" ? findLayer(ed, a.layer) : null;
+    if (masked && !masked.maskPx) throw new Error(`${masked.name} has no mask (set_mask adds one)`);
+    const r = box || { x: 0, y: 0, w: ed.width, h: ed.height };
+    const rect = [r.x, r.y, r.x + r.w, r.y + r.h];
     // a layer alone is its own pixels (unmasked, at their resolution); the picture is a composite
-    const src = layer ? { w: layer.px.width, h: layer.px.height } : { w: ed.width, h: ed.height };
+    const src = layer ? { w: layer.px.width, h: layer.px.height } : { w: r.w, h: r.h };
     const s = Math.min(1, max / Math.max(src.w, src.h));
     const w = Math.max(1, Math.round(src.w * s)), h = Math.max(1, Math.round(src.h * s));
     const c = makeCanvas(w, h);
     const ctx = c.getContext("2d");
-    ctx.fillStyle = "#202020"; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = what === "mask" ? "#000000" : "#202020"; ctx.fillRect(0, 0, w, h);
+    if (what === "mask") {
+        ctx.drawImage(await maskShot(ed, masked, rect, s, w, h), 0, 0);
+        return { canvas: c, w, h, s, src, box };
+    }
     if (layer) {
         const px = layer.px;
         const job = tiles && typeof px.primeRegion === "function" ? await px.primeRegion([0, 0, src.w, src.h], ed.tileLevel(w / src.w)) : null;
@@ -206,20 +219,66 @@ export async function shotCanvas(ed, a) {
         } finally {
             if (job) job.release();
         }
+    } else if (what === "base") {
+        // the base alone (the picture before any layer), the peek's pass, on both backends
+        ctx.drawImage(await ed.sampleRegionSettled("image", rect, s, { forRun: true, baseOnly: true }), 0, 0);
     } else if (tiles) {
-        ctx.drawImage(await ed.sampleRegionSettled("image", [0, 0, src.w, src.h], s, { forRun: a.what !== "editor" }), 0, 0);
+        // a box is padded by as far as its filters read, so its edges are the whole picture's (unknown: unpadded)
+        const o = { forRun: what !== "editor" };
+        const reach = box && typeof ed.boxReach === "function" ? ed.boxReach(rect, o) : 0;
+        ctx.drawImage(await ed.sampleRegionSettled("image", rect, s, Number.isFinite(reach) && reach > 0 ? { ...o, pad: reach } : o), 0, 0);
+    } else if (box) {
+        ctx.drawImage(ed.flattenToCanvas({ forRun: what !== "editor" }), r.x, r.y, r.w, r.h, 0, 0, w, h);
     } else {
-        ctx.drawImage(ed.flattenToCanvas({ forRun: a.what !== "editor" }), 0, 0, w, h);
+        ctx.drawImage(ed.flattenToCanvas({ forRun: what !== "editor" }), 0, 0, w, h);
     }
     const b = bounds(ed);
     if (a.show_selection !== false && b && ed.sel && !layer) {
-        const m = await ed.selectionCanvasSettled([0, 0, src.w, src.h], s, w, h);
+        const m = await ed.selectionCanvasSettled(rect, s, w, h);
         ctx.globalAlpha = 0.35;
-        if (m) ctx.drawImage(m, 0, 0); else ed.sel.drawTo(ctx, 0, 0, w, h);
+        if (m) ctx.drawImage(m, 0, 0);
+        else if (!box) ed.sel.drawTo(ctx, 0, 0, w, h);
+        else { ctx.save(); ctx.setTransform(s, 0, 0, s, -r.x * s, -r.y * s); ed.sel.drawTo(ctx, 0, 0, ed.width, ed.height); ctx.restore(); }
         ctx.globalAlpha = 1;
-        ctx.strokeStyle = "#ff40ff"; ctx.lineWidth = 2; ctx.strokeRect(b.x * s, b.y * s, b.w * s, b.h * s);
+        ctx.strokeStyle = "#ff40ff"; ctx.lineWidth = 2; ctx.strokeRect((b.x - r.x) * s, (b.y - r.y) * s, b.w * s, b.h * s);
     }
-    return { canvas: c, w, h, s, src };
+    return { canvas: c, w, h, s, src, box };
+}
+
+/** What `screenshot` shows (F2a added base and mask). */
+const SHOT_WHAT = ["image", "editor", "layer", "base", "mask"];
+
+/** `screenshot`'s box [x, y, w, h] in image pixels, held to the picture on whole pixels; null without one. */
+function shotBox(ed, box) {
+    if (box == null) return null;
+    if (!Array.isArray(box) || box.length !== 4 || box.some((v) => v === null || v === "" || !Number.isFinite(+v))) throw new Error("box must be [x, y, w, h] in image pixels");
+    const x0 = Math.max(0, Math.floor(+box[0])), y0 = Math.max(0, Math.floor(+box[1]));
+    const x1 = Math.min(ed.width, Math.ceil(+box[0] + +box[2])), y1 = Math.min(ed.height, Math.ceil(+box[1] + +box[3]));
+    if (!(x1 > x0 && y1 > y0)) throw new Error(`the box ${JSON.stringify(box)} holds no pixel of the ${ed.width} × ${ed.height} picture`);
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/**
+ * A mask over `rect` at `s` as white on transparent (the caller lays it on black): the selection (`layer` null; from its
+ * tiles on the tile backend), or a layer's mask over the layer's place, white where the layer shows, switched off or not.
+ */
+async function maskShot(ed, layer, rect, s, w, h) {
+    const m = makeCanvas(w, h);
+    const mc = m.getContext("2d");
+    if (!layer) {
+        const t = await ed.selectionCanvasSettled(rect, s, w, h);
+        if (t) mc.drawImage(t, 0, 0);
+        else { mc.setTransform(s, 0, 0, s, -rect[0] * s, -rect[1] * s); mc.imageSmoothingEnabled = true; ed.sel.drawTo(mc, 0, 0, ed.width, ed.height); }
+    } else {
+        mc.setTransform(s, 0, 0, s, -rect[0] * s, -rect[1] * s);
+        mc.imageSmoothingEnabled = true;
+        ed.drawPixelsInto(mc, layer, layer.maskPx, { x: rect[0], y: rect[1], w: rect[2] - rect[0], h: rect[3] - rect[1], sx: s, sy: s, sample: true });
+    }
+    mc.setTransform(1, 0, 0, 1, 0, 0);
+    mc.globalCompositeOperation = "source-in";
+    mc.fillStyle = "#ffffff"; mc.fillRect(0, 0, w, h);
+    mc.globalCompositeOperation = "source-over";
+    return m;
 }
 
 export function bounds(ed) {
@@ -286,6 +345,36 @@ function realismState(ed) {
 }
 
 /**
+ * Whether a recipe can run now, for list_recipes (docs/PLAN_0_1_42.md F2a; R4 gave the pass the same three keys): an API
+ * recipe by its chosen provider's key or the in-app model (the shell's own check, which Settings › Recipes shows), a
+ * recipe on the user's ComfyUI by the connection and the node types it needs (queueGenerate's own check), the pass by
+ * the server's check. `v`: the recipe resolved to its chosen provider.
+ */
+function recipeReadiness(r, v) {
+    if (r.task === "pass") {
+        const s = host.realismSupport();
+        return { ready: !!s.ok, reason: s.reason || null, note: s.note || null };
+    }
+    if (r.kind === "provider") {
+        const ks = host.shell.keyState(v);
+        return { ready: !ks || !!ks.ok, reason: ks && !ks.ok ? ks.text : null, note: null };
+    }
+    // host.connected is never set back; the server's state is (the shell reports every status)
+    const st = host.server && host.server.state;
+    if (!host.connected || (st && st !== "connected" && st !== "missing-node")) return { ready: false, reason: "Not connected to ComfyUI: Settings › ComfyUI.", note: null };
+    const missing = (r.needs || []).filter((n) => host.objectInfo && !host.objectInfo[n]);
+    return { ready: !missing.length, reason: missing.length ? `The server lacks these node types: ${missing.join(", ")}.` : null, note: null };
+}
+
+/** The longest side an upscaler's scope document takes (host.runUpscale's and upscaleSizeRefusal's), null: no cap. */
+function documentMax(r, v) {
+    if (r.kind === "provider") return (v.limits && v.limits.max) || 2048;
+    const l = r.limits || {};
+    const m = Math.min(l.picture || Infinity, l.max || Infinity);
+    return Number.isFinite(m) ? m : null;
+}
+
+/**
  * What the app is using, in MB: the GPU process and this renderer (docs/PERFORMANCE.md phase
  * 6), and the card as a whole when it can be read (cardUsedMB / cardTotalMB, null otherwise).
  */
@@ -320,6 +409,59 @@ const P = {
 };
 /** The operations of `set_mask` (the editor's `maskOp`). */
 const MASK_OPS = ["invert", "reveal", "hide", "from_selection", "hide_selection", "enable", "disable", "apply", "remove"];
+/** The modes of `transform_layer`: the move tool's Rotate, Distort and Warp, and its quarter turns. */
+const TRANSFORM_MODES = ["rotate", "rotate90", "distort", "warp"];
+
+/** [[x, y], ...] (or [{x, y}, ...]) of finite numbers, for transform_layer's corners and points. */
+function pointList(v, what) {
+    if (!Array.isArray(v) || !v.length) throw new Error(`${what} must be a list of [x, y] points in image pixels`);
+    return v.map((q, i) => {
+        const x = Array.isArray(q) ? +q[0] : q && typeof q === "object" ? +q.x : NaN;
+        const y = Array.isArray(q) ? +q[1] : q && typeof q === "object" ? +q.y : NaN;
+        if ((Array.isArray(q) && q.length !== 2) || !Number.isFinite(x) || !Number.isFinite(y)) throw new Error(`${what}[${i}] is no [x, y] point: ${JSON.stringify(q)}`);
+        return [x, y];
+    });
+}
+
+/**
+ * The pixel size the editor's applyPending gives a pending transform, measured the way it measures it (its fine
+ * subdivisions through pendingDst, at the layer's own resolution), or null when a point is not finite.
+ */
+function pendingSize(ed, p) {
+    const l = p.layer;
+    const n = ed.pendingSubdivisions(p, true);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
+        const [X, Y] = ed.pendingDst(p, i / n, j / n);
+        if (!Number.isFinite(X) || !Number.isFinite(Y)) return null;
+        minX = Math.min(minX, X); minY = Math.min(minY, Y); maxX = Math.max(maxX, X); maxY = Math.max(maxY, Y);
+    }
+    const res = Math.max(l.px.width / l.w, l.px.height / l.h, 1);
+    const bw = Math.max(1, Math.ceil(maxX) - Math.floor(minX)), bh = Math.max(1, Math.ceil(maxY) - Math.floor(minY));
+    return { w: Math.round(bw * res), h: Math.round(bh * res) };
+}
+
+/**
+ * The clipboard Ctrl+Shift+C makes (the visible picture in the selection's box, cut to the selection; the whole picture
+ * without one), read as a box (`readBox`: padded as far as the filters read, a region pass on tiles) instead of the
+ * editor's whole flatten, which a document past the canvas limits cannot make.
+ */
+async function mergedClip(ed) {
+    const b = ed.getBounds && ed.getBounds();
+    const [x0, y0, x1, y1] = b || [0, 0, ed.width, ed.height];
+    const w = x1 - x0, h = y1 - y0;
+    const c = makeCanvas(w, h);
+    const ctx = c.getContext("2d");
+    ctx.drawImage(ed.readBox([x0, y0, x1, y1], { forRun: true }), 0, 0);
+    if (b) {
+        ctx.globalCompositeOperation = "destination-in";
+        const m = await ed.selectionCanvasSettled([x0, y0, x1, y1], 1, w, h);
+        if (m) ctx.drawImage(m, 0, 0); else ed.sel.drawTo(ctx, -x0, -y0);
+        ctx.globalCompositeOperation = "source-over";
+    }
+    ed.setStatus(`Copied ${w} × ${h} px from the visible image.`);
+    return { canvas: c, x: x0, y: y0, source: "the visible image" };
+}
 const FILE_PARAMS = {
     path: P.str("absolute path of a local image file"),
     filename: P.str("instead of path: a file name in the local store / ComfyUI input folder (with subfolder and type)"),
@@ -467,16 +609,34 @@ const COMMANDS = {
     },
     list_recipes: {
         readOnly: true,
-        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. The ${REALISM_LABEL} recipe (task "pass") says whether the connected ComfyUI can run it: ready, the reason when not, a note (RTX 30); status has the same for a document (its runs, its size).`,
+        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the ${REALISM_LABEL} recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).`,
         params: {},
         async run() {
             const cur = host.recipe;
-            const support = host.realismSupport();
-            return { selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null, recipes: host.shell.recipes().map((r) => {
-                const v = host.shell.resolveRecipe(r);
-                const pass = r.task === "pass";
-                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, limits: r.task === "upscale" && r.kind !== "provider" ? r.limits || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, textRefs: r.task === "upscale" || pass ? undefined : r.kind === "provider" ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots), ready: pass ? support.ok : undefined, reason: pass ? support.reason || null : undefined, note: pass ? support.note || null : undefined, description: r.description || "", source: r.source || "builtin" };
-            }) };
+            return {
+                selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null,
+                recipes: host.shell.recipes().map((r) => {
+                    const v = host.shell.resolveRecipe(r);
+                    const pass = r.task === "pass", up = r.task === "upscale", api = r.kind === "provider";
+                    // what the Generate new dialog offers for it: the chosen variant's text route (a local recipe takes any size)
+                    const text = api ? v.text || null : null;
+                    const makes = !up && !pass && (!api || !!text);
+                    const rows = text ? text.settings || v.settings || [] : [];
+                    return {
+                        id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit",
+                        ...recipeReadiness(r, v),
+                        keys: api ? Object.fromEntries((r.providerIds || []).map((pid) => { const ks = host.shell.keyState(host.shell.resolveRecipe(r, pid)); return [pid, !ks || !!ks.ok]; })) : undefined,
+                        new_image: makes, edit: up || pass ? undefined : !api || v.edit !== false,
+                        sizes: makes ? (text && Array.isArray(text.sizes) && text.sizes.length ? text.sizes.slice().sort((x, y) => x - y) : null) : undefined,
+                        background: makes ? rows.some((s) => s.key === "background") : undefined,
+                        factor: up ? v.factor || null : undefined, limits: up && !api ? r.limits || null : undefined, document_max: up ? documentMax(r, v) : undefined,
+                        usesPrompt: up ? !!v.usesPrompt : undefined,
+                        textRefs: up || pass ? undefined : api ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots),
+                        description: r.description || "", source: r.source || "builtin",
+                    };
+                }),
+                provider_keys: host.shell.providerKeys ? host.shell.providerKeys() : [],
+            };
         },
     },
     select_recipe: {
@@ -915,6 +1075,29 @@ const COMMANDS = {
             return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - started) / 100) / 10, prompt_sent: ed.lastSentPrompt, notes: ed.lastRunNotes || [], boxes: ed.lastSentBoxes || 0 };
         },
     },
+    cancel_run: {
+        scope: "app",
+        description: `Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends at once with the cancel, and nothing lands. A provider may still finish a job it already had and charge it. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running); ended: whether they have let go of their documents (waited for up to 10 s).`,
+        params: { doc: P.int("only this tab's runs (the id from list_documents); every tab's when left out") },
+        async run(_, a) {
+            let ed = null;
+            if (a.doc != null && a.doc !== "") {
+                ed = host.editorById(a.doc);
+                if (!ed) throw new Error(`no document with id ${a.doc} (open: ${host.editors().map((e) => e.node.id).join(", ") || "none"})`);
+            }
+            const now = Date.now();
+            const runs = host.cancelRuns(ed);
+            // the run ends in its own code (main aborts the request, a job on the user's ComfyUI is taken off it): wait for
+            // its slot and its row in the title bar to go
+            const over = () => runs.every((t) => !host._providerRuns.has(t) && !(t.editor && t.editor.providerPending === t));
+            const ended = runs.length ? await until(over, 10000, 100) : true;
+            return {
+                cancelled: runs.map((t) => ({ doc: t.editor && t.editor.node ? t.editor.node.id : null, provider: t.provider || null, label: t.label || t.provider || null, seconds: Math.round((now - (t.started || now)) / 100) / 10 })),
+                ended,
+                note: runs.length ? "A provider may still finish a job it already had and charge it." : "Nothing was running" + (ed ? " on this document." : "."),
+            };
+        },
+    },
 
     // -- layers --
     list_layers: { readOnly: true, description: "All layers bottom to top with their properties; `selected` lists the layers selected with the active one; `groups` the folders (a layer's `group` is the innermost it is in, `parent` a group's).", params: {}, async run(ed) { return { active: ed.activeLayerId, selected: ed.selectedLayers ? ed.selectedLayers().map((l) => l.id) : [], layers: ed.layers.map((l) => layerSummary(ed, l)), groups: (ed.groups || []).map((g) => groupSummary(ed, g)) }; } },
@@ -1013,6 +1196,116 @@ const COMMANDS = {
     // axis x is the editor's "h" (left to right), y its "v": until 0.1.42 both reached the editor as a vertical flip
     flip_layer: { description: "Mirror a layer: axis x mirrors it left to right (horizontally), axis y top to bottom (vertically). Refused on a locked or a filter layer.", params: { layer: P.layer(), axis: P.str("x (left to right) or y (top to bottom)", { enum: ["x", "y"], default: "x" }) }, async run(ed, a) { const l = findLayer(ed, a.layer); refuseLayer(ed, l, "flipped"); ed.activeLayerId = l.id; ed.flipLayer(a.axis === "y" || a.axis === "vertical" ? "v" : "h"); return layerSummary(ed, l); } },
     center_layer: { description: "Centre a layer on the canvas. Refused on a locked or a filter layer.", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); refuseLayer(ed, l, "centred"); ed.activeLayerId = l.id; ed.centerLayer(); return layerSummary(ed, l); } },
+    transform_layer: {
+        needsImage: true,
+        description: "Transform one layer, baked into its pixels in one undo step, as the move tool's Rotate / Distort / Warp and its quarter turns. mode rotate: by `angle` degrees clockwise about the layer's middle (a text layer stays editable: the angle goes into the text, as set_text's angle); rotate90: a quarter turn (`dir` cw or ccw) without resampling; distort: the layer's four corners to `corners` (a perspective: [[x, y] top left, top right, bottom right, bottom left] in image pixels); warp: the layer bent on a grid of n × n cells: `points` holds the (n + 1) × (n + 1) grid points row by row from the top left, in image pixels (unbent they are x + w·i/n, y + h·j/n of the layer's box). Distort and warp turn a text layer into pixels; a live mask is baked into the pixels, a switched-off one dropped (undo brings both back). The layer keeps the resolution of its pixels. Refused on a locked or a filter layer; the base is no layer (rotate_canvas and straighten_canvas turn the whole picture). from: the layer's box before; changed false: nothing to do (an angle of 0).",
+        params: {
+            layer: P.layer(),
+            mode: P.str("rotate, rotate90, distort or warp", { required: true, enum: TRANSFORM_MODES }),
+            angle: P.num("rotate: degrees clockwise"),
+            dir: P.str("rotate90: cw (clockwise) or ccw", { enum: ["cw", "ccw"], default: "cw" }),
+            corners: { type: "array", items: { type: "array", items: { type: "number" } }, description: "distort: four [x, y] in image pixels, the new top left, top right, bottom right and bottom left corner" },
+            n: P.int("warp: grid cells per side, 1..16", { default: 4 }),
+            points: { type: "array", items: { type: "array", items: { type: "number" } }, description: "warp: (n + 1) × (n + 1) [x, y] grid points in image pixels, row by row from the top left" },
+        },
+        async run(ed, a) {
+            const l = findLayer(ed, a.layer);
+            refuseLayer(ed, l, "transformed");
+            const mode = String(a.mode || "");
+            if (!TRANSFORM_MODES.includes(mode)) throw new Error(`mode must be one of ${TRANSFORM_MODES.join(", ")}`);
+            // the arguments first, so a wrong one leaves the editor as it was
+            let deg = 0, dir = 1, pts = null, n = 0;
+            if (mode === "rotate") {
+                deg = +a.angle;
+                if (a.angle == null || a.angle === "" || !Number.isFinite(deg)) throw new Error("rotate needs angle (degrees clockwise)");
+            } else if (mode === "rotate90") {
+                if (a.dir != null && a.dir !== "" && a.dir !== "cw" && a.dir !== "ccw") throw new Error("dir must be cw or ccw");
+                dir = a.dir === "ccw" ? -1 : 1;
+            } else if (mode === "distort") {
+                pts = pointList(a.corners, "corners");
+                if (pts.length !== 4) throw new Error(`distort needs four corners (top left, top right, bottom right, bottom left), not ${pts.length}`);
+            } else {
+                n = clampInt(a.n == null || a.n === "" ? 4 : a.n, 1, 16, 4);
+                if (a.n != null && a.n !== "" && n !== +a.n) throw new Error("n must be a whole number of grid cells, 1..16");
+                pts = pointList(a.points, "points");
+                if (pts.length !== (n + 1) * (n + 1)) throw new Error(`warp with n ${n} needs ${(n + 1) * (n + 1)} points ((n + 1) × (n + 1), row by row), not ${pts.length}`);
+            }
+            if (ed.textEdit) ed.endTextEdit(true);
+            // an open transform in the editor (a preview, not applied) goes, as Esc would; the modes take one layer
+            if (ed.pending) ed.cancelPending();
+            ed.selectLayers([l.id]);
+            const from = { x: l.x, y: l.y, w: l.w, h: l.h };
+            const px0 = l.px, text0 = l.text;
+            if (mode === "rotate90") ed.rotateLayer90(dir);
+            else if (mode === "rotate" && l.kind === "text" && l.text) {
+                // a text stays text: its angle grows, about its middle (the move tool's Rotate on a text does the same)
+                const now = (layerSummary(ed, l).text || {}).angle || 0;
+                await ed.setTextAngle(l, now + deg, { label: "Rotate" });
+            } else {
+                ed.startPending(mode);
+                const p = ed.pending;
+                if (!p || p.layer !== l) { if (ed.pending) ed.cancelPending(); throw new Error(ed.status || "the layer cannot be transformed"); }
+                if (mode === "rotate") p.angle = deg * Math.PI / 180;
+                else if (mode === "distort") { p.points = pts; p.H = null; }
+                else { p.n = n; p.points = pts; }
+                // the size the baked pixels get, before anything changes: a shape past one canvas (or a corner at infinity)
+                // would fail half way, after the undo step and the mask
+                const size = pendingSize(ed, p);
+                if (!size) { ed.cancelPending(); throw new Error(`the ${mode} sends a corner to infinity: give corners that make a four-sided shape`); }
+                if (size.w > 65535 || size.h > 65535 || size.w * size.h > 268435456) { ed.cancelPending(); throw new Error(`the ${mode} makes ${size.w} × ${size.h} px of pixels, more than one canvas holds (65,535 px a side, 268 megapixels)`); }
+                ed.applyPending();
+                if (ed.pending) { ed.cancelPending(); throw new Error(ed.status || "the transform was not applied"); }
+            }
+            const changed = l.px !== px0 || l.text !== text0;
+            if (changed) touch(ed);
+            return { ...layerSummary(ed, l), mode, from, changed, status: ed.status };
+        },
+    },
+    copy_to_layer: {
+        needsImage: true,
+        description: "Copy the selected pixels of a layer, or of the visible picture with merged, into a new layer at the same place (Ctrl+C, or Ctrl+Shift+C, then Ctrl+V); with nothing selected the whole layer or the whole picture. cut takes the selected pixels out of the layer (the whole layer when nothing is selected), as Ctrl+X. to_doc pastes into another tab at the same coordinates. The new layer goes on top and becomes active, one undo step in the tab it lands in (a cut is a step of its own in this tab). The clipboard the user's Ctrl+V reads stays as it was. A typical use: lift an object out of the picture onto a layer of its own, then move it (set_layer x, y) or transform_layer it. Refused: a filter layer (no pixels; merged copies the picture), a cut of a locked layer or of the merged picture.",
+        params: {
+            layer: P.layer("the layer to copy from (id, name, a unique part of the name, or \"active\"); ignored with merged"),
+            merged: P.bool("the visible picture (every visible layer with its filters, without reference and control layers) instead of one layer", { default: false }),
+            cut: P.bool("take the pixels out of the layer (not with merged)", { default: false }),
+            to_doc: P.int("the tab to paste into (default this one)"),
+            name: P.str("the new layer's name (default \"<layer> copy\", or \"Paste n\" for the picture)"),
+        },
+        async run(ed, a) {
+            const merged = !!a.merged, cut = !!a.cut;
+            if (merged && cut) throw new Error("cut takes pixels out of one layer: the merged picture cannot be cut (copy it, then hide or mask what should go)");
+            let target = ed;
+            if (a.to_doc != null && a.to_doc !== "") {
+                target = host.editorById(a.to_doc);
+                if (!target) throw new Error(`no document with id ${a.to_doc} (open: ${host.editors().map((e) => e.node.id).join(", ") || "none"})`);
+                if (!target.base || !target.width) throw new Error(`document ${a.to_doc} has no picture to paste into: load_image or new_canvas there first`);
+            }
+            const l = merged ? null : findLayer(ed, a.layer);
+            if (l && l.kind === "filter") throw new Error(`layer ${l.name || l.id} is a filter layer: it has no pixels to copy (merged true copies the visible picture)`);
+            if (l && cut) refuseLayer(ed, l);
+            const prev = ed.clipboard;   // every tab shares it: the user's Ctrl+V reads it afterwards
+            let made = null, clip = null;
+            try {
+                if (merged) clip = await mergedClip(ed);
+                else {
+                    ed.activeLayerId = l.id;
+                    // a cut takes pixels; with the layer's mask in edit mode the editor would hide them in the mask instead
+                    const edit = l.maskEdit;
+                    if (cut) l.maskEdit = false;
+                    try { clip = ed.copySelection({ cut }); } finally { if (cut && ed.layers.includes(l)) l.maskEdit = edit; }
+                }
+                if (!clip) throw new Error(ed.status || "nothing was copied");
+                ed.clipboard = clip;
+                target.pushUndo({ kind: "layers", label: "Paste" });
+                made = target.pasteClipboard();
+                if (!made) throw new Error(target.status || "nothing was pasted");
+                if (a.name != null && String(a.name).trim()) made.name = String(a.name).trim();
+            } finally { ed.clipboard = prev; }
+            touch(target);
+            if (target !== ed) touch(ed);
+            return { ...layerSummary(target, made), doc: target.node.id, source: merged ? "merged" : l.id, cut, status: target.status };
+        },
+    },
     align_layers: {
         description: "Align the selected layers (or `layers`, which get selected) on an edge or a centre, or distribute them with equal gaps, within the box around them or within the canvas (one layer aligns to the canvas). Filter and locked layers stay put. One undo step.",
         params: {
@@ -1296,6 +1589,46 @@ const COMMANDS = {
             return { width: ed.width, height: ed.height, status: ed.status };
         },
     },
+    resize_image: {
+        destructive: true,
+        needsImage: true,
+        description: "Resize the whole document, as Image › Canvas › Resize: the base picture is resampled to the new size, every layer keeps its own pixels and is scaled in place, masks and the selection follow; one undo step. Give width and height, or one of them (the other keeps the aspect), or percent, or long_side (the aspect kept). Refused while a run or another job of the document is going (its result would land in the old geometry), below 8 px a side, and past what one canvas holds (65,535 px a side, 268 megapixels). from: the size before.",
+        params: {
+            width: P.int("the new width in pixels"), height: P.int("the new height in pixels"),
+            percent: P.num("instead: percent of the current size (1..1000)"), long_side: P.int("instead: the new long side in pixels"),
+        },
+        async run(ed, a) {
+            const W = ed.width, H = ed.height;
+            const given = (v) => v != null && v !== "";
+            const ways = [given(a.width) || given(a.height), given(a.percent), given(a.long_side)].filter(Boolean).length;
+            if (ways !== 1) throw new Error(ways ? "give width / height, percent or long_side, one of them" : "give width and / or height, percent or long_side");
+            const num = (v, what) => { const x = +v; if (!Number.isFinite(x) || x <= 0) throw new Error(`${what} must be a positive number, not ${JSON.stringify(v)}`); return x; };
+            let nw, nh;
+            if (given(a.percent)) {
+                const p = num(a.percent, "percent");
+                if (p < 1 || p > 1000) throw new Error("percent must be 1..1000");
+                nw = Math.round(W * p / 100); nh = Math.round(H * p / 100);
+            } else if (given(a.long_side)) {
+                const k = num(a.long_side, "long_side") / Math.max(W, H);
+                nw = Math.round(W * k); nh = Math.round(H * k);
+            } else {
+                nw = given(a.width) ? Math.round(num(a.width, "width")) : null;
+                nh = given(a.height) ? Math.round(num(a.height, "height")) : null;
+                if (nw == null) nw = Math.round(W * nh / H);
+                if (nh == null) nh = Math.round(H * nw / W);
+            }
+            if (nw < 8 || nh < 8) throw new Error(`${nw} × ${nh} px is too small: at least 8 px a side`);
+            if (nw > 65535 || nh > 65535 || nw * nh > 268435456) throw new Error(`${nw} × ${nh} px is more than one canvas holds (65,535 px a side, 268 megapixels): the resize needs one of that size`);
+            if (nw === W && nh === H) throw new Error(`the picture is ${W} × ${H} already`);
+            // before the editor, which would only say it in the status line: a job would land in the old geometry
+            const blocked = ed.turnBlocked();
+            if (blocked) throw new Error(blocked);
+            if (ed._turning) throw new Error("Wait for the turn to finish.");
+            await ed.resizeImage(nw, nh);
+            if (ed.width !== nw || ed.height !== nh) throw new Error(ed.status || "the picture could not be resized");
+            return { width: ed.width, height: ed.height, from: [W, H], status: ed.status };
+        },
+    },
 
     // -- export --
     export: {
@@ -1334,17 +1667,23 @@ const COMMANDS = {
     },
     screenshot: {
         readOnly: true,
-        needsImage: true, description: "A JPEG of the image (what = image: the flattened picture; editor: with hidden helpers; layer: one layer alone), base64 in `data`.",
-        params: { what: P.str("image, editor or layer", { enum: ["image", "editor", "layer"], default: "image" }), layer: P.layer("for what = layer"), max_size: P.int("long side in pixels (64..4096)", { default: 1024 }), quality: P.num("JPEG quality 0.3..0.95", { default: 0.85 }), show_selection: P.bool("tint and outline the selection", { default: true }), show_layers: P.bool("outline and label the layers", { default: false }) },
+        needsImage: true, description: "A JPEG, base64 in `data`. what = image: the flattened picture; editor: with hidden helpers; layer: one layer alone (its own pixels, whole); base: the base picture without any layer (the before); mask: the selection in black and white (white = selected), or with `layer` that layer's mask over its place (white = the layer shows). box [x, y, w, h] in image pixels shows only that region (not with layer), up to 1:1 (max_size caps its long side): judge an inpainted area on a large picture at full resolution. scale: output pixels per image pixel; box: the region read, held to the picture.",
+        params: {
+            what: P.str("image, editor, layer, base or mask", { enum: SHOT_WHAT, default: "image" }), layer: P.layer("for what = layer; for what = mask the layer whose mask to show (the selection when left out)", { default: undefined }),
+            box: { type: "array", items: { type: "number" }, description: "[x, y, w, h]: only this region of the picture, in image pixels (image, editor, base, mask)" },
+            max_size: P.int("long side in pixels (64..4096)", { default: 1024 }), quality: P.num("JPEG quality 0.3..0.95", { default: 0.85 }), show_selection: P.bool("tint and outline the selection (image, editor, base)", { default: true }), show_layers: P.bool("outline and label the layers", { default: false }),
+        },
         async run(ed, a) {
-            const { canvas: c, w, h, s, src } = await shotCanvas(ed, a);
+            const { canvas: c, w, h, s, src, box } = await shotCanvas(ed, a);
             const ctx = c.getContext("2d");
-            if (a.show_layers && a.what !== "layer") {
+            const ox = box ? box.x : 0, oy = box ? box.y : 0;
+            if (a.show_layers && a.what !== "layer" && a.what !== "mask") {
                 ctx.strokeStyle = "#7cc7ff"; ctx.lineWidth = 1; ctx.font = "12px sans-serif"; ctx.fillStyle = "#7cc7ff";
-                for (const l of ed.layers) { if (l.kind === "filter" || !l.visible) continue; ctx.strokeRect(l.x * s, l.y * s, l.w * s, l.h * s); ctx.fillText(l.name, l.x * s + 3, l.y * s + 13); }
+                for (const l of ed.layers) { if (l.kind === "filter" || !l.visible) continue; ctx.strokeRect((l.x - ox) * s, (l.y - oy) * s, l.w * s, l.h * s); ctx.fillText(l.name, (l.x - ox) * s + 3, (l.y - oy) * s + 13); }
             }
             const url = c.toDataURL("image/jpeg", Math.min(0.95, Math.max(0.3, +a.quality || 0.85)));
-            return { width: w, height: h, scale: s, image_width: src.w, image_height: src.h, mime: "image/jpeg", data: url.slice(url.indexOf(",") + 1) };
+            // with a box the picture's own size, and the region read
+            return { width: w, height: h, scale: s, image_width: box ? ed.width : src.w, image_height: box ? ed.height : src.h, ...(box ? { box } : {}), mime: "image/jpeg", data: url.slice(url.indexOf(",") + 1) };
         },
     },
     get_state: { readOnly: true, description: "The document's state JSON (the node's canvas_state without the selection bitmaps).", params: {}, async run(ed) { const v = JSON.parse(ed.getValue() || "{}"); delete v.selection; delete v.selections; return v; } },

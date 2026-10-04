@@ -69,6 +69,20 @@ the section for its version; `docs/` and the commit history hold the technical d
   deleted layer, layers merged, a crop, a file written over, the recipe's settings), from flags on the commands
   themselves; plugin commands can set them (`docs/PLUGINS.md`). Until now the plugins' reads were not marked read-only,
   most commands that lose something were not marked destructive, and New document was.
+- Agents: four new commands. `transform_layer` rotates a layer by any angle, turns it a quarter, distorts it to four
+  corners or warps it on a grid, as the move tool does (a text layer's rotation stays editable). `copy_to_layer` puts
+  the selected pixels of a layer, or of the visible picture, on a new layer at the same place, in this tab or another
+  (a cut takes them out of the layer); the clipboard your Ctrl+V reads stays as it was. `resize_image` resizes the
+  whole document as Image › Canvas › Resize does, refused while a run is going on the document. `cancel_run` cancels
+  the runs in flight as the title row's *Cancel* does, for one tab or all; a command waiting on such a run ends at once.
+  Each change is one undo step.
+- Agents: `list_recipes` says for every recipe whether it can run now and why not (a missing key, the in-app model not
+  downloaded, not connected to ComfyUI, node types the server lacks), which of a recipe's providers have a key, whether
+  it makes new images and at which sizes, whether it takes a transparent background, and the largest picture an
+  upscaler takes whole; it lists the API providers with whether a key is stored (never the key itself). `screenshot`
+  takes a region of the picture at up to full resolution, the picture without its layers, and the selection or a
+  layer's mask in black and white. The in-app assistant asks before it transforms or cuts a layer you made, pastes into
+  another tab or resizes the picture.
 
 ## 0.1.41 — 2026-10-03
 

@@ -1147,8 +1147,9 @@ try {
     const readiness = async () => {
         const rec = (await c("list_recipes")).recipes.find((x) => x.id === "realism_pass");
         const st = (await c("status", { doc })).realism;
+        // F2a: every recipe has its readiness now (the step list_recipes_readiness checks the others)
         const other = (await c("list_recipes")).recipes.find((x) => x.id !== "realism_pass");
-        if (!rec || !st || other.ready !== undefined) throw new Error("readiness missing, or on another recipe: " + JSON.stringify({ rec, st, other: other && other.id }));
+        if (!rec || !st || typeof other.ready !== "boolean") throw new Error("readiness missing: " + JSON.stringify({ rec, st, other: other && other.id }));
         return { rec, st };
     };
     const v0 = host.realismValues();
@@ -1267,6 +1268,442 @@ try {
     host.connected = saved.connected; host.objectInfo = saved.objectInfo;
     host.setServerStatus({ state: saved.server.state || "disconnected", os: saved.server.os || "", gpus: saved.server.gpus || [], remote: !!saved.server.remote, url: saved.server.url || "", version: saved.server.version || "" });
     host.setRecipe(saved.recipe);
+}
+"""),
+    # docs/PLAN_0_1_42.md F2a: the six commands of high value for agents
+    ("transform_layer", """
+// the move tool's Rotate / Distort / Warp and its quarter turns as one command, each baked in one undo step; a text layer's
+// rotation stays its angle; a locked or a filter layer, a wrong argument or a shape past one canvas refused before
+// anything changes
+const d = await c("new_document");
+await c("new_canvas", { width: 400, height: 300, doc: d.id });
+const ed = window.editor;
+const P = await import("./plugins.js");
+const doc = new P.Document(ed);
+const W = 40, H = 20;
+const img = new ImageData(W, H);
+const RED = [230, 30, 30], GREEN = [30, 200, 40], BLUE = [30, 40, 220];
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    // the left 10 columns red, the top 5 rows of the rest green, the rest blue, opaque
+    const i = (y * W + x) * 4, k = x < 10 ? RED : y < 5 ? GREEN : BLUE;
+    img.data[i] = k[0]; img.data[i + 1] = k[1]; img.data[i + 2] = k[2]; img.data[i + 3] = 255;
+}
+const made = doc.addLayer(img, { name: "Turn probe", x: 100, y: 100 });
+const L = () => ed.layers.find((l) => l.id === made.id);
+const read = () => { const l = L(); return { w: l.px.width, h: l.px.height, d: Array.from(l.px.readRect(0, 0, l.px.width, l.px.height).data) }; };
+const same = (a, b) => a.w === b.w && a.h === b.h && a.d.every((v, i) => v === b.d[i]);
+// the layer's pixel at image (ix, iy) (its own resolution is 1 here)
+const at = (ix, iy) => { const l = L(); const lx = Math.floor(ix - l.x), ly = Math.floor(iy - l.y); if (lx < 0 || ly < 0 || lx >= l.px.width || ly >= l.px.height) return [0, 0, 0, 0]; return Array.from(l.px.readRect(lx, ly, 1, 1).data); };
+const near = (p, k) => p[3] > 200 && Math.abs(p[0] - k[0]) + Math.abs(p[1] - k[1]) + Math.abs(p[2] - k[2]) < 60;
+const lastLabel = () => ed.undo[ed.undo.length - 1].label;
+const p0 = read();
+const out = {};
+try {
+    // a quarter turn clockwise: no resampling, the middle kept
+    const r90 = await c("transform_layer", { doc: d.id, layer: made.id, mode: "rotate90" });
+    const q = read();
+    let off = 0;
+    for (let y = 0; y < q.h; y++) for (let x = 0; x < q.w; x++) for (let k = 0; k < 4; k++) if (q.d[(y * q.w + x) * 4 + k] !== p0.d[((H - 1 - x) * W + y) * 4 + k]) off++;
+    if (q.w !== H || q.h !== W || off) throw new Error("rotate90 is no clockwise quarter turn: " + JSON.stringify({ w: q.w, h: q.h, off }));
+    if (r90.x !== 110 || r90.y !== 90 || r90.w !== 20 || r90.h !== 40 || !r90.changed || lastLabel() !== "Rotate 90° clockwise") throw new Error("rotate90: " + JSON.stringify({ r90, label: lastLabel() }));
+    await c("undo", { doc: d.id });
+    if (!same(read(), p0) || L().x !== 100 || L().w !== 40) throw new Error("one undo did not take the quarter turn back");
+    const ccw = await c("transform_layer", { doc: d.id, layer: made.id, mode: "rotate90", dir: "ccw" });
+    if (!near(at(ccw.x + 10, ccw.y + 37), RED) || lastLabel() !== "Rotate 90° counter-clockwise") throw new Error("rotate90 ccw: the red band is not at the bottom: " + JSON.stringify(at(ccw.x + 10, ccw.y + 37)));
+    await c("undo", { doc: d.id });
+    // 30 degrees clockwise about the middle (120, 110): the box grows to the turned rectangle's, the red band's middle
+    // (15 px left of the middle) goes up-left, a point the other way round stays empty
+    const r30 = await c("transform_layer", { doc: d.id, layer: made.id, mode: "rotate", angle: 30 });
+    const cx = r30.x + r30.w / 2, cy = r30.y + r30.h / 2;
+    if (r30.w < 44 || r30.w > 47 || r30.h < 37 || r30.h > 40 || Math.abs(cx - 120) > 1 || Math.abs(cy - 110) > 1 || lastLabel() !== "Rotate") throw new Error("rotate 30: " + JSON.stringify({ x: r30.x, y: r30.y, w: r30.w, h: r30.h, label: lastLabel() }));
+    const cw = at(120 - 15 * Math.cos(Math.PI / 6), 110 - 15 * Math.sin(Math.PI / 6)), wrong = at(107, 117.5), blue = at(121, 116.3);
+    if (!near(cw, RED) || wrong[3] > 40 || !near(blue, BLUE)) throw new Error("rotate 30 is not clockwise: " + JSON.stringify({ cw, wrong, blue }));
+    out.rotate = { w: r30.w, h: r30.h, cw, blue };
+    await c("undo", { doc: d.id });
+    if (!same(read(), p0)) throw new Error("one undo did not take the rotation back");
+    // an angle of 0 changes nothing and pushes no step
+    const u0 = ed.undo.length;
+    const r0 = await c("transform_layer", { doc: d.id, layer: made.id, mode: "rotate", angle: 0 });
+    if (r0.changed || ed.undo.length !== u0 || !same(read(), p0)) throw new Error("rotate by 0 changed something");
+    // distort: the corners twice as wide is a stretch
+    const dr = await c("transform_layer", { doc: d.id, layer: made.id, mode: "distort", corners: [[100, 100], [180, 100], [180, 120], [100, 120]] });
+    if (dr.x !== 100 || dr.y !== 100 || dr.w !== 80 || dr.h !== 20 || lastLabel() !== "Distort") throw new Error("distort: " + JSON.stringify({ x: dr.x, y: dr.y, w: dr.w, h: dr.h, label: lastLabel() }));
+    if (!near(at(110, 112), RED) || !near(at(160, 102), GREEN) || !near(at(160, 115), BLUE)) throw new Error("distort's pixels: " + JSON.stringify([at(110, 112), at(160, 102), at(160, 115)]));
+    await c("undo", { doc: d.id });
+    // warp: the 2 x 2 grid moved by (10, 5) moves the layer
+    const pts = [];
+    for (let j = 0; j <= 2; j++) for (let i = 0; i <= 2; i++) pts.push([100 + 20 * i + 10, 100 + 10 * j + 5]);
+    const wr = await c("transform_layer", { doc: d.id, layer: made.id, mode: "warp", n: 2, points: pts });
+    if (wr.x !== 110 || wr.y !== 105 || wr.w !== 40 || wr.h !== 20 || lastLabel() !== "Warp") throw new Error("warp: " + JSON.stringify({ x: wr.x, y: wr.y, w: wr.w, h: wr.h, label: lastLabel() }));
+    if (!near(at(115, 117), RED) || !near(at(140, 107), GREEN) || !near(at(140, 120), BLUE)) throw new Error("warp's pixels: " + JSON.stringify([at(115, 117), at(140, 107), at(140, 120)]));
+    await c("undo", { doc: d.id });
+    if (!same(read(), p0) || L().x !== 100 || L().y !== 100) throw new Error("undo did not take the warp back");
+    // a text layer stays text: its angle grows; undo takes it back
+    const t = await c("add_text", { doc: d.id, text: "Hi", x: 220, y: 40, size: 32, name: "Turn text" });
+    const tr = await c("transform_layer", { doc: d.id, layer: t.id, mode: "rotate", angle: 20 });
+    if (tr.kind !== "text" || !tr.text || tr.text.angle !== 20 || !tr.changed) throw new Error("a text's rotation: " + JSON.stringify(tr.text));
+    await c("undo", { doc: d.id });
+    if ((await c("list_layers", { doc: d.id })).layers.find((l) => l.id === t.id).text.angle) throw new Error("undo did not take the text's angle back");
+    out.text = tr.text.angle;
+    // refused before anything changes
+    const refused = async (args, re) => {
+        const u1 = ed.undo.length, before = read();
+        let msg = "";
+        try { await c("transform_layer", { doc: d.id, layer: made.id, ...args }); } catch (e) { msg = String(e.message || e); }
+        if (!re.test(msg)) throw new Error("transform_layer " + JSON.stringify(args).slice(0, 80) + ": " + (msg || "not refused"));
+        if (ed.undo.length !== u1 || !same(read(), before) || ed.pending) throw new Error("a refused transform changed something: " + msg);
+        return msg;
+    };
+    out.refused = [
+        await refused({ mode: "spin" }, /^mode must be one of rotate, rotate90, distort, warp/),
+        await refused({ mode: "rotate" }, /^rotate needs angle/),
+        await refused({ mode: "rotate90", dir: "left" }, /^dir must be cw or ccw/),
+        await refused({ mode: "distort", corners: [[0, 0], [1, 0], [1, 1]] }, /^distort needs four corners/),
+        await refused({ mode: "distort", corners: [[0, 0], [1, 0], [1, "x"], [0, 1]] }, /^corners.2. is no .x, y. point/),
+        await refused({ mode: "warp", n: 2, points: pts.slice(1) }, /^warp with n 2 needs 9 points/),
+        await refused({ mode: "distort", corners: [[0, 0], [70000, 0], [70000, 20], [0, 20]] }, /more than one canvas holds/),
+    ];
+    await c("set_layer", { doc: d.id, layer: made.id, locked: true });
+    out.locked = await refused({ mode: "rotate90" }, /^layer Turn probe is locked/);
+    await c("set_layer", { doc: d.id, layer: made.id, locked: false });
+    const fl = await c("add_filter", { doc: d.id, type: "curves", name: "Turn filter" });
+    let fm = "";
+    try { await c("transform_layer", { doc: d.id, layer: fl.id, mode: "rotate", angle: 5 }); } catch (e) { fm = String(e.message || e); }
+    if (fm !== "layer Turn filter is a filter layer: it cannot be transformed") throw new Error("a filter layer: " + (fm || "not refused"));
+    out.tiles = !!ed.tileMode;
+    return out;
+} finally {
+    await c("close_document", { doc: d.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
+    ("copy_to_layer", """
+// Ctrl+C / Ctrl+Shift+C / Ctrl+X then Ctrl+V as one command: the selected pixels of a layer or of the picture as a new layer
+// at the same place, one undo step; the user's clipboard stays; a cut clears the pixels; another tab takes the paste
+const { host } = await import("./editor/host.js");
+const d = await c("new_document");
+await c("new_canvas", { width: 300, height: 200, doc: d.id });
+const d2 = await c("new_document", { activate: false });
+const ed = host.editorById(d.id), ed2 = host.editorById(d2.id);
+const P = await import("./plugins.js");
+const doc = new P.Document(ed);
+const W = 60, H = 40;
+const img = new ImageData(W, H);
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; img.data[i] = 4 * x; img.data[i + 1] = 6 * y; img.data[i + 2] = 200 - 3 * x; img.data[i + 3] = 255; }
+const made = doc.addLayer(img, { name: "Copy probe", x: 50, y: 40 });
+const layer = (e, id) => e.layers.find((l) => l.id === id);
+const px = (e, id, x, y, w, h) => Array.from(layer(e, id).px.readRect(x, y, w, h).data);
+const diff = (a, b) => { let m = 0; for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return a.length === b.length ? m : 999; };
+const sentinel = { canvas: document.createElement("canvas"), x: 1, y: 2, source: "sentinel" };
+const out = {};
+try {
+    await c("select_rect", { doc: d.id, x: 60, y: 50, w: 30, h: 20 });
+    ed.clipboard = sentinel;
+    const n0 = ed.layers.length;
+    // a layer's selected pixels
+    const cp = await c("copy_to_layer", { doc: d.id, layer: made.id });
+    if (ed.clipboard !== sentinel) throw new Error("the user's clipboard was replaced");
+    if (cp.x !== 60 || cp.y !== 50 || cp.w !== 30 || cp.h !== 20 || cp.name !== "Copy probe copy" || !cp.active || cp.doc !== d.id || ed.layers.length !== n0 + 1) throw new Error("the copy: " + JSON.stringify(cp));
+    const dc = diff(px(ed, cp.id, 0, 0, 30, 20), px(ed, made.id, 10, 10, 30, 20));
+    if (dc > 2 || ed.undo[ed.undo.length - 1].label !== "Paste") throw new Error("the copy's pixels differ by " + dc + " levels, or its step is " + ed.undo[ed.undo.length - 1].label);
+    await c("undo", { doc: d.id });
+    if (layer(ed, cp.id) || ed.layers.length !== n0) throw new Error("one undo did not take the paste back");
+    // the visible picture in the selection's box, as the whole flatten has it
+    const flat = Array.from(ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(60, 50, 30, 20).data);
+    const mg = await c("copy_to_layer", { doc: d.id, merged: true, name: "Lifted" });
+    const dm = diff(px(ed, mg.id, 0, 0, 30, 20), flat);
+    if (mg.name !== "Lifted" || mg.x !== 60 || mg.y !== 50 || mg.w !== 30 || mg.h !== 20 || mg.source !== "merged" || dm > 2) throw new Error("merged: " + JSON.stringify({ name: mg.name, x: mg.x, y: mg.y, w: mg.w, h: mg.h, dm }));
+    await c("undo", { doc: d.id });
+    // a cut: the pixels leave the layer, the new one holds them; the cut and the paste are a step each
+    const before = px(ed, made.id, 0, 0, W, H);
+    const want = [];
+    for (let y = 10; y < 30; y++) for (let x = 10; x < 40; x++) for (let k = 0; k < 4; k++) want.push(before[(y * W + x) * 4 + k]);
+    const ct = await c("copy_to_layer", { doc: d.id, layer: made.id, cut: true });
+    const hole = px(ed, made.id, 10, 10, 30, 20);
+    const dcut = diff(px(ed, ct.id, 0, 0, 30, 20), want);
+    if (!ct.cut || hole.some((v, i) => i % 4 === 3 && v !== 0) || dcut > 2) throw new Error("the cut: " + JSON.stringify({ cut: ct.cut, holeAlpha: hole.filter((v, i) => i % 4 === 3 && v).length, dcut }));
+    await c("undo", { doc: d.id });
+    await c("undo", { doc: d.id });
+    if (diff(px(ed, made.id, 0, 0, W, H), before) || ed.layers.length !== n0) throw new Error("two undos did not take the cut back");
+    // into another tab, at the same place
+    await c("new_canvas", { width: 300, height: 200, doc: d2.id });
+    const td = await c("copy_to_layer", { doc: d.id, layer: made.id, to_doc: d2.id });
+    if (td.doc !== d2.id || !layer(ed2, td.id) || layer(ed, td.id) || td.x !== 60 || td.y !== 50 || ed.layers.length !== n0) throw new Error("to_doc: " + JSON.stringify(td));
+    // nothing selected: the whole layer
+    await c("select_none", { doc: d.id });
+    const wl = await c("copy_to_layer", { doc: d.id, layer: made.id });
+    if (wl.x !== 50 || wl.y !== 40 || wl.w !== W || wl.h !== H || diff(px(ed, wl.id, 0, 0, W, H), before) > 2) throw new Error("the whole layer: " + JSON.stringify({ x: wl.x, y: wl.y, w: wl.w, h: wl.h }));
+    await c("undo", { doc: d.id });
+    // refused
+    const refused = async (args, re) => { let m = ""; try { await c("copy_to_layer", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); } if (!re.test(m)) throw new Error("copy_to_layer " + JSON.stringify(args) + ": " + (m || "not refused")); return m; };
+    const fl = await c("add_filter", { doc: d.id, type: "curves", name: "Copy filter" });
+    await c("set_layer", { doc: d.id, layer: made.id, locked: true });
+    const d3 = await c("new_document", { activate: false });
+    out.refused = [
+        await refused({ merged: true, cut: true }, /^cut takes pixels out of one layer/),
+        await refused({ layer: made.id, cut: true }, /^layer Copy probe is locked/),
+        await refused({ layer: fl.id }, /^layer Copy filter is a filter layer: it has no pixels to copy/),
+        await refused({ layer: made.id, to_doc: 9999 }, /^no document with id 9999/),
+        await refused({ layer: made.id, to_doc: d3.id }, /has no picture to paste into/),
+    ];
+    await c("close_document", { doc: d3.id });
+    if (ed.layers.length !== n0 + 1 || ed.clipboard !== sentinel) throw new Error("a refusal changed the layers or the clipboard");
+    out.tiles = !!ed.tileMode; out.diffs = { layer: dc, merged: dm };
+    return out;
+} finally {
+    ed.clipboard = null;
+    await c("close_document", { doc: d.id });
+    await c("close_document", { doc: d2.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
+    ("resize_image", """
+// Image › Canvas › Resize as a command: the base resampled, the layers scaled in place at their own pixels, the selection
+// along, one undo step; refused while a job would land in the old geometry, and on sizes no canvas holds
+const { host } = await import("./editor/host.js");
+const d = await c("new_document");
+await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });
+const ed = host.editorById(d.id);
+const P = await import("./plugins.js");
+const doc = new P.Document(ed);
+const img = new ImageData(40, 20);
+img.data.fill(255);
+const made = doc.addLayer(img, { name: "Resize probe", x: 30, y: 20 });
+await c("select_rect", { doc: d.id, x: 10, y: 10, w: 100, h: 50 });
+const W0 = ed.width, H0 = ed.height;
+const mean = () => { const c2 = ed.flattenToCanvas({ forRun: true }); const g = c2.getContext("2d").getImageData(0, 0, c2.width, c2.height).data; const s = [0, 0, 0]; for (let i = 0; i < g.length; i += 4) { s[0] += g[i]; s[1] += g[i + 1]; s[2] += g[i + 2]; } return s.map((v) => v / (g.length / 4)); };
+const m0 = mean();
+const out = {};
+try {
+    const r = await c("resize_image", { doc: d.id, percent: 50 });
+    const L = ed.layers.find((l) => l.id === made.id);
+    const sel = (await c("status", { doc: d.id })).selection;
+    if (r.width !== Math.round(W0 / 2) || r.height !== Math.round(H0 / 2) || ed.width !== r.width || JSON.stringify(r.from) !== JSON.stringify([W0, H0])) throw new Error("percent 50: " + JSON.stringify(r));
+    if (L.x !== 15 || L.y !== 10 || L.w !== 20 || L.h !== 10 || L.px.width !== 40 || L.px.height !== 20) throw new Error("the layer: " + JSON.stringify({ x: L.x, y: L.y, w: L.w, h: L.h, px: [L.px.width, L.px.height] }));
+    if (!sel || Math.abs(sel.x - 5) > 1 || Math.abs(sel.y - 5) > 1 || Math.abs(sel.w - 50) > 1 || Math.abs(sel.h - 25) > 1) throw new Error("the selection: " + JSON.stringify(sel));
+    const m1 = mean();
+    if (m0.some((v, i) => Math.abs(v - m1[i]) > 3)) throw new Error("the picture's mean colour moved: " + JSON.stringify({ m0, m1 }));
+    if (ed.undo[ed.undo.length - 1].label !== "Resize image") throw new Error("the step: " + ed.undo[ed.undo.length - 1].label);
+    await c("undo", { doc: d.id });
+    // the canvas step puts its own copy of the layers back
+    const L1 = ed.layers.find((l) => l.id === made.id);
+    if (ed.width !== W0 || ed.height !== H0 || !L1 || L1.x !== 30 || L1.w !== 40) throw new Error("one undo did not take the resize back: " + JSON.stringify({ w: ed.width, h: ed.height, layer: L1 && [L1.x, L1.w] }));
+    const wOnly = await c("resize_image", { doc: d.id, width: 200 });
+    if (wOnly.width !== 200 || wOnly.height !== Math.round(H0 * 200 / W0)) throw new Error("width alone: " + JSON.stringify(wOnly));
+    await c("undo", { doc: d.id });
+    const ls = await c("resize_image", { doc: d.id, long_side: 300 });
+    if (Math.max(ls.width, ls.height) !== 300) throw new Error("long_side: " + JSON.stringify(ls));
+    await c("undo", { doc: d.id });
+    const both = await c("resize_image", { doc: d.id, width: 333, height: 111 });
+    if (both.width !== 333 || both.height !== 111) throw new Error("both: " + JSON.stringify(both));
+    await c("undo", { doc: d.id });
+    const refused = async (args, re, setup, teardown) => {
+        if (setup) setup();
+        let m = "";
+        try { await c("resize_image", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); } finally { if (teardown) teardown(); }
+        if (!re.test(m) || ed.width !== W0 || ed.height !== H0) throw new Error("resize_image " + JSON.stringify(args) + ": " + (m || "not refused") + " at " + ed.width + " x " + ed.height);
+        return m;
+    };
+    out.refused = [
+        await refused({}, /^give width and . or height, percent or long_side/),
+        await refused({ width: 100, percent: 50 }, /^give width . height, percent or long_side, one of them/),
+        await refused({ percent: 0.5 }, /^percent must be 1..1000/),
+        await refused({ width: 4 }, /is too small/),
+        await refused({ width: 70000, height: 10 }, /more than one canvas holds/),
+        await refused({ width: W0, height: H0 }, /already/),
+        await refused({ percent: 50 }, /^Wait for the running job to finish/, () => { ed.providerPending = { provider: "loopback", label: "Loopback", started: Date.now() }; }, () => { ed.providerPending = null; }),
+        await refused({ percent: 50 }, /^A render on your ComfyUI is still running/, () => { (ed._localRuns || (ed._localRuns = new Set())).add("user-render"); }, () => { ed._localRuns.delete("user-render"); }),
+    ];
+    out.tiles = !!ed.tileMode;
+    return out;
+} finally {
+    await c("close_document", { doc: d.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
+    ("cancel_run", """
+// the title row's Cancel as a command: an API run waiting on its provider (the loopback, 20 s) is cancelled, the generate
+// waiting on it ends at once, nothing lands; another tab's cancel leaves it alone; without doc every tab's
+const { host } = await import("./editor/host.js");
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const d = await c("new_document");
+await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });
+const other = await c("new_document", { activate: false });
+const ed = host.editorById(d.id);
+const prev = host.recipe;
+host.setRecipe({ id: "loopback_slow", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", refs: { name: "image {n}" }, name: "Loopback slow", settings: [], fixed: { delay_ms: 20000 } });
+const out = {};
+try {
+    const none = await c("cancel_run", { doc: d.id });
+    if (none.cancelled.length || none.ended !== true || none.note !== "Nothing was running on this document.") throw new Error("nothing running: " + JSON.stringify(none));
+    await c("select_rect", { doc: d.id, x: 10, y: 10, w: 64, h: 64 });
+    const n0 = ed.layers.length;
+    const start = async () => {
+        const t0 = Date.now();
+        const g = c("generate", { doc: d.id, timeout: 60 }).then(() => "finished", (e) => String(e.message || e));
+        for (let k = 0; k < 100 && !(ed.providerPending && host._providerRuns.size); k++) await wait(50);
+        if (!ed.providerPending) throw new Error("the run did not start: " + ed.status);
+        await wait(1000);   // the request waits in main by now
+        return { g, t0 };
+    };
+    const run1 = await start();
+    const elsewhere = await c("cancel_run", { doc: other.id });
+    if (elsewhere.cancelled.length || !ed.providerPending) throw new Error("another tab's cancel reached the run: " + JSON.stringify(elsewhere));
+    const r = await c("cancel_run", { doc: d.id });
+    const msg = await run1.g, ms = Date.now() - run1.t0;
+    if (r.cancelled.length !== 1 || r.cancelled[0].doc !== d.id || r.cancelled[0].provider !== "loopback" || r.cancelled[0].label !== "Loopback" || !(r.cancelled[0].seconds >= 0.5) || r.ended !== true || !/charge/.test(r.note)) throw new Error("the cancel: " + JSON.stringify(r));
+    // once the request waits in main, main stops waiting at once; a cancel while the crop is made sends nothing
+    if (!/^Cancelled (after [0-9.]+ s: Scumble stopped waiting for Loopback|before anything was sent)/.test(msg) || ms > 8000) throw new Error("the generate ended with: " + msg + " after " + ms + " ms");
+    if (ed.providerPending || ed.layers.length !== n0) throw new Error("the document is still held, or a layer landed");
+    // without doc: every tab's runs
+    const run2 = await start();
+    const all = await c("cancel_run");
+    const msg2 = await run2.g;
+    if (all.cancelled.length !== 1 || all.cancelled[0].doc !== d.id || !/^Cancelled/.test(msg2)) throw new Error("every tab's: " + JSON.stringify(all) + " / " + msg2);
+    out.cancelled = { ms, msg: msg.slice(0, 70) };
+    let bad = "";
+    try { await c("cancel_run", { doc: 9999 }); } catch (e) { bad = String(e.message || e); }
+    if (!/^no document with id 9999/.test(bad)) throw new Error("an unknown doc: " + (bad || "not refused"));
+    return out;
+} finally {
+    host.setRecipe(prev);
+    await c("close_document", { doc: d.id });
+    await c("close_document", { doc: other.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
+    ("list_recipes_readiness", """
+// every recipe says whether it can run now and why not; the provider key flags are booleans, never the key; the text
+// route's sizes and background, an upscaler's document_max
+const { host } = await import("./editor/host.js");
+const L = await c("list_recipes");
+const out = {};
+const bad = L.recipes.filter((r) => typeof r.ready !== "boolean" || (r.ready ? r.reason !== null : typeof r.reason !== "string" || !r.reason));
+if (bad.length) throw new Error("readiness: " + JSON.stringify(bad.map((r) => [r.id, r.ready, r.reason])));
+if (!Array.isArray(L.provider_keys) || !L.provider_keys.length) throw new Error("provider_keys: " + JSON.stringify(L.provider_keys));
+for (const p of L.provider_keys) if (typeof p.key !== "boolean" || typeof p.id !== "string" || Object.keys(p).some((k) => !["id", "label", "key", "shares_key"].includes(k))) throw new Error("a provider row: " + JSON.stringify(p));
+// an API recipe: ready exactly when its chosen provider has its key, the same flag in keys and provider_keys
+for (const r of L.recipes.filter((x) => x.kind === "provider")) {
+    if (!r.keys || Object.keys(r.keys).join() !== r.providers.join() || Object.values(r.keys).some((v) => typeof v !== "boolean")) throw new Error(r.id + " keys: " + JSON.stringify(r.keys));
+    if (r.ready !== r.keys[r.provider]) throw new Error(r.id + ": ready " + r.ready + ", its provider's key " + r.keys[r.provider]);
+    const pk = L.provider_keys.find((p) => p.id === r.provider);
+    if (pk && pk.key !== r.ready) throw new Error(r.id + ": provider_keys says " + pk.key);
+    if (!r.ready && r.provider !== "inapp" && !/key/.test(r.reason)) throw new Error(r.id + "'s reason: " + r.reason);
+}
+// a recipe on the user's ComfyUI: by the connection and its node types
+const flux = L.recipes.find((x) => x.id === "flux2_klein_local");
+const fluxRaw = host.shell.recipes().find((x) => x.id === "flux2_klein_local");
+if (!flux || !fluxRaw || !(fluxRaw.needs || []).length) throw new Error("no local recipe with node types to try");
+if (flux.new_image !== true || flux.edit !== true || flux.sizes !== null || flux.background !== false || flux.keys !== undefined) throw new Error("the local recipe's fields: " + JSON.stringify(flux));
+const saved = { server: { ...(host.server || {}) }, objectInfo: host.objectInfo, connected: host.connected };
+try {
+    host.setServerStatus({ state: "disconnected" });
+    const off = (await c("list_recipes")).recipes.find((x) => x.id === "flux2_klein_local");
+    if (off.ready !== false || off.reason !== "Not connected to ComfyUI: Settings › ComfyUI.") throw new Error("offline: " + JSON.stringify([off.ready, off.reason]));
+    host.connected = true;
+    host.objectInfo = Object.fromEntries(fluxRaw.needs.map((n) => [n, { input: { required: {} } }]));
+    host.setServerStatus({ state: "connected", os: "win32", gpus: [], url: "http://127.0.0.1:1", version: "0.0.0" });
+    const on = (await c("list_recipes")).recipes.find((x) => x.id === "flux2_klein_local");
+    if (on.ready !== true || on.reason !== null) throw new Error("connected with its nodes: " + JSON.stringify([on.ready, on.reason]));
+    delete host.objectInfo[fluxRaw.needs[0]];
+    const lacks = (await c("list_recipes")).recipes.find((x) => x.id === "flux2_klein_local");
+    if (lacks.ready !== false || lacks.reason !== "The server lacks these node types: " + fluxRaw.needs[0] + ".") throw new Error("a node missing: " + JSON.stringify([lacks.ready, lacks.reason]));
+    out.local = { off: off.reason, lacks: lacks.reason };
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo;
+    host.setServerStatus({ state: saved.server.state || "disconnected", os: saved.server.os || "", gpus: saved.server.gpus || [], remote: !!saved.server.remote, url: saved.server.url || "", version: saved.server.version || "" });
+}
+// the text route, as the Generate new dialog offers it
+for (const r of L.recipes) {
+    const rr = host.shell.recipes().find((x) => x.id === r.id);
+    if (r.task === "upscale" || r.task === "pass") {
+        if (r.new_image !== false || r.sizes !== undefined || r.edit !== undefined) throw new Error(r.id + ": an upscaler or the pass makes no new image: " + JSON.stringify(r));
+        if (r.task === "upscale" && !(r.document_max === null || r.document_max >= 64)) throw new Error(r.id + " document_max " + r.document_max);
+        continue;
+    }
+    if (r.kind !== "provider") continue;
+    const v = rr.providers[r.provider] || {};
+    const t = v.text || null;
+    if (r.new_image !== !!t) throw new Error(r.id + " new_image " + r.new_image + " with text route " + !!t);
+    if (t && Array.isArray(t.sizes) && t.sizes.length && JSON.stringify(r.sizes) !== JSON.stringify(t.sizes.slice().sort((a, b) => a - b))) throw new Error(r.id + " sizes " + JSON.stringify(r.sizes));
+    if (t && r.background !== ((t.settings || v.settings || []).some((s) => s.key === "background"))) throw new Error(r.id + " background " + r.background);
+    if (r.edit !== (v.edit !== false)) throw new Error(r.id + " edit " + r.edit);
+}
+const withAlpha = L.recipes.filter((r) => r.background).map((r) => r.id);
+const sized = L.recipes.filter((r) => Array.isArray(r.sizes)).map((r) => r.id);
+const ups = L.recipes.filter((r) => r.task === "upscale").map((r) => [r.id, r.document_max]);
+if (!sized.length || !ups.length) throw new Error("nothing to check: " + JSON.stringify({ sized, ups }));
+out.counts = { recipes: L.recipes.length, ready: L.recipes.filter((r) => r.ready).length, keys: L.provider_keys.length, withAlpha: withAlpha.length, sized: sized.length };
+out.ups = ups;
+return out;
+"""),
+    ("screenshot_region", """
+// screenshot's box (a region at up to 1:1), base (the picture without its layers) and mask (the selection, or a layer's
+// mask, in black and white)
+const { host } = await import("./editor/host.js");
+const d = await c("new_document");
+await c("new_canvas", { width: 600, height: 400, doc: d.id });
+const ed = host.editorById(d.id);
+const base = document.createElement("canvas"); base.width = 600; base.height = 400;
+{ const x = base.getContext("2d"); x.fillStyle = "#c03020"; x.fillRect(0, 0, 300, 400); x.fillStyle = "#2040c0"; x.fillRect(300, 0, 300, 400); }
+Object.defineProperty(base, "naturalWidth", { value: 600 });
+Object.defineProperty(base, "naturalHeight", { value: 400 });
+await ed.setBase({ filename: "region.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const P = await import("./plugins.js");
+const img = new ImageData(100, 80);
+for (let i = 0; i < img.data.length; i += 4) { img.data[i] = 40; img.data[i + 1] = 210; img.data[i + 2] = 60; img.data[i + 3] = 255; }
+const made = new P.Document(ed).addLayer(img, { name: "Region probe", x: 250, y: 150 });
+// the layer's mask shows its left half
+await c("select_rect", { doc: d.id, x: 250, y: 150, w: 50, h: 80 });
+await c("set_mask", { doc: d.id, layer: made.id, op: "from_selection" });
+await c("select_rect", { doc: d.id, x: 200, y: 100, w: 200, h: 200 });
+if (ed.mipsSettled) await ed.mipsSettled();
+const bytes = (cv) => cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+const pix = (cv, x, y) => { const b = cv.getContext("2d").getImageData(x, y, 1, 1).data; return [b[0], b[1], b[2]]; };
+const close = (a, b, t) => a.every((v, i) => Math.abs(v - b[i]) <= t);
+const out = {};
+try {
+    // the picture at 1:1 in the box, as the whole flatten has it there
+    const box = [240, 140, 120, 100];
+    const s1 = await raw.shotCanvas(ed, { box, show_selection: false });
+    const flat = ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(240, 140, 120, 100).data;
+    const got = bytes(s1.canvas);
+    let m = 0;
+    for (let i = 0; i < got.length; i++) m = Math.max(m, Math.abs(got[i] - flat[i]));
+    if (s1.w !== 120 || s1.h !== 100 || s1.s !== 1 || m > 2) throw new Error("the box at 1:1: " + JSON.stringify({ w: s1.w, h: s1.h, s: s1.s, max: m }));
+    // the base alone: the base's colour where the layer lies
+    const sb = await raw.shotCanvas(ed, { what: "base", box, show_selection: false });
+    if (!close(pix(sb.canvas, 20, 30), [0xc0, 0x30, 0x20], 3) || !close(pix(sb.canvas, 80, 30), [0x20, 0x40, 0xc0], 3)) throw new Error("base: " + JSON.stringify([pix(sb.canvas, 20, 30), pix(sb.canvas, 80, 30)]));
+    if (!close(pix(s1.canvas, 20, 30), [40, 210, 60], 3)) throw new Error("the picture has no layer in the box: " + JSON.stringify(pix(s1.canvas, 20, 30)));
+    // the selection in black and white
+    const sm = await raw.shotCanvas(ed, { what: "mask", box: [150, 50, 300, 300] });
+    if (!close(pix(sm.canvas, 150, 150), [255, 255, 255], 2) || !close(pix(sm.canvas, 10, 10), [0, 0, 0], 2)) throw new Error("the selection mask: " + JSON.stringify([pix(sm.canvas, 150, 150), pix(sm.canvas, 10, 10)]));
+    // the layer's mask: white where it shows, black where it hides and outside it
+    const sl = await raw.shotCanvas(ed, { what: "mask", layer: made.id, box });
+    const ml = [pix(sl.canvas, 20, 40), pix(sl.canvas, 80, 40), pix(sl.canvas, 5, 5)];
+    if (!close(ml[0], [255, 255, 255], 2) || !close(ml[1], [0, 0, 0], 2) || !close(ml[2], [0, 0, 0], 2)) throw new Error("the layer's mask: " + JSON.stringify(ml));
+    // a box larger than max_size is scaled down; one past the picture is held to it
+    const ss = await raw.shotCanvas(ed, { box, max_size: 64 });
+    if (ss.w !== 64 || Math.abs(ss.s - 64 / 120) > 1e-9) throw new Error("max_size: " + JSON.stringify({ w: ss.w, h: ss.h, s: ss.s }));
+    // the command: the region's size, the box, the picture's size
+    const r = await c("screenshot", { doc: d.id, box: [550, 350, 200, 200] });
+    if (r.width !== 50 || r.height !== 50 || r.scale !== 1 || JSON.stringify(r.box) !== JSON.stringify({ x: 550, y: 350, w: 50, h: 50 }) || r.image_width !== 600 || r.image_height !== 400 || r.mime !== "image/jpeg" || !(r.data.length > 100)) throw new Error("the command: " + JSON.stringify({ ...r, data: r.data.length }));
+    const whole = await c("screenshot", { doc: d.id, max_size: 300 });
+    if (whole.box !== undefined || whole.width !== 300 || whole.image_width !== 600) throw new Error("without a box: " + JSON.stringify({ ...whole, data: 0 }));
+    const refused = async (args, re) => { let msg = ""; try { await c("screenshot", { doc: d.id, ...args }); } catch (e) { msg = String(e.message || e); } if (!re.test(msg)) throw new Error("screenshot " + JSON.stringify(args) + ": " + (msg || "not refused")); return msg; };
+    await c("set_mask", { doc: d.id, layer: made.id, op: "remove" });
+    out.refused = [
+        await refused({ box: [700, 0, 10, 10] }, /holds no pixel of the 600 . 400 picture/),
+        await refused({ box: [1, 2, 3] }, /^box must be .x, y, w, h./),
+        await refused({ what: "layer", layer: made.id, box }, /^box reads a region of the picture/),
+        await refused({ what: "mask", layer: made.id }, /^Region probe has no mask/),
+        await refused({ what: "bogus" }, /^what must be one of image, editor, layer, base, mask/),
+    ];
+    out.tiles = !!ed.tileMode; out.max = m;
+    return out;
+} finally {
+    await c("close_document", { doc: d.id });
+    await c("activate_document", { doc: window.__testDoc });
 }
 """),
     ("close", """

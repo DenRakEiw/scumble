@@ -79,7 +79,7 @@ Open a .scumble file as a tab (the tab that already holds it is activated instea
 
 ### `list_recipes` *(app)* *(read-only)*
 
-The recipes (ComfyUI workflows and API providers) and which one is selected. textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. The Realism Pass (Windows only, RTX only) recipe (task "pass") says whether the connected ComfyUI can run it: ready, the reason when not, a note (RTX 30); status has the same for a document (its runs, its size).
+The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the Realism Pass (Windows only, RTX only) recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).
 
 (no parameters)
 
@@ -397,6 +397,14 @@ Realism Pass (Windows only, RTX only): the whole visible picture (every visible 
 | `factor` | number | 1 (the default: refine at the picture's own size), 1.5, 1.7, 2 or 3: above 1 the document becomes that many times larger and the pass layer comes at the new size |
 | `timeout` | integer | seconds to wait for the result (default 570) (default `570`) |
 
+### `cancel_run` *(app)*
+
+Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends at once with the cancel, and nothing lands. A provider may still finish a job it already had and charge it. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running); ended: whether they have let go of their documents (waited for up to 10 s).
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | only this tab's runs (the id from list_documents); every tab's when left out |
+
 ## Layers
 
 ### `list_layers` *(read-only)*
@@ -506,6 +514,34 @@ Centre a layer on the canvas. Refused on a locked or a filter layer.
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
+
+### `transform_layer` *(image)*
+
+Transform one layer, baked into its pixels in one undo step, as the move tool's Rotate / Distort / Warp and its quarter turns. mode rotate: by `angle` degrees clockwise about the layer's middle (a text layer stays editable: the angle goes into the text, as set_text's angle); rotate90: a quarter turn (`dir` cw or ccw) without resampling; distort: the layer's four corners to `corners` (a perspective: [[x, y] top left, top right, bottom right, bottom left] in image pixels); warp: the layer bent on a grid of n × n cells: `points` holds the (n + 1) × (n + 1) grid points row by row from the top left, in image pixels (unbent they are x + w·i/n, y + h·j/n of the layer's box). Distort and warp turn a text layer into pixels; a live mask is baked into the pixels, a switched-off one dropped (undo brings both back). The layer keeps the resolution of its pixels. Refused on a locked or a filter layer; the base is no layer (rotate_canvas and straighten_canvas turn the whole picture). from: the layer's box before; changed false: nothing to do (an angle of 0).
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
+| `mode` | string | rotate, rotate90, distort or warp (required; one of `rotate`, `rotate90`, `distort`, `warp`) |
+| `angle` | number | rotate: degrees clockwise |
+| `dir` | string | rotate90: cw (clockwise) or ccw (default `"cw"`; one of `cw`, `ccw`) |
+| `corners` | array | distort: four [x, y] in image pixels, the new top left, top right, bottom right and bottom left corner |
+| `n` | integer | warp: grid cells per side, 1..16 (default `4`) |
+| `points` | array | warp: (n + 1) × (n + 1) [x, y] grid points in image pixels, row by row from the top left |
+
+### `copy_to_layer` *(image)*
+
+Copy the selected pixels of a layer, or of the visible picture with merged, into a new layer at the same place (Ctrl+C, or Ctrl+Shift+C, then Ctrl+V); with nothing selected the whole layer or the whole picture. cut takes the selected pixels out of the layer (the whole layer when nothing is selected), as Ctrl+X. to_doc pastes into another tab at the same coordinates. The new layer goes on top and becomes active, one undo step in the tab it lands in (a cut is a step of its own in this tab). The clipboard the user's Ctrl+V reads stays as it was. A typical use: lift an object out of the picture onto a layer of its own, then move it (set_layer x, y) or transform_layer it. Refused: a filter layer (no pixels; merged copies the picture), a cut of a locked layer or of the merged picture.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layer` | string | the layer to copy from (id, name, a unique part of the name, or "active"); ignored with merged (default `"active"`) |
+| `merged` | boolean | the visible picture (every visible layer with its filters, without reference and control layers) instead of one layer (default `false`) |
+| `cut` | boolean | take the pixels out of the layer (not with merged) (default `false`) |
+| `to_doc` | integer | the tab to paste into (default this one) |
+| `name` | string | the new layer's name (default "<layer> copy", or "Paste n" for the picture) |
 
 ### `align_layers`
 
@@ -752,6 +788,18 @@ Straighten the whole picture: turn it by any angle (degrees clockwise, -45..45) 
 | `width` | integer | frame width |
 | `height` | integer | frame height |
 
+### `resize_image` *(image)* *(destructive)*
+
+Resize the whole document, as Image › Canvas › Resize: the base picture is resampled to the new size, every layer keeps its own pixels and is scaled in place, masks and the selection follow; one undo step. Give width and height, or one of them (the other keeps the aspect), or percent, or long_side (the aspect kept). Refused while a run or another job of the document is going (its result would land in the old geometry), below 8 px a side, and past what one canvas holds (65,535 px a side, 268 megapixels). from: the size before.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `width` | integer | the new width in pixels |
+| `height` | integer | the new height in pixels |
+| `percent` | number | instead: percent of the current size (1..1000) |
+| `long_side` | integer | instead: the new long side in pixels |
+
 ## Export
 
 ### `export` *(image)* *(destructive)*
@@ -795,16 +843,17 @@ Save the selection as a black and white mask PNG.
 
 ### `screenshot` *(image)* *(read-only)*
 
-A JPEG of the image (what = image: the flattened picture; editor: with hidden helpers; layer: one layer alone), base64 in `data`.
+A JPEG, base64 in `data`. what = image: the flattened picture; editor: with hidden helpers; layer: one layer alone (its own pixels, whole); base: the base picture without any layer (the before); mask: the selection in black and white (white = selected), or with `layer` that layer's mask over its place (white = the layer shows). box [x, y, w, h] in image pixels shows only that region (not with layer), up to 1:1 (max_size caps its long side): judge an inpainted area on a large picture at full resolution. scale: output pixels per image pixel; box: the region read, held to the picture.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `what` | string | image, editor or layer (default `"image"`; one of `image`, `editor`, `layer`) |
-| `layer` | string | for what = layer (default `"active"`) |
+| `what` | string | image, editor, layer, base or mask (default `"image"`; one of `image`, `editor`, `layer`, `base`, `mask`) |
+| `layer` | string | for what = layer; for what = mask the layer whose mask to show (the selection when left out) |
+| `box` | array | [x, y, w, h]: only this region of the picture, in image pixels (image, editor, base, mask) |
 | `max_size` | integer | long side in pixels (64..4096) (default `1024`) |
 | `quality` | number | JPEG quality 0.3..0.95 (default `0.85`) |
-| `show_selection` | boolean | tint and outline the selection (default `true`) |
+| `show_selection` | boolean | tint and outline the selection (image, editor, base) (default `true`) |
 | `show_layers` | boolean | outline and label the layers (default `false`) |
 
 ## Other

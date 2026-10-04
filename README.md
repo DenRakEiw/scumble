@@ -136,7 +136,7 @@ first.
   exports without freezing the window, and PNGs beyond the canvas limit (up to 65,535 px a
   side, a gigapixel) open and save in strips.
 - JavaScript plugins (filters with CPU and WebGL2 paths, panels, menu actions, tools,
-  commands) and a command core with 97 documented commands (80 core, 17 from the built-in plugins) ([docs/COMMANDS.md](docs/COMMANDS.md)).
+  commands) and a command core with 101 documented commands (84 core, 17 from the built-in plugins) ([docs/COMMANDS.md](docs/COMMANDS.md)).
 - MCP server: Claude Code, Claude Desktop or any MCP client can drive the editor (Help >
   Copy MCP registration puts the line for your client on the clipboard); `--headless` and
   `--cmd` for scripts ([docs/MCP.md](docs/MCP.md)).

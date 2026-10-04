@@ -95,6 +95,26 @@ const POLICY = {
         return ASK("merges into a layer you made", card(call, facts, []));
     },
 
+    // docs/PLAN_0_1_42.md F2a: one undo step of the editor's own; on a layer the user made it changes that layer
+    transform_layer: (call, facts) => (owns(call, facts)
+        ? AUTO()
+        : ASK("transforms a layer you made (Ctrl+Z takes it back)", card(call, facts, []))),
+    // a copy adds a layer (its own undo step); a cut takes pixels out of the layer, and another tab is out of this turn's undo
+    copy_to_layer: (call, facts) => {
+        const args = call.args || {};
+        if (args.cut && !owns(call, facts)) return ASK("cuts pixels out of a layer you made (Ctrl+Z takes it back)", card(call, facts, []));
+        if (args.to_doc !== undefined && args.to_doc !== null && args.to_doc !== "" && String(args.to_doc) !== String(args.doc)) {
+            return ASK("pastes into another tab (Ctrl+Z there takes it back; Undo this turn does not reach it)", { to_doc: args.to_doc });
+        }
+        return AUTO();
+    },
+    resize_image: (call) => ASK("resizes the whole picture: the base is resampled, every layer scaled along (Ctrl+Z takes it back)",
+        { changes: ["width", "height", "percent", "long_side"].filter((k) => call.args && call.args[k] !== undefined).map((k) => ({ field: k, to: call.args[k] })) }),
+    // the runs of the pinned document (the canonical call carries its doc); without one every tab's, the user's too
+    cancel_run: (call) => (call.args && call.args.doc !== undefined && call.args.doc !== null && call.args.doc !== ""
+        ? AUTO("stops the runs of this document; a provider may still bill a run it already had")
+        : ASK("cancels every run in progress in every tab, yours included; a provider may still bill a run it already had")),
+
     flatten: () => ASK("merges every visible layer, yours included, into the base image"),
     rotate_canvas: () => ASK("turns the whole picture, every layer with it (Ctrl+Z takes it back)"),
     flip_canvas: () => ASK("mirrors the whole picture, every layer with it (Ctrl+Z takes it back)"),

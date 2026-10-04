@@ -87,11 +87,18 @@ card that says why:
   past 7680 × 4320 or 27.9 megapixels is no such reason (the pass scales it down first).
 - **`flatten`, `extend_canvas`, `new_canvas`, `load_image`** - they clear the undo stack or bake
   every layer into the base.
-- **Removing, merging or editing a layer (or its mask) that is not the assistant's own**, unlocking a layer you
-  locked, moving or retexting a locked one, `undo` / `redo`, reading a file, an export with a
-  path, and the global settings.
-- Editing a layer the assistant made itself, and the per-document fields (prompt, generation
-  settings, crop, the recipe's settings), run **without** asking.
+- **`resize_image`, `rotate_canvas`, `flip_canvas`, `straighten_canvas`** - they change the whole picture,
+  every layer with it (one undo step each); the card of `resize_image` shows the size it was asked for.
+- **Removing, merging, transforming (`transform_layer`) or editing a layer (or its mask) that is not the
+  assistant's own**, cutting pixels out of one (`copy_to_layer` with `cut`), pasting into another tab (which
+  *Undo this turn* does not reach), unlocking a layer you locked, moving or retexting a locked one, `undo` /
+  `redo`, reading a file, an export with a path, and the global settings.
+- **`cancel_run` without a document** - it would cancel every run in every tab, yours too. With the turn's
+  document (the assistant always passes it) it runs without asking: it cancels that document's runs, as
+  the title row's *Cancel* does; a provider may still charge a job it already had.
+- Editing a layer the assistant made itself (a transform or a cut included), a copy onto a new layer in the same
+  tab, and the per-document fields (prompt, generation settings, crop, the recipe's settings), run **without**
+  asking.
 
 Neither button of an ask card is the default, and Enter in the chat field never answers one. An
 export without a path, or with an extension that does not match the format, is refused outright.

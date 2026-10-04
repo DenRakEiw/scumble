@@ -1176,6 +1176,16 @@ async function main() {
             ["boxes_list", {}, "auto"], ["boxes_add", { kind: "new" }, "auto"], ["boxes_set", { id: "box_1" }, "auto"],
             ["boxes_from_selection", {}, "auto"], ["boxes_remove", { id: "box_1" }, "ask"], ["boxes_clear", {}, "ask"],
             ["sample_box", {}, "auto"], ["sample_box", { on: true }, "ask"],
+            // docs/PLAN_0_1_42.md F2a: a transform or a cut on the user's layer asks, on the assistant's own it runs; a copy
+            // runs, into another tab it asks; a resize asks; cancelling the pinned document's runs runs, every tab's asks
+            ["transform_layer", { layer: "Lmine", mode: "rotate", angle: 10 }, "auto"],
+            ["transform_layer", { layer: "Lyours", mode: "distort", corners: [[0, 0], [9, 0], [9, 9], [0, 9]] }, "ask"],
+            ["copy_to_layer", { layer: "Lyours" }, "auto"], ["copy_to_layer", { merged: true }, "auto"],
+            ["copy_to_layer", { layer: "Lyours", cut: true }, "ask"], ["copy_to_layer", { layer: "Lmine", cut: true }, "auto"],
+            ["copy_to_layer", { doc: 1, layer: "Lyours", to_doc: 2 }, "ask"], ["copy_to_layer", { doc: 1, layer: "Lyours", to_doc: 1 }, "auto"],
+            ["resize_image", { percent: 50 }, "ask"],
+            ["cancel_run", { doc: 1 }, "auto"], ["cancel_run", {}, "ask"],
+            ["list_recipes", {}, "auto"], ["screenshot", { what: "mask", box: [0, 0, 10, 10] }, "auto"],
             ["a_user_plugins_tool", {}, "ask"],
         ];
         const wrong = [];
@@ -1247,6 +1257,8 @@ async function main() {
             ["list_layers", {}, null], ["screenshot", {}, null],
             // they push their own step
             ["duplicate_layer", {}, null], ["frequency_separation", {}, null], ["dodge_burn_layer", {}, null],
+            // F2a: the transform, the paste and the resize push their own; a cancel changes no document
+            ["transform_layer", { mode: "rotate", angle: 10 }, null], ["copy_to_layer", { cut: true }, null], ["resize_image", { percent: 50 }, null], ["cancel_run", {}, null],
         ];
         const badSteps = [];
         for (const [name, args, want] of steps) {

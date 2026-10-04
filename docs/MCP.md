@@ -108,7 +108,7 @@ Read-only: `ping`, the `list_*` commands, `status`, `get_state`, `filter_types`,
 Destructive (the call can lose something: a document, a layer, layers merged or flattened, a crop,
 a file written over without asking, the recipe or its settings, an undo or redo step):
 `close_document`, `new_canvas`, `load_image`, `generate_new`, `remove_layer`, `merge_down`,
-`flatten`, `extend_canvas`, `straighten_canvas`, `save_document`, `export`, `export_layer`,
+`flatten`, `extend_canvas`, `straighten_canvas`, `resize_image`, `save_document`, `export`, `export_layer`,
 `export_mask`, `delete_snapshot`, `undo`, `redo`, `select_recipe`, `set_node_params`,
 `ailabel_add` (it replaces the label layer) and `ailabel_remove`. Everything else changes the
 document additively or in one undo step and carries neither. A plugin command that sets no flag
@@ -169,12 +169,31 @@ as far as the pass allows. Any other factor is refused. Before calling it, read
 document, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; above factor 1 that last reason does not
 hold, and a picture that cannot get larger or would be scaled under 64 px a side is refused
 instead), and `note` the RTX 30 one. `list_recipes` gives the pass recipe (task
-`pass`) `ready` / `reason` / `note` for the connected server alone. Style, Strength and the model
+`pass`) `ready` / `reason` / `note` for the connected server alone (every recipe has `ready` / `reason`
+since F2a, below). Style, Strength and the model
 preset are the user's (the Upscale dialog's row); there is no command argument for them. The
 command waits for the answer (`timeout`, 570 s by default, ends the job on the server too) and
 returns `layer`, `seconds`, `notes`, `changed` (the picture changed while the pass ran), `factor`, and
 `from` / `width` / `height` (the document's size before and after). The pass
 recipe itself runs through `generate` on a selection's box; `generate_new` refuses it.
+
+**Before a run, during it, and the picture** (docs/PLAN_0_1_42.md F2a). `list_recipes` says per recipe
+whether it can run now: `ready`, and `reason` when not (an API recipe: a key stored for its chosen
+provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected, and every node
+type it needs on the server), `keys` (per provider of the recipe, `true` / `false`), `new_image` /
+`edit` (whether `generate_new` / `generate` take it), `sizes` (the long sides its text route offers;
+null: any), `background` (whether `generate_new`'s `background: "transparent"` reaches it), and an
+upscaler's `document_max`; `provider_keys` lists every API provider with whether a key is stored, as a
+boolean (never the key or its last characters). `cancel_run` cancels the runs in flight as the
+title row's Cancel does (one tab's with `doc`, else every tab's); a `generate`, `upscale` or
+`realism_pass` waiting on one ends at once, and a provider may still charge a job it already had. A
+Generate with a recipe on the user's own ComfyUI is not interrupted. `screenshot` takes `box` [x, y,
+w, h] (a region at up to 1:1, to judge an inpainted area of a large picture), `what: "base"` (the
+picture without its layers) and `what: "mask"` (the selection, or with `layer` that layer's mask, in
+black and white). `transform_layer` rotates, distorts, warps or quarter-turns one layer;
+`copy_to_layer` lifts a layer's or the picture's selected pixels onto a new layer (in this tab or
+another, the user's clipboard untouched); `resize_image` resizes the whole document as Image › Canvas
+› Resize. Each is one undo step.
 
 ## How it works
 
@@ -238,8 +257,8 @@ agent sees the user's last documents.
 ## Testing
 
 `python tools/mcp_test.py [--exe dist/win-unpacked/Scumble.exe]` talks to the server with
-the Python `mcp` client: instructions, the tools with valid names and schemas (97 on a fresh
-profile on 2026-10-04: 80 core commands and 17 from the built-in plugins), `ping`
+the Python `mcp` client: instructions, the tools with valid names and schemas (101 on a fresh
+profile on 2026-10-05: 84 core commands and 17 from the built-in plugins), `ping`
 (reports the mode), `new_document`, `load_image` by path, `select_rect`, `add_filter`
 (`sample.posterize`, WebGL2 in the hidden window), `sample_mean_color`, `screenshot` as
 image content (`dist/smoke/mcp_screenshot.jpg`), `export` to a path, an error case, an

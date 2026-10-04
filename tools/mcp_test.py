@@ -120,8 +120,9 @@ HINT_READ = ["ping", "status", "list_layers", "list_history", "screenshot", "fil
              "film_looks", "glb_info", "ailabel_info", "sample_mean_color", "boxes_list"]
 HINT_DESTRUCTIVE = ["close_document", "remove_layer", "new_canvas", "load_image", "generate_new", "flatten", "merge_down",
                     "extend_canvas", "export", "export_layer", "export_mask", "undo", "redo", "select_recipe",
-                    "set_node_params", "ailabel_add"]
-HINT_NEITHER = ["new_document", "select_rect", "generate", "set_layer", "add_filter", "sample_box"]
+                    "set_node_params", "ailabel_add", "resize_image"]
+HINT_NEITHER = ["new_document", "select_rect", "generate", "set_layer", "add_filter", "sample_box",
+                "transform_layer", "copy_to_layer", "cancel_run"]
 # a plugin command that sets no flag: judged by its own name (the part after the plugin id), never destructive
 HINT_FALLBACK = (
     "const { toTool } = require('./electron/main/mcp/server');"

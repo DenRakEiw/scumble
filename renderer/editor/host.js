@@ -2182,10 +2182,19 @@ export const host = {
 
     /** The title row's Cancel: stop waiting for every API run in progress (main aborts them; each says so in its tab). */
     cancelProviderRuns() {
-        const runs = Array.from(this._providerRuns);
+        return this.cancelRuns(null).length;
+    },
+
+    /**
+     * Cancel the runs in the title row (API runs, and the picture runs on the user's ComfyUI that hold a document: the
+     * pass, an upscale of the whole picture, whose job is taken off the server), every tab's or only `editor`'s
+     * (the cancel_run command, docs/PLAN_0_1_42.md F2a). Returns the tokens it cancelled.
+     */
+    cancelRuns(editor) {
+        const runs = Array.from(this._providerRuns).filter((t) => !editor || t.editor === editor);
         for (const t of runs) t.cancelled = true;
         for (const t of runs) if (t.runId && window.scumble && window.scumble.providers && window.scumble.providers.cancel) window.scumble.providers.cancel(t.runId).catch(() => {});
-        return runs.length;
+        return runs;
     },
 
     /** A run's answer is in (or it failed): its timer and Cancel leave the title row. */
