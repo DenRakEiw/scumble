@@ -111,7 +111,7 @@ async function main() {
             check("a ref without subfolder and type goes as subfolder \"\" and type input", eq(JSON.parse(ref2), { filename: "a.png", subfolder: "", type: "input" }), ref2);
             if (how === "normalized") {
                 check(rtx ? "normalized: the factor names its input, limits 64 / 4096 / 8192" : "normalized: a fixed factor, limits max 2048 (Q14: 4x answers at most 8192)",
-                    rtx ? r.factor.input === "rtx|resize_type.scale" && eq(r.limits, { min: 64, max: 4096, out: 8192 }) : r.factor.fixed === true && eq(r.limits, { max: 2048 }), short({ factor: r.factor, limits: r.limits }));
+                    rtx ? r.factor.input === "rtx|resize_type.scale" && eq(r.limits, { min: 64, max: 4096, out: 8192 }) : r.factor.fixed === true && eq(r.limits, { picture: 2048 }), short({ factor: r.factor, limits: r.limits }));
             }
         });
     }

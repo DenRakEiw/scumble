@@ -90,7 +90,8 @@ recipe's `DLSS5Settings` inputs, and a new layer above the picture). Any other t
   it; on the selection the node's stitch fits the model's larger answer back into the box (`nodes.py`
   `InpaintCanvasStitch`, `_resize_image(src, w, h)`), so it is a sharper detail pass at the document's resolution; on
   the whole picture (0.1.42 U2) the base goes through the same graph and the answer becomes the new base. `limits`
-  `{ "max": 2048 }` (0.1.42 Q14: a 4x model answers at most 8192 px; the box or the picture that goes out). Checked
+  `{ "picture": 2048 }` (0.1.42 Q14: on the whole picture a 4x model answers at most 8192 px; `picture` caps the whole
+  picture alone, so the selection's box keeps no cap, as before). Checked
   against the user's `/object_info` on 2026-09-22 (both classes, their inputs and outputs); **not run** (the user's
   ComfyUI was not free).
 - `rtx_vsr_local`, **RTX Video Super Resolution (ComfyUI)** (0.1.42, `docs/PLAN_0_1_42.md` U1): `InpaintCanvas` ->

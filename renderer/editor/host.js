@@ -1656,8 +1656,9 @@ export const host = {
 
     /**
      * "" when a ComfyUI upscaler (`r.limits`: `min` the input's short side, `max` its long side, `out` the answer's
-     * long side) takes a w × h picture at `factor` (null: the model picks its own, so `out` is not checked), else the
-     * refusal. `what` names the picture: "box" (the selection with its context) or "picture" (the whole one).
+     * long side; `picture` the whole picture's long side alone, upscale_model_local's 2048, Q14) takes a w × h picture at
+     * `factor` (null: the model picks its own, so `out` is not checked), else the refusal. `what` names the picture:
+     * "box" (the selection with its context) or "picture" (the whole one).
      */
     upscaleSizeRefusal(r, w, h, factor, what = "box") {
         const l = (r && r.limits) || {};
@@ -1665,7 +1666,8 @@ export const host = {
         const the = what === "box" ? `The box (the selection with its context) is ${w} × ${h}` : `The picture is ${w} × ${h}`;
         const smaller = what === "box" ? "a smaller area" : "a smaller picture";
         if (l.min && Math.min(w, h) < l.min) return `${the}; ${name} needs at least ${l.min} px a side.`;
-        if (l.max && Math.max(w, h) > l.max) return `${the}; ${name} takes at most ${l.max} px on the long side. Pick ${smaller}.`;
+        const max = what === "picture" && l.picture ? Math.min(l.picture, l.max || Infinity) : l.max;
+        if (max && Math.max(w, h) > max) return `${the}; ${name} takes at most ${max} px on the long side. Pick ${smaller}.`;
         if (l.out && factor != null && Math.round(Math.max(w, h) * factor) > l.out) return `${the}; at ${factor}× the answer would pass ${l.out} px on the long side. Pick a smaller factor or ${smaller}.`;
         return "";
     },

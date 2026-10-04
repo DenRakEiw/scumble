@@ -280,14 +280,16 @@ function comfyFactor(r) {
 
 /**
  * A ComfyUI upscaler's size limits, kept only as whole positive numbers: `min` the input's short side, `max` its long
- * side, `out` the answer's long side (RTX Video Super Resolution: 64, 4096, 8192). A missing one is no limit.
+ * side, `out` the answer's long side (RTX Video Super Resolution: 64, 4096, 8192), `picture` the whole picture's long
+ * side alone (an upscale model: 2048, so a 4x model answers 8192; its selection's box keeps no cap). A missing one is
+ * no limit.
  * @param {Recipe} r
  */
 function comfyLimits(r) {
     const l = r.limits && typeof r.limits === "object" ? /** @type {any} */ (r.limits) : null;
     /** @type {Record<string, number>} */
     const out = {};
-    if (l) for (const k of ["min", "max", "out"]) { const v = Math.round(+l[k]); if (Number.isFinite(v) && v > 0) out[k] = v; }
+    if (l) for (const k of ["min", "max", "out", "picture"]) { const v = Math.round(+l[k]); if (Number.isFinite(v) && v > 0) out[k] = v; }
     if (Object.keys(out).length) r.limits = /** @type {any} */ (out); else delete r.limits;
 }
 

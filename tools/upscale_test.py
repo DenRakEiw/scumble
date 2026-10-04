@@ -171,7 +171,7 @@ if (JSON.stringify(mc.factor.steps) !== "[2,4,8,16]" || mc.provider !== "magnifi
 // takes at most 2048 px (U2, Q14)
 const rtx = ups.find((r) => r.id === "rtx_vsr_local"), um = ups.find((r) => r.id === "upscale_model_local");
 if (rtx.mode !== "local" || rtx.provider !== null || !rtx.factor || rtx.factor.fixed !== false || rtx.factor.default !== 2 || rtx.factor.min !== 1 || rtx.factor.max !== 4 || JSON.stringify(rtx.limits) !== JSON.stringify({ min: 64, max: 4096, out: 8192 })) throw new Error("RTX Video Super Resolution: " + JSON.stringify(rtx));
-if (!um.factor || um.factor.fixed !== true || JSON.stringify(um.limits) !== JSON.stringify({ max: 2048 })) throw new Error("Upscale model: " + JSON.stringify({ factor: um.factor, limits: um.limits }));
+if (!um.factor || um.factor.fixed !== true || JSON.stringify(um.limits) !== JSON.stringify({ picture: 2048 })) throw new Error("Upscale model: " + JSON.stringify({ factor: um.factor, limits: um.limits }));
 if (mc.limits !== undefined) throw new Error("an API upscaler names ComfyUI limits: " + JSON.stringify(mc.limits));
 if (list.recipes.some((r) => r.task !== "upscale" && r.factor !== undefined)) throw new Error("an edit recipe carries a factor");
 const gen = list.recipes.filter((r) => r.task === "edit").length;
@@ -851,6 +851,10 @@ try {
     try { out.lacks = await refused(wide, {}, /lacks these node types: InpaintCanvasLoadRef/); } finally { host.objectInfo = OI; }
     host.shell.selectRecipe("upscale_model_local");
     out.cap2048 = await refused(wide, {}, /^The picture is 2100 × 100; Upscale model \\(ComfyUI\\) takes at most 2048 px on the long side\\. Pick a smaller picture\\.$/);
+    // the 2048 cap is the whole picture's alone: the selection's box keeps none (an upscale model on a large box worked before)
+    const umR = host.shell.recipes().find((x) => x.id === "upscale_model_local");
+    if (host.upscaleSizeRefusal(umR, 3000, 3000, null, "box") !== "") throw new Error("the upscale model refused a 3000 px box: " + host.upscaleSizeRefusal(umR, 3000, 3000, null, "box"));
+    out.boxUncapped = true;
     if (ew.width !== 2100 || ew.providerPending || T.queued.length !== q1) throw new Error("a refusal changed the picture or queued");
     return out;
 } finally {

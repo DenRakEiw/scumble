@@ -173,7 +173,7 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         // 2048, so a 4x model answers at most 8192)
         const um = quiet(() => recipes._normalize(JSON.parse(JSON.stringify(rawOf("upscale_model_local")))));
         check("upscale_model_local stays fixed, names no input, takes at most 2048 px on the long side, and is read without a warning",
-            um.factor.fixed === true && um.factor.input === undefined && eq(um.limits, { max: 2048 }) && !warned.length, short({ factor: um.factor, limits: um.limits, warned }));
+            um.factor.fixed === true && um.factor.input === undefined && eq(um.limits, { picture: 2048 }) && !warned.length, short({ factor: um.factor, limits: um.limits, warned }));
 
         // a factor.input that names no node of the graph (or is no "node|input"): fixed, with a warning that names it
         for (const bad of ["nope|scale", "rtx", "|resize_type.scale", "rtx|", 5]) {
