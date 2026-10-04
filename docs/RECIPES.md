@@ -105,8 +105,11 @@ recipe's `DLSS5Settings` inputs, and a new layer above the picture). Any other t
   pair there); a crop (the selection with its context, as the node cuts it) under 64 px a side or past 7680 × 4320 is
   refused. *Save as new recipe* from it keeps the presets only for rows the new graph has, and the task only while
   the graph holds `DLSS5Settings`. The pack's own errors come back as
-  sentences (`realism.hint`, fixtures in `tools/refs/dlss5/messages.json`). No Comfy Cloud alternative (the user's
-  decision). **Not run** on a real server.
+  sentences (`realism.hint`, fixtures in `tools/refs/dlss5/messages.json`), several of them pointing to the manual's
+  chapter *Realism Pass (Windows only, RTX only)* (`docs/MANUAL.md`, slug `realism-pass`): what the pass needs, the
+  pack's install steps with the runtime installer's `--url` workaround and the Defender exclusion (as the pack's README
+  had them on 2026-10-04), and what each message means. No Comfy Cloud alternative (the user's decision). **Not run**
+  on a real server.
 
 ### Presets
 
@@ -1077,6 +1080,11 @@ it. The `upscale` command refuses `scope: "document"` for such a recipe by name 
 the `generate` command's path (queue, wait for the result layer); the dialog greys *the whole picture* out,
 hides the factor and the provider row, and disables *Upscale* without a selection, without a server connection
 or when the server lacks one of the recipe's `needs` (named in the note).
+
+**The Realism Pass entry** (a `pass` recipe, `realism_pass` above) is listed in the same dialog but is no upscale:
+its factor is *1× (refine)*, its scope is always the whole picture, and *Upscale* runs the `realism_pass` command
+(the whole visible picture through `realism.passPrompt`, a new layer above it) instead of the recipe's graph. The
+dialog greys *Upscale* with `realism.serverSupport`'s reason or the size refusal (`realism.wholeRefusal`).
 
 The adapters: `upscale(req, ctx)` beside `edit` / `generate`; `providers/index.js` sends `kind: "upscale"` there
 and refuses a provider without one by name. **fal** (`fal.js`): `{ image_url, upscale_factor, output_format:

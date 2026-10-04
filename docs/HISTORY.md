@@ -40,6 +40,8 @@ The block of 2026-10-04 (night, R3a of 0.1.42) was moved here the same night, wh
 
 The block of 2026-10-04 (night, R3b of 0.1.42) was moved here the same night, when R4 was built.
 
+The block of 2026-10-04 (night, R4 of 0.1.42) was moved here the same night, when R5's docs were written.
+
 
 The block of 2026-09-29 (morning, item 26 S1 built) was moved here at noon, when the eraser hotfix 0.1.33 was prepared.
 
@@ -74,6 +76,34 @@ The block of 2026-10-03 (midday: B5, B6, the 0.1.39 release) was moved here the 
 The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved here the same afternoon, when V1 of item 35 was built.
 
 The block of 2026-10-04 (evening: R3 dropped, the Realism Pass redesigned as a refiner, the MCP listings) was moved here the same night, when R3a was built.
+
+## 2026-10-04 (night: R4 of 0.1.42 built, agents and the assistant; moved here the same night when R5's docs were written)
+
+**This session (2026-10-04 night, R4 of 0.1.42): the Realism Pass for agents and the assistant, unreleased.**
+- **The assistant** (`electron/main/assistant/policy.js`): `realism_pass` in `RUNS`, its own row `realismRow` (asks
+  "runs {LABEL} on your ComfyUI: it queues there and adds a layer", the card `settings: { style, strength, preset }`;
+  refuses with `status`'s reason, no card, when `realism.ready` is false), `TIMEOUT_DEFAULTS` 1800, `undoStep` null,
+  `REALISM_LABEL`; `index.js` `factsFor` reads `status` for it, `idsNamedBy` owns its layer.
+- **Readiness**: `host.realismWholeRefusal(editor)` (new) holds `realismWhole`'s refusals before anything is read, in
+  order (server, a run going on the document incl. a local render in `_localRuns`, loading, no picture, the size);
+  `realismWhole` and `status`'s `realism: { ready, reason, note, style, strength, preset }` both call it.
+  `list_recipes` gives the pass recipe `ready` / `reason` / `note` of the server alone (the keys F2a's readiness reuses).
+- **Docs**: `docs/COMMANDS.md` regenerated (97: 80 core, 17 plugin), counts in `docs/MCP.md` and the README,
+  `docs/ASSISTANT.md` row, CHANGELOG sentence. The MCP listings (Registry, TensorBlock PR #3084 in review, the others)
+  still say 96 tools: update them in the release's listing pass.
+- **Tests**: `tools/assistant_test.js` §6 (249 checks), `commands` `realism_pass` (readiness offline / ready / RTX 30 /
+  linux / during a local render / while loading). Gates `--offline` on tiles: `commands assistant upscale lint types
+  help` PASS (Light / Normal tier, no pixel path). Review: a workflow of three lenses plus a verifier per finding
+  (8 agents): three findings, one defect (status said ready during a local render or a load), fixed; two refuted.
+- **The user asked mid-session** whether a GitHub community setup makes sense (Discussions with Showcase / Ideas / Q&A /
+  Workflow recipes, a Now / Next / Later / Won't do roadmap, 3-5 good first issues, CONTRIBUTING / issue templates /
+  SECURITY, a pinned "Share your workflow" thread). Answered: yes to Discussions, the templates, CONTRIBUTING and
+  SECURITY, a small roadmap as one pinned issue or discussion without other products' names, kept with each release;
+  good first issues only if outside PRs are wanted; the pinned thread once Discussions are on and seeded. **Nothing
+  done, waiting for the user's pick** (outward-facing; its own section after a commit).
+- **Asked earlier, still waiting for the user's word:** the README for reach (a GIF, install buttons, a comparison
+  table, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, how to post on Show HN (the
+  comparison table names other products, the user's rule of 2026-09-29).
 
 ## 2026-10-04 (night: R3b of 0.1.42 built, the Upscale entry, the menu and the command; moved here the same night when R4 was built)
 

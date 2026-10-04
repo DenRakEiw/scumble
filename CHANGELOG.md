@@ -11,12 +11,15 @@ the section for its version; `docs/` and the commit history hold the technical d
   ComfyUI-DLSS5-Enhancer with its runtime, installed there by you; Scumble ships none of it. The recipe comes with two
   presets, L (the default) and M, for the DLSS model. Before anything is sent, Scumble checks the server and says why
   it cannot run there (not Windows, no supported card, the pack missing, the selection with its surroundings smaller
-  than 64 px or larger than 7680 × 4320); RTX 30 cards run with a note. The pack's own errors come back as plain sentences that say what to do.
-  There is no Comfy Cloud version of the pass.
+  than 64 px or larger than 7680 × 4320); RTX 30 cards run with a note. The pack's own errors come back as plain
+  sentences that say what to do. There is no Comfy Cloud version of the pass. The manual has a chapter of the same
+  name: what the pass needs, how to install the pack and its runtime on your ComfyUI (with the workaround for the
+  runtime installer's download address and the antivirus exclusion the pack's README advises), and what each message
+  means.
 - **Realism Pass (Windows only, RTX only) over the whole picture.** *Upscale* (also *Image › Realism Pass (Windows
   only, RTX only)...*) lists the pass beside the upscalers. At 1× it sends the whole visible picture through DLSS 5 on
   your own ComfyUI and adds the answer as a new layer above it, at full size and without a colour match (the layer's
-  match slider is there if you want one); the picture keeps its size. Filter layers at the top of the stack, such as a
+  match slider takes a colour shift back once its source is set to underneath); the picture keeps its size. Filter layers at the top of the stack, such as a
   film look or grain, stay live above the new layer and are not sent; reference layers stay out. A second run reads
   the first pass layer with the rest and stacks its own above it. Style and Strength sit in the dialog's Realism Pass
   row and count for the recipe on a selection too; the row's DLSS model preset is the whole-picture pass's own (on a

@@ -2115,7 +2115,7 @@ async function openSettings() {
     } catch (_) { ui.setGpuMem.textContent = ""; }
     try {
         const info = await window.scumble.info();
-        ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products.`;
+        ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products. NVIDIA, RTX and DLSS are trademarks of NVIDIA Corporation; Scumble is not affiliated with or endorsed by NVIDIA, and the Realism Pass (Windows only, RTX only) runs only what you installed on your own ComfyUI.`;
     } catch (_) { /* ignore */ }
     ui.updateAuto.checked = !(settings.updates && settings.updates.check === false);
     ui.promptRefPics.checked = refPicturesOn(settings);

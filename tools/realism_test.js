@@ -243,7 +243,7 @@ function nodeFitSpan(a0, a1, limit, m) {
     {
         const s = sup(ok({ objectInfo: without("DLSS5Settings") }));
         check("DLSS5Settings missing: disabled, names it and the pack", s.ok === false && s.show === "disabled"
-            && s.reason === `${L}: your ComfyUI lacks its nodes (DLSS5Settings): install the ComfyUI-DLSS5-Enhancer node pack there (Help › Manual › ${L}).`, short(s));
+            && s.reason === `${L}: your ComfyUI lacks its nodes (DLSS5Settings): install the ComfyUI-DLSS5-Enhancer node pack there (Help › Scumble help › ${L}).`, short(s));
         const s2 = sup(ok({ objectInfo: without("DLSS5Settings", "DLSS5EnhanceImages") }));
         check("both DLSS nodes missing: disabled, names both in the pack's order", s2.ok === false && s2.show === "disabled"
             && s2.reason.includes("(DLSS5Settings, DLSS5EnhanceImages)") && s2.reason.includes("ComfyUI-DLSS5-Enhancer"), short(s2));
@@ -455,7 +455,7 @@ function nodeFitSpan(a0, a1, limit, m) {
     // ---- 6. hint for every message of the pack (plan 3.4) ----------------------------------------------------------
     console.log("\n--- 6. hint, isPresetRefusal (plan 3.4, tools/refs/dlss5/messages.json) ---");
     const fixtures = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "dlss5", "messages.json"), "utf8")).messages;
-    const manual = `(Help › Manual › ${L})`;
+    const manual = `(Help › Scumble help › ${L})`;
     const feature18 = `${L}: DLSS 5 did not run its neural rendering on your ComfyUI. Another program may hold the GPU (a game, a video encoder): close it and try again.`;
     const versionText = `${L}: the installed runtime is not the version the pack expects (v3.0). Install it again with the address in the manual ${manual}.`;
     const presetText = (p) => `${L}: the runtime on your ComfyUI does not support DLSS model preset ${p}. Pick Default under DLSS model preset and Generate again.`;
@@ -482,7 +482,7 @@ function nodeFitSpan(a0, a1, limit, m) {
         feature18_crash_rtx30: `${crash} On an RTX 30 card the experimental runtime pair must match exactly and may still be unstable.`,
         too_large: `${L}: the picture is larger than 7680 × 4320.`,
         too_small: `${L} needs at least 64 px a side; this is 40 × 60.`,
-        opencv: `${L}: the pack's Python packages are missing on your ComfyUI: install its requirements there ${manual}.`,
+        opencv: `${L}: your ComfyUI's Python has no OpenCV, which the pack needs: install opencv-python there (or opencv-contrib-python if you already use it) ${manual}.`,
         other: `${generic}The native DLSS worker stopped on frame 0 (exit 3).`,
         worker_exit: `${generic}The native DLSS worker exited with code 3.`,
         worker_timeout: `${generic}The native DLSS worker did not exit within 60 seconds and was killed.`,

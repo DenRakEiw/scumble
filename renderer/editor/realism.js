@@ -90,7 +90,7 @@ export function serverSupport({ state, os, gpus, objectInfo } = {}) {
     if (objectInfo) {
         const missing = NODES.filter((n) => !objectInfo[n]);
         if (missing.length) {
-            return out(false, "disabled", `${LABEL}: your ComfyUI lacks its nodes (${missing.join(", ")}): install the ComfyUI-DLSS5-Enhancer node pack there (Help › Manual › ${LABEL}).`, { gpu, generation, experimental, note });
+            return out(false, "disabled", `${LABEL}: your ComfyUI lacks its nodes (${missing.join(", ")}): install the ComfyUI-DLSS5-Enhancer node pack there (Help › Scumble help › ${LABEL}).`, { gpu, generation, experimental, note });
         }
     }
     if ((objectInfo && !objectInfo.InpaintCanvas) || (!objectInfo && state === "missing-node")) {
@@ -179,7 +179,7 @@ const firstLine = (s) => String(s || "").split(/\r?\n/).map((l) => l.trim()).fin
 /** The sentence a user reads for a failure inside the pack (§3.4); `message` is the execution_error's text. */
 export function hint(message) {
     const m = String(message || "");
-    const manual = `(Help › Manual › ${LABEL})`;
+    const manual = `(Help › Scumble help › ${LABEL})`;
     if (/No DLSS 5 runtime was found/.test(m)) {
         return `${LABEL}: the DLSS 5 runtime is not installed on your ComfyUI. Install it there with the pack's install_runtime.py ${manual}.`;
     }
@@ -230,7 +230,7 @@ export function hint(message) {
         return `${LABEL} needs at least ${MIN_SIDE} px a side; this is ${g[1]} × ${g[2]}.`;
     }
     if (/OpenCV is required/.test(m)) {
-        return `${LABEL}: the pack's Python packages are missing on your ComfyUI: install its requirements there ${manual}.`;
+        return `${LABEL}: your ComfyUI's Python has no OpenCV, which the pack needs: install opencv-python there (or opencv-contrib-python if you already use it) ${manual}.`;
     }
     return `${LABEL} failed on your ComfyUI: ${firstLine(m).replace(/[.:;\s]+$/, "") || "no message"}.`;
 }

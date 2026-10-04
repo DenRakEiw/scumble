@@ -72,6 +72,11 @@ press Generate. The recipe decides where it runs: your ComfyUI, or a provider wi
   the model where each change goes. With no boxes drawn, the selection goes as one box. One switch under the prompt
   turns them on and off, and the boxes are saved with the document. Ideogram 4 gets them as its structured caption
   (new things, words and kept elements; it has no move, remove or reference boxes).
+- *Realism Pass (Windows only, RTX only)*, a refiner for generated pictures: from the Upscale dialog it sends the
+  whole visible picture at 1× through DLSS 5 Neural Rendering on your own ComfyUI and adds the answer as a new layer
+  above it, so generated skin, hair and fabric look less waxy. It needs a ComfyUI on Windows with an RTX 30, 40 or 50
+  card and the community node pack ComfyUI-DLSS5-Enhancer with its runtime, which you install there; the
+  [manual](docs/MANUAL.md)'s chapter of the same name has the steps. There is no Comfy Cloud version.
 - Prompt upsampling through a stored API key, an OpenRouter, Oxen.ai or ToAPIs key, or a local Ollama /
   LM Studio, with your own prompt-writing rules as Markdown templates.
 
@@ -166,7 +171,9 @@ For local rendering you need a ComfyUI with the node pack
 [ComfyUI-InpaintCanvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas) installed and
 the models of the recipe you pick (the shipped Flux.2 Klein recipe wants the Flux.2 Klein
 9B model, the Qwen3 8B text encoder and the Flux.2 VAE; the recipe's Settings panel lets
-you choose the file names you have). For an API provider put the key into Settings > API
+you choose the file names you have). The Realism Pass (Windows only, RTX only) also needs that ComfyUI on Windows,
+an RTX 30, 40 or 50 card there, and the community node pack ComfyUI-DLSS5-Enhancer with its runtime. For an API
+provider put the key into Settings > API
 providers; no ComfyUI is needed then. The same key rows serve the assistant and prompt
 upsampling (Anthropic, OpenAI, Google, OpenRouter, DeepSeek, Moonshot, Z.ai, ToAPIs,
 WaveSpeed, Oxen.ai), plus a local OpenAI-compatible endpoint that needs no key. The *get a key* links
