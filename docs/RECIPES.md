@@ -87,17 +87,20 @@ recipe's `DLSS5Settings` inputs, and a new layer above the picture). Any other t
   `ImageFromBatch` (the crop only) -> `UpscaleModelLoader` (`model_name` as *Model*, slot 1, the server's
   `models/upscale_models` list from `/object_info`; default `4x-UltraSharp.pth`) -> `ImageUpscaleWithModel` ->
   `result_local`. `"task": "upscale"` on a ComfyUI recipe (see "Upscale recipes" below): the *Upscale* dialog lists
-  it, the selection is its only mode, and the node's stitch fits the model's larger answer back into the box
-  (`nodes.py` `InpaintCanvasStitch`, `_resize_image(src, w, h)`), so it is a sharper detail pass at the document's
-  resolution. Checked against the user's `/object_info` on 2026-09-22 (both classes, their inputs and outputs);
-  **not run** (the user's ComfyUI was not free).
+  it; on the selection the node's stitch fits the model's larger answer back into the box (`nodes.py`
+  `InpaintCanvasStitch`, `_resize_image(src, w, h)`), so it is a sharper detail pass at the document's resolution; on
+  the whole picture (0.1.42 U2) the base goes through the same graph and the answer becomes the new base. `limits`
+  `{ "max": 2048 }` (0.1.42 Q14: a 4x model answers at most 8192 px; the box or the picture that goes out). Checked
+  against the user's `/object_info` on 2026-09-22 (both classes, their inputs and outputs); **not run** (the user's
+  ComfyUI was not free).
 - `rtx_vsr_local`, **RTX Video Super Resolution (ComfyUI)** (0.1.42, `docs/PLAN_0_1_42.md` U1): `InpaintCanvas` ->
   `ImageFromBatch` (the crop only) -> `RTXVideoSuperResolution` (`resize_type` "scale by multiplier", its
   `resize_type.scale` the factor, `quality` LOW / MEDIUM / HIGH / ULTRA as the *Quality* row, ULTRA by default) ->
   `result_local`, task `upscale`. NVIDIA's RTX Video Super Resolution from the node pack Nvidia_RTX_Nodes_ComfyUI
   (Comfy-Org, with its `nvidia-vfx` package), which the user installs on an RTX machine. 1 to 4 times (`factor.input`
   `rtx|resize_type.scale`), `limits` 64 / 4096 / 8192 (the node's target mode takes 64 to 8192 a side; its output sides
-  are `int(w × scale)` rounded to a multiple of 8, which the stitch fits back anyway). Checked against the user's
+  are `int(w × scale)` rounded to a multiple of 8, which the stitch fits back anyway; on the whole picture, U2, the
+  answer is stretched to the document's aspect). The selection or the whole picture. Checked against the user's
   `/object_info` on 2026-10-04 (inputs, combo, ranges).
 - `realism_pass`, **Realism Pass (Windows only, RTX only)** (0.1.42, `docs/PLAN_0_1_42.md` R1; the name is the
   user's, held by `renderer/editor/realism.js` `LABEL` and pinned by `tools/recipes_test.js`): `InpaintCanvas` ->
@@ -1087,16 +1090,35 @@ the node's dynamic combo, a flat key in the API prompt), keeps an unfixed factor
 editor as `_comfyUpscaleFactor`, read once, since `editor.generate()` takes no arguments). `"limits": { "min", "max",
 "out" }` (the input's short side, its long side, the answer's long side) are checked on the crop the node cuts before
 anything is uploaded (`host.upscaleSizeRefusal`); `*Save to recipe*` keeps `factor` and `limits`, and a *Cloud copy*
-runs at the factor its graph holds (its factor fixed, with a note). There is **only the selection mode**: the node's stitch resizes every answer to the
-crop box and has no way to replace the base (that would need the node to hand back the raw result, a node
-change). `host.queueGenerate` runs it like any ComfyUI recipe with three differences: it refuses without a
-selection, the canvas state it sends is `host.upscaleState(...)` (crop `fill: "none"` and `withOriginal: false`,
-`references: []`, no refine pass; the document's own crop settings are untouched), and the canvas node gets
-`target_size: 0`, so the node grows the box to `multiple_of` instead of scaling the crop before the model sees
-it. The `upscale` command refuses `scope: "document"` for such a recipe by name and runs the selection through
-the `generate` command's path (queue, wait for the result layer); the dialog greys *the whole picture* out,
-hides the factor and the provider row, and disables *Upscale* without a selection, without a server connection
-or when the server lacks one of the recipe's `needs` (named in the note).
+runs at the factor its graph holds (its factor fixed, with a note). Both modes:
+
+- **The selection**: the node's stitch resizes every answer to the crop box. `host.queueGenerate` runs it like any
+  ComfyUI recipe with three differences: it refuses without a selection, the canvas state it sends is
+  `host.upscaleState(...)` (crop `fill: "none"` and `withOriginal: false`, `references: []`, no refine pass; the
+  document's own crop settings are untouched), and the canvas node gets `target_size: 0`, so the node grows the box to
+  `multiple_of` instead of scaling the crop before the model sees it. The `upscale` command runs it through the
+  `generate` command's path (queue, wait for the result layer).
+- **The whole picture** (0.1.42 U2, `host.runComfyUpscale`): the base alone is drawn at its size, stored in the mirror
+  and on the server (`uploadInput`), and the recipe's own graph runs on it through `comfyPictureRun` (queued behind the
+  user's jobs, a helper prompt): `renderer/editor/comfyprompt.js` `wholePicturePrompt(r, ref, factor, settings)` keeps
+  the canvas node's id and makes it `InpaintCanvasLoadRef { ref }` (its output 0 is an IMAGE like the canvas node's
+  slot 0, so the links that read `[canvas, 0]` read the picture), writes the Settings rows and the factor, and adds a
+  `PreviewImage` named `scumble_out` on the recipe's `result` (temp files, nothing in the user's output folder). The
+  answer lands through `landWholePicture`, the API upscalers' tail: the new base at its own width, every layer, mask
+  and the selection scaled along through `resizeImage(nw, nh, { base })`, one `canvas` undo step. The loader gives
+  RGB, so a cut-out picture comes back opaque (the dialog says so). Refused before anything is drawn or sent: a graph
+  that reads anything but slot 0 of the canvas node (its mask, its prompt, a Settings slot: "... reads more than the
+  picture from the canvas node (its crop_mask); it cannot upscale the whole picture."), no connection, a node type of
+  that prompt the server lacks (`InpaintCanvasLoadRef` and `PreviewImage` instead of `InpaintCanvas`), a document that
+  is busy (`turnBlocked`), and `upscaleSizeRefusal(r, W, H, factor, "picture")` (the long side past `limits.max`, the
+  answer past `limits.out` at the factor; not checked for a fixed factor). The document is busy like a run meanwhile
+  (`providerPending` holds a `{ provider: "comfyui", label }` token: the title row's timer and its *Cancel*, which takes
+  the job off the server; Generate and a turn refuse); closing the tab ends it and lands nothing.
+
+The dialog offers both scopes, hides the factor for a fixed one and the provider row, says for the whole picture what
+goes out and comes back with the transparency line, and disables *Upscale* without a selection (the selection's
+mode), without a server connection, when the server lacks a node type of the chosen route (named in the note), or for
+a refusal of the size or the graph.
 
 **The Realism Pass entry** (a `pass` recipe, `realism_pass` above) is listed in the same dialog but is no upscale:
 its factor is *1× (refine)*, its scope is always the whole picture, and *Upscale* runs the `realism_pass` command

@@ -124,6 +124,9 @@ for g in "$@"; do
     docux) SCUMBLE_EXE="$EXE" timeout 900 python tools/document_ux_test.py --out "$OUT/docux" > "$OUT/docux.log" 2>&1; rc=$? ;;
     # docperf:15000x10000: a .scumble save and open at size against the runner's app (docs/PLAN_DOCUMENTS.md §7 D5)
     docperf:*) timeout 3600 python tools/document_perf.py ${g#docperf:} --out "$OUT/docperf" > "$OUT/docperf.log" 2>&1; rc=$? ;;
+    # upscaleperf:7680x4320: the whole picture on a ComfyUI upscaler at 2x, the landing timed against the runner's app
+    # (docs/PLAN_0_1_42.md U2, the 15k measurement; the answer goes into this run's profile, nothing reaches a server)
+    upscaleperf:*) timeout 3600 python tools/upscale_perf.py ${g#upscaleperf:} --profile "$PROFILE" --out "$OUT/upscaleperf" > "$OUT/upscaleperf.log" 2>&1; rc=$? ;;
     *) $T python "tools/${g}_test.py" > "$OUT/$g.log" 2>&1; rc=$? ;;
   esac
   verdict=$(grep -aE "(^PASS|^FAIL|^RESULT)" "$OUT/${g%%:*}.log" | tail -1)

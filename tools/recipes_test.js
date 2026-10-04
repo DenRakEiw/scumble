@@ -525,7 +525,7 @@ async function main() {
             } finally { console.warn = w0; }
             const um = comfy.find((r) => r.id === "upscale_model_local");
             const umSaved = um && recipes.fromGraph({ output: recipes.toPrompt(um), workflow, objectInfo: {}, base: um, date });
-            check("the upscale model's Save to recipe keeps its fixed factor and adds no limits", !!umSaved && umSaved.factor && umSaved.factor.fixed === true && !Object.prototype.hasOwnProperty.call(umSaved, "limits"), short(umSaved && { factor: umSaved.factor, limits: umSaved.limits }));
+            check("the upscale model's Save to recipe keeps its fixed factor and its one limit (2048 px, U2)", !!umSaved && umSaved.factor && umSaved.factor.fixed === true && eq(umSaved.limits, { max: 2048 }), short(umSaved && { factor: umSaved.factor, limits: umSaved.limits }));
             const klein = comfy.find((r) => r.id === "flux2_klein_local");
             const kSaved = klein && recipes.fromGraph({ output: recipes.toPrompt(klein), workflow, objectInfo: {}, base: klein, date });
             check("an edit recipe's Save to recipe gets no factor and no limits", !!kSaved && !Object.prototype.hasOwnProperty.call(kSaved, "factor") && !Object.prototype.hasOwnProperty.call(kSaved, "limits"), short(kSaved && { factor: kSaved.factor, limits: kSaved.limits }));

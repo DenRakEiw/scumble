@@ -16,6 +16,7 @@ import * as dialogs from "./dialogs.js";
 import { PromptField, RefBar } from "./editor/prompt_field.js";
 import { remap, compare, checkNote, normalize as normalizeTokens, referencesText, referencesRule } from "./editor/reftokens.js";
 import * as realism from "./editor/realism.js";
+import * as comfyprompt from "./editor/comfyprompt.js";
 
 // the editor's style, in the app's cascade layer (docs/SKINS.md): created here before the first editor, so the
 // editor's own injectStyle() finds it and adds nothing; a skin's rules then beat it as they beat shell.css
@@ -1474,19 +1475,34 @@ function upSyncNote() {
     ui.upScopeSel.parentElement.title = "";
     if (upScopeBeforePass) { (upScopeBeforePass === "selection" ? ui.upScopeSel : ui.upScopeDoc).checked = true; upScopeBeforePass = null; }
     const comfy = !!r && r.kind !== "provider";
-    ui.upScopeDoc.disabled = comfy;
+    ui.upScopeDoc.disabled = false;
     // only an upscaler that takes guidance (Clarity, Magnific Creative: `usesPrompt`) shows the prompt
     ui.upPromptRow.hidden = !(v && v.usesPrompt);
     if (comfy) {
-        // the node's stitch fits any answer back into the selection's box: no whole-picture mode on ComfyUI
-        if (ui.upScopeDoc.checked) ui.upScopeSel.checked = true;
-        const lacks = host.connected ? (r.needs || []).filter((n) => host.objectInfo && !host.objectInfo[n]) : [];
+        // the whole picture through the recipe's graph (host.runComfyUpscale, the classes it queues), or the selection's
+        // box through the node, whose stitch fits the answer back into it (the recipe's `needs`)
+        const doc = ui.upScopeDoc.checked;
+        let lacks = [], shape = "";
+        if (doc) shape = comfyprompt.wholePictureRefusal(r);
+        if (host.connected && !shape) {
+            const classes = doc ? comfyprompt.wholePictureClasses(r) : (r.needs || []);
+            lacks = classes.filter((n) => host.objectInfo && !host.objectInfo[n]);
+        }
         const why = !host.connected ? " Not connected to ComfyUI: Settings › ComfyUI."
             : lacks.length ? ` The server lacks these node types: ${lacks.join(", ")}.` : "";
         ui.upNote.textContent = (r.description || "") + why;
-        const sel = !!(ed && ed.getBounds && ed.getBounds());
-        // a factor the recipe takes (RTX Video Super Resolution): the box the node cuts, its answer and the size limits
+        // a factor the recipe takes (RTX Video Super Resolution); an upscale model picks its own (none shown)
         const f = r.factor && !r.factor.fixed ? +ui.upFactor.value || r.factor.default : null;
+        if (doc) {
+            const W = (ed && ed.width) || 0, H = (ed && ed.height) || 0;
+            const refusal = shape || (!(ed && ed.base && W && H) ? "Load an image first." : host.upscaleSizeRefusal(r, W, H, f, "picture"));
+            const back = f != null ? `about ${Math.round(W * f)} × ${Math.round(H * f)} comes back` : "the model's larger answer comes back";
+            ui.upSizeNote.textContent = refusal || `${W} × ${H} (the base picture alone) goes out to your ComfyUI, ${back} and becomes the picture; every layer, mask and the selection scale along. A cut-out picture comes back without its transparency on this route.`;
+            ui.upGo.disabled = !!why || !!refusal;
+            return;
+        }
+        const sel = !!(ed && ed.getBounds && ed.getBounds());
+        // the box the node cuts, its answer and the size limits
         let refusal = "", sized = "";
         if (sel && f != null && ed.cropRect) {
             const [, , cw, ch] = ed.cropRect();
@@ -1496,10 +1512,10 @@ function upSyncNote() {
             sized = ` The box with its context (${bw} × ${bh}) comes back at about ${Math.round(bw * f)} × ${Math.round(bh * f)} and is fitted back into it by the node's stitch.`;
         }
         ui.upSizeNote.textContent = !sel
-            ? "Select an area first: on ComfyUI an upscale model sharpens the selection's box. The whole picture needs an API upscaler."
+            ? "Select an area first, or pick the whole picture: on the selection an upscaler on ComfyUI sharpens the selection's box."
             : refusal || (f != null
-                ? `The selection's box (with its context) goes out at its own size.${sized} The whole picture is not upscaled on ComfyUI.`
-                : "The selection's box (with its context) goes out at its own size; the model's larger answer is fitted back into it by the node's stitch. The whole picture is not upscaled on ComfyUI.");
+                ? `The selection's box (with its context) goes out at its own size.${sized}`
+                : "The selection's box (with its context) goes out at its own size; the model's larger answer is fitted back into it by the node's stitch.");
         ui.upGo.disabled = !sel || !!why || !!refusal;
         return;
     }

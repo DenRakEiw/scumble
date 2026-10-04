@@ -375,7 +375,7 @@ Generate with the selected recipe: the selected area (with context) goes to the 
 
 ### `upscale` *(image)*
 
-Upscale with the selected upscale recipe (list_recipes: task "upscale"; select_recipe picks one). scope "selection": the selection's box goes to the upscaler at its own size and the sharper answer comes back into it at the document's resolution, as a result layer. scope "document": the base image goes out, the answer becomes the new base N times larger, and every layer, mask and the selection are scaled along (one undo step); an upscale recipe on ComfyUI takes the selection only. Waits for the answer; Topaz can take several minutes.
+Upscale with the selected upscale recipe (list_recipes: task "upscale"; select_recipe picks one). scope "selection": the selection's box goes to the upscaler at its own size and the sharper answer comes back into it at the document's resolution, as a result layer. scope "document": the base image goes out, the answer becomes the new base N times larger, and every layer, mask and the selection are scaled along (one undo step); on an upscale recipe on the user's ComfyUI the base goes through the recipe's graph and comes back without transparency (refused before anything is sent when the graph reads more than the picture, the picture passes the recipe's limits, or a job is going on the document). Waits for the answer; Topaz can take several minutes.
 
 | param | type | description |
 |---|---|---|

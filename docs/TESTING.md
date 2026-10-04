@@ -335,6 +335,16 @@ an answer that drops `@img2` gives "dropped @img2" in the note, Revert puts the 
 --offline --tiles on generate commands lint types nodecopy`, then `generate` again with `--tiles off` (the reference
 layers now live across a base swap).
 
+0.1.42 U2, the whole picture on a ComfyUI upscaler (`docs/PLAN_0_1_42.md` U2): `node tools/comfyprompt_test.js` (plain
+Node, run by the `upscale` gate's node step; stdout alone is judged, stderr carries Node's ES module note) tests
+`renderer/editor/comfyprompt.js` on both shipped local upscalers, raw and normalized. The `upscale` gate's
+`a_comfy_upscaler_upscales_the_whole_picture` stubs the queue, the ensure, `/queue`, `/history` and the job cancel in
+the page and answers with a mirror file (nothing reaches a server); the `document` gate's
+`a_comfy_whole_picture_upscale_round_trips` saves and opens the upscaled document. `upscaleperf:<W>x<H>`
+(`tools/upscale_perf.py`) is the 15k measurement of the landing against the runner's app: it writes the answer into
+the run's profile, so it runs alone on a fresh instance per backend. The run: `bash tools/run_gates.sh <label>
+--offline --tiles on upscale document`, the same with `--tiles off`.
+
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:

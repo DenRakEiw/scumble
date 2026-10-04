@@ -169,10 +169,11 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         const again = quiet(() => recipes._normalize(JSON.parse(JSON.stringify(r))));
         check("normalized twice, the factor and the limits stay as they were", eq(again.factor, r.factor) && eq(again.limits, r.limits) && !warned.length, short({ factor: again.factor, limits: again.limits }));
 
-        // the upscale model keeps a fixed factor: it names no input, and has no limits
+        // the upscale model keeps a fixed factor: it names no input; its one limit is the input's long side (U2, Q14:
+        // 2048, so a 4x model answers at most 8192)
         const um = quiet(() => recipes._normalize(JSON.parse(JSON.stringify(rawOf("upscale_model_local")))));
-        check("upscale_model_local stays fixed, names no input, has no limits, and is read without a warning",
-            um.factor.fixed === true && um.factor.input === undefined && um.limits === undefined && !warned.length, short({ factor: um.factor, limits: um.limits, warned }));
+        check("upscale_model_local stays fixed, names no input, takes at most 2048 px on the long side, and is read without a warning",
+            um.factor.fixed === true && um.factor.input === undefined && eq(um.limits, { max: 2048 }) && !warned.length, short({ factor: um.factor, limits: um.limits, warned }));
 
         // a factor.input that names no node of the graph (or is no "node|input"): fixed, with a warning that names it
         for (const bad of ["nope|scale", "rtx", "|resize_type.scale", "rtx|", 5]) {
@@ -460,6 +461,8 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         const sel = policy.decide({ name: "upscale", args: { doc: 1, scope: "selection" } }, { tools: new Set(["upscale"]) });
         const doc = policy.decide({ name: "upscale", args: { doc: 1, scope: "document" } }, { tools: new Set(["upscale"]) });
         check("upscale asks (it costs money), with its own reason per scope", sel.action === "ask" && doc.action === "ask" && /selection/.test(sel.reason) && /whole picture/.test(doc.reason), `${sel.reason} | ${doc.reason}`);
+        // U2: the whole picture runs on the user's ComfyUI too
+        check("the whole picture's reason names both routes", doc.reason === "upscales the whole picture (a paid model or your ComfyUI): every layer is scaled along", doc.reason);
         check("upscale is a run: a busy document refuses it", policy.decide({ name: "upscale", args: {} }, { tools: new Set(["upscale"]), busy: true }).action === "refuse");
         check("its timeout defaults to 30 minutes", policy.clamp({ name: "upscale", args: {} }).args.timeout === 1800);
         check("the selection's upscale gets a layers step, the whole picture's none (it pushes its own)",

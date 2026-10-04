@@ -167,10 +167,11 @@ const ids = ups.map((r) => r.id).sort();
 if (JSON.stringify(ids) !== JSON.stringify(want)) throw new Error("upscale recipes: " + ids.join(", "));
 const mc = ups.find((r) => r.id === "magnific_creative");
 if (JSON.stringify(mc.factor.steps) !== "[2,4,8,16]" || mc.provider !== "magnific") throw new Error("Magnific Creative: " + JSON.stringify(mc));
-// a ComfyUI upscaler names its factor and its limits (docs/PLAN_0_1_42.md U1); an upscale model picks its own and has none
+// a ComfyUI upscaler names its factor and its limits (docs/PLAN_0_1_42.md U1); an upscale model picks its own factor and
+// takes at most 2048 px (U2, Q14)
 const rtx = ups.find((r) => r.id === "rtx_vsr_local"), um = ups.find((r) => r.id === "upscale_model_local");
 if (rtx.mode !== "local" || rtx.provider !== null || !rtx.factor || rtx.factor.fixed !== false || rtx.factor.default !== 2 || rtx.factor.min !== 1 || rtx.factor.max !== 4 || JSON.stringify(rtx.limits) !== JSON.stringify({ min: 64, max: 4096, out: 8192 })) throw new Error("RTX Video Super Resolution: " + JSON.stringify(rtx));
-if (!um.factor || um.factor.fixed !== true || um.limits !== null) throw new Error("Upscale model: " + JSON.stringify({ factor: um.factor, limits: um.limits }));
+if (!um.factor || um.factor.fixed !== true || JSON.stringify(um.limits) !== JSON.stringify({ max: 2048 })) throw new Error("Upscale model: " + JSON.stringify({ factor: um.factor, limits: um.limits }));
 if (mc.limits !== undefined) throw new Error("an API upscaler names ComfyUI limits: " + JSON.stringify(mc.limits));
 if (list.recipes.some((r) => r.task !== "upscale" && r.factor !== undefined)) throw new Error("an edit recipe carries a factor");
 const gen = list.recipes.filter((r) => r.task === "edit").length;
@@ -316,7 +317,8 @@ try {
     try { await run("set_prompt", { doc: window.__u, text: "" }); } catch (_) { /* gone */ }
 }
 """),
-    ("a_comfy_upscale_recipe_queues_the_crop_as_it_is_and_only_the_selection", """
+    # the selection through the node (the whole picture since U2 is the next step but one)
+    ("a_comfy_upscale_recipe_queues_the_crop_as_it_is", """
 // the shipped ComfyUI recipe, with the prompt caught before it leaves: nothing is queued on any server
 const ed = ednow(window.__u);
 const { api } = await import("./editor/host.js");
@@ -356,14 +358,16 @@ try {
     if (ed.cropSettings.fill !== "green" || ed.cropSettings.withOriginal !== true) throw new Error("the crop settings of the document were changed: " + JSON.stringify(ed.cropSettings));
     if (host.nodeParams.target_size !== 1024) throw new Error("the node params were changed: " + JSON.stringify(host.nodeParams));
     out.sent = { target_size: cv.target_size, crop: st.crop, model: P_.loader.inputs.model_name, result: cv.result_source_local };
-    // the dialog lists it, offers no factor and no whole picture
+    // the dialog lists it and offers no factor; with a selection it starts on the selection, the whole picture offered
+    // beside it (U2)
     host.shell.openUpscale(ed);
     const pick = (id) => { const s = document.getElementById("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); };
     const recs = Array.from(document.getElementById("up-recipe").options).map((o) => o.value);
     if (!recs.includes("upscale_model_local")) throw new Error("the dialog does not list it: " + recs.join(", "));
     pick("upscale_model_local");
     const docRadio = document.getElementById("up-scope-doc"), go = document.getElementById("up-go");
-    if (!docRadio.disabled || docRadio.checked) throw new Error("the whole picture is offered on ComfyUI");
+    if (docRadio.disabled || docRadio.checked || !document.getElementById("up-scope-sel").checked) throw new Error("the scope: " + JSON.stringify({ docDisabled: docRadio.disabled, doc: docRadio.checked }));
+    if (/whole picture is not upscaled/.test(document.getElementById("up-size-note").textContent)) throw new Error("the note still says the whole picture is not upscaled: " + document.getElementById("up-size-note").textContent);
     if (!document.getElementById("up-factor-row").hidden) throw new Error("a factor is offered for a model that picks its own");
     if (!document.getElementById("up-provider-row").hidden) throw new Error("a provider row for a ComfyUI recipe");
     if (go.disabled) throw new Error("Go is disabled with a selection and a server: " + document.getElementById("up-size-note").textContent);
@@ -382,15 +386,14 @@ try {
     pick("upscale_model_local");
     document.getElementById("up-cancel").click();
     await wait(60);
-    // the command: the whole picture is refused by name, and so is no selection
+    // the command: no selection is refused for the selection's mode
     const refused = async (args, re) => {
         try { await run("upscale", { doc: window.__u, ...args }); } catch (err) { const m = String(err.message || err); if (!re.test(m)) throw new Error("wrong refusal for " + JSON.stringify(args) + ": " + m); return m; }
         throw new Error("not refused: " + JSON.stringify(args));
     };
     sent = null;
-    // a short timeout: a refusal that lets the call through would wait for a result that never comes
-    out.document = await refused({ scope: "document", timeout: 8 }, /cannot enlarge the whole picture/);
     await run("select_none", { doc: window.__u });
+    // a short timeout: a refusal that lets the call through would wait for a result that never comes
     out.noSelection = await refused({ scope: "selection", timeout: 8 }, /Select an area first/);
     try { await host.queueGenerate(ed); throw new Error("Generate queued without a selection"); }
     catch (err) { if (!/Select an area first/.test(String(err.message))) throw err; }
@@ -399,6 +402,8 @@ try {
     return out;
 } finally {
     host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; host.nodeParams = saved.np;
+    // the caught prompt never ends on a server: it would stay an open render of the tab and block a later whole picture
+    if (ed._localRuns) ed._localRuns.delete("gate-upscale");
     if (document.getElementById("up-dialog").open) document.getElementById("up-cancel").click();
     await run("set_crop", { doc: window.__u, fill: saved.crop.fill || "none", withOriginal: !!saved.crop.withOriginal });
     if (ref) { try { await run("remove_layer", { doc: window.__u, layer: ref.id }); } catch (_) { /* gone */ } }
@@ -468,7 +473,8 @@ try {
         return res;
     };
 
-    // the dialog: the factor row 1 to 4 (2 by default), the box and the answer in the size note, no whole picture
+    // the dialog: the factor row 1 to 4 (2 by default), the box and the answer in the size note, the selection chosen and
+    // the whole picture offered beside it (U2)
     host.shell.openUpscale(ed);
     if (!$("up-dialog").open) throw new Error("the dialog did not open");
     if ($("up-recipe").value !== "rtx_vsr_local") throw new Error("the selected recipe is not preselected: " + $("up-recipe").value);
@@ -476,7 +482,7 @@ try {
     if (!$("up-factor-row").hidden) throw new Error("the upscale model shows a factor");
     pick("rtx_vsr_local");
     if ($("up-factor-row").hidden || JSON.stringify(factors()) !== "[1,2,3,4]" || $("up-factor").value !== "2") throw new Error("the factor row: " + JSON.stringify({ hidden: $("up-factor-row").hidden, factors: factors(), value: $("up-factor").value }));
-    if (!$("up-scope-doc").disabled || !$("up-scope-sel").checked || !$("up-provider-row").hidden || !$("up-prompt-row").hidden) throw new Error("the scope or the rows: " + JSON.stringify({ doc: $("up-scope-doc").disabled, sel: $("up-scope-sel").checked, provider: $("up-provider-row").hidden, prompt: $("up-prompt-row").hidden }));
+    if ($("up-scope-doc").disabled || !$("up-scope-sel").checked || !$("up-provider-row").hidden || !$("up-prompt-row").hidden) throw new Error("the scope or the rows: " + JSON.stringify({ doc: $("up-scope-doc").disabled, sel: $("up-scope-sel").checked, provider: $("up-provider-row").hidden, prompt: $("up-prompt-row").hidden }));
     const note2 = $("up-size-note").textContent;
     if ($("up-go").disabled || !note2.includes("(" + bw + " × " + bh + ") comes back at about " + (bw * 2) + " × " + (bh * 2))) throw new Error("the note at 2x: " + note2);
     setFactor(3);
@@ -576,11 +582,287 @@ try {
     if (ownGenerate) ed.generate = ownGenerate; else delete ed.generate;
     for (const h of pushed) { const i = ed.history.indexOf(h); if (i >= 0) ed.history.splice(i, 1); }
     host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; host.nodeParams = saved.np;
+    // the caught prompts never end on a server: they would stay open renders of the tab and block a later whole picture
+    if (ed._localRuns) ed._localRuns.delete("gate-rtx");
     if ($("up-dialog").open) $("up-cancel").click();
     if (big) { try { await run("close_document", { doc: big }); } catch (_) { /* gone */ } }
     host.shell.activate(ed);
     if (fake) { try { await run("remove_layer", { doc: window.__u, layer: fake.id }); } catch (_) { /* gone */ } }
     try { await run("set_crop", { doc: window.__u, context: saved.crop.context, feather: saved.crop.feather }); } catch (_) { /* gone */ }
+    // the window's recipe as the step found it, through the shell (CLAUDE.md: a gate that switches a recipe puts it back)
+    if (recipe0 && (!host.recipe || host.recipe.id !== recipe0.id)) host.shell.selectRecipe(recipe0.id, recipe0.kind === "provider" ? recipe0.provider : undefined);
+}
+"""),
+    # docs/PLAN_0_1_42.md U2: the whole picture on a ComfyUI upscaler. The dialog offers it with what goes out, what
+    # comes back and the transparency line, and greys Upscale for what refuses it; its run goes out as the recipe's graph
+    # with the canvas node as a loader of the uploaded base (queued at the back, a PreviewImage on the result, the factor
+    # and Quality written), the document is busy like a run while it waits (status, Generate, a turn), and ComfyUI's
+    # answer (a dispatched `executed` naming a mirror file, the base at 2x with a magenta frame) becomes the new base with
+    # the layers and the selection scaled along, one undo step. The upscale model (a fixed factor) runs too; Cancel takes
+    # its job off the server and changes nothing. Refused before anything is uploaded or queued: a busy document, a graph
+    # that reads the canvas node's mask, the 8192 px answer, the 2048 px input of the upscale model, a bad factor, no
+    # server, the loader missing. Nothing reaches a server: the queue, the ensure, /queue and the job cancel are caught in
+    # the page; the uploads and /view go to the gate profile's mirror.
+    ("a_comfy_upscaler_upscales_the_whole_picture", """
+const ed = ednow(window.__u);
+const { api } = await import("./editor/host.js");
+const $ = (id) => document.getElementById(id);
+const pick = (id) => { const s = $("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); };
+const scopeDoc = () => { $("up-scope-doc").checked = true; $("up-scope-doc").dispatchEvent(new Event("change")); };
+const setFactor = (v) => { $("up-factor").value = String(v); $("up-factor").dispatchEvent(new Event("change")); };
+const nodeInfo = () => ({ input: { required: {} } });
+const OI = {};
+for (const n of ["InpaintCanvas", "InpaintCanvasLoadRef", "ImageFromBatch", "RTXVideoSuperResolution", "UpscaleModelLoader", "ImageUpscaleWithModel", "PreviewImage"]) OI[n] = nodeInfo();
+const GOOD = { state: "connected", os: "win32", gpus: ["cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync"], url: "http://127.0.0.1:8188", version: "0.38.0" };
+const recipe0 = host.recipe;
+const list = host.shell.recipes();
+const saved = { connected: host.connected, objectInfo: host.objectInfo, server: { ...(host.server || {}) }, ensureRefs: host.ensureRefs, queue: api.queuePrompt, fetchApi: api.fetchApi, run: commands.run, model: ed.settings["1"] };
+// what the page sent: queued prompts, ensured refs, uploads, job cancels; T.onQueued(id, body, n) runs 300 ms after a queueing
+const T = { queued: [], ensured: [], uploads: 0, cancels: [], onQueued: null, n: 0, during: null, checked: false, err: "" };
+const json = (v) => Promise.resolve(new Response(JSON.stringify(v), { status: 200, headers: { "Content-Type": "application/json" } }));
+const viewBytes = async (ref) => new Uint8Array(await (await saved.fetchApi.call(api, "/view?" + new URLSearchParams({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" }).toString())).arrayBuffer());
+const decode = async (bytes) => {
+    const img = await new Promise((res, rej) => { const u = URL.createObjectURL(new Blob([bytes], { type: "image/png" })); const i = new Image(); i.onload = () => { URL.revokeObjectURL(u); res(i); }; i.onerror = () => rej(new Error("not a picture")); i.src = u; });
+    const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(img, 0, 0);
+    const d = x.getImageData(0, 0, c.width, c.height).data; c.width = c.height = 0;
+    return { w: img.naturalWidth, h: img.naturalHeight, at: (px, py) => Array.from(d.slice((py * img.naturalWidth + px) * 4, (py * img.naturalWidth + px) * 4 + 4)) };
+};
+const pixel = (px, x, y) => Array.from(px.readRect(x, y, 1, 1).data);
+const near = (a, b, tol) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= tol);
+const magenta = (p) => p[0] > 200 && p[1] < 80 && p[2] > 200;
+const refused = async (doc, args, re) => {
+    const q0 = T.queued.length, u0 = T.uploads;
+    try { await run("upscale", { doc, scope: "document", timeout: 8, ...args }); } catch (err) {
+        const m = String(err.message || err);
+        if (!re.test(m)) throw new Error("wrong refusal for " + JSON.stringify(args) + ": " + m);
+        if (T.queued.length !== q0 || T.uploads !== u0) throw new Error("a refusal sent something: " + JSON.stringify(args) + " " + m);
+        return m;
+    }
+    throw new Error("not refused: " + JSON.stringify(args));
+};
+const answerWith = (ANS) => (id, body, n) => {
+    if (n !== 1 || T.checked) return;
+    T.checked = true;
+    (async () => {
+        // while it waits: the document busy like a run (the token, the title row, status, Generate, a turn)
+        const tok = ed.providerPending;
+        const d = { token: tok ? { provider: tok.provider, label: tok.label } : null, row: Array.from(host._providerRuns).some((t) => t.editor === ed), turn: ed.turnBlocked(), pending: (await saved.run.call(commands, "status", { doc: window.__u })).pending };
+        try { await saved.run.call(commands, "generate", { doc: window.__u, timeout: 5 }); d.generate = "ran"; } catch (err) { d.generate = String(err.message || err); }
+        T.during = d;
+        api.dispatch("executed", { prompt_id: id, node: "scumble_out", output: { images: [ANS] } });
+    })().catch((e) => { T.err = String((e && e.message) || e); api.dispatch("execution_error", { prompt_id: id, node_id: "x", node_type: "x", exception_message: "the test's answer failed: " + T.err }); });
+};
+let fake = null, wide = null, paint = null;
+const out = {};
+try {
+    host.connected = true; host.objectInfo = OI; host.setServerStatus(GOOD);
+    host.ensureRefs = async (refs) => { T.ensured.push(...refs); return { checked: 0, uploaded: [], missing: [] }; };
+    api.queuePrompt = async (n, body) => {
+        const id = "gate-u2-" + (++T.n);
+        T.queued.push({ n, body, id });
+        const k = T.queued.length;
+        if (T.onQueued) { const f = T.onQueued; setTimeout(() => f(id, body, k), 300); }
+        return { prompt_id: id };
+    };
+    api.fetchApi = (path, init) => {
+        const p = String(path), post = !!(init && init.method === "POST");
+        if (p === "/upload/image" && post) T.uploads++;
+        if (p === "/queue" && post) return json({});
+        // every prompt queued here shows as running (a picture run whose job is neither queued nor running ends as dropped)
+        if (p === "/queue") return json({ queue_running: T.queued.map((x, k) => [k, x.id, {}, {}, []]), queue_pending: [] });
+        const job =/^\\/api\\/jobs\\/([^/]+)\\/cancel$/.exec(p);
+        if (job && post) { T.cancels.push(decodeURIComponent(job[1])); return json({ cancelled: true }); }
+        if (p.startsWith("/history/")) return json({});
+        return saved.fetchApi.call(api, path, init);
+    };
+    const W0 = ed.width, H0 = ed.height;
+    if (W0 !== 640 || H0 !== 480) throw new Error("the document is not 640 x 480: " + W0 + "x" + H0);
+    if (ed._localRuns && ed._localRuns.size) throw new Error("an earlier step left open renders on the tab: " + Array.from(ed._localRuns).join(", "));
+    // ComfyUI's answer: the base at 2x with a 4 px magenta frame, stored in the mirror (its /view serves it)
+    const ac = document.createElement("canvas"); ac.width = 2 * W0; ac.height = 2 * H0;
+    const ag = ac.getContext("2d");
+    ed.drawBaseInto(ag, 0, 0, 2 * W0, 2 * H0);
+    ag.fillStyle = "rgb(255, 0, 255)";
+    ag.fillRect(0, 0, 2 * W0, 4); ag.fillRect(0, 2 * H0 - 4, 2 * W0, 4); ag.fillRect(0, 0, 4, 2 * H0); ag.fillRect(2 * W0 - 4, 0, 4, 2 * H0);
+    const ablob = await new Promise((r) => ac.toBlob(r, "image/png"));
+    ac.width = ac.height = 0;
+    const ANS = await host.uploadResult(ablob, "u2_gate_answer.png");
+    // a paint layer and a selection, to be scaled along
+    paint = await run("add_paint_layer", { doc: window.__u, name: "u2 paint" });
+    await run("set_layer", { doc: window.__u, layer: paint.id, x: 30, y: 40, w: 100, h: 60 });
+    await run("select_rect", { doc: window.__u, x: 200, y: 100, w: 80, h: 50 });
+    host.shell.selectRecipe("rtx_vsr_local");
+    await run("set_settings", { doc: window.__u, values: { Quality: "HIGH" } });
+
+    // the dialog: the whole picture offered beside the selection, the note says what goes out, what comes back, and the
+    // transparency line
+    host.shell.openUpscale(ed);
+    pick("rtx_vsr_local");
+    if ($("up-scope-doc").disabled || !$("up-scope-sel").checked) throw new Error("the whole picture is greyed, or the selection not chosen");
+    scopeDoc(); setFactor(2);
+    const note = $("up-size-note").textContent;
+    if ($("up-go").disabled || !note.startsWith("640 × 480 (the base picture alone) goes out to your ComfyUI, about 1280 × 960 comes back and becomes the picture; every layer, mask and the selection scale along.") || !/A cut-out picture comes back without its transparency on this route\\./.test(note)) throw new Error("the note: " + note + " / Upscale greyed " + $("up-go").disabled);
+    out.note = note;
+    pick("upscale_model_local"); scopeDoc();
+    const umNote = $("up-size-note").textContent;
+    if ($("up-go").disabled || !/the model's larger answer comes back/.test(umNote) || !$("up-factor-row").hidden) throw new Error("the upscale model's note: " + umNote);
+    // what greys it: no server, the loader missing on the server, a picture past the caps
+    host.connected = false; scopeDoc();
+    if (!$("up-go").disabled || !/Not connected to ComfyUI/.test($("up-note").textContent)) throw new Error("not connected: " + $("up-note").textContent);
+    host.connected = true;
+    host.objectInfo = { ...OI, InpaintCanvasLoadRef: undefined }; scopeDoc();
+    if (!$("up-go").disabled || !/lacks these node types: InpaintCanvasLoadRef/.test($("up-note").textContent)) throw new Error("the loader missing: " + $("up-note").textContent);
+    host.objectInfo = OI; scopeDoc();
+    ed.width = 2100; ed.height = 100; scopeDoc();
+    const capUm = $("up-size-note").textContent, capUmGo = $("up-go").disabled;
+    pick("rtx_vsr_local"); scopeDoc(); setFactor(4);
+    const capRtx = $("up-size-note").textContent, capRtxGo = $("up-go").disabled;
+    ed.width = W0; ed.height = H0; scopeDoc();
+    if (!capUmGo || capUm !== "The picture is 2100 × 100; Upscale model (ComfyUI) takes at most 2048 px on the long side. Pick a smaller picture.") throw new Error("the upscale model past 2048: " + capUm);
+    if (!capRtxGo || capRtx !== "The picture is 2100 × 100; at 4× the answer would pass 8192 px on the long side. Pick a smaller factor or a smaller picture.") throw new Error("RTX past 8192: " + capRtx);
+    if ($("up-go").disabled) throw new Error("Upscale stays greyed after the size came back: " + $("up-size-note").textContent);
+    // a graph that reads the canvas node's mask: the whole picture refused by name, the selection still runs
+    fake = JSON.parse(JSON.stringify(list.find((r) => r.id === "rtx_vsr_local")));
+    fake.id = "rtx_vsr_gate_mask"; fake.name = "RTX gate (reads the mask)";
+    fake.prompt.mask = { class_type: "MaskToImage", inputs: { mask: ["canvas", 1] } };
+    list.push(fake);
+    $("up-cancel").click(); await wait(60);
+    host.shell.openUpscale(ed);
+    pick(fake.id); scopeDoc();
+    const maskNote = $("up-size-note").textContent;
+    if (!$("up-go").disabled || maskNote !== "RTX gate (reads the mask) reads more than the picture from the canvas node (its crop_mask); it cannot upscale the whole picture.") throw new Error("the mask graph: " + maskNote);
+    $("up-scope-sel").checked = true; $("up-scope-sel").dispatchEvent(new Event("change"));
+    if ($("up-go").disabled) throw new Error("the mask graph's selection is greyed: " + $("up-size-note").textContent);
+    $("up-cancel").click(); await wait(60);
+
+    // Upscale from the dialog: rtx at 2x on the whole picture
+    host.shell.openUpscale(ed);
+    pick("rtx_vsr_local"); scopeDoc(); setFactor(2);
+    const L0 = ed.layers.find((l) => l.id === paint.id);
+    const before = { layer: { x: L0.x, y: L0.y, w: L0.w, h: L0.h }, sel: ed.getBounds(), undo: ed.undo.length, mid: pixel(ed.basePx, 320, 240) };
+    const seen = [];
+    commands.run = async (n, a) => {
+        if (n !== "upscale") return saved.run.call(commands, n, a);
+        try { const r = await saved.run.call(commands, n, a); seen.push({ args: a, out: r }); return r; } catch (err) { seen.push({ args: a, error: String(err.message || err) }); throw err; }
+    };
+    T.onQueued = answerWith(ANS);
+    $("up-go").click();
+    for (let k = 0; k < 400 && !seen.length; k++) await wait(50);
+    commands.run = saved.run;
+    T.onQueued = null;
+    if (!seen.length) throw new Error("the dialog ran no upscale: " + ed.status);
+    const got = seen[0];
+    if (got.error) throw new Error("the dialog's run failed: " + got.error + (T.err ? " (" + T.err + ")" : ""));
+    if (got.args.scope !== "document" || got.args.factor !== 2) throw new Error("the dialog sent " + JSON.stringify(got.args));
+    const o = got.out;
+    if (o.scope !== "document" || o.recipe !== "rtx_vsr_local" || o.provider !== null || o.factor !== 2 || JSON.stringify(o.from) !== "[640,480]" || o.width !== 1280 || o.height !== 960 || JSON.stringify(o.answered) !== "[1280,960]") throw new Error("the answer: " + JSON.stringify(o));
+    // what went out: one prompt at the back of the queue, a helper; the canvas node a loader of the uploaded base; the
+    // factor and Quality written; a PreviewImage on the result; the recipe's own graph untouched
+    if (T.queued.length !== 1) throw new Error("queued " + T.queued.length + " prompts");
+    const q = T.queued[0], P_ = q.body.output;
+    if (q.n !== 0 || !(q.body.workflow && q.body.workflow.extra && q.body.workflow.extra.inpaint_canvas_helper)) throw new Error("not queued at the back as a helper: " + JSON.stringify({ n: q.n, wf: q.body.workflow }));
+    const sref = JSON.parse((P_.canvas && P_.canvas.inputs && P_.canvas.inputs.ref) || "null");
+    if (P_.canvas.class_type !== "InpaintCanvasLoadRef" || Object.keys(P_.canvas.inputs).length !== 1 || !sref || sref.type !== "input" || sref.subfolder !== "inpaint_canvas" || !T.ensured.some((x) => x.filename === sref.filename)) throw new Error("the loader: " + JSON.stringify({ canvas: P_.canvas, ensured: T.ensured }));
+    if (P_.rtx.inputs["resize_type.scale"] !== 2 || P_.rtx.inputs.quality !== "HIGH" || JSON.stringify(P_.img0.inputs.image) !== JSON.stringify(["canvas", 0])) throw new Error("the graph: " + JSON.stringify({ rtx: P_.rtx.inputs, img0: P_.img0.inputs }));
+    if (!P_.scumble_out || P_.scumble_out.class_type !== "PreviewImage" || JSON.stringify(P_.scumble_out.inputs.images) !== JSON.stringify(["rtx", 0])) throw new Error("the answer's node: " + JSON.stringify(P_.scumble_out));
+    if (host.recipe.prompt.canvas.class_type !== "InpaintCanvas" || host.recipe.prompt.scumble_out) throw new Error("the run changed the recipe's own graph");
+    // the picture that went out: the base at its size
+    const sent = await decode(await viewBytes(sref));
+    if (sent.w !== 640 || sent.h !== 480 || !near(sent.at(320, 240), before.mid, 2)) throw new Error("the picture sent: " + JSON.stringify({ w: sent.w, h: sent.h, mid: sent.at(320, 240), base: before.mid }));
+    // busy like a run while it waited
+    const d = T.during || {};
+    if (!d.token || d.token.provider !== "comfyui" || d.token.label !== "RTX Video Super Resolution (ComfyUI)" || !d.row) throw new Error("the document was not busy like a run: " + JSON.stringify(d));
+    if (!d.pending || d.pending.provider !== true || !d.turn || !/a run is still going on this document/.test(d.generate || "")) throw new Error("while it waited: " + JSON.stringify(d));
+    out.during = d;
+    // the landing: 2x, the layer and the selection scaled along, the base the answer, one undo step, nothing held
+    if (ed.width !== 1280 || ed.height !== 960) throw new Error("not 2x: " + ed.width + "x" + ed.height);
+    const L1 = ed.layers.find((l) => l.id === paint.id);
+    if (L1.x !== 60 || L1.y !== 80 || L1.w !== 200 || L1.h !== 120) throw new Error("the paint layer was not scaled along: " + JSON.stringify({ x: L1.x, y: L1.y, w: L1.w, h: L1.h }));
+    const sb = ed.getBounds();
+    if (!sb || Math.abs(sb[0] - 400) > 2 || Math.abs(sb[1] - 200) > 2 || Math.abs(sb[2] - 560) > 2 || Math.abs(sb[3] - 300) > 2) throw new Error("the selection was not scaled along: " + JSON.stringify(sb));
+    if (!magenta(pixel(ed.basePx, 1, 1)) || !near(pixel(ed.basePx, 640, 480), before.mid, 12)) throw new Error("the base is not the answer: " + JSON.stringify({ corner: pixel(ed.basePx, 1, 1), mid: pixel(ed.basePx, 640, 480), was: before.mid }));
+    if (ed.undo.length !== before.undo + 1) throw new Error("not one undo step: " + (ed.undo.length - before.undo));
+    if (ed.providerPending || host._providerRuns.size || (ed._localRuns && ed._localRuns.size)) throw new Error("the document stays busy after the landing");
+    if (!/upscaled the picture in \\d+ s: 640 × 480 is now 1280 × 960, every layer scaled along/.test(ed.status)) throw new Error("the status: " + ed.status);
+    out.status = ed.status;
+    await ed.undoStep();
+    const L2 = ed.layers.find((l) => l.id === paint.id);
+    if (ed.width !== 640 || ed.height !== 480 || L2.x !== 30 || L2.y !== 40 || L2.w !== 100 || L2.h !== 60) throw new Error("Ctrl+Z did not bring the picture and the layer back: " + ed.width + "x" + ed.height + " " + JSON.stringify({ x: L2.x, y: L2.y, w: L2.w, h: L2.h }));
+    if (JSON.stringify(ed.getBounds()) !== JSON.stringify(before.sel)) throw new Error("Ctrl+Z did not bring the selection back: " + JSON.stringify(ed.getBounds()) + " vs " + JSON.stringify(before.sel));
+    if (magenta(pixel(ed.basePx, 1, 1))) throw new Error("Ctrl+Z did not bring the old base back");
+    await ed.redoStep();
+    if (ed.width !== 1280) throw new Error("redo did not upscale again");
+    await ed.undoStep();
+    if (ed.width !== 640) throw new Error("the second undo did not bring 640 back");
+
+    // the upscale model (a fixed factor: none written) through the command: Cancel takes its job off the server and
+    // changes nothing; then it runs
+    host.shell.selectRecipe("upscale_model_local");
+    ed.settings["1"] = { value: "2xESRGAN.pth" };
+    T.queued.length = 0; T.cancels.length = 0;
+    T.onQueued = () => { host.cancelProviderRuns(); };
+    let cerr = null;
+    try { await run("upscale", { doc: window.__u, scope: "document", timeout: 60 }); } catch (err) { cerr = String(err.message || err); }
+    T.onQueued = null;
+    if (!cerr || cerr !== "Upscale model (ComfyUI) cancelled.") throw new Error("Cancel: " + cerr);
+    if (T.queued.length !== 1 || !T.cancels.includes(T.queued[0].id)) throw new Error("the cancelled job was not taken off: " + JSON.stringify({ queued: T.queued.map((x) => x.id), cancels: T.cancels }));
+    if (ed.width !== 640 || ed.providerPending || host._providerRuns.size || (ed._localRuns && ed._localRuns.size)) throw new Error("Cancel left the document changed or busy");
+    const Pm = T.queued[0].body.output;
+    if (Pm.canvas.class_type !== "InpaintCanvasLoadRef" || Pm.loader.inputs.model_name !== "2xESRGAN.pth" || JSON.stringify(Pm.scumble_out.inputs.images) !== JSON.stringify(["up", 0]) || JSON.stringify(Pm.up.inputs) !== JSON.stringify({ upscale_model: ["loader", 0], image: ["img0", 0] })) throw new Error("the upscale model's prompt: " + JSON.stringify(Pm));
+    out.cancel = cerr;
+    T.queued.length = 0; T.checked = false;
+    T.onQueued = answerWith(ANS);
+    const um = await run("upscale", { doc: window.__u, scope: "document", timeout: 60 });
+    T.onQueued = null;
+    if (um.factor !== null || um.width !== 1280 || um.height !== 960 || ed.width !== 1280) throw new Error("the upscale model's run: " + JSON.stringify(um));
+    await ed.undoStep();
+    if (ed.width !== 640) throw new Error("Ctrl+Z after the upscale model");
+    out.model = { factor: um.factor, width: um.width };
+
+    // refusals, before anything is uploaded or queued: a busy document (a render, a run), the mask graph
+    const q1 = T.queued.length;
+    ed._localRuns = ed._localRuns || new Set();
+    ed._localRuns.add("gate-u2-other");
+    try { out.busyRender = await refused(window.__u, {}, /A render on your ComfyUI is still running/); } finally { ed._localRuns.delete("gate-u2-other"); }
+    const fakeTok = { provider: "loopback", label: "x", editor: ed };
+    ed.providerPending = fakeTok;
+    try {
+        out.busyRun = await refused(window.__u, {}, /a run is still going on this document/);
+        try { await host.runComfyUpscale(ed, {}); throw new Error("the host ran on a busy document"); }
+        catch (err) { if (!/A run is still going on this document/.test(String(err.message))) throw err; }
+    } finally { if (ed.providerPending === fakeTok) ed.providerPending = null; }
+    host.setRecipe(fake);
+    out.mask = await refused(window.__u, {}, /reads more than the picture from the canvas node \\(its crop_mask\\); it cannot upscale the whole picture/);
+    // the caps, a bad factor, no server, the loader missing: on a 2100 x 100 picture
+    const d2 = await run("new_document");
+    wide = d2.id;
+    const ew = ednow(wide);
+    host.shell.activate(ew);
+    const c = document.createElement("canvas"); c.width = 2100; c.height = 100;
+    const g = c.getContext("2d"); g.fillStyle = "rgb(120, 90, 60)"; g.fillRect(0, 0, 2100, 100);
+    await ew.setBaseFromCanvas(c);
+    host.shell.selectRecipe("rtx_vsr_local");
+    out.cap8192 = await refused(wide, { factor: 4 }, /^The picture is 2100 × 100; at 4× the answer would pass 8192 px on the long side\\. Pick a smaller factor or a smaller picture\\.$/);
+    out.factor5 = await refused(wide, { factor: 5 }, /1 to 4, not 5/);
+    host.connected = false;
+    try { out.offline = await refused(wide, {}, /Not connected to ComfyUI/); } finally { host.connected = true; }
+    host.objectInfo = { ...OI, InpaintCanvasLoadRef: undefined };
+    try { out.lacks = await refused(wide, {}, /lacks these node types: InpaintCanvasLoadRef/); } finally { host.objectInfo = OI; }
+    host.shell.selectRecipe("upscale_model_local");
+    out.cap2048 = await refused(wide, {}, /^The picture is 2100 × 100; Upscale model \\(ComfyUI\\) takes at most 2048 px on the long side\\. Pick a smaller picture\\.$/);
+    if (ew.width !== 2100 || ew.providerPending || T.queued.length !== q1) throw new Error("a refusal changed the picture or queued");
+    return out;
+} finally {
+    commands.run = saved.run;
+    T.onQueued = null;
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureRefs = saved.ensureRefs; api.queuePrompt = saved.queue; api.fetchApi = saved.fetchApi;
+    host.setServerStatus({ state: saved.server.state || "disconnected", os: saved.server.os || "", gpus: saved.server.gpus || [], remote: !!saved.server.remote, url: saved.server.url || "", version: saved.server.version || "" });
+    if ($("up-dialog").open) $("up-cancel").click();
+    if (fake && list.includes(fake)) list.splice(list.indexOf(fake), 1);
+    if (wide) { try { await run("close_document", { doc: wide, force: true }); } catch (_) { /* gone */ } }
+    host.shell.activate(ed);
+    if (paint) { try { await run("remove_layer", { doc: window.__u, layer: paint.id }); } catch (_) { /* gone */ } }
     // the window's recipe as the step found it, through the shell (CLAUDE.md: a gate that switches a recipe puts it back)
     if (recipe0 && (!host.recipe || host.recipe.id !== recipe0.id)) host.shell.selectRecipe(recipe0.id, recipe0.kind === "provider" ? recipe0.provider : undefined);
 }
@@ -747,7 +1029,13 @@ def node_step():
     tail = (r.stdout + r.stderr).strip()
     if r.returncode != 0 or not tail.endswith("PASS"):
         raise Exception("tools/upscale_test.js: " + tail[-1500:])
-    return {"checks": tail.count("[ok]")}
+    # docs/PLAN_0_1_42.md U2: the whole picture's prompt (renderer/editor/comfyprompt.js); stderr carries Node's note that
+    # it read the module as an ES module, so stdout alone is judged
+    c = subprocess.run(["node", os.path.join(ROOT, "tools", "comfyprompt_test.js")], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
+    ctail = c.stdout.strip()
+    if c.returncode != 0 or not ctail.endswith("PASS"):
+        raise Exception("tools/comfyprompt_test.js: " + (ctail + c.stderr)[-1500:])
+    return {"checks": tail.count("[ok]"), "comfyprompt": ctail.count("[ok]")}
 
 
 async def run_all(c):

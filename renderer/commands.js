@@ -763,7 +763,7 @@ const COMMANDS = {
         },
     },
     upscale: {
-        needsImage: true, description: "Upscale with the selected upscale recipe (list_recipes: task \"upscale\"; select_recipe picks one). scope \"selection\": the selection's box goes to the upscaler at its own size and the sharper answer comes back into it at the document's resolution, as a result layer. scope \"document\": the base image goes out, the answer becomes the new base N times larger, and every layer, mask and the selection are scaled along (one undo step); an upscale recipe on ComfyUI takes the selection only. Waits for the answer; Topaz can take several minutes.",
+        needsImage: true, description: "Upscale with the selected upscale recipe (list_recipes: task \"upscale\"; select_recipe picks one). scope \"selection\": the selection's box goes to the upscaler at its own size and the sharper answer comes back into it at the document's resolution, as a result layer. scope \"document\": the base image goes out, the answer becomes the new base N times larger, and every layer, mask and the selection are scaled along (one undo step); on an upscale recipe on the user's ComfyUI the base goes through the recipe's graph and comes back without transparency (refused before anything is sent when the graph reads more than the picture, the picture passes the recipe's limits, or a job is going on the document). Waits for the answer; Topaz can take several minutes.",
         params: {
             scope: P.str("selection (a detail pass) or document (the whole picture larger)", { enum: ["selection", "document"], default: "selection" }),
             factor: P.num("how many times larger; the recipe's default when left out (list_recipes shows each recipe's factors); ignored by a model that picks its own"),
@@ -776,9 +776,21 @@ const COMMANDS = {
             if (ed.providerPending) throw new Error("a run is still going on this document");
             const scope = a.scope === "document" ? "document" : "selection";
             if (r.kind !== "provider") {
-                // an upscale model on the user's ComfyUI: the node's stitch fits the answer back into the box, so
-                // there is only the selection mode, and it is a Generate with the crop at its native size
-                if (scope === "document") throw new Error(`${r.name || r.id} runs on ComfyUI, where the answer is fitted back into the selection's box: it cannot enlarge the whole picture. Select an area, or pick an API upscaler for the whole picture.`);
+                // an upscaler on the user's ComfyUI. The whole picture: the base goes out alone through the recipe's graph
+                // and the answer becomes the new base (host.runComfyUpscale, docs/PLAN_0_1_42.md U2); `timeout` is its hard
+                // end, the queue's wait included, so the job is taken off the server when it passes
+                if (scope === "document") {
+                    const deadline = Date.now() + clampInt(a.timeout, 5, 3600, 1800) * 1000;
+                    const out = await host.runComfyUpscale(ed, { factor: a.factor, deadline });
+                    if (out.width != null) ed.notifyChanged();
+                    return {
+                        scope, recipe: out.recipe, provider: null, factor: out.factor, from: out.from, width: out.width, height: out.height, answered: out.answered,
+                        seconds: Math.round((out.seconds || 0) * 10) / 10, info: null,
+                        status: out.width != null ? ed.status : "The document was closed while the upscale ran; nothing was changed.",
+                    };
+                }
+                // the selection: the node's stitch fits the answer back into the box, a Generate with the crop at its
+                // native size
                 if (!(ed.getBounds && ed.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
                 // a factor (RTX Video Super Resolution) checked here, so a bad one is refused before the run starts
                 const factor = host.upscaleFactorFor(r, a.factor);

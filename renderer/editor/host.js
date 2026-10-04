@@ -21,6 +21,7 @@ import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, reference
 import { comfyRefSpec, comfyLayout, trimSlots, refName, resolveMarkers as resolveComfyMarkers } from "./comfyrefs.js";
 import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from "./boxes.js";
 import * as realism from "./realism.js";
+import * as comfyprompt from "./comfyprompt.js";
 import * as dialogs from "../dialogs.js";
 
 const PROXY = "/comfy";
@@ -1752,24 +1753,131 @@ export const host = {
                 editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.${texts.note ? " " + texts.note : ""}`);
                 return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null, note: texts.note };
             }
-            // the whole picture: the answer at its own size, stretched to the document's aspect if the model rounded
-            const img = await bytesToImage(res.bytes, res.mime);
-            const aw = img.naturalWidth || img.width, ah = img.naturalHeight || img.height;
-            if (!(aw > 0 && ah > 0)) throw new Error(`${label} answered with an empty picture.`);
-            const nw = aw, nh = Math.max(1, Math.round(H * aw / W));
-            if (nw === W && nh === H) throw new Error(`${label} answered at the picture's own size (${aw} × ${ah}); nothing to do.`);
-            const nb = document.createElement("canvas");
-            nb.width = nw; nb.height = nh;
-            const nctx = nb.getContext("2d");
-            nctx.imageSmoothingEnabled = true;
-            nctx.imageSmoothingQuality = "high";
-            nctx.drawImage(img, 0, 0, nw, nh);
-            await editor.resizeImage(nw, nh, { base: nb });
-            nb.width = nb.height = 0;
-            if (editor.width !== nw || editor.height !== nh) throw new Error(editor.status || "the upscaled picture could not be taken");
-            editor.setStatus(`${label} upscaled the picture in ${Math.round(res.seconds)} s: ${W} × ${H} is now ${nw} × ${nh}, every layer scaled along (Ctrl+Z takes it back).${texts.note ? " " + texts.note : ""}`);
-            return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: nw, height: nh, answered: [aw, ah], info: res.info || null, note: texts.note };
+            const land = await this.landWholePicture(editor, res.bytes, res.mime, { label, seconds: res.seconds, W, H, note: texts.note });
+            return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: land.width, height: land.height, answered: land.answered, info: res.info || null, note: texts.note };
         } finally {
+            this.endRun(editor, token);
+        }
+    },
+
+    /**
+     * The whole picture's answer becomes the document's base (an API upscaler's, runUpscale; a ComfyUI upscaler's,
+     * runComfyUpscale): at its own width, stretched to the document's aspect if the model rounded a side, and every
+     * layer, mask and the selection scaled along through `resizeImage(nw, nh, { base })`, one `canvas` undo step. The
+     * caller holds the document's run slot (providerPending) until this returns: resizeImage's `base` lets this landing
+     * through, and nothing else lands in the old geometry meanwhile. `W` × `H` is the picture that went out. Throws on an
+     * empty answer, one at the picture's own size, and a resize the editor refused (its status).
+     * -> { width, height, answered: [aw, ah] }
+     */
+    async landWholePicture(editor, bytes, mime, { label, seconds = 0, W, H, note = "" }) {
+        const img = await bytesToImage(bytes, mime);
+        const aw = img.naturalWidth || img.width, ah = img.naturalHeight || img.height;
+        if (!(aw > 0 && ah > 0)) throw new Error(`${label} answered with an empty picture.`);
+        const nw = aw, nh = Math.max(1, Math.round(H * aw / W));
+        if (nw === W && nh === H) throw new Error(`${label} answered at the picture's own size (${aw} × ${ah}); nothing to do.`);
+        const nb = document.createElement("canvas");
+        nb.width = nw; nb.height = nh;
+        const nctx = nb.getContext("2d");
+        nctx.imageSmoothingEnabled = true;
+        nctx.imageSmoothingQuality = "high";
+        nctx.drawImage(img, 0, 0, nw, nh);
+        await editor.resizeImage(nw, nh, { base: nb });
+        nb.width = nb.height = 0;
+        if (editor.width !== nw || editor.height !== nh) throw new Error(editor.status || "the upscaled picture could not be taken");
+        editor.setStatus(`${label} upscaled the picture in ${Math.round(seconds)} s: ${W} × ${H} is now ${nw} × ${nh}, every layer scaled along (Ctrl+Z takes it back).${note ? " " + note : ""}`);
+        return { width: nw, height: nh, answered: [aw, ah] };
+    },
+
+    /**
+     * The whole picture through the selected upscale recipe on the user's ComfyUI (docs/PLAN_0_1_42.md U2): the base
+     * alone goes out (drawn at its size, stored in the mirror and on the server, uploadInput), the recipe's graph runs
+     * with the canvas node as a loader of that picture (comfyprompt.wholePicturePrompt: the Settings rows and the factor
+     * written, a PreviewImage on the result), queued behind the user's jobs (comfyPictureRun), and the answer becomes the
+     * new base with every layer, mask and the selection scaled along (landWholePicture, one undo step). Refused before
+     * anything is drawn or sent: a graph that reads more than the picture from the canvas node, no connection, node types
+     * the server lacks, a document that is busy (turnBlocked), a picture past the recipe's `limits` (the long side `max`,
+     * the answer's long side `out` at the factor; an upscale model picks its own factor, so `out` is not checked). The
+     * document is busy like a run meanwhile: the title row's timer names the recipe and its Cancel takes the job off the
+     * server; closing the tab ends it too and lands nothing. The loader gives RGB: a cut-out picture comes back opaque.
+     * `factor`: what the dialog or the command asked (the recipe's default when left out; null for a fixed one);
+     * `deadline` (a time in ms, 0 for none): comfyPictureRun's hard end, the upload's too.
+     * -> { scope: "document", recipe, factor, seconds, from, width, height, answered } (width null when the tab was closed)
+     * @param {any} editor
+     * @param {{ factor?: any, deadline?: number }} [opts]
+     */
+    async runComfyUpscale(editor, { factor: want = undefined, deadline = 0 } = {}) {
+        const r = this.recipe;
+        if (!r || r.kind === "provider" || r.task !== "upscale" || !r.prompt) throw new Error("Pick an upscale recipe on ComfyUI first (Upscale shows them).");
+        if (!editor.base) throw new Error("Load an image first.");
+        if (editor.providerPending) throw new Error(RUN_GOING);
+        const label = r.name || r.id;
+        const shape = comfyprompt.wholePictureRefusal(r);
+        if (shape) throw new Error(shape);
+        if (!this.connected) throw new Error("Not connected to ComfyUI.");
+        const factor = this.upscaleFactorFor(r, want);
+        // the classes this route queues: the recipe's own with the loader for the canvas node, and PreviewImage
+        const missing = comfyprompt.wholePictureClasses(r).filter((n) => this.objectInfo && !this.objectInfo[n]);
+        if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
+        // the answer replaces the base: not while a job would land in the old geometry
+        const blocked = editor.turnBlocked ? editor.turnBlocked() : "";
+        if (blocked) throw new Error(blocked);
+        const W = editor.width, H = editor.height;
+        const size = this.upscaleSizeRefusal(r, W, H, factor, "picture");
+        if (size) throw new Error(size);
+        const by = factor != null ? `${factor}×` : "the model's own factor";
+        const token = { provider: "comfyui", label, started: Date.now(), editor };
+        editor.providerPending = token;
+        this._providerRuns.add(token);
+        this.notifyProviderRuns();
+        // closing the tab ends the run (its job taken off the server) and lands nothing
+        let closed = false;
+        const offRemoved = this.on("removed", (e) => { if (e && e.editor === editor) { closed = true; token.cancelled = true; } });
+        const gone = () => closed || !this._editors.includes(editor);
+        const fail = (err) => {
+            const msg = String((err && err.message) || err);
+            const text = err && err.kind === "error" && !msg.startsWith(label) ? `${label} failed on your ComfyUI: ${msg}` : msg;
+            if (!gone()) editor.setStatus(text);
+            return Object.assign(new Error(text), { kind: err && err.kind });
+        };
+        try {
+            let res;
+            try {
+                editor.setStatus(`Upscaling the picture ${W} × ${H} by ${by} on your ComfyUI (${label}) ...`);
+                const c = document.createElement("canvas");
+                c.width = W; c.height = H;
+                editor.drawBaseInto(c.getContext("2d"), 0, 0, W, H);
+                let png;
+                try { png = await canvasBytes(c); } finally { c.width = c.height = 0; }
+                const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
+                // the upload and the server's copy end at a Cancel and at the deadline too (a stalled forward never holds
+                // the caller; the request runs on and is ignored, a stray input)
+                const upload = this.uploadInput(new Blob([png], { type: "image/png" }), `n${editor.node.id}_upscale_${stamp}.png`);
+                png = null;
+                const ref = await new Promise((resolve, reject) => {
+                    const t0 = Date.now();
+                    let iv = null;
+                    const done = (fn, v) => { clearInterval(iv); fn(v); };
+                    iv = setInterval(() => {
+                        if (token.cancelled) done(reject, Object.assign(new Error(`${label} cancelled.`), { kind: "cancelled" }));
+                        else if (deadline && Date.now() > deadline) done(reject, Object.assign(new Error(`${label}: your ComfyUI did not take the picture within ${Math.round((Date.now() - t0) / 1000)} s.`), { kind: "timeout" }));
+                    }, 250);
+                    upload.then((v) => done(resolve, v), (err) => done(reject, err));
+                });
+                const prompt = comfyprompt.wholePicturePrompt(r, ref, factor, editor.settings);
+                res = await this.comfyPictureRun(editor, prompt, comfyprompt.WHOLE_OUTPUT, { label, token, front: false, deadline, timeoutMs: 1800000 });
+            } finally {
+                // the answer is in (or the run ended): the timer and Cancel leave the title row; the document stays held
+                // until the answer has landed (endRun below)
+                this.endRunRow(token);
+            }
+            if (gone()) return { scope: "document", recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: null, height: null, answered: null };
+            const land = await this.landWholePicture(editor, res.bytes, res.mime, { label, seconds: res.seconds, W, H, note: "" });
+            return { scope: "document", recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: land.width, height: land.height, answered: land.answered };
+        } catch (err) {
+            if (gone()) return { scope: "document", recipe: r.id, factor, seconds: 0, from: [W, H], width: null, height: null, answered: null };
+            throw fail(err);
+        } finally {
+            offRemoved();
             this.endRun(editor, token);
         }
     },
@@ -1781,7 +1889,7 @@ export const host = {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "ipc-ib ipc-upscale";
-        b.title = "Upscale: the selection comes back sharper at the document's resolution, or the whole picture becomes 2, 4 ... times larger with every layer scaled along. Topaz, Clarity, SeedVR2, Recraft and Magnific models.";
+        b.title = "Upscale: the selection comes back sharper at the document's resolution, or the whole picture becomes 2, 4 ... times larger with every layer scaled along. Topaz, Clarity, SeedVR2, Recraft and Magnific models, or an upscaler on your own ComfyUI.";
         b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-7 7"/><path d="M10 20H4v-6"/><path d="M4 20l7-7"/></svg><span>Upscale</span>';
         b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); this.shell.openUpscale(editor); });
         const after = Array.from(top.querySelectorAll(".ipc-ib")).find((x) => /^Generate new/.test(x.title || ""));

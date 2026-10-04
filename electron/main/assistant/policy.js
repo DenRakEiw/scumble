@@ -129,7 +129,7 @@ const POLICY = {
     generate: (call, facts) => ASK("renders: this costs money, or queues on your ComfyUI", renderCard(call, facts)),
     generate_new: (call, facts) => ASK("renders a new base image, replaces every layer but the reference layers and clears the undo history", renderCard(call, facts)),
     upscale: (call, facts) => ASK(call.args && call.args.scope === "document"
-        ? "upscales the whole picture on a paid model: every layer is scaled along"
+        ? "upscales the whole picture (a paid model or your ComfyUI): every layer is scaled along"
         : "upscales the selection: this costs money, or queues on your ComfyUI", renderCard(call, facts)),
     // the whole visible picture at 1x on the user's own ComfyUI, never an API; `status` says whether it can run on the
     // document (the server, the size), and its values are the app's (no command sets them)

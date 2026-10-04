@@ -2,11 +2,12 @@
   "id": "upscale_model_local",
   "name": "Upscale model (ComfyUI)",
   "task": "upscale",
-  "description": "An upscale model from the server's models/upscale_models folder (ESRGAN, UltraSharp, DAT, ...), picked under Settings as Model. The selection's box goes out at its own size, without a fill or the reference layers, the model enlarges it by its own factor, and the node's stitch fits the answer back into the box: a sharper detail pass at the document's resolution. The whole picture is not upscaled on this route (the node's stitch has no way to replace the base).",
+  "description": "An upscale model from the server's models/upscale_models folder (ESRGAN, UltraSharp, DAT, ...), picked under Settings as Model; the model enlarges by its own factor. On the selection, its box goes out at its own size, without a fill or the reference layers, and the node's stitch fits the answer back into the box: a sharper detail pass at the document's resolution. On the whole picture, the base goes out alone and the answer becomes the new picture, every layer scaled along; a cut-out picture comes back without its transparency. What goes out may be at most 2048 px on the long side, so a 4x model answers at most 8192.",
   "mode": "local",
   "canvas": "canvas",
   "result": "up:0",
   "needs": ["InpaintCanvas", "ImageFromBatch", "UpscaleModelLoader", "ImageUpscaleWithModel"],
+  "limits": { "max": 2048 },
   "settings": [
     { "index": 1, "node": "loader", "input": "model_name", "label": "Model" }
   ],

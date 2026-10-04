@@ -36,8 +36,11 @@ default), and this gate starts and ends each of them itself (WM_CLOSE, or a kill
     `minReader: 3` is refused with nothing imported (2 is this version's since linear light, 0.1.32); `version: 2, minReader: 1` with a layer of an unknown kind (with a
     ref), an unknown filter id, an unknown top-level field and an unknown plugin's data (with a ref) opens with a note,
     and all four come back unchanged in the next save.
+U2. a_comfy_whole_picture_upscale_round_trips - (docs/PLAN_0_1_42.md U2) the whole picture upscaled 2x on the ComfyUI
+    route (RTX Video Super Resolution, against stubs in the page: no server), saved, closed and opened: the size, the
+    state, every layer's place and pixels, the base and the selection as before the save; the file read by zipfile.
 
-(Steps 9, 10 and 12 of the plan need D3 and D4.) The order is the instances': the first profile runs 1, 3, 11, 5, 6
+(Steps 9, 10 and 12 of the plan need D3 and D4.) The order is the instances': the first profile runs 1, 3, 11, U2, 5, 6
 (cancel) and 7 (killed), its next start 7 (the sweep) and 8 (closed), its third start the open of 8; the fresh
 profile 2, 4 and 6 (disk full).
 
@@ -311,6 +314,104 @@ if (e.layer.id !== obj.layer) throw new Error("glb.edit made a new layer");
 if (L1.w === before[0] && L1.h === before[1]) throw new Error("glb.edit did not change the object: " + JSON.stringify(before));
 await ed.syncLayers();              // uploaded now, so no upload lands in the mirror later
 return { before, after: [L1.w, L1.h] };
+"""
+
+# ---- the whole picture on a ComfyUI upscaler, then saved and opened (docs/PLAN_0_1_42.md U2) -------------------------
+# RTX Video Super Resolution at 2x on the whole picture, against stubs (nothing reaches a server: the queue, the ensure,
+# /queue and /history are caught in the page; the uploads and /view go to the profile's mirror): ComfyUI's answer is the
+# base at 2x with a magenta frame, stored in the mirror first. The upscaled document is saved, closed and opened: its
+# size, every layer's place and pixels, the base and the selection as before the save.
+
+COMFY_UPSCALE = """
+const { api } = await import('./editor/host.js');
+let ed = shell.newDocument(); shell.activate(ed);
+await must("load_image", { path: G.dir + "/photo.png" });
+ed = host.editor;
+await settle(ed);
+const id = ed.node.id;
+G.up = { id };
+const fill = (layerId, color) => { ed.activeLayerId = layerId; ed.color = color; ed.brushOpacity = 1; ed.fillSelection(); };
+const paint = await must("add_paint_layer", { name: "paint" });
+await must("select_rect", { x: 40, y: 30, w: 120, h: 80 });
+fill(paint.id, "#20c040");
+const img = await must("add_image_layer", { path: G.dir + "/same.png", x: 200, y: 150 });
+await must("set_layer", { layer: img.id, name: "image", w: 100, h: 50 });
+await must("select_rect", { x: 250, y: 60, w: 90, h: 70 });
+const W0 = ed.width, H0 = ed.height;
+const nodeInfo = () => ({ input: { required: {} } });
+const OI = { InpaintCanvas: nodeInfo(), InpaintCanvasLoadRef: nodeInfo(), ImageFromBatch: nodeInfo(), RTXVideoSuperResolution: nodeInfo(), PreviewImage: nodeInfo() };
+const saved = { connected: host.connected, objectInfo: host.objectInfo, server: { ...(host.server || {}) }, ensureRefs: host.ensureRefs, queue: api.queuePrompt, fetchApi: api.fetchApi, recipe: host.recipe };
+const json = (v) => Promise.resolve(new Response(JSON.stringify(v), { status: 200, headers: { "Content-Type": "application/json" } }));
+const queued = [];
+try {
+    // ComfyUI's answer: the base at 2x with a 4 px magenta frame, in the mirror
+    const ac = document.createElement("canvas"); ac.width = 2 * W0; ac.height = 2 * H0;
+    const ag = ac.getContext("2d");
+    ed.drawBaseInto(ag, 0, 0, 2 * W0, 2 * H0);
+    ag.fillStyle = "rgb(255, 0, 255)";
+    ag.fillRect(0, 0, 2 * W0, 4); ag.fillRect(0, 0, 4, 2 * H0);
+    const ANS = await host.uploadResult(await new Promise((r) => ac.toBlob(r, "image/png")), "u2_doc_answer.png");
+    ac.width = ac.height = 0;
+    host.connected = true; host.objectInfo = OI;
+    host.setServerStatus({ state: "connected", os: "win32", gpus: ["cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync"], url: "http://127.0.0.1:8188", version: "0.38.0" });
+    host.ensureRefs = async () => ({ checked: 0, uploaded: [], missing: [] });
+    api.queuePrompt = async (n, body) => {
+        const pid = "doc-u2-" + (queued.length + 1);
+        queued.push(body);
+        setTimeout(() => api.dispatch("executed", { prompt_id: pid, node: "scumble_out", output: { images: [ANS] } }), 300);
+        return { prompt_id: pid };
+    };
+    api.fetchApi = (path, init) => {
+        const p = String(path);
+        if (p === "/queue" && !(init && init.method === "POST")) return json({ queue_running: queued.length ? [[0, "doc-u2-" + queued.length, {}, {}, []]] : [], queue_pending: [] });
+        if (p.startsWith("/history/")) return json({});
+        return saved.fetchApi.call(api, path, init);
+    };
+    shell.selectRecipe("rtx_vsr_local");
+    const before = ed.layers.map((l) => ({ id: l.id, x: l.x, y: l.y, w: l.w, h: l.h }));
+    const out = await must("upscale", { doc: id, scope: "document", factor: 2, timeout: 60 });
+    if (out.width !== 2 * W0 || out.height !== 2 * H0 || ed.width !== 2 * W0 || ed.height !== 2 * H0) throw new Error("not 2x: " + JSON.stringify(out) + " " + ed.status);
+    if (queued.length !== 1 || queued[0].output.canvas.class_type !== "InpaintCanvasLoadRef") throw new Error("the prompt: " + JSON.stringify(queued.map((q) => Object.keys(q.output))));
+    const bad = [];
+    for (const b of before) {
+        const l = ed.layers.find((x) => x.id === b.id);
+        if (!l || l.x !== 2 * b.x || l.y !== 2 * b.y || l.w !== 2 * b.w || l.h !== 2 * b.h) bad.push(b.id);
+    }
+    if (bad.length) throw new Error("layers not scaled along: " + bad.join(", "));
+    const p = Array.from(ed.basePx.readRect(1, 1, 1, 1).data);
+    if (!(p[0] > 200 && p[1] < 80 && p[2] > 200)) throw new Error("the base is not the answer: " + p);
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureRefs = saved.ensureRefs; api.queuePrompt = saved.queue; api.fetchApi = saved.fetchApi;
+    host.setServerStatus({ state: saved.server.state || "disconnected", os: saved.server.os || "", gpus: saved.server.gpus || [], remote: !!saved.server.remote, url: saved.server.url || "", version: saved.server.version || "" });
+    if (saved.recipe && (!host.recipe || host.recipe.id !== saved.recipe.id)) shell.selectRecipe(saved.recipe.id, saved.recipe.kind === "provider" ? saved.recipe.provider : undefined);
+}
+await snap(ed, {}, { glb: false });
+const rawA = {};
+const a = await snap(ed, rawA, { glb: false });
+const r = await host.saveDocument(ed, { path: G.upPath });
+const b = await snap(ed, null, { glb: false });
+shell.closeDocument(ed, { force: true });
+await wait(300);
+const o = await host.openDocument(G.upPath);
+const e2 = o.editor;
+await settle(e2);
+const rawC = {};
+const c = await snap(e2, rawC, { glb: false });
+const problems = [];
+if (e2.width !== 2 * W0 || e2.height !== 2 * H0) problems.push(`opened at ${e2.width} x ${e2.height}, not ${2 * W0} x ${2 * H0}`);
+if (c.state !== b.state) problems.push("getValue() differs from the saved one");
+const geo = (e) => e.layers.map((l) => [l.id, l.name, l.x, l.y, l.w, l.h].join(":")).join(",");
+const geoB = JSON.parse(b.state).layers.map((l) => [l.id, l.name, l.x, l.y, l.w, l.h].join(":")).join(",");
+if (geo(e2) !== geoB) problems.push("the layers' places: " + geo(e2) + " vs " + geoB);
+if (c.base !== a.base) problems.push("the base differs: " + c.base + " vs " + a.base);
+if (c.sel !== a.sel) problems.push("the selection differs");
+for (const k of Object.keys(rawA)) {
+    const d = cmpRaw(rawA[k], rawC[k]);
+    if (d.n < 0 || d.solid > 0 || d.max > (k === "flat" ? 2 : 1)) problems.push(`${k}: ${JSON.stringify(d)} against the document before the save`);
+}
+const size = [W0, H0, e2.width, e2.height];
+shell.closeDocument(e2, { force: true });
+return { problems, size, layers: c.layers.length, bytes: r.bytes };
 """
 
 # ---- step 3 --------------------------------------------------------------------------------------------------------
@@ -840,8 +941,8 @@ class Gate:
         for p in (prof_a, prof_b):
             shutil.rmtree(p, ignore_errors=True)
             os.makedirs(p, exist_ok=True)
-        every, collide, big = (os.path.join(docs, n) for n in ("every.scumble", "collide.scumble", "big.scumble"))
-        paths = dict(dir=self.fwd(inp), everyPath=self.fwd(every), collidePath=self.fwd(collide), bigPath=self.fwd(big))
+        every, collide, big, up = (os.path.join(docs, n) for n in ("every.scumble", "collide.scumble", "big.scumble", "upscaled.scumble"))
+        paths = dict(dir=self.fwd(inp), everyPath=self.fwd(every), collidePath=self.fwd(collide), bigPath=self.fwd(big), upPath=self.fwd(up))
         state = {}
         g = self.guarded
         try:
@@ -857,6 +958,7 @@ class Gate:
             state["collide"] = await A.ev(BUILD_COLLIDE)
             self.note(f"collide.scumble saved ({time.time() - t:.1f} s)")
             await g("newer_documents", A, self.step11(A, prof_a, every, docs, inp))
+            await g("a_comfy_whole_picture_upscale_round_trips", A, self.step_upscale(A, up))
             t = time.time()
             bigr = await A.ev(BUILD_BIG, timeout=600)
             state["bigBase"] = bigr["base"]
@@ -948,6 +1050,20 @@ class Gate:
                   f"{saved['bytes'] / 1024:.0f} KB, {saved['entries']} entries, written in {saved['ms']} ms (save {saved['wall']} ms, open {opened['wall']} ms); "
                   f"state, {len(opened['snap']['layers'])} layers, masks, selection and flatten equal to the restore of the saved state; "
                   f"against the live document, partly transparent pixels one level off: {live}; zipfile clean; glb.edit {glb}", t)
+
+    async def step_upscale(self, A, up):
+        """docs/PLAN_0_1_42.md U2: the whole picture on a ComfyUI upscaler (stubbed), then saved, closed and opened."""
+        t = time.time()
+        r = await A.ev(COMFY_UPSCALE)
+        problems = list(r["problems"])
+        if not os.path.exists(up):
+            problems.append("no file written")
+        else:
+            zp, _header, _entries = zip_check(up)
+            problems += ["zip: " + p for p in zp]
+        w0, h0, w1, h1 = r["size"]
+        self.step("a_comfy_whole_picture_upscale_round_trips", not problems, "; ".join(problems[:6]) if problems else
+                  f"{w0} x {h0} upscaled to {w1} x {h1} on the stubbed ComfyUI route, {r['layers']} layers; saved ({r['bytes'] / 1024:.0f} KB), closed and opened: size, state, layer places, pixels, base and selection as before the save", t)
 
     async def step3(self, A, prof, every, state):
         t = time.time()

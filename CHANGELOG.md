@@ -37,6 +37,11 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **RTX Video Super Resolution on your ComfyUI.** A new upscale recipe on NVIDIA's RTX Video Super Resolution node
   (the node pack Nvidia_RTX_Nodes_ComfyUI, which you install on your ComfyUI): 1 to 4 times, with a Quality setting.
   The Upscale dialog shows the box's size and the answer's, and refuses a box whose answer would pass 8192 px.
+- **The whole picture on your ComfyUI.** Upscale recipes on your own ComfyUI now enlarge the whole picture too: the
+  answer becomes the new base and every layer, mask and the selection scale along, in one undo step. A cut-out picture
+  loses its transparency on this route. The *Upscale model (ComfyUI)* recipe takes at most 2048 px on the long side, so
+  a 4× model answers at most 8192 px. While it runs, the title row's timer shows it and its *Cancel* takes the job off
+  your ComfyUI.
 - **Recipes can ship presets.** The Preset row in the Settings section shows a recipe's own presets first, then
   yours; the shipped ones cannot be deleted.
 - Generate new no longer offers the local upscale recipe, which makes nothing from a prompt.
