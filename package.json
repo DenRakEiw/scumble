@@ -15,6 +15,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win nsis",
+    "dist:portable": "node tools/portable_zip.js",
     "dist:store": "node tools/build_store.js",
     "dist:store:test": "node tools/build_store.js --test",
     "dist:linux": "electron-builder --linux",

@@ -1,7 +1,8 @@
 # Code signing policy
 
-Scumble's Windows installer (`Scumble Setup <version>.exe`) is built by GitHub Actions from
-the source in this repository and published on
+Scumble's Windows installer (`Scumble Setup <version>.exe`) and its portable zip
+(`Scumble-<version>-portable-win-x64.zip`) are built by GitHub Actions from the source in this
+repository and published on
 [GitHub Releases](https://github.com/DenRakEiw/scumble/releases). This page is the code
 signing policy the [SignPath Foundation](https://signpath.org/terms) asks an open source
 project to publish. It describes who may change the code, who approves a signed release and
@@ -63,8 +64,9 @@ automatically.
 
 - A release is a git tag `v<version>` on `main` that matches `version` in `package.json`.
 - `.github/workflows/build.yml` builds the installer on a GitHub-hosted `windows-latest`
-  runner from that tag with `npm ci` and `electron-builder`. Nobody builds release binaries
-  on a private machine.
+  runner from that tag with `npm ci` and `electron-builder`, and in the same job the portable
+  zip from the same unpacked app (`tools/portable_zip.js`: the files the installer installs, the
+  marker `portable.txt`, one top folder). Nobody builds release binaries on a private machine.
 - The release notes are that version's section of `CHANGELOG.md`; a missing section fails the
   build.
 - Product name (`Scumble`), file description and product version are set by electron-builder
@@ -101,13 +103,16 @@ In detail, Scumble talks to these systems, and to nothing else:
   8 seconds after start, and downloads it in the background when one exists. This check can
   be switched off in Settings › Updates (*Check for updates at start*); *Check now* and
   *Restart and install* only run when you click them. The Microsoft Store copy never asks
-  GitHub: the Store updates it.
+  GitHub: the Store updates it. The portable copy (and any copy without the installer's
+  uninstaller beside it) checks the same way but downloads nothing: it says that a new version
+  is out, and *Download* opens the release page in your browser.
 - **Links you click** (Help menu, "get a key" next to a provider) open in your browser.
 
 Scumble collects no usage data, has no telemetry and no crash reporting. Your images,
 documents, autosaves and settings stay in `%APPDATA%\Scumble` on your machine (the Microsoft
 Store copy keeps them in `%LOCALAPPDATA%\Packages\<its package>\LocalCache\Roaming\Scumble Store`,
-which Windows removes when the app is uninstalled).
+which Windows removes when the app is uninstalled; the portable copy in the `data` folder beside
+its `Scumble.exe`).
 
 ## Licence
 

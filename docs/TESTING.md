@@ -156,7 +156,13 @@ byte-equal after describe / list / get). `tools/updater_test.js` runs notify mod
 no install, no quit handler. The platform gate's `a_copy_that_does_not_update_itself_offers_the_release_page` drives the
 window: Download in the Updates section and the title row, the question once with Download / Later / Skip this version,
 Download opening the tag's page (`shell.updateLinks.open` stubbed). The packaged start on a marker is P3's `portable`
-gate.
+gate. The zip (P2, `tools/portable_zip.js`): `platform_test.js` builds one from a fake `win-unpacked` in a temp folder
+with Windows' `tar.exe` and reads it back by its own central directory (one top folder `Scumble/`, the marker's bytes,
+no `data` even from a stale stage that has one, an old file of the zip's name replaced, the source untouched), checks
+the refusals before anything is staged (no exe, no `app-update.yml`, another feed, another version in the asar, no
+asar, a `data` folder), and reads `dist:portable` in `package.json` and the windows job's order in `build.yml`
+(installer, its artifact, the zip, the zip's artifact, the upload to the draft on a tag only). The real zip is checked
+by hand once per build (`docs/RELEASING.md`).
 
 Item 26 (`docs/PLAN_REFS.md`, @img tokens for reference layers): `node tools/refs_layout_test.js` pins every adapter's
 `layout(req)` against the request its real builder sends (every shipped provider variant, every ToAPIs channel, 0 / 1 /

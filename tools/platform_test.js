@@ -421,5 +421,159 @@ check("a_key_this_account_cannot_decrypt_reads_as_stale_and_is_never_rewritten",
     }
 });
 
+// ---- the portable zip (tools/portable_zip.js, docs/PLAN_0_1_42.md P2) ---------------------------------------------
+// A fake win-unpacked (an asar with its package.json, the update feed, a locale) in a temp folder; the zip is read back
+// by its own central directory, not by the tar that wrote it.
+
+const zlib = require("node:zlib");
+const pzip = require("./portable_zip");
+const FEED = "owner: DenRakEiw\nrepo: scumble\nprovider: github\nreleaseType: draft\nupdaterCacheDirName: scumble-updater\n";
+
+/** An asar as the app's: the 8-byte size pickle, the header pickle with its JSON, the files after it. */
+function writeAsar(file, files) {
+    const header = { files: {} };
+    const bodies = [];
+    let offset = 0;
+    for (const [name, data] of Object.entries(files)) {
+        header.files[name] = { size: data.length, offset: String(offset) };
+        offset += data.length;
+        bodies.push(data);
+    }
+    const json = Buffer.from(JSON.stringify(header));
+    const padded = Math.ceil(json.length / 4) * 4;
+    const pickle = Buffer.alloc(8 + padded);
+    pickle.writeUInt32LE(4 + padded, 0);
+    pickle.writeInt32LE(json.length, 4);
+    json.copy(pickle, 8);
+    const size = Buffer.alloc(8);
+    size.writeUInt32LE(4, 0);
+    size.writeUInt32LE(pickle.length, 4);
+    fs.writeFileSync(file, Buffer.concat([size, pickle, ...bodies]));
+}
+
+function fakeUnpacked(dir, { version = "9.9.9", feed = FEED, exe = true, asar = true, data = false } = {}) {
+    fs.mkdirSync(path.join(dir, "resources"), { recursive: true });
+    fs.mkdirSync(path.join(dir, "locales"), { recursive: true });
+    if (exe) fs.writeFileSync(path.join(dir, "Scumble.exe"), "MZ not an exe");
+    fs.writeFileSync(path.join(dir, "locales", "en-US.pak"), "pak");
+    if (feed != null) fs.writeFileSync(path.join(dir, "resources", "app-update.yml"), feed);
+    if (asar) writeAsar(path.join(dir, "resources", "app.asar"), { "package.json": Buffer.from(JSON.stringify({ name: "scumble", version })) });
+    if (data) {
+        fs.mkdirSync(path.join(dir, "data"));
+        fs.writeFileSync(path.join(dir, "data", "settings.json"), "{}");
+    }
+}
+
+/** The entries of a zip by its central directory; `read` inflates one. */
+function readZip(file) {
+    const b = fs.readFileSync(file);
+    let end = -1;
+    for (let i = b.length - 22; i >= Math.max(0, b.length - 22 - 65535); i--) if (b.readUInt32LE(i) === 0x06054b50) { end = i; break; }
+    if (end < 0) throw new Error("not a zip: " + file);
+    const entries = new Map();
+    let p = b.readUInt32LE(end + 16);
+    for (let k = b.readUInt16LE(end + 10); k > 0; k--) {
+        if (b.readUInt32LE(p) !== 0x02014b50) throw new Error("a broken central directory");
+        const nlen = b.readUInt16LE(p + 28);
+        entries.set(b.toString("utf8", p + 46, p + 46 + nlen), { method: b.readUInt16LE(p + 10), csize: b.readUInt32LE(p + 20), local: b.readUInt32LE(p + 42) });
+        p += 46 + nlen + b.readUInt16LE(p + 30) + b.readUInt16LE(p + 32);
+    }
+    const read = (name) => {
+        const e = entries.get(name);
+        if (!e) throw new Error("no entry " + name);
+        const at = e.local + 30 + b.readUInt16LE(e.local + 26) + b.readUInt16LE(e.local + 28);
+        const raw = b.subarray(at, at + e.csize);
+        return e.method === 8 ? zlib.inflateRawSync(raw) : Buffer.from(raw);
+    };
+    return { names: [...entries.keys()], read };
+}
+
+function tree(dir, base = dir) {
+    const out = [];
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) out.push(...tree(p, base));
+        else out.push(path.relative(base, p) + ":" + fs.statSync(p).size);
+    }
+    return out.sort();
+}
+
+check("the_portable_zip_is_one_scumble_folder_with_the_marker_and_no_data", () => {
+    if (process.platform !== "win32") return; // Windows' tar.exe writes the zip
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-pzip-"));
+    try {
+        const src = path.join(base, "win-unpacked"), out = path.join(base, "dist");
+        fakeUnpacked(src);
+        // a stage from an earlier run that was started by hand (its data folder), and an old file of the zip's name
+        fs.mkdirSync(path.join(out, "portable", "Scumble", "data"), { recursive: true });
+        fs.writeFileSync(path.join(out, "portable", "Scumble", "data", "secrets.json"), "{\"fal\":1}");
+        fs.writeFileSync(path.join(out, pzip.zipName("9.9.9")), "not a zip");
+        const before = tree(src);
+        const r = pzip.build({ src, out, version: "9.9.9" });
+        eq(r.zip, path.join(out, "Scumble-9.9.9-portable-win-x64.zip"), "where it lands");
+        const z = readZip(r.zip);
+        const outside = z.names.filter((n) => !n.startsWith("Scumble/"));
+        if (outside.length) throw new Error("entries outside the top folder: " + outside.join(", "));
+        if (z.names.some((n) => n.startsWith("Scumble/data"))) throw new Error("the zip carries a data folder");
+        eq(z.names.filter((n) => !n.endsWith("/")).sort(), ["Scumble/Scumble.exe", "Scumble/locales/en-US.pak", "Scumble/portable.txt", "Scumble/resources/app-update.yml", "Scumble/resources/app.asar"], "the files");
+        if (!z.read("Scumble/portable.txt").equals(Buffer.from(portable.MARKER_TEXT, "utf8"))) throw new Error("the marker is not MARKER_TEXT");
+        eq(z.read("Scumble/Scumble.exe").toString(), "MZ not an exe", "the exe");
+        eq(z.read("Scumble/resources/app-update.yml").toString(), FEED, "the feed");
+        eq([r.files, fs.existsSync(path.join(out, "portable"))], [5, false], "files counted, the stage removed");
+        eq(tree(src), before, "win-unpacked untouched (no marker added there)");
+    } finally {
+        fs.rmSync(base, { recursive: true, force: true });
+    }
+});
+
+check("the_portable_zip_refuses_a_layout_it_cannot_ship", () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-pzip-"));
+    try {
+        const cases = [
+            ["no-exe", { exe: false }, /no Scumble\.exe in .*run npm run dist first/],
+            ["no-feed", { feed: null }, /no resources\\app-update\.yml in .*dist:store/],
+            ["another-feed", { feed: "provider: generic\nurl: https://example.com/\n" }, /does not name the GitHub releases of DenRakEiw\/scumble/],
+            ["another-version", { version: "9.9.8" }, /holds version 9\.9\.8, package\.json says 9\.9\.9/],
+            ["no-asar", { asar: false }, /cannot read the version of resources\\app\.asar/],
+            ["a-data-folder", { data: true }, /has a "data" folder .*settings and keys/],
+        ];
+        for (const [what, o, re] of cases) {
+            const src = path.join(base, what), out = path.join(base, "out-" + what);
+            fakeUnpacked(src, o);
+            let err = null;
+            // a tar that does not exist: a refusal must come before anything is staged or zipped
+            try { pzip.build({ src, out, version: "9.9.9", tar: path.join(base, "no-tar.exe") }); } catch (e) { err = e; }
+            if (!err || !err.refused || !re.test(err.message)) throw new Error(`${what}: ${err ? err.message : "built a zip"}`);
+            if (fs.existsSync(out)) throw new Error(`${what}: wrote ${out}`);
+        }
+        const ok = path.join(base, "ok");
+        fakeUnpacked(ok);
+        eq(pzip.problems(ok, "9.9.9"), [], "a sound layout");
+        eq(pzip.builtVersion(ok), "9.9.9", "the asar's version");
+    } finally {
+        fs.rmSync(base, { recursive: true, force: true });
+    }
+});
+
+check("the_portable_zip_runs_from_npm_and_goes_into_the_tag_build_after_the_installer", () => {
+    eq(pkg.scripts["dist:portable"], "node tools/portable_zip.js", "npm run dist:portable");
+    // electron-builder's own zip and one-file portable targets stay out (a marker through extraFiles would land in
+    // the NSIS install too)
+    eq((pkg.build.win.target || []).map((t) => t.target || t), ["nsis"], "the Windows targets");
+    const yml = fs.readFileSync(path.join(ROOT, ".github", "workflows", "build.yml"), "utf8").replace(/\r\n/g, "\n");
+    const win = yml.slice(yml.indexOf("\n  windows:"), yml.indexOf("\n  linux:"));
+    const at = (s) => { const i = win.indexOf(s); if (i < 0) throw new Error("the windows job lacks " + s); return i; };
+    const order = [
+        at("name: Build installer"),
+        at("name: Scumble-windows\n"),
+        at("run: node tools/portable_zip.js"),
+        at("path: dist/*-portable-win-x64.zip"),
+        at(`gh release upload "$GITHUB_REF_NAME" "dist/${pzip.zipName("${GITHUB_REF_NAME#v}")}" --clobber`),
+    ];
+    for (let i = 1; i < order.length; i++) if (order[i] <= order[i - 1]) throw new Error("the windows job's order: " + order.join(", "));
+    const step = win.slice(win.lastIndexOf("- name:", order[4]), order[4]);
+    if (!/if: startsWith\(github\.ref, 'refs\/tags\/v'\)/.test(step)) throw new Error("the upload to the draft runs without a tag");
+});
+
 console.log(failed ? "FAIL" : "PASS");
 process.exit(failed ? 1 : 0);

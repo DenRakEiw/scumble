@@ -286,7 +286,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   with the release link instead of *Restart and update*; MCP registration names the exe's own path. CI: a zip asset in
   `.github/workflows/build.yml` beside the installer; the installer stays the recommended download (README, website).
   To test: the data folder (quit, document, autosave, settings gates on a portable layout), two portable copies side by
-  side, the update notice. About half a day to a day. Nothing built.
+  side, the update notice. About half a day to a day. **P1 (the data folder, the update notice, stale keys) and P2
+  (`npm run dist:portable` = `tools/portable_zip.js`, the CI upload to the draft, the docs) built 2026-10-05**
+  (`docs/PLAN_0_1_42.md`); P3 (the `portable` gate on the exe, on the user's word) is open.
 
 ## Gate runner and flakes
 
@@ -355,7 +357,12 @@ there; add a new flake there, with the date and what was ruled out.
   a CR LF to stdout before any JS runs (hence the MCP launcher); a window created hidden stays hidden after `show()`,
   `restore()` brings it up.
 - Electron has no `window.prompt`; the editor has its own `ask()` modal.
-- Only one instance runs at a time (single-instance lock and named pipe), including headless `--mcp` instances.
+- Only one instance runs per data folder (single-instance lock and named pipe), including headless `--mcp`
+  instances; a portable copy has its own data folder, so it runs beside an installed one.
+- `npm run dist:store` rewrites `dist/win-unpacked` without `resources\app-update.yml` (`npm run dist` writes it):
+  `npm run dist:portable` goes between the two, and refuses a `win-unpacked` without the feed. Git Bash's `tar` is
+  GNU tar and writes no zip; `%SystemRoot%\System32\tar.exe -a -c -f x.zip` (bsdtar) does, and Explorer's zip
+  handler unpacks it (measured 2026-10-05).
 - An unsigned MSIX cannot be installed when it holds an app (0x80073D2B), whatever `-AllowUnsigned` and the
   publisher OID say, and a registered layout refuses that OID (0x80073D2D); a test install is Developer Mode plus
   `Add-AppxPackage -Register` of the unpacked layout with a plain test publisher (`docs/STORE.md`).

@@ -5,13 +5,27 @@ happens only on the user's word; everything before it may be prepared locally.
 
 ## The chain
 
-**Every release:** the CHANGELOG section first, the version in `package.json`, `npm run dist`, exe gates `--offline` on
-both backends (0.1.30's list: `dist/gates/gates/rel30-exe*/summary.txt`), push, tag `v<version>`, `gh run watch` the
-tag's build, `gh release edit v<version> --draft=false`, then the manual sync (`node tools/manual_sync.js`) and the dev
-blog post (the last section here; `time` is the release's `published_at` in German time).
+**Every release:** the CHANGELOG section first, the version in `package.json`, `npm run dist`, `npm run dist:portable`,
+exe gates `--offline` on both backends (0.1.30's list: `dist/gates/gates/rel30-exe*/summary.txt`), push, tag
+`v<version>`, `gh run watch` the tag's build, the draft's assets checked, `gh release edit v<version> --draft=false`,
+then the manual sync (`node tools/manual_sync.js`) and the dev blog post (the last section here; `time` is the
+release's `published_at` in German time).
 
 Before the tag: the exe gates `--offline` on both backends against `dist/win-unpacked/Scumble.exe`, each on its own
 profile (`bash tools/run_gates.sh <label> --offline --exe dist/win-unpacked/Scumble.exe --tiles on|off <gates>`).
+
+**The portable zip** (item 36, since 0.1.42): `npm run dist:portable` (`tools/portable_zip.js`) zips
+`dist/win-unpacked` with the marker `portable.txt` into `dist/Scumble-<version>-portable-win-x64.zip` (one top folder
+`Scumble\`, no `data`; about 180 MB, a few seconds). It comes **after `npm run dist` and before any `npm run
+dist:store`**: dist:store rewrites `win-unpacked` without `resources\app-update.yml`, and the script refuses a layout
+without it, of another version than `package.json`, or with a `data` folder in it. The tag build makes its own zip
+the same way and adds it to the draft with `gh release upload` (and keeps it as the workflow artifact
+`Scumble-windows-portable` on every run, so a failed upload can be redone by hand from that build). **The draft's
+check before publishing:** `Scumble Setup <version>.exe`, its blockmap, `latest.yml`, the AppImage, the deb,
+`latest-linux.yml` and `Scumble-<version>-portable-win-x64.zip`; the zip downloaded once and unpacked by hand
+(Explorer's *Extract all*): one `Scumble` folder, `portable.txt` in it, no `data`, `resources\app-update.yml`
+present, and it starts (on this machine only with the user's Scumble closed: a start without `--user-data-dir` that
+missed the marker would use `%APPDATA%\Scumble`).
 
 **The official MCP Registry** (listed since 2026-10-04, `docs/PLAN_MCP_LISTINGS.md`): after the release is published,
 `server.json`'s `version` set to the new version (and its description if the tools changed; at most 100 characters),
@@ -29,7 +43,8 @@ update, the upload, the What's new text) and clicks *Submit for certification* o
 Never tried yet: the upload of the ~190 MB MSIX through the extension. If it does not work, the user's rule before:
 a Store update only with essential changes, by hand (0.1.41 went that way, after the Comfy Cloud fix of 0.1.40). The
 steps either way: `npm run
-dist:store` (`dist/Scumble-<version>.msix`, built from the release's tag state), a short "What's new in this version"
+dist:store` (`dist/Scumble-<version>.msix`, built from the release's tag state; after `npm run dist:portable`, since it
+rewrites `dist/win-unpacked`), a short "What's new in this version"
 text in English, and the user's part in Partner Center (https://partner.microsoft.com/dashboard): Apps and games ›
 Scumble › Start update; Packages: drop the new MSIX in, delete the old one, leave gradual rollout and mandatory off,
 save; Store listings › English › What's new in this version, save; Submit for certification. Certification takes hours
@@ -37,8 +52,9 @@ to about three working days; the Store then updates its users by itself.
 
 - Release channel: **GitHub Releases** of `DenRakEiw/scumble` (public since 2026-09-09).
   `electron-updater` reads `latest.yml` there; `.github/workflows/build.yml` builds the
-  installer on `windows-latest` and publishes a **draft** release on a `v<version>` tag
-  (the tag must match `package.json`); publishing the draft makes it visible to the app.
+  installer and the portable zip on `windows-latest` and publishes a **draft** release on a `v<version>` tag
+  (the tag must match `package.json`); publishing the draft makes it visible to the app. A portable copy reads the
+  same feed but never downloads: it offers the release page.
   **Every release needs its section in `CHANGELOG.md` first**: the workflow builds the
   release body from it through `tools/release_notes.py` and fails the tag build when the
   section is missing, and the app shows the same text in Settings › Updates before you

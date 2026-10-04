@@ -36,7 +36,7 @@ run inside the app through ONNX Runtime (SAM2, BiRefNet, RMBG). The editor is th
 code as the ComfyUI node [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas);
 Scumble is the standalone window around it, plus recipes, plugins, an MCP server and the assistant.
 
-Windows first (from the [Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R) or the installer below), a Linux build (AppImage, .deb) that has not been tried on Linux yet, macOS is planned. Free software, GPL-3.0.
+Windows first (from the [Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R), the installer below or a portable zip), a Linux build (AppImage, .deb) that has not been tried on Linux yet, macOS is planned. Free software, GPL-3.0.
 What has been verified so far: local rendering through ComfyUI, the in-app helper models,
 the film pack, the command core, the MCP server, the tile engine on large documents and
 auto-update, and among the API providers FLUX 3 Image on Black Forest Labs (with boxes in the prompt), OpenRouter and Comfy Router,
@@ -149,7 +149,7 @@ was generated with Scumble.
 
 ## Install (Windows)
 
-Two ways to the same app:
+Three ways to the same app; from GitHub the installer is the recommended one:
 
 - **From the Microsoft Store:** [Scumble in the Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R).
   Microsoft signs the Store copy, so it installs without a SmartScreen warning, and the Store
@@ -162,6 +162,16 @@ Two ways to the same app:
   *More info*, then *Run anyway*. Updates are downloaded by the app itself, which then asks
   whether to restart into the new version (*Settings > Updates* shows what changed), and do not
   go through SmartScreen again.
+- **Portable, from GitHub:** download `Scumble-<version>-portable-win-x64.zip` from the same
+  release and unpack it into a plain folder you can write to, such as `C:\Tools` (not Program
+  Files, not a folder OneDrive syncs). The zip holds one folder, `Scumble`; start the
+  `Scumble.exe` in it (SmartScreen asks once, as for the installer). The file `portable.txt`
+  beside it makes Scumble keep everything it stores (settings, API keys, autosave, the local
+  files, plugins, helper models, logs) in a `data` folder next to it instead of
+  `%APPDATA%\Scumble`, so it runs beside an installed Scumble. API keys are encrypted for the
+  Windows account: on another PC, type them again. This copy does not update itself: when a
+  new version is out it says so, and you unpack the new zip where you unpacked the old one, so
+  its `Scumble` folder lands on the old one; the `data` folder stays.
 
 [CHANGELOG.md](CHANGELOG.md) lists every version. How releases are built, who approves
 them and what the app sends over the network is in the
@@ -200,7 +210,8 @@ Ctrl+Tab next); a run keeps going while another tab is in front. Ctrl+, opens th
 local files, rendering, updates). Ctrl+Shift+A opens the assistant.
 
 Every image the editor uploads or receives is kept under `%APPDATA%/Scumble/files/`
-(`input/` and `output/`, mirroring ComfyUI's folders). The server only holds copies:
+(in a portable copy `data/files/` beside `Scumble.exe`; `input/` and `output/`, mirroring
+ComfyUI's folders). The server only holds copies:
 before a run the app uploads what the server lacks, so a fresh or restarted ComfyUI
 (RunPod) works without re-loading the document, and the last session is restored at
 start even while no server is connected.
@@ -213,9 +224,10 @@ npm start
 ```
 
 Build the installer with `npm run dist` (`dist/Scumble Setup <version>.exe`, NSIS,
-unsigned). Releases are built by GitHub Actions: pushing a tag `v<version>` that matches
+unsigned), then the portable zip from the same build with `npm run dist:portable`
+(`dist/Scumble-<version>-portable-win-x64.zip`). Releases are built by GitHub Actions: pushing a tag `v<version>` that matches
 `package.json` publishes a draft release with the installer, its blockmap and `latest.yml`
-(the auto-update feed); publishing the draft makes it visible to the app. The Rust pixel
+(the auto-update feed) and the portable zip; publishing the draft makes it visible to the app. The Rust pixel
 kernels are committed as `renderer/editor/px/px.wasm`; `python tools/build_px.py` rebuilds
 them.
 
@@ -256,7 +268,7 @@ docker/runpod/     Dockerfile + provision.sh for a ComfyUI box on RunPod (draft,
 tools/             build_node.py (the node's editor), build_px.py (the kernels), cdp.py (DevTools driver), the tests, run_gates.sh
 docs/              BRIEF.md (vision, decisions, phases), ASSISTANT.md, COMMANDS.md, PLUGINS.md, FILM.md, MCP.md, RECIPES.md,
                    HELPERS.md, PROMPTS.md, BRUSHES.md, GLB.md, PERFORMANCE.md, BUILD_NODE.md, CODE_SIGNING_POLICY.md, images/
-.github/workflows/ build.yml (Windows installer, Linux AppImage and .deb, draft release on a version tag)
+.github/workflows/ build.yml (Windows installer and portable zip, Linux AppImage and .deb, draft release on a version tag)
 ```
 
 ## Licence

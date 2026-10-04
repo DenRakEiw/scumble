@@ -10,8 +10,9 @@ Plugins* or reloading takes all of it out again without a restart. Only JavaScri
 
 Folders:
 
-- `<userData>/plugins/<id>/` — the user's plugins (`%APPDATA%/Scumble/plugins` on Windows;
-  *Settings › Plugins › Open folder*, or the *Plugins* menu).
+- `<userData>/plugins/<id>/` — the user's plugins (`%APPDATA%/Scumble/plugins` on Windows,
+  `data/plugins` beside `Scumble.exe` in a portable copy; *Settings › Plugins › Open folder*, or
+  the *Plugins* menu).
 - `<app>/plugins/<id>/` — built-in plugins shipped with the app (`plugins/sample` is the
   reference: one of every extension point, ~150 lines).
 

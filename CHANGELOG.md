@@ -53,12 +53,15 @@ the section for its version; `docs/` and the commit history hold the technical d
   7680 × 4320 and 27.9 megapixels: a picture whose answer would be larger is scaled down first, so it comes back as
   large as the pass allows, and the dialog and the status line say to what. 1× stays a refiner at the picture's own size. Agents pass `factor`
   to `realism_pass`; the assistant's question names it.
-- **A portable copy.** A file portable.txt beside Scumble.exe makes Scumble keep everything it stores (settings, keys,
-  autosave, the local files, plugins, recipes, helper models, logs, the browser caches and the Comfy Cloud sign-in) in
-  a data folder beside it, made at the first start, so it runs beside an installed Scumble; a folder it cannot write
-  to stops it with a message naming the folder. A portable copy, and any other copy without the installer's
-  uninstaller beside it, never installs an update: when a new version is out it asks once, and Download opens the
-  release page. A portable copy adds nothing to the taskbar's jump list.
+- **A portable copy.** Each release now also comes as `Scumble-<version>-portable-win-x64.zip`: unpack it into a
+  folder you can write to (it holds one folder, Scumble) and start the Scumble.exe in it. The file portable.txt beside
+  it makes Scumble keep everything it stores (settings, keys, autosave, the local files, plugins, recipes, helper
+  models, logs, the browser caches and the Comfy Cloud sign-in) in a data folder beside it, made at the first start,
+  so it runs beside an installed Scumble; a folder it cannot write to stops it with a message naming the folder. A
+  portable copy, and any other copy without the installer's uninstaller beside it, never installs an update: when a
+  new version is out it asks once, and Download opens the release page; unpack the new zip where you unpacked the old
+  one and the data folder stays. A portable copy adds nothing to the taskbar's jump list. The installer stays the
+  recommended download.
 - API keys that cannot be read on this PC or Windows account (Windows encrypts them for the account that stored them)
   are marked *stored on another PC or Windows account: type it again* in *Settings › API providers*, and a run with
   one says so instead of reporting no key. The stored key is kept until you type a new one.

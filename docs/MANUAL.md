@@ -21,7 +21,7 @@ Scumble is a normal desktop app. Download the installer from the latest release 
 
 The installer is not code-signed yet, so Windows shows "Windows protected your PC" the first time. That is the warning Windows gives every unsigned program, not a verdict about this one. Click More info, then Run anyway. Updates after that are downloaded by the app itself and do not go through SmartScreen again. Proper signing is planned through the SignPath Foundation, which is free for open-source projects but wants a project with a public release and some use behind it first.
 
-There is also a portable copy for Windows, Scumble-\<version\>-portable-win-x64.zip in the same release. Unpack it into a plain folder you can write to, such as C:\Tools\Scumble (not Program Files, and not a folder OneDrive syncs), and start Scumble.exe there. The file portable.txt beside it makes Scumble keep everything it stores — settings, keys, autosave, the local files, plugins, recipes, helper models, logs — in a data folder next to it, so nothing lands in %APPDATA%\Scumble and it runs beside an installed Scumble. The installer stays the recommended way.
+There is also a portable copy for Windows, Scumble-\<version\>-portable-win-x64.zip in the same release. Unpack it into a plain folder you can write to, such as C:\Tools (not Program Files, and not a folder OneDrive syncs): the zip holds one folder, Scumble, and you start the Scumble.exe in it. The file portable.txt beside it makes Scumble keep everything it stores — settings, keys, autosave, the local files, plugins, recipes, helper models, logs — in a data folder next to it, so nothing lands in %APPDATA%\Scumble and it runs beside an installed Scumble. The installer stays the recommended way.
 
 On Linux the same release carries an AppImage and a .deb. Fair warning: they are built by CI and have not been run by me, because I have no Linux machine here. If you try one, tell me what breaks. macOS is prepared but not released.
 
@@ -36,11 +36,11 @@ The app alone can do a great deal — open, paint, select, layer, filter, save, 
 ### Notes
 
 - Windows 10 and 11, 64-bit. A GPU is not required for the editor itself: filters run on the GPU when there is one and fall back to the processor when there is not.
-- The installer is about 128 MB, the installed app about 410 MB, most of which is Chromium and the helper models' runtime.
+- The installer is about 128 MB, the portable zip about 180 MB, the installed or unpacked app about 410 MB, most of which is Chromium and the helper models' runtime.
 - Updates: when a new version is downloaded, Scumble asks once whether to restart into it now, later (it is installed when you close Scumble) or not for this version. Settings › Updates shows everything that changed.
-- The portable copy keeps its data in the data folder beside Scumble.exe, made at the first start. A folder it cannot write to stops it with a message naming the folder; move the Scumble folder somewhere you can write to. Delete portable.txt and it uses %APPDATA%\Scumble like an installed copy, and shares that data with it.
+- The portable copy keeps its data in the data folder beside Scumble.exe, made at the first start. A folder it cannot write to stops it with a message naming the folder; move the Scumble folder somewhere you can write to. Its Scumble.exe is not code-signed either, so SmartScreen asks once at the first start, as for the installer. Delete portable.txt and it uses %APPDATA%\Scumble like an installed copy, and shares that data with it.
 - API keys are encrypted for the Windows account that stored them (DPAPI). On another PC or under another Windows account a portable copy cannot read them: Settings › API providers says "stored on another PC or Windows account: type it again" in that key's row, and a run with it says the same. The stored key is left as it is until you type a new one.
-- The portable copy does not update itself. When a new version is out it asks once: Download opens the release page, Later asks again at the next start, Skip this version leaves it out. Unpack the new zip over the folder; the data folder stays.
+- The portable copy does not update itself. When a new version is out it asks once: Download opens the release page, Later asks again at the next start, Skip this version leaves it out. Unpack the new zip where you unpacked the old one, so its Scumble folder lands on the old one; the data folder stays.
 - The portable copy registers no file type and adds nothing to the taskbar's jump list: open a .scumble file with File › Open or by dropping it on the window. Help › Copy MCP registration names the Scumble.exe of that folder.
 
 ## Where it renders: your ComfyUI, or an API key

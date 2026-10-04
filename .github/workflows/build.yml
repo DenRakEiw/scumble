@@ -1,8 +1,8 @@
-# Builds the Windows installer and the Linux AppImage and .deb. On a version tag (v0.1.0) the
-# `draft` job creates the draft GitHub release from CHANGELOG.md and both builds upload to it
-# (electron-builder --publish: the installer, its blockmap and latest.yml; the AppImage, the .deb
-# and latest-linux.yml); on other pushes and pull requests the files are kept as workflow
-# artifacts only.
+# Builds the Windows installer and portable zip and the Linux AppImage and .deb. On a version tag
+# (v0.1.0) the `draft` job creates the draft GitHub release from CHANGELOG.md and both builds upload
+# to it (electron-builder --publish: the installer, its blockmap and latest.yml; the AppImage, the
+# .deb and latest-linux.yml; gh release upload: Scumble-<version>-portable-win-x64.zip); on other
+# pushes and pull requests the files are kept as workflow artifacts only (the zip on every run).
 name: build
 
 on:
@@ -101,6 +101,28 @@ jobs:
             dist/*.blockmap
             dist/latest.yml
           if-no-files-found: error
+
+      # the portable copy (CLAUDE.md item 36): dist/win-unpacked under one top folder Scumble\ with the marker
+      # portable.txt; tools/portable_zip.js refuses a layout without resources\app-update.yml or of another version
+      - name: Build the portable zip
+        shell: bash
+        run: node tools/portable_zip.js
+
+      # on every run, a tag's too: a failed upload to the draft can be redone by hand from the same build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Scumble-windows-portable
+          path: dist/*-portable-win-x64.zip
+          compression-level: 0
+          if-no-files-found: error
+
+      # the draft exists (the draft job made it); electron-builder uploaded the installer to it above
+      - name: Add the portable zip to the draft
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release upload "$GITHUB_REF_NAME" "dist/Scumble-${GITHUB_REF_NAME#v}-portable-win-x64.zip" --clobber
 
   linux:
     needs: draft
