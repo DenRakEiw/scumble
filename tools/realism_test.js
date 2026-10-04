@@ -874,6 +874,38 @@ function nodeFitSpan(a0, a1, limit, m) {
         check("topFilterRun's index splits the stack: paint read, the look and the reference above", i === 2 && stack.slice(0, i).map((l) => l.name).join() === "base-ish,paint", `got ${i}`);
     }
 
+    // ---- 9d. wholeRefusal (R3b: the size host.realismWhole refuses and the Upscale dialog greys with) ---------------
+    console.log("\n--- 9d. wholeRefusal (R3b) ---");
+    {
+        const cases = [
+            ["7680 x 4320 fits", 7680, 4320, ""],
+            ["4320 x 7680 (portrait) fits", 4320, 7680, ""],
+            ["an odd 7679 x 4319 fits (padded to 7680 x 4320)", 7679, 4319, ""],
+            ["64 x 64 fits", 64, 64, ""],
+            ["an odd 63 x 100 fits (padded to 64 x 100)", 63, 100, ""],
+            ["7681 x 100 is past the long side", 7681, 100, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side); this is 7681 × 100.`],
+            ["5000 x 4321 is past the short side", 5000, 4321, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side); this is 5000 × 4321.`],
+            ["15000 x 10000 is past both", 15000, 10000, `${EXACT_LABEL} takes at most 7680 × 4320 (long × short side); this is 15000 × 10000.`],
+            ["62 x 500 is too small", 62, 500, `${EXACT_LABEL} needs at least 64 px a side; this is 62 × 500.`],
+        ];
+        for (const [what, w, h, want] of cases) {
+            const got = R.wholeRefusal(w, h);
+            check(`wholeRefusal: ${what}`, got === want, `got ${JSON.stringify(got)}`);
+            if (got) texts.push(got);
+        }
+        // the same answer as R3a's inline rule (evenPlan, then fits, the padded size written back as the document's)
+        let same = 0, n = 0;
+        for (const w of [1, 63, 64, 65, 4319, 4320, 4321, 7679, 7680, 7681, 9000]) {
+            for (const h of [1, 63, 64, 65, 4319, 4320, 4321, 7679, 7680, 7681]) {
+                n++;
+                const { w2, h2 } = R.evenPlan(w, h);
+                const r = R.fits(w2, h2);
+                if (R.wholeRefusal(w, h) === (r ? r.replace(`${w2} × ${h2}`, `${w} × ${h}`) : "")) same++;
+            }
+        }
+        check(`wholeRefusal equals evenPlan + fits on ${n} sizes`, same === n, `${n - same} differ`);
+    }
+
     // ---- 10. the label in every text ------------------------------------------------------------------------------
     console.log("\n--- 10. the label in every text ---");
     const missing = texts.filter((t) => !t.includes(EXACT_LABEL));

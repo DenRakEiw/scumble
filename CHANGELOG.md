@@ -13,6 +13,21 @@ the section for its version; `docs/` and the commit history hold the technical d
   it cannot run there (not Windows, no supported card, the pack missing, the selection with its surroundings smaller
   than 64 px or larger than 7680 × 4320); RTX 30 cards run with a note. The pack's own errors come back as plain sentences that say what to do.
   There is no Comfy Cloud version of the pass.
+- **Realism Pass (Windows only, RTX only) over the whole picture.** *Upscale* (also *Image › Realism Pass (Windows
+  only, RTX only)...*) lists the pass beside the upscalers. At 1× it sends the whole visible picture through DLSS 5 on
+  your own ComfyUI and adds the answer as a new layer above it, at full size and without a colour match (the layer's
+  match slider is there if you want one); the picture keeps its size. Filter layers at the top of the stack, such as a
+  film look or grain, stay live above the new layer and are not sent; reference layers stay out. A second run reads
+  the first pass layer with the rest and stacks its own above it. Style and Strength sit in the dialog's Realism Pass
+  row and count for the recipe on a selection too; the row's DLSS model preset is the whole-picture pass's own (on a
+  selection the recipe's Preset row picks it), and a preset the runtime refused shows as Default there and can be set
+  back. The dialog says why the pass cannot run before anything is sent (the requirements above, or a picture larger
+  than 7680 × 4320). The title row's timer shows the pass and its *Cancel* ends it; closing the tab ends it too.
+  Agents run it with the `realism_pass` command.
+- While an API Generate, an API upscale or the Realism Pass (Windows only, RTX only) runs on a document, until its
+  result is in, a second Generate with an API model, an upscale or Generate new on it is refused with a note instead
+  of starting beside it (Generate new with a recipe on your own ComfyUI used to clear the document before it was
+  refused). Generate with a recipe on your own ComfyUI still queues.
 - **Recipes can ship presets.** The Preset row in the Settings section shows a recipe's own presets first, then
   yours; the shipped ones cannot be deleted.
 - Generate new no longer offers the local upscale recipe, which makes nothing from a prompt.

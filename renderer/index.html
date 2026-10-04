@@ -241,7 +241,7 @@
 <dialog id="up-dialog">
   <form method="dialog">
     <h2>Upscale</h2>
-    <p class="shell-help">An upscale model makes the picture larger and sharper. On the selection the answer comes back into it at the document's resolution, as a detail pass on a new layer. On the whole picture the base image is replaced by the upscaled one and every layer, mask and the selection are scaled along (one undo step).</p>
+    <p class="shell-help">An upscale model makes the picture larger and sharper. On the selection the answer comes back into it at the document's resolution, as a detail pass on a new layer. On the whole picture the base image is replaced by the upscaled one and every layer, mask and the selection are scaled along (one undo step). The Realism Pass (Windows only, RTX only) refines instead: the whole visible picture goes through DLSS 5 on your own ComfyUI at 1× and comes back as a new layer above it.</p>
     <div class="shell-grid">
       <label class="shell-field">Model <select id="up-recipe"></select></label>
       <label class="shell-field" id="up-provider-row">Provider <select id="up-provider"></select></label>
@@ -253,6 +253,11 @@
       <label class="shell-field" id="up-factor-row">Factor <select id="up-factor"></select></label>
     </div>
     <p id="up-size-note" class="shell-note"></p>
+    <div class="shell-row" id="up-pass-row" hidden>
+      <label class="shell-field" title="The DLSS 5 Neural Rendering style (nr_style). For every document, and for the recipe on a selection too.">Style <select id="up-pass-style"></select></label>
+      <label class="shell-field" title="How strongly the neural rendering is applied (nr_intensity, 0 to 1). For every document, and for the recipe on a selection too.">Strength <input type="range" id="up-pass-strength" min="0" max="1" step="0.05"><b id="up-pass-strength-v"></b></label>
+      <label class="shell-field" title="The DLSS model preset of the whole-picture pass (L by default). When the runtime refuses one, the pass falls back to Default and it shows here: set it back when the runtime takes it again.">Preset <select id="up-pass-preset"></select></label>
+    </div>
     <label class="shell-field up-wide" id="up-prompt-row">Prompt <textarea id="up-prompt" rows="3" spellcheck="false" placeholder="what the added detail should look like (optional)"></textarea></label>
     <div class="shell-row shell-right"><span id="up-state" class="shell-note"></span><button id="up-cancel" type="submit" formnovalidate>Cancel</button><button id="up-go" type="button">Upscale</button></div>
   </form>

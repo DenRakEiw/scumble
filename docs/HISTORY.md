@@ -36,6 +36,8 @@ The block of 2026-10-04 (R2a of 0.1.42) was moved here the same day, when R2b wa
 The block of 2026-10-04 (R2b of 0.1.42) was moved here the same evening, when R3 was redesigned (the pass as a
 whole-picture refiner).
 
+The block of 2026-10-04 (night, R3a of 0.1.42) was moved here the same night, when R3b was built.
+
 
 The block of 2026-09-29 (morning, item 26 S1 built) was moved here at noon, when the eraser hotfix 0.1.33 was prepared.
 
@@ -70,6 +72,35 @@ The block of 2026-10-03 (midday: B5, B6, the 0.1.39 release) was moved here the 
 The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved here the same afternoon, when V1 of item 35 was built.
 
 The block of 2026-10-04 (evening: R3 dropped, the Realism Pass redesigned as a refiner, the MCP listings) was moved here the same night, when R3a was built.
+
+## 2026-10-04 (night: R3a of 0.1.42 built, the whole picture as a layer; moved here the same night when R3b was built)
+
+**This session (2026-10-04 night, R3a of 0.1.42): Generate is never passed; the whole picture as a layer, unreleased.**
+Nothing new on screen yet (R3b adds the entry). Said to the user first, in one sentence: Generate and Generate new are
+never passed any more; the whole visible picture goes through DLSS 5 at 1x and lands as a new layer named
+`Realism Pass (Windows only, RTX only)` on top, under the top filter layers, no colour match, a second run stacks.
+- **R2b out**: `runProvider`, `runGenerate`, generate and generate_new are back to before R2b (kept: the "a run is
+  still going" refusal, "a landed layer is no failure", `comfyPictureRun`'s deadline, `passPicture`'s upload race);
+  `realismAfter`, `passAnswer`, `runDeadline` gone; comments that named the switch reworded.
+- **`realism.topFilterRun`** (where the read stops and the layer lands) and **`host.realismWhole(editor, { deadline })`**
+  (refusals before any read, the busy token like an upscale's, the read through the tile workers or a flatten,
+  `passPicture`, the layer stored like a result, one undo step, the move under the filter run as the stack is at the
+  landing, "the picture changed" note from a signature of the read, closing the tab or a Cancel at any point ends the
+  job and lands nothing). Readings taken beyond the plan, in its "As built": clipped filters and grouped layers end the
+  run, hidden non-filter layers are passed over, `_loading` refuses.
+- **Measured at 7680 × 4320** (a noisy photo, server stubbed, fresh instance): 2.3 s in Scumble, main thread blocked at
+  most 378 ms, JS heap +330 MB; not optimised. A warm instance took 7.7-8.5 s (the restart-before-benchmarks trap).
+- **Tests**: `tools/realism_test.js` §9c (423 checks), `tools/generate_test.py` `STEPS_R3A` (eight steps, R2b's six out),
+  both backends; gates `--offline`: `generate` both backends, `commands transparent upscale lint types` tiles: PASS.
+  Review: a workflow of four lenses plus a verifier per finding (15 agents): ten findings, five real and fixed (a Cancel
+  after the answer still landed the layer; the "changed" note fired for Compare redraws and the live filters; a hidden
+  layer on top stopped the filter run; the closed-tab test passed by the timeout; a stale comment), three test gaps
+  closed anyway, two mutations red; one is for R3b, written into its plan text (an API Generate during a pass clears
+  the pass's busy token, as it does an upscale's today). New: `SCUMBLE_GENERATE_ONLY=name,name` runs a subset of the
+  generate gate.
+- **Asked earlier, still waiting for the user's word:** the README for reach (a GIF, install buttons, a comparison
+  table, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, how to post on Show HN (the
+  comparison table names other products, the user's rule of 2026-09-29).
 
 ## 2026-10-04 (evening: R3 dropped, the Realism Pass redesigned as a refiner, the MCP listings; moved here the same night when R3a was built)
 

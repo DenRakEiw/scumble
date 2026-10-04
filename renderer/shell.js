@@ -15,6 +15,7 @@ import { initSkins, applySkin, reloadSkins, renderAppearance } from "./skins.js"
 import * as dialogs from "./dialogs.js";
 import { PromptField, RefBar } from "./editor/prompt_field.js";
 import { remap, compare, checkNote, normalize as normalizeTokens, referencesText, referencesRule } from "./editor/reftokens.js";
+import * as realism from "./editor/realism.js";
 
 // the editor's style, in the app's cascade layer (docs/SKINS.md): created here before the first editor, so the
 // editor's own injectStyle() finds it and adds nothing; a skin's rules then beat it as they beat shell.css
@@ -76,6 +77,7 @@ const ui = {
     up: $("up-dialog"), upRecipe: $("up-recipe"), upProvider: $("up-provider"), upProviderRow: $("up-provider-row"),
     upNote: $("up-note"), upScopeSel: $("up-scope-sel"), upScopeDoc: $("up-scope-doc"), upFactor: $("up-factor"),
     upFactorRow: $("up-factor-row"), upSizeNote: $("up-size-note"), upPromptRow: $("up-prompt-row"), upPrompt: $("up-prompt"), upState: $("up-state"), upGo: $("up-go"),
+    upPassRow: $("up-pass-row"), upPassStyle: $("up-pass-style"), upPassStrength: $("up-pass-strength"), upPassStrengthV: $("up-pass-strength-v"), upPassPreset: $("up-pass-preset"),
     promptList: $("set-prompts"), promptImport: $("set-prompt-import"), promptFolder: $("set-prompt-folder"), promptNote: $("set-prompt-note"),
     promptRefPics: $("set-prompt-refpics"),
     compatUrl: $("set-compat-url"), compatModel: $("set-compat-model"), compatModels: $("set-compat-models"),
@@ -1347,11 +1349,23 @@ ui.genGo.addEventListener("click", async () => {
 // ---- Upscale: the selection or the whole picture through an upscale recipe -----------
 
 let upEditor = null;
+// the scope chosen before the Realism Pass entry forced the whole picture: back when another entry is chosen
+let upScopeBeforePass = null;
+// how the prompt's @img tokens go to an upscaler (as the layers' names); the pass sends no prompt, so it shows none
+let upRefNote = "";
+// the factor last shown for an upscaler: the pass's 1× would otherwise be kept as the next upscaler's factor (a paid run
+// that enlarges nothing)
+let upLastFactor = 0;
 
-/** The upscale recipes (`task: "upscale"`: API models and upscale models on ComfyUI), in the recipe list's order. */
+/**
+ * The dialog's entries, in the recipe list's order: the upscale recipes (`task: "upscale"`: API models and upscale
+ * models on ComfyUI) and the Realism Pass (`task: "pass"`: the whole picture at 1x, docs/PLAN_0_1_42.md R3b).
+ */
 function upRecipes() {
-    return recipes.filter((r) => r.task === "upscale");
+    return recipes.filter((r) => r.task === "upscale" || r.task === "pass");
 }
+
+const isPassRecipe = (r) => !!r && r.task === "pass";
 
 /** The factors a variant offers: its `steps`, else whole numbers min..max; none when the model picks. */
 export function upFactors(v) {
@@ -1384,7 +1398,7 @@ function upFillRecipes() {
         o.textContent = "no upscale recipe installed";
         ui.upRecipe.appendChild(o);
     }
-    const cur = host.recipe && host.recipe.task === "upscale" ? host.recipe.id : settings.upscaleRecipe;
+    const cur = host.recipe && (host.recipe.task === "upscale" || isPassRecipe(host.recipe)) ? host.recipe.id : settings.upscaleRecipe;
     if (list.some((r) => r.id === cur)) ui.upRecipe.value = cur;
     else if (list.some((r) => r.id === keep)) ui.upRecipe.value = keep;
     upFillProviders();
@@ -1407,27 +1421,56 @@ function upFillProviders() {
     upFillFactors();
 }
 
-function upFillFactors() {
-    const { v } = upVariant();
+/** An entry's factors as [value, text] pairs: none when the model picks its own. */
+function upFactorOptions(r, v) {
+    // the Realism Pass refines at the picture's own size (R-U adds 1.5× to 3×)
+    if (isPassRecipe(r)) return [[1, "1× (refine)"]];
     // a ComfyUI upscaler has no variant: its model picks the factor, and the stitch fits the answer to the box
-    const list = v ? upFactors(v) : [];
-    const keep = +ui.upFactor.value || 0;
+    return (v ? upFactors(v) : []).map((f) => [f, `${f}×`]);
+}
+
+function upFillFactors() {
+    const { r, v } = upVariant();
+    const list = upFactorOptions(r, v);
+    const keep = ui.upFactor.dataset.pass ? upLastFactor : +ui.upFactor.value || 0;
     ui.upFactor.innerHTML = "";
-    for (const f of list) {
+    for (const [f, text] of list) {
         const o = document.createElement("option");
         o.value = String(f);
-        o.textContent = `${f}×`;
+        o.textContent = text;
         ui.upFactor.appendChild(o);
     }
     ui.upFactorRow.hidden = !list.length;
-    if (list.length) ui.upFactor.value = String(list.includes(keep) ? keep : (list.includes(v.factor.default) ? v.factor.default : list[0]));
+    const values = list.map(([f]) => f);
+    const dflt = v && v.factor ? v.factor.default : values[0];
+    if (values.length) ui.upFactor.value = String(values.includes(keep) ? keep : (values.includes(dflt) ? dflt : values[0]));
+    ui.upFactor.dataset.pass = isPassRecipe(r) ? "1" : "";
+    upNoteFactor();
     upSyncNote();
 }
+
+/** Remember an upscaler's factor (never the pass's), for the next upscaler shown after the pass. */
+function upNoteFactor() {
+    if (!ui.upFactor.dataset.pass && ui.upFactor.options.length) upLastFactor = +ui.upFactor.value || 0;
+}
+
+/** The open dialog's Realism Pass entry again, as the server, its node list or settings.realism are now. */
+function upResyncPass() {
+    if (ui.up.open && isPassRecipe(upVariant().r)) upSyncNote();
+}
+host.on("realism", upResyncPass);
 
 /** What the run will send and get back, and why the whole-picture mode may be refused. */
 function upSyncNote() {
     const ed = upEditor || host.editor;
     const { r, v } = upVariant();
+    ui.upPassRow.hidden = !isPassRecipe(r);
+    ui.upState.textContent = isPassRecipe(r) ? "" : upRefNote;
+    if (isPassRecipe(r)) { upSyncPass(ed); return; }
+    // another entry after the pass: the selection usable again, and the scope chosen before the pass back
+    ui.upScopeSel.disabled = false;
+    ui.upScopeSel.parentElement.title = "";
+    if (upScopeBeforePass) { (upScopeBeforePass === "selection" ? ui.upScopeSel : ui.upScopeDoc).checked = true; upScopeBeforePass = null; }
     const comfy = !!r && r.kind !== "provider";
     ui.upScopeDoc.disabled = comfy;
     // only an upscaler that takes guidance (Clarity, Magnific Creative: `usesPrompt`) shows the prompt
@@ -1469,18 +1512,69 @@ function upSyncNote() {
 }
 
 /**
- * The dialog. Nothing changes until Upscale is pressed; then the recipe (and provider) is selected, so its
- * settings stay in the Settings panel afterwards, and the `upscale` command runs, the path agents take too.
+ * The Realism Pass entry (docs/PLAN_0_1_42.md R3b): the whole picture only, at 1×, its Style / Strength / Preset row
+ * (settings.realism, the app's), and Upscale greyed with the reason the server (§3.3) or the picture's size (§3.5) gives;
+ * host.realismWhole refuses the same before anything is read.
  */
-export function openUpscale(editor) {
+function upSyncPass(ed) {
+    const L = realism.LABEL;
+    if (!upScopeBeforePass) upScopeBeforePass = ui.upScopeSel.checked ? "selection" : "document";
+    ui.upScopeDoc.disabled = false;
+    ui.upScopeDoc.checked = true;
+    ui.upScopeSel.disabled = true;
+    ui.upScopeSel.parentElement.title = `${L} runs over the whole picture.`;
+    ui.upPromptRow.hidden = true;
+    ui.upProviderRow.hidden = true;
+    upFillPassRow();
+    const support = host.realismSupport();
+    const W = (ed && ed.width) || 0, H = (ed && ed.height) || 0;
+    const size = !(ed && ed.base && W && H) ? `${L}: load an image first.` : realism.wholeRefusal(W, H);
+    ui.upNote.textContent = support.ok
+        ? [`DLSS 5 Neural Rendering over the whole visible picture, on your own ComfyUI: generated skin, hair and fabric look less waxy.`, support.note].filter(Boolean).join(" ")
+        : support.reason;
+    ui.upSizeNote.textContent = size || `${W} × ${H} goes out at 1× and comes back as a new layer above the picture (under the filter layers at the top, which stay live), no colour match; a second run stacks. ${L} runs over the whole picture: the selection is not used.`;
+    ui.upGo.disabled = !support.ok || !!size;
+}
+
+/** The pass row's controls as settings.realism is now (a refused model preset shows its fallback, Default, here). */
+function upFillPassRow() {
+    const fill = (sel, list) => {
+        if (sel.options.length === list.length) return;
+        sel.innerHTML = "";
+        for (const x of list) { const o = document.createElement("option"); o.value = x; o.textContent = x; sel.appendChild(o); }
+    };
+    fill(ui.upPassStyle, realism.STYLES);
+    fill(ui.upPassPreset, realism.MODEL_PRESETS);
+    const v = host.realismValues();
+    ui.upPassStyle.value = v.style;
+    ui.upPassPreset.value = v.preset;
+    ui.upPassStrength.value = String(v.intensity);
+    ui.upPassStrengthV.textContent = v.intensity.toFixed(2);
+}
+
+// each control writes settings.realism whole (host.setRealismValues fills the rest; the key is `intensity`)
+ui.upPassStyle.addEventListener("change", () => { host.setRealismValues({ style: ui.upPassStyle.value }); });
+ui.upPassPreset.addEventListener("change", () => { host.setRealismValues({ preset: ui.upPassPreset.value }); });
+ui.upPassStrength.addEventListener("input", () => { ui.upPassStrengthV.textContent = (+ui.upPassStrength.value).toFixed(2); });
+ui.upPassStrength.addEventListener("change", () => { host.setRealismValues({ intensity: +ui.upPassStrength.value }); });
+
+/**
+ * The dialog. Nothing changes until Upscale is pressed; then the recipe (and provider) is selected, so its
+ * settings stay in the Settings panel afterwards, and the `upscale` command runs, the path agents take too. The
+ * Realism Pass entry selects no recipe and runs `realism_pass`. `opts.recipe`: the entry to show chosen (the Image
+ * menu's Realism Pass item).
+ */
+export function openUpscale(editor, opts = {}) {
     upEditor = editor || host.editor;
     if (!upEditor) return;
     upFillRecipes();
+    if (opts.recipe && upRecipes().some((r) => r.id === opts.recipe)) { ui.upRecipe.value = opts.recipe; upFillProviders(); }
     const hasSel = !!(upEditor.getBounds && upEditor.getBounds());
+    upScopeBeforePass = null;
     (hasSel ? ui.upScopeSel : ui.upScopeDoc).checked = true;
     // an upscale sends no reference picture: the prompt's @img tokens come in as the layers' names
     const named = host.refNames(upEditor, upEditor.promptText || "");
-    ui.upState.textContent = named.note;
+    upRefNote = named.note;
     ui.upPrompt.value = named.text;
     upSyncNote();
     ui.up.showModal();
@@ -1488,7 +1582,7 @@ export function openUpscale(editor) {
 
 ui.upRecipe.addEventListener("change", upFillProviders);
 ui.upProvider.addEventListener("change", upFillFactors);
-ui.upFactor.addEventListener("change", upSyncNote);
+ui.upFactor.addEventListener("change", () => { upNoteFactor(); upSyncNote(); });
 ui.upScopeSel.addEventListener("change", upSyncNote);
 ui.upScopeDoc.addEventListener("change", upSyncNote);
 ui.up.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopPropagation(); });
@@ -1498,15 +1592,20 @@ ui.upGo.addEventListener("click", async () => {
     if (!ed) return;
     const id = ui.upRecipe.value;
     if (!id) { ui.upState.textContent = "No upscale recipe to run."; return; }
+    const pass = isPassRecipe(recipes.find((r) => r.id === id));
     ui.upGo.disabled = true;
     try {
-        selectRecipe(id, ui.upProvider.value || undefined);
-        if (settings.upscaleRecipe !== id) window.scumble.settings.set({ upscaleRecipe: id }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
-        const args = { doc: ed.node.id, scope: ui.upScopeDoc.checked ? "document" : "selection", timeout: 1800 };
-        if (!ui.upFactorRow.hidden) args.factor = +ui.upFactor.value;
-        if (!ui.upPromptRow.hidden) args.prompt = (ui.upPrompt.value || "").trim();
-        // the dialog closes as soon as the run starts; the status line and the busy marker follow it
-        const run = commands.run("upscale", args);
+        // the pass selects no recipe: it would become the window's, and the next Generate would run its box route
+        // nor is it remembered as the upscaler last used (the Image menu opens it directly)
+        if (!pass) selectRecipe(id, ui.upProvider.value || undefined);
+        if (!pass && settings.upscaleRecipe !== id) window.scumble.settings.set({ upscaleRecipe: id }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
+        const args = { doc: ed.node.id, timeout: 1800 };
+        if (!pass) args.scope = ui.upScopeDoc.checked ? "document" : "selection";
+        if (!pass && !ui.upFactorRow.hidden) args.factor = +ui.upFactor.value;
+        if (!pass && !ui.upPromptRow.hidden) args.prompt = (ui.upPrompt.value || "").trim();
+        // the dialog closes as soon as the run starts; the status line and the busy marker (the title row's timer, its
+        // Cancel) follow it. A person waits: the pass gets 1800 s, past the command's default made for agents
+        const run = commands.run(pass ? "realism_pass" : "upscale", args);
         ui.up.close();
         activate(ed);
         console.log("[upscale]", await run);
@@ -2608,7 +2707,8 @@ window.addEventListener("keydown", (e) => {
     if (!e.repeat) canvasOnly();       // Escape gets here only while the view is on, so it only ever leaves
 }, true);
 
-window.scumble.onMenu((cmd) => {
+/** A command of the app menu (main's `send("menu", cmd)`); exported so a gate can call it. */
+export function menuCommand(cmd) {
     if (cmd === "save") host.editor && host.editor.exportImage();
     else if (cmd === "save-document") saveDocumentFromUi(host.editor);
     else if (cmd === "save-document-as") saveDocumentFromUi(host.editor, { as: true });
@@ -2623,6 +2723,7 @@ window.scumble.onMenu((cmd) => {
     }
     else if (cmd === "frequency-separation") frequencySeparation();
     else if (cmd === "dodge-burn-layer" || cmd === "dodge-burn-layer:grey") { if (host.editor) host.editor.dodgeBurnLayer({ grey: cmd.endsWith(":grey") }); }
+    else if (cmd === "realism-pass") { if (host.editor) openUpscale(host.editor, { recipe: realism.RECIPE_ID }); }
     else if (cmd === "new-tab") activate(newDocument());
     else if (cmd === "close-tab") closeDocument(host.editor);
     else if (cmd === "next-tab") cycleTab(1);
@@ -2638,7 +2739,9 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "settings-comfy") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "ComfyUI"); if (h) h.scrollIntoView(); if (ui.setUrl) ui.setUrl.focus(); });
     else if (cmd === "settings-appearance") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Appearance"); if (h) h.scrollIntoView(); });
     else if (cmd.startsWith("plugin:")) plugins.runAction(cmd.slice(7)).catch(() => { /* reported by the plugin host */ });
-});
+}
+
+window.scumble.onMenu(menuCommand);
 
 // ---- the command bridge: main (MCP server, --cmd, the local socket) runs commands here -----
 

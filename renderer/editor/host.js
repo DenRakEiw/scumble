@@ -143,6 +143,9 @@ function docMeta(ed, clean = false) {
 
 const plainObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
 
+/** An API run, an upscale or a Realism Pass refused while another one holds the document (`editor.providerPending`). */
+const RUN_GOING = "A run is still going on this document: wait for it, or Cancel.";
+
 /** A run's id, for main's Cancel (providers/index.js `cancel`). */
 const runIdOf = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
@@ -377,6 +380,7 @@ export const host = {
             url: typeof st.url === "string" ? st.url : (this.server && this.server.url) || "",
             version: typeof st.version === "string" ? st.version : (this.server && this.server.version) || "",
         };
+        this.emit("realism");
     },
 
     /** Whether the connected server can run the pass, and what the user reads when not (realism.serverSupport). */
@@ -493,6 +497,8 @@ export const host = {
     //   removed (editor)          a tab was closed
     //   crop (editor)             an app setting the crop of a run depends on changed (a node parameter, the API size);
     //                             once per open editor, the document itself unchanged
+    //   realism ()                what the Realism Pass shows may have changed: the server's status, its node list,
+    //                             settings.realism (a refused model preset's fallback included)
 
     on(type, fn) {
         if (!this._listeners.has(type)) this._listeners.set(type, new Set());
@@ -928,6 +934,7 @@ export const host = {
         api.clientId = await window.scumble.comfy.clientId();
         try { await this.loadObjectInfo(); } catch (err) { console.warn(err); this.objectInfo = null; this._types = {}; }
         this.connected = true;
+        this.emit("realism");   // the pass's check reads the node list
         for (const ed of this._editors) {
             // Uploads are cached per hash; a (possibly different) server may not have them.
             // The mirror re-uploads what a run needs (ensureOnServer), the reset only makes
@@ -1521,6 +1528,9 @@ export const host = {
     async runProvider(editor, opts = {}) {
         const r = this.recipe;
         if (!editor.base) throw new Error("Load an image first.");
+        // one run per document: a second token would take the slot, and its end would clear it under the first (a Realism
+        // Pass, an upscale), which then reads as idle (busy(), Close without asking, turnBlocked)
+        if (editor.providerPending) throw new Error(RUN_GOING);
         const label = r.providerLabel || r.provider;
         if (r.edit === false) throw new Error(`${r.name || r.id} on ${label} makes images from the prompt alone: use "Generate new", not Generate.`);
         // the prompt and the references of the click; a token that cannot go refuses before anything is made
@@ -1590,34 +1600,40 @@ export const host = {
             res = await providerEdit(request, token);
             editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
             editor.lastRunNotes = [...preNotes, ...(res.notes || [])];
+        } catch (err) {
+            this.endRun(editor, token);
+            throw err;
         } finally {
-            if (editor.providerPending === token) editor.providerPending = null;
-            this._providerRuns.delete(token);
-            this.notifyProviderRuns();
+            this.endRunRow(token);
         }
-        // an adapter that knows its answer covers the crop exactly (Magnific's preset shapes, Image Expand) says so
-        if (res && res.info && res.info.fit === "stretch") info.fit = "stretch";
-        // the answer decoded and stitched in the stitch worker, the region (for a colour match) from the tile workers
-        const fin = await finishResultAsync(editor, info, sel, res.bytes, res.mime);
-        const { blob, align } = fin;
-        const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
-        const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
-        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
-        const cutout = info.keepAlpha ? fin.cutout : false;
-        await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res) }]);
-        // addResults writes its own line, so the cut-out note, the names the references went as and what the route left
-        // out go on afterwards
-        if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`);
-        const sentAs = named.pairs.map((p) => {
-            const got = (res.refs || []).find((x) => x.ref === p.ref);
-            return got ? `${p.label} → ${got.name}` : null;
-        }).filter(Boolean);
-        if (sentAs.length) editor.setStatus(`${editor.status} Named in the prompt: ${sentAs.join(", ")}.`);
-        const sentBoxes = res.boxes > 0 ? Math.floor(res.boxes) : 0;
-        editor.lastSentBoxes = sentBoxes;
-        if (sentBoxes) editor.setStatus(`${editor.status} Sent with ${sentBoxes} box${sentBoxes === 1 ? "" : "es"}.`);
-        if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`);
-        return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout, prompt: editor.lastSentPrompt, refs: res.refs || [], pairs: named.pairs, notes: editor.lastRunNotes, info: res.info || null, boxes: sentBoxes };
+        // the document stays held until the result has landed (endRun)
+        try {
+            // an adapter that knows its answer covers the crop exactly (Magnific's preset shapes, Image Expand) says so
+            if (res && res.info && res.info.fit === "stretch") info.fit = "stretch";
+            // the answer decoded and stitched in the stitch worker, the region (for a colour match) from the tile workers
+            const fin = await finishResultAsync(editor, info, sel, res.bytes, res.mime);
+            const { blob, align } = fin;
+            const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+            const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
+            editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
+            const cutout = info.keepAlpha ? fin.cutout : false;
+            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res) }]);
+            // addResults writes its own line, so the cut-out note, the names the references went as and what the route
+            // left out go on afterwards
+            if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`);
+            const sentAs = named.pairs.map((p) => {
+                const got = (res.refs || []).find((x) => x.ref === p.ref);
+                return got ? `${p.label} → ${got.name}` : null;
+            }).filter(Boolean);
+            if (sentAs.length) editor.setStatus(`${editor.status} Named in the prompt: ${sentAs.join(", ")}.`);
+            const sentBoxes = res.boxes > 0 ? Math.floor(res.boxes) : 0;
+            editor.lastSentBoxes = sentBoxes;
+            if (sentBoxes) editor.setStatus(`${editor.status} Sent with ${sentBoxes} box${sentBoxes === 1 ? "" : "es"}.`);
+            if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`);
+            return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout, prompt: editor.lastSentPrompt, refs: res.refs || [], pairs: named.pairs, notes: editor.lastRunNotes, info: res.info || null, boxes: sentBoxes };
+        } finally {
+            this.endRun(editor, token);
+        }
     },
 
     /**
@@ -1649,6 +1665,7 @@ export const host = {
         const r = this.recipe;
         if (!r || r.kind !== "provider" || r.task !== "upscale") throw new Error("Pick an upscale recipe first (Upscale shows them).");
         if (!editor.base) throw new Error("Load an image first.");
+        if (editor.providerPending) throw new Error(RUN_GOING);   // as runProvider
         const scope = opts.scope === "document" ? "document" : "selection";
         const label = r.providerLabel || r.provider;
         const factor = this.upscaleFactorFor(r, opts.factor);
@@ -1699,39 +1716,46 @@ export const host = {
                 editor.setStatus(`Upscaling the picture ${W} × ${H} by ${by} on ${label} ...${slow}`);
             }
             res = await providerEdit(request, token);
+        } catch (err) {
+            this.endRun(editor, token);
+            throw err;
         } finally {
-            if (editor.providerPending === token) editor.providerPending = null;
-            this._providerRuns.delete(token);
-            this.notifyProviderRuns();
+            this.endRunRow(token);
         }
-        if (scope === "selection") {
-            const info = prep.info;
-            const [x, y, w, h] = info.bbox;
-            const fin = await finishResultAsync(editor, info, prep.sel, res.bytes, res.mime);
-            const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
-            const ref = await this.uploadResult(fin.blob, `n${editor.node.id}_upscale_${stamp}.png`);
-            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res) }]);
-            const got = res.info && res.info.width ? ` (${res.info.width} × ${res.info.height} came back)` : "";
-            editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.${texts.note ? " " + texts.note : ""}`);
-            return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null, note: texts.note };
+        // the document stays held until the answer has landed (endRun); the whole picture's resize lets its own landing
+        // through (resizeImageNow's `base`)
+        try {
+            if (scope === "selection") {
+                const info = prep.info;
+                const [x, y, w, h] = info.bbox;
+                const fin = await finishResultAsync(editor, info, prep.sel, res.bytes, res.mime);
+                const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+                const ref = await this.uploadResult(fin.blob, `n${editor.node.id}_upscale_${stamp}.png`);
+                await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res) }]);
+                const got = res.info && res.info.width ? ` (${res.info.width} × ${res.info.height} came back)` : "";
+                editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.${texts.note ? " " + texts.note : ""}`);
+                return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null, note: texts.note };
+            }
+            // the whole picture: the answer at its own size, stretched to the document's aspect if the model rounded
+            const img = await bytesToImage(res.bytes, res.mime);
+            const aw = img.naturalWidth || img.width, ah = img.naturalHeight || img.height;
+            if (!(aw > 0 && ah > 0)) throw new Error(`${label} answered with an empty picture.`);
+            const nw = aw, nh = Math.max(1, Math.round(H * aw / W));
+            if (nw === W && nh === H) throw new Error(`${label} answered at the picture's own size (${aw} × ${ah}); nothing to do.`);
+            const nb = document.createElement("canvas");
+            nb.width = nw; nb.height = nh;
+            const nctx = nb.getContext("2d");
+            nctx.imageSmoothingEnabled = true;
+            nctx.imageSmoothingQuality = "high";
+            nctx.drawImage(img, 0, 0, nw, nh);
+            await editor.resizeImage(nw, nh, { base: nb });
+            nb.width = nb.height = 0;
+            if (editor.width !== nw || editor.height !== nh) throw new Error(editor.status || "the upscaled picture could not be taken");
+            editor.setStatus(`${label} upscaled the picture in ${Math.round(res.seconds)} s: ${W} × ${H} is now ${nw} × ${nh}, every layer scaled along (Ctrl+Z takes it back).${texts.note ? " " + texts.note : ""}`);
+            return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: nw, height: nh, answered: [aw, ah], info: res.info || null, note: texts.note };
+        } finally {
+            this.endRun(editor, token);
         }
-        // the whole picture: the answer at its own size, stretched to the document's aspect if the model rounded
-        const img = await bytesToImage(res.bytes, res.mime);
-        const aw = img.naturalWidth || img.width, ah = img.naturalHeight || img.height;
-        if (!(aw > 0 && ah > 0)) throw new Error(`${label} answered with an empty picture.`);
-        const nw = aw, nh = Math.max(1, Math.round(H * aw / W));
-        if (nw === W && nh === H) throw new Error(`${label} answered at the picture's own size (${aw} × ${ah}); nothing to do.`);
-        const nb = document.createElement("canvas");
-        nb.width = nw; nb.height = nh;
-        const nctx = nb.getContext("2d");
-        nctx.imageSmoothingEnabled = true;
-        nctx.imageSmoothingQuality = "high";
-        nctx.drawImage(img, 0, 0, nw, nh);
-        await editor.resizeImage(nw, nh, { base: nb });
-        nb.width = nb.height = 0;
-        if (editor.width !== nw || editor.height !== nh) throw new Error(editor.status || "the upscaled picture could not be taken");
-        editor.setStatus(`${label} upscaled the picture in ${Math.round(res.seconds)} s: ${W} × ${H} is now ${nw} × ${nh}, every layer scaled along (Ctrl+Z takes it back).${texts.note ? " " + texts.note : ""}`);
-        return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: nw, height: nh, answered: [aw, ah], info: res.info || null, note: texts.note };
     },
 
     /** The Upscale button in the editor's top bar, next to Generate new (the app's, so the node's host needs none). */
@@ -1765,10 +1789,8 @@ export const host = {
         if (!t || !t.model) throw new Error(`${r.providerLabel || r.provider} cannot make an image from the prompt alone for this model.`);
         const label = r.providerLabel || r.provider;
         // the answer replaces the base: not while a job would land in the picture it replaces
-        if (editor._localRuns && editor._localRuns.size) throw new Error("A render on your ComfyUI is still running: its result would land in the picture Generate new replaces. Try again when it is in.");
-        if (editor.providerPending || editor.segmentPending || editor.cutoutPending || editor.objectsPending || editor._pointPending || editor._loading || editor._docSaving) {
-            throw new Error("Wait for the running job to finish: it would land in the picture Generate new replaces.");
-        }
+        const blocked = this.generateNewBlocked(editor);
+        if (blocked) throw new Error(blocked);
         const width = Math.max(64, Math.round(opts.width || editor.width || 1024));
         const height = Math.max(64, Math.round(opts.height || editor.height || 1024));
         // the prompt and the references of the click; a token that cannot go refuses before anything is sent
@@ -1830,18 +1852,25 @@ export const host = {
                 boxes,
             };
             res = await providerEdit(request, token);
+        } catch (err) {
+            this.endRun(editor, token);
+            throw err;
         } finally {
-            if (editor.providerPending === token) editor.providerPending = null;
-            this._providerRuns.delete(token);
-            this.notifyProviderRuns();
+            this.endRunRow(token);
         }
-        const img = await bytesToImage(res.bytes, res.mime);
-        const c = document.createElement("canvas");
-        c.width = img.naturalWidth || img.width;
-        c.height = img.naturalHeight || img.height;
-        c.getContext("2d").drawImage(img, 0, 0);
-        // the reference layers stay (they name what the prompt refers to), every other layer goes with the old base
-        const swap = await editor.setBaseFromCanvas(c, { keepRefs: true });
+        // the document stays held until the new base is in (endRun)
+        let c, swap;
+        try {
+            const img = await bytesToImage(res.bytes, res.mime);
+            c = document.createElement("canvas");
+            c.width = img.naturalWidth || img.width;
+            c.height = img.naturalHeight || img.height;
+            c.getContext("2d").drawImage(img, 0, 0);
+            // the reference layers stay (they name what the prompt refers to), every other layer goes with the old base
+            swap = await editor.setBaseFromCanvas(c, { keepRefs: true });
+        } finally {
+            this.endRun(editor, token);
+        }
         const gotAlpha = cutout && transparentPixels(c);
         const notes = [...preNotes, ...(res.notes || [])];
         const sentAs = named.pairs.map((p) => {
@@ -1999,6 +2028,33 @@ export const host = {
         for (const t of runs) t.cancelled = true;
         for (const t of runs) if (t.runId && window.scumble && window.scumble.providers && window.scumble.providers.cancel) window.scumble.providers.cancel(t.runId).catch(() => {});
         return runs.length;
+    },
+
+    /** A run's answer is in (or it failed): its timer and Cancel leave the title row. */
+    endRunRow(token) {
+        if (this._providerRuns.delete(token)) this.notifyProviderRuns();
+    },
+
+    /**
+     * A run is over: the document's slot (`providerPending`) is given back. An API run holds it past its answer until
+     * the result has landed, so a second run, a turn or a Realism Pass started meanwhile does not read or land in the
+     * picture before it.
+     */
+    endRun(editor, token) {
+        if (editor.providerPending === token) editor.providerPending = null;
+        this.endRunRow(token);
+    },
+
+    /**
+     * Why Generate new cannot replace the document's picture now (a job would land in the picture it replaces), or "".
+     * The API route (runGenerate) and the local one (the generate_new command, before its newCanvas) both ask it.
+     */
+    generateNewBlocked(editor) {
+        if (editor._localRuns && editor._localRuns.size) return "A render on your ComfyUI is still running: its result would land in the picture Generate new replaces. Try again when it is in.";
+        if (editor.providerPending || editor.segmentPending || editor.cutoutPending || editor.objectsPending || editor._pointPending || editor._loading || editor._docSaving) {
+            return "Wait for the running job to finish: it would land in the picture Generate new replaces.";
+        }
+        return "";
     },
 
     notifyProviderRuns() {
@@ -2249,6 +2305,7 @@ export const host = {
     async setRealismValues(patch) {
         const next = realism.fillValues({ ...this.realismValues(), ...(patch || {}) });
         this.realismStored = next;
+        this.emit("realism");
         try { await window.scumble.settings.set({ realism: next }); } catch (err) { console.warn("settings.realism not saved", err); }
         return next;
     },
@@ -2367,9 +2424,8 @@ export const host = {
         if (!editor.base || !editor.width || !editor.height) throw say(`${L}: load an image first.`);
         // the size before anything is read: a 15k document is refused without its flatten
         const W = editor.width, H = editor.height;
-        const { w2, h2 } = realism.evenPlan(W, H);
-        const size = realism.fits(w2, h2);
-        if (size) throw say(size.replace(`${w2} × ${h2}`, `${W} × ${H}`));
+        const size = realism.wholeRefusal(W, H);
+        if (size) throw say(size);
         const token = { provider: "comfyui", label: L, started: Date.now(), editor };
         editor.providerPending = token;
         this._providerRuns.add(token);
@@ -2449,9 +2505,7 @@ export const host = {
             throw say(err && err.hint ? String(err.hint) : msg.startsWith(L) ? msg : `${L}: ${msg}`);
         } finally {
             offRemoved();
-            if (editor.providerPending === token) editor.providerPending = null;
-            this._providerRuns.delete(token);
-            this.notifyProviderRuns();
+            this.endRun(editor, token);
         }
     },
 

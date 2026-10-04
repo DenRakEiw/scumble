@@ -207,7 +207,8 @@ await wait(60);
 const dlg = document.getElementById("up-dialog");
 if (!dlg.open) throw new Error("the dialog did not open");
 const recs = Array.from(document.getElementById("up-recipe").options).map((o) => o.value);
-if (recs.length !== 10) throw new Error("the dialog lists " + recs.length + " recipes: " + recs.join(", "));
+// the ten upscale recipes and the Realism Pass (task "pass", R3b)
+if (recs.length !== 11 || !recs.includes("realism_pass")) throw new Error("the dialog lists " + recs.length + " recipes: " + recs.join(", "));
 if (document.getElementById("up-recipe").value !== "topaz_precision") throw new Error("the selected upscale recipe is not preselected");
 if (!document.getElementById("up-scope-sel").checked) throw new Error("with a selection the dialog does not start on it");
 const pick = (id) => { const s = document.getElementById("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); };
@@ -396,6 +397,146 @@ try {
     if (document.getElementById("up-dialog").open) document.getElementById("up-cancel").click();
     await run("set_crop", { doc: window.__u, fill: saved.crop.fill || "none", withOriginal: !!saved.crop.withOriginal });
     if (ref) { try { await run("remove_layer", { doc: window.__u, layer: ref.id }); } catch (_) { /* gone */ } }
+}
+"""),
+    # docs/PLAN_0_1_42.md R3b: the Realism Pass entry. 1x only, the whole picture only (the selection greyed with its
+    # reason, usable again for the next entry), its Style / Strength / Preset row writing settings.realism whole, the
+    # note and a greyed Upscale for a server or a size that refuses it, Upscale running realism_pass (host.realismWhole
+    # stubbed: nothing is read or sent) without selecting the recipe, and the Image menu's item opening it chosen
+    ("the_realism_pass_entry", """
+const ed = ednow(window.__u);
+const LABEL = "Realism Pass (Windows only, RTX only)";
+const shell = await import("./shell.js");
+const $ = (id) => document.getElementById(id);
+const pick = (id) => { const s = $("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); };
+const resync = () => $("up-scope-doc").dispatchEvent(new Event("change"));
+const nodeInfo = () => ({ input: { required: {} } });
+const OI = { InpaintCanvas: nodeInfo(), InpaintCanvasLoadRef: nodeInfo(), ImageFromBatch: nodeInfo(), DLSS5Settings: nodeInfo(), DLSS5EnhanceImages: nodeInfo() };
+const GOOD = { state: "connected", os: "win32", gpus: ["cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync"], url: "http://127.0.0.1:8188", version: "0.38.0" };
+const saved = { connected: host.connected, objectInfo: host.objectInfo, server: { ...(host.server || {}) }, realism: host.realismStored, whole: host.realismWhole, stored: (await window.scumble.settings.get()).realism, upscaleRecipe: (await window.scumble.settings.get()).upscaleRecipe, run: commands.run };
+const recipe0 = host.recipe;
+const seen = [];
+const out = {};
+try {
+    host.connected = true; host.objectInfo = OI; host.setServerStatus(GOOD);
+    await run("select_rect", { doc: window.__u, x: 20, y: 20, w: 100, h: 80 });
+    host.shell.openUpscale(ed);
+    if (!$("up-dialog").open) throw new Error("the dialog did not open");
+    const recs = Array.from($("up-recipe").options).map((o) => [o.value, o.textContent]);
+    const entry = recs.find(([id]) => id === "realism_pass");
+    if (!entry || entry[1] !== LABEL) throw new Error("the pass entry: " + JSON.stringify(entry));
+    if (!$("up-scope-sel").checked || !$("up-pass-row").hidden) throw new Error("before the pass: the selection is not chosen, or the pass row shows");
+    // an upscaler with a prompt row and a factor other than its default before the pass: the pass hides the row itself,
+    // and the upscaler shown after it keeps its own factor, not the pass's 1x
+    pick("clarity_upscaler");
+    if ($("up-prompt-row").hidden) throw new Error("the prompt row does not show for an upscaler that takes one");
+    pick("topaz_precision");
+    const topazFactors = Array.from($("up-factor").options).map((o) => +o.value);
+    const topazPick = Math.max(...topazFactors);
+    if (!(topazPick > 1) || topazPick === +$("up-factor").value) throw new Error("Topaz Precision's factors: " + topazFactors + " (shown " + $("up-factor").value + ")");
+    $("up-factor").value = String(topazPick);
+    $("up-factor").dispatchEvent(new Event("change"));
+    pick("clarity_upscaler");
+    pick("realism_pass");
+    // 1x only, the whole picture only, no provider and no prompt, the pass row
+    const factors = Array.from($("up-factor").options).map((o) => [o.value, o.textContent]);
+    if (JSON.stringify(factors) !== JSON.stringify([["1", "1× (refine)"]]) || $("up-factor-row").hidden) throw new Error("the factors: " + JSON.stringify(factors));
+    const selLabel = $("up-scope-sel").parentElement;
+    if (!$("up-scope-sel").disabled || !$("up-scope-doc").checked || $("up-scope-doc").disabled || selLabel.title !== LABEL + " runs over the whole picture.") throw new Error("the scope: " + JSON.stringify({ sel: $("up-scope-sel").disabled, doc: $("up-scope-doc").checked, title: selLabel.title }));
+    if (!$("up-provider-row").hidden || !$("up-prompt-row").hidden || $("up-pass-row").hidden) throw new Error("the rows: " + JSON.stringify({ provider: $("up-provider-row").hidden, prompt: $("up-prompt-row").hidden, pass: $("up-pass-row").hidden }));
+    if ($("up-go").disabled || !/^640 × 480 goes out at 1× and comes back as a new layer above the picture/.test($("up-size-note").textContent) || !$("up-note").textContent.startsWith("DLSS 5 Neural Rendering over the whole visible picture")) throw new Error("ready: " + $("up-note").textContent + " / " + $("up-size-note").textContent);
+    out.ready = $("up-size-note").textContent.slice(0, 80);
+    // the row shows settings.realism as it is (a refused preset's fallback, Default, included)
+    host.realismStored = { style: "Natural", intensity: 0.4, preset: "Default", timeout: 120 };
+    resync();
+    if ($("up-pass-style").value !== "Natural" || +$("up-pass-strength").value !== 0.4 || $("up-pass-strength-v").textContent !== "0.40" || $("up-pass-preset").value !== "Default") throw new Error("the row: " + JSON.stringify({ style: $("up-pass-style").value, strength: $("up-pass-strength").value, preset: $("up-pass-preset").value }));
+    const styles = Array.from($("up-pass-style").options).map((o) => o.value), presets = Array.from($("up-pass-preset").options).map((o) => o.value);
+    if (styles.join() !== "Default,Natural,Cinematic" || presets.join() !== "Default,J,K,L,M") throw new Error("the options: " + styles + " / " + presets);
+    // each control writes settings.realism whole: the stored object holds all four keys after every change
+    const stored = async () => (await window.scumble.settings.get()).realism;
+    const set = async (el, value) => { el.value = value; el.dispatchEvent(new Event("change")); for (let k = 0; k < 20; k++) { await wait(50); } };
+    await set($("up-pass-style"), "Cinematic");
+    let s = await stored();
+    if (JSON.stringify(s) !== JSON.stringify({ style: "Cinematic", intensity: 0.4, preset: "Default", timeout: 120 })) throw new Error("after Style: " + JSON.stringify(s));
+    $("up-pass-strength").value = "0.65";
+    $("up-pass-strength").dispatchEvent(new Event("input"));
+    if ($("up-pass-strength-v").textContent !== "0.65") throw new Error("the strength's value: " + $("up-pass-strength-v").textContent);
+    await set($("up-pass-strength"), "0.65");
+    s = await stored();
+    if (JSON.stringify(s) !== JSON.stringify({ style: "Cinematic", intensity: 0.65, preset: "Default", timeout: 120 })) throw new Error("after Strength: " + JSON.stringify(s));
+    // the preset set back after a fallback
+    await set($("up-pass-preset"), "L");
+    s = await stored();
+    if (JSON.stringify(s) !== JSON.stringify({ style: "Cinematic", intensity: 0.65, preset: "L", timeout: 120 }) || host.realismValues().preset !== "L") throw new Error("after Preset: " + JSON.stringify(s));
+    out.stored = s;
+    // a server that cannot: the reason in the note, Upscale greyed; the open dialog follows the status by itself
+    host.setServerStatus({ ...GOOD, os: "linux" });
+    if (!$("up-go").disabled || $("up-note").textContent !== LABEL + " runs only on a ComfyUI on Windows; this one runs on linux.") throw new Error("linux: " + $("up-note").textContent);
+    out.linux = $("up-note").textContent;
+    host.setServerStatus({ state: "disconnected" });
+    if (!$("up-go").disabled || !$("up-note").textContent.startsWith(LABEL + " needs your own ComfyUI")) throw new Error("not connected: " + $("up-note").textContent);
+    host.setServerStatus(GOOD);
+    if ($("up-go").disabled) throw new Error("Upscale stays greyed after the server came back: " + $("up-note").textContent);
+    // a preset written behind the dialog (a refused preset's fallback) shows in it at once
+    await host.setRealismValues({ preset: "M" });
+    if ($("up-pass-preset").value !== "M") throw new Error("the preset written behind the dialog: " + $("up-pass-preset").value);
+    await set($("up-pass-preset"), "L");
+    // a picture past the cap: the size note says so, Upscale greyed
+    const w0 = ed.width, h0 = ed.height;
+    ed.width = 7681; ed.height = 100;
+    resync();
+    const capNote = $("up-size-note").textContent, capGo = $("up-go").disabled;
+    ed.width = w0; ed.height = h0;
+    if (!capGo || capNote !== LABEL + " takes at most 7680 × 4320 (long × short side); this is 7681 × 100.") throw new Error("past the cap: " + capNote);
+    out.cap = capNote;
+    resync();
+    if ($("up-go").disabled) throw new Error("Upscale stays greyed after the size came back: " + $("up-size-note").textContent);
+    // another entry: the selection usable again and chosen as before the pass, the pass row gone, the factor its own
+    pick("topaz_precision");
+    if ($("up-scope-sel").disabled || !$("up-scope-sel").checked || selLabel.title || !$("up-pass-row").hidden) throw new Error("after the pass: " + JSON.stringify({ disabled: $("up-scope-sel").disabled, checked: $("up-scope-sel").checked, title: selLabel.title, row: $("up-pass-row").hidden }));
+    if (+$("up-factor").value !== topazPick) throw new Error("the upscaler after the pass shows " + $("up-factor").value + "x, not its " + topazPick + "x");
+    pick("upscale_model_local");
+    if ($("up-scope-sel").disabled || !$("up-pass-row").hidden) throw new Error("a ComfyUI upscaler after the pass");
+    // Upscale runs realism_pass on this document, with the dialog's long timeout; the window's recipe stays
+    pick("realism_pass");
+    const calls = [];
+    host.realismWhole = async (e, o) => { calls.push({ e, o, at: Date.now() }); e.setStatus("stubbed pass"); return { layer: null, seconds: 0, note: "", changed: false }; };
+    commands.run = async (n, a) => { seen.push({ n, a }); return saved.run.call(commands, n, a); };
+    $("up-go").click();
+    for (let k = 0; k < 100 && !calls.length; k++) await wait(50);
+    if (calls.length !== 1 || calls[0].e !== ed) throw new Error("the pass did not run on this document: " + calls.length);
+    const left = calls[0].o.deadline - calls[0].at;
+    if (!(left > 1790000 && left <= 1800000)) throw new Error("the deadline: " + left + " ms");
+    const ran = seen.filter((x) => x.n === "realism_pass" || x.n === "upscale");
+    if (ran.length !== 1 || ran[0].n !== "realism_pass" || JSON.stringify(ran[0].a) !== JSON.stringify({ doc: window.__u, timeout: 1800 })) throw new Error("the command: " + JSON.stringify(ran));
+    if ($("up-dialog").open) throw new Error("the dialog stayed open");
+    if (host.recipe !== recipe0) throw new Error("the pass selected a recipe: " + (host.recipe && host.recipe.id));
+    if ((await window.scumble.settings.get()).upscaleRecipe !== saved.upscaleRecipe) throw new Error("the pass was remembered as the upscaler");
+    out.deadline = left;
+    // the Image menu's item: the dialog with the pass chosen and its one factor, whatever the window's upscaler is; the
+    // upscaler's dialog opened afterwards shows its own factor, not the pass's 1x
+    host.shell.selectRecipe("topaz_precision");
+    shell.menuCommand("realism-pass");
+    await wait(60);
+    const menuFactors = JSON.stringify(Array.from($("up-factor").options).map((o) => [o.value, o.textContent]));
+    if (!$("up-dialog").open || $("up-recipe").value !== "realism_pass" || $("up-pass-row").hidden || !$("up-scope-sel").disabled || menuFactors !== JSON.stringify([["1", "1× (refine)"]]) || $("up-factor-row").hidden) throw new Error("the menu item: " + JSON.stringify({ open: $("up-dialog").open, value: $("up-recipe").value, factors: menuFactors }));
+    $("up-cancel").click();
+    await wait(60);
+    host.shell.openUpscale(ed);
+    if ($("up-recipe").value !== "topaz_precision" || +$("up-factor").value !== topazPick) throw new Error("the next Upscale after the pass: " + $("up-recipe").value + " at " + $("up-factor").value + "x");
+    $("up-cancel").click();
+    await wait(60);
+    return out;
+} finally {
+    commands.run = saved.run;
+    host.realismWhole = saved.whole;
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo;
+    host.setServerStatus({ state: saved.server.state || "disconnected", os: saved.server.os || "", gpus: saved.server.gpus || [], remote: !!saved.server.remote, url: saved.server.url || "", version: saved.server.version || "" });
+    if (saved.stored && typeof saved.stored === "object") await window.scumble.settings.set({ realism: saved.stored });
+    host.realismStored = saved.realism;
+    if ($("up-dialog").open) $("up-cancel").click();
+    // the window's recipe as the step found it (the menu part selected an upscaler)
+    if (recipe0 && (!host.recipe || host.recipe.id !== recipe0.id)) host.shell.selectRecipe(recipe0.id);
 }
 """),
     ("cleanup", """

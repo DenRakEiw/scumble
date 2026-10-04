@@ -47,7 +47,10 @@ out like an upscale's (at its own size, `target_size` 0, no fill, no Original, n
 `multiple_of` 2: DLSS needs even sides only, and a larger multiple would shrink a whole-picture crop and leave a border
 without the pass) and comes back at the same size. A `pass` recipe has no *Cloud copy* (`detach` refuses it:
 the pass runs on the user's own ComfyUI only), is not offered by Generate new, and `list_recipes` reports it with
-`task: "pass"`, mode `local`. Any other task is read as `edit`.
+`task: "pass"`, mode `local`. The *Upscale* dialog lists a `pass` recipe as its Realism Pass entry (`docs/PLAN_0_1_42.md`
+R3b): that entry does not run the recipe's graph and selects no recipe, it runs the `realism_pass` command
+(`host.realismWhole`: the whole visible picture at 1x through a prompt of its own, `realism.passPrompt`, which takes the
+recipe's `DLSS5Settings` inputs, and a new layer above the picture). Any other task is read as `edit`.
 
 ### The shipped ComfyUI recipes
 
@@ -95,7 +98,7 @@ the pass runs on the user's own ComfyUI only), is not offered by Generate new, a
   its runtime; Scumble ships none of it. The prompt holds the user's own template (1x DLAA, model preset L, the pack's
   other defaults pinned), the one Settings row is *DLSS model preset* (with its `spec`, so it shows unconnected) with
   the shipped presets L and M. Style and Strength come from `settings.realism` (app-wide; the Upscale dialog's Realism
-  Pass row, R3b), written into every `DLSS5Settings` node. Before anything is uploaded the run checks the server
+  Pass row, which also holds the whole-picture pass's own model preset), written into every `DLSS5Settings` node. Before anything is uploaded the run checks the server
   (`/system_stats` os and devices, `/object_info`): no Windows, CUDA devices none of which is an RTX 30 / 40 / 50 by
   the pack's name rule, or the pack's nodes missing refuse with the reason (a server that reports no os or no CUDA
   device is left to the pack's own check); an RTX 30 runs with a note (the pack needs its experimental Ampere runtime

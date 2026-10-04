@@ -2,7 +2,7 @@
   "id": "realism_pass",
   "name": "Realism Pass (Windows only, RTX only)",
   "task": "pass",
-  "description": "DLSS 5 Neural Rendering on the selection's box, on your own ComfyUI: generated skin, hair and fabric look less waxy. Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the community node pack ComfyUI-DLSS5-Enhancer with its runtime, which you install there yourself (Help › Manual › Realism Pass (Windows only, RTX only)); Scumble ships none of it. The box goes out at its own size, without a fill or the reference layers, and comes back as a layer over it. Preset L or M picks the DLSS model; style and strength: the row Realism Pass (Windows only, RTX only) in the Generate pane.",
+  "description": "DLSS 5 Neural Rendering on your own ComfyUI: generated skin, hair and fabric look less waxy. With this recipe, Generate runs it on the selection's box: the box goes out at its own size, without a fill or the reference layers, and comes back as a layer over it. Over the whole picture it runs from Upscale › Realism Pass (Windows only, RTX only), which adds a new layer above the picture. Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the community node pack ComfyUI-DLSS5-Enhancer with its runtime, which you install there yourself (Help › Manual › Realism Pass (Windows only, RTX only)); Scumble ships none of it. Preset L or M picks the DLSS model of the box; Style and Strength, for both: the Realism Pass row of the Upscale dialog.",
   "mode": "local",
   "canvas": "canvas",
   "result": "rp_enhance:0",

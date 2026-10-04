@@ -1121,6 +1121,106 @@ try {
     if (refused !== "a run is still going on this document" || T.queued.length || ed.layers.length !== n0) throw new Error("a second run: " + (refused || "not refused"));
     return { deadline: { ms: ms1, message: e1.message }, refused };
 """ + R3A_END),
+    # R3b (a finding of R3a's review): while a pass holds the document, an API Generate (the button's path) and an API
+    # upscale (the selection, the whole picture, Generate with an upscale recipe) refuse instead of taking its slot,
+    # whose end used to clear it under the pass (which then read as idle); the pass keeps its token and lands, and an
+    # API Generate runs again after it
+    ("an_api_run_during_a_pass_is_refused", R2A_STUBS + R3A_PRE + r"""
+try {
+    stubR3a();
+    const ed = await scene();
+    const LOOP_UP = { id: "loopback_rp_up", kind: "provider", task: "upscale", provider: "loopback", providerLabel: "Loopback", model: "loopback", name: "Loopback upscale",
+        factor: { default: 2, min: 1, max: 4, steps: null, fixed: false }, limits: { min: 32, max: 4096, step: 1, pixels: 0, minPixels: 0, ratio: 0 }, settings: [], usesPrompt: false, input: "fill" };
+    await run("select_rect", { doc, x: 40, y: 40, w: 100, h: 80 });
+    const RG = "A run is still going on this document: wait for it, or Cancel.";
+    const n0 = ed.layers.length;
+    let during = null;
+    T.onQueued = (id, body) => (async () => {
+        const token = ed.providerPending;
+        const tries = {};
+        host.setRecipe(LOOP);
+        const g = await ed.generate();
+        tries.generate = g && g.error ? g.error.message : "ran";
+        tries.status = ed.status;
+        host.setRecipe(LOOP_UP);
+        const msg = (p) => p.then(() => "ran", (e) => String((e && e.message) || e));
+        tries.upscaleSelection = await msg(host.runUpscale(ed, { scope: "selection" }));
+        tries.upscaleDocument = await msg(host.runUpscale(ed, { scope: "document", factor: 2 }));
+        tries.generateUpscale = await msg(host.queueGenerate(ed));
+        tries.kept = !!token && ed.providerPending === token && host._providerRuns.has(token) && host._providerRuns.size === 1;
+        tries.busy = (await run("list_documents")).documents.find((d) => d.id === doc).busy;
+        tries.layers = ed.layers.length - n0;
+        during = tries;
+        answerWith([30, 200, 60])(id, body);
+    })().catch((e) => { T.err = e; fails(id, "the test's tries failed: " + String((e && e.message) || e)); });
+    const out = await host.realismWhole(ed);
+    if (T.err) throw T.err;
+    const ok = during && during.generate === RG && during.status === RG && during.upscaleSelection === RG && during.upscaleDocument === RG && during.generateUpscale === RG;
+    if (!ok || !during.kept || !during.busy || during.layers !== 0) throw new Error("during the pass: " + JSON.stringify(during));
+    if (!out.layer || ed.layers.length !== n0 + 1 || ed.width !== 320 || ed.height !== 240) throw new Error("after the pass: " + JSON.stringify({ layer: !!out.layer, layers: ed.layers.length - n0, size: [ed.width, ed.height] }));
+    if (ed.providerPending || host._providerRuns.size) throw new Error("the pass's run stays open");
+    host.setRecipe(LOOP);
+    const g2 = await run("generate", { doc, timeout: 60 });
+    if (!g2.layer || ed.layers.length !== n0 + 2) throw new Error("an API Generate after the pass: " + ed.status);
+    return { during, after: g2.layer.kind };
+""" + R3A_END),
+    # R3b (the review): an API run holds the document past its answer until its result has landed (Generate's result
+    # layer, the whole picture's resize, Generate new's base): the title row's timer is gone, but a Realism Pass or a
+    # second run started meanwhile is refused, so neither reads nor lands in the picture before it. A landing that
+    # fails gives the document back
+    ("an_api_run_holds_the_document_until_it_landed", R2A_STUBS + R3A_PRE + r"""
+const RG = "A run is still going on this document: wait for it, or Cancel.";
+let ed = null;
+const own = [];
+try {
+    stubR3a();
+    ed = await loopTab();
+    const LOOP_UP = { id: "loopback_rp_up", kind: "provider", task: "upscale", provider: "loopback", providerLabel: "Loopback", model: "loopback", name: "Loopback upscale",
+        factor: { default: 2, min: 1, max: 4, steps: null, fixed: false }, limits: { min: 32, max: 4096, step: 1, pixels: 0, minPixels: 0, ratio: 0 }, settings: [], usesPrompt: false, input: "fill" };
+    // what the document looks like from inside a landing: held, off the title row, and a pass or a second run refused
+    const inside = async () => ({
+        held: !!ed.providerPending, row: host._providerRuns.size,
+        busy: (await run("list_documents")).documents.find((d) => d.id === doc).busy,
+        pass: await host.realismWhole(ed).then(() => "ran", (e) => e.message),
+        again: await host.runProvider(ed).then(() => "ran", (e) => e.message),
+    });
+    const wrap = (name) => { const f = ed[name]; own.push(name); const seen = []; ed[name] = async function (...a) { seen.push(await inside()); return f.apply(this, a); }; return seen; };
+    const want = (seen, what) => {
+        const s = seen[0];
+        if (seen.length !== 1 || !s.held || s.row !== 0 || !s.busy || s.pass !== LABEL + ": a run is still going on this document." || s.again !== RG) throw new Error(what + ": " + JSON.stringify(seen));
+        if (ed.providerPending || host._providerRuns.size) throw new Error(what + ": the document stays held after the landing");
+    };
+    // Generate (runProvider): the result layer lands while held
+    host.setRecipe(LOOP);
+    const s1 = wrap("addResults");
+    await host.runProvider(ed);
+    want(s1, "Generate");
+    // the whole picture's upscale (runUpscale): its resize lands while held
+    host.setRecipe(LOOP_UP);
+    const s2 = wrap("resizeImage");
+    await host.runUpscale(ed, { scope: "document", factor: 2 });
+    if (ed.width !== 640 || ed.height !== 480) throw new Error("the upscale did not land: " + ed.width + "x" + ed.height);
+    want(s2, "the whole picture's upscale");
+    // a landing that fails (an answer at the picture's own size) gives the document back
+    const e3 = await host.runUpscale(ed, { scope: "document", factor: 1 }).then(() => null, (e) => e);
+    if (!e3 || !/nothing to do/.test(e3.message) || ed.providerPending || host._providerRuns.size) throw new Error("a failed landing: " + JSON.stringify({ message: e3 && e3.message, held: !!ed.providerPending }));
+    // Generate new (runGenerate): the new base lands while held
+    host.setRecipe(LOOP);
+    const s4 = wrap("setBaseFromCanvas");
+    await host.runGenerate(ed, { width: 256, height: 192, prompt: "a lighthouse", seed: 5 });
+    if (ed.width !== 256 || ed.height !== 192) throw new Error("Generate new did not land: " + ed.width + "x" + ed.height);
+    want(s4, "Generate new");
+    if (T.queued.length) throw new Error(T.queued.length + " passes went to the server");
+    return { generate: s1[0], upscale: s2[0].held, generateNew: s4[0].held, failed: e3.message.slice(0, 60) };
+} finally {
+    if (ed) for (const n of own) delete ed[n];
+    T.onQueued = null;
+    host.onProviderRuns = onRuns0;
+    host.setRecipe(prevRecipe);
+    unstubAll();
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""),
 ]
 
 

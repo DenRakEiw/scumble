@@ -76,39 +76,45 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-04 night: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1, R2a, R2b and R3a built, next R3b)
+## Where things stand (2026-10-04 night: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1, R2a, R2b, R3a and R3b built, next R4)
 
-**Next session: R3b of `docs/PLAN_0_1_42.md`** (the Upscale dialog's Realism Pass entry at 1x, *Image › Realism Pass
-...*, the `realism_pass` command over `host.realismWhole`; the CHANGELOG line). Read the plan's §1 "The Realism Pass is a
-refiner", R3a's "As built" and R3b first; R3b's anchors are from 2026-10-04 evening, grep the names. **F2 is picked**:
+**Next session: R4 of `docs/PLAN_0_1_42.md`** (agents and the assistant: `realism_pass` in the assistant's policy,
+`RUNS`, an ASK row, `TIMEOUT_DEFAULTS` 1800, `undoStep` null; its layer among the owned ones; readiness in
+`list_recipes` / `status`; `docs/COMMANDS.md` regenerated, and with it the command counts in `docs/MCP.md` and the
+README, 80 core now). Read R3b's "As built" and R4 first; anchors drift, grep the names. **F2 is picked**:
 the 12 marked ✓ in `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-04 night, R3a of 0.1.42): Generate is never passed; the whole picture as a layer, unreleased.**
-Nothing new on screen yet (R3b adds the entry). Said to the user first, in one sentence: Generate and Generate new are
-never passed any more; the whole visible picture goes through DLSS 5 at 1x and lands as a new layer named
-`Realism Pass (Windows only, RTX only)` on top, under the top filter layers, no colour match, a second run stacks.
-- **R2b out**: `runProvider`, `runGenerate`, generate and generate_new are back to before R2b (kept: the "a run is
-  still going" refusal, "a landed layer is no failure", `comfyPictureRun`'s deadline, `passPicture`'s upload race);
-  `realismAfter`, `passAnswer`, `runDeadline` gone; comments that named the switch reworded.
-- **`realism.topFilterRun`** (where the read stops and the layer lands) and **`host.realismWhole(editor, { deadline })`**
-  (refusals before any read, the busy token like an upscale's, the read through the tile workers or a flatten,
-  `passPicture`, the layer stored like a result, one undo step, the move under the filter run as the stack is at the
-  landing, "the picture changed" note from a signature of the read, closing the tab or a Cancel at any point ends the
-  job and lands nothing). Readings taken beyond the plan, in its "As built": clipped filters and grouped layers end the
-  run, hidden non-filter layers are passed over, `_loading` refuses.
-- **Measured at 7680 × 4320** (a noisy photo, server stubbed, fresh instance): 2.3 s in Scumble, main thread blocked at
-  most 378 ms, JS heap +330 MB; not optimised. A warm instance took 7.7-8.5 s (the restart-before-benchmarks trap).
-- **Tests**: `tools/realism_test.js` §9c (423 checks), `tools/generate_test.py` `STEPS_R3A` (eight steps, R2b's six out),
-  both backends; gates `--offline`: `generate` both backends, `commands transparent upscale lint types` tiles: PASS.
-  Review: a workflow of four lenses plus a verifier per finding (15 agents): ten findings, five real and fixed (a Cancel
-  after the answer still landed the layer; the "changed" note fired for Compare redraws and the live filters; a hidden
-  layer on top stopped the filter run; the closed-tab test passed by the timeout; a stale comment), three test gaps
-  closed anyway, two mutations red; one is for R3b, written into its plan text (an API Generate during a pass clears
-  the pass's busy token, as it does an upscale's today). New: `SCUMBLE_GENERATE_ONLY=name,name` runs a subset of the
-  generate gate.
+**This session (2026-10-04 night, R3b of 0.1.42): the Realism Pass in the Upscale dialog, the Image menu and the
+`realism_pass` command, unreleased.** Said to the user first, in one sentence: Upscale (and *Image › Realism Pass
+(Windows only, RTX only)...*) offers the pass at 1× on the whole picture only, with Style / Strength / Preset, and lands
+R3a's layer; while a run holds a document a second API Generate or upscale on it is refused (local Generates queue).
+- **The dialog** (`renderer/shell.js` `upSyncPass`, `upFillPassRow`, `upFactorOptions`, `upLastFactor`,
+  `upScopeBeforePass`, the exported `menuCommand`): the entry selects no recipe, writes no `settings.upscaleRecipe` and
+  runs `realism_pass` with 1800 s; `realism.wholeRefusal` is shared with `realismWhole`; a host event `realism` (server
+  status, node list, `setRealismValues`) re-syncs the open dialog.
+- **One run per document**: `RUN_GOING` in `runProvider` / `runUpscale`; the API runs (`runGenerate` too) hold
+  `providerPending` until their result has landed (`endRunRow` when the answer is in, `endRun` after the landing);
+  `host.generateNewBlocked` refuses `generate_new` before its local route's `newCanvas` could wipe a busy document (an
+  older data-loss path the review found, common with a minutes-long pass).
+- **`realism_pass`**: `P.timeout(570)` (inside the bridge's own 600 s), answers `{ layer, seconds, notes, changed,
+  status }`. The assistant still asks for it ("not in the assistant's table") until R4.
+- **Tests**: `tools/realism_test.js` §9d (433 checks), `upscale` `the_realism_pass_entry` (11 entries), `commands`
+  `realism_pass`, `generate` `an_api_run_during_a_pass_is_refused` and `an_api_run_holds_the_document_until_it_landed`.
+  Gates `--offline` on tiles: `upscale commands generate transparent magnific oxen openrouter toapis ark help lint
+  types` ALL PASS (no pixel path changed, so no canvas run; no mutation round, Normal tier). Review: a workflow of four
+  lenses plus a verifier per finding (15 agents): eleven findings, nine real and fixed (the pass's 1× kept as the next
+  upscaler's factor; Generate new wiping a busy document; API runs giving the document back before their landing; the
+  dialog not following the server; the default deadline without margin; two CHANGELOG sentences; two test gaps), two
+  refuted. Details in the plan's R3b "As built".
+- **The user asked mid-session** whether a GitHub community setup makes sense (Discussions with Showcase / Ideas / Q&A /
+  Workflow recipes, a Now / Next / Later / Won't do roadmap, 3-5 good first issues, CONTRIBUTING / issue templates /
+  SECURITY, a pinned "Share your workflow" thread). Answered: yes to Discussions, the templates, CONTRIBUTING and
+  SECURITY, a small roadmap as one pinned issue or discussion without other products' names, kept with each release;
+  good first issues only if outside PRs are wanted; the pinned thread once Discussions are on and seeded. **Nothing
+  done, waiting for the user's pick** (outward-facing; its own section after a commit).
 - **Asked earlier, still waiting for the user's word:** the README for reach (a GIF, install buttons, a comparison
   table, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, how to post on Show HN (the
   comparison table names other products, the user's rule of 2026-09-29).
@@ -178,7 +184,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   and the portable zip (item 36): `docs/PLAN_0_1_42.md`; research in `docs/PLAN_RTX_VSR.md`'s last section. **R1 (the
   recipe, the server check, the hints, shipped presets L and M) built 2026-10-04**, not run live; R2a and R2b the
   same day; **redesigned that evening as a refiner** (the whole picture at 1x as a new layer, never a Generate result:
-  plan §1 "The Realism Pass is a refiner"); **R3a built the same night** (`host.realismWhole`, R2b's routes out), next R3b.
+  plan §1 "The Realism Pass is a refiner"); **R3a and R3b built the same night** (`host.realismWhole`; the Upscale entry, the Image menu, `realism_pass`), next R4.
 - 38: new commands for MCP agents (the user, 2026-10-04: "schau auch noch ob noch mehr commands in den mcp aufgenommen
   werden können"): 28 verified candidates in `docs/PLAN_MCP_COMMANDS.md`; **the user picked 12** (marked ✓) for 0.1.42,
   sessions F2a / F2b after the six fixes of F1 (all six picked from `docs/BUGS.md` the same day). The other 16 wait

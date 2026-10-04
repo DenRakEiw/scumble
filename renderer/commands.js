@@ -707,7 +707,11 @@ const COMMANDS = {
         async run(ed, a) {
             const r = host.recipe;
             if (!r) throw new Error("no recipe selected");
-            if (r.task === "pass") throw new Error(`${REALISM_LABEL} works on a picture: select an area and Generate (generate).`);
+            if (r.task === "pass") throw new Error(`${REALISM_LABEL} works on a picture: over the whole picture with Upscale › ${REALISM_LABEL} (realism_pass), or select an area and Generate (generate).`);
+            // before anything changes: the local route's newCanvas below would wipe the document (layers, history, undo)
+            // before the generate it runs refuses a busy one; the API route asks the same in runGenerate
+            const blocked = host.generateNewBlocked(ed);
+            if (blocked) throw new Error(blocked);
             let w = clampInt(a.width, 64, 8192, 1024), h = clampInt(a.height, 64, 8192, 1024);
             if (a.aspect) {
                 const [aw, ah] = sizeForAspect(a.aspect, clampInt(a.resolution, 64, 8192, 1024));
@@ -778,6 +782,26 @@ const COMMANDS = {
             const h = ed.history.length > n0 ? ed.history[ed.history.length - 1] : null;
             const layer = h ? ed.layers.find((l) => l.id === h.layerId) : null;
             return { scope, recipe: out.recipe, provider: out.provider, factor: out.factor, box: { x: out.x, y: out.y, w: out.w, h: out.h }, layer: layer ? layerSummary(ed, layer) : null, seconds: Math.round(out.seconds * 10) / 10, info: out.info, status: ed.status };
+        },
+    },
+    realism_pass: {
+        needsImage: true,
+        description: `${REALISM_LABEL}: the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once at its own size through DLSS 5 Neural Rendering at 1x on the user's own ComfyUI and comes back as a new layer named "${REALISM_LABEL}": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › ${REALISM_LABEL}). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, or the picture is past 7680 × 4320. Waits for the answer; \`timeout\` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was).`,
+        params: { timeout: P.timeout(570) },
+        async run(ed, a) {
+            // an epoch time in ms, comfyPictureRun's hard end (the queue's wait included): the job is taken off the
+            // server when it passes, so no race is needed here. Without `timeout` the bridge waits its own 600 s, counted
+            // from before this call: the default ends the pass 30 s inside it, room for the landing and the cancel, so an
+            // agent hears the pass's own sentence and no layer lands after the bridge gave up
+            const deadline = Date.now() + clampInt(a.timeout, 5, 3600, 570) * 1000;
+            const out = await host.realismWhole(ed, { deadline });
+            if (out.layer) ed.notifyChanged();
+            return {
+                layer: out.layer ? layerSummary(ed, out.layer) : null, seconds: Math.round((out.seconds || 0) * 10) / 10,
+                notes: out.note ? [out.note] : [], changed: !!out.changed,
+                // the tab was closed while the pass ran: the job was taken off the server, nothing was added
+                status: out.layer ? ed.status : "The document was closed while the pass ran; nothing was added.",
+            };
         },
     },
     generate: {

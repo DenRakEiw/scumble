@@ -365,6 +365,16 @@ export function topFilterRun(layers, isFill = () => false, skip = () => false) {
 }
 
 /**
+ * "" when the whole-picture pass takes a w × h document at 1x, else the refusal (§3.5) with the document's own size:
+ * the even size evenPlan pads it to is what goes (host.realismWhole refuses with it, the Upscale dialog greys with it).
+ */
+export function wholeRefusal(w, h) {
+    const { w2, h2 } = evenPlan(w, h);
+    const refusal = fits(w2, h2);
+    return refusal ? refusal.replace(`${w2} × ${h2}`, `${Math.round(+w || 0)} × ${Math.round(+h || 0)}`) : "";
+}
+
+/**
  * The sentence a failed picture run ends with (host.comfyPictureRun's error: `kind` "error" carries the server's
  * message, the other kinds a text of their own that already names the pass).
  */

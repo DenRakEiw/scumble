@@ -1042,6 +1042,92 @@ await c("close_document", { doc: window.__refsDoc, force: true });
 await c("activate_document", { doc: window.__testDoc });
 return { reopened: P0, missing, snapshot: snap };
 """.replace("__OUT__", out_path("refs_restore.scumble"))),
+    # docs/PLAN_0_1_42.md R3b: realism_pass. Under --no-comfy it refuses with the server's reason and adds nothing; with
+    # the server stood in for and the pass answering the picture it got (host.passPicture stubbed: nothing is queued
+    # or sent) it answers the layer, its deadline from `timeout`, and one undo takes it back; generate_new on the pass
+    # recipe names both routes
+    ("realism_pass", """
+const { host } = await import("./editor/host.js");
+const LABEL = "Realism Pass (Windows only, RTX only)";
+const doc = window.__testDoc;
+await c("activate_document", { doc });
+const ed = host.editors().find((e) => e.node.id === doc);
+const n0 = ed.layers.length;
+const nodeInfo = () => ({ input: { required: {} } });
+const OI = { InpaintCanvas: nodeInfo(), InpaintCanvasLoadRef: nodeInfo(), DLSS5Settings: nodeInfo(), DLSS5EnhanceImages: nodeInfo() };
+const GOOD = { state: "connected", os: "win32", gpus: ["cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync"], url: "http://127.0.0.1:8188", version: "0.38.0" };
+const saved = { server: { ...(host.server || {}) }, objectInfo: host.objectInfo, connected: host.connected, pass: host.passPicture, recipe: host.recipe };
+const refused = async (args, test) => { try { await c("realism_pass", { doc, ...args }); } catch (e) { const m = String(e.message || e); if (!test(m)) throw new Error("wrong refusal: " + m); return m; } throw new Error("not refused: " + JSON.stringify(args)); };
+const out = {};
+try {
+    host.setServerStatus({ state: "disconnected" });
+    out.offline = await refused({ timeout: 10 }, (m) => m.startsWith(LABEL + " needs your own ComfyUI: connect it under Settings › ComfyUI"));
+    if (ed.layers.length !== n0 || ed.providerPending) throw new Error("a refusal added a layer or left the document busy");
+    host.connected = true; host.objectInfo = OI; host.setServerStatus(GOOD);
+    const calls = [];
+    host.passPicture = async (e, bytes, mime, o) => { calls.push({ e, n: bytes.length, mime, deadline: o && o.deadline, busy: !!e.providerPending }); return { bytes, mime, width: e.width, height: e.height, seconds: 2.34, note: "a note of the run" }; };
+    const t0 = Date.now();
+    const r = await c("realism_pass", { doc, timeout: 90 });
+    const t1 = Date.now();
+    if (calls.length !== 1 || calls[0].e !== ed || !calls[0].busy || calls[0].mime !== "image/png" || !(calls[0].n > 1000)) throw new Error("the pass got: " + JSON.stringify(calls.map((x) => ({ n: x.n, mime: x.mime, busy: x.busy }))));
+    if (!(calls[0].deadline >= t0 + 90000 && calls[0].deadline <= t1 + 90000)) throw new Error("the deadline: " + (calls[0].deadline - t0) + " ms after the call");
+    const L = r.layer;
+    if (!L || L.name !== LABEL || L.kind !== "image" || L.role !== "none" || L.x !== 0 || L.y !== 0 || L.w !== ed.width || L.h !== ed.height || L.match) throw new Error("the layer: " + JSON.stringify(L));
+    if (r.seconds !== 2.3 || JSON.stringify(r.notes) !== JSON.stringify(["a note of the run"]) || r.changed !== false || !r.status.startsWith(LABEL + " ran on your ComfyUI in 2 s: a new layer above the picture") || !r.status.endsWith("a note of the run")) throw new Error("the answer: " + JSON.stringify({ seconds: r.seconds, notes: r.notes, changed: r.changed, status: r.status }));
+    if (ed.layers.length !== n0 + 1 || !ed.layers.some((l) => l.id === L.id)) throw new Error("the layer is not in the document");
+    out.layer = { name: L.name, w: L.w, h: L.h, status: r.status.slice(0, 90) };
+    await c("undo", { doc });
+    if (ed.layers.length !== n0 || ed.layers.some((l) => l.id === L.id)) throw new Error("one undo did not take the pass layer back");
+    // the default timeout is 570 s (inside the bridge's own 600 s), a larger one is held to 3600
+    calls.length = 0;
+    const t2 = Date.now();
+    await c("realism_pass", { doc });
+    const t3 = Date.now();
+    if (!(calls[0].deadline >= t2 + 570000 && calls[0].deadline <= t3 + 570000)) throw new Error("the default deadline: " + (calls[0].deadline - t2));
+    await c("undo", { doc });
+    calls.length = 0;
+    const t4 = Date.now();
+    await c("realism_pass", { doc, timeout: 99999 });
+    if (!(calls[0].deadline <= Date.now() + 3600000 && calls[0].deadline >= t4 + 3600000)) throw new Error("the clamped deadline: " + (calls[0].deadline - t4));
+    await c("undo", { doc });
+    if (ed.layers.length !== n0) throw new Error("the runs left layers behind");
+    // a run going on the document: refused, nothing read
+    calls.length = 0;
+    ed.providerPending = { provider: "loopback", label: "Loopback", started: Date.now() };
+    try { out.busy = await refused({ timeout: 10 }, (m) => m === LABEL + ": a run is still going on this document."); } finally { ed.providerPending = null; }
+    if (calls.length) throw new Error("a refused pass ran");
+    // generate_new with a local recipe while a run holds the document (or a render of it is queued): refused before its
+    // new canvas would wipe the layers, the results history and the undo steps
+    const local = host.shell.recipes().find((x) => x.id === "flux2_klein_local");
+    if (!local) throw new Error("no local recipe to try");
+    host.setRecipe(local);
+    const before = { layers: ed.layers.map((l) => l.id).join(), history: ed.history.length, undo: ed.undo.length, w: ed.width, h: ed.height, prompt: ed.promptText };
+    const gnRefused = async (setup, teardown, want) => {
+        setup();
+        let m = "";
+        try { await c("generate_new", { doc, prompt: "a new picture", width: 256, height: 256 }); } catch (e) { m = String(e.message || e); } finally { teardown(); }
+        const now = { layers: ed.layers.map((l) => l.id).join(), history: ed.history.length, undo: ed.undo.length, w: ed.width, h: ed.height, prompt: ed.promptText };
+        if (m !== want || JSON.stringify(now) !== JSON.stringify(before)) throw new Error("generate_new on a busy document: " + (m || "not refused") + " / " + JSON.stringify(now));
+        return m;
+    };
+    out.newWhileRun = await gnRefused(() => { ed.providerPending = { provider: "comfyui", label: LABEL, started: Date.now() }; }, () => { ed.providerPending = null; }, "Wait for the running job to finish: it would land in the picture Generate new replaces.");
+    out.newWhileRender = await gnRefused(() => { (ed._localRuns || (ed._localRuns = new Set())).add("user-render"); }, () => { ed._localRuns.delete("user-render"); }, "A render on your ComfyUI is still running: its result would land in the picture Generate new replaces. Try again when it is in.");
+    // generate_new on the pass recipe names both routes
+    const rp = host.realismRecipe();
+    if (!rp) throw new Error("the pass recipe is not listed");
+    host.setRecipe(rp);
+    let gn = "";
+    try { await c("generate_new", { doc, prompt: "x", width: 256, height: 256 }); } catch (e) { gn = String(e.message || e); }
+    if (gn !== LABEL + " works on a picture: over the whole picture with Upscale › " + LABEL + " (realism_pass), or select an area and Generate (generate).") throw new Error("generate_new: " + gn);
+    out.generateNew = gn.slice(0, 60);
+    return out;
+} finally {
+    host.passPicture = saved.pass;
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo;
+    host.setServerStatus({ state: saved.server.state || "disconnected", os: saved.server.os || "", gpus: saved.server.gpus || [], remote: !!saved.server.remote, url: saved.server.url || "", version: saved.server.version || "" });
+    host.setRecipe(saved.recipe);
+}
+"""),
     ("close", """
 const before = (await c("list_documents")).documents.length;
 const r = await c("close_document", { doc: window.__testDoc });
