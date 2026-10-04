@@ -80,9 +80,9 @@ code.
 
 **Next session: R2a of `docs/PLAN_0_1_42.md`** (the picture runner `comfyPictureRun` and `realismAfter`; the preset
 refusal writes `settings.realism` whole). Read the plan's §1 ("The user's answers after the plan", with "How the
-shipped presets work") and R1's "As built" first. **Ask Q3 before building** (which runs the switch covers; upscales;
-transparent answers): it is needed by R2a and not answered. The user's pick for **F2** (new MCP commands,
-`docs/PLAN_MCP_COMMANDS.md`) is open too: ask once, record the answer in the plan.
+shipped presets work") and R1's "As built" first. **Q3 is answered** (the user, 2026-10-04: as recommended, no
+upscales, transparent answers passed with the alpha put back). **F2 is picked**: the 12 marked ✓ in
+`docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -122,8 +122,10 @@ the user picks).
   changed.
 - **Not run on a real server; nothing queued on 8188.** The pack is installed on the user's machine (its `runtime/`
   and `config.json` exist): the first live look is R5's, on the user's word.
-- **Open:** the user's pick for F2; Q3 before R2a; the session's look in the app by the user (the recipe in the
-  local list, the Preset row with L and M, a refusal on a server without the pack).
+- **Answered after the commit:** Q3 as recommended; F2 the 12 the user picked from my recommendation (the six of
+  high value, the `set_crop` / `set_filter` fixes, `select_color`, `select_shape`, `list_settings`, `apply_preset`).
+  **Open:** the user's look in the app (the recipe in the local list, the Preset row with L and M, a refusal on a
+  server without the pack).
 
 **One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
 build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
@@ -190,8 +192,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   and the portable zip (item 36): `docs/PLAN_0_1_42.md`; research in `docs/PLAN_RTX_VSR.md`'s last section. **R1 (the
   recipe, the server check, the hints, shipped presets L and M) built 2026-10-04**, not run live; next R2a.
 - 38: new commands for MCP agents (the user, 2026-10-04: "schau auch noch ob noch mehr commands in den mcp aufgenommen
-  werden können"): 28 verified candidates in `docs/PLAN_MCP_COMMANDS.md`, session F2 of 0.1.42 after the six fixes of
-  F1 (the user picked all six from `docs/BUGS.md` the same day). Nothing built; the user picks.
+  werden können"): 28 verified candidates in `docs/PLAN_MCP_COMMANDS.md`; **the user picked 12** (marked ✓) for 0.1.42,
+  sessions F2a / F2b after the six fixes of F1 (all six picked from `docs/BUGS.md` the same day). The other 16 wait
+  for a later update. Nothing built.
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
