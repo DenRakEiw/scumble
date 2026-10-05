@@ -179,6 +179,12 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   werden können"): 28 verified candidates in `docs/PLAN_MCP_COMMANDS.md`; **the user picked 12** (marked ✓) for 0.1.42,
   sessions F2a / F2b after the six fixes of F1 (all six picked from `docs/BUGS.md` the same day). The other 16 wait
   for a later update. **The 12 built (F2a, F2b), released in 0.1.42.**
+- 39: a tidier Settings dialog (the user, 2026-10-05, with a screenshot of *Settings › Recipes*: "das einstellungs menü
+  aufräumen. die model liste ist zu lang / auch die anbieterliste; kann man das aufklappbar machen?"): 60 recipe rows
+  and 16 key rows in one flat list today. Sketch: recipes in collapsible groups (ComfyUI / Comfy Cloud / API, the
+  active one open, a filter field), providers as *Keys stored* open and *Add a key* closed, the open state in
+  `localStorage`. `docs/PLAN_SETTINGS.md` (what exists, the shape, the traps: the gates that read the rows, the jumps
+  by h3 text, rebuilds that reset the DOM, the skins; five open questions). For a later update; nothing built.
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
