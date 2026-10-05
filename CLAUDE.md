@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-04 night: 0.1.41 is Latest and submitted to the Store; 0.1.42 in work, `docs/PLAN_0_1_42.md`: R1-R4 and R5's docs built, next U1)
+## Where things stand (2026-10-05 night: 0.1.42 built and prepared (9bba0b7), the release chain running; 0.1.41 is Latest)
 
 **The user, 2026-10-04 night (after R5): the whole rest of `docs/PLAN_0_1_42.md` in this one sitting, no `/clear`
 (compaction instead: keep this block current after every commit), then REL with the Store step in the user's Chrome
@@ -86,8 +86,19 @@ code.
 RTX VSR whole picture 2x in 1.2 s, ESRGAN 4x to 7680 x 4320 in 6.5 s), **U3** (eb23385, a310a38; one paid run on Comfy
 Cloud: 21 s, works). **R-U** (6274013; the live look found the DLSS
 runtime returning broken colours from ~30.4 MP output: capped at 27.9 MP, b4f0410 / 16fb6e3, verified live), **F1** (7412d5b), **F2a** (249371c),
-**F2b** (0c97ba4, 105 commands), **P1** (0b87aab), **P2** (3deca86).
-**Next: P3** (needs the user's installed Scumble closed: it ran since 2026-10-04 00:00; ask, never close it), then REL. The MCP listings (Registry etc.) still say 96: update at REL. Tell the user: their own DLSS5 Fit Input Size node allows 33 MP (can give broken
+**F2b** (0c97ba4, 105 commands), **P1** (0b87aab), **P2** (3deca86), the P3 gate
+(05c98f4, written, **not run live**: it refuses while any Scumble.exe runs; the user was asked to close theirs and write
+"zu"; the mutation round against it is skipped on purpose, it would take the failed-detection path on the user's real
+%APPDATA%). A release review (25 agents) confirmed 19 findings, all fixed (66a3cca, ccf33e6; plan REL "Release review").
+**REL state:** CHANGELOG `## 0.1.42 — 2026-10-05` and version 0.1.42 committed (9bba0b7); `npm run dist` and
+`dist:portable` built (`dist/Scumble Setup 0.1.42.exe`, `dist/Scumble-0.1.42-portable-win-x64.zip`); exe gates
+`rel42-exe` (tiles, 0.1.41's 35) and `rel42-exe-canvas` (22) were started in the background (outputs
+`dist/rel42-exe*.out`, summaries `dist/gates/gates/rel42-exe*/summary.txt`). **Then:** P3 live on the user's word
+(`bash tools/run_gates.sh rel42-portable --exe dist/win-unpacked/Scumble.exe portable`), push, tag v0.1.42, `gh run
+watch`, the draft's assets incl. the zip, publish, `node tools/manual_sync.js`, the blog post (F:\portfolio_web, its
+own identity, no trailer), the Store in the user's Chrome (authorised by the user: "du kannst auch das microsoft store
+update machen und meinen chrome browser steuern"; What's new names only the label, Q12), `server.json` 0.1.42 + the
+MCP Registry publish (needs the user's GitHub device login) and the listings' tool count (105). The MCP listings (Registry etc.) still say 96: update at REL. Tell the user: their own DLSS5 Fit Input Size node allows 33 MP (can give broken
 answers) and fits before padding (4455 x 2506 at 1.724x is refused by the pack); not changed in their folder. Read each row's text in the plan first. **F2 is picked**: the 12 marked ✓ in
 `docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
 
