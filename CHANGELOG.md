@@ -34,15 +34,20 @@ the section for its version; `docs/` and the commit history hold the technical d
 - While an API Generate, an API upscale or the Realism Pass (Windows only, RTX only) runs on a document, until its
   result is in, a second Generate with an API model, an upscale or Generate new on it is refused with a note instead
   of starting beside it (Generate new with a recipe on your own ComfyUI used to clear the document before it was
-  refused). Generate with a recipe on your own ComfyUI still queues.
+  refused). Generate with a recipe on your own ComfyUI still queues, except while an upscale of the whole picture or
+  the Realism Pass (Windows only, RTX only) above 1× runs: those resize the document, so Generate, a selection by text,
+  a cutout, the object tool and Ctrl+Z of a crop, a resize or a turn are refused with the reason until the result is
+  in (they would land in the old size).
 - **RTX Video Super Resolution on your ComfyUI.** A new upscale recipe on NVIDIA's RTX Video Super Resolution node
   (the node pack Nvidia_RTX_Nodes_ComfyUI, which you install on your ComfyUI): 1 to 4 times, with a Quality setting.
   The Upscale dialog shows the box's size and the answer's, and refuses a box whose answer would pass 8192 px.
 - **The whole picture on your ComfyUI.** Upscale recipes on your own ComfyUI now enlarge the whole picture too: the
   answer becomes the new base and every layer, mask and the selection scale along, in one undo step. A cut-out picture
   comes back opaque on this route, black where it was transparent. For the whole picture the *Upscale model (ComfyUI)* recipe takes at most 2048 px on
-  the long side, so a 4× model answers at most 8192 px; a selection has no such cap. While it runs, the title row's timer shows it and its *Cancel* takes the job off
-  your ComfyUI.
+  the long side, so a 4× model answers at most 8192 px; a selection has no such cap. The whole picture at 1× is
+  refused before anything is sent (its answer would be the picture's own size): select all and upscale the selection
+  for a cleanup at 1×. While it runs, the title row's timer shows it and its *Cancel* takes the job off your ComfyUI;
+  pressed while the answer is fetched, nothing lands.
 - **RTX Video Super Resolution on Comfy Cloud.** The same upscaler on Comfy Cloud on your Comfy key, for the selection
   or the whole picture, 1 to 4 times, with the Quality setting; a picture whose answer would pass 8192 px is refused
   before anything is sent.
@@ -64,12 +69,15 @@ the section for its version; `docs/` and the commit history hold the technical d
   recommended download.
 - API keys that cannot be read on this PC or Windows account (Windows encrypts them for the account that stored them)
   are marked *stored on another PC or Windows account: type it again* in *Settings › API providers*, and a run with
-  one says so instead of reporting no key. The stored key is kept until you type a new one.
+  one says so instead of reporting no key. Once a portable copy has started on another PC or Windows account, its
+  stored keys may have to be typed again on both PCs, the first one included (Windows may replace the copy's own
+  encryption key at that start; not measured yet).
 - **Recipes can ship presets.** The Preset row in the Settings section shows a recipe's own presets first, then
   yours; the shipped ones cannot be deleted.
 - Generate new no longer offers the local upscale recipe, which makes nothing from a prompt.
 - Ctrl+Enter no longer starts a second Generate while an API run is going on the document: it is refused with a note,
-  as the Generate button is, and the seed stays as it was. Generate with a recipe on your own ComfyUI still queues.
+  as the Generate button is, and the seed stays as it was. Generate with a recipe on your own ComfyUI still queues
+  (not while a run that resizes the document goes, above).
 - The film look *None (adjustments only)* adds no grain any more; it used to add a light grain of its own.
 - The key of the local OpenAI-compatible endpoint goes only to the URL saved under *Settings › Local /
   OpenAI-compatible endpoint* (the Test button saves it first); any other address is asked without it.
@@ -86,8 +94,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   the selected pixels of a layer, or of the visible picture, on a new layer at the same place, in this tab or another
   (a cut takes them out of the layer); the clipboard your Ctrl+V reads stays as it was. `resize_image` resizes the
   whole document as Image › Canvas › Resize does, refused while a run is going on the document. `cancel_run` cancels
-  the runs in flight as the title row's *Cancel* does, for one tab or all; a command waiting on such a run ends at once.
-  Each change is one undo step.
+  the runs in flight as the title row's *Cancel* does, for one tab or all; a command waiting on such a run ends at once,
+  and a run whose answer is already landing is named as such. Each change is one undo step (a cut is a step of its own
+  before the paste).
 - Agents: `list_recipes` says for every recipe whether it can run now and why not (a missing key, the in-app model not
   downloaded, not connected to ComfyUI, node types the server lacks), which of a recipe's providers have a key, whether
   it makes new images and at which sizes, whether it takes a transparent background, and the largest picture an

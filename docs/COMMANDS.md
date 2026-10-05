@@ -128,7 +128,7 @@ The filter layer types (built-in and from plugins) with their parameters; `fill:
 
 ### `status` *(read-only)*
 
-What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (Realism Pass (Windows only, RTX only)) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; above factor 1 a picture past that size is scaled down instead), note (RTX 30), and the app's style, strength and preset it sends.
+What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (Realism Pass (Windows only, RTX only)) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends.
 
 | param | type | description |
 |---|---|---|
@@ -449,7 +449,7 @@ Realism Pass (Windows only, RTX only): the whole visible picture (every visible 
 
 ### `cancel_run` *(app)*
 
-Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends at once with the cancel, and nothing lands. A provider may still finish a job it already had and charge it. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running); ended: whether they have let go of their documents (waited for up to 10 s).
+Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends at once with the cancel, and nothing lands. A provider may still finish a job it already had and charge it. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running); landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 10 s).
 
 | param | type | description |
 |---|---|---|

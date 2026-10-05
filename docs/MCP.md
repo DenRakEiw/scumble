@@ -111,7 +111,7 @@ a file written over without asking, the recipe or its settings, an undo or redo 
 `flatten`, `extend_canvas`, `straighten_canvas`, `resize_image`, `save_document`, `export`, `export_layer`,
 `export_mask`, `delete_snapshot`, `undo`, `redo`, `select_recipe`, `set_node_params`,
 `ailabel_add` (it replaces the label layer) and `ailabel_remove`. Everything else changes the
-document additively or in one undo step and carries neither. A plugin command that sets no flag
+document additively or in one undo step (a `copy_to_layer` cut in two) and carries neither. A plugin command that sets no flag
 is judged by its own name, the part after the plugin id: a `list...`, `get_...`, `info` or
 `status` command is read-only, and none is destructive. Until 0.1.42 the hints came from the names
 alone: the plugins' reads and `read_log` were not marked read-only, `new_document` was marked
@@ -186,14 +186,16 @@ null: any), `background` (whether `generate_new`'s `background: "transparent"` r
 upscaler's `document_max`; `provider_keys` lists every API provider with whether a key is stored, as a
 boolean (never the key or its last characters). `cancel_run` cancels the runs in flight as the
 title row's Cancel does (one tab's with `doc`, else every tab's); a `generate`, `upscale` or
-`realism_pass` waiting on one ends at once, and a provider may still charge a job it already had. A
+`realism_pass` waiting on one ends at once, and a provider may still charge a job it already had; a run
+whose answer is already landing can no longer be cancelled and is listed under `landing`. A
 Generate with a recipe on the user's own ComfyUI is not interrupted. `screenshot` takes `box` [x, y,
 w, h] (a region at up to 1:1, to judge an inpainted area of a large picture), `what: "base"` (the
 picture without its layers) and `what: "mask"` (the selection, or with `layer` that layer's mask, in
 black and white). `transform_layer` rotates, distorts, warps or quarter-turns one layer;
 `copy_to_layer` lifts a layer's or the picture's selected pixels onto a new layer (in this tab or
 another, the user's clipboard untouched); `resize_image` resizes the whole document as Image › Canvas
-› Resize. Each is one undo step.
+› Resize. Each is one undo step; a `copy_to_layer` cut is two in its own tab (the cut, then the
+paste: `undo {steps: 2}` takes both back).
 
 **Selections, the Settings rows, crop and filter values** (docs/PLAN_0_1_42.md F2b). `select_color` is
 the Magic wand at a point (`tolerance` 0..255, `contiguous`, `sample` image or layer), in the app with

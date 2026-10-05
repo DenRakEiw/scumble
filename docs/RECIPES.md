@@ -93,8 +93,8 @@ through a prompt of its own, `realism.passPrompt`, which takes the recipe's `DLS
   the whole picture (0.1.42 U2) the base goes through the same graph and the answer becomes the new base. `limits`
   `{ "picture": 2048 }` (0.1.42 Q14: on the whole picture a 4x model answers at most 8192 px; `picture` caps the whole
   picture alone, so the selection's box keeps no cap, as before). Checked
-  against the user's `/object_info` on 2026-09-22 (both classes, their inputs and outputs); **not run** (the user's
-  ComfyUI was not free).
+  against the user's `/object_info` on 2026-09-22 (both classes, their inputs and outputs); run live 2026-10-04 on the
+  whole picture (4x-UltraSharp, 1920 × 1080 to 7680 × 4320, 6.5 s on the server, `docs/PLAN_0_1_42.md` U2).
 - `rtx_vsr_local`, **RTX Video Super Resolution (ComfyUI)** (0.1.42, `docs/PLAN_0_1_42.md` U1): `InpaintCanvas` ->
   `ImageFromBatch` (the crop only) -> `RTXVideoSuperResolution` (`resize_type` "scale by multiplier", its
   `resize_type.scale` the factor, `quality` LOW / MEDIUM / HIGH / ULTRA as the *Quality* row, ULTRA by default) ->
@@ -102,8 +102,10 @@ through a prompt of its own, `realism.passPrompt`, which takes the recipe's `DLS
   (Comfy-Org, with its `nvidia-vfx` package), which the user installs on an RTX machine. 1 to 4 times (`factor.input`
   `rtx|resize_type.scale`), `limits` 64 / 4096 / 8192 (the node's target mode takes 64 to 8192 a side; its output sides
   are `int(w × scale)` rounded to a multiple of 8, which the stitch fits back anyway; on the whole picture, U2, the
-  answer is stretched to the document's aspect). The selection or the whole picture. Checked against the user's
-  `/object_info` on 2026-10-04 (inputs, combo, ranges).
+  answer is stretched to the document's aspect). The selection or the whole picture (the whole picture not at 1×: its
+  answer would be the picture's own size, refused before anything is sent). Checked against the user's
+  `/object_info` on 2026-10-04 (inputs, combo, ranges); run live the same day on a selection and on the whole picture
+  (U1 / U2's live look).
 - `realism_pass`, **Realism Pass (Windows only, RTX only)** (0.1.42, `docs/PLAN_0_1_42.md` R1; the name is the
   user's, held by `renderer/editor/realism.js` `LABEL` and pinned by `tools/recipes_test.js`): `InpaintCanvas` ->
   `ImageFromBatch` (the crop only) -> `DLSS5Settings` -> `DLSS5EnhanceImages` -> `result_local`, task `pass`. DLSS 5
@@ -1167,7 +1169,7 @@ the other fal upscalers, both routes on Comfy Cloud, factors above 2 except that
 until a larger picture is tried). The fal answer's size is not read back (`info` carries no width), which the status
 line would show.
 
-The shipped recipes (written from the providers' schemas; the three named above have run live):
+The shipped recipes (written from the providers' schemas; the three named above and `rtx_vsr_cloud` have run live):
 
 | Recipe | Providers (default first) | Factor | Rows |
 | --- | --- | --- | --- |
@@ -1180,7 +1182,7 @@ The shipped recipes (written from the providers' schemas; the three named above 
 | `recraft_creative` Recraft Creative | fal `fal-ai/recraft/upscale/creative`, Comfy Cloud | the model's | none |
 | `magnific_precision` Magnific Precision | Magnific `image-upscaler-precision-v2`, Comfy Cloud, Comfy Router `freepik/ai-image-upscaler-precision-v2` | 2 to 16 (Comfy Cloud 2, 4, 8, 16) | Flavor, Sharpen, Smart grain, Ultra detail |
 | `magnific_creative` Magnific Creative | Magnific `image-upscaler`, Comfy Cloud | 2, 4, 8, 16 (at most 25.3 MP out) | Optimized for, Engine, Creativity, HDR, Resemblance, Fractality; the prompt goes along |
-| `rtx_vsr_cloud` RTX Video Super Resolution (Comfy Cloud) | Comfy Cloud `RTXVideoSuperResolution` (not run live yet) | 1 to 4 (at most 8192 px out) | Quality (ULTRA by default) |
+| `rtx_vsr_cloud` RTX Video Super Resolution (Comfy Cloud) | Comfy Cloud `RTXVideoSuperResolution` (run live 2026-10-04: 1024 to 2048 px in 21 s) | 1 to 4 (at most 8192 px out; the whole picture not at 1×) | Quality (ULTRA by default) |
 
 **Who else serves an upscaler** (the survey of 2026-09-22; only lists that answer without a key could be read, and
 **no key but BFL's is stored in this install**, so Replicate, WaveSpeed and ToAPIs stay open): OpenRouter's

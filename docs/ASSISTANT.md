@@ -81,10 +81,11 @@ card that says why:
   whole picture is one undo step of its own, as *Resize* is.
 - **`realism_pass`** (Realism Pass (Windows only, RTX only)) - it queues on your ComfyUI and adds a layer, one undo
   step. The card shows the Style, Strength and model preset it sends (the Upscale dialog's Realism Pass row; the
-  assistant cannot change them). Above `factor` 1 the question says the document becomes about that many times larger
-  (every layer scaled along) and the card shows the factor first. Where the pass cannot run on the document (the
-  server, the picture's size) the assistant gets the reason instead and no card is shown; above factor 1 a picture
-  past 7680 × 4320 or 27.9 megapixels is no such reason (the pass scales it down first).
+  assistant cannot change them). Above `factor` 1 the question says the document becomes up to that many times larger
+  (less when the pass's output cap of 7680 × 4320 and 27.9 megapixels applies; every layer scaled along) and the card
+  shows the factor first. Where the pass cannot run on the document (the server, the picture's size) the assistant
+  gets the reason instead and no card is shown, at every factor: a picture past 7680 × 4320 or 27.9 megapixels cannot
+  get larger either.
 - **`flatten`, `extend_canvas`, `new_canvas`, `load_image`** - they clear the undo stack or bake
   every layer into the base.
 - **`resize_image`, `rotate_canvas`, `flip_canvas`, `straighten_canvas`** - they change the whole picture,
@@ -93,9 +94,10 @@ card that says why:
   assistant's own**, cutting pixels out of one (`copy_to_layer` with `cut`), pasting into another tab (which
   *Undo this turn* does not reach), unlocking a layer you locked, moving or retexting a locked one, `undo` /
   `redo`, reading a file, an export with a path, and the global settings.
-- **`cancel_run` without a document** - it would cancel every run in every tab, yours too. With the turn's
-  document (the assistant always passes it) it runs without asking: it cancels that document's runs, as
-  the title row's *Cancel* does; a provider may still charge a job it already had.
+- **`cancel_run`** - always: the runs it would cancel are almost always yours (the assistant's own runs are refused
+  on a busy document), and nothing they would bring lands. With the turn's document (the assistant always passes it)
+  the card names that document; without one it would cancel every run in every tab. A provider may still charge a
+  job it already had.
 - Editing a layer the assistant made itself (a transform or a cut included), a copy onto a new layer in the same
   tab, the selections (`select_color`, the magic wand; `select_shape`, an ellipse or a polygon), and the
   per-document fields (prompt, generation settings, crop, the recipe's settings, a preset of them with

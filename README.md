@@ -169,7 +169,8 @@ Three ways to the same app; from GitHub the installer is the recommended one:
   beside it makes Scumble keep everything it stores (settings, API keys, autosave, the local
   files, plugins, helper models, logs) in a `data` folder next to it instead of
   `%APPDATA%\Scumble`, so it runs beside an installed Scumble. API keys are encrypted for the
-  Windows account: on another PC, type them again. This copy does not update itself: when a
+  Windows account: once the copy has started on another PC or account, they may have to be
+  typed again on both PCs, the first one included. This copy does not update itself: when a
   new version is out it says so, and you unpack the new zip where you unpacked the old one, so
   its `Scumble` folder lands on the old one; the `data` folder stays.
 
