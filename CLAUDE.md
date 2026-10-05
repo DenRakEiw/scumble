@@ -194,7 +194,12 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   GitHub"**: on the first start of a new version (the last version seen kept in the settings), a quiet line that can
   be closed, never a modal and never again for that version; whether it shows in the Store copy (the Store updates
   it) and beside item 32's update dialog is a design question. Opens https://github.com/DenRakEiw/scumble through
-  `shell.openExternal`. Small (a few hours). For a later update; nothing built.
+  `shell.openExternal`. **Beside it "↗ Share the project"** (the user, the same evening): suggested, not yet confirmed,
+  a small menu at the button (Windows has no share sheet for Electron): *Copy link* (text + link to the clipboard,
+  "Link copied") and the platforms' own share pages in the browser (X intent, LinkedIn share-offsite, Bluesky intent,
+  Reddit submit) with a prefilled line such as "Scumble: a free, open-source editor for AI inpainting"; the link the
+  website hub https://www.denrakeiw.com/scumble (download, videos, manual), no UTM or tracking. In the same three
+  places as the star. Small (a few hours together). For a later update; nothing built.
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
