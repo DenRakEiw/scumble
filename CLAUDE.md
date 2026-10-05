@@ -76,52 +76,26 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-05 night: 0.1.42 built and prepared (9bba0b7), the release chain running; 0.1.41 is Latest)
+## Where things stand (2026-10-05 early morning: **0.1.42 released and Latest**, post live; the Store, P3's live run and the MCP Registry wait for the user)
 
-**The user, 2026-10-04 night (after R5): the whole rest of `docs/PLAN_0_1_42.md` in this one sitting, no `/clear`
-(compaction instead: keep this block current after every commit), then REL with the Store step in the user's Chrome
-(authorised).** All open questions as recommended (Q13-Q19, Q21-Q23, Q29; §1 of the plan); 8188 may be used whenever
-`/queue` is empty, one RTX VSR run on Comfy Cloud too. **Done so far: R5 incl. its live look** (5361018: 8 s for
-16.7 MP on the user's RTX 5090, +4.6 GB; the pass layer's match source is *underneath*), **U1** (1b2cbda), **U2** (d3e951a, f8f8356; live look:
-RTX VSR whole picture 2x in 1.2 s, ESRGAN 4x to 7680 x 4320 in 6.5 s), **U3** (eb23385, a310a38; one paid run on Comfy
-Cloud: 21 s, works). **R-U** (6274013; the live look found the DLSS
-runtime returning broken colours from ~30.4 MP output: capped at 27.9 MP, b4f0410 / 16fb6e3, verified live), **F1** (7412d5b), **F2a** (249371c),
-**F2b** (0c97ba4, 105 commands), **P1** (0b87aab), **P2** (3deca86), the P3 gate
-(05c98f4, written, **not run live**: it refuses while any Scumble.exe runs; the user was asked to close theirs and write
-"zu"; the mutation round against it is skipped on purpose, it would take the failed-detection path on the user's real
-%APPDATA%). A release review (25 agents) confirmed 19 findings, all fixed (66a3cca, ccf33e6; plan REL "Release review").
-**REL state:** CHANGELOG `## 0.1.42 — 2026-10-05` and version 0.1.42 committed (9bba0b7); `npm run dist` and
-`dist:portable` built (`dist/Scumble Setup 0.1.42.exe`, `dist/Scumble-0.1.42-portable-win-x64.zip`); exe gates
-`rel42-exe` (tiles, 0.1.41's 35) and `rel42-exe-canvas` (22) were started in the background (outputs
-`dist/rel42-exe*.out`, summaries `dist/gates/gates/rel42-exe*/summary.txt`). **Then:** P3 live on the user's word
-(`bash tools/run_gates.sh rel42-portable --exe dist/win-unpacked/Scumble.exe portable`), push, tag v0.1.42, `gh run
-watch`, the draft's assets incl. the zip, publish, `node tools/manual_sync.js`, the blog post (F:\portfolio_web, its
-own identity, no trailer), the Store in the user's Chrome (authorised by the user: "du kannst auch das microsoft store
-update machen und meinen chrome browser steuern"; What's new names only the label, Q12), `server.json` 0.1.42 + the
-MCP Registry publish (needs the user's GitHub device login) and the listings' tool count (105). The MCP listings (Registry etc.) still say 96: update at REL. Tell the user: their own DLSS5 Fit Input Size node allows 33 MP (can give broken
-answers) and fits before padding (4455 x 2506 at 1.724x is refused by the pack); not changed in their folder. Read each row's text in the plan first. **F2 is picked**: the 12 marked ✓ in
-`docs/PLAN_MCP_COMMANDS.md`, as sessions F2a and F2b after F1.
+**0.1.42 is out** (tag v0.1.42 on b601879, published 2026-10-05T01:29:47Z; the post `v0-1-42` live; the manual
+synced). Everything of `docs/PLAN_0_1_42.md` was built in one sitting (the user: "mache hier gleich weiter ohne
+clear"); each row's "As built" note and REL's say what ran live. **Waiting for the user:**
+- **The Store**: `dist/Scumble-0.1.42.msix` (187.4 MB, from the tag state) and `dist/store-listing/whats-new-0.1.42.txt`
+  (the label only, Q12). The MSIX upload cannot go through Claude in Chrome (10 MB per call): the user drags it into
+  Partner Center (Start update, the package in, the old one out, What's new, Submit). Read 0.1.41's certification
+  state first.
+- **P3's live run**: `bash tools/run_gates.sh rel42-portable --exe dist/win-unpacked/Scumble.exe portable` once the
+  user's installed Scumble is closed and the user says so (the packaged resolver was checked in Node mode only).
+- **The MCP Registry**: `server.json` is 0.1.42; `mcp-publisher login github` (the user's device code), `validate`,
+  `publish`; the listings still say 96 tools (105 now).
+- Tell the user: their own DLSS5 Fit Input Size node (custom_nodes/dlss5_fit_size) allows 33 MP outputs, which the
+  runtime answers with broken colours above ~30 MP (Scumble caps at 27.9 MP), and fits before padding to even sides.
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**This session (2026-10-04 night, R5 of 0.1.42, the docs half): the Realism Pass chapter, unreleased.**
-- **Q11 and Q12 answered as recommended** (the user, at the start): the manual prints the runtime installer's `--url`
-  workaround and the pack's Defender advice, attributed, dated, "only if you trust the source"; the not-affiliated line
-  in the chapter and the About dialog, not the CHANGELOG; the Store's What's new names the label alone (REL).
-- **`docs/MANUAL.md`**: the chapter *Realism Pass (Windows only, RTX only)* (slug `realism-pass`, after *Upscaling*,
-  no screenshot yet, **no timing or VRAM numbers until the live look**): what it does and where, what is sent, where the
-  layer lands, the run, the recipe on a box, no Comfy Cloud, what the ComfyUI machine needs, four install steps from
-  the pack's README of 2026-10-04, Notes for every refusal, wait and pack message as built, the trademark line.
-  About line in `renderer/shell.js`; README bullet and requirement sentence; `docs/MCP.md` paragraph; `docs/RECIPES.md`
-  pointers; the CHANGELOG's recipe line finished.
-- **Code text fixes**: the hints said "Help › Manual › {LABEL}" (no such menu path): now "Help › Scumble help ›
-  {LABEL}"; the OpenCV hint now names OpenCV (the pack's `requirements.txt` leaves it out on purpose);
-  `renderer/help.css` lets code break anywhere (the `--url` address made the whole Help panel scroll sideways).
-- **Review** (14 agents: three lenses, a refuter per finding): three defects fixed (the match slider, the OpenCV advice,
-  the dialog's 1800 s end), four refuted. The pass layer's match source is now *underneath* (the user's answer).
-- **Tests**: `manual_test.js`, `realism_test.js` (433), `recipes_test.js` (160) PASS; gates `--offline` on tiles:
-  `help` (21 chapters) and `lint` PASS; one look in a dev instance (the About line, the chapter in the panel).
+**Still asked, waiting for the user's word:**
 - **The user asked earlier** whether a GitHub community setup makes sense (Discussions with Showcase / Ideas / Q&A /
   Workflow recipes, a Now / Next / Later / Won't do roadmap, 3-5 good first issues, CONTRIBUTING / issue templates /
   SECURITY, a pinned "Share your workflow" thread). Answered: yes to Discussions, the templates, CONTRIBUTING and
@@ -197,11 +171,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   and the portable zip (item 36): `docs/PLAN_0_1_42.md`; research in `docs/PLAN_RTX_VSR.md`'s last section. **R1 (the
   recipe, the server check, the hints, shipped presets L and M) built 2026-10-04**, not run live; R2a and R2b the
   same day; **redesigned that evening as a refiner** (the whole picture at 1x as a new layer, never a Generate result:
-  plan §1 "The Realism Pass is a refiner"); **R3a, R3b and R4 built the same night** (`host.realismWhole`; the Upscale entry, the Image menu, `realism_pass`; the assistant's row and readiness in `status` / `list_recipes`), **R5's docs** too (the manual chapter, About, README, MCP, RECIPES); its live look waits for the user's word, next U1.
+  plan §1 "The Realism Pass is a refiner"); **R3a, R3b and R4 built the same night** (`host.realismWhole`; the Upscale entry, the Image menu, `realism_pass`; the assistant's row and readiness in `status` / `list_recipes`), R5 to P3 the next night; **released in 0.1.42 (2026-10-05)**, with the Realism Pass Upscale and the 27.9 MP cap found live.
 - 38: new commands for MCP agents (the user, 2026-10-04: "schau auch noch ob noch mehr commands in den mcp aufgenommen
   werden können"): 28 verified candidates in `docs/PLAN_MCP_COMMANDS.md`; **the user picked 12** (marked ✓) for 0.1.42,
   sessions F2a / F2b after the six fixes of F1 (all six picked from `docs/BUGS.md` the same day). The other 16 wait
-  for a later update. Nothing built.
+  for a later update. **The 12 built (F2a, F2b), released in 0.1.42.**
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.

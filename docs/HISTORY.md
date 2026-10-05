@@ -42,6 +42,9 @@ The block of 2026-10-04 (night, R3b of 0.1.42) was moved here the same night, wh
 
 The block of 2026-10-04 (night, R4 of 0.1.42) was moved here the same night, when R5's docs were written.
 
+The block of 2026-10-04 (night, R5 of 0.1.42) and its continuation (the rest of the plan in one sitting) were moved here
+at the 0.1.42 release (2026-10-05).
+
 
 The block of 2026-09-29 (morning, item 26 S1 built) was moved here at noon, when the eraser hotfix 0.1.33 was prepared.
 
@@ -76,6 +79,35 @@ The block of 2026-10-03 (midday: B5, B6, the 0.1.39 release) was moved here the 
 The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved here the same afternoon, when V1 of item 35 was built.
 
 The block of 2026-10-04 (evening: R3 dropped, the Realism Pass redesigned as a refiner, the MCP listings) was moved here the same night, when R3a was built.
+
+## 2026-10-04 (night: R5 of 0.1.42, then the rest of the plan in one sitting; moved here at the 0.1.42 release)
+
+**This session (2026-10-04 night, R5 of 0.1.42, the docs half): the Realism Pass chapter, unreleased.**
+- **Q11 and Q12 answered as recommended** (the user, at the start): the manual prints the runtime installer's `--url`
+  workaround and the pack's Defender advice, attributed, dated, "only if you trust the source"; the not-affiliated line
+  in the chapter and the About dialog, not the CHANGELOG; the Store's What's new names the label alone (REL).
+- **`docs/MANUAL.md`**: the chapter *Realism Pass (Windows only, RTX only)* (slug `realism-pass`, after *Upscaling*,
+  no screenshot yet, **no timing or VRAM numbers until the live look**): what it does and where, what is sent, where the
+  layer lands, the run, the recipe on a box, no Comfy Cloud, what the ComfyUI machine needs, four install steps from
+  the pack's README of 2026-10-04, Notes for every refusal, wait and pack message as built, the trademark line.
+  About line in `renderer/shell.js`; README bullet and requirement sentence; `docs/MCP.md` paragraph; `docs/RECIPES.md`
+  pointers; the CHANGELOG's recipe line finished.
+- **Code text fixes**: the hints said "Help › Manual › {LABEL}" (no such menu path): now "Help › Scumble help ›
+  {LABEL}"; the OpenCV hint now names OpenCV (the pack's `requirements.txt` leaves it out on purpose);
+  `renderer/help.css` lets code break anywhere (the `--url` address made the whole Help panel scroll sideways).
+- **Review** (14 agents: three lenses, a refuter per finding): three defects fixed (the match slider, the OpenCV advice,
+  the dialog's 1800 s end), four refuted. The pass layer's match source is now *underneath* (the user's answer).
+- **Tests**: `manual_test.js`, `realism_test.js` (433), `recipes_test.js` (160) PASS; gates `--offline` on tiles:
+  `help` (21 chapters) and `lint` PASS; one look in a dev instance (the About line, the chapter in the panel).
+- **The user asked earlier** whether a GitHub community setup makes sense (Discussions with Showcase / Ideas / Q&A /
+  Workflow recipes, a Now / Next / Later / Won't do roadmap, 3-5 good first issues, CONTRIBUTING / issue templates /
+  SECURITY, a pinned "Share your workflow" thread). Answered: yes to Discussions, the templates, CONTRIBUTING and
+  SECURITY, a small roadmap as one pinned issue or discussion without other products' names, kept with each release;
+  good first issues only if outside PRs are wanted; the pinned thread once Discussions are on and seeded. **Nothing
+  done, waiting for the user's pick** (outward-facing; its own section after a commit).
+- **Asked earlier, still waiting for the user's word:** the README for reach (a GIF, install buttons, a comparison
+  table, Discussions), the Inpaint Canvas node's registry entry linking to Scumble, how to post on Show HN (the
+  comparison table names other products, the user's rule of 2026-09-29).
 
 ## 2026-10-04 (night: R4 of 0.1.42 built, agents and the assistant; moved here the same night when R5's docs were written)
 
