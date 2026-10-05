@@ -83,7 +83,12 @@ const store = read();
 shell.renderUpdate(before);
 const back = read();
 document.getElementById("shell-settings").close();
-if (JSON.stringify(own.hidden) !== "[false,false,false]") throw new Error("this instance hides its updates: " + JSON.stringify(own));
+// a copy that does not update itself (notify mode: an unpacked copy without the uninstaller, dist/win-unpacked in the
+// exe gates, docs/PLAN_0_1_42.md P1) swaps the help text for its own paragraph; every other copy shows all three
+const notify = before.mode === "notify";
+const wantOwn = notify ? "[false,true,false]" : "[false,false,false]";
+if (JSON.stringify(own.hidden) !== wantOwn) throw new Error("this instance hides its updates: " + JSON.stringify(own) + " (mode " + before.mode + ")");
+if (notify && document.getElementById("set-update-help-notify") && document.getElementById("set-update-help-notify").hidden) throw new Error("a notify copy hides its own help text");
 if (JSON.stringify(store.hidden) !== "[true,true,true]" || !/Microsoft Store/.test(store.note) || /GitHub/.test(store.note)) throw new Error("the Store copy still offers GitHub updates: " + JSON.stringify(store));
 if (JSON.stringify(back) !== JSON.stringify(own)) throw new Error("the section did not come back: " + JSON.stringify(back) + " against " + JSON.stringify(own));
 return { state: before.state, store: store.note };
@@ -141,7 +146,11 @@ try {
     shell.renderUpdate(before);
     const back = section();
     $("shell-settings").close();
-    if (JSON.stringify(back) !== JSON.stringify(own) || back.install !== "Restart and install" || back.help || !back.helpNotify) throw new Error("the section did not come back: " + JSON.stringify(back) + " against " + JSON.stringify(own));
+    // the instance's own mode: a dev instance installs (the help text shown), the exe gates' dist/win-unpacked copy has
+    // no uninstaller and is a notify copy itself (its own help text shown, Download on the button)
+    const ownNotify = before.mode === "notify";
+    const ownOk = ownNotify ? back.install === "Download" && back.help && !back.helpNotify : back.install === "Restart and install" && !back.help && back.helpNotify;
+    if (JSON.stringify(back) !== JSON.stringify(own) || !ownOk) throw new Error("the section did not come back: " + JSON.stringify(back) + " against " + JSON.stringify(own) + " (mode " + before.mode + ")");
     out.section = n.bar;
     // the question: asked once, Download opens the tag's page
     const p1 = shell.announceUpdate(fake("9.8.2"));
