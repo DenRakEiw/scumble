@@ -31,6 +31,9 @@
 # every platform, the files each installer leaves out), then the API keys note in the app.
 # Gate "document" (tools/document_test.py) runs tools/document_test.js in plain Node first, then saves and opens
 # .scumble documents in instances of its own (a fresh profile, a kill mid-save, a close during a save, newer files).
+# Gate "portable" (tools/portable_test.py, --exe only) starts staged portable copies without --user-data-dir and
+# refuses while any Scumble.exe runs (the user's own included); it copies the user's settings and autosave files to
+# dist/gates/portable-backup/<time> before its first start.
 # Logs and summary.txt go to $SCUMBLE_GATES/gates/<label>/. Exit code 0 only when every gate passed.
 # Logs, profiles and the node copy go under $SCUMBLE_GATES (default F:/canvas/dist/gates, ignored by git).
 SP="${SCUMBLE_GATES:-/f/canvas/dist/gates}"
@@ -66,7 +69,7 @@ if curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null; then
 fi
 
 needs_app=0
-for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document) ;; *) needs_app=1 ;; esac; done
+for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document|portable) ;; *) needs_app=1 ;; esac; done
 TILEARG=""
 case "$TILES" in
   on) export SCUMBLE_TILES=1; TILEARG="--tiles" ;;
@@ -114,6 +117,10 @@ for g in "$@"; do
     # .scumble documents (docs/PLAN_DOCUMENTS.md D5): like quit, it starts, kills and ends its own instances (port +17,
     # profiles under $OUT/document); runs tools/document_test.js first
     document) timeout 1500 python tools/document_test.py ${EXE:+--exe "$EXE"} --out "$OUT/document" > "$OUT/document.log" 2>&1; rc=$? ;;
+    # the portable copy (docs/PLAN_0_1_42.md P3): exe only; it stages its own copies under $OUT/portable and starts them
+    # WITHOUT --user-data-dir (ports +19, +20, A's inspector +21), so it refuses without --exe and while any Scumble.exe
+    # runs: run it alone or beside gates that start no runner app (lint, types, quit, document)
+    portable) timeout 1800 python tools/portable_test.py ${EXE:+--exe "$EXE"} --out "$OUT/portable" > "$OUT/portable.log" 2>&1; rc=$? ;;
     # tiffperf:15000x10000: a TIFF export and open of a noise picture at size (docs/PLAN_0_1_29.md 3d, the 15k measurement)
     tiffperf:*) timeout 3600 python tools/tiff_test.py --size ${g#tiffperf:} --out "$OUT/tiffperf" > "$OUT/tiffperf.log" 2>&1; rc=$? ;;
     exportperf:*) timeout 1800 python tools/export_test.py --perf $(echo "${g#exportperf:}" | tr ',' ' ') > "$OUT/exportperf.log" 2>&1; rc=$? ;;

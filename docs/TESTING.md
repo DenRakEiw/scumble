@@ -156,13 +156,37 @@ byte-equal after describe / list / get). `tools/updater_test.js` runs notify mod
 no install, no quit handler. The platform gate's `a_copy_that_does_not_update_itself_offers_the_release_page` drives the
 window: Download in the Updates section and the title row, the question once with Download / Later / Skip this version,
 Download opening the tag's page (`shell.updateLinks.open` stubbed). The packaged start on a marker is P3's `portable`
-gate. The zip (P2, `tools/portable_zip.js`): `platform_test.js` builds one from a fake `win-unpacked` in a temp folder
+gate (below). The zip (P2, `tools/portable_zip.js`): `platform_test.js` builds one from a fake `win-unpacked` in a temp folder
 with Windows' `tar.exe` and reads it back by its own central directory (one top folder `Scumble/`, the marker's bytes,
 no `data` even from a stale stage that has one, an old file of the zip's name replaced, the source untouched), checks
 the refusals before anything is staged (no exe, no `app-update.yml`, another feed, another version in the asar, no
 asar, a `data` folder), and reads `dist:portable` in `package.json` and the windows job's order in `build.yml`
 (installer, its artifact, the zip, the zip's artifact, the upload to the draft on a tag only). The real zip is checked
 by hand once per build (`docs/RELEASING.md`).
+
+The `portable` gate (P3, `tools/portable_test.py`, `--exe` only) starts portable copies of the exe's folder the way a
+user does, **without `--user-data-dir`**, so it is the one gate that could reach the user's own `%APPDATA%\Scumble`.
+It refuses, starting nothing and reading nothing there, without `--exe` and while any `Scumble.exe` runs (the user's
+window, a headless or MCP-started one, a runner app of another gate: run it alone, or only beside `lint`, `types`,
+`quit`, `document`). It runs `tools/platform_test.js` first, then: (1) snapshots `%APPDATA%\Scumble` (names, sizes,
+times) and the top level of `%APPDATA%` and `%LOCALAPPDATA%`, and copies the user's `settings.json` and `autosave*.json`
+to `dist/gates/portable-backup/<time>` (kept across runs); (2) stages copies A and B (`<out>\A\Scumble` with the marker);
+(3) proves the detection with two starts that cannot rotate an autosave (the built `portable.js` in the exe's Node mode,
+then `--cmd ping --attach-only`, which must make A's `data` and leave `%APPDATA%\Scumble` as it was), then starts A's
+window (`--no-comfy`, port +19): `app:info.userData` is `A\Scumble\data`, read first on every start (else the instance
+is killed at once and the gate stops), `Local State` and `settings.json` there; (4) a setting changed through the
+Settings field's own listener survives a WM_CLOSE and a start; (5) a stroke's autosave in A's data, "Last session
+restored." with the same pixels after the next start; (6) a `.scumble` saved to `A\docs\`, the tab closed, opened
+again with the same pixels; (7) B beside A (port +20), `--cmd ping --attach-only` from each exe answering from its own
+instance (told apart by a canvas size only that instance holds: ping names no pid); (8) both Help > Copy MCP
+registration entries clicked in A's main process through its Node inspector (`--inspect` on A's last start, port
++21) with `clipboard.writeText` swapped for a recorder (the user's clipboard is never written): A's exe and launcher;
+(8b) A's update status is `notify`, never a download; (9) a copy C whose folder denies this account writing (icacls
+`(OI)(CI)(WD,AD,WEA,WA)`: the plan's plain `W` also denies running the exe, measured 2026-10-05) shows the error box,
+which the gate presses OK on (a task dialog's TDM_CLICK_BUTTON first), exits with 1, makes no `data`, and its stderr
+line names its data folder; (10) the snapshot again: `%APPDATA%\Scumble` unchanged, no new Scumble names in `%APPDATA%`
+or `%LOCALAPPDATA%`, the Scumble-named ones there unchanged. The cleanup takes the deny entry off C (`/remove:d`, then
+`/reset /T`) before it deletes the staged copies (`--keep` keeps them) and closes every instance it started by WM_CLOSE.
 
 Item 26 (`docs/PLAN_REFS.md`, @img tokens for reference layers): `node tools/refs_layout_test.js` pins every adapter's
 `layout(req)` against the request its real builder sends (every shipped provider variant, every ToAPIs channel, 0 / 1 /
