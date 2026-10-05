@@ -187,11 +187,14 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `docs/PLAN_SETTINGS.md` (what exists, the shape, the traps: the gates that read the rows, rebuilds that reset the
   DOM, the skins; two questions still open: the providers' grouping, Remove and one-option selects). For a later
   update; nothing built.
-- 40: a "⭐ Star this project on GitHub" link in the app (the user, 2026-10-05: "irgendwo in der app ... evtl. in den
-  einstellungen... oder irgendwo wo es nicht nervt"). Never a popup, a toast or a counter that asks. Places that do not
-  nag: *Settings › About* (today one line with the repo link, `renderer/index.html:186`, `shell.js:2605`) as a small
-  button, and the Help menu beside *Scumble on GitHub* (`electron/main/main.js:695`); opens
-  https://github.com/DenRakEiw/scumble through `shell.openExternal`. Small (an hour). For a later update; nothing built.
+- 40: a GitHub star link in the app (the user, 2026-10-05: "irgendwo in der app ... wo es nicht nervt", then the exact
+  wording and places): **"⭐ Star on GitHub"** directly in the Help menu (beside *Scumble on GitHub*,
+  `electron/main/main.js:695`) and in *Settings › About* (today one line with the repo link, `renderer/index.html:186`,
+  `shell.js:2605`), and **after a successful update, once per version: "Enjoying the new version? ⭐ Star us on
+  GitHub"**: on the first start of a new version (the last version seen kept in the settings), a quiet line that can
+  be closed, never a modal and never again for that version; whether it shows in the Store copy (the Store updates
+  it) and beside item 32's update dialog is a design question. Opens https://github.com/DenRakEiw/scumble through
+  `shell.openExternal`. Small (a few hours). For a later update; nothing built.
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
