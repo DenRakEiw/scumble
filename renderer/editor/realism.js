@@ -352,7 +352,7 @@ export function scaledDownNote(w, h) {
  * 64 px a side, a fit under 64 px a side, and a fit whose answer would not be larger than the picture.
  * -> { mode, refusal, scaled, fit: [w, h] (the picture before padding), sent: [w, h] (what goes), out: [w, h] (the
  *      pack's answer), keep: [w, h] (the answer's part that is the picture, the padding's share off), doc: [w, h]
- *      (the document after the landing: keep's width, the picture's aspect) }
+ *      (the document after the landing: keep's width, the picture's aspect, landingSize) }
  */
 export function fitPlan(w, h, factor) {
     w = Math.round(+w || 0); h = Math.round(+h || 0);
@@ -380,11 +380,26 @@ export function fitPlan(w, h, factor) {
     const o = outputSize(plan.sent[0], plan.sent[1], mode.F);
     plan.out = [o.w, o.h];
     plan.keep = [Math.round(plan.fit[0] * o.w / plan.sent[0]), Math.round(plan.fit[1] * o.h / plan.sent[1])];
-    plan.doc = [plan.keep[0], Math.max(1, Math.round(h * plan.keep[0] / w))];
+    const d = landingSize(w, h, plan.keep[0], plan.keep[1]);
+    plan.doc = [d.w, d.h];
     if (plan.doc[0] <= w) {
         plan.refusal = `${LABEL} cannot make the ${w} × ${h} picture larger at ${mode.text}: its output is capped at ${CAP_TEXT}.`;
     }
     return plan;
+}
+
+/**
+ * The document's size after a pass above 1× lands on a W × H picture whose answer (the part that is the picture) is
+ * w × h: the answer's width at the picture's aspect, the height rounded; where that rounding puts the document past the
+ * 1× caps (wholeRefusal: 6468 × 4312 from a 3:2 picture at 1.7×), the answer's own height, which a fit made within the
+ * caps, so a 1× pass on the document the pass made is not refused (release review 2026-10-05). fitPlan's `doc` and
+ * host.realismWhole's landing both take it.
+ * -> { w, h }
+ */
+export function landingSize(W, H, w, h) {
+    W = Math.round(+W || 0); H = Math.round(+H || 0); w = Math.round(+w || 0); h = Math.round(+h || 0);
+    const nh = W > 0 ? Math.max(1, Math.round(H * w / W)) : h;
+    return { w, h: nh !== h && wholeRefusal(w, nh) && !wholeRefusal(w, h) ? h : nh };
 }
 
 /**

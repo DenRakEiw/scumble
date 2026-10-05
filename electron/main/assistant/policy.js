@@ -113,10 +113,11 @@ const POLICY = {
     },
     resize_image: (call) => ASK("resizes the whole picture: the base is resampled, every layer scaled along (Ctrl+Z takes it back)",
         { changes: ["width", "height", "percent", "long_side"].filter((k) => call.args && call.args[k] !== undefined).map((k) => ({ field: k, to: call.args[k] })) }),
-    // the runs of the pinned document (the canonical call carries its doc); without one every tab's, the user's too
+    // always asked (release review 2026-10-05): the assistant's own runs are refused on a busy document, so a run in flight
+    // there is almost always the user's (or another agent's), and a cancel cannot be taken back
     cancel_run: (call) => (call.args && call.args.doc !== undefined && call.args.doc !== null && call.args.doc !== ""
-        ? AUTO("stops the runs of this document; a provider may still bill a run it already had")
-        : ASK("cancels every run in progress in every tab, yours included; a provider may still bill a run it already had")),
+        ? ASK("cancels the runs in progress on this document, yours included: nothing they would bring lands, and a provider may still bill a run it already had", { doc: call.args.doc })
+        : ASK("cancels every run in progress in every tab, yours included: nothing they would bring lands, and a provider may still bill a run it already had")),
 
     flatten: () => ASK("merges every visible layer, yours included, into the base image"),
     rotate_canvas: () => ASK("turns the whole picture, every layer with it (Ctrl+Z takes it back)"),
@@ -249,9 +250,10 @@ function renderCard(call, facts) {
 
 /**
  * realism_pass: refused with `status`'s reason when it cannot run, else asked with the values it sends on the card.
- * `status` answers for factor 1; above it (1.5, 1.7, 2, 3) a picture past 7680 × 4320 or 27.9 MP is scaled down instead of
- * refused, so that one reason does not refuse there (the command refuses a fit it cannot make with its own sentence),
- * and the question and the card name the factor and the document made larger.
+ * `status` answers for factor 1, and its every reason refuses at any factor (release review 2026-10-05): a picture past
+ * 7680 × 4320 or 27.9 MP cannot get larger either, so the command would refuse it above 1× too (a fit it cannot make
+ * otherwise is refused by the command with its own sentence). Above 1× the question and the card name the factor and
+ * the document made larger, as a ceiling: a picture whose output would pass the cap is scaled down first.
  */
 function realismRow(call, facts) {
     const r = facts && facts.realism;
@@ -262,11 +264,10 @@ function realismRow(call, facts) {
         return REFUSE(`${REALISM_LABEL} takes the factors 1, 1.5, 1.7, 2 and 3, not ${raw}.`);
     }
     const up = factor > 1;
-    const capOnly = up && r && typeof r.reason === "string" && r.reason.startsWith(`${REALISM_LABEL} takes at most `);
-    if (r && r.ready === false && !capOnly) return REFUSE(String(r.reason || `${REALISM_LABEL} cannot run on this document`));
+    if (r && r.ready === false) return REFUSE(String(r.reason || `${REALISM_LABEL} cannot run on this document`));
     const values = r ? { style: r.style, strength: r.strength, preset: r.preset } : null;
     if (up) {
-        return ASK(`runs ${REALISM_LABEL} at ${factor}× on your ComfyUI: the document becomes about ${factor} times larger (every layer scaled along) and the pass adds a layer; it queues there`,
+        return ASK(`runs ${REALISM_LABEL} at ${factor}× on your ComfyUI: the document becomes up to ${factor} times larger (less when the pass's output cap of 7680 × 4320 and 27.9 megapixels applies; every layer scaled along) and the pass adds a layer; it queues there`,
             { settings: { factor: `${factor}×`, ...(values || {}) } });
     }
     return ASK(`runs ${REALISM_LABEL} on your ComfyUI: it queues there and adds a layer`, { settings: values });

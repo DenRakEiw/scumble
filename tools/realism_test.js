@@ -1081,11 +1081,25 @@ function nodeFitSpan(a0, a1, limit, m) {
                 const p = R.fitPlan(w, h, m.factor);
                 if (p.refusal) continue;
                 plans++;
-                if (!passAccepts(p.sent[0], p.sent[1], m.F) || p.out[0] * p.out[1] > R.MAX_AREA || p.sent[0] % 2 || p.sent[1] % 2 || !(p.doc[0] > w) || Math.abs(p.doc[1] / p.doc[0] - h / w) > 1 / p.doc[0] + 1e-9) { planBad = [w, h, m.factor, p]; break; }
+                // the aspect within a rounding, or, where landingSize held the height to the caps, the answer's own size
+                // (no stretch of the pass layer; the layers below scaled by its sides); the document made is one a 1x pass
+                // takes (release review 2026-10-05)
+                const held = p.doc[1] !== Math.max(1, Math.round(h * p.keep[0] / w));
+                const aspectOk = held ? p.doc[0] === p.keep[0] && p.doc[1] === p.keep[1] : Math.abs(p.doc[1] / p.doc[0] - h / w) <= 1 / p.doc[0] + 1e-9;
+                if (!passAccepts(p.sent[0], p.sent[1], m.F) || p.out[0] * p.out[1] > R.MAX_AREA || p.sent[0] % 2 || p.sent[1] % 2 || !(p.doc[0] > w) || !aspectOk || R.wholeRefusal(p.doc[0], p.doc[1])) { planBad = [w, h, m.factor, p]; break; }
                 if (!p.scaled && (p.sent[0] - w > 1 || p.sent[1] - h > 1)) { planBad = [w, h, m.factor, "padded more than 1 px", p]; break; }
             }
         }
-        check(`fitPlan on ${plans} sizes: what goes is even and taken at F, its output never past 27.9 MP, the document larger at the picture's aspect`, plans > 2000 && !planBad, short(planBad));
+        check(`fitPlan on ${plans} sizes: what goes is even and taken at F, its output never past 27.9 MP, the document larger at the picture's aspect and within the 1x caps`, plans > 2000 && !planBad, short(planBad));
+        // landingSize (release review 2026-10-05): the rounded height that would put the document past the 1x caps is held
+        // to the answer's own, so a 1x pass on the document the pass made is not refused; elsewhere the aspect's rounding
+        const p32 = plan(3840, 2560, 1.7), pTall = plan(1761, 5374, 1.5);
+        check("fitPlan(3840, 2560, 1.7): the answer 6468 x 4310 makes a 6468 x 4310 document (not 6468 x 4312, past 27.9 MP), which a 1x pass takes",
+            !p32.refusal && eq(p32.keep, [6468, 4310]) && eq(p32.doc, [6468, 4310]) && !R.wholeRefusal(6468, 4310) && !!R.wholeRefusal(6468, 4312), short(p32));
+        check("fitPlan(1761, 5374, 1.5): the answer 2518 x 7680 makes a 2518 x 7680 document (not 2518 x 7684, past the long side)",
+            !pTall.refusal && eq(pTall.doc, [2518, 7680]) && !R.wholeRefusal(2518, 7680), short(pTall));
+        check("landingSize keeps the aspect's rounding where it is within the caps", eq(R.landingSize(3000, 200, 7680, 510), { w: 7680, h: 512 }) && eq(R.landingSize(320, 240, 640, 480), { w: 640, h: 480 }) && eq(R.landingSize(3840, 2560, 6468, 4310), { w: 6468, h: 4310 }),
+            short([R.landingSize(3000, 200, 7680, 510), R.landingSize(3840, 2560, 6468, 4310)]));
         {
             // every picture size the dialog meets at every factor, refused or not: no plan sends an output past the area
             let over = null, nAll = 0;

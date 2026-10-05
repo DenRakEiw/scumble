@@ -335,8 +335,8 @@ export function status(ed) {
 /**
  * The Realism Pass on this document (docs/PLAN_0_1_42.md R4): whether realism_pass at factor 1 would start now
  * (host.realismWholeRefusal: the refusals host.realismWhole makes before anything is read), the reason when not, the
- * server's note (RTX 30) and the app's values it sends. Above 1 (R-U) a picture past 7680 × 4320 or 27.9 MP is scaled down
- * instead of refused; the assistant's row reads that size reason as no refusal there.
+ * server's note (RTX 30) and the app's values it sends. Above 1 (R-U) a picture already past 7680 × 4320 or 27.9 MP is
+ * refused too (it cannot get larger), so the assistant's row refuses on every reason given here, whatever the factor.
  */
 function realismState(ed) {
     const v = host.realismValues();
@@ -756,7 +756,7 @@ const COMMANDS = {
     // -- document --
     status: {
         readOnly: true,
-        description: `What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; above factor 1 a picture past that size is scaled down instead), note (RTX 30), and the app's style, strength and preset it sends.`,
+        description: `What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends.`,
         params: {},
         async run(ed) {
             const s = status(ed);
@@ -889,6 +889,8 @@ const COMMANDS = {
         params: { x: P.num("x of the point"), y: P.num("y of the point"), points: P.obj("instead of x/y: [{x, y, label}] with several points"), box: P.obj("optional [x0, y0, x1, y1] box prompt"), mode: P.str("replace, add or subtract", { enum: ["replace", "add", "subtract"], default: "replace" }) },
         async run(ed, a) {
             if (!host.objectsInApp()) throw new Error("no SAM2 model is downloaded (Settings › Helpers)");
+            // a run that resizes the document holds it: the mask would land in the old geometry
+            if (ed.resizingRun && ed.resizingRun()) throw new Error("A run is still going on this document: wait for it, or Cancel.");
             if (!ed.objects || ed.objects.w !== ed.width || ed.objects.h !== ed.height) {
                 await ed.ensureObjects();
                 const ok = await until(() => !ed.objectsPending, 600000, 250);
@@ -1310,7 +1312,7 @@ const COMMANDS = {
     },
     cancel_run: {
         scope: "app",
-        description: `Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends at once with the cancel, and nothing lands. A provider may still finish a job it already had and charge it. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running); ended: whether they have let go of their documents (waited for up to 10 s).`,
+        description: `Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends at once with the cancel, and nothing lands. A provider may still finish a job it already had and charge it. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running); landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 10 s).`,
         params: { doc: P.int("only this tab's runs (the id from list_documents); every tab's when left out") },
         async run(_, a) {
             let ed = null;
@@ -1320,14 +1322,24 @@ const COMMANDS = {
             }
             const now = Date.now();
             const runs = host.cancelRuns(ed);
+            // a run whose answer is in has left the title row but still holds its document until its result has landed:
+            // it can no longer be cancelled, so it is named as landing (and waited for), never as nothing running
+            const landing = (ed ? [ed] : host.editors()).filter((e) => e.providerPending && !runs.includes(e.providerPending))
+                .map((e) => ({ e, t: e.providerPending }));
             // the run ends in its own code (main aborts the request, a job on the user's ComfyUI is taken off it): wait for
             // its slot and its row in the title bar to go
-            const over = () => runs.every((t) => !host._providerRuns.has(t) && !(t.editor && t.editor.providerPending === t));
-            const ended = runs.length ? await until(over, 10000, 100) : true;
+            const over = () => runs.every((t) => !host._providerRuns.has(t) && !(t.editor && t.editor.providerPending === t))
+                && landing.every((x) => x.e.providerPending !== x.t);
+            const ended = runs.length || landing.length ? await until(over, 10000, 100) : true;
+            const notes = [];
+            if (runs.length) notes.push("A provider may still finish a job it already had and charge it.");
+            if (landing.length) notes.push("A run's answer was already in and is landing: it can no longer be cancelled (Ctrl+Z takes it back once it is in).");
+            if (!notes.length) notes.push("Nothing was running" + (ed ? " on this document." : "."));
             return {
                 cancelled: runs.map((t) => ({ doc: t.editor && t.editor.node ? t.editor.node.id : null, provider: t.provider || null, label: t.label || t.provider || null, seconds: Math.round((now - (t.started || now)) / 100) / 10 })),
+                landing: landing.map((x) => ({ doc: x.e.node ? x.e.node.id : null, label: x.t.label || x.t.provider || null })),
                 ended,
-                note: runs.length ? "A provider may still finish a job it already had and charge it." : "Nothing was running" + (ed ? " on this document." : "."),
+                note: notes.join(" "),
             };
         },
     },
@@ -1462,6 +1474,13 @@ const COMMANDS = {
                 if (a.n != null && a.n !== "" && n !== +a.n) throw new Error("n must be a whole number of grid cells, 1..16");
                 pts = pointList(a.points, "points");
                 if (pts.length !== (n + 1) * (n + 1)) throw new Error(`warp with n ${n} needs ${(n + 1) * (n + 1)} points ((n + 1) × (n + 1), row by row), not ${pts.length}`);
+            }
+            // a mode that bakes (rotate, distort, warp; not a text's angle) reads the layer's own pixels as one canvas (the
+            // mask step and the bake): a layer past that (a full-size paint layer of a document over 268 MP) is refused
+            // before anything changes, not half way after the undo step
+            if (mode !== "rotate90" && !(mode === "rotate" && l.kind === "text" && l.text)) {
+                const pw = l.px ? l.px.width : 0, ph = l.px ? l.px.height : 0;
+                if (pw > 65535 || ph > 65535 || pw * ph > 268435456) throw new Error(`layer ${l.name || l.id} is ${pw} × ${ph} px, more than one canvas holds (65,535 px a side, 268 megapixels): ${mode} needs its pixels as one canvas`);
             }
             if (ed.textEdit) ed.endTextEdit(true);
             // an open transform in the editor (a preview, not applied) goes, as Esc would; the modes take one layer

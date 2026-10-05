@@ -1363,6 +1363,17 @@ try {
         await refused({ mode: "warp", n: 2, points: pts.slice(1) }, /^warp with n 2 needs 9 points/),
         await refused({ mode: "distort", corners: [[0, 0], [70000, 0], [70000, 20], [0, 20]] }, /more than one canvas holds/),
     ];
+    // a layer whose own pixels are past one canvas (a full-size layer of a document over 268 MP; its size stood in for
+    // here) is refused before anything changes, however small the shape it would make (release review 2026-10-05)
+    {
+        const Lp = ed.layers.find((l) => l.id === made.id), px0 = Lp.px, u2 = ed.undo.length, sel0 = ed.selectedLayers ? ed.selectedLayers().map((l) => l.id) : null;
+        let big = "";
+        Lp.px = Object.create(px0, { width: { value: 70000 }, height: { value: 5000 } });
+        try { await c("transform_layer", { doc: d.id, layer: made.id, mode: "distort", corners: [[0, 0], [20, 0], [20, 20], [0, 20]] }); } catch (e) { big = String(e.message || e); } finally { Lp.px = px0; }
+        if (!/^layer Turn probe is 70000 × 5000 px, more than one canvas holds \\(65,535 px a side, 268 megapixels\\): distort needs its pixels as one canvas$/.test(big) || ed.undo.length !== u2 || ed.pending) throw new Error("a layer past one canvas: " + (big || "not refused") + " / steps " + (ed.undo.length - u2));
+        if (sel0 && JSON.stringify(ed.selectedLayers().map((l) => l.id)) !== JSON.stringify(sel0)) throw new Error("the refusal changed the selected layers");
+        out.bigLayer = big;
+    }
     await c("set_layer", { doc: d.id, layer: made.id, locked: true });
     out.locked = await refused({ mode: "rotate90" }, /^layer Turn probe is locked/);
     await c("set_layer", { doc: d.id, layer: made.id, locked: false });
@@ -1561,6 +1572,19 @@ try {
     const msg2 = await run2.g;
     if (all.cancelled.length !== 1 || all.cancelled[0].doc !== d.id || !/^Cancelled/.test(msg2)) throw new Error("every tab's: " + JSON.stringify(all) + " / " + msg2);
     out.cancelled = { ms, msg: msg.slice(0, 70) };
+    // a run whose answer is in has left the title row but still holds the document while its result lands: named as
+    // landing (and waited for), never "Nothing was running" (release review 2026-10-05)
+    const landTok = { provider: "loopback", label: "Loopback landing", started: Date.now(), editor: ed };
+    ed.providerPending = landTok;
+    setTimeout(() => { if (ed.providerPending === landTok) ed.providerPending = null; }, 600);
+    const t1 = Date.now();
+    const lr = await c("cancel_run", { doc: d.id });
+    if (lr.cancelled.length || !lr.landing || lr.landing.length !== 1 || lr.landing[0].doc !== d.id || lr.landing[0].label !== "Loopback landing" || lr.ended !== true || Date.now() - t1 < 400
+        || lr.note !== "A run's answer was already in and is landing: it can no longer be cancelled (Ctrl+Z takes it back once it is in).") throw new Error("a landing run: " + JSON.stringify(lr));
+    if (ed.providerPending === landTok) ed.providerPending = null;
+    const none2 = await c("cancel_run", { doc: d.id });
+    if (none2.cancelled.length || none2.landing.length || none2.note !== "Nothing was running on this document.") throw new Error("nothing after the landing: " + JSON.stringify(none2));
+    out.landing = lr.note;
     let bad = "";
     try { await c("cancel_run", { doc: 9999 }); } catch (e) { bad = String(e.message || e); }
     if (!/^no document with id 9999/.test(bad)) throw new Error("an unknown doc: " + (bad || "not refused"));

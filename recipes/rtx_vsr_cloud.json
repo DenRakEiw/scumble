@@ -13,7 +13,7 @@
       "model": "RTXVideoSuperResolution",
       "options": { "node": "RTXVideoSuperResolution" },
       "settings": [ { "index": 1, "key": "quality", "label": "Quality", "spec": [["LOW", "MEDIUM", "HIGH", "ULTRA"], { "default": "ULTRA" }] } ],
-      "note": "Runs on Comfy Cloud's GPUs (a node Comfy Cloud has installed, no Partner Node), billed in Comfy credits; not run live yet. 1 to 4 times, with a Quality setting; the answer may be at most 8192 px on the long side, so a large box or picture at a high factor is refused before anything is sent. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along.",
+      "note": "Runs on Comfy Cloud's GPUs (a node Comfy Cloud has installed, no Partner Node), billed in Comfy credits; run live 2026-10-04 (1024 to 2048 px in about 21 s). 1 to 4 times, with a Quality setting; the answer may be at most 8192 px on the long side, so a large box or picture at a high factor is refused before anything is sent. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along.",
       "factor": { "default": 2, "min": 1, "max": 4 }
     }
   }

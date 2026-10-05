@@ -1201,9 +1201,18 @@ try {
     await host.runUpscale(ed, { scope: "document", factor: 2 });
     if (ed.width !== 640 || ed.height !== 480) throw new Error("the upscale did not land: " + ed.width + "x" + ed.height);
     want(s2, "the whole picture's upscale");
-    // a landing that fails (an answer at the picture's own size) gives the document back
-    const e3 = await host.runUpscale(ed, { scope: "document", factor: 1 }).then(() => null, (e) => e);
-    if (!e3 || !/nothing to do/.test(e3.message) || ed.providerPending || host._providerRuns.size) throw new Error("a failed landing: " + JSON.stringify({ message: e3 && e3.message, held: !!ed.providerPending }));
+    // the whole picture at 1x is refused before anything is sent (its answer would be the picture's own size: release
+    // review 2026-10-05)
+    const e1 = await host.runUpscale(ed, { scope: "document", factor: 1 }).then(() => null, (e) => e);
+    if (!e1 || e1.message !== "At 1× the whole picture would come back at its own size: upscale a selection at 1× (Select All for the whole picture), or pick a larger factor." || ed.providerPending || host._providerRuns.size || ed.width !== 640) throw new Error("1x on the whole picture: " + JSON.stringify({ message: e1 && e1.message, held: !!ed.providerPending }));
+    // a landing the net refuses (a render on ComfyUI that got past the run's hold) changes nothing and gives the document
+    // back
+    const wl0 = host.wholeLandingRefusal;
+    host.wholeLandingRefusal = function (e, ...a) { (e._localRuns || (e._localRuns = new Set())).add("gate-late-render"); return wl0.call(this, e, ...a); };
+    let e3;
+    try { e3 = await host.runUpscale(ed, { scope: "document", factor: 2 }).then(() => null, (e) => e); }
+    finally { host.wholeLandingRefusal = wl0; if (ed._localRuns) ed._localRuns.delete("gate-late-render"); }
+    if (!e3 || e3.message !== "Loopback: a render on your ComfyUI is still running on this document: its result would land where the picture was. Nothing was changed; run it again when the render is in." || ed.width !== 640 || ed.providerPending || host._providerRuns.size) throw new Error("a refused landing: " + JSON.stringify({ message: e3 && e3.message, width: ed.width, held: !!ed.providerPending }));
     // Generate new (runGenerate): the new base lands while held
     host.setRecipe(LOOP);
     const s4 = wrap("setBaseFromCanvas");
@@ -1211,7 +1220,7 @@ try {
     if (ed.width !== 256 || ed.height !== 192) throw new Error("Generate new did not land: " + ed.width + "x" + ed.height);
     want(s4, "Generate new");
     if (T.queued.length) throw new Error(T.queued.length + " passes went to the server");
-    return { generate: s1[0], upscale: s2[0].held, generateNew: s4[0].held, failed: e3.message.slice(0, 60) };
+    return { generate: s1[0], upscale: s2[0].held, generateNew: s4[0].held, oneX: e1.message.slice(0, 50), failed: e3.message.slice(0, 60) };
 } finally {
     if (ed) for (const n of own) delete ed[n];
     T.onQueued = null;
@@ -1384,6 +1393,77 @@ try {
     return { at3: [a.e.width, a.e.height], at17: [b.e.width, b.e.height], at2area: [7040, 3960], note };
 } finally {
     for (const id of extra) { try { await run("close_document", { doc: id, force: true }); } catch (_) { /* gone */ } }
+""" + RU_END_TAIL),
+    # release review 2026-10-05: while a pass above 1x waits, the document is held against what would land in the old
+    # geometry (Generate with any recipe, a selection by text, an undo of a resize); the landing takes the Cancel off the
+    # title row before the resize (cancel_run then finds nothing to cancel), names its undo step even with a full history,
+    # and its net refuses a landing after a render slipped in or the size changed (nothing added, the document as it was)
+    ("the_pass_above_1x_holds_the_document_and_its_landing", R2A_STUBS + R3A_PRE + RU_PRE + r"""
+const RG = "A run is still going on this document: wait for it, or Cancel.";
+let wrapped = null;
+try {
+    stubR3a();
+    const { id, e: ed } = await blank(320, 240);
+    // a resize before the pass: its undo step is the one a Ctrl+Z during the pass would take back
+    await run("resize_image", { doc: id, width: 400, height: 300 });
+    if (ed.width !== 400) throw new Error("the resize: " + ed.width);
+    // with a full history (the push drops the oldest step): the pass's step is still found and named
+    ed.maxUndo = ed.undo.length;
+    const before = async () => {
+        const d = {};
+        ed.lastRunError = null;
+        const g = await ed.generate();
+        d.generate = g && g.error ? g.error.message : "ran";
+        ed.setStatus(""); ed.segInput.value = "the sky";
+        await ed.segmentByText();
+        d.segment = ed.status; d.segPending = !!ed.segmentPending;
+        ed.segInput.value = "";
+        const u = await run("undo", { doc: id });
+        d.undo = u.stepped; d.width = ed.width;
+        return d;
+    };
+    let during = null, atResize = null;
+    T.onQueued = (qid, body) => (async () => { during = await before(); await answerUp([30, 200, 60], 2)(qid, body); })();
+    const proto = Object.getPrototypeOf(ed);
+    ed.resizeImage = function (...a) { atResize = { rows: host._providerRuns.size, cancel: host.cancelRuns(ed).length, held: !!ed.providerPending }; return proto.resizeImage.apply(this, a); };
+    wrapped = ed;
+    const n0 = ed.layers.length;
+    const out = await host.realismWhole(ed, { factor: 2 });
+    if (T.err) throw T.err;
+    if (!during || during.generate !== RG || during.segment !== RG || during.segPending || during.undo !== 0 || during.width !== 400) throw new Error("while the pass waited: " + JSON.stringify(during));
+    if (!atResize || atResize.rows !== 0 || atResize.cancel !== 0 || !atResize.held) throw new Error("at the landing's resize: " + JSON.stringify(atResize));
+    if (ed.width !== 800 || ed.height !== 600 || !out.layer || ed.layers.length !== n0 + 1) throw new Error("the landing: " + JSON.stringify({ size: [ed.width, ed.height], layers: ed.layers.length - n0 }));
+    const step = ed.undo[ed.undo.length - 1];
+    if (!step || step.kind !== "canvas" || step.label !== LABEL) throw new Error("the step with a full history: " + JSON.stringify(step && [step.kind, step.label]));
+    ed.maxUndo = 30;
+    delete ed.resizeImage; wrapped = null;
+    const res = { during, atResize };
+    // the net: a render that got past the hold (stood in for here) refuses the landing; nothing added, the size kept
+    const refusedLanding = async (setup, want, steps = 0) => {
+        const n1 = ed.layers.length, u1 = ed.undo.length;
+        T.queued = [];
+        T.onQueued = (qid, body) => (async () => { await setup(); await answerUp([30, 200, 60], 1.5)(qid, body); })();
+        const err = await failed(host.realismWhole(ed, { factor: 1.5 }));
+        if (T.err) throw T.err;
+        if (!err || err.message !== want || ed.status !== want) throw new Error("the net: " + (err ? err.message : "not refused") + " / " + ed.status);
+        if (ed.layers.length !== n1 || ed.undo.length !== u1 + steps || ed.providerPending || host._providerRuns.size) throw new Error("a refused landing changed something: " + JSON.stringify({ layers: ed.layers.length - n1, steps: ed.undo.length - u1, held: !!ed.providerPending }));
+        return err.message;
+    };
+    res.late = await refusedLanding(async () => { (ed._localRuns || (ed._localRuns = new Set())).add("gate-late-render"); },
+        LABEL + ": a render on your ComfyUI is still running on this document: its result would land where the picture was. Nothing was changed; run it again when the render is in.");
+    ed._localRuns.delete("gate-late-render");
+    if (ed.width !== 800 || ed.height !== 600) throw new Error("the refused landing changed the size: " + ed.width + "x" + ed.height);
+    // the size changed under the pass (a resize that got past the hold, stood in for by freeing the slot and the pass's
+    // own open render for it): one step of its own, the pass adds nothing
+    res.sized = await refusedLanding(async () => {
+        const t = ed.providerPending, runs = ed._localRuns;
+        ed.providerPending = null; ed._localRuns = new Set();
+        try { await run("resize_image", { doc: id, width: 400, height: 300 }); } finally { ed.providerPending = t; ed._localRuns = runs; }
+    }, LABEL + ": the picture's size changed while it ran (800 × 600 is now 400 × 300); nothing was changed.", 1);
+    if (ed.width !== 400 || ed.height !== 300) throw new Error("after the size change: " + ed.width + "x" + ed.height);
+    return res;
+} finally {
+    if (wrapped) { delete wrapped.resizeImage; wrapped.maxUndo = 30; if (wrapped._localRuns) wrapped._localRuns.delete("gate-late-render"); }
 """ + RU_END_TAIL),
     # refused before anything is read or sent: a fit under 64 px (4600 x 100 at 3x: 2560 x 54), a picture that cannot get
     # larger, a factor no mode has, a job that would land in the old geometry (a cutout going; 1x is not held by it)

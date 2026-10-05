@@ -1700,8 +1700,13 @@ export const host = {
      * upscaleSizeRefusal's last rule alone, for an API upscaler (its variant's `limits.out`: RTX Video Super Resolution
      * on Comfy Cloud, 8192; docs/PLAN_0_1_42.md U3), whose input limits the crop is held to instead of refused: "" when
      * the long side of w × h times `factor` stays within `out` (or there is no `out`, or the model picks its factor).
+     * The whole picture (`what` "picture") at 1× is refused on every upscaler: its answer would come back at the picture's
+     * own size, which the landing cannot take (release review 2026-10-05); a fixed 1× model is only seen in its answer.
      */
     upscaleOutRefusal(r, w, h, factor, what = "box") {
+        if (what === "picture" && factor != null && factor <= 1) {
+            return `At 1× the whole picture would come back at its own size: upscale a selection at 1× (Select All for the whole picture), or pick a larger factor.`;
+        }
         const out = r && r.limits && r.limits.out;
         if (!out || factor == null || Math.round(Math.max(w, h) * factor) <= out) return "";
         const { the, smaller } = upscaleWords(w, h, what);
@@ -1752,7 +1757,9 @@ export const host = {
         const slow = /topaz/i.test(`${r.id} ${r.model}`) ? " Topaz can take several minutes; the window stays usable."
             : /precision/i.test(r.model || "") && r.provider === "magnific" ? " Magnific Precision can take several minutes; the window stays usable." : "";
         const by = factor ? `${factor}×` : "the model's own factor";
-        const token = { provider: r.provider, label, started: Date.now(), editor, runId: runIdOf() };
+        // `resizes`: the whole picture's landing resizes the document, so a Generate or a helper job started meanwhile is
+        // refused (editor.generate and the helpers' starters read it), not left to land in the old geometry
+        const token = { provider: r.provider, label, started: Date.now(), editor, runId: runIdOf(), resizes: scope === "document" };
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
@@ -1816,15 +1823,18 @@ export const host = {
      * layer, mask and the selection scaled along through `resizeImage(nw, nh, { base })`, one `canvas` undo step. The
      * caller holds the document's run slot (providerPending) until this returns: resizeImage's `base` lets this landing
      * through, and nothing else lands in the old geometry meanwhile. `W` × `H` is the picture that went out. Throws on an
-     * empty answer, one at the picture's own size, and a resize the editor refused (its status).
+     * empty answer, one at the picture's own size, a landing wholeLandingRefusal refuses (the size changed, a job that
+     * would land in the old geometry), and a resize the editor refused (its status). `gone`: the caller's closed-tab test.
      * -> { width, height, answered: [aw, ah] }
      */
-    async landWholePicture(editor, bytes, mime, { label, seconds = 0, W, H, note = "" }) {
+    async landWholePicture(editor, bytes, mime, { label, seconds = 0, W, H, note = "", gone = () => false }) {
         const img = await bytesToImage(bytes, mime);
         const aw = img.naturalWidth || img.width, ah = img.naturalHeight || img.height;
         if (!(aw > 0 && ah > 0)) throw new Error(`${label} answered with an empty picture.`);
         const nw = aw, nh = Math.max(1, Math.round(H * aw / W));
         if (nw === W && nh === H) throw new Error(`${label} answered at the picture's own size (${aw} × ${ah}); nothing to do.`);
+        const refused = await this.wholeLandingRefusal(editor, W, H, gone);
+        if (refused) throw new Error(`${label}: ${refused}`);
         const nb = document.createElement("canvas");
         nb.width = nw; nb.height = nh;
         const nctx = nb.getContext("2d");
@@ -1839,6 +1849,26 @@ export const host = {
     },
 
     /**
+     * The net before a whole-picture landing resizes the document (landWholePicture; realismWhole above 1×): "" when it
+     * may, else why not (the caller prefixes its label, adds nothing and changes nothing). The run held the document's
+     * slot (providerPending, `resizes`), so Generate, the helpers and a turn were refused meanwhile; this catches what
+     * got past that: the size changed since `W` × `H` went out, and turnBlocked's conditions without the run's own slot (a
+     * helper job, a render on the user's ComfyUI, a load). A save or a held stroke is waited for (up to 30 s) first.
+     * `gone`: the caller's closed-tab test (the wait ends on it).
+     */
+    async wholeLandingRefusal(editor, W, H, gone = () => false) {
+        const t0 = Date.now();
+        const busy = () => !!editor._docSaving || !!(editor.gestureHeld && editor.gestureHeld());
+        while (busy() && !gone() && Date.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 100));
+        if (gone()) return "the document was closed; nothing was changed.";
+        if (editor.width !== W || editor.height !== H) return `the picture's size changed while it ran (${W} × ${H} is now ${editor.width} × ${editor.height}); nothing was changed.`;
+        if (editor._localRuns && editor._localRuns.size) return "a render on your ComfyUI is still running on this document: its result would land where the picture was. Nothing was changed; run it again when the render is in.";
+        if (editor.segmentPending || editor.cutoutPending || editor.objectsPending || editor._pointPending || editor._loading) return "another job on this document (a selection by text, a cutout, the object tool, a load) would land where the picture was. Nothing was changed; run it again when that job is in.";
+        if (busy()) return "the document stayed busy (a save, or a held stroke): nothing was changed.";
+        return "";
+    },
+
+    /**
      * The whole picture through the selected upscale recipe on the user's ComfyUI (docs/PLAN_0_1_42.md U2): the base
      * alone goes out (drawn at its size, stored in the mirror and on the server, uploadInput), the recipe's graph runs
      * with the canvas node as a loader of that picture (comfyprompt.wholePicturePrompt: the Settings rows and the factor
@@ -1846,9 +1876,11 @@ export const host = {
      * new base with every layer, mask and the selection scaled along (landWholePicture, one undo step). Refused before
      * anything is drawn or sent: a graph that reads more than the picture from the canvas node, no connection, node types
      * the server lacks, a document that is busy (turnBlocked), a picture past the recipe's `limits` (the long side `max`,
-     * the answer's long side `out` at the factor; an upscale model picks its own factor, so `out` is not checked). The
-     * document is busy like a run meanwhile: the title row's timer names the recipe and its Cancel takes the job off the
-     * server; closing the tab ends it too and lands nothing. The loader gives RGB: a cut-out picture comes back opaque.
+     * the answer's long side `out` at the factor; an upscale model picks its own factor, so `out` is not checked), a factor
+     * of 1 (upscaleOutRefusal). The document is busy like a run meanwhile (a token that `resizes`: Generate and the helper
+     * jobs are refused): the title row's timer names the recipe and its Cancel takes the job off the server, or, pressed
+     * while the answer is fetched, lands nothing; closing the tab ends it too and lands nothing. The landing is
+     * landWholePicture's (its net: wholeLandingRefusal). The loader gives RGB: a cut-out picture comes back opaque.
      * `factor`: what the dialog or the command asked (the recipe's default when left out; null for a fixed one);
      * `deadline` (a time in ms, 0 for none): comfyPictureRun's hard end, the upload's too.
      * -> { scope: "document", recipe, factor, seconds, from, width, height, answered } (width null when the tab was closed)
@@ -1875,7 +1907,8 @@ export const host = {
         const size = this.upscaleSizeRefusal(r, W, H, factor, "picture");
         if (size) throw new Error(size);
         const by = factor != null ? `${factor}×` : "the model's own factor";
-        const token = { provider: "comfyui", label, started: Date.now(), editor };
+        // `resizes`: the landing resizes the document (see runUpscale)
+        const token = { provider: "comfyui", label, started: Date.now(), editor, resizes: true };
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
@@ -1915,13 +1948,16 @@ export const host = {
                 });
                 const prompt = comfyprompt.wholePicturePrompt(r, ref, factor, editor.settings);
                 res = await this.comfyPictureRun(editor, prompt, comfyprompt.WHOLE_OUTPUT, { label, token, front: false, deadline, timeoutMs: 1800000 });
+                // a Cancel during the answer's fetch (comfyPictureRun stops watching the token once the job answered):
+                // honoured here, so nothing lands, as cancel_run promises
+                if (token.cancelled && !gone()) throw Object.assign(new Error(`${label} cancelled.`), { kind: "cancelled" });
             } finally {
                 // the answer is in (or the run ended): the timer and Cancel leave the title row; the document stays held
                 // until the answer has landed (endRun below)
                 this.endRunRow(token);
             }
             if (gone()) return { scope: "document", recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: null, height: null, answered: null };
-            const land = await this.landWholePicture(editor, res.bytes, res.mime, { label, seconds: res.seconds, W, H, note: "" });
+            const land = await this.landWholePicture(editor, res.bytes, res.mime, { label, seconds: res.seconds, W, H, note: "", gone });
             return { scope: "document", recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: land.width, height: land.height, answered: land.answered };
         } catch (err) {
             if (gone()) return { scope: "document", recipe: r.id, factor, seconds: 0, from: [W, H], width: null, height: null, answered: null };
@@ -2614,8 +2650,8 @@ export const host = {
      * without its flatten). `status`'s realism answers from it too, so an agent is never told ready for a refused pass.
      * `factor` (R-U): a factor no mode has first; above 1× the document is resized when the answer lands, so not while
      * a job would land where the picture was (turnBlocked, as for an upscale of the whole picture), and the size is
-     * realism.fitPlan's (a picture past the cap is scaled down instead; a fit under 64 px, or one that would not get
-     * larger, is refused). `status` asks at 1×.
+     * realism.fitPlan's (a picture whose output would pass the cap is scaled down instead; a fit under 64 px, or one that
+     * would not get larger, which is every picture already past the cap, is refused). `status` asks at 1×.
      */
     realismWholeRefusal(editor, { factor = 1 } = {}) {
         const L = realism.LABEL;
@@ -2646,7 +2682,9 @@ export const host = {
      * (the base and every layer, mask and the selection scaled as Resize scales them) and the pass, at the pack's mode
      * of that factor, lands on top of it as the same new layer at the new size, both in one undo step; a picture whose
      * output would pass 7680 × 4320 or 27.9 MP (realism.MAX_AREA, measured) is scaled down before it goes, so the answer,
-     * and the document, come back as large as the pass allows. The landing goes through resizeImage's `base` path while the run slot is held.
+     * and the document, come back as large as the pass allows. The landing goes through resizeImage's `base` path while the run slot is held
+     * (a token that `resizes`: Generate and the helper jobs are refused meanwhile), after wholeLandingRefusal's net; from
+     * the resize on the Cancel is gone from the title row (it could no longer stop the landing).
      * -> { layer, seconds, note, changed, factor, from: [W, H], width, height } (layer null when the tab was closed
      *    meanwhile)
      */
@@ -2659,7 +2697,8 @@ export const host = {
         const mode = realism.modeFor(factor);
         const up = mode.factor > 1;
         const plan = up ? realism.fitPlan(W, H, mode.factor) : null;
-        const token = { provider: "comfyui", label: L, started: Date.now(), editor };
+        // above 1× the landing resizes the document: `resizes` refuses a Generate or a helper job meanwhile (see runUpscale)
+        const token = { provider: "comfyui", label: L, started: Date.now(), editor, resizes: up };
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
@@ -2710,9 +2749,11 @@ export const host = {
             const img = await bytesToImage(out.bytes, out.mime);
             const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
             // above 1×: the document's new size (the answer's width, the picture's aspect, as an upscale of the whole
-            // picture lands); the layer's pixels the answer as it is, or stretched by the pixel or two the pack's even
-            // rounding moved its height
-            const nw = up ? w : W, nh = up ? Math.max(1, Math.round(H * w / W)) : H;
+            // picture lands; the answer's own height where that rounding would pass the 1× caps, realism.landingSize);
+            // the layer's pixels the answer as it is, or stretched by the pixel or two the pack's even rounding moved
+            // its height
+            const land = up ? realism.landingSize(W, H, w, h) : null;
+            const nw = up ? land.w : W, nh = up ? land.h : H;
             if (up && nw <= W) throw new Error(`${L}: your ComfyUI answered ${w} × ${h}, which is not larger than the picture (${W} × ${H}).`);
             let lbytes = out.bytes, lmime = out.mime, lcanvas = null;
             if (up && h !== nh) {
@@ -2743,6 +2784,16 @@ export const host = {
             // (the canvas backend's layer keeps the canvas it is made from: it is not emptied here)
             const px = lcanvas ? editor.pixels.Layer.fromCanvas(lcanvas) : editor.pixels.Layer.fromImage(img);
             if (up) {
+                // the net before the resize (release review 2026-10-05): the size the pass started from, and no job that
+                // would land in the old geometry; refused with the reason, nothing added
+                const refused = await this.wholeLandingRefusal(editor, W, H, gone);
+                if (gone()) return none;
+                if (refused) throw new Error(`${L}: ${refused}`);
+                if (token.cancelled) throw cancelled();
+                // from here the landing cannot be stopped (half of it would be in): the timer and Cancel leave the title
+                // row, so neither it nor cancel_run reports a cancel that nothing honours; the slot stays held until the
+                // layer is in (endRun below)
+                this.endRunRow(token);
                 // the document by the factor (Q29): the base scaled as Resize scales it, given as the new base so the
                 // landing goes through while this run holds the slot (resizeImage's `base`); every layer, mask and the
                 // selection scale along, one `canvas` undo step, which the pass layer below joins (no step of its own)
@@ -2752,14 +2803,15 @@ export const host = {
                 nctx.imageSmoothingEnabled = true;
                 nctx.imageSmoothingQuality = "high";
                 editor.drawBaseInto(nctx, 0, 0, nw, nh);
-                const u0 = editor.undo.length;
+                // the step is found by identity: with a full history the push drops the oldest, so the length stays
+                const last0 = editor.undo[editor.undo.length - 1];
                 try { await editor.resizeImage(nw, nh, { base: nb }); } finally { nb.width = nb.height = 0; }
-                // the landing is under way: a Cancel pressed now no longer stops it (half of it is in), a closed tab does
+                // a closed tab ends it here too
                 if (gone()) return none;
                 if (editor.width !== nw || editor.height !== nh) throw new Error(editor.status || `${L}: the picture could not be resized.`);
                 // the Undo history names the pass, not "Upscale image"
-                const step = editor.undo.length > u0 ? editor.undo[editor.undo.length - 1] : null;
-                if (step && step.kind === "canvas") { step.label = L; if (editor.historyChanged) editor.historyChanged(); }
+                const step = editor.undo[editor.undo.length - 1];
+                if (step && step !== last0 && step.kind === "canvas") { step.label = L; if (editor.historyChanged) editor.historyChanged(); }
             } else {
                 editor.pushUndo({ kind: "layers", label: L });
             }
@@ -2794,6 +2846,9 @@ export const host = {
     async queueGenerate(editor, opts = {}) {
         const r = this.recipe;
         if (!r) throw new Error("No recipe selected.");
+        // a run whose landing resizes the document (an upscale of the whole picture, the Realism Pass above 1×) holds it:
+        // a render queued now would land in the old geometry (editor.generate refuses first; this is the net)
+        if (editor.providerPending && editor.providerPending.resizes) throw new Error(RUN_GOING);
         if (r.kind === "provider" && r.task === "upscale") return this.runUpscale(editor, { scope: "selection", refs: opts.refs });
         if (r.kind === "provider") return this.runProvider(editor, { refs: opts.refs });
         if (!r.prompt) throw new Error("No recipe selected.");
@@ -3787,6 +3842,8 @@ export const host = {
      */
     async selectPoint(editor, ix, iy, p = {}) {
         if (editor.objectsPending || editor._pointPending) return;
+        // a run that resizes the document holds it: the mask would land in the old geometry
+        if (editor.providerPending && editor.providerPending.resizes) { editor.setStatus(RUN_GOING); return; }
         editor._pointPending = true;
         try {
             editor.setStatus("Segmenting what is under the cursor with SAM2 ...");

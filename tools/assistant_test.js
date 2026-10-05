@@ -1177,14 +1177,14 @@ async function main() {
             ["boxes_from_selection", {}, "auto"], ["boxes_remove", { id: "box_1" }, "ask"], ["boxes_clear", {}, "ask"],
             ["sample_box", {}, "auto"], ["sample_box", { on: true }, "ask"],
             // docs/PLAN_0_1_42.md F2a: a transform or a cut on the user's layer asks, on the assistant's own it runs; a copy
-            // runs, into another tab it asks; a resize asks; cancelling the pinned document's runs runs, every tab's asks
+            // runs, into another tab it asks; a resize asks; a cancel always asks (the runs are the user's: release review)
             ["transform_layer", { layer: "Lmine", mode: "rotate", angle: 10 }, "auto"],
             ["transform_layer", { layer: "Lyours", mode: "distort", corners: [[0, 0], [9, 0], [9, 9], [0, 9]] }, "ask"],
             ["copy_to_layer", { layer: "Lyours" }, "auto"], ["copy_to_layer", { merged: true }, "auto"],
             ["copy_to_layer", { layer: "Lyours", cut: true }, "ask"], ["copy_to_layer", { layer: "Lmine", cut: true }, "auto"],
             ["copy_to_layer", { doc: 1, layer: "Lyours", to_doc: 2 }, "ask"], ["copy_to_layer", { doc: 1, layer: "Lyours", to_doc: 1 }, "auto"],
             ["resize_image", { percent: 50 }, "ask"],
-            ["cancel_run", { doc: 1 }, "auto"], ["cancel_run", {}, "ask"],
+            ["cancel_run", { doc: 1 }, "ask"], ["cancel_run", {}, "ask"],
             ["list_recipes", {}, "auto"], ["screenshot", { what: "mask", box: [0, 0, 10, 10] }, "auto"],
             // F2b: the wand and the shapes select, the Settings rows read and a preset applied to them run; a crop setting runs
             ["select_color", { x: 5, y: 5, tolerance: 20 }, "auto"], ["select_color", { x: 5, y: 5, sample: "layer", layer: "Lyours" }, "auto"],
@@ -1304,23 +1304,31 @@ async function main() {
                 && policy.undoStep({ name: "realism_pass", args: {} }) === null,
                 JSON.stringify(policy.clamp({ name: "realism_pass", args: {} }).args));
             check("the_policys_realism_label_is_the_renderers", policy.REALISM_LABEL === LABEL, policy.REALISM_LABEL);
-            // R-U: above 1x the question and the card name the factor and the document made larger; status (which answers
-            // for 1x) refusing only for the size past 7680 x 4320 or 27.9 MP does not refuse there (the pass scales down),
-            // any other reason still does; at 1x the size refuses as before (both caps' sentence: realism.fits)
+            // R-U: above 1x the question and the card name the factor and the document made larger, as a ceiling; every
+            // reason of status (which answers for 1x) refuses at every factor (release review 2026-10-05: a picture past
+            // 7680 x 4320 or 27.9 MP cannot get larger, the command refuses it above 1x too)
             const cap = { ...ready, ready: false, reason: `${LABEL} takes at most 7680 × 4320 (long × short side) and 27.9 megapixels; this is 7680 × 4320.` };
             const up2 = policy.decide({ name: "realism_pass", args: { factor: 2 } }, f({ realism: ready }));
             const upCap = policy.decide({ name: "realism_pass", args: { factor: 1.7 } }, f({ realism: cap }));
             const oneCap = policy.decide({ name: "realism_pass", args: { factor: 1 } }, f({ realism: cap }));
             const upLinux = policy.decide({ name: "realism_pass", args: { factor: 3 } }, f({ realism: { ...ready, ready: false, reason: linux } }));
             const upBlind = policy.decide({ name: "realism_pass", args: { factor: 2 } }, f());
-            check("realism_pass_above_1x_names_the_factor_and_scales_down_past_the_cap",
-                up2.action === "ask" && up2.reason === `runs ${LABEL} at 2× on your ComfyUI: the document becomes about 2 times larger (every layer scaled along) and the pass adds a layer; it queues there`
+            check("realism_pass_above_1x_names_the_factor_as_a_ceiling_and_refuses_past_the_cap",
+                up2.action === "ask" && up2.reason === `runs ${LABEL} at 2× on your ComfyUI: the document becomes up to 2 times larger (less when the pass's output cap of 7680 × 4320 and 27.9 megapixels applies; every layer scaled along) and the pass adds a layer; it queues there`
                 && eq(up2.card, { settings: { factor: "2×", style: "Cinematic", strength: 0.75, preset: "M" } })
-                && upCap.action === "ask" && /at 1\.7× on your ComfyUI/.test(upCap.reason) && upCap.card.settings.factor === "1.7×"
+                && upCap.action === "refuse" && upCap.reason === cap.reason
                 && oneCap.action === "refuse" && oneCap.reason === cap.reason
                 && upLinux.action === "refuse" && upLinux.reason === linux
                 && upBlind.action === "ask" && eq(upBlind.card, { settings: { factor: "2×" } }),
                 JSON.stringify({ up2, upCap, oneCap, upLinux, upBlind }));
+            // release review 2026-10-05: cancel_run always asks, on the pinned document too, and says what is lost
+            const fc = () => { const x = facts(); x.tools.add("cancel_run"); return x; };
+            const cOne = policy.decide({ name: "cancel_run", args: { doc: 4 } }, fc());
+            const cAll = policy.decide({ name: "cancel_run", args: {} }, fc());
+            check("cancel_run_always_asks_and_names_what_is_lost",
+                cOne.action === "ask" && /yours included: nothing they would bring lands/.test(cOne.reason) && /on this document/.test(cOne.reason) && eq(cOne.card, { doc: 4 })
+                && cAll.action === "ask" && /every tab, yours included: nothing they would bring lands/.test(cAll.reason),
+                JSON.stringify({ cOne, cAll }));
             // a factor no mode has is refused before the user is asked; the policy's factors are realism.js MODES'
             const src = require("node:fs").readFileSync(path.join(ROOT, "renderer", "editor", "realism.js"), "utf8");
             const modes = [...src.matchAll(/factor: ([\d.]+), F: ([\d.]+), label:/g)].flatMap((m) => [+m[1], +m[2]]);

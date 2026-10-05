@@ -1563,8 +1563,9 @@ function upSyncNote() {
 /**
  * The Realism Pass entry (docs/PLAN_0_1_42.md R3b, R-U): the whole picture only, at 1× (refine) or 1.5× to 3× (the
  * picture made larger first), its Style / Strength / Preset row (settings.realism, the app's), and Upscale greyed with
- * the reason the server (§3.3) or the picture's size gives (1×: §3.5's cap; above: realism.fitPlan, a picture past the
- * cap scaled down instead, the note says to what); host.realismWhole refuses the same before anything is read.
+ * the reason the server (§3.3) or the picture's size gives (1×: §3.5's cap; above: realism.fitPlan, a picture whose
+ * output would pass the cap scaled down instead, the note says to what); host.realismWhole refuses the same before
+ * anything is read.
  */
 function upSyncPass(ed) {
     const L = realism.LABEL;

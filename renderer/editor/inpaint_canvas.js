@@ -67,6 +67,8 @@ const STITCH_CLASS = "InpaintCanvasStitch";
 const MAX_UNDO = 30;
 const MAX_UNDO_BYTES = 384 * 1024 * 1024;   // rect undo copies: older steps are dropped past this
 const MAX_SNAPSHOTS = 8;                    // named snapshots of the whole document (the Undo history section)
+/** Said when a run holds the document (the app's host; the node's sets no `providerPending`). */
+const RUN_GOING_TEXT = "A run is still going on this document: wait for it, or Cancel.";
 /** What an undo step is called in the Undo history when its site gives no label of its own. */
 const UNDO_LABELS = {
     layerrect: "Layer pixels", layer: "Layer pixels", layerfull: "Layer", selection: "Selection", transform: "Transform", transforms: "Transform layers",
@@ -10548,8 +10550,14 @@ class InpaintEditor {
         if (this.segQualityLab) this.segQualityLab.hidden = this.segBackendSel.value !== "dino_sam";
     }
 
+    /** A run whose landing resizes the document holds it (the app's host): a helper's answer would land in the old geometry. */
+    resizingRun() {
+        return !!(this.providerPending && this.providerPending.resizes);
+    }
+
     async segmentByText() {
         if (!this.base) { this.setStatus("Load an image first."); return; }
+        if (this.resizingRun()) { this.setStatus(RUN_GOING_TEXT); return; }
         let text = (this.segInput.value || "").trim();
         // Empty field but a prompt: let the language model name the object the prompt is about.
         const fromPrompt = !text && !!(this.promptText || "").trim();
@@ -10828,6 +10836,7 @@ class InpaintEditor {
     /** Make sure the object map matches the current source; run SAM2 if not. */
     async ensureObjects() {
         if (!this.base || this.objectsPending) return;
+        if (this.resizingRun()) { if (this.status !== RUN_GOING_TEXT) this.setStatus(RUN_GOING_TEXT); return; }
         if (!objectBackendAvailable()) { this.setStatus(hostText("noObjectBackend", "Object selection needs a SAM2 model: download one in Settings › Helpers, or install ComfyUI-segment-anything-2 (Kijai) on the server.")); return; }
         this.objectsPending = { stage: "upload" };
         try {
@@ -11949,6 +11958,14 @@ class InpaintEditor {
             return;
         }
         if (held()) return;
+        // a step that changes the document's geometry (a crop, an extend, a resize, a turn, Generate new's picture) is
+        // refused while a job would land in the geometry it was made for, as the crop, the resize and the turn are
+        // themselves (turnBlocked): an upscale of the whole picture or a Realism Pass above 1× would otherwise land its
+        // answer in a document of another size (release review 2026-10-05)
+        if ((snap.kind === "canvas" || snap.kind === "turn") && this.turnBlocked()) {
+            this.setStatus(`Nothing ${redo ? "redone" : "undone"}: a job still running on this document would land where the picture was. Press ${redo ? "Ctrl+Shift+Z" : "Ctrl+Z"} again when it is in.`);
+            return;
+        }
         if (this.pending) this.cancelPending();
         now.pop();
         if (failed) {
@@ -12632,6 +12649,7 @@ class InpaintEditor {
     /** Remove the background of a layer with an RMBG node; the result becomes its transparency mask. */
     async cutoutLayer(layer) {
         if (!layer || !layer.px) return;
+        if (this.resizingRun()) { this.setStatus(RUN_GOING_TEXT); return; }
         const availCut = availableCutoutBackends();
         const backend = availCut.find((b) => b.id === this.cutoutSettings.backend) || availCut[0];
         if (!backend) { this.setStatus(hostText("noCutoutBackend", "No background removal model: download one in Settings › Helpers, or install comfyui-rmbg on the server.")); return; }
@@ -18075,9 +18093,11 @@ class InpaintEditor {
         // disabled while the run is awaited. Ctrl+Enter (the editor's keys and the prompt field) reaches here directly, so
         // a run that needs that slot (the host's resultInputState says `provider`) is refused here, before the seed is
         // rolled or the button freed under the first run. A recipe on the user's ComfyUI takes no slot and keeps
-        // queueing (ComfyUI queues on purpose), also while a pass or an upscale holds it; the node's host has no slot.
-        if (this.providerPending && this.resultInputState().provider) {
-            this.lastRunError = new Error("A run is still going on this document: wait for it, or Cancel.");
+        // queueing (ComfyUI queues on purpose), also while a 1× pass or a selection's upscale holds it; not while a run
+        // whose landing resizes the document holds it (`resizes`: an upscale of the whole picture, the Realism Pass
+        // above 1×), whose result would land in the old geometry. The node's host has no slot.
+        if (this.providerPending && (this.resultInputState().provider || this.providerPending.resizes)) {
+            this.lastRunError = new Error(RUN_GOING_TEXT);
             this.setStatus(this.lastRunError.message);
             return { error: this.lastRunError };
         }

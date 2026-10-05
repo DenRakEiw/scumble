@@ -11142,8 +11142,9 @@ return out;
 // was going (and freed the button under it). With an API recipe selected, a stub run that never answers holds the
 // document's slot (`providerPending`, as host.runProvider does): Ctrl+Enter on the editor and in the prompt field are
 // refused with the reason, nothing is queued, the seed is not rolled and the button stays disabled. A recipe on the
-// user's ComfyUI takes no slot and still queues on every press while the slot is held (a pass or an upscale holds it
-// too), and once the run is over the API recipe goes again.
+// user's ComfyUI takes no slot and still queues on every press while the slot is held (a 1x pass or a selection's upscale
+// holds it too), but not while a run whose landing resizes the document holds it (`resizes`), and once the run is over
+// the API recipe goes again.
 const d = await run("new_document");
 const ed = ednow(d.id);
 host.shell.activate(ed);
@@ -11187,6 +11188,28 @@ try {
     ctrlEnter(ed.promptInput); await wait(80);
     out.comfyWhileHeld = calls.slice(1);
     if (calls.length !== 3 || calls[1] !== prev.id || calls[2] !== prev.id) throw new Error(`two Ctrl+Enter with ${prev.id} while the slot was held queued ${JSON.stringify(calls.slice(1))}`);
+    // release review 2026-10-05: not while the slot is held by a run whose landing resizes the document (an upscale of the
+    // whole picture, the Realism Pass above 1x): Ctrl+Enter with the ComfyUI recipe, a selection by text, a cutout and the
+    // object tool are refused with the reason and start nothing
+    const tok = ed.providerPending;
+    tok.resizes = true;
+    try {
+        ed.setStatus("");
+        ctrlEnter(document.body); await wait(80);
+        if (calls.length !== 3 || ed.status !== WORDS) throw new Error(`Ctrl+Enter with ${prev.id} while a resizing run held the slot: ${JSON.stringify({ calls: calls.slice(3), status: ed.status })}`);
+        ed.setStatus(""); ed.segInput.value = "the sky";
+        await ed.segmentByText();
+        if (ed.segmentPending || ed.status !== WORDS) throw new Error("a selection by text during a resizing run: " + ed.status);
+        const pl = await run("add_paint_layer", { doc: d.id, name: "f1 cutout probe" });
+        ed.setStatus("");
+        await ed.cutoutLayer(ed.layers.find((l) => l.id === pl.id));
+        if (ed.cutoutPending || ed.status !== WORDS) throw new Error("a cutout during a resizing run: " + ed.status);
+        ed.setStatus("");
+        await ed.ensureObjects();
+        if (ed.objectsPending || ed.status !== WORDS) throw new Error("the object tool during a resizing run: " + ed.status);
+        await run("remove_layer", { doc: d.id, layer: pl.id });
+        out.resizingRun = ed.status;
+    } finally { tok.resizes = false; ed.segInput.value = ""; }
     release();
     await first;
     if (ed.providerPending || ed.generateBtn.disabled) throw new Error("the run's end left the slot or the button: " + JSON.stringify({ busy: !!ed.providerPending, disabled: ed.generateBtn.disabled }));
@@ -11202,6 +11225,56 @@ try {
     ed.genSettings.seedRandom = random0;
     host.setRecipe(prev);
     try { await run("close_document", { doc: d.id }); } catch (_) { /* gone */ }
+}
+return out;
+"""),
+    ("a_geometry_undo_waits_for_a_job", """
+// release review 2026-10-05: Ctrl+Z / Ctrl+Shift+Z of a step that changes the document's geometry (here a resize) is
+// refused while a job would land in the geometry it was made for (a run holding the slot, a render on ComfyUI, a helper
+// job: turnBlocked), with the reason; a step of the layers still goes; once the job is in, the step goes
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+const WORDS = (w, k) => `Nothing ${w}: a job still running on this document would land where the picture was. Press ${k} again when it is in.`;
+try {
+    await run("new_canvas", { width: 320, height: 200, doc: d.id });
+    await run("resize_image", { doc: d.id, percent: 50 });
+    // a step of the layers after it: a paint layer added (no step of its own) and deleted (one)
+    const pl = await run("add_paint_layer", { doc: d.id, name: "undo probe" });
+    await run("remove_layer", { doc: d.id, layer: pl.id });
+    if (ed.width !== 160 || ed.layers.some((l) => l.id === pl.id)) throw new Error("the resize and the delete: " + ed.width);
+    const tok = { provider: "stub", label: "Stub", started: Date.now(), editor: ed };
+    ed.providerPending = tok;
+    // the layer step goes; the resize's is refused (the command reports no step taken)
+    const u1 = await run("undo", { doc: d.id });
+    if (u1.stepped !== 1 || !ed.layers.some((l) => l.id === pl.id)) throw new Error("the layers step during a run: " + JSON.stringify(u1));
+    const u2 = await run("undo", { doc: d.id });
+    if (u2.stepped !== 0 || ed.width !== 160 || u2.status !== WORDS("undone", "Ctrl+Z")) throw new Error("the resize undone during a run: " + JSON.stringify(u2) + " at " + ed.width);
+    out.refused = u2.status;
+    // a render on ComfyUI and a helper job hold it too
+    ed.providerPending = null;
+    (ed._localRuns || (ed._localRuns = new Set())).add("gate-undo-render");
+    const u3 = await run("undo", { doc: d.id });
+    ed._localRuns.delete("gate-undo-render");
+    ed.segmentPending = { text: "x" };
+    const u4 = await run("undo", { doc: d.id });
+    ed.segmentPending = null;
+    if (u3.stepped !== 0 || u4.stepped !== 0 || ed.width !== 160) throw new Error("a render or a helper job: " + JSON.stringify({ u3, u4, w: ed.width }));
+    // free: it goes; the redo is refused while held, goes once free
+    const u5 = await run("undo", { doc: d.id });
+    if (u5.stepped !== 1 || ed.width !== 320) throw new Error("the undo once free: " + JSON.stringify(u5) + " at " + ed.width);
+    ed.providerPending = tok;
+    const r1 = await run("redo", { doc: d.id });
+    ed.providerPending = null;
+    if (r1.stepped !== 0 || ed.width !== 320 || r1.status !== WORDS("redone", "Ctrl+Shift+Z")) throw new Error("the redo during a run: " + JSON.stringify(r1));
+    const r2 = await run("redo", { doc: d.id });
+    if (r2.stepped !== 1 || ed.width !== 160) throw new Error("the redo once free: " + JSON.stringify(r2));
+    out.ok = true;
+} finally {
+    ed.providerPending = null; ed.segmentPending = null;
+    if (ed._localRuns) ed._localRuns.delete("gate-undo-render");
+    try { await run("close_document", { doc: d.id, force: true }); } catch (_) { /* gone */ }
 }
 return out;
 """),
