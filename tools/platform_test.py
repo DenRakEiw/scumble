@@ -149,7 +149,7 @@ try {
     if (!b1) throw new Error("no question for a new version");
     const r1 = read(b1);
     if (r1.title !== "Scumble 9.8.2 is out" || JSON.stringify(r1.buttons) !== JSON.stringify(["Download", "Later", "Skip this version"])) throw new Error("the question: " + JSON.stringify(r1));
-    if (!/^This copy does not update itself\. Download the new zip and unpack it over this folder: the data folder stays\.$/.test(r1.message)) throw new Error("the message: " + r1.message);
+    if (!/^This copy does not update itself\. Download the new zip and unpack it where you unpacked this one, so its Scumble folder lands on this one: the data folder stays\.$/.test(r1.message)) throw new Error("the message: " + r1.message);
     if (!r1.detail.startsWith("What changed:\n• One.\n• Two.") || !/Later asks again at the next start/.test(r1.detail) || /Restart|installs/.test(JSON.stringify(r1))) throw new Error("the detail: " + JSON.stringify(r1));
     const focused = b1.activeElement && b1.activeElement.textContent;
     if (focused !== "Later") throw new Error("the focus is on " + focused);

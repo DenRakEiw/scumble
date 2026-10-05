@@ -2360,7 +2360,7 @@ export async function announceUpdate(s) {
         if (notify) {
             const n = await dialogs.ask({
                 title: `Scumble ${v} is out`,
-                message: "This copy does not update itself. Download the new zip and unpack it over this folder: the data folder stays.",
+                message: "This copy does not update itself. Download the new zip and unpack it where you unpacked this one, so its Scumble folder lands on this one: the data folder stays.",
                 detail: updateQuestionDetail(now),
                 buttons: ["Download", "Later", "Skip this version"],
                 defaultId: 0,

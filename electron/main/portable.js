@@ -30,11 +30,12 @@ const MARKER_TEXT = [
     "",
     "- API keys are encrypted for this Windows account. On another PC or account, type them again.",
     "- This copy does not update itself. When a new version is out, Scumble says so: download the new",
-    "  zip and unpack it over this folder. The data folder stays.",
+    "  zip and unpack it where you unpacked this one, so its Scumble folder lands on this one. The data",
+    "  folder stays.",
     "- Delete this file and Scumble uses %APPDATA%\\Scumble like an installed copy, and shares that",
     "  data with it.",
-    "- Unpack into a plain folder you can write to (for example C:\\Tools\\Scumble), not into Program",
-    "  Files and not into a folder OneDrive syncs.",
+    "- Keep this folder in a plain place you can write to (for example C:\\Tools\\Scumble), not in",
+    "  Program Files and not in a folder OneDrive syncs.",
     "",
 ].join("\r\n");
 

@@ -334,7 +334,7 @@ check("the_data_folder_is_made_and_proven_writable", () => {
 
 check("the_marker_text_says_what_the_file_does", () => {
     const t = portable.MARKER_TEXT;
-    for (const s of ["\"data\" folder", "%APPDATA%\\Scumble", "type them again", "does not update itself", "unpack it over this folder", "Delete this file"]) if (!t.includes(s)) throw new Error("the marker lacks " + JSON.stringify(s));
+    for (const s of ["\"data\" folder", "%APPDATA%\\Scumble", "type them again", "does not update itself", "where you unpacked this one", "Delete this file"]) if (!t.includes(s)) throw new Error("the marker lacks " + JSON.stringify(s));
     if (/[^\x00-\x7F]/.test(t)) throw new Error("the marker is not plain ASCII");
 });
 
