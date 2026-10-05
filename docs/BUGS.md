@@ -134,6 +134,30 @@ only auto and 1K). Not run live.
 
 ## Open
 
+### The Realism Pass on RTX 40 and 30 is not proven to change pixels (found 2026-10-05, read, not run)
+
+**Found** while checking OpenDLSS-NR for the user (`docs/PLAN_RTX_VSR.md` last section); no user reported it. The
+Realism Pass ran live on the user's RTX 5090 only.
+
+**Known (read, not run):**
+- NVIDIA launched DLSS 5 Neural Rendering on 2026-09-03 for RTX 50 only; RTX 40 is announced for "later this fall",
+  RTX 30 and 20 not at all (news, 2026-09-04).
+- OpenDLSS-NR issue #3 (a third party, 2026-10-04): the signed `nvngx_dlssnr.dll` 310.8.0 holds only sm_120
+  (Blackwell) kernels and no PTX; on an RTX 4080 Laptop "the bridge" (a ComfyUI one, not named) returned its input
+  unchanged, without an error.
+- The pack's runtime carries the modified build 310.8.SF.0 (unsigned, on the user's disk), which exists to run on RTX
+  40 and 30; the pack's README claims RTX 30 / 40 / 50, RTX 30 as an experiment with a hash-checked pair of files.
+- `verify_neural_rendering` (true in `recipes/realism_pass.json:25` and `renderer/editor/realism.js:464`) fails the run
+  when the ReShade log shows no signed feature-18 execution: it reads a log line, not the pixels.
+- `docs/MANUAL.md` (the Realism Pass's requirements) and the server check promise RTX 50, 40 and, as an experiment, 30.
+
+**To measure first:** one Realism Pass on an RTX 40 card and one on an RTX 30 card (not the user's 5090), output
+against input: the mean and largest difference per channel. A result that differs by noise only is a silent no-op.
+
+**Possible fix, after the measurement:** if it is a no-op on a series, the server check refuses that series with the
+reason (as it refuses RTX 20 today) and the manual says so; or Scumble compares the result with its input and warns
+when they are nearly equal.
+
 ### The local Flux.2 Klein example fails in the sampler: "mat1 and mat2 shapes cannot be multiplied" (reported 2026-10-02)
 
 **Reported** 2026-10-02 by a Reddit user, passed on by the user: "Yep, an error for me as well running the example

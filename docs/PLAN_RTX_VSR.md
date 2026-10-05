@@ -85,3 +85,57 @@ as a new layer; hidden when the connected ComfyUI lacks the nodes. Raised with t
 unofficial runtime around NVIDIA's libraries may read as a licence problem; the official RTX nodes are the clean
 showcase; the user may ask Comfy whether a DLSS 5 integration through the pack is welcome. First step after the
 user's install: one test picture without, Natural and Cinematic, on the user's ComfyUI when it is free.
+
+## OpenDLSS-NR and the other open reimplementations: parked (the user, 2026-10-05)
+
+The user asked whether github.com/maanHimself/OpenDLSS-NR brings DLSS 5 Neural Rendering to every system. Checked
+2026-10-05, read only (the repo and its issues through `gh api`, licence texts, news; nothing cloned, built or run).
+**Decided: parked until there is a cleaner way** (the user: "geparkt ... bis es eine sauberere lösung gibt").
+
+**What it is.** MIT code only (4 commits on 2026-09-20/21, nothing since, no releases): the 71-block NR network of
+build 310.8.0, once in Vulkan (GLSL and PTX kernels) and once as a WebGPU port (`ports/browser-webgpu`, ES modules and
+WGSL). No weights and nothing that makes them ("Nothing in this repository produces such a directory"); everyone who
+runs it extracts the 141 MiB from NVIDIA's `nvngx_dlssnr.dll` 310.8.0 (a PE resource, not encrypted). That DLL first
+turned up in NBA 2K27's early-access build and is in no public NVIDIA SDK (310.9.1 has `nvngx_dlss`, `nvngx_dlssd` and
+`nvngx_dlssg` only).
+
+**Systems.**
+- Vulkan: Windows and NVIDIA RTX 40 / 50 only (the device always enables NVIDIA-only extensions; FP8 E4M3; PTX for
+  sm_89). Narrower than today's path, which also serves RTX 30.
+- WebGPU: the only vendor-neutral part, and it would run inside Scumble's renderer (Electron 44.2 / Chromium 152 has
+  WebGPU on by default on Windows and macOS; Linux needs switches). It needs `shader-f16`, 32 KB of workgroup storage
+  and 512 invocations per workgroup. Measured on one RTX 4070 SUPER only (73 ms at 512 x 512, about 465 ms at
+  1904 x 929); no run on AMD, Intel or Apple found. The ViT kernel's workgroup arrays cap it at about 15-16 MP, below
+  the Realism Pass's 27.9 MP, and tiles change the result (the bottom stage attends over the whole picture).
+- Other projects come closer to "every system": MLX-DLSS (Apple Silicon and PyTorch, a picture CLI), the
+  OpenDLSS-NR-AMD fork (RDNA4), dlss-nr-on-intel (Intel Xe2), forks with a `dlss5vk image` command, taowen/dlss5-onnx
+  (fixed 256 x 256, and it redistributes the weights: never link it). All of them need the same extracted weights.
+
+**Why parked.**
+- The weights: Scumble can neither ship them nor point to a source. NVIDIA's RTX SDK licence forbids reverse
+  engineering and limits DLSS to NVIDIA GPUs (whether it governs the NR DLL at all is open; the game's terms forbid
+  reverse engineering too; a lawyer's question). The Comfy Dev Platform Challenge's rules bar unlicensed IP, and
+  NVIDIA sits on the jury.
+- No upscaling: only NR is rebuilt, no DLSS-SR, so the Realism Pass Upscale cannot run on it; the presets J / K / L / M
+  have no counterpart.
+- Upstream's CLI has no picture command (bench, profile, parity, verify, shaderinfo); issue #3 reports almost pure red
+  output from the default fused route on an RTX 4080 Laptop; the parity fixtures are not in the repo.
+- What it would have given: no ComfyUI, no Defender-flagged worker, MIT code (fits GPL-3.0); the controls mostly map
+  (tone, structure, skin, style and the auto-mask are network inputs; intensity and the Natural / Cinematic grade are a
+  small step after it).
+
+**What counts as cleaner.** NVIDIA's own Neural Rendering in a public SDK, under terms that allow still pictures in a
+GPL-3.0 app (none yet; RTX 40 support was announced for "later this fall"), or a written yes from NVIDIA or Comfy.
+Then look at the routes above again. OpenDLSS-NR loads the 310.8.0 network only and refuses any other.
+
+**Found on the way about today's path** (the user's disk, read only, 2026-10-05):
+- `custom_nodes/ComfyUI-DLSS5-Enhancer/runtime/nvngx_dlssnr.dll` is version **310.8.SF.0 and not signed**: a
+  community-modified build, not NVIDIA's file; only `nvngx_dlss.dll` (310.8.0) carries NVIDIA's signature. So the
+  Realism Pass already runs a modified NVIDIA binary on every card, the user's RTX 5090 included, and its worker is
+  named `nvngx.dll` to pass NVIDIA's signed-caller check. `docs/MANUAL.md` (the Realism Pass's requirements: "holds
+  NVIDIA's proprietary DLSS libraries") does not say that the NR library is a modified build.
+- Merserk's runtime changed its licence after v3.0 (MIT then; the proprietary "Merserk Source License 1.0" since
+  2026-09-17, no redistribution without permission; current release v14.0): a runtime update brings those terms.
+- Before the challenge entry shows the Realism Pass, ask Comfy whether a pass on this runtime is welcome (raised before,
+  more pressing now).
+- RTX 40 / 30: `docs/BUGS.md` "The Realism Pass on RTX 40 and 30 is not proven to change pixels".

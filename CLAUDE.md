@@ -172,6 +172,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   recipe, the server check, the hints, shipped presets L and M) built 2026-10-04**, not run live; R2a and R2b the
   same day; **redesigned that evening as a refiner** (the whole picture at 1x as a new layer, never a Generate result:
   plan §1 "The Realism Pass is a refiner"); **R3a, R3b and R4 built the same night** (`host.realismWhole`; the Upscale entry, the Image menu, `realism_pass`; the assistant's row and readiness in `status` / `list_recipes`), R5 to P3 the next night; **released in 0.1.42 (2026-10-05)**, with the Realism Pass Upscale and the 27.9 MP cap found live.
+  OpenDLSS-NR and the other open reimplementations of the network (checked 2026-10-05): **parked until there is a
+  cleaner way** (the user; `docs/PLAN_RTX_VSR.md` last section: they all need NVIDIA's extracted weights; found there:
+  the runtime's NR library is an unsigned, modified build; the RTX 40 / 30 question in `docs/BUGS.md`).
 - 38: new commands for MCP agents (the user, 2026-10-04: "schau auch noch ob noch mehr commands in den mcp aufgenommen
   werden können"): 28 verified candidates in `docs/PLAN_MCP_COMMANDS.md`; **the user picked 12** (marked ✓) for 0.1.42,
   sessions F2a / F2b after the six fixes of F1 (all six picked from `docs/BUGS.md` the same day). The other 16 wait
