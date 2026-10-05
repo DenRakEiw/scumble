@@ -181,10 +181,12 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   for a later update. **The 12 built (F2a, F2b), released in 0.1.42.**
 - 39: a tidier Settings dialog (the user, 2026-10-05, with a screenshot of *Settings › Recipes*: "das einstellungs menü
   aufräumen. die model liste ist zu lang / auch die anbieterliste; kann man das aufklappbar machen?"): 60 recipe rows
-  and 16 key rows in one flat list today. Sketch: recipes in collapsible groups (ComfyUI / Comfy Cloud / API, the
-  active one open, a filter field), providers as *Keys stored* open and *Add a key* closed, the open state in
-  `localStorage`. `docs/PLAN_SETTINGS.md` (what exists, the shape, the traps: the gates that read the rows, the jumps
-  by h3 text, rebuilds that reset the DOM, the skins; five open questions). For a later update; nothing built.
+  and 16 key rows in one flat list today. **Decided the same day:** recipes in three collapsible groups (ComfyUI /
+  Comfy Cloud / API models, family sub-headings, count / ready / in use on each group's line, the active one open), no
+  filter field, only the two long lists collapsible (recipes and API providers), the open state in `localStorage`.
+  `docs/PLAN_SETTINGS.md` (what exists, the shape, the traps: the gates that read the rows, rebuilds that reset the
+  DOM, the skins; two questions still open: the providers' grouping, Remove and one-option selects). For a later
+  update; nothing built.
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.

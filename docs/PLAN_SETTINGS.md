@@ -38,13 +38,13 @@ test tier (UI, no pixels): the gates below, `lint`, `types`, `skins`, one look i
 1. **Recipes in three collapsible groups** by mode, the same words as the editor's picker: *ComfyUI (5)*,
    *Comfy Cloud (13)*, *API models (42)*, the last with plain family sub-headings like the picker's optgroups. Each
    group's line shows its count, how many are ready (`providerKeyState`, :474-484) and "in use: <name>" when the active
-   recipe is inside. The active recipe's group opens by itself. A **filter field** above the groups: while it holds
-   text, groups with a match open and the rest close.
+   recipe is inside. The active recipe's group opens by itself. No filter field (decided, see below).
 2. **Providers in two groups**: *Keys stored (n)* open, *Add a key (m)* closed; the order inside each stays the
    `describeAll` order.
 3. **Small clean-ups in the rows**: Remove only on the user's own recipes (today 60 disabled buttons); a one-option
    provider select may become plain text (see the traps: a gate reads one).
-4. **Optional: every section collapsible**, with the h3 kept inside the `<summary>`.
+4. ~~Every section collapsible~~: no, only the two long lists (decided, see below). The sections keep their plain h3,
+   so the menu jumps by h3 text keep working as they are.
 5. **Open state kept in `localStorage`** (`shell.settings.open`, try / catch as in help.js), read on every render.
 
 ## Traps (what a build must keep)
@@ -73,7 +73,8 @@ test tier (UI, no pixels): the gates below, `lint`, `types`, `skins`, one look i
   Settings" (`assistant.js:744-747`) say API providers but open the top; with groups they should open that group.
 - **Form validity.** An invalid number field keeps Close from submitting (`shell.js:2151-2153`); inside a closed
   `<details>` Chromium cannot focus it, so Close would silently do nothing. A section that holds number fields
-  (Rendering, Assistant) opens on `invalid`, or the fields are checked before the submit.
+  (Rendering, Assistant) opens on `invalid`, or the fields are checked before the submit. (Moot while only the two
+  lists collapse: they hold no number fields.)
 - **The shared family code.** `familyOf` / `FAMILY_ORDER` also build the title-row picker's optgroups
   (`upscale_test.py:205` checks `optgroup[label=Upscale]`); a recipe's group can change with its provider select
   (`cloudModeOf`, :404).
@@ -91,12 +92,18 @@ test tier (UI, no pixels): the gates below, `lint`, `types`, `skins`, one look i
   screenshots mask the key hints (`key set (…xxxx)`, `shell.js:693`). The uncommitted tutorial recorder
   (`docs/images/video/rec/scenes.py:133-143`, `scenes2.py:203-217`) picks visible rows only and `#set-providers > *`.
 
-## Open questions for the user
+## Decided (the user, 2026-10-05)
 
-1. Recipes grouped by where they run (ComfyUI / Comfy Cloud / API, families inside), or by family alone?
-2. Providers: *Keys stored* open and *Add a key* closed, or every provider one closed line?
-3. Only the two long lists collapsible, or every section of the dialog?
-4. A filter field above the recipes?
-5. Hide Remove on shipped recipes; show a one-option provider as text instead of a select?
+- **Recipes as in shape 1:** three collapsible groups *ComfyUI (5)*, *Comfy Cloud (13)*, *API models (42)*, family
+  sub-headings inside, each group's line with its count, how many are ready and the recipe in use; the active recipe's
+  group open.
+- **No filter field:** "suchfeld braucht es nicht, aufklappbar reicht".
+- **Only the long lists collapsible** ("nur die langen listen aufklappbar"): the recipes and the API providers; the
+  other sections stay as they are.
 
-Size: about one session for 1, 2, 3 and 5 with the gate updates; one more with 4 and the manual's screenshots.
+## Still open
+
+1. Providers: *Keys stored* open and *Add a key* closed (shape 2), or every provider one closed line?
+2. Hide Remove on shipped recipes; show a one-option provider as text instead of a select?
+
+Size: about one session with the gate updates, plus the manual's two screenshots (recipes.jpg, rendering-and-keys.jpg).
