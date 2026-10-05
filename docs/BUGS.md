@@ -134,6 +134,45 @@ only auto and 1K). Not run live.
 
 ## Open
 
+### Generate new leaves the boxes behind when the model answers at another size (found 2026-10-05, run live)
+
+**Found** in the video 3 test runs (`docs/TUTORIAL.md` section 5, "Test runs"): a 4096 x 2304 canvas, three New
+boxes, Generate new on FLUX 3 Image (BFL). The request went out as 4096 x 2304, which `flux3.js` `tierOf` (by area)
+sends as the 4k tier, and BFL's 4k tier at 16:9 is 5456 x 3072: the document became 5456 x 3072, the boxes kept their
+4096 x 2304 rects (`boxes.list` after the run), so they sat about 25 % too far up and left of what they had placed.
+The rows themselves were right: they are fractions of the frame (`[577,483,738,654]` on 0-1000), and the model put
+everything where the boxes had been.
+
+**Known (read):** the boxes follow the picture through the "geometry" event (`plugins/boxes/main.js:301`), which
+`host.changed` emits for turn, crop, extend, resize and straighten (`inpaint_canvas.js:4559`, `:4669`, `:4870`).
+`host.runGenerate` lands the answer with `editor.setBaseFromCanvas(c, { keepRefs: true })` at the model's size
+(`renderer/editor/host.js` about 2080) and emits none. Any provider whose text route rounds or tiers the size does the
+same (FLUX 3's tiers, presets elsewhere); a local Generate new (`newCanvas` at the asked size) does not.
+
+**Possible fix:** after the landing, when `c.width x c.height` differs from the frame the boxes were measured in, emit a
+geometry event with the scale `[c.width / frame.w, 0, 0, c.height / frame.h, 0, 0]` (kind "resize"), so every plugin
+that keeps image coordinates follows; one undo step with the landing. Test: a plain-Node or editor step with a stub
+provider that answers 1.33x larger, the boxes' rects scaled.
+
+**Workaround (the video):** a canvas of the size the model answers with (5456 x 3072 for FLUX 3 4k at 16:9).
+
+### A shown reference layer can take over an unrelated FLUX 3 edit (seen once 2026-10-05, run live)
+
+**Seen** in the same test runs: after a From box had placed a cup from reference layer `@img1` (a kitchen photo), a
+Remove box on a bin elsewhere (prompt "Take out the green bin.", no `@img1`) came back as the kitchen photo: the
+result layer held the reference's scene instead of the street. The reference was still shown, so it went along as
+image 2 (`ref_image_1`), as every shown reference does. FLUX 3's own expanded prompt (in the log) planned the removal
+correctly ("Remove the green wheelie bin ... reconstructing the ... doorway, cream exterior wall, drainpipe ..."); the
+picture it rendered was the other one. The crop was 5:7, the reference 3:4. With the layer hidden, the same edit
+worked at once. One case, not repeated.
+
+**To measure first:** whether it repeats (the same crop and reference, two or three runs, about $0.05 each) and
+whether the near aspect matters (a 1:1 crop with the same reference did not do it).
+
+**Possible fix, after the measurement:** for a variant whose model takes the references as free context (FLUX 3),
+send only the references the prompt or a box names, or warn before a run that sends a shown reference nothing names
+("@img1 goes along but nothing in the prompt uses it").
+
 ### The Realism Pass on RTX 40 and 30 is not proven to change pixels (found 2026-10-05, read, not run)
 
 **Found** while checking OpenDLSS-NR for the user (`docs/PLAN_RTX_VSR.md` last section); no user reported it. The
