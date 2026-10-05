@@ -40,7 +40,7 @@ the README follows `list_commands`.
 submission API needs a company account in Partner Center (an Entra app with the Manager role; "Individual accounts do
 not support multiple users"), so Claude drives Partner Center in the user's logged-in Chrome (Claude in Chrome: Start
 update, the upload, the What's new text) and clicks *Submit for certification* only after the user's yes in chat.
-Never tried yet: the upload of the ~190 MB MSIX through the extension. If it does not work, the user's rule before:
+**The upload of the ~190 MB MSIX cannot go through the extension** (checked at 0.1.42, 2026-10-05: its file upload takes at most 10 MB per call), so the package is always the user's drag and drop; Claude in Chrome can still do *Start update*, the What's new text and the rest. If it does not work, the user's rule before:
 a Store update only with essential changes, by hand (0.1.41 went that way, after the Comfy Cloud fix of 0.1.40). The
 steps either way: `npm run
 dist:store` (`dist/Scumble-<version>.msix`, built from the release's tag state; after `npm run dist:portable`, since it
