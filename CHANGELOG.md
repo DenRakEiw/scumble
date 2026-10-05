@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.42 — 2026-10-05
 
 - **Realism Pass (Windows only, RTX only).** A new local recipe sends the selection's box at its own size through
   DLSS 5 Neural Rendering on your own ComfyUI and lays the answer over it as a layer, so generated skin, hair and
@@ -121,6 +121,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   preset's value turns it to custom, as dragging it does. `set_filter` is now one undo step (an undo after it used to
   take back the step before), and a refused parameter changes nothing, nor does `add_filter` then add a layer.
   `filter_types` gives each option its label and group.
+
+- Tried live before the release, on an RTX 5090: the Realism Pass over a 5456 × 3072 picture (about 8 s on the
+  ComfyUI), on a box, on a transparent picture, and at 1.5× and 2× (that run found the 27.9 megapixel cap: larger
+  answers sometimes came back with broken colours); RTX Video Super Resolution on a box and on the whole picture, and
+  once on Comfy Cloud (1024 to 2048 pixels in about 21 s); the upscale model at 4× on the whole picture. Not tried
+  live: the portable zip on a second PC or Windows account, and the Linux builds.
 
 ## 0.1.41 — 2026-10-03
 
