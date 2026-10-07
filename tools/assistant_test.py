@@ -877,6 +877,43 @@ return { back, askKept, fieldKept, handedOff, stayedAway, dropPrevented: drop.de
             raise RuntimeError("a drop on the panel was not stopped: " + json.dumps(out))
         return "the focus came back, the question and the prompt field kept it, Escape gave it away, the drop was stopped"
 
+    async def panel_notice_clears(self):
+        """docs/PLAN_0_1_43.md B2: the provider's privacy notice shows in the panel's head until the first send to it."""
+        await self.set_model("anthropic:claude-sonnet-5")
+        self.mock.reset()
+        self.mock.push(Turn(answer={"text": "ok"}))
+        out = await self.ev("""
+const a = await import("./assistant.js");
+const cur = (await window.scumble.settings.get()).assistant || {};
+const noticed = { ...(cur.noticed || {}) };
+delete noticed.anthropic;
+await window.scumble.settings.set({ assistant: { ...cur, noticed } });
+a.toggleAssistant(false);
+a.toggleAssistant(true);
+await wait(400);
+const d = document.getElementById("assistant");
+const head = () => (d.querySelector(".as-head .as-note") || {}).textContent || "";
+const before = { state: !!(await window.scumble.assistant.state()).notice, head: head() };
+const area = d.querySelector("textarea");
+area.value = "hallo";
+area.focus();
+area.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+for (let i = 0; i < 120; i++) {
+    await wait(250);
+    const s = await window.scumble.assistant.state();
+    if (!s.busy && s.events.some((e) => e.type === "turn:done")) break;
+}
+await wait(600);
+const st = await window.scumble.assistant.state();
+const saved = ((await window.scumble.settings.get()).assistant || {}).noticed || {};
+return { before, after: { state: !!st.notice, head: head(), saved: saved.anthropic || null } };""", timeout=120)
+        b, a = out["before"], out["after"]
+        if not b["state"] or "Anthropic" not in b["head"]:
+            raise RuntimeError("the notice did not show before the send: " + json.dumps(out))
+        if a["state"] or "go to Anthropic" in a["head"] or not a["saved"]:
+            raise RuntimeError("the notice is still there after the first send: " + json.dumps(out))
+        return out
+
     async def panel_shows_a_turn(self):
         """A turn the panel drives: bubbles, a tool card with its result, and markup that is text."""
         self.mock.reset()
@@ -1553,6 +1590,7 @@ async def main():
             await g.run_step("a_chat_key_never_reaches_the_editor", g.panel_keys)
             await g.run_step("the_chat_field_keeps_the_focus_and_stops_a_drop", g.panel_focus_and_drop)
             await g.run_step("the_panel_shows_a_turn_and_writes_no_markup", g.panel_shows_a_turn)
+            await g.run_step("the_privacy_notice_clears_after_the_first_send", g.panel_notice_clears)
             await g.run_step("an_ask_opens_the_panel_and_its_buttons_answer", g.panel_ask_card)
             await g.run_step("a_saved_chat_reopens_after_the_memory_is_cleared", g.chat_survives)
             await g.run_step("the_picture_is_a_file_beside_the_chat", g.chat_history_is_byte_equal)

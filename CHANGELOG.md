@@ -16,6 +16,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   Google takes. Nano Banana Pro on fal no longer offers 0.5K, which fal does not take for that model.
 - An agent's `cutout_layer` with the in-app model no longer reports a failure when the background was removed.
 - Filter settings that an agent sends as text (a JSON string) instead of an object are now accepted.
+- The assistant's one-line privacy notice for a provider now goes away after your first message to it.
+- A key OpenRouter no longer knows now says so in the assistant ("OpenRouter does not know this key") instead of
+  showing the raw error.
 
 ## 0.1.42 — 2026-10-05
 

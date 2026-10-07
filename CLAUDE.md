@@ -94,7 +94,7 @@ in Partner Center). **Waiting for the user:**
   runtime answers with broken colours above ~30 MP (Scumble caps at 27.9 MP), and fits before padding to even sides.
 
 **Next release 0.1.43 planned (2026-10-07): `docs/PLAN_0_1_43.md`** (the user's picks: Nano Banana 2.1 N1-N2, the
-bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1, N2 and B1 built 2026-10-07** (Nano Banana 2.1 on Gemini direct and seven hosts, not run live; B1 the cutout and string-params fixes). Next: B2-B6, S1, S2 in any order. S1 waits for the user's answer on
+bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1, N2, B1 and B2 built 2026-10-07** (Nano Banana 2.1 on Gemini direct and seven hosts, not run live; B1 the cutout and string-params fixes; B2 the assistant's notice and OpenRouter 401). Next: B3-B6, S1, S2 in any order. S1 waits for the user's answer on
 the rows (the plan's recommendation: Remove only on own recipes, keep the one-option select).
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,

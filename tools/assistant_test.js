@@ -2548,6 +2548,8 @@ async function main() {
             // the final answers: plain words, one request, the turn ends "error"
             const cases = [
                 ["a_deepseek_402_says_the_balance_is_empty", CHAT[1], { status: 402, body: JSON.stringify({ error: { message: "Insufficient Balance" } }) }, /^the DeepSeek balance is empty$/],
+                // a key OpenRouter no longer knows (docs/PLAN_0_1_43.md B2): the words, not the raw JSON
+                ["an_openrouter_401_names_the_key", CHAT[0], { status: 401, body: JSON.stringify({ error: { message: "User not found.", code: 401 } }) }, /^OpenRouter does not know this key: check it under Settings › API providers$/],
                 ["an_openrouter_402_is_final", CHAT[0], { status: 402, body: JSON.stringify({ error: { code: 402, message: "Insufficient credits" } }) }, /OpenRouter credits/],
                 ["a_moonshot_empty_balance_is_final", CHAT[2], { status: 429, body: JSON.stringify({ error: { type: "exceeded_current_quota_error", message: "Your account is suspended" } }) }, /^the Moonshot balance is empty$/],
                 ["a_moonshot_daily_limit_is_final", CHAT[2], { status: 429, body: JSON.stringify({ error: { type: "rate_limit_reached_error", message: "Your account reached max request TPD: 1500000, please try again after 1 day" } }) }, /daily token limit.*next day/],

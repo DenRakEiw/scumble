@@ -38,6 +38,7 @@ let lastOutsidePointer = 0;
 let lastTab = 0;
 let focusBefore = null;
 let agents = 0;
+let noticeProvider = null;   // the provider whose privacy notice the panel shows, until the first send to it
 
 const api = () => (window.scumble && window.scumble.assistant) || null;
 const el = (tag, cls, text) => {
@@ -736,8 +737,14 @@ async function send() {
     const text = ui.text.value.trim();
     if (!text || busy) return;
     ui.text.value = "";
+    // the provider's privacy notice shows until the first send to it (docs/ASSISTANT.md): that send is this one
+    const noticed = noticeProvider;
     try {
         await api().send(text);
+        if (noticed && api().noticed) {
+            noticeProvider = null;
+            api().noticed(noticed).then(() => refresh()).catch(() => { /* shown again next time */ });
+        }
     } catch (err) {
         const message = String((err && err.message) || err).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, "");
         const card = note(message, "as-bad");
@@ -867,6 +874,7 @@ async function fillPicker(state) {
     if (state.built === false) notes.push(`${state.label || provider} is not built yet`);
     if (state.vision === false) notes.push("this model cannot look at the picture");
     if (state.notice && state.notice.text) notes.push(state.notice.text);
+    noticeProvider = state.notice && state.notice.text ? state.notice.provider || provider : null;
     ui.pickNote = notes.join(" · ");
 }
 

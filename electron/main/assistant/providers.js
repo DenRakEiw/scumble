@@ -49,7 +49,9 @@ const PROVIDERS = {
             dataCollection: "deny",          // provider.data_collection: hosts that train on the data are left out
             cacheControlFor: /^anthropic\//,
             costFromUsage: true,             // usage.cost, taken as it comes (§2 row 25)
-            finalStatus: { 402: "the OpenRouter credits are used up" },
+            // a key OpenRouter no longer knows answers 401 {"message":"User not found."}; its model list needs no key,
+            // so the picker looked ready until this first send (seen 2026-10-07, docs/BUGS.md)
+            finalStatus: { 401: "OpenRouter does not know this key: check it under Settings › API providers", 402: "the OpenRouter credits are used up" },
         },
     },
     openai: {
