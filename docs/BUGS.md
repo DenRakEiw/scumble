@@ -134,6 +134,20 @@ only auto and 1K). Not run live.
 
 ## Open
 
+### Generate new on WaveSpeed without references goes to model ids that may not exist (found 2026-10-07, read, not run)
+
+**Found** while building Nano Banana 2.1's WaveSpeed variant (N2 of `docs/PLAN_0_1_43.md`). A WaveSpeed variant
+without `text.model` sends a new image to its edit id with `/edit` cut off (`textModelOf`, `electron/main/recipes.js`):
+`google/nano-banana-2`, `openai/gpt-image-2`, `wavespeed-ai/flux-2-pro` and so on. WaveSpeed's model pages for those
+ids answer 404, and the same ids with `/text-to-image` answer 200 (checked 2026-10-07 on `wavespeed.ai/models/<id>`):
+flux2_flex, flux2_klein (`flux-2-klein-9b`), flux2_max, flux2_pro, gpt_image_2, gpt_image_2_5_flare, `_sunburst`,
+nano_banana_2, nano_banana_2_lite, nano_banana_pro. Reve's `reve/2.1/text-to-image` answers 404 too. With reference
+layers the run goes to the `/edit` route (`text.refs.model`) and is not affected; the Seedream, Qwen, FLUX 3, Ideogram
+4.5 and FLUX.1 Fill ids answer 200. A 404 page is no proof that the API refuses the id; one Generate new on WaveSpeed
+with a key settles it. **The fix if it holds:** `text.model` `<id>/text-to-image` on each variant (as FLUX 3 and Nano
+Banana 2.1 have), or `textModelOf` writing `/text-to-image` for WaveSpeed; check each text page's fields (aspect,
+resolution) against what the edit's Settings rows send. Light tier.
+
 ### Size limits: gaps found reading the code (2026-10-07, read, not run)
 
 Found while answering the user's question about the largest picture (a workflow of three readers and a checker,

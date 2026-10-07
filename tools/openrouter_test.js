@@ -669,8 +669,8 @@ async function main() {
         let list;
         try { list = await recipes.list(RECIPES); } finally { fs.rmSync(empty, { recursive: true, force: true }); }
         const served = list.filter((r) => r.providers && r.providers.openrouter);
-        const want = ["flux2_flex", "flux2_max", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "krea_2", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "recraft_v4", "seedream_5_lite", "seedream_5_pro"];
-        check("fifteen shipped recipes carry an openrouter variant, all of them builtin", eq(served.map((r) => r.id).sort(), want) && served.every((r) => r.source === "builtin"), served.map((r) => r.id).join(", "));
+        const want = ["flux2_flex", "flux2_max", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "krea_2", "nano_banana_2", "nano_banana_2_1", "nano_banana_2_lite", "nano_banana_pro", "recraft_v4", "seedream_5_lite", "seedream_5_pro"];
+        check("sixteen shipped recipes carry an openrouter variant, all of them builtin", eq(served.map((r) => r.id).sort(), want) && served.every((r) => r.source === "builtin"), served.map((r) => r.id).join(", "));
         const qwen = list.filter((r) => r.providers && r.providers.openrouter && /qwen/i.test(String(r.providers.openrouter.model || "")));
         check("no recipe has an openrouter variant with a Qwen model (Alibaba, the only host, has a datacentre in China)", qwen.length === 0, qwen.map((r) => r.id).join(", "));
         const bad = [];

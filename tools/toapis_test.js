@@ -426,10 +426,10 @@ async function main() {
         Module._load = orig;
         const list = await recipes.list(path.join(ROOT, "recipes"));
         const served = list.filter((r) => r.providers && r.providers.toapis);
-        const want = ["flux2_flex", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro"];
-        check("eleven recipes carry a toapis variant", eq(served.map((r) => r.id).sort(), want), served.map((r) => r.id).join(", "));
+        const want = ["flux2_flex", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "nano_banana_2", "nano_banana_2_1", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro"];
+        check("twelve recipes carry a toapis variant", eq(served.map((r) => r.id).sort(), want), served.map((r) => r.id).join(", "));
         const bad = [];
-        const homes = { gpt_image_2: "openai", gpt_image_2_5_flare: "openai", gpt_image_2_5_sunburst: "openai", nano_banana_2: "gemini", nano_banana_2_lite: "gemini", nano_banana_pro: "gemini", flux2_pro: "bfl", flux2_flex: "bfl", seedream_5_lite: "fal", seedream_5_pro: "fal", qwen_image_edit: "fal" };
+        const homes = { gpt_image_2: "openai", gpt_image_2_5_flare: "openai", gpt_image_2_5_sunburst: "openai", nano_banana_2: "gemini", nano_banana_2_1: "gemini", nano_banana_2_lite: "gemini", nano_banana_pro: "gemini", flux2_pro: "bfl", flux2_flex: "bfl", seedream_5_lite: "fal", seedream_5_pro: "fal", qwen_image_edit: "fal" };
         for (const r of served) {
             const v = r.providers.toapis;
             if (r.providerIds[0] !== "toapis") bad.push(r.id + ": toapis is not first");

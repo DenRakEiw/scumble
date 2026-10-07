@@ -273,7 +273,7 @@ async function throws(fn) {
 // which recipe carries which Router model, and what kind of run it is
 const VARIANTS = {
     gpt_image_2: "openai/gpt-image-2", gpt_image_2_5_flare: "openai/gpt-image-2.5-flare", gpt_image_2_5_sunburst: "openai/gpt-image-2.5-sunburst",
-    nano_banana_2: "vertexai/gemini-3.1-flash-image", nano_banana_2_lite: "vertexai/gemini-3.1-flash-lite-image", nano_banana_pro: "vertexai/gemini-3-pro-image",
+    nano_banana_2: "vertexai/gemini-3.1-flash-image", nano_banana_2_1: "vertexai/gemini-nano-banana-2.1", nano_banana_2_lite: "vertexai/gemini-3.1-flash-lite-image", nano_banana_pro: "vertexai/gemini-3-pro-image",
     flux2_pro: "bfl/flux-2-pro", flux2_max: "bfl/flux-2-max", flux1_fill: "bfl/flux-pro-1.0-fill",
     seedream_5_lite: "byteplus/seedream-5-0-260128", seedream_5_pro: "byteplus/seedream-5-0-pro-260628",
     qwen_image_edit: "qwen/qwen-image-3.0", magnific_precision: "freepik/ai-image-upscaler-precision-v2",
@@ -466,7 +466,7 @@ async function main() {
     await section("6. recipes and schemas", async () => {
         const recipes = loadRecipes();
         const served = recipes.filter((r) => r.providers && r.providers.comfyrouter).map((r) => r.id).sort();
-        check("eighteen shipped recipes carry a comfyrouter variant", eq(served, Object.keys(VARIANTS).sort()), served.join(", "));
+        check("nineteen shipped recipes carry a comfyrouter variant", eq(served, Object.keys(VARIANTS).sort()), served.join(", "));
         const bad = [];
         let bodies = 0;
         for (const r of recipes.filter((x) => x.providers && x.providers.comfyrouter)) {

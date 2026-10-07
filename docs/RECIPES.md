@@ -503,6 +503,9 @@ of the request, and each family has its own word for it (the vendors' prompting 
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · WaveSpeed | 16 | https://wavespeed.ai/docs/docs-api/openai/openai-gpt-image-2-edit, `…-2.5-flare-edit`, `…-2.5-sunburst-edit` ("0 ~ 16 items") |
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · OpenAI | 16 | OpenAI's `image[]` (not read at a URL in this step; not read by `openai.js` yet, above) |
   | `nano_banana_2`, `_2_lite`, `_pro` · Gemini | 14 | Google's limit (not read at a URL in this step) |
+  | `nano_banana_2_1` · Replicate, WaveSpeed, OpenRouter, Comfy Router | 14 | https://replicate.com/google/nano-banana-2.1/llms.txt ("supports up to 14 images"), https://wavespeed.ai/docs/docs-api/google/google-nano-banana-2.1-edit ("max: 14"), the Router's schema; OpenRouter as its Nano Banana 2 (read 2026-10-07) |
+  | `nano_banana_2_1` · Comfy Cloud | 14 | the node `GeminiNanoBanana2V2` (`image_1` .. `image_14`, the live catalog 2026-10-07) |
+  | `nano_banana_2_1` · ToAPIs | 6 (standard), 14 (vip) | no page for the model: the numbers of ToAPIs' Gemini 3.1 Flash Image pages (https://docs.toapis.com/llms.txt, 2026-10-07) |
   | `nano_banana_2_1` · Gemini | 14 | https://ai.google.dev/gemini-api/docs/models (Nano Banana 2.1: up to 14 reference pictures, 4 characters and 10 objects; read 2026-10-07) |
   | `nano_banana_2`, `_pro` · Replicate | 14 | https://replicate.com/google/nano-banana-2 ("Use up to 14 reference images."), https://replicate.com/google/nano-banana-pro ("combine up to 14 images") |
   | `nano_banana_2`, `_pro` · WaveSpeed | 14 | https://wavespeed.ai/docs/docs-api/google/google-nano-banana-2-edit, `…-pro-edit` ("0 ~ 14 items") |
@@ -514,8 +517,8 @@ of the request, and each family has its own word for it (the vendors' prompting 
   Router, ToAPIs, Magnific, HY) are in their providers' sections below.
 - **Undocumented** (no cap set: such a variant may still lose pictures on the host's side without a word; the sweep
   of `tools/refs_layout_test.js` keeps the same list):
-  - `nano_banana_2`, `nano_banana_pro` · fal: neither the page nor the OpenAPI schema names a number (`image_urls`
-    has no `maxItems`).
+  - `nano_banana_2`, `nano_banana_2_1`, `nano_banana_pro` · fal: neither the page nor the OpenAPI schema names a number
+    (`image_urls` has no `maxItems`).
   - `gpt_image_2` · Replicate: the page says "pass multiple images" and names no number; its schema page did not
     render.
   - `nano_banana_2_lite` · WaveSpeed: the `images` row has no range.
@@ -713,7 +716,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   | FLUX 3 Image | BFL, OpenRouter, Comfy Router, Oxen.ai; fal (`edit-image`), WaveSpeed (`image-edit`) | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, OpenRouter, Comfy Router, Oxen.ai; WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
-  | Nano Banana 2.1 | Gemini | - |
+  | Nano Banana 2.1 | Gemini, ToAPIs, OpenRouter, Comfy Router, Replicate; fal and WaveSpeed (`/edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
   | Seedream 5 lite, 5 pro | ModelArk, ToAPIs, OpenRouter, Comfy Router, Replicate (lite), Oxen.ai (pro); fal (`/edit`, `options: { sizing: "image_size" }`), WaveSpeed (`/edit`), Magnific (the `-edit` route) | - |
   | Seedream 4.5 | Magnific (`seedream-v4-5-edit`) | - |
@@ -794,7 +797,9 @@ the adapter builds a workflow from LoadImage, one Partner Node named in `options
 SaveImage (only the pictures the node wires are uploaded; how many each node takes is in "Reference pictures"
 above), submits it to `/api/prompt`, polls `/api/job/<id>/status`, reads the image from
 `/api/jobs/<id>` (its `outputs`; Comfy Cloud stopped serving `/api/history` by 2026-10-03) and `/api/view`; settings keys are the node's full input keys, dotted
-for the model combos such as `model.quality`; needs a paid plan), **openrouter** (`POST
+for the model combos such as `model.quality`, and override what the node's wiring sets (Nano Banana 2.1:
+`model` "Gemini Nano Banana 2.1" on `GeminiNanoBanana2V2`, `model.thinking_level` MINIMAL / MEDIUM / HIGH over the
+wiring's MINIMAL); needs a paid plan), **openrouter** (`POST
 /api/v1/images`, one synchronous request with the pictures inline as data URLs and the image back
 as base64; no mask input, so a `fill` variant sends the mask as a second picture as the Gemini
 adapter does; only the parameters `options.accepts` names; tiers and aspect presets from
@@ -1270,6 +1275,7 @@ prices, far below the vendor's, suggest third-party backends.
 | `gpt_image_2_5_flare`, `_sunburst` | `gpt-image-2.5-<name>-official` | official, vip (`-vip`), standard (plain id: presets, a 1K / 2K / 4K tier, no quality) | edit; `WxH` in 16 px steps, 655,360 to 8,294,400 px, at most 3:1 | none (pixels) |
 | `nano_banana_2` | `gemini-3.1-flash-image-official` | official, vip (`-preview-vip`), standard (`-preview`); both with `{url}` objects | edit; the closest of the channel's presets | `metadata.resolution` 1K / 2K / 4K |
 | `nano_banana_2_lite` | `gemini-3.1-flash-lite-image-official` | none | as 3.1 Flash official | as 3.1 Flash |
+| `nano_banana_2_1` | `gemini-nano-banana-2.1` (standard; no official channel) | standard, vip (`-vip`); both with `{url}` objects, the shape of the 3.1 Flash channels (no page for 2.1, not verified) | edit; the closest of the channel's presets | `metadata.resolution` 1K / 2K / 4K |
 | `nano_banana_pro` | `gemini-3-pro-image-official` (the id of ToAPIs' price list) | official, vip, standard (`gemini-3-pro-image-preview[-vip]`, objects) | edit; presets | `metadata.resolution` 1K / 2K / 4K |
 | `flux2_pro`, `flux2_flex` | `flux-2-pro`, `flux-2-flex` | none | edit, 8 images; 7 presets | `metadata.resolution` 1K / 2K |
 | `seedream_5_lite` | `doubao-seedream-5-0` | none | edit, 10 images; 9 presets; inputs at most 3:1 | `metadata.resolution` **2K / 3K** |
@@ -1626,6 +1632,7 @@ crop, the mask, *Original* and the reference layers together):
 | `gpt_image_2_5_flare`, `_sunburst` | `openai/gpt-image-2.5-flare`, `-sunburst` | fill | Quality (auto to max), Background (auto, opaque, transparent) | none | 16 | 1536 |
 | `nano_banana_2` | `google/gemini-3.1-flash-image` | fill | Resolution | 512, 1K, 2K, 4K | 14 | 1024, 2048, 4096 |
 | `nano_banana_2_lite` | `google/gemini-3.1-flash-lite-image` | fill | none | 1K, always sent | 14 | 1024 |
+| `nano_banana_2_1` | `google/gemini-nano-banana-2.1` (`/api/v1/models`, 2026-10-07) | fill | Resolution (no Thinking: how OpenRouter's `reasoning` maps to it is not documented) | 1K, 2K, 4K | 14 | 1024, 2048, 4096 |
 | `nano_banana_pro` | `google/gemini-3-pro-image` | fill | Resolution | 1K, 2K, 4K (4K on AI Studio only) | 14 | 1024, 2048, 4096 |
 | `flux2_max`, `flux2_pro`, `flux2_flex` | `black-forest-labs/flux.2-max`, `-pro`, `-flex` | edit, `seed`, fixed `output_format: png` | none | none | 8 | 1024 |
 | `seedream_5_lite` | `bytedance-seed/seedream-5-0-lite` | edit, `seed` | Resolution | 2K, 4K | 14, none steeper than 16:1 | 2048, 4096 |
@@ -2187,7 +2194,7 @@ on a queued run.
   name (`keyNameOf`), `describeAll()` lists Comfy Router with `sharesKey: "comfycloud"` and the Comfy Cloud key's
   state, and Settings › API providers skips it. The Comfy Cloud row's hint says the Router runs on the same key with
   credits only. There is no *check balance* (`GET /customers/balance` exists in the API document; not wired).
-- **The recipes.** Eighteen recipes carry a `comfyrouter` variant (FLUX 3 Image since B1), always **last**, and no default changed. Their
+- **The recipes.** Nineteen recipes carry a `comfyrouter` variant (FLUX 3 Image since B1), always **last**, and no default changed. Their
   descriptions say "Also on Comfy Router." `comfyrouter` is in `TEXT_PROVIDERS`: Generate new sends the same model
   id without a picture, or with the reference layers alone where the variant has `text.refs` (26f; the openai dialect
   in `image`, the vertexai one with label parts, bfl in `input_image..`, byteplus in `image`, qwen before the text).
@@ -2195,6 +2202,7 @@ on a queued run.
 | Recipe | Router model | Kind | What goes in |
 |---|---|---|---|
 | `gpt_image_2`, `gpt_image_2_5_flare`, `_sunburst` | `openai/gpt-image-2`, `-2.5-flare`, `-2.5-sunburst` | fill | OpenAI's body: `image` (data URLs, crop first, at most 16), `mask` (the RGBA mask, at most 4 MB), `size`, `n: 1`, the OpenAI variant's settings (`openai._common`) |
+| `nano_banana_2_1` | `vertexai/gemini-nano-banana-2.1` | fill | as the row below, plus Thinking as `generationConfig.thinkingConfig.thinkingLevel` in the schema's upper case (`MINIMAL` / `MEDIUM` / `HIGH`; only a variant with the row sends it) and `options.ratios` (the 14) for a free-size text run with references (schema saved as `tools/refs/comfyrouter/vertexai_gemini-nano-banana-2.1.json`, 2026-10-07) |
 | `nano_banana_2`, `_lite`, `nano_banana_pro` | `vertexai/gemini-3.1-flash-image`, `-3.1-flash-lite-image`, `gemini-3-pro-image` | fill | Gemini's `generateContent`: the instruction (`refs.instruction`), then the crop, the mask as a second picture, the Original and the references, each with a label part before it ("Image 1:", ... `refs.labelParts`) when more than one picture goes, all as camelCase `inlineData` (the schema's spelling); the mask picture counts against `max_images`; `responseModalities: ["IMAGE"]`, `imageConfig` (1K / 2K / 4K; no 0.5K in the schema) |
 | `flux2_pro`, `flux2_max` | `bfl/flux-2-pro`, `bfl/flux-2-max` | edit | `input_image` .. `input_image_9` (plain base64), `width` / `height` held to 256..2048 in 16 px steps, the seed, `output_format: "png"`, *Prompt upsampling* off (the Router's default is on), Max's *Safety tolerance* 0..5 |
 | `flux1_fill` | `bfl/flux-pro-1.0-fill` | fill | `image`, `mask` (white = repaint), steps, guidance, safety tolerance; no text shape. The layout declares the drop "FLUX.1 Fill takes no reference images": a run with reference layers or the Original goes out with the crop and the mask, and the status line says what was not sent (until step 26a2 it was refused) |

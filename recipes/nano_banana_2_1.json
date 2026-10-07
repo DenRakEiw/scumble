@@ -4,9 +4,101 @@
   "name": "Nano Banana 2.1",
   "family": "Google",
   "refs": { "name": "image {n}" },
-  "description": "Google's image model of October 2026, 1K to 4K, with a Thinking setting. Key: Google AI Studio. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Google's image model of October 2026, 1K to 4K, with a Thinking setting. Keys: Google AI Studio, fal.ai or Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Comfy Router. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {
+    "toapis": {
+      "model": "gemini-nano-banana-2.1",
+      "input": "edit",
+      "options": {
+        "size": "preset",
+        "urls": "objects",
+        "ratios": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "5:4",
+          "4:5",
+          "21:9",
+          "1:4",
+          "4:1",
+          "1:8",
+          "8:1"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048,
+          "4K": 4096
+        },
+        "tier_key": "metadata.resolution",
+        "max_images": 6,
+        "channels": {
+          "standard": {},
+          "vip": {
+            "model": "gemini-nano-banana-2.1-vip",
+            "urls": "objects",
+            "ratios": [
+              "1:1",
+              "2:3",
+              "3:2",
+              "3:4",
+              "4:3",
+              "4:5",
+              "5:4",
+              "9:16",
+              "16:9",
+              "21:9"
+            ],
+            "max_images": 14
+          }
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "channel",
+          "label": "Channel",
+          "spec": [
+            [
+              "standard",
+              "vip"
+            ],
+            {
+              "default": "standard"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "metadata.resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024,
+          2048,
+          4096
+        ],
+        "refs": {}
+      },
+      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. ToAPIs lists the model (gemini-nano-banana-2.1 and -vip, 2026-10-07) but has no docs page for it yet: the request is the shape of its Gemini 3.1 Flash Image channels (standard: up to six pictures, vip: fourteen), not verified. Crop, mask and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The model takes aspect presets: a crop of another shape comes back re-framed and is centre-cropped."
+    },
     "gemini": {
       "model": "gemini-nano-banana-2.1",
       "input": "fill",
@@ -93,6 +185,366 @@
       "text": {
         "refs": {}
       }
+    },
+    "fal": {
+      "model": "fal-ai/nano-banana-2.1/edit",
+      "input": "edit",
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "2K"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "thinking_level",
+          "label": "Thinking",
+          "spec": [
+            [
+              "minimal",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "safety_tolerance",
+          "label": "Safety tolerance",
+          "spec": [
+            [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6"
+            ],
+            {
+              "default": "4"
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". fal names no limit on the number of pictures. Not run against the live API yet (written from the provider's docs, 2026-10-07).",
+      "options": {
+        "sizing": "none"
+      },
+      "text": {
+        "refs": {
+          "model": "fal-ai/nano-banana-2.1/edit",
+          "options": {
+            "aspect_ratios": [
+              "1:1",
+              "2:3",
+              "3:2",
+              "3:4",
+              "4:3",
+              "4:5",
+              "5:4",
+              "9:16",
+              "16:9",
+              "21:9",
+              "4:1",
+              "1:4",
+              "8:1",
+              "1:8"
+            ]
+          }
+        }
+      }
+    },
+    "replicate": {
+      "model": "google/nano-banana-2.1",
+      "input": "edit",
+      "fields": {
+        "images": "image_input"
+      },
+      "options": {
+        "max_images": 14
+      },
+      "fixed": {
+        "output_format": "png",
+        "aspect_ratio": "match_input_image"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "2K"
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". Replicate offers no Thinking setting. Not run against the live API yet (written from the provider's docs, 2026-10-07).",
+      "text": {
+        "refs": {}
+      }
+    },
+    "wavespeed": {
+      "model": "google/nano-banana-2.1/edit",
+      "input": "edit",
+      "options": {
+        "max_images": 14,
+        "aspect_ratios": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "21:9",
+          "1:4",
+          "4:1",
+          "1:8",
+          "8:1"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1k",
+              "2k",
+              "4k"
+            ],
+            {
+              "default": "2k"
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". WaveSpeed sends the aspect preset closest to the crop and offers no Thinking setting. Not run against the live API yet (written from the provider's docs, 2026-10-07).",
+      "text": {
+        "model": "google/nano-banana-2.1/text-to-image",
+        "refs": {
+          "model": "google/nano-banana-2.1/edit"
+        }
+      }
+    },
+    "comfycloud": {
+      "model": "Gemini Nano Banana 2.1",
+      "input": "edit",
+      "options": {
+        "node": "GeminiNanoBanana2V2"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "model.resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "2K"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "model.thinking_level",
+          "label": "Thinking",
+          "spec": [
+            [
+              "MINIMAL",
+              "MEDIUM",
+              "HIGH"
+            ],
+            {
+              "default": "MEDIUM"
+            }
+          ]
+        }
+      ],
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". Not run against the live API yet (written from the provider's docs, 2026-10-07)."
+    },
+    "openrouter": {
+      "model": "google/gemini-nano-banana-2.1",
+      "input": "fill",
+      "options": {
+        "accepts": [
+          "resolution",
+          "aspect_ratio",
+          "n"
+        ],
+        "ratios": [
+          "1:1",
+          "1:4",
+          "1:8",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:1",
+          "4:3",
+          "4:5",
+          "5:4",
+          "8:1",
+          "9:16",
+          "16:9",
+          "21:9"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048,
+          "4K": 4096
+        },
+        "max_images": 14
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024,
+          2048,
+          4096
+        ],
+        "refs": {}
+      },
+      "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. The pictures go inline in the request to OpenRouter, which passes them to Google. No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape (not verified); an answer of another shape is centre-cropped. Resolution auto takes the smallest tier that covers the crop. No Thinking setting: OpenRouter lists reasoning for the model, and how it maps to Google's thinking level is not documented."
+    },
+    "comfyrouter": {
+      "model": "vertexai/gemini-nano-banana-2.1",
+      "input": "fill",
+      "options": {
+        "max_images": 14,
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048,
+          "4K": 4096
+        },
+        "ratios": [
+          "1:1",
+          "1:4",
+          "1:8",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:1",
+          "4:3",
+          "4:5",
+          "5:4",
+          "8:1",
+          "9:16",
+          "16:9",
+          "21:9"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "aspect_ratio",
+          "label": "Aspect",
+          "spec": [
+            [
+              "auto",
+              "1:1",
+              "3:2",
+              "2:3",
+              "4:3",
+              "3:4",
+              "5:4",
+              "4:5",
+              "16:9",
+              "9:16",
+              "21:9",
+              "4:1",
+              "1:4",
+              "8:1",
+              "1:8"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "image_size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "2K"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "thinking_level",
+          "label": "Thinking",
+          "spec": [
+            [
+              "minimal",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024,
+          2048,
+          4096
+        ],
+        "refs": {}
+      },
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. Written from the Router's schema (2026-10-07). The pictures go inline in the request to Comfy, which passes them to Google's Vertex AI. No mask input: the crop and the mask go along and the prompt tells the model to change the white area only; the stitch keeps the selection. Size takes 1K, 2K or 4K. At most fourteen pictures go in besides the mask."
     }
   }
 }

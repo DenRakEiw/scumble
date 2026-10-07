@@ -94,7 +94,7 @@ in Partner Center). **Waiting for the user:**
   runtime answers with broken colours above ~30 MP (Scumble caps at 27.9 MP), and fits before padding to even sides.
 
 **Next release 0.1.43 planned (2026-10-07): `docs/PLAN_0_1_43.md`** (the user's picks: Nano Banana 2.1 N1-N2, the
-bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1 built 2026-10-07** (the recipe on Gemini direct, not run live). Next session: N2. S1 waits for the user's answer on
+bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1 and N2 built 2026-10-07** (Gemini direct and seven hosts, not run live). Next: B1-B6, S1, S2 in any order. S1 waits for the user's answer on
 the rows (the plan's recommendation: Remove only on own recipes, keep the one-option select).
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
@@ -219,7 +219,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   direct Gemini adapter first (model id, the size classes, the new ratios, the 14-picture limit in `layout`), the
   other hosts as they list it; open: whether its edit path differs from 2's, the thinking level as a setting.
   **Planned for 0.1.43 (2026-10-07): `docs/PLAN_0_1_43.md` N1 (Google direct) and N2 (fal, Replicate, WaveSpeed,
-  OpenRouter, Comfy Cloud, Comfy Router, ToAPIs; Oxen does not list it), docs only, no live run.** **N1 built 2026-10-07** (`recipes/nano_banana_2_1.json`, `gemini.js` thought parts and Thinking).
+  OpenRouter, Comfy Cloud, Comfy Router, ToAPIs; Oxen does not list it), docs only, no live run.** **N1 and N2 built 2026-10-07** (`recipes/nano_banana_2_1.json` with eight hosts, `gemini.js` thought parts and Thinking).
 - 42: **Match an inpaint layer's edges to the layer below** (the user, 2026-10-07: "manchmal kommt der inpaint leicht
   verschoben heraus, damit kann man es automatisch auf die ebene darunter matchen"): edit models re-render the whole
   crop and often shift or slightly scale it, so contours double where the selection border crosses an edge. Known:

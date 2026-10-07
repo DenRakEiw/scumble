@@ -5,6 +5,9 @@
 // hands it. The light tier (CLAUDE.md "Working rules"): the request shapes written from Google's image generation page
 // (docs/PLAN_0_1_43.md §3, N1), never run against the live API. Sections 4 and 5 hold Nano Banana 2 to what it sent
 // before the Thinking setting and the per-variant ratios existed, and pin the "512" size class of 3.1 Flash Image.
+// Section 6 (N2) the other hosts where 2.1 adds something: fal's thinking_level by name, Comfy Router's upper-case
+// thinkingConfig and its own ratios, Comfy Cloud's node option and Thinking, WaveSpeed's text-to-image route; the
+// first request each adapter sends is captured and the run stopped. OpenRouter and ToAPIs are built by their own tests.
 "use strict";
 
 const fs = require("node:fs");
@@ -141,6 +144,62 @@ const fillReq = (over = {}) => ({
         const pro = JSON.parse(fs.readFileSync(path.join(ROOT, "recipes", "nano_banana_pro.json"), "utf8"));
         const falRes = pro.providers.fal.settings.find((s) => s.key === "resolution").spec[0];
         check("Nano Banana Pro on fal offers no 0.5K (fal's enum: 1K, 2K, 4K)", eq(falRes, ["1K", "2K", "4K"]), short(falRes));
+    });
+
+    await section("6. the other hosts (N2)", async () => {
+        const PROV = path.join(ROOT, "electron", "main", "providers");
+        const STOP = "captured";
+        /** The first request an adapter sends, then a throw: { url, body }. */
+        async function firstRequest(adapter, req) {
+            let got = null;
+            const fetch = async (url, init = {}) => {
+                got = { url: String(url), body: typeof init.body === "string" ? JSON.parse(init.body) : init.body };
+                throw new Error(STOP);
+            };
+            const err = await thrown(() => adapter[req.kind === "text" ? "generate" : "edit"](req, { fetch, key: "k-test", sleep: async () => {} }));
+            if (!got) throw new Error("no request: " + err);
+            return got;
+        }
+        const hostReq = (pid, over = {}) => {
+            const v = recipe.providers[pid];
+            return { provider: pid, kind: v.input === "edit" ? "edit" : "fill", model: v.model, options: v.options || {}, fields: v.fields || {}, fixed: v.fixed || null, params: paramsOf(v, over.params || {}), prompt: "a red door", negative: "", seed: 7, image: pic("crop"), mask: pic("mask"), references: [], width: 1024, height: 768, ...over, ...(over.params ? { params: paramsOf(v, over.params) } : {}) };
+        };
+
+        const fal = require(path.join(PROV, "fal.js"));
+        const f = await firstRequest(fal, hostReq("fal"));
+        check("fal: the edit endpoint, Thinking medium, Resolution 2K, Safety 4 by name", /\/fal-ai\/nano-banana-2\.1\/edit$/.test(f.url) && f.body.thinking_level === "medium" && f.body.resolution === "2K" && f.body.safety_tolerance === "4", short({ url: f.url, thinking_level: f.body.thinking_level, resolution: f.body.resolution }));
+        const fh = await firstRequest(fal, hostReq("fal", { params: { thinking_level: "high" } }));
+        check("fal: Thinking high goes as fal's lower-case enum", fh.body.thinking_level === "high");
+
+        const router = require(path.join(PROV, "comfyrouter.js"));
+        const r = await firstRequest(router, hostReq("comfyrouter"));
+        const rg = r.body && r.body.generationConfig;
+        check("Comfy Router: vertexai/gemini-nano-banana-2.1", /vertexai\/gemini-nano-banana-2\.1/.test(r.url), r.url);
+        check("Comfy Router: thinkingConfig in the schema's upper case (MEDIUM), Size 2K", rg && eq(rg.thinkingConfig, { thinkingLevel: "MEDIUM" }) && rg.imageConfig && rg.imageConfig.imageSize === "2K", short(rg));
+        const nb2r = nb2.providers.comfyrouter;
+        const r2 = await firstRequest(router, { ...hostReq("comfyrouter"), model: nb2r.model, options: nb2r.options, params: paramsOf(nb2r) });
+        check("Comfy Router: Nano Banana 2 sends no thinkingConfig, as before", r2.body && r2.body.generationConfig && !("thinkingConfig" in r2.body.generationConfig), short(r2.body && r2.body.generationConfig));
+        const rw = await firstRequest(router, { ...hostReq("comfyrouter"), kind: "text", image: null, mask: null, references: [pic("r0")], width: 4096, height: 520, params: paramsOf(recipe.providers.comfyrouter, { image_size: "auto" }) });
+        check("Comfy Router: a free-size text run with a reference takes the closest of the variant's ratios (8:1)", rw.body.generationConfig.imageConfig.aspectRatio === "8:1", short(rw.body.generationConfig.imageConfig));
+
+        const cloud = require(path.join(PROV, "comfycloud.js"));
+        const uploads = [];
+        const cctx = { key: "k-test", fetch: async (url, init = {}) => {
+            uploads.push(String(url));
+            return { ok: true, status: 200, json: async () => ({ name: `u${uploads.length}.png`, subfolder: "", type: "input" }), text: async () => "{}" };
+        } };
+        const g = await cloud._buildGraph(hostReq("comfycloud", { params: { "model.thinking_level": "HIGH" } }), cctx, "GeminiNanoBanana2V2");
+        const node = Object.values(g).find((x) => x.class_type === "GeminiNanoBanana2V2");
+        check("Comfy Cloud: the node's model option \"Gemini Nano Banana 2.1\", Thinking HIGH over the node's default, Resolution 2K", node && node.inputs.model === "Gemini Nano Banana 2.1" && node.inputs["model.thinking_level"] === "HIGH" && node.inputs["model.resolution"] === "2K", short(node && node.inputs));
+
+        const orig = require("node:module")._load;
+        require("node:module")._load = function (request, ...rest) { return request === "electron" ? { app: { getPath: () => ROOT } } : orig.call(this, request, ...rest); };
+        let normalize;
+        try { normalize = require(path.join(ROOT, "electron", "main", "recipes.js"))._normalize; } finally { require("node:module")._load = orig; }
+        const n = normalize(JSON.parse(JSON.stringify(recipe)));
+        const tw = n.providers.wavespeed.text;
+        check("WaveSpeed: a new image goes to google/nano-banana-2.1/text-to-image, with references to /edit", tw && tw.model === "google/nano-banana-2.1/text-to-image" && tw.refs && tw.refs.model === "google/nano-banana-2.1/edit", short(tw && { model: tw.model, refs: tw.refs }));
+        check("no Oxen variant (Oxen does not list the model)", !("oxen" in recipe.providers));
     });
 
     const failed = results.filter((x) => !x).length;

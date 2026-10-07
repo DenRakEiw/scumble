@@ -416,13 +416,18 @@ const DIALECTS = {
                 });
             } else parts.push({ text: String(req.prompt || "") });
             const imageConfig = {};
-            const free = req.kind === "text" && !req.aspect && pics.length ? closestAspect(req.width || 1, req.height || 1, GEMINI_RATIOS) : null;
+            // a model that takes more presets than Gemini's ten names them in options.ratios (Nano Banana 2.1)
+            const ratios = Array.isArray(o.ratios) && o.ratios.length ? o.ratios : GEMINI_RATIOS;
+            const free = req.kind === "text" && !req.aspect && pics.length ? closestAspect(req.width || 1, req.height || 1, ratios) : null;
             const aspect = setting(p, "aspect_ratio") || (req.kind === "text" ? req.aspect || free : null);
             if (aspect) imageConfig.aspectRatio = String(aspect);
             const size = setting(p, "image_size") || (req.kind === "text" ? tierFor(Math.max(req.width || 0, req.height || 0), o.tiers) : null);
             if (size) imageConfig.imageSize = String(size);
             const generationConfig = { responseModalities: ["IMAGE"] };
             if (Object.keys(imageConfig).length) generationConfig.imageConfig = imageConfig;
+            // only a variant with a Thinking row sends one, as the schema's upper-case enum (MINIMAL / MEDIUM / HIGH)
+            const thinking = setting(p, "thinking_level");
+            if (thinking) generationConfig.thinkingConfig = { thinkingLevel: String(thinking).toUpperCase() };
             return { contents: [{ role: "user", parts }], generationConfig };
         },
         // parts[0] is the instruction; with more than one picture each has its label part before it, so picture n sits

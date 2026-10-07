@@ -511,6 +511,7 @@ function pin(req, fx, lay, shot) {
 const UNDOCUMENTED = {
     "nano_banana_2/fal": { max: null, why: "fal nano-banana-2/edit: image_urls has no maxItems and the page names no number" },
     "nano_banana_pro/fal": { max: null, why: "fal nano-banana-pro/edit: no maxItems, no number" },
+    "nano_banana_2_1/fal": { max: null, why: "fal nano-banana-2.1/edit: image_urls has no maxItems and the schema names no number (read 2026-10-07)" },
     "gpt_image_2/replicate": { max: null, why: "replicate.com openai/gpt-image-2: \"pass multiple images\", no number" },
     "nano_banana_2_lite/wavespeed": { max: null, why: "WaveSpeed nano-banana-2-lite-edit: the images row has no range" },
     "reve/wavespeed": { max: null, why: "no WaveSpeed Reve edit page found (404)" },

@@ -7,8 +7,9 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 - **Nano Banana 2.1.** Google's new image model as its own recipe, on Google's API with an AI Studio key: 1K, 2K and
   4K, the very wide and tall ratios 4:1, 1:4, 8:1 and 1:8 besides the usual ones, up to 14 pictures, and a Thinking
-  setting (minimal, medium, high; medium is Google's default, every level is billed). Written from Google's docs, not
-  run against the live API yet.
+  setting (minimal, medium, high; medium is Google's default, every level is billed). Also on fal.ai, Replicate,
+  WaveSpeedAI, OpenRouter, Comfy Cloud, Comfy Router and ToAPIs; Thinking where the host offers it (fal, Comfy Cloud,
+  Comfy Router). Written from the providers' docs, not run against the live APIs yet.
 - A thinking Gemini model can send draft pictures before its answer; the Gemini route now takes the final picture,
   never a draft.
 - Nano Banana 2 on Google's API: the smallest size now goes out as Google spells it ("512"); "0.5K" was not a value
