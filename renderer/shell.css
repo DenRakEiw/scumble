@@ -136,7 +136,7 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 .film-head .ipc-sel { max-width: 150px; }
 .film-note { flex: 1; font-size: 11px; color: var(--sc-muted, #888); line-height: 1.3; }
 /* the section centres its items, which shrank the grid to one column: it takes the section's width */
-.film-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; width: 100%; align-self: stretch; box-sizing: border-box; }
+.film-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; align-self: stretch; }
 .film-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; border-radius: var(--sc-radius-sm, 4px); padding: 3px; border: 1px solid transparent; }
 .film-cell:hover { background: var(--sc-raised, #262626); border-color: var(--sc-line, #3a3a3a); }
 .film-cell canvas { width: 96px; height: auto; max-height: 64px; border-radius: var(--sc-radius-sm, 2px); background: var(--sc-well, #111); }
