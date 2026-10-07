@@ -94,7 +94,7 @@ in Partner Center). **Waiting for the user:**
   runtime answers with broken colours above ~30 MP (Scumble caps at 27.9 MP), and fits before padding to even sides.
 
 **Next release 0.1.43 planned (2026-10-07): `docs/PLAN_0_1_43.md`** (the user's picks: Nano Banana 2.1 N1-N2, the
-bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1, N2, B1-B6 and S2 built 2026-10-07** (Nano Banana 2.1 on Gemini direct and seven hosts, not run live; B1 the cutout and string-params fixes; B2 the assistant's notice and OpenRouter 401; B3 the Film looks panel; B4 the ComfyUI window's name and layout, the install messages; B6 the boxes after Generate new; S2 star and share; B5 the cutout's memory). Next: S1 (the user took the recommendation: Remove only on own recipes, one-option selects kept), then REL prepared locally. S1 waits for the user's answer on
+bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1, N2, B1-B6, S1 and S2 built 2026-10-07** (Nano Banana 2.1 on Gemini direct and seven hosts, not run live; B1 the cutout and string-params fixes; B2 the assistant's notice and OpenRouter 401; B3 the Film looks panel; B4 the ComfyUI window's name and layout, the install messages; B6 the boxes after Generate new; S2 star and share; B5 the cutout's memory; S1 Settings groups). Next: REL prepared locally (the manual's two Settings screenshots again, keys masked); the release only on the user's word. S1 waits for the user's answer on
 the rows (the plan's recommendation: Remove only on own recipes, keep the one-option select).
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
@@ -191,8 +191,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   Comfy Cloud / API models, family sub-headings, count / ready / in use on each group's line, the active one open), no
   filter field, only the two long lists collapsible (recipes and API providers), the open state in `localStorage`.
   `docs/PLAN_SETTINGS.md` (what exists, the shape, the traps: the gates that read the rows, rebuilds that reset the
-  DOM, the skins; two questions still open: the providers' grouping, Remove and one-option selects). For a later
-  update; nothing built.
+  DOM, the skins; both answered 2026-10-07: the providers one group as they are, Remove only on own recipes). **Built
+  2026-10-07 for 0.1.43 (S1).**
 - 40: a GitHub star link in the app (the user, 2026-10-05: "irgendwo in der app ... wo es nicht nervt", then the exact
   wording and places): **"⭐ Star on GitHub"** directly in the Help menu (beside *Scumble on GitHub*,
   `electron/main/main.js:695`) and in *Settings › About* (today one line with the repo link, `renderer/index.html:186`,
