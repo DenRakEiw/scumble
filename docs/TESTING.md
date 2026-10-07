@@ -433,6 +433,16 @@ Known flakes; **re-run before believing any of these**:
   `closed_tabs_are_collected` twice with the last two tabs alive, `helper_inputs_read_levels_and_upload_nothing` with
   one upload counted), while the unchanged tree passed once and `closed_tabs_are_collected` alone passed 3 of 3 on
   both trees; not looked into further.
+- 2026-10-07 (0.1.43): the editor gate on tiles failed `a_settled_read_builds_its_levels_in_the_worker_not_here`
+  (`requested: 0`) in every run of the evening, dev tree and exe alike, and with it excluded
+  `a_whole_change_builds_its_mips_in_the_worker_and_the_screen_ends_exact` (the settled screen 13 levels off on 859
+  bytes); **both fail the same way at c660749, the morning's commit**, in a worktree, and both passed in 0.1.42's exe
+  gates two days before. DaVinci Resolve was running on the machine. Not looked into further; the release ran the
+  editor gate with `SCUMBLE_EDITOR_ONLY` set to every other step (113 PASS). `the_navigator_watches_the_chains_it_asks_for`
+  failed once in that sequence and passed in the next two runs and alone.
+  The same evening the exe's `comfyview` gate failed "Ctrl+S reaches the page" twice on its control ("Ctrl+Shift+L in
+  the editor's window reached no menu"), the occluded-window key trap of CLAUDE.md; it passed at once on a fresh instance
+  both times.
 - The 0.1.34 exe gates on tiles (2026-09-29, one full run of 31 gates) failed two steps once, and both passed at once
   when `export film` ran again on a fresh instance: `export_test.py` `a_run_reads_its_box_and_a_window_of_the_selection`
   ("the run's patch differs between the window and the whole selection", one byte, one level; `stitch.js`'s
