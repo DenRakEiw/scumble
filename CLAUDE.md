@@ -200,6 +200,18 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   Reddit submit) with a prefilled line such as "Scumble: a free, open-source editor for AI inpainting"; the link the
   website hub https://www.denrakeiw.com/scumble (download, videos, manual), no UTM or tracking. In the same three
   places as the star. Small (a few hours together). For a later update; nothing built.
+- 41: **Nano Banana 2.1** as a new model (the user, 2026-10-07, with Google's page
+  https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1). Known so far (Gemini
+  API model page, 2026-10-07; the Cloud page renders no body for a fetch): model id `gemini-nano-banana-2.1`, GA,
+  released 2026-10-06; text, image, video and PDF in, image and text out; up to 14 reference pictures (4 characters,
+  10 objects); 1K / 2K / 4K (default 1K), also 1:4, 4:1, 1:8, 8:1 at 2K and 4K; thinking (minimal / medium / high),
+  search grounding (web and image search); news says better editing and subject consistency at half the price
+  (unchecked). Scumble today: `recipes/nano_banana_2.json` (Gemini 3.1 Flash Image) with a direct `gemini` variant
+  (`electron/main/providers/gemini.js` takes the model from the recipe) and variants on fal, Replicate, WaveSpeed,
+  Comfy Cloud, ToAPIs, OpenRouter, Comfy Router and Oxen. Likely shape: a recipe `nano_banana_2_1.json` on the
+  direct Gemini adapter first (model id, the size classes, the new ratios, the 14-picture limit in `layout`), the
+  other hosts as they list it; open: whether its edit path differs from 2's, the thinking level as a setting. For a
+  later update; nothing built.
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
