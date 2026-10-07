@@ -172,7 +172,22 @@ a failure and may retry. **Fix to check:** tell "did not start" from "already do
 `cutoutLayer`, or the layer's version / the status set by the in-app path), and a `commands` gate step with the
 in-app model present.
 
-### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07, dev instance, not measured)
+### Found while recording the trailer's takes (2026-10-07, run live, not fixed)
+
+- **The ComfyUI window lays a shipped recipe out as one column.** `flux2_klein_local` opens about 7,400 graph units
+  tall: `loadApiJson`'s `graph.arrange()` puts almost every node in one column (the node ids are strings such as
+  `canvas`). A recipe saved from the window with a UI graph opens laid out.
+- **The ComfyUI window's tab name drops everything before a "/"** in the recipe name: "Flux.2 Klein 4B / 9B (ComfyUI)"
+  shows as "9B (ComfyUI)".
+- **A recipe with a saved UI graph opens as "Unsaved Workflow (2)"**: `comfyview.js` passes `loadGraphData` no name.
+- **The film-look thumbnails preview each stock over the active look** (`plugins/film/main.js` near 100: the previews
+  are drawn over the whole composite, the active look included), so after a black-and-white look every thumbnail is
+  grey, while a click replaces the look.
+- **The Film looks grid shows one column of 46**: the panel section computes `align-items: center`, so `.film-grid`
+  (`renderer/shell.css` near 132, `auto-fill minmax(96px, 1fr)`) shrinks to about 103 px although the 304 px section
+  fits three columns.
+
+### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07, dev instance; one step measured)
 
 **Seen:** the trailer's recording instance (a dev instance of main at e7866f8, `--no-comfy`, profile
 `dist/video/trailer/trailer_rec_profile`) held 28.6 GB private memory in its **main** process (the renderer 3 GB, the
@@ -180,7 +195,13 @@ GPU process 1.5 GB) after about an hour of scripted work: a 5456 x 3072 document
 (101 MB .scumble), full-size `export_layer` PNGs (32-35 MB each) and composites, then six more 5456 x 3072 documents,
 several `select_point` / `select_rect` selections and a few FLUX 3 Image runs on Black Forest Labs. The user's RAM
 ran short. A restart frees it (the trailer workflow now restarts the instance between steps).
-**Not known:** which of these holds the memory in main. Suspects, none checked: sharp / libvips caches of the exports,
+**Measured since** (the trailer's cutlooks step, a fresh instance, one step at a time): main held 0.08 GB after the
+start, 0.10 GB after `load_image` and `add_image_layer`, **23.06 GB after one in-app `cutout_layer`** (BiRefNet lite
+on 5456 x 3072, 8.6 s), and stayed there after the tab was closed; a cold SAM2 `select_point` gave 6.1 GB; 92 look
+exports gave no growth. `electron/main/onnx/runtime.js` keeps one session per model file (`this.sessions`), so the
+BiRefNet session (or its arena / the DirectML allocations behind it) is the main suspect. Not measured: whether a
+second cutout grows it further, and how much of it is the session itself against tensors kept after the run.
+**Not known before that measurement:** which of these holds the memory in main. Suspects, none checked: sharp / libvips caches of the exports,
 the file mirror or the forward queue keeping upload buffers while not connected, `docfile.js` zip buffers per save,
 the ONNX helper sessions' tensors per document, the provider path keeping request or response buffers.
 **To measure first:** a fresh instance, one step at a time (a document load, a save, an export_layer at full size, a
