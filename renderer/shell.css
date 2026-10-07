@@ -93,6 +93,12 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 .shell-provider .shell-key-state.set { color: var(--sc-ok, #7cc47f); }
 .shell-recipe .shell-recipe-name { color: var(--sc-fg, #ddd); }
 .shell-recipe .shell-recipe-meta { color: var(--sc-muted, #888); font-size: 12px; margin-left: 6px; }
+/* item 39: the two long lists of Settings as collapsible groups (renderer/shell.js settingsGroup) */
+.shell-group { border: 1px solid var(--sc-line, #2a2a2a); border-radius: var(--sc-radius, 3px); margin: 0 0 6px; }
+.shell-group > summary { cursor: pointer; padding: 5px 8px; color: var(--sc-fg, #ddd); font-weight: 600; user-select: none; }
+.shell-group > summary:hover { background: var(--sc-raised, #262626); }
+.shell-group-body { padding: 0 8px 4px; }
+.shell-recipe-family { color: var(--sc-muted, #888); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 8px 0 2px; border-bottom: 1px solid var(--sc-line, #2a2a2a); }
 #shell-settings a { color: var(--sc-accent, #f0c674); }
 
 /* helpers: one row per model */
@@ -226,11 +232,10 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 .log-entry .log-source { color: var(--sc-link, #7cc7ff); overflow: hidden; text-overflow: ellipsis; }
 .log-entry .log-detail { grid-column: 1 / -1; color: var(--sc-fg-2, #aaa); margin: 2px 0 4px 78px; white-space: pre-wrap; }
 .log-empty { color: var(--sc-faint, #777); padding: 12px; }
-}
-
 /* item 40: the quiet line after an update (renderer/shell.js showStarNote) */
 #shell-star { display: flex; align-items: center; gap: 10px; padding: 3px 10px; font-size: 12px; color: var(--sc-fg-2, #aaa); background: var(--sc-raised, #222); border-bottom: 1px solid var(--sc-line, #3a3a3a); }
 #shell-star span { flex: 1; }
 #shell-star a { color: var(--sc-accent, #ffd166); }
 #shell-star .shell-star-close { background: none; border: none; color: inherit; font-size: 14px; cursor: pointer; padding: 0 4px; }
 #set-about-share-row #set-share-targets { display: inline-flex; gap: 6px; }
+}

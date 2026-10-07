@@ -541,6 +541,7 @@ function syncRecipeRows() {
         const meta = row.querySelector(".shell-recipe-meta");
         if (meta) meta.textContent = recipeMeta(r);
     }
+    syncGroupHeads();
 }
 
 /** Provider name for the recipe select; "(no key)" marks a provider with no API key stored yet. */
@@ -556,9 +557,71 @@ function recipeMeta(r) {
     return `${v.model || ""}${ks && !ks.ok ? (v.provider === "inapp" ? " · model not downloaded" : " · no key") : ""}`;
 }
 
+// ---- Settings' two long lists as collapsible groups (item 39, docs/PLAN_SETTINGS.md) ---------------------------------
+// The open state lives in localStorage, never in the DOM: both lists are rebuilt after every save, import or removal.
+const OPEN_KEY = "shell.settings.open";
+function openState() {
+    try { const v = JSON.parse(localStorage.getItem(OPEN_KEY) || "{}"); return v && typeof v === "object" ? v : {}; } catch (_) { return {}; }
+}
+function rememberOpen(id, open) {
+    try { localStorage.setItem(OPEN_KEY, JSON.stringify({ ...openState(), [id]: !!open })); } catch (_) { /* a per-window convenience */ }
+}
+/** A `<details>` group of the Settings dialog: open as stored, else as `byDefault`; its body is returned. */
+function settingsGroup(parent, id, byDefault) {
+    const d = document.createElement("details");
+    d.className = "shell-group";
+    d.dataset.group = id;
+    const stored = openState()[id];
+    d.open = stored === undefined ? !!byDefault : !!stored;
+    d.addEventListener("toggle", () => rememberOpen(id, d.open));
+    const sum = document.createElement("summary");
+    d.appendChild(sum);
+    const body = document.createElement("div");
+    body.className = "shell-group-body";
+    d.appendChild(body);
+    parent.appendChild(d);
+    return body;
+}
+
+// the recipes by mode, in the words of the editor's local / api / cloud select
+const RECIPE_GROUPS = [["local", "ComfyUI"], ["cloud", "Comfy Cloud"], ["api", "API models"]];
+
+/** A group's line: its name, how many, how many are ready to run (keys, models) and the recipe in use when inside. */
+function recipeGroupHead(mode, label) {
+    const items = recipes.filter((r) => modeOf(r) === mode);
+    const keyed = items.filter((r) => r.kind === "provider" || cloudModeOf(r));
+    const ready = keyed.filter((r) => { const ks = providerKeyState(resolveRecipe(r)); return !ks || ks.ok; }).length;
+    const using = host.recipe && items.find((r) => r.id === host.recipe.id);
+    return `${label} (${items.length})${keyed.length ? ` · ${ready} ready` : ""}${using ? ` · in use: ${using.name || using.id}` : ""}`;
+}
+
+function syncGroupHeads() {
+    for (const d of ui.recipes.querySelectorAll("details.shell-group")) {
+        const g = RECIPE_GROUPS.find(([m]) => "recipes." + m === d.dataset.group);
+        if (g) d.querySelector("summary").textContent = recipeGroupHead(g[0], g[1]);
+    }
+}
+
 function renderRecipeList() {
     ui.recipes.innerHTML = "";
+    const activeMode = host.recipe ? modeOf(recipes.find((x) => x.id === host.recipe.id) || host.recipe) : null;
+    const bodies = new Map();
+    for (const [mode] of RECIPE_GROUPS) {
+        if (!recipes.some((r) => modeOf(r) === mode)) continue;
+        bodies.set(mode, settingsGroup(ui.recipes, "recipes." + mode, mode === activeMode));
+    }
+    let lastFamily = null, lastMode = null;
     for (const r of recipes) {
+        const mode = modeOf(r);
+        const body = bodies.get(mode);
+        // the API models get the picker's family headings (Google, OpenAI, ...)
+        if (mode === "api" && (familyOf(r) !== lastFamily || lastMode !== mode)) {
+            const h = document.createElement("div");
+            h.className = "shell-recipe-family";
+            h.textContent = familyOf(r);
+            body.appendChild(h);
+        }
+        lastFamily = familyOf(r); lastMode = mode;
         const row = document.createElement("div");
         row.className = "shell-recipe";
         row.dataset.id = r.id;
@@ -607,14 +670,19 @@ function renderRecipeList() {
         use.type = "button"; use.textContent = "Use";
         use.addEventListener("click", () => selectRecipe(r.id));
         row.appendChild(use);
-        const del = document.createElement("button");
-        del.type = "button"; del.textContent = "Remove"; del.disabled = r.source !== "user"; del.title = r.source === "user" ? "Delete this imported recipe" : "Shipped recipe";
-        del.addEventListener("click", async () => {
-            if (!(await dialogs.confirm(`Remove the recipe "${r.name || r.id}"?`, { ok: "Remove", danger: true }))) return;
-            try { await window.scumble.recipes.remove(r.id); await loadRecipes(); renderRecipeList(); selectRecipe(settings.recipe); } catch (err) { ui.recipeNoteSet.textContent = String(err.message || err); }
-        });
-        row.appendChild(del);
-        ui.recipes.appendChild(row);
+        // Remove only on the user's own recipes (imports, Cloud copies, saved graphs): a shipped one cannot be removed
+        if (r.source === "user") {
+            const del = document.createElement("button");
+            del.type = "button"; del.textContent = "Remove"; del.title = "Delete this recipe of yours";
+            del.addEventListener("click", async () => {
+                if (!(await dialogs.confirm(`Remove the recipe "${r.name || r.id}"?`, { ok: "Remove", danger: true }))) return;
+                try { await window.scumble.recipes.remove(r.id); await loadRecipes(); renderRecipeList(); selectRecipe(settings.recipe); } catch (err) { ui.recipeNoteSet.textContent = String(err.message || err); }
+            });
+            row.appendChild(del);
+        } else {
+            row.appendChild(document.createElement("span"));
+        }
+        body.appendChild(row);
     }
     syncRecipeRows();
 }
@@ -664,6 +732,11 @@ async function loadProviders() {
 async function renderProviders() {
     const info = await window.scumble.keys.list();
     ui.providers.innerHTML = "";
+    // one collapsible group, the rows and their order as they were (the user, 2026-10-07); open while no key is stored
+    const shown = providers.filter((p) => !p.sharesKey);
+    const keyed = shown.filter((p) => p.key && p.key.set).length;
+    const list = settingsGroup(ui.providers, "providers", keyed === 0);
+    list.parentNode.querySelector("summary").textContent = `Keys (${shown.length} providers) · ${keyed} stored`;
     for (const p of providers) {
         if (p.sharesKey) continue;   // Comfy Router runs on the Comfy Cloud row's key
         const row = document.createElement("div");
@@ -720,7 +793,7 @@ async function renderProviders() {
             state.appendChild(out);
         }
         row.appendChild(state);
-        ui.providers.appendChild(row);
+        list.appendChild(row);
     }
     showKeysNote(info);
 }

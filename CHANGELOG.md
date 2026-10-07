@@ -5,6 +5,9 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
+- **A tidier Settings dialog.** *Settings › Recipes* shows the recipes in three groups you open and close (ComfyUI,
+  Comfy Cloud, API models by family), each with how many are ready and which one is in use; the API providers' key rows
+  are one group too. Remove shows only on your own recipes.
 - **Star and share.** The Help menu and *Settings › About* have "⭐ Star on GitHub" and "↗ Share the project" (copy
   the link, or open the share page of X, LinkedIn, Bluesky or Reddit in your browser; the link is the GitHub repo, with
   nothing added to track it). After an update, the first start of the new version shows one quiet line asking for a

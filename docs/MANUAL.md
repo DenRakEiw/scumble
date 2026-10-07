@@ -141,6 +141,8 @@ _A recipe is a model and the place it runs. Pick one, adjust its settings in the
 
 ![Settings, the Recipes section: the shipped recipes with the provider each runs on, and the button to import a ComfyUI workflow as a recipe](https://www.denrakeiw.com/projects/scumble/manual/recipes.jpg "1600x946")
 
+In Settings › Recipes the recipes sit in three groups you open and close: ComfyUI, Comfy Cloud and API models, the last by model family. Each group's line says how many recipes it holds, how many are ready to run (a key or a model in place) and which one is in use; the group of the recipe in use opens by itself, and the dialog remembers which you opened. Remove shows only on your own recipes. The key rows of Settings › API providers are one such group too, open while no key is stored.
+
 A recipe is Scumble's answer to the node graph. It names a model — "FLUX.2 \[max\]", "Nano Banana 2", "Upscale model (ComfyUI)" — and, for models that several services host, the provider it should go to. Picking one from the top bar is the whole configuration; the settings the model actually has (steps, guidance, seed, resolution) appear in the Settings panel of the Generate tab, with sensible defaults.
 
 Local recipes are ComfyUI workflows in API format with an Inpaint Canvas node in them. The shipped ones cover FLUX.2 Klein, Qwen Image Edit 2.1 and an upscale-model chain, plus the Realism Pass (Windows only, RTX only), which has a chapter of its own. You can import your own: Settings › Recipes, Import, pick your exported workflow. If it holds an Inpaint Canvas node, Scumble fills that node with your canvas and queues the rest exactly as you built it.

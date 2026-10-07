@@ -101,7 +101,11 @@ test tier (UI, no pixels): the gates below, `lint`, `types`, `skins`, one look i
 - **Only the long lists collapsible** ("nur die langen listen aufklappbar"): the recipes and the API providers; the
   other sections stay as they are.
 
-## Still open
+## Built (2026-10-07, S1 of docs/PLAN_0_1_43.md)
+
+As decided, with the providers as one group (the user, 2026-10-07: "so wie es jetzt ist, nur zum aufklappen") and Remove only on the user's own recipes, the one-option selects kept. The plan's "As built" note has the detail.
+
+## Still open (answered 2026-10-07, kept for the record)
 
 1. Providers: *Keys stored* open and *Add a key* closed (shape 2), or every provider one closed line?
 2. Hide Remove on shipped recipes; show a one-option provider as text instead of a select?
