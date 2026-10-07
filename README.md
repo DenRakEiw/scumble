@@ -24,6 +24,19 @@
   <img src="docs/images/readme/hero.gif" width="100%" alt="Three boxes drawn and described on an empty canvas, then Generate new with FLUX 3 Image makes the café picture with each thing in its box (the wait sped up 16 times)">
 </p>
 
+## Get Scumble
+
+| Platform | Get it | Notes |
+|---|---|---|
+| **Windows** | [Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R), or `winget install 9NDBTNNMXF2R` | Signed by Microsoft, no SmartScreen warning, updated by the Store |
+| **Windows** | [Installer](https://github.com/DenRakEiw/scumble/releases/latest): `Scumble-Setup-<version>.exe` | Updates itself; not code-signed yet, so SmartScreen asks once |
+| **Windows, portable** | [Zip](https://github.com/DenRakEiw/scumble/releases/latest): `Scumble-<version>-portable-win-x64.zip` | No install; keeps its data in a folder beside it |
+| **Linux** (x64) | [AppImage or .deb](https://github.com/DenRakEiw/scumble/releases/latest) | Early builds made by CI, not run by the author yet; reports welcome |
+| **macOS** | not yet | Planned, not started |
+
+Scumble is free and needs no account of its own. The details, and what it needs to render, are under
+[Installation](#installation).
+
 ## What can it do?
 
 Scumble is a desktop image editor built around AI models. Select part of a picture, or draw boxes on an empty
@@ -92,11 +105,18 @@ Three boxes drawn and described on an empty canvas (left), and the picture FLUX 
 
 ### Windows (10 and 11, 64-bit)
 
-- **Microsoft Store:** [Scumble in the Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R). Microsoft
-  signs the Store copy, so it installs without a SmartScreen warning, and the Store keeps it up to date. A new version
-  arrives there after Microsoft has certified it, so sometimes a little after the GitHub release. The Store copy keeps
-  its own settings, keys and files (`%APPDATA%\Scumble Store`), so it can sit beside the GitHub one.
-- **Installer from GitHub:** `Scumble Setup <version>.exe` from the
+- **Microsoft Store:** [Scumble in the Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R), or in a
+  terminal:
+
+  ```
+  winget install 9NDBTNNMXF2R
+  ```
+
+  (winget installs the same Store copy and may ask you to accept the Store's terms first.) Microsoft signs the Store
+  copy, so it installs without a SmartScreen warning, and the Store keeps it up to date. A new version arrives there
+  after Microsoft has certified it, so sometimes a little after the GitHub release. The Store copy keeps its own
+  settings, keys and files (`%APPDATA%\Scumble Store`), so it can sit beside the GitHub one.
+- **Installer from GitHub:** `Scumble-Setup-<version>.exe` from the
   [latest release](https://github.com/DenRakEiw/scumble/releases/latest). It is not code-signed yet, so SmartScreen
   shows "Windows protected your PC" once: click *More info*, then *Run anyway*. After that the app downloads its own
   updates and asks before it restarts into a new version.
@@ -115,15 +135,24 @@ have not been run by the author yet; reports are welcome** in the
 
 ### macOS
 
-Planned, not released yet.
+Planned, not started yet.
 
 ### What you need to render
 
 - **Only an API key:** *Settings › API providers* (Ctrl+,), paste the key, Save. No ComfyUI and no server; you pay
   the provider directly. The same keys serve the assistant and prompt upsampling.
 - **Your own ComfyUI:** the node pack [ComfyUI-InpaintCanvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas)
-  installed there (Scumble offers to install it through the ComfyUI Manager when it is missing) and the models of the
-  recipe you pick. Type the server's address in the top bar and press Connect.
+  installed there, and the models of the recipe you pick. Install the pack with git into ComfyUI's `custom_nodes`
+  folder, then restart ComfyUI (the pack needs no extra Python packages):
+
+  ```
+  cd ComfyUI/custom_nodes
+  git clone https://github.com/DenRakEiw/ComfyUI-InpaintCanvas
+  ```
+
+  The ComfyUI Manager does not list the pack at the moment; once it does, you can install it from there too. Then
+  type the server's address in Scumble's top bar and press Connect. Scumble checks for the pack when it connects and
+  says so when it is missing; it does not install it for you.
 - **Comfy Cloud:** your Comfy key in *Settings › API providers*; the same key runs Comfy Router.
 
 Without any of these Scumble still opens, paints, selects, layers, filters, saves and exports, and its in-app models

@@ -35,7 +35,8 @@ const NOTES_MAX = 30000;
  * GitHub's release feed carries the release body as **HTML** (`<ul><li><strong>…` with a
  * `<br>` per source line), and electron-updater passes it through. With `fullChangelog` (on, `_load`) it hands over
  * every release newer than this one up to the offered one, as [{version, note}] newest first; each gets its version
- * as a line of its own when there are several. Lists become bullets and a paragraph broken over
+ * as a line of its own when there are several, and none carries its "Get Scumble" block (withoutDownloads). Lists
+ * become bullets and a paragraph broken over
  * several source lines becomes one line again, because the renderer shows this as text and
  * never as markup - the string comes from a server.
  */
@@ -131,12 +132,41 @@ function sentence(t) {
     return s.slice(0, cut > 80 ? cut : 157) + " …";
 }
 
-/** The notes as electron-updater hands them over: one HTML string, or [{version, note}] with fullChangelog. */
+/**
+ * The notes as electron-updater hands them over: one HTML string, or [{version, note}] with fullChangelog; each body
+ * without its "Get Scumble" block (withoutDownloads), so neither the notes nor the update question show it.
+ */
 function notesList(info) {
     const raw = info && info.releaseNotes;
     if (!raw) return [];
-    if (Array.isArray(raw)) return raw.map((r) => ({ version: (r && r.version) || null, html: String((r && r.note) || "") })).filter((r) => r.html);
-    return [{ version: (info && info.version) || null, html: String(raw) }];
+    if (Array.isArray(raw)) return raw.map((r) => ({ version: (r && r.version) || null, html: withoutDownloads(String((r && r.note) || "")) })).filter((r) => r.html);
+    return [{ version: (info && info.version) || null, html: withoutDownloads(String(raw)) }];
+}
+
+/**
+ * A release body without the "Get Scumble" block on top of it (tools/release_notes.py: a heading, a table of the
+ * downloads, a line on the updater's files, a horizontal rule). It is for the release page, not a change. The feed
+ * carries the body as GitHub renders it (`<h3>Get Scumble</h3>` ... `<hr>`; the web view adds attributes, an anchor
+ * or a `<div class="markdown-heading">` around the heading): cut from that heading, of any level, to the first `<hr>`
+ * after it, when that rule comes before any list or heading (the block has neither, the CHANGELOG section starts with
+ * a list). A block that lost its rule loses only the heading and a table right under it. A body without the heading
+ * (every release up to 0.1.42 as published) comes back as it is.
+ */
+function withoutDownloads(html) {
+    const s = String(html || "");
+    const heading = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1\s*>/gi;
+    for (let m; (m = heading.exec(s));) {
+        if (!/^get scumble$/i.test(inline(m[2]))) continue;
+        const wrap = /<div\b[^>]*\bmarkdown-heading\b[^>]*>\s*$/i.exec(s.slice(0, m.index));
+        const start = wrap ? wrap.index : m.index;
+        const rest = s.slice(m.index + m[0].length);
+        const next = /<(hr|ul|ol|h[1-6])\b[^>]*>/i.exec(rest);
+        if (next && next[1].toLowerCase() === "hr") return s.slice(0, start) + rest.slice(next.index + next[0].length);
+        // no rule: the heading (with its wrapper's anchor and end) and a table right under it
+        const tail = /^(?:\s*<a\b[^>]*>[\s\S]*?<\/a>)?(?:\s*<\/div>)?(?:\s*<markdown-accessib\w*-table\b[^>]*>)?(?:\s*<table\b[\s\S]*?<\/table>(?:\s*<\/markdown-accessib\w*-table>)?)?/i.exec(rest);
+        return s.slice(0, start) + rest.slice(tail[0].length);
+    }
+    return s;
 }
 
 /** The few entities GitHub's HTML uses, decoded; `&amp;` last, so `&amp;lt;` stays the text "&lt;". */

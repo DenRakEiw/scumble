@@ -1,10 +1,11 @@
 // The updater's main side (electron/main/updater.js) in plain Node, no Electron and no network:
 //   node tools/updater_test.js
 // Sections 1-3: the release notes and the bold leads of their bullets (`releaseHeadlines`, what the update question
-// lists) from the feed HTML of 0.1.37 as GitHub served it (tools/refs/updates/release_0_1_37.html) and from small cases.
-// Sections 4-6: an Updater over a scripted autoUpdater: a skipped version is not installed on quit
+// lists) from the feed HTML of 0.1.37 as GitHub served it (tools/refs/updates/release_0_1_37.html) and from small cases;
+// section 4: the "Get Scumble" block on top of a release body (tools/release_notes.py) is neither notes nor a change.
+// Sections 5-10: an Updater over a scripted autoUpdater (in notify mode too): a skipped version is not installed on quit
 // (`autoInstallOnAppQuit` off while the offered version is the skipped one), any other is, `announce` keeps the version
-// this start asked about. Section 7: the wiring in main.js (the skip read at the start and on every settings write,
+// this start asked about. Section 11: the wiring in main.js (the skip read at the start and on every settings write,
 // the announce handler) and electron-updater's quit handler, which must read the switch at quit time for a skip made
 // after the download to count.
 // The normal tier for the question itself is the platform gate's `the_update_question_asks_once` step.
@@ -107,6 +108,65 @@ check("leads_over_two_lines_entities_loose_lists_and_none", () => {
     const huge = releaseNotes({ releaseNotes: "<ul>" + ("<li>" + "y".repeat(99) + "</li>").repeat(400) + "</ul>" });
     assert(huge.length <= 30002 && huge.endsWith(NL + "…") && new RegExp(NL + "• y{99}" + NL + "…$").test(huge), "past 30,000 characters: " + huge.length + " " + JSON.stringify(huge.slice(-30)));
     return "wrapped, loose, a sentence, sub-bullets, [{version, note}], 30,000";
+});
+
+// The "Get Scumble" block on top of a release body (tools/release_notes.py) as GitHub renders it: the feed's form (a
+// bare <h3> and <table>, as releases.atom serves headings and tables) and the markdown API's (attributes and GitHub's
+// <markdown-accessiblity-table> around the table); the web view's wrapper with an anchor below. Never a change.
+const NL = String.fromCharCode(10);
+function getBlock({ api = false, rule = true } = {}) {
+    const row = (name, link, size, note) => ["<tr>", `<td><strong>${name}</strong></td>`, `<td>${link}</td>`, `<td>${size}</td>`, `<td>${note}</td>`, "</tr>"];
+    const code = api ? '<code class="notranslate">' : "<code>";
+    const table = [
+        api ? '<markdown-accessiblity-table><table role="table">' : "<table>",
+        "<thead>", "<tr>", "<th>Package</th>", "<th>Download</th>", "<th>Size</th>", "<th>Notes</th>", "</tr>", "</thead>", "<tbody>",
+        ...row("Microsoft Store", `<a href="https://apps.microsoft.com/detail/9NDBTNNMXF2R" rel="nofollow">Scumble in the Store</a> or ${code}winget install 9NDBTNNMXF2R</code>`, "–", "Signed by Microsoft and updated by the Store."),
+        ...row("Windows installer", '<a href="https://github.com/DenRakEiw/scumble/releases/download/v0.1.43/Scumble-Setup-0.1.43.exe">Scumble-Setup-0.1.43.exe</a>', "123 MB", "Updates itself."),
+        ...row("Linux .deb", '<a href="https://github.com/DenRakEiw/scumble/releases/download/v0.1.43/scumble-0.1.43.deb">scumble-0.1.43.deb</a>', "118 MB", "Early build made by CI, not tested by the author yet."),
+        "</tbody>",
+        api ? "</table></markdown-accessiblity-table>" : "</table>",
+    ];
+    return [
+        api ? '<h3 dir="auto">Get Scumble</h3>' : "<h3>Get Scumble</h3>",
+        ...table,
+        `<p${api ? ' dir="auto"' : ""}>The other files of this release (${code}latest.yml</code>, ${code}latest-linux.yml</code> and the ${code}.blockmap</code>) are for the app's updater; you do not need to download them.</p>`,
+        ...(rule ? ["<hr>"] : []),
+        "",
+    ].join(NL);
+}
+
+check("the_get_scumble_block_is_neither_notes_nor_a_change", () => {
+    const plain = { notes: releaseNotes({ releaseNotes: feed }), heads: JSON.stringify(releaseHeadlines({ releaseNotes: feed })) };
+    const same = (html, what) => {
+        const n = releaseNotes({ releaseNotes: html }), h = JSON.stringify(releaseHeadlines({ releaseNotes: html }));
+        assert(n === plain.notes, what + ": the notes differ, starting " + JSON.stringify((n || "").slice(0, 120)));
+        assert(h === plain.heads, what + ": the headlines differ: " + h.slice(0, 200));
+    };
+    // present: the feed's form, the markdown API's, the web view's wrapper with an anchor, an anchor inside the heading
+    same(getBlock() + feed, "the feed's form");
+    same(getBlock({ api: true }) + feed, "the markdown API's form");
+    const web = getBlock({ api: true }).replace('<h3 dir="auto">Get Scumble</h3>', '<div class="markdown-heading" dir="auto"><h3 class="heading-element" dir="auto">Get Scumble</h3><a id="user-content-get-scumble" class="anchor" aria-label="Permalink: Get Scumble" href="#get-scumble"><svg class="octicon octicon-link"><path d="M0 0"></path></svg></a></div>');
+    assert(web.includes("markdown-heading"), "the web form was not built");
+    same(web + feed, "the web view's wrapper");
+    same(getBlock().replace("<h3>Get Scumble</h3>", '<h2><a id="user-content-get-scumble" class="anchor" href="#get-scumble"></a>Get  Scumble</h2>') + feed, "an anchor inside an h2");
+    // the block with a newer release's notes in fullChangelog form: only the changes, under their versions
+    const two = { version: "0.1.43", releaseNotes: [{ version: "0.1.43", note: getBlock() + "<ul><li><strong>Two.</strong> b</li></ul>" }, { version: "0.1.42", note: "<ul><li><strong>One.</strong> a</li></ul>" }] };
+    assert(releaseNotes(two) === ["0.1.43", "• Two. b", "", "0.1.42", "• One. a"].join(NL), "fullChangelog with a block: " + JSON.stringify(releaseNotes(two)));
+    assert(JSON.stringify(releaseHeadlines(two)) === JSON.stringify(["Two.", "One."]), "fullChangelog headlines: " + JSON.stringify(releaseHeadlines(two)));
+    // a body that is only the block holds no notes and no change
+    assert(releaseNotes({ releaseNotes: getBlock() }) === null && releaseHeadlines({ releaseNotes: getBlock({ api: true }) }) === null, "a block alone: " + JSON.stringify(releaseNotes({ releaseNotes: getBlock() })));
+    // absent: an old body, and other headings and rules, stay as they are
+    const other = "<h3>Known issues</h3>" + NL + "<ul>" + NL + "<li><strong>Kept.</strong> x</li>" + NL + "</ul>" + NL + "<hr>" + NL + "<p>After the rule.</p>";
+    assert(releaseNotes({ releaseNotes: other }) === ["Known issues", "", "• Kept. x", "", "After the rule."].join(NL), "another heading: " + JSON.stringify(releaseNotes({ releaseNotes: other })));
+    assert(JSON.stringify(releaseHeadlines({ releaseNotes: other })) === JSON.stringify(["Kept."]), "another heading's headlines");
+    // a block that lost its rule: its heading and table go, the rest stays (nothing of the CHANGELOG section is cut)
+    const lost = releaseNotes({ releaseNotes: getBlock({ rule: false }) + feed });
+    assert(lost === "The other files of this release (latest.yml, latest-linux.yml and the .blockmap) are for the app's updater; you do not need to download them." + NL + NL + plain.notes, "no rule: " + JSON.stringify((lost || "").slice(0, 200)));
+    assert(JSON.stringify(releaseHeadlines({ releaseNotes: getBlock({ rule: false }) + feed })) === plain.heads, "no rule: the headlines");
+    // a rule only after the CHANGELOG's list is not the block's: the list stays
+    const late = releaseNotes({ releaseNotes: getBlock({ rule: false }) + "<ul><li><strong>Kept.</strong> y</li></ul>" + NL + "<hr>" + NL + "<p>z</p>" });
+    assert(/^The other files[^\n]*\n\n• Kept\. y\n\nz$/.test(late || ""), "a later rule: " + JSON.stringify(late));
+    return "feed, API and web forms, fullChangelog, alone, absent, no rule, a later rule";
 });
 
 const info = (version) => ({ version, releaseNotes: "<ul><li><strong>New in " + version + ".</strong> More.</li></ul>" });

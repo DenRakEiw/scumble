@@ -37,7 +37,9 @@ code.
   performance; Node process for `sharp` exports and the in-app MCP server).
 - Local rendering: **the user's ComfyUI**, local or remote (RunPod). The app never
   bundles Python/Torch. The node pack must be installed there; the app checks
-  `/object_info` and offers to install it via the Manager.
+  `/object_info/InpaintCanvas` and, when the pack is missing, only tells the user to install it (the status line,
+  *Settings › ComfyUI* Test); it installs nothing itself, there is no Manager install in the code. The Manager
+  cannot install the pack today either (`docs/BUGS.md`), so public texts give the `git clone` line.
 - API rendering: **fal.ai** as the aggregator, plus direct adapters (Black Forest Labs
   Flux.2, OpenAI gpt-image, Google Gemini image) and the ComfyUI API nodes as fallback.
   Keys in the OS credential store via Electron `safeStorage`, never in config files.
@@ -76,15 +78,14 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-05 early morning: **0.1.42 released and Latest**, post live; the Store, P3's live run and the MCP Registry wait for the user)
+## Where things stand (2026-10-05 early morning: **0.1.42 released and Latest**, post live, in the Store since that evening; P3's live run and the MCP Registry wait for the user)
 
 **0.1.42 is out** (tag v0.1.42 on b601879, published 2026-10-05T01:29:47Z; the post `v0-1-42` live; the manual
 synced). Everything of `docs/PLAN_0_1_42.md` was built in one sitting (the user: "mache hier gleich weiter ohne
-clear"); each row's "As built" note and REL's say what ran live. **Waiting for the user:**
-- **The Store**: `dist/Scumble-0.1.42.msix` (187.4 MB, from the tag state) and `dist/store-listing/whats-new-0.1.42.txt`
-  (the label only, Q12). The MSIX upload cannot go through Claude in Chrome (10 MB per call): the user drags it into
-  Partner Center (Start update, the package in, the old one out, What's new, Submit). Read 0.1.41's certification
-  state first.
+clear"); each row's "As built" note and REL's say what ran live. **The Store has 0.1.42 too** (the live listing, read
+2026-10-07: last updated 2026-10-05 21:30 UTC, its What's new is `dist/store-listing/whats-new-0.1.42.txt` word for
+word, its package 187,454,066 bytes against the 187,437,900 of `dist/Scumble-0.1.42.msix`; 0 ratings; installs only
+in Partner Center). **Waiting for the user:**
 - **P3's live run**: `bash tools/run_gates.sh rel42-portable --exe dist/win-unpacked/Scumble.exe portable` once the
   user's installed Scumble is closed and the user says so (the packaged resolver was checked in Node mode only).
 - **The MCP Registry**: `server.json` is 0.1.42; `mcp-publisher login github` (the user's device code), `validate`,
@@ -124,7 +125,8 @@ The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27
   Microsoft; identity `DenRakEiw.Scumble`). The README links it (Install (Windows): Store or GitHub), the website hub too since 0.1.38
   (2026-10-03, with the post). Submission 1 (2026-09-30) held the first Store version; **0.1.41 was submitted
   2026-10-04 (submission 2, the user in Partner Center: the MSIX built here, the What's new text, the trailer
-  "Scumble explained" with `dist/store-listing/hero-1920x1080.png` as its thumbnail), certification pending.**
+  "Scumble explained" with `dist/store-listing/hero-1920x1080.png` as its thumbnail); 0.1.42 followed and is the
+  live Store version (the listing, read 2026-10-07).**
   **A Store update with every release, clicked through in the user's Chrome** (the user, 2026-10-04: first "nur nach
   essenziellen änderungen", then "wenn du es in chrome machen kannst dann doch jedes mal"; the submission API needs a
   company account, the user's is not one): `npm run dist:store`, a What's new text, then Claude in Chrome in Partner

@@ -3,6 +3,7 @@
 # to it (electron-builder --publish: the installer, its blockmap and latest.yml; the AppImage, the
 # .deb and latest-linux.yml; gh release upload: Scumble-<version>-portable-win-x64.zip); on other
 # pushes and pull requests the files are kept as workflow artifacts only (the zip on every run).
+# After both builds, the `sizes` job writes the draft's body again with each file's size in its "Get Scumble" table.
 name: build
 
 on:
@@ -40,7 +41,8 @@ jobs:
         shell: bash
         run: |
           tag=${GITHUB_REF#refs/tags/}
-          # the release body is that version's section of CHANGELOG.md (tools/release_notes.py);
+          # the release body is the "Get Scumble" table and that version's section of CHANGELOG.md
+          # (tools/release_notes.py; the sizes job adds the files' sizes once both builds uploaded them);
           # a missing section stops the release rather than shipping someone else's notes
           python tools/release_notes.py "$tag" > release_notes.md
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "Scumble ${tag#v}" --notes-file release_notes.md
@@ -161,3 +163,36 @@ jobs:
             dist/*.deb
             dist/latest-linux.yml
           if-no-files-found: error
+
+  # the draft's body once more, now with each file's size in its "Get Scumble" table (tools/release_notes.py
+  # --assets reads them from the release); only after both builds uploaded their files, only for a draft, and only
+  # while the body is still the one the draft job wrote (one edited by hand, or given sizes by an earlier run, is left
+  # alone; docs/RELEASING.md says how to redo it). It never fails the release: every failure ends the step with a
+  # warning, and the job may fail on its own (continue-on-error).
+  sizes:
+    needs: [windows, linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Add the file sizes to the draft's body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          tag=${GITHUB_REF#refs/tags/}
+          draft=$(gh release view "$tag" --json isDraft --jq .isDraft) || { echo "::warning::$tag could not be read; no sizes added"; exit 0; }
+          [ "$draft" = "true" ] || { echo "::notice::$tag is no draft (published already); its body is left as it is"; exit 0; }
+          python tools/release_notes.py "$tag" > plain_notes.md || { echo "::warning::release_notes.py failed; no sizes added"; exit 0; }
+          python tools/release_notes.py "$tag" --assets > release_notes.md || { echo "::warning::release_notes.py --assets failed; no sizes added"; exit 0; }
+          gh release view "$tag" --json body > current_body.json || { echo "::warning::the draft's body could not be read; no sizes added"; exit 0; }
+          python -c "import json, sys; b = json.load(open('current_body.json', encoding='utf-8'))['body'] or ''; p = open('plain_notes.md', encoding='utf-8').read(); sys.exit(0 if b.strip() == p.strip() else 1)" \
+            || { echo "::notice::the draft's body is not the one the draft job wrote (edited by hand, or sized by an earlier run); left as it is"; exit 0; }
+          gh release edit "$tag" --notes-file release_notes.md || { echo "::warning::gh release edit failed; the draft keeps its body without sizes"; exit 0; }
+          echo "the draft's body now lists the files' sizes"

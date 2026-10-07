@@ -176,13 +176,14 @@ in-app model present.
 
 Found by the promotion research (read-only, `https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions?include_status_reason=true`):
 every version of ComfyUI-InpaintCanvas on the Comfy Registry is `NodeVersionStatusFlagged`. 0.2.0-0.3.1 carry the
-manual verdict "policy-v0.4: PATH_TRAVERSAL", 0.3.2 "policy-v0.5: path-traversal" (both by a Comfy reviewer); 0.3.3 is
-flagged by the scanner with six info-level findings and no verdict yet. With no active version the Manager has nothing
+manual verdict "policy-v0.4: PATH_TRAVERSAL", 0.3.2 and 0.3.3 "policy-v0.5: path-traversal" (all by the same Comfy
+reviewer; 0.3.3's verdict read again 2026-10-07 afternoon). The scanner's six info-level findings are all in
+`DEVELOPMENT.md`, `docs/shots.py` and `mcp/inpaint_canvas_mcp.py`, none in `nodes.py`. With no active version the Manager has nothing
 to install (registry downloads: 3), and the node is missing from ComfyUI-Manager's `custom-node-list.json` and
 `extension-node-map.json` too. So the local route of Scumble fails for anyone without a git clone.
 **Known (read, not verified against the reviewer):** the node's `_ref_path` (`nodes.py` near 64-77) checks
 `commonpath` on `abspath`, not `realpath` (a symlink or junction inside the input folder can lead out), and the routes
-`/inpaint_canvas/upload`, `/cleanup` and `/command` take no authentication. An earlier pack was accepted into the
+`/inpaint_canvas/upload` and `/cleanup` take no authentication (`/command` answers loopback only). An earlier pack was accepted into the
 Manager list after a realpath + commonpath fix (DenRakEiw_Nodes, 2026-09-23).
 **Also:** `README.md` (near 124) and `docs/MANUAL.md` (near 55) say Scumble "offers to install it through the ComfyUI
 Manager"; the code only prints "install ComfyUI-InpaintCanvas there (Manager or git clone)" (`renderer/shell.js` near
@@ -190,6 +191,13 @@ Manager"; the code only prints "install ComfyUI-InpaintCanvas there (Manager or 
 name (changes with the next node publish).
 **To do first:** ask the reviewer which path they mean (the registry issue), fix the path checks with realpath, decide
 on the routes, publish a node version, then a PR to the Manager list; correct README and manual now.
+**Texts corrected 2026-10-07 (local, not pushed):** README "What you need to render" and MANUAL "Where it renders"
+now say Scumble only reports a missing pack and give the `cd ComfyUI/custom_nodes` + `git clone` lines (the Manager
+once the pack is listed again), `CLAUDE.md`'s decision line too; the app's two messages still say "Manager or git clone".
+**Node 0.3.4 prepared 2026-10-07 (local, not pushed):** the branch `registry-0.3.4` in the worktree `dist/node_wt`
+(realpath + commonpath for every client-given path, safe file-name tokens in Mask Out / Object Map / Stitch, a
+`.comfyignore` that keeps `docs/`, `mcp/`, `tests/`, `DEVELOPMENT.md` out of the package, the description without the
+comparison, 23 path tests); the push, the registry note and the Manager PR in `dist/node_release/`, all on the user's word.
 
 ### Found while recording the trailer's takes (2026-10-07, run live, not fixed)
 

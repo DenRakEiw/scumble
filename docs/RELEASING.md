@@ -27,6 +27,21 @@ check before publishing:** `Scumble Setup <version>.exe`, its blockmap, `latest.
 present, and it starts (on this machine only with the user's Scumble closed: a start without `--user-data-dir` that
 missed the marker would use `%APPDATA%\Scumble`).
 
+**The "Get Scumble" block** (from the release after 0.1.42 on; 0.1.42's published body only by hand, on the user's
+word): `tools/release_notes.py` prints a fixed block above the CHANGELOG section: the heading `### Get Scumble`, a table
+(the Microsoft Store with `winget install 9NDBTNNMXF2R`, the installer, the portable zip, the AppImage and the deb, each
+with its direct link), one line saying `latest.yml`, `latest-linux.yml` and the `.blockmap` are for the updater, and a
+rule. A table, never a bulleted list: the update question takes every top-level bullet's bold lead as a change, and
+`electron/main/updater.js` (`withoutDownloads`) drops the block from its heading to the rule, so the app shows none of
+it (`node tools/updater_test.js`). Copies up to 0.1.42 do not have that yet: offered a release with the block, they show
+its rows as text at the top of *Settings › Updates* (the update question's list of changes is the same). The draft job
+writes it without sizes; the `sizes` job at the end of the tag build writes the body again with `--assets` (each file's
+size read from the release), for a draft only, only while the body is still the generated one, and never failing the
+build. To fix a body by hand (a re-run, an edited draft, a published release on the user's word), from Git Bash
+(PowerShell's `>` re-encodes the file): `python tools/release_notes.py v<version> --assets > notes.md`, then `gh release
+edit v<version> --repo DenRakEiw/scumble --notes-file notes.md`. The block's wording lives in the script's `block()`,
+not in CHANGELOG.md.
+
 **The official MCP Registry** (listed since 2026-10-04, `docs/PLAN_MCP_LISTINGS.md`): after the release is published,
 `server.json`'s `version` set to the new version (and its description if the tools changed; at most 100 characters),
 committed, then `mcp-publisher validate` and `mcp-publisher publish` from the repo root (a published version is

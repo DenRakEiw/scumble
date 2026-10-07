@@ -13,32 +13,33 @@
 ## Install and first start
 
 <!-- slug: install -->
-_Download, the SmartScreen warning, and what Scumble needs on your machine._
+_The Microsoft Store or the download, the SmartScreen warning, and what Scumble needs on your machine._
 
 ![Scumble at first start: one empty tab, the tool column on the left, the side panel on the right, and the hint to load, paste or drop an image](https://www.denrakeiw.com/projects/scumble/manual/install.jpg "1600x946")
 
-Scumble is a normal desktop app. Download the installer from the latest release on GitHub, run it, and it is in your start menu. There is no account, no sign-up and no server of mine in between: the app talks to your own ComfyUI, or to the API provider whose key you gave it, and to GitHub when it looks for an update.
+Scumble is a normal desktop app. On Windows the simplest way to get it is the Microsoft Store: search for Scumble there, or open apps.microsoft.com/detail/9NDBTNNMXF2R in a browser, press Get, and it is in your start menu. In a terminal, `winget install 9NDBTNNMXF2R` installs the same Store copy. The other way is the installer from the latest release on GitHub: download it, run it, and it is in your start menu too. Scumble itself has no account, no sign-up and no server of mine in between: the app talks to your own ComfyUI, or to the API provider whose key you gave it, and, unless it came from the Store, to GitHub when it looks for an update.
 
-The installer is not code-signed yet, so Windows shows "Windows protected your PC" the first time. That is the warning Windows gives every unsigned program, not a verdict about this one. Click More info, then Run anyway. Updates after that are downloaded by the app itself and do not go through SmartScreen again. Proper signing is planned through the SignPath Foundation, which is free for open-source projects but wants a project with a public release and some use behind it first.
+Microsoft signs the Store copy, so it installs without a warning. The installer from GitHub is not code-signed yet, so Windows shows "Windows protected your PC" the first time. That is the warning Windows gives every unsigned program, not a verdict about this one. Click More info, then Run anyway. Updates after that are downloaded by the app itself and do not go through SmartScreen again. Proper signing is planned through the SignPath Foundation, which is free for open-source projects but wants a project with a public release and some use behind it first.
 
-There is also a portable copy for Windows, Scumble-\<version\>-portable-win-x64.zip in the same release. Unpack it into a plain folder you can write to, such as C:\Tools (not Program Files, and not a folder OneDrive syncs): the zip holds one folder, Scumble, and you start the Scumble.exe in it. The file portable.txt beside it makes Scumble keep everything it stores — settings, keys, autosave, the local files, plugins, recipes, helper models, logs — in a data folder next to it, so nothing lands in %APPDATA%\Scumble and it runs beside an installed Scumble. The installer stays the recommended way.
+There is also a portable copy for Windows, Scumble-\<version\>-portable-win-x64.zip in the same release. Unpack it into a plain folder you can write to, such as C:\\Tools (not Program Files, and not a folder OneDrive syncs): the zip holds one folder, Scumble, and you start the Scumble.exe in it. The file portable.txt beside it makes Scumble keep everything it stores — settings, keys, autosave, the local files, plugins, recipes, helper models, logs — in a data folder next to it, so nothing lands in %APPDATA%\\Scumble and it runs beside an installed Scumble. The Store copy and the installer stay the recommended ways.
 
-On Linux the same release carries an AppImage and a .deb. Fair warning: they are built by CI and have not been run by me, because I have no Linux machine here. If you try one, tell me what breaks. macOS is prepared but not released.
+On Linux the same release carries an AppImage and a .deb. Fair warning: they are built by CI and have not been run by me, because I have no Linux machine here. If you try one, tell me what breaks. macOS is planned, but not started yet.
 
 The app alone can do a great deal — open, paint, select, layer, filter, save, export — but it generates nothing until it has somewhere to render. That is the next chapter.
 
 ### Steps
 
-1. **Download.** Scumble Setup \<version\>.exe from the latest release. On Linux: the .AppImage (chmod +x, start it) or the .deb.
-2. **Run it.** More info, then Run anyway, when SmartScreen asks. The app installs per user, no admin rights needed.
+1. **Get it.** On Windows: Scumble in the Microsoft Store, or `winget install 9NDBTNNMXF2R`; or Scumble-Setup-\<version\>.exe from the latest release on GitHub. On Linux: the .AppImage (chmod +x, start it) or the .deb.
+2. **Run it.** The Store installs it by itself. The installer from GitHub: More info, then Run anyway, when SmartScreen asks. Either way the app installs per user, no admin rights needed.
 3. **Start it.** First start opens an empty tab. Nothing is configured yet and nothing has to be.
 
 ### Notes
 
 - Windows 10 and 11, 64-bit. A GPU is not required for the editor itself: filters run on the GPU when there is one and fall back to the processor when there is not.
 - The installer is about 128 MB, the portable zip about 180 MB, the installed or unpacked app about 410 MB, most of which is Chromium and the helper models' runtime.
-- Updates: when a new version is downloaded, Scumble asks once whether to restart into it now, later (it is installed when you close Scumble) or not for this version. Settings › Updates shows everything that changed.
-- The portable copy keeps its data in the data folder beside Scumble.exe, made at the first start. A folder it cannot write to stops it with a message naming the folder; move the Scumble folder somewhere you can write to. Its Scumble.exe is not code-signed either, so SmartScreen asks once at the first start, as for the installer. Delete portable.txt and it uses %APPDATA%\Scumble like an installed copy, and shares that data with it.
+- The Store copy keeps its settings, keys and files in a folder of its own, %APPDATA%\\Scumble Store, so it can sit beside a copy from GitHub. The Store updates it; a new version reaches the Store after Microsoft has checked it, so sometimes a little after the GitHub release.
+- Updates in a copy from the GitHub installer: when a new version is downloaded, Scumble asks once whether to restart into it now, later (it is installed when you close Scumble) or not for this version. Settings › Updates shows everything that changed.
+- The portable copy keeps its data in the data folder beside Scumble.exe, made at the first start. A folder it cannot write to stops it with a message naming the folder; move the Scumble folder somewhere you can write to. Its Scumble.exe is not code-signed either, so SmartScreen asks once at the first start, as for the installer. Delete portable.txt and it uses %APPDATA%\\Scumble like an installed copy, and shares that data with it.
 - API keys are encrypted for the Windows account that stored them (DPAPI). On another PC or under another Windows account a portable copy cannot read them: Settings › API providers says "stored on another PC or Windows account: type it again" in that key's row, and a run with it says the same. Once the copy has started on another PC or account, its stored keys may have to be typed again on both PCs, the first one included: Windows may replace the copy's own encryption key at that start (not measured yet), and the row then says the same on the first PC.
 - The portable copy does not update itself. When a new version is out it asks once: Download opens the release page, Later asks again at the next start, Skip this version leaves it out. Unpack the new zip where you unpacked the old one, so its Scumble folder lands on the old one; the data folder stays.
 - The portable copy registers no file type and adds nothing to the taskbar's jump list: open a .scumble file with File › Open or by dropping it on the window. Help › Copy MCP registration names the Scumble.exe of that folder.
@@ -52,7 +53,7 @@ _The one decision to make before the first generate — and how to store a key s
 
 Scumble does not generate anything itself. It sends your selection somewhere and puts the answer back as a layer. That somewhere is either your own ComfyUI, or a model provider you have an API key for. You can have both and switch per run; the recipe picker in the top bar decides which one a run uses.
 
-Your own ComfyUI is free to run, keeps every pixel on your machine, and gives you the models you already downloaded. It needs the node pack ComfyUI-InpaintCanvas installed there, and the models the recipe asks for. Type the server's address into the top bar — http://127.0.0.1:8188 for a local one, or the address of a rented box, RunPod included — and press Connect. If the node pack is missing, Scumble notices and offers to install it through the ComfyUI Manager.
+Your own ComfyUI is free to run, keeps every pixel on your machine, and gives you the models you already downloaded. It needs the node pack ComfyUI-InpaintCanvas installed there, and the models the recipe asks for. Type the server's address into the top bar — http://127.0.0.1:8188 for a local one, or the address of a rented box, RunPod included — and press Connect. Scumble checks for the node pack when it connects and says so in the status line when it is missing (Test in Settings › ComfyUI lists it too); it does not install the pack for you. Install it with git: in a terminal, `cd ComfyUI/custom_nodes`, then `git clone https://github.com/DenRakEiw/ComfyUI-InpaintCanvas`, and restart ComfyUI. The pack needs no extra Python packages. The ComfyUI Manager does not list it at the moment; once it does, you can install it from there too.
 
 An API provider needs no server at all. Put a key into Settings › API providers and the models behind it appear in the recipe picker: Google's Nano Banana, OpenAI's GPT Image, Black Forest Labs' FLUX.2 and FLUX 3 Image, ByteDance's Seedream, Qwen Image Edit, and the same models through aggregators like fal.ai, Replicate, WaveSpeedAI, ToAPIs, Comfy Cloud, Comfy Router, OpenRouter and Oxen.ai. You pay that provider directly; Scumble takes no cut and sees no invoice. Comfy Router has no key row of its own: it runs on the Comfy Cloud key, with credits and without a paid Comfy plan. The same key runs HY Image 3.5 through Comfy's Partner API.
 
@@ -62,7 +63,7 @@ The same key rows also feed two other things: the assistant, and prompt upsampli
 
 ### Steps
 
-1. **For a local ComfyUI.** Install the ComfyUI-InpaintCanvas node pack there, start ComfyUI, type its address in the top bar, press Connect. The dot goes green.
+1. **For a local ComfyUI.** Install the ComfyUI-InpaintCanvas node pack there with git (above), start ComfyUI, type its address in the top bar, press Connect. The dot goes green.
 2. **For an API provider.** Ctrl+, → API providers, paste the key into its row, Save. No restart, no connection needed.
 3. **Pick what a run uses.** The recipe dropdown in the top bar lists every recipe you can actually run: local recipes when a server is connected, provider recipes when their key is there.
 
