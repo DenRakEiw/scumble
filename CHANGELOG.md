@@ -25,6 +25,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   graph under the recipe's name instead of "Unsaved Workflow", and lays a recipe without a saved graph out left to
   right instead of in one long column.
 - When ComfyUI lacks the Inpaint Canvas node pack, the message gives the `git clone` line to install it.
+- Boxes follow a Generate new whose answer comes back at another size than the canvas (FLUX 3's 4K tier, for one):
+  they stay where they were drawn on the picture instead of keeping their old pixel positions.
 
 ## 0.1.42 — 2026-10-05
 

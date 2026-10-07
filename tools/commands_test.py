@@ -2041,6 +2041,39 @@ await c("remove_layer", { layer: fl.id });
 await c("remove_layer", { layer: made.id });
 return out;
 """),
+    ("boxes_follow_generate_new", """
+// docs/PLAN_0_1_43.md B6: Generate new whose answer is another size than the document (FLUX 3's 4k tier answers
+// 5456 x 3072 for 4096 x 2304) left the boxes at their old pixel rects; they follow the answer as after a resize now.
+// The loopback's answer_scale stands in for the model
+const d = await c("new_document");
+await c("new_canvas", { width: 400, height: 300, doc: d.id });
+const ed = window.editor;
+const H = (await import("./editor/host.js")).host;
+const saved = H.recipe;
+await c("boxes.add", { doc: d.id, kind: "new", rect: [40, 30, 200, 150], desc: "a red ball" });
+await c("boxes.add", { doc: d.id, kind: "new", rect: [220, 160, 380, 290], desc: "a blue cube" });
+const before = (await c("boxes.list", { doc: d.id })).boxes.map((b) => b.rect);
+const out = { before };
+try {
+    H.setRecipe({ id: "loopback_scaled", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "fill", text: { model: "loopback" }, name: "Loopback scaled",
+        settings: [{ index: 1, key: "answer_scale", label: "Scale", spec: ["FLOAT", { default: 1.5 }] }] });
+    const r = await c("generate_new", { doc: d.id, prompt: "a ball and a cube", width: 400, height: 300 });
+    if (r.width !== 600 || r.height !== 450 || ed.width !== 600 || ed.height !== 450) throw new Error("the answer's size: " + JSON.stringify({ r: [r.width, r.height], ed: [ed.width, ed.height] }));
+    out.after = (await c("boxes.list", { doc: d.id })).boxes.map((b) => b.rect);
+    const want = before.map((rc) => rc.map((v) => Math.round(v * 1.5)));
+    if (JSON.stringify(out.after) !== JSON.stringify(want)) throw new Error("the boxes did not follow: " + JSON.stringify({ before, after: out.after, want }));
+    // the same size: nothing moves
+    H.setRecipe({ id: "loopback_same", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "fill", text: { model: "loopback" }, name: "Loopback", settings: [] });
+    await c("generate_new", { doc: d.id, prompt: "again", width: 600, height: 450 });
+    const same = (await c("boxes.list", { doc: d.id })).boxes.map((b) => b.rect);
+    if (JSON.stringify(same) !== JSON.stringify(out.after)) throw new Error("an answer of the same size moved the boxes: " + JSON.stringify(same));
+} finally {
+    H.setRecipe(saved);
+    await c("close_document", { doc: d.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+return out;
+"""),
     ("close", """
 const before = (await c("list_documents")).documents.length;
 const r = await c("close_document", { doc: window.__testDoc });

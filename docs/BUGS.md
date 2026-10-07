@@ -11,6 +11,15 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### Generate new left the boxes behind when the model answered at another size - fixed for 0.1.43 (B6 of docs/PLAN_0_1_43.md, 2026-10-07)
+
+Found in the video 3 test runs (a 4096 x 2304 canvas, FLUX 3's 4k tier answered 5456 x 3072, the boxes kept their old
+pixel rects). `host.runGenerate` keeps the document's size before the run and, when the answer lands at another size,
+emits a geometry event (kind "resize", the scale of both sides) through `host.changed`, so every plugin that keeps
+image coordinates follows (the boxes, the film points, 3D objects). Generate new clears the undo history, so there is
+no step to share. Test: `commands` step `boxes_follow_generate_new` (the loopback's new `answer_scale` answers 1.5x:
+two boxes scaled; an answer of the same size moves nothing). It fails on the old code.
+
 ### The ComfyUI window: tab name, "Unsaved Workflow (2)", one column; the install messages - fixed for 0.1.43 (B4 of docs/PLAN_0_1_43.md, 2026-10-07)
 
 - **The tab name dropped everything before a "/"** ("Flux.2 Klein 4B / 9B (ComfyUI)" showed as "9B (ComfyUI)"): the
@@ -279,28 +288,6 @@ the ONNX helper sessions' tensors per document, the provider path keeping reques
 **To measure first:** a fresh instance, one step at a time (a document load, a save, an export_layer at full size, a
 select_point, a provider run), main's private bytes after each and after a forced GC (`--js-flags=--expose-gc`), and a
 heap snapshot of main (CDP on the main process via `--inspect`) when it has grown: what retains the buffers.
-
-### Generate new leaves the boxes behind when the model answers at another size (found 2026-10-05, run live)
-
-**Found** in the video 3 test runs (`docs/TUTORIAL.md` section 5, "Test runs"): a 4096 x 2304 canvas, three New
-boxes, Generate new on FLUX 3 Image (BFL). The request went out as 4096 x 2304, which `flux3.js` `tierOf` (by area)
-sends as the 4k tier, and BFL's 4k tier at 16:9 is 5456 x 3072: the document became 5456 x 3072, the boxes kept their
-4096 x 2304 rects (`boxes.list` after the run), so they sat about 25 % too far up and left of what they had placed.
-The rows themselves were right: they are fractions of the frame (`[577,483,738,654]` on 0-1000), and the model put
-everything where the boxes had been.
-
-**Known (read):** the boxes follow the picture through the "geometry" event (`plugins/boxes/main.js:301`), which
-`host.changed` emits for turn, crop, extend, resize and straighten (`inpaint_canvas.js:4559`, `:4669`, `:4870`).
-`host.runGenerate` lands the answer with `editor.setBaseFromCanvas(c, { keepRefs: true })` at the model's size
-(`renderer/editor/host.js` about 2080) and emits none. Any provider whose text route rounds or tiers the size does the
-same (FLUX 3's tiers, presets elsewhere); a local Generate new (`newCanvas` at the asked size) does not.
-
-**Possible fix:** after the landing, when `c.width x c.height` differs from the frame the boxes were measured in, emit a
-geometry event with the scale `[c.width / frame.w, 0, 0, c.height / frame.h, 0, 0]` (kind "resize"), so every plugin
-that keeps image coordinates follows; one undo step with the landing. Test: a plain-Node or editor step with a stub
-provider that answers 1.33x larger, the boxes' rects scaled.
-
-**Workaround (the video):** a canvas of the size the model answers with (5456 x 3072 for FLUX 3 4k at 16:9).
 
 ### A shown reference layer can take over an unrelated FLUX 3 edit (seen once 2026-10-05, run live)
 

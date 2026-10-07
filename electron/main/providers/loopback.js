@@ -147,7 +147,9 @@ module.exports = {
         const delay = Math.max(0, +req.params.delay_ms || 0);
         if (delay) await (ctx && ctx.sleep ? ctx.sleep(delay) : new Promise((r) => setTimeout(r, delay)));   // ctx.sleep: Cancel ends it
         if (req.params.fail) throw new Error("loopback failure requested");
-        const w = Math.max(16, Math.min(4096, req.width | 0)), h = Math.max(16, Math.min(4096, req.height | 0));
+        // params.answer_scale: an answer of another size than asked, as a model that tiers or rounds it (FLUX 3's 4k tier)
+        const k = +req.params.answer_scale > 0 ? +req.params.answer_scale : 1;
+        const w = Math.max(16, Math.min(4096, Math.round((req.width | 0) * k))), h = Math.max(16, Math.min(4096, Math.round((req.height | 0) * k)));
         const bytes = transparent(req) ? discPng(w, h, req.seed || 0) : rampPng(w, h, req.seed || 0);
         // what arrived, as edit() reports it: the references and the texts after main resolved their names
         return { bytes, mime: "image/png", seed: req.seed, info: { width: w, height: h, prompt: req.prompt || "", negative: req.negative == null ? null : req.negative, aspect: req.aspect || null, background: transparent(req) ? "transparent" : "auto", references: (req.references || []).length, model: req.model || "" } };

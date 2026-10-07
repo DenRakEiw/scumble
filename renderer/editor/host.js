@@ -2003,6 +2003,8 @@ export const host = {
         if (blocked) throw new Error(blocked);
         const width = Math.max(64, Math.round(opts.width || editor.width || 1024));
         const height = Math.max(64, Math.round(opts.height || editor.height || 1024));
+        // the frame the plugins' image coordinates (the boxes) are measured in: the answer may come back at another size
+        const drawnOn = { width: editor.width || 0, height: editor.height || 0 };
         // the prompt and the references of the click; a token that cannot go refuses before anything is sent
         const base = opts.refs || editor.refSnapshot();
         const snap = { ...base, prompt: opts.prompt != null ? String(opts.prompt) : base.prompt, negative: opts.negative != null ? String(opts.negative) : base.negative };
@@ -2080,6 +2082,12 @@ export const host = {
             swap = await editor.setBaseFromCanvas(c, { keepRefs: true });
         } finally {
             this.endRun(editor, token);
+        }
+        // a model that rounds or tiers the size (FLUX 3's 4k tier answers 5456 x 3072 for 4096 x 2304) lands a picture of
+        // another size: what the plugins keep in image coordinates follows it, as after a resize (the boxes were fractions
+        // of the frame for the model, so they still are). Generate new clears the undo history, so there is no step to share
+        if (drawnOn.width > 0 && drawnOn.height > 0 && (c.width !== drawnOn.width || c.height !== drawnOn.height)) {
+            this.changed(editor, { geometry: { kind: "resize", m: [c.width / drawnOn.width, 0, 0, c.height / drawnOn.height, 0, 0], from: drawnOn, to: { width: c.width, height: c.height } } });
         }
         const gotAlpha = cutout && transparentPixels(c);
         const notes = [...preNotes, ...(res.notes || [])];
