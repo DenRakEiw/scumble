@@ -1976,6 +1976,71 @@ try {
     await c("activate_document", { doc: window.__testDoc });
 }
 """),
+    ("cutout_and_string_params", """
+// docs/PLAN_0_1_43.md B1: cutout_layer answered a failure (with the success text) after an in-app cutout, which finishes
+// inside the call; and filter params sent as a JSON string were refused. The in-app model is a stub here: host's
+// backend list and its cutoutInApp answer a grey mask (white left half), or throw, and are put back afterwards
+const H = await import("./editor/host.js");
+const P = await import("./plugins.js");
+const doc = new P.Document(editor);
+const W = 32, H2 = 16;
+const img = new ImageData(W, H2);
+for (let i = 0; i < img.data.length; i += 4) { img.data[i] = 200; img.data[i + 1] = 120; img.data[i + 2] = 40; img.data[i + 3] = 255; }
+const made = doc.addLayer(img, { name: "Cutout probe", x: 10, y: 10 });
+const L = () => editor.layers.find((l) => l.id === made.id);
+const saved = { backends: H.host.cutoutBackends, inApp: H.host.cutoutInApp, setting: editor.cutoutSettings };
+const out = {};
+try {
+    H.host.cutoutBackends = () => [{ id: "stub-matting", label: "Stub matting", inApp: true }];
+    editor.cutoutSettings = { backend: "stub-matting" };
+    let calls = 0;
+    H.host.cutoutInApp = async () => {
+        calls++;
+        const cv = document.createElement("canvas"); cv.width = W; cv.height = H2;
+        const g = cv.getContext("2d"); g.fillStyle = "#000"; g.fillRect(0, 0, W, H2); g.fillStyle = "#fff"; g.fillRect(0, 0, W / 2, H2);
+        return cv;
+    };
+    const r = await c("cutout_layer", { layer: made.id });
+    if (calls !== 1) throw new Error("the stub model ran " + calls + " times");
+    if (!r || r.id !== made.id) throw new Error("cutout_layer did not answer the layer: " + JSON.stringify(r).slice(0, 200));
+    if (!L().maskPx) throw new Error("no mask after the cutout");
+    if (editor.cutoutPending) throw new Error("the cutout is still pending");
+    out.done = editor.status;
+    // the in-app model fails: an error with the reason, nothing pending
+    H.host.cutoutInApp = async () => { throw new Error("stub model broke"); };
+    let msg = "";
+    try { await c("cutout_layer", { layer: made.id }); } catch (e) { msg = String(e.message || e); }
+    if (!/Background removal failed: stub model broke/.test(msg)) throw new Error("a failing in-app model: " + (msg || "it answered as done"));
+    if (editor.cutoutPending) throw new Error("pending after a failure");
+    out.failed = msg;
+    // no model at all: refused before anything runs
+    H.host.cutoutBackends = () => [];
+    msg = "";
+    try { await c("cutout_layer", { layer: made.id }); } catch (e) { msg = String(e.message || e); }
+    if (!/No background removal model/.test(msg)) throw new Error("no model: " + (msg || "it answered as done"));
+    out.none = msg;
+} finally {
+    H.host.cutoutBackends = saved.backends; H.host.cutoutInApp = saved.inApp; editor.cutoutSettings = saved.setting;
+}
+// filter params as a JSON string: parsed when it holds an object, refused otherwise (nothing added)
+const fl = await c("add_filter", { type: "fill", params: "{\\"color\\": \\"#ff2d2d\\"}", name: "String params" });
+const F = () => editor.layers.find((l) => l.id === fl.id);
+if (F().params.color !== "#ff2d2d") throw new Error("add_filter with a string params: color " + F().params.color);
+await c("set_filter", { layer: fl.id, params: "{\\"color\\":\\"#00ff00\\"}" });
+if (F().params.color !== "#00ff00") throw new Error("set_filter with a string params: color " + F().params.color);
+await c("set_filter", { layer: fl.id, params: "{}" });
+const n0 = editor.layers.length;
+for (const bad of ["not json", "[1, 2]", "\\"#ff0000\\""]) {
+    let msg = "";
+    try { await c("add_filter", { type: "fill", params: bad }); } catch (e) { msg = String(e.message || e); }
+    if (!/params must be an object/.test(msg)) throw new Error("params " + bad + ": " + (msg || "accepted"));
+}
+if (editor.layers.length !== n0) throw new Error("a refused add_filter added a layer");
+out.stringParams = F().params.color;
+await c("remove_layer", { layer: fl.id });
+await c("remove_layer", { layer: made.id });
+return out;
+"""),
     ("close", """
 const before = (await c("list_documents")).documents.length;
 const r = await c("close_document", { doc: window.__testDoc });

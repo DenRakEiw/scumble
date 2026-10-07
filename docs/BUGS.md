@@ -11,6 +11,20 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### `cutout_layer` after an in-app cutout; filter params as a JSON string - fixed for 0.1.43 (B1 of docs/PLAN_0_1_43.md, 2026-10-07)
+
+- **`cutout_layer` answered a failure after a successful in-app cutout** (seen 2026-10-07 by the trailer's setup agent:
+  `ok: false` with the success text as its error). The in-app path finishes inside `cutoutLayer`, so the command's
+  "nothing pending" check took success for "never started". `cutoutLayer` now answers `"started"` (a ComfyUI run that
+  `applyCutoutFile` finishes), `"done"` (the in-app mask applied) or `false` (nothing started or the in-app run failed,
+  the status says why); the command throws only on `false` and waits only on `"started"`.
+- **Filter params sent as a JSON string were refused** (Claude Sonnet 5 through OpenRouter sent
+  `"{\"color\": \"#ff2d2d\"}"` and retried until the assistant's step cap). `checkParams` parses a string that holds
+  a JSON object; any other string is refused as before. The MCP schema declares `params` as an object already.
+- Test: `commands` step `cutout_and_string_params` (a stub in-app model: done, failing, none; `add_filter` /
+  `set_filter` with string params, three refused strings, nothing added). It fails on the old code with the reported
+  symptom. Tiles backend.
+
 ### The six the user picked for 0.1.42 - fixed for 0.1.42 (F1 of docs/PLAN_0_1_42.md, 2026-10-05)
 
 **Picked** 2026-10-04 ("alle sechs"). Five were found by reading while planning the in-app assistant (2026-09-19), the
@@ -175,17 +189,6 @@ the tile backend (`inpaint_canvas.js` `checkBaseSize`, refusals tested in `edito
 **To do first:** run `huge:30000x20000` on the current exe; then one check per item above (each refusal before any
 paid run or any canvas is made), and the manual's Upscale sentence corrected or made true.
 
-### `cutout_layer` reports a failure when the in-app cutout succeeded (seen 2026-10-07, run live)
-
-**Seen** by the trailer's setup agent: `cutout_layer` on a 5456 x 3072 layer with the in-app matting model
-(BiRefNet lite, 21 s) answered `ok: false` with the success message as its error; the layer had its clean cutout.
-**Known (read):** `renderer/commands.js` `cutout_layer` calls `await ed.cutoutLayer(l)` and then throws
-`ed.status` when `ed.cutoutPending` is already false. That check stands for "the cutout never started", but the
-in-app path finishes inside `cutoutLayer`, so pending is false on success too. An MCP agent or the assistant reports
-a failure and may retry. **Fix to check:** tell "did not start" from "already done" (a return value of
-`cutoutLayer`, or the layer's version / the status set by the in-app path), and a `commands` gate step with the
-in-app model present.
-
 ### The node cannot be installed through the Manager: every registry version is flagged (found 2026-10-07, read)
 
 Found by the promotion research (read-only, `https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions?include_status_reason=true`):
@@ -224,12 +227,6 @@ comparison, 23 path tests); the push, the registry note and the Manager PR in `d
 - **The film-look thumbnails preview each stock over the active look** (`plugins/film/main.js` near 100: the previews
   are drawn over the whole composite, the active look included), so after a black-and-white look every thumbnail is
   grey, while a click replaces the look.
-- **Filter params from the assistant are refused when the model sends them as a JSON string.** Claude Sonnet 5
-  through OpenRouter sent `add_filter` / `set_filter` `params` as a string (`"{\"color\": \"#ff2d2d\"}"`, even
-  `"{}"`); `checkParams` in `renderer/commands.js` (near 2054) throws "params must be an object" for every one, so
-  the model retried until the assistant's 25-step cap ended the turn ($0.42, the look's settings never set). Check
-  whether the tool schema declares `params` as an object for the adapters; accept a JSON string that parses to an
-  object; a `commands` gate step with a string `params`.
 - **The assistant's privacy notice never clears.** Nothing in `renderer/` calls `assistant:noticed` (only the
   preload entry, `electron/preload.js` near 220, and the handler in `electron/main/main.js` near 1178), so each
   provider's notice stays in the panel header, while `docs/ASSISTANT.md` (near 151) says it shows until the first

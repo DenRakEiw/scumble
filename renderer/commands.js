@@ -1613,11 +1613,15 @@ const COMMANDS = {
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
             if (ed.cutoutPending) throw new Error("a background removal is still running");
-            await ed.cutoutLayer(l);
-            if (!ed.cutoutPending) throw new Error(ed.status);
-            const ok = await until(() => !ed.cutoutPending, clampInt(a.timeout, 5, 3600, 300) * 1000);
-            if (!ok) throw new Error("background removal timed out: " + ed.status);
-            if (/failed/i.test(ed.status)) throw new Error(ed.status);
+            // "done": the in-app model finished inside the call; "started": a ComfyUI run the editor finishes later; false:
+            // nothing started (or the in-app run failed), and the status says why
+            const run = await ed.cutoutLayer(l);
+            if (!run) throw new Error(ed.status);
+            if (run === "started") {
+                const ok = await until(() => !ed.cutoutPending, clampInt(a.timeout, 5, 3600, 300) * 1000);
+                if (!ok) throw new Error("background removal timed out: " + ed.status);
+                if (/failed|could not apply/i.test(ed.status)) throw new Error(ed.status);
+            }
             return layerSummary(ed, l);
         },
     },
@@ -2051,6 +2055,12 @@ const optionIds = (p) => (p.options || []).map((o) => (o && typeof o === "object
  */
 function checkParams(filterId, params) {
     if (!FILTERS[filterId]) throw new Error(`filter "${filterId}" is not installed (its plugin is off or missing): its settings are kept as they are`);
+    // some models send the object as a JSON string ("{\"color\":\"#ff2d2d\"}"): a string that parses to an object counts
+    if (typeof params === "string") {
+        let parsed = null;
+        try { parsed = JSON.parse(params); } catch (_) { /* refused below */ }
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) params = parsed;
+    }
     if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("params must be an object {key: value} (filter_types lists the keys)");
     const spec = FILTERS[filterId].params || [];
     const out = {};

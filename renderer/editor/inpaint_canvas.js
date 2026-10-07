@@ -12646,19 +12646,23 @@ class InpaintEditor {
         this.cutoutSel.value = avail.some((b) => b.id === cur) ? cur : (avail[0] ? avail[0].id : "");
     }
 
-    /** Remove the background of a layer with an RMBG node; the result becomes its transparency mask. */
+    /**
+     * Remove the background of a layer with an RMBG node; the result becomes its transparency mask. Answers "started" (a
+     * ComfyUI run under way: applyCutoutFile finishes it), "done" (the in-app model's mask is applied) or false (nothing
+     * started or the in-app run failed; `status` says why), so a caller tells "not started" from "already finished".
+     */
     async cutoutLayer(layer) {
-        if (!layer || !layer.px) return;
-        if (this.resizingRun()) { this.setStatus(RUN_GOING_TEXT); return; }
+        if (!layer || !layer.px) return false;
+        if (this.resizingRun()) { this.setStatus(RUN_GOING_TEXT); return false; }
         const availCut = availableCutoutBackends();
         const backend = availCut.find((b) => b.id === this.cutoutSettings.backend) || availCut[0];
-        if (!backend) { this.setStatus(hostText("noCutoutBackend", "No background removal model: download one in Settings › Helpers, or install comfyui-rmbg on the server.")); return; }
-        if (this.cutoutPending) { this.setStatus(`Still removing the background of ${this.cutoutPending.layer.name} ...`); return; }
+        if (!backend) { this.setStatus(hostText("noCutoutBackend", "No background removal model: download one in Settings › Helpers, or install comfyui-rmbg on the server.")); return false; }
+        if (this.cutoutPending) { this.setStatus(`Still removing the background of ${this.cutoutPending.layer.name} ...`); return false; }
         try {
             this.cutoutPending = { layer, backend };
             this.renderLayers();
             this.setStatus(`Removing the background of ${layer.name} with ${backend.label} ...`);
-            if (backend.inApp) { const img = await host.cutoutInApp(this, layer, backend); await this.applyCutoutImage(img, this.cutoutPending); return; }
+            if (backend.inApp) { const img = await host.cutoutInApp(this, layer, backend); return (await this.applyCutoutImage(img, this.cutoutPending)) ? "done" : false; }
             // The layer's own pixels (transparent parts turn black on the way to RGB).
             const up = await uploadCanvas(layer.px.toCanvas(), `n${this.node.id}_cutsrc`);
             const prompt = {
@@ -12673,11 +12677,13 @@ class InpaintEditor {
                 const first = Object.values(res.node_errors)[0];
                 throw new Error((first.errors && first.errors[0] && first.errors[0].message) || "prompt rejected");
             }
+            return "started";
         } catch (err) {
             console.error(err);
             this.cutoutPending = null;
             this.renderLayers();
             this.setStatus("Background removal failed: " + (err.message || err));
+            return false;
         }
     }
 
@@ -12698,7 +12704,7 @@ class InpaintEditor {
         }
     }
 
-    /** A grayscale mask (any size, white = keep) for the pending cutout's layer -> its transparency mask. */
+    /** A grayscale mask (any size, white = keep) for the pending cutout's layer -> its transparency mask; true when applied. */
     async applyCutoutImage(img, pending) {
         const layer = pending.layer;
         try {
@@ -12722,9 +12728,11 @@ class InpaintEditor {
             this.draw();
             const pct = Math.round(100 * sum / (255 * W * H));
             this.setStatus(`${layer.name}: background removed with ${pending.backend.label}, ${pct}% kept. Enable mask editing to touch it up with P / E.`);
+            return true;
         } catch (err) {
             console.error(err);
             this.setStatus("Could not apply the cutout: " + (err.message || err));
+            return false;
         } finally {
             // cleared only now: the mask is applied before the row's spinner state goes away
             if (this.cutoutPending === pending) this.cutoutPending = null;

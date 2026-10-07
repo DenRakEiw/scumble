@@ -14,6 +14,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   never a draft.
 - Nano Banana 2 on Google's API: the smallest size now goes out as Google spells it ("512"); "0.5K" was not a value
   Google takes. Nano Banana Pro on fal no longer offers 0.5K, which fal does not take for that model.
+- An agent's `cutout_layer` with the in-app model no longer reports a failure when the background was removed.
+- Filter settings that an agent sends as text (a JSON string) instead of an object are now accepted.
 
 ## 0.1.42 — 2026-10-05
 
