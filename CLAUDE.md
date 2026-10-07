@@ -94,7 +94,7 @@ in Partner Center). **Waiting for the user:**
   runtime answers with broken colours above ~30 MP (Scumble caps at 27.9 MP), and fits before padding to even sides.
 
 **Next release 0.1.43 planned (2026-10-07): `docs/PLAN_0_1_43.md`** (the user's picks: Nano Banana 2.1 N1-N2, the
-bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1, N2, B1-B4 and B6 built 2026-10-07** (Nano Banana 2.1 on Gemini direct and seven hosts, not run live; B1 the cutout and string-params fixes; B2 the assistant's notice and OpenRouter 401; B3 the Film looks panel; B4 the ComfyUI window's name and layout, the install messages; B6 the boxes after Generate new). Next: S2, then B5 and S1 (S1 waits for the user's answer on the rows). S1 waits for the user's answer on
+bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1, N2, B1-B4, B6 and S2 built 2026-10-07** (Nano Banana 2.1 on Gemini direct and seven hosts, not run live; B1 the cutout and string-params fixes; B2 the assistant's notice and OpenRouter 401; B3 the Film looks panel; B4 the ComfyUI window's name and layout, the install messages; B6 the boxes after Generate new; S2 star and share). Next: B5 and S1 (S1 waits for the user's answer on the rows), then REL. S1 waits for the user's answer on
 the rows (the plan's recommendation: Remove only on own recipes, keep the one-option select).
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
@@ -206,7 +206,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   "Link copied") and the platforms' own share pages in the browser (X intent, LinkedIn share-offsite, Bluesky intent,
   Reddit submit) with a prefilled line such as "Scumble: a free, open-source editor for AI inpainting"; the link the
   website hub https://www.denrakeiw.com/scumble (download, videos, manual), no UTM or tracking. In the same three
-  places as the star. Small (a few hours together). For a later update; nothing built.
+  places as the star. Small (a few hours together). **Built 2026-10-07 for 0.1.43 (S2): the shared link is the GitHub repo.**
 - 41: **Nano Banana 2.1** as a new model (the user, 2026-10-07, with Google's page
   https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1). Known so far (Gemini
   API model page, 2026-10-07; the Cloud page renders no body for a fetch): model id `gemini-nano-banana-2.1`, GA,

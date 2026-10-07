@@ -227,3 +227,10 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 .log-entry .log-detail { grid-column: 1 / -1; color: var(--sc-fg-2, #aaa); margin: 2px 0 4px 78px; white-space: pre-wrap; }
 .log-empty { color: var(--sc-faint, #777); padding: 12px; }
 }
+
+/* item 40: the quiet line after an update (renderer/shell.js showStarNote) */
+#shell-star { display: flex; align-items: center; gap: 10px; padding: 3px 10px; font-size: 12px; color: var(--sc-fg-2, #aaa); background: var(--sc-raised, #222); border-bottom: 1px solid var(--sc-line, #3a3a3a); }
+#shell-star span { flex: 1; }
+#shell-star a { color: var(--sc-accent, #ffd166); }
+#shell-star .shell-star-close { background: none; border: none; color: inherit; font-size: 14px; cursor: pointer; padding: 0 4px; }
+#set-about-share-row #set-share-targets { display: inline-flex; gap: 6px; }

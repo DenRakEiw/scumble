@@ -7,6 +7,7 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const { app, BrowserWindow, protocol, net, ipcMain, dialog, Menu, shell, clipboard } = require("electron");
 const msix = require("./msix");
+const share = require("./share");
 const portable = require("./portable");
 // where the data lives, in one order (electron/main/portable.js): a --user-data-dir (the gates' profiles), the Store
 // package's own folder (msix.js), a portable copy's data folder (portable.txt beside the exe), Electron's default.
@@ -692,7 +693,16 @@ function buildMenu() {
             submenu: [
                 { label: "Scumble help", accelerator: "F1", click: () => send("menu", "help") },
                 { label: "Console (log)", accelerator: "CmdOrCtrl+Shift+L", click: () => send("menu", "console") },
-                { label: "Scumble on GitHub", click: () => shell.openExternal("https://github.com/DenRakEiw/scumble") },
+                { label: "Scumble on GitHub", click: () => shell.openExternal(share.REPO) },
+                { label: "⭐ Star on GitHub", click: () => shell.openExternal(share.REPO) },
+                {
+                    label: "↗ Share the project",
+                    submenu: [
+                        { label: "Copy link", click: () => { clipboard.writeText(share.copyText()); send("menu", "link-copied"); } },
+                        { type: "separator" },
+                        ...share.TARGETS.map((t) => ({ label: t.label, click: () => shell.openExternal(share.urlFor(t.id)) })),
+                    ],
+                },
                 { label: "Inpaint Canvas node on GitHub", click: () => shell.openExternal("https://github.com/DenRakEiw/ComfyUI-InpaintCanvas") },
                 { type: "separator" },
                 { label: "Copy MCP registration (Claude Code)", click: () => copyMcpRegistration("code") },
@@ -1184,6 +1194,24 @@ function installIpc() {
     });
     ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: msix.forExplorer(app.getPath("userData")), pluginDir: msix.forExplorer(plugins.userDir()), store: msix.isStore(), portable: PORTABLE, dataDir: PORTABLE ? DATA_HOME.dir : null }));
     ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
+    // item 40: the share targets for Settings › About; "copy" puts the line and the link on the clipboard
+    ipcMain.handle("app:shareTargets", () => ({ repo: share.REPO, targets: share.TARGETS }));
+    ipcMain.handle("app:share", (_e, id) => {
+        if (id === "copy") { clipboard.writeText(share.copyText()); return "copied"; }
+        const url = share.urlFor(String(id));
+        if (url) shell.openExternal(url);
+        return url ? "opened" : null;
+    });
+    // the quiet line after an update, once per version (the Store and portable copies too): asked once by the window
+    let starAsked = false;
+    ipcMain.handle("app:starNote", () => {
+        if (starAsked) return null;
+        starAsked = true;
+        const existing = fs.existsSync(path.join(app.getPath("userData"), "autosave.json"));
+        const v = share.versionNote({ seen: settings.get().starSeen || null, current: app.getVersion(), existing, quiet: headless || !!agentMode });
+        if (v.record) settings.set({ starSeen: v.record });
+        return v.show ? share.STAR_NOTE : null;
+    });
     // memory (docs/PHASE6_PLAN.md step 1a): the bytes that matter live in the GPU process, and
     // only the main process can see them. Sizes are KB, as Electron reports them.
     ipcMain.handle("app:metrics", () => ({

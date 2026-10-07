@@ -38,6 +38,10 @@ contextBridge.exposeInMainWorld("scumble", {
     // quit and start again as a window (electron/main/restart.js), or install a downloaded update
     relaunch: () => ipcRenderer.invoke("app:relaunch"),
     openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
+    // item 40: the share targets, a share ("copy" or a target id), the star line after an update (once per version)
+    shareTargets: () => ipcRenderer.invoke("app:shareTargets"),
+    share: (id) => ipcRenderer.invoke("app:share", id),
+    starNote: () => ipcRenderer.invoke("app:starNote"),
     settings: {
         get: () => ipcRenderer.invoke("settings:get"),
         set: (patch) => ipcRenderer.invoke("settings:set", patch),

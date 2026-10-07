@@ -91,7 +91,8 @@ const ui = {
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
     skins: $("set-skins"), skinsReload: $("set-skins-reload"), skinsFolder: $("set-skins-folder"), skinsNote: $("set-skins-note"),
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGens: $("set-gens"), setGensOpen: $("set-gens-open"), setGensNote: $("set-gens-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setUndoSteps: $("set-undo-steps"), setUndoMB: $("set-undo-mb"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
-    setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
+    setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"), aboutStar: $("set-about-star"), aboutShare: $("set-about-share"),
+    shareRow: $("set-about-share-row"), shareCopy: $("set-share-copy"), shareTargets: $("set-share-targets"), shareNote: $("set-share-note"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateHelp: $("set-update-help"), updateHelpNotify: $("set-update-help-notify"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
@@ -2435,6 +2436,32 @@ async function installUpdate() {
 window.scumble.updates.onStatus((s) => { renderUpdate(s); announceUpdate(s); });
 // a status from before this window listened (a window reloaded after a crash): main's `announced` says whether it asked
 window.scumble.updates.status().then((s) => { renderUpdate(s); announceUpdate(s); }, () => { /* no updater */ });
+
+// ---- item 40: the star line after an update ------------------------------------------------------------
+const REPO_URL = "https://github.com/DenRakEiw/scumble";
+
+/** The quiet line on the first start of a new version (main decides, once per version): never a modal, closed for good. */
+function showStarNote(text) {
+    if (!text || document.getElementById("shell-star")) return;
+    const bar = document.createElement("div");
+    bar.id = "shell-star";
+    const say = document.createElement("span");
+    say.textContent = text;
+    const star = document.createElement("a");
+    star.href = "#";
+    star.textContent = "Star on GitHub";
+    star.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal(REPO_URL); bar.remove(); });
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "shell-star-close";
+    close.textContent = "×";
+    close.title = "Close";
+    close.addEventListener("click", () => bar.remove());
+    bar.append(say, star, close);
+    const main = document.getElementById("shell-main");
+    main.parentNode.insertBefore(bar, main);
+}
+if (window.scumble.starNote) window.scumble.starNote().then(showStarNote, () => { /* an older main */ });
 ui.updateCheck.addEventListener("click", async () => { renderUpdate(await window.scumble.updates.check()); });
 ui.updateInstall.addEventListener("click", () => updateAction());
 ui.updateBar.addEventListener("click", () => updateAction());
@@ -2602,7 +2629,27 @@ async function saveBeforeRestart(say = () => {}, when = "the restart") {
     }
     await window.scumble.state.save(JSON.stringify(host.bundle()));
 }
-ui.aboutRepo.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal("https://github.com/DenRakEiw/scumble"); });
+ui.aboutRepo.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal(REPO_URL); });
+// item 40 (electron/main/share.js): star the repo, or share it (Copy link, or a platform's own share page in the browser)
+ui.aboutStar.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal(REPO_URL); });
+ui.aboutShare.addEventListener("click", async (e) => {
+    e.preventDefault();
+    ui.shareRow.hidden = !ui.shareRow.hidden;
+    if (ui.shareRow.hidden || ui.shareTargets.childElementCount) return;
+    const { targets } = await window.scumble.shareTargets();
+    for (const t of targets) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = t.label;
+        b.title = `Share on ${t.label}: opens its share page in the browser`;
+        b.addEventListener("click", () => { window.scumble.share(t.id); });
+        ui.shareTargets.appendChild(b);
+    }
+});
+ui.shareCopy.addEventListener("click", async () => {
+    const r = await window.scumble.share("copy");
+    ui.shareNote.textContent = r === "copied" ? "Link copied" : "";
+});
 
 // keys typed into the dialog must not reach the editor's window-level shortcut handler
 ui.settings.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopPropagation(); });
@@ -2848,6 +2895,7 @@ export function menuCommand(cmd) {
     else if (cmd === "reload-plugins") plugins.reloadPlugins().then(async (all) => { const list = all.filter((p) => p.kind !== "skin"); try { await reloadSkins(); } catch (err) { console.warn("skins", err); } if (host.editor) host.editor.setStatus(`Plugins reloaded: ${list.filter((p) => p.loaded).length} of ${list.length} loaded.`); });
     else if (cmd.startsWith("skin:")) applySkin(cmd.slice(5)).catch(() => { /* the Appearance note says why */ });
     else if (cmd === "assistant") showColumn(assistantOpen, toggleAssistant);
+    else if (cmd === "link-copied") host.editor && host.editor.setStatus("Link copied: paste it wherever you share it.");
     else if (cmd === "mcp-copied") host.editor && host.editor.setStatus("MCP registration copied. Paste it into your client; see docs/MCP.md.");
     else if (cmd === "settings-updates") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Updates"); if (h) h.scrollIntoView(); });
     else if (cmd === "settings-plugins") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Plugins"); if (h) h.scrollIntoView(); });
