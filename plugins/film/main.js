@@ -88,6 +88,10 @@ export function activate(scumble) {
             };
 
             let timer = null, busy = false, dirty = true;
+            // the active look layer, when it is one: a click replaces its stock (applyLook), so the thumbnails preview
+            // each stock over the picture below it, not over the look itself (a black-and-white look made them all grey)
+            const lookKey = () => { const a = doc.loaded ? doc.activeLayer() : null; return a && a.kind === "filter" && a.filter === LOOK_ID ? a.id : null; };
+            let shownKey = null;
             const render = async () => {
                 dirty = false;
                 if (!doc.loaded) { for (const cv of cells.values()) { const c = cv.getContext("2d"); c.clearRect(0, 0, cv.width, cv.height); } return; }
@@ -97,7 +101,9 @@ export function activate(scumble) {
                     // composited at thumbnail size: a full flatten of a large document is a second per change.
                     // `settled` (C6 c3): the levels it reads are built in the app's worker, so this panel no longer
                     // holds the window for half a second 500 ms after every change to a large document.
-                    const flat = await doc.flatten({ maxSize: 192, settled: true });
+                    const key = lookKey();
+                    shownKey = key;
+                    const flat = await doc.flatten({ maxSize: 192, settled: true, ...(key ? { below: key } : {}) });
                     if (!doc.loaded) return;
                     const k = Math.min(96 / flat.width, 64 / flat.height);
                     const base = makeCanvas(Math.max(1, Math.round(flat.width * k)), Math.max(1, Math.round(flat.height * k)));
@@ -121,6 +127,12 @@ export function activate(scumble) {
             schedule();
             scumble.events.on("changed", (ev) => { if (ev.doc && ev.doc.id === doc.id) { dirty = true; schedule(); } });
             scumble.events.on("activate", (ev) => { if (ev.doc && ev.doc.id === doc.id && dirty) schedule(); });
+            // a click in the layer list or a key changes the active layer without a "changed" event: look again then.
+            // On the editor's own root, which goes with the document (a listener on `document` would keep it alive)
+            // (after the event: this listener runs in the capture phase, before the row's own click handler)
+            const recheck = () => setTimeout(() => { if (lookKey() !== shownKey) { dirty = true; schedule(); } }, 0);
+            const root = doc.editor && doc.editor.root;
+            if (root) for (const type of ["click", "pointerup", "keyup"]) root.addEventListener(type, recheck, true);
             // a collapsed section renders nothing; render when it comes into view
             if (typeof IntersectionObserver === "function") {
                 const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting) && dirty) schedule(); });

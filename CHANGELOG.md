@@ -19,6 +19,8 @@ the section for its version; `docs/` and the commit history hold the technical d
 - The assistant's one-line privacy notice for a provider now goes away after your first message to it.
 - A key OpenRouter no longer knows now says so in the assistant ("OpenRouter does not know this key") instead of
   showing the raw error.
+- The Film looks panel shows its thumbnails in a grid again, not in one column, and with a film look layer active
+  each thumbnail shows that stock over the picture below it, not over the active look.
 
 ## 0.1.42 — 2026-10-05
 

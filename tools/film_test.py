@@ -431,6 +431,56 @@ await c("remove_layer", { layer: added.id });
 sec.open = false;
 return { thumbnails: cvs.length };
 """),
+    ("panel_over_the_active_look", """
+// docs/PLAN_0_1_43.md B3: with a black-and-white look layer active a click replaces that look, so the thumbnails show
+// each stock over the picture below it (they were drawn over the whole composite and came out grey); a click on the
+// look's row in the layer list (no "changed" event) brings them back. The grid fills the section (it shrank to one column)
+const sec = Array.from(editor.root.querySelectorAll("details")).find((d) => d.querySelector("summary") && d.querySelector("summary").textContent === "Film looks");
+if (!sec) throw new Error("Film looks panel missing");
+sec.open = true;
+const grp = sec.querySelector("select");
+const bwGroup = Array.from(grp.options).map((o) => o.value).find((v) => /black|white|mono|b&w/i.test(v));
+if (!bwGroup) throw new Error("no black-and-white group: " + Array.from(grp.options).map((o) => o.value).join(", "));
+grp.value = bwGroup; grp.dispatchEvent(new Event("change"));
+await new Promise((r) => setTimeout(r, 900));
+sec.querySelector(".film-cell").click();
+await new Promise((r) => setTimeout(r, 300));
+const look = editor.layers.find((l) => l.kind === "filter" && l.filter === "film.look");
+if (!look) throw new Error("no look layer");
+grp.value = "Slide"; grp.dispatchEvent(new Event("change"));
+const colour = async () => {
+    await new Promise((r) => setTimeout(r, 1500));
+    const cvs = Array.from(sec.querySelectorAll(".film-cell canvas"));
+    let n = 0;
+    for (const cv of cvs) {
+        const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+        let best = 0;
+        for (let i = 0; i < d.length; i += 4) best = Math.max(best, Math.abs(d[i] - d[i + 1]), Math.abs(d[i + 1] - d[i + 2]), Math.abs(d[i] - d[i + 2]));
+        if (best > 16) n++;
+    }
+    return { coloured: n, of: cvs.length };
+};
+await c("set_active_layer", { layer: look.id });
+const active = await colour();
+if (active.coloured !== active.of) throw new Error("thumbnails with the look active: " + JSON.stringify(active));
+// the base active: the look stays in the composite and a click adds a layer on top, so the thumbnails go grey
+editor.activeLayerId = null; editor.renderLayers();
+editor.root.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+const other = await colour();
+if (other.coloured) throw new Error("with the base active the thumbnails should show the look on top (grey): " + JSON.stringify(other));
+// a click on the look's row: the panel looks again although no "changed" event comes
+const row = editor.root.querySelector(`.ipc-layer[data-layer="${look.id}"]`);
+if (!row) throw new Error("no row for the look layer");
+row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+const clicked = await colour();
+if (clicked.coloured !== clicked.of) throw new Error("after a click on the look's row: " + JSON.stringify({ clicked, other }));
+const grid = sec.querySelector(".film-grid");
+const cols = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
+if (grid.getBoundingClientRect().width > 220 && cols < 2) throw new Error(`one column in a ${Math.round(grid.getBoundingClientRect().width)} px grid`);
+await c("remove_layer", { layer: look.id });
+sec.open = false;
+return { active, other, clicked, cols, width: Math.round(grid.getBoundingClientRect().width), section: Math.round(sec.getBoundingClientRect().width) };
+"""),
     ("exports", """
 const H = (await import("./editor/host.js")).host;
 const cases = [["look_portra400", "film.look", { preset: "portra400" }], ["halation", "film.halation", { strength: 80 }], ["frame_instant", "film.frame", { style: "instant" }], ["bw_red", "film.bw", { preset: "red", filter_hue: 10, filter_strength: 90 }], ["points", null, null]];

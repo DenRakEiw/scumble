@@ -11,6 +11,19 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### The Film looks panel: one column, thumbnails over the active look - fixed for 0.1.43 (B3 of docs/PLAN_0_1_43.md, 2026-10-07)
+
+- **One column of 46**: `.film-grid` shrank inside a section that centres its items; it takes the section's width now
+  (`width: 100%`, `align-self: stretch`): two columns in the 305 px section (three need 300 px of grid). No skin
+  overrides the rule.
+- **Thumbnails over the active look**: with a film look layer active (where a click replaces its stock) the panel
+  flattens `below` that layer, so each thumbnail shows the stock over the picture under it; otherwise as before (the
+  look on top of everything, where a click adds one). A click in the layer list or a key changes the active layer
+  without a "changed" event: the panel looks again after `click` / `pointerup` / `keyup` on the editor's root (deferred,
+  since the capture phase runs before the row's handler), and renders only when the active look changed.
+- Test: `film` gate step `panel_over_the_active_look` (look active: coloured; base active: grey; a click on the look's
+  row: coloured again; at least two columns). It fails on the old code. Tiles backend.
+
 ### The assistant's privacy notice and a dead OpenRouter key - fixed for 0.1.43 (B2 of docs/PLAN_0_1_43.md, 2026-10-07)
 
 - **The privacy notice never cleared**: nothing in `renderer/` called `assistant:noticed`. The panel's `send()` now
@@ -235,13 +248,6 @@ comparison, 23 path tests); the push, the registry note and the Manager PR in `d
 - **The ComfyUI window's tab name drops everything before a "/"** in the recipe name: "Flux.2 Klein 4B / 9B (ComfyUI)"
   shows as "9B (ComfyUI)".
 - **A recipe with a saved UI graph opens as "Unsaved Workflow (2)"**: `comfyview.js` passes `loadGraphData` no name.
-- **The film-look thumbnails preview each stock over the active look** (`plugins/film/main.js` near 100: the previews
-  are drawn over the whole composite, the active look included), so after a black-and-white look every thumbnail is
-  grey, while a click replaces the look.
-- **The Film looks grid shows one column of 46**: the panel section computes `align-items: center`, so `.film-grid`
-  (`renderer/shell.css` near 132, `auto-fill minmax(96px, 1fr)`) shrinks to about 103 px although the 304 px section
-  fits three columns.
-
 ### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07, dev instance; one step measured)
 
 **Seen:** the trailer's recording instance (a dev instance of main at e7866f8, `--no-comfy`, profile
