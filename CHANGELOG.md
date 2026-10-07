@@ -29,6 +29,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   graph under the recipe's name instead of "Unsaved Workflow", and lays a recipe without a saved graph out left to
   right instead of in one long column.
 - When ComfyUI lacks the Inpaint Canvas node pack, the message gives the `git clone` line to install it.
+- The in-app background removal no longer keeps about 24 GB of memory after it ran: it uses the processor (about as
+  fast here as DirectML) and gives the memory back. With the GPU picked under *Settings › Helpers* it gives it back
+  after each run, which loads the model again each time.
 - Boxes follow a Generate new whose answer comes back at another size than the canvas (FLUX 3's 4K tier, for one):
   they stay where they were drawn on the picture instead of keeping their old pixel positions.
 

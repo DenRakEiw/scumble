@@ -268,7 +268,7 @@ once the pack is listed again), `CLAUDE.md`'s decision line too; the app's two m
 `.comfyignore` that keeps `docs/`, `mcp/`, `tests/`, `DEVELOPMENT.md` out of the package, the description without the
 comparison, 23 path tests); the push, the registry note and the Manager PR in `dist/node_release/`, all on the user's word.
 
-### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07, dev instance; one step measured)
+### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07; the cutout part fixed for 0.1.43, B5)
 
 **Seen:** the trailer's recording instance (a dev instance of main at e7866f8, `--no-comfy`, profile
 `dist/video/trailer/trailer_rec_profile`) held 28.6 GB private memory in its **main** process (the renderer 3 GB, the
@@ -288,6 +288,17 @@ the ONNX helper sessions' tensors per document, the provider path keeping reques
 **To measure first:** a fresh instance, one step at a time (a document load, a save, an export_layer at full size, a
 select_point, a provider run), main's private bytes after each and after a forced GC (`--js-flags=--expose-gc`), and a
 heap snapshot of main (CDP on the main process via `--inspect`) when it has grown: what retains the buffers.
+
+**Measured and fixed (B5 of `docs/PLAN_0_1_43.md`, 2026-10-07):** BiRefNet lite alone, Electron's Node, private bytes
+after each step: the DirectML session 1.3 GB, **24.7 GB after its first 1024 x 1024 run**, flat after more runs, 0.24 GB
+after `release()` (`enableCpuMemArena: false` changes nothing on DirectML); the CPU with its arena 9.3 GB after one run,
+18.2 GB after two; **the CPU without the arena 0.37 GB**, at 5-6.5 s a run against DirectML's 4.3 s (8-14 s the first).
+So: background removal runs on the CPU on the "auto" device, every CPU session has the arena off, and a GPU the user
+picks (*Settings › Helpers* device "gpu") is released after each run. In the app (a 5456 x 3072 layer, `cutout_layer`
+twice): main 0.12 GB before, **0.43 GB after the first** (10.2 s, the load included) and 0.44 GB after the second (5.0 s);
+on "gpu" 13.1 s (a load each time) and back to 0.43 GB. **Still open:** the rest of the 29 GB (a cold SAM2
+`select_point` gave 6.1 GB on DirectML; SAM2 stays on the GPU, its sessions were not measured here) and the other
+suspects above.
 
 ### A shown reference layer can take over an unrelated FLUX 3 edit (seen once 2026-10-05, run live)
 

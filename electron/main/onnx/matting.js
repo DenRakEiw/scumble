@@ -21,7 +21,9 @@ class Matting {
     /** RGBA at model.input × model.input -> Uint8Array alpha (0..255) of the same size. */
     async run(rgba) {
         const size = this.model.input || 1024;
-        const { session, provider } = await this.runtime.session(this.file);
+        // the CPU on the "auto" device: DirectML held 24.7 GB of main's private bytes after one BiRefNet lite run (and
+        // until the session went) for 4.3 s against the CPU's 5 s at 0.37 GB (measured 2026-10-07, docs/BUGS.md B5)
+        const { session, provider } = await this.runtime.session(this.file, { auto: ["cpu"] });
         const input = this.runtime.tensor("float32", normalise(rgba, this.model.mean, this.model.std, size), [1, 3, size, size]);
         const t0 = Date.now();
         const out = await session.run({ [session.inputNames[0]]: input });
@@ -38,6 +40,8 @@ class Matting {
             if (logits) v = 1 / (1 + Math.exp(-v));
             alpha[i] = Math.max(0, Math.min(255, Math.round(v * 255)));
         }
+        // a GPU the user asked for keeps that memory only for the run: the next cutout loads the model again (seconds)
+        if (provider !== "cpu") await this.runtime.release(this.file);
         return { alpha, size, provider, ms: Date.now() - t0, logits };
     }
 }

@@ -94,7 +94,7 @@ in Partner Center). **Waiting for the user:**
   runtime answers with broken colours above ~30 MP (Scumble caps at 27.9 MP), and fits before padding to even sides.
 
 **Next release 0.1.43 planned (2026-10-07): `docs/PLAN_0_1_43.md`** (the user's picks: Nano Banana 2.1 N1-N2, the
-bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1, N2, B1-B4, B6 and S2 built 2026-10-07** (Nano Banana 2.1 on Gemini direct and seven hosts, not run live; B1 the cutout and string-params fixes; B2 the assistant's notice and OpenRouter 401; B3 the Film looks panel; B4 the ComfyUI window's name and layout, the install messages; B6 the boxes after Generate new; S2 star and share). Next: B5 and S1 (S1 waits for the user's answer on the rows), then REL. S1 waits for the user's answer on
+bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1, N2, B1-B6 and S2 built 2026-10-07** (Nano Banana 2.1 on Gemini direct and seven hosts, not run live; B1 the cutout and string-params fixes; B2 the assistant's notice and OpenRouter 401; B3 the Film looks panel; B4 the ComfyUI window's name and layout, the install messages; B6 the boxes after Generate new; S2 star and share; B5 the cutout's memory). Next: S1 (the user took the recommendation: Remove only on own recipes, one-option selects kept), then REL prepared locally. S1 waits for the user's answer on
 the rows (the plan's recommendation: Remove only on own recipes, keep the one-option select).
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
