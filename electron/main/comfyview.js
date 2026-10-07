@@ -40,12 +40,70 @@ function needsCanvasNode(prompt) {
     return Object.values(prompt || {}).some((n) => n && n.class_type === "InpaintCanvas");
 }
 
-/** The script that hands a recipe's graph to the page: its UI graph when it has one, else the API prompt ComfyUI lays out. */
+/**
+ * The name the page's tab shows: the frontend reads it as a workflow path, so "Flux.2 Klein 4B / 9B" became "9B";
+ * a slash or backslash goes as the division slash U+2215, which looks the same.
+ */
+function tabName(recipe) {
+    return String(recipe.name || recipe.id).replace(/[/\\]/g, String.fromCharCode(0x2215));
+}
+
+// An API prompt as loadApiJson leaves it lies in about one column (its arrange() with string node ids): columns by the
+// longest path from a source (a node with no linked input), rows in id order. A recipe's graph is a loop (the canvas
+// node's result inputs read the chain's end): those inputs do not count, and any other loop is cut where a walk in id
+// order meets it. Read from LiteGraph's own fields only; a graph it does not understand is left as the page laid it out
+const LAYOUT_JS = `(() => { const g = window.app.rootGraph || window.app.graph; const nodes = g && (g.nodes || g._nodes);
+    if (!Array.isArray(nodes) || nodes.length < 2) return false;
+    const linkOf = (id) => (typeof g.getLink === "function" ? g.getLink(id) : g.links && (typeof g.links.get === "function" ? g.links.get(id) : g.links[id]));
+    const byId = new Map(nodes.map((n) => [String(n.id), n]));
+    const order = (a, b) => { const x = Number(a.id), y = Number(b.id); return Number.isFinite(x) && Number.isFinite(y) ? x - y : String(a.id).localeCompare(String(b.id)); };
+    const sources = new Map(nodes.map((n) => [String(n.id), (n.inputs || []).filter((inp) => inp && inp.link != null && !(n.type === "InpaintCanvas" && /^result/.test(String(inp.name || ""))))
+        .map((inp) => { const l = linkOf(inp.link); return l ? byId.get(String(l.origin_id)) : null; }).filter(Boolean)]));
+    const state = new Map(), cut = new Set();
+    const walk = (n) => {
+        const k = String(n.id);
+        state.set(k, 1);
+        for (const src of sources.get(k)) {
+            const sk = String(src.id);
+            if (state.get(sk) === 1) cut.add(k + ">" + sk); else if (!state.has(sk)) walk(src);
+        }
+        state.set(k, 2);
+    };
+    for (const n of [...nodes].sort(order)) if (!state.has(String(n.id))) walk(n);
+    const depth = new Map();
+    const dep = (n) => {
+        const k = String(n.id);
+        if (depth.has(k)) return depth.get(k);
+        let d = 0;
+        for (const src of sources.get(k)) if (!cut.has(k + ">" + String(src.id))) d = Math.max(d, dep(src) + 1);
+        depth.set(k, d);
+        return d;
+    };
+    const cols = [];
+    for (const n of nodes) { const d = dep(n); (cols[d] = cols[d] || []).push(n); }
+    let x = 0;
+    for (const col of cols) {
+        if (!col) continue;
+        col.sort(order);
+        let y = 0, w = 0;
+        for (const n of col) {
+            const size = n.size && n.size.length ? n.size : [200, 100];
+            n.pos = [x, y];
+            y += (+size[1] || 100) + 70;   // the title bar sits above pos
+            w = Math.max(w, +size[0] || 200);
+        }
+        x += w + 80;
+    }
+    if (typeof g.setDirtyCanvas === "function") g.setDirtyCanvas(true, true);
+    return true; })()`;
+
+/** The script that hands a recipe's graph to the page: its UI graph when it has one, else the API prompt, laid out by depth. */
 function loadScript(recipe) {
+    const name = JSON.stringify(tabName(recipe));
     const call = recipe.workflow
-        ? `await window.app.loadGraphData(${JSON.stringify(recipe.workflow)})`
-        : `await window.app.loadApiJson(${JSON.stringify(recipe.prompt)}, ${JSON.stringify(String(recipe.name || recipe.id))})`;
-    return `(async () => { try { ${call}; return { ok: true }; } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
+        ? `await window.app.loadGraphData(${JSON.stringify(recipe.workflow)}, true, true, ${name}); const laidOut = false;`
+        : `await window.app.loadApiJson(${JSON.stringify(recipe.prompt)}, ${name}); let laidOut = false; try { laidOut = ${LAYOUT_JS}; } catch (_) { /* left as the page laid it out */ }`;
+    return `(async () => { try { ${call} return { ok: true, laidOut }; } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
 }
 
 /** The origin of an http(s) URL, or "" for anything else. */

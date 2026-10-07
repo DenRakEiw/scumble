@@ -11,6 +11,25 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### The ComfyUI window: tab name, "Unsaved Workflow (2)", one column; the install messages - fixed for 0.1.43 (B4 of docs/PLAN_0_1_43.md, 2026-10-07)
+
+- **The tab name dropped everything before a "/"** ("Flux.2 Klein 4B / 9B (ComfyUI)" showed as "9B (ComfyUI)"): the
+  frontend reads the name as a workflow path (`loadApiJson(apiData, fileName)`, `loadGraphData(graph, clean,
+  restore_view, workflow)`, read in the installed `comfyui_frontend_package`). A slash or backslash goes as U+2215,
+  which looks the same.
+- **A recipe with a saved UI graph opened as "Unsaved Workflow (2)"**: `loadGraphData` now gets the recipe's name as
+  its fourth argument.
+- **An API recipe lay in one column**: after `loadApiJson` the window lays the nodes out by depth (columns by the
+  longest path from a source, rows in id order); the canvas node's `result*` inputs do not count (a recipe's graph is
+  a loop through them), any other loop is cut where a walk in id order meets it. A layout error leaves the page's own
+  layout and still counts as loaded. Checked on the stub's LiteGraph-shaped graph (the shipped Klein recipe: 11
+  columns, no input left of its source) and in Node; **not yet looked at in a real ComfyUI page** (the user's server
+  is a production machine).
+- **The two install messages** (`renderer/shell.js`, `renderer/editor/host.js`) said "Manager or git clone": now the
+  `git clone` line of README and MANUAL.
+- Test: the `comfyview` gate (25/25): V2 checks the name and the layout, V3 reopens the saved recipe through
+  `loadGraphData` with its name.
+
 ### The Film looks panel: one column, thumbnails over the active look - fixed for 0.1.43 (B3 of docs/PLAN_0_1_43.md, 2026-10-07)
 
 - **One column of 46**: `.film-grid` shrank inside a section that centres its items; it takes the section's width now
@@ -234,20 +253,12 @@ name (changes with the next node publish).
 on the routes, publish a node version, then a PR to the Manager list; correct README and manual now.
 **Texts corrected 2026-10-07 (local, not pushed):** README "What you need to render" and MANUAL "Where it renders"
 now say Scumble only reports a missing pack and give the `cd ComfyUI/custom_nodes` + `git clone` lines (the Manager
-once the pack is listed again), `CLAUDE.md`'s decision line too; the app's two messages still say "Manager or git clone".
+once the pack is listed again), `CLAUDE.md`'s decision line too; the app's two messages said "Manager or git clone" until B4 of `docs/PLAN_0_1_43.md` (2026-10-07: now the `git clone` line, fixed for 0.1.43).
 **Node 0.3.4 prepared 2026-10-07 (local, not pushed):** the branch `registry-0.3.4` in the worktree `dist/node_wt`
 (realpath + commonpath for every client-given path, safe file-name tokens in Mask Out / Object Map / Stitch, a
 `.comfyignore` that keeps `docs/`, `mcp/`, `tests/`, `DEVELOPMENT.md` out of the package, the description without the
 comparison, 23 path tests); the push, the registry note and the Manager PR in `dist/node_release/`, all on the user's word.
 
-### Found while recording the trailer's takes (2026-10-07, run live, not fixed)
-
-- **The ComfyUI window lays a shipped recipe out as one column.** `flux2_klein_local` opens about 7,400 graph units
-  tall: `loadApiJson`'s `graph.arrange()` puts almost every node in one column (the node ids are strings such as
-  `canvas`). A recipe saved from the window with a UI graph opens laid out.
-- **The ComfyUI window's tab name drops everything before a "/"** in the recipe name: "Flux.2 Klein 4B / 9B (ComfyUI)"
-  shows as "9B (ComfyUI)".
-- **A recipe with a saved UI graph opens as "Unsaved Workflow (2)"**: `comfyview.js` passes `loadGraphData` no name.
 ### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07, dev instance; one step measured)
 
 **Seen:** the trailer's recording instance (a dev instance of main at e7866f8, `--no-comfy`, profile

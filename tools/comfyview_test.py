@@ -72,8 +72,12 @@ ws.onclose = (e) => { if (document.title !== 'open') document.title = 'closed ' 
 # a fake ComfyUI frontend for V2: window.app records the graph it is given ("throw": its load fails)
 FAKE_APP = """<script>
 window.app = { graph: {},
-  loadApiJson: async (prompt, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'api', prompt, name }; },
-  loadGraphData: async (workflow) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'graph', workflow }; },
+  loadApiJson: async (prompt, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'api', prompt, name };
+    // a LiteGraph-shaped graph of the prompt, every node at 0,0 (one column), for the window's layout by depth
+    const links = {}; let n = 0;
+    window.app.graph = { links, _nodes: Object.keys(prompt).map((id) => ({ id, type: prompt[id].class_type, pos: [0, 0], size: [200, 100],
+      inputs: Object.entries(prompt[id].inputs || {}).filter(([, v]) => Array.isArray(v) && prompt[v[0]]).map(([name, v]) => { n++; links[n] = { origin_id: v[0] }; return { name, link: n }; }) })) }; },
+  loadGraphData: async (workflow, clean, restore, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'graph', workflow, name }; },
   graphToPrompt: async () => ({ workflow: window.__wf || { nodes: [], links: [] }, output: window.__out || (window.__loaded && window.__loaded.prompt) || {} }) };
 window.__throw = %s;
 </script>"""
@@ -347,8 +351,20 @@ class Gate:
         p = got["prompt"]
         res = r["result"].split(":")
         wired = all(p[s["node"]]["inputs"][s["input"]] == [r["canvas"], 12 + s["index"]] for s in r["settings"])
-        if got["kind"] != "api" or got["name"] != r["name"] or p[r["canvas"]]["inputs"].get("result_local") != [res[0], int(res[1])] or not wired:
+        # docs/PLAN_0_1_43.md B4: the frontend reads the name as a path, so "/" goes as the look-alike U+2215
+        def tab_of(name):
+            return name.replace("/", chr(0x2215)).replace("\\", chr(0x2215))
+        tab = tab_of(r["name"])
+        if "/" not in r["name"]:
+            raise Exception("the test recipe's name has no slash any more: " + r["name"])
+        if got["kind"] != "api" or got["name"] != tab or p[r["canvas"]]["inputs"].get("result_local") != [res[0], int(res[1])] or not wired:
             raise Exception("the page got: " + json.dumps(got)[:600])
+        # laid out by depth: a node's column is right of every node it reads from, sources in the first column
+        lay = await on_target(self.stub.url, lambda c: c.eval("""(() => { const g = window.app.graph; const at = new Map(g._nodes.map((n) => [String(n.id), n.pos]));
+            const bad = []; for (const n of g._nodes) for (const i of n.inputs) { if (n.type === "InpaintCanvas" && /^result/.test(i.name)) continue; const src = at.get(String(g.links[i.link].origin_id)); if (!(src[0] < n.pos[0])) bad.push(n.id + "<" + g.links[i.link].origin_id); }
+            return { columns: new Set(g._nodes.map((n) => n.pos[0])).size, bad, nodes: g._nodes.length }; })()"""))
+        if lay["bad"] or lay["columns"] < 3:
+            raise Exception("the layout by depth: " + json.dumps(lay))
         b = await self.bar_text()
         if b["recipe"] != "Editing: " + r["name"] or b["note"]:
             raise Exception("the bar: " + json.dumps(b))
@@ -357,9 +373,9 @@ class Gate:
         await self.js("await window.scumble.comfyView.open({ recipe: 'upscale_model_local' }); return 1")
         i2 = await self.wait_info("i.recipeId === 'upscale_model_local' && (i.recipeLoaded || i.recipeNote)")
         got2 = await on_target(self.stub.url, lambda c: c.eval("window.__loaded"))
-        if not i2.get("recipeLoaded") or got2["name"] != q["name"]:
+        if not i2.get("recipeLoaded") or got2["name"] != tab_of(q["name"]):
             raise Exception("the second recipe: " + json.dumps({"info": i2, "name": got2.get("name")}))
-        return {"name": got["name"], "nodes": len(p), "bar": b["recipe"], "second": got2["name"]}
+        return {"name": got["name"], "nodes": len(p), "columns": lay["columns"], "bar": b["recipe"], "second": got2["name"]}
 
     async def recipe_refused(self):
         err = await self.js("try { await window.scumble.comfyView.open({ recipe: 'flux3' }); return null; } catch (e) { return String(e.message || e); }")
@@ -418,7 +434,14 @@ class Gate:
         sel = await self.js("for (let k = 0; k < 30 && !/Saved the graph/.test(document.body.textContent); k++) await wait(100); return document.getElementById('shell-recipe').value")
         if sel != "flux2_klein_local":
             raise Exception("the editor did not select the saved recipe: " + str(sel))
-        return {"note": i2["saveNote"][:120], "rows": len(mine["settings"])}
+        # opened again it loads its own UI graph, under the recipe's name (B4: loadGraphData got none, "Unsaved Workflow (2)")
+        await self.js("await window.scumble.comfyView.open({ recipe: 'flux2_klein_local' }); return 1")
+        await self.wait_info("i.recipeLoaded || i.recipeNote", 15000)
+        again = await on_target(self.stub.url, lambda c: c.eval("window.__loaded"))
+        want = shipped["name"].replace("/", chr(0x2215))
+        if again.get("kind") != "graph" or again.get("name") != want or (again.get("workflow") or {}).get("extra", {}).get("gate") != 1:
+            raise Exception("the saved recipe opened again: " + json.dumps({k: again.get(k) for k in ("kind", "name")}))
+        return {"note": i2["saveNote"][:120], "rows": len(mine["settings"]), "reopened": again["name"]}
 
     async def save_new(self):
         await self.bar_click("document.getElementById('cb-save-new').click()")
@@ -484,7 +507,7 @@ class Gate:
         i2 = await self.wait_info("i.target === 'comfy' && i.recipeLoaded", 15000)
         got = await on_target(self.stub.url, lambda c: c.eval("window.__loaded || null"))
         stored = await self.js("return ((await window.scumble.settings.get()).comfyView || {}).target")
-        if not i2.get("recipeLoaded") or not got or got.get("name") != "Flux.2 Klein 4B / 9B (ComfyUI)" or stored != "comfy" or i2["recipeNote"]:
+        if not i2.get("recipeLoaded") or not got or got.get("name") != "Flux.2 Klein 4B / 9B (ComfyUI)".replace("/", chr(0x2215)) or stored != "comfy" or i2["recipeNote"]:
             raise Exception("switched to My ComfyUI: " + json.dumps({"info": i2, "stored": stored, "loaded": (got or {}).get("name")})[:600])
         return {"cloudNote": i["recipeNote"][:80], "switched": i2["title"]}
 

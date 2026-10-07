@@ -948,7 +948,7 @@ export const host = {
             // The mirror re-uploads what a run needs (ensureOnServer), the reset only makes
             // sure the next run hashes the composite again.
             ed.uploaded = ed.makeUploaded();
-            if (!status.node) ed.setStatus("ComfyUI is connected but the Inpaint Canvas node pack is missing: install ComfyUI-InpaintCanvas on that server (ComfyUI Manager or git clone).");
+            if (!status.node) ed.setStatus("ComfyUI is connected but the Inpaint Canvas node pack is missing: in that server's custom_nodes run git clone https://github.com/DenRakEiw/ComfyUI-InpaintCanvas, then restart ComfyUI.");
             else if (!ed.base) ed.setStatus(`Connected to ${status.message}. Load an image (Ctrl+O, drop a file, or paste).`);
             ed.refreshSegmentBackends();
             ed.settingsChanged();

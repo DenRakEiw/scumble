@@ -21,6 +21,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   showing the raw error.
 - The Film looks panel shows its thumbnails in a grid again, not in one column, and with a film look layer active
   each thumbnail shows that stock over the picture below it, not over the active look.
+- The ComfyUI window names its tab after the whole recipe name (a "/" in it cut the name short), opens a saved
+  graph under the recipe's name instead of "Unsaved Workflow", and lays a recipe without a saved graph out left to
+  right instead of in one long column.
+- When ComfyUI lacks the Inpaint Canvas node pack, the message gives the `git clone` line to install it.
 
 ## 0.1.42 — 2026-10-05
 
