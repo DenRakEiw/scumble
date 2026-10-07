@@ -212,6 +212,20 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   direct Gemini adapter first (model id, the size classes, the new ratios, the 14-picture limit in `layout`), the
   other hosts as they list it; open: whether its edit path differs from 2's, the thinking level as a setting. For a
   later update; nothing built.
+- 42: **Match an inpaint layer's edges to the layer below** (the user, 2026-10-07: "manchmal kommt der inpaint leicht
+  verschoben heraus, damit kann man es automatisch auf die ebene darunter matchen"): edit models re-render the whole
+  crop and often shift or slightly scale it, so contours double where the selection border crosses an edge. Known:
+  the node already does this at stitch time (`nodes.py` `_align_patch`: an affine ECC fit, OpenCV, on the ring where
+  the base stays visible, at most 512 px; kept only within 8 % scale, 0.03 shear, 5 % shift and when the ring
+  difference drops by 3 % or more; it reports aligned / reason / scale / shift); the app has the crop setting
+  `align: true` but `renderer/editor/stitch.js` `finishResult` answers `{ aligned: false, reason: "not available in
+  the app" }` (no OpenCV in the app; the manual says so). Two parts: (a) the same fit at result time in the app (an
+  ECC / Lucas-Kanade fit in `crates/px` or a small JS one; OpenCV.js is Apache-2.0 but about 8 MB), so new results land
+  aligned; (b) **after the fact** on any layer: a layer-menu entry, an MCP command and maybe a button on result
+  layers, "Match edges to the layer below", fitting the layer's own edge ring (its alpha / mask border) against the
+  composite under it, moving or warping the layer as one undo step, with the report in the status line and a manual
+  nudge as the fallback. Tests: normal tier (a result shifted and scaled by known amounts comes back within a pixel;
+  a flat area or a too-large fit refuses). For a later update; nothing built.
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
