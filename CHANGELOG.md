@@ -3,8 +3,13 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.43 — 2026-10-07
 
+- **Nano Banana 2.1.** Google's new image model as its own recipe, on Google's API with an AI Studio key: 1K, 2K and
+  4K, the very wide and tall ratios 4:1, 1:4, 8:1 and 1:8 besides the usual ones, up to 14 pictures, and a Thinking
+  setting (minimal, medium, high; medium is Google's default, every level is billed). Also on fal.ai, Replicate,
+  WaveSpeedAI, OpenRouter, Comfy Cloud, Comfy Router and ToAPIs; Thinking where the host offers it (fal, Comfy Cloud,
+  Comfy Router). Written from the providers' docs, not run against the live APIs yet.
 - **A tidier Settings dialog.** *Settings › Recipes* shows the recipes in three groups you open and close (ComfyUI,
   Comfy Cloud, API models by family), each with how many are ready and which one is in use; the API providers' key rows
   are one group too. Remove shows only on your own recipes.
@@ -12,11 +17,6 @@ the section for its version; `docs/` and the commit history hold the technical d
   the link, or open the share page of X, LinkedIn, Bluesky or Reddit in your browser; the link is the GitHub repo, with
   nothing added to track it). After an update, the first start of the new version shows one quiet line asking for a
   star, once per version, closed with ×; a fresh install does not.
-- **Nano Banana 2.1.** Google's new image model as its own recipe, on Google's API with an AI Studio key: 1K, 2K and
-  4K, the very wide and tall ratios 4:1, 1:4, 8:1 and 1:8 besides the usual ones, up to 14 pictures, and a Thinking
-  setting (minimal, medium, high; medium is Google's default, every level is billed). Also on fal.ai, Replicate,
-  WaveSpeedAI, OpenRouter, Comfy Cloud, Comfy Router and ToAPIs; Thinking where the host offers it (fal, Comfy Cloud,
-  Comfy Router). Written from the providers' docs, not run against the live APIs yet.
 - A thinking Gemini model can send draft pictures before its answer; the Gemini route now takes the final picture,
   never a draft.
 - Nano Banana 2 on Google's API: the smallest size now goes out as Google spells it ("512"); "0.5K" was not a value
