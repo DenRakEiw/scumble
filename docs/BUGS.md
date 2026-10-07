@@ -134,6 +134,33 @@ only auto and 1K). Not run live.
 
 ## Open
 
+### Size limits: gaps found reading the code (2026-10-07, read, not run)
+
+Found while answering the user's question about the largest picture (a workflow of three readers and a checker,
+every number checked at its file:line). The document ceiling itself holds: 65,535 px a side and 1,073,741,824 px on
+the tile backend (`inpaint_canvas.js` `checkBaseSize`, refusals tested in `editor_test.py`).
+- **A whole-picture upscale is not refused before it is paid for.** `docs/MANUAL.md` (the Upscale section) says a
+  factor that would pass 65,535 px / about a gigapixel is refused "before it costs you anything"; the code checks only
+  the recipe's `limits.out` before sending (`host.js` near 1707-1716). The answer lands through `resizeImage` ->
+  the unchecked `makeCanvas` of `inpaint_canvas.js` (about 698-702), so a result above the canvas limit (Magnific
+  Precision 4096 px x 16 = 65,536 px, SeedVR2 4096 x 4096 x 8) fails or comes out empty after the provider was paid.
+- **Resize (the panel) and Extend check no target size.** Both use that unchecked `makeCanvas`; only the MCP
+  `resize_image` checks (65,535 px, 268 MP). The panel's `max=16384` is an HTML attribute; typed values pass. Above
+  268 MP Chromium's canvas draws and reads nothing, so an empty base is possible. Not measured.
+- **JPEG / WebP above 268 MP are not refused** although a comment in `inpaint_canvas.js` (near 548) and
+  `docs/PLAN_BCE.md` promise a refusal that names PNG; the file goes to `createImageBitmap` in a worker. Not measured.
+- **PNG / TIFF export with a size or a frame** caps each side at 32,768 px silently and goes through one canvas: an
+  output above 268 MP from a smaller document is not checked (`host.js` near 582-632).
+- **The PSD fallback writer** (canvas backend, or no worker pool) checks neither the 30,000 px side nor the 4 GiB
+  section limit that the banded writer checks (`inpaint_bands.js` near 289).
+- **Files above 2 GiB fail to open from the dialog or a path** (`fsp.readFile` in `electron/main/main.js` near 760);
+  drag and drop is not affected. Not documented.
+- `docs/PERFORMANCE.md` (near 147) still says about 8 GB of pixels per renderer; 15.5 GB was measured later (§14).
+- The `huge` gate (30k) last ran on 0.1.20 (2026-09-19); 0.1.21-0.1.42 were never checked at 30k, and nothing between
+  600 MP and 1 GiP was ever opened.
+**To do first:** run `huge:30000x20000` on the current exe; then one check per item above (each refusal before any
+paid run or any canvas is made), and the manual's Upscale sentence corrected or made true.
+
 ### `cutout_layer` reports a failure when the in-app cutout succeeded (seen 2026-10-07, run live)
 
 **Seen** by the trailer's setup agent: `cutout_layer` on a 5456 x 3072 layer with the in-app matting model
