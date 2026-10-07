@@ -172,6 +172,25 @@ a failure and may retry. **Fix to check:** tell "did not start" from "already do
 `cutoutLayer`, or the layer's version / the status set by the in-app path), and a `commands` gate step with the
 in-app model present.
 
+### The node cannot be installed through the Manager: every registry version is flagged (found 2026-10-07, read)
+
+Found by the promotion research (read-only, `https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions?include_status_reason=true`):
+every version of ComfyUI-InpaintCanvas on the Comfy Registry is `NodeVersionStatusFlagged`. 0.2.0-0.3.1 carry the
+manual verdict "policy-v0.4: PATH_TRAVERSAL", 0.3.2 "policy-v0.5: path-traversal" (both by a Comfy reviewer); 0.3.3 is
+flagged by the scanner with six info-level findings and no verdict yet. With no active version the Manager has nothing
+to install (registry downloads: 3), and the node is missing from ComfyUI-Manager's `custom-node-list.json` and
+`extension-node-map.json` too. So the local route of Scumble fails for anyone without a git clone.
+**Known (read, not verified against the reviewer):** the node's `_ref_path` (`nodes.py` near 64-77) checks
+`commonpath` on `abspath`, not `realpath` (a symlink or junction inside the input folder can lead out), and the routes
+`/inpaint_canvas/upload`, `/cleanup` and `/command` take no authentication. An earlier pack was accepted into the
+Manager list after a realpath + commonpath fix (DenRakEiw_Nodes, 2026-09-23).
+**Also:** `README.md` (near 124) and `docs/MANUAL.md` (near 55) say Scumble "offers to install it through the ComfyUI
+Manager"; the code only prints "install ComfyUI-InpaintCanvas there (Manager or git clone)" (`renderer/shell.js` near
+359, `renderer/editor/host.js` near 951). The node's `pyproject.toml` description still opens with another product's
+name (changes with the next node publish).
+**To do first:** ask the reviewer which path they mean (the registry issue), fix the path checks with realpath, decide
+on the routes, publish a node version, then a PR to the Manager list; correct README and manual now.
+
 ### Found while recording the trailer's takes (2026-10-07, run live, not fixed)
 
 - **The ComfyUI window lays a shipped recipe out as one column.** `flux2_klein_local` opens about 7,400 graph units
