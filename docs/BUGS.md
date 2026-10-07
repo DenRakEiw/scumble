@@ -202,6 +202,12 @@ on the routes, publish a node version, then a PR to the Manager list; correct RE
 - **The film-look thumbnails preview each stock over the active look** (`plugins/film/main.js` near 100: the previews
   are drawn over the whole composite, the active look included), so after a black-and-white look every thumbnail is
   grey, while a click replaces the look.
+- **Filter params from the assistant are refused when the model sends them as a JSON string.** Claude Sonnet 5
+  through OpenRouter sent `add_filter` / `set_filter` `params` as a string (`"{\"color\": \"#ff2d2d\"}"`, even
+  `"{}"`); `checkParams` in `renderer/commands.js` (near 2054) throws "params must be an object" for every one, so
+  the model retried until the assistant's 25-step cap ended the turn ($0.42, the look's settings never set). Check
+  whether the tool schema declares `params` as an object for the adapters; accept a JSON string that parses to an
+  object; a `commands` gate step with a string `params`.
 - **The assistant's privacy notice never clears.** Nothing in `renderer/` calls `assistant:noticed` (only the
   preload entry, `electron/preload.js` near 220, and the handler in `electron/main/main.js` near 1178), so each
   provider's notice stays in the panel header, while `docs/ASSISTANT.md` (near 151) says it shows until the first
