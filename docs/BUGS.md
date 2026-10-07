@@ -134,6 +134,17 @@ only auto and 1K). Not run live.
 
 ## Open
 
+### `cutout_layer` reports a failure when the in-app cutout succeeded (seen 2026-10-07, run live)
+
+**Seen** by the trailer's setup agent: `cutout_layer` on a 5456 x 3072 layer with the in-app matting model
+(BiRefNet lite, 21 s) answered `ok: false` with the success message as its error; the layer had its clean cutout.
+**Known (read):** `renderer/commands.js` `cutout_layer` calls `await ed.cutoutLayer(l)` and then throws
+`ed.status` when `ed.cutoutPending` is already false. That check stands for "the cutout never started", but the
+in-app path finishes inside `cutoutLayer`, so pending is false on success too. An MCP agent or the assistant reports
+a failure and may retry. **Fix to check:** tell "did not start" from "already done" (a return value of
+`cutoutLayer`, or the layer's version / the status set by the in-app path), and a `commands` gate step with the
+in-app model present.
+
 ### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07, dev instance, not measured)
 
 **Seen:** the trailer's recording instance (a dev instance of main at e7866f8, `--no-comfy`, profile
