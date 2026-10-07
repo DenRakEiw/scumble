@@ -190,8 +190,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 40: a GitHub star link in the app (the user, 2026-10-05: "irgendwo in der app ... wo es nicht nervt", then the exact
   wording and places): **"⭐ Star on GitHub"** directly in the Help menu (beside *Scumble on GitHub*,
   `electron/main/main.js:695`) and in *Settings › About* (today one line with the repo link, `renderer/index.html:186`,
-  `shell.js:2605`), and **after a successful update, once per version: "Enjoying the new version? ⭐ Star us on
-  GitHub"**: on the first start of a new version (the last version seen kept in the settings), a quiet line that can
+  `shell.js:2605`), and **after a successful update, once per version: "⭐ If Scumble is useful to you, consider
+  starring the repo — it helps the project get discovered."** (the user's wording of 2026-10-07, replacing "Enjoying
+  the new version? ⭐ Star us on GitHub"): on the first start of a new version (the last version seen kept in the settings), a quiet line that can
   be closed, never a modal and never again for that version; whether it shows in the Store copy (the Store updates
   it) and beside item 32's update dialog is a design question. Opens https://github.com/DenRakEiw/scumble through
   `shell.openExternal`. **Beside it "↗ Share the project"** (the user, the same evening): suggested, not yet confirmed,
