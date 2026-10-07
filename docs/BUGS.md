@@ -183,9 +183,22 @@ in-app model present.
 - **The film-look thumbnails preview each stock over the active look** (`plugins/film/main.js` near 100: the previews
   are drawn over the whole composite, the active look included), so after a black-and-white look every thumbnail is
   grey, while a click replaces the look.
+- **The assistant's privacy notice never clears.** Nothing in `renderer/` calls `assistant:noticed` (only the
+  preload entry, `electron/preload.js` near 220, and the handler in `electron/main/main.js` near 1178), so each
+  provider's notice stays in the panel header, while `docs/ASSISTANT.md` (near 151) says it shows until the first
+  send.
 - **The Film looks grid shows one column of 46**: the panel section computes `align-items: center`, so `.film-grid`
   (`renderer/shell.css` near 132, `auto-fill minmax(96px, 1fr)`) shrinks to about 103 px although the 304 px section
   fits three columns.
+- **The assistant's privacy notice never goes away.** `docs/ASSISTANT.md` says the panel shows the one-line notice
+  per provider the first time you send to it; `assistant:noticed` (preload `window.scumble.assistant.noticed`,
+  handler `electron/main/main.js` near 1178) is what clears it, and nothing in `renderer/` calls it, so `state()`
+  keeps answering `notice` for that provider after every send (read, and seen in the agent take's setup, which
+  calls it off camera). **Fix to check:** call it after the first send to a provider (or on the notice's close).
+- **A dead OpenRouter key shows only at the first send.** The assistant's model picker reads OpenRouter's live list,
+  which needs no key, so the panel looks ready with a key OpenRouter no longer knows; the first send ends on the
+  error card `HTTP 401: {"error":{"message":"User not found.","code":401}}` ($0). Seen with the trailer profile's
+  key. A key check on save (OpenRouter's `GET /api/v1/key`) or a plainer error line would catch it.
 
 ### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07, dev instance; one step measured)
 
