@@ -78,24 +78,25 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-05 early morning: **0.1.42 released and Latest**, post live, in the Store since that evening; P3's live run and the MCP Registry wait for the user)
+## Where things stand (2026-10-07 evening: **0.1.43 released and Latest**, post live; the Store submission, the MCP Registry and P3's live run wait for the user)
 
-**0.1.42 is out** (tag v0.1.42 on b601879, published 2026-10-05T01:29:47Z; the post `v0-1-42` live; the manual
-synced). Everything of `docs/PLAN_0_1_42.md` was built in one sitting (the user: "mache hier gleich weiter ohne
-clear"); each row's "As built" note and REL's say what ran live. **The Store has 0.1.42 too** (the live listing, read
-2026-10-07: last updated 2026-10-05 21:30 UTC, its What's new is `dist/store-listing/whats-new-0.1.42.txt` word for
-word, its package 187,454,066 bytes against the 187,437,900 of `dist/Scumble-0.1.42.msix`; 0 ratings; installs only
-in Partner Center). **Waiting for the user:**
-- **P3's live run**: `bash tools/run_gates.sh rel42-portable --exe dist/win-unpacked/Scumble.exe portable` once the
-  user's installed Scumble is closed and the user says so (the packaged resolver was checked in Node mode only).
-- **The MCP Registry**: `server.json` is 0.1.42; `mcp-publisher login github` (the user's device code), `validate`,
-  `publish`; the listings still say 96 tools (105 now).
-- Tell the user: their own DLSS5 Fit Input Size node (custom_nodes/dlss5_fit_size) allows 33 MP outputs, which the
-  runtime answers with broken colours above ~30 MP (Scumble caps at 27.9 MP), and fits before padding to even sides.
-
-**Next release 0.1.43 planned (2026-10-07): `docs/PLAN_0_1_43.md`** (the user's picks: Nano Banana 2.1 N1-N2, the
-bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1, N2, B1-B6, S1 and S2 built 2026-10-07** (Nano Banana 2.1 on Gemini direct and seven hosts, not run live; B1 the cutout and string-params fixes; B2 the assistant's notice and OpenRouter 401; B3 the Film looks panel; B4 the ComfyUI window's name and layout, the install messages; B6 the boxes after Generate new; S2 star and share; B5 the cutout's memory; S1 Settings groups). Next: REL prepared locally (the manual's two Settings screenshots again, keys masked); the release only on the user's word. S1 waits for the user's answer on
-the rows (the plan's recommendation: Remove only on own recipes, keep the one-option select).
+**0.1.43 is out** (tag v0.1.43, published 2026-10-07T20:27:04Z; the post `v0-1-43` live; the manual synced). Built the
+same day from `docs/PLAN_0_1_43.md`, every row with its "As built": Nano Banana 2.1 on Gemini direct and seven hosts
+(N1, N2; never run live), B1-B6 (agent errors, the assistant's notices, the Film looks panel, the ComfyUI window, the
+cutout's 24 GB, the boxes after Generate new), S1 (Settings groups), S2 (star and share). The exe gates ran on both
+backends; the editor gate without two mips-worker steps that failed at the morning's commit too while DaVinci Resolve
+rendered a video (`docs/TESTING.md`). **Waiting for the user:**
+- **The Store update**: `dist/Scumble-0.1.43.msix` (187,427,628 bytes) and `dist/store-listing/whats-new-0.1.43.txt` are
+  built; the submission in Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.
+- **The MCP Registry**: `server.json` is 0.1.43; `mcp-publisher login github` (the user's device code), `validate`,
+  `publish`. 0.1.42's publish never happened either (its listing still says 96 tools; 105 now).
+- **P3's live run** (`bash tools/run_gates.sh rel42-portable --exe dist/win-unpacked/Scumble.exe portable`) once the
+  user's Scumble is closed.
+- Tell the user (still open from 0.1.42): their DLSS5 Fit Input Size node allows 33 MP outputs, above Scumble's 27.9 MP.
+- A live run of Nano Banana 2.1 (about $0.05 at 2K with the user's key) settles v1 / v1beta and the thinking level's
+  spelling (`docs/PLAN_0_1_43.md` §5); the ComfyUI window's new layout was never seen in a real ComfyUI page.
+- **Found and not built** (`docs/BUGS.md`): Generate new on WaveSpeed without references goes to ten model ids whose
+  pages answer 404.
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.

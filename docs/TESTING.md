@@ -437,7 +437,8 @@ Known flakes; **re-run before believing any of these**:
   (`requested: 0`) in every run of the evening, dev tree and exe alike, and with it excluded
   `a_whole_change_builds_its_mips_in_the_worker_and_the_screen_ends_exact` (the settled screen 13 levels off on 859
   bytes); **both fail the same way at c660749, the morning's commit**, in a worktree, and both passed in 0.1.42's exe
-  gates two days before. DaVinci Resolve was running on the machine. Not looked into further; the release ran the
+  gates two days before. DaVinci Resolve was rendering a video on the machine the whole evening (the user), which takes
+  the worker's and the card's time: the likely cause. Not looked into further; the release ran the
   editor gate with `SCUMBLE_EDITOR_ONLY` set to every other step (113 PASS). `the_navigator_watches_the_chains_it_asks_for`
   failed once in that sequence and passed in the next two runs and alone.
   The same evening the exe's `comfyview` gate failed "Ctrl+S reaches the page" twice on its control ("Ctrl+Shift+L in

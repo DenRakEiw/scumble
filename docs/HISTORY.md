@@ -80,6 +80,27 @@ The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved
 
 The block of 2026-10-04 (evening: R3 dropped, the Realism Pass redesigned as a refiner, the MCP listings) was moved here the same night, when R3a was built.
 
+## Where things stand, as of 2026-10-07 morning (moved from CLAUDE.md at 0.1.43's release)
+
+### Where things stand (2026-10-05 early morning: **0.1.42 released and Latest**, post live, in the Store since that evening; P3's live run and the MCP Registry wait for the user)
+
+**0.1.42 is out** (tag v0.1.42 on b601879, published 2026-10-05T01:29:47Z; the post `v0-1-42` live; the manual
+synced). Everything of `docs/PLAN_0_1_42.md` was built in one sitting (the user: "mache hier gleich weiter ohne
+clear"); each row's "As built" note and REL's say what ran live. **The Store has 0.1.42 too** (the live listing, read
+2026-10-07: last updated 2026-10-05 21:30 UTC, its What's new is `dist/store-listing/whats-new-0.1.42.txt` word for
+word, its package 187,454,066 bytes against the 187,437,900 of `dist/Scumble-0.1.42.msix`; 0 ratings; installs only
+in Partner Center). **Waiting for the user:**
+- **P3's live run**: `bash tools/run_gates.sh rel42-portable --exe dist/win-unpacked/Scumble.exe portable` once the
+  user's installed Scumble is closed and the user says so (the packaged resolver was checked in Node mode only).
+- **The MCP Registry**: `server.json` is 0.1.42; `mcp-publisher login github` (the user's device code), `validate`,
+  `publish`; the listings still say 96 tools (105 now).
+- Tell the user: their own DLSS5 Fit Input Size node (custom_nodes/dlss5_fit_size) allows 33 MP outputs, which the
+  runtime answers with broken colours above ~30 MP (Scumble caps at 27.9 MP), and fits before padding to even sides.
+
+**Next release 0.1.43 planned (2026-10-07): `docs/PLAN_0_1_43.md`** (the user's picks: Nano Banana 2.1 N1-N2, the
+bug sessions B1-B6, item 39 S1, item 40 S2, REL). **N1, N2, B1-B6, S1 and S2 built 2026-10-07** (Nano Banana 2.1 on Gemini direct and seven hosts, not run live; B1 the cutout and string-params fixes; B2 the assistant's notice and OpenRouter 401; B3 the Film looks panel; B4 the ComfyUI window's name and layout, the install messages; B6 the boxes after Generate new; S2 star and share; B5 the cutout's memory; S1 Settings groups). Next: REL prepared locally (the manual's two Settings screenshots again, keys masked); the release only on the user's word. S1 waits for the user's answer on
+the rows (the plan's recommendation: Remove only on own recipes, keep the one-option select).
+
 ## 2026-10-04 (night: R5 of 0.1.42, then the rest of the plan in one sitting; moved here at the 0.1.42 release)
 
 **This session (2026-10-04 night, R5 of 0.1.42, the docs half): the Realism Pass chapter, unreleased.**
