@@ -134,6 +134,21 @@ only auto and 1K). Not run live.
 
 ## Open
 
+### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07, dev instance, not measured)
+
+**Seen:** the trailer's recording instance (a dev instance of main at e7866f8, `--no-comfy`, profile
+`dist/video/trailer/trailer_rec_profile`) held 28.6 GB private memory in its **main** process (the renderer 3 GB, the
+GPU process 1.5 GB) after about an hour of scripted work: a 5456 x 3072 document with five layers built and saved
+(101 MB .scumble), full-size `export_layer` PNGs (32-35 MB each) and composites, then six more 5456 x 3072 documents,
+several `select_point` / `select_rect` selections and a few FLUX 3 Image runs on Black Forest Labs. The user's RAM
+ran short. A restart frees it (the trailer workflow now restarts the instance between steps).
+**Not known:** which of these holds the memory in main. Suspects, none checked: sharp / libvips caches of the exports,
+the file mirror or the forward queue keeping upload buffers while not connected, `docfile.js` zip buffers per save,
+the ONNX helper sessions' tensors per document, the provider path keeping request or response buffers.
+**To measure first:** a fresh instance, one step at a time (a document load, a save, an export_layer at full size, a
+select_point, a provider run), main's private bytes after each and after a forced GC (`--js-flags=--expose-gc`), and a
+heap snapshot of main (CDP on the main process via `--inspect`) when it has grown: what retains the buffers.
+
 ### Generate new leaves the boxes behind when the model answers at another size (found 2026-10-05, run live)
 
 **Found** in the video 3 test runs (`docs/TUTORIAL.md` section 5, "Test runs"): a 4096 x 2304 canvas, three New
