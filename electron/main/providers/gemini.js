@@ -17,7 +17,8 @@ const { layoutOf, refRoles, countOf, instruction, labelParts } = require("./refs
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
 
 // the aspectRatio values the image models take besides the default; a text run with references and a free size gets
-// the closest, since without one the answer takes the shape of a reference picture
+// the closest, since without one the answer takes the shape of a reference picture. A variant whose model takes more
+// (Nano Banana 2.1: 1:4, 4:1, 1:8, 8:1) names its own in `options.ratios`.
 const RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
 
 /** Where each picture goes: part 0 is the text, then `seq` ([role, ref]) with a label part before each when more than one. */
@@ -47,7 +48,7 @@ module.exports = {
         return placed(refRoles(req).map(([role, i]) => [role, i]), +o.max_images > 0 ? +o.max_images : null);
     },
     async edit(req, ctx) {
-        const p = req.params;
+        const p = req.params, o = req.options || {};
         const model = String(p.model || req.model || "gemini-3.1-flash-lite-image");
         const parts = [];
         const text = req.kind === "text", withRefs = text && (req.references || []).length > 0;
@@ -75,7 +76,7 @@ module.exports = {
         // "auto" (the Aspect row's default) on a text run would send no aspect: the asked one goes
         if (req.kind === "text" && req.aspect && (!p.aspect_ratio || p.aspect_ratio === "auto")) imageConfig.aspectRatio = req.aspect;
         // with references "auto" (the Aspect row's default) takes a picture's shape: the asked one goes instead
-        if (withRefs && (!p.aspect_ratio || p.aspect_ratio === "auto")) imageConfig.aspectRatio = req.aspect || closestAspect(req.width || 1, req.height || 1, RATIOS);
+        if (withRefs && (!p.aspect_ratio || p.aspect_ratio === "auto")) imageConfig.aspectRatio = req.aspect || closestAspect(req.width || 1, req.height || 1, Array.isArray(o.ratios) && o.ratios.length ? o.ratios : RATIOS);
         if (req.kind === "text" && !p.image_size) {
             // the model takes a class, not pixels: pick the one the request is closest to
             const long = Math.max(req.width || 0, req.height || 0);
@@ -84,6 +85,12 @@ module.exports = {
         if (p.aspect_ratio && p.aspect_ratio !== "auto") imageConfig.aspectRatio = p.aspect_ratio;
         if (p.image_size && p.image_size !== "auto") imageConfig.imageSize = p.image_size;
         if (Object.keys(imageConfig).length) generationConfig.imageConfig = imageConfig;
+        // only a variant with a Thinking setting sends one (Nano Banana 2.1: minimal / medium / high), the others what they
+        // sent before; spelled as Google's REST example ("High"). Thoughts stay hidden (no includeThoughts).
+        if (p.thinking_level) {
+            const level = String(p.thinking_level);
+            generationConfig.thinkingConfig = { thinkingLevel: level.charAt(0).toUpperCase() + level.slice(1).toLowerCase() };
+        }
         const body = { contents: [{ role: "user", parts }], generationConfig };
         const r = await ctx.fetch(`${BASE}${encodeURIComponent(model)}:generateContent`, {
             method: "POST", headers: { "x-goog-api-key": ctx.key, "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -92,9 +99,11 @@ module.exports = {
         const out = await r.json();
         const cand = out.candidates && out.candidates[0];
         const partsOut = (cand && cand.content && cand.content.parts) || [];
-        const img = partsOut.find((x) => x.inlineData && x.inlineData.data);
+        // a thinking model may send interim pictures marked `thought`; the answer is the last one that is not
+        const images = partsOut.filter((x) => x && x.inlineData && x.inlineData.data);
+        const img = images.filter((x) => !x.thought).pop() || images.pop();
         if (!img) {
-            const why = (cand && cand.finishReason) || (out.promptFeedback && out.promptFeedback.blockReason) || partsOut.map((x) => x.text).filter(Boolean).join(" ").slice(0, 200) || "no image part";
+            const why = (cand && cand.finishReason) || (out.promptFeedback && out.promptFeedback.blockReason) || partsOut.filter((x) => !x.thought).map((x) => x.text).filter(Boolean).join(" ").slice(0, 200) || "no image part";
             throw new Error("Gemini: " + why);
         }
         return { bytes: Buffer.from(img.inlineData.data, "base64"), mime: img.inlineData.mimeType || "image/png", seed: undefined, info: { model } };   // generateContent is sent no seed

@@ -203,7 +203,7 @@ async function main() {
         // what each model's docs call its pictures; every other provider recipe takes the default
         const WANT = {
             flux2_pro: "image {n}", flux2_flex: "image {n}", flux2_max: "image {n}", flux2_klein: "image {n}",
-            nano_banana_2: "image {n}", nano_banana_2_lite: "image {n}", nano_banana_pro: "image {n}", grok_imagine: "image {n}", reve: "image {n}",
+            nano_banana_2: "image {n}", nano_banana_2_1: "image {n}", nano_banana_2_lite: "image {n}", nano_banana_pro: "image {n}", grok_imagine: "image {n}", reve: "image {n}",
             gpt_image_2: "Image {n}", gpt_image_2_5_flare: "Image {n}", gpt_image_2_5_sunburst: "Image {n}",
             seedream_4_5: "Image {n}", seedream_5_lite: "Image {n}", seedream_5_pro: "Image {n}", qwen_image_edit: "Image {n}", hy_image_3_5: "Image {n}",
             qwen_image_2_1: "<image{n}>", cloud_qwen_image_2_1_edit: "<image{n}>",
@@ -255,6 +255,7 @@ async function main() {
             gpt_image_2_5_flare: { toapis: {}, openai: {}, wavespeed: { model: "openai/gpt-image-2.5-flare/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-5-edit" } },
             gpt_image_2_5_sunburst: { toapis: {}, openai: {}, wavespeed: { model: "openai/gpt-image-2.5-sunburst/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-5-edit" } },
             nano_banana_2: { toapis: {}, gemini: {}, fal: { model: "fal-ai/nano-banana-2/edit", options: { aspect_ratios: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] } }, replicate: {}, wavespeed: { model: "google/nano-banana-2/edit" }, openrouter: {}, comfyrouter: {}, oxen: {} },
+            nano_banana_2_1: { gemini: {} },
             nano_banana_2_lite: { toapis: {}, gemini: {}, wavespeed: { model: "google/nano-banana-2-lite/edit" }, openrouter: {}, comfyrouter: {}, oxen: {} },
             nano_banana_pro: { toapis: {}, gemini: {}, fal: { model: "fal-ai/nano-banana-pro/edit", options: { aspect_ratios: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] } }, replicate: {}, wavespeed: { model: "google/nano-banana-pro/edit" }, openrouter: {}, comfyrouter: {}, oxen: {} },
             seedream_4_5: { magnific: { model: "text-to-image/seedream-v4-5-edit" } },
@@ -296,7 +297,7 @@ async function main() {
             }
         }
         const stale = Object.entries(TEXT_REFS).flatMap(([id, rows]) => Object.keys(rows).map((pid) => `${id}/${pid}`)).filter((n) => !seen.has(n));
-        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 104, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
+        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 105, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
         check("every row of the table names a shipped provider variant", !stale.length, stale.join(", "));
         check("every text shape without text.refs is on the takes-none list", !none.length, none.join(", "));
         const noneStale = Object.entries(TAKES_NONE).flatMap(([id, pids]) => pids.map((pid) => `${id}/${pid}`)).filter((n) => { const [id, pid] = n.split("/"); const r = list.find((x) => x.id === id); return !r || !r.providers[pid] || !r.providers[pid].text || r.providers[pid].text.refs !== null; });

@@ -503,6 +503,7 @@ of the request, and each family has its own word for it (the vendors' prompting 
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · WaveSpeed | 16 | https://wavespeed.ai/docs/docs-api/openai/openai-gpt-image-2-edit, `…-2.5-flare-edit`, `…-2.5-sunburst-edit` ("0 ~ 16 items") |
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · OpenAI | 16 | OpenAI's `image[]` (not read at a URL in this step; not read by `openai.js` yet, above) |
   | `nano_banana_2`, `_2_lite`, `_pro` · Gemini | 14 | Google's limit (not read at a URL in this step) |
+  | `nano_banana_2_1` · Gemini | 14 | https://ai.google.dev/gemini-api/docs/models (Nano Banana 2.1: up to 14 reference pictures, 4 characters and 10 objects; read 2026-10-07) |
   | `nano_banana_2`, `_pro` · Replicate | 14 | https://replicate.com/google/nano-banana-2 ("Use up to 14 reference images."), https://replicate.com/google/nano-banana-pro ("combine up to 14 images") |
   | `nano_banana_2`, `_pro` · WaveSpeed | 14 | https://wavespeed.ai/docs/docs-api/google/google-nano-banana-2-edit, `…-pro-edit` ("0 ~ 14 items") |
   | `grok_imagine` · fal | 5 | https://fal.ai/models/xai/grok-imagine-image/v2.0/edit/api ("A maximum of 5 images are supported.") |
@@ -712,6 +713,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   | FLUX 3 Image | BFL, OpenRouter, Comfy Router, Oxen.ai; fal (`edit-image`), WaveSpeed (`image-edit`) | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, OpenRouter, Comfy Router, Oxen.ai; WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
+  | Nano Banana 2.1 | Gemini | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
   | Seedream 5 lite, 5 pro | ModelArk, ToAPIs, OpenRouter, Comfy Router, Replicate (lite), Oxen.ai (pro); fal (`/edit`, `options: { sizing: "image_size" }`), WaveSpeed (`/edit`), Magnific (the `-edit` route) | - |
   | Seedream 4.5 | Magnific (`seedream-v4-5-edit`) | - |
@@ -769,7 +771,12 @@ sizes and tiers from `options`; see "ToAPIs" below), **fal** (queue API, setting
 `output_format`, `output_compression`, `moderation`, and `input_fidelity` on 1.5 and 1
 only - gpt-image-2 always works at high fidelity and the docs say to omit it; `sizeFor()`
 holds a free size inside each model's own rules), **gemini** (`aspect_ratio`,
-`image_size`; no mask input, the mask goes along as an image and the prompt names the
+`image_size` (1K / 2K / 4K, and `"512"` without a K on 3.1 Flash Image only, Google's spelling), `thinking_level`
+(Nano Banana 2.1 only: minimal / medium / high, sent as `thinkingConfig.thinkingLevel` "Minimal" / "Medium" / "High"
+as Google's REST example spells it; a variant without the setting sends no `thinkingConfig`); `options.ratios` the
+aspect presets a model takes beyond Gemini's ten (2.1: 1:4, 4:1, 1:8, 8:1), the closest of which goes for a free-size
+text run with references; the answer is the last picture part not marked `thought` (a thinking model's interim
+pictures come before it); no mask input, the mask goes along as an image and the prompt names the
 white area), **replicate** (settings by name, `model` is `owner/name` or
 `owner/name:version`, files over 256 kB through the Files API; Ideogram 4.5's inverted mask, seed cap and preset
 sizes from `options`, "Ideogram 4.5" below), **wavespeed** (`POST

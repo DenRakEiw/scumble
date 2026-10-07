@@ -200,7 +200,7 @@ on a second PC, or the Linux builds.
 - Selection by brush, rectangle, ellipse, lasso, magic wand, object hover (SAM2, in the app) or by text (SAM3 on your
   ComfyUI); grow, shrink, feather, invert, from layer, saved selections.
 - Models: FLUX 3 Image, FLUX.2 (max, pro, flex, klein) and FLUX.1 Fill from Black Forest Labs; GPT Image 2.5 Flare /
-  Sunburst and GPT Image 2; Nano Banana 2, 2 Lite and Pro; Seedream 5 and 4.5; Qwen Image Edit and Qwen Image 2.1;
+  Sunburst and GPT Image 2; Nano Banana 2.1, 2, 2 Lite and Pro; Seedream 5 and 4.5; Qwen Image Edit and Qwen Image 2.1;
   Ideogram 4 and 4.5; Grok Imagine, Krea 2, Recraft V4, Reve, Z-Image and HY Image 3.5; Magnific's Mystic, Ideogram
   inpainting and Image Expand outpainting. Each runs on the model's own API where Scumble
   has one, or through ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud, Comfy Router, OpenRouter, Oxen.ai and

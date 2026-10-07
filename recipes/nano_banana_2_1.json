@@ -1,0 +1,98 @@
+{
+  "id": "nano_banana_2_1",
+  "kind": "provider",
+  "name": "Nano Banana 2.1",
+  "family": "Google",
+  "refs": { "name": "image {n}" },
+  "description": "Google's image model of October 2026, 1K to 4K, with a Thinking setting. Key: Google AI Studio. Adapter written from the provider's docs, not run against the live API yet.",
+  "default": "gemini",
+  "providers": {
+    "gemini": {
+      "model": "gemini-nano-banana-2.1",
+      "input": "fill",
+      "options": {
+        "max_images": 14,
+        "ratios": [
+          "1:1",
+          "1:4",
+          "1:8",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:1",
+          "4:3",
+          "4:5",
+          "5:4",
+          "8:1",
+          "9:16",
+          "16:9",
+          "21:9"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "aspect_ratio",
+          "label": "Aspect",
+          "spec": [
+            [
+              "auto",
+              "1:1",
+              "3:2",
+              "2:3",
+              "4:3",
+              "3:4",
+              "5:4",
+              "4:5",
+              "16:9",
+              "9:16",
+              "21:9",
+              "4:1",
+              "1:4",
+              "8:1",
+              "1:8"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "image_size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "2K"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "thinking_level",
+          "label": "Thinking",
+          "spec": [
+            [
+              "minimal",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        }
+      ],
+      "note": "Gemini has no mask input: the crop and the mask go along and the prompt tells the model to change the white area only; the stitch keeps the selection. Thinking cannot be turned off and is billed at every level; minimal is the fastest, medium Google's default. At most fourteen pictures. Not run against the live API yet.",
+      "text": {
+        "refs": {}
+      }
+    }
+  }
+}
