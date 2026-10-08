@@ -5,7 +5,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
-- **Select by depth, brightness or colour.** `select_range` (and next the Selection panel) selects what lies between two depths, two brightness levels or near a colour, softened at each end as far as you set it; replace, add, subtract or intersect.
+- **Select by depth, brightness or colour.** The Selection panel's *Select by range* block with a live preview and *Show depth map*: select what lies between two depths, two brightness levels or near a colour, softened at each end as far as you set it; replace, add, subtract or intersect.
 - **Depth model.** *Settings › Helpers* offers Depth Anything V2 Small (99 MB, Apache-2.0) for the depth tools; it runs in the app on the GPU or the processor.
 - **Depth map of the picture.** *Selection › Depth* computes a depth map in the app (Depth Anything V2 Small, on the GPU or the processor). It is saved with the document, follows turns, crops and resizes, and says when the picture has changed enough to compute it again; it never recomputes by itself.
 - **Soft selection combine and Intersect.** Selection combine operations (replace, add, subtract, and intersect) are soft across both canvas and tile backends, supporting smooth feathered transitions.

@@ -118,6 +118,8 @@ Object hover is the one people like: move the pointer over the picture and Scumb
 
 Selection by text is the other one: type "the handbag" or "her sunglasses" into the Selection panel and press Go. That route runs on your connected ComfyUI (SAM3 there), so it needs a server, unlike object hover.
 
+Selection by range is the photographic one: select what lies between two depths, two brightness levels or near a colour, softened at each end as far as you set it. The Selection panel's *Select by range* block gives you the range bar with its histogram, a live preview tint on the canvas as you adjust the handles or hover the bar, and an eyedropper button to pick a depth, luma or colour directly from the picture. When a depth map is present, *Show map* overlays the map directly on the canvas. Press Enter while focused in the range bar to commit the selection immediately. The four mode buttons — Replace, Add, Subtract and Intersect — combine the range with your current selection.
+
 Once you have a selection, the Selection panel does the rest: grow and shrink it by a pixel count, feather its edge, invert it, take it from a layer's transparency, or save it under a name to come back to later. Selections survive a restart with the document, and the selection and the saved ones travel in its .scumble file.
 
 ### Steps
@@ -126,6 +128,7 @@ Once you have a selection, the Selection panel does the rest: grow and shrink it
 2. **Something flat.** Magic wand, then raise the tolerance until the whole sky is in.
 3. **Something you can name.** Type it into the text field in the Selection panel and press Go (needs a connected ComfyUI).
 4. **Something awkward.** Paint it. It is faster than fighting a clever tool.
+5. **Something by distance or by brightness.** Open the Selection panel's *Select by range*, pick Depth or Luminosity, adjust the range bar and feather handles (or pick from the canvas with the eyedropper), and click Select (or press Enter in the range bar).
 
 ### Notes
 
@@ -133,6 +136,8 @@ Once you have a selection, the Selection panel does the rest: grow and shrink it
 - Grow, shrink and feather are the difference between a visible patch and an invisible one. A feather of 4 to 16 px is a good habit.
 - Select from layer turns any layer's transparency into a selection — useful after a cut-out.
 - Background removal (RMBG / BiRefNet) also runs in the app and gives you a cut-out layer, not just a selection.
+- **Range selections:** Ranges are per picture: a depth or brightness range from one image means nothing in another. When a soft (feathered) selection becomes an inpainting mask for a generation run, it is thresholded at half strength (the run path's cut-off).
+- **Soft selections:** Cut, copy and delete scale pixel transparency by the selection's alpha, while fill and brush operations blend smoothly by alpha.
 
 ## Recipes: what model runs, and where
 
@@ -590,6 +595,7 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | Ctrl+I | Invert the selection |
 | Shift+F | Fill the selection with the foreground colour |
 | Delete  ·  Backspace | Clear the selected pixels — with nothing selected, delete the layer |
+| Enter (in range bar) | Commit the range selection |
 
 #### Layers and editing
 

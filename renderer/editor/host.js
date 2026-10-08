@@ -23,7 +23,6 @@ import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from
 import * as realism from "./realism.js";
 import * as comfyprompt from "./comfyprompt.js";
 import * as dialogs from "../dialogs.js";
-import { WORK_MAX, modelSize, workSize } from "./inpaint_depth.js";
 
 const PROXY = "/comfy";
 
@@ -3608,6 +3607,9 @@ export const host = {
 
     /** The Remove tool is in the app (LaMa in-app, PLAN_0_1_31 §5 step 3); the node has none. */
     removeSupported: true,
+
+    /** Depth map computation is supported in Scumble (R1-S1 / R1-S3). */
+    depthSupported: true,
 
     /**
      * @img1, @img2 in the prompt name the shown reference layers, and their numbers follow the layers through every

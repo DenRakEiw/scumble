@@ -427,6 +427,165 @@ if (typeof res.seconds !== "number" || res.seconds < 0) throw new Error("15k lum
 await run("close_document", { doc: d15k.id, force: true });
 return { seconds: res.seconds, tiles: res.tiles, flattenCount };
 """),
+    ("selection_panel_range_cases", """
+const ed = ednow(window.__selDoc);
+const { makeMap } = await import("./editor/inpaint_maps.js");
+
+// (1) the block exists; with host.depthSupported = false and the modal rebuilt the Depth option and row are absent.
+if (!ed.rangeBlock) throw new Error("rangeBlock does not exist on ed");
+if (!ed.rangeSourceSel) throw new Error("rangeSourceSel does not exist on ed");
+if (!ed.rangeBar) throw new Error("rangeBar does not exist on ed");
+if (!ed.rangeSelectBtn) throw new Error("rangeSelectBtn does not exist on ed");
+if (!ed.depthContainer) throw new Error("depthContainer should exist when depthSupported is true");
+
+const depthOptionPresent = Array.from(ed.rangeSourceSel.options).some((o) => o.value === "depth");
+if (!depthOptionPresent) throw new Error("Depth option missing in rangeSourceSel when depthSupported is true");
+
+// Set depthSupported = false and rebuild modal
+const oldRoot = ed.root;
+host.depthSupported = false;
+ed.buildModal();
+if (oldRoot && oldRoot.parentNode) oldRoot.parentNode.replaceChild(ed.root, oldRoot);
+
+if (ed.depthContainer) throw new Error("depthContainer should be absent when depthSupported is false");
+const depthOptionAbsent = !Array.from(ed.rangeSourceSel.options).some((o) => o.value === "depth");
+if (!depthOptionAbsent) throw new Error("Depth option still present in rangeSourceSel when depthSupported is false");
+
+// Restore depthSupported = true and rebuild modal
+const oldRoot2 = ed.root;
+host.depthSupported = true;
+ed.buildModal();
+if (oldRoot2 && oldRoot2.parentNode) oldRoot2.parentNode.replaceChild(ed.root, oldRoot2);
+
+if (!ed.depthContainer) throw new Error("depthContainer did not restore after rebuilding modal with depthSupported = true");
+
+// Set up 1600 x 1200 canvas with ramp depth map (like R1-S5 Case 1)
+await run("new_canvas", { doc: window.__selDoc, width: 1600, height: 1200, color: "#ffffff" });
+const mapW = 1024, mapH = 768;
+const ramp = new Uint16Array(mapW * mapH);
+for (let y = 0; y < mapH; y++) {
+    for (let x = 0; x < mapW; x++) {
+        ramp[y * mapW + x] = Math.round(x * 65535 / (mapW - 1));
+    }
+}
+const map = makeMap("depth", mapW, mapH, ramp, [1600, 0, 0, 1200, 0, 0], {});
+await ed.setMap("depth", map);
+ed.rangeSourceSel.value = "depth";
+ed.rangeSourceSel.dispatchEvent(new Event("change"));
+
+const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
+
+// (2) ed.rangeBar.set({ lo: .25, hi: .5, fLo: 0, fHi: 0 }) and Select clicked give the bytes of R1-S5 case 1 at its 9 probes.
+ed.rangeBar.set({ lo: 0.25, hi: 0.5, fLo: 0, fHi: 0 });
+ed.rangeMode = "replace";
+ed.rangeSelectBtn.click();
+while (ed.rangePending) await wait(20);
+if (ed.mipsSettled) await ed.mipsSettled();
+await wait(50);
+
+const c1Cols = [160, 320, 400, 480, 720, 800, 960, 1200, 1440];
+const expectedC1 = [0, 0, 255, 255, 255, 0, 0, 0, 0];
+for (let i = 0; i < c1Cols.length; i++) {
+    const val = at(c1Cols[i], 600);
+    if (val !== expectedC1[i]) throw new Error(`panel case 2: at x=${c1Cols[i]} expected ${expectedC1[i]}, got ${val}`);
+}
+
+// (3) begin, preview and stop set and clear ed._rangeTint (a state check);
+// no getImageData on a GPU canvas per preview call: count the calls with a hook, at most one per compositeVersion (the acceleration latch).
+ed.rangeSourceSel.value = "luma";
+ed.rangeSourceSel.dispatchEvent(new Event("change"));
+
+if (ed._rangeTint) throw new Error("case 3: _rangeTint should be null before begin()");
+ed.rangeBar.begin();
+if (!ed._rangeTint) throw new Error("case 3: begin() did not set ed._rangeTint");
+
+let getImageDataCount = 0;
+const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+CanvasRenderingContext2D.prototype.getImageData = function(...args) {
+    getImageDataCount++;
+    return origGetImageData.apply(this, args);
+};
+
+try {
+    for (let i = 1; i <= 5; i++) {
+        ed.rangeBar.preview({ lo: 0.1 * i, hi: 0.1 * i + 0.3 });
+    }
+} finally {
+    CanvasRenderingContext2D.prototype.getImageData = origGetImageData;
+}
+
+if (getImageDataCount > 1) {
+    throw new Error(`case 3: getImageData called ${getImageDataCount} times during preview (expected <= 1)`);
+}
+
+ed.rangeBar.stop();
+if (ed._rangeTint) throw new Error("case 3: stop() did not clear ed._rangeTint");
+
+// Switch back to depth for case 4
+ed.rangeSourceSel.value = "depth";
+ed.rangeSourceSel.dispatchEvent(new Event("change"));
+
+// (4) pickOnce("depth") plus a real click at (800, 1100) recentres the range on depthAt(800, 1100) +- 0.002.
+const expectedV = ed.depthAt(800, 1100);
+ed.pickOnce("depth");
+const rect = ed.canvas.getBoundingClientRect();
+const [sx, sy] = ed.imageToScreen(800, 1100);
+const clientX = rect.left + sx * rect.width / ed.canvas.width;
+const clientY = rect.top + sy * rect.height / ed.canvas.height;
+ed.canvas.dispatchEvent(new PointerEvent("pointerdown", {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 50,
+    pointerType: "mouse",
+    isPrimary: true,
+    button: 0,
+    buttons: 1,
+    clientX,
+    clientY,
+}));
+ed.canvas.dispatchEvent(new PointerEvent("pointerup", {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 50,
+    pointerType: "mouse",
+    isPrimary: true,
+    button: 0,
+    buttons: 0,
+    clientX,
+    clientY,
+}));
+
+const mid = (ed.rangeLimit.lo + ed.rangeLimit.hi) / 2;
+if (Math.abs(mid - expectedV) > 0.002) {
+    throw new Error(`case 4: range center ${mid} not within 0.002 of depthAt(800, 1100)=${expectedV}`);
+}
+
+// (5) mapView = "depth" changes no export bytes.
+const expBefore = host.exportCanvas(ed, "png");
+const bytesBefore = expBefore.getContext("2d").getImageData(0, 0, expBefore.width, expBefore.height).data;
+
+ed.mapView = "depth";
+ed.draw();
+if (ed.depthViewBtn && !ed.depthViewBtn.classList.contains("ipc-toggle-on")) {
+    throw new Error("case 5: depthViewBtn missing ipc-toggle-on class");
+}
+
+const expAfter = host.exportCanvas(ed, "png");
+const bytesAfter = expAfter.getContext("2d").getImageData(0, 0, expAfter.width, expAfter.height).data;
+
+if (bytesBefore.length !== bytesAfter.length) throw new Error("case 5: export byte lengths differ");
+for (let i = 0; i < bytesBefore.length; i++) {
+    if (bytesBefore[i] !== bytesAfter[i]) {
+        throw new Error(`case 5: export byte mismatch at byte ${i}: ${bytesBefore[i]} vs ${bytesAfter[i]}`);
+    }
+}
+
+// Reset mapView
+ed.mapView = null;
+ed.draw();
+
+return { panelOk: true, getImageDataCount, mid, expectedV };
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__selDoc, force: true }); } catch (_) { /* gone */ }
 return "ok";

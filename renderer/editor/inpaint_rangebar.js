@@ -121,6 +121,7 @@ export function buildRangeBar(range, {
     pick = null,
     hover = null,
     title = null,
+    onEnter = null,
 } = {}) {
     let curRange = { ...RANGE_DEFAULTS, ...range };
     let currentHist = null;
@@ -129,11 +130,16 @@ export function buildRangeBar(range, {
 
     const wrap = document.createElement("div");
     wrap.className = "ipc-rangebar-wrap";
+    wrap.tabIndex = 0;
 
-    if (typeof stop === "function") {
-        for (const ev of ["click", "pointerdown", "dblclick", "keydown"]) {
-            wrap.addEventListener(ev, stop);
-        }
+    if (typeof onEnter === "function") {
+        wrap.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                onEnter();
+            }
+        });
     }
 
     // Header with title, pick button (if provided) and invert toggle
@@ -490,6 +496,9 @@ export function buildRangeBar(range, {
         if (typeof commit === "function") {
             commit({ ...curRange });
         }
+        if (typeof stop === "function") {
+            stop();
+        }
     };
 
     canvas.addEventListener("pointerup", finishDrag);
@@ -507,12 +516,14 @@ export function buildRangeBar(range, {
             if (e.key === "Alt" && hovering) {
                 hovering = false;
                 hover(false);
+                if (typeof stop === "function") stop();
             }
         });
         wrap.addEventListener("pointerleave", () => {
             if (hovering) {
                 hovering = false;
                 hover(false);
+                if (typeof stop === "function") stop();
             }
         });
     }
@@ -534,12 +545,28 @@ export function buildRangeBar(range, {
             curRange = { ...curRange, ...nextRange };
             syncButtons();
             draw();
+            if (typeof commit === "function") {
+                commit({ ...curRange });
+            }
         },
         refresh() {
             if (typeof histogram === "function") {
                 currentHist = histogram();
             }
             draw();
+        },
+        begin() {
+            if (typeof begin === "function") begin();
+        },
+        preview(r) {
+            if (typeof preview === "function") preview(r !== undefined ? r : { ...curRange });
+        },
+        commit(r) {
+            if (r !== undefined) curRange = { ...curRange, ...r };
+            if (typeof commit === "function") commit({ ...curRange });
+        },
+        stop() {
+            if (typeof stop === "function") stop();
         },
     };
 }

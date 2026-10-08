@@ -78,9 +78,9 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-08 night: **Nik 9 parity build through R1-S5b built and gated**, all gates pass 100 %; 0.1.43 is Latest)
+## Where things stand (2026-10-09 night: **Nik 9 parity build through R1-S6 built and gated**, all gates pass 100 %; 0.1.43 is Latest)
 
-**Nik 9 parity build (in progress):** F1-F8, R1-S1..S4, R1-S5a and R1-S5b built. R1-S5b completes range selection luminosity and colour sources: worker `range_select` luma/color band processing, `ed.selectRange` with `holdRunStack` and `fillBoxFromStack` (at most 2 bands in flight), `SharedArrayBuffer` transport, float precision epsilon in `rangeWeight`/`WEIGHTS_GLSL`, all 12 selection gate cases passing on both backends (including 15k luma case 11). Gates `pixels selection limit maps film editor` pass 100 % on both `--tiles on` and `--tiles off` with `--offline`. Next: R1-S6 (Select by range UI panel).
+**Nik 9 parity build (in progress):** F1-F8, R1-S1..S4, R1-S5a, R1-S5b, R1-S6 built. R1-S6 completes Selection panel *Select by range* block: Depth (guarded by host.depthSupported), Luminosity and Colour source picker, range bar with whole-picture / similarity histograms, color swatch with tolerance, eyedropper pickOnce with image recentering, Show depth map view toggle, 4 combine modes (replace, add, subtract, intersect), live red preview tint (GPU shader / CPU fallback, acceleration latch verified <= 1 getImageData), Enter in range bar commits, Escape cancels pick/preview. Gates `pixels selection limit maps film editor` pass 100 % on both `--tiles on` and `--tiles off` with `--offline`. Next: R1-S7a (Limit on filter layers, the stage).
 
 **0.1.43 is out** (tag v0.1.43, published 2026-10-07T20:27:04Z; the post `v0-1-43` live; the manual synced). Built the
 same day from `docs/PLAN_0_1_43.md`, every row with its "As built": Nano Banana 2.1 on Gemini direct and seven hosts
