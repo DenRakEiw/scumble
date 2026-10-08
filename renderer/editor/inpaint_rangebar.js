@@ -178,6 +178,10 @@ export function buildRangeBar(range, {
                     curRange = { ...curRange, lo, hi };
                     draw();
                     if (commit) commit({ ...curRange });
+                } else if (typeof val === "string" && val.startsWith("#")) {
+                    curRange = { ...curRange, color: val };
+                    draw();
+                    if (commit) commit({ ...curRange });
                 }
             } catch (err) {
                 console.error("Eyedropper pick failed:", err);
@@ -559,6 +563,7 @@ export function buildRangeBar(range, {
             if (typeof begin === "function") begin();
         },
         preview(r) {
+            if (r !== undefined) curRange = { ...curRange, ...r };
             if (typeof preview === "function") preview(r !== undefined ? r : { ...curRange });
         },
         commit(r) {

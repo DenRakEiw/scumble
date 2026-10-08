@@ -546,6 +546,103 @@ JS = r"""
     check("Case 12 readerFor doc with limit is 3", readerFor(docWithLimit) === 3);
     check("Case 12 readerFor empty doc is 1", readerFor({ layers: [] }) === 1);
 
+    // -------------------------------------------------------------------------
+    // Row group (R1-S8): Limit on filter layers, the row
+    // -------------------------------------------------------------------------
+    const edRow = shell.newDocument();
+    shell.activate(edRow);
+    await new Promise((r) => setTimeout(r, 200));
+    edRow.resizeCanvas();
+    const baseRow = mk(W, H);
+    {
+        const ctx = baseRow.getContext("2d");
+        ctx.fillStyle = "#333333";
+        ctx.fillRect(0, 0, W, H);
+    }
+    Object.defineProperty(baseRow, "naturalWidth", { value: W });
+    Object.defineProperty(baseRow, "naturalHeight", { value: H });
+    await edRow.setBaseFromCanvas(baseRow, { keepLayers: false });
+    await settle(edRow);
+
+    // 1. Check filter layer controls include Limit block with full options
+    const flRow = await commands.run("add_filter", { doc: edRow.node.id, type: "invert" });
+    const rawFl = edRow.layers.find((l) => l.id === flRow.id);
+    const fxControls = edRow.buildFilterControls(rawFl);
+    const limitBlock = fxControls.querySelector(".ipc-limit-block");
+    check("Row group: limit block exists for filter layer", !!limitBlock);
+
+    const filterSel = limitBlock ? limitBlock.querySelector("select.ipc-limit-sel") : null;
+    check("Row group: source select exists in filter limit block", !!filterSel);
+    const filterOpts = filterSel ? Array.from(filterSel.options).map((o) => o.value) : [];
+    check("Row group: filter layer lists Off, Depth, Luminosity, Colour",
+        filterOpts.includes("off") && filterOpts.includes("depth") && filterOpts.includes("luma") && filterOpts.includes("color"),
+        filterOpts);
+
+    // 2. Check fill layer controls list Off and Depth only
+    const fillLayer = await commands.run("add_filter", { doc: edRow.node.id, type: "fill" });
+    const rawFill = edRow.layers.find((l) => l.id === fillLayer.id);
+    const fillControls = edRow.buildFilterControls(rawFill);
+    const fillLimitBlock = fillControls.querySelector(".ipc-limit-block");
+    check("Row group: limit block exists for fill layer", !!fillLimitBlock);
+    const fillSel = fillLimitBlock ? fillLimitBlock.querySelector("select.ipc-limit-sel") : null;
+    const fillOpts = fillSel ? Array.from(fillSel.options).map((o) => o.value) : [];
+    check("Row group: fill layer lists Off and Depth only",
+        fillOpts.length === 2 && fillOpts[0] === "off" && fillOpts[1] === "depth",
+        fillOpts);
+
+    // 3. Set limit on filter layer, test bar lifecycle:
+    // bar.set through begin, preview ×3, commit gives one undo step,
+    // params.limit is a new object at each preview (identity check),
+    // undo restores the old limit object; Off removes it and list_layers shows no limit.
+    const initialLimit = { source: "depth", lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+    rawFl.params.limit = initialLimit;
+    const fxWithLim = edRow.buildFilterControls(rawFl);
+    const limBlockWithBar = fxWithLim.querySelector(".ipc-limit-block");
+    const bar = limBlockWithBar ? (limBlockWithBar.rangeBar || fxWithLim.rangeBar || rawFl._rangeBar) : null;
+    check("Row group: range bar exists when limit enabled", !!bar);
+
+    if (bar) {
+        const undoCountBefore = edRow.undo.length;
+        bar.begin();
+
+        bar.preview({ lo: 0.25 });
+        const lim1 = rawFl.params.limit;
+        check("Row group: preview 1 creates new limit object", lim1 !== initialLimit && lim1.lo === 0.25, { lim1, initialLimit });
+
+        bar.preview({ lo: 0.30 });
+        const lim2 = rawFl.params.limit;
+        check("Row group: preview 2 creates new limit object", lim2 !== lim1 && lim2 !== initialLimit && lim2.lo === 0.30, { lim2, lim1 });
+
+        bar.preview({ lo: 0.35 });
+        const lim3 = rawFl.params.limit;
+        check("Row group: preview 3 creates new limit object", lim3 !== lim2 && lim3 !== lim1 && lim3 !== initialLimit && lim3.lo === 0.35, { lim3, lim2 });
+
+        bar.commit({ lo: 0.35 });
+        check("Row group: commit gives exactly one undo step", edRow.undo.length === undoCountBefore + 1, { before: undoCountBefore, now: edRow.undo.length });
+        check("Row group: filterPreview is null after commit", edRow.filterPreview === null);
+
+        // 4. Undo restores the old limit object (identity check)
+        await commands.run("undo", { doc: edRow.node.id });
+        await settle(edRow);
+        check("Row group: undo restores the old limit object", rawFl.params.limit === initialLimit, { restored: rawFl.params.limit, initialLimit });
+
+        // 5. Selecting Off removes limit and list_layers shows no limit
+        const fxRestored = edRow.buildFilterControls(rawFl);
+        const selRestored = fxRestored.querySelector("select.ipc-limit-sel");
+        if (selRestored) {
+            selRestored.value = "off";
+            selRestored.dispatchEvent(new Event("change"));
+            await settle(edRow);
+        }
+        check("Row group: Off removes params.limit", !rawFl.params.limit);
+
+        const layersAfterOff = await commands.run("list_layers", { doc: edRow.node.id });
+        const flAfterOff = layersAfterOff.layers.find((l) => l.id === rawFl.id);
+        check("Row group: list_layers shows no limit", flAfterOff && (!flAfterOff.params || !flAfterOff.params.limit), flAfterOff);
+    }
+
+    shell.closeDocument && shell.closeDocument(edRow, { force: true });
+
     return { fails, tiles: !!ed.tileMode };
 })()
 """
