@@ -234,7 +234,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   layers, "Match edges to the layer below", fitting the layer's own edge ring (its alpha / mask border) against the
   composite under it, moving or warping the layer as one undo step, with the report in the status line and a manual
   nudge as the fallback. Tests: normal tier (a result shifted and scaled by known amounts comes back within a pixel;
-  a flat area or a too-large fit refuses). For a later update; nothing built.
+  a flat area or a too-large fit refuses). **Built 2026-10-08** (affine Lucas-Kanade edge ring fit in `renderer/editor/edgefit.js`, `matchEdges` on `InpaintEditor`, context menu entry, MCP command `match_edges`, live result alignment in `renderer/editor/stitch.js`, `tools/edgefit_test.js` 9/9 passing).
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.

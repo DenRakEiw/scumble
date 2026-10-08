@@ -12,10 +12,11 @@
 //
 // Differences from the node: resizing is the browser's bilinear/bicubic instead of
 // Lanczos, the gaussian blur is a triple box blur, the "border" fill mode has no
-// Navier-Stokes inpainting (it behaves like "blur"), and the ECC alignment of the
-// result to its surroundings is not implemented (reported as not aligned).
+// Navier-Stokes inpainting (it behaves like "blur"). Alignment uses an affine Lucas-Kanade
+// fit on the edge ring (edgefit.js).
 
 import { dilateMask, boxBlurs, kernelsMode } from "./px/kernels.js";
+import { fitLayerRGBA, warpRGBA } from "./edgefit.js";
 
 const MIN_AUTO_CROP = 512;
 
@@ -563,9 +564,9 @@ function colorMatch(patch, region, weight) {
     return out;
 }
 
-/** Does the stitch read the composite of the region? Only for the colour match of an answer that is not a cut-out. */
+/** Does the stitch read the composite of the region? For edge alignment and colour match of an answer that is not a cut-out. */
 export function finishNeedsRegion(info) {
-    return !!(info.color_match && !info.keepAlpha);
+    return !!((info.color_match || info.align) && !info.keepAlpha);
 }
 
 /**
@@ -607,11 +608,37 @@ export function finishPixels(info, sel, resultImage, region) {
     }
     const blend = cropMask(full, x - wx0, y - wy0, w, h);
 
-    const align = { aligned: false, reason: "not available in the app" };
+    let align = { aligned: false, reason: "disabled" };
+    if (info.align && region && !info.keepAlpha) {
+        try {
+            const pdata = patch.getContext("2d").getImageData(0, 0, w, h);
+            const rdata = region.getContext("2d").getImageData(0, 0, w, h);
+            const layRGBA = new Uint8ClampedArray(pdata.data);
+            for (let i = 0, j = 3; i < w * h; i++, j += 4) {
+                layRGBA[j] = Math.round(Math.min(1, Math.max(0, blend.data[i])) * 255);
+            }
+            const r = fitLayerRGBA({ baseRGBA: rdata.data, layerRGBA: layRGBA, w, h });
+            align = { aligned: r.aligned, ...(r.reason ? { reason: r.reason } : {}), scale: r.scale, shift: r.shift, shear: r.shear, before: r.before, after: r.after };
+            if (r.aligned && r.matrix) {
+                const warped = warpRGBA(pdata.data, w, h, r.matrix);
+                patch = makeCanvas(w, h);
+                const img = patch.getContext("2d").createImageData(w, h);
+                img.data.set(warped);
+                patch.getContext("2d").putImageData(img, 0, 0);
+            }
+        } catch (err) {
+            align = { aligned: false, reason: (err && err.message) || "fit failed" };
+        }
+    } else if (info.keepAlpha) {
+        align = { aligned: false, reason: "cutout" };
+    } else if (!region) {
+        align = { aligned: false, reason: "no region" };
+    }
+
     // A cut-out (the model was asked for a transparent background) is never colour matched:
     // the statistics would read the transparent pixels' black, and the asset was never meant
     // to sit on the backdrop the region shows.
-    if (finishNeedsRegion(info)) {
+    if (info.color_match && region && !info.keepAlpha) {
         const keep = maskOf(w, h);
         for (let i = 0; i < keep.data.length; i++) keep.data[i] = 1 - blend.data[i];
         patch = colorMatch(patch, region, keep);

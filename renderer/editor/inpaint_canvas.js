@@ -40,6 +40,7 @@ import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRota
 import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
 import { LiquifyField, gridStep, previewBlock, liquifyFalloff } from "./inpaint_liquify.js";
 import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
+import { fitLayerRGBA, workScale } from "./edgefit.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -4348,6 +4349,109 @@ class InpaintEditor {
         this.markLayerChanged(l);
         this.renderLayers(); this.draw();
         this.setStatus(`${l.name} flipped ${axis === "h" ? "horizontally" : "vertically"}.`);
+    }
+
+    /**
+     * Match a layer's edges to the picture under it (item 42): an inpaint result that came back slightly shifted or
+     * scaled is fitted on its own edge ring (its opaque pixels near its transparent part or its mask's border) against
+     * the composite of the layers below (renderer/editor/edgefit.js, the node's `_align_patch` limits), then moved or
+     * resampled in one undo step. A fit that is pure translation by whole pixels moves the layer (no resampling); any
+     * other bakes the matrix into the pixels as the transform tool does (a live mask baked in). Refuses with a reason in
+     * the status line and the answer: a flat ring, a fit past 8 % scale or 5 % shift, no gain. `apply` false only fits.
+     * `{ aligned, reason?, scale, shift, before, after, how: "moved" | "resampled" | null, centre: [dx, dy] }`.
+     */
+    matchEdges(layer = this.activeLayer(), { apply = true } = {}) {
+        const l = layer;
+        const refuse = (reason, status) => { this.setStatus(status); return { aligned: false, reason, how: null }; };
+        if (!l || l.kind === "filter") return refuse("no pixel layer", "Select a pixel layer to match its edges.");
+        if (this.isReference(l) || this.isControl(l)) return refuse("not part of the picture", `${l.name} is not part of the picture: there is nothing to match it to.`);
+        if (this.isLocked(l)) return refuse("locked", `${l.name} is locked.`);
+        const index = this.layers.indexOf(l);
+        const x0 = Math.max(0, Math.floor(l.x)), y0 = Math.max(0, Math.floor(l.y));
+        const x1 = Math.min(this.width, Math.ceil(l.x + l.w)), y1 = Math.min(this.height, Math.ceil(l.y + l.h));
+        if (x1 - x0 < 8 || y1 - y0 < 8) return refuse("outside the canvas", `${l.name} hardly reaches into the canvas: nothing to match.`);
+        if (this.pending) this.cancelPending();
+        const bw = x1 - x0, bh = y1 - y0, s = workScale(bw, bh);
+        const tw = Math.max(1, Math.round(bw * s)), th = Math.max(1, Math.round(bh * s));
+        // the composite under the layer at the working size, and the layer itself (its mask applied) on the same grid
+        const below = makeCanvas(tw, th), bctx = below.getContext("2d", { willReadFrequently: true });
+        bctx.drawImage(this.sampleRegion("image", [x0, y0, x1, y1], s, { forRun: true, upTo: Math.max(0, index) }), 0, 0, tw, th);
+        const own = makeCanvas(tw, th), octx = own.getContext("2d", { willReadFrequently: true });
+        octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "high";
+        const dx = (l.x - x0) * s, dy = (l.y - y0) * s, dw = l.w * s, dh = l.h * s;
+        l.px.drawTo(octx, dx, dy, dw, dh);
+        if (this.liveMask(l)) { octx.globalCompositeOperation = "destination-in"; l.maskPx.drawTo(octx, dx, dy, dw, dh); octx.globalCompositeOperation = "source-over"; }
+        const r = fitLayerRGBA({ baseRGBA: bctx.getImageData(0, 0, tw, th).data, layerRGBA: octx.getImageData(0, 0, tw, th).data, w: tw, h: th, fullW: bw, fullH: bh });
+        const out = { aligned: r.aligned, ...(r.reason ? { reason: r.reason } : {}), scale: r.scale, shift: r.shift, before: r.before, after: r.after, how: null };
+        if (r.matrix) {
+            // the matrix in image coordinates: layer(A X + t) belongs at X; the layer's content at its middle moves by -(M c - c)
+            const [a00, a01, t0, a10, a11, t1] = r.matrix;
+            const cx = l.x + l.w / 2, cy = l.y + l.h / 2;
+            const rx = a00 * (cx - x0) + a01 * (cy - y0) + t0 - (cx - x0);
+            const ry = a10 * (cx - x0) + a11 * (cy - y0) + t1 - (cy - y0);
+            out.centre = [Math.round(-rx * 10) / 10, Math.round(-ry * 10) / 10];
+            out.matrix = [a00, a01, t0 + a00 * -x0 + a01 * -y0 + x0, a10, a11, t1 + a10 * -x0 + a11 * -y0 + y0];
+        }
+        const what = { "ring too small": "the edge ring is too small to fit (under 2,000 px or 2 % of the layer)", "flat area": "the edge ring has no contrast to fit on",
+            "fit out of range": "the fit found is too large to be a drift (over 8 % scale or 5 % shift)", "no gain": "it already sits as well as a fit can put it",
+            "no fit found": "no fit was found" }[r.reason] || r.reason;
+        if (!r.aligned) {
+            this.setStatus(`${l.name}: edges not matched, ${what}. Nudge it with the move tool if it is still off.`);
+            return out;
+        }
+        if (!apply) return out;
+        const [a00, a01, t0, a10, a11, t1] = out.matrix;
+        // the scale and shear over the layer's box move no corner by more than a tenth of a pixel: a pure translation
+        const lin = Math.max(Math.abs(a00 - 1) * l.w + Math.abs(a01) * l.h, Math.abs(a10) * l.w + Math.abs(a11 - 1) * l.h);
+        const mx = -out.centre[0], my = -out.centre[1];
+        const scaleNote = `scale ${out.scale[0]} × ${out.scale[1]}, `;
+        if (lin < 0.1 && Math.abs(mx - Math.round(mx)) < 0.25 && Math.abs(my - Math.round(my)) < 0.25) {
+            this.placeLayers([[l, l.x - Math.round(mx), l.y - Math.round(my)]], "Match edges");
+            out.how = "moved";
+        } else {
+            if (l.kind === "text" && l.text) {
+                out.aligned = false; out.reason = "text layer";
+                this.setStatus(`${l.name}: a fit was found (${scaleNote}moved ${out.centre[0]}, ${out.centre[1]} px) but a text layer can only be moved by whole pixels; turn it into pixels first or nudge it by hand.`);
+                return out;
+            }
+            const pw = l.px.width, ph = l.px.height;
+            if (pw > 65535 || ph > 65535 || pw * ph > 268435456) {
+                out.aligned = false; out.reason = "too large";
+                this.setStatus(`${l.name} is ${pw} × ${ph} px, more than one canvas holds: its edges cannot be resampled.`);
+                return out;
+            }
+            // the inverse: where an old layer point lands
+            const det = a00 * a11 - a01 * a10, i00 = a11 / det, i01 = -a01 / det, i10 = -a10 / det, i11 = a00 / det;
+            const i02 = -(i00 * t0 + i01 * t1), i12 = -(i10 * t0 + i11 * t1);
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const [X, Y] of [[l.x, l.y], [l.x + l.w, l.y], [l.x, l.y + l.h], [l.x + l.w, l.y + l.h]]) {
+                const u = i00 * X + i01 * Y + i02, v = i10 * X + i11 * Y + i12;
+                minX = Math.min(minX, u); minY = Math.min(minY, v); maxX = Math.max(maxX, u); maxY = Math.max(maxY, v);
+            }
+            minX = Math.floor(minX); minY = Math.floor(minY); maxX = Math.ceil(maxX); maxY = Math.ceil(maxY);
+            const nw = Math.max(1, maxX - minX), nh = Math.max(1, maxY - minY);
+            this.pushUndo({ kind: "layerfull", id: l.id, label: "Match edges" });
+            if (this.liveMask(l)) this.applyMask(l, { silent: true, undo: false });
+            else if (l.maskPx) { l.maskPx = null; l.maskOff = false; l.maskEdit = false; this.markMaskChanged(l); }
+            const src = l.px.toCanvas();
+            const res = Math.max(src.width / l.w, src.height / l.h, 1);
+            const canvas = makeCanvas(Math.round(nw * res), Math.round(nh * res));
+            const ctx = canvas.getContext("2d");
+            ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+            const kx = l.w / src.width, ky = l.h / src.height;
+            ctx.setTransform(res * i00 * kx, res * i10 * kx, res * i01 * ky, res * i11 * ky,
+                res * (i00 * l.x + i01 * l.y + i02 - minX), res * (i10 * l.x + i11 * l.y + i12 - minY));
+            ctx.drawImage(src, 0, 0);
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.imageSmoothingQuality = "low";
+            l.px = this.pixels.Layer.fromCanvas(canvas);
+            l.x = minX; l.y = minY; l.w = nw; l.h = nh;
+            this.markLayerChanged(l);
+            this.renderLayers(); this.updateSubbar(); this.draw();
+            out.how = "resampled";
+        }
+        this.setStatus(`${l.name}: edges matched to the picture below (moved ${out.centre[0]}, ${out.centre[1]} px, ${scaleNote}edge difference ${out.before} → ${out.after}). Ctrl+Z takes it back; the move tool nudges it by hand.`);
+        return out;
     }
 
     /**
@@ -12910,6 +13014,9 @@ class InpaintEditor {
                     onClick: () => { const l = live(); if (l.length) this.setLayerClip(l.find((x) => x.id === layer.id) || l[0], !layer.clip); } },
                 { icon: "folder", label: many ? `Group ${sel.length} layers` : "Group layer", key: "Ctrl+G", title: "Put the layers into a new group (a folder: its eye and lock count for all of them)",
                     onClick: () => { const l = live(); if (l.length) this.groupLayersNow(l); } },
+                ...(many ? [] : [{ icon: "contentmove", label: "Match edges to the layer below",
+                    title: "An inpaint that came back slightly shifted or scaled: fit the layer's own edge to the picture under it and move or resample it to match (one undo step; refused when the fit is not plausible)",
+                    onClick: () => { const l = live()[0]; if (l) this.matchEdges(l); } }]),
                 { sep: true },
                 { icon: "merge", label: many ? `Merge ${sel.length} layers` : "Merge down", key: "Ctrl+E", title: many ? "Merge the selected layers into one, at the place of the topmost" : "Merge into the layer below",
                     onClick: () => (many ? this.mergeSelected() : this.mergeDown(live()[0])) },

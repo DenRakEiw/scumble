@@ -1441,6 +1441,23 @@ const COMMANDS = {
     // axis x is the editor's "h" (left to right), y its "v": until 0.1.42 both reached the editor as a vertical flip
     flip_layer: { description: "Mirror a layer: axis x mirrors it left to right (horizontally), axis y top to bottom (vertically). Refused on a locked or a filter layer.", params: { layer: P.layer(), axis: P.str("x (left to right) or y (top to bottom)", { enum: ["x", "y"], default: "x" }) }, async run(ed, a) { const l = findLayer(ed, a.layer); refuseLayer(ed, l, "flipped"); ed.activeLayerId = l.id; ed.flipLayer(a.axis === "y" || a.axis === "vertical" ? "v" : "h"); return layerSummary(ed, l); } },
     center_layer: { description: "Centre a layer on the canvas. Refused on a locked or a filter layer.", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); refuseLayer(ed, l, "centred"); ed.activeLayerId = l.id; ed.centerLayer(); return layerSummary(ed, l); } },
+    // item 42: the layer menu's "Match edges to the layer below"; a refusal is an answer (aligned false and the reason), not an error
+    match_edges: {
+        needsImage: true,
+        description: "Match a layer's edges to the picture under it: an inpaint result that came back slightly shifted or scaled (edit models re-render the whole crop) is fitted on its own edge ring (its opaque pixels near its transparent part or its mask's border) against the composite of the layers below, and moved (a whole-pixel shift) or resampled to match, one undo step (a live mask is baked in when it is resampled). The fit is kept only within 8 % scale, 0.03 shear and 5 % shift and when the edge difference drops by 3 % or more; otherwise nothing changes and the answer says why (aligned false, reason: flat area, fit out of range, no gain, ring too small, no fit found, text layer). apply false only reports the fit. scale and shift as the node's stitch reports them; centre: how far the layer's middle moved, in image pixels; before / after: the mean edge difference in levels of 255; how: moved, resampled or null. Refused on a locked or a filter layer.",
+        params: { layer: P.layer(), apply: P.bool("false: only fit and report, change nothing", { default: true }) },
+        async run(ed, a) {
+            const l = findLayer(ed, a.layer);
+            refuseLayer(ed, l, "matched");
+            if (ed.textEdit) ed.endTextEdit(true);
+            ed.selectLayers([l.id]);
+            const from = { x: l.x, y: l.y, w: l.w, h: l.h };
+            const r = ed.matchEdges(l, { apply: a.apply !== false });
+            if (r.how) touch(ed);
+            const { matrix: _m, ...rest } = r;
+            return { ...layerSummary(ed, l), ...rest, from, status: ed.status };
+        },
+    },
     transform_layer: {
         needsImage: true,
         description: "Transform one layer, baked into its pixels in one undo step, as the move tool's Rotate / Distort / Warp and its quarter turns. mode rotate: by `angle` degrees clockwise about the layer's middle (a text layer stays editable: the angle goes into the text, as set_text's angle); rotate90: a quarter turn (`dir` cw or ccw) without resampling; distort: the layer's four corners to `corners` (a perspective: [[x, y] top left, top right, bottom right, bottom left] in image pixels); warp: the layer bent on a grid of n × n cells: `points` holds the (n + 1) × (n + 1) grid points row by row from the top left, in image pixels (unbent they are x + w·i/n, y + h·j/n of the layer's box). Distort and warp turn a text layer into pixels; a live mask is baked into the pixels, a switched-off one dropped (undo brings both back). The layer keeps the resolution of its pixels. Refused on a locked or a filter layer; the base is no layer (rotate_canvas and straighten_canvas turn the whole picture). from: the layer's box before; changed false: nothing to do (an angle of 0).",

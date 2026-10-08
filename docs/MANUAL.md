@@ -529,7 +529,7 @@ On your own ComfyUI none of the size machinery applies: there the Inpaint Canvas
 - Run too expensive or too slow? Lower it. Providers charge by the size that goes out, and 2x crop is often indistinguishable from Maximum on a selection that is already big.
 - Edge of the patch visible? More feather in the Crop panel, and check colour match before blaming the model.
 - The model repainted things outside what you selected? It cannot have — what you see is inside the composite mask. Select more tightly, or feather less.
-- Scumble's crop and stitch are a port of the node's own maths, with three honest differences: the browser resizes bilinearly where the node uses Lanczos, the blur is a triple box blur rather than a true gaussian, and the node's ECC alignment of the answer to its surroundings is not implemented here.
+- Scumble's crop and stitch are a port of the node's own maths, with two honest differences: the browser resizes bilinearly where the node uses Lanczos, and the blur is a triple box blur rather than a true gaussian. Edge alignment to the surroundings is implemented as an affine Lucas-Kanade fit on the edge ring (edgefit.js).
 - On a large document the crop and the stitch run in worker threads, so the window does not freeze while a 15,000 pixel picture has a box cut out of it and put back.
 
 ## Keyboard shortcuts
