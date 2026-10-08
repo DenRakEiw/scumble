@@ -622,6 +622,7 @@ export function colourStats(src) {
     ctx.drawImage(src, 0, 0, w, h);
     const px = ctx.getImageData(0, 0, w, h).data;
     const hist = [new Float64Array(256), new Float64Array(256), new Float64Array(256)];
+    const lumaHist = new Float64Array(256);
     const sum = [0, 0, 0];
     let wsum = 0;
     for (let i = 0; i < px.length; i += 4) {
@@ -629,12 +630,15 @@ export function colourStats(src) {
         if (!a) continue;
         wsum += a;
         for (let ch = 0; ch < 3; ch++) { const v = px[i + ch]; sum[ch] += v * a; hist[ch][v] += a; }
+        const lum = Math.min(255, Math.max(0, (LR * px[i] + LG * px[i + 1] + LB * px[i + 2] + 0.5) | 0));
+        lumaHist[lum] += a;
     }
-    if (!wsum) return { mean: [128, 128, 128], lo: [0, 0, 0], hi: [255, 255, 255] };
+    const hists = { r: hist[0], g: hist[1], b: hist[2], luma: lumaHist };
+    if (!wsum) return { mean: [128, 128, 128], lo: [0, 0, 0], hi: [255, 255, 255], hist: hists, bytes: px, w, h };
     const mean = sum.map((v) => v / wsum);
     const level = (ch, frac) => { let acc = 0; for (let v = 0; v < 256; v++) { acc += hist[ch][v]; if (acc >= wsum * frac) return v; } return 255; };
     const lo = [0, 1, 2].map((ch) => level(ch, 0.01)), hi = [0, 1, 2].map((ch) => Math.max(level(ch, 0.99), 0));
-    return { mean, lo, hi: hi.map((v, i) => Math.max(v, lo[i] + 1)) };
+    return { mean, lo, hi: hi.map((v, i) => Math.max(v, lo[i] + 1)), hist: hists, bytes: px, w, h };
 }
 
 /**

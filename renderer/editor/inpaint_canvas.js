@@ -1610,8 +1610,17 @@ const STYLE = `
 .ipc-textedit { position:absolute; z-index:3; background:transparent; color:transparent; caret-color:#fff; border:1px dashed #7cc7ff; outline:none; resize:none; margin:0; overflow:hidden; white-space:pre; box-sizing:border-box; }
 .ipc-subbar .ipc-geo label { gap:2px; }
 .ipc-subbar .ipc-geo .ipc-num { width:58px; }
-.ipc-subbar input[type=checkbox] { margin:0; }
 .ipc-subbar .ipc-hint { color:var(--sc-muted, #888); }
+.ipc-rangebar-wrap { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.ipc-rangebar-head { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--sc-fg-2, #aaa); }
+.ipc-rangebar-title { font-weight:500; color:var(--sc-fg, #ddd); }
+.ipc-rangebar-head .ipc-grow { flex:1; }
+.ipc-rangebar-btn { display:inline-flex; align-items:center; justify-content:center; padding:1px 6px; font:11px var(--sc-font, system-ui, sans-serif);
+  border-radius:var(--sc-radius, 4px); border:1px solid var(--sc-line, #3a3a3a); background:var(--sc-field, #161616); color:var(--sc-fg-2, #aaa); cursor:pointer; }
+.ipc-rangebar-btn:hover { background:var(--sc-btn-hover, #333); color:var(--sc-fg, #ddd); }
+.ipc-rangebar-btn.ipc-active { background:var(--sc-selected, #2b3a4f); color:var(--sc-active, #7cc7ff); border-color:var(--sc-active, #4a90d9); }
+.ipc-rangebar-canvas { width:100%; height:26px; border:1px solid var(--sc-line, #3a3a3a); border-radius:var(--sc-radius-sm, 3px);
+  background:var(--sc-well, #161616); display:block; cursor:crosshair; touch-action:none; box-sizing:border-box; }
 `;
 
 function injectStyle() {
@@ -4795,6 +4804,9 @@ class InpaintEditor {
         this.objectShapeCache.clear();
         this.hoverObjectId = 0; this.hoverObjectCanvas = null;
         this._depthOverlayCanvas = null;
+        this._picStats = null;
+        this._picStatsRun = null;
+        if (this._mapHistCache) this._mapHistCache.clear();
     }
 
     // ---- the whole document straightened and cropped in one step (PLAN_0_1_31 §7, 23b) -------------------------------
@@ -12768,6 +12780,7 @@ class InpaintEditor {
      * before, each pass took them from whatever part it composited.
      */
     belowStats(layer, forRun) {
+        if (!layer || !this.layers || !this.width || !this.height) return null;
         const slot = forRun ? "_bstatsRun" : "_bstats";
         const c = layer[slot];
         if (c && c.version === this.compositeVersion) return c.stats;
@@ -12779,6 +12792,93 @@ class InpaintEditor {
         const small = this.sampleRegion("image", [0, 0, this.width, this.height], s, { forRun: !!forRun, upTo: Math.max(0, index) });
         entry.stats = colourStats(small);
         return entry.stats;
+    }
+
+    /**
+     * The histogram `{ r, g, b, luma }` of the composite below a filter layer (R1-S4).
+     */
+    belowHistogram(layer, forRun = false) {
+        const st = this.belowStats(layer, forRun);
+        return (st && st.hist) || null;
+    }
+
+    /**
+     * The 256 px RGBA sample `{ bytes, w, h }` below a filter layer (R1-S4).
+     */
+    belowSample(layer, forRun = false) {
+        const st = this.belowStats(layer, forRun);
+        return (st && st.bytes) ? { bytes: st.bytes, w: st.w, h: st.h } : null;
+    }
+
+    /**
+     * `colourStats` of the whole picture, sampled at up to 256 px on the long side (R1-S4).
+     * Cached per `compositeVersion` in `_picStats` or `_picStatsRun`.
+     */
+    pictureStats(forRun = true) {
+        if (!this.width || !this.height) return null;
+        const slot = forRun ? "_picStatsRun" : "_picStats";
+        const c = this[slot];
+        if (c && c.version === this.compositeVersion) return c.stats;
+        const s = Math.min(1, 256 / Math.max(this.width, this.height));
+        const entry = { version: this.compositeVersion, stats: null };
+        this[slot] = entry;
+        const upTo = this.layers ? this.layers.length : 0;
+        const small = this.sampleRegion("image", [0, 0, this.width, this.height], s, { forRun: !!forRun, upTo });
+        entry.stats = colourStats(small);
+        return entry.stats;
+    }
+
+    /**
+     * The whole picture's histogram `{ r, g, b, luma }` from a 256 px sample (R1-S4).
+     */
+    pictureHistogram(forRun = true) {
+        const st = this.pictureStats(forRun);
+        return (st && st.hist) || null;
+    }
+
+    /**
+     * The whole picture's 256 px RGBA sample `{ bytes, w, h }` (R1-S4).
+     */
+    pictureSample(forRun = true) {
+        const st = this.pictureStats(forRun);
+        return (st && st.bytes) ? { bytes: st.bytes, w: st.w, h: st.h } : null;
+    }
+
+    /**
+     * 256-bin histogram of a feature map (depth `u16 >> 8`, etc.), cached by hash / dataVersion (R1-S4).
+     */
+    mapHistogram(kind) {
+        if (kind === "depth") {
+            const depth = (this.maps && this.maps.depth) || this.depth;
+            if (!depth || !depth.u16) return null;
+            if (!this._mapHistCache) this._mapHistCache = new Map();
+            const key = `depth:${depth.hash ?? depth.dataVersion ?? depth.version ?? "default"}`;
+            if (this._mapHistCache.has(key)) return this._mapHistCache.get(key);
+            const u16 = depth.u16;
+            const hist = new Float64Array(256);
+            for (let i = 0; i < u16.length; i++) hist[u16[i] >> 8]++;
+            this._mapHistCache.set(key, hist);
+            return hist;
+        }
+        if (this.maps && this.maps[kind]) {
+            const map = this.maps[kind];
+            if (!this._mapHistCache) this._mapHistCache = new Map();
+            const key = `${kind}:${map.hash ?? map.dataVersion ?? map.version ?? "default"}`;
+            if (this._mapHistCache.has(key)) return this._mapHistCache.get(key);
+            if (map.u16) {
+                const hist = new Float64Array(256);
+                for (let i = 0; i < map.u16.length; i++) hist[map.u16[i] >> 8]++;
+                this._mapHistCache.set(key, hist);
+                return hist;
+            }
+            if (map.u8) {
+                const hist = new Float64Array(256);
+                for (let i = 0; i < map.u8.length; i++) hist[map.u8[i]]++;
+                this._mapHistCache.set(key, hist);
+                return hist;
+            }
+        }
+        return null;
     }
 
     /**

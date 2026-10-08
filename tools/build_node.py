@@ -37,7 +37,7 @@ DEFAULT_NODE = r"F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\custom_nodes
 # (host.js, stitch.js, redact.js) stay here. px/ goes with the tile store (C2), which imports it: the kernels, their JS twins, the
 # loader and the Rust build (BINARIES, copied byte for byte).
 FILES = [
-    "inpaint_canvas.js", "inpaint_filters.js", "inpaint_filters_gl.js", "inpaint_curves.js",
+    "inpaint_canvas.js", "inpaint_filters.js", "inpaint_filters_gl.js", "inpaint_curves.js", "inpaint_rangebar.js",
     "inpaint_text.js", "inpaint_raster.js", "inpaint_export.js", "inpaint_worker.js",
     "inpaint_compositor.js", "inpaint_brushes.js", "inpaint_pixels.js", "inpaint_resample.js", "inpaint_tiles.js", "inpaint_arena.js", "inpaint_pool.js", "inpaint_png.js", "inpaint_bands.js", "inpaint_boxstack.js", "inpaint_stroke.js", "inpaint_tippicker.js", "inpaint_remove.js", "inpaint_liquify.js",
     "inpaint_jobs.js", "inpaint_encode.js", "inpaint_upload.js", "inpaint_modal.js", "inpaint_layered.js", "inpaint_tiff.js", "inpaint_theme.js", "inpaint_depth.js", "edgefit.js",
