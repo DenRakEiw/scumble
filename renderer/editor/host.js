@@ -306,6 +306,9 @@ export const api = {
  * @property {() => boolean} objectsInApp
  * @property {(editor: any, pending: any) => Promise<any>} findObjects
  * @property {(editor: any, ix: number, iy: number, p?: any) => Promise<any>} selectPoint
+ * @property {(editor: any, box: number[], opts?: any) => Promise<any>} selectBox
+ * @property {(editor: any, layer: any) => Promise<{ key: string, image: any }>} segmentKey
+ * @property {(editor: any, points?: any[], box?: any, layer?: any) => Promise<{ logits: Float32Array, n: number, score: number }>} segmentLogits
  * @property {() => Promise<any>} freeHelpers
  * @property {boolean} removeSupported
  * @property {boolean} refTokens                                     @img1 in the prompt names a reference layer (docs/PLAN_REFS.md); the node has none yet
@@ -3813,7 +3816,7 @@ export const host = {
             editor.objectsPending = null;
             editor.applySegmentIds(ids, W, H, res.count, pending);
             if (editor.objects) editor.objects.version = version;   // the hover's staleness test (updateObjectHover)
-            editor.setStatus(`${res.count} objects found with ${model.label} in ${res.seconds.toFixed(1)} s (${res.provider}). Hover to preview, click to select, click again to deselect (Shift adds, Alt subtracts).${this.slowHelperHint(res)}`);
+            editor.setStatus(`${res.count} objects found with ${model.label} in ${res.seconds.toFixed(1)} s (${res.provider}). Hover to preview, click to select, click again to deselect (Shift adds, Alt subtracts, Shift+Alt intersects).${this.slowHelperHint(res)}`);
         } catch (err) {
             console.error(err);
             editor.objectsPending = null;
@@ -3847,41 +3850,82 @@ export const host = {
     },
 
     /**
-     * One SAM2 point prompt on the current object-tool source (its embedding is cached in
-     * the main process by the hash ensureObjects used): a Uint8 mask at image size.
+     * Cache key for SAM2 embeddings: reuses editor.objects.hash when it matches;
+     * else ${editor.node.id}: + (layer ? layer:${layer.id}: : "image:") + inputHash(objectInput(editor, layer));
+     * cached per compositeVersion.
      */
-    async segmentPoint(editor, points, box) {
+    async segmentKey(editor, layer) {
+        const o = editor.objects;
+        const matchesLayer = layer ? (o && o.layerId === layer.id) : (o && o.layerId == null);
+        if (matchesLayer && o.hash && o.w === editor.width && o.h === editor.height) {
+            return { key: `${editor.node.id}:${o.hash}`, image: null };
+        }
+        const cache = editor._segmentKeyCache;
+        const layerKey = layer ? `layer:${layer.id}` : "image";
+        if (cache && cache.version === editor.compositeVersion && cache.layerKey === layerKey) {
+            return { key: cache.key, image: cache.image || null };
+        }
+        const image = await this.objectInput(editor, layer);
+        const hash = (layer ? `layer:${layer.id}:` : "image:") + await this.inputHash(image);
+        const key = `${editor.node.id}:${hash}`;
+        editor._segmentKeyCache = { version: editor.compositeVersion, layerKey, key, image };
+        return { key, image };
+    },
+
+    /**
+     * Segment logits using SAM2: helpers:segment with raw: true, key, points/box in 1024 space.
+     * The image is sent only when main lost the embedding.
+     */
+    async segmentLogits(editor, points = [], box = null, layer = null) {
         const model = this.sam2Model();
-        if (!model || !editor.objects) throw new Error("run the object tool first");
+        if (!model) throw new Error("no SAM2 model is downloaded (Settings > Helpers)");
         const W = editor.width, H = editor.height;
-        const s = Math.min(1, 2048 / Math.max(W, H));
-        const outW = Math.max(1, Math.round(W * s)), outH = Math.max(1, Math.round(H * s));
-        const pts = points.map((p) => ({ x: p.x / W * 1024, y: p.y / H * 1024, label: p.label }));
-        const bx = box ? [box[0] / W * 1024, box[1] / H * 1024, box[2] / W * 1024, box[3] / H * 1024] : null;
-        const key = `${editor.node.id}:${editor.objects.hash}`;
+        const pts = points.map((p) => ({ x: (p.x / W) * 1024, y: (p.y / H) * 1024, label: p.label == null ? 1 : p.label }));
+        const bx = box ? [(box[0] / W) * 1024, (box[1] / H) * 1024, (box[2] / W) * 1024, (box[3] / H) * 1024] : null;
+        const keyInfo = await this.segmentKey(editor, layer);
+        const key = keyInfo.key;
         let res;
         try {
-            res = await this.helperCall("segment", { model: model.id, key, points: pts, box: bx, outWidth: outW, outHeight: outH });
+            res = await this.helperCall("segment", { model: model.id, key, points: pts, box: bx, raw: true });
         } catch (err) {
-            // embedding gone (freed, restarted): encode again from the same source, the input the map's hash was taken of
-            const layer = editor.objects.layerId != null ? editor.layers.find((l) => l.id === editor.objects.layerId) : null;
-            const image = await this.objectInput(editor, layer);
-            res = await this.helperCall("segment", { model: model.id, key, image, points: pts, box: bx, outWidth: outW, outHeight: outH });
+            // embedding gone (freed, restarted): encode again from the same source
+            const image = keyInfo.image || await this.objectInput(editor, layer);
+            res = await this.helperCall("segment", { model: model.id, key, image, points: pts, box: bx, raw: true });
         }
-        if (res.width === W && res.height === H) return { mask: res.mask, score: res.score };
-        const mask = new Uint8Array(W * H);
-        const sx = res.width / W, sy = res.height / H;
-        for (let y = 0; y < H; y++) {
-            const row = Math.min(res.height - 1, Math.floor((y + 0.5) * sy)) * res.width, o = y * W;
-            for (let x = 0; x < W; x++) mask[o + x] = res.mask[row + Math.min(res.width - 1, Math.floor((x + 0.5) * sx))];
+        return { logits: res.logits, n: res.n || 256, score: res.score };
+    },
+
+    /** Backward-compatibility wrapper for segmentLogits */
+    async segmentPoint(editor, points, box) {
+        return this.segmentLogits(editor, points, box);
+    },
+
+    /**
+     * Drag a box with the Object tool: segment with SAM2 box prompt and combine into selection.
+     */
+    async selectBox(editor, box, { mode = "replace" } = {}) {
+        if (editor.objectsPending || editor._pointPending) return;
+        if (editor.providerPending && editor.providerPending.resizes) { editor.setStatus(RUN_GOING); return; }
+        editor._pointPending = true;
+        try {
+            editor.setStatus("Segmenting what SAM2 sees in the box ...");
+            const layer = editor.objects && editor.objects.layerId != null
+                ? editor.layers.find((l) => l.id === editor.objects.layerId)
+                : (editor.segSourceSel && editor.segSourceSel.value === "active layer" ? (editor.activeLayer ? editor.activeLayer() : null) : null);
+            const res = await this.segmentLogits(editor, [], box, layer);
+            await editor.selectLogits(res, { mode, label: "Object selection", layer, box });
+        } catch (err) {
+            console.error(err);
+            editor.setStatus("Box segmentation failed: " + (err.message || err));
+        } finally {
+            editor._pointPending = false;
         }
-        return { mask, score: res.score };
     },
 
     /**
      * Object tool, click where the object map has nothing: segment with one SAM2 point
-     * prompt and toggle that mask in the selection (Shift adds, Alt subtracts, otherwise
-     * a click on a selected pixel subtracts). Called by the editor's toggleObjectAt().
+     * prompt and toggle that mask in the selection (Shift adds, Alt subtracts, Shift+Alt intersects,
+     * otherwise a click on a selected pixel subtracts). Called by the editor's toggleObjectAt().
      */
     async selectPoint(editor, ix, iy, p = {}) {
         if (editor.objectsPending || editor._pointPending) return;
@@ -3890,32 +3934,18 @@ export const host = {
         editor._pointPending = true;
         try {
             editor.setStatus("Segmenting what is under the cursor with SAM2 ...");
-            const { mask, score } = await this.segmentPoint(editor, [{ x: ix, y: iy, label: 1 }], null);
-            const W = editor.width, H = editor.height;
-            const layer = editor.objects && editor.objects.layerId != null ? editor.layers.find((l) => l.id === editor.objects.layerId) : null;
-            const clip = layer ? editor.layerAlpha(layer) : null;
-            let count = 0;
-            for (let i = 0; i < mask.length; i++) { if (clip && !clip[i]) mask[i] = 0; count += mask[i]; }
-            if (!count) { editor.setStatus("SAM2 found nothing at this spot. Use the brush or lasso here."); return; }
+            const layer = editor.objects && editor.objects.layerId != null
+                ? editor.layers.find((l) => l.id === editor.objects.layerId)
+                : (editor.segSourceSel && editor.segSourceSel.value === "active layer" ? (editor.activeLayer ? editor.activeLayer() : null) : null);
+            const res = await this.segmentLogits(editor, [{ x: ix, y: iy, label: 1 }], null, layer);
             const x = Math.floor(ix), y = Math.floor(iy);
             const already = editor.sel.readRect(x, y, 1, 1).data[3] > 0;
-            const subtract = p.alt ? true : (p.shift ? false : already);
-            editor.pushUndo({ kind: "selection", label: "Object selection" });
-            const shape = document.createElement("canvas");
-            shape.width = W; shape.height = H;
-            const sctx = shape.getContext("2d");
-            const im = sctx.createImageData(W, H);
-            const d = im.data;
-            for (let i = 0, j = 0; i < mask.length; i++, j += 4) if (mask[i]) { d[j] = 255; d[j + 3] = 255; }
-            sctx.putImageData(im, 0, 0);
-            // the shape is image-sized: the whole selection (null)
-            editor.sel.drawInto(null, (ctx) => {
-                ctx.globalCompositeOperation = subtract ? "destination-out" : "source-over";
-                ctx.drawImage(shape, 0, 0);
-            });
-            editor.markSelectionChanged();
-            editor.draw();
-            editor.setStatus(`${subtract ? "Removed" : "Added"} what SAM2 sees at this point (${Math.round(100 * count / (W * H))}% of the image, score ${score.toFixed(2)}).`);
+            let mode;
+            if (p.shift && p.alt) mode = "intersect";
+            else if (p.alt) mode = "subtract";
+            else if (p.shift) mode = "add";
+            else mode = already ? "subtract" : "add";
+            await editor.selectLogits(res, { mode, label: "Object selection", layer, point: [ix, iy] });
         } catch (err) {
             console.error(err);
             editor.setStatus("Point segmentation failed: " + (err.message || err));

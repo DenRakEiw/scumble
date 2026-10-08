@@ -233,6 +233,9 @@ async function segment(req) {
     busy.add("segment");
     try {
         const { logits, score } = await sam.predict(emb, req.points || [], req.box || null);
+        if (req.raw === true) {
+            return { logits, n: 256, score, provider: emb.provider, model: model.id, label: model.label };
+        }
         return { mask: logitsToMask(logits, outW, outH), width: outW, height: outH, score, provider: emb.provider, model: model.id, label: model.label };
     } finally {
         busy.delete("segment");

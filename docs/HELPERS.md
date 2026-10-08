@@ -235,7 +235,7 @@ error names the URL. It puts `settings.llm` back at the end.
 | `matting.js` | `Matting`: one 1024 × 1024 RGB in with the model's mean / std, the output tensor of 1024² values (sigmoid applied when the range says it is a logit; RMBG-1.4 already outputs probabilities) → `Uint8Array` alpha. |
 | `depth.js` | `Depth`: one `[1, 3, H, W]` RGB in at multiples of 14 with ImageNet mean / std, the output tensor of $H \times W$ values → `Float32Array` depth map. |
 | `lama.js`, `lama_process.js` | `Lama`: the Remove model (below) in a **process of its own** (an Electron utility process; a forked Node process under plain Node): `warm()` loads the session, `run(rgba512, mask512)` answers RGBA 512² (outside the mask the input's bytes), `kill()` ends the process where it stands and refuses its jobs, `busy()`. `engine(ort)` is the load / run code the process and the fallback share: a process that dies before its first answer (it could not start or load onnxruntime) leaves the engine to the main thread, and the jobs that waited run there. |
-| `index.js` | The IPC facade: `status`, `configure({device, dir, sam2, matting, inpaint, depth})`, `browseDir`, `openFolder`, `download`, `cancel`, `remove`, `free`, `objects`, `segment`, `cutout`, `inpaint`, `warmInpaint`, `depth`. Settings under `helpers` in `settings.json`, the Hugging Face token under `hf-token` in `keys.js`. |
+| `index.js` | The IPC facade: `status`, `configure({device, dir, sam2, matting, inpaint, depth})`, `browseDir`, `openFolder`, `download`, `cancel`, `remove`, `free`, `objects`, `segment` (with `raw: true` returns the 256 × 256 `Float32Array` logits tensor), `cutout`, `inpaint`, `warmInpaint`, `depth`. Settings under `helpers` in `settings.json`, the Hugging Face token under `hf-token` in `keys.js`. |
 
 **Every model but LaMa runs on the main process's thread.** onnxruntime-node's
 `InferenceSession.create` and `run` are synchronous native calls behind a `setImmediate`
@@ -253,12 +253,13 @@ answer), and a Remove does not set the editor's `helperUsed`, so a local run doe
 Moving SAM2 and the matting models out of the main thread is open.
 
 The renderer side is in `renderer/editor/host.js` (`findObjects`, `cutoutInApp`,
-`selectPoint`, `segmentPoint`, `refreshHelpers`, `cutoutBackends`, `removeModel`,
+`selectPoint`, `segmentPoint`, `segmentKey`, `segmentLogits`, `selectBox`, `refreshHelpers`, `cutoutBackends`, `removeModel`,
 `removeInApp`, `warmRemove`) and the editor
 `host.*` calls in the editor (`docs/BUILD_NODE.md`). The renderer scales the source to 1024 × 1024 with
 Canvas 2D (squashed, like SAM2's own transform and the ComfyUI RMBG node), sends the
 RGBA bytes over IPC, and scales the answer back: the label map comes at ≤ 2048 px long
-side and is nearest-scaled to the image; the alpha comes at 1024² and is drawn onto the
+side and is nearest-scaled to the image; point clicks and box drag prompts request raw logits
+(256 × 256 `Float32Array`) and evaluate bilinearly in worker bands; the alpha comes at 1024² and is drawn onto the
 layer with smoothing.
 
 ## Models (`models.js`)
@@ -358,7 +359,6 @@ model that is not in the folder is skipped; no model at all is a failure.
 ## Not done / ideas
 
 - fp16 model variants (half the download) once their input dtype is verified.
-- Box prompts in the object tool (the decoder supports them, `segment` accepts `box`).
 - The CUDA provider on Linux: the Linux build (CI, `ONNXRUNTIME_NODE_INSTALL=skip`) does **not**
   carry `onnxruntime-node`'s CUDA provider, which its install script would fetch from NuGet on
   linux/x64 (hundreds of MB, and it needs the user's CUDA 12 libraries anyway), so `runtime.js`'s

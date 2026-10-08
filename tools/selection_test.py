@@ -586,6 +586,245 @@ ed.draw();
 
 return { panelOk: true, getImageDataCount, mid, expectedV };
 """),
+    ("object_standin_setup", """
+const d = await run("new_document");
+window.__objDoc = d.id;
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { doc: d.id, width: 1600, height: 1200, color: "#808080" });
+
+window.__objCalls = [];
+window.__objFailOnce = false;
+window.__origSam2Model = host.sam2Model;
+window.__origHelperCall = host.helperCall;
+window.__origObjectsInApp = host.objectsInApp;
+
+host.objectsInApp = () => true;
+host.sam2Model = () => ({ id: "sam2_mock", label: "SAM2 Mock" });
+host.helperCall = async (method, req) => {
+    window.__objCalls.push({ method, req });
+    if (method === "segment") {
+        if (window.__objFailOnce && !req.image) {
+            window.__objFailOnce = false;
+            throw new Error("Embedding lost from cache");
+        }
+        if (req.raw) {
+            const n = 256;
+            const logits = new Float32Array(n * n);
+            let cx = 128, cy = 128;
+            if (req.box) {
+                cx = (req.box[0] + req.box[2]) / 8;
+                cy = (req.box[1] + req.box[3]) / 8;
+            } else if (req.points && req.points.length > 0) {
+                cx = req.points[0].x / 4;
+                cy = req.points[0].y / 4;
+            }
+            for (let gy = 0; gy < n; gy++) {
+                const r = gy * n;
+                for (let gx = 0; gx < n; gx++) {
+                    const d = Math.hypot(gx - cx, gy - cy);
+                    logits[r + gx] = d <= 40 ? 8 : -8;
+                }
+            }
+            return { logits, n, score: 0.93 };
+        }
+    }
+    return window.__origHelperCall.call(host, method, req);
+};
+return { doc: d.id, width: ed.width, height: ed.height };
+"""),
+    ("object_case1_drag", """
+const ed = ednow(window.__objDoc);
+ed.setTool("object");
+window.__objCalls.length = 0;
+
+const rect = ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 55, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+
+ed.canvas.dispatchEvent(ev("pointerdown", 400, 300));
+ed.canvas.dispatchEvent(ev("pointermove", 1200, 900));
+ed.canvas.dispatchEvent(ev("pointerup", 1200, 900));
+
+await wait(50);
+while (ed._pointPending) await wait(50);
+
+if (window.__objCalls.some((c) => c.method === "objects")) throw new Error("objects was called");
+const segCall = window.__objCalls.find((c) => c.method === "segment");
+if (!segCall) throw new Error("segment was not called");
+const bx = segCall.req.box;
+if (!bx || Math.abs(bx[0] - 256) > 1 || Math.abs(bx[1] - 256) > 1 || Math.abs(bx[2] - 768) > 1 || Math.abs(bx[3] - 768) > 1) {
+    throw new Error("stand-in box mismatch in 1024 space: " + JSON.stringify(bx));
+}
+
+const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
+if (at(800, 600) !== 255) throw new Error("center (800, 600) is not 255");
+
+const inside = [[1046, 600], [554, 600], [800, 784], [800, 416]];
+const outside = [[1054, 600], [546, 600], [800, 792], [800, 408]];
+
+for (const [x, y] of inside) {
+    if (at(x, y) !== 255) throw new Error(`inside probe (${x}, ${y}) is not 255: got ${at(x, y)}`);
+}
+for (const [x, y] of outside) {
+    if (at(x, y) !== 0) throw new Error(`outside probe (${x}, ${y}) is not 0: got ${at(x, y)}`);
+}
+return { box: bx, insideOk: true, outsideOk: true };
+"""),
+    ("object_case2_second_drag_reuses_key", """
+const ed = ednow(window.__objDoc);
+window.__objCalls.length = 0;
+
+const rect = ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 56, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+
+ed.canvas.dispatchEvent(ev("pointerdown", 300, 200));
+ed.canvas.dispatchEvent(ev("pointermove", 1100, 800));
+ed.canvas.dispatchEvent(ev("pointerup", 1100, 800));
+
+await wait(50);
+while (ed._pointPending) await wait(50);
+
+const segCall = window.__objCalls.find((c) => c.method === "segment");
+if (!segCall) throw new Error("segment was not called on second drag");
+if (segCall.req.image) throw new Error("image was sent on second drag (key should be reused)");
+if (!segCall.req.key) throw new Error("key was missing on second drag");
+return { keyReused: segCall.req.key };
+"""),
+    ("object_case3_shift_alt_intersect", """
+const ed = ednow(window.__objDoc);
+await run("select_rect", { doc: window.__objDoc, x: 0, y: 0, w: 1600, h: 1200, mode: "replace" });
+const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
+if (at(100, 100) !== 255) throw new Error("selection fill failed at (100, 100)");
+
+window.__objCalls.length = 0;
+const rect = ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 57, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+
+ed.canvas.dispatchEvent(ev("pointerdown", 400, 300, { shiftKey: true, altKey: true }));
+ed.canvas.dispatchEvent(ev("pointermove", 1200, 900, { shiftKey: true, altKey: true }));
+ed.canvas.dispatchEvent(ev("pointerup", 1200, 900, { shiftKey: true, altKey: true }));
+
+await wait(50);
+while (ed._pointPending) await wait(50);
+
+if (at(800, 600) !== 255) throw new Error("center (800, 600) not selected after intersect");
+if (at(1046, 600) !== 255) throw new Error("inside probe (1046, 600) not selected after intersect");
+if (at(1054, 600) !== 0) throw new Error("outside probe (1054, 600) not cleared after intersect");
+if (at(100, 100) !== 0) throw new Error("outside box (100, 100) not cleared after intersect");
+if (at(1500, 1100) !== 0) throw new Error("outside box (1500, 1100) not cleared after intersect");
+
+return { intersectOk: true };
+"""),
+    ("object_case4_click_empty_spot", """
+const ed = ednow(window.__objDoc);
+ed.sel.clear();
+window.__objCalls.length = 0;
+
+const rect = ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 58, pointerType: "mouse", isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+
+ed.canvas.dispatchEvent(ev("pointerdown", 800, 600));
+ed.canvas.dispatchEvent(ev("pointerup", 800, 600));
+
+await wait(50);
+while (ed._pointPending) await wait(50);
+
+const segCall = window.__objCalls.find((c) => c.method === "segment");
+if (!segCall) throw new Error("segment was not called on click");
+const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
+if (at(800, 600) !== 255) throw new Error("clicked spot (800, 600) was not selected");
+
+return { clickOk: true, score: segCall.score };
+"""),
+    ("object_case5_15k_no_large_allocations", """
+const ed = ednow(window.__objDoc);
+if (!ed.tileMode) return { skipped: "canvas backend" };
+
+const d15k = await run("new_document");
+const ed15k = ednow(d15k.id);
+host.shell.activate(ed15k);
+await run("new_canvas", { doc: d15k.id, width: 15000, height: 10000, color: "#808080" });
+
+let largeUint8Allocated = false;
+let maxU8Alloc = 0;
+const origU8 = window.Uint8Array;
+const U8Proxy = new Proxy(origU8, {
+    construct(target, args, newTarget) {
+        if (typeof args[0] === "number") {
+            if (args[0] > maxU8Alloc) maxU8Alloc = args[0];
+            if (args[0] >= 150000000) largeUint8Allocated = true;
+        }
+        return Reflect.construct(target, args, newTarget);
+    }
+});
+window.Uint8Array = U8Proxy;
+
+let maxCanvasMB = 0;
+const origCreate = document.createElement;
+document.createElement = function(tag, ...args) {
+    const el = origCreate.call(document, tag, ...args);
+    if (tag === "canvas") {
+        let _w = el.width, _h = el.height;
+        Object.defineProperty(el, "width", {
+            get() { return _w; },
+            set(v) { _w = v; const mb = (_w * _h * 4) / 1048576; if (mb > maxCanvasMB) maxCanvasMB = mb; }
+        });
+        Object.defineProperty(el, "height", {
+            get() { return _h; },
+            set(v) { _h = v; const mb = (_w * _h * 4) / 1048576; if (mb > maxCanvasMB) maxCanvasMB = mb; }
+        });
+    }
+    return el;
+};
+
+const t0 = performance.now();
+try {
+    await run("select_point", { doc: d15k.id, x: 7500, y: 5000 });
+} finally {
+    window.Uint8Array = origU8;
+    document.createElement = origCreate;
+}
+const elapsedMs = performance.now() - t0;
+
+if (largeUint8Allocated) throw new Error(`large Uint8Array >= 150M allocated (max was ${maxU8Alloc})`);
+if (maxCanvasMB > 64) throw new Error(`canvas over 64 MB allocated: ${maxCanvasMB.toFixed(1)} MB`);
+
+if (typeof ed15k.memoryReport === "function") {
+    const rep = ed15k.memoryReport();
+    if (rep && rep.mirrors) {
+        for (const [k, bytes] of Object.entries(rep.mirrors)) {
+            if (bytes > 64 * 1024 * 1024) throw new Error(`mirror ${k} exceeded 64MB: ${bytes}`);
+        }
+    }
+}
+
+await run("close_document", { doc: d15k.id, force: true });
+return { elapsedMs: +elapsedMs.toFixed(1), maxU8Alloc, maxCanvasMB: +maxCanvasMB.toFixed(1) };
+"""),
+    ("object_case6_embedding_retry", """
+const ed = ednow(window.__objDoc);
+host.shell.activate(ed);
+window.__objCalls.length = 0;
+window.__objFailOnce = true;
+
+await run("select_point", { doc: window.__objDoc, x: 800, y: 600 });
+
+const segCalls = window.__objCalls.filter((c) => c.method === "segment");
+if (segCalls.length !== 2) throw new Error("expected 2 segment calls on retry, got " + segCalls.length);
+if (segCalls[0].req.image) throw new Error("first segment call should not have sent image");
+if (!segCalls[1].req.image) throw new Error("second segment call should have sent image");
+
+host.sam2Model = window.__origSam2Model;
+host.helperCall = window.__origHelperCall;
+host.objectsInApp = window.__origObjectsInApp;
+await run("close_document", { doc: window.__objDoc, force: true });
+
+return { retryOk: true, segCalls: segCalls.length };
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__selDoc, force: true }); } catch (_) { /* gone */ }
 return "ok";

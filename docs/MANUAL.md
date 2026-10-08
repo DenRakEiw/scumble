@@ -114,7 +114,7 @@ _Seven ways to say which part of the picture you mean, and what to do with the s
 
 The selection is the most important thing in an inpainting editor, so Scumble gives it seven routes. The brush is the honest one: paint, Alt to subtract, done. Rectangle, ellipse and lasso are there for the shapes that painting gets wrong. The magic wand takes everything of a similar colour from where you clicked, which is what you want for skies and flat backgrounds.
 
-Object hover is the one people like: move the pointer over the picture and Scumble outlines the object under it, click to select it. That is SAM2 running inside the app through ONNX Runtime, on your GPU on Windows and on the processor on Linux. Nothing leaves your machine, and the model file is downloaded once or read from a ComfyUI models folder you point at.
+Object hover is the one people like: move the pointer over the picture and Scumble outlines the object under it, click to select it. Dragging a box with the Object tool selects the object inside it through a box prompt, with a blue dashed rubber band showing the area. Shift adds, Alt subtracts, and Shift+Alt intersects with the existing selection (a plain drag adds like the click). The click on an empty spot and the box drag evaluate logits bilinearly at image resolution without building a full-sized mask in memory, saving hundreds of megabytes on large pictures. That is SAM2 running inside the app through ONNX Runtime, on your GPU on Windows and on the processor on Linux. Nothing leaves your machine, and the model file is downloaded once or read from a ComfyUI models folder you point at.
 
 Selection by text is the other one: type "the handbag" or "her sunglasses" into the Selection panel and press Go. That route runs on your connected ComfyUI (SAM3 there), so it needs a server, unlike object hover.
 
@@ -558,7 +558,7 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | R  ·  Shift+R | Rectangle · ellipse |
 | L  ·  Shift+L | Lasso · polygon |
 | W | Magic wand |
-| O | Object hover (SAM2 in the app) |
+| O | Object hover · box drag (SAM2 in the app; Shift adds, Alt subtracts, Shift+Alt intersects) |
 | D | Deselect tool — drag over a selection to take it away |
 | Q | Quick mask |
 | P  ·  E | Paint · erase |
@@ -597,6 +597,7 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | Ctrl+I | Invert the selection |
 | Shift+F | Fill the selection with the foreground colour |
 | Delete  ·  Backspace | Clear the selected pixels — with nothing selected, delete the layer |
+| Shift+Alt + drag / click | Intersect with the existing selection (brush, rectangle, ellipse, lasso, polygon, wand, object) |
 | Enter (in range bar) | Commit the range selection |
 
 #### Layers and editing

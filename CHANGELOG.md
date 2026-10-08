@@ -5,6 +5,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
+- **Drag a box with the Object tool** to select the object in it (Shift adds, Alt subtracts, Shift+Alt keeps only the overlap); a click or a box on a very large picture no longer builds a full-size mask in memory. **Shift+Alt** intersects with every selection tool.
 - **Limit a filter layer by depth, brightness or colour.** A filter layer acts only where the picture lies in a chosen range, set in the layer's Limit row, with soft ends, and its painted mask still refines it. A colour or haze that grows with distance is a fill or filter layer with a depth limit. Documents with a limit open in Scumble 0.1.44 and newer.
 - **Select by depth, brightness or colour.** The Selection panel's *Select by range* block with a live preview and *Show depth map*: select what lies between two depths, two brightness levels or near a colour, softened at each end as far as you set it; replace, add, subtract or intersect.
 - **Depth model.** *Settings › Helpers* offers Depth Anything V2 Small (99 MB, Apache-2.0) for the depth tools; it runs in the app on the GPU or the processor.

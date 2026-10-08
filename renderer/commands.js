@@ -897,16 +897,13 @@ const COMMANDS = {
             if (!host.objectsInApp()) throw new Error("no SAM2 model is downloaded (Settings › Helpers)");
             // a run that resizes the document holds it: the mask would land in the old geometry
             if (ed.resizingRun && ed.resizingRun()) throw new Error("A run is still going on this document: wait for it, or Cancel.");
-            if (!ed.objects || ed.objects.w !== ed.width || ed.objects.h !== ed.height) {
-                await ed.ensureObjects();
-                const ok = await until(() => !ed.objectsPending, 600000, 250);
-                if (!ok || !ed.objects) throw new Error("object detection did not finish: " + ed.status);
-            }
-            const pts = Array.isArray(a.points) && a.points.length ? a.points.map((p) => ({ x: +p.x, y: +p.y, label: p.label == null ? 1 : +p.label })) : [{ x: +a.x, y: +a.y, label: 1 }];
+            const pts = Array.isArray(a.points) && a.points.length ? a.points.map((p) => ({ x: +p.x, y: +p.y, label: p.label == null ? 1 : +p.label })) : (a.x != null && a.y != null ? [{ x: +a.x, y: +a.y, label: 1 }] : []);
+            const box = Array.isArray(a.box) && a.box.length === 4 ? a.box.map(Number) : null;
+            if (!pts.length && !box) throw new Error("pass x and y, or points");
             if (pts.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error("pass x and y, or points");
-            const { mask, score } = await host.segmentPoint(ed, pts, Array.isArray(a.box) && a.box.length === 4 ? a.box.map(Number) : null);
-            ed.applyMaskToSelection(mask, mode);
-            return { selection: bounds(ed), score };
+            const res = await host.segmentLogits(ed, pts, box, null);
+            await ed.selectLogits(res, { mode, label: "Object selection", box });
+            return { selection: bounds(ed), score: res.score };
         },
     },
     // docs/PLAN_0_1_42.md F2b: the magic wand and the ellipse / polygon / lasso tools without a pointer
