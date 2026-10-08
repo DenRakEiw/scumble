@@ -18,7 +18,7 @@ import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfa
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
 import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform } from "./px/kernels.js";
-import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
+import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds, selModeOf, selectionGco, tilesSource } from "./inpaint_raster.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { INTERACTIVE, EXPORT } from "./inpaint_pool.js";
@@ -41,7 +41,7 @@ import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remo
 import { LiquifyField, gridStep, previewBlock, liquifyFalloff } from "./inpaint_liquify.js";
 import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
 import { fitLayerRGBA, workScale } from "./edgefit.js";
-import { WORK_MAX, STALE_DIFF, GUIDE, LONG_CAP, modelSize, workSize, disparityRange, farU16 } from "./inpaint_depth.js";
+import { STALE_DIFF, GUIDE } from "./inpaint_depth.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -5396,8 +5396,8 @@ class InpaintEditor {
             return;
         }
 
-        // Krita / Photoshop modifiers: Shift adds, Alt subtracts; rectangle and lasso replace otherwise.
-        const selMode = e.altKey ? "subtract" : (e.shiftKey ? "add" : "replace");
+        // Krita / Photoshop modifiers: Shift adds, Alt subtracts, Shift+Alt intersects; rectangle and lasso replace otherwise.
+        const selMode = selModeOf(e);
         if (this.tool === "select" || this.tool === "deselect") {
             this.pushUndo({ kind: "selection", label: this.tool === "deselect" ? "Deselect brush" : "Selection brush" });
             this.pointer = { kind: "selpaint", last: [ix, iy], path: [[ix, iy]], subtract: this.tool === "deselect" || e.altKey };
@@ -5716,7 +5716,7 @@ class InpaintEditor {
                 const dx = ix - p.start[0], dy = iy - p.start[1], m = Math.max(Math.abs(dx), Math.abs(dy));
                 p.cur = [p.start[0] + Math.sign(dx || 1) * m, p.start[1] + Math.sign(dy || 1) * m];
             } else p.cur = [ix, iy];
-            p.mode = e.altKey ? "subtract" : (e.shiftKey ? "add" : p.mode === "replace" && !e.shiftKey ? "replace" : "add");
+            p.mode = selModeOf(e);
         } else if (p.kind === "selmove") {
             const mx = Math.round(ix - p.start[0]), my = Math.round(iy - p.start[1]);
             if (mx || my) p.moved = true;
@@ -5759,7 +5759,7 @@ class InpaintEditor {
             }
         } else if (p.kind === "lasso") {
             this.lassoPoints.push([ix, iy]);
-            p.mode = e.altKey ? "subtract" : (e.shiftKey ? "add" : p.mode === "replace" && !e.shiftKey ? "replace" : "add");
+            p.mode = selModeOf(e);
         } else if (p.kind === "patchdrag") {
             this.patchDrag(p, e, ix, iy);
         } else if (p.kind === "move") {
@@ -5863,21 +5863,30 @@ class InpaintEditor {
             const [x1, y1] = p.cur;
             const mode = p.mode, ellipse = p.ellipse, W = this.width, H = this.height;
             if (mode === "replace") this.selectionLabel = "";
-            // a replace clears everything (null); add and subtract stay inside the shape's box
-            const box = mode === "replace" ? null : [Math.min(x0, x1) - 1, Math.min(y0, y1) - 1, Math.max(x0, x1) + 1, Math.max(y0, y1) + 1];
+            const rx0 = Math.min(x0, x1), ry0 = Math.min(y0, y1), rx1 = Math.max(x0, x1), ry1 = Math.max(y0, y1);
+            const shapeBox = [rx0, ry0, rx1, ry1];
+            const gco = selectionGco(mode);
+            if (mode === "replace") {
+                this.sel.clear();
+            } else if (gco.clearOutside) {
+                if (ry0 > 0) this.sel.clear([0, 0, W, ry0]);
+                if (ry1 < H) this.sel.clear([0, ry1, W, H]);
+                if (rx0 > 0) this.sel.clear([0, ry0, rx0, ry1]);
+                if (rx1 < W) this.sel.clear([rx1, ry0, W, ry1]);
+            }
+            const box = [rx0 - 1, ry0 - 1, rx1 + 1, ry1 + 1];
             this.sel.drawInto(box, (sctx) => {
-                if (mode === "replace") sctx.clearRect(0, 0, W, H);
-                sctx.globalCompositeOperation = mode === "subtract" ? "destination-out" : "source-over";
+                sctx.globalCompositeOperation = gco.op;
                 sctx.fillStyle = "#ff0000";
                 if (ellipse) {
                     sctx.beginPath();
                     sctx.ellipse((x0 + x1) / 2, (y0 + y1) / 2, Math.abs(x1 - x0) / 2, Math.abs(y1 - y0) / 2, 0, 0, Math.PI * 2);
                     sctx.fill();
                 } else {
-                    sctx.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+                    sctx.fillRect(rx0, ry0, rx1 - rx0, ry1 - ry0);
                 }
             });
-            this.markSelectionChanged(this.boundsAfter(p.mode, [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)]));
+            this.markSelectionChanged(this.boundsAfter(p.mode, shapeBox));
         } else if (p.kind === "selmove") {
             // a click without a drag deselects, the way the marquee tools do in Photoshop and Krita
             if (!p.moved) { this.clearSelection(); return; }
@@ -5892,10 +5901,17 @@ class InpaintEditor {
                 for (const [px, py] of pts) { if (px < lx0) lx0 = px; if (px > lx1) lx1 = px; if (py < ly0) ly0 = py; if (py > ly1) ly1 = py; }
                 const mode = p.mode, W = this.width, H = this.height;
                 if (mode === "replace") this.selectionLabel = "";
-                // a replace clears everything (null); add and subtract stay inside the points' box
-                this.sel.drawInto(mode === "replace" ? null : [lx0 - 1, ly0 - 1, lx1 + 1, ly1 + 1], (sctx) => {
-                    if (mode === "replace") sctx.clearRect(0, 0, W, H);
-                    sctx.globalCompositeOperation = mode === "subtract" ? "destination-out" : "source-over";
+                const gco = selectionGco(mode);
+                if (mode === "replace") {
+                    this.sel.clear();
+                } else if (gco.clearOutside) {
+                    if (ly0 > 0) this.sel.clear([0, 0, W, ly0]);
+                    if (ly1 < H) this.sel.clear([0, ly1, W, H]);
+                    if (lx0 > 0) this.sel.clear([0, ly0, lx0, ly1]);
+                    if (lx1 < W) this.sel.clear([lx1, ly0, W, ly1]);
+                }
+                this.sel.drawInto([lx0 - 1, ly0 - 1, lx1 + 1, ly1 + 1], (sctx) => {
+                    sctx.globalCompositeOperation = gco.op;
                     sctx.fillStyle = "#ff0000";
                     sctx.beginPath();
                     sctx.moveTo(pts[0][0], pts[0][1]);
@@ -5992,10 +6008,17 @@ class InpaintEditor {
         if (mode === "replace") this.selectionLabel = "";
         let bx0 = pts[0][0], by0 = pts[0][1], bx1 = bx0, by1 = by0;
         for (const [px, py] of pts) { if (px < bx0) bx0 = px; if (px > bx1) bx1 = px; if (py < by0) by0 = py; if (py > by1) by1 = py; }
-        // a replace clears everything (null); add and subtract stay inside the points' box
-        this.sel.drawInto(mode === "replace" ? null : [bx0 - 1, by0 - 1, bx1 + 1, by1 + 1], (sctx) => {
-            if (mode === "replace") sctx.clearRect(0, 0, W, H);
-            sctx.globalCompositeOperation = mode === "subtract" ? "destination-out" : "source-over";
+        const gco = selectionGco(mode);
+        if (mode === "replace") {
+            this.sel.clear();
+        } else if (gco.clearOutside) {
+            if (by0 > 0) this.sel.clear([0, 0, W, by0]);
+            if (by1 < H) this.sel.clear([0, by1, W, H]);
+            if (bx0 > 0) this.sel.clear([0, by0, bx0, by1]);
+            if (bx1 < W) this.sel.clear([bx1, by0, W, by1]);
+        }
+        this.sel.drawInto([bx0 - 1, by0 - 1, bx1 + 1, by1 + 1], (sctx) => {
+            sctx.globalCompositeOperation = gco.op;
             sctx.fillStyle = "#ff0000";
             sctx.beginPath();
             sctx.moveTo(pts[0][0], pts[0][1]);
@@ -6003,8 +6026,9 @@ class InpaintEditor {
             sctx.closePath();
             sctx.fill();
         });
-        this.markSelectionChanged();
-        this.setStatus(`Polygon with ${pts.length} points ${this.polyMode === "replace" ? "selected" : this.polyMode === "add" ? "added" : "subtracted"}.`);
+        this.markSelectionChanged(this.boundsAfter(this.polyMode, [bx0, by0, bx1, by1]));
+        const modeWord = this.polyMode === "replace" ? "selected" : this.polyMode === "add" ? "added" : this.polyMode === "subtract" ? "subtracted" : "intersected";
+        this.setStatus(`Polygon with ${pts.length} points ${modeWord}.`);
     }
 
     selectionDab(x0, y0, x1, y1) {
@@ -6310,9 +6334,22 @@ class InpaintEditor {
     }
 
     /**
-     * A rectangle ([x0, y0, x1, y1] in image pixels) into the selection: replace, add or subtract. Written as a fill
-     * (or a clear) of the box, never as a mask or a shape of the image's size (E5: `select_rect` and `select_all` made a
-     * W x H byte mask and a canvas of it, which no document above 268 MP has).
+     * Combine an arbitrary alpha source (rectSource, bytesSource, tilesSource) into the selection.
+     */
+    combineSelection(src, mode = "replace", { label = "Selection", box = src.box } = {}) {
+        const hint = box ? this.boundsAfter(mode, box) : undefined;
+        this.pushUndo({ kind: "selection", label });
+        if (mode === "replace") this.selectionLabel = "";
+        const old = (mode === "replace" || mode === "intersect") ? this.getBounds() : null;
+        this.sel.combine(src, mode);
+        const rect = box || [0, 0, this.width, this.height];
+        const touched = old ? [Math.min(old[0], rect[0]), Math.min(old[1], rect[1]), Math.max(old[2], rect[2]), Math.max(old[3], rect[3])] : rect;
+        this.markSelectionChanged(hint, touched);
+        this.draw();
+    }
+
+    /**
+     * A rectangle ([x0, y0, x1, y1] in image pixels) into the selection: replace, add, subtract or intersect.
      */
     selectRectangle(box, mode = "replace") {
         const b = [Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(this.width, Math.ceil(box[2])), Math.min(this.height, Math.ceil(box[3]))];
@@ -6321,9 +6358,20 @@ class InpaintEditor {
         const all = mode === "replace" && !b[0] && !b[1] && b[2] === this.width && b[3] === this.height;
         this.pushUndo({ kind: "selection", label: all ? "Select all" : "Rectangle selection" });
         if (mode === "replace") this.selectionLabel = "";
-        const old = mode === "replace" ? this.getBounds() : null;
-        if (mode === "replace") this.sel.clear();
-        if (mode === "subtract") this.sel.clear(b); else this.sel.fill(b, "#ff0000");
+        const old = (mode === "replace" || mode === "intersect") ? this.getBounds() : null;
+        if (mode === "replace") {
+            this.sel.clear();
+            this.sel.fill(b, "#ff0000");
+        } else if (mode === "subtract") {
+            this.sel.clear(b);
+        } else if (mode === "intersect") {
+            if (b[1] > 0) this.sel.clear([0, 0, this.width, b[1]]);
+            if (b[3] < this.height) this.sel.clear([0, b[3], this.width, this.height]);
+            if (b[0] > 0) this.sel.clear([0, b[1], b[0], b[3]]);
+            if (b[2] < this.width) this.sel.clear([b[2], b[1], this.width, b[3]]);
+        } else {
+            this.sel.fill(b, "#ff0000");
+        }
         const touched = old ? [Math.min(old[0], b[0]), Math.min(old[1], b[1]), Math.max(old[2], b[2]), Math.max(old[3], b[3])] : b;
         this.markSelectionChanged(hint, touched);
         this.draw();
@@ -6342,14 +6390,18 @@ class InpaintEditor {
         this.pushUndo({ kind: "selection", label });
         if (mode === "replace") this.selectionLabel = "";
         const rect = [at[0], at[1], at[0] + shape.width, at[1] + shape.height];
-        // C5: a replace clears the mask first -- on tiles that drops the tiles, where a clearRect
-        // inside drawInto was a scratch of the whole image -- and then draws the shape in its own
-        // box; the levels are refreshed in the box the pixels can have changed in, which for a
-        // replace is the old selection's box together with the shape's.
-        const old = mode === "replace" ? this.getBounds() : null;
-        if (mode === "replace") this.sel.clear();
+        const old = (mode === "replace" || mode === "intersect") ? this.getBounds() : null;
+        const gco = selectionGco(mode);
+        if (mode === "replace") {
+            this.sel.clear();
+        } else if (gco.clearOutside) {
+            if (rect[1] > 0) this.sel.clear([0, 0, this.width, rect[1]]);
+            if (rect[3] < this.height) this.sel.clear([0, rect[3], this.width, this.height]);
+            if (rect[0] > 0) this.sel.clear([0, rect[1], rect[0], rect[3]]);
+            if (rect[2] < this.width) this.sel.clear([rect[2], rect[1], this.width, rect[3]]);
+        }
         this.sel.drawInto(rect, (sctx) => {
-            sctx.globalCompositeOperation = mode === "subtract" ? "destination-out" : "source-over";
+            sctx.globalCompositeOperation = gco.op;
             sctx.drawImage(shape, at[0], at[1]);
         });
         const touched = old ? [Math.min(old[0], rect[0]), Math.min(old[1], rect[1]), Math.max(old[2], rect[2]), Math.max(old[3], rect[3])] : rect;
@@ -7262,37 +7314,13 @@ class InpaintEditor {
     }
 
     /**
-     * The wand's answer as tiles of the selection (`floodOverTiles` with `tiles`), written into the mask: `tiles` are
-     * `[{ tx, ty, data }]` on the grid of the box at `at`, the shape opaque where the region is. What
-     * `applyShapeToSelection` does with a canvas, without one.
+     * The wand's answer as tiles of the selection (`floodOverTiles` with `tiles`), written into the mask.
      */
     applyTilesToSelection(tiles, mode = "replace", box = null, at = [0, 0]) {
-        const hint = box ? this.boundsAfter(mode, box) : undefined;
-        this.pushUndo({ kind: "selection", label: "Magic wand" });
-        if (mode === "replace") this.selectionLabel = "";
-        const old = mode === "replace" ? this.getBounds() : null;
-        if (mode === "replace") this.sel.clear();
-        const W = this.width, H = this.height;
-        for (const t of tiles) {
-            const X = at[0] + t.tx * TILE_SIZE, Y = at[1] + t.ty * TILE_SIZE, w = Math.min(TILE_SIZE, W - X), h = Math.min(TILE_SIZE, H - Y);
-            const src = new Uint8ClampedArray(t.data);
-            let out;
-            if (mode === "replace" && w === TILE_SIZE && h === TILE_SIZE) out = src;
-            else {
-                out = mode === "replace" ? new Uint8ClampedArray(w * h * 4) : this.sel.readRect(X, Y, w, h).data;
-                for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
-                    const so = (yy * TILE_SIZE + xx) * 4, o = (yy * w + xx) * 4;
-                    if (!src[so + 3]) continue;
-                    if (mode === "subtract") { out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0; }
-                    else { out[o] = src[so]; out[o + 1] = src[so + 1]; out[o + 2] = src[so + 2]; out[o + 3] = src[so + 3]; }
-                }
-            }
-            this.sel.writeRect({ data: out, width: w, height: h }, X, Y);
-        }
-        const rect = box || [at[0], at[1], at[0] + 1, at[1] + 1];
-        const touched = old ? [Math.min(old[0], rect[0]), Math.min(old[1], rect[1]), Math.max(old[2], rect[2]), Math.max(old[3], rect[3])] : rect;
-        this.markSelectionChanged(hint, touched);
-        this.draw();
+        return this.combineSelection(tilesSource(tiles, at, box), mode, {
+            label: "Magic wand",
+            box: box || (tiles.length ? [at[0], at[1], at[0] + 1, at[1] + 1] : null),
+        });
     }
 
     /**
@@ -7492,23 +7520,24 @@ class InpaintEditor {
         try {
             const img = await loadImageEl(s.url);
             this.pushUndo({ kind: "selection", label: "Load selection" });
-            const W = this.width, H = this.height;
             // the saved PNG is drawn at 0, 0 whatever its size: the whole rect (null); turned as the document was before this
             // build (its `orient`) and moved, scaled and turned as it was since (its `xf`, PLAN_0_1_31 §7). On whole pixels
             // (a crop, an extend, the quarter turns) without smoothing, so the bytes move as they are
             const o = orientIsUp(s.orient) ? XF_IDENTITY : orientMatrix(s.orient, img.naturalWidth || img.width, img.naturalHeight || img.height);
             const m = validXf(s.xf) ? xfMul(s.xf, o) : o;
             const exact = !!orientOfXf(m) && m.every((v) => Number.isInteger(v)) && m.slice(0, 4).every((v) => Math.abs(v) <= 1);
+            const gco = selectionGco(mode);
+            if (mode === "replace") this.sel.clear();
             this.sel.drawInto(null, (sctx) => {
-                if (mode === "replace") sctx.clearRect(0, 0, W, H);
-                sctx.globalCompositeOperation = mode === "subtract" ? "destination-out" : "source-over";
+                sctx.globalCompositeOperation = gco.op;
                 if (!xfIsIdentity(m)) { sctx.save(); sctx.imageSmoothingEnabled = !exact; sctx.transform(...m); sctx.drawImage(img, 0, 0); sctx.restore(); }
                 else sctx.drawImage(img, 0, 0);
             });
             this.selectionLabel = mode === "replace" ? s.name : this.selectionLabel;
             this.markSelectionChanged();
             this.draw();
-            this.setStatus(`"${s.name}" ${mode === "replace" ? "loaded" : mode === "add" ? "added" : "subtracted"}.`);
+            const modeWord = mode === "replace" ? "loaded" : mode === "add" ? "added" : mode === "subtract" ? "subtracted" : "intersected";
+            this.setStatus(`"${s.name}" ${modeWord}.`);
         } catch (err) {
             console.error(err);
             this.setStatus("Could not load the saved selection.");
@@ -11077,16 +11106,23 @@ class InpaintEditor {
         if (!id) { if (host.objectsInApp()) { host.selectPoint(this, ix, iy, p); return; } this.setStatus("No object here. Use the brush or lasso for this spot."); return; }
         const x = Math.floor(ix), y = Math.floor(iy);
         const already = this.sel.readRect(x, y, 1, 1).data[3] > 0;
-        const subtract = p.alt ? true : (p.shift ? false : already);
+        let mode;
+        if (p.shift && p.alt) mode = "intersect";
+        else if (p.alt) mode = "subtract";
+        else if (p.shift) mode = "add";
+        else mode = already ? "subtract" : "add";
         this.pushUndo({ kind: "selection", label: "Object selection" });
         const shape = this.objectShape(id);   // image-sized: the whole rect (null)
+        const gco = selectionGco(mode);
+        if (mode === "replace") this.sel.clear();
         this.sel.drawInto(null, (sctx) => {
-            sctx.globalCompositeOperation = subtract ? "destination-out" : "source-over";
+            sctx.globalCompositeOperation = gco.op;
             sctx.drawImage(shape, 0, 0);
         });
         this.markSelectionChanged();
         this.draw();
-        this.setStatus(subtract ? "Object removed from the selection." : "Object added to the selection.");
+        const modeStatus = mode === "intersect" ? "Object intersected with the selection." : mode === "subtract" ? "Object removed from the selection." : "Object added to the selection.";
+        this.setStatus(modeStatus);
     }
 
     /** A mask came back from a helper prompt: merge it into the selection. */
@@ -11114,10 +11150,10 @@ class InpaintEditor {
                 if (on) count++;
             }
             sh.putImageData(out, 0, 0);
-            const W = this.width, H = this.height;
+            const gco = selectionGco(pending.mode || "replace");
+            if (pending.mode === "replace") this.sel.clear();
             this.sel.drawInto(null, (sctx) => {
-                if (pending.mode === "replace") sctx.clearRect(0, 0, W, H);
-                sctx.globalCompositeOperation = pending.mode === "subtract" ? "destination-out" : "source-over";
+                sctx.globalCompositeOperation = gco.op;
                 sctx.drawImage(shape, 0, 0);
             });
             this.markSelectionChanged();
@@ -14755,6 +14791,14 @@ class InpaintEditor {
             Math.min(this.width, Math.ceil(box[2])), Math.min(this.height, Math.ceil(box[3]))];
         const empty = b[2] <= b[0] || b[3] <= b[1];
         if (mode === "replace") return empty ? null : b;
+        if (mode === "intersect") {
+            if (empty || known === null) return null;
+            if (known === undefined) return { within: b };
+            const ix0 = Math.max(known[0], b[0]), iy0 = Math.max(known[1], b[1]);
+            const ix1 = Math.min(known[2], b[2]), iy1 = Math.min(known[3], b[3]);
+            if (ix0 >= ix1 || iy0 >= iy1) return null;
+            return { within: [ix0, iy0, ix1, iy1] };
+        }
         if (known === undefined) return undefined;
         const old = known;
         const u = empty ? old : (!old ? b : [Math.min(old[0], b[0]), Math.min(old[1], b[1]), Math.max(old[2], b[2]), Math.max(old[3], b[3])]);

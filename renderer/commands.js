@@ -396,7 +396,7 @@ async function memoryMB() {
 
 /**
  * @typedef {(description?: string, extra?: Partial<CommandParam>) => CommandParam} ParamFn
- * @type {{ layer: ParamFn, timeout: (seconds: number) => CommandParam, num: ParamFn, int: ParamFn, str: ParamFn, bool: ParamFn, obj: ParamFn }}
+ * @type {{ layer: ParamFn, timeout: (seconds: number) => CommandParam, num: ParamFn, int: ParamFn, str: ParamFn, bool: ParamFn, obj: ParamFn, enum: (description: string, values: string[], def?: string) => CommandParam, selMode: () => CommandParam }}
  */
 const P = {
     layer: (d, extra = {}) => ({ type: "string", description: d || "the layer: id, name, a unique part of the name, or \"active\"", default: "active", ...extra }),
@@ -406,14 +406,16 @@ const P = {
     str: (description, extra = {}) => ({ type: "string", description, ...extra }),
     bool: (description, extra = {}) => ({ type: "boolean", description, ...extra }),
     obj: (description, extra = {}) => ({ type: "object", description, ...extra }),
+    enum: (description, values, def) => ({ type: "string", description, enum: values.slice(), ...(def !== undefined ? { default: def } : {}) }),
+    selMode: () => P.enum("replace, add, subtract or intersect", SEL_MODES, "replace"),
 };
 /** The operations of `set_mask` (the editor's `maskOp`). */
 const MASK_OPS = ["invert", "reveal", "hide", "from_selection", "hide_selection", "enable", "disable", "apply", "remove"];
 /** How a new selection combines with the one there is. */
-const SEL_MODES = ["replace", "add", "subtract"];
+const SEL_MODES = ["replace", "add", "subtract", "intersect"];
 function selMode(v) {
     const m = v == null || v === "" ? "replace" : String(v);
-    if (!SEL_MODES.includes(m)) throw new Error(`mode must be replace, add or subtract, not ${JSON.stringify(v)}`);
+    if (!SEL_MODES.includes(m)) throw new Error(`mode must be replace, add, subtract or intersect, not ${JSON.stringify(v)}`);
     return m;
 }
 
@@ -822,10 +824,11 @@ const COMMANDS = {
     // -- selection --
     select_rect: {
         needsImage: true, description: "Select a rectangle in image pixels.",
-        params: { x: P.int("left", { required: true }), y: P.int("top", { required: true }), w: P.int("width (alias width)", { required: true }), h: P.int("height (alias height)", { required: true }), mode: P.str("replace, add or subtract", { enum: ["replace", "add", "subtract"], default: "replace" }) },
+        params: { x: P.int("left", { required: true }), y: P.int("top", { required: true }), w: P.int("width (alias width)", { required: true }), h: P.int("height (alias height)", { required: true }), mode: P.selMode() },
         async run(ed, a) {
+            const mode = selMode(a.mode);
             const x = +a.x || 0, y = +a.y || 0, w = +a.w || +a.width || 0, h = +a.h || +a.height || 0;
-            if (!ed.selectRectangle([x, y, x + w, y + h], a.mode || "replace")) throw new Error(`empty rectangle ${x},${y} ${w}×${h} on a ${ed.width}×${ed.height} image`);
+            if (!ed.selectRectangle([x, y, x + w, y + h], mode)) throw new Error(`empty rectangle ${x},${y} ${w}×${h} on a ${ed.width}×${ed.height} image`);
             return { selection: bounds(ed) };
         },
     },
@@ -841,8 +844,9 @@ const COMMANDS = {
     },
     select_mask: {
         needsImage: true, description: "Selection from a mask: an array of width × height values (image size, >0 = selected), or a base64 PNG (white = selected).",
-        params: { mask: P.obj("array of width*height values, or a base64 PNG string", { required: true }), mode: P.str("replace, add or subtract", { enum: ["replace", "add", "subtract"], default: "replace" }) },
+        params: { mask: P.obj("array of width*height values, or a base64 PNG string", { required: true }), mode: P.selMode() },
         async run(ed, a) {
+            const mode = selMode(a.mode);
             const W = ed.width, H = ed.height;
             let m;
             if (typeof a.mask === "string") {
@@ -859,20 +863,20 @@ const COMMANDS = {
                 m = new Uint8Array(W * H);
                 for (let i = 0; i < m.length; i++) m[i] = src[i] > 0 ? 1 : 0;
             }
-            ed.applyMaskToSelection(m, a.mode || "replace");
+            ed.applyMaskToSelection(m, mode);
             return { selection: bounds(ed) };
         },
     },
     select_by_text: {
         needsImage: true, description: "Select an object by describing it (\"the car\", \"sky\"). Runs the segmentation model on the connected ComfyUI (SAM3); waits for the mask.",
-        params: { text: P.str("what to select", { required: true }), mode: P.str("replace, add or subtract", { enum: ["replace", "add", "subtract"], default: "replace" }), threshold: P.num("0.05..0.95, the model's default when omitted"), timeout: P.timeout(300) },
+        params: { text: P.str("what to select", { required: true }), mode: P.selMode(), threshold: P.num("0.05..0.95, the model's default when omitted"), timeout: P.timeout(300) },
         async run(ed, a) {
             if (!ed.segInput) throw new Error("the editor has no segmentation controls");
             if (ed.segmentPending) throw new Error("a segmentation is still running");
             const text = String(a.text || "").trim();
             if (!text) throw new Error("text missing, e.g. \"the car\"");
             ed.segInput.value = text;
-            ed.segMode = ["replace", "add", "subtract"].includes(a.mode) ? a.mode : "replace";
+            ed.segMode = SEL_MODES.includes(a.mode) ? a.mode : "replace";
             if (a.threshold != null && ed.segThreshold) ed.segThreshold.value = Math.min(0.95, Math.max(0.05, +a.threshold || 0.3));
             const before = ed.status;
             await ed.segmentByText();
@@ -886,8 +890,9 @@ const COMMANDS = {
     },
     select_point: {
         needsImage: true, description: "Select what SAM2 (in-app) sees at a point; needs a downloaded SAM2 model (Settings › Helpers). Points: label 1 = inside, 0 = outside.",
-        params: { x: P.num("x of the point"), y: P.num("y of the point"), points: P.obj("instead of x/y: [{x, y, label}] with several points"), box: P.obj("optional [x0, y0, x1, y1] box prompt"), mode: P.str("replace, add or subtract", { enum: ["replace", "add", "subtract"], default: "replace" }) },
+        params: { x: P.num("x of the point"), y: P.num("y of the point"), points: P.obj("instead of x/y: [{x, y, label}] with several points"), box: P.obj("optional [x0, y0, x1, y1] box prompt"), mode: P.selMode() },
         async run(ed, a) {
+            const mode = selMode(a.mode);
             if (!host.objectsInApp()) throw new Error("no SAM2 model is downloaded (Settings › Helpers)");
             // a run that resizes the document holds it: the mask would land in the old geometry
             if (ed.resizingRun && ed.resizingRun()) throw new Error("A run is still going on this document: wait for it, or Cancel.");
@@ -899,7 +904,7 @@ const COMMANDS = {
             const pts = Array.isArray(a.points) && a.points.length ? a.points.map((p) => ({ x: +p.x, y: +p.y, label: p.label == null ? 1 : +p.label })) : [{ x: +a.x, y: +a.y, label: 1 }];
             if (pts.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error("pass x and y, or points");
             const { mask, score } = await host.segmentPoint(ed, pts, Array.isArray(a.box) && a.box.length === 4 ? a.box.map(Number) : null);
-            ed.applyMaskToSelection(mask, a.mode || "replace");
+            ed.applyMaskToSelection(mask, mode);
             return { selection: bounds(ed), score };
         },
     },
@@ -913,7 +918,7 @@ const COMMANDS = {
             contiguous: P.bool("only the area connected to x, y", { default: true }),
             sample: P.str("image or layer", { enum: ["image", "layer"], default: "image" }),
             layer: P.layer("with sample layer: the layer whose pixels are read"),
-            mode: P.str("replace, add or subtract", { enum: SEL_MODES, default: "replace" }),
+            mode: P.selMode(),
         },
         async run(ed, a) {
             const x = +a.x, y = +a.y;
@@ -949,7 +954,7 @@ const COMMANDS = {
             x: P.num("ellipse: left of its box"), y: P.num("ellipse: top of its box"), w: P.num("ellipse: width (alias width)"), h: P.num("ellipse: height (alias height)"),
             points: P.obj("polygon / lasso: [[x, y], ...], at least three"),
             feather: P.num("radius of the soft edge in pixels, 0..512", { default: 0 }),
-            mode: P.str("replace, add or subtract", { enum: SEL_MODES, default: "replace" }),
+            mode: P.selMode(),
         },
         async run(ed, a) {
             const shape = String(a.shape || "");

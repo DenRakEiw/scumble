@@ -5,6 +5,7 @@
 // the editor, as the method did: they are construction, not state of their own.
 import { host } from "./host.js";
 import { el, iconButton, miniButton, selectInput, numberInput, hostText, REF_FITS, REF_DEFAULTS, UPSAMPLE_CASES, randomSeed, brushSizeToSlider, sliderToBrushSize } from "./inpaint_canvas.js";
+import { selModeOf } from "./inpaint_raster.js";
 import { PromptField, RefBar } from "./prompt_field.js";
 
 /**
@@ -591,7 +592,7 @@ function buildSelection(ed, section) {
         ed.selectionsSel = selectInput([], "", "Saved selections");
         ed.selectionsSel.classList.add("ipc-narrow");
         sv.appendChild(ed.selectionsSel);
-        const load = iconButton("fromLayer", "Load the saved selection (replaces; Shift+click adds, Alt+click subtracts)", (e) => ed.loadSelection(ed.selectionsSel.selectedIndex, e && e.altKey ? "subtract" : (e && e.shiftKey ? "add" : "replace")), "Load");
+        const load = iconButton("fromLayer", "Load the saved selection (replaces; Shift+click adds, Alt+click subtracts, Shift+Alt intersects)", (e) => ed.loadSelection(ed.selectionsSel.selectedIndex, selModeOf(e)), "Load");
         load.classList.add("ipc-small");
         sv.appendChild(load);
         sv.appendChild(miniButton("trash", "Delete the saved selection", () => ed.deleteSelection(ed.selectionsSel.selectedIndex), "ipc-del"));
@@ -613,7 +614,7 @@ function buildSelection(ed, section) {
         seg.appendChild(row);
         const modes = el("div", "ipc-modes");
         ed.segModeButtons = {};
-        for (const [id, label, title] of [["replace", "Replace", "Replace the selection"], ["add", "Add", "Add to the selection"], ["subtract", "Subtract", "Remove from the selection"]]) {
+        for (const [id, label, title] of [["replace", "Replace", "Replace the selection"], ["add", "Add", "Add to the selection"], ["subtract", "Subtract", "Remove from the selection"], ["intersect", "Intersect", "Intersect with the selection"]]) {
             const b = el("button", "ipc-ib", label); b.type = "button"; b.title = title;
             b.addEventListener("click", (e) => { e.stopPropagation(); ed.segMode = id; for (const [k, x] of Object.entries(ed.segModeButtons)) x.classList.toggle("ipc-active", k === id); });
             ed.segModeButtons[id] = b;

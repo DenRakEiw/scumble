@@ -1,28 +1,26 @@
-/**
- * Selection combine test (PLAN_NIK9_BUILD.md §F4a).
- * Tests SEL_MODES, mul255, combineAlpha, combineRows, selModeOf, selectionGco,
- * rectSource, bytesSource, tilesSource, and MaskPixels / TileMaskPixels combine.
- *
- * Usage: node tools/combine_test.js
- */
-import assert from "node:assert/strict";
+"use strict";
+
+const assert = require("node:assert/strict");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
+
+const ROOT = path.join(__dirname, "..");
 
 // In Node, provide minimal canvas creation and ImageData for probeColor and readRect
-if (typeof ImageData === "undefined") {
-    globalThis.ImageData = class ImageData {
-        constructor(...args) {
-            if (args[0] instanceof Uint8ClampedArray || args[0] instanceof Uint8Array) {
-                this.data = args[0] instanceof Uint8ClampedArray ? args[0] : new Uint8ClampedArray(args[0].buffer, args[0].byteOffset, args[0].byteLength);
-                this.width = args[1];
-                this.height = args[2];
-            } else {
-                this.width = args[0];
-                this.height = args[1];
-                this.data = new Uint8ClampedArray(this.width * this.height * 4);
-            }
+const ImageData = globalThis.ImageData || class ImageData {
+    constructor(...args) {
+        if (args[0] instanceof Uint8ClampedArray || args[0] instanceof Uint8Array) {
+            this.data = args[0] instanceof Uint8ClampedArray ? args[0] : new Uint8ClampedArray(args[0].buffer, args[0].byteOffset, args[0].byteLength);
+            this.width = args[1];
+            this.height = args[2];
+        } else {
+            this.width = args[0];
+            this.height = args[1];
+            this.data = new Uint8ClampedArray(this.width * this.height * 4);
         }
-    };
-}
+    }
+};
+globalThis.ImageData = ImageData;
 
 if (typeof document === "undefined") {
     globalThis.document = {
@@ -51,14 +49,18 @@ if (typeof document === "undefined") {
     };
 }
 
-import {
-    SEL_MODES, mul255, combineAlpha, combineRows, selModeOf, selectionGco,
-    rectSource, bytesSource, tilesSource
-} from "../renderer/editor/inpaint_raster.js";
-import { TileMaskPixels } from "../renderer/editor/inpaint_tiles.js";
-import { MaskPixels } from "../renderer/editor/inpaint_pixels.js";
+async function main() {
+    const rasterMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_raster.js")).href);
+    const {
+        SEL_MODES, mul255, combineAlpha, combineRows, selModeOf, selectionGco,
+        rectSource, bytesSource, tilesSource
+    } = rasterMod;
+    const tilesMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_tiles.js")).href);
+    const { TileMaskPixels } = tilesMod;
+    const pixelsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_pixels.js")).href);
+    const { MaskPixels } = pixelsMod;
 
-console.log("Running combine_test.js...");
+    console.log("Running combine_test.js...");
 
 // 1. Check SEL_MODES
 assert.deepEqual(SEL_MODES, ["replace", "add", "subtract", "intersect"]);
@@ -386,4 +388,10 @@ console.log("  [ok] combineRows updates pixels and clears zero alpha");
     console.log("  [ok] Canvas and Tiles backends are 100% byte-equal across all combine modes!");
 }
 
-console.log("ALL TESTS PASSED!");
+    console.log("ALL TESTS PASSED!");
+}
+
+main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+});

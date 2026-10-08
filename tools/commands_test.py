@@ -1882,8 +1882,18 @@ try {
         await refusedC({ x: 10, y: 10, tolerance: 300 }, /^tolerance must be 0..255/),
         await refusedC({ x: 10, y: 10, sample: "layer", layer: filt.id }, /is a filter layer/),
         await refusedC({ x: 10, y: 10, layer: made.id }, /^layer goes with sample layer/),
-        await refusedC({ x: 10, y: 10, mode: "xor" }, /^mode must be replace, add or subtract/),
+        await refusedC({ x: 10, y: 10, mode: "xor" }, /^mode must be replace, add, subtract or intersect/),
     ];
+    // select_rect, select_mask, select_point accept "intersect", and bad mode names the four
+    const refusedR = async (args, re) => { let m = ""; try { await c("select_rect", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); } if (!re.test(m)) throw new Error("select_rect " + JSON.stringify(args) + ": " + (m || "not refused")); return m; };
+    const refusedM = async (args, re) => { let m = ""; try { await c("select_mask", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); } if (!re.test(m)) throw new Error("select_mask " + JSON.stringify(args) + ": " + (m || "not refused")); return m; };
+    const refusedP = async (args, re) => { let m = ""; try { await c("select_point", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); } if (!re.test(m)) throw new Error("select_point " + JSON.stringify(args) + ": " + (m || "not refused")); return m; };
+    await refusedR({ x: 0, y: 0, w: 10, h: 10, mode: "bad" }, /^mode must be replace, add, subtract or intersect/);
+    await refusedM({ mask: new Uint8Array(400 * 300), mode: "bad" }, /^mode must be replace, add, subtract or intersect/);
+    await refusedP({ x: 10, y: 10, mode: "bad" }, /^mode must be replace, add, subtract or intersect/);
+    await c("select_rect", { doc: d.id, x: 20, y: 20, w: 40, h: 40, mode: "intersect" });
+    const fullMask = new Uint8Array(400 * 300); fullMask.fill(1);
+    await c("select_mask", { doc: d.id, mask: fullMask, mode: "intersect" });
     // shapes
     const u1 = ed.undo.length;
     const e1 = await c("select_shape", { doc: d.id, shape: "ellipse", x: 100, y: 50, w: 200, h: 100 });
