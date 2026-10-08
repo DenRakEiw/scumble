@@ -7341,7 +7341,8 @@ class InpaintEditor {
      * takes (a colour match, a live stroke, a mask off the tile grid) are repeated here, and `forRun` defaults the
      * way `drawLayersInto` defaults it.
      */
-    passStores(source, box, scale, { forRun = false, upTo = null, baseOnly = false, controlOnly = false, noFilters = false } = {}) {
+    passStores(source, box, scale, { forRun = false, upTo = null, baseOnly = false, controlOnly = false, skipFilters = false, noFilters = false } = {}) {
+        const skip = skipFilters || noFilters;
         const out = [];
         const vp = { x: box[0], y: box[1], w: box[2] - box[0], h: box[3] - box[1], sx: scale, sy: scale };
         const add = (px, x, y, w, h) => {
@@ -7361,12 +7362,22 @@ class InpaintEditor {
         }
         if (!controlOnly) add(this.basePx, 0, 0, this.width, this.height);
         const end = baseOnly || controlOnly ? 0 : upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
+        const drawn = new Set();
         for (let i = 0; i < end; i++) {
             const layer = this.layers[i];
             if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
             if ((!this.shown(layer) && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
-            if (layer.kind === "filter") { if (!noFilters) add(this.liveMask(layer), 0, 0, this.width, this.height); continue; }
+            const target = controlOnly ? null : this.clipTargetOf(layer, i);
+            if (target && !drawn.has(target)) continue;
+            if (layer.kind === "filter") {
+                if (!controlOnly && !skip) {
+                    add(this.liveMask(layer), 0, 0, this.width, this.height);
+                    drawn.add(layer);
+                }
+                continue;
+            }
             if (forRun && (this.isControl(layer) || this.isReference(layer))) continue;
+            drawn.add(layer);
             // only the layers `drawLayer` really draws from tiles in a region pass. A colour-matched layer off tiles
             // (`layerMatchedPixels`), a layer under a live paint stroke and one whose mask is not on the same
             // tile grid are composed from a canvas instead, so priming them would buy a wait and nothing else.
@@ -11260,7 +11271,7 @@ class InpaintEditor {
         if (this.thumb && this.thumb.width >= 16 && this.thumb.height >= 16) {
             ctx.drawImage(this.thumb, 0, 0, 64, 64);
         } else {
-            const flat = this.flattenToCanvas({ forRun: true, noFilters: true });
+            const flat = this.flattenToCanvas({ forRun: true, skipFilters: true });
             ctx.drawImage(flat, 0, 0, 64, 64);
         }
         const d = ctx.getImageData(0, 0, 64, 64).data;
@@ -16598,8 +16609,9 @@ class InpaintEditor {
 
     drawComposite(ctx, opts = {}) {
         if (!this.base) return;
+        const skipFilters = !!(opts.skipFilters || opts.noFilters);
         const below = opts.baseOnly ? [] : opts.upTo == null ? this.layers : this.layers.slice(0, Math.max(0, opts.upTo));
-        const hasFilters = !opts.controlOnly && !opts.noFilters && below.some((l) => this.shown(l) && (l.kind === "filter" || this.matchActive(l)));
+        const hasFilters = !opts.controlOnly && below.some((l) => this.shown(l) && ((!skipFilters && l.kind === "filter") || this.matchActive(l)));
         // In a region pass the target canvas is already the filter input: no full-size copy.
         if (this.viewPass || !hasFilters) { this.drawLayersInto(ctx, opts); return; }
         // Filters need the composite below them at image resolution: build it offscreen first.
@@ -16616,7 +16628,8 @@ class InpaintEditor {
     }
 
     /** `upTo`: the composite of the layers below that index only (C6 c1: what a filter layer there takes as its input); `baseOnly`: the base alone (C6 c2f: the peek). */
-    drawLayersInto(ctx, { forRun = false, controlOnly = false, upTo = null, baseOnly = false, noFilters = false } = {}) {
+    drawLayersInto(ctx, { forRun = false, controlOnly = false, upTo = null, baseOnly = false, skipFilters = false, noFilters = false } = {}) {
+        const skip = skipFilters || noFilters;
         if (controlOnly) {
             ctx.fillStyle = "#000";
             ctx.fillRect(0, 0, this.width, this.height);
@@ -16643,10 +16656,11 @@ class InpaintEditor {
                 const layer = this.layers[i];
                 if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
                 if ((!this.shown(layer) && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
+                const target = controlOnly ? null : this.clipTargetOf(layer, i);
+                if (target && !drawn.has(target)) continue;
                 const cb = controlOnly ? null : this.clipBaseOf(layer, i);
-                if (cb && !drawn.has(cb)) continue;
                 if (layer.kind === "filter") {
-                    if (!controlOnly && !noFilters) { chain = this.applyFilterLayer(ctx, layer, i, forRun, chain, this.nextIsFilterLayer(i, forRun, end), cb ? () => coverage(cb) : null); drawn.add(layer); }
+                    if (!controlOnly && !skip) { chain = this.applyFilterLayer(ctx, layer, i, forRun, chain, this.nextIsFilterLayer(i, forRun, end), cb ? () => coverage(cb) : null); drawn.add(layer); }
                     continue;
                 }
                 const ctrl = this.isControl(layer);
@@ -16668,6 +16682,21 @@ class InpaintEditor {
     }
 
     /**
+     * Clipping: the unclipped layer below this layer in the same group that it targets.
+     */
+    clipTargetOf(layer, i = this.layers.indexOf(layer)) {
+        if (!layer || !layer.clip) return null;
+        for (let j = i - 1; j >= 0; j--) {
+            const b = this.layers[j];
+            if (b.clip) continue;
+            // a clip does not reach out of its group: the base is in the same one (a reference is in none and draws nothing)
+            if (!this.isReference(b) && (b.group || null) !== (layer.group || null)) return null;
+            return b;
+        }
+        return null;
+    }
+
+    /**
      * Clipping (PLAN_0_1_31 §6 step 3): the layer a clipped layer (`clip`) is clipped to, its base: the nearest layer below
      * it that is not clipped, when that is a layer of pixels. Null for a layer drawn as it is: not clipped, or a clip
      * without effect (below it only clipped layers and the picture, or a filter layer as the base). A walk of the stack
@@ -16675,15 +16704,8 @@ class InpaintEditor {
      * in a run): `drawLayersInto`, `glViewComposite` and `stackPlan` do it the same way.
      */
     clipBaseOf(layer, i = this.layers.indexOf(layer)) {
-        if (!layer || !layer.clip) return null;
-        for (let j = i - 1; j >= 0; j--) {
-            const b = this.layers[j];
-            if (b.clip) continue;
-            // a clip does not reach out of its group: the base is in the same one (a reference is in none and draws nothing)
-            if (!this.isReference(b) && (b.group || null) !== (layer.group || null)) return null;
-            return b.kind === "filter" ? null : b;
-        }
-        return null;
+        const b = this.clipTargetOf(layer, i);
+        return b && b.kind === "filter" ? null : b;
     }
 
     // ---- groups as folders (PLAN_0_1_31 §6 step 5) ------------------------------------------------------------------

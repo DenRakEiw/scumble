@@ -3744,6 +3744,33 @@ export const host = {
     },
 
     /**
+     * Document picture input without filter layers (or with them if skipFilters: false):
+     * For depth estimation, fresh fingerprints, and other photo-derived inputs (PLAN_NIK9_BUILD.md §F5).
+     * On tiles: one sampleRegionSettled pass over the whole picture at s = min(1, max(w / W, h / H)) with forRun: true,
+     * drawn into a w x h canvas, then RGBA bytes.
+     * On canvases: a plain draw of flattenToCanvas({ forRun: true, skipFilters }).
+     */
+    async pictureInput(editor, w, h, { skipFilters = true, background = null } = {}) {
+        const W = editor.width, H = editor.height;
+        if (!W || !H) throw new Error("empty document");
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const ctx = c.getContext("2d");
+        if (background) { ctx.fillStyle = background; ctx.fillRect(0, 0, w, h); }
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+        if (editor.tileMode) {
+            const s = Math.min(1, Math.max(w / W, h / H));
+            const sample = await editor.sampleRegionSettled("image", [0, 0, W, H], s, { forRun: true, skipFilters });
+            ctx.drawImage(sample, 0, 0, w, h);
+        } else {
+            const flat = editor.flattenToCanvas({ forRun: true, skipFilters });
+            ctx.drawImage(flat, 0, 0, w, h);
+        }
+        const image = new Uint8Array(ctx.getImageData(0, 0, w, h).data.buffer);
+        return { image, width: w, height: h };
+    },
+
+    /**
      * The object map for the hover tool from SAM2 in-app. Called by the editor's
      * ensureObjects() with the source hash and layer; fills editor.objects through
      * applySegmentIds like the ComfyUI path does through applySegmentsFile.
@@ -3911,8 +3938,8 @@ export const host = {
         const [gw, gh] = workSize(W, H, WORK_MAX);
         const s = Math.min(1, Math.max(gw / W, gh / H));
         const sample = editor.tileMode
-            ? await editor.sampleRegionSettled("image", [0, 0, W, H], s, { forRun: true, noFilters: true })
-            : editor.flattenToCanvas({ forRun: true, noFilters: true });
+            ? await editor.sampleRegionSettled("image", [0, 0, W, H], s, { forRun: true, skipFilters: true, noFilters: true })
+            : editor.flattenToCanvas({ forRun: true, skipFilters: true, noFilters: true });
 
         const c_work = (sample.width === gw && sample.height === gh) ? sample : document.createElement("canvas");
         if (c_work !== sample) {

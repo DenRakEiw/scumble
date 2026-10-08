@@ -193,12 +193,12 @@ async function runCommandChecks() {
             tileMode: false,
             compositeVersion: 5,
             flattenToCanvas: (opts) => {
-                noFiltersPassed = !!opts.noFilters;
+                noFiltersPassed = !!(opts.skipFilters || opts.noFilters);
                 return fakeCanvas;
             },
         };
         const inp = await host.depthInput(fakeEd);
-        assert.ok(noFiltersPassed, "flattenToCanvas called with noFilters: true");
+        assert.ok(noFiltersPassed, "flattenToCanvas called with skipFilters: true");
         assert.ok(inp.rgba instanceof Uint8Array, "rgba is Uint8Array");
         assert.ok(inp.grey instanceof Uint8Array, "grey is Uint8Array");
         assert.ok(inp.thumb instanceof Uint8Array, "thumb is Uint8Array");
