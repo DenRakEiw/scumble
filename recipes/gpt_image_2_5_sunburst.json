@@ -321,6 +321,7 @@
       ],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". WaveSpeed sends the aspect preset closest to the crop.",
       "text": {
+        "model": "openai/gpt-image-2.5-sunburst/text-to-image",
         "refs": {
           "model": "openai/gpt-image-2.5-sunburst/edit"
         }

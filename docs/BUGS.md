@@ -11,6 +11,18 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### Generate new on WaveSpeed without references went to model ids that answer 404 - fixed for 0.1.44 (2026-10-08, not run live)
+
+Found 2026-10-07 while building Nano Banana 2.1's WaveSpeed variant. A WaveSpeed variant without `text.model` sent a
+new image to its edit id with `/edit` cut off (`textModelOf`, `electron/main/recipes.js`); those pages answer 404 and
+the `/text-to-image` ones 200. The ten variants (flux2_flex, flux2_klein, flux2_max, flux2_pro, gpt_image_2,
+gpt_image_2_5_flare, gpt_image_2_5_sunburst, nano_banana_2, nano_banana_2_lite, nano_banana_pro) now name
+`text.model` `<id>/text-to-image`, as FLUX 3 and Nano Banana 2.1 do; references still go to `/edit`. `textModelOf`
+is unchanged (Seedream and Ideogram use the bare id, which answers 200). Test: `node tools/wavespeed_text_test.js`
+(every shipped WaveSpeed variant's normalised text route; it fails with one variant's fix reverted). **Still open:**
+the text pages' fields (aspect, resolution) were not compared against each edit variant's Settings rows, and Reve's
+`reve/2.1/text-to-image` page answers 404 while a search names that id; one Generate new with a key settles both.
+
 ### Generate new left the boxes behind when the model answered at another size - fixed for 0.1.43 (B6 of docs/PLAN_0_1_43.md, 2026-10-07)
 
 Found in the video 3 test runs (a 4096 x 2304 canvas, FLUX 3's 4k tier answered 5456 x 3072, the boxes kept their old
@@ -199,20 +211,6 @@ only auto and 1K). Not run live.
 ---
 
 ## Open
-
-### Generate new on WaveSpeed without references goes to model ids that may not exist (found 2026-10-07, read, not run)
-
-**Found** while building Nano Banana 2.1's WaveSpeed variant (N2 of `docs/PLAN_0_1_43.md`). A WaveSpeed variant
-without `text.model` sends a new image to its edit id with `/edit` cut off (`textModelOf`, `electron/main/recipes.js`):
-`google/nano-banana-2`, `openai/gpt-image-2`, `wavespeed-ai/flux-2-pro` and so on. WaveSpeed's model pages for those
-ids answer 404, and the same ids with `/text-to-image` answer 200 (checked 2026-10-07 on `wavespeed.ai/models/<id>`):
-flux2_flex, flux2_klein (`flux-2-klein-9b`), flux2_max, flux2_pro, gpt_image_2, gpt_image_2_5_flare, `_sunburst`,
-nano_banana_2, nano_banana_2_lite, nano_banana_pro. Reve's `reve/2.1/text-to-image` answers 404 too. With reference
-layers the run goes to the `/edit` route (`text.refs.model`) and is not affected; the Seedream, Qwen, FLUX 3, Ideogram
-4.5 and FLUX.1 Fill ids answer 200. A 404 page is no proof that the API refuses the id; one Generate new on WaveSpeed
-with a key settles it. **The fix if it holds:** `text.model` `<id>/text-to-image` on each variant (as FLUX 3 and Nano
-Banana 2.1 have), or `textModelOf` writing `/text-to-image` for WaveSpeed; check each text page's fields (aspect,
-resolution) against what the edit's Settings rows send. Light tier.
 
 ### Size limits: gaps found reading the code (2026-10-07, read, not run)
 
