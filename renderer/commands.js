@@ -55,7 +55,7 @@ function docName(ed) {
 }
 
 function busy(ed) {
-    return !!(ed.pending || ed.segmentPending || ed.cutoutPending || ed.upsamplePending || ed.objectsPending || ed.depthPending || ed._loading || ed.providerPending || ed._docSaving || (ed.pointer && ed.pointer.healing));
+    return !!(ed.pending || ed.segmentPending || ed.cutoutPending || ed.upsamplePending || ed.objectsPending || ed.depthPending || ed.rangePending || ed._loading || ed.providerPending || ed._docSaving || (ed.pointer && ed.pointer.healing));
 }
 
 export function layerSummary(ed, l) {
@@ -324,7 +324,7 @@ export function status(ed) {
         // every reference layer top first: its label (what @img<n> names; null while hidden) and, from the `status`
         // command, the name the chosen route sends its picture as
         references: ed.refDescriptors().map((d) => ({ id: d.id, name: d.name, label: d.label ? "img" + d.label : null, visible: d.visible })),
-        pending: { segment: !!ed.segmentPending, cutout: !!ed.cutoutPending, upsample: !!ed.upsamplePending, transform: !!ed.pending, objects: !!ed.objectsPending, provider: !!ed.providerPending, depth: !!ed.depthPending },
+        pending: { segment: !!ed.segmentPending, cutout: !!ed.cutoutPending, upsample: !!ed.upsamplePending, transform: !!ed.pending, objects: !!ed.objectsPending, provider: !!ed.providerPending, depth: !!ed.depthPending, range: !!ed.rangePending },
         recipe: r ? { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", provider: r.provider || null } : null,
         connected: !!host.connected, status: ed.status || "",
         // the pixel backend of this document (docs/PLAN_BCE.md §C2 step b) and what chose it
@@ -995,6 +995,36 @@ const COMMANDS = {
             const sel = bounds(ed);
             ed.setStatus(`${label.replace(/ selection$/, "")} ${mode === "replace" ? "selected" : mode === "add" ? "added" : "subtracted"}${feather ? `, its edge feathered by ${feather} px` : ""}.`);
             return { selection: sel };
+        },
+    },
+    select_range: {
+        needsImage: true,
+        description: "Select by depth (0 near .. 1 far; needs depth_map), luminosity (0 black .. 1 white) or colour similarity (1 = the colour): between lo and hi, softened over fLo below and fHi above.",
+        params: {
+            source: P.enum("depth, luma or color", ["depth", "luma", "color"], "depth"),
+            lo: P.num("0..1", { required: true }),
+            hi: P.num("0..1", { required: true }),
+            fLo: P.num("feather below lo, 0..1", { default: 0 }),
+            fHi: P.num("feather above hi, 0..1", { default: 0 }),
+            invert: P.bool("select outside the range", { default: false }),
+            color: P.str("#rrggbb, for source color"),
+            tol: P.num("0..100, colour tolerance", { default: 30 }),
+            mode: P.selMode(),
+        },
+        async run(ed, a) {
+            const mode = selMode(a.mode);
+            const limit = normalizeLimit({
+                source: a.source || "depth",
+                lo: a.lo,
+                hi: a.hi,
+                fLo: a.fLo,
+                fHi: a.fHi,
+                invert: a.invert,
+                color: a.color,
+                tol: a.tol,
+            });
+            const res = await ed.selectRange(limit, mode);
+            return { selection: bounds(ed), seconds: res ? res.seconds : 0, status: ed.status };
         },
     },
 

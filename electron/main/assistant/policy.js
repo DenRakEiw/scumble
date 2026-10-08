@@ -48,7 +48,7 @@ const POLICY = {
     select_rect: AUTO, select_all: AUTO, select_none: AUTO, select_invert: AUTO, select_feather: AUTO,
     select_grow: AUTO, select_from_layer: AUTO, select_mask: AUTO, select_point: AUTO,
     // docs/PLAN_0_1_42.md F2b: the magic wand and the ellipse / polygon tools, in the app, one selection step each
-    select_color: AUTO, select_shape: AUTO,
+    select_color: AUTO, select_shape: AUTO, select_range: AUTO,
     select_by_text: () => ASK("a SAM3 helper run goes to the front of your ComfyUI queue"),
 
     // ---- the document's generation fields -----------------------------------------------

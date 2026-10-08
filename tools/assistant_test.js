@@ -1189,6 +1189,7 @@ async function main() {
             // F2b: the wand and the shapes select, the Settings rows read and a preset applied to them run; a crop setting runs
             ["select_color", { x: 5, y: 5, tolerance: 20 }, "auto"], ["select_color", { x: 5, y: 5, sample: "layer", layer: "Lyours" }, "auto"],
             ["select_shape", { shape: "ellipse", x: 0, y: 0, w: 10, h: 10 }, "auto"], ["select_shape", { shape: "polygon", points: [[0, 0], [9, 0], [0, 9]], mode: "subtract" }, "auto"],
+            ["select_range", { source: "depth", lo: .2, hi: .8 }, "auto"],
             ["list_settings", {}, "auto"], ["apply_preset", { name: "M" }, "auto"], ["set_crop", { fill: "green", colorMatch: false }, "auto"],
             ["a_user_plugins_tool", {}, "ask"],
         ];
@@ -1265,7 +1266,7 @@ async function main() {
             // F2a: the transform, the paste and the resize push their own; a cancel changes no document
             ["transform_layer", { mode: "rotate", angle: 10 }, null], ["copy_to_layer", { cut: true }, null], ["resize_image", { percent: 50 }, null], ["cancel_run", {}, null],
             // F2b: the selections push their own selection step; a preset and a read change no layer
-            ["select_color", { x: 5, y: 5 }, null], ["select_shape", { shape: "ellipse" }, null], ["apply_preset", { name: "M" }, null], ["list_settings", {}, null],
+            ["select_color", { x: 5, y: 5 }, null], ["select_shape", { shape: "ellipse" }, null], ["select_range", {}, null], ["apply_preset", { name: "M" }, null], ["list_settings", {}, null],
         ];
         const badSteps = [];
         for (const [name, args, want] of steps) {

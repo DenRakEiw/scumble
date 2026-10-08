@@ -36,6 +36,10 @@ async function main() {
         u16Bilinear,
         WEIGHTS_GLSL,
     } = weightsMod;
+    const rasterMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_raster.js")).href);
+    const { combineAlpha, tilesSource } = rasterMod;
+    const workerMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_worker.js")).href);
+    const { rangeSelectJob } = workerMod;
 
     // ---------------------------------------------------------------------------
     // 1. sstep & rangeWeight: test requirements from PLAN_NIK9_BUILD §3.1
@@ -265,6 +269,89 @@ async function main() {
         assert.ok(WEIGHTS_GLSL.includes("vec3 w_opp("), "w_opp present");
         assert.ok(WEIGHTS_GLSL.includes("float w_colour("), "w_colour present");
         assert.ok(WEIGHTS_GLSL.includes("float w_limit("), "w_limit present");
+    });
+
+    // ---------------------------------------------------------------------------
+    // 8. combineAlpha: banded combine identity
+    // combineAlpha(a, 255 - w, "subtract") === combineAlpha(a, w, "intersect")
+    // for all 65,536 pairs of (a, w) in 0..255
+    // ---------------------------------------------------------------------------
+
+    test("combineAlpha: subtract(a, 255 - w) === intersect(a, w) for all 65,536 pairs", () => {
+        let diffs = 0;
+        for (let a = 0; a <= 255; a++) {
+            for (let w = 0; w <= 255; w++) {
+                const sub = combineAlpha(a, 255 - w, "subtract");
+                const inter = combineAlpha(a, w, "intersect");
+                if (sub !== inter) diffs++;
+            }
+        }
+        assert.equal(diffs, 0, "must have 0 diffs across all 65,536 pairs");
+    });
+
+    // ---------------------------------------------------------------------------
+    // 9. rangeSelectJob worker band vs per-pixel limitWeight loop on synthetic 600 x 300 ramp
+    // ---------------------------------------------------------------------------
+
+    test("rangeSelectJob: worker band matches per-pixel limitWeight loop byte for byte on 600x300 ramp", () => {
+        const W = 600, H = 300;
+        const mapW = 300, mapH = 150;
+        const mapData = new Uint16Array(mapW * mapH);
+        for (let y = 0; y < mapH; y++) {
+            for (let x = 0; x < mapW; x++) {
+                mapData[y * mapW + x] = Math.round(65535 * x / (mapW - 1));
+            }
+        }
+        // Affine map: maps document pixels [0..600, 0..300] to map pixels [0..300, 0..150]
+        const m = [mapW / W, 0, 0, mapH / H, 0, 0];
+        const limit = { source: "depth", lo: 0.25, hi: 0.65, fLo: 0.1, fHi: 0.1, invert: false };
+
+        // 1. Run rangeSelectJob for bands [0, 150] and [150, 300]
+        const job1 = rangeSelectJob({
+            W, H, y0: 0, y1: 150, source: "depth", limit, invert: false,
+            map: { w: mapW, h: mapH, data: mapData, m }
+        });
+        const job2 = rangeSelectJob({
+            W, H, y0: 150, y1: 300, source: "depth", limit, invert: false,
+            map: { w: mapW, h: mapH, data: mapData, m }
+        });
+
+        const src1 = tilesSource(job1.tiles, [0, 0], [0, 0, W, 150]);
+        const src2 = tilesSource(job2.tiles, [0, 0], [0, 150, W, 300]);
+        const r1 = src1.read(0, 0, W, 150);
+        const r2 = src2.read(0, 150, W, 150);
+
+        // 2. Direct per-pixel loop
+        for (let y = 0; y < 150; y++) {
+            const pyCentre = y + 0.5;
+            for (let x = 0; x < W; x++) {
+                const pxCentre = x + 0.5;
+                const mx = m[0] * pxCentre + m[2] * pyCentre + m[4];
+                const my = m[1] * pxCentre + m[3] * pyCentre + m[5];
+                const v = u16Bilinear(mapData, mapW, mapH, mx, my);
+                const w = rangeWeight(v, limit);
+                const expected = Math.round(255 * w);
+                const actual = r1[y * W + x];
+                if (actual !== expected) {
+                    throw new Error(`band 1 mismatch at (${x}, ${y}): actual ${actual} !== expected ${expected}`);
+                }
+            }
+        }
+        for (let y = 150; y < 300; y++) {
+            const pyCentre = y + 0.5;
+            for (let x = 0; x < W; x++) {
+                const pxCentre = x + 0.5;
+                const mx = m[0] * pxCentre + m[2] * pyCentre + m[4];
+                const my = m[1] * pxCentre + m[3] * pyCentre + m[5];
+                const v = u16Bilinear(mapData, mapW, mapH, mx, my);
+                const w = rangeWeight(v, limit);
+                const expected = Math.round(255 * w);
+                const actual = r2[(y - 150) * W + x];
+                if (actual !== expected) {
+                    throw new Error(`band 2 mismatch at (${x}, ${y}): actual ${actual} !== expected ${expected}`);
+                }
+            }
+        }
     });
 
     console.log(`\nAll ${passed} tests passed!`);

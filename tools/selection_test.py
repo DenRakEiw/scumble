@@ -178,6 +178,153 @@ if (!bRedo || bRedo[0] !== 100 || bRedo[1] !== 100 || bRedo[2] !== 300 || bRedo[
 await run("remove_layer", { doc: window.__selDoc, layer: l.id });
 return { ok: true, bounds: b };
 """),
+    ("range_select_depth_cases", """
+const ed = ednow(window.__selDoc);
+const { makeMap } = await import("./editor/inpaint_maps.js");
+
+// Setup 1600 x 1200 canvas
+await run("new_canvas", { doc: window.__selDoc, width: 1600, height: 1200, color: "#ffffff" });
+
+const mapW = 1024, mapH = 768;
+const ramp = new Uint16Array(mapW * mapH);
+for (let y = 0; y < mapH; y++) {
+    for (let x = 0; x < mapW; x++) {
+        ramp[y * mapW + x] = Math.round(x * 65535 / (mapW - 1));
+    }
+}
+const map = makeMap("depth", mapW, mapH, ramp, [1600, 0, 0, 1200, 0, 0], {});
+await ed.setMap("depth", map);
+
+const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
+
+// Case 1: depth lo .25 hi .5, no feathers
+// at columns where v = .2 / .3 / .45 / .6 -> 0 / 255 / 255 / 0, exact (9 columns, middle row 600)
+await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0, fHi: 0 }, "replace");
+const c1Cols = [160, 320, 400, 480, 720, 800, 960, 1200, 1440];
+const c1Vals = c1Cols.map((x) => at(x, 600));
+if (at(320, 600) !== 0) throw new Error("case 1: at v=0.2 (x=320) expected 0, got " + at(320, 600));
+if (at(480, 600) !== 255) throw new Error("case 1: at v=0.3 (x=480) expected 255, got " + at(480, 600));
+if (at(720, 600) !== 255) throw new Error("case 1: at v=0.45 (x=720) expected 255, got " + at(720, 600));
+if (at(960, 600) !== 0) throw new Error("case 1: at v=0.6 (x=960) expected 0, got " + at(960, 600));
+
+// Case 2: fLo .1 at v = .2 -> round(255 * sstep(.15, .25, .2)) = 128 (+-1)
+await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0.1, fHi: 0 }, "replace");
+const aCase2 = at(320, 600);
+if (Math.abs(aCase2 - 128) > 1) throw new Error("case 2: expected 128 +- 1 at v=0.2, got " + aCase2);
+
+// Case 3: add over a rect selection [0,0,400,1200] -> 255 inside the rect whatever w; outside equals w
+await run("select_rect", { doc: window.__selDoc, x: 0, y: 0, w: 400, h: 1200, mode: "replace" });
+await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0.1, fHi: 0 }, "add");
+if (at(200, 600) !== 255 || at(320, 600) !== 255) throw new Error("case 3: inside rect not 255");
+if (at(720, 600) !== 255) throw new Error("case 3: outside rect at 720 not 255");
+if (at(960, 600) !== 0) throw new Error("case 3: outside rect at 960 not 0");
+
+// Case 4: intersect over a selection feathered to 200, at a pixel with w = 128 -> mul255(200, 128) = 100 exactly
+await run("select_none", { doc: window.__selDoc });
+ed.sel.drawInto([319, 599, 322, 602], (ctx) => {
+    ctx.fillStyle = "rgba(255, 0, 0, " + (200 / 255) + ")";
+    ctx.fillRect(319, 599, 3, 3);
+});
+if (at(320, 600) !== 200) throw new Error("case 4 prep: pixel at (320, 600) is not 200: " + at(320, 600));
+await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0.1, fHi: 0 }, "intersect");
+const aCase4 = at(320, 600);
+if (aCase4 !== 100) throw new Error("case 4: expected mul255(200, 128) === 100, got " + aCase4);
+
+// Case 5: subtract -> a - mul255(a, w) exactly at 5 probes
+await run("select_all", { doc: window.__selDoc });
+const probes = [160, 320, 480, 720, 960];
+const aBefore = probes.map((x) => at(x, 600));
+await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0.1, fHi: 0 }, "subtract");
+const expectedSub = [255, 127, 0, 0, 255];
+for (let i = 0; i < probes.length; i++) {
+    const val = at(probes[i], 600);
+    if (val !== expectedSub[i]) {
+        throw new Error(`case 5: at x=${probes[i]} expected ${expectedSub[i]}, got ${val}`);
+    }
+}
+
+// Case 9: undo, then redo -> bytes before and after equal at the probes
+await run("undo", { doc: window.__selDoc });
+for (let i = 0; i < probes.length; i++) {
+    const val = at(probes[i], 600);
+    if (val !== aBefore[i]) {
+        throw new Error(`case 9 undo: at x=${probes[i]} expected ${aBefore[i]}, got ${val}`);
+    }
+}
+await run("redo", { doc: window.__selDoc });
+for (let i = 0; i < probes.length; i++) {
+    const val = at(probes[i], 600);
+    if (val !== expectedSub[i]) {
+        throw new Error(`case 9 redo: at x=${probes[i]} expected ${expectedSub[i]}, got ${val}`);
+    }
+}
+
+// Case 12: a stand-in pool delay (a hook on editorPool().run), then cancelRange() -> selection bytes and undo length preserved
+if (ed.tileMode) {
+    const { editorPool } = await import("./editor/inpaint_jobs.js");
+    const pool = editorPool();
+    const origRun = pool.run.bind(pool);
+    const undoLenBefore = ed.undo.length;
+    const probeBytesBefore = probes.map((x) => at(x, 600));
+
+    pool.run = function(op, args, transfer, opts) {
+        if (opts && opts.group && opts.group.startsWith("range")) {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    origRun(op, args, transfer, opts).then(resolve, reject);
+                }, 400);
+            });
+        }
+        return origRun(op, args, transfer, opts);
+    };
+
+    const rangePromise = ed.selectRange({ source: "depth", lo: 0.1, hi: 0.9 }, "replace");
+    await new Promise((r) => setTimeout(r, 60));
+    const wasCancelled = ed.cancelRange();
+    pool.run = origRun;
+    await rangePromise;
+
+    if (!wasCancelled) throw new Error("case 12: cancelRange returned false");
+    if (ed.undo.length !== undoLenBefore) throw new Error(`case 12: undo length changed: ${undoLenBefore} -> ${ed.undo.length}`);
+    for (let i = 0; i < probes.length; i++) {
+        const val = at(probes[i], 600);
+        if (val !== probeBytesBefore[i]) {
+            throw new Error(`case 12: at x=${probes[i]} expected preserved ${probeBytesBefore[i]}, got ${val}`);
+        }
+    }
+}
+
+return { c1Vals, aCase2, aCase4, expectedSub };
+"""),
+    ("range_select_15k_tile_case", """
+const ed = ednow(window.__selDoc);
+if (!ed.tileMode) return { skipped: "canvas backend" };
+
+const { makeMap } = await import("./editor/inpaint_maps.js");
+const d15k = await run("new_document");
+await run("new_canvas", { doc: d15k.id, width: 15000, height: 10000 });
+const ed15k = ednow(d15k.id);
+
+const mapW = 1024, mapH = 768;
+const ramp = new Uint16Array(mapW * mapH);
+for (let i = 0; i < ramp.length; i++) ramp[i] = Math.round(i * 65535 / ramp.length);
+await ed15k.setMap("depth", makeMap("depth", mapW, mapH, ramp, [15000, 0, 0, 10000, 0, 0], {}));
+
+let flattenCount = 0;
+const origFlatten = ed15k.flattenToCanvas.bind(ed15k);
+ed15k.flattenToCanvas = function(...args) {
+    flattenCount++;
+    return origFlatten(...args);
+};
+
+const res = await ed15k.selectRange({ source: "depth", lo: 0.5, hi: 0.5, fLo: 0.5, fHi: 0.5 }, "replace");
+
+if (flattenCount !== 0) throw new Error("15k case: flattenToCanvas called " + flattenCount);
+if (typeof res.seconds !== "number" || res.seconds < 0) throw new Error("15k case: invalid seconds " + res.seconds);
+
+await run("close_document", { doc: d15k.id, force: true });
+return { seconds: res.seconds, tiles: res.tiles, flattenCount };
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__selDoc, force: true }); } catch (_) { /* gone */ }
 return "ok";

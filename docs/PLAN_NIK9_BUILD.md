@@ -404,6 +404,7 @@ route, limits in presets.
 - **R1-S3a / R1-S3b** (2026-10-08): Depth maths, `depth_guide` worker job, `depth_map` and pure read `sample_depth` commands, stored on `ed.maps.depth` with 0.5/99.5 percentiles.
 - **R1-S4** (2026-10-08): Range bar control `renderer/editor/inpaint_rangebar.js` and whole-picture histograms.
 - **Review Must-Fix 1-7** (2026-10-08): All 7 review findings resolved; gates `pixels selection limit maps film editor` ALL PASS on both `--tiles on` and `--tiles off` with `--offline`.
+- **R1-S5a** (2026-10-08): Select by range depth source: banded combine rule, worker `range_select` op, `ed.selectRange`, `cancelRange`, `select_range` command (auto policy, 109 commands in COMMANDS.md), selection gate cases 1–5, 9, 10, 12 passing on both backends.
 
 ## 4. Foundations
 

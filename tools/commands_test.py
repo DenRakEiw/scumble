@@ -1892,6 +1892,13 @@ try {
     await refusedR({ x: 0, y: 0, w: 10, h: 10, mode: "bad" }, /^mode must be replace, add, subtract or intersect/);
     await refusedM({ mask: new Uint8Array(400 * 300), mode: "bad" }, /^mode must be replace, add, subtract or intersect/);
     await refusedP({ x: 10, y: 10, mode: "bad" }, /^mode must be replace, add, subtract or intersect/);
+    const refusedRange = async (args, re) => { let m = ""; try { await c("select_range", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); } if (!re.test(m)) throw new Error("select_range " + JSON.stringify(args) + ": " + (m || "not refused")); return m; };
+    await refusedRange({ source: "x", lo: 0.2, hi: 0.8 }, /^source must be one of depth, luma, color/);
+    await refusedRange({ source: "depth", lo: 0.2, hi: 0.8 }, /^no depth map/);
+    const { makeMap } = await import("./editor/inpaint_maps.js");
+    await ed.setMap("depth", makeMap("depth", 16, 16, new Uint16Array(256), [ed.width, 0, 0, ed.height, 0, 0]));
+    await c("select_range", { doc: d.id, source: "depth", lo: 0.2, hi: 0.8, mode: "intersect" });
+    await ed.setMap("depth", null);
     await c("select_rect", { doc: d.id, x: 20, y: 20, w: 40, h: 40, mode: "intersect" });
     const fullMask = new Uint8Array(400 * 300); fullMask.fill(1);
     await c("select_mask", { doc: d.id, mask: fullMask, mode: "intersect" });

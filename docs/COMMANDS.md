@@ -389,6 +389,23 @@ Select an ellipse (x, y, w, h: its bounding box) or a polygon / lasso (points: t
 | `feather` | number | radius of the soft edge in pixels, 0..512 (default `0`) |
 | `mode` | string | replace, add, subtract or intersect (default `"replace"`; one of `replace`, `add`, `subtract`, `intersect`) |
 
+### `select_range` *(image)*
+
+Select by depth (0 near .. 1 far; needs depth_map), luminosity (0 black .. 1 white) or colour similarity (1 = the colour): between lo and hi, softened over fLo below and fHi above.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `source` | string | depth, luma or color (default `"depth"`; one of `depth`, `luma`, `color`) |
+| `lo` | number | 0..1 (required) |
+| `hi` | number | 0..1 (required) |
+| `fLo` | number | feather below lo, 0..1 (default `0`) |
+| `fHi` | number | feather above hi, 0..1 (default `0`) |
+| `invert` | boolean | select outside the range (default `false`) |
+| `color` | string | #rrggbb, for source color |
+| `tol` | number | 0..100, colour tolerance (default `30`) |
+| `mode` | string | replace, add, subtract or intersect (default `"replace"`; one of `replace`, `add`, `subtract`, `intersect`) |
+
 ## Prompt and generation
 
 ### `set_prompt`
