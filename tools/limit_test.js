@@ -63,12 +63,6 @@ async function main() {
         WEIGHTS_GLSL,
     } = weightsModule;
 
-    const filtersModule = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_filters.js")).href);
-    const {
-        applyFilter,
-        setLimitStage,
-        FILTERS,
-    } = filtersModule;
 
     const canvasModule = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_canvas.js")).href);
     const { InpaintEditor } = canvasModule;
@@ -253,7 +247,21 @@ async function main() {
         fHi: 0,
         invert: false,
     }, "prev.limit must be preserved on filter type switch");
-    console.log("     [ok] setFilterType keeps limit across filter type switch");
+    const sampleLumaLayer = {
+        id: "fx_luma",
+        filter: "invert",
+        params: {
+            limit: { source: "luma", lo: 0.2, hi: 0.8 },
+        },
+        name: "Invert 1",
+    };
+    let noteSet = "";
+    edFilterType.setStatus = (s) => { noteSet = s; };
+    edFilterType.setFilterType(sampleLumaLayer, "fill");
+    assert.strictEqual(sampleLumaLayer.filter, "fill");
+    assert.strictEqual(sampleLumaLayer.params.limit, undefined, "luma limit should be dropped when switching to fill");
+    assert.match(noteSet, /Fill layers take a depth limit only/);
+    console.log("     [ok] setFilterType keeps limit across filter type switch and drops non-depth on fill");
 
     // -------------------------------------------------------------------------
     // 5. commands.js: filter_types schema and writeParams immutability
@@ -278,6 +286,10 @@ async function main() {
     let capturedUndoSnap = null;
     const testEd = {
         node: { id: 99 },
+        base: {},
+        width: 100,
+        height: 100,
+        addFilterLayer: (type) => ({ id: "new_fl", filter: type, kind: "filter", name: type, params: {} }),
         layers: [testLayer],
         activeLayerId: testLayer.id,
         activeLayer: () => testLayer,
@@ -318,6 +330,41 @@ async function main() {
         }
         assert.match(badSourceError, /limit\.source must be depth, luma or color/);
 
+        // Verify fill layer rejects non-depth limit in set_filter
+        const fillLayer = {
+            id: "layer_test_fill",
+            name: "TestFill",
+            kind: "filter",
+            filter: "fill",
+            params: { color: "#ffffff" },
+        };
+        testEd.layers.push(fillLayer);
+
+        let fillLumaError = "";
+        try {
+            await commands.run("set_filter", {
+                doc: 99,
+                layer: "layer_test_fill",
+                params: { limit: { source: "luma", lo: 0.2, hi: 0.8 } },
+            });
+        } catch (e) {
+            fillLumaError = e.message || String(e);
+        }
+        assert.match(fillLumaError, /a fill layer takes a depth limit only/);
+
+        // Verify add_filter with fill rejects non-depth limit
+        let addFillLumaError = "";
+        try {
+            await commands.run("add_filter", {
+                doc: 99,
+                type: "fill",
+                params: { limit: { source: "luma", lo: 0.2, hi: 0.8 } },
+            });
+        } catch (e) {
+            addFillLumaError = e.message || String(e);
+        }
+        assert.match(addFillLumaError, /a fill layer takes a depth limit only/);
+
         // Apply a valid limit
         await commands.run("set_filter", {
             doc: 99,
@@ -353,35 +400,62 @@ async function main() {
     console.log("     [ok] commands.js validates limit, preserves immutability, and supports removal");
 
     // -------------------------------------------------------------------------
-    // 6. inpaint_filters.js setLimitStage hook
+    // 6. inpaint_limit.js: LIMIT_SHADER, limitStage shortcuts & limitStageCPU
     // -------------------------------------------------------------------------
-    console.log("  6. inpaint_filters limitStage execution...");
-    let stageCalled = false;
-    let stageArgs = null;
-    const testStage = (src, out, limit, info, def) => {
-        stageCalled = true;
-        stageArgs = { src, out, limit, info, def };
-        return "stageResult";
+    console.log("  6. inpaint_limit.js limitStage & limitStageCPU execution...");
+    const limitModule = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_limit.js")).href);
+    const { LIMIT_SHADER, limitStage, limitStageCPU } = limitModule;
+
+    assert.ok(LIMIT_SHADER.uniforms.u_in, "u_in uniform present");
+    assert.ok(LIMIT_SHADER.uniforms.u_map, "u_map uniform present");
+    assert.ok(LIMIT_SHADER.uniforms.u_source, "u_source uniform present");
+    assert.ok(LIMIT_SHADER.uniforms.u_m0, "u_m0 uniform present");
+    assert.ok(LIMIT_SHADER.uniforms.u_m1, "u_m1 uniform present");
+    assert.ok(LIMIT_SHADER.code.includes("w_limit"), "shader code includes w_limit");
+
+    const cSrc = document.createElement("canvas"); cSrc.width = 10; cSrc.height = 10;
+    const cOut = document.createElement("canvas"); cOut.width = 10; cOut.height = 10;
+    assert.strictEqual(limitStage(cSrc, cOut, null), cOut, "null limit returns out");
+    assert.strictEqual(limitStage(cSrc, cOut, { source: "luma", lo: 0, hi: 1 }), cOut, "full range returns out");
+    assert.strictEqual(limitStage(cSrc, cSrc, { source: "luma", lo: 0.2, hi: 0.8 }), cSrc, "src === out returns src");
+
+    const infoMissing = { maps: {} };
+    const resMissing = limitStage(cSrc, cOut, { source: "depth", lo: 0.2, hi: 0.8 }, infoMissing);
+    assert.strictEqual(resMissing, cSrc, "missing depth map returns src");
+    assert.strictEqual(infoMissing.limitMissing, true, "missing depth map sets limitMissing");
+
+    // Test limitStageCPU with mock data
+    const mockSrcCPU = {
+        width: 2, height: 1,
+        getContext: () => ({
+            getImageData: () => ({ data: new Uint8ClampedArray([100, 100, 100, 255, 200, 200, 200, 255]) }),
+        }),
     };
-
-    setLimitStage(testStage);
-    const mockSrc = document.createElement("canvas");
-    const testInfo = { cpu: true };
-    const limitObj = { source: "luma", lo: 0.2, hi: 0.8 };
-
-    const outWithStage = applyFilter("invert", mockSrc, { limit: limitObj }, testInfo);
-    assert.strictEqual(stageCalled, true, "limitStage must be called when params.limit is present");
-    assert.strictEqual(stageArgs.limit, limitObj);
-    assert.strictEqual(stageArgs.def, FILTERS.invert);
-    assert.strictEqual(outWithStage, "stageResult");
-
-    // Clean up limitStage
-    setLimitStage(null);
-    stageCalled = false;
-    const outWithoutStage = applyFilter("invert", mockSrc, { limit: limitObj }, testInfo);
-    assert.strictEqual(stageCalled, false, "limitStage must not be called when null");
-    assert.notStrictEqual(outWithoutStage, "stageResult");
-    console.log("     [ok] setLimitStage intercepts filter output when params.limit is set");
+    const mockOutCPU = {
+        width: 2, height: 1,
+        getContext: () => ({
+            getImageData: () => ({ data: new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 255]) }),
+        }),
+    };
+    let savedData = null;
+    const mockRes = {
+        width: 2, height: 1,
+        getContext: () => ({
+            createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+            putImageData: (img) => { savedData = img.data; },
+        }),
+    };
+    const origCreateEl = document.createElement;
+    document.createElement = (tag) => (tag === "canvas" ? mockRes : origCreateEl(tag));
+    try {
+        limitStageCPU(mockSrcCPU, mockOutCPU, { source: "luma", lo: 0.3, hi: 0.7, fLo: 0, fHi: 0, invert: false });
+        assert.ok(savedData, "putImageData called");
+        assert.strictEqual(savedData[0], 0, "px 0 inside range took filtered value 0");
+        assert.strictEqual(savedData[4], 200, "px 1 outside range took src value 200");
+    } finally {
+        document.createElement = origCreateEl;
+    }
+    console.log("     [ok] limitStage shortcuts and limitStageCPU math verified");
 
     // -------------------------------------------------------------------------
     // 7. WEIGHTS_GLSL & ramp check
@@ -419,6 +493,20 @@ async function main() {
     assert.strictEqual(rangeWeight(0.5, rInv), 0);
 
     console.log("     [ok] WEIGHTS_GLSL exports required symbols and JS ramp math is verified");
+
+    // -------------------------------------------------------------------------
+    // 8. docfile.js: FEATURES filter-limit and readerFor 3
+    // -------------------------------------------------------------------------
+    console.log("  8. docfile.js filter-limit feature verification...");
+    const docfile = require(path.join(ROOT, "electron", "main", "docfile.js"));
+    const feat = docfile.FEATURES.find((f) => f.id === "filter-limit");
+    assert.ok(feat, "filter-limit must be present in FEATURES");
+    assert.strictEqual(feat.reader, 3, "filter-limit reader must be 3");
+    assert.strictEqual(docfile.READER_VERSION, 3, "docfile.READER_VERSION must be 3");
+    assert.strictEqual(docfile.readerFor(feat.sample), 3, "readerFor of filter-limit sample must be 3");
+    const emptyDocReader = docfile.readerFor({ layers: [] });
+    assert.strictEqual(emptyDocReader, 1, "readerFor empty document must be 1");
+    console.log("     [ok] docfile.js FEATURES filter-limit is reader 3 and empty document is 1");
 
     console.log("ALL LIMIT TESTS PASSED!");
 }

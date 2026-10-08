@@ -1741,6 +1741,7 @@ const COMMANDS = {
             const type = String(a.type || "grain");
             if (!FILTERS[type]) throw new Error(`unknown filter "${type}" (${Object.keys(FILTERS).join(", ")})`);
             const vals = a.params != null ? checkParams(type, a.params) : null;
+            if (FILTERS[type]?.over && vals?.limit && vals.limit.source !== "depth") throw new Error("a fill layer takes a depth limit only");
             const l = ed.addFilterLayer(type);
             if (!l) throw new Error(ed.status);
             if (vals) writeParams(ed, l, vals);
@@ -1750,7 +1751,7 @@ const COMMANDS = {
         },
     },
     set_filter: {
-        description: "Change a filter layer's parameters (or its type), in one undo step as the layer list's controls make one. params.preset (a film stock of the grain, a colour filter of black-and-white film) sets the preset's values and names the layer, then the other params are applied; a slider that is no offset on the preset turns it to custom when it changes the value (filter_types: offset). A new type starts from its defaults, then params. Nothing changes when a parameter is refused.",
+        description: "Change a filter layer's parameters (or its type), in one undo step as the layer list's controls make one. params.limit restricts where the filter acts (by depth, luma or colour; fill layers take depth only). params.preset (a film stock of the grain, a colour filter of black-and-white film) sets the preset's values and names the layer, then the other params are applied; a slider that is no offset on the preset turns it to custom when it changes the value (filter_types: offset). A new type starts from its defaults, then params. Nothing changes when a parameter is refused.",
         params: { layer: P.layer("", { required: true }), type: P.str("new filter type id"), params: P.obj("parameter values {key: value}") },
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
@@ -1760,6 +1761,8 @@ const COMMANDS = {
             // a fill layer stays a fill and a filter a filter, as the type select offers them
             if (type && FILTERS[l.filter] && !!FILTERS[type].over !== !!FILTERS[l.filter].over) throw new Error(`${l.name} is a ${FILTERS[l.filter].over ? "fill" : "filter"} layer: its type is one of the ${FILTERS[l.filter].over ? "fills" : "filters"} (filter_types: fill)`);
             const vals = a.params != null ? checkParams(type || l.filter, a.params) : null;
+            const targetType = type || l.filter;
+            if (FILTERS[targetType]?.over && vals?.limit && vals.limit.source !== "depth") throw new Error("a fill layer takes a depth limit only");
             const keys = vals ? Object.keys(vals) : [];
             const retype = !!type && type !== l.filter;
             // the type select pushes its own step ("Filter type"), which holds the parameters as they were too

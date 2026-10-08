@@ -33,6 +33,11 @@ const FEATURES = [
         id: "maps", since: "0.1.33", version: 2, sample: { maps: { depth: {} } },
         test: (d) => !!(d && d.maps && typeof d.maps === "object" && Object.keys(d.maps).length > 0),
     },
+    {
+        id: "filter-limit", since: "0.1.44", reader: 3,
+        sample: { layers: [{ kind: "filter", params: { limit: { source: "luma", lo: 0, hi: 1 } } }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.params && l.params.limit),
+    },
 ];
 
 const FORMAT_VERSION = Math.max(1, ...FEATURES.map((f) => f.version || 1));

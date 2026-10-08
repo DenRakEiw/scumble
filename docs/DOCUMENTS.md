@@ -186,7 +186,7 @@ history entry would name it and it would be `false`.
 | `maskOff` | when true | the mask is switched off (kept, not applied; PSD's "disabled"); left out when false, and a reader that does not know it shows the mask on |
 | `match` | when on | colour match `{ strength, source }`, `source` `surroundings` or `underneath`; left out at strength 0 |
 | `locked`, `alphaLock` | when true | left out when false |
-| `filter`, `params`, `lut`, `plate` | filter | the filter type id (built-in, or `<plugin>.<id>`), its parameters, a LUT `{ name, size, ref }` (the LUT stored as a PNG) or `null`, a grain plate `{ name, ref, w, h, mean, std }` or `null` |
+| `filter`, `params`, `lut`, `plate` | filter | the filter type id (built-in, or `<plugin>.<id>`), its parameters (including `limit` since 0.1.44: `{ source, lo, hi, fLo, fHi, invert, color, tol }`, where a document with a limit writes `minReader` 3), a LUT `{ name, size, ref }` (the LUT stored as a PNG) or `null`, a grain plate `{ name, ref, w, h, mean, std }` or `null` |
 | `text` | text | the description `{ content, font, fontRef, size, color, bold, italic, align, lineHeight, letterSpacing, outline, outlineColor, res, turn, flip, angle, box }`; the rendered pixels are the layer's `ref`. `fontRef` is a ref to a font the user added, `null` for a bundled or system font (named only; a machine without it falls back). `turn` (quarter turns clockwise) and `flip` (mirrored before the turn, 0.1.31) and `angle` (degrees clockwise beyond the quarter turns, 0.1.32) say how the text is turned; `box` `[w, h]` is the upright render's size in render pixels (0.1.32). A reader that does not know `angle` shows the stored pixels until the text is edited, then draws it upright |
 
 ### 4.2 Refs and entry names
@@ -387,7 +387,11 @@ Python's `zipfile` with `ZIP_STORED`, `mimetype` written first, is one way.
 ## 8. Versioning, for later writers
 
 - `FORMAT_VERSION` in `docfile.js` is what the app writes as `version`, `READER_VERSION` the highest `minReader` it
-  opens; the `minReader` it writes is the literal in `buildHeader`. The format of this file is 1 / 1.
+  opens; derived from the `FEATURES` table. The current format is version 2 / reader 3.
+- The `FEATURES` table (`electron/main/docfile.js`) controls version requirements:
+  - `linear-light` (since 0.1.32): `minReader` 2.
+  - `maps` (since 0.1.33): format `version` 2.
+  - `filter-limit` (since 0.1.44): `minReader` 3 (filter layers with `params.limit`).
 - **Raise `version`** for an addition a v1 reader can carry without showing it and without harm: a new optional
   top-level field of `document` (it travels as an extra field), new plugin data, new keys inside `crop`, `gen`,
   `settings` and the other settings objects. A v1 reader opens such a file with a note and asks before saving over it.

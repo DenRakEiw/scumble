@@ -52,7 +52,7 @@ const GL = await import("./editor/inpaint_filters_gl.js");
 const src = editor.flattenToCanvas({ forRun: true });
 const W = src.width, H = src.height;
 const cases = {
-  "film.look": [{ preset: "portra400" }, { preset: "velvia50", push: 1 }, { preset: "trix400" }, { preset: "cinestill800t" }, { preset: "custom", contrast: 20, warmth: 20 }],
+  "film.look": [{ preset: "portra400" }, { preset: "velvia50", push: 1 }, { preset: "trix400" }, { preset: "cinestill800t" }, { preset: "custom", contrast: 20, warmth: 20 }, { preset: "portra400", limit: { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } }],
   "film.halation": [{ strength: 80, radius: 20, threshold: 55 }],
   "film.glow": [{ mode: "soft", amount: 80 }, { mode: "screen", amount: 60, threshold: 50 }, { mode: "lighten", amount: 60 }],
   "film.tonal_contrast": [{ highlights: 60, midtones: 70, shadows: 60 }],
