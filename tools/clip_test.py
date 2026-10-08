@@ -259,6 +259,57 @@ JS = r"""
         { const lc = mk(W, H), x = lc.getContext("2d", { willReadFrequently: true }); x.drawImage(ed.layerPixels(baseNow), baseNow.x, baseNow.y, baseNow.w, baseNow.h); const d = x.getImageData(0, 0, W, H).data; for (let i = 0; i < W * H; i++) alphaMax = Math.max(alphaMax, Math.abs(d[i * 4 + 3] - cov[i])); }
         out.mergeIntoBase = { ...diffSolid(b1, m2), all: diff(b1, m2), alphaMax, baseClip: !!baseNow.clip, gone: !ed.layers.some((l) => l.id === cn.id) };
     }
+
+    // Case 11 (PLAN_NIK9_BUILD.md): clipped filter layer with a limit: mix(in, filtered*w, baseAlpha) at 3 probes +- 2
+    {
+        const ed11 = shell.newDocument();
+        shell.activate(ed11);
+        await new Promise((r) => setTimeout(r, 100));
+        const W11 = 200, H11 = 200;
+        const b11 = mk(W11, H11);
+        const bx = b11.getContext("2d");
+        // Left half (x < 100) is grey 128; right half (x >= 100) is black 0
+        bx.fillStyle = "#808080";
+        bx.fillRect(0, 0, 100, H11);
+        bx.fillStyle = "#000000";
+        bx.fillRect(100, 0, 100, H11);
+        await ed11.setBaseFromCanvas(b11, { keepLayers: false });
+
+        // Base paint layer: matches picture colors with vertical alpha gradient (y=0: a=0, y=199: a=255)
+        const blC = mk(W11, H11), blx = blC.getContext("2d");
+        for (let y = 0; y < H11; y++) {
+            const a = y / (H11 - 1);
+            blx.fillStyle = `rgba(128,128,128,${a})`;
+            blx.fillRect(0, y, 100, 1);
+            blx.fillStyle = `rgba(0,0,0,${a})`;
+            blx.fillRect(100, y, 100, 1);
+        }
+        ed11.addLayer({ name: "base", kind: "paint", px: LP.fromCanvas(blC), x: 0, y: 0, w: W11, h: H11, dirty: true });
+
+        // Invert filter with limit: only acts on luma 0.25..0.75 (so left half w=1, right half w=0)
+        const fxLim = ed11.addFilterLayer("invert");
+        fxLim.clip = true;
+        fxLim.params = { limit: { source: "luma", lo: 0.25, hi: 0.75, fLo: 0, fHi: 0, invert: false } };
+        ed11.markFilterChanged(fxLim);
+        await settle(ed11);
+        const fLim = bytes(ed11.flattenToCanvas({ forRun: true }));
+
+        // Probe 1: (50, 0) -> left half (w=1), baseAlpha=0 -> output = in = 128
+        const p0 = fLim[(0 * W11 + 50) * 4];
+        // Probe 2: (50, 199) -> left half (w=1), baseAlpha=1 -> output = 255 - 128 = 127
+        const pFull = fLim[(199 * W11 + 50) * 4];
+        // Probe 3: (150, 199) -> right half (w=0), baseAlpha=1 -> output = in = 0
+        const pOut = fLim[(199 * W11 + 150) * 4];
+
+        const probes = [
+            { name: "baseAlpha_0", diff: Math.abs(p0 - 128), ok: Math.abs(p0 - 128) <= 2 },
+            { name: "baseAlpha_1", diff: Math.abs(pFull - 127), ok: Math.abs(pFull - 127) <= 2 },
+            { name: "limit_out", diff: Math.abs(pOut - 0), ok: Math.abs(pOut - 0) <= 2 },
+        ];
+        out.clippedLimit = { probes, ok: probes.every((p) => p.ok) };
+        shell.closeDocument && shell.closeDocument(ed11, { force: true });
+        shell.activate(ed);
+    }
     return out;
 })()
 """
@@ -315,6 +366,9 @@ async def run(c, args):
     # (the clip is the base's coverage as a mask, not an isolated group): the merges are gated where it is 0 or 255
     check(m1["max"] <= tol and m1["stillClipped"], f"merge two clipped layers (coverage 0 / 255): {m1}")
     check(m2["max"] <= tol and m2["alphaMax"] <= 1 and not m2["baseClip"] and m2["gone"], f"merge a clipped layer into its base (coverage 0 / 255): {m2}")
+    if "clippedLimit" in r:
+        cl = r["clippedLimit"]
+        check(cl.get("ok"), f"Case 11 clipped filter with limit at 3 probes: {cl.get('probes')}")
     print("PASS" if ok else "FAIL")
     return ok
 

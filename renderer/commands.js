@@ -1013,8 +1013,12 @@ const COMMANDS = {
         },
         async run(ed, a) {
             const mode = selMode(a.mode);
+            const source = a.source == null ? "depth" : String(a.source);
+            if (!["depth", "luma", "color"].includes(source)) {
+                throw new Error(`source must be one of depth, luma, color (got ${JSON.stringify(a.source)})`);
+            }
             const limit = normalizeLimit({
-                source: a.source || "depth",
+                source,
                 lo: a.lo,
                 hi: a.hi,
                 fLo: a.fLo,

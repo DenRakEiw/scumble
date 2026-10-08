@@ -1093,7 +1093,21 @@ for (let i = 0; i < 3; i++) {
     ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: L.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
     c.width = 1; c.height = 1;
 }
-{ const { FILTERS } = await import("./editor/inpaint_filters.js"); ed.addFilterLayer(FILTERS[__FILTER__] ? __FILTER__ : "levels"); }
+const mapW = __MAP_W__, mapH = __MAP_H__;
+if (mapW > 0 && mapH > 0) {
+    const { makeMap } = await import("./editor/inpaint_maps.js");
+    const ramp = new Uint16Array(mapW * mapH);
+    for (let i = 0; i < ramp.length; i++) ramp[i] = Math.round(i * 65535 / ramp.length);
+    await ed.setMap("depth", makeMap("depth", mapW, mapH, ramp, [W, 0, 0, H, 0, 0]));
+}
+{
+    const { FILTERS } = await import("./editor/inpaint_filters.js");
+    const fx = ed.addFilterLayer(FILTERS[__FILTER__] ? __FILTER__ : "levels");
+    if (__LIMIT__) {
+        fx.params = { ...fx.params, limit: __LIMIT__ };
+        ed.markFilterChanged(fx);
+    }
+}
 ed.renderLayers(); ed.fitView(); ed.draw();
 await ed.mipsSettled();
 const timed = async (fn) => {
@@ -1157,7 +1171,31 @@ async def run_all(c):
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
     if "--perf" in sys.argv:
         w, h = sys.argv[sys.argv.index("--perf") + 1].lower().split("x")
-        res = await c.eval(PRE % (HELPERS, PERF.replace("__W__", w).replace("__H__", h).replace("__FILTER__", json.dumps(next((x.split("=")[1] for x in sys.argv if x.startswith("--filter=")), "levels")))), timeout=1800)
+        filter_id = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--filter=")), "levels")
+        limit_arg = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--limit=")), None)
+        map_arg = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--map=")), "4096x2731")
+        limit_obj = None
+        map_w, map_h = 0, 0
+        if limit_arg:
+            parts = limit_arg.split(":")
+            limit_obj = {
+                "source": parts[0],
+                "lo": float(parts[1]),
+                "hi": float(parts[2]),
+                "fLo": float(parts[3]),
+                "fHi": float(parts[4]),
+                "invert": len(parts) > 5 and parts[5] in ("inv", "true", "1"),
+            }
+            if limit_obj["source"] == "depth":
+                mw, mh = map_arg.lower().split("x")
+                map_w, map_h = int(mw), int(mh)
+        perf_js = (PERF.replace("__W__", w)
+                       .replace("__H__", h)
+                       .replace("__FILTER__", json.dumps(filter_id))
+                       .replace("__LIMIT__", json.dumps(limit_obj))
+                       .replace("__MAP_W__", str(map_w))
+                       .replace("__MAP_H__", str(map_h)))
+        res = await c.eval(PRE % (HELPERS, perf_js), timeout=1800)
         print(json.dumps(res, indent=1))
         return True
     ok = True

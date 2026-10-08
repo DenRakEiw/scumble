@@ -391,6 +391,151 @@ JS = r"""
     shell.closeDocument && shell.closeDocument(ed8, { force: true });
 
     // -------------------------------------------------------------------------
+    // Case 7: Fill layer + depth limit (fill alpha, PSD, ORA)
+    // -------------------------------------------------------------------------
+    const edFill = shell.newDocument();
+    shell.activate(edFill);
+    await new Promise((r) => setTimeout(r, 200));
+    const Wf = 200, Hf = 200;
+    const baseFill = mk(Wf, Hf);
+    baseFill.getContext("2d").fillRect(0, 0, Wf, Hf);
+    await edFill.setBaseFromCanvas(baseFill, { keepLayers: false });
+
+    // Synthetic depth ramp along x: 0 at x=0 to 65535 at x=199
+    const rampFill = new Uint16Array(Wf * Hf);
+    for (let y = 0; y < Hf; y++) {
+        for (let x = 0; x < Wf; x++) {
+            rampFill[y * Wf + x] = Math.round(x * 65535 / (Wf - 1));
+        }
+    }
+    const mapFill = makeMap("depth", Wf, Hf, rampFill, [Wf, 0, 0, Hf, 0, 0]);
+    await edFill.setMap("depth", mapFill);
+
+    const fl7 = edFill.addFilterLayer("fill");
+    fl7.params = {
+        color: "#ff0000",
+        limit: { source: "depth", lo: 0.25, hi: 0.75, fLo: 0, fHi: 0, invert: false },
+    };
+    edFill.markFilterChanged(fl7);
+    await settle(edFill);
+
+    // 1. fillLayerCanvas alpha: round(255 * w) +- 1
+    const fc7 = edFill.fillLayerCanvas(fl7, false);
+    const fcData = fc7.getContext("2d").getImageData(0, 0, Wf, Hf).data;
+    const a20 = fcData[(100 * Wf + 20) * 4 + 3];   // depth ~0.10 -> w = 0
+    const a100 = fcData[(100 * Wf + 100) * 4 + 3]; // depth ~0.50 -> w = 1
+    const a180 = fcData[(100 * Wf + 180) * 4 + 3]; // depth ~0.90 -> w = 0
+    check("Case 7 fillLayerCanvas alpha matches round(255 w)", Math.abs(a20 - 0) <= 1 && Math.abs(a100 - 255) <= 1 && Math.abs(a180 - 0) <= 1, { a20, a100, a180 });
+
+    // 2. PSD export
+    const { readPsd, readOra } = await import("./editor/inpaint_layered.js");
+    const { buildLayered } = await import("./editor/inpaint_jobs.js");
+    const rPsd = await edFill.exportLayeredBands("psd");
+    let psdBlob = rPsd ? rPsd.blob : null;
+    if (!psdBlob) {
+        const { layers } = edFill.exportLayerStack("psd");
+        psdBlob = await buildLayered("psd", { width: Wf, height: Hf, layers, composite: edFill.flattenToCanvas({ forRun: true }) });
+    }
+    if (psdBlob) {
+        const psdDoc = await readPsd(new Uint8Array(await psdBlob.arrayBuffer()));
+        const psdFill = psdDoc.layers.find((l) => l.name === fl7.name || l.name.startsWith("Fill"));
+        check("Case 7 PSD has fill layer", !!psdFill);
+        if (psdFill && psdFill.rgba) {
+            const pa20 = psdFill.rgba[(100 * Wf + 20) * 4 + 3];
+            const pa100 = psdFill.rgba[(100 * Wf + 100) * 4 + 3];
+            const pa180 = psdFill.rgba[(100 * Wf + 180) * 4 + 3];
+            check("Case 7 PSD fill alpha matches round(255 w)", Math.abs(pa20 - 0) <= 1 && Math.abs(pa100 - 255) <= 1 && Math.abs(pa180 - 0) <= 1, { pa20, pa100, pa180 });
+        }
+    }
+
+    // 3. ORA export
+    const rOra = await edFill.exportLayeredBands("ora");
+    if (rOra && rOra.blob) {
+        const oraDoc = await readOra(new Uint8Array(await rOra.blob.arrayBuffer()), {
+            inflateRaw: async (data) => new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer()),
+        });
+        const oraFill = oraDoc.layers.find((l) => l.name === fl7.name || l.name.startsWith("Fill"));
+        check("Case 7 ORA has fill layer", !!oraFill);
+        if (oraFill && oraFill.png) {
+            const bmp = await createImageBitmap(new Blob([oraFill.png], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+            const oc = mk(bmp.width, bmp.height);
+            oc.getContext("2d").drawImage(bmp, 0, 0);
+            bmp.close();
+            const oData = oc.getContext("2d").getImageData(0, 0, Wf, Hf).data;
+            const oa20 = oData[(100 * Wf + 20) * 4 + 3];
+            const oa100 = oData[(100 * Wf + 100) * 4 + 3];
+            const oa180 = oData[(100 * Wf + 180) * 4 + 3];
+            check("Case 7 ORA fill alpha matches round(255 w)", Math.abs(oa20 - 0) <= 1 && Math.abs(oa100 - 255) <= 1 && Math.abs(oa180 - 0) <= 1, { oa20, oa100, oa180 });
+        }
+    }
+    shell.closeDocument && shell.closeDocument(edFill, { force: true });
+
+    // -------------------------------------------------------------------------
+    // Case 11: Clipped filter layer with a limit
+    // mix(in, filtered * w, baseAlpha) at 3 probes +- 2
+    // -------------------------------------------------------------------------
+    const edClip = shell.newDocument();
+    shell.activate(edClip);
+    await new Promise((r) => setTimeout(r, 200));
+    const Wc = 200, Hc = 200;
+    const baseClip = mk(Wc, Hc);
+    const bcx = baseClip.getContext("2d");
+    // Left half (x < 100) is grey 128; right half (x >= 100) is black 0
+    bcx.fillStyle = "#808080";
+    bcx.fillRect(0, 0, 100, Hc);
+    bcx.fillStyle = "#000000";
+    bcx.fillRect(100, 0, 100, Hc);
+    await edClip.setBaseFromCanvas(baseClip, { keepLayers: false });
+
+    // Paint layer as base for clipping: matches colors with vertical alpha gradient (y=0: a=0, y=199: a=255)
+    const { Layer: LP } = edClip.pixels;
+    const baseLayerC = mk(Wc, Hc);
+    const blCtx = baseLayerC.getContext("2d");
+    for (let y = 0; y < Hc; y++) {
+        const a = y / (Hc - 1);
+        blCtx.fillStyle = `rgba(128,128,128,${a})`;
+        blCtx.fillRect(0, y, 100, 1);
+        blCtx.fillStyle = `rgba(0,0,0,${a})`;
+        blCtx.fillRect(100, y, 100, 1);
+    }
+    edClip.addLayer({
+        name: "BaseLayer",
+        kind: "paint",
+        px: LP.fromCanvas(baseLayerC),
+        x: 0,
+        y: 0,
+        w: Wc,
+        h: Hc,
+        dirty: true,
+    });
+
+    // Clipped filter layer with luma limit
+    const fxClip = edClip.addFilterLayer("invert");
+    fxClip.clip = true;
+    fxClip.params = {
+        limit: { source: "luma", lo: 0.25, hi: 0.75, fLo: 0, fHi: 0, invert: false },
+    };
+    edClip.markFilterChanged(fxClip);
+    await settle(edClip);
+
+    const compClip = edClip.flattenToCanvas({ forRun: true });
+    const compData = compClip.getContext("2d").getImageData(0, 0, Wc, Hc).data;
+
+    // Probe 1: (50, 0) -> left half (w=1), baseAlpha=0 -> output = in = 128
+    const p1 = compData[(0 * Wc + 50) * 4];
+    check("Case 11 probe 1 (baseAlpha = 0)", Math.abs(p1 - 128) <= 2, { p1, want: 128 });
+
+    // Probe 2: (50, 199) -> left half (w=1), baseAlpha=1 -> output = 255 - 128 = 127
+    const p2 = compData[(199 * Wc + 50) * 4];
+    check("Case 11 probe 2 (baseAlpha = 1, w = 1)", Math.abs(p2 - 127) <= 2, { p2, want: 127 });
+
+    // Probe 3: (150, 199) -> right half (w=0), baseAlpha=1 -> output = in = 0
+    const p3 = compData[(199 * Wc + 150) * 4];
+    check("Case 11 probe 3 (baseAlpha = 1, w = 0)", Math.abs(p3 - 0) <= 2, { p3, want: 0 });
+
+    shell.closeDocument && shell.closeDocument(edClip, { force: true });
+
+    // -------------------------------------------------------------------------
     // Case 12: docfile readerFor checks
     // -------------------------------------------------------------------------
     const { featuresOf, readerFor } = await import("../electron/main/docfile.js");

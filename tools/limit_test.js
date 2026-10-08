@@ -506,7 +506,51 @@ async function main() {
     assert.strictEqual(docfile.readerFor(feat.sample), 3, "readerFor of filter-limit sample must be 3");
     const emptyDocReader = docfile.readerFor({ layers: [] });
     assert.strictEqual(emptyDocReader, 1, "readerFor empty document must be 1");
-    console.log("     [ok] docfile.js FEATURES filter-limit is reader 3 and empty document is 1");
+    // -------------------------------------------------------------------------
+    // 9. inpaint_limit.js: limitAlphaRows
+    // -------------------------------------------------------------------------
+    console.log("  9. inpaint_limit.js limitAlphaRows verification...");
+    const { limitAlphaRows } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_limit.js")).href);
+    const { makeMap } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_maps.js")).href);
+
+    // Test 1: Full range limit leaves alpha untouched
+    const buf1 = new Uint8Array([100, 150, 200, 255, 50, 60, 70, 180]);
+    limitAlphaRows(buf1, 0, 0, 2, 1, { source: "depth", lo: 0, hi: 1, fLo: 0, fHi: 0, invert: false }, null);
+    assert.strictEqual(buf1[3], 255);
+    assert.strictEqual(buf1[7], 180);
+
+    // Test 2: Depth limit with missing map sets alpha to 0
+    const buf2 = new Uint8Array([100, 150, 200, 255, 50, 60, 70, 180]);
+    limitAlphaRows(buf2, 0, 0, 2, 1, { source: "depth", lo: 0.3, hi: 0.7, fLo: 0, fHi: 0 }, null);
+    assert.strictEqual(buf2[3], 0);
+    assert.strictEqual(buf2[7], 0);
+
+    // Test 3: Depth limit with synthetic ramp map
+    // 4x1 map from 0 to 65535, image 4x1
+    const ramp4 = new Uint16Array([0, 21845, 43690, 65535]);
+    const map4 = makeMap("depth", 4, 1, ramp4, [4, 0, 0, 1, 0, 0]);
+    // Limit: depth 0.4 to 0.8 with 0 feather -> pixels 0 and 1 are out (w=0), pixel 2 (val ~0.667) is in (w=1), pixel 3 is in
+    const buf3 = new Uint8Array(4 * 4);
+    for (let i = 0; i < 4; i++) {
+        buf3[i * 4] = 200;
+        buf3[i * 4 + 1] = 200;
+        buf3[i * 4 + 2] = 200;
+        buf3[i * 4 + 3] = 255;
+    }
+    limitAlphaRows(buf3, 0, 0, 4, 1, { source: "depth", lo: 0.4, hi: 0.8, fLo: 0, fHi: 0 }, map4);
+    assert.strictEqual(buf3[3], 0, "pixel 0 (depth ~0.0) should have alpha 0");
+    assert.strictEqual(buf3[7], 0, "pixel 1 (depth ~0.33) should have alpha 0");
+    assert.strictEqual(buf3[11], 255, "pixel 2 (depth ~0.67) should have alpha 255");
+    assert.strictEqual(buf3[15], 0, "pixel 3 (depth ~1.0) should have alpha 0");
+
+    // Test 4: Band offset x0, y0
+    // Test band starting at x0=2, y0=0, w=2, h=1 (covering pixels 2 and 3)
+    const buf4 = new Uint8Array([200, 200, 200, 255, 200, 200, 200, 255]);
+    limitAlphaRows(buf4, 2, 0, 2, 1, { source: "depth", lo: 0.4, hi: 0.8, fLo: 0, fHi: 0 }, map4);
+    assert.strictEqual(buf4[3], 255, "band pixel 0 (image pixel 2) should have alpha 255");
+    assert.strictEqual(buf4[7], 0, "band pixel 1 (image pixel 3) should have alpha 0");
+
+    console.log("     [ok] inpaint_limit.js limitAlphaRows math and band offsets verified");
 
     console.log("ALL LIMIT TESTS PASSED!");
 }

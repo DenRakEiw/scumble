@@ -100,9 +100,21 @@ BENCH = """
     const res = paint(mk(rw, rh), 20, 20);
     const resLayer = ed.addLayer({ name: "Result", kind: "result", px: LayerPixels.fromCanvas(res), x: Math.round(W / 4), y: Math.round(H / 4), w: rw, h: rh, dirty: true });
     resLayer.match = { strength: 60, source: "surroundings" };
-    // a film look on top (the plugin's filter when it is loaded, else grain)
+    const mapW = %(map_w)d, mapH = %(map_h)d;
+    if (mapW > 0 && mapH > 0) {
+        const { makeMap } = await import("./editor/inpaint_maps.js");
+        const ramp = new Uint16Array(mapW * mapH);
+        for (let i = 0; i < ramp.length; i++) ramp[i] = Math.round(i * 65535 / ramp.length);
+        await ed.setMap("depth", makeMap("depth", mapW, mapH, ramp, [W, 0, 0, H, 0, 0]));
+    }
+    // a film look on top (the plugin's filter when it is loaded, else grain, or chosen --filter)
     const { FILTERS } = await import("./editor/inpaint_filters.js");
-    const fx = ed.addFilterLayer(FILTERS["film.look"] ? "film.look" : "grain");   // the film pack's look when the plugin is loaded
+    const chosenFilter = %(filter_id)s;
+    const fx = ed.addFilterLayer(FILTERS[chosenFilter] ? chosenFilter : (FILTERS["film.look"] ? "film.look" : "grain"));
+    if (%(limit_obj)s) {
+        fx.params = { ...fx.params, limit: %(limit_obj)s };
+        ed.markFilterChanged(fx);
+    }
     const fxId = fx && fx.filter;
     ed.markMatchChanged(resLayer);
     ed.uploaded.baseHash = null;
@@ -875,13 +887,39 @@ async def chain_main():
 
 
 async def main():
+    filter_id = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--filter=")), "film.look")
+    limit_arg = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--limit=")), None)
+    map_arg = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--map=")), "4096x2731")
+    limit_obj = None
+    map_w, map_h = 0, 0
+    if limit_arg:
+        parts = limit_arg.split(":")
+        limit_obj = {
+            "source": parts[0],
+            "lo": float(parts[1]),
+            "hi": float(parts[2]),
+            "fLo": float(parts[3]),
+            "fHi": float(parts[4]),
+            "invert": len(parts) > 5 and parts[5] in ("inv", "true", "1"),
+        }
+        if limit_obj["source"] == "depth":
+            mw, mh = map_arg.lower().split("x")
+            map_w, map_h = int(mw), int(mh)
+
     async def run(c):
         await c.eval(SETUP)
         results = []
         for size in SIZES:
             w, h = (int(v) for v in size.lower().split("x"))
             print(f"== {size} ({w * h / 1e6:.1f} MP) ...", flush=True)
-            js = BENCH % {"w": w, "h": h}
+            js = BENCH % {
+                "w": w,
+                "h": h,
+                "filter_id": json.dumps(filter_id),
+                "limit_obj": json.dumps(limit_obj),
+                "map_w": map_w,
+                "map_h": map_h,
+            }
             results.append(json.loads(await c.eval(js, timeout=900)))
         return results
 

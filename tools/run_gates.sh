@@ -103,7 +103,7 @@ for g in "$@"; do
     film) $T python tools/film_test.py "$OUT/film" > "$OUT/$g.log" 2>&1; rc=$? ;;
     nodecopy) NC="$SP/nodecopy"; rm -rf "$NC"; mkdir -p "$NC"; (cd "/f/Comfyui/ComfyUI_windows_portable_nvidia/ComfyUI/custom_nodes/ComfyUI-InpaintCanvas" && tar --exclude=.git --exclude=__pycache__ -cf - .) | (cd "$NC" && tar -xf -); { $T python tools/build_node.py --node "$NC" && $T python tools/build_node.py --node "$NC" --check && $T python tools/node_test.py --node "$NC"; } > "$OUT/$g.log" 2>&1; rc=$? ;;
     node) $T python tools/build_node.py --check > "$OUT/$g.log" 2>&1 && $T python tools/node_test.py >> "$OUT/$g.log" 2>&1; rc=$? ;;
-    perf:*) $T python tools/perf_test.py ${g#perf:} > "$OUT/perf.log" 2>&1; rc=$? ;;
+    perf:*) $T python tools/perf_test.py $(echo "${g#perf:}" | tr ',' ' ') > "$OUT/perf.log" 2>&1; rc=$? ;;
     # no app and no Python: the four rules that catch what `node --check` cannot see
     lint) timeout 600 npx eslint . > "$OUT/lint.log" 2>&1; rc=$? ;;
     # no app and no Python either: the three contracts, checked by tsc (docs/PLAN_TYPES.md)
