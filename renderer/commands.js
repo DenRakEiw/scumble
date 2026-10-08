@@ -17,6 +17,7 @@
 import { api, host } from "./editor/host.js";
 import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
+import { normalizeLimit } from "./editor/inpaint_weights.js";
 import { fontList } from "./editor/inpaint_text.js";
 import { parse, remap } from "./editor/reftokens.js";
 import { LABEL as REALISM_LABEL } from "./editor/realism.js";
@@ -1688,6 +1689,18 @@ const COMMANDS = {
                         })),
                     };
                 }),
+                common: {
+                    limit: {
+                        source: ["depth", "luma", "color"],
+                        lo: "0..1",
+                        hi: "0..1",
+                        fLo: "0..1",
+                        fHi: "0..1",
+                        invert: "bool",
+                        color: "#rrggbb",
+                        tol: "0..100",
+                    },
+                },
             };
         },
     },
@@ -2127,6 +2140,11 @@ function checkParams(filterId, params) {
     const spec = FILTERS[filterId].params || [];
     const out = {};
     for (const [k, v] of Object.entries(params)) {
+        if (k === "limit") {
+            const lim = normalizeLimit(v);
+            out.limit = lim;
+            continue;
+        }
         const p = spec.find((x) => x.key === k);
         if (!p) throw new Error(`filter "${filterId}" has no parameter "${k}" (${spec.map((x) => x.key).join(", ")})`);
         if (p.type === "select") {
@@ -2176,6 +2194,14 @@ function writeParams(ed, l, vals) {
     const custom = !!presetP && optionIds(presetP).includes("custom");
     for (const [k, v] of Object.entries(vals)) {
         if (presetP && k === "preset") continue;
+        if (k === "limit") {
+            const lim = normalizeLimit(v);
+            const next = { ...l.params };
+            if (lim) next.limit = lim;
+            else delete next.limit;
+            l.params = next;
+            continue;
+        }
         const p = spec.find((x) => x.key === k);
         const moved = JSON.stringify(l.params[k]) !== JSON.stringify(v);
         l.params[k] = v;
@@ -2187,6 +2213,7 @@ function writeParams(ed, l, vals) {
 /** The Undo history's name of a filter change, as the layer row names one control's step. */
 function filterStepLabel(filterId, keys) {
     const def = FILTERS[filterId];
+    if (keys.length === 1 && keys[0] === "limit") return `${def.label}: Limit`;
     const p = keys.length === 1 ? (def.params || []).find((x) => x.key === keys[0]) : null;
     return p && p.label ? `${def.label}: ${p.label}` : def.label;
 }

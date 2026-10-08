@@ -1111,6 +1111,16 @@ export function filterDefaults(id) {
     return out;
 }
 
+let limitStage = null;
+
+/**
+ * Register the limit stage processor (R1-S7 inpaint_limit.js).
+ * @param {(src: any, out: any, limit: any, info: any, def: any) => any} fn
+ */
+export function setLimitStage(fn) {
+    limitStage = fn;
+}
+
 /**
  * Apply filter `id` to `src` (a canvas). `info`: {scale (1 = full resolution,
  * <1 for previews so radii shrink with the image), seed, lut}.
@@ -1118,8 +1128,11 @@ export function filterDefaults(id) {
 export function applyFilter(id, src, params, info = {}) {
     const f = FILTERS[id];
     if (!f) return src;
-    if (!info.cpu) { const gl = applyFilterGL(id, src, params || {}, info); if (gl) return gl; }
+    let out = null;
+    if (!info.cpu) { const gl = applyFilterGL(id, src, params || {}, info); if (gl) out = gl; }
     // A plugin filter that runs its own shader stages (def.chain) takes the texture as it is;
     // every other apply() is a pixel loop and needs a canvas.
-    return f.apply(f.chain ? src : glToCanvas(src), params || {}, info);
+    if (!out) out = f.apply(f.chain ? src : glToCanvas(src), params || {}, info);
+    if (params && params.limit && limitStage) out = limitStage(src, out, params.limit, info, f);
+    return out;
 }

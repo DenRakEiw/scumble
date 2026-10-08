@@ -1814,6 +1814,7 @@ try {
         await refused({ type: "nope" }, /^unknown filter "nope"/),
         await refused({ type: "fill" }, /is a filter layer: its type is one of the filters/),
         await refused({ params: { chroma: true } }, /^chroma takes a number/),
+        await refused({ params: { limit: { source: "bogus" } } }, /limit\.source must be depth, luma or color/),
     ];
     // a new type and its params: the type's own step alone
     await c("set_filter", { doc: d.id, layer: g.id, type: "blur", params: { radius: 3 } });

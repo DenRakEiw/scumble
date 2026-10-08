@@ -237,6 +237,8 @@ A select param named `preset` is a preset list: picking an entry copies its othe
 (`amount: 3` above) into the params, renames the layer after it, and a drag on any slider
 without `keepPreset: true` switches it back to the `custom` entry (so give it one). Any
 other select (a mode, a style) just sets its value. `title` is the tooltip of a param.
+`params.limit` is reserved by the engine for limit stages (depth/luma/color range limiting)
+and cannot be declared as a filter parameter.
 
 The filter appears in the type list of every filter layer, works in `add_filter` /
 `set_filter`, and is stored in documents by its full id. `apply(src, params, info)` gets a

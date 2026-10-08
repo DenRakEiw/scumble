@@ -6920,12 +6920,19 @@ class InpaintEditor {
 
     /** One filter layer over `input` (a surface or a canvas of a band whose corner is `origin` in the picture), as `filteredCanvas` runs it in a pass at full resolution; the input again when the filter gave nothing. */
     bandFilter(layer, input, origin, forRun) {
-        const def = FILTERS[layer.filter];
-        const stats = def && def.wholeStats ? this.belowStats(layer, forRun) : null;
         if (!layer._fxCacheSample) layer._fxCacheSample = {};
+        const info = this.filterInfo(layer, {
+            scale: 1,
+            origin,
+            full: [this.width, this.height],
+            forRun: !!forRun,
+            cache: layer._fxCacheSample,
+            chain: "bands",
+            site: "bandFilter",
+        });
         let out = null;
         beginScope();
-        try { out = applyFilter(layer.filter, input, layer.params, { scale: 1, origin, full: [this.width, this.height], stats, seed: layer.id, lut: layer._lutData, plate: layer._plateImg || null, plateKey: layer.plate && layer.plate.ref && layer.plate.ref.filename, plateMean: layer.plate && layer.plate.mean, plateStd: layer.plate && layer.plate.std, cache: layer._fxCacheSample, chain: "bands" }); }
+        try { out = applyFilter(layer.filter, input, layer.params, info); }
         catch (err) { console.error(err); }
         out = endScope(out);
         return out || input;
@@ -12678,6 +12685,7 @@ class InpaintEditor {
         const seed = was === "fill" ? hex(prev.color) : was === "gradient" ? hex(prev.from) : hex(this.color);
         layer.filter = id;
         layer.params = filterDefaults(id);
+        if (prev.limit) layer.params.limit = { ...prev.limit };
         if (seed && id === "fill") layer.params.color = seed;
         if (seed && id === "gradient") { layer.params.from = seed; layer.params.to = seed; layer.params.to_opacity = 0; }
         // layer names are not editable: the type (or a preset, see the preset select) names the layer
@@ -12770,6 +12778,57 @@ class InpaintEditor {
     }
 
     /**
+     * Cache key for a filtered canvas pass. Centralises key generation so call sites and future
+     * map dependencies stay in sync. Produces the legacy string for layers without limit or maps.
+     */
+    filterKey(layer, below, forRun, preview, vp = this.viewPass) {
+        return JSON.stringify([
+            layer.filter,
+            layer.params,
+            layer.lut && layer.lut.ref && layer.lut.ref.filename,
+            layer.plate && layer.plate.ref && layer.plate.ref.filename,
+            !!forRun,
+            !!preview,
+            below.width,
+            below.height,
+            vp ? [vp.x, vp.y, vp.w, vp.h, vp.sx, vp.sy, !!(vp.screen || vp.display)] : 0,
+        ]);
+    }
+
+    /**
+     * @typedef {{ scale: number, origin: number[], full: number[], forRun?: boolean, cache?: object, chain?: boolean|"bands", site?: string }} FilterPass
+     *
+     * Build the context object handed to `applyFilter` for both filteredCanvas and bandFilter.
+     * @param {any} layer
+     * @param {FilterPass} pass
+     */
+    filterInfo(layer, pass) {
+        const def = FILTERS[layer.filter];
+        const stats = def && def.wholeStats ? this.belowStats(layer, pass.forRun) : null;
+        const info = {
+            scale: pass.scale,
+            origin: pass.origin,
+            full: pass.full,
+            stats,
+            seed: layer.id,
+            lut: layer._lutData,
+            plate: layer._plateImg || null,
+            plateKey: layer.plate && layer.plate.ref && layer.plate.ref.filename,
+            plateMean: layer.plate && layer.plate.mean,
+            plateStd: layer.plate && layer.plate.std,
+            cache: pass.cache,
+            chain: pass.chain,
+            maps: this.maps || null,
+        };
+        if (pass.site) {
+            if (!this._lastFilterInfoBySite) this._lastFilterInfoBySite = {};
+            this._lastFilterInfoBySite[pass.site] = info;
+        }
+        if (this._filterInfoHook) this._filterInfoHook(info, layer, pass);
+        return info;
+    }
+
+    /**
      * Filtered copy of `below` for a filter layer, cached until the composite or the parameters
      * change. `below` is the composite so far: a canvas, or the GPU surface the filter layer
      * before this one left behind. With `keepSurface` the result stays a surface for the next
@@ -12779,7 +12838,7 @@ class InpaintEditor {
      */
     filteredCanvas(layer, below, forRun, preview, keepSurface = false) {
         const vp = this.viewPass;
-        const key = JSON.stringify([layer.filter, layer.params, layer.lut && layer.lut.ref && layer.lut.ref.filename, layer.plate && layer.plate.ref && layer.plate.ref.filename, !!forRun, !!preview, below.width, below.height, vp ? [vp.x, vp.y, vp.w, vp.h, vp.sx, vp.sy, !!(vp.screen || vp.display)] : 0]);   // C6 (c1): a pass of the same size and origin over another box or at another scale is another picture
+        const key = this.filterKey(layer, below, forRun, preview, vp);
         const slot = vp ? (vp.sample ? "_fcacheSample" : "_fcacheView") : "_fcache";
         const c = layer[slot];
         if (!keepSurface && c && c.version === this.compositeVersion && c.key === key) return c.canvas;
@@ -12803,11 +12862,18 @@ class InpaintEditor {
         // E3: the whole picture in the input's pixels, for a filter whose geometry belongs to the picture (a vignette, a
         // frame), and the whole picture's statistics for one that reads them (normalise): a pass composites a part
         const full = vp ? [this.width * vp.sx, this.height * vp.sy] : [input.width, input.height];
-        const def = FILTERS[layer.filter];
-        const stats = def && def.wholeStats ? this.belowStats(layer, forRun) : null;
         const chain = !this.filterChainOff && glChainUsable(input.width, input.height);   // filterChainOff: the Canvas 2D path, for composite_test
+        const info = this.filterInfo(layer, {
+            scale,
+            origin,
+            full,
+            forRun: !!forRun,
+            cache: layer[fxSlot],
+            chain,
+            site: "filteredCanvas",
+        });
         beginScope();
-        try { canvas = applyFilter(layer.filter, input, layer.params, { scale, origin, full, stats, seed: layer.id, lut: layer._lutData, plate: layer._plateImg || null, plateKey: layer.plate && layer.plate.ref && layer.plate.ref.filename, plateMean: layer.plate && layer.plate.mean, plateStd: layer.plate && layer.plate.std, cache: layer[fxSlot], chain }); }
+        try { canvas = applyFilter(layer.filter, input, layer.params, info); }
         catch (err) { console.error(err); }
         canvas = endScope(canvas);
         if (isGLSurface(canvas)) {
