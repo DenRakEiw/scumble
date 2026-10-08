@@ -45,6 +45,7 @@
 import { canvasRoundTrip, resampleOptions, resampleStore } from "./inpaint_resample.js";
 import { resampleBlock } from "./px/kernels.js";
 import { liquifyStore, liquifyBox } from "./inpaint_liquify.js";
+import { combineRows } from "./inpaint_raster.js";
 
 let OPTIONS = { strict: false, copy: false, software: false, tiles: null, tilesFrom: null };
 const warned = new Set();
@@ -593,6 +594,46 @@ export class MaskPixels extends LayerPixels {
         const d = img.data;
         for (let i = 0; i < d.length; i += 4) { d[i] = cr; d[i + 1] = cg; d[i + 2] = cb; d[i + 3] = 255 - d[i + 3]; }
         this.writeRect(img, 0, 0);
+    }
+
+    /**
+     * Combine this mask with an AlphaSource under `mode` ("replace", "add", "subtract", "intersect").
+     * Uses `combineRows` on 256-row bands inside `src.box`.
+     * Clears outside `src.box` for replace and intersect.
+     */
+    combine(src, mode, color = [255, 0, 0]) {
+        this._guard();
+        const [sbx0, sby0, sbx1, sby1] = src.box;
+        const bx0 = Math.max(0, Math.min(this.width, sbx0));
+        const by0 = Math.max(0, Math.min(this.height, sby0));
+        const bx1 = Math.max(0, Math.min(this.width, sbx1));
+        const by1 = Math.max(0, Math.min(this.height, sby1));
+
+        if (mode === "replace" || mode === "intersect") {
+            if (bx0 >= bx1 || by0 >= by1) {
+                this.clear();
+                return;
+            }
+            const ctx = this._context();
+            ctx.save();
+            resetContext(ctx);
+            if (by0 > 0) ctx.clearRect(0, 0, this.width, by0);
+            if (by1 < this.height) ctx.clearRect(0, by1, this.width, this.height - by1);
+            if (bx0 > 0) ctx.clearRect(0, by0, bx0, by1 - by0);
+            if (bx1 < this.width) ctx.clearRect(bx1, by0, this.width - bx1, by1 - by0);
+            ctx.restore();
+        }
+
+        if (bx0 >= bx1 || by0 >= by1) return;
+
+        const bw = bx1 - bx0;
+        for (let y = by0; y < by1; y += 256) {
+            const bh = Math.min(256, by1 - y);
+            const srcAlpha = src.read(bx0, y, bw, bh);
+            const img = this.readRect(bx0, y, bw, bh);
+            combineRows(img.data, 0, bw * 4, srcAlpha, 0, bw, bw, bh, mode, color);
+            this.writeRect(img, bx0, y);
+        }
     }
 }
 

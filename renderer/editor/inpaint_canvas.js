@@ -7313,7 +7313,7 @@ class InpaintEditor {
      * takes (a colour match, a live stroke, a mask off the tile grid) are repeated here, and `forRun` defaults the
      * way `drawLayersInto` defaults it.
      */
-    passStores(source, box, scale, { forRun = false, upTo = null, baseOnly = false, controlOnly = false } = {}) {
+    passStores(source, box, scale, { forRun = false, upTo = null, baseOnly = false, controlOnly = false, noFilters = false } = {}) {
         const out = [];
         const vp = { x: box[0], y: box[1], w: box[2] - box[0], h: box[3] - box[1], sx: scale, sy: scale };
         const add = (px, x, y, w, h) => {
@@ -7337,7 +7337,7 @@ class InpaintEditor {
             const layer = this.layers[i];
             if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
             if ((!this.shown(layer) && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
-            if (layer.kind === "filter") { if (!opts.noFilters) add(this.liveMask(layer), 0, 0, this.width, this.height); continue; }
+            if (layer.kind === "filter") { if (!noFilters) add(this.liveMask(layer), 0, 0, this.width, this.height); continue; }
             if (forRun && (this.isControl(layer) || this.isReference(layer))) continue;
             // only the layers `drawLayer` really draws from tiles in a region pass. A colour-matched layer off tiles
             // (`layerMatchedPixels`), a layer under a live paint stroke and one whose mask is not on the same

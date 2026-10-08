@@ -2320,6 +2320,138 @@ function pixelsCases(P, T) {
             return { tiles: B.tiles ? m.tileCount : null, worst };
         })],
 
+        // F4a: selection combine on both backends (PLAN_NIK9_BUILD.md §F4a)
+        ["mask_combine", both(async ({ B, Mask, snap, rec }) => {
+            const { combineAlpha, rectSource, bytesSource, tilesSource } = await import("../renderer/editor/inpaint_raster.js");
+            // Spot checks
+            if (combineAlpha(128, 128, "add") !== 192) throw new Error("spot check add(128, 128) failed: " + combineAlpha(128, 128, "add"));
+            if (combineAlpha(255, 128, "subtract") !== 127) throw new Error("spot check subtract(255, 128) failed: " + combineAlpha(255, 128, "subtract"));
+            if (combineAlpha(255, 128, "intersect") !== 128) throw new Error("spot check intersect(255, 128) failed: " + combineAlpha(255, 128, "intersect"));
+
+            // Identity check across all 65,536 byte pairs
+            for (let a = 0; a < 256; a++) {
+                for (let w = 0; w < 256; w++) {
+                    if (combineAlpha(a, 255 - w, "subtract") !== combineAlpha(a, w, "intersect")) {
+                        throw new Error(`identity failed at a=${a}, w=${w}`);
+                    }
+                }
+            }
+
+            // Test full tile reads 255 without allocation
+            const fullSrc = tilesSource([{ tx: 0, ty: 0, full: true }], [0, 0], [0, 0, 256, 256]);
+            const fullBuf = fullSrc.read(10, 10, 5, 5);
+            for (let i = 0; i < fullBuf.length; i++) {
+                if (fullBuf[i] !== 255) throw new Error("full tile did not read as 255: " + fullBuf[i]);
+            }
+
+            const W = 601, H = 501;
+
+            const makeInitial = () => {
+                const m = Mask.empty(W, H);
+                m.fill([50, 50, 550, 450], "#ff0000");
+                const steps = [0, 37, 128, 200, 255];
+                m.drawInto([200, 200, 350, 350], (ctx) => {
+                    for (let i = 0; i < steps.length; i++) {
+                        ctx.fillStyle = `rgba(255, 0, 0, ${steps[i] / 255})`;
+                        ctx.fillRect(200 + i * 30, 200, 30, 150);
+                    }
+                });
+                return m;
+            };
+
+            const sw = 150, sh = 150, sx0 = 230, sy0 = 210;
+            const srcAlpha = new Uint8Array(sw * sh);
+            const steps = [0, 37, 128, 200, 255];
+            for (let y = 0; y < sh; y++) {
+                for (let x = 0; x < sw; x++) {
+                    const stepIdx = Math.floor((x / sw) * steps.length);
+                    srcAlpha[y * sw + x] = steps[Math.min(steps.length - 1, stepIdx)];
+                }
+            }
+            const softSrc = bytesSource(srcAlpha, sx0, sy0, sw, sh);
+
+            for (const mode of ["replace", "add", "subtract", "intersect"]) {
+                const m = makeInitial();
+                const before = m.readRect(0, 0, W, H).data.slice();
+                m.combine(softSrc, mode);
+                const after = m.readRect(0, 0, W, H).data;
+                snap(m, `combine mode ${mode}`);
+
+                let worst = 0;
+                for (let y = 0; y < H; y++) {
+                    for (let x = 0; x < W; x++) {
+                        const idx = (y * W + x) * 4;
+                        const da = before[idx + 3];
+                        let sa = 0;
+                        if (x >= sx0 && x < sx0 + sw && y >= sy0 && y < sy0 + sh) {
+                            sa = srcAlpha[(y - sy0) * sw + (x - sx0)];
+                        }
+                        const expectedA = combineAlpha(da, sa, mode);
+                        const actualA = after[idx + 3];
+                        const diff = Math.abs(actualA - expectedA);
+                        if (diff > worst) worst = diff;
+                        if (actualA > 0) {
+                            if (after[idx] !== 255 || after[idx + 1] !== 0 || after[idx + 2] !== 0) {
+                                throw new Error(`bad colour at ${x},${y} in mode ${mode}`);
+                            }
+                        } else {
+                            if (after[idx] !== 0 || after[idx + 1] !== 0 || after[idx + 2] !== 0) {
+                                throw new Error(`non-zero colour on transparent pixel at ${x},${y} in mode ${mode}`);
+                            }
+                        }
+                    }
+                }
+                if (worst > 0) throw new Error(`mode ${mode} off by ${worst} from combineAlpha`);
+                rec(`worst diff ${mode}`, worst);
+            }
+
+            // Intersect with empty source leaves tileCount 0
+            const mEmpty = Mask.empty(W, H);
+            mEmpty.fill([100, 100, 400, 400], "#ff0000");
+            mEmpty.combine(rectSource([0, 0, 0, 0]), "intersect");
+            snap(mEmpty, "intersect with empty source");
+            if (B.tiles && mEmpty.tileCount !== 0) {
+                throw new Error(`intersect with empty source left ${mEmpty.tileCount} tiles`);
+            }
+
+            // Box starting at x = 256 drops every tile to its left for intersect and keeps them for add
+            const mLeft = Mask.empty(W, H);
+            mLeft.fill([0, 0, 500, 400], "#ff0000");
+            const box256 = [256, 0, W, H];
+            mLeft.combine(rectSource(box256), "intersect");
+            snap(mLeft, "intersect box starting at x=256");
+            if (B.tiles) {
+                for (const key of mLeft.tileKeys()) {
+                    const tx = key & 0xFFFF;
+                    if (tx * 256 < 256) throw new Error(`intersect kept tile to left of x=256: tx=${tx}`);
+                }
+            }
+
+            const mAdd = Mask.empty(W, H);
+            mAdd.fill([50, 50, 150, 150], "#ff0000");
+            mAdd.combine(rectSource(box256), "add");
+            snap(mAdd, "add box starting at x=256");
+            if (B.tiles) {
+                let hasLeft = false;
+                for (const key of mAdd.tileKeys()) {
+                    const tx = key & 0xFFFF;
+                    if (tx === 0) hasLeft = true;
+                }
+                if (!hasLeft) throw new Error("add dropped tile to left of x=256");
+            }
+
+            // Colour [255, 255, 255] works for a layer mask
+            const mWhite = Mask.empty(300, 200);
+            mWhite.combine(rectSource([50, 50, 250, 150]), "replace", [255, 255, 255]);
+            snap(mWhite, "combine with white color");
+            const wData = mWhite.readRect(50, 50, 1, 1).data;
+            if (wData[0] !== 255 || wData[1] !== 255 || wData[2] !== 255 || wData[3] !== 255) {
+                throw new Error(`white mask got [${wData[0]},${wData[1]},${wData[2]},${wData[3]}]`);
+            }
+
+            return { tiles: B.tiles ? mLeft.tileCount : null };
+        })],
+
         ["tiles_blit_mixed_backends", both(async ({ B, Layer, mk, paint, pair, snap }) => {
             const Other = B.tiles ? P.LayerPixels : T.TileLayerPixels;   // the other backend
             const c = mk(400, 300); paint(c.getContext("2d"), 400, 300);

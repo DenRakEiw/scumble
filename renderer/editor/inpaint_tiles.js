@@ -34,11 +34,12 @@
  * - No module-level side effects: nothing touches the page until pixels are made.
  */
 
-import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN, reentrantPixels } from "./inpaint_pixels.js";
+import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN } from "./inpaint_pixels.js";
 import { mipChain, mipChainBytes, clampExtend, compositeTile, resampleBlock } from "./px/kernels.js";
 import { allocTileBytes, isShared } from "./inpaint_arena.js";
 import { canvasRoundTrip, resampleOptions, resampleStore, toFixed, preimage } from "./inpaint_resample.js";
 import { liquifyStore, liquifyBox } from "./inpaint_liquify.js";
+import { combineRows } from "./inpaint_raster.js";
 
 export const TILE_SIZE = 256;
 const TILE_BYTES = TILE_SIZE * TILE_SIZE * 4;
@@ -2546,6 +2547,76 @@ export class TileMaskPixels extends tiled(MaskPixels) {
                     }
                 }
                 if (tileEmpty(t)) this._dropTile(key);
+            }
+        }
+        this._version = ++pixelSeq;
+        if (this._mirror) this._mirror._dispVer = this._version;
+    }
+
+    /**
+     * Combine this mask with an AlphaSource under `mode` ("replace", "add", "subtract", "intersect").
+     * Operates tile by tile. Drops empty tiles, drops tiles outside `src.box` for replace and intersect,
+     * skips absent tiles for subtract and intersect, and allocates for add only where the source is non-zero.
+     */
+    combine(src, mode, color = [255, 0, 0]) {
+        this._guard();
+        const cols = Math.ceil(this._w / TILE_SIZE), rows = Math.ceil(this._h / TILE_SIZE);
+        const [sbx0, sby0, sbx1, sby1] = src.box;
+        const bx0 = Math.max(0, Math.min(this._w, sbx0));
+        const by0 = Math.max(0, Math.min(this._h, sby0));
+        const bx1 = Math.max(0, Math.min(this._w, sbx1));
+        const by1 = Math.max(0, Math.min(this._h, sby1));
+
+        // Outside src.box: drop tiles for replace and intersect
+        if (mode === "replace" || mode === "intersect") {
+            for (const key of Array.from(this._tiles.keys())) {
+                const tx = key & 0xFFFF, ty = key >>> 16;
+                const ox = tx << 8, oy = ty << 8;
+                if (ox + TILE_SIZE <= bx0 || ox >= bx1 || oy + TILE_SIZE <= by0 || oy >= by1) {
+                    this._dropTile(key);
+                }
+            }
+        }
+
+        if (bx0 >= bx1 || by0 >= by1) {
+            this._version = ++pixelSeq;
+            if (this._mirror) this._mirror._dispVer = this._version;
+            return;
+        }
+
+        const tx0 = Math.max(0, Math.floor(bx0 / TILE_SIZE));
+        const ty0 = Math.max(0, Math.floor(by0 / TILE_SIZE));
+        const tx1 = Math.min(cols - 1, Math.floor((bx1 - 1) / TILE_SIZE));
+        const ty1 = Math.min(rows - 1, Math.floor((by1 - 1) / TILE_SIZE));
+
+        for (let ty = ty0; ty <= ty1; ty++) {
+            const oy = ty << 8;
+            const bh = Math.min(TILE_SIZE, this._h - oy);
+            for (let tx = tx0; tx <= tx1; tx++) {
+                const ox = tx << 8;
+                const bw = Math.min(TILE_SIZE, this._w - ox);
+                const key = (ty << 16) | tx;
+                const had = this._tiles.has(key);
+
+                if (!had && (mode === "subtract" || mode === "intersect")) {
+                    continue;
+                }
+
+                const srcAlpha = src.read(ox, oy, bw, bh);
+
+                if (!had) {
+                    let nonZero = false;
+                    for (let i = 0; i < srcAlpha.length; i++) {
+                        if (srcAlpha[i]) { nonZero = true; break; }
+                    }
+                    if (!nonZero) continue;
+                }
+
+                const t = this.writable(tx, ty);
+                combineRows(t.data, 0, TILE_SIZE * 4, srcAlpha, 0, bw, bw, bh, mode, color);
+                if (tileEmpty(t)) {
+                    this._dropTile(key);
+                }
             }
         }
         this._version = ++pixelSeq;

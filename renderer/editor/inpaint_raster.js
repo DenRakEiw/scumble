@@ -259,9 +259,266 @@ export function clipMaskToSelection(mask, selection) {
  */
 export function clipCoverage(cov, baseMask, alpha, own) {
     const n = cov.length;
-    const mul = (x, y) => { const t = x * y + 128; return (t + (t >> 8)) >> 8; };
-    if (baseMask) for (let i = 0; i < n; i++) cov[i] = mul(cov[i], baseMask[i]);
-    if (alpha < 255) for (let i = 0; i < n; i++) cov[i] = mul(cov[i], alpha);
-    if (own) for (let i = 0; i < n; i++) cov[i] = mul(cov[i], own[i]);
+    if (baseMask) for (let i = 0; i < n; i++) cov[i] = mul255(cov[i], baseMask[i]);
+    if (alpha < 255) for (let i = 0; i < n; i++) cov[i] = mul255(cov[i], alpha);
+    if (own) for (let i = 0; i < n; i++) cov[i] = mul255(cov[i], own[i]);
     return cov;
 }
+
+export const SEL_MODES = ["replace", "add", "subtract", "intersect"];
+
+/** Exact integer formula for round(x * y / 255): matches the tile compositing kernel and Skia. */
+export const mul255 = (x, y) => { const t = x * y + 128; return (t + (t >> 8)) >> 8; };
+
+/** Combine an existing selection alpha `a` with a new weight `w` (both 0..255) under `mode`. */
+export function combineAlpha(a, w, mode) {
+    if (mode === "replace") return w;
+    if (mode === "add") return a + w - mul255(a, w);
+    if (mode === "subtract") return Math.max(0, a - mul255(a, w));
+    if (mode === "intersect") return mul255(a, w);
+    return w;
+}
+
+/**
+ * Combine a rectangle of RGBA8 pixels (`dst`) with an alpha source buffer (`src`) under `mode`.
+ * Transparent pixels (a = 0) are cleared to [0, 0, 0, 0] so canvas and tiles agree byte for byte.
+ */
+export function combineRows(dst, dOff, dStride, src, sOff, sStride, w, h, mode, color) {
+    const [cr, cg, cb] = color;
+    if (mode === "replace") {
+        for (let y = 0; y < h; y++) {
+            let dp = dOff + y * dStride;
+            let sp = sOff + y * sStride;
+            for (let x = 0; x < w; x++, dp += 4, sp++) {
+                const a = src[sp];
+                if (a) {
+                    dst[dp] = cr;
+                    dst[dp + 1] = cg;
+                    dst[dp + 2] = cb;
+                    dst[dp + 3] = a;
+                } else {
+                    dst[dp] = 0;
+                    dst[dp + 1] = 0;
+                    dst[dp + 2] = 0;
+                    dst[dp + 3] = 0;
+                }
+            }
+        }
+    } else if (mode === "add") {
+        for (let y = 0; y < h; y++) {
+            let dp = dOff + y * dStride;
+            let sp = sOff + y * sStride;
+            for (let x = 0; x < w; x++, dp += 4, sp++) {
+                const da = dst[dp + 3];
+                const sa = src[sp];
+                const a = da + sa - mul255(da, sa);
+                if (a) {
+                    dst[dp] = cr;
+                    dst[dp + 1] = cg;
+                    dst[dp + 2] = cb;
+                    dst[dp + 3] = a;
+                } else {
+                    dst[dp] = 0;
+                    dst[dp + 1] = 0;
+                    dst[dp + 2] = 0;
+                    dst[dp + 3] = 0;
+                }
+            }
+        }
+    } else if (mode === "subtract") {
+        for (let y = 0; y < h; y++) {
+            let dp = dOff + y * dStride;
+            let sp = sOff + y * sStride;
+            for (let x = 0; x < w; x++, dp += 4, sp++) {
+                const da = dst[dp + 3];
+                const sa = src[sp];
+                const a = Math.max(0, da - mul255(da, sa));
+                if (a) {
+                    dst[dp] = cr;
+                    dst[dp + 1] = cg;
+                    dst[dp + 2] = cb;
+                    dst[dp + 3] = a;
+                } else {
+                    dst[dp] = 0;
+                    dst[dp + 1] = 0;
+                    dst[dp + 2] = 0;
+                    dst[dp + 3] = 0;
+                }
+            }
+        }
+    } else if (mode === "intersect") {
+        for (let y = 0; y < h; y++) {
+            let dp = dOff + y * dStride;
+            let sp = sOff + y * sStride;
+            for (let x = 0; x < w; x++, dp += 4, sp++) {
+                const da = dst[dp + 3];
+                const sa = src[sp];
+                const a = mul255(da, sa);
+                if (a) {
+                    dst[dp] = cr;
+                    dst[dp + 1] = cg;
+                    dst[dp + 2] = cb;
+                    dst[dp + 3] = a;
+                } else {
+                    dst[dp] = 0;
+                    dst[dp + 1] = 0;
+                    dst[dp + 2] = 0;
+                    dst[dp + 3] = 0;
+                }
+            }
+        }
+    }
+}
+
+/** Determine selection mode from keyboard event modifiers: Shift+Alt -> intersect, Alt -> subtract, Shift -> add. */
+export function selModeOf(e, fallback = "replace") {
+    if (!e) return fallback;
+    const shift = !!e.shiftKey, alt = !!e.altKey;
+    if (shift && alt) return "intersect";
+    if (alt) return "subtract";
+    if (shift) return "add";
+    return fallback;
+}
+
+/** Global composite operation and outside-clearing behavior for a selection mode. */
+export function selectionGco(mode) {
+    switch (mode) {
+        case "subtract":
+            return { op: "destination-out", clearOutside: false };
+        case "intersect":
+            return { op: "destination-in", clearOutside: true };
+        case "add":
+            return { op: "source-over", clearOutside: false };
+        case "replace":
+        default:
+            return { op: "source-over", clearOutside: true };
+    }
+}
+
+/**
+ * An AlphaSource covering a rectangle with full alpha (255).
+ * @param {number[]} box [x0, y0, x1, y1]
+ * @returns {{ box: number[], read(rx: number, ry: number, rw: number, rh: number): Uint8Array }}
+ */
+export function rectSource(box) {
+    const b = [box[0] | 0, box[1] | 0, box[2] | 0, box[3] | 0];
+    const [bx0, by0, bx1, by1] = b;
+    return {
+        box: b,
+        read(rx, ry, rw, rh) {
+            const out = new Uint8Array(rw * rh);
+            const ix0 = Math.max(rx, bx0), iy0 = Math.max(ry, by0);
+            const ix1 = Math.min(rx + rw, bx1), iy1 = Math.min(ry + rh, by1);
+            if (ix0 < ix1 && iy0 < iy1) {
+                const fillW = ix1 - ix0;
+                for (let y = iy0; y < iy1; y++) {
+                    const o = (y - ry) * rw + (ix0 - rx);
+                    out.fill(255, o, o + fillW);
+                }
+            }
+            return out;
+        }
+    };
+}
+
+/**
+ * An AlphaSource reading from a contiguous w * h Uint8Array of alpha bytes placed at (x0, y0).
+ * @returns {{ box: number[], read(rx: number, ry: number, rw: number, rh: number): Uint8Array }}
+ */
+export function bytesSource(alpha, x0, y0, w, h) {
+    const box = [x0 | 0, y0 | 0, (x0 + w) | 0, (y0 + h) | 0];
+    return {
+        box,
+        read(rx, ry, rw, rh) {
+            const out = new Uint8Array(rw * rh);
+            const ix0 = Math.max(rx, x0), iy0 = Math.max(ry, y0);
+            const ix1 = Math.min(rx + rw, x0 + w), iy1 = Math.min(ry + rh, y0 + h);
+            if (ix0 < ix1 && iy0 < iy1) {
+                const copyW = ix1 - ix0;
+                for (let y = iy0; y < iy1; y++) {
+                    const srcOff = (y - y0) * w + (ix0 - x0);
+                    const dstOff = (y - ry) * rw + (ix0 - rx);
+                    out.set(alpha.subarray(srcOff, srcOff + copyW), dstOff);
+                }
+            }
+            return out;
+        }
+    };
+}
+
+/**
+ * An AlphaSource reading from a collection of 256x256 tiles.
+ * Supports {tx, ty, data: RGBA 256*256*4}, {tx, ty, alpha: Uint8Array(65536)}, {tx, ty, full: true}, {tx, ty, empty: true}.
+ * `full` reads as 255 without an allocation.
+ * @param {Array|Map|Set} tiles
+ * @param {number[]} [at=[0,0]] tile 0,0 origin [x, y]
+ * @param {number[]} [box=null] bounding box [x0, y0, x1, y1]
+ * @returns {{ box: number[], read(rx: number, ry: number, rw: number, rh: number): Uint8Array }}
+ */
+export function tilesSource(tiles, at = [0, 0], box = null) {
+    const [ox, oy] = at;
+    const tileMap = new Map();
+    let computedBox = null;
+    const iter = (tiles && typeof tiles.values === "function") ? tiles.values() : (tiles || []);
+    for (const t of iter) {
+        const key = `${t.tx},${t.ty}`;
+        tileMap.set(key, t);
+        if (!box && !t.empty) {
+            const x0 = ox + t.tx * 256, y0 = oy + t.ty * 256;
+            const x1 = x0 + 256, y1 = y0 + 256;
+            if (!computedBox) computedBox = [x0, y0, x1, y1];
+            else {
+                computedBox[0] = Math.min(computedBox[0], x0);
+                computedBox[1] = Math.min(computedBox[1], y0);
+                computedBox[2] = Math.max(computedBox[2], x1);
+                computedBox[3] = Math.max(computedBox[3], y1);
+            }
+        }
+    }
+    const b = box ? [box[0] | 0, box[1] | 0, box[2] | 0, box[3] | 0] : (computedBox || [ox, oy, ox, oy]);
+    return {
+        box: b,
+        read(rx, ry, rw, rh) {
+            const out = new Uint8Array(rw * rh);
+            const tx0 = Math.floor((rx - ox) / 256);
+            const ty0 = Math.floor((ry - oy) / 256);
+            const tx1 = Math.floor((rx + rw - 1 - ox) / 256);
+            const ty1 = Math.floor((ry + rh - 1 - oy) / 256);
+            for (let ty = ty0; ty <= ty1; ty++) {
+                const tileY = oy + ty * 256;
+                for (let tx = tx0; tx <= tx1; tx++) {
+                    const t = tileMap.get(`${tx},${ty}`);
+                    if (!t || t.empty) continue;
+                    const tileX = ox + tx * 256;
+                    const ix0 = Math.max(rx, tileX), iy0 = Math.max(ry, tileY);
+                    const ix1 = Math.min(rx + rw, tileX + 256), iy1 = Math.min(ry + rh, tileY + 256);
+                    if (ix0 >= ix1 || iy0 >= iy1) continue;
+                    const copyW = ix1 - ix0;
+                    if (t.full) {
+                        for (let y = iy0; y < iy1; y++) {
+                            const dstOff = (y - ry) * rw + (ix0 - rx);
+                            out.fill(255, dstOff, dstOff + copyW);
+                        }
+                    } else if (t.alpha) {
+                        for (let y = iy0; y < iy1; y++) {
+                            const srcOff = (y - tileY) * 256 + (ix0 - tileX);
+                            const dstOff = (y - ry) * rw + (ix0 - rx);
+                            out.set(t.alpha.subarray(srcOff, srcOff + copyW), dstOff);
+                        }
+                    } else if (t.data) {
+                        const d = t.data;
+                        for (let y = iy0; y < iy1; y++) {
+                            let srcOff = ((y - tileY) * 256 + (ix0 - tileX)) * 4 + 3;
+                            let dstOff = (y - ry) * rw + (ix0 - rx);
+                            for (let x = 0; x < copyW; x++, srcOff += 4, dstOff++) {
+                                out[dstOff] = d[srcOff];
+                            }
+                        }
+                    }
+                }
+            }
+            return out;
+        }
+    };
+}
+

@@ -216,14 +216,24 @@ Executed and verified using `tools/depth_probe.py` on Depth Anything V2 Small (`
 1. **Working Map Size (`WORK_MAX`):**
    - Default: `4096` (allows up to 11.2 MP on 15k documents).
    - For fast interactive previews and compact document storage, 2048 is also available.
-2. **Guide Parameters (`GUIDE`):**
+2. Guide Parameters (`GUIDE`):
    - `GUIDE = { r: 2, eps: 1e-3 }` (2 model pixels scaled to working pixels: `r_work = round(2 * (gw / mw))`).
    - `eps = 1e-3` prevents edge bleeding across contrast jumps while maintaining smooth gradients.
-3. **Long-side Cap for Panoramas (`LONG_CAP`):**
+3. Long-side Cap for Panoramas (`LONG_CAP`):
    - `LONG_CAP = 2058` (prevents extreme aspect ratios like 6:1 panoramas from exceeding VRAM / buffer limits).
-4. **Freshness Threshold (`STALE_DIFF`):**
+4. Freshness Threshold (`STALE_DIFF`):
    - `STALE_DIFF = 6` (mean absolute difference on 64 × 64 thumbnail fingerprint).
-5. **Release 2 Decisions (Edges & Detail Pass):**
+5. Release 2 Decisions (Edges & Detail Pass):
    - The global pass with guided filter `r=2, eps=1e-3` is sufficient for distance-based grading and depth masks in Release 1.
    - Release 2 will add the local tiled detail pass (518 px tiles) and edge snap for fine hair / foliage when doing hard depth cutouts.
+
+## Selection combine: Skia rounding vs mul255 (2026-10-08, F4a)
+
+Measured Skia's 8-bit rounding on a CPU canvas (`willReadFrequently: true`) across all 65,536 `(a, w)` byte pairs against the integer formula `mul255 = (x, y) => { const t = x * y + 128; return (t + (t >> 8)) >> 8; }`:
+- **`destination-in` (intersect, `mul255(a, w)`):** worst diff 0 (exact match on all 65,536 pairs).
+- **`destination-out` (subtract, `a - mul255(a, w)`):** worst diff 0 (exact match on all 65,536 pairs).
+- **`source-over` (add, `a + w - mul255(a, w)`):** worst diff 1 level (at low alpha pairs such as a=1, w=1 where Skia gives 1 and round gives 2).
+
+Both backends (Canvas 2D and Tile Store) run the exact same `combineRows` integer formula (`mul255`), guaranteeing 0 difference between backends (verified byte-equal in `tools/combine_test.js` and `tools/pixels_test.js`).
+
 
