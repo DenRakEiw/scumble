@@ -29,6 +29,7 @@ export function buildEditorModal(ed) {
     buildReferences(ed);
     buildUndoHistory(ed, section);
     buildSelection(ed, section);
+    buildDepth(ed, section);
     buildCanvasPanel(ed, section);
     buildExport(ed, section);
     toGenPane();
@@ -643,6 +644,15 @@ function buildSelection(ed, section) {
         ed.segBackendSel.addEventListener("change", () => ed.updateSegQuality());
         seg.appendChild(ed.segBackendSel);
         d.appendChild(seg);
+    });
+}
+
+/** Depth map: compute / recompute, view toggle, staleness (Nik-9 Parity R1-S3b). */
+function buildDepth(ed, section) {
+    section("Depth", false, (d) => {
+        ed.depthContainer = el("div", "ipc-depth-container");
+        d.appendChild(ed.depthContainer);
+        ed.renderDepthRow();
     });
 }
 

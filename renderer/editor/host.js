@@ -23,6 +23,7 @@ import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from
 import * as realism from "./realism.js";
 import * as comfyprompt from "./comfyprompt.js";
 import * as dialogs from "../dialogs.js";
+import { WORK_MAX, STALE_DIFF, GUIDE, LONG_CAP, modelSize, workSize } from "./inpaint_depth.js";
 
 const PROXY = "/comfy";
 
@@ -314,6 +315,9 @@ export const api = {
  * @property {() => any} removeModel
  * @property {(editor: any, req: { image: Uint8Array, mask: Uint8Array }) => Promise<any>} removeInApp
  * @property {(editor: any) => Promise<any>} warmRemove
+ * @property {() => any} [depthModel]
+ * @property {(editor: any) => Promise<{ rgba: Uint8Array, mw: number, mh: number, grey: Uint8Array, gw: number, gh: number, hash: string, thumb: Uint8Array, version: number }>} [depthInput]
+ * @property {(editor: any, req: { image: Uint8Array, width: number, height: number }) => Promise<{ depth: Float32Array, min: number, max: number, ms: number, provider: string }>} [depthInApp]
  */
 
 // ---- host --------------------------------------------------------------------------------
@@ -3480,8 +3484,8 @@ export const host = {
     // availableCutoutBackends() / cutoutLayer(); when
     // no in-app model is present, the ComfyUI helper prompts run as in the node.
 
-    /** @type {{ models: any[], sam2?: any, matting?: any, inpaint?: any, runtime?: any }} */
-    helpers: { models: [], sam2: null, matting: null, inpaint: null, runtime: null },
+    /** @type {{ models: any[], sam2?: any, matting?: any, inpaint?: any, runtime?: any, depth?: any }} */
+    helpers: { models: [], sam2: null, matting: null, inpaint: null, runtime: null, depth: null },
     onHelpersChanged: null,   // set by the shell: (status) => void
 
     /** Ask the main process what is downloaded and refresh the editors' model lists. */
@@ -3887,6 +3891,80 @@ export const host = {
         } finally {
             editor._pointPending = false;
         }
+    },
+
+    /** The depth model (Depth Anything V2 Small): the chosen one when present, else the first present. */
+    depthModel() {
+        const all = this.presentHelpers("depth");
+        return all.find((m) => m.id === this.helpers.depth) || all[0] || null;
+    },
+
+    /**
+     * Document input for depth estimation:
+     * Returns model RGBA at multiple of 14, working grayscale guide luma, hash, and 64x64 fingerprint thumb.
+     * Leaves filter layers out so depth estimation runs against base/paint/image pixels without post-effects.
+     */
+    async depthInput(editor) {
+        const W = editor.width, H = editor.height;
+        if (!W || !H) throw new Error("empty document");
+        const [mw, mh] = modelSize(W, H);
+        const [gw, gh] = workSize(W, H, WORK_MAX);
+        const s = Math.min(1, Math.max(gw / W, gh / H));
+        const sample = editor.tileMode
+            ? await editor.sampleRegionSettled("image", [0, 0, W, H], s, { forRun: true, noFilters: true })
+            : editor.flattenToCanvas({ forRun: true, noFilters: true });
+
+        const c_work = (sample.width === gw && sample.height === gh) ? sample : document.createElement("canvas");
+        if (c_work !== sample) {
+            c_work.width = gw; c_work.height = gh;
+            const wctx = c_work.getContext("2d");
+            wctx.imageSmoothingEnabled = true;
+            wctx.drawImage(sample, 0, 0, gw, gh);
+        }
+        const wdata = c_work.getContext("2d").getImageData(0, 0, gw, gh).data;
+        const grey = new Uint8Array(gw * gh);
+        for (let i = 0, j = 0; i < wdata.length; i += 4, j++) {
+            grey[j] = (wdata[i] * 77 + wdata[i + 1] * 150 + wdata[i + 2] * 29) >> 8;
+        }
+
+        const c_model = document.createElement("canvas");
+        c_model.width = mw; c_model.height = mh;
+        const mctx = c_model.getContext("2d");
+        mctx.imageSmoothingEnabled = true;
+        mctx.drawImage(c_work, 0, 0, mw, mh);
+        const rgba = new Uint8Array(mctx.getImageData(0, 0, mw, mh).data.buffer);
+
+        const c_thumb = document.createElement("canvas");
+        c_thumb.width = 64; c_thumb.height = 64;
+        const tctx = c_thumb.getContext("2d");
+        tctx.imageSmoothingEnabled = true;
+        tctx.drawImage(c_model, 0, 0, 64, 64);
+        const tdata = tctx.getImageData(0, 0, 64, 64).data;
+        const thumb = new Uint8Array(64 * 64);
+        for (let i = 0, j = 0; i < tdata.length; i += 4, j++) {
+            thumb[j] = (tdata[i] * 77 + tdata[i + 1] * 150 + tdata[i + 2] * 29) >> 8;
+        }
+
+        const hash = await this.inputHash(rgba);
+        editor.helperUsed = true;
+        return { rgba, mw, mh, grey, gw, gh, hash, thumb, version: editor.compositeVersion };
+    },
+
+    /**
+     * Run Depth Anything V2 Small helper on image:
+     * -> { depth: Float32Array, min: number, max: number, ms: number, provider: string }
+     */
+    async depthInApp(editor, { image, width, height }) {
+        const model = this.depthModel();
+        if (!model) throw new Error("No depth model is downloaded (Settings › Helpers)");
+        const res = await this.helperCall("depth", {
+            model: model.id,
+            image,
+            width,
+            height,
+        });
+        editor.helperUsed = true;
+        return res;
     },
 
     /**

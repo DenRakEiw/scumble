@@ -41,6 +41,7 @@ import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remo
 import { LiquifyField, gridStep, previewBlock, liquifyFalloff } from "./inpaint_liquify.js";
 import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
 import { fitLayerRGBA, workScale } from "./edgefit.js";
+import { WORK_MAX, STALE_DIFF, GUIDE, LONG_CAP, modelSize, workSize, disparityRange, farU16 } from "./inpaint_depth.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -1956,6 +1957,9 @@ class InpaintEditor {
         this.objectShapeCache = new Map();
         this.hoverObjectId = 0;
         this.hoverObjectCanvas = null;
+        this.depth = null;              // { raw, rw, rh, u16, w, h, origW, origH, lo, hi, hash, thumb, version, provider, ms }
+        this.depthPending = null;
+        this.showDepthMap = false;
         let selDisplay = "ants";
         try { selDisplay = localStorage.getItem("ipc.selectionDisplay") || "ants"; } catch (_) { /* no storage */ }
         this.selectionDisplay = selDisplay === "tint" ? "tint" : "ants";   // marching ants (default) or red tint
@@ -4790,6 +4794,7 @@ class InpaintEditor {
         this.objects = null;
         this.objectShapeCache.clear();
         this.hoverObjectId = 0; this.hoverObjectCanvas = null;
+        this._depthOverlayCanvas = null;
     }
 
     // ---- the whole document straightened and cropped in one step (PLAN_0_1_31 §7, 23b) -------------------------------
@@ -7320,7 +7325,7 @@ class InpaintEditor {
             const layer = this.layers[i];
             if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
             if ((!this.shown(layer) && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
-            if (layer.kind === "filter") { add(this.liveMask(layer), 0, 0, this.width, this.height); continue; }
+            if (layer.kind === "filter") { if (!opts.noFilters) add(this.liveMask(layer), 0, 0, this.width, this.height); continue; }
             if (forRun && (this.isControl(layer) || this.isReference(layer))) continue;
             // only the layers `drawLayer` really draws from tiles in a region pass. A colour-matched layer off tiles
             // (`layerMatchedPixels`), a layer under a live paint stroke and one whose mask is not on the same
@@ -11114,6 +11119,195 @@ class InpaintEditor {
             console.error(err);
             this.setStatus("Could not apply the mask: " + (err.message || err));
         }
+    }
+
+    // ---- depth estimation (Nik-9 Parity R1-S3b) --------------------------------
+
+    /**
+     * Compute or refresh the document's depth map:
+     * Samples document without filter layers via host.depthInput, runs Depth Anything V2 Small,
+     * refines edges using guidedFar in a worker, and stores result in this.depth.
+     */
+    async ensureDepthMap({ force = false } = {}) {
+        if (!this.base) throw new Error("No image loaded in document");
+        if (this.depthPending) return this.depthPending;
+        const model = host.depthModel();
+        if (!model) {
+            this.setStatus("Depth estimation needs Depth Anything V2 Small: download it in Settings › Helpers.");
+            throw new Error("No depth model is downloaded (Settings › Helpers)");
+        }
+        const run = async () => {
+            this.depthPending = true;
+            this.renderDepthRow();
+            try {
+                const input = await host.depthInput(this);
+                if (!force && this.depth && this.depth.u16 && this.depth.hash === input.hash && this.depth.w === input.gw && this.depth.h === input.gh) {
+                    this.depth.version = input.version;
+                    this.depth.stale = false;
+                    this.renderDepthRow();
+                    return this.depth;
+                }
+                this.setStatus(`Estimating depth with ${model.label} ...`);
+                const res = await host.depthInApp(this, {
+                    image: input.rgba,
+                    width: input.mw,
+                    height: input.mh,
+                });
+                this.setStatus("Refining depth map with guided filter ...");
+                const poolRes = await editorPool().run("depth_guide", {
+                    raw: res.depth,
+                    rw: input.mw,
+                    rh: input.mh,
+                    grey: input.grey,
+                    gw: input.gw,
+                    gh: input.gh,
+                    r: GUIDE.r,
+                    eps: GUIDE.eps,
+                    lo: res.min,
+                    hi: res.max,
+                }, [input.grey.buffer], { priority: INTERACTIVE });
+                const u16 = new Uint16Array(poolRes.u16);
+                this.depth = {
+                    raw: res.depth,
+                    rw: input.mw,
+                    rh: input.mh,
+                    u16,
+                    w: input.gw,
+                    h: input.gh,
+                    origW: this.width,
+                    origH: this.height,
+                    lo: res.min,
+                    hi: res.max,
+                    hash: input.hash,
+                    thumb: input.thumb,
+                    version: input.version,
+                    provider: res.provider,
+                    ms: res.ms,
+                    totalMs: res.ms + (poolRes.timing && poolRes.timing.total ? poolRes.timing.total : 0),
+                    stale: false,
+                };
+                this._depthOverlayCanvas = null;
+                this.setStatus(`Depth map ready (${input.gw} × ${input.gh}) in ${(this.depth.totalMs / 1000).toFixed(2)} s (${res.provider}).`);
+                return this.depth;
+            } catch (err) {
+                console.error("Depth estimation failed:", err);
+                this.setStatus("Depth estimation failed: " + (err.message || err));
+                throw err;
+            } finally {
+                this.depthPending = null;
+                this.renderDepthRow();
+            }
+        };
+        const p = run();
+        this.depthPending = p;
+        return p;
+    }
+
+    /** Compute 64x64 luma thumbnail for quick fingerprinting and staleness check. */
+    depthFingerprint() {
+        if (!this.base || !this.width || !this.height) return null;
+        const c = document.createElement("canvas");
+        c.width = 64; c.height = 64;
+        const ctx = c.getContext("2d");
+        if (this.thumb && this.thumb.width >= 16 && this.thumb.height >= 16) {
+            ctx.drawImage(this.thumb, 0, 0, 64, 64);
+        } else {
+            const flat = this.flattenToCanvas({ forRun: true, noFilters: true });
+            ctx.drawImage(flat, 0, 0, 64, 64);
+        }
+        const d = ctx.getImageData(0, 0, 64, 64).data;
+        const out = new Uint8Array(64 * 64);
+        for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+            out[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+        }
+        return out;
+    }
+
+    /** Check if document changed significantly compared to cached depth map. */
+    isDepthStale() {
+        if (!this.depth) return false;
+        if (this.depth.version === this.compositeVersion) return false;
+        if (!this.depth.thumb) return true;
+        const current = this.depthFingerprint();
+        if (!current) return true;
+        let sum = 0;
+        const dt = this.depth.thumb;
+        for (let i = 0; i < 4096; i++) {
+            sum += Math.abs(current[i] - dt[i]);
+        }
+        return (sum / 4096) >= STALE_DIFF;
+    }
+
+    /** Draw depth map overlay onto canvas view. */
+    drawDepthOverlay(ctx) {
+        if (!this.depth || !this.depth.u16) return;
+        if (!this._depthOverlayCanvas || this._depthOverlayKey !== this.depth.hash) {
+            const dw = this.depth.w, dh = this.depth.h;
+            const c = document.createElement("canvas");
+            c.width = dw; c.height = dh;
+            const dctx = c.getContext("2d");
+            const idata = dctx.createImageData(dw, dh);
+            const d32 = idata.data;
+            const u16 = this.depth.u16;
+            const n = dw * dh;
+            for (let i = 0, j = 0; i < n; i++, j += 4) {
+                const v = (u16[i] >> 8) & 0xff;
+                d32[j] = v;
+                d32[j + 1] = v;
+                d32[j + 2] = v;
+                d32[j + 3] = 255;
+            }
+            dctx.putImageData(idata, 0, 0);
+            this._depthOverlayCanvas = c;
+            this._depthOverlayKey = this.depth.hash;
+        }
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.drawImage(this._depthOverlayCanvas, 0, 0, this.width, this.height);
+        ctx.restore();
+    }
+
+    /** Refresh sidebar depth controls and status. */
+    renderDepthRow() {
+        if (!this.depthContainer) return;
+        const con = this.depthContainer;
+        con.innerHTML = "";
+        if (!this.base) {
+            con.appendChild(el("span", "ipc-dim", "No image loaded"));
+            return;
+        }
+        if (this.depthPending) {
+            const row = el("div", "ipc-sec");
+            row.appendChild(el("span", null, "Estimating depth map ..."));
+            con.appendChild(row);
+            return;
+        }
+        if (!this.depth) {
+            const row = el("div", "ipc-sec");
+            const btn = iconButton("magic", "Compute 16-bit depth map with Depth Anything V2 Small", () => this.ensureDepthMap(), "Compute depth map");
+            btn.classList.add("ipc-small", "ipc-primary");
+            row.appendChild(btn);
+            con.appendChild(row);
+            return;
+        }
+        const stale = this.isDepthStale();
+        const row = el("div", "ipc-sec");
+        const info = el("span", null, `${this.depth.w} × ${this.depth.h}` + (stale ? " (stale)" : ""));
+        if (stale) info.classList.add("ipc-warn");
+        row.appendChild(info);
+        const recomputeBtn = iconButton("refresh", "Recompute depth map for the current picture", () => this.ensureDepthMap({ force: true }), "Recompute");
+        recomputeBtn.classList.add("ipc-small");
+        if (stale) recomputeBtn.classList.add("ipc-primary");
+        row.appendChild(recomputeBtn);
+        const viewBtn = iconButton("eye", "Toggle depth map view on canvas", () => {
+            this.showDepthMap = !this.showDepthMap;
+            viewBtn.classList.toggle("ipc-toggle-on", !!this.showDepthMap);
+            this.draw();
+        }, "View");
+        viewBtn.classList.add("ipc-small");
+        viewBtn.classList.toggle("ipc-toggle-on", !!this.showDepthMap);
+        row.appendChild(viewBtn);
+        con.appendChild(row);
     }
 
     // ---- outpainting ---------------------------------------------------------
@@ -16261,7 +16455,7 @@ class InpaintEditor {
     drawComposite(ctx, opts = {}) {
         if (!this.base) return;
         const below = opts.baseOnly ? [] : opts.upTo == null ? this.layers : this.layers.slice(0, Math.max(0, opts.upTo));
-        const hasFilters = !opts.controlOnly && below.some((l) => this.shown(l) && (l.kind === "filter" || this.matchActive(l)));
+        const hasFilters = !opts.controlOnly && !opts.noFilters && below.some((l) => this.shown(l) && (l.kind === "filter" || this.matchActive(l)));
         // In a region pass the target canvas is already the filter input: no full-size copy.
         if (this.viewPass || !hasFilters) { this.drawLayersInto(ctx, opts); return; }
         // Filters need the composite below them at image resolution: build it offscreen first.
@@ -16278,7 +16472,7 @@ class InpaintEditor {
     }
 
     /** `upTo`: the composite of the layers below that index only (C6 c1: what a filter layer there takes as its input); `baseOnly`: the base alone (C6 c2f: the peek). */
-    drawLayersInto(ctx, { forRun = false, controlOnly = false, upTo = null, baseOnly = false } = {}) {
+    drawLayersInto(ctx, { forRun = false, controlOnly = false, upTo = null, baseOnly = false, noFilters = false } = {}) {
         if (controlOnly) {
             ctx.fillStyle = "#000";
             ctx.fillRect(0, 0, this.width, this.height);
@@ -16308,7 +16502,7 @@ class InpaintEditor {
                 const cb = controlOnly ? null : this.clipBaseOf(layer, i);
                 if (cb && !drawn.has(cb)) continue;
                 if (layer.kind === "filter") {
-                    if (!controlOnly) { chain = this.applyFilterLayer(ctx, layer, i, forRun, chain, this.nextIsFilterLayer(i, forRun, end), cb ? () => coverage(cb) : null); drawn.add(layer); }
+                    if (!controlOnly && !noFilters) { chain = this.applyFilterLayer(ctx, layer, i, forRun, chain, this.nextIsFilterLayer(i, forRun, end), cb ? () => coverage(cb) : null); drawn.add(layer); }
                     continue;
                 }
                 const ctrl = this.isControl(layer);
@@ -17707,6 +17901,10 @@ class InpaintEditor {
             ctx.restore();
         }
 
+        if (this.showDepthMap && this.depth && !this.spaceDown) {
+            this.drawDepthOverlay(ctx);
+        }
+
         if (this.getBounds()) {
             const [x, y, w, h] = this.cropRect();
             ctx.save();
@@ -18351,6 +18549,22 @@ class InpaintEditor {
             settings: this.settings,
             refs: this.refSettings,
             cutout: this.cutoutSettings,
+            depth: this.depth ? {
+                w: this.depth.w,
+                h: this.depth.h,
+                origW: this.depth.origW,
+                origH: this.depth.origH,
+                rw: this.depth.rw,
+                rh: this.depth.rh,
+                lo: this.depth.lo,
+                hi: this.depth.hi,
+                hash: this.depth.hash,
+                version: this.depth.version,
+                provider: this.depth.provider,
+                ms: this.depth.ms,
+                totalMs: this.depth.totalMs,
+                thumb: this.depth.thumb ? Array.from(this.depth.thumb) : null,
+            } : null,
         });
     }
 
@@ -18526,9 +18740,29 @@ class InpaintEditor {
                 this.selectionEncoded = false;
                 this.selectionDataUrl = null;
             }
+            if (state.depth) {
+                let thumb = null;
+                if (Array.isArray(state.depth.thumb)) {
+                    thumb = new Uint8Array(state.depth.thumb);
+                } else if (typeof state.depth.thumb === "string") {
+                    const bin = atob(state.depth.thumb);
+                    thumb = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) thumb[i] = bin.charCodeAt(i);
+                }
+                this.depth = {
+                    ...state.depth,
+                    thumb,
+                    u16: null,
+                    raw: null,
+                    stale: true,
+                };
+            } else {
+                this.depth = null;
+            }
             this.renderLayers();
             this.renderHistory();
             this.renderInfo();
+            this.renderDepthRow();
             this.draw();
             this.drawThumb();
         } catch (err) {

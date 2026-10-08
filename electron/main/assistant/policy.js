@@ -14,7 +14,7 @@ const EXCLUDED = new Set(["list_commands", "run_action", "set_status", "ailabel_
 const READS = new Set([
     "ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips",
     "filter_types", "status", "get_state", "read_log", "film_looks", "glb_info", "sample_mean_color",
-    "screenshot", "compare", "list_history", "boxes_list", "list_settings",
+    "screenshot", "compare", "list_history", "boxes_list", "list_settings", "sample_depth",
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
@@ -42,7 +42,7 @@ const POLICY = {
     // ---- read the app -------------------------------------------------------------------
     ping: AUTO, list_documents: AUTO, list_recipes: AUTO, list_plugins: AUTO, list_layers: AUTO,
     list_brush_tips: AUTO, filter_types: AUTO, status: AUTO, get_state: AUTO, read_log: AUTO,
-    film_looks: AUTO, glb_info: AUTO, sample_mean_color: AUTO, screenshot: AUTO, compare: AUTO,
+    film_looks: AUTO, glb_info: AUTO, sample_mean_color: AUTO, sample_depth: AUTO, screenshot: AUTO, compare: AUTO,
 
     // ---- selection ----------------------------------------------------------------------
     select_rect: AUTO, select_all: AUTO, select_none: AUTO, select_invert: AUTO, select_feather: AUTO,

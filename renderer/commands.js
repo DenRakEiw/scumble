@@ -1984,6 +1984,46 @@ const COMMANDS = {
             return { width: w, height: h, scale: s, image_width: box ? ed.width : src.w, image_height: box ? ed.height : src.h, ...(box ? { box } : {}), mime: "image/jpeg", data: url.slice(url.indexOf(",") + 1) };
         },
     },
+    sample_depth: {
+        needsImage: true,
+        readOnly: true,
+        description: "Sample the document's depth map at (x, y) in image pixels (Depth Anything V2 Small). Returns normalized depth (0..1, near to far), 16-bit depth (0..65535), raw disparity, disparity bounds, resolution, provider and whether the map is stale compared to current edits.",
+        params: {
+            x: P.num("x in image pixels", { required: true }),
+            y: P.num("y in image pixels", { required: true }),
+            recompute: P.bool("force recomputing depth even if a fresh or stale map exists", { default: false }),
+        },
+        async run(ed, a) {
+            const x = +a.x, y = +a.y;
+            if (a.x == null || a.y == null || !Number.isFinite(x) || !Number.isFinite(y)) throw new Error("pass x and y in image pixels");
+            if (x < 0 || y < 0 || x >= ed.width || y >= ed.height) throw new Error(`${x}, ${y} is outside the ${ed.width} × ${ed.height} picture`);
+            const force = a.recompute === true || a.recompute === "true";
+            const depthObj = await ed.ensureDepthMap({ force });
+            if (!depthObj || !depthObj.u16) throw new Error("depth map not available");
+            const gx = Math.max(0, Math.min(depthObj.w - 1, Math.floor((x / ed.width) * depthObj.w)));
+            const gy = Math.max(0, Math.min(depthObj.h - 1, Math.floor((y / ed.height) * depthObj.h)));
+            const u16Val = depthObj.u16[gy * depthObj.w + gx];
+            let rawVal = null;
+            if (depthObj.raw && depthObj.rw && depthObj.rh) {
+                const rx = Math.max(0, Math.min(depthObj.rw - 1, Math.floor((x / ed.width) * depthObj.rw)));
+                const ry = Math.max(0, Math.min(depthObj.rh - 1, Math.floor((y / ed.height) * depthObj.rh)));
+                rawVal = depthObj.raw[ry * depthObj.rw + rx];
+            }
+            return {
+                x: Math.floor(x),
+                y: Math.floor(y),
+                depth: Math.round((u16Val / 65535) * 100000) / 100000,
+                u16: u16Val,
+                raw_disparity: rawVal != null ? Math.round(rawVal * 10000) / 10000 : null,
+                near: depthObj.hi != null ? Math.round(depthObj.hi * 10000) / 10000 : null,
+                far: depthObj.lo != null ? Math.round(depthObj.lo * 10000) / 10000 : null,
+                width: depthObj.w,
+                height: depthObj.h,
+                provider: depthObj.provider,
+                stale: ed.isDepthStale(),
+            };
+        },
+    },
     get_state: { readOnly: true, description: "The document's state JSON (the node's canvas_state without the selection bitmaps).", params: {}, async run(ed) { const v = JSON.parse(ed.getValue() || "{}"); delete v.selection; delete v.selections; return v; } },
     set_status: { description: "Write a line into the document's status bar.", params: { text: P.str("", { required: true }) }, async run(ed, a) { ed.setStatus(String(a.text)); return { status: ed.status }; } },
 
