@@ -85,6 +85,174 @@ if (warn.length) bad.push("console: " + warn.map((l) => l[1].slice(0, 120)).join
 if (bad.length) throw new Error(bad.join("; "));
 return { cases: Object.keys(out).length, gl: GL.glFiltersAvailable(), worst: Math.max(...Object.values(out).map((o) => o.max)) };
 """),
+    ("points_structure_above_the_drawing_buffer", """
+const F = await import("./editor/inpaint_filters.js");
+const GL = await import("./editor/inpaint_filters_gl.js");
+GL.glTestLimits({ maxDraw: 1e6 });
+try {
+    const W = 1600, H = 1200;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    const g = ctx.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, "#f06"); g.addColorStop(0.5, "#4a9"); g.addColorStop(1, "#0af");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    const params = {
+        ...F.filterDefaults("film.points"),
+        points: [{ id: 1, x: 800, y: 600, r: 400, tol: 60, ev: 0.5, contrast: 20, sat: 30, warmth: 20, structure: 50, color: [0.5, 0.1, -0.2] }],
+    };
+    const a = F.applyFilter("film.points", cv, params, { cpu: true, scale: 1, seed: 7, cache: {} });
+    const b = F.applyFilter("film.points", cv, params, { scale: 1, seed: 7, cache: {} });
+    const pa = a.getContext("2d").getImageData(0, 0, W, H).data;
+    const pb = b.getContext("2d").getImageData(0, 0, W, H).data;
+    let max = 0, over2 = 0, n = 0;
+    for (let i = 0; i < pa.length; i++) {
+        if ((i & 3) === 3) continue;
+        const df = Math.abs(pa[i] - pb[i]);
+        if (df > max) max = df;
+        if (df > 2) over2++;
+        n++;
+    }
+    const over2Pct = over2 / n * 100;
+    if (GL.glFiltersAvailable() && (max > 4 || over2 / n > 0.001)) {
+        throw new Error(`points_structure_above_the_drawing_buffer tolerance exceeded: max=${max}, over2=${over2Pct.toFixed(3)}%`);
+    }
+    return { max, over2: +over2Pct.toFixed(3), pixels: W * H };
+} finally {
+    GL.glTestLimits(null);
+}
+"""),
+    ("gl_scratch_and_static_cache", """
+const GL = await import("./editor/inpaint_filters_gl.js");
+if (!GL.glFiltersAvailable()) return { skipped: "no webgl2" };
+
+// 1. An ad-hoc runShader with three constant-colour samplers after glReleasePool()
+// so that createSurface happens between bind and draw, returning their sum exactly.
+GL.glReleasePool();
+const def3 = {
+    code: `
+        vec4 shade(vec4 c, vec2 uv) {
+            return texture(s1, uv) + texture(s2, uv) + texture(s3, uv);
+        }
+    `,
+    uniforms: { s1: "sampler2D", s2: "sampler2D", s3: "sampler2D" },
+    label: "sum3",
+};
+const cvSrc = document.createElement("canvas"); cvSrc.width = 2; cvSrc.height = 2;
+const s1 = { data: new Uint8Array([10, 20, 30, 255]), width: 1, height: 1 };
+const s2 = { data: new Uint8Array([40, 50, 60, 255]), width: 1, height: 1 };
+const s3 = { data: new Uint8Array([70, 80, 90, 255]), width: 1, height: 1 };
+const out3 = GL.runShader(def3, cvSrc, { s1, s2, s3 });
+const pix3 = out3.getContext("2d").getImageData(0, 0, 1, 1).data;
+const expected3 = [120, 150, 180, 255];
+for (let i = 0; i < 3; i++) {
+    if (Math.abs(pix3[i] - expected3[i]) > 1) {
+        throw new Error(`sum3 sampler failed at ${i}: expected ${expected3[i]}, got ${pix3[i]}`);
+    }
+}
+
+// 2. The same static value twice adds 1 to G.uploads; a new key adds 1 more; a WEBGL_lose_context round re-uploads.
+const G = GL.G || GL.glContext();
+const u0 = G.uploads;
+const staticData = new Uint8Array([11, 22, 33, 255]);
+const staticVal = { data: staticData, width: 1, height: 1, static: true, key: "k1" };
+const defStat = {
+    code: `vec4 shade(vec4 c, vec2 uv) { return texture(s, uv); }`,
+    uniforms: { s: "sampler2D" },
+    label: "static_test",
+};
+GL.runShader(defStat, cvSrc, { s: staticVal });
+const u1 = G.uploads;
+if (u1 !== u0 + 1) throw new Error(`first static upload expected uploads=${u0 + 1}, got ${u1}`);
+
+GL.runShader(defStat, cvSrc, { s: staticVal });
+const u2 = G.uploads;
+if (u2 !== u1) throw new Error(`second static upload expected no upload (${u1}), got ${u2}`);
+
+staticVal.key = "k2";
+GL.runShader(defStat, cvSrc, { s: staticVal });
+const u3 = G.uploads;
+if (u3 !== u2 + 1) throw new Error(`new key static upload expected ${u2 + 1}, got ${u3}`);
+
+// Context loss round
+const ext = G.gl.getExtension("WEBGL_lose_context");
+if (ext) {
+    ext.loseContext();
+    GL.runShader(defStat, cvSrc, { s: staticVal });
+    const G2 = GL.G || GL.glContext();
+    if (G2.uploads !== 1) throw new Error(`after context lost expected 1 upload, got ${G2.uploads}`);
+}
+
+return { sum3: Array.from(pix3), uploads: { u0, u1, u2, u3 } };
+"""),
+    ("gl_u16_sampling", """
+const GL = await import("./editor/inpaint_filters_gl.js");
+const W = await import("./editor/inpaint_weights.js");
+if (!GL.glFiltersAvailable()) return { skipped: "no webgl2" };
+
+// SAMPLE_GLSL against F3's u16Bilinear on a 5 x 3 map at 1,000 random points, within 1 level after 8-bit quantisation
+const mw = 5, mh = 3;
+const u16 = new Uint16Array(mw * mh);
+const vals = [
+    1200, 15400, 32000, 48000, 65000,
+    8000, 22000, 41000, 55000, 62000,
+    3000, 18000, 37000, 51000, 64000,
+];
+for (let i = 0; i < 15; i++) u16[i] = vals[i];
+const u8 = new Uint8Array(u16.buffer, u16.byteOffset, u16.byteLength);
+
+let seed = 42;
+function rng() {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+}
+const N = 1000;
+const ptsData = new Float32Array(N * 4);
+for (let i = 0; i < N; i++) {
+    ptsData[i * 4] = rng() * 5.0;
+    ptsData[i * 4 + 1] = rng() * 3.0;
+    ptsData[i * 4 + 2] = 0;
+    ptsData[i * 4 + 3] = 1;
+}
+
+const mapSampler = { data: u8, width: mw, height: mh, channels: 2 };
+const ptsSampler = { data: ptsData, width: N, height: 1, channels: 4 };
+
+const defSample = {
+    code: `
+        ${GL.SAMPLE_GLSL}
+        vec4 shade(vec4 c, vec2 uv) {
+            ivec2 coord = ivec2(gl_FragCoord.xy);
+            vec2 pt = texelFetch(u_pts, coord, 0).xy;
+            float val = u16Bilinear(u_map, pt);
+            return vec4(val, val, val, 1.0);
+        }
+    `,
+    uniforms: { u_map: "sampler2D", u_pts: "sampler2D" },
+    label: "u16_sample_test",
+};
+
+const cvSample = document.createElement("canvas"); cvSample.width = N; cvSample.height = 1;
+const outSample = GL.runShader(defSample, cvSample, { u_map: mapSampler, u_pts: ptsSampler });
+const sampleData = outSample.getContext("2d").getImageData(0, 0, N, 1).data;
+
+let worstDiff = 0, diffCount = 0;
+for (let i = 0; i < N; i++) {
+    const px = ptsData[i * 4], py = ptsData[i * 4 + 1];
+    const jsNorm = W.u16Bilinear(u16, mw, mh, px, py);
+    const jsByte = Math.round(jsNorm * 255);
+    const glByte = sampleData[i * 4];
+    const diff = Math.abs(jsByte - glByte);
+    if (diff > worstDiff) worstDiff = diff;
+    if (diff > 1) {
+        throw new Error(`point ${i} (${px.toFixed(2)}, ${py.toFixed(2)}): js=${jsByte}, gl=${glByte}, diff=${diff} > 1`);
+    }
+    if (diff > 0) diffCount++;
+}
+
+return { points: N, worstDiff, diffCount };
+"""),
     ("look_commands", """
 // docs/PLAN_0_1_42.md F1: "None (adjustments only)" adds no grain (it fell back to grain 25 without a stock). Its Grain
 // slider at 0, at its default and at 200 % gives the same bytes, on the CPU and on the GPU path
