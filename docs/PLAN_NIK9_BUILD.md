@@ -405,6 +405,7 @@ route, limits in presets.
 - **R1-S4** (2026-10-08): Range bar control `renderer/editor/inpaint_rangebar.js` and whole-picture histograms.
 - **Review Must-Fix 1-7** (2026-10-08): All 7 review findings resolved; gates `pixels selection limit maps film editor` ALL PASS on both `--tiles on` and `--tiles off` with `--offline`.
 - **R1-S5a** (2026-10-08): Select by range depth source: banded combine rule, worker `range_select` op, `ed.selectRange`, `cancelRange`, `select_range` command (auto policy, 109 commands in COMMANDS.md), selection gate cases 1–5, 9, 10, 12 passing on both backends.
+- **R1-S5b** (2026-10-08): Select by range luminosity and colour sources: worker `range_select` luma/color band processing, `ed.selectRange` with `holdRunStack` and `fillBoxFromStack` (at most 2 bands in flight), `SharedArrayBuffer` transport, float precision epsilon in `rangeWeight`/`WEIGHTS_GLSL`, all 12 selection gate cases passing on `--tiles on` (including 15k luma case 11) and `--tiles off`. All 6 gates passing 100% on both backends.
 
 ## 4. Foundations
 

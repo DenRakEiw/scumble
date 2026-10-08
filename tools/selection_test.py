@@ -325,6 +325,108 @@ if (typeof res.seconds !== "number" || res.seconds < 0) throw new Error("15k cas
 await run("close_document", { doc: d15k.id, force: true });
 return { seconds: res.seconds, tiles: res.tiles, flattenCount };
 """),
+    ("range_select_luma_color_cases", """
+const ed = ednow(window.__selDoc);
+await run("new_canvas", { doc: window.__selDoc, width: 1600, height: 400, color: "#000000" });
+
+const l = await run("add_paint_layer", { doc: window.__selDoc, name: "luma_color_stripes" });
+const layer = ed.layers.find((x) => x.id === l.id);
+
+// 1. Draw 16 grey stripes (0, 17, 34, ..., 255), each 100px wide
+layer.px.drawInto([0, 0, 1600, 400], (ctx) => {
+    for (let k = 0; k < 16; k++) {
+        const g = k * 17;
+        ctx.fillStyle = `rgb(${g}, ${g}, ${g})`;
+        ctx.fillRect(k * 100, 0, 100, 400);
+    }
+});
+ed.markLayerChanged(layer);
+ed.renderLayers();
+ed.draw();
+if (ed.mipsSettled) await ed.mipsSettled();
+await wait(100);
+
+const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
+
+// Case 6: luma on 16 grey stripes 0, 17, ..., 255; lo .4 hi .6 -> stripes 102, 119, 136, 153 -> 255; others 0
+await ed.selectRange({ source: "luma", lo: 0.4, hi: 0.6, fLo: 0, fHi: 0 }, "replace");
+const selectedStripes = [];
+for (let k = 0; k < 16; k++) {
+    const val = at(k * 100 + 50, 200);
+    const expected = (k >= 6 && k <= 9) ? 255 : 0;
+    if (val !== expected) {
+        throw new Error(`case 6: stripe ${k} (${k * 17}) expected ${expected}, got ${val}`);
+    }
+    if (val === 255) selectedStripes.push(k * 17);
+}
+
+// Case 7: colour #ff0000 tol 20 lo .5 hi 1 over red / green / blue patches -> red 255; green and blue 0
+layer.px.drawInto([0, 0, 1600, 400], (ctx) => {
+    ctx.fillStyle = "#ff0000"; ctx.fillRect(0, 0, 400, 400);
+    ctx.fillStyle = "#00ff00"; ctx.fillRect(400, 0, 400, 400);
+    ctx.fillStyle = "#0000ff"; ctx.fillRect(800, 0, 400, 400);
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(1200, 0, 400, 400);
+});
+ed.markLayerChanged(layer);
+ed.renderLayers();
+ed.draw();
+if (ed.mipsSettled) await ed.mipsSettled();
+await wait(100);
+
+await ed.selectRange({ source: "color", color: "#ff0000", tol: 20, lo: 0.5, hi: 1.0, fLo: 0, fHi: 0 }, "replace");
+const redVal = at(200, 200);
+const greenVal = at(600, 200);
+const blueVal = at(1000, 200);
+if (redVal !== 255) throw new Error("case 7: red patch not 255: " + redVal);
+if (greenVal !== 0) throw new Error("case 7: green patch not 0: " + greenVal);
+if (blueVal !== 0) throw new Error("case 7: blue patch not 0: " + blueVal);
+
+// Case 8: the same picture with a levels-to-black filter layer on top, luma lo .5 -> nothing selected (it reads the shown picture)
+const fl = await run("add_filter", { doc: window.__selDoc, type: "fill" });
+const fLayer = ed.layers.find((x) => x.id === fl.id);
+fLayer.params = { ...fLayer.params, color: "#000000" };
+ed.markFilterChanged(fLayer);
+ed.renderLayers();
+ed.draw();
+if (ed.mipsSettled) await ed.mipsSettled();
+await wait(100);
+
+await ed.selectRange({ source: "luma", lo: 0.5, hi: 1.0, fLo: 0, fHi: 0 }, "replace");
+const selBoundsAfterFilter = ed.getBounds();
+if (selBoundsAfterFilter !== null) {
+    throw new Error("case 8: expected null bounds with black filter layer on top, got: " + JSON.stringify(selBoundsAfterFilter));
+}
+
+// Clean up filter and paint layer
+await run("remove_layer", { doc: window.__selDoc, layer: fl.id });
+await run("remove_layer", { doc: window.__selDoc, layer: l.id });
+
+return { selectedStripes, redVal, greenVal, blueVal, emptyBounds: selBoundsAfterFilter === null };
+"""),
+    ("range_select_15k_luma_case", """
+const ed = ednow(window.__selDoc);
+if (!ed.tileMode) return { skipped: "canvas backend" };
+
+const d15k = await run("new_document");
+await run("new_canvas", { doc: d15k.id, width: 15000, height: 10000, color: "#ffffff" });
+const ed15k = ednow(d15k.id);
+
+let flattenCount = 0;
+const origFlatten = ed15k.flattenToCanvas.bind(ed15k);
+ed15k.flattenToCanvas = function(...args) {
+    flattenCount++;
+    return origFlatten(...args);
+};
+
+// Case 11: 15000 x 10000, luma -> as case 10, through the held stack
+const res = await ed15k.selectRange({ source: "luma", lo: 0.5, hi: 1.0, fLo: 0.2, fHi: 0 }, "replace");
+
+if (flattenCount !== 0) throw new Error("15k luma case: flattenToCanvas called " + flattenCount);
+if (typeof res.seconds !== "number" || res.seconds < 0) throw new Error("15k luma case: invalid seconds " + res.seconds);
+
+await run("close_document", { doc: d15k.id, force: true });
+return { seconds: res.seconds, tiles: res.tiles, flattenCount };
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__selDoc, force: true }); } catch (_) { /* gone */ }
 return "ok";

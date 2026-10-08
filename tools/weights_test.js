@@ -354,6 +354,88 @@ async function main() {
         }
     });
 
+    // ---------------------------------------------------------------------------
+    // 10. rangeSelectJob for source "luma" matches direct limitWeight loop byte for byte
+    // ---------------------------------------------------------------------------
+    test("rangeSelectJob: luma worker band matches per-pixel limitWeight loop", () => {
+        const W = 400, H = 200;
+        const buf = new Uint8Array(W * 100 * 4);
+        for (let y = 0; y < 100; y++) {
+            for (let x = 0; x < W; x++) {
+                const idx = (y * W + x) * 4;
+                buf[idx] = (x * 7) & 255;
+                buf[idx + 1] = (y * 11) & 255;
+                buf[idx + 2] = (x + y * 3) & 255;
+                buf[idx + 3] = 255;
+            }
+        }
+        const limit = { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1, invert: false };
+        const job = rangeSelectJob({
+            W, H, y0: 0, y1: 100,
+            source: "luma",
+            limit,
+            invert: false,
+            sab: buf.buffer,
+        });
+
+        const src = tilesSource(job.tiles, [0, 0], [0, 0, W, 100]);
+        const actual = src.read(0, 0, W, 100);
+
+        for (let y = 0; y < 100; y++) {
+            for (let x = 0; x < W; x++) {
+                const idx = (y * W + x) * 4;
+                const r = buf[idx] / 255, g = buf[idx + 1] / 255, b = buf[idx + 2] / 255;
+                const w = limitWeight(limit, r, g, b, 0);
+                const expected = Math.round(255 * w);
+                const act = actual[y * W + x];
+                if (act !== expected) {
+                    throw new Error(`luma mismatch at (${x}, ${y}): actual ${act} !== expected ${expected}`);
+                }
+            }
+        }
+    });
+
+    // ---------------------------------------------------------------------------
+    // 11. rangeSelectJob for source "color" matches direct limitWeight loop byte for byte
+    // ---------------------------------------------------------------------------
+    test("rangeSelectJob: color worker band matches per-pixel limitWeight loop", () => {
+        const W = 400, H = 200;
+        const buf = new Uint8Array(W * 100 * 4);
+        for (let y = 0; y < 100; y++) {
+            for (let x = 0; x < W; x++) {
+                const idx = (y * W + x) * 4;
+                buf[idx] = (x * 13) & 255;
+                buf[idx + 1] = (y * 17) & 255;
+                buf[idx + 2] = ((x * 3) ^ y) & 255;
+                buf[idx + 3] = 255;
+            }
+        }
+        const limit = { source: "color", color: "#e03020", tol: 25, lo: 0.2, hi: 0.8, fLo: 0.1, fHi: 0.1, invert: false };
+        const job = rangeSelectJob({
+            W, H, y0: 0, y1: 100,
+            source: "color",
+            limit,
+            invert: false,
+            sab: buf.buffer,
+        });
+
+        const src = tilesSource(job.tiles, [0, 0], [0, 0, W, 100]);
+        const actual = src.read(0, 0, W, 100);
+
+        for (let y = 0; y < 100; y++) {
+            for (let x = 0; x < W; x++) {
+                const idx = (y * W + x) * 4;
+                const r = buf[idx] / 255, g = buf[idx + 1] / 255, b = buf[idx + 2] / 255;
+                const w = limitWeight(limit, r, g, b, 0);
+                const expected = Math.round(255 * w);
+                const act = actual[y * W + x];
+                if (act !== expected) {
+                    throw new Error(`color mismatch at (${x}, ${y}): actual ${act} !== expected ${expected}`);
+                }
+            }
+        }
+    });
+
     console.log(`\nAll ${passed} tests passed!`);
 }
 
