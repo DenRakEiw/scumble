@@ -49,7 +49,8 @@ import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js"
 import { readTiff, tiffPart } from "./inpaint_tiff.js";
 import { resampleStore } from "./inpaint_resample.js";
 import { liquifyStore } from "./inpaint_liquify.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, poissonBlend } from "./px/kernels.js";
+import { guidedFar } from "./inpaint_depth.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, poissonBlend, boxBlurs } from "./px/kernels.js";
 
 const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
 const now = () => performance.now();
@@ -794,9 +795,16 @@ function liquifyJob(msg) {
     return { tiles, stats, transfer, timing: { op: "liquify", tiles: msg.txs.length, total: now() - t0 } };
 }
 
+function depthGuide(msg) {
+    const t0 = now();
+    const u16 = guidedFar(msg, boxBlurs);
+    return { u16: u16.buffer, transfer: [u16.buffer], timing: { op: "depth_guide", total: now() - t0 } };
+}
+
 async function run(msg) {
     setKernels(msg.kernels);
     await kernelsReady();
+    if (msg.op === "depth_guide") return depthGuide(msg);
     if (msg.op === "resample") return resampleJob(msg);
     if (msg.op === "liquify") return liquifyJob(msg);
     if (msg.op === "png") return png(msg.bitmap, !!msg.hash);

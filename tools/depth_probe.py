@@ -246,7 +246,8 @@ def probe_image(img_path, model_path, out_root):
     raw_far_u16 = far_u16(raw_depth, lo, hi)
     raw_far_f32 = 1.0 - np.clip((raw_depth - lo) / (hi - lo), 0.0, 1.0)
 
-    # 1. raw16.png
+    # 1. raw16.png and raw.f32
+    raw_depth.tofile(os.path.join(out_dir, "raw.f32"))
     raw16_path = os.path.join(out_dir, "raw16.png")
     Image.fromarray(raw_far_u16).save(raw16_path)
 
@@ -274,10 +275,14 @@ def probe_image(img_path, model_path, out_root):
         gw, gh = work_size(W, H, target_dim)
         print(f"\nWorking resolution {target_dim} px: {gw} x {gh}")
 
-        # Guide image I (grayscale luma in 0..1)
+        # Guide image I (grayscale luma in 0..1 from Uint8Array matching host.depthInput)
         im_guide = im.resize((gw, gh), resample=Image.Resampling.BILINEAR)
-        rgb_guide = np.array(im_guide, dtype=np.float32) / 255.0
-        I = (rgb_guide[:, :, 0] * LUMA[0] + rgb_guide[:, :, 1] * LUMA[1] + rgb_guide[:, :, 2] * LUMA[2]).astype(np.float32)
+        rgb_guide = np.array(im_guide, dtype=np.float32)
+        grey_u8 = np.clip(np.round(rgb_guide[:, :, 0] * LUMA[0] + rgb_guide[:, :, 1] * LUMA[1] + rgb_guide[:, :, 2] * LUMA[2]), 0, 255).astype(np.uint8)
+        grey_u8.tofile(os.path.join(out_dir, f"grey_{gw}x{gh}.u8"))
+        if not os.path.exists(os.path.join(out_dir, "grey.u8")) or target_dim == 2048:
+            grey_u8.tofile(os.path.join(out_dir, "grey.u8"))
+        I = grey_u8.astype(np.float32) / 255.0
 
         # Bilinear upsample raw depth to gw x gh
         p = bilinear_resize(raw_far_f32, gw, gh)

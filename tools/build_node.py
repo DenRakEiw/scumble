@@ -40,7 +40,7 @@ FILES = [
     "inpaint_canvas.js", "inpaint_filters.js", "inpaint_filters_gl.js", "inpaint_curves.js",
     "inpaint_text.js", "inpaint_raster.js", "inpaint_export.js", "inpaint_worker.js",
     "inpaint_compositor.js", "inpaint_brushes.js", "inpaint_pixels.js", "inpaint_resample.js", "inpaint_tiles.js", "inpaint_arena.js", "inpaint_pool.js", "inpaint_png.js", "inpaint_bands.js", "inpaint_boxstack.js", "inpaint_stroke.js", "inpaint_tippicker.js", "inpaint_remove.js", "inpaint_liquify.js",
-    "inpaint_jobs.js", "inpaint_encode.js", "inpaint_upload.js", "inpaint_modal.js", "inpaint_layered.js", "inpaint_tiff.js", "inpaint_theme.js",
+    "inpaint_jobs.js", "inpaint_encode.js", "inpaint_upload.js", "inpaint_modal.js", "inpaint_layered.js", "inpaint_tiff.js", "inpaint_theme.js", "inpaint_depth.js",
     "reftokens.js", "prompt_field.js",
     "px/kernels_js.js", "px/kernels.js", "px/px.js",
 ]

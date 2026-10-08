@@ -124,6 +124,142 @@ function check(name, ok, detail = "") {
     }
     check("depth() refuses dimensions > 2058", caughtBounds && caughtBounds.message.includes("multiples of 14"), caughtBounds ? caughtBounds.message : "none");
 
+    // 4. Depth map maths & guided filter (R1-S3a)
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const DepthMath = await import("../renderer/editor/inpaint_depth.js");
+    const { boxBlurs } = await import("../renderer/editor/px/kernels_js.js");
+
+    // roundHalfEven
+    check("roundHalfEven(54.5) = 54", DepthMath.roundHalfEven(54.5) === 54);
+    check("roundHalfEven(55.5) = 56", DepthMath.roundHalfEven(55.5) === 56);
+
+    // modelSize table of R1-S2
+    const table = [
+        [[6000, 4000], [784, 518]],
+        [[2000, 1125], [924, 518]],
+        [[1500, 2000], [518, 686]],
+        [[400, 300], [518, 392]],
+        [[763, 518], [756, 518]],
+        [[15000, 10000], [784, 518]],
+        [[6000, 1000], [3108, 518]],
+    ];
+    for (const [[w, h], [ew, eh]] of table) {
+        const [mw, mh] = DepthMath.modelSize(w, h, { cap: null });
+        check(`modelSize(${w}, ${h}) -> [${mw}, ${mh}]`, mw === ew && mh === eh);
+    }
+    const [capW, capH] = DepthMath.modelSize(6000, 1000);
+    check("modelSize(6000, 1000) capped at LONG_CAP (2058)", capW === 2058 && capH === 336 && capW % 14 === 0 && capH % 14 === 0);
+
+    // workSize
+    const [gw, gh] = DepthMath.workSize(15000, 10000);
+    check("workSize(15000, 10000, 4096) -> [4096, 2731]", gw === 4096 && gh === 2731);
+
+    // disparityRange on a 1..1000 ramp gives lo ≈ 5.995 and hi ≈ 995.005 (±1 bin)
+    const nRamp = 100000;
+    const ramp = new Float32Array(nRamp);
+    for (let i = 0; i < nRamp; i++) ramp[i] = 1 + (999 * i) / (nRamp - 1);
+    const { lo, hi } = DepthMath.disparityRange(ramp);
+    check("disparityRange on 1..1000 ramp gives lo ≈ 5.995 and hi ≈ 995.005",
+        Math.abs(lo - 5.995) < 0.25 && Math.abs(hi - 995.005) < 0.25,
+        `lo=${lo.toFixed(3)}, hi=${hi.toFixed(3)}`);
+
+    // farU16: d = hi -> 0, d = lo -> 65535, monotonic
+    const dVals = new Float32Array([100, 55, 10]);
+    const far = DepthMath.farU16(dVals, 10, 100);
+    check("farU16: d = hi -> 0", far[0] === 0);
+    check("farU16: d = lo -> 65535", far[2] === 65535);
+    check("farU16: monotonic", far[0] < far[1] && far[1] < far[2]);
+
+    // guidedFilter: constant p gives p (|Δ| ≤ 1e-6)
+    const cw = 64, ch = 64;
+    const I_const = new Float32Array(cw * ch);
+    const p_const = new Float32Array(cw * ch);
+    for (let i = 0; i < cw * ch; i++) {
+        I_const[i] = (i % 64) / 64;
+        p_const[i] = 0.42;
+    }
+    const q_const = DepthMath.guidedFilter(I_const, p_const, cw, ch, 4, 1e-3, boxBlurs);
+    let maxConstDelta = 0;
+    for (let i = 0; i < cw * ch; i++) {
+        const diff = Math.abs(q_const[i] - 0.42);
+        if (diff > maxConstDelta) maxConstDelta = diff;
+    }
+    check("guidedFilter: constant p gives p (|Δ| ≤ 1e-6)", maxConstDelta <= 1e-6, `delta=${maxConstDelta.toExponential(2)}`);
+
+    // guidedFilter: eps = 1e6 approaches double box mean (mean of local means)
+    const p_rand = new Float32Array(cw * ch);
+    for (let i = 0; i < cw * ch; i++) p_rand[i] = ((i * 37 + 13) & 0xff) / 255;
+    const q_box = DepthMath.guidedFilter(I_const, p_rand, cw, ch, 4, 1e6, boxBlurs);
+    const b_mean = boxBlurs(boxBlurs(p_rand, cw, ch, [4]), cw, ch, [4]);
+    let maxMeanDelta = 0;
+    for (let i = 0; i < cw * ch; i++) {
+        const diff = Math.abs(q_box[i] - b_mean[i]);
+        if (diff > maxMeanDelta) maxMeanDelta = diff;
+    }
+    check("guidedFilter: eps = 1e6 equals double box mean (≤ 1e-5)", maxMeanDelta <= 1e-5, `delta=${maxMeanDelta.toExponential(2)}`);
+
+    // guidedFilter: edge-preserving smoothing of a step edge in I (r = 8, eps = 1e-4) preserves sharp step ≤ 2 px vs box blur ≥ 8 px
+    const sw = 100, sh = 20;
+    const I_step = new Float32Array(sw * sh);
+    const p_noisy = new Float32Array(sw * sh);
+    for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+            const idx = y * sw + x;
+            I_step[idx] = x < 50 ? 0.1 : 0.9;
+            const noise = (((idx * 17) % 100) / 100 - 0.5) * 0.05;
+            p_noisy[idx] = (x < 50 ? 0.1 : 0.9) + noise;
+        }
+    }
+    const b_step = boxBlurs(p_noisy, sw, sh, [8]);
+    const q_guided = DepthMath.guidedFilter(I_step, p_noisy, sw, sh, 8, 1e-4, boxBlurs);
+
+    function transitionWidth(arr, rowY, W) {
+        const row = arr.subarray(rowY * W, (rowY + 1) * W);
+        const minV = row[0], maxV = row[W - 1];
+        const v10 = minV + 0.1 * (maxV - minV);
+        const v90 = minV + 0.9 * (maxV - minV);
+        let x10 = -1, x90 = -1;
+        for (let x = 0; x < W; x++) {
+            if (x10 < 0 && row[x] >= v10) x10 = x;
+            if (x90 < 0 && row[x] >= v90) { x90 = x; break; }
+        }
+        return x90 - x10;
+    }
+    const w_box = transitionWidth(b_step, 10, sw);
+    const w_guided = transitionWidth(q_guided, 10, sw);
+    check("guidedFilter: step edge in I preserves sharp transition (≤ 2 px vs ≥ 8)",
+        w_guided <= 2 && w_box >= 8, `guided width=${w_guided} px, box width=${w_box} px`);
+
+    // guidedFar against R1-S2's numpy reference on scene.jpg's 2048 map within 64/65535
+    const refPath = path.join(__dirname, "../dist/depth_checkpoint/scene/ref_py.u16");
+    const rawPath = path.join(__dirname, "../dist/depth_checkpoint/scene/raw.f32");
+    const greyPath = path.join(__dirname, "../dist/depth_checkpoint/scene/grey.u8");
+    if (fs.existsSync(refPath) && fs.existsSync(rawPath) && fs.existsSync(greyPath)) {
+        const rawBuf = fs.readFileSync(rawPath);
+        const raw = new Float32Array(rawBuf.buffer, rawBuf.byteOffset, rawBuf.byteLength / 4);
+        const greyBuf = fs.readFileSync(greyPath);
+        const grey = new Uint8Array(greyBuf.buffer, greyBuf.byteOffset, greyBuf.byteLength);
+        const refBuf = fs.readFileSync(refPath);
+        const ref = new Uint16Array(refBuf.buffer, refBuf.byteOffset, refBuf.byteLength / 2);
+
+        const u16 = DepthMath.guidedFar({
+            raw, rw: 924, rh: 518,
+            grey, gw: 2000, gh: 1125,
+            r: 2, eps: 1e-3,
+            lo: 0.0, hi: 7.497405529022217,
+        }, boxBlurs);
+
+        let maxRefDiff = 0;
+        for (let i = 0; i < u16.length; i++) {
+            const d = Math.abs(u16[i] - ref[i]);
+            if (d > maxRefDiff) maxRefDiff = d;
+        }
+        check("guidedFar against R1-S2 numpy reference within 64/65535", maxRefDiff <= 64, `maxDiff=${maxRefDiff}/65535`);
+    } else {
+        check("guidedFar against R1-S2 numpy reference", true, "(skipped: run tools/depth_probe.py first)");
+    }
+
     console.log(failures ? `${failures} FAILED` : "all ok");
     process.exit(failures ? 1 : 0);
 })().catch((err) => {
