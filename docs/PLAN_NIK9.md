@@ -190,3 +190,40 @@ https://github.com/DepthAnything/Depth-Anything-V2/issues/320,
 https://raw.githubusercontent.com/ByteDance-Seed/Depth-Anything-3/main/README.md,
 https://huggingface.co/depth-anything/DA3MONO-LARGE, https://huggingface.co/apple/DepthPro/blob/main/LICENSE,
 https://github.com/microsoft/MoGe/issues/98.
+
+## Checkpoint (2026-10-08, R1-S2)
+
+Executed and verified using `tools/depth_probe.py` on Depth Anything V2 Small (`depth_anything_v2_small.onnx`, 99,060,839 bytes, Apache-2.0).
+
+### 1. Measurements per picture
+
+| Picture | Original Size | Model Input (DPT rule) | Inference (DML / GPU) | Inference (CPU) | Disparity Range [lo, hi] | Working Size | Guided Filter (r=2, eps=1e-3) | Packed RG16 PNG |
+|---|---|---|---|---|---|---|---|---|
+| `docs/images/tutorial/scene.jpg` | 2000 × 1125 | 924 × 518 | **225 ms** | 724 ms | [0.0, 7.50] | 2000 × 1125 | 441 ms (CPU) | 1.71 MB |
+| `docs/images/tutorial/skin.jpg` | 1500 × 2000 | 518 × 686 | **185 ms** | 482 ms | [0.35, 7.64] | 1500 × 2000 | 412 ms (CPU) | 1.38 MB |
+| `dist/daily/adobe_15000x10000.jpg` | 15000 × 10000 | 784 × 518 | **215 ms** | 555 ms | [1.30, 2.48] | 2048 × 1365<br>4096 × 2731 | 641 ms (2048)<br>3,431 ms (4096) | 2.36 MB (2048)<br>10.53 MB (4096) |
+
+*Artifacts saved under `dist/depth_checkpoint/<name>/`: `raw16.png`, `raw_colour.jpg`, `sheet.jpg`, `packed_rg.png`, and `guided_<2048|4096>_r<r>_e<eps>.png` for r ∈ {1, 2, 4} model px and eps ∈ {1e-4, 1e-3, 1e-2}.*
+
+### 2. Edge quality verdicts
+
+- **Scene (`scene.jpg`):** The woman silhouette against the blue Porsche and building wall is sharply separated. Hair outline against sky shows no harsh halo. The guided filter at `r = 2` model px and `eps = 1e-3` crisply aligns the depth edge with contrast boundaries without bleeding into the background.
+- **Portrait (`skin.jpg`):** Smooth, continuous depth gradient over the facial contours (nose tip warm/near, cheeks intermediate, ear and background cool/far). The earring boundary cleanly snaps to the silhouette.
+- **15k Image (`adobe_15000x10000.jpg`):** Downscaling to 784 × 518 model input runs in 215 ms (DML). At working resolution 4096 × 2731, the guided filter preserves fine structures with a 10.5 MB map, while 2048 × 1365 delivers a fast 641 ms filter and a lightweight 2.36 MB map.
+
+### 3. Decisions & Constants for R1-S3 and Release 2
+
+1. **Working Map Size (`WORK_MAX`):**
+   - Default: `4096` (allows up to 11.2 MP on 15k documents).
+   - For fast interactive previews and compact document storage, 2048 is also available.
+2. **Guide Parameters (`GUIDE`):**
+   - `GUIDE = { r: 2, eps: 1e-3 }` (2 model pixels scaled to working pixels: `r_work = round(2 * (gw / mw))`).
+   - `eps = 1e-3` prevents edge bleeding across contrast jumps while maintaining smooth gradients.
+3. **Long-side Cap for Panoramas (`LONG_CAP`):**
+   - `LONG_CAP = 2058` (prevents extreme aspect ratios like 6:1 panoramas from exceeding VRAM / buffer limits).
+4. **Freshness Threshold (`STALE_DIFF`):**
+   - `STALE_DIFF = 6` (mean absolute difference on 64 × 64 thumbnail fingerprint).
+5. **Release 2 Decisions (Edges & Detail Pass):**
+   - The global pass with guided filter `r=2, eps=1e-3` is sufficient for distance-based grading and depth masks in Release 1.
+   - Release 2 will add the local tiled detail pass (518 px tiles) and edge snap for fine hair / foliage when doing hard depth cutouts.
+
