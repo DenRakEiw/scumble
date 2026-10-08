@@ -16,12 +16,16 @@ const models = require("../electron/main/onnx/models");
 const { Sam2, logitsToMask, SIZE } = require("../electron/main/onnx/sam2");
 const { Matting } = require("../electron/main/onnx/matting");
 const { Lama, SIZE: LAMA } = require("../electron/main/onnx/lama");
+const { Depth } = require("../electron/main/onnx/depth");
 
 const args = process.argv.slice(2);
 const flag = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def; };
 const dir = args.length && !args[0].startsWith("--") ? args[0] : path.join(process.env.APPDATA || ".", "Scumble", "models");
 const sam2Id = flag("--sam2", "sam2_tiny");
 const mattingId = flag("--matting", "birefnet_lite");
+const depthId = flag("--depth", "da2_small");
+const depthRefDir = flag("--depth-ref", null);
+const timed = args.includes("--time");
 
 function synthetic() {
     const img = new Uint8ClampedArray(SIZE * SIZE * 4);
@@ -46,11 +50,12 @@ async function main() {
     const samOk = await testSam2(runtime);
     const cutOk = await testMatting(runtime);
     const lamaOk = await testLama(runtime);
+    const depthOk = await testDepth(runtime);
     console.log("runtime:", JSON.stringify(runtime.status().active));
     await runtime.free();
-    const ran = [samOk, cutOk, lamaOk].some((v) => v !== null);
-    const ok = ran && samOk !== false && cutOk !== false && lamaOk !== false;
-    console.log(ok ? "PASS" : "FAIL", { sam2: samOk, cutout: cutOk, lama: lamaOk, ran });
+    const ran = [samOk, cutOk, lamaOk, depthOk].some((v) => v !== null);
+    const ok = ran && samOk !== false && cutOk !== false && lamaOk !== false && depthOk !== false;
+    console.log(ok ? "PASS" : "FAIL", { sam2: samOk, cutout: cutOk, lama: lamaOk, depth: depthOk, ran });
     process.exit(ok ? 0 : 1);
 }
 
@@ -144,6 +149,138 @@ async function testLama(runtime) {
     const meanErr = err / cnt;
     console.log(`LaMa: load ${loadMs} ms, run ${runMs} ms on ${r.provider} (${where}), outside unchanged ${same}, red pixels left ${red}, mean |fill - gradient| ${meanErr.toFixed(1)}`);
     return same && red < cnt * 0.01 && meanErr < 12;
+}
+
+function syntheticDepth(W = 784, H = 518) {
+    const img = new Uint8ClampedArray(W * H * 4);
+    const yh = Math.floor(0.35 * H);
+    const cx = W / 2, f = H * 0.8, s = 40;
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            if (y < yh) {
+                const t = y / Math.max(1, yh);
+                img[i] = Math.round(100 + 80 * t);
+                img[i + 1] = Math.round(140 + 60 * t);
+                img[i + 2] = Math.round(220 + 20 * t);
+                img[i + 3] = 255;
+            } else {
+                const dy = y - yh + 1;
+                const z = f / dy;
+                const X = (x - cx) * z / f;
+                const chk = ((Math.floor(X / s) + Math.floor(z / s)) & 1) ? 220 : 60;
+                const fog = Math.min(1, Math.max(0, 1 - 20 / z));
+                const v = Math.round(chk * (1 - fog) + 128 * fog);
+                img[i] = v; img[i + 1] = v; img[i + 2] = v; img[i + 3] = 255;
+            }
+        }
+    }
+    return img;
+}
+
+function rankCorr(x) {
+    const n = x.length;
+    const sorted = x.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+    const ranks = new Float64Array(n);
+    for (let r = 0; r < n; r++) ranks[sorted[r].i] = r;
+    let d2 = 0;
+    for (let i = 0; i < n; i++) { const d = i - ranks[i]; d2 += d * d; }
+    return 1 - (6 * d2) / (n * (n * n - 1));
+}
+
+async function testDepth(runtime) {
+    const depthModel = models.byId(depthId);
+    const dp = models.paths(depthModel, dir);
+    if (!dp) { console.log(`depth model ${depthId} not present, skipped`); return null; }
+    const depth = new Depth(runtime, depthModel, dp.model);
+
+    if (depthRefDir) {
+        const fs = require("node:fs");
+        let refOk = true;
+        const entries = fs.readdirSync(depthRefDir);
+        for (const e of entries) {
+            const m = e.match(/^input_(\d+)x(\d+)\.rgba$/);
+            if (!m) continue;
+            const w = parseInt(m[1], 10), h = parseInt(m[2], 10);
+            const refPath = path.join(depthRefDir, `ref_${w}x${h}.f32`);
+            if (!fs.existsSync(refPath)) continue;
+            const rgba = new Uint8Array(fs.readFileSync(path.join(depthRefDir, e)));
+            const refBuf = fs.readFileSync(refPath);
+            const refF32 = new Float32Array(refBuf.buffer, refBuf.byteOffset, refBuf.byteLength / 4);
+            const r = await depth.run(rgba, w, h);
+            const n = w * h;
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0, maxDiff = 0;
+            for (let i = 0; i < n; i++) {
+                const x = r.depth[i], y = refF32[i];
+                sumX += x; sumY += y; sumXY += x * y;
+                sumX2 += x * x; sumY2 += y * y;
+                const d = Math.abs(x - y);
+                if (d > maxDiff) maxDiff = d;
+            }
+            const denom = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+            const pearson = denom > 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+            const span = r.max - r.min;
+            const relDiff = span > 0 ? maxDiff / span : maxDiff;
+            const minPearson = r.provider === "cpu" ? 0.99999 : 0.9999;
+            const maxRelDiff = 1e-4;
+            const ok = pearson >= minPearson && (r.provider !== "cpu" || relDiff <= maxRelDiff);
+            console.log(`depth ref ${w}×${h}: Pearson ${pearson.toFixed(6)}, max |Δ|/span ${relDiff.toExponential(2)} on ${r.provider} -> ${ok ? "ok" : "FAIL"}`);
+            if (!ok) refOk = false;
+        }
+        return refOk;
+    }
+
+    const W = 784, H = 518;
+    const img = syntheticDepth(W, H);
+    let t0 = Date.now();
+    const r = await depth.run(img, W, H);
+    const runMs = Date.now() - t0;
+    console.log(`depth ${depthModel.label}: ${runMs} ms on ${r.provider}, dims ${r.width} × ${r.height}, range [${r.min.toFixed(2)}, ${r.max.toFixed(2)}]`);
+    if (r.width !== W || r.height !== H) return false;
+
+    if (timed) {
+        const shapes = [[784, 518], [924, 518], [518, 686], [518, 518]];
+        for (const [sw, sh] of shapes) {
+            const simg = syntheticDepth(sw, sh);
+            const st0 = Date.now();
+            await depth.run(simg, sw, sh);
+            console.log(`timed shape ${sw}×${sh}: ${Date.now() - st0} ms`);
+        }
+        const wt0 = Date.now();
+        await depth.run(img, W, H);
+        console.log(`warm run ${W}×${H}: ${Date.now() - wt0} ms`);
+    }
+
+    const yh = Math.floor(0.35 * H);
+    const numBins = 20;
+    const binSize = (H - yh) / numBins;
+    const binMeans = [];
+    for (let b = 0; b < numBins; b++) {
+        const y0 = Math.floor(yh + b * binSize), y1 = Math.floor(yh + (b + 1) * binSize);
+        let sum = 0, count = 0;
+        for (let y = y0; y < y1; y++) {
+            for (let x = 0; x < W; x++) { sum += r.depth[y * W + x]; count++; }
+        }
+        binMeans.push(sum / count);
+    }
+    const spearman = rankCorr(binMeans);
+    console.log(`floor row bins Spearman rho: ${spearman.toFixed(3)}`);
+
+    let skySum = 0, skyCount = 0;
+    for (let y = 0; y < yh; y++) {
+        for (let x = 0; x < W; x++) { skySum += r.depth[y * W + x]; skyCount++; }
+    }
+    const skyMean = skySum / skyCount;
+    const floorVals = [];
+    for (let y = yh; y < H; y += 4) {
+        for (let x = 0; x < W; x += 4) floorVals.push(r.depth[y * W + x]);
+    }
+    floorVals.sort((a, b) => a - b);
+    const p10 = floorVals[Math.floor(floorVals.length * 0.1)];
+    console.log(`sky mean disparity: ${skyMean.toFixed(2)}, floor p10: ${p10.toFixed(2)}`);
+
+    const depthOk = spearman >= 0.95 && skyMean <= p10;
+    return depthOk;
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });

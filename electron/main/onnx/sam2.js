@@ -25,9 +25,9 @@ const AUTOMASK_DEFAULTS = {
     stabilityScoreOffset: 1.0, boxNmsThresh: 0.7, minArea: 0.0002, maxObjects: 1000,
 };
 
-/** RGBA 1024 × 1024 -> float32 CHW tensor data with ImageNet normalisation. */
-function normalise(rgba, mean = MEAN, std = STD, size = SIZE) {
-    const n = size * size;
+/** RGBA w × h -> float32 CHW tensor data with normalisation. */
+function normaliseRect(rgba, w, h, mean = MEAN, std = STD) {
+    const n = w * h;
     const out = new Float32Array(3 * n);
     const m0 = mean[0], m1 = mean[1], m2 = mean[2], s0 = 1 / std[0], s1 = 1 / std[1], s2 = 1 / std[2];
     for (let i = 0, j = 0; i < n; i++, j += 4) {
@@ -36,6 +36,11 @@ function normalise(rgba, mean = MEAN, std = STD, size = SIZE) {
         out[2 * n + i] = (rgba[j + 2] / 255 - m2) * s2;
     }
     return out;
+}
+
+/** RGBA size × size -> float32 CHW tensor data with ImageNet normalisation. */
+function normalise(rgba, mean = MEAN, std = STD, size = SIZE) {
+    return normaliseRect(rgba, size, size, mean, std);
 }
 
 class Sam2 {
@@ -204,4 +209,4 @@ function logitsToMask(logits, outW, outH) {
     return out;
 }
 
-module.exports = { Sam2, normalise, logitsToMask, AUTOMASK_DEFAULTS, SIZE, LOW };
+module.exports = { Sam2, normalise, normaliseRect, logitsToMask, AUTOMASK_DEFAULTS, SIZE, LOW };

@@ -1864,7 +1864,7 @@ function renderHelpers(status) {
         row.className = "shell-model";
         const name = document.createElement("span");
         name.textContent = m.label;
-        name.title = `${({ sam2: "objects (SAM2)", matting: "background removal", inpaint: "the Remove tool (inpainting)" })[m.kind] || m.kind} · ${m.source} · ${m.license}`;
+        name.title = `${({ sam2: "objects (SAM2)", matting: "background removal", inpaint: "the Remove tool (inpainting)", depth: "depth maps (Select by depth, Limit by depth)" })[m.kind] || m.kind} · ${m.source} · ${m.license}`;
         row.appendChild(name);
         const info = document.createElement("span");
         info.className = "shell-model-info";

@@ -14,15 +14,17 @@ const { Runtime } = require("./runtime");
 const { Sam2, logitsToMask, SIZE } = require("./sam2");
 const { Matting } = require("./matting");
 const { Lama, SIZE: LAMA_SIZE } = require("./lama");
+const { Depth } = require("./depth");
 
 const HF_TOKEN = "hf-token";
-const DEFAULTS = { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama" };
+const DEFAULTS = { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama", depth: "da2_small" };
 
 const runtime = new Runtime();
 let progressSink = null;
 const sam2Instances = new Map();     // model id -> Sam2
 const mattingInstances = new Map();  // model id -> Matting
 const inpaintInstances = new Map();  // model id -> Lama
+const depthInstances = new Map();    // model id -> Depth
 const busy = new Set();              // running jobs, for the status line
 
 function conf() {
@@ -30,7 +32,7 @@ function conf() {
 }
 
 function modelsDir() {
-    return conf().dir || path.join(app.getPath("userData"), "models");
+    return conf().dir || (app && app.getPath ? path.join(app.getPath("userData"), "models") : path.join(process.env.APPDATA || ".", "Scumble", "models"));
 }
 
 /** Files a scan linked under other names, `{ modelId: { role: path } }`. */
@@ -57,7 +59,7 @@ function status() {
     const sc = lastScan(dir);
     return {
         dir, isDefaultDir: !c.dir, downloadDir: models.downloadDir(dir), isComfyDir: models.isComfyModelsDir(dir),
-        device: c.device, sam2: c.sam2, matting: c.matting, inpaint: c.inpaint,
+        device: c.device, sam2: c.sam2, matting: c.matting, inpaint: c.inpaint, depth: c.depth,
         models: models.describeAll(dir, links(), sc ? sc.elsewhere : null),
         scan: sc,
         downloads: downloader.running(),
@@ -94,13 +96,13 @@ async function scan() {
 }
 
 function clearInstances() {
-    sam2Instances.clear(); mattingInstances.clear();
+    sam2Instances.clear(); mattingInstances.clear(); depthInstances.clear();
     for (const l of inpaintInstances.values()) l.kill();
     inpaintInstances.clear();
 }
 
 // LaMa's process ends with the app (a utility process would too; the forked one of plain Node would not)
-app.on("will-quit", () => { for (const l of inpaintInstances.values()) l.kill(); });
+if (app && typeof app.on === "function") app.on("will-quit", () => { for (const l of inpaintInstances.values()) l.kill(); });
 
 async function browseDir(win) {
     const r = await dialog.showOpenDialog(win, { title: "Model folder (the app's own, or a ComfyUI models folder)", defaultPath: modelsDir(), properties: ["openDirectory", "createDirectory"] });
@@ -138,6 +140,7 @@ async function remove(id) {
     }
     sam2Instances.delete(id);
     mattingInstances.delete(id);
+    depthInstances.delete(id);
     const lama = inpaintInstances.get(id);
     if (lama) { lama.kill(); inpaintInstances.delete(id); }
     return status();
@@ -156,6 +159,7 @@ const MISSING = {
     sam2: "No SAM2 model is downloaded (Settings › Helpers).",
     matting: "No background removal model is downloaded (Settings › Helpers).",
     inpaint: "The LaMa model is not downloaded (Settings › Helpers).",
+    depth: "No depth model is downloaded (Settings › Helpers).",
 };
 
 function presentOf(kind, wanted) {
@@ -182,6 +186,12 @@ function inpaintFor(id) {
     const model = presentOf("inpaint", id || conf().inpaint);
     if (!inpaintInstances.has(model.id)) inpaintInstances.set(model.id, new Lama(model, models.paths(model, modelsDir(), links()).model));
     return { model, lama: inpaintInstances.get(model.id) };
+}
+
+function depthFor(id) {
+    const model = presentOf("depth", id || conf().depth);
+    if (!depthInstances.has(model.id)) depthInstances.set(model.id, new Depth(runtime, model, models.paths(model, modelsDir(), links()).model));
+    return { model, depth: depthInstances.get(model.id) };
 }
 
 function checkImage(req) {
@@ -281,4 +291,31 @@ async function warmInpaint(req) {
     }
 }
 
-module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, inpaint, warmInpaint, setProgressSink, HF_TOKEN, DEFAULTS, LAMA_SIZE };
+/**
+ * Depth map: req { model?, image (Uint8Array RGBA w*h*4), width, height }
+ * -> { depth: Float32Array, width, height, min, max, seconds, runMs, provider, model, label }.
+ * Both width and height must be multiples of 14 in [14, 2058].
+ */
+async function depth(req) {
+    const w = req && req.width | 0;
+    const h = req && req.height | 0;
+    const image = req && req.image;
+    if (!w || !h || w < 14 || h < 14 || w > 2058 || h > 2058 || w % 14 !== 0 || h % 14 !== 0 || !image || image.length !== w * h * 4) {
+        throw new Error(`the depth model needs RGBA at multiples of 14 (got ${w} × ${h}, length ${image ? image.length : 0})`);
+    }
+    const { model, depth: depthModel } = depthFor(req.model);
+    const t0 = Date.now();
+    busy.add("depth");
+    try {
+        const res = await depthModel.run(image, w, h);
+        return {
+            depth: res.depth, width: res.width, height: res.height,
+            min: res.min, max: res.max, seconds: (Date.now() - t0) / 1000,
+            runMs: res.ms, provider: res.provider, model: model.id, label: model.label,
+        };
+    } finally {
+        busy.delete("depth");
+    }
+}
+
+module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, inpaint, warmInpaint, depth, setProgressSink, HF_TOKEN, DEFAULTS, LAMA_SIZE };

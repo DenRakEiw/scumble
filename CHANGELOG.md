@@ -3,6 +3,10 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- **Depth model.** *Settings › Helpers* offers Depth Anything V2 Small (99 MB, Apache-2.0) for the depth tools; it runs in the app on the GPU or the processor.
+
 ## 0.1.43 — 2026-10-07
 
 - **Nano Banana 2.1.** Google's new image model as its own recipe, on Google's API with an AI Studio key: 1K, 2K and

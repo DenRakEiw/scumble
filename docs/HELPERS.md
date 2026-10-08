@@ -233,8 +233,9 @@ error names the URL. It puts `settings.llm` back at the end.
 | `models.js` | The registry (below), lookup in the model folder and its `onnx/`, `sam2/`, `RMBG/`, `BiRefNet/`, `rembg/` subfolders, `Downloader` (Node `fetch`, `.part` files resumed with `Range`, progress events, `Authorization: Bearer <hf token>`, size check against the registry), `remove()`. No Electron imports: `node tools/helpers_test.js` uses it directly. |
 | `sam2.js` | `Sam2`: `encode(rgba1024, key)` (cached per key, three embeddings), `decode()` for B prompts, `predict(points, box)` (best of three masks), `automask()`: the SAM2 automatic mask generator with crop_n_layers = 0 and the node's parameters (32 × 32 point grid, batches of 64, pred IoU ≥ 0.8, stability ≥ 0.92 with offset 1.0, box NMS 0.7, min area 0.02 %), masks kept as Int8 quantised logits, painted large to small (the smallest object under the cursor wins) into a `Uint16Array` label map at the requested size by bilinear sampling of the logits. |
 | `matting.js` | `Matting`: one 1024 × 1024 RGB in with the model's mean / std, the output tensor of 1024² values (sigmoid applied when the range says it is a logit; RMBG-1.4 already outputs probabilities) → `Uint8Array` alpha. |
+| `depth.js` | `Depth`: one `[1, 3, H, W]` RGB in at multiples of 14 with ImageNet mean / std, the output tensor of $H \times W$ values → `Float32Array` depth map. |
 | `lama.js`, `lama_process.js` | `Lama`: the Remove model (below) in a **process of its own** (an Electron utility process; a forked Node process under plain Node): `warm()` loads the session, `run(rgba512, mask512)` answers RGBA 512² (outside the mask the input's bytes), `kill()` ends the process where it stands and refuses its jobs, `busy()`. `engine(ort)` is the load / run code the process and the fallback share: a process that dies before its first answer (it could not start or load onnxruntime) leaves the engine to the main thread, and the jobs that waited run there. |
-| `index.js` | The IPC facade: `status`, `configure({device, dir, sam2, matting, inpaint})`, `browseDir`, `openFolder`, `download`, `cancel`, `remove`, `free`, `objects`, `segment`, `cutout`, `inpaint`, `warmInpaint`. Settings under `helpers` in `settings.json`, the Hugging Face token under `hf-token` in `keys.js`. |
+| `index.js` | The IPC facade: `status`, `configure({device, dir, sam2, matting, inpaint, depth})`, `browseDir`, `openFolder`, `download`, `cancel`, `remove`, `free`, `objects`, `segment`, `cutout`, `inpaint`, `warmInpaint`, `depth`. Settings under `helpers` in `settings.json`, the Hugging Face token under `hf-token` in `keys.js`. |
 
 **Every model but LaMa runs on the main process's thread.** onnxruntime-node's
 `InferenceSession.create` and `run` are synchronous native calls behind a `setImmediate`
@@ -270,6 +271,7 @@ layer with smoothing.
 | `rmbg14` | `rmbg14.onnx` (176 MB) | `briaai/RMBG-1.4` | BRIA, non-commercial |
 | `rmbg2` | `rmbg2.onnx` (1.02 GB) | `briaai/RMBG-2.0` (gated: accept the licence, save a token) | CC BY-NC 4.0 |
 | `lama` (kind `inpaint`) | `lama_fp32.onnx` (208 MB; also found in `inpaint/` and `lama/`) | `Carve/LaMa-ONNX`, pinned to commit `c3c0c9e4`, sha256 `1faef530…68d6` | Apache-2.0 (the weights: `advimman/lama`, Apache-2.0) |
+| `da2_small` (kind `depth`) | `depth_anything_v2_small.onnx` (99 MB; also found in `depth/`) | `onnx-community/depth-anything-v2-small`, pinned to commit `4472b736…`, sha256 `afb6a5c2…df10c` | Apache-2.0 |
 
 **LaMa** (package 5 step 3, 2026-09-28): the Big-LaMa weights in Carve's ONNX export (opset 17,
 the Fourier unit rewritten with `Einsum` / `Cos` / `Sin` so it exports, the same output as the

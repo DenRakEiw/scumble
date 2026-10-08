@@ -48,19 +48,34 @@ function mk(dir, rel, size) {
 async function synthetic() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-scan-"));
     try {
-        const tiny = models.byId("sam2_tiny"), lite = models.byId("birefnet_lite");
+        const tiny = models.byId("sam2_tiny"), lite = models.byId("birefnet_lite"), da2 = models.byId("da2_small");
         const enc = tiny.files.find((f) => f.role === "encoder"), dec = tiny.files.find((f) => f.role === "decoder");
         fs.mkdirSync(path.join(dir, "checkpoints"));                                           // makes it a ComfyUI models folder
         mk(dir, "sam2/sam2_hiera_tiny.safetensors", 16);                                       // the ComfyUI node's weights
         mk(dir, "RMBG/RMBG-2.0/model.safetensors", 16);
         mk(dir, "RMBG/RMBG-2.0/birefnet.py", 16);                                              // not a weight file
         mk(dir, "rembg/RMBG-1.4.pth", 16);
+        mk(dir, "depth/depth_anything_v2_vits.safetensors", 16);                              // ComfyUI depth node weights
         mk(dir, "sam2/export/" + enc.name, enc.size);                                          // ONNX under the exporter's names
         mk(dir, "sam2/export/" + dec.name, dec.size);
         mk(dir, "sam2/export/sam2_hiera_large.decoder.onnx", dec.size);                        // same size as every SAM2 decoder
         mk(dir, "BiRefNet/BiRefNet_lite-ONNX/onnx/model.onnx", lite.files[0].size);            // a Hugging Face snapshot
+        mk(dir, "depth-anything-v2-small/onnx/model.onnx", da2.files[0].size);                 // a Hugging Face snapshot
+        mk(dir, "depth-anything-v2-small-ONNX/onnx/model.onnx", 127 * 1024);                   // 127 KB stub, must not link
         mk(dir, "insightface/det_10g.onnx", 5000);                                             // someone else's ONNX
         mk(dir, ".cache/huggingface/blobs/abc.onnx", lite.files[0].size);                      // hidden folders are skipped
+
+        // registered-size file found directly in subfolder
+        const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-scan-da2-"));
+        let da2Found = false;
+        try {
+            mk(dir2, "depth/" + da2.files[0].name, da2.files[0].size);
+            const loc = models.locate(da2, dir2);
+            da2Found = loc.present && !loc.linked && loc.bytes === da2.files[0].size;
+        } finally {
+            fs.rmSync(dir2, { recursive: true, force: true });
+        }
+
         const { walk, m } = await report(dir);
         const checks = {
             walkedNoHidden: walk.files.every((f) => !f.rel.startsWith(".cache")),
@@ -68,6 +83,10 @@ async function synthetic() {
             liteLinkedBySnapshot: !!(m.links.birefnet_lite && /BiRefNet_lite-ONNX/.test(m.links.birefnet_lite.model)),
             largeNotLinkedBySize: !m.links.sam2_large,          // its encoder is missing, and a decoder never links by size alone
             smallNotLinked: !m.links.sam2_small,
+            da2RegisteredFound: da2Found,
+            da2LinkedBySnapshot: !!(m.links.da2_small && /depth-anything-v2-small[\\/]onnx[\\/]model\.onnx/.test(m.links.da2_small.model) && !/depth-anything-v2-small-ONNX/.test(m.links.da2_small.model)),
+            da2StubNotLinked: !walk.files.some((f) => f.rel.includes("depth-anything-v2-small-ONNX") && Object.values(m.links).some((l) => Object.values(l).includes(f.path))),
+            da2OthersReported: (m.elsewhere.da2_small || [])[0] === "depth/depth_anything_v2_vits.safetensors",
             othersReported: (m.elsewhere.sam2_tiny || [])[0] === "sam2/sam2_hiera_tiny.safetensors"
                 && (m.elsewhere.rmbg2 || [])[0] === "RMBG/RMBG-2.0/model.safetensors"
                 && (m.elsewhere.rmbg14 || [])[0] === "rembg/RMBG-1.4.pth",

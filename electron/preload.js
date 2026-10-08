@@ -177,6 +177,7 @@ contextBridge.exposeInMainWorld("scumble", {
         cutout: (req) => ipcRenderer.invoke("helpers:cutout", req),
         inpaint: (req) => ipcRenderer.invoke("helpers:inpaint", req),
         warmInpaint: (req) => ipcRenderer.invoke("helpers:warmInpaint", req),
+        depth: (req) => ipcRenderer.invoke("helpers:depth", req),
         onProgress: (cb) => on("helpers:progress", cb),
     },
     plugins: {

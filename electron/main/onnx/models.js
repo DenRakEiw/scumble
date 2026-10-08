@@ -61,12 +61,21 @@ const MODELS = [
         input: 512,
         files: [{ name: "lama_fp32.onnx", role: "model", size: 208044816, url: `${HF}/Carve/LaMa-ONNX/resolve/c3c0c9e468934d62e79c329e35d82dd09ff8c444/lama_fp32.onnx` }],
     },
+    {
+        // pinned to commit 4472b736... (sha256 afb6a5c2...df10c); the single-file repo is deprecated,
+        // and its successor -ONNX uses external data
+        id: "da2_small", kind: "depth", label: "Depth Anything V2 Small", note: "depth maps (Select by depth, Limit by depth)",
+        source: "onnx-community/depth-anything-v2-small", sourceUrl: `${HF}/onnx-community/depth-anything-v2-small`, license: "Apache-2.0",
+        input: 518, multiple: 14, ...IMAGENET,
+        files: [{ name: "depth_anything_v2_small.onnx", role: "model", size: 99060839,
+            url: `${HF}/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx` }],
+    },
 ];
 
 const byId = (id) => MODELS.find((m) => m.id === id) || null;
 
 /** Subfolders of the model folder that are searched too (a linked ComfyUI models folder). */
-const SUBDIRS = ["", "onnx", "sam2", "RMBG", "BiRefNet", "rembg", "inpaint", "lama"];
+const SUBDIRS = ["", "onnx", "sam2", "RMBG", "BiRefNet", "rembg", "inpaint", "lama", "depth"];
 
 function isComfyModelsDir(dir) {
     return fs.existsSync(path.join(dir, "checkpoints")) || fs.existsSync(path.join(dir, "diffusion_models"));
@@ -146,6 +155,7 @@ const ONNX_ALIASES = {
     birefnet: /birefnet(?![^/]*lite)[^/]*\/onnx\/model\.onnx$/,
     rmbg14: /rmbg[_-]?1\.4[^/]*\/onnx\/model\.onnx$/,
     rmbg2: /rmbg[_-]?2\.0[^/]*\/onnx\/model\.onnx$/,
+    da2_small: /depth[-_]anything[-_]v2[-_]small(?![-_]onnx)[^/]*\/onnx\/model\.onnx$/,
 };
 
 /** The same weights in the formats the ComfyUI nodes use: reported, never loaded. */
@@ -159,6 +169,7 @@ const OTHER_WEIGHTS = {
     rmbg14: /rmbg[_-]?1\.4(?:[^/]*\.(?:safetensors|pt|pth|bin)|\/(?:model|pytorch_model)\.(?:safetensors|pth|bin))$/,
     rmbg2: /rmbg[_-]?2\.0(?:[^/]*\.(?:safetensors|pt|pth|bin)|\/(?:model|pytorch_model)\.(?:safetensors|pth|bin))$/,
     lama: /(?:^|\/)big[_-]?lama[^/]*\.(?:safetensors|pt|pth|ckpt)$/,
+    da2_small: /depth[_-]anything[_-]v2[_-]vits[^/]*\.(?:safetensors|pth|pt|bin)$/,
 };
 
 /** Every weight file under `dir` (depth and count bounded), with its size. Never follows symlinks. */
