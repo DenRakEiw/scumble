@@ -18,14 +18,62 @@ const path = require("node:path");
 const zlib = require("node:zlib");
 
 const MIME = "application/x-scumble";
-const FORMAT_VERSION = 1;            // what this app writes
-const READER_VERSION = 2;            // the newest minReader this app can open (2: the linear light blend mode, 0.1.32)
-// blend modes a reader of version 1 (0.1.31 and before) does not know: it would show such a layer as normal, a different
-// picture, so a document that has one asks for reader 2 (docs/DOCUMENTS.md §8); every other document stays readable by 1
-const READER_2_BLENDS = new Set(["linear-light"]);
+const layersOf = (d) => (d && Array.isArray(d.layers) ? d.layers : []);
+
+/**
+ * One row per document feature: an older reader shows it wrongly (reader) or only carries it (version).
+ * sample: the smallest document that has it (for tests).
+ */
+const FEATURES = [
+    {
+        id: "linear-light", since: "0.1.32", reader: 2, sample: { layers: [{ blend: "linear-light" }] },
+        test: (d) => layersOf(d).some((l) => l && l.blend === "linear-light"),
+    },
+    {
+        id: "maps", since: "0.1.33", version: 2, sample: { maps: { depth: {} } },
+        test: (d) => !!(d && d.maps && typeof d.maps === "object" && Object.keys(d.maps).length > 0),
+    },
+];
+
+const FORMAT_VERSION = Math.max(1, ...FEATURES.map((f) => f.version || 1));
+const READER_VERSION = Math.max(1, ...FEATURES.map((f) => f.reader || 1));
+
+function featuresOf(document) {
+    const out = [];
+    for (const f of FEATURES) {
+        try {
+            if (f.test(document)) out.push(f.id);
+        } catch (_) {
+            out.push(f.id);
+        }
+    }
+    return out;
+}
+
 function readerFor(document) {
-    const layers = document && Array.isArray(document.layers) ? document.layers : [];
-    return layers.some((l) => l && READER_2_BLENDS.has(l.blend)) ? 2 : 1;
+    let max = 1;
+    for (const f of FEATURES) {
+        if (!f.reader) continue;
+        try {
+            if (f.test(document) && f.reader > max) max = f.reader;
+        } catch (_) {
+            if (f.reader > max) max = f.reader;
+        }
+    }
+    return max;
+}
+
+function versionFor(document) {
+    let max = 1;
+    for (const f of FEATURES) {
+        if (!f.version) continue;
+        try {
+            if (f.test(document) && f.version > max) max = f.version;
+        } catch (_) {
+            if (f.version > max) max = f.version;
+        }
+    }
+    return max;
 }
 const HEADER_ENTRY = "scumble/document.json";
 const THUMB_ENTRY = "Thumbnails/thumbnail.png";
@@ -104,7 +152,7 @@ function renameRefs(v, renames) {
  */
 function buildHeader({ document, plugins = {}, extra = {}, app = "", summary = {}, recipe = null, files = [], saved = null }) {
     return {
-        format: "scumble", version: FORMAT_VERSION, minReader: readerFor(document),
+        format: "scumble", version: versionFor(document), minReader: readerFor(document),
         app: String(app), saved: saved || new Date().toISOString(),
         summary, recipe, document, extra, plugins,
         files: files.map((f) => ({ entry: entryOf(f.ref), size: f.size, required: f.required !== false })),
@@ -581,5 +629,5 @@ module.exports = {
     MIME, FORMAT_VERSION, READER_VERSION, HEADER_ENTRY, THUMB_ENTRY, TEMP_RE, LIMITS,
     setLimits, resetLimits, mirrorPath, keyOf, entryOf, refOfEntry, collectRefs, renameRefs,
     buildHeader, checkHeader, writeDocument, readDirectory, openDocument, sweepTemps, registerTemp, unregisterTemp,
-    isScumble, crcOfFile, fmtBytes,
+    isScumble, crcOfFile, fmtBytes, FEATURES, featuresOf, readerFor, versionFor,
 };

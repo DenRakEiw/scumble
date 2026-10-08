@@ -310,17 +310,27 @@ function listTree(dir) {
                 return p;
             };
             let err = null;
-            try { await doc.openDocument({ file: await make({ version: 3, minReader: 3, app: "0.2.0" }, "newer_reader.scumble"), mirrorRoot: mirror("V2") }); } catch (e) { err = e; }
+            const newerReader = doc.READER_VERSION + 1;
+            const newerVersion = doc.FORMAT_VERSION + 1;
+            try { await doc.openDocument({ file: await make({ version: newerReader, minReader: newerReader, app: "0.2.0" }, "newer_reader.scumble"), mirrorRoot: mirror("V2") }); } catch (e) { err = e; }
             assert(err && /newer Scumble/.test(err.message) && !listTree(mirror("V2")).length, "a newer minReader: " + (err && err.message));
-            const o = await doc.openDocument({ file: await make({ version: 2, minReader: 1, app: "0.1.40" }, "newer.scumble"), mirrorRoot: mirror("V3") });
+            const o = await doc.openDocument({ file: await make({ version: newerVersion, minReader: 1, app: "0.1.40" }, "newer.scumble"), mirrorRoot: mirror("V3") });
             assert(o.notes.some((n) => /newer Scumble/.test(n)), "no note for a newer version: " + JSON.stringify(o.notes));
             // a layer in linear light (0.1.32) asks for reader 2, which this version is; every other document stays at 1
             const plain = doc.buildHeader({ document: { layers: [{ blend: "multiply" }, { blend: "normal" }] }, files: [] });
             const ll = doc.buildHeader({ document: { layers: [{ blend: "normal" }, { blend: "linear-light" }] }, files: [] });
             assert(plain.minReader === 1 && ll.minReader === 2 && doc.READER_VERSION === 2, "minReader " + plain.minReader + " / " + ll.minReader + ", reader " + doc.READER_VERSION);
+            // maps (0.1.33) writes version 2, minReader 1
+            const withMap = doc.buildHeader({ document: { maps: { depth: { ref: { filename: "d.png" } } } }, files: [] });
+            assert(withMap.version === 2 && withMap.minReader === 1, "maps version " + withMap.version + " / " + withMap.minReader);
+            for (const feat of doc.FEATURES) {
+                const sampleH = doc.buildHeader({ document: feat.sample, files: [] });
+                if (feat.reader) assert(sampleH.minReader === feat.reader, `feature ${feat.id} reader`);
+                if (feat.version) assert(sampleH.version === feat.version, `feature ${feat.id} version`);
+            }
             const o2 = await doc.openDocument({ file: await make({ version: 1, minReader: 2 }, "linear_light.scumble"), mirrorRoot: mirror("V4") });
             assert(o2 && !o2.notes.some((n) => /newer Scumble/.test(n)), "a minReader 2 document: " + JSON.stringify(o2 && o2.notes));
-            return "minReader 3 refused; version 2 opened with a note; linear light asks for reader 2 and opens";
+            return "minReader 3 refused; version 3 opened with a note; linear light asks for reader 2; maps asks for version 2";
         });
         await check("a_full_disk_a_cancel_or_a_held_file_leave_the_target_as_it_was", async () => {
             const target = path.join(scratch, "keep.scumble");

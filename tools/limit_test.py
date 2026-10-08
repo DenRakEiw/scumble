@@ -52,10 +52,11 @@ JS = r"""
     await ed.setBaseFromCanvas(base, { keepLayers: false });
     await settle(ed);
 
-    // 1. add_filter with params.limit and list_layers
+    // 1. add_filter, then set_filter with params.limit and list_layers
+    const fl = await commands.run("add_filter", { doc: ed.node.id, type: "grain" });
     const lim = { source: "depth", lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.1, invert: false };
-    const fl = await commands.run("add_filter", { doc: ed.node.id, type: "grain", params: { limit: lim } });
-    check("add_filter returns layer with limit", fl && fl.params && fl.params.limit && fl.params.limit.source === "depth", fl && fl.params);
+    const flWithLimit = await commands.run("set_filter", { doc: ed.node.id, layer: fl.id, params: { limit: lim } });
+    check("set_filter returns layer with limit", flWithLimit && flWithLimit.params && flWithLimit.params.limit && flWithLimit.params.limit.source === "depth", flWithLimit && flWithLimit.params);
 
     const layersList = await commands.run("list_layers", { doc: ed.node.id });
     const flInList = layersList.layers.find((l) => l.id === fl.id);
@@ -65,7 +66,8 @@ JS = r"""
     await commands.run("undo", { doc: ed.node.id });
     await settle(ed);
     const layersAfterUndo = await commands.run("list_layers", { doc: ed.node.id });
-    check("undo removes filter layer", !layersAfterUndo.layers.some((l) => l.id === fl.id));
+    const flAfterUndo = layersAfterUndo.layers.find((l) => l.id === fl.id);
+    check("undo removes limit", flAfterUndo && (!flAfterUndo.params || !flAfterUndo.params.limit));
 
     await commands.run("redo", { doc: ed.node.id });
     await settle(ed);

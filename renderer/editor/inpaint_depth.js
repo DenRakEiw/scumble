@@ -4,7 +4,7 @@
 // far conversion, bilinear upsampling, and the guided filter (He et al.).
 // No DOM references here: runs under plain Node, in Web Workers, and in the renderer.
 
-export const WORK_MAX = 4096;
+export const WORK_MAX = 2048;
 export const STALE_DIFF = 6;
 export const GUIDE = { r: 2, eps: 1e-3 };
 export const LONG_CAP = 2058;
@@ -43,7 +43,7 @@ export function modelSize(W, H, { short = 518, multiple = 14, cap = LONG_CAP } =
     } else if (W >= short && H >= short) {
         scale = short / Math.min(W, H);
     } else {
-        scale = short / (Math.abs(H - short) <= Math.abs(W - short) ? H : W);
+        scale = Math.abs(1 - short / W) < Math.abs(1 - short / H) ? short / W : short / H;
     }
 
     let mw = Math.max(multiple, roundHalfEven((W * scale) / multiple) * multiple);

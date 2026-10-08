@@ -82,7 +82,7 @@ if [ "$needs_app" = 1 ]; then
     "$EXE" --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE > "$OUT/app.log" 2>&1 &
   else
     if [ "$STRICT" = 1 ]; then export SCUMBLE_STRICT=1; else export SCUMBLE_STRICT=0; fi
-    ./node_modules/electron/dist/electron.exe . --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $OFFLINE > "$OUT/app.log" 2>&1 &
+    ./node_modules/electron/dist/electron.exe . --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE > "$OUT/app.log" 2>&1 &
   fi
   for i in $(seq 1 90); do
     curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null && break
@@ -130,7 +130,7 @@ for g in "$@"; do
     # second start with a path) against the runner's app; the second start uses the runner's profile (and --exe)
     docux) SCUMBLE_EXE="$EXE" timeout 900 python tools/document_ux_test.py --out "$OUT/docux" > "$OUT/docux.log" 2>&1; rc=$? ;;
     # docperf:15000x10000: a .scumble save and open at size against the runner's app (docs/PLAN_DOCUMENTS.md §7 D5)
-    docperf:*) timeout 3600 python tools/document_perf.py ${g#docperf:} --out "$OUT/docperf" > "$OUT/docperf.log" 2>&1; rc=$? ;;
+    docperf:*) timeout 3600 python tools/document_perf.py $(echo "${g#docperf:}" | tr ',' ' ') --out "$OUT/docperf" > "$OUT/docperf.log" 2>&1; rc=$? ;;
     # upscaleperf:7680x4320: the whole picture on a ComfyUI upscaler at 2x, the landing timed against the runner's app
     # (docs/PLAN_0_1_42.md U2, the 15k measurement; the answer goes into this run's profile, nothing reaches a server)
     upscaleperf:*) timeout 3600 python tools/upscale_perf.py ${g#upscaleperf:} --profile "$PROFILE" --out "$OUT/upscaleperf" > "$OUT/upscaleperf.log" 2>&1; rc=$? ;;

@@ -2322,7 +2322,7 @@ function pixelsCases(P, T) {
 
         // F4a: selection combine on both backends (PLAN_NIK9_BUILD.md §F4a)
         ["mask_combine", both(async ({ B, Mask, snap, rec }) => {
-            const { combineAlpha, rectSource, bytesSource, tilesSource } = await import("../renderer/editor/inpaint_raster.js");
+            const { combineAlpha, rectSource, bytesSource, tilesSource } = await import("./editor/inpaint_raster.js");
             // Spot checks
             if (combineAlpha(128, 128, "add") !== 192) throw new Error("spot check add(128, 128) failed: " + combineAlpha(128, 128, "add"));
             if (combineAlpha(255, 128, "subtract") !== 127) throw new Error("spot check subtract(255, 128) failed: " + combineAlpha(255, 128, "subtract"));

@@ -78,7 +78,9 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-07 evening: **0.1.43 released and Latest**, post live; the Store submission, the MCP Registry and P3's live run wait for the user)
+## Where things stand (2026-10-08 night: **Nik 9 parity build through F1-F8 and R1-S4 built and gated**, all 7 review must-fix items resolved; 0.1.43 is Latest)
+
+**Nik 9 parity build (in progress):** F1-F8 and R1-S1..S4 built, all 7 review must-fix items resolved (magic wand ArrayBuffer on tiles, clipped layers agree across walks, colour-match stats skipFilters key, DPT model size scaling for mixed sides, pure-read sample_depth + depth_map command, filter-free fingerprint staleness, disparity percentiles range). Gates `pixels selection limit maps film editor` pass 100 % on both `--tiles on` and `--tiles off` with `--offline`. Next: R1-S5a.
 
 **0.1.43 is out** (tag v0.1.43, published 2026-10-07T20:27:04Z; the post `v0-1-43` live; the manual synced). Built the
 same day from `docs/PLAN_0_1_43.md`, every row with its "As built": Nano Banana 2.1 on Gemini direct and seven hosts

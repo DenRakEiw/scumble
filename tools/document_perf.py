@@ -24,6 +24,9 @@ from cdp import session  # noqa: E402
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 SIZE = ARGS[0] if ARGS else "15000x10000"
 W, H = (int(v) for v in SIZE.lower().split("x"))
+MAP_OPT = next((a for a in sys.argv[1:] if a.startswith("--map=")), None)
+MAP_SIZE = MAP_OPT.split("=")[1] if MAP_OPT else None
+MAP_W, MAP_H = (int(v) for v in MAP_SIZE.lower().split("x")) if MAP_SIZE else (0, 0)
 OUT = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else os.path.join(os.environ.get("SCUMBLE_GATES", os.path.join(os.path.dirname(__file__), "..", "dist", "gates")), "docperf")
 
 
@@ -72,11 +75,18 @@ BUILD = r"""
         ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: Layer.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
         if (ed.tileMode) c.width = c.height = 1;    // tiles copied the pixels; the canvas backend keeps this canvas as the layer
     }
+    const mapW = __MAP_W__, mapH = __MAP_H__;
+    if (mapW > 0 && mapH > 0) {
+        const { makeMap } = await import("./editor/inpaint_maps.js");
+        const ramp = new Uint16Array(mapW * mapH);
+        for (let i = 0; i < ramp.length; i++) ramp[i] = Math.round(i * 65535 / ramp.length);
+        await ed.setMap("depth", makeMap("depth", mapW, mapH, ramp, [W, 0, 0, H, 0, 0]));
+    }
     ed.addFilterLayer("curves");
     ed.renderLayers(); ed.fitView(); ed.draw();
     if (ed.mipsSettled) await ed.mipsSettled();
     window.__docperf = ed;
-    return { loadMs: Math.round(loadMs), layers: ed.layers.length, tiles: !!ed.tileMode };
+    return { loadMs: Math.round(loadMs), layers: ed.layers.length, map: mapW > 0 ? `${mapW}x${mapH}` : null, tiles: !!ed.tileMode };
 })()
 """
 
@@ -148,7 +158,7 @@ async def run(c):
     if not os.path.exists(base):
         size = noise_png(base)
         print(f"noise base: {size / 1048576:.0f} MB in {time.time() - t:.1f} s", flush=True)
-    built = await c.eval(BUILD.replace("__W__", str(W)).replace("__H__", str(H)).replace("__BASE__", json.dumps(base)), timeout=1800)
+    built = await c.eval(BUILD.replace("__W__", str(W)).replace("__H__", str(H)).replace("__BASE__", json.dumps(base)).replace("__MAP_W__", str(MAP_W)).replace("__MAP_H__", str(MAP_H)), timeout=1800)
     print("built:", json.dumps(built), flush=True)
     # the main process's private bytes while the save runs (a second CDP connection is not needed: poll between steps)
     before_kb = await main_proc_kb(c)

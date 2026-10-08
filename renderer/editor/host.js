@@ -23,7 +23,7 @@ import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from
 import * as realism from "./realism.js";
 import * as comfyprompt from "./comfyprompt.js";
 import * as dialogs from "../dialogs.js";
-import { WORK_MAX, STALE_DIFF, GUIDE, LONG_CAP, modelSize, workSize } from "./inpaint_depth.js";
+import { WORK_MAX, modelSize, workSize } from "./inpaint_depth.js";
 
 const PROXY = "/comfy";
 
@@ -63,7 +63,7 @@ const listeners = new Map();
 
 // the top-level fields the editor's getValue() writes (renderer/editor/inpaint_canvas.js); anything else in an opened
 // document came from a newer Scumble and rides along in `extra` (docs/PLAN_DOCUMENTS.md §6)
-const STATE_KEYS = new Set(["width", "height", "base", "prompt", "layers", "history", "selection", "selectionBox", "selections", "guides", "seen", "crop", "upsample", "gen", "negative", "settings", "refs", "cutout"]);
+const STATE_KEYS = new Set(["width", "height", "base", "prompt", "groups", "layers", "history", "selection", "selectionBox", "selections", "guides", "seen", "crop", "upsample", "gen", "negative", "settings", "refs", "cutout", "maps"]);
 
 /** A 53-bit hash of a string (cyrb53): the saved state's key, to tell a changed document from a saved one. */
 function hashString(s) {
@@ -314,10 +314,12 @@ export const api = {
  * @property {(editor: any) => { takes: boolean, count: number, schema: string | null } | null} boxSwitch   the Boxes switch under the prompt (docs/PLAN_BOXES.md S3d): does the recipe send boxes, how many the document holds, in which format (flux3, ideogram4); the node answers null
  * @property {() => any} removeModel
  * @property {(editor: any, req: { image: Uint8Array, mask: Uint8Array }) => Promise<any>} removeInApp
- * @property {(editor: any) => Promise<any>} warmRemove
+ * @property {boolean} [depthSupported]
  * @property {() => any} [depthModel]
- * @property {(editor: any) => Promise<{ rgba: Uint8Array, mw: number, mh: number, grey: Uint8Array, gw: number, gh: number, hash: string, thumb: Uint8Array, version: number }>} [depthInput]
+ * @property {(editor: any, w: number, h: number) => Promise<{ image: Uint8Array, width: number, height: number }>} [depthInput]
+ * @property {(editor: any, req: { image: Uint8Array, width: number, height: number }) => Promise<{ depth: Float32Array, min: number, max: number, ms: number, provider: string }>} [computeDepth]
  * @property {(editor: any, req: { image: Uint8Array, width: number, height: number }) => Promise<{ depth: Float32Array, min: number, max: number, ms: number, provider: string }>} [depthInApp]
+ * @property {(editor: any, w: number, h: number, opts?: any) => Promise<{ image: Uint8Array, width: number, height: number }>} [pictureInput]
  */
 
 // ---- host --------------------------------------------------------------------------------
@@ -3927,54 +3929,17 @@ export const host = {
     },
 
     /**
-     * Document input for depth estimation:
-     * Returns model RGBA at multiple of 14, working grayscale guide luma, hash, and 64x64 fingerprint thumb.
-     * Leaves filter layers out so depth estimation runs against base/paint/image pixels without post-effects.
+     * Document input for depth estimation (delegates to pictureInput with skipFilters: true and #808080 background).
      */
-    async depthInput(editor) {
-        const W = editor.width, H = editor.height;
-        if (!W || !H) throw new Error("empty document");
-        const [mw, mh] = modelSize(W, H);
-        const [gw, gh] = workSize(W, H, WORK_MAX);
-        const s = Math.min(1, Math.max(gw / W, gh / H));
-        const sample = editor.tileMode
-            ? await editor.sampleRegionSettled("image", [0, 0, W, H], s, { forRun: true, skipFilters: true, noFilters: true })
-            : editor.flattenToCanvas({ forRun: true, skipFilters: true, noFilters: true });
+    async depthInput(editor, w, h) {
+        return this.pictureInput(editor, w, h, { skipFilters: true, background: "#808080" });
+    },
 
-        const c_work = (sample.width === gw && sample.height === gh) ? sample : document.createElement("canvas");
-        if (c_work !== sample) {
-            c_work.width = gw; c_work.height = gh;
-            const wctx = c_work.getContext("2d");
-            wctx.imageSmoothingEnabled = true;
-            wctx.drawImage(sample, 0, 0, gw, gh);
-        }
-        const wdata = c_work.getContext("2d").getImageData(0, 0, gw, gh).data;
-        const grey = new Uint8Array(gw * gh);
-        for (let i = 0, j = 0; i < wdata.length; i += 4, j++) {
-            grey[j] = (wdata[i] * 77 + wdata[i + 1] * 150 + wdata[i + 2] * 29) >> 8;
-        }
-
-        const c_model = document.createElement("canvas");
-        c_model.width = mw; c_model.height = mh;
-        const mctx = c_model.getContext("2d");
-        mctx.imageSmoothingEnabled = true;
-        mctx.drawImage(c_work, 0, 0, mw, mh);
-        const rgba = new Uint8Array(mctx.getImageData(0, 0, mw, mh).data.buffer);
-
-        const c_thumb = document.createElement("canvas");
-        c_thumb.width = 64; c_thumb.height = 64;
-        const tctx = c_thumb.getContext("2d");
-        tctx.imageSmoothingEnabled = true;
-        tctx.drawImage(c_model, 0, 0, 64, 64);
-        const tdata = tctx.getImageData(0, 0, 64, 64).data;
-        const thumb = new Uint8Array(64 * 64);
-        for (let i = 0, j = 0; i < tdata.length; i += 4, j++) {
-            thumb[j] = (tdata[i] * 77 + tdata[i + 1] * 150 + tdata[i + 2] * 29) >> 8;
-        }
-
-        const hash = await this.inputHash(rgba);
-        editor.helperUsed = true;
-        return { rgba, mw, mh, grey, gw, gh, hash, thumb, version: editor.compositeVersion };
+    /**
+     * Compute depth map via helperCall("depth").
+     */
+    async computeDepth(editor, req) {
+        return this.depthInApp(editor, req);
     },
 
     /**

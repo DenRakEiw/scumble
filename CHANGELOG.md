@@ -6,6 +6,11 @@ the section for its version; `docs/` and the commit history hold the technical d
 ## Unreleased
 
 - **Depth model.** *Settings › Helpers* offers Depth Anything V2 Small (99 MB, Apache-2.0) for the depth tools; it runs in the app on the GPU or the processor.
+- **Depth map of the picture.** *Selection › Depth* computes a depth map in the app (Depth Anything V2 Small, on the GPU or the processor). It is saved with the document, follows turns, crops and resizes, and says when the picture has changed enough to compute it again; it never recomputes by itself.
+- **Soft selection combine and Intersect.** Selection combine operations (replace, add, subtract, and intersect) are soft across both canvas and tile backends, supporting smooth feathered transitions.
+- **Range bar and document histograms.** Range bar controls with whole-picture histograms provide double-ended interval and feather adjustments.
+- **Document maps and filter limits.** Documents support auxiliary maps with geometry tracking and undo support; filter layers accept limit parameters.
+- **Format compatibility table.** Document version requirements are handled through a format feature table, allowing newer backward-compatible features while preserving reader compatibility.
 
 ## 0.1.43 — 2026-10-07
 

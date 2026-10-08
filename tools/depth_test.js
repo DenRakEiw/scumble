@@ -143,6 +143,8 @@ function check(name, ok, detail = "") {
         [[763, 518], [756, 518]],
         [[15000, 10000], [784, 518]],
         [[6000, 1000], [3108, 518]],
+        [[300, 1000], [154, 518]],
+        [[1000, 300], [518, 154]],
     ];
     for (const [[w, h], [ew, eh]] of table) {
         const [mw, mh] = DepthMath.modelSize(w, h, { cap: null });
@@ -152,8 +154,8 @@ function check(name, ok, detail = "") {
     check("modelSize(6000, 1000) capped at LONG_CAP (2058)", capW === 2058 && capH === 336 && capW % 14 === 0 && capH % 14 === 0);
 
     // workSize
-    const [gw, gh] = DepthMath.workSize(15000, 10000);
-    check("workSize(15000, 10000, 4096) -> [4096, 2731]", gw === 4096 && gh === 2731);
+    const [gw, gh] = DepthMath.workSize(15000, 10000, DepthMath.WORK_MAX);
+    check("workSize(15000, 10000, 2048) -> [2048, 1365]", gw === 2048 && gh === 1365);
 
     // disparityRange on a 1..1000 ramp gives lo ≈ 5.995 and hi ≈ 995.005 (±1 bin)
     const nRamp = 100000;

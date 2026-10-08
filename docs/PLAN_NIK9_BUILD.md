@@ -1,6 +1,6 @@
 # Nik 9 parity: the build plan (Umbauplan)
 
-**Status: planned on 2026-10-04 against `b6c5238` (0.1.41 is Latest), not built.** The research and the shape are in
+**Status: building since 2026-10-08 against `b6c5238` (0.1.41 is Latest); F1-F8, R1-S1-S4 built and gated.** The research and the shape are in
 `docs/PLAN_NIK9.md` (2026-09-25); this is CLAUDE.md "What comes next" item 22. Five agents re-read the code on
 2026-10-04 (nothing was run), one designed the shared foundations, four planned a release each; this file joins them,
 removes the overlaps and makes the ids and cross references agree. Every effort figure is **inferred, not measured**.
@@ -388,6 +388,22 @@ Every row of `docs/PLAN_NIK9.md` "What Nik 9 has, and where Scumble stands", wit
 The research's release 2 extras are covered too: haze by depth (R2-S12), lens blur (R2-S15, on R2-D7), depth from any
 grey layer (R2-S11). Not built, as the research says: depth as a layer (the control-layer finding first), a ComfyUI depth
 route, limits in presets.
+
+### 3.8 As built records (2026-10-08)
+
+- **R1-S1** (2026-10-08): Depth model in main (`electron/main/onnx/depth.js`, `models.js` entry for `da2_small`, IPC `helpers:depth`, `host.js` wiring).
+- **R1-S2** (2026-10-08): Checkpoint; decisions confirmed (`WORK_MAX = 2048` user decision per R1-D5, keeping 4096 as an option; `GUIDE = { r: 2, eps: 1e-3 }`).
+- **F1** (2026-10-08): Document feature table (`FEATURES` in `docfile.js`), `STATE_KEYS` fix in `host.js` for `"groups"` and `"maps"`.
+- **F2** (2026-10-08): Command surface checks (`readOnly`, assistant policy coverage, `commands_doc.py` GROUPS updated, `COMMANDS.md` refreshed with 108 commands).
+- **F3** (2026-10-08): Pure weights calculation module `renderer/editor/inpaint_weights.js` with `rangeWeight`, `normalizeLimit`, `limitWeight`, and `WEIGHTS_GLSL`.
+- **F4a / F4b** (2026-10-08): Selection combine core (`combineAlpha`, `combineRows`, `tilesSource` with ArrayBuffer fix, `bytesSource`, `rectSource`, `TileMaskPixels.combine`) and call sites; Intersect mode.
+- **F5** (2026-10-08): Picture input without filter layers (`skipFilters`, `host.pictureInput`, `passStores` and `drawComposite`).
+- **F6** (2026-10-08): Filter pass context (`filterInfo`, `filterKey`) and `params.limit`.
+- **F7** (2026-10-08): GL infrastructure: scratch unit allocation, static sampler caching, packed u16 sampling.
+- **F8a / F8b** (2026-10-08): Document maps store `ed.maps`, `setMap`, geometry following, persistence, and staleness fingerprinting from filter-free source.
+- **R1-S3a / R1-S3b** (2026-10-08): Depth maths, `depth_guide` worker job, `depth_map` and pure read `sample_depth` commands, stored on `ed.maps.depth` with 0.5/99.5 percentiles.
+- **R1-S4** (2026-10-08): Range bar control `renderer/editor/inpaint_rangebar.js` and whole-picture histograms.
+- **Review Must-Fix 1-7** (2026-10-08): All 7 review findings resolved; gates `pixels selection limit maps film editor` ALL PASS on both `--tiles on` and `--tiles off` with `--offline`.
 
 ## 4. Foundations
 

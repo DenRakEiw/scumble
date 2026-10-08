@@ -500,13 +500,15 @@ export function tilesSource(tiles, at = [0, 0], box = null) {
                             out.fill(255, dstOff, dstOff + copyW);
                         }
                     } else if (t.alpha) {
+                        const a = t.alpha instanceof ArrayBuffer ? new Uint8Array(t.alpha) : t.alpha;
                         for (let y = iy0; y < iy1; y++) {
                             const srcOff = (y - tileY) * 256 + (ix0 - tileX);
                             const dstOff = (y - ry) * rw + (ix0 - rx);
-                            out.set(t.alpha.subarray(srcOff, srcOff + copyW), dstOff);
+                            out.set(a.subarray(srcOff, srcOff + copyW), dstOff);
                         }
                     } else if (t.data) {
-                        const d = t.data;
+                        const d = t.data instanceof ArrayBuffer ? new Uint8ClampedArray(t.data)
+                            : (ArrayBuffer.isView(t.data) ? t.data : new Uint8ClampedArray(t.data));
                         for (let y = iy0; y < iy1; y++) {
                             let srcOff = ((y - tileY) * 256 + (ix0 - tileX)) * 4 + 3;
                             let dstOff = (y - ry) * rw + (ix0 - rx);

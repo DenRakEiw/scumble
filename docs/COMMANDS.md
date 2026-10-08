@@ -124,6 +124,40 @@ The filter layer types (built-in and from plugins) with their parameters; `fill:
 
 (no parameters)
 
+### `read_log` *(app)* *(read-only)*
+
+The app's log (what the app, its providers and helpers reported; errors carry the request shape and the stack): the last entries, newest last. Also in Help > Console and in <userData>/logs/scumble.log.
+
+| param | type | description |
+|---|---|---|
+| `level` | string | all, warn (warnings and errors) or error (default `"all"`; one of `all`, `warn`, `error`) |
+| `after` | integer | only entries with an id above this (from an earlier call) (default `0`) |
+| `limit` | integer | at most this many entries (default 200) (default `200`) |
+
+### `list_brush_tips` *(read-only)*
+
+The brush tips available under Tip: the built-in round dab and the imported ones (from Photoshop .abr files or images), with the active one and the brush settings of this document.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `set_brush`
+
+Brush settings of this document: the tip (round, or an imported tip by id or name), size in pixels, hardness, opacity and flow in percent, the tip's spacing in percent of its size, and whether the tip follows the stroke direction. Every parameter is optional.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `tip` | string | round, or the id or name of an imported tip (list_brush_tips) |
+| `size` | integer | brush size in image pixels (2..1000) |
+| `hardness` | number | 0..100 for the paint brush (the eraser keeps its own, see erase_hardness) |
+| `erase_hardness` | number | 0..100 for the eraser |
+| `opacity` | number | brush opacity 0..100 |
+| `flow` | number | brush flow 5..100: below 100 a stroke builds up where it overlaps itself |
+| `spacing` | number | stamp spacing of the active imported tip, in percent of its size (1..200) |
+| `follow` | boolean | rotate an imported tip with the stroke direction |
+
 ## Document and files
 
 ### `status` *(read-only)*
@@ -204,6 +238,25 @@ Write a line into the document's status bar.
 | `doc` | integer | document id (default the active tab) |
 | `text` | string | (required) |
 
+### `depth_map` *(image)*
+
+Compute or refresh the document's depth map (Depth Anything V2 Small).
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `force` | boolean | recompute even if already present and fresh (default `false`) |
+
+### `sample_depth` *(image)* *(read-only)*
+
+Sample the document's depth map at (x, y) in image pixels (Depth Anything V2 Small). Returns normalized depth (0..1, near to far), 16-bit depth (0..65535), raw disparity, disparity bounds, resolution, provider and whether the map is stale. Requires running depth_map first.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `x` | number | x in image pixels (required) |
+| `y` | number | y in image pixels (required) |
+
 ## Selection
 
 ### `select_rect` *(image)*
@@ -217,7 +270,7 @@ Select a rectangle in image pixels.
 | `y` | integer | top (required) |
 | `w` | integer | width (alias width) (required) |
 | `h` | integer | height (alias height) (required) |
-| `mode` | string | replace, add or subtract (default `"replace"`; one of `replace`, `add`, `subtract`) |
+| `mode` | string | replace, add, subtract or intersect (default `"replace"`; one of `replace`, `add`, `subtract`, `intersect`) |
 
 ### `select_all` *(image)*
 
@@ -278,7 +331,7 @@ Selection from a mask: an array of width × height values (image size, >0 = sele
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `mask` | object | array of width*height values, or a base64 PNG string (required) |
-| `mode` | string | replace, add or subtract (default `"replace"`; one of `replace`, `add`, `subtract`) |
+| `mode` | string | replace, add, subtract or intersect (default `"replace"`; one of `replace`, `add`, `subtract`, `intersect`) |
 
 ### `select_by_text` *(image)*
 
@@ -288,7 +341,7 @@ Select an object by describing it ("the car", "sky"). Runs the segmentation mode
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `text` | string | what to select (required) |
-| `mode` | string | replace, add or subtract (default `"replace"`; one of `replace`, `add`, `subtract`) |
+| `mode` | string | replace, add, subtract or intersect (default `"replace"`; one of `replace`, `add`, `subtract`, `intersect`) |
 | `threshold` | number | 0.05..0.95, the model's default when omitted |
 | `timeout` | integer | seconds to wait for the result (default 300) (default `300`) |
 
@@ -303,7 +356,7 @@ Select what SAM2 (in-app) sees at a point; needs a downloaded SAM2 model (Settin
 | `y` | number | y of the point |
 | `points` | object | instead of x/y: [{x, y, label}] with several points |
 | `box` | object | optional [x0, y0, x1, y1] box prompt |
-| `mode` | string | replace, add or subtract (default `"replace"`; one of `replace`, `add`, `subtract`) |
+| `mode` | string | replace, add, subtract or intersect (default `"replace"`; one of `replace`, `add`, `subtract`, `intersect`) |
 
 ### `select_color` *(image)*
 
@@ -318,7 +371,7 @@ Magic wand: select the area of similar colour at x, y, as the Magic wand tool (W
 | `contiguous` | boolean | only the area connected to x, y (default `true`) |
 | `sample` | string | image or layer (default `"image"`; one of `image`, `layer`) |
 | `layer` | string | with sample layer: the layer whose pixels are read (default `"active"`) |
-| `mode` | string | replace, add or subtract (default `"replace"`; one of `replace`, `add`, `subtract`) |
+| `mode` | string | replace, add, subtract or intersect (default `"replace"`; one of `replace`, `add`, `subtract`, `intersect`) |
 
 ### `select_shape` *(image)*
 
@@ -334,7 +387,7 @@ Select an ellipse (x, y, w, h: its bounding box) or a polygon / lasso (points: t
 | `h` | number | ellipse: height (alias height) |
 | `points` | object | polygon / lasso: [[x, y], ...], at least three |
 | `feather` | number | radius of the soft edge in pixels, 0..512 (default `0`) |
-| `mode` | string | replace, add or subtract (default `"replace"`; one of `replace`, `add`, `subtract`) |
+| `mode` | string | replace, add, subtract or intersect (default `"replace"`; one of `replace`, `add`, `subtract`, `intersect`) |
 
 ## Prompt and generation
 
@@ -423,6 +476,24 @@ Generate with the selected recipe: the selected area (with context) goes to the 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
+| `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
+
+### `generate_new` *(destructive)*
+
+Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture ("image 1"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `prompt` | string | what to make; the tab's current prompt when left out. An @img token names a shown reference layer; a model that makes new images from the prompt alone refuses it |
+| `negative` | string | negative prompt (local chains only) |
+| `refs` | object | which layer each @img token of prompt and negative means: {"img1": "<layer id>", ...} (as set_prompt) |
+| `width` | integer | width in pixels (default `1024`) |
+| `height` | integer | height in pixels (default `1024`) |
+| `aspect` | string | aspect ratio like 16:9; used with resolution instead of width and height |
+| `resolution` | integer | long side in pixels when aspect is given (default `1024`) |
+| `seed` | integer | seed; a new random one when left out |
+| `background` | string | transparent asks an API model that supports it (the OpenAI image models) for a cut-out on a transparent ground; the base image then keeps its alpha channel (one of `auto`, `opaque`, `transparent`) |
 | `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
 
 ### `upscale` *(image)*
@@ -517,6 +588,24 @@ Delete a layer. Refused on a locked layer.
 | `doc` | integer | document id (default the active tab) |
 | `layer` | string | the layer: id, name, a unique part of the name, or "active" (required; default `"active"`) |
 
+### `frequency_separation`
+
+Frequency separation of the selection's box (or of the whole picture up to 16 MP): two layers on top, 'Low frequency' (its blur of radius px, normal) and 'High frequency' (the detail, linear light), which together give the picture back. One undo step; the high layer becomes active.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `radius` | number | the blur radius in pixels (default: 0.4 % of the picture's short side) |
+
+### `dodge_burn_layer`
+
+A dodge & burn layer on top: a paint layer in soft light where white paint lightens and black darkens. Empty by default (the same picture as 50 % grey, no memory until painted); grey fills it with 50 % grey. One undo step; the layer becomes active.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `grey` | boolean | fill it with 50 % grey (Photoshop's habit; about 600 MB at 15000 x 10000) |
+
 ### `duplicate_layer`
 
 Duplicate a layer (the copy sits above it).
@@ -564,6 +653,16 @@ Centre a layer on the canvas. Refused on a locked or a filter layer.
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
+
+### `match_edges` *(image)*
+
+Match a layer's edges to the picture under it: an inpaint result that came back slightly shifted or scaled (edit models re-render the whole crop) is fitted on its own edge ring (its opaque pixels near its transparent part or its mask's border) against the composite of the layers below, and moved (a whole-pixel shift) or resampled to match, one undo step (a live mask is baked in when it is resampled). The fit is kept only within 8 % scale, 0.03 shear and 5 % shift and when the edge difference drops by 3 % or more; otherwise nothing changes and the answer says why (aligned false, reason: flat area, fit out of range, no gain, ring too small, no fit found, text layer). apply false only reports the fit. scale and shift as the node's stitch reports them; centre: how far the layer's middle moved, in image pixels; before / after: the mean edge difference in levels of 255; how: moved, resampled or null. Refused on a locked or a filter layer.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
+| `apply` | boolean | false: only fit and report, change nothing (default `true`) |
 
 ### `transform_layer` *(image)*
 
@@ -905,78 +1004,6 @@ A JPEG, base64 in `data`. what = image: the flattened picture; editor: with hidd
 | `quality` | number | JPEG quality 0.3..0.95 (default `0.85`) |
 | `show_selection` | boolean | tint and outline the selection (image, editor, base) (default `true`) |
 | `show_layers` | boolean | outline and label the layers (default `false`) |
-
-## Other
-
-### `generate_new` *(destructive)*
-
-Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture ("image 1"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `prompt` | string | what to make; the tab's current prompt when left out. An @img token names a shown reference layer; a model that makes new images from the prompt alone refuses it |
-| `negative` | string | negative prompt (local chains only) |
-| `refs` | object | which layer each @img token of prompt and negative means: {"img1": "<layer id>", ...} (as set_prompt) |
-| `width` | integer | width in pixels (default `1024`) |
-| `height` | integer | height in pixels (default `1024`) |
-| `aspect` | string | aspect ratio like 16:9; used with resolution instead of width and height |
-| `resolution` | integer | long side in pixels when aspect is given (default `1024`) |
-| `seed` | integer | seed; a new random one when left out |
-| `background` | string | transparent asks an API model that supports it (the OpenAI image models) for a cut-out on a transparent ground; the base image then keeps its alpha channel (one of `auto`, `opaque`, `transparent`) |
-| `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
-
-### `frequency_separation`
-
-Frequency separation of the selection's box (or of the whole picture up to 16 MP): two layers on top, 'Low frequency' (its blur of radius px, normal) and 'High frequency' (the detail, linear light), which together give the picture back. One undo step; the high layer becomes active.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `radius` | number | the blur radius in pixels (default: 0.4 % of the picture's short side) |
-
-### `dodge_burn_layer`
-
-A dodge & burn layer on top: a paint layer in soft light where white paint lightens and black darkens. Empty by default (the same picture as 50 % grey, no memory until painted); grey fills it with 50 % grey. One undo step; the layer becomes active.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `grey` | boolean | fill it with 50 % grey (Photoshop's habit; about 600 MB at 15000 x 10000) |
-
-### `read_log` *(app)* *(read-only)*
-
-The app's log (what the app, its providers and helpers reported; errors carry the request shape and the stack): the last entries, newest last. Also in Help > Console and in <userData>/logs/scumble.log.
-
-| param | type | description |
-|---|---|---|
-| `level` | string | all, warn (warnings and errors) or error (default `"all"`; one of `all`, `warn`, `error`) |
-| `after` | integer | only entries with an id above this (from an earlier call) (default `0`) |
-| `limit` | integer | at most this many entries (default 200) (default `200`) |
-
-### `list_brush_tips` *(read-only)*
-
-The brush tips available under Tip: the built-in round dab and the imported ones (from Photoshop .abr files or images), with the active one and the brush settings of this document.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-
-### `set_brush`
-
-Brush settings of this document: the tip (round, or an imported tip by id or name), size in pixels, hardness, opacity and flow in percent, the tip's spacing in percent of its size, and whether the tip follows the stroke direction. Every parameter is optional.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `tip` | string | round, or the id or name of an imported tip (list_brush_tips) |
-| `size` | integer | brush size in image pixels (2..1000) |
-| `hardness` | number | 0..100 for the paint brush (the eraser keeps its own, see erase_hardness) |
-| `erase_hardness` | number | 0..100 for the eraser |
-| `opacity` | number | brush opacity 0..100 |
-| `flow` | number | brush flow 5..100: below 100 a stroke builds up where it overlaps itself |
-| `spacing` | number | stamp spacing of the active imported tip, in percent of its size (1..200) |
-| `follow` | boolean | rotate an imported tip with the stroke direction |
 
 ## Plugin commands
 

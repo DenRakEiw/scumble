@@ -42,6 +42,7 @@ import { LiquifyField, gridStep, previewBlock, liquifyFalloff } from "./inpaint_
 import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
 import { fitLayerRGBA, workScale } from "./edgefit.js";
 import { STALE_DIFF, GUIDE } from "./inpaint_depth.js";
+import { packRG16, mapToJSON, mapFromJSON, fingerprint, fingerprintDiff } from "./inpaint_maps.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -75,7 +76,7 @@ const RUN_GOING_TEXT = "A run is still going on this document: wait for it, or C
 const UNDO_LABELS = {
     layerrect: "Layer pixels", layer: "Layer pixels", layerfull: "Layer", selection: "Selection", transform: "Transform", transforms: "Transform layers",
     mask: "Layer mask", match: "Colour match", filter: "Filter", text: "Text", layers: "Layers", canvas: "Canvas",
-    turn: "Assistant turn taken back", data: "Plugin data",
+    turn: "Assistant turn taken back", data: "Plugin data", maps: "Depth map",
 };
 /**
  * An orientation `{ turn, flip }` (quarter turns clockwise after an optional horizontal mirror) with one more flip or turn
@@ -1966,9 +1967,11 @@ class InpaintEditor {
         this.objectShapeCache = new Map();
         this.hoverObjectId = 0;
         this.hoverObjectCanvas = null;
-        this.depth = null;              // { raw, rw, rh, u16, w, h, origW, origH, lo, hi, hash, thumb, version, provider, ms }
         this.depthPending = null;
         this.showDepthMap = false;
+        this.maps = {};
+        this.mapsVersion = 0;
+        this.geometrySeq = 0;
         let selDisplay = "ants";
         try { selDisplay = localStorage.getItem("ipc.selectionDisplay") || "ants"; } catch (_) { /* no storage */ }
         this.selectionDisplay = selDisplay === "tint" ? "tint" : "ants";   // marching ants (default) or red tint
@@ -4642,6 +4645,7 @@ class InpaintEditor {
             }
             this.sel = sel;
             const A = xfOfOp(op, W, H);
+            this.geometrySeq++;
             this.mapExtras(A, "turn");
             this.mapGuides(A, nw, nh);
             this.docXf = snapXf(xfMul(A, this.docXf));
@@ -4721,6 +4725,15 @@ class InpaintEditor {
             const xf = snapXf(xfMul(A, sv.xf || XF_IDENTITY));
             if (xfIsIdentity(xf)) delete sv.xf; else sv.xf = xf;
         }
+        if (this.maps) {
+            let anyMap = false;
+            for (const map of Object.values(this.maps)) {
+                if (!map || !map.xf) continue;
+                map.xf = snapXf(xfMul(A, map.xf));
+                anyMap = true;
+            }
+            if (anyMap) this.mapsVersion++;
+        }
         const e = this._export;   // the app's export settings (host.js); the node has none
         if (e && kind === "turn" && o && (o.turn & 1)) {
             [e.width, e.height] = [e.height, e.width];
@@ -4780,6 +4793,7 @@ class InpaintEditor {
      * their own run): the extras and the guides follow A, the document's map composes it, and the plugins hear of it.
      */
     followGeometry(kind, A, from, to) {
+        this.geometrySeq++;
         this.mapExtras(A, kind);
         this.mapGuides(A, to.width, to.height);
         this.docXf = snapXf(xfMul(A, this.docXf));
@@ -4958,6 +4972,7 @@ class InpaintEditor {
                 if (p.text) { l.text = p.text; if (l._textUndo) this.releaseSnapshot(l._textUndo); l._textUndo = null; }
             }
             this.sel = sel;
+            this.geometrySeq++;
             this.mapExtras(A, "straighten");
             // a guide is not turned by a few degrees: it stays where it was on the screen, shifted by the crop
             this.mapGuides(xfTranslate(-fx, -fy), nw, nh);
@@ -7348,8 +7363,8 @@ class InpaintEditor {
      * takes (a colour match, a live stroke, a mask off the tile grid) are repeated here, and `forRun` defaults the
      * way `drawLayersInto` defaults it.
      */
-    passStores(source, box, scale, { forRun = false, upTo = null, baseOnly = false, controlOnly = false, skipFilters = false, noFilters = false } = {}) {
-        const skip = skipFilters || noFilters;
+    passStores(source, box, scale, { forRun = false, upTo = null, baseOnly = false, controlOnly = false, skipFilters = false } = {}) {
+        const skip = skipFilters;
         const out = [];
         const vp = { x: box[0], y: box[1], w: box[2] - box[0], h: box[3] - box[1], sx: scale, sy: scale };
         const add = (px, x, y, w, h) => {
@@ -7374,8 +7389,12 @@ class InpaintEditor {
             const layer = this.layers[i];
             if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
             if ((!this.shown(layer) && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
-            const target = controlOnly ? null : this.clipTargetOf(layer, i);
-            if (target && !drawn.has(target)) continue;
+            const cb = controlOnly ? null : this.clipBaseOf(layer, i);
+            if (cb && !drawn.has(cb)) continue;
+            if (skip && layer.clip) {
+                const target = controlOnly ? null : this.clipTargetOf(layer, i);
+                if (target && target.kind === "filter" && !drawn.has(target)) continue;
+            }
             if (layer.kind === "filter") {
                 if (!controlOnly && !skip) {
                     add(this.liveMask(layer), 0, 0, this.width, this.height);
@@ -11187,14 +11206,37 @@ class InpaintEditor {
         }
     }
 
-    // ---- depth estimation (Nik-9 Parity R1-S3b) --------------------------------
+    // ---- depth estimation (Nik-9 Parity R1-S3b / F8) --------------------------------
+
+    /** The depth map on the document's map store (F8), or null. */
+    get depth() {
+        const m = this.maps && this.maps.depth;
+        if (!m) return null;
+        return {
+            ...m,
+            u16: m.data,
+            ...m.meta,
+            origW: this.width,
+            origH: this.height,
+        };
+    }
+
+    set depth(v) {
+        if (!this.maps) this.maps = {};
+        if (v) this.maps.depth = v;
+        else delete this.maps.depth;
+    }
+
+    async ensureDepthMap({ force = false } = {}) {
+        return this.computeDepthMap({ recompute: force });
+    }
 
     /**
      * Compute or refresh the document's depth map:
      * Samples document without filter layers via host.depthInput, runs Depth Anything V2 Small,
-     * refines edges using guidedFar in a worker, and stores result in this.depth.
+     * refines edges using guided filter in a worker, and stores result in this.maps.depth via setMap.
      */
-    async ensureDepthMap({ force = false } = {}) {
+    async computeDepthMap({ recompute = false } = {}) {
         if (!this.base) throw new Error("No image loaded in document");
         if (this.depthPending) return this.depthPending;
         const model = host.depthModel();
@@ -11206,55 +11248,68 @@ class InpaintEditor {
             this.depthPending = true;
             this.renderDepthRow();
             try {
-                const input = await host.depthInput(this);
-                if (!force && this.depth && this.depth.u16 && this.depth.hash === input.hash && this.depth.w === input.gw && this.depth.h === input.gh) {
-                    this.depth.version = input.version;
-                    this.depth.stale = false;
+                const token = this.geometryToken();
+                const W = this.width, H = this.height;
+                const [mw, mh] = modelSize(W, H);
+                const input = await host.depthInput(this, mw, mh);
+                const fpInp = await host.pictureInput(this, 64, 64, { skipFilters: true, background: "#808080" });
+                const fp = fingerprint(fpInp.image, 64, 64);
+
+                const existing = this.maps && this.maps.depth;
+                if (!recompute && existing && existing.meta && existing.meta.fp === fp) {
                     this.renderDepthRow();
-                    return this.depth;
+                    return existing;
                 }
                 this.setStatus(`Estimating depth with ${model.label} ...`);
-                const res = await host.depthInApp(this, {
-                    image: input.rgba,
-                    width: input.mw,
-                    height: input.mh,
+                const res = await host.computeDepth(this, {
+                    image: input.image,
+                    width: mw,
+                    height: mh,
                 });
+                const { lo, hi } = disparityRange(res.depth, 0.005, 0.995);
+                const [gw, gh] = workSize(W, H, WORK_MAX);
+                const guide = await host.depthInput(this, gw, gh);
+                const grey = new Uint8Array(gw * gh);
+                const gd = guide.image;
+                for (let i = 0, j = 0; i < gd.length; i += 4, j++) {
+                    grey[j] = Math.round(gd[i] * 0.299 + gd[i + 1] * 0.587 + gd[i + 2] * 0.114);
+                }
                 this.setStatus("Refining depth map with guided filter ...");
                 const poolRes = await editorPool().run("depth_guide", {
                     raw: res.depth,
-                    rw: input.mw,
-                    rh: input.mh,
-                    grey: input.grey,
-                    gw: input.gw,
-                    gh: input.gh,
+                    rw: mw,
+                    rh: mh,
+                    grey,
+                    gw,
+                    gh,
                     r: GUIDE.r,
                     eps: GUIDE.eps,
-                    lo: res.min,
-                    hi: res.max,
-                }, [input.grey.buffer], { priority: INTERACTIVE });
+                    lo,
+                    hi,
+                }, [grey.buffer], { priority: INTERACTIVE });
                 const u16 = new Uint16Array(poolRes.u16);
-                this.depth = {
-                    raw: res.depth,
-                    rw: input.mw,
-                    rh: input.mh,
-                    u16,
-                    w: input.gw,
-                    h: input.gh,
-                    origW: this.width,
-                    origH: this.height,
-                    lo: res.min,
-                    hi: res.max,
-                    hash: input.hash,
-                    thumb: input.thumb,
-                    version: input.version,
+                const meta = {
+                    fp,
+                    lo,
+                    hi,
+                    rawBounds: [res.min, res.max],
                     provider: res.provider,
                     ms: res.ms,
                     totalMs: res.ms + (poolRes.timing && poolRes.timing.total ? poolRes.timing.total : 0),
-                    stale: false,
+                    raw: res.depth,
+                    rw: mw,
+                    rh: mh,
                 };
+                const map = makeMap("depth", gw, gh, u16, [W, 0, 0, H, 0, 0], meta);
+                const ok = await this.setMap("depth", map, { label: recompute ? "Recompute depth map" : "Depth map", token });
+                if (!ok) {
+                    this.setStatus("The depth map was dropped: the picture was turned or cropped meanwhile.");
+                    return null;
+                }
                 this._depthOverlayCanvas = null;
-                this.setStatus(`Depth map ready (${input.gw} × ${input.gh}) in ${(this.depth.totalMs / 1000).toFixed(2)} s (${res.provider}).`);
-                return this.depth;
+                this._depthStale = false;
+                this.setStatus(`Depth map ${mw}×${mh} → ${gw}×${gh} with ${model.label} in ${(meta.totalMs / 1000).toFixed(2)} s (${res.provider}).`);
+                return map;
             } catch (err) {
                 console.error("Depth estimation failed:", err);
                 this.setStatus("Depth estimation failed: " + (err.message || err));
@@ -11269,45 +11324,25 @@ class InpaintEditor {
         return p;
     }
 
-    /** Compute 64x64 luma thumbnail for quick fingerprinting and staleness check. */
-    depthFingerprint() {
-        if (!this.base || !this.width || !this.height) return null;
-        const c = document.createElement("canvas");
-        c.width = 64; c.height = 64;
-        const ctx = c.getContext("2d");
-        if (this.thumb && this.thumb.width >= 16 && this.thumb.height >= 16) {
-            ctx.drawImage(this.thumb, 0, 0, 64, 64);
-        } else {
-            const flat = this.flattenToCanvas({ forRun: true, skipFilters: true });
-            ctx.drawImage(flat, 0, 0, 64, 64);
-        }
-        const d = ctx.getImageData(0, 0, 64, 64).data;
-        const out = new Uint8Array(64 * 64);
-        for (let i = 0, j = 0; i < d.length; i += 4, j++) {
-            out[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
-        }
-        return out;
-    }
-
     /** Check if document changed significantly compared to cached depth map. */
     isDepthStale() {
-        if (!this.depth) return false;
-        if (this.depth.version === this.compositeVersion) return false;
-        if (!this.depth.thumb) return true;
-        const current = this.depthFingerprint();
-        if (!current) return true;
-        let sum = 0;
-        const dt = this.depth.thumb;
-        for (let i = 0; i < 4096; i++) {
-            sum += Math.abs(current[i] - dt[i]);
-        }
-        return (sum / 4096) >= STALE_DIFF;
+        const m = this.maps && this.maps.depth;
+        if (!m) return false;
+        if (m.version === this.compositeVersion) return false;
+        return this._depthStale ?? false;
+    }
+
+    async checkDepthStale() {
+        const res = await this.mapStale("depth");
+        this._depthStale = res.stale;
+        return res.stale;
     }
 
     /** Draw depth map overlay onto canvas view. */
     drawDepthOverlay(ctx) {
         if (!this.depth || !this.depth.u16) return;
-        if (!this._depthOverlayCanvas || this._depthOverlayKey !== this.depth.hash) {
+        const key = this.depth.dataVersion || this.depth.version || 1;
+        if (!this._depthOverlayCanvas || this._depthOverlayKey !== key) {
             const dw = this.depth.w, dh = this.depth.h;
             const c = document.createElement("canvas");
             c.width = dw; c.height = dh;
@@ -11325,7 +11360,7 @@ class InpaintEditor {
             }
             dctx.putImageData(idata, 0, 0);
             this._depthOverlayCanvas = c;
-            this._depthOverlayKey = this.depth.hash;
+            this._depthOverlayKey = key;
         }
         ctx.save();
         ctx.globalAlpha = 0.85;
@@ -11374,6 +11409,82 @@ class InpaintEditor {
         viewBtn.classList.toggle("ipc-toggle-on", !!this.showDepthMap);
         row.appendChild(viewBtn);
         con.appendChild(row);
+    }
+
+    /** The sequence counter bumped whenever whole-document geometry changes (PLAN_NIK9_BUILD.md §F8). */
+    geometryToken() {
+        return this.geometrySeq;
+    }
+
+    /**
+     * Store or replace a document map (depth, guide, sky mask) under `kind`.
+     * Immutable in data: changes produce a new DocMap object.
+     * Uploads the packed u16 RGBA8 representation to ComfyUI/mirror if ref is missing.
+     * Rejects if `token` no longer matches `geometryToken()` (e.g. canvas turned or cropped meanwhile)
+     * or if the editor was destroyed.
+     * @param {string} kind
+     * @param {any} [map]
+     * @param {{ label?: string, token?: number | null }} [opts]
+     * @returns {Promise<boolean>}
+     */
+    async setMap(kind, map = null, { label = "Depth map", token = null } = {}) {
+        if (token !== null && token !== this.geometryToken()) return false;
+        if (this._destroyed) return false;
+
+        if (map && !map.ref) {
+            try {
+                const nodeId = (this.node && this.node.id != null) ? this.node.id : "0";
+                const c = packRG16(map);
+                const { ref } = await uploadCanvas(c, `n${nodeId}_${kind || "depth"}`);
+                map.ref = ref;
+            } catch (_) {
+                // Standalone / offline / test mode
+            }
+        }
+        if (token !== null && token !== this.geometryToken()) return false;
+        if (this._destroyed) return false;
+
+        const prev = (this.maps && this.maps[kind]) || null;
+        this.pushUndoSnapshot({ kind: "maps", map: kind, prev }, { label });
+        if (!this.maps) this.maps = {};
+        if (map) {
+            this.maps[kind] = map;
+        } else {
+            delete this.maps[kind];
+        }
+        this.mapsVersion++;
+
+        for (const l of this.layers) {
+            if (l.kind === "filter" && l.params?.limit?.source === (kind || "depth")) {
+                this.markFilterChanged(l);
+            }
+        }
+        this.renderHistory();
+        this.draw();
+        this.notifyChanged();
+        return true;
+    }
+
+    /**
+     * Checks if the document map under `kind` is stale against the current picture.
+     * Renders pictureInput through the map's xf into 64 x 64 and compares fingerprint against meta.fp.
+     * @param {string} kind
+     * @returns {Promise<{ stale: boolean, diff: number }>}
+     */
+    async mapStale(kind) {
+        const map = this.maps && this.maps[kind];
+        if (!map || !map.meta || !map.meta.fp) return { stale: false, diff: 0 };
+        if (this.width <= 0 || this.height <= 0) return { stale: false, diff: 0 };
+        try {
+            const inp = await host.pictureInput(this, 64, 64, { skipFilters: true, background: "#808080" });
+            const fp = fingerprint(inp.image, 64, 64);
+            const diff = fingerprintDiff(map.meta.fp, fp);
+            const thresh = map.meta.threshold != null ? map.meta.threshold : STALE_DIFF;
+            return { stale: diff >= thresh, diff };
+        } catch (err) {
+            console.warn("mapStale failed:", err);
+            return { stale: false, diff: 0 };
+        }
     }
 
     // ---- outpainting ---------------------------------------------------------
@@ -11674,6 +11785,7 @@ class InpaintEditor {
             groups: this.groupsCopy(),
             pixels,
             activeLayerId: this.activeLayerId,
+            maps: this.maps ? { ...this.maps } : {},
             ...this.geometrySnapshot(),
             doc: {
                 prompt: this.promptText,
@@ -11802,6 +11914,7 @@ class InpaintEditor {
         // the plugins' per-document data alone (scumble.documents.data(doc).set(patch, { undo })): a plugin's own change
         // of what it keeps with the document, no pixels; a canvas or turn step carries the same copy beside its pixels
         if (step.kind === "data") return { kind: "data", pluginData: this.pluginDataCopy() };
+        if (step.kind === "maps") return { kind: "maps", map: step.map, prev: (this.maps && this.maps[step.map]) || null };
         if (step.kind === "layers") return { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), groups: this.groupsCopy(), activeLayerId: this.activeLayerId };
         if (step.kind === "transforms") {
             // the places of several layers moved or scaled together (a multi-selection): one step, no pixels
@@ -12026,6 +12139,23 @@ class InpaintEditor {
             this.renderHistory(); this.draw(); this.notifyChanged();   // the plugins hear "changed" and redraw their overlays
             return;
         }
+        if (snap.kind === "maps") {
+            const kind = snap.map;
+            if (!this.maps) this.maps = {};
+            if (snap.prev) {
+                this.maps[kind] = snap.prev;
+            } else {
+                delete this.maps[kind];
+            }
+            this.mapsVersion++;
+            for (const l of this.layers) {
+                if (l.kind === "filter" && l.params?.limit?.source === (kind || "depth")) {
+                    this.markFilterChanged(l);
+                }
+            }
+            this.renderHistory(); this.draw(); this.notifyChanged();
+            return;
+        }
         if (snap.kind === "turn") {
             if (this.pending) this.cancelPending();
             if (this.textEdit) this.endTextEdit(false);
@@ -12070,6 +12200,8 @@ class InpaintEditor {
             if (doc.crop) { this.cropSettings = JSON.parse(JSON.stringify(doc.crop)); this.syncCropControls(); }
             if (doc.settings) this.settings = JSON.parse(JSON.stringify(doc.settings));
             this.syncGenControls();
+            this.maps = snap.maps ? { ...snap.maps } : {};
+            this.mapsVersion++;
             this.renderSettings();
             this.renderLayers();
             this.renderInfo();
@@ -12782,7 +12914,7 @@ class InpaintEditor {
      * map dependencies stay in sync. Produces the legacy string for layers without limit or maps.
      */
     filterKey(layer, below, forRun, preview, vp = this.viewPass) {
-        return JSON.stringify([
+        const baseKey = [
             layer.filter,
             layer.params,
             layer.lut && layer.lut.ref && layer.lut.ref.filename,
@@ -12792,7 +12924,11 @@ class InpaintEditor {
             below.width,
             below.height,
             vp ? [vp.x, vp.y, vp.w, vp.h, vp.sx, vp.sy, !!(vp.screen || vp.display)] : 0,
-        ]);
+        ];
+        if (layer.params && layer.params.limit && (layer.params.limit.source === "depth" || layer.params.limit.source === "map")) {
+            baseKey.push(this.mapsVersion || 0);
+        }
+        return JSON.stringify(baseKey);
     }
 
     /**
@@ -16121,6 +16257,8 @@ class InpaintEditor {
             this.activeLayerId = null;
             this.history = [];
             this.savedSelections = [];
+            this.maps = {};
+            this.mapsVersion++;
             this.guides = { x: [], y: [] };
             this.compare = null;
             this.sel = null;
@@ -16174,6 +16312,8 @@ class InpaintEditor {
             this.activeLayerId = null;
             this.history = [];
             this.savedSelections = [];
+            this.maps = {};
+            this.mapsVersion++;
             this.guides = { x: [], y: [] };
             this.compare = null;
             this.sel = null;
@@ -16675,7 +16815,7 @@ class InpaintEditor {
 
     drawComposite(ctx, opts = {}) {
         if (!this.base) return;
-        const skipFilters = !!(opts.skipFilters || opts.noFilters);
+        const skipFilters = !!opts.skipFilters;
         const below = opts.baseOnly ? [] : opts.upTo == null ? this.layers : this.layers.slice(0, Math.max(0, opts.upTo));
         const hasFilters = !opts.controlOnly && below.some((l) => this.shown(l) && ((!skipFilters && l.kind === "filter") || this.matchActive(l)));
         // In a region pass the target canvas is already the filter input: no full-size copy.
@@ -16694,8 +16834,8 @@ class InpaintEditor {
     }
 
     /** `upTo`: the composite of the layers below that index only (C6 c1: what a filter layer there takes as its input); `baseOnly`: the base alone (C6 c2f: the peek). */
-    drawLayersInto(ctx, { forRun = false, controlOnly = false, upTo = null, baseOnly = false, skipFilters = false, noFilters = false } = {}) {
-        const skip = skipFilters || noFilters;
+    drawLayersInto(ctx, { forRun = false, controlOnly = false, upTo = null, baseOnly = false, skipFilters = false } = {}) {
+        const skip = skipFilters;
         if (controlOnly) {
             ctx.fillStyle = "#000";
             ctx.fillRect(0, 0, this.width, this.height);
@@ -16722,9 +16862,12 @@ class InpaintEditor {
                 const layer = this.layers[i];
                 if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
                 if ((!this.shown(layer) && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
-                const target = controlOnly ? null : this.clipTargetOf(layer, i);
-                if (target && !drawn.has(target)) continue;
                 const cb = controlOnly ? null : this.clipBaseOf(layer, i);
+                if (cb && !drawn.has(cb)) continue;
+                if (skip && layer.clip) {
+                    const target = controlOnly ? null : this.clipTargetOf(layer, i);
+                    if (target && target.kind === "filter" && !drawn.has(target)) continue;
+                }
                 if (layer.kind === "filter") {
                     if (!controlOnly && !skip) { chain = this.applyFilterLayer(ctx, layer, i, forRun, chain, this.nextIsFilterLayer(i, forRun, end), cb ? () => coverage(cb) : null); drawn.add(layer); }
                     continue;
@@ -16734,10 +16877,10 @@ class InpaintEditor {
                 if (forRun && (ctrl || this.isReference(layer))) continue;
                 chain = this.flushFilterChain(ctx, chain);
                 drawn.add(layer);
-                if (cb || (!controlOnly && EMULATED_BLENDS.has(layer.blend))) { this.blendEmulated(ctx, layer.blend, (lc) => { this.drawLayer(lc, layer); }, layer.opacity, cb ? coverage(cb) : null); continue; }
+                if (cb || (!controlOnly && EMULATED_BLENDS.has(layer.blend))) { this.blendEmulated(ctx, layer.blend, (lc) => { this.drawLayer(lc, layer, { skipFilters: skip }); }, layer.opacity, cb ? coverage(cb) : null); continue; }
                 ctx.globalAlpha = layer.opacity;
                 ctx.globalCompositeOperation = (!controlOnly && layer.blend && layer.blend !== "normal") ? layer.blend : "source-over";
-                this.drawLayer(ctx, layer);
+                this.drawLayer(ctx, layer, { skipFilters: skip });
             }
             chain = this.flushFilterChain(ctx, chain);
         } finally {
@@ -17111,7 +17254,7 @@ class InpaintEditor {
         return c;
     }
 
-    drawLayer(ctx, layer) {
+    drawLayer(ctx, layer, opts = {}) {
         const p = this.pending;
         if (p && p.layer === layer) {
             const fine = !this.pointer;
@@ -17177,7 +17320,7 @@ class InpaintEditor {
             if (part) ctx.drawImage(part.canvas, part.x, part.y, part.w, part.h);
             return;
         }
-        const src = matched ? this.layerMatchedPixels(layer, ctx.canvas, vp) : this.layerPixels(layer, true);
+        const src = matched ? this.layerMatchedPixels(layer, ctx.canvas, vp, opts) : this.layerPixels(layer, true);
         ctx.drawImage(this.displaySource(src, vp ? (layer.w * vp.sx) / src.width : 1, !!(vp && vp.screen)), layer.x, layer.y, layer.w, layer.h);
     }
 
@@ -17204,17 +17347,18 @@ class InpaintEditor {
      * layer's opaque area) or the pixels underneath it. Cached per composite
      * version and settings.
      */
-    layerMatchedPixels(layer, below, vp = null) {
+    layerMatchedPixels(layer, below, vp = null, opts = {}) {
         const m = layer.match || {};
         const strength = Math.min(1, Math.max(0, (m.strength || 0) / 100));
         const px = this.layerPixels(layer, true);
         // in a region pass the match is applied to the pyramid level that is actually drawn
         const out0 = vp ? this.displaySource(px, (layer.w * vp.sx) / px.width, !!vp.screen) : px;
-        const key = JSON.stringify([m.strength, m.source, layer.x, layer.y, layer.w, layer.h, out0.width, out0.height]);
+        const skip = !!opts.skipFilters;
+        const key = JSON.stringify([m.strength, m.source, layer.x, layer.y, layer.w, layer.h, out0.width, out0.height, skip]);
         const slot = vp ? (vp.sample ? "_mcacheSample" : "_mcacheView") : "_mcache";
         const c = layer[slot];
         if (c && c.version === this.compositeVersion && c.key === key) return c.canvas;
-        const st = this.matchStats(layer, below, vp, out0);
+        const st = this.matchStats(layer, below, vp, out0, opts);
         const out = st && strength > 0 ? matchCanvas(out0, st, strength) : out0;
         layer[slot] = { version: this.compositeVersion, key, canvas: out };
         return out;
@@ -17335,10 +17479,11 @@ class InpaintEditor {
      * view. The full-resolution flatten (exports, runs, uploads) keeps its own, from the whole composite below the layer
      * and the layer's own pixels (`out0`), cached per composite version.
      */
-    matchStats(layer, below, vp, out0) {
+    matchStats(layer, below, vp, out0, opts = {}) {
         if (vp) return this.sampledMatchStats(layer, !!vp.forRun, !!(vp.screen || vp.display));
         const m = layer.match || {};
-        const key = JSON.stringify([m.strength, m.source, layer.x, layer.y, layer.w, layer.h]);
+        const skip = !!opts.skipFilters;
+        const key = JSON.stringify([m.strength, m.source, layer.x, layer.y, layer.w, layer.h, skip]);
         const cached = layer._mstats;
         if (cached && cached.version === this.compositeVersion && cached.key === key) return cached.stats;
         below = typeof below === "function" ? below() : below;
@@ -18797,6 +18942,15 @@ class InpaintEditor {
                 totalMs: this.depth.totalMs,
                 thumb: this.depth.thumb ? Array.from(this.depth.thumb) : null,
             } : null,
+            maps: (this.maps && Object.keys(this.maps).length > 0) ? (() => {
+                const out = {};
+                for (const [k, m] of Object.entries(this.maps)) {
+                    if (!m) continue;
+                    const j = mapToJSON(m);
+                    if (j) out[k] = j;
+                }
+                return Object.keys(out).length > 0 ? out : undefined;
+            })() : undefined,
         });
     }
 
@@ -18991,6 +19145,25 @@ class InpaintEditor {
             } else {
                 this.depth = null;
             }
+            this.maps = {};
+            if (state.maps && typeof state.maps === "object") {
+                for (const [kind, j] of Object.entries(state.maps)) {
+                    if (!j || !j.ref) continue;
+                    try {
+                        const map = await mapFromJSON(kind, j, async (ref) => loadImageEl(viewUrl(ref)));
+                        if (stale()) return;
+                        if (map) {
+                            this.maps[kind] = map;
+                        } else {
+                            this.setStatus(`Map "${kind}" could not be loaded.`);
+                        }
+                    } catch (err) {
+                        console.warn(`Inpaint Canvas: map "${kind}" missing`, j.ref, err);
+                        this.setStatus(`Map "${kind}" missing: ${err.message || err}`);
+                    }
+                }
+            }
+            this.mapsVersion++;
             this.renderLayers();
             this.renderHistory();
             this.renderInfo();
@@ -19234,10 +19407,20 @@ class InpaintEditor {
             }
             return { steps: list.length, kinds, rectBytes: bytes, heldLayerBytes: held };
         };
-        const undo = { budget: this.undoBytes, undo: walkSteps(this.undo), redo: walkSteps(this.redo), snapshots: walkSteps(this.snapshots.map((s) => s.snap)) };
+        const undo = { budget: this.undoBytes, undo: walkSteps(this.undo || []), redo: walkSteps(this.redo || []), snapshots: walkSteps((this.snapshots || []).map((s) => s.snap)) };
 
         const comp = this._compositor && this._compositor.stats ? this._compositor.stats() : null;
         const pool = this.tileMode ? scratchStats() : null;
+        const mapsReport = {};
+        let mapsBytes = 0;
+        if (this.maps) {
+            for (const [k, m] of Object.entries(this.maps)) {
+                if (!m) continue;
+                const b = m.data ? m.data.byteLength : 0;
+                mapsBytes += b;
+                mapsReport[k] = { w: m.w, h: m.h, bytes: b, version: m.version, dataVersion: m.dataVersion };
+            }
+        }
         return {
             id: this.node && this.node.id,
             size: [this.width, this.height],
@@ -19249,6 +19432,7 @@ class InpaintEditor {
             undo,
             compositor: comp,
             objects: this.objects && this.objects.ids ? { w: this.objects.w, h: this.objects.h, bytes: this.objects.ids.byteLength } : null,
+            maps: { count: Object.keys(mapsReport).length, bytes: mapsBytes, kinds: mapsReport },
             scratch: { bytes: sum(scratch), list: scratch },
         };
     }

@@ -1347,7 +1347,7 @@ class Gate:
         blob = bytes(range(256)) * 16
 
         def newer(h):
-            h["version"], h["minReader"], h["app"] = 2, 1, "9.9.9"
+            h["version"], h["minReader"], h["app"] = 99, 1, "9.9.9"
             h["document"]["layers"] += [future, ffilter]
             h["document"]["futureField"] = field
             h["plugins"]["future-plugin"] = pdata
@@ -1379,7 +1379,7 @@ class Gate:
             problems.append("the files of the unknown layer and plugin data did not travel: " + ", ".join(e for e in entries if "future" in e))
         await A.ev("for (const e of host.editors().slice()) if (e.docFile && /newer_v2/.test(e.docFile.path)) shell.closeDocument(e, { force: true }); return 1;")
         self.step("newer_documents", not problems, "; ".join(problems[:6]) if problems else
-                  f"minReader 3 refused ({r['err'][:90]}...), nothing imported; version 2 opened with the note, and the unknown kind, filter id, top-level field and plugin data (with their files) came back unchanged in the next save", t)
+                  f"minReader 3 refused ({r['err'][:90]}...), nothing imported; version 99 opened with the note, and the unknown kind, filter id, top-level field and plugin data (with their files) came back unchanged in the next save", t)
 
     def finish(self):
         ok = bool(self.results) and all(self.results)

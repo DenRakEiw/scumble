@@ -169,6 +169,7 @@ history entry would name it and it would be `false`.
 | `selections` | array | the saved selections, `{ name, url, orient, xf }`, `url` a PNG data URL drawn at 0, 0; `orient` `{ turn, flip }` (0.1.31) turns it first, then `xf` (0.1.32: the map `[a, b, c, d, e, f]` of every crop, extend, resize, turn and straighten since it was saved) places it; each left out when it does nothing |
 | `guides` | `{ x: [], y: [] }` | guide positions in pixels; left out when there are none |
 | `crop`, `upsample`, `gen`, `settings`, `refs`, `cutout` | objects | the crop, prompt upsampling, generation, recipe *Settings* panel, reference-image (`{ fit }`, not file refs) and cut-out settings; `gen.boxes` is the Boxes switch under the prompt (boxes in the prompt on or off for this document, default false; an older app keeps it as an unknown key) |
+| `maps` | object | document maps (since 0.1.33: `{ [kind]: { ref, w, h, xf, enc, meta } }`, enc `"u16rg"`; a document with a map writes format version 2); left out when empty |
 
 ### 4.1 Layers
 

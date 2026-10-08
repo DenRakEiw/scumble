@@ -31,14 +31,14 @@ def dpt_model_size(w, h, short=518, multiple=14):
     elif w >= short and h >= short:
         scale = short / min(w, h)
     else:
-        scale = short / (h if abs(h - short) <= abs(w - short) else w)
+        scale = (short / w) if abs(1.0 - short / w) < abs(1.0 - short / h) else (short / h)
 
     nw = round((w * scale) / multiple) * multiple
     nh = round((h * scale) / multiple) * multiple
     return max(multiple, int(nw)), max(multiple, int(nh))
 
 
-def work_size(w, h, max_dim=4096):
+def work_size(w, h, max_dim=2048):
     """Compute working size capped at max_dim, keeping aspect ratio."""
     m = max(w, h)
     if m <= max_dim:

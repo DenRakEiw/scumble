@@ -31,6 +31,7 @@ global.document = {
             createImageData: () => ({ data: new Uint8ClampedArray(4) }),
             putImageData: () => {},
             drawImage: () => {},
+            fillRect: () => {},
         }),
     }),
 };
@@ -81,7 +82,8 @@ async function runCommandChecks() {
     const { commands } = await import(pathToFileURL(path.join(ROOT, "renderer", "commands.js")).href);
     const { host } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "host.js")).href);
 
-    test("commands: sample_depth is registered with correct params and readOnly", () => {
+    test("commands: depth_map and sample_depth are registered with correct params and readOnly", () => {
+        assert.ok(commands.has("depth_map"), "commands.has('depth_map') must be true");
         assert.ok(commands.has("sample_depth"), "commands.has('sample_depth') must be true");
         const desc = commands.describe().find((c) => c.name === "sample_depth");
         assert.ok(desc, "command descriptor found");
@@ -89,15 +91,20 @@ async function runCommandChecks() {
         assert.strictEqual(desc.needsImage, true, "sample_depth needsImage must be true");
         assert.ok(desc.params.x && desc.params.x.required, "x is required");
         assert.ok(desc.params.y && desc.params.y.required, "y is required");
-        assert.ok(desc.params.recompute, "recompute parameter exists");
+        assert.strictEqual(desc.params.recompute, undefined, "sample_depth has no recompute param (use depth_map)");
+
+        const depthMapDesc = commands.describe().find((c) => c.name === "depth_map");
+        assert.ok(depthMapDesc, "depth_map descriptor found");
+        assert.strictEqual(depthMapDesc.readOnly, false, "depth_map is not readOnly");
+        assert.ok(depthMapDesc.params.force, "depth_map has force param");
     });
 
-    testAsync("commands: sample_depth validates coordinates", async () => {
+    await testAsync("commands: sample_depth validates coordinates and requires depth_map first", async () => {
         const fakeEd = {
             base: {},
             width: 800,
             height: 600,
-            ensureDepthMap: async () => {},
+            maps: {},
         };
         host.editor = fakeEd;
         await assert.rejects(async () => {
@@ -111,9 +118,13 @@ async function runCommandChecks() {
         await assert.rejects(async () => {
             await commands.run("sample_depth", {});
         }, /pass x and y in image pixels/);
+
+        await assert.rejects(async () => {
+            await commands.run("sample_depth", { x: 100, y: 100 });
+        }, /run depth_map first/);
     });
 
-    testAsync("commands: sample_depth returns mapped depth, u16, raw disparity and staleness", async () => {
+    await testAsync("commands: sample_depth returns mapped depth, u16, raw disparity and staleness", async () => {
         // Document: 800x600, depth map: 400x300 (guided workSize)
         const gw = 400, gh = 300;
         const u16 = new Uint16Array(gw * gh);
@@ -126,31 +137,30 @@ async function runCommandChecks() {
         const rawTargetIdx = Math.floor(75 * rh / gh) * rw + Math.floor(100 * rw / gw);
         raw[rawTargetIdx] = 42.5;
 
-        let forcePassed = null;
         const fakeEd = {
             base: {},
             width: 800,
             height: 600,
             isDepthStale: () => false,
-            ensureDepthMap: async ({ force }) => {
-                forcePassed = force;
-                return {
+            maps: {
+                depth: {
                     w: gw,
                     h: gh,
-                    rw,
-                    rh,
-                    u16,
-                    raw,
-                    lo: 10.0,
-                    hi: 100.0,
-                    provider: "dml",
-                };
+                    data: u16,
+                    meta: {
+                        rw,
+                        rh,
+                        raw,
+                        lo: 10.0,
+                        hi: 100.0,
+                        provider: "dml",
+                    },
+                },
             },
         };
         host.editor = fakeEd;
 
         const res = await commands.run("sample_depth", { x: 200, y: 150 });
-        assert.strictEqual(forcePassed, false, "default recompute is false");
         assert.strictEqual(res.x, 200);
         assert.strictEqual(res.y, 150);
         assert.strictEqual(res.u16, 32768);
@@ -161,13 +171,9 @@ async function runCommandChecks() {
         assert.strictEqual(res.far, 10.0);
         assert.strictEqual(res.provider, "dml");
         assert.strictEqual(res.stale, false);
-
-        // Force recompute
-        await commands.run("sample_depth", { x: 200, y: 150, recompute: true });
-        assert.strictEqual(forcePassed, true, "force recompute passed true");
     });
 
-    testAsync("host: depthModel and depthInput", async () => {
+    await testAsync("host: depthModel and depthInput", async () => {
         host.helpers.models = [
             { id: "da2_small", kind: "depth", present: true, label: "Depth Anything V2 Small" },
         ];
@@ -176,8 +182,7 @@ async function runCommandChecks() {
         assert.ok(m, "depth model returned");
         assert.strictEqual(m.id, "da2_small");
 
-        // Test depthInput: mock editor flattening
-        let noFiltersPassed = false;
+        let skipFiltersPassed = false;
         const fakeCanvas = {
             width: 800,
             height: 600,
@@ -193,19 +198,15 @@ async function runCommandChecks() {
             tileMode: false,
             compositeVersion: 5,
             flattenToCanvas: (opts) => {
-                noFiltersPassed = !!(opts.skipFilters || opts.noFilters);
+                skipFiltersPassed = !!opts.skipFilters;
                 return fakeCanvas;
             },
         };
-        const inp = await host.depthInput(fakeEd);
-        assert.ok(noFiltersPassed, "flattenToCanvas called with skipFilters: true");
-        assert.ok(inp.rgba instanceof Uint8Array, "rgba is Uint8Array");
-        assert.ok(inp.grey instanceof Uint8Array, "grey is Uint8Array");
-        assert.ok(inp.thumb instanceof Uint8Array, "thumb is Uint8Array");
-        assert.strictEqual(inp.thumb.length, 64 * 64, "thumb is 64x64");
-        assert.strictEqual(inp.mw % 14, 0, "mw multiple of 14");
-        assert.strictEqual(inp.mh % 14, 0, "mh multiple of 14");
-        assert.strictEqual(inp.version, 5, "version carried");
+        const inp = await host.depthInput(fakeEd, 518, 392);
+        assert.ok(skipFiltersPassed, "flattenToCanvas called with skipFilters: true");
+        assert.ok(inp.image instanceof Uint8Array, "image is Uint8Array");
+        assert.strictEqual(inp.width, 518);
+        assert.strictEqual(inp.height, 392);
     });
 }
 

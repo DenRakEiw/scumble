@@ -42,7 +42,7 @@ const POLICY = {
     // ---- read the app -------------------------------------------------------------------
     ping: AUTO, list_documents: AUTO, list_recipes: AUTO, list_plugins: AUTO, list_layers: AUTO,
     list_brush_tips: AUTO, filter_types: AUTO, status: AUTO, get_state: AUTO, read_log: AUTO,
-    film_looks: AUTO, glb_info: AUTO, sample_mean_color: AUTO, sample_depth: AUTO, screenshot: AUTO, compare: AUTO,
+    film_looks: AUTO, glb_info: AUTO, sample_mean_color: AUTO, sample_depth: AUTO, depth_map: AUTO, screenshot: AUTO, compare: AUTO,
 
     // ---- selection ----------------------------------------------------------------------
     select_rect: AUTO, select_all: AUTO, select_none: AUTO, select_invert: AUTO, select_feather: AUTO,
@@ -58,7 +58,7 @@ const POLICY = {
 
     // ---- layers -------------------------------------------------------------------------
     add_paint_layer: AUTO, add_filter: AUTO, add_text: AUTO, set_active_layer: AUTO,
-    move_layer: AUTO, duplicate_layer: AUTO, frequency_separation: AUTO, dodge_burn_layer: AUTO, flip_layer: AUTO, center_layer: AUTO, align_layers: AUTO,
+    move_layer: AUTO, duplicate_layer: AUTO, frequency_separation: AUTO, dodge_burn_layer: AUTO, flip_layer: AUTO, center_layer: AUTO, match_edges: AUTO, align_layers: AUTO,
     group_layers: AUTO, ungroup_layers: AUTO,
     set_group: (call) => (call.args && call.args.locked === false ? ASK("unlocks a group you locked") : AUTO()),
     film_apply_look: AUTO, film_add_point: AUTO,

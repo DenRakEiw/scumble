@@ -148,6 +148,36 @@ await run("undo", { doc: window.__selDoc });
 await run("redo", { doc: window.__selDoc });
 return { bounds: b };
 """),
+    ("real_wand_on_tiles", """
+const ed = ednow(window.__selDoc);
+await run("select_none", { doc: window.__selDoc });
+const l = await run("add_paint_layer", { doc: window.__selDoc, name: "wand_test_layer" });
+const layer = ed.layers.find((x) => x.id === l.id);
+layer.px.drawInto([100, 100, 300, 300], (ctx) => {
+    ctx.fillStyle = "#ff0000";
+    ctx.fillRect(100, 100, 200, 200);
+});
+ed.markLayerChanged(layer);
+ed.draw();
+await ed.wandSelect(150, 150, "replace");
+const b = ed.getBounds();
+if (!b) throw new Error("wand selected nothing on tiles backend");
+if (b[0] !== 100 || b[1] !== 100 || b[2] !== 300 || b[3] !== 300) {
+    throw new Error("wand selection bounds mismatch on tiles: " + JSON.stringify(b));
+}
+const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
+if (at(150, 150) !== 255) throw new Error("wand pixel at (150, 150) is not 255: " + at(150, 150));
+if (at(50, 50) !== 0) throw new Error("wand pixel at (50, 50) is not 0: " + at(50, 50));
+await run("undo", { doc: window.__selDoc });
+if (ed.getBounds()) throw new Error("undo did not clear wand selection: " + JSON.stringify(ed.getBounds()));
+await run("redo", { doc: window.__selDoc });
+const bRedo = ed.getBounds();
+if (!bRedo || bRedo[0] !== 100 || bRedo[1] !== 100 || bRedo[2] !== 300 || bRedo[3] !== 300) {
+    throw new Error("redo did not restore wand bounds: " + JSON.stringify(bRedo));
+}
+await run("remove_layer", { doc: window.__selDoc, layer: l.id });
+return { ok: true, bounds: b };
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__selDoc, force: true }); } catch (_) { /* gone */ }
 return "ok";
