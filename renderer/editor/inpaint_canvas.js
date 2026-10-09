@@ -42,7 +42,7 @@ import { LiquifyField, gridStep, previewBlock, liquifyFalloff } from "./inpaint_
 import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
 import { fitLayerRGBA, workScale } from "./edgefit.js";
 import { STALE_DIFF, GUIDE, RANGE_BAND_ROWS, WORK_MAX, modelSize, workSize, disparityRange } from "./inpaint_depth.js";
-import { packRG16, mapToJSON, mapFromJSON, fingerprint, fingerprintDiff, passToMap, makeMap } from "./inpaint_maps.js";
+import { packRG16, mapToJSON, mapFromJSON, fingerprint, fingerprintDiff, passToMap, makeMap, sampleMap } from "./inpaint_maps.js";
 import { normalizeLimit, u16Bilinear, rangeWeight, opp, colourSimilarity, hexToRgb as hexToRgb01, WEIGHTS_GLSL } from "./inpaint_weights.js";
 import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
@@ -12178,13 +12178,52 @@ class InpaintEditor {
         this.mapsVersion++;
 
         for (const l of this.layers) {
-            if (l.kind === "filter" && l.params?.limit?.source === (kind || "depth")) {
+            if (l.kind === "filter" && (l.params?.limit?.source === (kind || "depth") || this.mapsOf(l).includes(kind || "depth"))) {
                 this.markFilterChanged(l);
             }
         }
+        this.sceneSig = null;
         this.renderHistory();
         this.draw();
         this.notifyChanged();
+        return true;
+    }
+
+    /**
+     * The map kinds a filter layer depends on (R2-S12, F10):
+     * union of def.maps(params) and limit.source === "depth" ? ["depth"] : [].
+     * @param {any} layer
+     * @returns {string[]}
+     */
+    mapsOf(layer) {
+        if (!layer || layer.kind !== "filter") return [];
+        const def = FILTERS[layer.filter];
+        const res = new Set();
+        if (def && typeof def.maps === "function") {
+            try {
+                const list = def.maps(layer.params || {});
+                if (Array.isArray(list)) for (const k of list) if (k) res.add(k);
+            } catch (_) { /* ignore */ }
+        }
+        if (layer.params && layer.params.limit && (layer.params.limit.source === "depth" || layer.params.limit.source === "map")) {
+            res.add("depth");
+        }
+        return Array.from(res);
+    }
+
+    /**
+     * Cancel pending filter parameter preview (e.g. from slider drag or preset hover).
+     * Restores params to the snapshot taken before preview began and clears pending state.
+     * @param {any} layer
+     * @returns {boolean}
+     */
+    cancelFilterParams(layer) {
+        if (!layer || layer.kind !== "filter" || !layer._undoPending) return false;
+        layer.params = { ...(layer._undoPending.params || {}) };
+        layer._undoPending = null;
+        this.filterPreview = null;
+        this.markFilterChanged(layer, { soon: true });
+        this.draw();
         return true;
     }
 
@@ -13587,6 +13626,7 @@ class InpaintEditor {
     }
 
     markFilterChanged(layer, { soon = false } = {}) {
+        this.sceneSig = null;
         layer._fcache = null;
         layer._fcacheView = null; layer._fcacheSample = null; layer._fxCacheSample = null;
         this.uploaded.baseHash = null;
@@ -13663,7 +13703,7 @@ class InpaintEditor {
             below.height,
             vp ? [vp.x, vp.y, vp.w, vp.h, vp.sx, vp.sy, !!(vp.screen || vp.display)] : 0,
         ];
-        if (layer.params && layer.params.limit && (layer.params.limit.source === "depth" || layer.params.limit.source === "map")) {
+        if (this.mapsOf(layer).length > 0) {
             baseKey.push(this.mapsVersion || 0);
         }
         const isEffectView = this.effectViewOf(layer, forRun);
@@ -13776,23 +13816,35 @@ class InpaintEditor {
     }
 
     /**
-     * `colourStats` of the whole picture below a filter layer (E3), for a filter that asks for them (`wholeStats`):
-     * from a 256 px sampled pass of the layers below it, kept per composite version. Every pass (the screen's region,
-     * a band of an export, the whole flatten) gives the filter the same numbers, so they all show the same picture;
-     * before, each pass took them from whatever part it composited.
+     * `colourStats` or custom `wholeStats` of the whole picture below a filter layer (E3, F10):
+     * from a sampled pass of the layers below it (size chosen by def.wholeStatsSize, 64..1024, default 256),
+     * kept per composite version and map version.
      */
     belowStats(layer, forRun) {
         if (!layer || !this.layers || !this.width || !this.height) return null;
+        const def = FILTERS[layer.filter];
+        const n = Math.max(64, Math.min(1024, (def && def.wholeStatsSize) || 256));
+        const readsMap = this.mapsOf(layer).length > 0;
+        const vKey = `${this.compositeVersion}:${readsMap ? (this.mapsVersion || 0) : 0}:${n}`;
         const slot = forRun ? "_bstatsRun" : "_bstats";
         const c = layer[slot];
-        if (c && c.version === this.compositeVersion) return c.stats;
+        if (c && c.version === vKey) return c.stats;
         const index = this.layers.indexOf(layer);
-        const s = Math.min(1, 256 / Math.max(this.width, this.height));
-        // an entry first: the sampled pass below must not ask for this layer's statistics again
-        const entry = { version: this.compositeVersion, stats: null };
+        const s = Math.min(1, n / Math.max(this.width, this.height));
+        const entry = { version: vKey, stats: null };
         layer[slot] = entry;
         const small = this.sampleRegion("image", [0, 0, this.width, this.height], s, { forRun: !!forRun, upTo: Math.max(0, index) });
-        entry.stats = colourStats(small);
+        if (def && typeof def.wholeStats === "function") {
+            try {
+                entry.stats = def.wholeStats(small, { width: this.width, height: this.height }, { maps: this.maps || {}, sampleMap });
+            } catch (err) {
+                console.warn(`filter ${def.label || layer.filter} wholeStats failed:`, err);
+                if (host.pluginReport && def.plugin) host.pluginReport(def.plugin, `filter ${layer.filter} wholeStats`, err);
+                entry.stats = null;
+            }
+        } else {
+            entry.stats = colourStats(small);
+        }
         return entry.stats;
     }
 
@@ -17203,6 +17255,7 @@ class InpaintEditor {
         const fmt = (p, v) => (p.type === "bool" ? (v ? "on" : "off") : (Number.isInteger(p.step) ? Math.round(v) : (+v).toFixed(p.step < 0.1 ? 2 : 1)) + (p.unit || ""));
         let presetSel = null;
         for (const p of def.params) {
+            if (p.hidden) continue;
             if (p.onlyWithPlate && !layer.plate) continue;
             if (p.notWithPlate && layer.plate) continue;
             if (p.type === "custom") {
@@ -19623,7 +19676,7 @@ class InpaintEditor {
             this.maskView ? `${this.maskView.id}:${this.maskView.mode}` : ""];
         for (const l of this.layers) {
             parts.push(l.id, this.shown(l) ? 1 : 0, l.opacity, l.blend, l.role, l.x, l.y, l.w, l.h,
-                l.kind === "filter" ? l.filter + JSON.stringify(l.params || {}) : "",
+                l.kind === "filter" ? l.filter + JSON.stringify(l.params || {}) + (this.mapsOf(l).length ? `:${this.mapsVersion || 0}` : "") : "",
                 l.match ? `${l.match.strength}:${l.match.source}` : "", l.maskPx ? (l.maskOff ? 2 : 1) : 0, l.maskEdit ? 1 : 0);
         }
         if (p) parts.push("p", p.kind, p.layer ? p.layer.id : "");

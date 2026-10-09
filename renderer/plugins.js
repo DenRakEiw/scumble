@@ -15,7 +15,7 @@ import { el, icon, makeCanvas } from "./editor/inpaint_canvas.js";
 import { LayerPixels } from "./editor/inpaint_pixels.js";
 import * as dialogs from "./dialogs.js";
 
-export const API_VERSION = 3;   // 2: documents.data(doc), per-document plugin data (docs/PLAN_DOCUMENTS.md §3.6); 3: generate.register (box sources, docs/PLAN_BOXES.md §9)
+export const API_VERSION = 4;   // 2: documents.data(doc), per-document plugin data (docs/PLAN_DOCUMENTS.md §3.6); 3: generate.register (box sources, docs/PLAN_BOXES.md §9); 4: wholeStats, wholeStatsSize, param type color, hidden flag, cancelFilterParams
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 
 const plugins = new Map();   // id -> entry { id, manifest, module, api, regs, loaded, error, errors: [] }
@@ -221,6 +221,19 @@ export class Document {
         return layerSummary(ed, l);
     }
     /**
+     * Cancel pending parameter changes for a filter layer (e.g. while dragging a preview or hovering a preset).
+     * Reverts to the snapshot taken before the preview began and clears pending undo.
+     * Returns the layer summary, or null if the layer is not found or has no pending preview.
+     */
+    cancelFilterParams(layerKey) {
+        const ed = this.editor;
+        const l = findLayer(ed, layerKey);
+        if (l.kind !== "filter") throw new Error(`${l.name} is not a filter layer`);
+        if (!l._undoPending) return layerSummary(ed, l);
+        ed.cancelFilterParams(l);
+        return layerSummary(ed, l);
+    }
+    /**
      * After changes made on raw layer objects: caches off, lists and canvas fresh. With a layer:
      * its pixels (and its mask) were written through rawLayer(key).px / maskPx, so the display
      * levels, the upload and the caches of that layer are marked changed first, as setPixels does.
@@ -267,9 +280,16 @@ function registerFilter(entry, def) {
         else if (type === "select") { out.options = (p.options || []).map((o) => (typeof o === "string" ? { id: o, label: o } : o)); if (out.default == null && out.options.length) out.default = out.options[0].id; }
         else if (type === "bool") out.default = !!p.default;
         else if (type === "custom") { /* the plugin's own control */ }
-        else throw new Error(`filter "${id}": unknown param type "${type}" (number, select, bool, custom)`);
+        else if (type === "color") {
+            const defVal = p.default == null ? "#000000" : String(p.default).trim();
+            const m = /^#?([0-9a-f]{6})$/i.exec(defVal);
+            if (!m) throw new Error(`filter "${id}": param "${p.key}" default must be #rrggbb, got "${p.default}"`);
+            out.default = "#" + m[1].toLowerCase();
+        }
+        else throw new Error(`filter "${id}": unknown param type "${type}" (number, select, bool, custom, color)`);
         for (const k of ["keepPreset", "notWithPlate", "onlyWithPlate"]) if (p[k]) out[k] = true;
         if (p.title) out.title = String(p.title);
+        if (p.hidden) out.hidden = true;
         return out;
     });
     const apply = (src, p, info) => {
@@ -283,7 +303,14 @@ function registerFilter(entry, def) {
     let reach;
     if (typeof def.reach === "function") reach = (p, size) => { try { return def.reach(p, size); } catch (err) { report(entry, `filter ${def.id} reach`, err); return undefined; } };
     else if (def.reach != null) { reach = +def.reach; if (!(reach >= 0)) throw new Error(`filter "${id}": reach must be a number >= 0 or a function of the params`); }
-    FILTERS[id] = { label: def.label || def.id, params, apply, plugin: entry.id, chain: !!def.chain, control: typeof def.control === "function" ? def.control : undefined, reach };
+    let wholeStats;
+    if (typeof def.wholeStats === "function") wholeStats = def.wholeStats;
+    else if (def.wholeStats) wholeStats = true;
+    const wholeStatsSize = def.wholeStatsSize != null ? Math.max(64, Math.min(1024, Math.round(+def.wholeStatsSize) || 256)) : undefined;
+    let maps;
+    if (typeof def.maps === "function") maps = def.maps;
+    else if (Array.isArray(def.maps)) maps = () => def.maps;
+    FILTERS[id] = { label: def.label || def.id, params, apply, plugin: entry.id, chain: !!def.chain, control: typeof def.control === "function" ? def.control : undefined, reach, wholeStats, wholeStatsSize, maps };
     FILTER_IDS.push(id);
     if (def.glsl) {
         if (typeof def.glsl.code !== "string") throw new Error(`filter "${id}": glsl.code must be the fragment source defining vec4 shade(vec4 color, vec2 uv)`);
@@ -907,5 +934,10 @@ host.on("removed", ({ editor }) => {
 });
 host.on("tool", toolChanged);
 
-export const pluginHost = { pointer, key, overlay, boxes: collectBoxes, countBoxes, runAction, list: () => listPlugins(), reload: reloadPlugins, load: loadPlugins, setEnabled, entries: () => plugins };
+function reportForPlugin(pluginId, where, err) {
+    const entry = plugins.get(pluginId);
+    if (entry) report(entry, where, err);
+}
+
+export const pluginHost = { pointer, key, overlay, boxes: collectBoxes, countBoxes, runAction, list: () => listPlugins(), reload: reloadPlugins, load: loadPlugins, setEnabled, entries: () => plugins, report: reportForPlugin };
 host.plugins = pluginHost;

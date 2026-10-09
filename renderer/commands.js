@@ -1717,6 +1717,7 @@ const COMMANDS = {
                             key: p.key, label: p.label, type: p.type || "number", min: p.min, max: p.max, default: p.type === "custom" ? undefined : p.default,
                             options: p.options ? p.options.map(option) : undefined,
                             offset: hasPreset && p.key !== "preset" && p.keepPreset ? true : undefined,
+                            ...(p.hidden ? { hidden: true } : {}),
                         })),
                     };
                 }),
@@ -2185,7 +2186,7 @@ const optionIds = (p) => (p.options || []).map((o) => (o && typeof o === "object
  * A filter type's parameter values checked against its spec, before anything is written (docs/PLAN_0_1_42.md F2b): a
  * refused call changes nothing, and add_filter adds no layer for it. Returns `{ key: value }` as the layer stores them.
  */
-function checkParams(filterId, params) {
+export function checkParams(filterId, params) {
     if (!FILTERS[filterId]) throw new Error(`filter "${filterId}" is not installed (its plugin is off or missing): its settings are kept as they are`);
     // some models send the object as a JSON string ("{\"color\":\"#ff2d2d\"}"): a string that parses to an object counts
     if (typeof params === "string") {
@@ -2227,6 +2228,7 @@ function checkParams(filterId, params) {
     }
     return out;
 }
+export const applyParams = checkParams;
 
 /**
  * Checked values into a filter layer, as its row in the layer list writes them (inpaint_canvas.js buildFilterControls):

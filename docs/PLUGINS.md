@@ -109,6 +109,7 @@ One tab. Pixel access is ImageData in and out; every write is one undo step.
 | `undo()`, `redo()` | |
 | `draw()` | repaint the canvas and overlays (no cache invalidation) |
 | `setFilterParams(layer, patch, { preview })` | change a filter layer's params: `preview: true` during a drag (low-res, no undo step yet), the final call without it pushes one undo step |
+| `cancelFilterParams(layer)` | cancel a pending preview: reverts to the snapshot before the preview started and clears pending undo (API 4) |
 | `refresh(layer?)` | after changes on raw layer objects: caches off, lists and canvas redrawn; with a layer, its pixels and mask are marked changed first (after writing through `rawLayer(layer).px` / `maskPx`) |
 | `editor` | the raw editor (unstable) |
 
@@ -220,10 +221,14 @@ scumble.filters.register({
     params: [
         { key: "levels", label: "Levels", type: "number", min: 2, max: 32, step: 1, default: 6, unit: "" },
         { key: "mono", label: "Monochrome", type: "bool", default: false },
+        // { key: "tint", label: "Tint", type: "color", default: "#ff8800" } (API 4: validated #rrggbb)
+        // { key: "debug", type: "number", hidden: true, default: 0 } (API 4: omitted from layer row UI)
         // { key: "mode", type: "select", options: [{ id: "a", label: "A" }, "b"], default: "a", title: "tooltip" }
         // { key: "preset", type: "select", options: [{ id: "x", label: "X", amount: 3 }, { id: "custom", label: "Custom" }] }
         // { key: "curve", type: "custom", default: {...} }  with control(layer, param, callbacks) -> element
     ],
+    // wholeStats (API 4): true or a function (small, size, ctx) => any
+    // wholeStatsSize: 64..1024 (default 256)
     apply(src, params, info) { ... return canvas; },   // CPU path, required
     glsl: {                                            // optional WebGL2 path
         uniforms: { u_levels: "float", u_mono: "bool" },    // float, int, bool, vec2, vec3, vec4, sampler2D
@@ -277,9 +282,13 @@ take them from its input, or every band gets a frame of its own:
   and `uv` for anything placed in the picture.
 - `wholeStats: true` on the filter definition asks for `info.stats`: `{ mean, lo, hi }` per
   channel (the 1 % and 99 % levels) of the whole picture below the filter layer, the same numbers
-  for every pass.
-- `reach` may take the picture's size: `reach(params, { width, height })`. The film look's
-  halation is a blur of 1.2 % of the picture's long side, so its reach is three sigma of that.
+  for every pass (sampled at 256 px).
+  **In Plugin API 4**, `wholeStats` can also be a function: `wholeStats(small, size, ctx) => any`
+  where `small` is a canvas of the composite below the filter sampled at `wholeStatsSize` px (64..1024,
+  default 256), `size` is `{ width, height }` document dimensions in image pixels, and `ctx` is `{ maps, sampleMap }`.
+  `ctx.maps.depth` is read-only (`{ w, h, data, xf, meta }`, never written), and
+  `ctx.sampleMap(map, docX, docY) -> 0..1`. The function runs on the main thread once per composite version.
+- `wholeStatsSize`: number (64..1024, default 256), the sampling resolution for `wholeStats`.
 
 A filter that does this has a `reach` (0 for a vignette), a box of the picture is exact under
 it, and a document with it is exported in bands. One that still depends on its input's size

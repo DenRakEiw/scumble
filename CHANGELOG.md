@@ -3,6 +3,10 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- Plugin filters can take statistics of the whole picture below them, at a size they choose, and read the document's depth map (plugin API 4). Parameter type "color", hidden parameters, and cancelFilterParams.
+
 ## 0.1.44 — 2026-10-09
 
 - **A depth map of the picture.** *Selection › Depth* computes a 16-bit depth map in the app with Depth Anything V2

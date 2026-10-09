@@ -242,6 +242,134 @@ const shot = await c("screenshot", { max_size: 512 });
 window.__posterShot = shot.data;
 return { filter: f, layer: layer.id, compare: cmp, screenshot: [shot.width, shot.height] };
 """),
+    ("plugin_api_4", """
+const P = await import("./plugins.js");
+const mapsMod = await import("./editor/inpaint_maps.js");
+const sampleApi = P.pluginHost.entries().get("sample").api;
+
+let wholeStatsCalls = 0;
+let lastStats = null;
+const fid = sampleApi.filters.register({
+    id: "apifour_test",
+    label: "API 4 Test",
+    params: [
+        { key: "tint", label: "Tint", type: "color", default: "#112233" },
+        { key: "secret", label: "Secret", type: "number", min: 0, max: 10, default: 5, hidden: true },
+        { key: "readMap", label: "Read Map", type: "bool", default: false },
+    ],
+    maps: (p) => (p && p.readMap ? ["depth"] : []),
+    wholeStatsSize: 512,
+    wholeStats: (small, size, ctx) => {
+        wholeStatsCalls++;
+        lastStats = { w: small.width, h: small.height, calls: wholeStatsCalls, hasMap: !!(ctx.maps && ctx.maps.depth) };
+        return lastStats;
+    },
+    apply: (src, p, info) => src,
+});
+
+try {
+    // 1. filter_types reports hidden: true and color type
+    const types = await c("filter_types");
+    const entry = types.filters.find((x) => x.id === fid);
+    if (!entry) throw new Error("filter not in filter_types");
+    const tintP = entry.params.find((x) => x.key === "tint");
+    if (!tintP || tintP.type !== "color") throw new Error("tint param missing or not color type");
+    const secretP = entry.params.find((x) => x.key === "secret");
+    if (!secretP || !secretP.hidden) throw new Error("hidden param missing or hidden: true not reported");
+
+    // 2. A color param refuses "red" and stores "#ff0000"; hidden param clamps through add_filter / set_filter
+    let refusedRed = false;
+    try {
+        await c("add_filter", { type: fid, params: { tint: "red" }, name: "API4 Filter" });
+    } catch (e) {
+        if (e.message.includes("#rrggbb")) refusedRed = true;
+    }
+    if (!refusedRed) throw new Error("add_filter did not refuse 'red' for color param");
+
+    // 3. Document at 2000 x 1000
+    const d2 = await c("new_document");
+    try {
+        await c("new_canvas", { width: 2000, height: 1000, doc: d2.id });
+        const HMod = await import("./editor/host.js");
+        const ed = HMod.host.editorById(d2.id);
+        window.__testDoc2Ed = ed;
+        const fl = await c("add_filter", { type: fid, params: { tint: "#FF0000", secret: 99 }, name: "API4 Filter", doc: d2.id });
+        if (fl.params.tint !== "#ff0000") throw new Error("tint not lowercased #ff0000: " + fl.params.tint);
+        if (fl.params.secret !== 10) throw new Error("hidden param not clamped to max 10: " + fl.params.secret);
+
+        // Clamping through set_filter
+        const setRes = await c("set_filter", { layer: fl.id, params: { secret: -20 }, doc: d2.id });
+        if (setRes.params.secret !== 0) throw new Error("hidden param not clamped to min 0: " + setRes.params.secret);
+
+        // 4. buildFilterControls skips hidden params
+        const rawLayer = ed.layers.find((l) => l.id === fl.id);
+        const controlsBox = ed.buildFilterControls(rawLayer);
+        const labels = Array.from(controlsBox.querySelectorAll("span")).map((s) => s.textContent);
+        if (labels.includes("Secret")) throw new Error("hidden param 'Secret' rendered in filter controls");
+        if (!labels.includes("Tint")) throw new Error("color param 'Tint' not rendered in filter controls");
+
+        // 5. wholeStats on 2000 x 1000 has small.width === 512
+        if (!lastStats || lastStats.w !== 512) throw new Error("wholeStats size on 2000x1000 is not 512: " + (lastStats && lastStats.w));
+        const callsAfterSetup = wholeStatsCalls;
+
+        // A second draw with the same compositeVersion must NOT rerun wholeStats (it is cached)
+        ed.draw();
+        if (wholeStatsCalls !== callsAfterSetup) throw new Error("wholeStats called again on identical compositeVersion: " + wholeStatsCalls);
+
+        // Export in bands equals whole flatten, and does not rerun wholeStats per band
+        const callsBeforeExp = wholeStatsCalls;
+        ed.flattenToCanvas({ forRun: true });
+        if (wholeStatsCalls !== callsBeforeExp + 1) throw new Error("flatten forRun did not run wholeStats exactly once: " + (wholeStatsCalls - callsBeforeExp));
+
+        // 6. setMap with synthetic map: called again ONLY if the filter reads maps
+        const callsBeforeMap1 = wholeStatsCalls;
+        const synthMap = mapsMod.makeMap("depth", 100, 50, new Uint16Array(5000), [2000, 0, 0, 1000, 0, 0], {});
+        synthMap.ref = { filename: "synth.png", subfolder: "", type: "input" };
+        await ed.setMap("depth", synthMap);
+        ed.draw();
+        if (wholeStatsCalls !== callsBeforeMap1) throw new Error("wholeStats called after setMap when readMap is false: " + wholeStatsCalls);
+
+        // Now set readMap: true
+        await c("set_filter", { layer: fl.id, params: { readMap: true }, doc: d2.id });
+
+        const callsBeforeMap2 = wholeStatsCalls;
+        const synthMap2 = mapsMod.makeMap("depth", 100, 50, new Uint16Array(5000), [2000, 0, 0, 1000, 0, 0], {});
+        synthMap2.ref = { filename: "synth2.png", subfolder: "", type: "input" };
+        await ed.setMap("depth", synthMap2);
+        if (wholeStatsCalls !== callsBeforeMap2 + 1) throw new Error("wholeStats NOT called after setMap when readMap is true: " + wholeStatsCalls);
+
+        const callsAfterMap2 = wholeStatsCalls;
+        ed.draw();
+        if (wholeStatsCalls !== callsAfterMap2) throw new Error("wholeStats called again on identical mapsVersion: " + wholeStatsCalls);
+
+        // 7. cancelFilterParams
+        const docObj = new P.Document(ed);
+        const undoLenBefore = ed.undo.length;
+        const paramsBefore = { ...rawLayer.params };
+
+        docObj.setFilterParams(fl.id, { tint: "#0000ff" }, { preview: true });
+        if (rawLayer.params.tint !== "#0000ff") throw new Error("preview did not update params");
+        if (!rawLayer._undoPending) throw new Error("_undoPending not set during preview");
+
+        docObj.cancelFilterParams(fl.id);
+        if (rawLayer.params.tint !== paramsBefore.tint) throw new Error("cancel did not restore params");
+        if (ed.undo.length !== undoLenBefore) throw new Error("undo length changed after cancel");
+        if (rawLayer._undoPending !== null) throw new Error("_undoPending not null after cancel");
+
+        // commit after cancel pushes one step whose old state is the state before the preview
+        docObj.setFilterParams(fl.id, { tint: "#00ff00" });
+        if (ed.undo.length !== undoLenBefore + 1) throw new Error("commit after cancel did not push 1 undo step");
+        const topUndo = ed.undo[ed.undo.length - 1];
+        if (topUndo.params.tint !== paramsBefore.tint) throw new Error("old state in undo step is not state before preview: " + JSON.stringify(topUndo));
+    } finally {
+        await c("close_document", { doc: d2.id });
+        await c("activate_document", { doc: window.__testDoc });
+    }
+} finally {
+    sampleApi.filters.unregister(fid);
+}
+return { ok: true, fid };
+"""),
     ("plugin_action_and_undo", """
 await c("set_active_layer", { layer: "Test paint" });
 // paint something into the paint layer through the plugin API, then desaturate it via the action

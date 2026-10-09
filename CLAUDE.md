@@ -78,7 +78,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-09 noon: **0.1.44 released and Latest** = Nik 9 parity release 1; the Store submission, the MCP Registry publish and the post's live check wait)
+## Where things stand (2026-10-09: **0.1.44 released and Latest**; R2-S1 built as part of Release 2+3 block; awaiting review before R2-S2)
 
 **0.1.44 is out** (tag v0.1.44, published 2026-10-09T10:07:52Z, title "depth maps, range selections, filter limits"; the post
 `v0-1-44` committed to the website with the manual synced, its deploy status to be read). It is **release 1 (masks) of
@@ -89,13 +89,18 @@ then the user's own test of the exe: the depth row now follows a loaded picture 
 (edges above, feather handles in a strip below; it was unreachable with a feather of 0), `WORK_MAX` 4096 (1.06 s on
 15k, a 22 MB map). Exe gates green on both backends (two flakes re-run, `docs/TESTING.md`). **Decided 2026-10-09 (the
 user): releases 2 and 3 are built as one block** by the other agent, a review by this account after every session, one
-release at the end after the user's test; release 4 (blend modes) independent. **Waiting for the user:**
+release at the end after the user's test; release 4 (blend modes) independent.
+- **R2-S1 built** (2026-10-09): = F10 with Release 2 extension (Plugin API 4): `wholeStats` (function or true), `wholeStatsSize`
+  (64..1024, default 256), param type `color` (#rrggbb lower case), `hidden: true`, `cancelFilterParams` preview rollback without undo,
+  `belowStats` versioned by `${compositeVersion}:${readsMap ? mapsVersion : 0}:${n}`, `mapsOf` layer map tracking. Gates `commands`
+  (14s on tiles, 13s on canvas), `film` (11s / 11s), `lint` (29s), `types` (5s), `help` (3s) ALL PASS on both `--tiles on` and `--tiles off`
+  with `--offline`. Ready for review (`docs/REVIEW_NIK9_<date>.md`) before R2-S2.
+**Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.
 - **The MCP Registry**: `server.json` is 0.1.44 (109 tools); `mcp-publisher login github`, `validate`, `publish`.
 - The portable test copy under `dist/portable-test/` (started for the user's test; delete when done).
 - Item 43 (relight) is researched and planned (`docs/PLAN_RELIGHT.md`), its §5 questions open; after the Nik block.
-- The R1-S11 live checkpoint with the user present (the other agent's note) is covered by the user's test of 2026-10-09.
 
 **0.1.43 is out** (tag v0.1.43, published 2026-10-07T20:27:04Z; the post `v0-1-43` live; the manual synced). Built the
 same day from `docs/PLAN_0_1_43.md`, every row with its "As built": Nano Banana 2.1 on Gemini direct and seven hosts

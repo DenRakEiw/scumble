@@ -283,6 +283,7 @@ export const api = {
  * @property {(editor: any, phase: string, e: any, ix: number, iy: number, p: any) => boolean} pluginPointer
  * @property {(editor: any, e: any, k: string) => boolean} pluginKey
  * @property {(editor: any, ctx: any) => void} pluginOverlay
+ * @property {(pluginId: string, where: string, err: any) => void} [pluginReport]
  * @property {() => any} nodeTypes                       the server's node classes, for the settings rows
  * @property {(editor: any) => any[]} settingTargets     the recipe's settings rows for this editor
  * @property {(editor: any, list: any, targets: any) => void} renderPresets
@@ -888,6 +889,11 @@ export const host = {
     /** Plugin tools draw on the canvas overlay (patched into drawOverlays, view transform applied). */
     pluginOverlay(editor, ctx) {
         if (this.plugins) this.plugins.overlay(editor, ctx);
+    },
+
+    /** Report an error from a plugin execution (e.g. wholeStats) to the plugin registry. */
+    pluginReport(pluginId, where, err) {
+        if (this.plugins && typeof this.plugins.report === "function") this.plugins.report(pluginId, where, err);
     },
 
     isActive(editor) {
