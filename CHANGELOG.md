@@ -3,18 +3,26 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.44 — 2026-10-09
 
-- **See a layer's mask.** Alt+click on its mask label shows it alone in black and white; the mask menu shows it as a red overlay; a filter layer with a limit can show where it acts.
-- **Drag a box with the Object tool** to select the object in it (Shift adds, Alt subtracts, Shift+Alt keeps only the overlap); a click or a box on a very large picture no longer builds a full-size mask in memory. **Shift+Alt** intersects with every selection tool.
-- **Limit a filter layer by depth, brightness or colour.** A filter layer acts only where the picture lies in a chosen range, set in the layer's Limit row, with soft ends, and its painted mask still refines it. A colour or haze that grows with distance is a fill or filter layer with a depth limit. Documents with a limit open in Scumble 0.1.44 and newer.
-- **Select by depth, brightness or colour.** The Selection panel's *Select by range* block with a live preview and *Show depth map*: select what lies between two depths, two brightness levels or near a colour, softened at each end as far as you set it; replace, add, subtract or intersect.
-- **Depth model.** *Settings › Helpers* offers Depth Anything V2 Small (99 MB, Apache-2.0) for the depth tools; it runs in the app on the GPU or the processor.
-- **Depth map of the picture.** *Selection › Depth* computes a depth map in the app (Depth Anything V2 Small, on the GPU or the processor). It is saved with the document, follows turns, crops and resizes, and says when the picture has changed enough to compute it again; it never recomputes by itself.
-- **Soft selection combine and Intersect.** Selection combine operations (replace, add, subtract, and intersect) are soft across both canvas and tile backends, supporting smooth feathered transitions.
-- **Range bar and document histograms.** Range bar controls with whole-picture histograms provide double-ended interval and feather adjustments.
-- **Document maps and filter limits.** Documents support auxiliary maps with geometry tracking and undo support; filter layers accept limit parameters.
-- **Format compatibility table.** Document version requirements are handled through a format feature table, allowing newer backward-compatible features while preserving reader compatibility.
+- **A depth map of the picture.** *Selection › Depth* computes a 16-bit depth map in the app with Depth Anything V2
+  Small (99 MB, Apache-2.0, offered in *Settings › Helpers*; on the GPU through DirectML or on the processor). The
+  map is saved with the document, follows turns, crops and resizes, and its row says when the picture has changed
+  enough to compute it again; it never recomputes by itself. *Show map* draws it over the canvas.
+- **Select by depth, brightness or colour.** The Selection panel's *Select by range* block: what lies between two
+  depths, two brightness levels or near a colour, on a range bar over the picture's own histogram, with soft ends as
+  wide as you set them, Invert, a live tint on the canvas, and replace, add, subtract or intersect.
+- **Limit a filter layer by depth, brightness or colour.** A filter or fill layer acts only where the picture lies in
+  the range set in its Limit row, with soft ends; its painted mask still refines it, and a blend mode or opacity
+  applies to the limited result alone. A haze that grows with distance is a fill layer with a depth limit. Documents
+  with a limit open in Scumble 0.1.44 and newer.
+- **See a layer's mask.** Alt+click on its mask label shows the mask alone in black and white; the mask menu shows it
+  as a red overlay over the picture; a filter layer with a limit can show where it acts.
+- **The Object tool takes a box.** Drag a box to select the object in it (Shift adds, Alt subtracts, Shift+Alt keeps
+  only the overlap); a click or a box on a very large picture no longer builds a full-size mask in memory. Shift+Alt
+  intersects with every selection tool, and every selection tool combines softly: a feathered edge stays feathered
+  when you add to it or cut from it.
+- **For agents.** New commands `depth_map`, `sample_depth` and `select_range`; `set_filter` takes a `limit`.
 
 ## 0.1.43 — 2026-10-07
 
