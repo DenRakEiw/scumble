@@ -1,6 +1,8 @@
 # Nik 9 parity: the build plan (Umbauplan)
 
-**Status: building since 2026-10-08 against `b6c5238` (0.1.41 is Latest); F1-F8, R1-S1-S4 built and gated.** The research and the shape are in
+**Status: release 1 (masks) built 2026-10-08/09 and released as 0.1.44 on 2026-10-09 (F1-F8, R1-S1..S11, two reviews:
+`docs/REVIEW_NIK9_2026-10-08.md` and the fixes in 91fe509 / 6098ca7); releases 2 and 3 next as one block with one
+release at the end (the user, 2026-10-09), release 4 independent. Planned on 2026-10-04 against `b6c5238`.** The research and the shape are in
 `docs/PLAN_NIK9.md` (2026-09-25); this is CLAUDE.md "What comes next" item 22. Five agents re-read the code on
 2026-10-04 (nothing was run), one designed the shared foundations, four planned a release each; this file joins them,
 removes the overlaps and makes the ids and cross references agree. Every effort figure is **inferred, not measured**.

@@ -78,9 +78,24 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-09: **Nik 9 parity build through R1-S10 built and gated**, all gates pass 100 %; R1-S11 tooling & docs completed, awaiting user presence for live judging checkpoint; 0.1.43 is Latest)
+## Where things stand (2026-10-09 noon: **0.1.44 released and Latest** = Nik 9 parity release 1; the Store submission, the MCP Registry publish and the post's live check wait)
 
-**Nik 9 parity build (in progress):** F1-F8, R1-S1..S4, R1-S5a, R1-S5b, R1-S6, R1-S7a, R1-S7b, R1-S8, R1-S9, R1-S10 built. R1-S10 completes layer-mask view modes: overlay, alone (black/white), and filter effect view with limit rendering on black; Alt+click toggle on mask label. R1-S11 tooling (`--map` in `tools/mem_test.py`) and documentation pass across HELPERS, DOCUMENTS, MANUAL, TESTING, CLAUDE, COMMANDS completed. Gates `maskview limit composite selection help skins lint types nodecopy` pass 100 % on both `--tiles on` and `--tiles off` with `--offline`. Next: checkpoint live judging in the app with the user on scene.jpg, skin.jpg and the 15k file.
+**0.1.44 is out** (tag v0.1.44, published 2026-10-09T10:07:52Z, title "depth maps, range selections, filter limits"; the post
+`v0-1-44` committed to the website with the manual synced, its deploy status to be read). It is **release 1 (masks) of
+`docs/PLAN_NIK9_BUILD.md`**: F1-F8, R1-S1..S11 built by the other agent on 2026-10-08/09, reviewed twice by this account
+(`docs/REVIEW_NIK9_2026-10-08.md`; the day-2 findings fixed in 91fe509: the limit's weight in the alpha under a blend mode,
+invert once, the depth histogram of the map store, the effect view screen-only, stale after an edit, and eight smaller),
+then the user's own test of the exe: the depth row now follows a loaded picture (renderInfo), the range bar has two zones
+(edges above, feather handles in a strip below; it was unreachable with a feather of 0), `WORK_MAX` 4096 (1.06 s on
+15k, a 22 MB map). Exe gates green on both backends (two flakes re-run, `docs/TESTING.md`). **Decided 2026-10-09 (the
+user): releases 2 and 3 are built as one block** by the other agent, a review by this account after every session, one
+release at the end after the user's test; release 4 (blend modes) independent. **Waiting for the user:**
+- **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
+  built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.
+- **The MCP Registry**: `server.json` is 0.1.44 (109 tools); `mcp-publisher login github`, `validate`, `publish`.
+- The portable test copy under `dist/portable-test/` (started for the user's test; delete when done).
+- Item 43 (relight) is researched and planned (`docs/PLAN_RELIGHT.md`), its §5 questions open; after the Nik block.
+- The R1-S11 live checkpoint with the user present (the other agent's note) is covered by the user's test of 2026-10-09.
 
 **0.1.43 is out** (tag v0.1.43, published 2026-10-07T20:27:04Z; the post `v0-1-43` live; the manual synced). Built the
 same day from `docs/PLAN_0_1_43.md`, every row with its "As built": Nano Banana 2.1 on Gemini direct and seven hosts
@@ -254,7 +269,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   eine art umbau plan .md", "detaillierter ... was später den umbau vereinfacht"; one workflow, 12 agents, anchors
   read at b6c5238): foundations F1-F12 first, then 57 core sessions (61 / 66 with the optional ones), 48.5-55 days
   inferred; release 4 (blend modes) and release 3 do not depend on release 1; the user's open questions in its §6.
-  Nothing built.
+  **Release 1 (masks) built 2026-10-08/09 by the other agent and released as 0.1.44 (2026-10-09)** after two reviews
+  and the user's test; **releases 2 and 3 next, as one block with one release at the end** (the user, 2026-10-09),
+  a review after every session; release 4 independent.
 - 25: the app's own dialogs instead of the native boxes: built 2026-10-01 (`renderer/dialogs.js`, main's `askWindow`
   with the native box as the fallback), released in 0.1.36.
 - FLUX 3 Image (not numbered; BFL's launch 2026-10-01): released in 0.1.36 the same night.
