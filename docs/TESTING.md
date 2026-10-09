@@ -393,6 +393,10 @@ the run's profile, so it runs alone on a fresh instance per backend. The run: `b
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:
+- `generate_test.py` `cancel_and_a_closed_tab_add_nothing` on the canvas backend against the exe ("the deadline's
+  take-off": the stub's delete and interrupt both arrived, the step's deadline came first; 2026-10-09, 0.1.44's exe
+  gates, the step passed on the re-run at once). A timing of the cancel against the stub's queue, not the cancel:
+  nothing else in the gate or the log failed.
 - (Fixed 2026-09-27: `editor_test.py` `pixel_backend_is_the_one_the_flag_chose` on the canvas backend, "the display
   took toCanvas() copies". Not the display: the tab the live stroke step closes flushes its 10000 x 5000 layers, and
   `rememberClosed`'s `saveAll` then encodes every open tab, this step's selection with `toCanvas()` among them, while
