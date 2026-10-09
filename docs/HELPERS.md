@@ -304,6 +304,12 @@ size, the guided filter 410-640 ms at a 2,048 px working size (3.4 s at 4,096); 
 The guide carries the picture at the map's grid without filter layers (`4 · w · h` bytes, 44.7 MB at 4096 × 2731; R2-D10).
 Apache-2.0 licence (open issue #320).
 
+**Detail pass on large pictures (R2-S7, 2026-10-09).** When the picture exceeds the model's standard working resolution, the *Detail* setting in the depth map row offers:
+- *Standard*: single-pass model inference scaled to `WORK_MAX` (4096 px long side). Fast (~1 s on DirectML).
+- *Fine* (2x2 grid): 4 overlapping sub-tiles plus a global reference pass (5 calls). Cosine blending and robust scale/shift alignment (`fitScaleShift` / `fuseTiles` in worker threads via `depth_fuse`) fuse the tiles smoothly without seam lines.
+- *Finest* (3x3 grid): 9 overlapping sub-tiles plus global reference (10 calls). Resolves thin wires, leaves, poles, and distant silhouettes.
+All tile calls maintain consistent aspect ratios and dimensions to prevent DirectML engine recompilation. Live progress is reported during execution and computation can be aborted at any time via *Cancel*.
+
 SAM2 tensors: encoder `image` [1,3,1024,1024] (ImageNet mean / std) →
 `high_res_feats_0` [1,32,256,256], `high_res_feats_1` [1,64,128,128], `image_embed`
 [1,256,64,64]; decoder `point_coords` [B,N,2] in 1024 space, `point_labels` [B,N]

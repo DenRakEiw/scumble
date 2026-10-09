@@ -139,6 +139,7 @@ Once you have a selection, the Selection panel does the rest: grow and shrink it
 - **Range selections:** Ranges are per picture: a depth or brightness range from one image means nothing in another. When a soft (feathered) selection becomes an inpainting mask for a generation run, it is thresholded at half strength (the run path's cut-off).
 - **Edges snapping:** When working with depth maps (in range selection or depth-limited layers), the *Edges* slider snaps depth boundaries cleanly to the picture's own fine contours (hairs, leaves, silhouettes) in real time without re-running the model. Select by depth uses the same edges as the filters.
 - **Correcting depth maps:** Correct the depth map where the model was wrong: select a subject (the Object tool's click or box is quickest) and press *Flatten*, and it becomes one depth; *Nearer*, *Farther* and *Smooth* work in the selection the same way.
+- **Depth map detail:** For large pictures, the *Detail* selector (*Standard*, *Fine* 2×2, *Finest* 3×3) runs Depth Anything across overlapping tiles with cosine blending and robust scale/shift alignment, resolving thin poles, wires, foliage and distant figures at up to 4,096 px resolution. While computing, the depth row shows live progress (e.g. "Depth: tile 2 of 4") with a *Cancel* button.
 - **Soft selections:** Cut, copy and delete scale pixel transparency by the selection's alpha, while fill and brush operations blend smoothly by alpha.
 
 ## Recipes: what model runs, and where

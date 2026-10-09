@@ -1192,6 +1192,7 @@ async function main() {
             ["select_range", { source: "depth", lo: .2, hi: .8 }, "auto"],
             ["select_range", { source: "luma", lo: .2, hi: .8 }, "auto"],
             ["depth_edit", { op: "flatten" }, "auto"],
+            ["depth_map", { detail: "fine" }, "auto"],
             ["list_settings", {}, "auto"], ["apply_preset", { name: "M" }, "auto"], ["set_crop", { fill: "green", colorMatch: false }, "auto"],
             ["a_user_plugins_tool", {}, "ask"],
         ];
@@ -1244,6 +1245,7 @@ async function main() {
                 `${noFile.action} ${inPlace.action}:${inPlace.reason} ${fresh.action} ${over.action} ${wrongExt.action} ${copyNoPath.action} open ${open.action}/${openBad.action}`);
         }
         check("screenshot_max_size_is_clamped", eq(policy.clamp({ name: "screenshot", args: { max_size: 4096, quality: 0.99 } }).args, { max_size: 1024, quality: 0.85 }));
+        check("depth_map_timeout_is_clamped_to_900", policy.clamp({ name: "depth_map", args: {} }).args.timeout === 900);
         {
             const readOnly = ["ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips", "status", "get_state", "filter_types", "screenshot", "list_settings"];
             const f = facts();

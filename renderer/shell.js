@@ -110,7 +110,7 @@ ui.url.value = (settings.comfy && settings.comfy.url) || "http://127.0.0.1:8188"
 
 // ---- documents (tabs) --------------------------------------------------------------------
 
-host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize, embedRecipe: settings.embedRecipe, llmRefPictures: refPicturesOn(settings), realism: settings.realism });
+host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize, embedRecipe: settings.embedRecipe, llmRefPictures: refPicturesOn(settings), realism: settings.realism, depthDetail: (settings.depth && settings.depth.detail) || "standard" });
 
 /** settings.llm.refPictures: the reference pictures go to the upsampling model unless it is false (absent = on, 26d2). */
 function refPicturesOn(set) {

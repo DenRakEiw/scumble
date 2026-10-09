@@ -23,6 +23,10 @@ import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from
 import * as realism from "./realism.js";
 import * as comfyprompt from "./comfyprompt.js";
 import * as dialogs from "../dialogs.js";
+import { tileBoxes, fusedSize } from "./inpaint_edges.js";
+import { modelSize, DEPTH_LARGE, roundHalfEven } from "./inpaint_depth.js";
+import { INTERACTIVE } from "./inpaint_pool.js";
+import { editorPool } from "./inpaint_jobs.js";
 
 const PROXY = "/comfy";
 
@@ -323,6 +327,8 @@ export const api = {
  * @property {(editor: any, req: { image: Uint8Array, width: number, height: number }) => Promise<{ depth: Float32Array, min: number, max: number, ms: number, provider: string }>} [computeDepth]
  * @property {(editor: any, req: { image: Uint8Array, width: number, height: number }) => Promise<{ depth: Float32Array, min: number, max: number, ms: number, provider: string }>} [depthInApp]
  * @property {(editor: any, w: number, h: number, opts?: any) => Promise<{ image: Uint8Array, width: number, height: number }>} [pictureInput]
+ * @property {(editor: any, box: any, w: number, h: number, opts?: any) => Promise<{ image: Uint8Array, width: number, height: number }>} [pictureInputBox]
+ * @property {(editor: any, opts: { grid?: number, route?: string, onProgress?: (i: number, n: number) => void, signal?: AbortSignal, global?: any }) => Promise<{ data: Float32Array, w: number, h: number, fits: any[], route: string, grid: number } | null>} [depthDetail]
  */
 
 // ---- host --------------------------------------------------------------------------------
@@ -372,15 +378,29 @@ export const host = {
 
     /**
      * Shell setup: where editors mount and the persisted node params.
-     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string, embedRecipe?: boolean, llmRefPictures?: boolean, realism?: any }} [opts]
+     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string, embedRecipe?: boolean, llmRefPictures?: boolean, realism?: any, depthDetail?: string }} [opts]
      */
-    configure({ mount, nodeParams, apiSize, embedRecipe, llmRefPictures, realism: realismStored } = {}) {
+    configure({ mount, nodeParams, apiSize, embedRecipe, llmRefPictures, realism: realismStored, depthDetail } = {}) {
         this.mountEl = mount || document.body;
         if (nodeParams) this.nodeParams = { ...this.nodeParams, ...nodeParams };
         if (API_SIZES.some(([id]) => id === apiSize)) this.apiSize = apiSize;
         if (typeof embedRecipe === "boolean") this.embedRecipe = embedRecipe;
         if (typeof llmRefPictures === "boolean") this.llmRefPictures = llmRefPictures;
         if (realismStored !== undefined) this.realismStored = realismStored;
+        if (depthDetail !== undefined) this.depthDetailSetting = depthDetail;
+    },
+
+    depthDetailSetting: "standard",
+
+    getDepthDetail() {
+        return this.depthDetailSetting || "standard";
+    },
+
+    setDepthDetail(val) {
+        this.depthDetailSetting = val || "standard";
+        if (typeof window !== "undefined" && window.scumble && window.scumble.settings) {
+            window.scumble.settings.set({ depth: { detail: this.depthDetailSetting } }).catch(() => {});
+        }
     },
 
     // ---- the Realism Pass (docs/PLAN_0_1_42.md, renderer/editor/realism.js) ----
@@ -3995,6 +4015,117 @@ export const host = {
         });
         editor.helperUsed = true;
         return res;
+    },
+
+    /**
+     * Document picture input cropped to a bounding box, without filter layers (or with them if skipFilters: false).
+     * @param {any} editor
+     * @param {{ x0: number, y0: number, x1: number, y1: number } | number[]} box
+     * @param {number} w
+     * @param {number} h
+     * @param {{ skipFilters?: boolean, background?: string | null }} [opts]
+     */
+    async pictureInputBox(editor, box, w, h, { skipFilters = true, background = null } = {}) {
+        const W = editor.width, H = editor.height;
+        if (!W || !H) throw new Error("empty document");
+        const bx0 = Array.isArray(box) ? box[0] : box.x0;
+        const by0 = Array.isArray(box) ? box[1] : box.y0;
+        const bx1 = Array.isArray(box) ? box[2] : box.x1;
+        const by1 = Array.isArray(box) ? box[3] : box.y1;
+        const bw = bx1 - bx0, bh = by1 - by0;
+        if (bw <= 0 || bh <= 0) throw new Error("empty box for pictureInputBox");
+
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const ctx = c.getContext("2d");
+        if (background) { ctx.fillStyle = background; ctx.fillRect(0, 0, w, h); }
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+        if (editor.tileMode) {
+            const s = Math.min(1, Math.max(w / bw, h / bh));
+            const sample = await editor.sampleRegionSettled("image", [bx0, by0, bx1, by1], s, { forRun: true, skipFilters });
+            ctx.drawImage(sample, 0, 0, w, h);
+        } else {
+            const flat = editor.flattenToCanvas({ forRun: true, skipFilters });
+            ctx.drawImage(flat, bx0, by0, bw, bh, 0, 0, w, h);
+        }
+        const image = new Uint8Array(ctx.getImageData(0, 0, w, h).data.buffer);
+        return { image, width: w, height: h };
+    },
+
+    /**
+     * Compute a detailed depth map by tiling and fusing or large input (PLAN_NIK9_BUILD.md R2-S7).
+     * @param {any} editor
+     * @param {{ grid?: number, route?: string, onProgress?: (i: number, n: number) => void, signal?: AbortSignal, global?: any }} [opts]
+     */
+    async depthDetail(editor, { grid = 2, route = "tiles", onProgress = null, signal = null, global = null } = {}) {
+        const W = editor.width, H = editor.height;
+        if (!W || !H) throw new Error("empty document");
+        const model = this.depthModel();
+        if (!model) throw new Error("No depth model is downloaded (Settings > Helpers)");
+
+        if (route === "large") {
+            const scale = DEPTH_LARGE / Math.max(W, H);
+            const mw = Math.max(14, roundHalfEven((W * scale) / 14) * 14);
+            const mh = Math.max(14, roundHalfEven((H * scale) / 14) * 14);
+            const inp = await this.pictureInput(editor, mw, mh, { skipFilters: true, background: "#808080" });
+            if (signal && signal.aborted) return null;
+            const res = await this.computeDepth(editor, { image: inp.image, width: mw, height: mh });
+            if (onProgress) onProgress(1, 1);
+            if (signal && signal.aborted) return null;
+            return { data: res.depth, w: mw, h: mh, fits: [], route: "large", grid: 1 };
+        }
+
+        const boxes = tileBoxes(W, H, grid);
+        const n = boxes.length;
+        const tiles = [];
+        const [mw, mh] = modelSize(W, H);
+
+        for (let i = 0; i < n; i++) {
+            if (signal && signal.aborted) return null;
+            if (onProgress) onProgress(i + 1, n);
+            const box = boxes[i];
+            const inp = await this.pictureInputBox(editor, box, mw, mh, { skipFilters: true, background: "#808080" });
+            if (signal && signal.aborted) return null;
+            const raw = await this.computeDepth(editor, { image: inp.image, width: mw, height: mh });
+            editor.helperUsed = true;
+            if (signal && signal.aborted) return null;
+            tiles.push({
+                box,
+                data: raw.depth,
+                w: mw,
+                h: mh,
+            });
+        }
+
+        const [wf, hf] = fusedSize(W, H, boxes, 518);
+        const globalCopy = {
+            data: global && global.data ? (global.data.slice ? global.data.slice() : new Float32Array(global.data)) : new Float32Array(wf * hf),
+            w: global ? global.w : mw,
+            h: global ? global.h : mh,
+        };
+        const tileBuffers = tiles.map((t) => t.data.buffer);
+        const transfer = [globalCopy.data.buffer, ...tileBuffers];
+
+        const fused = await editorPool().run("depth_fuse", {
+            global: globalCopy,
+            tiles,
+            W,
+            H,
+            wf,
+            hf,
+        }, transfer, { priority: INTERACTIVE, timeout: 300000 });
+
+        if (signal && signal.aborted) return null;
+
+        const fusedData = fused.data instanceof Float32Array ? fused.data : new Float32Array(fused.data);
+        return {
+            data: fusedData,
+            w: wf,
+            h: hf,
+            fits: fused.fits || [],
+            route: "tiles",
+            grid,
+        };
     },
 
     /**

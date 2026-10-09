@@ -350,6 +350,7 @@ function clamp(call, opts = {}) {
         args.timeout = clampInt(args.timeout, 5, 3600, TIMEOUT_DEFAULTS[name]);
     }
     if (name === "select_point") args.timeout = 600;   // the command ignores it; the Bridge waits by it
+    if (name === "depth_map") args.timeout = 900;
     return { ...call, args };
 }
 

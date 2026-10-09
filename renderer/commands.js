@@ -2048,19 +2048,24 @@ const COMMANDS = {
         params: {
             force: P.bool("recompute even if already present and fresh", { default: false }),
             edges: P.int("edge snap strength 0..100; 0 keeps the plain sample", { minimum: 0, maximum: 100 }),
+            detail: P.enum("standard, fine (2x2) or finest (3x3)", ["standard", "fine", "finest"], "standard"),
         },
         async run(ed, a) {
             const force = a.force === true || a.force === "true";
             const existing = ed.maps && ed.maps.depth;
             const edgesVal = a.edges !== undefined && a.edges !== null ? Math.max(0, Math.min(100, Math.round(+a.edges))) : null;
+            const detail = a.detail || "standard";
+            const existingDetail = existing && existing.meta && existing.meta.detail
+                ? (existing.meta.detail.route === "large" ? "large" : (existing.meta.detail.grid === 3 ? "finest" : "fine"))
+                : "standard";
             let map;
-            if (!force && existing && existing.data) {
+            if (!force && existing && existing.data && existingDetail === detail) {
                 if (edgesVal !== null) {
                     ed.setMapMeta("depth", { snap: { ...(existing.meta?.snap || {}), strength: edgesVal } });
                 }
                 map = ed.maps.depth;
             } else {
-                map = await ed.ensureDepthMap({ force, edges: edgesVal });
+                map = await ed.ensureDepthMap({ force: true, edges: edgesVal, detail });
             }
             if (!map || (!map.data && !map.u16)) throw new Error("depth map computation failed");
             const meta = map.meta || map;
@@ -2073,6 +2078,7 @@ const COMMANDS = {
                 stale: ed.isDepthStale ? (await ed.checkDepthStale?.() ?? ed.isDepthStale()) : false,
                 edges: (meta.snap && meta.snap.strength) || 0,
                 guide: !!map.guide,
+                detail: meta.detail || null,
             };
         },
     },

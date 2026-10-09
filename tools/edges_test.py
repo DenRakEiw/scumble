@@ -25,6 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 JS = r"""
 (async () => {
     const shell = await import("./shell.js");
+    const { host } = await import("./editor/host.js");
     const { commands } = await import("./commands.js");
     const F = await import("./editor/inpaint_filters.js");
     const { makeMap, passToMap } = await import("./editor/inpaint_maps.js");
@@ -484,6 +485,178 @@ JS = r"""
     check("Case h: flatten on turned 90 deg map modifies texels in turned frame", resH.texels_changed > 0, { changed: resH.texels_changed });
 
     shell.closeDocument && shell.closeDocument(ed8, { force: true });
+
+    // =========================================================================
+    // R2-S7 Detail pass in-app tests (Cases a-f)
+    // =========================================================================
+    const ed7 = shell.newDocument();
+    shell.activate(ed7);
+    await new Promise((r) => setTimeout(r, 200));
+    ed7.resizeCanvas();
+
+    const W7 = 1200, H7 = 800;
+    const base7 = mk(W7, H7);
+    const ctx7 = base7.getContext("2d");
+    const imgData7 = ctx7.createImageData(W7, H7);
+    const d7 = imgData7.data;
+
+    // Red channel encodes true depth: ramp from 40 to 180 plus fine vertical poles of width 2 at red=255
+    const gtDisparity = new Float32Array(W7 * H7);
+    for (let y = 0; y < H7; y++) {
+        for (let x = 0; x < W7; x++) {
+            const idx = (y * W7 + x) * 4;
+            let rVal = Math.round(40 + (180 - 40) * (x / W7));
+            // Add vertical poles at x = 150, 300, 450, 600, 750, 900, 1050 (width 2)
+            if ((x % 150 >= 0 && x % 150 <= 1)) {
+                rVal = 255;
+            }
+            d7[idx] = rVal;
+            d7[idx + 1] = 80;
+            d7[idx + 2] = 80;
+            d7[idx + 3] = 255;
+            gtDisparity[y * W7 + x] = rVal / 255;
+        }
+    }
+    ctx7.putImageData(imgData7, 0, 0);
+    Object.defineProperty(base7, "naturalWidth", { value: W7 });
+    Object.defineProperty(base7, "naturalHeight", { value: H7 });
+    await ed7.setBaseFromCanvas(base7, { keepLayers: false });
+    await settle(ed7);
+
+    // Stand-in helperCall("depth") and depthModel()
+    const origDepthModel = host.depthModel.bind(host);
+    host.depthModel = () => ({ id: "da2_small", label: "Depth Anything V2 Small" });
+    const origHelperCall = host.helperCall.bind(host);
+    const depthCalls = [];
+    let throwOnCall3 = false;
+    let cancelOnCall3 = false;
+
+    host.helperCall = async (helper, req) => {
+        if (helper === "depth") {
+            const callIdx = depthCalls.length;
+            depthCalls.push({
+                width: req.width,
+                height: req.height,
+                callIdx,
+            });
+            if (throwOnCall3 && callIdx === 2) {
+                throw new Error("simulated helper failure on call 3");
+            }
+            if (cancelOnCall3 && callIdx === 2) {
+                if (ed7._depthAbort) ed7._depthAbort.abort();
+            }
+            const w = req.width, h = req.height;
+            const depth = new Float32Array(w * h);
+            // Box-consistent disparity: red channel * scale + shift
+            const scale = 0.8 + 0.3 * Math.sin(callIdx * 1.5);
+            const shift = 0.2 + 0.1 * Math.cos(callIdx * 2.1);
+            for (let i = 0; i < w * h; i++) {
+                const r = req.image[i * 4] / 255;
+                depth[i] = r * scale + shift;
+            }
+            let min = Infinity, max = -Infinity;
+            for (let i = 0; i < depth.length; i++) {
+                if (depth[i] < min) min = depth[i];
+                if (depth[i] > max) max = depth[i];
+            }
+            return {
+                depth,
+                min,
+                max,
+                runMs: 20,
+                provider: "standin",
+            };
+        }
+        return origHelperCall(helper, req);
+    };
+
+    // 1. Standard run (1 call)
+    depthCalls.length = 0;
+    const mapStd = await ed7.computeDepthMap({ recompute: true, detail: "standard" });
+    check("R2-S7 standard run made 1 call", depthCalls.length === 1, { calls: depthCalls.length });
+
+    // 2. Fine run (4 + 1 calls, 1 input shape, progress 1..4)
+    depthCalls.length = 0;
+    const progressFine = [];
+    const origSetStatus = ed7.setStatus.bind(ed7);
+    ed7.setStatus = function(msg) {
+        const m = /^Depth: tile (\d+) of (\d+)$/.exec(msg);
+        if (m) progressFine.push(parseInt(m[1], 10));
+        origSetStatus(msg);
+    };
+    const mapFine = await ed7.computeDepthMap({ recompute: true, detail: "fine" });
+    check("Case b: fine makes 4 + 1 calls", depthCalls.length === 5, { calls: depthCalls.length });
+    const shapesFine = new Set(depthCalls.map((c) => `${c.width}x${c.height}`));
+    check("Case b: one input shape across all calls in fine", shapesFine.size === 1, { shapes: [...shapesFine] });
+    check("Case f: progress events 1..4 in order for fine", progressFine.length === 4 && progressFine.every((v, i) => v === i + 1), { progressFine });
+
+    // 3. Finest run (9 + 1 calls, 1 input shape, progress 1..9)
+    depthCalls.length = 0;
+    const progressFinest = [];
+    ed7.setStatus = function(msg) {
+        const m = /^Depth: tile (\d+) of (\d+)$/.exec(msg);
+        if (m) progressFinest.push(parseInt(m[1], 10));
+        origSetStatus(msg);
+    };
+    const mapFinest = await ed7.computeDepthMap({ recompute: true, detail: "finest" });
+    ed7.setStatus = origSetStatus;
+    check("Case b: finest makes 9 + 1 calls", depthCalls.length === 10, { calls: depthCalls.length });
+    const shapesFinest = new Set(depthCalls.map((c) => `${c.width}x${c.height}`));
+    check("Case b: one input shape across all calls in finest", shapesFinest.size === 1, { shapes: [...shapesFinest] });
+    check("Case f: progress events 1..9 in order for finest", progressFinest.length === 9 && progressFinest.every((v, i) => v === i + 1), { progressFinest });
+
+    // Case a: MAE against truth <= 0.7 * standard's MAE
+    const mw7 = mapStd.w, mh7 = mapStd.h;
+    let maeStd = 0, maeFinest = 0;
+    for (let y = 0; y < mh7; y++) {
+        const sy = Math.floor((y + 0.5) * (H7 / mh7));
+        for (let x = 0; x < mw7; x++) {
+            const sx = Math.floor((x + 0.5) * (W7 / mw7));
+            if (sx % 150 <= 4 || sx % 150 >= 146) {
+                const gtVal = gtDisparity[sy * W7 + sx];
+                const vStd = 1 - (mapStd.data[y * mw7 + x] / 65535);
+                const vFinest = 1 - (mapFinest.data[y * mw7 + x] / 65535);
+                maeStd += Math.abs(vStd - gtVal);
+                maeFinest += Math.abs(vFinest - gtVal);
+            }
+        }
+    }
+    check("Case a: finest MAE against truth <= 0.7 * standard", maeFinest <= 0.7 * maeStd, { maeFinest, maeStd, ratio: maeFinest / maeStd });
+
+    // Case c: Cancel after call 3: no maps step, old map object unchanged
+    depthCalls.length = 0;
+    cancelOnCall3 = true;
+    const oldMapBeforeCancel = ed7.maps.depth;
+    await ed7.computeDepthMap({ recompute: true, detail: "finest" });
+    cancelOnCall3 = false;
+    check("Case c: cancel after call 3 keeps old map object unchanged", ed7.maps.depth === oldMapBeforeCancel);
+
+    // Case d: The stand-in throws on call 3: status "Depth detail failed: ...", old map kept
+    depthCalls.length = 0;
+    throwOnCall3 = true;
+    const oldMapBeforeThrow = ed7.maps.depth;
+    try {
+        await ed7.computeDepthMap({ recompute: true, detail: "finest" });
+    } catch (_) {}
+    throwOnCall3 = false;
+    check("Case d: stand-in throws on call 3 keeps old map", ed7.maps.depth === oldMapBeforeThrow);
+    check("Case d: status matches Depth detail failed:", /Depth detail failed:/.test(ed7.status || ""));
+
+    // Case e: meta.detail round-trips through save and open
+    const openRes = await commands.run("depth_map", { doc: ed7.node.id, detail: "finest", force: true });
+    check("depth_map answer contains detail", openRes && openRes.detail && openRes.detail.grid === 3);
+
+    const savedState = ed7.getValue();
+    const edOpen7 = shell.newDocument();
+    await edOpen7.setValue(savedState);
+    await settle(edOpen7);
+    check("Case e: meta.detail round-trips through save/open", edOpen7.maps && edOpen7.maps.depth && edOpen7.maps.depth.meta && edOpen7.maps.depth.meta.detail && edOpen7.maps.depth.meta.detail.grid === 3);
+
+    // Restore host
+    host.helperCall = origHelperCall;
+    host.depthModel = origDepthModel;
+    shell.closeDocument && shell.closeDocument(edOpen7, { force: true });
+    shell.closeDocument && shell.closeDocument(ed7, { force: true });
 
     return { fails, tiles: !!ed.tileMode, hash: hash50 };
 })()

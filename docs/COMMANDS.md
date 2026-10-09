@@ -247,6 +247,7 @@ Compute or refresh the document's depth map (Depth Anything V2 Small).
 | `doc` | integer | document id (default the active tab) |
 | `force` | boolean | recompute even if already present and fresh (default `false`) |
 | `edges` | integer | edge snapping strength 0..100 (0 = off, default 50) |
+| `detail` | string | standard, fine (2×2) or finest (3×3) (default `"standard"`; one of `standard`, `fine`, `finest`) |
 
 ### `sample_depth` *(image)* *(read-only)*
 

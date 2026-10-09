@@ -604,6 +604,21 @@ async function main() {
     assert.ok(rotWeightsCount > 1000, `rotated selectionOnMap should find non-zero texels, found ${rotWeightsCount}`);
     console.log("     [ok] turned 90 deg map projects selection in turned frame correctly");
 
+    // -------------------------------------------------------------------------
+    // 11. Detail pass tiling and 3x3 finest coverage (R2-S7)
+    // -------------------------------------------------------------------------
+    console.log("  11. detail pass tiling and finest 3x3 grid...");
+    const boxes3x3 = tileBoxes(1200, 800, 3, 0.25);
+    assert.equal(boxes3x3.length, 9, "grid 3 produces 9 boxes");
+    for (const b of boxes3x3) {
+        const bw = b.x1 - b.x0;
+        const bh = b.y1 - b.y0;
+        assert.ok(Math.abs((bw / bh) - (1200 / 800)) < 0.05, `box aspect ratio should match doc aspect ratio: ${bw}x${bh}`);
+    }
+    const [wf3, hf3] = fusedSize(1200, 800, boxes3x3, 518);
+    assert.ok(wf3 > 1000 && hf3 > 600, `fusedSize for 3x3 is around 1295x863, got ${wf3}x${hf3}`);
+    console.log(`     [ok] 3x3 tileBoxes: 9 boxes with matching aspect ratio, fused size ${wf3}x${hf3}`);
+
     console.log("\nALL EDGE MATHS TESTS PASSED!");
 }
 
