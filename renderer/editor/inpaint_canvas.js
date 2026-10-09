@@ -11981,14 +11981,16 @@ class InpaintEditor {
                     hi,
                 }, [grey.buffer], { priority: INTERACTIVE });
                 const u16 = new Uint16Array(poolRes.u16);
+                // main answers the model's own time as runMs (and the whole call as seconds)
+                const modelMs = res.runMs != null ? res.runMs : (res.seconds != null ? res.seconds * 1000 : 0);
                 const meta = {
                     fp,
                     lo,
                     hi,
                     rawBounds: [res.min, res.max],
                     provider: res.provider,
-                    ms: res.ms,
-                    totalMs: res.ms + (poolRes.timing && poolRes.timing.total ? poolRes.timing.total : 0),
+                    ms: modelMs,
+                    totalMs: modelMs + (poolRes.timing && poolRes.timing.total ? poolRes.timing.total : 0),
                     raw: res.depth,
                     rw: mw,
                     rh: mh,
