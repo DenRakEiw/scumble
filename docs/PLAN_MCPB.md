@@ -1,8 +1,12 @@
 # An `.mcpb` bundle for Scumble's MCP server
 
 **Status (2026-10-09): S1 and S2 built on the branch `mcpb`** (the starter, the manifest, `npm run dist:mcpb`, the `mcpb`
-gate, CI, the "Get Scumble" row, `--server-json`, the docs); S3, the Claude Desktop hand test (§7), next; the user's
-word (2026-10-09): released together with 0.1.45. The user's ask: an MCP Bundle (`.mcpb`) so that Scumble installs
+gate, CI, the "Get Scumble" row, `--server-json`, the docs; `node tools/mcpb_test.js --exe … --store` PASS on the
+0.1.44 exe and the Store copy 0.1.42, the starter run from the unpacked bundle finds the installer copy). **S3, the
+install in Claude Desktop (§7), is the user's hand test:** the desktop app is Claude's own window, which computer use
+can never drive. The bundle for it: `.claude/worktrees/mcpb/dist/scumble-0.1.44.mcpb` (it names 0.1.44 because the
+branch's `package.json` does; the release build names 0.1.45). The user's word (2026-10-09): released together with
+0.1.45; merge into `main` when the Nik 9 agent's state allows. The user's ask: an MCP Bundle (`.mcpb`) so that Scumble installs
 into Claude Desktop with one click, can be listed on Smithery, and has a chance at GitHub's MCP registry
 (`docs/PLAN_MCP_LISTINGS.md` §2 "Build work"). Built on the branch `mcpb` in a worktree of its own
 (`.claude/worktrees/mcpb`), nothing pushed, published, uploaded or registered without the user's word.
