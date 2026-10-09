@@ -109,6 +109,7 @@ async function main() {
         viewPass: null,
         filterKey: InpaintEditor.prototype.filterKey,
         effectViewOf: InpaintEditor.prototype.effectViewOf,
+        mapsOf: InpaintEditor.prototype.mapsOf,
     };
     const belowMock = { width: 800, height: 600 };
     const layerPlain = {

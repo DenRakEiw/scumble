@@ -404,6 +404,7 @@ async function main() {
         memoryReport: InpaintEditor.prototype.memoryReport,
         filterKey: InpaintEditor.prototype.filterKey,
         effectViewOf: InpaintEditor.prototype.effectViewOf,
+        mapsOf: InpaintEditor.prototype.mapsOf,
         applySnapshot: InpaintEditor.prototype.applySnapshot,
         snapshot: InpaintEditor.prototype.snapshot,
         snapshotOf: InpaintEditor.prototype.snapshotOf,

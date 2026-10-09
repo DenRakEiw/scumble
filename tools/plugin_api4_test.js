@@ -47,23 +47,14 @@ async function main() {
     const filtersMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_filters.js")).href);
     const commandsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "commands.js")).href);
 
-    const { API_VERSION, Document, pluginHost } = pluginsMod;
+    const { API_VERSION, Document } = pluginsMod;
     const { FILTERS, FILTER_IDS } = filtersMod;
-    const { checkParams, applyParams } = commandsMod;
+    const { checkParams } = commandsMod;
 
     // 1. API_VERSION === 4
     assert.equal(API_VERSION, 4, "API_VERSION must be 4");
 
-    // 2. registerFilter via mock plugin entry
-    const testEntry = {
-        id: "testplug",
-        manifest: { name: "Test Plugin" },
-        regs: { filters: new Set(), panels: new Map(), actions: new Map(), tools: new Map(), commands: new Set(), generate: new Map(), listeners: [] },
-        errors: [],
-    };
-
-    // Color param validation
-    const origFilters = { ...FILTERS };
+    // 2. Color param validation
 
     // Register a filter with bad color default
     assert.throws(() => {
@@ -207,20 +198,25 @@ async function main() {
     // Second call: cached
     const st2 = mockEditor.belowStats(layerNoMap, false);
     assert.equal(statsCallCount, 1, "cached call does not rerun wholeStats");
+    assert.equal(st2.w, 512);
 
     // setMap with a new map: mapsVersion increments
     mockEditor.mapsVersion++;
     // layerNoMap does not read map -> version key does not change -> stays cached
     const st3 = mockEditor.belowStats(layerNoMap, false);
     assert.equal(statsCallCount, 1, "layer that does not read maps does not rerun wholeStats on map bump");
+    assert.equal(st3.w, 512);
 
     // Now layerWithMap reads maps:
     const stMap1 = mockEditor.belowStats(layerWithMap, false);
     assert.equal(statsCallCount, 2, "layer reading map runs wholeStats");
+    assert.ok(lastStatsCtx, "lastStatsCtx is passed");
+    assert.equal(stMap1.w, 512);
     // Another setMap: mapsVersion increments
     mockEditor.mapsVersion++;
     const stMap2 = mockEditor.belowStats(layerWithMap, false);
     assert.equal(statsCallCount, 3, "layer reading map reruns wholeStats when mapsVersion changes");
+    assert.equal(stMap2.w, 512);
 
     // 5. Test cancelFilterParams
     const cancelLayer = {
