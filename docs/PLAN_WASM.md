@@ -47,6 +47,22 @@ that already pins the behaviour.
 Not ranked, cheap when a module is open anyway: `alphaOf` / `grayOf` planes, the matting's alpha scaling, the TIFF
 reader's unpacking (`pack_rows` exists for writing).
 
+**The second ring** (asked 2026-10-09, "was noch in Rust umbauen? das grain evtl?"): paths that are worth it, but
+only when their module is open or a measurement names them.
+
+| Path | Today | Verdict |
+| --- | --- | --- |
+| **Grain** and the other film-pack filters | WebGL2 shaders; only the noise plate (`grainTileCanvas`, `grainNoiseCanvas` in `inpaint_filters.js`) is made on the CPU, once per seed and size | **No.** A CPU kernel cannot beat the shader; the noise plate is small. Only the CPU fallback of the filters would gain, and it runs on machines without WebGL2 alone |
+| **The TIFF reader's codecs** (`inpaint_tiff.js`: streamed LZW, PackBits, Deflate, the horizontal predictor, the 1 / 2 / 4 / 16-bit unpacking) | JS, streamed strip by strip | **Yes, when a big TIFF is slow:** byte-level decoders are what wasm does best (`unfilter_rows` is the same kind), 2-4×; the `tiff` gate and `tools/tiff_fixtures.py` pin every codec and bit depth already |
+| **The layered readers** (`inpaint_layered.js`: PSD channel RLE, ORA's PNG layers) | JS | Yes with the TIFF codecs, the same shape of work; the `layered` gate pins them |
+| **ONNX pre- and post-processing** (the source scaled to 1024², the normalisation, the label map and alpha scaled back to the picture) | JS resample and loops in the renderer, then the native runtime | Yes, small: `resample` exists, the normalisation is one pass; it shortens the helper round trip by the JS part only, the model dominates |
+| **Selection feather and grow** | `box_blurs`, `dilate`, `dist_transform` are Rust | done |
+| **Transform / resize / straighten resampling** | `resample` is Rust | done; a Lanczos option would be a kernel, not a port |
+| **The 16-bit depth map in the document** | `filter_rows` + `deflate_part` are Rust | done |
+| **Curves, levels, colour balance as CPU fallback** | JS per pixel | only with the filters' CPU fallback as a whole; the GPU is the path |
+| **Native Rust in the main process** (a napi-rs addon instead of wasm) | `sharp` and `onnxruntime-node` are native already | only for a new capability: a PSD reader with layer styles, a faster `.scumble` writer; not for speed of what exists |
+| **wgpu compute** (a native addon with compute shaders for the depth and edge maths) | WebGL2 fragment shaders | later, with the threads spike's result; it would also be the first step toward anything that outgrows WebGL2 |
+
 ## 3. The rules
 
 1. **Measure before and after, on the same session** (CLAUDE.md "Testing and benchmarking"): restart the app, settle
