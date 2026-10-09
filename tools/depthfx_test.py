@@ -18,12 +18,14 @@ Connects to running app via CDP.
 """
 import asyncio
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
 
 JS = r"""
 (async () => {
@@ -104,6 +106,22 @@ JS = r"""
     const diff550 = Math.abs(pxB[idx550] - pxBase[idx550]) + Math.abs(pxB[idx550 + 1] - pxBase[idx550 + 1]) + Math.abs(pxB[idx550 + 2] - pxBase[idx550 + 2]);
     check("b: near pixel below start threshold has 0 diff", diff50 === 0, { diff50 });
     check("b: far pixel has strong tint towards airlight", diff550 > 30, { diff550 });
+
+    const cpuB = ed.filteredCanvas(fx, { cpu: true, forRun: true });
+    if (cpuB) {
+        const pxCpuB = cpuB.getContext("2d").getImageData(0, 0, W, H).data;
+        let maxDiffGLvsCPU = 0, over2Count = 0;
+        for (let i = 0; i < W * H * 4; i += 4) {
+            const dr = Math.abs(pxB[i] - pxCpuB[i]);
+            const dg = Math.abs(pxB[i + 1] - pxCpuB[i + 1]);
+            const db = Math.abs(pxB[i + 2] - pxCpuB[i + 2]);
+            const d = Math.max(dr, dg, db);
+            if (d > maxDiffGLvsCPU) maxDiffGLvsCPU = d;
+            if (d > 2) over2Count++;
+        }
+        const over2Pct = (over2Count / (W * H)) * 100;
+        check("b: compareFilterPaths GL vs CPU (max <= 2, over2 <= 0.1%)", maxDiffGLvsCPU <= 2 && over2Pct <= 0.1, { maxDiffGLvsCPU, over2Pct });
+    }
 
     // -------------------------------------------------------------------------
     // Case c: amount = 0 is bitwise identical to source (skip hook)
@@ -349,8 +367,31 @@ async def run(c):
     return not fails
 
 
+def node_step():
+    r = subprocess.run(
+        ["node", os.path.join(HERE, "haze_test.js")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    tail = r.stdout.strip()
+    if r.returncode != 0 or not tail.endswith("PASS"):
+        raise Exception("tools/haze_test.js: " + (tail + r.stderr)[-1500:])
+    return {"checks": tail.count("[ok]")}
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
+    try:
+        nres = node_step()
+        print(f"[ok] haze_test.js: {nres['checks']} checks passed")
+    except Exception as err:
+        print(f"[FAIL] node: {err}")
+        print("FAIL")
+        sys.exit(1)
+
     try:
         ok = asyncio.run(session(run))
         if not ok:
