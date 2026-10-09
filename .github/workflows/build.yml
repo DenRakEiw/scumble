@@ -1,8 +1,8 @@
-# Builds the Windows installer and portable zip and the Linux AppImage and .deb. On a version tag
-# (v0.1.0) the `draft` job creates the draft GitHub release from CHANGELOG.md and both builds upload
+# Builds the Windows installer, the portable zip and the .mcpb bundle, and the Linux AppImage and .deb. On a version
+# tag (v0.1.0) the `draft` job creates the draft GitHub release from CHANGELOG.md and both builds upload
 # to it (electron-builder --publish: the installer, its blockmap and latest.yml; the AppImage, the
-# .deb and latest-linux.yml; gh release upload: Scumble-<version>-portable-win-x64.zip); on other
-# pushes and pull requests the files are kept as workflow artifacts only (the zip on every run).
+# .deb and latest-linux.yml; gh release upload: Scumble-<version>-portable-win-x64.zip and scumble-<version>.mcpb); on
+# other pushes and pull requests the files are kept as workflow artifacts only (the zip and the .mcpb on every run).
 # After both builds, the `sizes` job writes the draft's body again with each file's size in its "Get Scumble" table.
 name: build
 
@@ -125,6 +125,27 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: gh release upload "$GITHUB_REF_NAME" "dist/Scumble-${GITHUB_REF_NAME#v}-portable-win-x64.zip" --clobber
+
+      # the .mcpb bundle for Claude Desktop (docs/PLAN_MCPB.md): a starter that finds the installed Scumble, no app
+      # inside; tools/mcpb_build.js stages mcpb/, validates and packs with @anthropic-ai/mcpb (a devDependency)
+      - name: Build the .mcpb bundle
+        shell: bash
+        run: node tools/mcpb_build.js
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Scumble-mcpb
+          path: |
+            dist/*.mcpb
+            dist/*.mcpb.sha256
+          if-no-files-found: error
+
+      - name: Add the .mcpb bundle to the draft
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release upload "$GITHUB_REF_NAME" "dist/scumble-${GITHUB_REF_NAME#v}.mcpb" --clobber
 
   linux:
     needs: draft

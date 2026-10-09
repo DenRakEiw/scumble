@@ -75,9 +75,9 @@ file.
 
 ### Agents can drive it
 
-Every feature is a command, and the commands are an MCP server: *Help › Copy MCP registration*, and Claude Code,
-Claude Desktop or any other MCP client gets 109 tools to open, select, generate, match and export, in the same window
-and with the same undo. (A built-in chat assistant on your own key is there too; see [The assistant](#the-assistant).)
+Every feature is a command, and the commands are an MCP server: *Help › Copy MCP registration* (or, for Claude
+Desktop, the `.mcpb` file of every release, installed with one click), and Claude Code, Claude Desktop or any other
+MCP client gets 109 tools to open, select, generate, match and export, in the same window and with the same undo. (A built-in chat assistant on your own key is there too; see [The assistant](#the-assistant).)
 
 ### Made for real files
 
@@ -267,7 +267,8 @@ and what it costs: [docs/ASSISTANT.md](docs/ASSISTANT.md).
 - JavaScript plugins (filters with GPU and processor paths, panels, menu actions, tools, commands) and a command core
   with 109 documented commands, 92 core and 17 from the built-in plugins ([docs/COMMANDS.md](docs/COMMANDS.md),
   [docs/PLUGINS.md](docs/PLUGINS.md)).
-- MCP server for any MCP client, plus `--headless` and `--cmd` for scripts ([docs/MCP.md](docs/MCP.md)).
+- MCP server for any MCP client (an `.mcpb` bundle for Claude Desktop with every release), plus `--headless` and
+  `--cmd` for scripts ([docs/MCP.md](docs/MCP.md)).
 - Tabs with session restore, a local file mirror (no server needed to reopen your work), a console and a log file,
   updates from GitHub releases with the release notes shown before you restart.
 

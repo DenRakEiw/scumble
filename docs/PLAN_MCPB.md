@@ -1,6 +1,8 @@
 # An `.mcpb` bundle for Scumble's MCP server
 
-**Status (2026-10-09): planned, nothing built.** The user's ask: an MCP Bundle (`.mcpb`) so that Scumble installs
+**Status (2026-10-09): S1 and S2 built on the branch `mcpb`** (the starter, the manifest, `npm run dist:mcpb`, the `mcpb`
+gate, CI, the "Get Scumble" row, `--server-json`, the docs); S3, the Claude Desktop hand test (§7), next; the user's
+word (2026-10-09): released together with 0.1.45. The user's ask: an MCP Bundle (`.mcpb`) so that Scumble installs
 into Claude Desktop with one click, can be listed on Smithery, and has a chance at GitHub's MCP registry
 (`docs/PLAN_MCP_LISTINGS.md` §2 "Build work"). Built on the branch `mcpb` in a worktree of its own
 (`.claude/worktrees/mcpb`), nothing pushed, published, uploaded or registered without the user's word.

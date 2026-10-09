@@ -22,7 +22,8 @@ without it, of another version than `package.json`, or with a `data` folder in i
 the same way and adds it to the draft with `gh release upload` (and keeps it as the workflow artifact
 `Scumble-windows-portable` on every run, so a failed upload can be redone by hand from that build). **The draft's
 check before publishing:** `Scumble Setup <version>.exe`, its blockmap, `latest.yml`, the AppImage, the deb,
-`latest-linux.yml` and `Scumble-<version>-portable-win-x64.zip`; the zip downloaded once and unpacked by hand
+`latest-linux.yml`, `Scumble-<version>-portable-win-x64.zip` and `scumble-<version>.mcpb` (the Claude Desktop
+bundle, `docs/PLAN_MCPB.md`: `npx @anthropic-ai/mcpb info` on the downloaded file shows the version); the zip downloaded once and unpacked by hand
 (Explorer's *Extract all*): one `Scumble` folder, `portable.txt` in it, no `data`, `resources\app-update.yml`
 present, and it starts (on this machine only with the user's Scumble closed: a start without `--user-data-dir` that
 missed the marker would use `%APPDATA%\Scumble`).
@@ -43,8 +44,10 @@ edit v<version> --repo DenRakEiw/scumble --notes-file notes.md`. The block's wor
 not in CHANGELOG.md.
 
 **The official MCP Registry** (listed since 2026-10-04, `docs/PLAN_MCP_LISTINGS.md`): after the release is published,
-`server.json`'s `version` set to the new version (and its description if the tools changed; at most 100 characters),
-committed, then `mcp-publisher validate` and `mcp-publisher publish` from the repo root (a published version is
+`node tools/mcpb_build.js --server-json v<version>` sets `server.json`'s `version` and writes its `packages` entry for
+the release's `.mcpb` (the registry wants the file's SHA-256; the script reads the asset's digest through `gh`, and
+refuses a draft, since the registry checks the asset's URL), the description adjusted by hand if the tools changed (at
+most 100 characters), committed, then `mcp-publisher validate` and `mcp-publisher publish` from the repo root (a published version is
 immutable; the login is the user's GitHub device code, `mcp-publisher login github`, the CLI from
 modelcontextprotocol/registry's releases, checksum against its `checksums.txt`). The tool count in `docs/MCP.md` and
 the README follows `list_commands`.

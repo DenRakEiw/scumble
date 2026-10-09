@@ -15,7 +15,7 @@ für r/modelcontextprotocol"; asked, the user: "ja, reiche ein", every step, the
 | mcp.so | the form is paid only now ($39): submitted free as an issue, chatmcp/mcpso#4711 (the repo was mcp-directory) |
 | TensorBlock | issue TensorBlock/awesome-mcp-servers#3083 (the template's label is dropped for an issue made through the API; maintainers triage) |
 | Reddit | the user posts the draft of §3 |
-| Glama, punkpeye's list, Smithery, GitHub's MCP registry | not submitted: blocked without a Docker check or an `.mcpb` (§2) |
+| Glama, punkpeye's list, Smithery, GitHub's MCP registry | not submitted: blocked without a Docker check or an `.mcpb` (§2). **The `.mcpb` is built (2026-10-09, `docs/PLAN_MCPB.md`)** and ships with the first release after 0.1.44; Smithery and GitHub's registry then, on the user's word |
 
 Every release: a new `server.json` version published (`docs/RELEASING.md`). Below, the research as it was before the
 submissions.

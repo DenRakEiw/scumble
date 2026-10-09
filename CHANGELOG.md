@@ -5,6 +5,9 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
+- **One-click install in Claude Desktop.** Every release now carries `scumble-<version>.mcpb`: open it and Claude
+  Desktop installs Scumble's MCP server. The bundle finds the installed Scumble (installer or Microsoft Store) by
+  itself; a portable copy is named in the extension's settings. Without a Scumble it says what to install.
 - Plugin filters can take statistics of the whole picture below them, at a size they choose, and read the document's depth map (plugin API 4). Parameter type "color", hidden parameters, and cancelFilterParams.
 - Edge snapping and detail tile fusion foundation for depth maps: bilateral edge-aware color snapping maths, robust tile alignment and raised-cosine overlap blending, separable 4x4 range maps, and 256px tile edge detection.
 

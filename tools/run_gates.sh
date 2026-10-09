@@ -12,7 +12,7 @@
 #
 # A gate is a tools/ script name without .py (editor, composite, pixels, shape, brush, commands,
 # film, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, oxen, magnific, recipes, assistant, mcp, smoke,
-# node, perf:<args>).
+# node, perf:<args>; mcpb is tools/mcpb_test.js in plain Node).
 # Gate "toapis" (tools/toapis_test.py) runs tools/toapis_test.js in plain Node first, then the app against
 # tools/toapis_mock.py; it needs no ToAPIs key and refuses a profile that holds one. Gate "openrouter"
 # (tools/openrouter_test.py) does the same with tools/openrouter_test.js and tools/openrouter_mock.py, and gate
@@ -69,7 +69,7 @@ if curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null; then
 fi
 
 needs_app=0
-for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document|portable) ;; *) needs_app=1 ;; esac; done
+for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document|portable|mcpb) ;; *) needs_app=1 ;; esac; done
 TILEARG=""
 case "$TILES" in
   on) export SCUMBLE_TILES=1; TILEARG="--tiles" ;;
@@ -121,6 +121,9 @@ for g in "$@"; do
     # WITHOUT --user-data-dir (ports +19, +20, A's inspector +21), so it refuses without --exe and while any Scumble.exe
     # runs: run it alone or beside gates that start no runner app (lint, types, quit, document)
     portable) timeout 1800 python tools/portable_test.py ${EXE:+--exe "$EXE"} --out "$OUT/portable" > "$OUT/portable.log" 2>&1; rc=$? ;;
+    # the .mcpb bundle (docs/PLAN_MCPB.md): plain Node (the manifest, the starter's search and start forms, the fallback
+    # over stdio); with --exe also a real headless start through the starter on a profile of its own (--no-comfy)
+    mcpb) timeout 900 node tools/mcpb_test.js ${EXE:+--exe "$EXE"} > "$OUT/mcpb.log" 2>&1; rc=$? ;;
     # tiffperf:15000x10000: a TIFF export and open of a noise picture at size (docs/PLAN_0_1_29.md 3d, the 15k measurement)
     tiffperf:*) timeout 3600 python tools/tiff_test.py --size ${g#tiffperf:} --out "$OUT/tiffperf" > "$OUT/tiffperf.log" 2>&1; rc=$? ;;
     exportperf:*) timeout 1800 python tools/export_test.py --perf $(echo "${g#exportperf:}" | tr ',' ' ') > "$OUT/exportperf.log" 2>&1; rc=$? ;;
