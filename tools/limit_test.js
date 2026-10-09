@@ -505,7 +505,7 @@ async function main() {
     const feat = docfile.FEATURES.find((f) => f.id === "filter-limit");
     assert.ok(feat, "filter-limit must be present in FEATURES");
     assert.strictEqual(feat.reader, 3, "filter-limit reader must be 3");
-    assert.strictEqual(docfile.READER_VERSION, 3, "docfile.READER_VERSION must be 3");
+    assert.ok(docfile.READER_VERSION >= 3, "docfile.READER_VERSION must be at least 3");
     assert.strictEqual(docfile.readerFor(feat.sample), 3, "readerFor of filter-limit sample must be 3");
     const emptyDocReader = docfile.readerFor({ layers: [] });
     assert.strictEqual(emptyDocReader, 1, "readerFor empty document must be 1");
@@ -554,6 +554,106 @@ async function main() {
     assert.strictEqual(buf4[7], 0, "band pixel 1 (image pixel 3) should have alpha 0");
 
     console.log("     [ok] inpaint_limit.js limitAlphaRows math and band offsets verified");
+
+    // -------------------------------------------------------------------------
+    // 10. R2-S5: Edge snap in limit stage (LIMIT_SHADER uniforms & snapField CPU)
+    // -------------------------------------------------------------------------
+    console.log("  10. R2-S5 edge snap verification in limit stage...");
+    assert.strictEqual(LIMIT_SHADER.uniforms.u_guide, "sampler2D", "LIMIT_SHADER has u_guide sampler2D");
+    assert.strictEqual(LIMIT_SHADER.uniforms.u_snap, "vec2", "LIMIT_SHADER has u_snap vec2");
+    assert.ok(LIMIT_SHADER.code.includes("snapField(u_map, u_guide, mp, i.rgb, u_snap)"), "LIMIT_SHADER calls snapField");
+
+    // Test scene: 120 x 20 image (left red, right blue, edge at x = 60)
+    const Ws = 120, Hs = 20;
+    const srcData = new Uint8ClampedArray(Ws * Hs * 4);
+    for (let y = 0; y < Hs; y++) {
+        for (let x = 0; x < Ws; x++) {
+            const idx = (y * Ws + x) * 4;
+            const isRed = x < 60;
+            const r = isRed ? 200 : 40;
+            const g = isRed ? 40 : 60;
+            const b = isRed ? 40 : 200;
+            srcData[idx] = r; srcData[idx + 1] = g; srcData[idx + 2] = b; srcData[idx + 3] = 255;
+        }
+    }
+
+    // Blurred depth map: 30 x 10 (split at x = 15, blurred ramp between x=12 and x=18)
+    const Mw = 30, Mh = 10;
+    const guideData = new Uint8ClampedArray(Mw * Mh * 4);
+    for (let y = 0; y < Mh; y++) {
+        for (let x = 0; x < Mw; x++) {
+            const idx = (y * Mw + x) * 4;
+            const isRed = x < 15;
+            const r = isRed ? 200 : 40;
+            const g = isRed ? 40 : 60;
+            const b = isRed ? 40 : 200;
+            guideData[idx] = r; guideData[idx + 1] = g; guideData[idx + 2] = b; guideData[idx + 3] = 255;
+        }
+    }
+    const mapU16 = new Uint16Array(Mw * Mh);
+    for (let y = 0; y < Mh; y++) {
+        for (let x = 0; x < Mw; x++) {
+            let d;
+            if (x < 12) d = 0.2;
+            else if (x > 18) d = 0.8;
+            else d = 0.2 + (0.8 - 0.2) * (x - 12) / (18 - 12);
+            mapU16[y * Mw + x] = Math.round(d * 65535);
+        }
+    }
+
+    const testMapSnap50 = makeMap("depth", Mw, Mh, mapU16, [Ws, 0, 0, Hs, 0, 0], { snap: { strength: 50 } }, guideData);
+    testMapSnap50.guide = guideData;
+    const testMapSnap0 = makeMap("depth", Mw, Mh, mapU16, [Ws, 0, 0, Hs, 0, 0], { snap: { strength: 0 } }, guideData);
+    testMapSnap0.guide = guideData;
+    const testMapNoSnap = makeMap("depth", Mw, Mh, mapU16, [Ws, 0, 0, Hs, 0, 0], null, null);
+
+    const limDepth = { source: "depth", lo: 0, hi: 0.5, fLo: 0, fHi: 0.05, invert: false };
+
+    // Run limitStageCPU for snap 50 and snap 0 in view mode (returns weight w as greyscale)
+    const runSnapTest = (m) => {
+        let outArr = null;
+        const fakeSrc = { width: Ws, height: Hs, getContext: () => ({ getImageData: () => ({ data: srcData }) }) };
+        const fakeOut = { width: Ws, height: Hs, getContext: () => ({ getImageData: () => ({ data: srcData }) }) };
+        const fakeRes = {
+            width: Ws, height: Hs,
+            getContext: () => ({
+                createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+                putImageData: (img) => { outArr = img.data; },
+            }),
+        };
+        const orig = document.createElement;
+        document.createElement = (tag) => (tag === "canvas" ? fakeRes : orig(tag));
+        try {
+            limitStageCPU(fakeSrc, fakeOut, limDepth, { maps: { depth: m }, limitView: true });
+        } finally {
+            document.createElement = orig;
+        }
+        return outArr;
+    };
+
+    const out50 = runSnapTest(testMapSnap50);
+    const out0 = runSnapTest(testMapSnap0);
+    const outNull = runSnapTest(testMapNoSnap);
+
+    // Verify snap 0 matches no-snap / null meta
+    let diff0VsNull = 0;
+    for (let i = 0; i < out0.length; i += 4) {
+        diff0VsNull = Math.max(diff0VsNull, Math.abs(out0[i] - outNull[i]));
+    }
+    assert.strictEqual(diff0VsNull, 0, "snap 0 is bitwise identical to no-snap map");
+
+    // Count errors around boundary x in [56, 64] against ground truth (1 for x < 60, 0 for x >= 60)
+    let errs0 = 0, errs50 = 0;
+    for (let y = 0; y < Hs; y++) {
+        for (let x = 56; x <= 64; x++) {
+            const idx = (y * Ws + x) * 4;
+            const gt = x < 60 ? 255 : 0;
+            if (Math.abs(out0[idx] - gt) > 64) errs0++;
+            if (Math.abs(out50[idx] - gt) > 64) errs50++;
+        }
+    }
+    assert.ok(errs50 <= Math.ceil(errs0 / 3), `snap 50 edge errors (${errs50}) <= 1/3 of snap 0 errors (${errs0})`);
+    console.log(`     [ok] snap 50 error reduction: ${errs50} vs ${errs0} (<= 1/3 threshold met)`);
 
     console.log("ALL LIMIT TESTS PASSED!");
 }

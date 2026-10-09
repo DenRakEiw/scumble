@@ -675,6 +675,152 @@ JS = r"""
 
     shell.closeDocument && shell.closeDocument(edRow, { force: true });
 
+    // -------------------------------------------------------------------------
+    // R2-S5: Snap in the Limit stage and effect view; Edges slider
+    // -------------------------------------------------------------------------
+    const edSnap = shell.newDocument();
+    shell.activate(edSnap);
+    await new Promise((r) => setTimeout(r, 200));
+    edSnap.resizeCanvas();
+    const Ws = 1200, Hs = 800;
+    const baseSnap = mk(Ws, Hs);
+    {
+        const ctx = baseSnap.getContext("2d");
+        const imgData = ctx.createImageData(Ws, Hs);
+        const d = imgData.data;
+        for (let y = 0; y < Hs; y++) {
+            for (let x = 0; x < Ws; x++) {
+                const idx = (y * Ws + x) * 4;
+                const isRed = x < 600;
+                // 3% pseudo-noise
+                const noise = Math.abs((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1);
+                const nByte = Math.round((noise - 0.5) * 0.03 * 255);
+                const r = Math.max(0, Math.min(255, (isRed ? 200 : 40) + nByte));
+                const g = Math.max(0, Math.min(255, (isRed ? 40 : 60) + nByte));
+                const b = Math.max(0, Math.min(255, (isRed ? 40 : 200) + nByte));
+                d[idx] = r; d[idx + 1] = g; d[idx + 2] = b; d[idx + 3] = 255;
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+    }
+    Object.defineProperty(baseSnap, "naturalWidth", { value: Ws });
+    Object.defineProperty(baseSnap, "naturalHeight", { value: Hs });
+    await edSnap.setBaseFromCanvas(baseSnap, { keepLayers: false });
+    await settle(edSnap);
+
+    // Map 300 x 200, far 0.2 / 0.8 split at map x = 150, blurred sigma ~2 map px
+    const Mw = 300, Mh = 200;
+    const guideSnap = new Uint8ClampedArray(Mw * Mh * 4);
+    for (let y = 0; y < Mh; y++) {
+        for (let x = 0; x < Mw; x++) {
+            const idx = (y * Mw + x) * 4;
+            const isRed = x < 150;
+            guideSnap[idx] = isRed ? 200 : 40;
+            guideSnap[idx + 1] = isRed ? 40 : 60;
+            guideSnap[idx + 2] = isRed ? 40 : 200;
+            guideSnap[idx + 3] = 255;
+        }
+    }
+    const mapSnapU16 = new Uint16Array(Mw * Mh);
+    for (let y = 0; y < Mh; y++) {
+        for (let x = 0; x < Mw; x++) {
+            let val;
+            if (x < 144) val = 0.2;
+            else if (x > 156) val = 0.8;
+            else val = 0.2 + (0.8 - 0.2) * (x - 144) / 12;
+            mapSnapU16[y * Mw + x] = Math.round(val * 65535);
+        }
+    }
+
+    const snapDocMap = makeMap("depth", Mw, Mh, mapSnapU16, [Ws, 0, 0, Hs, 0, 0], { snap: { strength: 50 } }, guideSnap);
+    await edSnap.setMap("depth", snapDocMap);
+
+    // Layer levels (out white 0) with limit { source: "depth", lo: 0, hi: 0.5, fLo: 0, fHi: 0.05 }
+    const snapFx = await commands.run("add_filter", { doc: edSnap.node.id, type: "levels" });
+    const rawSnapFx = edSnap.layers.find((l) => l.id === snapFx.id);
+    rawSnapFx.params = {
+        ...rawSnapFx.params,
+        out_white: 0,
+        limit: { source: "depth", lo: 0, hi: 0.5, fLo: 0, fHi: 0.05, invert: false },
+    };
+    edSnap.markFilterChanged(rawSnapFx);
+    await settle(edSnap);
+
+    // a. GL against CPU
+    const glOut = edSnap.flattenToCanvas({ forRun: true });
+    const cpuOut = edSnap.filteredCanvas(rawSnapFx, baseSnap, true, false, false, { cpu: true });
+    if (glOut && cpuOut) {
+        const stat = diffStat(glOut, cpuOut, Ws, Hs);
+        check("R2-S5 a. GL against CPU (max <= 2, over2 <= 0.1%)", stat.max <= 2 && stat.over2Pct <= 0.1, stat);
+    }
+
+    // b. Edge accuracy against true weight (snap 50 vs snap 0 within x in [592, 608])
+    const glData50 = glOut.getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    let errs50_cdp = 0;
+    for (let y = 100; y < 700; y++) {
+        for (let x = 592; x <= 608; x++) {
+            const idx = (y * Ws + x) * 4;
+            const isRed = x < 600;
+            const origLuma = isRed ? (200 * 0.299 + 40 * 0.587 + 40 * 0.114) : (40 * 0.299 + 60 * 0.587 + 200 * 0.114);
+            const curLuma = glData50[idx] * 0.299 + glData50[idx + 1] * 0.587 + glData50[idx + 2] * 0.114;
+            const wEst = 1 - (curLuma / origLuma);
+            const wGt = x < 600 ? 1 : 0;
+            if (Math.abs(wEst - wGt) > 0.25) errs50_cdp++;
+        }
+    }
+
+    edSnap.setMapMeta("depth", { snap: { strength: 0 } }, { preview: false });
+    await settle(edSnap);
+    const glOut0 = edSnap.flattenToCanvas({ forRun: true });
+    const glData0 = glOut0.getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    let errs0_cdp = 0;
+    for (let y = 100; y < 700; y++) {
+        for (let x = 592; x <= 608; x++) {
+            const idx = (y * Ws + x) * 4;
+            const isRed = x < 600;
+            const origLuma = isRed ? (200 * 0.299 + 40 * 0.587 + 40 * 0.114) : (40 * 0.299 + 60 * 0.587 + 200 * 0.114);
+            const curLuma = glData0[idx] * 0.299 + glData0[idx + 1] * 0.587 + glData0[idx + 2] * 0.114;
+            const wEst = 1 - (curLuma / origLuma);
+            const wGt = x < 600 ? 1 : 0;
+            if (Math.abs(wEst - wGt) > 0.25) errs0_cdp++;
+        }
+    }
+    check("R2-S5 b. Edge accuracy snap 50 <= 1/3 of snap 0", errs50_cdp <= Math.ceil(errs0_cdp / 3), { errs50: errs50_cdp, errs0: errs0_cdp });
+
+    // c. Snap 0 against release 1: bytes identical to run with meta.snap deleted
+    edSnap.setMapMeta("depth", { snap: null }, { preview: false });
+    await settle(edSnap);
+    const glOutNoSnap = edSnap.flattenToCanvas({ forRun: true });
+    const stat0VsNoSnap = diffStat(glOut0, glOutNoSnap, Ws, Hs);
+    check("R2-S5 c. Snap 0 identical to no meta.snap", stat0VsNoSnap.max === 0, stat0VsNoSnap);
+
+    // d. Views agree: 1:1 region pass and flattenToCanvas
+    const regionOut = edSnap.regionCanvas ? edSnap.regionCanvas(0, 0, Ws, Hs, 1) : null;
+    if (regionOut) {
+        const statRegion = diffStat(glOutNoSnap, regionOut, Ws, Hs);
+        check("R2-S5 d. Region pass and flatten agree (worst <= 3)", statRegion.max <= 3, statRegion);
+    }
+
+    // e. Static cache: dragging Edges over 10 preview frames grows G.uploads by 0
+    const G = GL.context && GL.context();
+    if (G) {
+        const uploadsBefore = G.uploads;
+        for (let s = 10; s <= 100; s += 10) {
+            edSnap.setMapMeta("depth", { snap: { strength: s } }, { preview: true });
+            edSnap.draw();
+        }
+        await settle(edSnap);
+        const uploadsGrew = G.uploads - uploadsBefore;
+        check("R2-S5 e. Dragging Edges preview grows G.uploads by 0", uploadsGrew === 0, { uploadsBefore, uploadsAfter: G.uploads });
+    }
+
+    // g. G.scratchUnit > 8 asserted
+    if (G) {
+        check("R2-S5 g. G.scratchUnit > 8", G.scratchUnit > 8, { scratchUnit: G.scratchUnit });
+    }
+
+    shell.closeDocument && shell.closeDocument(edSnap, { force: true });
+
     return { fails, tiles: !!ed.tileMode };
 })()
 """

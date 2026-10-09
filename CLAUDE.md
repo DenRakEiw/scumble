@@ -78,7 +78,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-09: **0.1.44 released and Latest**; R2-S4 complete; ready for review before R2-S5)
+## Where things stand (2026-10-09: **0.1.44 released and Latest**; R2-S5 complete; ready for review before R2-S6)
 
 **0.1.44 is out** (tag v0.1.44, published 2026-10-09T10:07:52Z, title "depth maps, range selections, filter limits"; the post
 `v0-1-44` committed to the website with the manual synced, its deploy status to be read). It is **release 1 (masks) of
@@ -109,7 +109,8 @@ release at the end after the user's test; release 4 (blend modes) independent.
   `guideRef`, `guideVersion`; `deriveMap` preserves guide across geometry changes; `guideView` sampler; `mapToJSON` / `mapFromJSON` RGBA8 PNG
   persistence; `FEATURES` in `docfile.js` adds `depth-snap` row (minReader 4, since 0.1.45); `depth_map` command adds `edges` param;
   `setMapMeta` preview/commit modes; maps undo memory tracking. Gates `document` (44s/39s) and `commands` (13s/13s) ALL PASS on both
-  `--tiles on` and `--tiles off` with `--offline`. Ready for review before R2-S5.
+  `--tiles on` and `--tiles off` with `--offline`. Review findings resolved in `e862417`.
+- **R2-S5 built** (2026-10-09): Snap in the Limit stage and effect view; *Edges* slider: added `u_guide` (sampler2D) and `u_snap` (vec2) uniforms to `LIMIT_SHADER` in `renderer/editor/inpaint_limit.js` with prepended `SNAP_GLSL` and `snapField` call; updated CPU twin `limitStageCPU` and fill bake `limitAlphaRows` with `snapField` when `sigmaR > 0`; verified pure ASCII; added `.ipc-depth-edges-row`, `.ipc-depth-edges-slider`, and `.ipc-depth-edges-val` with interactive range slider (0..100, default 50) inside `renderDepthRow()` in `inpaint_canvas.js`, firing `setMapMeta("depth", { snap: { strength } }, { preview: true })` on input, committing on change, and reverting on Escape via `cancelMapMeta("depth")`; updated `tools/limit_test.js` and `tools/limit_test.py`; updated `docs/MANUAL.md`. Gate `limit` ALL PASS on both `--tiles on` (1s) and `--tiles off` (2s) with `--offline`. Ready for review before R2-S6.
 **Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.
