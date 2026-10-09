@@ -440,6 +440,10 @@ there; add a new flake there, with the date and what was ruled out.
 - electron-updater installs a downloaded update on every normal quit (`autoInstallOnAppQuit`, on by default) and adds
   that quit handler only when a download ends with the switch on: a Skip has to turn it off in main, and a Skip taken
   back has to add the handler (`updater.js` `_applySkip`, 6.8.9).
+- Claude Desktop runs a `node` extension server in an Electron UtilityProcess whose `nodeHost.js` replaces
+  `process.stdout.write` and `process.stdin` by MessagePort messages and loads the entry with `import()`: a child
+  spawned with `stdio: "inherit"` answers nobody, and `require.main === module` is never true (the `.mcpb` starter,
+  `docs/PLAN_MCPB.md` §1; measured 2026-10-09).
 - In the main process `process.stdin` never emits `data` from a pipe (read fd 0 with `fs.createReadStream`); Electron prints
   a CR LF to stdout before any JS runs (hence the MCP launcher); a window created hidden stays hidden after `show()`,
   `restore()` brings it up.

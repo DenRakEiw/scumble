@@ -283,6 +283,27 @@ if (EXE) {
     });
 }
 
+if (EXE) {
+    check("the_starter_answers_inside_an_electron_utility_process_like_claude_desktop", () => {
+        // tools/mcpb_utility.js forks the starter the way Claude Desktop's nodeHost.js does (stdin and stdout as
+        // messages over a MessagePort, the entry loaded with import()); the dev tree's electron runs it
+        let electron;
+        try { electron = require("electron"); } catch (_) { throw new Error("no electron package in node_modules"); }
+        if (typeof electron !== "string") throw new Error("the electron package did not yield a path");
+        const profile = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-mcpb-utility-"));
+        const env = { ...process.env };
+        delete env.ELECTRON_RUN_AS_NODE;
+        const r = spawnSync(electron, [path.join(__dirname, "mcpb_utility.js"), "--scumble", EXE, "--profile", profile, "--timeout", "150000"], { env, encoding: "utf8", windowsHide: true, timeout: 180000 });
+        const lines = String(r.stdout || "").split(/\r?\n/).filter((l) => l.trim().startsWith("{")).map((l) => JSON.parse(l));
+        const init = lines.find((l) => l.initialize), ping = lines.find((l) => l.ping), exit = lines.find((l) => l.exit !== undefined);
+        ok(init && init.initialize.name === "scumble", "initialize: " + JSON.stringify(lines).slice(0, 400) + " stderr: " + String(r.stderr).slice(0, 400));
+        ok(ping && ping.ping && ping.ping.mode === "headless", "ping headless: " + JSON.stringify(ping));
+        ok(exit && exit.exit === 0, "exit 0: " + JSON.stringify(exit));
+        eq(r.status, 0, "electron's exit");
+        fs.rmSync(profile, { recursive: true, force: true });
+    });
+}
+
 if (STORE) {
     check("the_store_alias_on_this_machine_answers_through_the_starter", async () => {
         const alias = path.join(process.env.LOCALAPPDATA || "", "Microsoft", "WindowsApps", "scumble.exe");

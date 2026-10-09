@@ -218,18 +218,51 @@ function main() {
         return;
     }
     if (!ok) { fallbackServer(found); return; }
+    relay(p);
+}
+
+/**
+ * Starts the launcher and relays the streams by hand: Claude Desktop runs this starter in an Electron UtilityProcess
+ * with its built-in Node, where stdin and stdout are the host's own streams and no Windows handles a grandchild could
+ * inherit (measured 2026-10-09: with stdio "inherit" the launcher's answers reached nobody and initialize timed out
+ * after 120 s). Through process.stdin / process.stdout the bytes go wherever the host reads them.
+ */
+function relay(p) {
     let child;
     try {
-        child = spawn(p.command, p.args, { env: { ...process.env, ...p.env }, stdio: "inherit", windowsHide: true });
+        child = spawn(p.command, p.args, { env: { ...process.env, ...p.env }, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     } catch (e) {
         process.stderr.write(`scumble-mcpb: cannot start ${p.command}: ${e.message}\n`);
         process.exit(1);
     }
     child.on("error", (e) => { process.stderr.write(`scumble-mcpb: cannot start ${p.command}: ${e.message}\n`); process.exit(1); });
+    child.stdout.on("data", (c) => { try { process.stdout.write(c); } catch (_) { /* the host went */ } });
+    child.stderr.on("data", (c) => { try { process.stderr.write(c); } catch (_) { /* the host went */ } });
+    child.stdin.on("error", () => { /* the child went first */ });
+    let ending = false;
+    const clientGone = () => {
+        if (ending) return;
+        ending = true;
+        try { child.stdin.end(); } catch (_) { /* gone */ }
+        setTimeout(() => { try { child.kill(); } catch (_) { /* gone */ } }, 5000).unref();
+    };
+    process.stdin.on("data", (c) => { try { child.stdin.write(c); } catch (_) { /* gone */ } });
+    process.stdin.on("end", clientGone);
+    process.stdin.on("close", clientGone);
+    process.stdin.on("error", clientGone);
+    process.stdin.resume();
     child.on("exit", (code, signal) => process.exit(code === null || code === undefined ? (signal ? 1 : 0) : code));
     for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { try { child.kill(); } catch (_) { /* gone */ } });
+    process.on("exit", () => { try { child.kill(); } catch (_) { /* gone */ } });
 }
 
-module.exports = { find, plan, isSet, isStorePath, folderOfUninstall, missingText, fallbackServer, parseArgs, defaultDeps, STORE_LAUNCH, UNINSTALL_GUID, UNINSTALL_KEY, LAUNCHER };
+module.exports = { find, plan, isSet, isStorePath, folderOfUninstall, missingText, fallbackServer, parseArgs, defaultDeps, relay, STORE_LAUNCH, UNINSTALL_GUID, UNINSTALL_KEY, LAUNCHER };
 
-if (require.main === module) main();
+// Started as the entry point: by node, or by Claude Desktop's host, which loads the entry with import() (no
+// require.main then) and puts its path into process.argv[1]. Required by a test, neither holds.
+function isEntry() {
+    if (require.main === module) return true;
+    try { return !!process.argv[1] && path.resolve(process.argv[1]) === __filename; } catch (_) { return false; }
+}
+
+if (isEntry()) main();

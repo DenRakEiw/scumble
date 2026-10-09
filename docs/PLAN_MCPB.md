@@ -4,7 +4,11 @@
 gate, CI, the "Get Scumble" row, `--server-json`, the docs; `node tools/mcpb_test.js --exe … --store` PASS on the
 0.1.44 exe and the Store copy 0.1.42, the starter run from the unpacked bundle finds the installer copy). **S3, the
 install in Claude Desktop (§7), is the user's hand test:** the desktop app is Claude's own window, which computer use
-can never drive. The bundle for it: `.claude/worktrees/mcpb/dist/scumble-0.1.44.mcpb` (it names 0.1.44 because the
+can never drive. **The first install (2026-10-09 17:38) timed out** ("Request timed out", three restarts): Claude
+Desktop runs the server in a UtilityProcess (§1), where the starter's `stdio: "inherit"` reached nobody. Fixed the
+same evening (the relay through `process.stdin` / `process.stdout`, the entry check through `process.argv[1]`),
+proven in the rebuilt host (`tools/mcpb_utility.js`, part of the `mcpb` gate with `--exe`); the user installs the
+rebuilt `.mcpb` again (the installed copy cannot be patched from here). The bundle for it: `.claude/worktrees/mcpb/dist/scumble-0.1.44.mcpb` (it names 0.1.44 because the
 branch's `package.json` does; the release build names 0.1.45). The user's word (2026-10-09): released together with
 0.1.45; merge into `main` when the Nik 9 agent's state allows. The user's ask: an MCP Bundle (`.mcpb`) so that Scumble installs
 into Claude Desktop with one click, can be listed on Smithery, and has a chance at GitHub's MCP registry
@@ -23,6 +27,23 @@ install's paths (`electron/main/mcp/registration.js`). Three Windows installatio
 | GitHub installer (NSIS, per user; per machine on request) | `%LOCALAPPDATA%\Programs\Scumble\Scumble.exe` (or the folder the user chose) | `Scumble.exe <folder>\resources\app.asar\electron\main\mcp\launch.js --mcp`, `ELECTRON_RUN_AS_NODE=1` | the uninstall key `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\7198d4e4-8820-55de-a96d-85d8f5c1ecfe` (uuid v5 of the appId `app.scumble.desktop` in electron-builder's namespace `50e065bc-3134-11e6-9bab-38c9862bdaf3`, checked 2026-10-09): `InstallLocation` when set, else the folder of `UninstallString` (on this machine `InstallLocation` is empty and the key still says 0.1.11: the updater never rewrites it, the folder is right); then the default folder; HKLM for a per-machine install |
 | Microsoft Store (MSIX) | `C:\Program Files\WindowsApps\DenRakEiw.Scumble_<version>_x64__eh52rqbjjrbdj\app\Scumble.exe`, a folder that changes with every update | the execution alias `%LOCALAPPDATA%\Microsoft\WindowsApps\scumble.exe` in Node mode with `-e <STORE_LAUNCH>` (the code in `registration.js` that loads the launcher from `process.resourcesPath`); arguments after `--` reach the launcher | the alias: `fs.existsSync` and `fs.statSync` answer false / EACCES for an app execution alias, **`fs.lstatSync` works** (a reparse point, `isSymbolicLink()` true; `readlinkSync` gives the version folder); measured 2026-10-09, and a Node-mode probe through the alias from plain Node answered 0.1.42's resources folder |
 | Portable zip (item 36) | anywhere (`portable.txt` beside the exe) | as the installer | **not discoverable**: the user names the exe in the extension's settings (`user_config`) |
+
+**How Claude Desktop runs a `node` server (read from its `app.asar`, 2.31226, on 2026-10-09 after the first bundle timed
+out):** not as a child process with pipes. The main process forks an Electron **UtilityProcess** running its own
+`.vite/build/mcp-runtime/nodeHost.js` with the entry point as an argument; that host replaces `process.stdout.write`
+and `process.stderr.write` by functions that post `{type: "stdout" | "stderr", content}` over a MessagePort, replaces
+`process.stdin`'s methods by those of a `Readable` it feeds with `{type: "stdin", data}` messages (one line each), sets
+`process.argv` to `["node.exe", entry, ...args]` and loads the entry with `import()`. It also blocks spawning
+`process.execPath` (the built-in Node is Claude's own exe). Three consequences for the starter: (1) a child given
+`stdio: "inherit"` writes to the process's real handles, which nobody reads: the first bundle answered nothing and
+`initialize` timed out after 120 s ("Couldn't start for Cowork and Code sessions. Error: Request timed out" in
+`%LOCALAPPDATA%\Claude\logs\mcp-server-Scumble.log`); the starter relays by hand through `process.stdin` and
+`process.stdout`; (2) `require.main === module` is never true under `import()`: the starter also takes
+`process.argv[1] === __filename` as "started as the entry"; (3) the server is ended by killing the utility process:
+the launcher's child must go with it (the launcher kills the app when its stdin ends; the relay ends the child's
+stdin on the host's end / close). `tools/mcpb_utility.js` + `tools/mcpb_utility_host.js` rebuild this host for the
+`mcpb` gate. The log of a running extension: `%LOCALAPPDATA%\Claude\logs\mcp-server-<name>.log` and `mcp.log` (the
+`%APPDATA%\Claude\logs` folder is stale since August).
 
 **Claude Desktop and MCPB.** An `.mcpb` is a zip with a `manifest.json` (spec 0.3, `@anthropic-ai/mcpb` 2.1.2, MIT:
 `init`, `validate`, `pack`, `clean`, `sign`, `verify`, `info`, `unpack`). Opening the file in Claude Desktop shows the
