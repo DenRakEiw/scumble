@@ -8,7 +8,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - Plugin filters can take statistics of the whole picture below them, at a size they choose, and read the document's depth map (plugin API 4). Parameter type "color", hidden parameters, and cancelFilterParams.
 - Edge snapping and detail tile fusion foundation for depth maps: bilateral edge-aware color snapping maths, robust tile alignment and raised-cosine overlap blending, separable 4x4 range maps, and 256px tile edge detection.
 - Depth map color guide and edge snap settings are saved in the document; documents with edge snap require reader version 4 (Scumble 0.1.45). Live preview and undo/redo support for map meta changes without copying large pixel buffers.
-- Depth-limited filter layers snap cleanly to fine edges (hairs, leaves, silhouettes) via real-time bilateral color guidance; interactive *Edges* slider in depth map controls with live preview and Escape cancellation.
+- Depth-limited filter layers snap cleanly to fine edges (hairs, leaves, silhouettes) via real-time bilateral color guidance; interactive *Edges* slider in depth map controls with live preview and Escape cancellation, and so does a selection by depth.
 
 ## 0.1.44 — 2026-10-09
 

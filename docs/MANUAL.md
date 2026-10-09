@@ -137,7 +137,7 @@ Once you have a selection, the Selection panel does the rest: grow and shrink it
 - Select from layer turns any layer's transparency into a selection — useful after a cut-out.
 - Background removal (RMBG / BiRefNet) also runs in the app and gives you a cut-out layer, not just a selection.
 - **Range selections:** Ranges are per picture: a depth or brightness range from one image means nothing in another. When a soft (feathered) selection becomes an inpainting mask for a generation run, it is thresholded at half strength (the run path's cut-off).
-- **Edges snapping:** When working with depth maps (in range selection or depth-limited layers), the *Edges* slider snaps depth boundaries cleanly to the picture's own fine contours (hairs, leaves, silhouettes) in real time without re-running the model.
+- **Edges snapping:** When working with depth maps (in range selection or depth-limited layers), the *Edges* slider snaps depth boundaries cleanly to the picture's own fine contours (hairs, leaves, silhouettes) in real time without re-running the model. Select by depth uses the same edges as the filters.
 - **Soft selections:** Cut, copy and delete scale pixel transparency by the selection's alpha, while fill and brush operations blend smoothly by alpha.
 
 ## Recipes: what model runs, and where

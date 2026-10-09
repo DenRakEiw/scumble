@@ -137,6 +137,8 @@ backends: the PNG export and the stack box are the tiles' only).
 Release 1 gates (`docs/PLAN_NIK9_BUILD.md`): `tools/selection_test.py` (gate `selection`, Select by depth, luminosity, colour, SAM2 object tool box drag with logits bilinear sampling, Intersect mode, soft selection combine), `tools/limit_test.py` (gate `limit`, WebGL2 and CPU twin filter limits on filter layers and fill layers, depth, luma, colour ranges, falloffs), `tools/maps_test.py` / `node tools/maps_test.js` (gate `maps`, document auxiliary maps store, geometry following, persistence, and staleness fingerprinting), `tools/depth_test.py` (gate `depth`, Depth Anything V2 Small ONNX model in main, IPC, guided filter worker job, and `depth_map` command), `tools/maskview_test.py` (gate `maskview`, Layer-mask overlay, black-and-white alone view, filter effect view with limit rendering on black, memory bounds). Every gate name `X` without a rule of its own
 in `tools/run_gates.sh` runs `tools/X_test.py`.
 
+Release 2 gates: `tools/edges_test.py` / `node tools/edges_test.js` (gate `edges`, depth edge snap mathematics, bilateral colour guidance, robust tile fitting and raised-cosine overlap fusion, rangeMax and edgeTiles detection, and edge-snapped Select by depth on both backends with bounded scratch allocations and 15k memory limits).
+
 Item 32 (the update question, `docs/PLAN_0_1_38.md` A1): `node tools/updater_test.js` runs `electron/main/updater.js`
 with Electron and electron-updater stubbed: the release notes and one line per bullet from the 0.1.37 feed
 (`tools/refs/updates/release_0_1_37.html`) and small cases (sub-bullets, several versions, the 30,000 cap), a skipped
