@@ -156,7 +156,7 @@ def run_node():
         console.log('__COMMANDS_JSON_END__');
     });
     """
-    res = subprocess.run(["node", "-e", script], capture_output=True, text=True, cwd=os.path.join(os.path.dirname(__file__), ".."))
+    res = subprocess.run(["node", "-e", script], capture_output=True, text=True, encoding="utf-8", cwd=os.path.join(os.path.dirname(__file__), ".."))
     out = res.stdout
     start = out.find("__COMMANDS_JSON_START__") + len("__COMMANDS_JSON_START__")
     end = out.find("__COMMANDS_JSON_END__")

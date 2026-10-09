@@ -62,7 +62,7 @@ Bring a tab to the front.
 
 ### `close_document` *(destructive)*
 
-Close a tab without asking (unsaved changes are not written to its .scumble file). File â€º Reopen Closed Tab brings it back in this session; the document's files stay in the local store.
+Close a tab without asking (unsaved changes are not written to its .scumble file). File › Reopen Closed Tab brings it back in this session; the document's files stay in the local store.
 
 | param | type | description |
 |---|---|---|
@@ -162,7 +162,7 @@ Brush settings of this document: the tip (round, or an imported tip by id or nam
 
 ### `status` *(read-only)*
 
-What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (Realism Pass (Windows only, RTX only)) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 Ã— 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends.
+What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (Realism Pass (Windows only, RTX only)) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends.
 
 | param | type | description |
 |---|---|---|
@@ -246,7 +246,7 @@ Compute or refresh the document's depth map (Depth Anything V2 Small).
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `force` | boolean | recompute even if already present and fresh (default `false`) |
-| `edges` | integer | edge snap strength 0..100; 0 keeps the plain sample |
+| `edges` | integer | edge snapping strength 0..100 (0 = off, default 50) |
 
 ### `sample_depth` *(image)* *(read-only)*
 
@@ -326,7 +326,7 @@ Selection from a layer's opaque pixels (its alpha).
 
 ### `select_mask` *(image)*
 
-Selection from a mask: an array of width Ã— height values (image size, >0 = selected), or a base64 PNG (white = selected).
+Selection from a mask: an array of width × height values (image size, >0 = selected), or a base64 PNG (white = selected).
 
 | param | type | description |
 |---|---|---|
@@ -348,7 +348,7 @@ Select an object by describing it ("the car", "sky"). Runs the segmentation mode
 
 ### `select_point` *(image)*
 
-Select what SAM2 (in-app) sees at a point; needs a downloaded SAM2 model (Settings â€º Helpers). Points: label 1 = inside, 0 = outside.
+Select what SAM2 (in-app) sees at a point; needs a downloaded SAM2 model (Settings › Helpers). Points: label 1 = inside, 0 = outside.
 
 | param | type | description |
 |---|---|---|
@@ -528,7 +528,7 @@ Upscale with the selected upscale recipe (list_recipes: task "upscale"; select_r
 
 ### `realism_pass` *(image)*
 
-Realism Pass (Windows only, RTX only): the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once through DLSS 5 Neural Rendering on the user's own ComfyUI and comes back as a new layer named "Realism Pass (Windows only, RTX only)": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. factor 1 (the default) refines at the picture's own size. factor 1.5, 1.7 (DLSS's 1.724x Balanced), 2 or 3 also makes the document that many times larger first (the base and every layer, mask and the selection scaled along, as Resize does) and the pass layer comes at the new size, both in the same undo step; a picture whose output would pass 7680 Ã— 4320 or 27.9 megapixels (answers near 30 megapixels sometimes came back with broken colours) is scaled down before it goes (the notes say so), so the answer and the document come back as large as DLSS allows. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale â€º Realism Pass (Windows only, RTX only)). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, at factor 1 the picture is past 7680 Ã— 4320 or 27.9 megapixels, above 1 a job would land in the old geometry, the scaled-down picture would be under 64 px a side or not get larger (status's realism says beforehand whether factor 1 can run). Waits for the answer; `timeout` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was). from / width / height: the document's size before and after.
+Realism Pass (Windows only, RTX only): the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once through DLSS 5 Neural Rendering on the user's own ComfyUI and comes back as a new layer named "Realism Pass (Windows only, RTX only)": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. factor 1 (the default) refines at the picture's own size. factor 1.5, 1.7 (DLSS's 1.724x Balanced), 2 or 3 also makes the document that many times larger first (the base and every layer, mask and the selection scaled along, as Resize does) and the pass layer comes at the new size, both in the same undo step; a picture whose output would pass 7680 × 4320 or 27.9 megapixels (answers near 30 megapixels sometimes came back with broken colours) is scaled down before it goes (the notes say so), so the answer and the document come back as large as DLSS allows. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › Realism Pass (Windows only, RTX only)). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, at factor 1 the picture is past 7680 × 4320 or 27.9 megapixels, above 1 a job would land in the old geometry, the scaled-down picture would be under 64 px a side or not get larger (status's realism says beforehand whether factor 1 can run). Waits for the answer; `timeout` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was). from / width / height: the document's size before and after.
 
 | param | type | description |
 |---|---|---|
@@ -644,7 +644,7 @@ Merge a layer into the one below it (into the base image if it is the lowest).
 
 ### `move_layer`
 
-Reorder a layer: to = up, down, top, bottom, or delta = Â±n. A step goes past the next layer, into a group next to it or out of its own group at its end; top and bottom leave every group.
+Reorder a layer: to = up, down, top, bottom, or delta = ±n. A step goes past the next layer, into a group next to it or out of its own group at its end; top and bottom leave every group.
 
 | param | type | description |
 |---|---|---|
@@ -684,7 +684,7 @@ Match a layer's edges to the picture under it: an inpaint result that came back 
 
 ### `transform_layer` *(image)*
 
-Transform one layer, baked into its pixels in one undo step, as the move tool's Rotate / Distort / Warp and its quarter turns. mode rotate: by `angle` degrees clockwise about the layer's middle (a text layer stays editable: the angle goes into the text, as set_text's angle); rotate90: a quarter turn (`dir` cw or ccw) without resampling; distort: the layer's four corners to `corners` (a perspective: [[x, y] top left, top right, bottom right, bottom left] in image pixels); warp: the layer bent on a grid of n Ã— n cells: `points` holds the (n + 1) Ã— (n + 1) grid points row by row from the top left, in image pixels (unbent they are x + wÂ·i/n, y + hÂ·j/n of the layer's box). Distort and warp turn a text layer into pixels; a live mask is baked into the pixels, a switched-off one dropped (undo brings both back). The layer keeps the resolution of its pixels. Refused on a locked or a filter layer; the base is no layer (rotate_canvas and straighten_canvas turn the whole picture). from: the layer's box before; changed false: nothing to do (an angle of 0).
+Transform one layer, baked into its pixels in one undo step, as the move tool's Rotate / Distort / Warp and its quarter turns. mode rotate: by `angle` degrees clockwise about the layer's middle (a text layer stays editable: the angle goes into the text, as set_text's angle); rotate90: a quarter turn (`dir` cw or ccw) without resampling; distort: the layer's four corners to `corners` (a perspective: [[x, y] top left, top right, bottom right, bottom left] in image pixels); warp: the layer bent on a grid of n × n cells: `points` holds the (n + 1) × (n + 1) grid points row by row from the top left, in image pixels (unbent they are x + w·i/n, y + h·j/n of the layer's box). Distort and warp turn a text layer into pixels; a live mask is baked into the pixels, a switched-off one dropped (undo brings both back). The layer keeps the resolution of its pixels. Refused on a locked or a filter layer; the base is no layer (rotate_canvas and straighten_canvas turn the whole picture). from: the layer's box before; changed false: nothing to do (an angle of 0).
 
 | param | type | description |
 |---|---|---|
@@ -695,7 +695,7 @@ Transform one layer, baked into its pixels in one undo step, as the move tool's 
 | `dir` | string | rotate90: cw (clockwise) or ccw (default `"cw"`; one of `cw`, `ccw`) |
 | `corners` | array | distort: four [x, y] in image pixels, the new top left, top right, bottom right and bottom left corner |
 | `n` | integer | warp: grid cells per side, 1..16 (default `4`) |
-| `points` | array | warp: (n + 1) Ã— (n + 1) [x, y] grid points in image pixels, row by row from the top left |
+| `points` | array | warp: (n + 1) × (n + 1) [x, y] grid points in image pixels, row by row from the top left |
 
 ### `copy_to_layer` *(image)*
 
@@ -957,7 +957,7 @@ Straighten the whole picture: turn it by any angle (degrees clockwise, -45..45) 
 
 ### `resize_image` *(image)* *(destructive)*
 
-Resize the whole document, as Image â€º Canvas â€º Resize: the base picture is resampled to the new size, every layer keeps its own pixels and is scaled in place, masks and the selection follow; one undo step. Give width and height, or one of them (the other keeps the aspect), or percent, or long_side (the aspect kept). Refused while a run or another job of the document is going (its result would land in the old geometry), below 8 px a side, and past what one canvas holds (65,535 px a side, 268 megapixels). from: the size before.
+Resize the whole document, as Image › Canvas › Resize: the base picture is resampled to the new size, every layer keeps its own pixels and is scaled in place, masks and the selection follow; one undo step. Give width and height, or one of them (the other keeps the aspect), or percent, or long_side (the aspect kept). Refused while a run or another job of the document is going (its result would land in the old geometry), below 8 px a side, and past what one canvas holds (65,535 px a side, 268 megapixels). from: the size before.
 
 | param | type | description |
 |---|---|---|
@@ -1027,6 +1027,198 @@ A JPEG, base64 in `data`. what = image: the flattened picture; editor: with hidd
 
 Plugins add commands with `scumble.commands.register(name, def)`; the name is prefixed with
 the plugin id. With the built-in sample plugin loaded:
+
+### `ailabel.add` *(plugin ailabel)* *(destructive)*
+
+Place the EU AI label as a layer (replaces an existing one). Every parameter defaults to the last setting used in the panel.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `label` | string | generated, modified, or mark (the bare AI mark) (one of `generated`, `modified`, `mark`) |
+| `style` | string | dark: white letters on a black pill; light: dark letters on white (one of `dark`, `light`) |
+| `ground` | string | solid, or translucent (the pill at 50 %) (one of `solid`, `translucent`) |
+| `size` | number | width of the label in percent of the picture's width (1..100; default 20, the mark 8) |
+| `anchor` | string | tl, tc, tr, ml, mc, mr, bl, bc, br (one of `tl`, `tc`, `tr`, `ml`, `mc`, `mr`, `bl`, `bc`, `br`) |
+| `margin` | number | distance from the edge in percent of the picture's shorter side (0..45) |
+| `opacity` | number | layer opacity in percent (0..100) |
+
+### `ailabel.remove` *(plugin ailabel)* *(destructive)*
+
+Remove the EU AI label layer from the picture.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `ailabel.info` *(plugin ailabel)* *(read-only)*
+
+The label variants, positions and the current defaults, plus where the icons come from.
+
+(no parameters)
+
+### `boxes.list` *(plugin boxes)* *(read-only)*
+
+The boxes of this document (image pixels), whether the selected recipe takes boxes and whether the document's Boxes switch is on (set_generation boxes): a run sends them only when both are.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `boxes.add` *(plugin boxes)*
+
+Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image; Ideogram 4 takes new, text and keep) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `id` | string | lowercase words and a number joined by underscores (knight_1, red_scarf_2); default made from the last two words of the description's first phrase ("a red scarf" -> red_scarf_1, "a small black cat sitting in the grass" -> black_cat_1), else the next free box_n |
+| `kind` | string | new (an element added in the box), keep, move, remove (an element of the picture), from (a reference layer placed in the box) (one of `new`, `keep`, `move`, `remove`, `from`) |
+| `rect` | array | [left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was |
+| `src` | array | keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer) |
+| `layer` | string | from only: the reference layer (id, name or a unique part of it) |
+| `desc` | string | what the element is, at most 400 characters; a reference as @img1 |
+| `text` | string | new only: words to render in the box (the box becomes a Text box) |
+
+### `boxes.set` *(plugin boxes)*
+
+Change a box: only the given fields change (new_id renames it). A box whose id is still a default one (box_1, edit_2) is named after a new description (red_scarf_1) unless the prompt names it as <id>; the answer carries the id. One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `id` | string | the box to change (required) |
+| `new_id` | string | a new id |
+| `kind` | string | new (an element added in the box), keep, move, remove (an element of the picture), from (a reference layer placed in the box) (one of `new`, `keep`, `move`, `remove`, `from`) |
+| `rect` | array | [left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was |
+| `src` | array | keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer) |
+| `layer` | string | from only: the reference layer (id, name or a unique part of it) |
+| `desc` | string | what the element is, at most 400 characters; a reference as @img1 |
+| `text` | string | new only: words to render in the box (the box becomes a Text box) |
+
+### `boxes.remove` *(plugin boxes)*
+
+Remove a box. One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `id` | string | the box to remove (required) |
+
+### `boxes.from_selection` *(plugin boxes)*
+
+The selection's bounds as a box: a new box described by the prompt (or desc); when the prompt names a reference with @img1, that layer placed into the selection (a from box). One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `id` | string | default made from the description's words (red_door_1), else the next free edit_n |
+| `desc` | string | the description (default the prompt) |
+
+### `boxes.clear` *(plugin boxes)*
+
+Remove every box of this document. One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `film.add_point` *(plugin film)*
+
+Add a control point (local adjustment) to the control points layer (the active one, the topmost one, or a new one). Weights: radial falloff times colour similarity to the pixel under the point.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `x` | number | centre x in image pixels (required) |
+| `y` | number | centre y in image pixels (required) |
+| `radius` | number | radius in pixels (default 10 % of the long side) |
+| `tolerance` | number | colour tolerance 0..100 (default 50; low = only the colour under the point) |
+| `exposure` | number | EV -2..2 |
+| `contrast` | number | -100..100 |
+| `saturation` | number | -100..100 |
+| `warmth` | number | -100..100 |
+| `structure` | number | -100..100 (local detail, negative softens) |
+
+### `film.looks` *(plugin film)* *(read-only)*
+
+The film stocks of the film look filter: id, label, group, ISO, grain character, tone curve class.
+
+| param | type | description |
+|---|---|---|
+| `group` | string | only this group (Colour negative, Slide, Black & white, Cine, Special & artistic) |
+
+### `film.apply_look` *(plugin film)*
+
+Apply a film stock: changes the active film look layer, or adds one on top (see film.looks for the ids).
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `preset` | string | stock id (film.looks), or custom (required) |
+| `strength` | number | 0..100 |
+
+### `glb.place` *(plugin glb)*
+
+Render a 3D object (.glb / .gltf) into a new layer, placed in the picture by position, distance, rotation and scale. The file is copied into the local store and the layer stays editable with glb.edit.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `path` | string | absolute path of a .glb / .gltf file |
+| `filename` | string | instead of path: a file already in the local store (from an earlier glb.place) |
+| `position` | object | { x, y } where the object's centre lands, as fractions of the picture (0..1, default 0.5 / 0.55) |
+| `depth` | number | distance from the camera in object units (the model is 1 unit on its longest side; default 3) |
+| `rotation` | object | { x, y, z } in degrees (default y 30) |
+| `scale` | number | size multiplier (default 1) |
+| `fov` | number | camera field of view in degrees (default 40; small = long lens) |
+| `light` | object | { azimuth, elevation, intensity, ambient }: the key light's direction in degrees and strength, the room light's strength |
+| `shadow` | boolean | a soft contact shadow on an invisible ground under the object (default true) |
+| `depth_layer` | boolean | also write a depth layer (near = white, role control) for a depth ControlNet (default false) |
+| `name` | string | layer name (default the file name) |
+
+### `glb.edit` *(plugin glb)*
+
+Re-render a 3D object layer with changed parameters (only the given ones change); the layer keeps its id, the depth layer follows.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layer` | string | the 3D object layer: id, name, or "active" (default `"active"`) |
+| `position` | object | { x, y } where the object's centre lands, as fractions of the picture (0..1, default 0.5 / 0.55) |
+| `depth` | number | distance from the camera in object units (the model is 1 unit on its longest side; default 3) |
+| `rotation` | object | { x, y, z } in degrees (default y 30) |
+| `scale` | number | size multiplier (default 1) |
+| `fov` | number | camera field of view in degrees (default 40; small = long lens) |
+| `light` | object | { azimuth, elevation, intensity, ambient }: the key light's direction in degrees and strength, the room light's strength |
+| `shadow` | boolean | a soft contact shadow on an invisible ground under the object (default true) |
+| `depth_layer` | boolean | also write a depth layer (near = white, role control) for a depth ControlNet (default false) |
+| `name` | string | layer name (default the file name) |
+
+### `glb.info` *(plugin glb)* *(read-only)*
+
+The 3D object layers of this document with their parameters, and the parameter defaults.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `sample.mean_color` *(plugin sample)* *(read-only)*
+
+Mean colour of the selection (or the whole picture) as rgb and hex.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `sample.box` *(plugin sample)*
+
+Switch the sample's box source on or off: on, every run of a recipe that takes boxes gets one box in the middle of the frame while the document's Boxes switch is on. Without `on` it answers the state.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `on` | boolean | true switches the source on, false off |
 
 ## Differences from the node's bridge
 
