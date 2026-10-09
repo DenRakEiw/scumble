@@ -107,7 +107,8 @@ JS = r"""
     check("b: near pixel below start threshold has 0 diff", diff50 === 0, { diff50 });
     check("b: far pixel has strong tint towards airlight", diff550 > 30, { diff550 });
 
-    const cpuB = ed.filteredCanvas(fx, { cpu: true, forRun: true });
+    const infoB = { ...ed.filterInfo(fx, { scale: 1, origin: [0, 0], full: [W, H], forRun: true }), maps: ed.maps, cpu: true };
+    const cpuB = F.applyFilter("haze", base, fx.params, infoB);
     check("b: cpuB canvas available", !!cpuB);
     if (cpuB) {
         const pxCpuB = cpuB.getContext("2d").getImageData(0, 0, W, H).data;
@@ -349,8 +350,243 @@ JS = r"""
         check("i: flattenToCanvas produced output", !!flatExp && flatExp.width === W && flatExp.height === H);
     }
 
-    // Cleanup
+    // Cleanup haze
     ed.removeLayer(fx.id);
+    await ed.setMap("depth", null);
+
+    // =========================================================================
+    // Dehaze filter layer tests (PLAN_NIK9_BUILD.md R2-S14)
+    // =========================================================================
+
+    // Case j: Dehaze GL against CPU, both modes (auto & depth)
+    const dbg = mk(W, H);
+    {
+        const dctx = dbg.getContext("2d");
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const r = 50 + ((x * 7) ^ (y * 11)) % 100;
+                const g = 60 + ((x * 13) ^ (y * 5)) % 100;
+                const b = 80 + ((x * 3) ^ (y * 9)) % 100;
+                dctx.fillStyle = `rgb(${r},${g},${b})`;
+                dctx.fillRect(x, y, 1, 1);
+            }
+        }
+    }
+    Object.defineProperty(dbg, "naturalWidth", { value: W });
+    Object.defineProperty(dbg, "naturalHeight", { value: H });
+    await ed.setBaseFromCanvas(dbg, { keepLayers: false });
+    await settle(ed);
+
+    const dfx = ed.addFilterLayer("dehaze");
+    check("j: dehaze layer created", !!dfx && dfx.filter === "dehaze");
+
+    // j1: Auto mode GL vs CPU parity
+    dfx.params.amount = 60;
+    dfx.params.mode = "auto";
+    dfx.params.protect = 40;
+    ed.markFilterChanged(dfx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+
+    const flatAutoGL = ed.flattenToCanvas({ forRun: true });
+    const pxAutoGL = flatAutoGL.getContext("2d").getImageData(0, 0, W, H).data;
+    const infoAuto = { ...ed.filterInfo(dfx, { scale: 1, origin: [0, 0], full: [W, H], forRun: true }), maps: ed.maps, cpu: true };
+    const cpuAuto = F.applyFilter("dehaze", dbg, dfx.params, infoAuto);
+    check("j: cpuAuto canvas available", !!cpuAuto);
+    if (cpuAuto) {
+        const pxCpuAuto = cpuAuto.getContext("2d").getImageData(0, 0, W, H).data;
+        let maxDiff = 0, over2Count = 0;
+        for (let i = 0; i < W * H * 4; i += 4) {
+            const dr = Math.abs(pxAutoGL[i] - pxCpuAuto[i]);
+            const dg = Math.abs(pxAutoGL[i + 1] - pxCpuAuto[i + 1]);
+            const db = Math.abs(pxAutoGL[i + 2] - pxCpuAuto[i + 2]);
+            const d = Math.max(dr, dg, db);
+            if (d > maxDiff) maxDiff = d;
+            if (d > 2) over2Count++;
+        }
+        const over2Pct = (over2Count / (W * H)) * 100;
+        check("j: dehaze auto GL vs CPU parity (max <= 2, over2 <= 0.1%)", maxDiff <= 2 && over2Pct <= 0.1, { maxDiff, over2Pct });
+    }
+
+    // j2: Depth mode GL vs CPU parity
+    await ed.setMap("depth", depthMap);
+    dfx.params.mode = "depth";
+    dfx.params.density = 120;
+    dfx.params.amount = 70;
+    ed.markFilterChanged(dfx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+
+    const flatDepthGL = ed.flattenToCanvas({ forRun: true });
+    const pxDepthGL = flatDepthGL.getContext("2d").getImageData(0, 0, W, H).data;
+    const infoDepth = { ...ed.filterInfo(dfx, { scale: 1, origin: [0, 0], full: [W, H], forRun: true }), maps: ed.maps, cpu: true };
+    const cpuDepth = F.applyFilter("dehaze", dbg, dfx.params, infoDepth);
+    check("j: cpuDepth canvas available", !!cpuDepth);
+    if (cpuDepth) {
+        const pxCpuDepth = cpuDepth.getContext("2d").getImageData(0, 0, W, H).data;
+        let maxDiff = 0, over2Count = 0;
+        for (let i = 0; i < W * H * 4; i += 4) {
+            const dr = Math.abs(pxDepthGL[i] - pxCpuDepth[i]);
+            const dg = Math.abs(pxDepthGL[i + 1] - pxCpuDepth[i + 1]);
+            const db = Math.abs(pxDepthGL[i + 2] - pxCpuDepth[i + 2]);
+            const d = Math.max(dr, dg, db);
+            if (d > maxDiff) maxDiff = d;
+            if (d > 2) over2Count++;
+        }
+        const over2Pct = (over2Count / (W * H)) * 100;
+        check("j: dehaze depth GL vs CPU parity (max <= 2, over2 <= 0.1%)", maxDiff <= 2 && over2Pct <= 0.1, { maxDiff, over2Pct });
+    }
+
+    // Case k: Synthetic hazy document recovery
+    const synW = 240, synH = 120;
+    const J_arr = new Float32Array(synW * synH * 3);
+    const hazyCanvas = mk(synW, synH);
+    const hctx = hazyCanvas.getContext("2d");
+    const hImg = hctx.createImageData(synW, synH);
+    const hpx = hImg.data;
+    const synA = [0.8, 0.85, 0.9];
+    let initialHazyDiff = 0;
+
+    for (let y = 0; y < synH; y++) {
+        for (let x = 0; x < synW; x++) {
+            const idx = (y * synW + x);
+            const pidx = idx * 4;
+            const t = 0.2 + 0.8 * (x / (synW - 1));
+
+            let jr, jg, jb;
+            if (x < 10 && y < 30) {
+                jr = synA[0]; jg = synA[1]; jb = synA[2];
+            } else {
+                const cPick = (x ^ y) % 3;
+                jr = (cPick === 0 ? 0.05 : 0.6) * ((x % 7) / 7 + 0.2);
+                jg = (cPick === 1 ? 0.05 : 0.7) * ((y % 5) / 5 + 0.2);
+                jb = (cPick === 2 ? 0.05 : 0.8) * (((x + y) % 6) / 6 + 0.2);
+            }
+            J_arr[idx * 3] = jr;
+            J_arr[idx * 3 + 1] = jg;
+            J_arr[idx * 3 + 2] = jb;
+
+            const ir = Math.round(Math.min(255, Math.max(0, (jr * t + synA[0] * (1 - t)) * 255)));
+            const ig = Math.round(Math.min(255, Math.max(0, (jg * t + synA[1] * (1 - t)) * 255)));
+            const ib = Math.round(Math.min(255, Math.max(0, (jb * t + synA[2] * (1 - t)) * 255)));
+
+            hpx[pidx] = ir;
+            hpx[pidx + 1] = ig;
+            hpx[pidx + 2] = ib;
+            hpx[pidx + 3] = 255;
+
+            initialHazyDiff += Math.abs(ir / 255 - jr) + Math.abs(ig / 255 - jg) + Math.abs(ib / 255 - jb);
+        }
+    }
+    hctx.putImageData(hImg, 0, 0);
+    Object.defineProperty(hazyCanvas, "naturalWidth", { value: synW });
+    Object.defineProperty(hazyCanvas, "naturalHeight", { value: synH });
+
+    await ed.setBaseFromCanvas(hazyCanvas, { keepLayers: false });
+    await settle(ed);
+
+    const synDfx = ed.addFilterLayer("dehaze");
+    synDfx.params.amount = 100;
+    synDfx.params.mode = "auto";
+    synDfx.params.protect = 0;
+    ed.markFilterChanged(synDfx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+
+    const flatRec = ed.flattenToCanvas({ forRun: true });
+    const pxRec = flatRec.getContext("2d").getImageData(0, 0, synW, synH).data;
+    let recoveredDiff = 0;
+    for (let i = 0; i < synW * synH; i++) {
+        const pidx = i * 4;
+        const outR = pxRec[pidx] / 255;
+        const outG = pxRec[pidx + 1] / 255;
+        const outB = pxRec[pidx + 2] / 255;
+        recoveredDiff += Math.abs(outR - J_arr[i * 3]) + Math.abs(outG - J_arr[i * 3 + 1]) + Math.abs(outB - J_arr[i * 3 + 2]);
+    }
+    check("k: amount 100 recovered mean diff <= 0.5 * hazy diff", recoveredDiff <= 0.5 * initialHazyDiff, { recoveredDiff, halfInitial: 0.5 * initialHazyDiff });
+
+    // Case l: amount 0 -> identity
+    synDfx.params.amount = 0;
+    ed.markFilterChanged(synDfx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+
+    const flatZero = ed.flattenToCanvas({ forRun: true });
+    const pxZero = flatZero.getContext("2d").getImageData(0, 0, synW, synH).data;
+    let diffZero = 0;
+    for (let i = 0; i < pxZero.length; i++) {
+        if (pxZero[i] !== hpx[i]) diffZero++;
+    }
+    check("l: amount 0 is bitwise identical to source", diffZero === 0, { diffZero });
+
+    // Case m: Protect sky: flat region equal to A stays within 3 levels at protect 100
+    const skyW = 100, skyH = 100;
+    const skyCanvas = mk(skyW, skyH);
+    const sctx = skyCanvas.getContext("2d");
+    sctx.fillStyle = `rgb(${Math.round(synA[0] * 255)}, ${Math.round(synA[1] * 255)}, ${Math.round(synA[2] * 255)})`;
+    sctx.fillRect(0, 0, skyW, skyH);
+    Object.defineProperty(skyCanvas, "naturalWidth", { value: skyW });
+    Object.defineProperty(skyCanvas, "naturalHeight", { value: skyH });
+    await ed.setBaseFromCanvas(skyCanvas, { keepLayers: false });
+    await settle(ed);
+
+    const skyDfx = ed.addFilterLayer("dehaze");
+    skyDfx.params.amount = 80;
+    skyDfx.params.protect = 100;
+    ed.markFilterChanged(skyDfx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+
+    const flatSky = ed.flattenToCanvas({ forRun: true });
+    const pxSky = flatSky.getContext("2d").getImageData(0, 0, skyW, skyH).data;
+    let maxSkyDiff = 0;
+    const expR = Math.round(synA[0] * 255), expG = Math.round(synA[1] * 255), expB = Math.round(synA[2] * 255);
+    for (let i = 0; i < skyW * skyH * 4; i += 4) {
+        const dr = Math.abs(pxSky[i] - expR);
+        const dg = Math.abs(pxSky[i + 1] - expG);
+        const db = Math.abs(pxSky[i + 2] - expB);
+        const d = Math.max(dr, dg, db);
+        if (d > maxSkyDiff) maxSkyDiff = d;
+    }
+    check("m: protect sky 100 on air region stays within 3 levels", maxSkyDiff <= 3, { maxSkyDiff });
+
+    // Case n: Stats computed once per composite version
+    const statsN1 = ed.belowStats(skyDfx, false);
+    const seqN1 = statsN1 ? statsN1.seq : -1;
+    ed.draw();
+    await settle(ed);
+    const statsN2 = ed.belowStats(skyDfx, false);
+    check("n: stats cached under same composite version", statsN1 === statsN2 && statsN1.seq === seqN1);
+
+    // Case o: Byte-stable stats across repeated exports
+    if (ed.tileMode) {
+        const r1 = await ed.encodeComposite({ forRun: true }, {});
+        const r2 = await ed.encodeComposite({ forRun: true }, {});
+        const dec1 = await decode(r1.blob), dec2 = await decode(r2.blob);
+        let diffRuns = 0;
+        for (let i = 0; i < dec1.data.length; i++) {
+            if (dec1.data[i] !== dec2.data[i]) diffRuns++;
+        }
+        check("o: byte-stable export across consecutive exports", diffRuns === 0, { diffRuns });
+    } else {
+        const f1 = ed.flattenToCanvas({ forRun: true });
+        const f2 = ed.flattenToCanvas({ forRun: true });
+        const d1 = f1.getContext("2d").getImageData(0, 0, skyW, skyH).data;
+        const d2 = f2.getContext("2d").getImageData(0, 0, skyW, skyH).data;
+        let diffRuns = 0;
+        for (let i = 0; i < d1.length; i++) {
+            if (d1[i] !== d2[i]) diffRuns++;
+        }
+        check("o: byte-stable flatten across consecutive exports", diffRuns === 0, { diffRuns });
+    }
+
+    // Cleanup dehaze
+    ed.removeLayer(skyDfx.id);
     await ed.setMap("depth", null);
 
     return { fails, tiles: !!ed.tiles };

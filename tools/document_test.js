@@ -335,6 +335,8 @@ function listTree(dir) {
             assert(dsFeat && doc.readerFor(dsFeat.sample) === 4, "readerFor of depth-snap sample is 4");
             const hazeFeat = doc.FEATURES.find((f) => f.id === "haze");
             assert(hazeFeat && doc.readerFor(hazeFeat.sample) === 4, "readerFor of haze sample is 4");
+            const dehazeFeat = doc.FEATURES.find((f) => f.id === "dehaze");
+            assert(dehazeFeat && doc.readerFor(dehazeFeat.sample) === 4, "readerFor of dehaze sample is 4");
             for (const feat of doc.FEATURES) {
                 const sampleH = doc.buildHeader({ document: feat.sample, files: [] });
                 if (feat.reader) assert(sampleH.minReader === feat.reader, `feature ${feat.id} reader`);
@@ -342,7 +344,7 @@ function listTree(dir) {
             }
             const o2 = await doc.openDocument({ file: await make({ version: 1, minReader: 2 }, "linear_light.scumble"), mirrorRoot: mirror("V4") });
             assert(o2 && !o2.notes.some((n) => /newer Scumble/.test(n)), "a minReader 2 document: " + JSON.stringify(o2 && o2.notes));
-            return "minReader 5 refused; version 3 opened with a note; linear light asks for reader 2; filter limit asks for reader 3; depth snap asks for reader 4; haze asks for reader 4; maps asks for version 2";
+            return "minReader 5 refused; version 3 opened with a note; linear light asks for reader 2; filter limit asks for reader 3; depth snap asks for reader 4; haze asks for reader 4; dehaze asks for reader 4; maps asks for version 2";
         });
         await check("a_full_disk_a_cancel_or_a_held_file_leave_the_target_as_it_was", async () => {
             const target = path.join(scratch, "keep.scumble");

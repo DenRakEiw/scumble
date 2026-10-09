@@ -243,6 +243,8 @@ const special = {
     vignette: [{ amount: 70, size: 40, softness: 40 }, 1],
     normalize: [{ mode: "levels", amount: 80 }, 2],   // a stretch of the levels doubles the one level the composite below differs by
     haze: [{ amount: 80, start: 0 }, 2, "depthRamp"],
+    dehaze: [{ amount: 80 }, 3],
+    "dehaze#depth": [{ mode: "depth", amount: 80 }, 8, "depthRamp"],
     "film.frame": [{ width: 6 }, 1],
     "film.light_leak": [{ strength: 80 }, 1],
     "film.look": [{ preset: "portra400", halation: 100, grain: 0 }, 3],
@@ -251,10 +253,16 @@ const cases = [];
 for (const id of Object.keys(FILTERS)) {
     if (id === "lut" || id === "film.points" || id.startsWith("sample.")) continue;   // need a LUT file / points; the sample plugin is the commands gate's
     const sp = special[id];
-    cases.push([id, sp ? sp[0] : {}, sp ? sp[1] : null, sp ? sp[2] : null]);
+    cases.push([id, id, sp ? sp[0] : {}, sp ? sp[1] : null, sp ? sp[2] : null]);
+}
+for (const [key, sp] of Object.entries(special)) {
+    if (key.includes("#")) {
+        const id = key.split("#")[0];
+        cases.push([key, id, sp[0], sp[1] != null ? sp[1] : null, sp[2] || null]);
+    }
 }
 const out = {};
-for (const [id, params, tolerance, setup] of cases) {
+for (const [key, id, params, tolerance, setup] of cases) {
     if (setup === "depthRamp") {
         const { makeMap } = await import("./editor/inpaint_maps.js");
         const mapW = 64, mapH = 64;
@@ -266,12 +274,12 @@ for (const [id, params, tolerance, setup] of cases) {
     Object.assign(fx.params, params);
     ed.markFilterChanged(fx);
     const plan = ed.bandPlan({ forRun: true });
-    if (!plan) { ed.removeLayer(fx.id); if (setup === "depthRamp") await ed.setMap("depth", null); throw new Error(id + ": no band plan"); }
+    if (!plan) { ed.removeLayer(fx.id); if (setup === "depthRamp") await ed.setMap("depth", null); throw new Error(key + ": no band plan"); }
     // the bands of the region pass (what E3 built, and what the stack program falls back to) ...
     E.stackFilters = false;
     let r;
     try { r = await ed.encodeComposite({ forRun: true }, {}); } finally { E.stackFilters = true; }
-    if (r.program) { ed.removeLayer(fx.id); if (setup === "depthRamp") await ed.setMap("depth", null); throw new Error(id + ": with stackFilters off the bands came from the program"); }
+    if (r.program) { ed.removeLayer(fx.id); if (setup === "depthRamp") await ed.setMap("depth", null); throw new Error(key + ": with stackFilters off the bands came from the program"); }
     // ... and the bands of the stack program (B item 7 part 2): two filter layers over the workers' composite
     const rp = await ed.encodeComposite({ forRun: true }, {});
     const flat = ed.flattenToCanvas({ forRun: true });
@@ -283,21 +291,21 @@ for (const [id, params, tolerance, setup] of cases) {
     const seamsP = dn.bytes ? seamRows(ap.data, b.data, ed.width, ed.height) : null;
     ed.removeLayer(fx.id);
     if (setup === "depthRamp") await ed.setMap("depth", null);
-    out[id] = [plan.reach, d.bytes, d.worst, rp.program || 0, dn.bytes, dn.worst];
+    out[key] = [plan.reach, d.bytes, d.worst, rp.program || 0, dn.bytes, dn.worst];
     const allowed = tolerance != null ? tolerance : plan.reach > 0 ? 3 : 2;   // a blur of a smaller canvas: up to 3 levels (C6 c1); a contrast curve doubles the one level of the composite below
-    if (d.worst > allowed) throw new Error(id + " in bands is " + d.worst + " levels off the whole flatten: " + JSON.stringify({ d, seams, plan }));
+    if (d.worst > allowed) throw new Error(key + " in bands is " + d.worst + " levels off the whole flatten: " + JSON.stringify({ d, seams, plan }));
     // The program's composite below the filters is a level from the flatten's on 1 % of the bytes (the step before), and
     // the filter rounds once more, so a level above the pass's tolerance; a filter that steepens the picture doubles it
-    if (!(rp.program > 0)) throw new Error(id + ": the bands did not come from the stack program");
+    if (!(rp.program > 0)) throw new Error(key + ": the bands did not come from the stack program");
     const allowedP = allowed + 1;   // measured over all 23 filters: never more than a level above what the pass itself shows
-    if (dn.worst > allowedP) throw new Error(id + " over the stack program is " + dn.worst + " levels off the whole flatten: " + JSON.stringify({ dn, seamsP, plan }));
-    if (seamsP && seamsP.rows > 64 && seamsP.nearSeams === seamsP.rows) throw new Error(id + ": the program's differences sit on the band seams only: " + JSON.stringify(seamsP));
+    if (dn.worst > allowedP) throw new Error(key + " over the stack program is " + dn.worst + " levels off the whole flatten: " + JSON.stringify({ dn, seamsP, plan }));
+    if (seamsP && seamsP.rows > 64 && seamsP.nearSeams === seamsP.rows) throw new Error(key + ": the program's differences sit on the band seams only: " + JSON.stringify(seamsP));
     // does the filter do anything at all here? (a filter that is skipped would pass everything above)
-    if (special[id]) {
+    if (special[key] || special[id]) {
         const plain = window.__exRef;
         let moved = 0;
         for (let i = 0; i < plain.length; i += 4001) if (plain[i] !== a.data[i]) moved++;
-        if (!moved) throw new Error(id + " changed nothing in the picture");
+        if (!moved) throw new Error(key + " changed nothing in the picture");
     }
 }
 return out;

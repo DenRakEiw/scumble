@@ -1709,7 +1709,7 @@ const COMMANDS = {
         scope: "app", description: "The filter layer types (built-in and from plugins) with their parameters; `fill: true` marks a fill layer's type (fill: a colour, gradient: two colours with their opacities), which covers what is below instead of filtering it. A select's options are {id, label, group}; a select with key \"preset\" (a grain's film stock, a black-and-white film's colour filter) fills the other parameters with the option's values when add_filter / set_filter set it, as picking it in the layer list does; `offset: true` marks a slider that is an offset on the preset (the others turn the preset to custom when they change it).",
         params: {},
         async run() {
-            const option = (o) => (o && typeof o === "object" ? { id: o.id, label: o.label != null ? String(o.label) : String(o.id), ...(o.group ? { group: o.group } : {}) } : { id: o, label: String(o) });
+            const option = (o) => (o && typeof o === "object" ? { id: o.id, label: o.label != null ? String(o.label) : String(o.id), ...(o.group ? { group: o.group } : {}), ...(o.needs ? { needs: o.needs } : {}) } : { id: o, label: String(o) });
             return {
                 filters: Object.entries(FILTERS).map(([id, f]) => {
                     const hasPreset = (f.params || []).some((p) => p.key === "preset" && p.type === "select");
