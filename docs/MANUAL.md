@@ -511,6 +511,7 @@ Above the browser's canvas limit — beyond about 268 megapixels — pictures ar
 - Big documents want memory more than speed. Several open 15k tabs will show in the task manager.
 - On a large picture one undo step can hold hundreds of megabytes. The MB limit of the undo history (Settings › Rendering) counts brush strokes and selections only; a whole-layer step (a flip, a rotation, a filter change, a mask, a crop, a restored snapshot) can hold a full copy of its layer and is limited by the number of steps alone, so keep that number low on big documents. Snapshots cost nothing when taken and grow as the picture changes after them.
 - If something draws wrong, the first useful test is the Rendering switch: the two paths are the same picture by design, and a difference between them is a bug worth reporting.
+- **Depth maps on large pictures:** The depth map is computed at working resolution (at most 2,048 pixels on its longest side; maps up to 4,096 pixels are supported). On a 15,000 by 10,000 document, depth-limited selections and filter layers evaluate the map bilinearly, so edges stay soft at 15k until Release 2 adds full-resolution edge snapping.
 
 ## Under the hood: the crop, the Highres fix and the stitch
 
@@ -678,6 +679,8 @@ _What is in the settings dialog, how updates work, and the three things to check
 ![The console window over the editor, with the filter by level and text and the path of the log file](https://www.denrakeiw.com/projects/scumble/manual/settings-and-trouble.jpg "1600x946")
 
 Ctrl+, opens the settings: the ComfyUI server and its authentication, API providers, language models, recipes, helper models, the assistant, the appearance, plugins, local files, rendering and updates. Most of it you set once.
+
+Settings › Helpers (in-app models) manages the local neural models: SAM2 (object hover and box drag), RMBG / BiRefNet (background removal cut-outs), LaMa (in-app object remove and content-aware move), and Depth Anything V2 Small (depth maps for depth selection and depth-limited filter layers). Each model can be downloaded or removed individually, and runs on your GPU or processor.
 
 Settings › Appearance switches the app's look: the default, 90s, Duck or a skin you add (docs/SKINS.md); View › Skin does the same from the menu, and View › Skin › Default brings the default back if a skin makes the app hard to read. A skin recolours the app's questions too, but cannot hide them or change the order of their buttons.
 

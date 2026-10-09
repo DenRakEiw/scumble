@@ -78,9 +78,9 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-09 night: **Nik 9 parity build through R1-S9 built and gated**, all gates pass 100 %; 0.1.43 is Latest)
+## Where things stand (2026-10-09: **Nik 9 parity build through R1-S10 built and gated**, all gates pass 100 %; R1-S11 tooling & docs completed, awaiting user presence for live judging checkpoint; 0.1.43 is Latest)
 
-**Nik 9 parity build (in progress):** F1-F8, R1-S1..S4, R1-S5a, R1-S5b, R1-S6, R1-S7a, R1-S7b, R1-S8, R1-S9 built. R1-S9 completes Object tool box drag and logit selection: IPC `helpers:segment` `raw: true` returning Float32Array logits tensor; worker `range_select` `source: "logit"` with bilinear sampling and edge clamp; `host.segmentKey`, `host.segmentLogits` and `host.selectBox`; `select_point` command streamlined without W x H mask allocations; pointerdown/move/up box drag in `inpaint_canvas.js` with blue dashed rubber band overlay; `ed.selectLogits` with banded combine and intersect clearing; 11 "Shift adds, Alt subtracts, Shift+Alt intersects" hints updated. Gates `selection editor commands assistant mcp help lint types nodecopy` pass 100 % on both `--tiles on` and `--tiles off` with `--offline`. Next: R1-S10 (Layer-mask overlay, black-and-white view, filter effect view).
+**Nik 9 parity build (in progress):** F1-F8, R1-S1..S4, R1-S5a, R1-S5b, R1-S6, R1-S7a, R1-S7b, R1-S8, R1-S9, R1-S10 built. R1-S10 completes layer-mask view modes: overlay, alone (black/white), and filter effect view with limit rendering on black; Alt+click toggle on mask label. R1-S11 tooling (`--map` in `tools/mem_test.py`) and documentation pass across HELPERS, DOCUMENTS, MANUAL, TESTING, CLAUDE, COMMANDS completed. Gates `maskview limit composite selection help skins lint types nodecopy` pass 100 % on both `--tiles on` and `--tiles off` with `--offline`. Next: checkpoint live judging in the app with the user on scene.jpg, skin.jpg and the 15k file.
 
 **0.1.43 is out** (tag v0.1.43, published 2026-10-07T20:27:04Z; the post `v0-1-43` live; the manual synced). Built the
 same day from `docs/PLAN_0_1_43.md`, every row with its "As built": Nano Banana 2.1 on Gemini direct and seven hosts
@@ -344,7 +344,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is

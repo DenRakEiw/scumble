@@ -290,6 +290,17 @@ whatever the optimisation level (the graph has 17,480 nodes). The Remove tool lo
 is picked (`warmInpaint`). A ComfyUI folder's `big-lama.pt` (the PyTorch weights of the
 ComfyUI inpaint nodes) is reported, never loaded.
 
+**Depth Anything V2 Small** (Release 1, 2026-10-08): Depth Anything V2 Small in ONNX export from
+`onnx-community` (99 MB, opset 17). Input: `image` `[1, 3, H, W]` RGB normalized with ImageNet
+mean `[0.485, 0.456, 0.406]` and std `[0.229, 0.224, 0.225]`. Both dimensions $H$ and $W$ are
+scaled to multiples of 14 at working resolution (at most 2,048 pixels on the long side, `WORK_MAX`).
+Output: `predicted_depth` `[1, H, W]` float32 depth map (larger values = closer). The raw depth
+map is normalized by robust percentiles (0.5 % and 99.5 %) and refined with a guided filter on the
+image guide in worker threads (`depth_guide` job, `GUIDE = { r: 2, eps: 1e-3 }`). The refined
+16-bit depth is stored as a document map on `ed.maps.depth`. Runs on the main process thread
+via DirectML on Windows and CPU on Linux; cold load ~2.5 s, warm run ~0.8 s on RTX 5090 (DirectML),
+~3.5 s on CPU (24 threads). Apache-2.0 licence (open issue #320).
+
 SAM2 tensors: encoder `image` [1,3,1024,1024] (ImageNet mean / std) →
 `high_res_feats_0` [1,32,256,256], `high_res_feats_1` [1,64,128,128], `image_embed`
 [1,256,64,64]; decoder `point_coords` [B,N,2] in 1024 space, `point_labels` [B,N]
@@ -342,6 +353,8 @@ cutout model lists in every open editor.
 | BiRefNet lite cutout | 10 s | 2.5 s |
 | RMBG-1.4 cutout | | 0.9 s |
 | LaMa (CPU, 24 threads, 2026-09-28) | 7-9 s | 1.5-1.7 s |
+| Depth Anything V2 Small (1024 × 768) | 2.5 s | 0.8 s |
+| Depth Anything V2 Small (CPU, 24 threads) | | 3.5 s |
 
 **VRAM pressure:** with ComfyUI holding Flux.2 Klein plus its helper models (29 of
 32 GB in use) the same SAM2 run took 125 s: DirectML pages through system memory. After
@@ -371,3 +384,4 @@ model that is not in the folder is skipped; no model at all is a failure.
 - LaMa beyond 512: the export is fixed at 512 x 512, so a hole wider than about 256 px comes
   back softer than the picture; Carve's notebook exports other sizes, and a refinement pass
   (LaMa's own "refine", or the Poisson solver's texture transfer) is the other way.
+- Depth Anything V2 Base / Large variants: Small (99 MB) is the default; Base (388 MB) can be added if users request higher depth fidelity.

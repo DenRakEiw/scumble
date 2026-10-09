@@ -132,7 +132,9 @@ PSD both ways, the merges; run it on both backends), `tools/groups_test.py` (gat
 PLAN_0_1_31 §6 step 5: a hidden group against its layers hidden one by one on every path, byte for byte, the GPU view
 against Canvas 2D, lock, solo, the clip's group edge, the steps and drops through the tree, undo, the panel's tree,
 getValue / setValue with a damaged state repaired, PSD both writers, opened and dropped, ORA, the commands; both
-backends: the PNG export and the stack box are the tiles' only). Every gate name `X` without a rule of its own
+backends: the PNG export and the stack box are the tiles' only).
+
+Release 1 gates (`docs/PLAN_NIK9_BUILD.md`): `tools/selection_test.py` (gate `selection`, Select by depth, luminosity, colour, SAM2 object tool box drag with logits bilinear sampling, Intersect mode, soft selection combine), `tools/limit_test.py` (gate `limit`, WebGL2 and CPU twin filter limits on filter layers and fill layers, depth, luma, colour ranges, falloffs), `tools/maps_test.py` / `node tools/maps_test.js` (gate `maps`, document auxiliary maps store, geometry following, persistence, and staleness fingerprinting), `tools/depth_test.py` (gate `depth`, Depth Anything V2 Small ONNX model in main, IPC, guided filter worker job, and `depth_map` command), `tools/maskview_test.py` (gate `maskview`, Layer-mask overlay, black-and-white alone view, filter effect view with limit rendering on black, memory bounds). Every gate name `X` without a rule of its own
 in `tools/run_gates.sh` runs `tools/X_test.py`.
 
 Item 32 (the update question, `docs/PLAN_0_1_38.md` A1): `node tools/updater_test.js` runs `electron/main/updater.js`

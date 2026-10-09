@@ -34,6 +34,14 @@ ROUNDS = 4
 for i, a in enumerate(ARGS):
     if a == "--rounds" and i + 1 < len(ARGS):
         ROUNDS = int(ARGS[i + 1])
+MAP_OPT = next((a for a in ARGS if a.startswith("--map=")), None)
+if not MAP_OPT:
+    for i, a in enumerate(ARGS):
+        if a == "--map" and i + 1 < len(ARGS):
+            MAP_OPT = "--map=" + ARGS[i + 1]
+            break
+MAP_SIZE = MAP_OPT.split("=")[1] if MAP_OPT else None
+MAP_W, MAP_H = (int(v) for v in MAP_SIZE.lower().split("x")) if MAP_SIZE else (0, 0)
 
 # The census hook has to be in place before anything is built, so this runs first and
 # only once per page. `__mem.canvases` is a list of WeakRefs; the registry counts the
@@ -157,6 +165,13 @@ BUILD = """
     ed.addFilterLayer(FILTERS["film.look"] ? "film.look" : "grain");
     const lv = ed.addFilterLayer("levels");
     ed.markMatchChanged(resLayer);
+    const mapW = %(map_w)d, mapH = %(map_h)d;
+    if (mapW > 0 && mapH > 0) {
+        const { makeMap } = await import("./editor/inpaint_maps.js");
+        const ramp = new Uint16Array(mapW * mapH);
+        for (let i = 0; i < ramp.length; i++) ramp[i] = Math.round(i * 65535 / ramp.length);
+        await ed.setMap("depth", makeMap("depth", mapW, mapH, ramp, [W, 0, 0, H, 0, 0]));
+    }
     ed.renderLayers();
     ed.fitView();
     ed.draw();
@@ -423,7 +438,7 @@ async def main():
 
     async def run(c):
         await c.eval(SETUP)
-        print(f"== {SIZE} ({w * h / 1e6:.0f} MP), {ROUNDS} rounds{', tabs kept open' if KEEP else ''}", flush=True)
+        print(f"== {SIZE} ({w * h / 1e6:.0f} MP), {ROUNDS} rounds{', tabs kept open' if KEEP else ''}{f', map {MAP_SIZE}' if MAP_SIZE else ''}", flush=True)
         print(head())
         base_r, base_b = await report(c)
         print(row(0, "start", base_r, base_b), flush=True)
@@ -431,7 +446,7 @@ async def main():
 
         for rnd in range(1, ROUNDS + 1):
             print(f"-- round {rnd}: building ...", flush=True)
-            await c.eval(BUILD % {"w": w, "h": h}, timeout=900)
+            await c.eval(BUILD % {"w": w, "h": h, "map_w": MAP_W, "map_h": MAP_H}, timeout=900)
             bench = json.loads(await c.eval(BENCH, timeout=900))
             r, b = await report(c, bench)
             benches.append((rnd, b))
