@@ -434,9 +434,9 @@ async function main() {
     }
     assert.ok(flaggedRows.size >= 1 && flaggedRows.size <= 3, `90 deg xf flags a horizontal row set, got ${flaggedRows.size} rows`);
     // -------------------------------------------------------------------------
-    // 9. Depth edits inside the selection (R2-S8)
+    // 10. Depth edits inside the selection (R2-S8)
     // -------------------------------------------------------------------------
-    console.log("  8. depth edits inside selection (selectionOnMap and editMap)...");
+    console.log("  10. depth edits inside selection (selectionOnMap and editMap)...");
 
     // a. 1200 x 800 document, map ramp 0..1 left to right (300 x 200 map)
     const dw = 1200, dh = 800;
