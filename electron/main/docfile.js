@@ -50,6 +50,11 @@ const FEATURES = [
             return false;
         },
     },
+    {
+        id: "haze", since: "0.1.45", reader: 4,
+        sample: { layers: [{ kind: "filter", filter: "haze" }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "haze"),
+    },
 ];
 
 const FORMAT_VERSION = Math.max(1, ...FEATURES.map((f) => f.version || 1));

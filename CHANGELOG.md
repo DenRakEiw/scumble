@@ -9,6 +9,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - Edge snapping and detail tile fusion foundation for depth maps: bilateral edge-aware color snapping maths, robust tile alignment and raised-cosine overlap blending, separable 4x4 range maps, and 256px tile edge detection.
 - Depth map color guide and edge snap settings are saved in the document; documents with edge snap require reader version 4 (Scumble 0.1.45). Live preview and undo/redo support for map meta changes without copying large pixel buffers.
 - Depth-limited filter layers snap cleanly to fine edges (hairs, leaves, silhouettes) via real-time bilateral color guidance; interactive *Edges* slider in depth map controls with live preview and Escape cancellation, and so does a selection by depth.
+- Built-in Haze by depth filter: simulates atmospheric haze and aerial perspective using the scene's depth map, with density, start threshold, falloff curve, and desaturation controls. Automatically samples airlight color from the scene's far distance or takes a custom color. Edge snapping aligns haze cleanly to fine object contours.
 
 ## 0.1.44 — 2026-10-09
 

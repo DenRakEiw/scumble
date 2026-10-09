@@ -1713,13 +1713,16 @@ const COMMANDS = {
             return {
                 filters: Object.entries(FILTERS).map(([id, f]) => {
                     const hasPreset = (f.params || []).some((p) => p.key === "preset" && p.type === "select");
+                    const needs = f.maps ? (typeof f.maps === "function" ? f.maps({}) : f.maps) : [];
                     return {
                         id, label: f.label, plugin: f.plugin || null, ...(f.over ? { fill: true } : {}),
+                        needs,
                         params: (f.params || []).map((p) => ({
                             key: p.key, label: p.label, type: p.type || "number", min: p.min, max: p.max, default: p.type === "custom" ? undefined : p.default,
                             options: p.options ? p.options.map(option) : undefined,
                             offset: hasPreset && p.key !== "preset" && p.keepPreset ? true : undefined,
                             ...(p.hidden ? { hidden: true } : {}),
+                            ...(p.when ? { when: p.when } : {}),
                         })),
                     };
                 }),
