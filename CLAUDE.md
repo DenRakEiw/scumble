@@ -78,7 +78,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-09: **0.1.44 released and Latest**; R2-S1 built as part of Release 2+3 block; awaiting review before R2-S2)
+## Where things stand (2026-10-09: **0.1.44 released and Latest**; R2-S2 built as part of Release 2+3 block; awaiting review before R2-S3)
 
 **0.1.44 is out** (tag v0.1.44, published 2026-10-09T10:07:52Z, title "depth maps, range selections, filter limits"; the post
 `v0-1-44` committed to the website with the manual synced, its deploy status to be read). It is **release 1 (masks) of
@@ -94,7 +94,13 @@ release at the end after the user's test; release 4 (blend modes) independent.
   (64..1024, default 256), param type `color` (#rrggbb lower case), `hidden: true`, `cancelFilterParams` preview rollback without undo,
   `belowStats` versioned by `${compositeVersion}:${readsMap ? mapsVersion : 0}:${n}`, `mapsOf` layer map tracking. Gates `commands`
   (14s on tiles, 13s on canvas), `film` (11s / 11s), `lint` (29s), `types` (5s), `help` (3s) ALL PASS on both `--tiles on` and `--tiles off`
-  with `--offline`. Ready for review (`docs/REVIEW_NIK9_<date>.md`) before R2-S2.
+  with `--offline`. Review findings resolved in `0f3f625`.
+- **R2-S2 built** (2026-10-09): Edge maths (`renderer/editor/inpaint_edges.js`, pure ASCII, no DOM at import): constants `SNAP_TAU` (0.02),
+  `SNAP_DEFAULT` (50); `snapParams(strength)` mapping 0..100 to `[sigmaR, tau]`; CPU twin `snapField` and GLSL twin `SNAP_GLSL`;
+  detail pass helpers `tileBoxes`, `fusedSize`, `fitScaleShift`, `fuseTiles` with raised-cosine overlap blending; `rangeMax` (separable 4x4);
+  `edgeTiles` (256x256 document tile edge flagging under affine transform). Unit tests in `tools/edges_test.js` covering all 11 PLAN cases.
+  Node build synced and committed in node repo (`91e0428`). Gates `lint`, `types`, `help`, `commands`, `film` ALL PASS on both `--tiles on`
+  and `--tiles off` with `--offline`. Ready for reviewer subagent before R2-S3.
 **Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.

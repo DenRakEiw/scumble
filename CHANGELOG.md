@@ -6,6 +6,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 ## Unreleased
 
 - Plugin filters can take statistics of the whole picture below them, at a size they choose, and read the document's depth map (plugin API 4). Parameter type "color", hidden parameters, and cancelFilterParams.
+- Edge snapping and detail tile fusion foundation for depth maps: bilateral edge-aware color snapping maths, robust tile alignment and raised-cosine overlap blending, separable 4x4 range maps, and 256px tile edge detection.
 
 ## 0.1.44 — 2026-10-09
 
