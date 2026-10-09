@@ -108,6 +108,7 @@ async function main() {
     const dummyEditor = {
         viewPass: null,
         filterKey: InpaintEditor.prototype.filterKey,
+        effectViewOf: InpaintEditor.prototype.effectViewOf,
     };
     const belowMock = { width: 800, height: 600 };
     const layerPlain = {
@@ -164,6 +165,7 @@ async function main() {
         maps: { depth: "fakeDepthMap" },
         belowStats: () => ({ mean: [0.5, 0.5, 0.5] }),
         filterInfo: InpaintEditor.prototype.filterInfo,
+        effectViewOf: InpaintEditor.prototype.effectViewOf,
         _lastFilterInfoBySite: {},
     };
 

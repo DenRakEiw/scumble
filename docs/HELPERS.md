@@ -298,8 +298,10 @@ Output: `predicted_depth` `[1, H, W]` float32 depth map (larger values = closer)
 map is normalized by robust percentiles (0.5 % and 99.5 %) and refined with a guided filter on the
 image guide in worker threads (`depth_guide` job, `GUIDE = { r: 2, eps: 1e-3 }`). The refined
 16-bit depth is stored as a document map on `ed.maps.depth`. Runs on the main process thread
-via DirectML on Windows and CPU on Linux; cold load ~2.5 s, warm run ~0.8 s on RTX 5090 (DirectML),
-~3.5 s on CPU (24 threads). Apache-2.0 licence (open issue #320).
+via DirectML on Windows and CPU on Linux. Measured at the R1-S2 checkpoint (2026-10-08, `tools/depth_probe.py`,
+three pictures): the model 185-225 ms on DirectML (RTX 5090) and 480-725 ms on the CPU (24 threads) at its input
+size, the guided filter 410-640 ms at a 2,048 px working size (3.4 s at 4,096); the load was not timed.
+Apache-2.0 licence (open issue #320).
 
 SAM2 tensors: encoder `image` [1,3,1024,1024] (ImageNet mean / std) →
 `high_res_feats_0` [1,32,256,256], `high_res_feats_1` [1,64,128,128], `image_embed`
@@ -353,8 +355,9 @@ cutout model lists in every open editor.
 | BiRefNet lite cutout | 10 s | 2.5 s |
 | RMBG-1.4 cutout | | 0.9 s |
 | LaMa (CPU, 24 threads, 2026-09-28) | 7-9 s | 1.5-1.7 s |
-| Depth Anything V2 Small (1024 × 768) | 2.5 s | 0.8 s |
-| Depth Anything V2 Small (CPU, 24 threads) | | 3.5 s |
+| Depth Anything V2 Small (DirectML, the model at its input size; R1-S2 checkpoint) | not timed | 0.19-0.23 s |
+| Depth Anything V2 Small (CPU, 24 threads; the same) | not timed | 0.48-0.73 s |
+| the guided filter after it (CPU, 2,048 px working size) | | 0.41-0.64 s |
 
 **VRAM pressure:** with ComfyUI holding Flux.2 Klein plus its helper models (29 of
 32 GB in use) the same SAM2 run took 125 s: DirectML pages through system memory. After

@@ -403,6 +403,64 @@ await run("remove_layer", { doc: window.__selDoc, layer: l.id });
 
 return { selectedStripes, redVal, greenVal, blueVal, emptyBounds: selBoundsAfterFilter === null };
 """),
+    ("range_select_invert_histogram_stale", """
+const ed = ednow(window.__selDoc);
+const { makeMap, fingerprint } = await import("./editor/inpaint_maps.js");
+await run("new_canvas", { doc: window.__selDoc, width: 1600, height: 400, color: "#000000" });
+const l = await run("add_paint_layer", { doc: window.__selDoc, name: "invert_stripes" });
+const layer = ed.layers.find((x) => x.id === l.id);
+layer.px.drawInto([0, 0, 1600, 400], (ctx) => {
+    for (let k = 0; k < 16; k++) { const g = k * 17; ctx.fillStyle = `rgb(${g}, ${g}, ${g})`; ctx.fillRect(k * 100, 0, 100, 400); }
+});
+ed.markLayerChanged(layer); ed.renderLayers(); ed.draw();
+if (ed.mipsSettled) await ed.mipsSettled();
+await wait(100);
+const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
+const expectStripes = (label, inside) => {
+    for (let k = 0; k < 16; k++) {
+        const val = at(k * 100 + 50, 200);
+        const expected = ((k >= 6 && k <= 9) === inside) ? 255 : 0;
+        if (val !== expected) throw new Error(`${label}: stripe ${k} expected ${expected}, got ${val}`);
+    }
+};
+// 1. invert with replace: the stripes outside .4-.6 (rangeWeight honours invert once; the job must not invert again)
+await ed.selectRange({ source: "luma", lo: 0.4, hi: 0.6, fLo: 0, fHi: 0, invert: true }, "replace");
+expectStripes("invert replace", false);
+// 2. invert with intersect over a full selection: the same stripes
+await run("select_all", { doc: window.__selDoc });
+await ed.selectRange({ source: "luma", lo: 0.4, hi: 0.6, fLo: 0, fHi: 0, invert: true }, "intersect");
+expectStripes("invert intersect", false);
+// 3. intersect without invert over a full selection: the stripes inside
+await run("select_all", { doc: window.__selDoc });
+await ed.selectRange({ source: "luma", lo: 0.4, hi: 0.6, fLo: 0, fHi: 0 }, "intersect");
+expectStripes("plain intersect", true);
+await run("select_none", { doc: window.__selDoc });
+// 4. the depth histogram of a map on the store: 256 bins over every map pixel
+const mapW = 256, mapH = 64;
+const ramp = new Uint16Array(mapW * mapH);
+for (let y = 0; y < mapH; y++) for (let x = 0; x < mapW; x++) ramp[y * mapW + x] = Math.round(x * 65535 / (mapW - 1));
+const inp = await host.pictureInput(ed, 64, 64, { skipFilters: true, background: "#808080" });
+const fp = fingerprint(inp.image, 64, 64);
+const map = makeMap("depth", mapW, mapH, ramp, [1600, 0, 0, 400, 0, 0], { fp });
+await ed.setMap("depth", map);
+const hist = ed.mapHistogram("depth");
+const total = hist ? hist.reduce((a, b) => a + b, 0) : 0;
+if (!hist || hist.length !== 256 || total !== mapW * mapH) throw new Error("depth histogram of the map store's entry: " + (hist ? `${hist.length} bins, ${total} px` : "null"));
+// 5. stale: fresh right after the map, stale once the picture changed a lot (the check runs in the background)
+if (ed.isDepthStale()) throw new Error("a fresh map reads stale");
+layer.px.drawInto([0, 0, 1600, 400], (ctx) => { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, 1600, 400); });
+ed.markLayerChanged(layer); ed.renderLayers(); ed.draw();
+if (ed.mipsSettled) await ed.mipsSettled();
+ed.isDepthStale();
+await wait(800);
+if (!ed.isDepthStale()) {
+    const r = await ed.mapStale("depth");
+    const m = ed.maps && ed.maps.depth;
+    throw new Error(`a repainted picture does not read stale: diff ${r.diff}, stale ${r.stale}, fp ${!!(m && m.meta && m.meta.fp)}, map version ${m && m.version} composite ${ed.compositeVersion}`);
+}
+await run("remove_layer", { doc: window.__selDoc, layer: l.id });
+return { total, stale: true };
+"""),
     ("range_select_15k_luma_case", """
 const ed = ednow(window.__selDoc);
 if (!ed.tileMode) return { skipped: "canvas backend" };
@@ -566,6 +624,7 @@ const bytesBefore = expBefore.getContext("2d").getImageData(0, 0, expBefore.widt
 
 ed.mapView = "depth";
 ed.draw();
+if (ed.renderDepthRow) ed.renderDepthRow();   // the row reflects the state when it renders (the button's click does both)
 if (ed.depthViewBtn && !ed.depthViewBtn.classList.contains("ipc-toggle-on")) {
     throw new Error("case 5: depthViewBtn missing ipc-toggle-on class");
 }

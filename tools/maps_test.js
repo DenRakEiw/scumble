@@ -403,6 +403,7 @@ async function main() {
         docXf: [1, 0, 0, 1, 0, 0],
         memoryReport: InpaintEditor.prototype.memoryReport,
         filterKey: InpaintEditor.prototype.filterKey,
+        effectViewOf: InpaintEditor.prototype.effectViewOf,
         applySnapshot: InpaintEditor.prototype.applySnapshot,
         snapshot: InpaintEditor.prototype.snapshot,
         snapshotOf: InpaintEditor.prototype.snapshotOf,

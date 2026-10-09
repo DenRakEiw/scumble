@@ -198,7 +198,18 @@ if (Math.abs(p2[0] - exp2) > 2 || Math.abs(p2[1] - exp2) > 2 || Math.abs(p2[2] -
     throw new Error(`probe 2 grey mismatch: got ${JSON.stringify(p2)}, expected ${exp2} +-2`);
 }
 
-return { p1, exp1, p2, exp2 };
+// The view is the screen's alone: the magic wand (a sample pass) reads the picture, not the weight
+// picture, so it selects the same area with the view on and off (the green right half, not a ramp band).
+await run("select_color", { doc: window.__maskDoc, x: 300, y: 150, tolerance: 8, mode: "replace" });
+const boundsOn = JSON.stringify(ed.getBounds());
+ed.maskView = null; ed.sceneSig = null; ed.draw(); await wait(100);
+await run("select_color", { doc: window.__maskDoc, x: 300, y: 150, tolerance: 8, mode: "replace" });
+const boundsOff = JSON.stringify(ed.getBounds());
+await run("select_none", { doc: window.__maskDoc });
+ed.maskView = { id: rawFl.id, mode: "effect" }; ed.sceneSig = null; ed.draw(); await wait(100);
+if (boundsOn !== boundsOff) throw new Error(`wand under the effect view: ${boundsOn} with the view, ${boundsOff} without`);
+
+return { p1, exp1, p2, exp2, wandBounds: boundsOn };
 """),
 
     ("case4_png_export_byte_equal", """

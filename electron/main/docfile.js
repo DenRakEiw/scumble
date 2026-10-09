@@ -30,7 +30,7 @@ const FEATURES = [
         test: (d) => layersOf(d).some((l) => l && l.blend === "linear-light"),
     },
     {
-        id: "maps", since: "0.1.33", version: 2, sample: { maps: { depth: {} } },
+        id: "maps", since: "0.1.44", version: 2, sample: { maps: { depth: {} } },
         test: (d) => !!(d && d.maps && typeof d.maps === "object" && Object.keys(d.maps).length > 0),
     },
     {

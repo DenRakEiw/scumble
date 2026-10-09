@@ -94,6 +94,19 @@ JS = r"""
     const statColor = diffStat(cpuColor, gpuColor, 256, 256);
     check("Case 2 color compareFilterPaths (max <= 2, over2 <= 0.1%)", statColor.max <= 2 && statColor.over2Pct <= 0.1, statColor);
 
+    // 2d. the weight in the alpha (`limitOver`: the result is drawn over the picture, under a blend mode, an
+    // opacity or a mask): where w = 0 the result is transparent, where w = 1 it is the filtered picture, both paths
+    const pOver = { in_min: 50, in_max: 200, limit: { source: "luma", lo: 0.3, hi: 0.7, fLo: 0, fHi: 0 } };
+    const overGpu = GL.glToCanvas(F.applyFilter("levels", ramp256, pOver, { cache: {}, limitOver: true }));
+    const overCpu = GL.glToCanvas(F.applyFilter("levels", ramp256, pOver, { cpu: true, cache: {}, limitOver: true }));
+    const plainCpu = GL.glToCanvas(F.applyFilter("levels", ramp256, { in_min: 50, in_max: 200 }, { cpu: true, cache: {} }));
+    const pxAt = (c, x) => Array.from(c.getContext("2d").getImageData(x, 128, 1, 1).data);
+    for (const [name, c] of [["gpu", overGpu], ["cpu", overCpu]]) {
+        const out = pxAt(c, 40), inn = pxAt(c, 128), ref = pxAt(plainCpu, 128);
+        check(`Case 2d ${name}: w = 0 is transparent`, out[3] === 0, out);
+        check(`Case 2d ${name}: w = 1 is the filtered picture, opaque`, inn[3] === 255 && Math.abs(inn[0] - ref[0]) <= 2, { inn, ref });
+    }
+
     // -------------------------------------------------------------------------
     // Document lifecycle tests on 400x300
     // -------------------------------------------------------------------------
@@ -113,6 +126,25 @@ JS = r"""
     Object.defineProperty(base, "naturalHeight", { value: H });
     await ed.setBaseFromCanvas(base, { keepLayers: false });
     await settle(ed);
+
+    // 0. a limited filter layer under a blend mode: where the limit is 0 it shows nothing, so the picture stays
+    // as it is (not multiplied by itself); where the limit is 1 the filtered picture is multiplied in
+    {
+        const mul = await commands.run("add_filter", { doc: ed.node.id, type: "levels", params: { in_min: 0, in_max: 128, limit: { source: "luma", lo: 0.9, hi: 1, fLo: 0, fHi: 0 } } });
+        await commands.run("set_layer", { doc: ed.node.id, layer: mul.id, blend: "multiply" });
+        await settle(ed);
+        const flat = ed.flattenToCanvas({ forRun: true });
+        const p = Array.from(flat.getContext("2d").getImageData(200, 150, 1, 1).data);
+        check("Case 0 multiply under a limit of 0 leaves the picture (#204060)", p[0] === 0x20 && p[1] === 0x40 && p[2] === 0x60, p);
+        await commands.run("set_filter", { doc: ed.node.id, layer: mul.id, params: { in_min: 0, in_max: 128, limit: { source: "luma", lo: 0, hi: 1, fLo: 0, fHi: 0 } } });
+        await settle(ed);
+        const flat1 = ed.flattenToCanvas({ forRun: true });
+        const q = Array.from(flat1.getContext("2d").getImageData(200, 150, 1, 1).data);
+        // levels 0..128 doubles the picture (clamped), multiply with the picture: r 64 * 32 / 255 = 8, b 191 * 96 / 255 = 72
+        check("Case 0 multiply under a limit of 1 multiplies the filtered picture in", q[0] >= 6 && q[0] <= 10 && q[2] >= 68 && q[2] <= 76, q);
+        await commands.run("remove_layer", { doc: ed.node.id, layer: mul.id });
+        await settle(ed);
+    }
 
     // 1. add_filter, then set_filter with params.limit and list_layers
     const fl = await commands.run("add_filter", { doc: ed.node.id, type: "grain" });

@@ -796,7 +796,7 @@ Add a non-destructive filter layer on top of the stack (see filter_types for typ
 
 ### `set_filter`
 
-Change a filter layer's parameters (or its type), in one undo step as the layer list's controls make one. params.preset (a film stock of the grain, a colour filter of black-and-white film) sets the preset's values and names the layer, then the other params are applied; a slider that is no offset on the preset turns it to custom when it changes the value (filter_types: offset). A new type starts from its defaults, then params. Nothing changes when a parameter is refused.
+Change a filter layer's parameters (or its type), in one undo step as the layer list's controls make one. params.limit restricts where the filter acts (by depth, luma or colour; fill layers take depth only). params.preset (a film stock of the grain, a colour filter of black-and-white film) sets the preset's values and names the layer, then the other params are applied; a slider that is no offset on the preset turns it to custom when it changes the value (filter_types: offset). A new type starts from its defaults, then params. Nothing changes when a parameter is refused.
 
 | param | type | description |
 |---|---|---|
