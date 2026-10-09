@@ -1191,6 +1191,7 @@ async function main() {
             ["select_shape", { shape: "ellipse", x: 0, y: 0, w: 10, h: 10 }, "auto"], ["select_shape", { shape: "polygon", points: [[0, 0], [9, 0], [0, 9]], mode: "subtract" }, "auto"],
             ["select_range", { source: "depth", lo: .2, hi: .8 }, "auto"],
             ["select_range", { source: "luma", lo: .2, hi: .8 }, "auto"],
+            ["depth_edit", { op: "flatten" }, "auto"],
             ["list_settings", {}, "auto"], ["apply_preset", { name: "M" }, "auto"], ["set_crop", { fill: "green", colorMatch: false }, "auto"],
             ["a_user_plugins_tool", {}, "ask"],
         ];

@@ -22,6 +22,8 @@ async function main() {
 
     const edgesMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_edges.js")).href);
     const weightsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_weights.js")).href);
+    const mapsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_maps.js")).href);
+    const { selectionOnMap, editMap, makeMap } = mapsMod;
 
     const {
         SNAP_TAU,
@@ -431,7 +433,176 @@ async function main() {
         }
     }
     assert.ok(flaggedRows.size >= 1 && flaggedRows.size <= 3, `90 deg xf flags a horizontal row set, got ${flaggedRows.size} rows`);
-    console.log("     [ok] 90 deg transform flags horizontal rows correctly");
+    // -------------------------------------------------------------------------
+    // 9. Depth edits inside the selection (R2-S8)
+    // -------------------------------------------------------------------------
+    console.log("  8. depth edits inside selection (selectionOnMap and editMap)...");
+
+    // a. 1200 x 800 document, map ramp 0..1 left to right (300 x 200 map)
+    const dw = 1200, dh = 800;
+    const mw8 = 300, mh8 = 200;
+    const rampU16 = new Uint16Array(mw8 * mh8);
+    for (let y = 0; y < mh8; y++) {
+        for (let x = 0; x < mw8; x++) {
+            // Texel center depth: (x + 0.5) / mw8
+            rampU16[y * mw8 + x] = Math.round(((x + 0.5) / mw8) * 65535);
+        }
+    }
+    const rampMap = makeMap("depth", mw8, mh8, rampU16, [dw, 0, 0, dh, 0, 0]);
+
+    // Rectangle selection over x: 300..600 in document pixels (width 1200, height 800)
+    // Create selCanvas at scale s = 1 (1200 x 800, alpha channel)
+    const selAlpha1 = new Uint8Array(dw * dh);
+    for (let y = 0; y < dh; y++) {
+        for (let x = 300; x < 600; x++) {
+            selAlpha1[y * dw + x] = 255;
+        }
+    }
+    const selBuf1 = { width: dw, height: dh, data: selAlpha1 };
+    const wOnMap1 = selectionOnMap(selBuf1, 1, rampMap);
+    assert.equal(wOnMap1.length, mw8 * mh8, "selectionOnMap output size matches map");
+
+    // Check weights:
+    // doc x = 300 corresponds to map x = 300 / 4 = 75.
+    // doc x = 600 corresponds to map x = 600 / 4 = 150.
+    // Inside footprint (e.g. x = 80..145), weight should be 1.0
+    for (let y = 10; y < 190; y += 20) {
+        for (let x = 80; x <= 145; x++) {
+            assert.ok(Math.abs(wOnMap1[y * mw8 + x] - 1.0) < 1e-4, `inside weight at (${x}, ${y}) should be 1.0, got ${wOnMap1[y * mw8 + x]}`);
+        }
+        for (let x = 0; x < 70; x++) {
+            assert.equal(wOnMap1[y * mw8 + x], 0, `outside left weight at (${x}, ${y}) should be 0`);
+        }
+        for (let x = 155; x < mw8; x++) {
+            assert.equal(wOnMap1[y * mw8 + x], 0, `outside right weight at (${x}, ${y}) should be 0`);
+        }
+    }
+    console.log("     [ok] selectionOnMap correctly projects doc selection to map texels");
+
+    // Flatten on rampMap:
+    const flatResult = editMap(rampMap, wOnMap1, "flatten");
+    assert.ok(flatResult instanceof Uint16Array, "editMap returns Uint16Array");
+    assert.notEqual(flatResult, rampMap.data, "editMap returns a new array, never the old one");
+
+    // Median of ramp between x = 75 and 150: center is at x ~ 112.5
+    // median value should be around 0.375 * 65535 ~ 24576
+    const expectedMedianU16 = Math.round(flatResult.median * 65535);
+    for (let y = 10; y < 190; y += 20) {
+        for (let x = 80; x <= 145; x++) {
+            const v = flatResult[y * mw8 + x];
+            assert.ok(Math.abs(v - expectedMedianU16) <= 1, `inside texel (${x}, ${y}) must equal median (+-1), got ${v} vs ${expectedMedianU16}`);
+        }
+        for (let x = 0; x < 70; x++) {
+            assert.equal(flatResult[y * mw8 + x], rampMap.data[y * mw8 + x], `outside left texel (${x}, ${y}) must be byte-equal`);
+        }
+        for (let x = 155; x < mw8; x++) {
+            assert.equal(flatResult[y * mw8 + x], rampMap.data[y * mw8 + x], `outside right texel (${x}, ${y}) must be byte-equal`);
+        }
+    }
+    console.log("     [ok] flatten: inside footprint equals median (+-1), outside byte-equal");
+
+    // b. Soft selection at alpha 128 -> halfway (+-1)
+    const softWeight = new Float32Array(mw8 * mh8);
+    const softVal = 128 / 255;
+    for (let y = 50; y < 150; y++) {
+        for (let x = 100; x < 200; x++) {
+            softWeight[y * mw8 + x] = softVal;
+        }
+    }
+    const softFlat = editMap(rampMap, softWeight, "flatten", 0.8);
+    const targetU16 = Math.round(0.8 * 65535);
+    for (let y = 60; y < 140; y += 10) {
+        for (let x = 110; x < 190; x += 10) {
+            const orig = rampMap.data[y * mw8 + x];
+            const expectedHalfway = Math.round(orig + softVal * (targetU16 - orig));
+            assert.ok(Math.abs(softFlat[y * mw8 + x] - expectedHalfway) <= 1, `soft selection must be halfway (+-1), got ${softFlat[y * mw8 + x]} vs ${expectedHalfway}`);
+        }
+    }
+    console.log("     [ok] soft selection at alpha 128 produces halfway result (+-1)");
+
+    // d. Offset 0.5 clamps at 65535
+    const offsetResult = editMap(rampMap, wOnMap1, "offset", 0.5);
+    for (let y = 10; y < 190; y += 20) {
+        for (let x = 80; x <= 145; x++) {
+            const orig = rampMap.data[y * mw8 + x];
+            const expClamped = Math.min(65535, Math.round(orig + 0.5 * 65535));
+            assert.equal(offsetResult[y * mw8 + x], expClamped, `offset 0.5 at (${x}, ${y}) clamped correctly`);
+        }
+        for (let x = 0; x < 70; x++) {
+            assert.equal(offsetResult[y * mw8 + x], rampMap.data[y * mw8 + x], `offset outside must be byte-equal`);
+        }
+    }
+    // Negative offset clamps at 0
+    const negOffset = editMap(rampMap, wOnMap1, "offset", -0.5);
+    for (let y = 10; y < 190; y += 20) {
+        for (let x = 80; x <= 145; x++) {
+            const orig = rampMap.data[y * mw8 + x];
+            const expClamped = Math.max(0, Math.round(orig - 0.5 * 65535));
+            assert.equal(negOffset[y * mw8 + x], expClamped, `negative offset at (${x}, ${y}) clamped to 0 correctly`);
+        }
+    }
+    console.log("     [ok] offset clamps at 65535 and 0; outside is byte-equal");
+
+    // e. Smooth 1: variance inside drops by >= 50 %, outside byte-equal
+    const noisyData = new Uint16Array(mw8 * mh8);
+    for (let y = 0; y < mh8; y++) {
+        for (let x = 0; x < mw8; x++) {
+            // High frequency checkerboard noise
+            const noise = ((x ^ y) & 1) ? 20000 : 40000;
+            noisyData[y * mw8 + x] = noise;
+        }
+    }
+    const noisyMap = makeMap("depth", mw8, mh8, noisyData, [dw, 0, 0, dh, 0, 0]);
+    const smoothResult = editMap(noisyMap, wOnMap1, "smooth", 1);
+
+    // Compute variance inside selection (x in 85..140, y in 20..180)
+    let sumOrig = 0, sumSqOrig = 0, countInside = 0;
+    let sumSmooth = 0, sumSqSmooth = 0;
+    for (let y = 20; y < 180; y++) {
+        for (let x = 85; x <= 140; x++) {
+            const vo = noisyMap.data[y * mw8 + x];
+            const vs = smoothResult[y * mw8 + x];
+            sumOrig += vo; sumSqOrig += vo * vo;
+            sumSmooth += vs; sumSqSmooth += vs * vs;
+            countInside++;
+        }
+    }
+    const meanOrig = sumOrig / countInside;
+    const varOrig = (sumSqOrig / countInside) - (meanOrig * meanOrig);
+    const meanSmooth = sumSmooth / countInside;
+    const varSmooth = (sumSqSmooth / countInside) - (meanSmooth * meanSmooth);
+
+    const varReductionPct = (1 - varSmooth / varOrig) * 100;
+    assert.ok(varSmooth <= 0.5 * varOrig, `variance inside must drop by >= 50%, dropped by ${varReductionPct.toFixed(1)}%`);
+
+    // Outside byte-equal
+    for (let y = 10; y < 190; y += 20) {
+        for (let x = 0; x < 70; x++) {
+            assert.equal(smoothResult[y * mw8 + x], noisyMap.data[y * mw8 + x], `smooth outside must be byte-equal`);
+        }
+    }
+    console.log(`     [ok] smooth 1: variance inside dropped by ${varReductionPct.toFixed(1)}% (>= 50%), outside byte-equal`);
+
+    // h. Rotated 90 deg xf: doc is 800 x 1200, map 300 x 200
+    // Doc x in [0, 800], doc y in [0, 1200]
+    // Turned 90 deg clockwise: xf = [0, 800, -1200, 0, 1200, 0]
+    const rotXf = [0, 800, -1200, 0, 1200, 0];
+    const rotMap = makeMap("depth", mw8, mh8, rampU16, rotXf);
+    // Selection in turned frame: box docX in [200, 600], docY in [300, 900]
+    const selRot = new Uint8Array(800 * 1200);
+    for (let y = 300; y < 900; y++) {
+        for (let x = 200; x < 600; x++) {
+            selRot[y * 800 + x] = 255;
+        }
+    }
+    const wRot = selectionOnMap({ width: 800, height: 1200, data: selRot }, 1, rotMap);
+    // Check that non-zero weights exist and follow the rotated footprint
+    let rotWeightsCount = 0;
+    for (let i = 0; i < wRot.length; i++) {
+        if (wRot[i] > 0.5) rotWeightsCount++;
+    }
+    assert.ok(rotWeightsCount > 1000, `rotated selectionOnMap should find non-zero texels, found ${rotWeightsCount}`);
+    console.log("     [ok] turned 90 deg map projects selection in turned frame correctly");
 
     console.log("\nALL EDGE MATHS TESTS PASSED!");
 }

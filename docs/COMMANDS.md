@@ -258,6 +258,16 @@ Sample the document's depth map at (x, y) in image pixels (Depth Anything V2 Sma
 | `x` | number | x in image pixels (required) |
 | `y` | number | y in image pixels (required) |
 
+### `depth_edit` *(image)*
+
+Change the document's depth map inside the selection (soft edges count partly): flatten to the median (or to `value`, 0 near .. 1 far), offset by `value` (-1..1, + is farther), or smooth by `value` (0..1). One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `op` | string | flatten, offset or smooth (one of `flatten`, `offset`, `smooth`) (required) |
+| `value` | number | see op |
+
 ## Selection
 
 ### `select_rect` *(image)*

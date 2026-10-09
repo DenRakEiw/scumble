@@ -2118,6 +2118,30 @@ const COMMANDS = {
             };
         },
     },
+    depth_edit: {
+        needsImage: true,
+        description: "Change the document's depth map inside the selection (soft edges count partly): flatten to the median (or to `value`, 0 near .. 1 far), offset by `value` (-1..1, + is farther), or smooth by `value` (0..1). One undo step.",
+        params: {
+            op: P.enum("flatten, offset or smooth", ["flatten", "offset", "smooth"]),
+            value: P.num("see op"),
+        },
+        async run(ed, a) {
+            const op = String(a.op || "").trim().toLowerCase();
+            if (!["flatten", "offset", "smooth"].includes(op)) {
+                throw new Error("op must be flatten, offset or smooth");
+            }
+            if (!ed.maps || !ed.maps.depth) {
+                throw new Error("run depth_map first");
+            }
+            if (!ed.getBounds()) {
+                throw new Error("make a selection first");
+            }
+            const val = a.value !== undefined && a.value !== null ? +a.value : null;
+            const res = await ed.editDepth(op, val);
+            if (!res) throw new Error("depth edit failed");
+            return res;
+        },
+    },
     get_state: { readOnly: true, description: "The document's state JSON (the node's canvas_state without the selection bitmaps).", params: {}, async run(ed) { const v = JSON.parse(ed.getValue() || "{}"); delete v.selection; delete v.selections; return v; } },
     set_status: { description: "Write a line into the document's status bar.", params: { text: P.str("", { required: true }) }, async run(ed, a) { ed.setStatus(String(a.text)); return { status: ed.status }; } },
 

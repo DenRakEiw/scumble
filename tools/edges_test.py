@@ -304,7 +304,186 @@ JS = r"""
         check("Case d: no selection mirror over 64 MB", memRep.selectionMirrorBytes <= 64 * 1024 * 1024, { mirrorBytes: memRep.selectionMirrorBytes });
     }
 
+    // Case g: 15k depth_edit memory and execution check
+    await commands.run("select_rect", { doc: ed.node.id, x: 2000, y: 2000, w: 4000, h: 4000, mode: "replace" });
+    await settle(ed);
+    await commands.run("depth_edit", { doc: ed.node.id, op: "offset", value: 0.05 });
+    await settle(ed);
+    const memRep15 = ed.memoryReport ? ed.memoryReport() : null;
+    if (memRep15 && memRep15.selectionMirrorBytes) {
+        check("Case g: no selection mirror over 64 MB after 15k depth_edit", memRep15.selectionMirrorBytes <= 64 * 1024 * 1024, { mirrorBytes: memRep15.selectionMirrorBytes });
+    }
+
     shell.closeDocument && shell.closeDocument(ed, { force: true });
+
+    // -------------------------------------------------------------------------
+    // R2-S8: depth edits inside the selection (the object snap)
+    // -------------------------------------------------------------------------
+    const ed8 = shell.newDocument();
+    shell.activate(ed8);
+    await new Promise((r) => setTimeout(r, 200));
+    ed8.resizeCanvas();
+
+    const W8 = 1200, H8 = 800;
+    const base8 = mk(W8, H8);
+    Object.defineProperty(base8, "naturalWidth", { value: W8 });
+    Object.defineProperty(base8, "naturalHeight", { value: H8 });
+    await ed8.setBaseFromCanvas(base8, { keepLayers: false });
+    await settle(ed8);
+
+    const mw8 = 300, mh8 = 200;
+    const rampData = new Uint16Array(mw8 * mh8);
+    for (let y = 0; y < mh8; y++) {
+        for (let x = 0; x < mw8; x++) {
+            rampData[y * mw8 + x] = Math.round(((x + 0.5) / mw8) * 65535);
+        }
+    }
+    const rampMap0 = makeMap("depth", mw8, mh8, rampData, [W8, 0, 0, H8, 0, 0]);
+    await ed8.setMap("depth", rampMap0);
+    await settle(ed8);
+
+    // Case a: rectangle selection over x 300-600 -> flatten
+    await commands.run("select_rect", { doc: ed8.node.id, x: 300, y: 0, w: 300, h: 800, mode: "replace" });
+    await settle(ed8);
+    const resA = await commands.run("depth_edit", { doc: ed8.node.id, op: "flatten" });
+    await settle(ed8);
+
+    const curDataA = ed8.maps.depth.data;
+    const medianU16 = Math.round(resA.median * 65535);
+    let okAInside = true, okAOutside = true;
+    for (let y = 10; y < 190; y += 20) {
+        for (let x = 80; x <= 145; x++) {
+            if (Math.abs(curDataA[y * mw8 + x] - medianU16) > 1) okAInside = false;
+        }
+        for (let x = 0; x < 70; x++) {
+            if (curDataA[y * mw8 + x] !== rampData[y * mw8 + x]) okAOutside = false;
+        }
+        for (let x = 155; x < mw8; x++) {
+            if (curDataA[y * mw8 + x] !== rampData[y * mw8 + x]) okAOutside = false;
+        }
+    }
+    check("Case a: flatten inside footprint equals median (+-1), outside byte-equal", okAInside && okAOutside, { okAInside, okAOutside, medianU16 });
+
+    // Case b: soft selection at alpha 128 -> halfway (+-1)
+    await commands.run("undo", { doc: ed8.node.id });
+    await settle(ed8);
+    const srect = ed8.sel.readRect(300, 200, 300, 400);
+    for (let i = 0; i < srect.data.length; i += 4) {
+        srect.data[i] = 255;
+        srect.data[i + 3] = 128;
+    }
+    ed8.sel.writeRect(srect, 300, 200);
+    ed8.markSelectionChanged([300, 200, 600, 600]);
+    await settle(ed8);
+
+    await commands.run("depth_edit", { doc: ed8.node.id, op: "flatten", value: 0.8 });
+    await settle(ed8);
+
+    const curDataB = ed8.maps.depth.data;
+    const targetU16 = Math.round(0.8 * 65535);
+    let okB = true;
+    for (let y = 60; y < 140; y += 10) {
+        for (let x = 85; x <= 140; x += 10) {
+            const orig = rampData[y * mw8 + x];
+            const expB = Math.round(orig + (128 / 255) * (targetU16 - orig));
+            if (Math.abs(curDataB[y * mw8 + x] - expB) > 1) okB = false;
+        }
+    }
+    check("Case b: soft selection at alpha 128 produces halfway result (+-1)", okB);
+
+    // Case c: Undo, then redo: ed.maps.depth is the very object before and after (identity)
+    const mapBeforeUndo = ed8.maps.depth;
+    await commands.run("undo", { doc: ed8.node.id });
+    await settle(ed8);
+    const mapAfterUndo = ed8.maps.depth;
+    await commands.run("redo", { doc: ed8.node.id });
+    await settle(ed8);
+    const mapAfterRedo = ed8.maps.depth;
+    check("Case c: undo then redo preserves map object identity", mapAfterRedo === mapBeforeUndo && mapAfterUndo !== mapBeforeUndo);
+
+    // Case d: offset 0.5 clamps at 65535
+    await commands.run("select_rect", { doc: ed8.node.id, x: 300, y: 0, w: 300, h: 800, mode: "replace" });
+    await settle(ed8);
+    await commands.run("depth_edit", { doc: ed8.node.id, op: "offset", value: 0.5 });
+    await settle(ed8);
+
+    const curDataD = ed8.maps.depth.data;
+    let okD = true;
+    for (let y = 10; y < 190; y += 20) {
+        for (let x = 80; x <= 145; x++) {
+            if (curDataD[y * mw8 + x] !== 65535) okD = false;
+        }
+    }
+    check("Case d: offset 0.5 clamps at 65535", okD);
+
+    // Case e: smooth 1: variance inside drops by >= 50 %, outside byte-equal
+    const noisyU16 = new Uint16Array(mw8 * mh8);
+    for (let y = 0; y < mh8; y++) {
+        for (let x = 0; x < mw8; x++) {
+            noisyU16[y * mw8 + x] = ((x ^ y) & 1) ? 20000 : 40000;
+        }
+    }
+    const noisyMap = makeMap("depth", mw8, mh8, noisyU16, [W8, 0, 0, H8, 0, 0]);
+    await ed8.setMap("depth", noisyMap);
+    await settle(ed8);
+
+    await commands.run("depth_edit", { doc: ed8.node.id, op: "smooth", value: 1 });
+    await settle(ed8);
+
+    const curDataE = ed8.maps.depth.data;
+    let sumOrigE = 0, sumSqOrigE = 0, countE = 0;
+    let sumSmoothE = 0, sumSqSmoothE = 0;
+    for (let y = 20; y < 180; y++) {
+        for (let x = 85; x <= 140; x++) {
+            const vo = noisyU16[y * mw8 + x];
+            const vs = curDataE[y * mw8 + x];
+            sumOrigE += vo; sumSqOrigE += vo * vo;
+            sumSmoothE += vs; sumSqSmoothE += vs * vs;
+            countE++;
+        }
+    }
+    const meanOrigE = sumOrigE / countE;
+    const varOrigE = (sumSqOrigE / countE) - (meanOrigE * meanOrigE);
+    const meanSmoothE = sumSmoothE / countE;
+    const varSmoothE = (sumSqSmoothE / countE) - (meanSmoothE * meanSmoothE);
+    const okEVar = varSmoothE <= 0.5 * varOrigE;
+
+    let okEOutside = true;
+    for (let y = 10; y < 190; y += 20) {
+        for (let x = 0; x < 70; x++) {
+            if (curDataE[y * mw8 + x] !== noisyU16[y * mw8 + x]) okEOutside = false;
+        }
+    }
+    check("Case e: smooth 1 variance inside drops by >= 50%, outside byte-equal", okEVar && okEOutside, { varRatio: varSmoothE / varOrigE, okEOutside });
+
+    // Case f: limited layer re-renders: filteredCanvas miss counter grows by 1
+    await commands.run("add_filter", { doc: ed8.node.id, filter: "haze", params: { amount: 50, limit: { source: "depth", lo: 0.2, hi: 0.8 } } });
+    await settle(ed8);
+
+    let missCountF = 0;
+    const origFC = ed8.filteredCanvas.bind(ed8);
+    ed8.filteredCanvas = function(...args) {
+        missCountF++;
+        return origFC(...args);
+    };
+
+    await commands.run("depth_edit", { doc: ed8.node.id, op: "offset", value: 0.05 });
+    await settle(ed8);
+    ed8.filteredCanvas = origFC;
+    check("Case f: limited layer re-renders on depth_edit", missCountF >= 1, { missCountF });
+
+    // Case h: map turned 90 deg (rotate_canvas) then flatten: edited texels under selection in turned frame
+    await commands.run("rotate_canvas", { doc: ed8.node.id, angle: 90 });
+    await settle(ed8);
+
+    await commands.run("select_rect", { doc: ed8.node.id, x: 200, y: 300, w: 400, h: 600, mode: "replace" });
+    await settle(ed8);
+
+    const resH = await commands.run("depth_edit", { doc: ed8.node.id, op: "flatten" });
+    await settle(ed8);
+    check("Case h: flatten on turned 90 deg map modifies texels in turned frame", resH.texels_changed > 0, { changed: resH.texels_changed });
+
+    shell.closeDocument && shell.closeDocument(ed8, { force: true });
 
     return { fails, tiles: !!ed.tileMode, hash: hash50 };
 })()

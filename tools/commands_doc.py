@@ -18,7 +18,7 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "CO
 
 GROUPS = [
     ("App", ["ping", "list_commands", "list_documents", "new_document", "activate_document", "close_document", "open_document", "list_recipes", "select_recipe", "set_node_params", "list_plugins", "run_action", "filter_types", "read_log", "list_brush_tips", "set_brush"]),
-    ("Document and files", ["status", "new_canvas", "load_image", "add_image_layer", "save_document", "get_state", "set_status", "depth_map", "sample_depth"]),
+    ("Document and files", ["status", "new_canvas", "load_image", "add_image_layer", "save_document", "get_state", "set_status", "depth_map", "sample_depth", "depth_edit"]),
     ("Selection", ["select_rect", "select_all", "select_none", "select_invert", "select_feather", "select_grow", "select_from_layer", "select_mask", "select_by_text", "select_point", "select_color", "select_shape", "select_range"]),
     ("Prompt and generation", ["set_prompt", "set_generation", "set_crop", "set_settings", "list_settings", "apply_preset", "upsample_prompt", "generate", "generate_new", "upscale", "realism_pass", "cancel_run"]),
     ("Layers", ["list_layers", "set_active_layer", "set_layer", "add_paint_layer", "remove_layer", "frequency_separation", "dodge_burn_layer", "duplicate_layer", "merge_down", "move_layer", "flip_layer", "center_layer", "match_edges", "transform_layer", "copy_to_layer", "align_layers", "group_layers", "ungroup_layers", "set_group", "flatten", "cutout_layer", "set_mask"]),

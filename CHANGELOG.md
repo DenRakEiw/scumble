@@ -12,6 +12,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - Built-in Haze by depth filter: simulates atmospheric haze and aerial perspective using the scene's depth map, with density, start threshold, falloff curve, and desaturation controls. Automatically samples airlight color from the scene's far distance or takes a custom color. Edge snapping aligns haze cleanly to fine object contours.
 - Mathematical foundations for dehazing: Dark Channel Prior calculation via O(1) van Herk / Gil-Werman running min filter, atmospheric light estimation, and transmission refinement using gray guided filter.
 - **Dehaze**, a filter layer that clears haze from the distance, found in the picture itself or taken from the depth map, with *Protect sky*.
+- **Fix the depth map by hand**: *Flatten*, *Nearer*, *Farther* and *Smooth* inside the selection; new `depth_edit` command.
 
 ## 0.1.44 — 2026-10-09
 
