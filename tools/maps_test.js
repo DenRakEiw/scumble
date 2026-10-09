@@ -460,6 +460,7 @@ async function main() {
         geometryToken: InpaintEditor.prototype.geometryToken,
         setMap: InpaintEditor.prototype.setMap,
         setMapMeta: InpaintEditor.prototype.setMapMeta,
+        cancelMapMeta: InpaintEditor.prototype.cancelMapMeta,
         pushUndoSnapshot(snap, opts) { snap.label = opts?.label; this.undo.push(snap); },
         markFilterChanged() {},
         renderHistory() {},
@@ -583,12 +584,26 @@ async function main() {
     assert.strictEqual(editor.maps.depth.data, depthMapWithGuide.data, "data array still identical after undo");
     assert.strictEqual(editor.maps.depth.guide, depthMapWithGuide.guide, "guide array still identical after undo");
 
+    // Test cancelMapMeta restores _mapUndoPending without undo step
+    editor.setMapMeta("depth", { snap: { strength: 80 } }, { preview: true });
+    assert.strictEqual(editor.maps.depth.meta.snap.strength, 80);
+    assert.notStrictEqual(editor._mapUndoPending, null);
+    const okCancel = editor.cancelMapMeta("depth");
+    assert.strictEqual(okCancel, true, "cancelMapMeta returns true");
+    assert.strictEqual(editor._mapUndoPending, null, "_mapUndoPending cleared on cancel");
+    assert.strictEqual(editor.maps.depth.meta.snap.strength, 50, "strength reverted to 50");
+
+    // Test memoryReport includes guide bytes
+    const memRep = editor.memoryReport();
+    assert.strictEqual(memRep.maps.kinds.depth.guide, true, "memoryReport tracks guide: true");
+    assert.strictEqual(memRep.maps.kinds.depth.bytes, depthMapWithGuide.data.byteLength + depthMapWithGuide.guide.byteLength, "memoryReport includes guide bytes");
+
     // Test mapExtras preserves guide object identity (===)
     const guideBefore = editor.maps.depth.guide;
     editor.mapExtras(rotXf, "turn");
     assert.strictEqual(editor.maps.depth.guide, guideBefore, "mapExtras leaves guide object strictly identical (===)");
 
-    console.log("  [ok] setMapMeta preview, commit, 0-byte undo/redo, and guide identity across geometry turns");
+    console.log("  [ok] setMapMeta preview, commit, cancel, 0-byte undo/redo, memoryReport, and guide identity across turns");
 
     console.log("ALL MAPS TESTS PASSED!");
     process.exit(0);
