@@ -108,6 +108,7 @@ JS = r"""
     check("b: far pixel has strong tint towards airlight", diff550 > 30, { diff550 });
 
     const cpuB = ed.filteredCanvas(fx, { cpu: true, forRun: true });
+    check("b: cpuB canvas available", !!cpuB);
     if (cpuB) {
         const pxCpuB = cpuB.getContext("2d").getImageData(0, 0, W, H).data;
         let maxDiffGLvsCPU = 0, over2Count = 0;
