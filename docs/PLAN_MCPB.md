@@ -7,8 +7,11 @@ install in Claude Desktop (§7), is the user's hand test:** the desktop app is C
 can never drive. **The first install (2026-10-09 17:38) timed out** ("Request timed out", three restarts): Claude
 Desktop runs the server in a UtilityProcess (§1), where the starter's `stdio: "inherit"` reached nobody. Fixed the
 same evening (the relay through `process.stdin` / `process.stdout`, the entry check through `process.argv[1]`),
-proven in the rebuilt host (`tools/mcpb_utility.js`, part of the `mcpb` gate with `--exe`); the user installs the
-rebuilt `.mcpb` again (the installed copy cannot be patched from here). The bundle for it: `.claude/worktrees/mcpb/dist/scumble-0.1.44.mcpb` (it names 0.1.44 because the
+proven in the rebuilt host (`tools/mcpb_utility.js`, part of the `mcpb` gate with `--exe`); the user installed the
+rebuilt `.mcpb` again (the installed copy cannot be patched from here). **Passed 2026-10-09 18:19:** Claude Desktop's
+log says "Connected to Scumble (109 tools)" in the UtilityProcess, `initialize` answered in 0.6 s, and in a chat
+Claude Desktop listed the two open documents and the recipe (proxy mode on the user's window). Not yet looked at by
+hand: the headless case (Scumble closed), the *Scumble.exe* field with a portable copy and with a wrong path (§7 3-4). The bundle for it: `.claude/worktrees/mcpb/dist/scumble-0.1.44.mcpb` (it names 0.1.44 because the
 branch's `package.json` does; the release build names 0.1.45). The user's word (2026-10-09): released together with
 0.1.45; merge into `main` when the Nik 9 agent's state allows. The user's ask: an MCP Bundle (`.mcpb`) so that Scumble installs
 into Claude Desktop with one click, can be listed on Smithery, and has a chance at GitHub's MCP registry
