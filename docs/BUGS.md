@@ -241,11 +241,17 @@ that message instead of queueing the first file. `applyPreset` (`host.js:1167`) 
 (`missing`, "not on the server, kept the current choice there"). Test: the recipes gate with a stub `/object_info` whose
 lists lack the Qwen files; assert the rows keep the recipe's names and the run is refused naming the file.
 
-**To measure before believing the second finding:** one live run of `qwen_image_edit_2_1_local` on a ComfyUI with the
-three files (downloading on 2026-10-09, 17 GB), a selection and an instruction that names the change; compare the
-result layer against the crop. If the edit lands, the reporter's server had a wrong file in a row they did not fix, and
-the fix above covers it. If it does not, suspects in order: the `withOriginal` second picture (the identical crop as
-`<image2>` when a fill mode is on), `resolution` 0 against 1024, and the stitch's paste inside the selection only.
+**Run live 2026-10-09 (the three files downloaded to the user's ComfyUI 0.38.0, a dev instance on its own profile,
+`test_base.png`, a 170 x 200 selection, "Change the white rectangle into a red apple on a wooden table", seed 12345):
+the recipe works.** The queued prompt held the recipe's own files and `CLIPLoader` `type: qwen_image`, the sampler ran
+25 steps, the prompt executed in 11.8 s, and the result layer shows a red apple on a wooden table inside the selection
+(the patch differs from the base by a mean of 26 levels per channel there). So the graph is not the cause of "no
+edits done"; the reporter's server most likely queued a wrong file in a row they did not change (the Model row, say,
+swapped for the first `diffusion_models` entry, or the VAE), which the silent swap above hides. Ask them which three
+files their rows show (and `/object_info` names for the Qwen 2.1 files on their server). Two things seen on the way,
+not bugs: the node's align fit refuses on this picture ("fit out of range", scale 2.0 in y, a gradient with no edges
+to fit), and a test that compares a result layer against `flattenToCanvas({ forRun: true })` compares it with itself
+(the flatten holds the layer; `tools/smoke_test.py`'s loopback step relies on that).
 
 ### Size limits: gaps found reading the code (2026-10-07, read, not run)
 
