@@ -120,7 +120,7 @@ LICENSE                copied in (GPL-3.0, the same as the app)
   "tools": [],
   "tools_generated": true,
   "compatibility": { "platforms": ["win32"], "runtimes": { "node": ">=18.0.0" } },
-  "keywords": ["image-editing", "inpainting", "layers", "photoshop-alternative", "comfyui"]
+  "keywords": ["image-editing", "inpainting", "layers", "image-generation", "comfyui", "photo-editing"]
 }
 ```
 
