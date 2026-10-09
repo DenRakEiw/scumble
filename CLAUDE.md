@@ -78,7 +78,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-09: **0.1.44 released and Latest**; R2-S2 built as part of Release 2+3 block; awaiting review before R2-S3)
+## Where things stand (2026-10-09: **0.1.44 released and Latest**; R2-S3 benchmark complete; awaiting review before R2-S4)
 
 **0.1.44 is out** (tag v0.1.44, published 2026-10-09T10:07:52Z, title "depth maps, range selections, filter limits"; the post
 `v0-1-44` committed to the website with the manual synced, its deploy status to be read). It is **release 1 (masks) of
@@ -99,8 +99,12 @@ release at the end after the user's test; release 4 (blend modes) independent.
   `SNAP_DEFAULT` (50); `snapParams(strength)` mapping 0..100 to `[sigmaR, tau]`; CPU twin `snapField` and GLSL twin `SNAP_GLSL`;
   detail pass helpers `tileBoxes`, `fusedSize`, `fitScaleShift`, `fuseTiles` with raised-cosine overlap blending; `rangeMax` (separable 4x4);
   `edgeTiles` (256x256 document tile edge flagging under affine transform). Unit tests in `tools/edges_test.js` covering all 11 PLAN cases.
-  Node build synced and committed in node repo (`91e0428`). Gates `lint`, `types`, `help`, `commands`, `film` ALL PASS on both `--tiles on`
-  and `--tiles off` with `--offline`. Ready for reviewer subagent before R2-S3.
+  Node build synced and committed in node repo (`91e0428`). Review findings resolved in `ce7a0fc`.
+- **R2-S3 built** (2026-10-09): Depth detail & snap benchmark (`tools/depth_bench.py`): measured global pass, large inputs (1036, 1400, 1568 px),
+  tiles 2×2 / 3×3, edge snap vs full-resolution guided filter, memory and costs across `scene.jpg`, `skin.jpg`, and `adobe_15000x10000.jpg`;
+  visual crops generated in `scratch/bench/`; section "Release 2 checkpoint (measured 2026-10-09)" appended to `docs/PLAN_NIK9.md` confirming
+  decisions R2-D1 (Tiles 2×2), R2-D2 (snap default 50), R2-D3 (Snap + Flatten), R2-D10 (accept 44.7 MB guide). Gates `lint`, `types`, `help`
+  ALL PASS on both `--tiles on` and `--tiles off` with `--offline`. Ready for review before R2-S4.
 **Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.

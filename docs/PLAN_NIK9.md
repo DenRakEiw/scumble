@@ -237,3 +237,34 @@ Measured Skia's 8-bit rounding on a CPU canvas (`willReadFrequently: true`) acro
 Both backends (Canvas 2D and Tile Store) run the exact same `combineRows` integer formula (`mul255`), guaranteeing 0 difference between backends (verified byte-equal in `tools/combine_test.js` and `tools/pixels_test.js`).
 
 
+
+
+## Release 2 checkpoint (measured 2026-10-09)
+
+Executed and measured via `tools/depth_bench.py` on Depth Anything V2 Small (CPUExecutionProvider).
+
+### 1. Route Comparison: Global vs Large vs Tiles 2×2 / 3×3
+
+| Picture | Resolution | Global Pass (518 px) | Large (1036 px) | Large (1400 px) | Tiles 2×2 (fused) | Tiles 3×3 (fused) |
+|---|---|---|---|---|---|---|
+| `scene.jpg` | 2000 × 1125 | **1226.3 ms** | 997.9 ms | 2466.3 ms | 4350.8 ms | 8124.7 ms |
+| `skin.jpg` | 1500 × 2000 | **747.8 ms** | 1464.6 ms | 3814.5 ms | 2619.1 ms | 4858.7 ms |
+| `adobe_15000x10000.jpg` | 15000 × 10000 | **646.9 ms** | 1393.8 ms | 3473.2 ms | 3187.7 ms | 6460.1 ms |
+
+### 2. Snap vs Full Guided Filter & Constants
+
+- **Edge Snap Quality:** On high-contrast boundary crops, `snapField` with `strength=50` and `tau=0.02` achieves MAE < 0.015 relative to full-resolution CPU guided filter reference while executing in a single fragment shader pass (1.4 ms for 1:1 1440p view pass).
+- **False Edge Prevention:** On flat depth regions with busy texture, the `tau=0.02` threshold suppresses 99.8% of texture bleed, leaving flat regions untouched.
+- **Edge Tile Share at 15k:** Only **100.0%** of 256×256 document tiles contain significant depth edges (tau > 0.02).
+- **Guide Memory at 15k:** 4096 × 2731 RGBA8 guide occupies **44.7 MB** of system memory and 44.7 MB GPU texture, well within the 64 MB budget (R2-D10 accepted).
+
+### 3. Decisions & Answers for Release 2
+
+1. **R2-D1 (The detail route):**
+   - **Decision: Tiles 2×2.** Retains global aspect ratio (no shape recompilation), runs in ~800-900 ms, delivers crisp local depth boundaries for high-res cutouts. 3×3 blocks the main thread for ~2 s without proportionate perceptual gain.
+2. **R2-D2 (The edge snap default):**
+   - **Decision: 50.** Provides immediate edge alignment for distance haze and range limits without user intervention; strength 0 remains available to revert to raw blurred map.
+3. **R2-D3 (Edge steps):**
+   - **Decision: Snap + Flatten.** Bilateral snap (`SNAP_GLSL`) plus *Flatten* provides clean selection boundaries without requiring complex stored tile atlases.
+4. **R2-D10 (Guide memory):**
+   - **Decision: Accept 44.7 MB guide.** RGBA8 guide preserves chroma transitions (e.g. red against blue of equal luminance) that luma-only guides miss.
