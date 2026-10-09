@@ -243,7 +243,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   with colour, intensity and diffusion, an Original light slider, a screen-only preview, the result as a new layer.
   Research and the plan: `docs/PLAN_RELIGHT.md` (the depth map carries placement, falloff and shadows; normals come
   first from its gradient, in phase 2 from MoGe-2 ViT-S normal, MIT, ONNX; routes: an in-app shader on the filter
-  infrastructure, Magnific's relight endpoint taking Scumble's own light map, a ComfyUI IC-Light recipe, fal's two
+  infrastructure, Magnific's relight endpoint taking Scumble's own light map, a local generative recipe only on a current model (no IC-Light SD 1.5, the user), fal's two
   direction-word endpoints as presets; the user's questions R-D1 to R-D5 in its §5; about 6-8 sessions plus 4-5).
   Nothing built.
 - 16: Oxen.ai: built from the docs, never run (no key).

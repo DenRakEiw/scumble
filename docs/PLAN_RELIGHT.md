@@ -61,7 +61,7 @@ Scumble's pattern: the same feature on the user's ComfyUI, on API providers, and
 | **fal `bria/fibo-edit/relight`** (API) | `image_url`, `light_direction` ∈ {front, side, bottom, top-down}, `light_type` ∈ {midday, blue hour light, low-angle sunlight, sunrise light, spotlight on subject, overcast light, soft overcast daylight lighting, cloud-filtered lighting, fog-diffused lighting, moonlight lighting, starlight nighttime, soft bokeh lighting, harsh studio lighting} | adapter exists (fal) | coarse: a direction word, no placement; a "presets" row |
 | **fal `fal-ai/iclight-v2`** (API) | `image_url`, `prompt`, `initial_latent` ∈ {None, Left, Right, Top, Bottom}, `enable_hr_fix` | adapter exists (fal) | the IC-Light v2 (Flux) model as a hosted service; direction words only; also `fal-ai/lightx/relight` (not read) |
 | **Any edit model by prompt** (Flux.2 / FLUX 3 / Nano Banana / Qwen on every host) | "relight with a warm light from the upper left, keep everything else" | exists today | no placement, no map; the fallback that needs no new code |
-| **ComfyUI, IC-Light (SD 1.5 `iclight_sd15_fc`)** on the user's ComfyUI | kijai's `ComfyUI-IC-Light` (`LightSource` node: a gradient light map) or huchenlei's `ComfyUI-IC-Light-Native`; a recipe whose light-map input Scumble fills with **its own light map** | to build as a recipe | local and free; SD 1.5 quality (soft detail, 1024 px class); IC-Light v2 Flux has **no public local node pack** (2026-10-09; only fal's service) |
+| **ComfyUI, a local generative route** | **not IC-Light SD 1.5** (the user, 2026-10-09: "zu alt, zu schlecht"); IC-Light v2 Flux has no public local node pack (only fal's service). The one current candidate found: a community LoRA for **Qwen Image Edit 2509** by dx8152 that relights from light directions and takes a **luminance map / black-white gradient as its second input image** (a tutorial's description, 2025-11; the LoRA's page, licence and the 2026 state of the pack to be checked before any recipe) | only if a current model holds up | a recipe on the Qwen edit chain the app already has (`recipes/qwen_image_edit*.json`), the light map as the second picture; judged on the user's pictures first |
 | Video / other | NVIDIA DiffusionRenderer (video, G-buffers, scripts only), LTX-2.3 Relight IC-LoRA (video), NVIDIA Maxine relighting NIM (faces, server) | not for pictures in the app | listed for completeness |
 
 ## 4. The shape in Scumble
@@ -86,8 +86,9 @@ Scumble's pattern: the same feature on the user's ComfyUI, on API providers, and
 
 ## 5. Open questions for the user (before the sessions)
 
-- R-D1: Which routes first? Suggested: in-app + Magnific (the light map fits) + the ComfyUI IC-Light recipe; fal's
-  two as presets later.
+- R-D1: Which routes first? Suggested: in-app + Magnific (the light map fits); fal's two as presets later; a local
+  generative recipe only on a current model (the Qwen LoRA of §3, checked first). Decided 2026-10-09: no IC-Light
+  SD 1.5 recipe.
 - R-D2: Does the in-app route ship as a result layer (pixels) or as a live filter layer (a `relight` filter with the
   lights in its params, re-rendered like any filter, maskable, undoable per change)? The filter is the better
   object (it follows the Nik release's filter limits and mask views), the pixel layer the simpler build.
@@ -110,8 +111,9 @@ Phase 1 (about 6-8 sessions):
   light); the screen-only preview; Apply as one undo step; the lights saved with the document.
 - L4: the Magnific relight adapter call (the light map in, `change_background` false, style and details settings),
   the result as a layer; a Node test of the request shape; the provider's readiness in the dialog.
-- L5: the ComfyUI recipe on kijai's IC-Light nodes (the light map through the recipe's image input; `/object_info`
-  check for the node pack; the hint when it is missing); no live run unless the user frees ComfyUI.
+- L5 (conditional): a local generative recipe only if the Qwen Image Edit relight LoRA (§3) holds up on the user's
+  pictures: the light map as the recipe's second picture, the LoRA loader in the recipe, `/object_info` for the
+  nodes, the hint when they are missing; no live run unless the user frees ComfyUI. No IC-Light SD 1.5 recipe.
 - L6: MCP commands, the assistant's rows, the manual, the CHANGELOG line; the gate `relight` (the light map's
   bytes for a known light on a known depth ramp; the preview never in an export; undo; the request shapes).
 Phase 2 (about 4-5 sessions): the normal model (MoGe-2 ViT-S normal: registry row, ONNX on the `Runtime`, a
