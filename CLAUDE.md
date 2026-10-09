@@ -238,6 +238,14 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   nudge as the fallback. Tests: normal tier (a result shifted and scaled by known amounts comes back within a pixel;
   a flat area or a too-large fit refuses). **Built 2026-10-08** (affine Lucas-Kanade edge ring fit in `renderer/editor/edgefit.js`, `matchEdges` on `InpaintEditor`, context menu entry, MCP command `match_edges`, live result alignment in `renderer/editor/stitch.js`, `tools/edgefit_test.js` 9/9 passing).
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
+- 43: **Relight: virtual lights on the picture** (the user, 2026-10-09, with a link to a commercial editor's beta of
+  2026-09-28; **the update after the Nik 9 block**, releases 2 and 3). Up to a few lights dragged on the canvas, each
+  with colour, intensity and diffusion, an Original light slider, a screen-only preview, the result as a new layer.
+  Research and the plan: `docs/PLAN_RELIGHT.md` (the depth map carries placement, falloff and shadows; normals come
+  first from its gradient, in phase 2 from MoGe-2 ViT-S normal, MIT, ONNX; routes: an in-app shader on the filter
+  infrastructure, Magnific's relight endpoint taking Scumble's own light map, a ComfyUI IC-Light recipe, fal's two
+  direction-word endpoints as presets; the user's questions R-D1 to R-D5 in its §5; about 6-8 sessions plus 4-5).
+  Nothing built.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
