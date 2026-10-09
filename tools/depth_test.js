@@ -154,8 +154,12 @@ function check(name, ok, detail = "") {
     check("modelSize(6000, 1000) capped at LONG_CAP (2058)", capW === 2058 && capH === 336 && capW % 14 === 0 && capH % 14 === 0);
 
     // workSize
-    const [gw, gh] = DepthMath.workSize(15000, 10000, DepthMath.WORK_MAX);
+    const [gw, gh] = DepthMath.workSize(15000, 10000, 2048);
     check("workSize(15000, 10000, 2048) -> [2048, 1365]", gw === 2048 && gh === 1365);
+    const [gw4, gh4] = DepthMath.workSize(15000, 10000, DepthMath.WORK_MAX);
+    check("workSize(15000, 10000, WORK_MAX = 4096) -> [4096, 2731]", DepthMath.WORK_MAX === 4096 && gw4 === 4096 && gh4 === 2731);
+    const [gwS, ghS] = DepthMath.workSize(2000, 1125, DepthMath.WORK_MAX);
+    check("workSize keeps a smaller picture at its own size", gwS === 2000 && ghS === 1125);
 
     // disparityRange on a 1..1000 ramp gives lo ≈ 5.995 and hi ≈ 995.005 (±1 bin)
     const nRamp = 100000;

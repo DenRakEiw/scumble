@@ -115,6 +115,27 @@ async function main() {
         assert.equal(hitTest(range, 0.73, tol01), "fHi", "fHi wins over hi within tolerance");
     });
 
+    test("hitTest: with a vertical position the upper zone gives the edges, the strip the feather handles", () => {
+        const { FEATHER_ZONE } = rangebarMod;
+        const tol01 = 0.03;
+        // feather 0: both handles on one spot; the edge is reachable from the upper zone, the feather from the strip
+        const flat = { lo: 0.2, hi: 0.7, fLo: 0, fHi: 0 };
+        assert.equal(hitTest(flat, 0.2, tol01, 0.3), "lo", "upper zone: the edge");
+        assert.equal(hitTest(flat, 0.2, tol01, FEATHER_ZONE + 0.1), "fLo", "strip: the feather handle");
+        assert.equal(hitTest(flat, 0.7, tol01, 0.3), "hi");
+        assert.equal(hitTest(flat, 0.7, tol01, 0.9), "fHi");
+        assert.equal(hitTest(flat, 0.45, tol01, 0.3), "box", "upper zone inside: the box");
+        assert.equal(hitTest(flat, 0.45, tol01, 0.9), "box", "strip inside: the box");
+        // a wide feather: the upper zone ignores the feather's end, the strip ignores the edge
+        const wide = { lo: 0.2, hi: 0.7, fLo: 0.1, fHi: 0.05 };
+        assert.equal(hitTest(wide, 0.1, tol01, 0.3), null, "upper zone at the feather's end: nothing");
+        assert.equal(hitTest(wide, 0.1, tol01, 0.9), "fLo");
+        assert.equal(hitTest(wide, 0.2, tol01, 0.9), "box", "strip at the edge: the box, not the edge");
+        // no vertical position: the old order (feather first)
+        assert.equal(hitTest(wide, 0.1, tol01), "fLo");
+        assert.equal(hitTest(flat, 0.2, tol01), "fLo");
+    });
+
     test("hitTest: handles, box interior and outside detection", () => {
         const range = { lo: 0.20, hi: 0.70, fLo: 0.05, fHi: 0.05, invert: false };
         const tol01 = 0.02;

@@ -511,7 +511,7 @@ Above the browser's canvas limit — beyond about 268 megapixels — pictures ar
 - Big documents want memory more than speed. Several open 15k tabs will show in the task manager.
 - On a large picture one undo step can hold hundreds of megabytes. The MB limit of the undo history (Settings › Rendering) counts brush strokes and selections only; a whole-layer step (a flip, a rotation, a filter change, a mask, a crop, a restored snapshot) can hold a full copy of its layer and is limited by the number of steps alone, so keep that number low on big documents. Snapshots cost nothing when taken and grow as the picture changes after them.
 - If something draws wrong, the first useful test is the Rendering switch: the two paths are the same picture by design, and a difference between them is a bug worth reporting.
-- **Depth maps on large pictures:** The depth map is computed at working resolution (at most 2,048 pixels on its longest side; maps up to 4,096 pixels are supported). On a 15,000 by 10,000 document, depth-limited selections and filter layers evaluate the map bilinearly, so edges stay soft at 15k until Release 2 adds full-resolution edge snapping.
+- **Depth maps on large pictures:** The depth map is computed at working resolution (the picture's own size up to 4,096 pixels on its longest side; a larger picture gets a 4,096 map). On a 15,000 by 10,000 document, depth-limited selections and filter layers evaluate the map bilinearly, so edges stay soft at 15k; an edge pass at the picture's own resolution is planned.
 
 ## Under the hood: the crop, the Highres fix and the stitch
 

@@ -1649,7 +1649,8 @@ const STYLE = `
   border-radius:var(--sc-radius, 4px); border:1px solid var(--sc-line, #3a3a3a); background:var(--sc-field, #161616); color:var(--sc-fg-2, #aaa); cursor:pointer; }
 .ipc-rangebar-btn:hover { background:var(--sc-btn-hover, #333); color:var(--sc-fg, #ddd); }
 .ipc-rangebar-btn.ipc-active { background:var(--sc-selected, #2b3a4f); color:var(--sc-active, #7cc7ff); border-color:var(--sc-active, #4a90d9); }
-.ipc-rangebar-canvas { width:100%; height:26px; border:1px solid var(--sc-line, #3a3a3a); border-radius:var(--sc-radius-sm, 3px);
+.ipc-rangebar-container { width:100%; flex-basis:100%; min-width:0; }
+.ipc-rangebar-canvas { width:100%; height:38px; border:1px solid var(--sc-line, #3a3a3a); border-radius:var(--sc-radius-sm, 3px);
   background:var(--sc-well, #161616); display:block; cursor:crosshair; touch-action:none; box-sizing:border-box; }
 .ipc-limit-block { grid-column:1 / -1; display:flex; flex-direction:column; gap:4px; margin-top:4px; padding-top:4px; border-top:1px solid var(--sc-line, #333); }
 .ipc-limit-head { display:flex; align-items:center; gap:6px; font-size:11px; }
@@ -11907,7 +11908,7 @@ class InpaintEditor {
         if (!m) return null;
         return {
             ...m,
-            u16: m.data,
+            u16: m.data || m.u16,   // a store entry keeps its bytes in `data`; a legacy object set through the setter in `u16`
             ...m.meta,
             origW: this.width,
             origH: this.height,

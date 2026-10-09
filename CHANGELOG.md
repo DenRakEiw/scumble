@@ -7,7 +7,8 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 - **A depth map of the picture.** *Selection › Depth* computes a 16-bit depth map in the app with Depth Anything V2
   Small (99 MB, Apache-2.0, offered in *Settings › Helpers*; on the GPU through DirectML or on the processor). The
-  map is saved with the document, follows turns, crops and resizes, and its row says when the picture has changed
+  map is at the picture's own size up to 4,096 pixels on its long side (a 15,000-pixel picture takes about a second),
+  is saved with the document, follows turns, crops and resizes, and its row says when the picture has changed
   enough to compute it again; it never recomputes by itself. *Show map* draws it over the canvas.
 - **Select by depth, brightness or colour.** The Selection panel's *Select by range* block: what lies between two
   depths, two brightness levels or near a colour, on a range bar over the picture's own histogram, with soft ends as

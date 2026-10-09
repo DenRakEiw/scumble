@@ -293,7 +293,7 @@ ComfyUI inpaint nodes) is reported, never loaded.
 **Depth Anything V2 Small** (Release 1, 2026-10-08): Depth Anything V2 Small in ONNX export from
 `onnx-community` (99 MB, opset 17). Input: `image` `[1, 3, H, W]` RGB normalized with ImageNet
 mean `[0.485, 0.456, 0.406]` and std `[0.229, 0.224, 0.225]`. Both dimensions $H$ and $W$ are
-scaled to multiples of 14 at working resolution (at most 2,048 pixels on the long side, `WORK_MAX`).
+scaled to multiples of 14 at working resolution (the picture's size up to 4,096 pixels on the long side, `WORK_MAX`; raised from 2,048 on 2026-10-09 so larger pictures get larger maps).
 Output: `predicted_depth` `[1, H, W]` float32 depth map (larger values = closer). The raw depth
 map is normalized by robust percentiles (0.5 % and 99.5 %) and refined with a guided filter on the
 image guide in worker threads (`depth_guide` job, `GUIDE = { r: 2, eps: 1e-3 }`). The refined
@@ -358,6 +358,7 @@ cutout model lists in every open editor.
 | Depth Anything V2 Small (DirectML, the model at its input size; R1-S2 checkpoint) | not timed | 0.19-0.23 s |
 | Depth Anything V2 Small (CPU, 24 threads; the same) | not timed | 0.48-0.73 s |
 | the guided filter after it (CPU, 2,048 px working size) | | 0.41-0.64 s |
+| the whole depth map in the app on 15,000 × 10,000 (model on DirectML, guide in the workers at 4,096 × 2,731; 2026-10-09) | | 1.06 s, 22 MB map |
 
 **VRAM pressure:** with ComfyUI holding Flux.2 Klein plus its helper models (29 of
 32 GB in use) the same SAM2 run took 125 s: DirectML pages through system memory. After
