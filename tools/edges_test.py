@@ -1,4 +1,4 @@
-"""Edge snap in Select by depth gate (PLAN_NIK9_BUILD.md §R2-S6).
+"""Edge snap in Select by depth gate (PLAN_NIK9_BUILD.md R2-S6).
 
 Tests depth edge snapping in selection:
   * Case a: select_range { source: "depth", lo: 0, hi: 0.5, fHi: 0.05 }:
@@ -13,7 +13,6 @@ Tests depth edge snapping in selection:
 Runs Node test tools/edges_test.js first, then connects to running app via CDP if available.
 """
 import asyncio
-import json
 import os
 import subprocess
 import sys
@@ -22,7 +21,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
 
 JS = r"""
 (async () => {
