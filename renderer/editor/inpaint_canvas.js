@@ -16233,6 +16233,9 @@ class InpaintEditor {
         // the recipe, the selection, the fill and the Original all change what the references go as
         this.refreshRefLayout();
         this.renderInfoRows();
+        // the depth row follows the picture: a load, a crop or a resize changes what it says (it was
+        // rendered only on a document's setValue and after a compute, so a loaded picture kept "No image loaded")
+        this.renderDepthRow();
     }
 
     /** The Info panel's rows (renderInfo, and again when the references' layout has answered: refreshRefLayout). */
