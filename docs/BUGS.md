@@ -212,6 +212,41 @@ only auto and 1K). Not run live.
 
 ## Open
 
+### Qwen Image Edit 2.1 local: a model file the server lacks is swapped for the first file in the list, silently (issue #4, 2026-10-09, read, not run)
+
+Reported by hwatik on GitHub (https://github.com/DenRakEiw/scumble/issues/4): "load clip is set to Flux (but it needs
+qwen)", and after changing it by hand "any edit returns almost the same image, no edits done" while Generate new works.
+
+**Found reading the code.** `renderSettings` (`renderer/editor/inpaint_canvas.js:20222`) replaces a combo value that is
+not in the server's list by the list's first entry, with no word in the status line:
+`if (!k.options.includes(entry.value) && k.options.length) entry.value = k.options[0]`. Every local recipe names its
+files by Comfy-Org's names (`qwen_image_2.1_int8_convrot.safetensors`, `qwen3vl_8b_int8_convrot.safetensors`,
+`qwen_image_2.1_vae_bf16.safetensors`); on a server whose files are named otherwise, or that lacks one, the Model, Text
+encoder and VAE rows each silently become the alphabetically first file of their folder, which is a Flux / SD file on
+most installs. That is the reporter's first finding; the recipe itself has `CLIPLoader` `type: "qwen_image"`, as
+ComfyUI's own template does. The same happens to `flux2_klein_local`, `upscale_model_local`, `rtx_vsr_local` and
+`realism_pass`. The reporter fixed the Text encoder row by hand; whether the Model or the VAE row still held a wrong
+file (the first VAE of a Flux install is `ae.safetensors`; a wrong VAE loads without an error) is unknown, and a wrong
+VAE on `TextEncodeQwenImage21`'s reference latents and on the decode is one candidate for "no edits done". The recipe itself was checked against ComfyUI's template `image_qwen_image_2_1_image_edit.json` on 2026-10-09:
+the same chain (UNETLoader, CLIPLoader `qwen_image`, VAELoader, QwenImage21Cache, TextEncodeQwenImage21 with the
+encoder's own latent into the KSampler, 25 steps, CFG 1, euler / simple, denoise 1); the only difference is
+`resolution` 0 (keep the crop's size, about 1 MP at `target_size` 1024) against the template's 1024 (about 1 MP as
+well). The canvas node's outputs the recipe wires (7 prompt, 10 seed, 12 negative) are right. The recipe has never
+run (the model files were not on the user's server, `docs/RECIPES.md`).
+
+**Fix (not written; the other agent holds `inpaint_canvas.js` and `host.js` on 2026-10-09):** keep the recipe's value
+when the server lacks it, show it in the select marked as missing (`qwen3vl_8b_int8_convrot.safetensors (not on the
+server)`), say so in the status line with the recipe's download link (`models` in the recipe), and refuse the run with
+that message instead of queueing the first file. `applyPreset` (`host.js:1167`) already does the first half for presets
+(`missing`, "not on the server, kept the current choice there"). Test: the recipes gate with a stub `/object_info` whose
+lists lack the Qwen files; assert the rows keep the recipe's names and the run is refused naming the file.
+
+**To measure before believing the second finding:** one live run of `qwen_image_edit_2_1_local` on a ComfyUI with the
+three files (downloading on 2026-10-09, 17 GB), a selection and an instruction that names the change; compare the
+result layer against the crop. If the edit lands, the reporter's server had a wrong file in a row they did not fix, and
+the fix above covers it. If it does not, suspects in order: the `withOriginal` second picture (the identical crop as
+`<image2>` when a fill mode is on), `resolution` 0 against 1024, and the stitch's paste inside the selection only.
+
 ### Size limits: gaps found reading the code (2026-10-07, read, not run)
 
 Found while answering the user's question about the largest picture (a workflow of three readers and a checker,
