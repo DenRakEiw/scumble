@@ -55,6 +55,8 @@ async function main() {
     assert.ok(Math.abs(sp50[0] - 0.145) < 1e-6, "sigmaR at 50 is 0.145");
 
     assert.ok(typeof SNAP_GLSL === "string" && SNAP_GLSL.includes("float snapField"), "SNAP_GLSL exported");
+    assert.deepEqual(gaussRadii(0), [0, 0, 0], "gaussRadii 0 is all 0");
+    assert.equal(gaussRadii(2.0).length, 3, "gaussRadii returns 3 box radii");
 
     // -------------------------------------------------------------------------
     // 2. off equals bilinear (1,000 random points on 37 x 23 random map, sigmaR = 0)
