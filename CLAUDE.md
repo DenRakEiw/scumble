@@ -78,7 +78,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-09: **0.1.44 released and Latest**; R2-S3 benchmark complete; awaiting review before R2-S4)
+## Where things stand (2026-10-09: **0.1.44 released and Latest**; R2-S4 complete; ready for review before R2-S5)
 
 **0.1.44 is out** (tag v0.1.44, published 2026-10-09T10:07:52Z, title "depth maps, range selections, filter limits"; the post
 `v0-1-44` committed to the website with the manual synced, its deploy status to be read). It is **release 1 (masks) of
@@ -104,7 +104,12 @@ release at the end after the user's test; release 4 (blend modes) independent.
   tiles 2×2 / 3×3, edge snap vs full-resolution guided filter, memory and costs across `scene.jpg`, `skin.jpg`, and `adobe_15000x10000.jpg`;
   visual crops generated in `scratch/bench/`; section "Release 2 checkpoint (measured 2026-10-09)" appended to `docs/PLAN_NIK9.md` confirming
   decisions R2-D1 (Tiles 2×2), R2-D2 (snap default 50), R2-D3 (Snap + Flatten), R2-D10 (accept 44.7 MB guide). Gates `lint`, `types`, `help`
-  ALL PASS on both `--tiles on` and `--tiles off` with `--offline`. Ready for review before R2-S4.
+  ALL PASS on both `--tiles on` and `--tiles off` with `--offline`. Review findings resolved in `fef6aec`.
+- **R2-S4 built** (2026-10-09): Guide and snap setting in document; `depth-snap` row: DocMap extended with `guide` (RGBA8 Uint8ClampedArray/SAB),
+  `guideRef`, `guideVersion`; `deriveMap` preserves guide across geometry changes; `guideView` sampler; `mapToJSON` / `mapFromJSON` RGBA8 PNG
+  persistence; `FEATURES` in `docfile.js` adds `depth-snap` row (minReader 4, since 0.1.45); `depth_map` command adds `edges` param;
+  `setMapMeta` preview/commit modes; maps undo memory tracking. Gates `document` (44s/39s) and `commands` (13s/13s) ALL PASS on both
+  `--tiles on` and `--tiles off` with `--offline`. Ready for review before R2-S5.
 **Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.

@@ -126,6 +126,49 @@ async def run(c):
     return True
 
 
+def run_node():
+    import subprocess
+    script = """
+    global.window = {
+        scumble: {
+            comfy: { onEvent: () => {} },
+            helpers: { status: async () => ({ models: [] }) },
+            log: { list: async () => [], file: async () => '' },
+        },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    };
+    global.document = {
+        createElement: () => ({
+            getContext: () => ({
+                getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+                createImageData: () => ({ data: new Uint8ClampedArray(4) }),
+                putImageData: () => {},
+                drawImage: () => {},
+                fillRect: () => {},
+            }),
+        }),
+    };
+    import('./renderer/commands.js').then(({ commands }) => {
+        console.log('__COMMANDS_JSON_START__');
+        console.log(JSON.stringify(commands.describe()));
+        console.log('__COMMANDS_JSON_END__');
+    });
+    """
+    res = subprocess.run(["node", "-e", script], capture_output=True, text=True, cwd=os.path.join(os.path.dirname(__file__), ".."))
+    out = res.stdout
+    start = out.find("__COMMANDS_JSON_START__") + len("__COMMANDS_JSON_START__")
+    end = out.find("__COMMANDS_JSON_END__")
+    json_str = out[start:end].strip()
+    cmds = json.loads(json_str)
+    io.open(OUT, "w", encoding="utf-8", newline=chr(10)).write(render(cmds))
+    print("wrote docs/COMMANDS.md:", len(cmds), "commands")
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    asyncio.run(session(run))
+    try:
+        asyncio.run(session(run))
+    except Exception:
+        run_node()

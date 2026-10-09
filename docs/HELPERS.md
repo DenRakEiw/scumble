@@ -301,6 +301,7 @@ image guide in worker threads (`depth_guide` job, `GUIDE = { r: 2, eps: 1e-3 }`)
 via DirectML on Windows and CPU on Linux. Measured at the R1-S2 checkpoint (2026-10-08, `tools/depth_probe.py`,
 three pictures): the model 185-225 ms on DirectML (RTX 5090) and 480-725 ms on the CPU (24 threads) at its input
 size, the guided filter 410-640 ms at a 2,048 px working size (3.4 s at 4,096); the load was not timed.
+The guide carries the picture at the map's grid without filter layers (`4 · w · h` bytes, 44.7 MB at 4096 × 2731; R2-D10).
 Apache-2.0 licence (open issue #320).
 
 SAM2 tensors: encoder `image` [1,3,1024,1024] (ImageNet mean / std) →

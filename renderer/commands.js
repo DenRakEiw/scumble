@@ -580,6 +580,8 @@ const FILE_PARAMS = {
  * @property {boolean} [required]
  * @property {any[]} [enum]
  * @property {any} [items]
+ * @property {number} [minimum]
+ * @property {number} [maximum]
  */
 
 /**
@@ -2042,10 +2044,21 @@ const COMMANDS = {
         description: "Compute or refresh the document's depth map (Depth Anything V2 Small).",
         params: {
             force: P.bool("recompute even if already present and fresh", { default: false }),
+            edges: P.int("edge snap strength 0..100; 0 keeps the plain sample", { minimum: 0, maximum: 100 }),
         },
         async run(ed, a) {
             const force = a.force === true || a.force === "true";
-            const map = await ed.ensureDepthMap({ force });
+            const existing = ed.maps && ed.maps.depth;
+            const edgesVal = a.edges !== undefined && a.edges !== null ? Math.max(0, Math.min(100, Math.round(+a.edges))) : null;
+            let map;
+            if (!force && existing && existing.data) {
+                if (edgesVal !== null) {
+                    ed.setMapMeta("depth", { snap: { ...(existing.meta?.snap || {}), strength: edgesVal } });
+                }
+                map = ed.maps.depth;
+            } else {
+                map = await ed.ensureDepthMap({ force, edges: edgesVal });
+            }
             if (!map || (!map.data && !map.u16)) throw new Error("depth map computation failed");
             const meta = map.meta || map;
             return {
@@ -2055,6 +2068,8 @@ const COMMANDS = {
                 provider: meta.provider,
                 raw_bounds: meta.rawBounds || null,
                 stale: ed.isDepthStale ? (await ed.checkDepthStale?.() ?? ed.isDepthStale()) : false,
+                edges: (meta.snap && meta.snap.strength) || 0,
+                guide: !!map.guide,
             };
         },
     },

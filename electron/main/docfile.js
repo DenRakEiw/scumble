@@ -38,6 +38,18 @@ const FEATURES = [
         sample: { layers: [{ kind: "filter", params: { limit: { source: "luma", lo: 0, hi: 1 } } }] },
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.params && l.params.limit),
     },
+    {
+        id: "depth-snap", since: "0.1.45", reader: 4,
+        sample: { maps: { depth: { meta: { snap: { strength: 50 } } } } },
+        test: (d) => {
+            const m = d && d.maps;
+            if (!m || typeof m !== "object") return false;
+            for (const map of Object.values(m)) {
+                if (map && map.meta && map.meta.snap && Number(map.meta.snap.strength) > 0) return true;
+            }
+            return false;
+        },
+    },
 ];
 
 const FORMAT_VERSION = Math.max(1, ...FEATURES.map((f) => f.version || 1));

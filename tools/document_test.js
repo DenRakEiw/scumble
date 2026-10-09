@@ -319,7 +319,7 @@ function listTree(dir) {
             // a layer in linear light (0.1.32) asks for reader 2, which this version is; every other document stays at 1
             const plain = doc.buildHeader({ document: { layers: [{ blend: "multiply" }, { blend: "normal" }] }, files: [] });
             const ll = doc.buildHeader({ document: { layers: [{ blend: "normal" }, { blend: "linear-light" }] }, files: [] });
-            assert(plain.minReader === 1 && ll.minReader === 2 && doc.READER_VERSION === 3, "minReader " + plain.minReader + " / " + ll.minReader + ", reader " + doc.READER_VERSION);
+            assert(plain.minReader === 1 && ll.minReader === 2 && doc.READER_VERSION === 4, "minReader " + plain.minReader + " / " + ll.minReader + ", reader " + doc.READER_VERSION);
             // maps (0.1.33) writes version 2, minReader 1
             const withMap = doc.buildHeader({ document: { maps: { depth: { ref: { filename: "d.png" } } } }, files: [] });
             assert(withMap.version === 2 && withMap.minReader === 1, "maps version " + withMap.version + " / " + withMap.minReader);
@@ -327,6 +327,12 @@ function listTree(dir) {
             assert(flLimit.minReader === 3, "filter limit minReader " + flLimit.minReader);
             const flFeat = doc.FEATURES.find((f) => f.id === "filter-limit");
             assert(flFeat && doc.readerFor(flFeat.sample) === 3, "readerFor of filter-limit sample is 3");
+            const snap0 = doc.buildHeader({ document: { maps: { depth: { ref: { filename: "d.png" }, meta: { snap: { strength: 0 } } } } }, files: [] });
+            assert(snap0.minReader === 1, "snap 0 minReader " + snap0.minReader);
+            const snap50 = doc.buildHeader({ document: { maps: { depth: { ref: { filename: "d.png" }, meta: { snap: { strength: 50 } } } } }, files: [] });
+            assert(snap50.minReader === 4, "snap 50 minReader " + snap50.minReader);
+            const dsFeat = doc.FEATURES.find((f) => f.id === "depth-snap");
+            assert(dsFeat && doc.readerFor(dsFeat.sample) === 4, "readerFor of depth-snap sample is 4");
             for (const feat of doc.FEATURES) {
                 const sampleH = doc.buildHeader({ document: feat.sample, files: [] });
                 if (feat.reader) assert(sampleH.minReader === feat.reader, `feature ${feat.id} reader`);
@@ -334,7 +340,7 @@ function listTree(dir) {
             }
             const o2 = await doc.openDocument({ file: await make({ version: 1, minReader: 2 }, "linear_light.scumble"), mirrorRoot: mirror("V4") });
             assert(o2 && !o2.notes.some((n) => /newer Scumble/.test(n)), "a minReader 2 document: " + JSON.stringify(o2 && o2.notes));
-            return "minReader 4 refused; version 3 opened with a note; linear light asks for reader 2; filter limit asks for reader 3; maps asks for version 2";
+            return "minReader 5 refused; version 3 opened with a note; linear light asks for reader 2; filter limit asks for reader 3; depth snap asks for reader 4; maps asks for version 2";
         });
         await check("a_full_disk_a_cancel_or_a_held_file_leave_the_target_as_it_was", async () => {
             const target = path.join(scratch, "keep.scumble");

@@ -97,6 +97,7 @@ async function runCommandChecks() {
         assert.ok(depthMapDesc, "depth_map descriptor found");
         assert.strictEqual(depthMapDesc.readOnly, false, "depth_map is not readOnly");
         assert.ok(depthMapDesc.params.force, "depth_map has force param");
+        assert.ok(depthMapDesc.params.edges, "depth_map has edges param");
     });
 
     await testAsync("commands: sample_depth validates coordinates and requires depth_map first", async () => {

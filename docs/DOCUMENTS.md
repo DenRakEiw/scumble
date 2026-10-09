@@ -169,7 +169,7 @@ history entry would name it and it would be `false`.
 | `selections` | array | the saved selections, `{ name, url, orient, xf }`, `url` a PNG data URL drawn at 0, 0; `orient` `{ turn, flip }` (0.1.31) turns it first, then `xf` (0.1.32: the map `[a, b, c, d, e, f]` of every crop, extend, resize, turn and straighten since it was saved) places it; each left out when it does nothing |
 | `guides` | `{ x: [], y: [] }` | guide positions in pixels; left out when there are none |
 | `crop`, `upsample`, `gen`, `settings`, `refs`, `cutout` | objects | the crop, prompt upsampling, generation, recipe *Settings* panel, reference-image (`{ fit }`, not file refs) and cut-out settings; `gen.boxes` is the Boxes switch under the prompt (boxes in the prompt on or off for this document, default false; an older app keeps it as an unknown key) |
-| `maps` | object | document maps (since 0.1.33: `{ [kind]: { ref, w, h, xf, enc, meta } }`, enc `"u16rg"`; a document with a map writes format version 2); left out when empty |
+| `maps` | object | document maps (since 0.1.33: `{ [kind]: { ref, guide, w, h, xf, enc, genc, meta } }`, enc `"u16rg"`, genc `"rgba8"`; `guide` is the photo on the map's grid without filter layers; `meta.snap`: `{ strength: 0..100 }`; a document with `meta.snap.strength > 0` writes `minReader` 4; a document with a map writes format version 2); left out when empty |
 
 ### 4.1 Layers
 
@@ -387,11 +387,12 @@ Python's `zipfile` with `ZIP_STORED`, `mimetype` written first, is one way.
 ## 8. Versioning, for later writers
 
 - `FORMAT_VERSION` in `docfile.js` is what the app writes as `version`, `READER_VERSION` the highest `minReader` it
-  opens; derived from the `FEATURES` table. The current format is version 2 / reader 3.
+  opens; derived from the `FEATURES` table. The current format is version 2 / reader 4.
 - The `FEATURES` table (`electron/main/docfile.js`) controls version requirements:
   - `linear-light` (since 0.1.32): `minReader` 2.
   - `maps` (since 0.1.33): format `version` 2.
   - `filter-limit` (since 0.1.44): `minReader` 3 (filter layers with `params.limit`).
+  - `depth-snap` (since 0.1.45): `minReader` 4 (document maps with `meta.snap.strength > 0`).
 - **Raise `version`** for an addition a v1 reader can carry without showing it and without harm: a new optional
   top-level field of `document` (it travels as an extra field), new plugin data, new keys inside `crop`, `gen`,
   `settings` and the other settings objects. A v1 reader opens such a file with a note and asks before saving over it.

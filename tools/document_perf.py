@@ -27,6 +27,7 @@ W, H = (int(v) for v in SIZE.lower().split("x"))
 MAP_OPT = next((a for a in sys.argv[1:] if a.startswith("--map=")), None)
 MAP_SIZE = MAP_OPT.split("=")[1] if MAP_OPT else None
 MAP_W, MAP_H = (int(v) for v in MAP_SIZE.lower().split("x")) if MAP_SIZE else (0, 0)
+WITH_GUIDE = "--guide" in sys.argv
 OUT = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else os.path.join(os.environ.get("SCUMBLE_GATES", os.path.join(os.path.dirname(__file__), "..", "dist", "gates")), "docperf")
 
 
@@ -80,7 +81,17 @@ BUILD = r"""
         const { makeMap } = await import("./editor/inpaint_maps.js");
         const ramp = new Uint16Array(mapW * mapH);
         for (let i = 0; i < ramp.length; i++) ramp[i] = Math.round(i * 65535 / ramp.length);
-        await ed.setMap("depth", makeMap("depth", mapW, mapH, ramp, [W, 0, 0, H, 0, 0]));
+        let guide = null;
+        if (__WITH_GUIDE__) {
+            guide = new Uint8Array(mapW * mapH * 4);
+            for (let i = 0; i < guide.length; i += 4) {
+                guide[i] = (i / 4) & 255;
+                guide[i + 1] = ((i / 4) >> 8) & 255;
+                guide[i + 2] = 128;
+                guide[i + 3] = 255;
+            }
+        }
+        await ed.setMap("depth", makeMap("depth", mapW, mapH, ramp, [W, 0, 0, H, 0, 0], { snap: { strength: 50 } }, guide));
     }
     ed.addFilterLayer("curves");
     ed.renderLayers(); ed.fitView(); ed.draw();
@@ -158,7 +169,7 @@ async def run(c):
     if not os.path.exists(base):
         size = noise_png(base)
         print(f"noise base: {size / 1048576:.0f} MB in {time.time() - t:.1f} s", flush=True)
-    built = await c.eval(BUILD.replace("__W__", str(W)).replace("__H__", str(H)).replace("__BASE__", json.dumps(base)).replace("__MAP_W__", str(MAP_W)).replace("__MAP_H__", str(MAP_H)), timeout=1800)
+    built = await c.eval(BUILD.replace("__W__", str(W)).replace("__H__", str(H)).replace("__BASE__", json.dumps(base)).replace("__MAP_W__", str(MAP_W)).replace("__MAP_H__", str(MAP_H)).replace("__WITH_GUIDE__", "true" if WITH_GUIDE else "false"), timeout=1800)
     print("built:", json.dumps(built), flush=True)
     # the main process's private bytes while the save runs (a second CDP connection is not needed: poll between steps)
     before_kb = await main_proc_kb(c)

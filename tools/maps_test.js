@@ -74,7 +74,7 @@ async function main() {
     const InpaintEditor = canvasModule.InpaintEditor;
     const mapsModule = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_maps.js")).href);
     const {
-        makeMap, packRG16, unpackRG16, rg8View, mapToJSON, mapFromJSON, passToMap, sampleMap,
+        makeMap, packRG16, unpackRG16, rg8View, guideView, deriveMap, mapToJSON, mapFromJSON, passToMap, sampleMap,
         fingerprint, fingerprintDiff, snapXf,
     } = mapsModule;
     const resampleModule = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_resample.js")).href);
@@ -377,6 +377,72 @@ async function main() {
     console.log("  [ok] rg8View and mapToJSON / mapFromJSON serialization");
 
     // =========================================================================
+    // 8b. inpaint_maps.js: guideView, deriveMap, guide serialization (R2-S4)
+    // =========================================================================
+    const guideW = 300, guideH = 200;
+    const guideData = new Uint8Array(guideW * guideH * 4);
+    for (let i = 0; i < guideData.length; i += 4) {
+        guideData[i] = (i / 4) & 255;         // R
+        guideData[i + 1] = ((i / 4) >> 8) & 255; // G
+        guideData[i + 2] = 128;               // B
+        guideData[i + 3] = 255;               // A
+    }
+    const mapWithGuide = makeMap("depth", guideW, guideH, new Uint16Array(guideW * guideH), [guideW, 0, 0, guideH, 0, 0], { snap: { strength: 50 } }, guideData);
+    assert.ok(mapWithGuide.guide instanceof Uint8Array, "map.guide is Uint8Array");
+    assert.strictEqual(mapWithGuide.guide.length, guideW * guideH * 4, "map.guide has correct byte length");
+    assert.strictEqual(mapWithGuide.guideRef, null, "initial guideRef is null");
+
+    const gView = guideView(mapWithGuide);
+    assert.strictEqual(gView.width, guideW);
+    assert.strictEqual(gView.height, guideH);
+    assert.strictEqual(gView.channels, 4);
+    assert.strictEqual(gView.static, true);
+    assert.strictEqual(gView.key, `depth:${mapWithGuide.guideVersion}:guide`);
+
+    // deriveMap sharing
+    const derived = deriveMap(mapWithGuide, { meta: { snap: { strength: 70 } } });
+    assert.strictEqual(derived.data, mapWithGuide.data, "deriveMap shares data array");
+    assert.strictEqual(derived.guide, mapWithGuide.guide, "deriveMap shares guide array");
+    assert.strictEqual(derived.dataVersion, mapWithGuide.dataVersion, "deriveMap preserves dataVersion");
+    assert.strictEqual(derived.guideVersion, mapWithGuide.guideVersion, "deriveMap preserves guideVersion");
+    assert.notStrictEqual(derived.version, mapWithGuide.version, "deriveMap bumps version");
+    assert.strictEqual(derived.meta.snap.strength, 70, "deriveMap applied meta patch");
+
+    // Serialization with guide
+    mapWithGuide.ref = { filename: "depth.png", subfolder: "inpaint_canvas", type: "input" };
+    mapWithGuide.guideRef = { filename: "guide.png", subfolder: "inpaint_canvas", type: "input" };
+    const guideJson = mapToJSON(mapWithGuide);
+    assert.strictEqual(guideJson.genc, "rgba8", "mapToJSON includes genc: rgba8");
+    assert.deepStrictEqual(guideJson.guide, mapWithGuide.guideRef, "mapToJSON includes guideRef");
+
+    // Deserialization with mock image loader
+    const loadedMap = await mapFromJSON("depth", guideJson, async (ref) => {
+        const c = document.createElement("canvas");
+        c.width = guideW;
+        c.height = guideH;
+        return c;
+    });
+    assert.ok(loadedMap, "mapFromJSON succeeds");
+    assert.strictEqual(loadedMap.w, guideW);
+    assert.strictEqual(loadedMap.h, guideH);
+    assert.strictEqual(loadedMap.meta.snap.strength, 50, "meta.snap.strength preserved");
+    assert.deepStrictEqual(loadedMap.guideRef, mapWithGuide.guideRef, "guideRef restored");
+    assert.ok(loadedMap.guide, "guide loaded");
+
+    // Deserialization with missing guide file gives guide = null while preserving meta.snap
+    const loadedMissingGuide = await mapFromJSON("depth", guideJson, async (ref) => {
+        if (ref.filename === "guide.png") throw new Error("File not found");
+        const c = document.createElement("canvas");
+        c.width = guideW;
+        c.height = guideH;
+        return c;
+    });
+    assert.ok(loadedMissingGuide, "mapFromJSON succeeds despite missing guide");
+    assert.strictEqual(loadedMissingGuide.guide, null, "missing guide results in guide = null");
+    assert.strictEqual(loadedMissingGuide.meta.snap.strength, 50, "meta.snap.strength preserved on missing guide");
+    console.log("  [ok] guideView, deriveMap, and guide serialization / deserialization");
+
+    // =========================================================================
     // 9. InpaintEditor integration: store, geometryToken, setMap, undo/redo (F8a)
     // =========================================================================
     const editor = {
@@ -390,9 +456,11 @@ async function main() {
         redo: [],
         layers: [],
         _destroyed: false,
+        _mapUndoPending: null,
         geometryToken: InpaintEditor.prototype.geometryToken,
         setMap: InpaintEditor.prototype.setMap,
-        pushUndoSnapshot(snap) { this.undo.push(snap); },
+        setMapMeta: InpaintEditor.prototype.setMapMeta,
+        pushUndoSnapshot(snap, opts) { snap.label = opts?.label; this.undo.push(snap); },
         markFilterChanged() {},
         renderHistory() {},
         draw() {},
@@ -478,6 +546,49 @@ async function main() {
     assert.ok(k2.includes(String(editor.mapsVersion)), "filterKey includes mapsVersion for depth limit layer");
 
     console.log("  [ok] InpaintEditor maps store, geometryToken, undo/redo, geometry following, memoryReport, and filterKey");
+
+    // =========================================================================
+    // 12. InpaintEditor setMapMeta: preview, commit, and undo/redo (R2-S4)
+    // =========================================================================
+    const depthMapWithGuide = makeMap("depth", 800, 600, new Uint16Array(800 * 600), [800, 0, 0, 600, 0, 0], { snap: { strength: 50 } }, new Uint8Array(800 * 600 * 4));
+    await editor.setMap("depth", depthMapWithGuide);
+    const undoLenBefore = editor.undo.length;
+
+    // Preview change (e.g. slider drag): no undo step, _mapUndoPending stored
+    const okPrev = editor.setMapMeta("depth", { snap: { strength: 30 } }, { preview: true });
+    assert.strictEqual(okPrev, true, "setMapMeta preview returns true");
+    assert.strictEqual(editor.maps.depth.meta.snap.strength, 30, "strength updated during preview");
+    assert.strictEqual(editor.undo.length, undoLenBefore, "preview pushes no undo step");
+    assert.strictEqual(editor._mapUndoPending, depthMapWithGuide, "_mapUndoPending holds original map");
+    assert.strictEqual(editor.maps.depth.data, depthMapWithGuide.data, "data array shared during preview");
+    assert.strictEqual(editor.maps.depth.guide, depthMapWithGuide.guide, "guide array shared during preview");
+
+    // Commit change: one undo step pushed from _mapUndoPending with bytes: 0
+    const okCommit = editor.setMapMeta("depth", { snap: { strength: 70 } }, { preview: false });
+    assert.strictEqual(okCommit, true, "setMapMeta commit returns true");
+    assert.strictEqual(editor.maps.depth.meta.snap.strength, 70, "strength updated on commit");
+    assert.strictEqual(editor.undo.length, undoLenBefore + 1, "commit pushed 1 undo step");
+    assert.strictEqual(editor._mapUndoPending, null, "_mapUndoPending cleared");
+    const metaStep = editor.undo[editor.undo.length - 1];
+    assert.strictEqual(metaStep.kind, "maps");
+    assert.strictEqual(metaStep.bytes, 0, "meta-only undo step has 0 bytes");
+    assert.strictEqual(metaStep.prev.meta.snap.strength, 50, "prev in undo step holds initial strength 50");
+
+    // Test undo of setMapMeta restores original map and snap strength 50
+    const undoMetaSnap = editor.undo.pop();
+    const redoMetaSnap = editor.snapshot(undoMetaSnap);
+    assert.strictEqual(redoMetaSnap.bytes, 0, "redo snapshot of meta-only step has 0 bytes");
+    editor.applySnapshot(undoMetaSnap);
+    assert.strictEqual(editor.maps.depth.meta.snap.strength, 50, "undo restored snap strength 50");
+    assert.strictEqual(editor.maps.depth.data, depthMapWithGuide.data, "data array still identical after undo");
+    assert.strictEqual(editor.maps.depth.guide, depthMapWithGuide.guide, "guide array still identical after undo");
+
+    // Test mapExtras preserves guide object identity (===)
+    const guideBefore = editor.maps.depth.guide;
+    editor.mapExtras(rotXf, "turn");
+    assert.strictEqual(editor.maps.depth.guide, guideBefore, "mapExtras leaves guide object strictly identical (===)");
+
+    console.log("  [ok] setMapMeta preview, commit, 0-byte undo/redo, and guide identity across geometry turns");
 
     console.log("ALL MAPS TESTS PASSED!");
     process.exit(0);
