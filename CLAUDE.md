@@ -276,6 +276,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   infrastructure, Magnific's relight endpoint taking Scumble's own light map, a local generative recipe only on a current model (no IC-Light SD 1.5, the user), fal's two
   direction-word endpoints as presets; the user's questions R-D1 to R-D5 in its §5; about 6-8 sessions plus 4-5).
   Nothing built.
+- 44: **grow the Rust kernels, no rewrite** (the user, 2026-10-09, after asking whether Scumble should be rewritten in
+  Rust: no, the shell stays Electron; "schreibe auf den plan wasm kernel wachsen lassen"): `docs/PLAN_WASM.md` ranks
+  the CPU paths worth moving into `crates/px` (the edge snap and guided filter maps, histograms and the limit rows,
+  the compositor's CPU band, the stroke kernels, a threads spike), with the rules (measure first, the JS kernel stays
+  the reference and fallback, both wasm builds, one kernel per session). Nothing built.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
