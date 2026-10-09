@@ -5,6 +5,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
+- **See a layer's mask.** Alt+click on its mask label shows it alone in black and white; the mask menu shows it as a red overlay; a filter layer with a limit can show where it acts.
 - **Drag a box with the Object tool** to select the object in it (Shift adds, Alt subtracts, Shift+Alt keeps only the overlap); a click or a box on a very large picture no longer builds a full-size mask in memory. **Shift+Alt** intersects with every selection tool.
 - **Limit a filter layer by depth, brightness or colour.** A filter layer acts only where the picture lies in a chosen range, set in the layer's Limit row, with soft ends, and its painted mask still refines it. A colour or haze that grows with distance is a fill or filter layer with a depth limit. Documents with a limit open in Scumble 0.1.44 and newer.
 - **Select by depth, brightness or colour.** The Selection panel's *Select by range* block with a live preview and *Show depth map*: select what lies between two depths, two brightness levels or near a colour, softened at each end as far as you set it; replace, add, subtract or intersect.
