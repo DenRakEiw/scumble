@@ -13,7 +13,9 @@ log says "Connected to Scumble (109 tools)" in the UtilityProcess, `initialize` 
 Claude Desktop listed the two open documents and the recipe (proxy mode on the user's window). Not yet looked at by
 hand: the headless case (Scumble closed), the *Scumble.exe* field with a portable copy and with a wrong path (§7 3-4). The bundle for it: `.claude/worktrees/mcpb/dist/scumble-0.1.44.mcpb` (it names 0.1.44 because the
 branch's `package.json` does; the release build names 0.1.45). The user's word (2026-10-09): released together with
-0.1.45; merge into `main` when the Nik 9 agent's state allows. The user's ask: an MCP Bundle (`.mcpb`) so that Scumble installs
+0.1.45, tonight or tomorrow; merge into `main` when the Nik 9 agent's state allows. **The registry publish of 0.1.44
+(metadata only) is skipped** (the user, the same evening): the first publish after 0.1.41 is 0.1.45 with the
+`packages` entry (§5), one device code instead of two. The user's ask: an MCP Bundle (`.mcpb`) so that Scumble installs
 into Claude Desktop with one click, can be listed on Smithery, and has a chance at GitHub's MCP registry
 (`docs/PLAN_MCP_LISTINGS.md` §2 "Build work"). Built on the branch `mcpb` in a worktree of its own
 (`.claude/worktrees/mcpb`), nothing pushed, published, uploaded or registered without the user's word.
