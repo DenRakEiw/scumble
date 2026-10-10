@@ -65,7 +65,13 @@ const FEATURES = [
         sample: { layers: [{ kind: "filter", filter: "color_grade", params: {} }] },
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "color_grade"),
     },
+    {
+        id: "hsl", since: "0.1.45", reader: 4,
+        sample: { layers: [{ kind: "filter", filter: "hsl", params: {} }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "hsl"),
+    },
 ];
+
 
 const FORMAT_VERSION = Math.max(1, ...FEATURES.map((f) => f.version || 1));
 const READER_VERSION = Math.max(1, ...FEATURES.map((f) => f.reader || 1));

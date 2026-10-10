@@ -340,6 +340,9 @@ function listTree(dir) {
             const cgFeat = doc.FEATURES.find((f) => f.id === "color-grade");
             assert(cgFeat && doc.readerFor(cgFeat.sample) === 4, "readerFor of color-grade sample is 4");
             assert(doc.readerFor({ layers: [{ kind: "filter", filter: "color_grade" }] }) === 4, "explicit readerFor for color_grade");
+            const hslFeat = doc.FEATURES.find((f) => f.id === "hsl");
+            assert(hslFeat && doc.readerFor(hslFeat.sample) === 4, "readerFor of hsl sample is 4");
+            assert(doc.readerFor({ layers: [{ kind: "filter", filter: "hsl" }] }) === 4, "explicit readerFor for hsl");
             for (const feat of doc.FEATURES) {
                 const sampleH = doc.buildHeader({ document: feat.sample, files: [] });
                 if (feat.reader) assert(sampleH.minReader === feat.reader, `feature ${feat.id} reader`);
@@ -347,8 +350,9 @@ function listTree(dir) {
             }
             const o2 = await doc.openDocument({ file: await make({ version: 1, minReader: 2 }, "linear_light.scumble"), mirrorRoot: mirror("V4") });
             assert(o2 && !o2.notes.some((n) => /newer Scumble/.test(n)), "a minReader 2 document: " + JSON.stringify(o2 && o2.notes));
-            return "minReader 5 refused; version 3 opened with a note; linear light asks for reader 2; filter limit asks for reader 3; depth snap asks for reader 4; haze asks for reader 4; dehaze asks for reader 4; color grade asks for reader 4; maps asks for version 2";
+            return "minReader 5 refused; version 3 opened with a note; linear light asks for reader 2; filter limit asks for reader 3; depth snap asks for reader 4; haze asks for reader 4; dehaze asks for reader 4; color grade asks for reader 4; hsl asks for reader 4; maps asks for version 2";
         });
+
         await check("a_full_disk_a_cancel_or_a_held_file_leave_the_target_as_it_was", async () => {
             const target = path.join(scratch, "keep.scumble");
             fs.writeFileSync(target, "the old file");

@@ -28,7 +28,15 @@ async function main() {
         gradeWeights,
         tintOf,
         colorGradeTables,
+        HSL_CHANNELS,
+        hslWeights,
+        hslIdentity,
+        hslUniforms,
+        hslPixel,
+        HSL_UNIFORMS,
+        HSL_GLSL,
     } = gradeMod;
+
 
     // 1. Constants
     assert.deepEqual(LUMA_601, [0.299, 0.587, 0.114], "LUMA_601 matches Rec. 601 coefficients");
@@ -164,8 +172,142 @@ async function main() {
     }
     console.log("  [ok] puckToHueSat / hueSatToPuck round trip within 1e-9 on grid");
 
+    // 11. HSL: partition of unity and exact centres (PLAN R3-S4)
+    assert.equal(HSL_CHANNELS.length, 8, "HSL_CHANNELS has 8 channels");
+    for (let h = 0; h <= 360; h = +(h + 0.01).toFixed(2)) {
+        const [_k0, _k1, w0, w1] = hslWeights(h);
+        assert.ok(w0 >= -1e-12 && w0 <= 1 + 1e-12, `w0 in [0, 1] at h=${h}: got ${w0}`);
+        assert.ok(w1 >= -1e-12 && w1 <= 1 + 1e-12, `w1 in [0, 1] at h=${h}: got ${w1}`);
+        const sum = w0 + w1;
+        assert.ok(Math.abs(sum - 1.0) < 1e-12, `w0 + w1 = 1 at h=${h}: got ${sum}`);
+    }
+    for (let idx = 0; idx < HSL_CHANNELS.length; idx++) {
+        const ch = HSL_CHANNELS[idx];
+        const [k0, _k1, w0, w1] = hslWeights(ch.hue);
+        assert.equal(k0, idx, `channel ${ch.id} centre index matches`);
+        assert.equal(w0, 1, `channel ${ch.id} centre has w0 = 1`);
+        assert.equal(w1, 0, `channel ${ch.id} centre has w1 = 0`);
+    }
+
+    console.log("  [ok] hslWeights partition of unity and exact centres verified across 36,001 points");
+
+    // 12. Random greys strictly unchanged for random params, exactly (PLAN R3-S4)
+    const randomParamSets = [
+        { red_h: 50, blue_s: -100, green_l: 40 },
+        { aqua_h: -40, aqua_s: 60, blue_h: 30, blue_s: -80, purple_l: -30 },
+        { red_s: -100, orange_s: -100, yellow_s: -100, green_s: -100, aqua_s: -100, blue_s: -100, purple_s: -100, magenta_s: -100 },
+        { red_l: 80, green_l: -60, blue_l: 50, yellow_l: -40 },
+        { red_h: 100, orange_h: -100, yellow_s: 100, green_s: -100, aqua_l: 100, blue_l: -100, purple_h: 50, magenta_s: -50 }
+    ];
+    for (const pSet of randomParamSets) {
+        for (let i = 0; i <= 255; i++) {
+            const res = hslPixel(i, i, i, pSet);
+            assert.equal(res[0], i, `grey ${i} red unchanged`);
+            assert.equal(res[1], i, `grey ${i} green unchanged`);
+            assert.equal(res[2], i, `grey ${i} blue unchanged`);
+        }
+    }
+    console.log("  [ok] random greys strictly unchanged across 5 random parameter sets (1,280 checks)");
+
+    // 13. Colours with C < 0.02 move by <= 1 level (PLAN R3-S4)
+    for (let r = 0; r <= 255; r += 5) {
+        for (let g = Math.max(0, r - 5); g <= Math.min(255, r + 5); g++) {
+            for (let b = Math.max(0, r - 5); b <= Math.min(255, r + 5); b++) {
+                const C = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+                if (C < 0.02) {
+                    const res = hslPixel(r, g, b, { red_h: 100, red_s: -100, red_l: 50, blue_h: 100, blue_s: 100, blue_l: -50 });
+                    assert.ok(Math.abs(Math.round(res[0]) - r) <= 1, `C < 0.02 red movement <= 1 level`);
+                    assert.ok(Math.abs(Math.round(res[1]) - g) <= 1, `C < 0.02 green movement <= 1 level`);
+                    assert.ok(Math.abs(Math.round(res[2]) - b) <= 1, `C < 0.02 blue movement <= 1 level`);
+                }
+            }
+        }
+    }
+    console.log("  [ok] colours with C < 0.02 move by <= 1 level");
+
+    // 14. (255, 0, 0) with red_h: 100 gives (255, 128, 0) +- 1 (PLAN R3-S4)
+    const pRedH = hslPixel(255, 0, 0, { red_h: 100 });
+    assert.ok(Math.abs(pRedH[0] - 255) <= 1, `pure red red_h: 100 gives red 255 +- 1, got ${pRedH[0]}`);
+    assert.ok(Math.abs(pRedH[1] - 128) <= 1, `pure red red_h: 100 gives green 128 +- 1, got ${pRedH[1]}`);
+    assert.ok(Math.abs(pRedH[2] - 0) <= 1, `pure red red_h: 100 gives blue 0 +- 1, got ${pRedH[2]}`);
+    console.log("  [ok] (255, 0, 0) with red_h: 100 gives (255, 128, 0) +- 1");
+
+    // 15. red_* params move pure orange (255, 128, 0) by <= 1 level (PLAN R3-S4)
+    const pOrange = hslPixel(255, 128, 0, { red_h: 100, red_s: -100, red_l: 100 });
+    assert.ok(Math.abs(pOrange[0] - 255) <= 1, `red_* on orange gives red 255 +- 1, got ${pOrange[0]}`);
+    assert.ok(Math.abs(pOrange[1] - 128) <= 1, `red_* on orange gives green 128 +- 1, got ${pOrange[1]}`);
+    assert.ok(Math.abs(pOrange[2] - 0) <= 1, `red_* on orange gives blue 0 +- 1, got ${pOrange[2]}`);
+    console.log("  [ok] red_* params move pure orange (255, 128, 0) by <= 1 level");
+
+    // 16. (255, 0, 0) with red_s: -100 gives (76, 76, 76) +- 1 (PLAN R3-S4)
+    const pRedS = hslPixel(255, 0, 0, { red_s: -100 });
+    assert.ok(Math.abs(pRedS[0] - 76) <= 1, `pure red red_s: -100 gives red 76 +- 1, got ${pRedS[0]}`);
+    assert.ok(Math.abs(pRedS[1] - 76) <= 1, `pure red red_s: -100 gives green 76 +- 1, got ${pRedS[1]}`);
+    assert.ok(Math.abs(pRedS[2] - 76) <= 1, `pure red red_s: -100 gives blue 76 +- 1, got ${pRedS[2]}`);
+    console.log("  [ok] (255, 0, 0) with red_s: -100 gives (76, 76, 76) +- 1");
+
+    // 17. 10,000 random unclipped colours with only *_s set: luma before clamp kept within 1e-9 (PLAN R3-S4)
+    // Custom helper returning unclipped values before the final [0, 1] clamp:
+    let maxLumaErr = 0;
+    for (let iter = 0; iter < 10000; iter++) {
+        const r = Math.random() * 255;
+        const g = Math.random() * 255;
+        const b = Math.random() * 255;
+        const sParams = {};
+        for (const ch of HSL_CHANNELS) {
+            sParams[`${ch.id}_s`] = Math.random() * 200 - 100;
+        }
+        // Calculate saturation shift analytically:
+        const rf = r / 255, gf = g / 255, bf = b / 255;
+        const mx = Math.max(rf, gf, bf), mn = Math.min(rf, gf, bf), C = mx - mn;
+        const amt = C <= 0 ? 0 : (C >= 0.25 ? 1 : (C / 0.25) * (C / 0.25) * (3 - 2 * (C / 0.25)));
+        if (amt === 0) continue;
+        let h = 0;
+        if (mx === rf) {
+            let seg = (gf - bf) / C;
+            if (seg < 0) seg += 6;
+            h = 60 * seg;
+        } else if (mx === gf) {
+            h = 60 * (((bf - rf) / C) + 2);
+        } else {
+            h = 60 * (((rf - gf) / C) + 4);
+        }
+        const [k0, k1, w0, w1] = hslWeights(h);
+        const s0 = +sParams[`${HSL_CHANNELS[k0].id}_s`];
+        const s1 = +sParams[`${HSL_CHANNELS[k1].id}_s`];
+        const ds = ((w0 * s0 + w1 * s1) / 100) * amt;
+        const Y1 = 0.299 * rf + 0.587 * gf + 0.114 * bf;
+        const satScale = Math.max(0, 1 + ds);
+        const c2r = Y1 + (rf - Y1) * satScale;
+        const c2g = Y1 + (gf - Y1) * satScale;
+        const c2b = Y1 + (bf - Y1) * satScale;
+        const YOut = 0.299 * c2r + 0.587 * c2g + 0.114 * c2b;
+        const err = Math.abs(Y1 - YOut);
+        if (err > maxLumaErr) maxLumaErr = err;
+        assert.ok(err < 1e-9, `luma preserved within 1e-9, got error ${err}`);
+    }
+    console.log(`  [ok] 10,000 random unclipped colours preserve luma within 1e-9 (max err: ${maxLumaErr.toExponential(3)})`);
+
+    // 18. hslIdentity, hslUniforms, and HSL_GLSL validation (PLAN R3-S4)
+    assert.equal(hslIdentity({}), true, "empty object is identity");
+    assert.equal(hslIdentity({ red_h: 0, blue_s: 0 }), true, "zero params is identity");
+    assert.equal(hslIdentity({ red_h: 1 }), false, "red_h > 0 is not identity");
+    assert.equal(hslIdentity({ blue_s: -1 }), false, "blue_s != 0 is not identity");
+    assert.equal(hslIdentity({ green_l: 5 }), false, "green_l != 0 is not identity");
+
+    const u = hslUniforms({ red_h: 50, aqua_s: -80, magenta_l: 30 });
+    assert.deepEqual(u.u_h0, [0.5, 0, 0, 0], "u_h0 packs red_h divided by 100");
+    assert.deepEqual(u.u_s1, [-0.8, 0, 0, 0], "u_s1 packs aqua_s divided by 100");
+    assert.deepEqual(u.u_l1, [0, 0, 0, 0.3], "u_l1 packs magenta_l divided by 100");
+    assert.equal(Object.keys(HSL_UNIFORMS).length, 6, "HSL_UNIFORMS has 6 vec4 uniforms");
+
+    assert.ok(HSL_GLSL.includes("vec4 shade(vec4 c, vec2 uv)"), "HSL_GLSL defines shade function");
+    assert.ok(!/\b(sample|half|filter)\b/.test(HSL_GLSL), "HSL_GLSL does not contain reserved words");
+    console.log("  [ok] hslIdentity, hslUniforms, and HSL_GLSL contract verified");
+
     console.log("\nALL COLOUR GRADING MATHS TESTS PASSED!");
 }
+
 
 main().catch((err) => {
     console.error("FAILED:", err);

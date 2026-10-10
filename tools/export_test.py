@@ -246,7 +246,9 @@ const special = {
     dehaze: [{ amount: 80 }, 3],
     "dehaze#depth": [{ mode: "depth", amount: 80 }, 8, "depthRamp"],
     color_grade: [{ mid_hue: 200, mid_sat: 60, hi_lum: 20, sh_sat: 40 }, 1],
+    hsl: [{ red_h: 40, blue_s: -60, green_l: 30 }, 2],
     "film.frame": [{ width: 6 }, 1],
+
     "film.light_leak": [{ strength: 80 }, 1],
     "film.look": [{ preset: "portra400", halation: 100, grain: 0 }, 3],
 };
