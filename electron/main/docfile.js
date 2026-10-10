@@ -105,6 +105,26 @@ const FEATURES = [
         sample: { layers: [{ kind: "filter", filter: "effects.chromatic_shift" }] },
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && typeof l.filter === "string" && l.filter.startsWith("effects.")),
     },
+    {
+        id: "vibrance", since: "0.1.46", reader: 5,
+        sample: { layers: [{ kind: "filter", filter: "vibrance" }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "vibrance"),
+    },
+    {
+        id: "gradient-map", since: "0.1.46", reader: 5,
+        sample: { layers: [{ kind: "filter", filter: "gradient_map" }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "gradient_map"),
+    },
+    {
+        id: "threshold", since: "0.1.46", reader: 5,
+        sample: { layers: [{ kind: "filter", filter: "threshold" }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "threshold"),
+    },
+    {
+        id: "posterize", since: "0.1.46", reader: 5,
+        sample: { layers: [{ kind: "filter", filter: "posterize" }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "posterize"),
+    },
 ];
 
 

@@ -254,6 +254,10 @@ const special = {
     "effects.chromatic_shift": [{ style: "lateral", amount: 8 }, 1],
     "effects.glass": [{ style: "ribbed", amount: 20, size: 60 }, 2],
     "effects.glass#frost": [{ style: "frosted", amount: 10, frost: 3 }, 3],
+    vibrance: [{ vibrance: 40, saturation: 20 }, 8],
+    gradient_map: [{ preset: "cyberpunk", opacity: 80 }, 8],
+    threshold: [{ level: 128 }, 255],
+    posterize: [{ levels: 4 }, 85],
 };
 const cases = [];
 for (const id of Object.keys(FILTERS)) {
@@ -949,7 +953,7 @@ for (const mode of blendModes) {
     for (const l of ed.layers) l.blend = mode;
     ed.renderLayers();
     const plan = ed.stackPlan({ forRun: true });
-    if (!plan || plan.length !== 5 || plan.slice(1).some((s) => !(s.op >= 5))) throw new Error(mode + ": the stack plan is " + JSON.stringify(plan && plan.map((s) => s.op)));
+    if (!plan || plan.length !== 5 || plan.slice(1).some((s) => mode === "dissolve" ? s.dissolve == null : !(s.op >= 5))) throw new Error(mode + ": the stack plan is " + JSON.stringify(plan && plan.map((s) => s.op)));
     const r = await ed.encodeComposite({ forRun: true }, { hash: false });
     if (!r || r.stack !== 4) throw new Error(mode + ": the composite was not written from the stack");
     const flat = ed.flattenToCanvas({ forRun: true });
@@ -976,7 +980,7 @@ for (const l of ed.layers) l.blend = "normal";
 // the threshold on ~0.1% of bytes, bounded by layer alpha (worst <= 180, mean <= 0.15).
 // Vivid light doubles the slope of colour burn/dodge (worst <= 6, over2 <= 10 / 10000, mean <= 0.05).
 const bad = Object.entries(out).filter(([k, v]) => {
-    const isStep = k === "hard-mix";
+    const isStep = k === "hard-mix" || k === "dissolve";
     const isVivid = k === "vivid-light";
     const maxWorst = isStep ? 180 : isVivid ? 6 : 3;
     const maxOver = (W * ed.height * 4 * (isStep ? 20 : isVivid ? 10 : 1)) / 10000;

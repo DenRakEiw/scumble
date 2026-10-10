@@ -217,6 +217,18 @@ release at the end after the user's test; release 4 (blend modes) independent.
   - Docfile & PSD: `READER_OF_BLEND` in `electron/main/docfile.js` maps `dissolve` to reader 5 (17 blend modes at reader 5); PSD maps 'diss' to 'dissolve' without missing blend mode notes.
   - Node sync: committed in custom node repo (`1609185`); verified with `python tools/build_node.py --check`.
   - Tests & verification: `blend_table_test.js` updated to 27 modes (PASS); `blendmodes_test.py` step `n. dissolve` verifies export against flatten (0 bytes differ), 1:1 canvas view against kernel dither (0 bytes differ), kept share at alpha 128 is 50% +- 1% (50.10%), and PSD round-trip keeping 'diss'; docs and changelog updated in pure ASCII. Ready for R4-S10.
+- **Quick-Wins adjustment filters built** (2026-10-10): Vibrance, Gradient Map, Threshold, and Posterize (reader 5, since "0.1.46"):
+  - Module `renderer/editor/inpaint_adjustments.js`: pure ASCII, `// @ts-check`, standalone without DOM access.
+    - Vibrance (`applyVibrance`, `VIBRANCE_GLSL`): vibrance [-100, 100] and saturation [-100, 100]. Skin tones protected (halved boost when r > g && g > b). Rec. 601 luma.
+    - Gradient Map (`applyGradientMap`, `GRADIENT_MAP_GLSL`): 6 built-in presets (`cyberpunk`, `sunset`, `teal_orange`, `sepia`, `infrared`, `bw_contrast`) plus `custom` stops (`{ pos, color }`). Supports `reverse`, `opacity` [0, 100], alpha preserved.
+    - Threshold (`applyThreshold`, `THRESHOLD_GLSL`): level 1..254 (default 128), Rec. 601 luma cutoff to binary black/white (0 or 255), alpha preserved.
+    - Posterize (`applyPosterize`, `POSTERIZE_GLSL`): levels 2..32 (default 4), per-channel step quantization (`floor(c * (levels - 1) + 0.5) / (levels - 1)`), alpha preserved.
+    - Pure pixel math helpers: `vibrancePixel`, `gradientMapPixel`, `thresholdPixel`, `posterizePixel`, `sampleGradient`, `hexToRgb`, `vibranceIdentity`, `gradientMapIdentity`, and uniform extractors.
+  - Registration: `FILTERS` in `renderer/editor/inpaint_filters.js` with reach: 0; WebGL2 shader registration in `renderer/editor/inpaint_filters_gl.js`.
+  - Persistence: `electron/main/docfile.js` reader 5 feature rows for `vibrance`, `gradient-map`, `threshold`, and `posterize`.
+  - Custom node sync: added to `FILES` in `tools/build_node.py`; committed in custom node repo (`f6067ef`); verified with `python tools/build_node.py --check`.
+  - Tests & verification: `tools/adjustments_test.js` (math bounds, skin tone protection, gradient interpolation, threshold, posterize quantization, uniforms); `tools/document_test.js` (reader 5 checks); `tools/export_test.py` (`special` test cases for all 4 filters).
+  - Gates: `document`, `commands`, `export`, `adjustments_test`, `lint`, and `types` ALL PASS with `--offline`. Ready for review.
 **Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.

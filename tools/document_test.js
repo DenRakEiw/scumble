@@ -352,6 +352,18 @@ function listTree(dir) {
             const effFeat = doc.FEATURES.find((f) => f.id === "effects-filters");
             assert(effFeat && doc.readerFor(effFeat.sample) === 4, "readerFor of effects-filters sample is 4");
             assert(doc.readerFor({ layers: [{ kind: "filter", filter: "effects.chromatic_shift" }] }) === 4, "explicit readerFor for effects-filters");
+            const vibFeat = doc.FEATURES.find((f) => f.id === "vibrance");
+            assert(vibFeat && doc.readerFor(vibFeat.sample) === 5, "readerFor of vibrance sample is 5");
+            assert(doc.readerFor({ layers: [{ kind: "filter", filter: "vibrance" }] }) === 5, "explicit readerFor for vibrance");
+            const gmapFeat = doc.FEATURES.find((f) => f.id === "gradient-map");
+            assert(gmapFeat && doc.readerFor(gmapFeat.sample) === 5, "readerFor of gradient-map sample is 5");
+            assert(doc.readerFor({ layers: [{ kind: "filter", filter: "gradient_map" }] }) === 5, "explicit readerFor for gradient_map");
+            const thFeat = doc.FEATURES.find((f) => f.id === "threshold");
+            assert(thFeat && doc.readerFor(thFeat.sample) === 5, "readerFor of threshold sample is 5");
+            assert(doc.readerFor({ layers: [{ kind: "filter", filter: "threshold" }] }) === 5, "explicit readerFor for threshold");
+            const postFeat = doc.FEATURES.find((f) => f.id === "posterize");
+            assert(postFeat && doc.readerFor(postFeat.sample) === 5, "readerFor of posterize sample is 5");
+            assert(doc.readerFor({ layers: [{ kind: "filter", filter: "posterize" }] }) === 5, "explicit readerFor for posterize");
             const esm = await import("../renderer/editor/blend_modes.js");
             assert(same(esm.READER_OF_BLEND, doc.READER_OF_BLEND), "READER_OF_BLEND matches blend_modes.js");
             for (const feat of doc.FEATURES) {
@@ -361,7 +373,7 @@ function listTree(dir) {
             }
             const o2 = await doc.openDocument({ file: await make({ version: 1, minReader: 2 }, "linear_light.scumble"), mirrorRoot: mirror("V4") });
             assert(o2 && !o2.notes.some((n) => /newer Scumble/.test(n)), "a minReader 2 document: " + JSON.stringify(o2 && o2.notes));
-            return "minReader 5 refused; version 3 opened with a note; linear light asks for reader 2; filter limit asks for reader 3; depth snap asks for reader 4; haze asks for reader 4; dehaze asks for reader 4; color grade asks for reader 4; hsl asks for reader 4; point shapes asks for reader 4; effects filters asks for reader 4; maps asks for version 2";
+            return "minReader 5 refused; version 3 opened with a note; linear light asks for reader 2; filter limit asks for reader 3; depth snap asks for reader 4; haze asks for reader 4; dehaze asks for reader 4; color grade asks for reader 4; hsl asks for reader 4; point shapes asks for reader 4; effects filters asks for reader 4; vibrance asks for reader 5; gradient-map asks for reader 5; threshold asks for reader 5; posterize asks for reader 5; maps asks for version 2";
         });
 
         await check("a_full_disk_a_cancel_or_a_held_file_leave_the_target_as_it_was", async () => {
