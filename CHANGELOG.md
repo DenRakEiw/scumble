@@ -15,6 +15,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Fix the depth map by hand**: *Flatten*, *Nearer*, *Farther* and *Smooth* inside the selection; new `depth_edit` command.
 - **Finer depth maps** for large pictures: *Detail* › *Fine* / *Finest*.
 - **Your own depth map**: any grey layer can become the document's depth map (*From layer…*).
+- **Colour grading**: a filter layer that tints the shadows, midtones, highlights and the whole picture separately, each with a hue, a strength and a brightness, with Balance and Blending for where the ranges meet.
 
 ## 0.1.44 — 2026-10-09
 

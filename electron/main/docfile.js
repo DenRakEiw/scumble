@@ -60,6 +60,11 @@ const FEATURES = [
         sample: { layers: [{ kind: "filter", filter: "dehaze" }] },
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "dehaze"),
     },
+    {
+        id: "color-grade", since: "0.1.45", reader: 4,
+        sample: { layers: [{ kind: "filter", filter: "color_grade", params: {} }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "color_grade"),
+    },
 ];
 
 const FORMAT_VERSION = Math.max(1, ...FEATURES.map((f) => f.version || 1));
