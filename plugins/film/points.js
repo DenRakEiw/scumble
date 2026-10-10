@@ -5,12 +5,23 @@
 // the sky changes the sky and not the roof inside the circle. The tool (U) places, moves and
 // resizes points on the canvas; the layer row shows sliders for the selected point.
 
-import { luma, clamp01, sstep, mix, loop, blur, num, pct, makeRunner, shader } from "./common.js";
+import { luma, loop, blur, num, pct, makeRunner, shader } from "./common.js";
+import {
+    normalisePoint,
+    innerOf,
+    pointsTexture2,
+    pointsPixel,
+    SHAPE_GLSL,
+    mapShape,
+    handlesOf,
+    hitShape,
+} from "./shapes.js";
 
 const FILTER_ID = "film.points";
 const MAX_POINTS = 64;
 
 const POINTS = shader("control points", { u_pts: "sampler2D", u_count: "int", u_blur: "sampler2D", u_useBlur: "bool", u_strength: "float", u_origin: "vec2" }, `
+${SHAPE_GLSL}
 vec3 opp(vec3 c) { float L = luma(c); return vec3(L, c.r - L, c.b - L); }
 vec4 shade(vec4 c, vec2 uv) {
     vec2 p = uv * u_size + u_origin;   // the pass's pixel in the image's pixels at this scale (C6 c1 review)
@@ -18,13 +29,12 @@ vec4 shade(vec4 c, vec2 uv) {
     float ev = 0.0, con = 0.0, sat = 0.0, warm = 0.0, str = 0.0, wsum = 0.0;
     for (int i = 0; i < ${MAX_POINTS}; i++) {
         if (i >= u_count) break;
+        float wd = shapeWeight(p, i);
+        if (wd <= 0.0) continue;
         vec4 a = texelFetch(u_pts, ivec2(0, i), 0);
         vec4 col = texelFetch(u_pts, ivec2(1, i), 0);
         vec4 adj = texelFetch(u_pts, ivec2(2, i), 0);
         vec4 adj2 = texelFetch(u_pts, ivec2(3, i), 0);
-        float dist = distance(p, a.xy) / max(a.z, 1.0);
-        float wd = 1.0 - sstep(0.25, 1.0, dist);
-        if (wd <= 0.0) continue;
         vec3 dc = o3 - col.xyz;
         float d2 = dc.x * dc.x + 4.0 * (dc.y * dc.y + dc.z * dc.z);
         float w = wd * exp(-d2 / (2.0 * a.w * a.w));
@@ -41,21 +51,6 @@ vec4 shade(vec4 c, vec2 uv) {
 }`);
 
 const opp = (r, g, b) => { const L = luma(r, g, b); return [L, r - L, b - L]; };
-const sigmaOf = (tol) => 0.04 + clamp01(tol / 100) * 0.6;
-
-/** The points as rows of a 4 x N float texture (pixel values scaled for previews). */
-function pointsTexture(points, scale) {
-    const n = Math.min(MAX_POINTS, points.length);
-    const data = new Float32Array(4 * 4 * Math.max(1, n));
-    for (let i = 0; i < n; i++) {
-        const p = points[i], o = i * 16, c = p.color || [0.5, 0, 0];
-        data[o] = p.x * scale; data[o + 1] = p.y * scale; data[o + 2] = Math.max(1, p.r * scale); data[o + 3] = sigmaOf(num(p.tol, 50));
-        data[o + 4] = c[0]; data[o + 5] = c[1]; data[o + 6] = c[2]; data[o + 7] = 0;
-        data[o + 8] = num(p.ev, 0); data[o + 9] = num(p.contrast, 0) / 100; data[o + 10] = num(p.sat, 0) / 100; data[o + 11] = num(p.warmth, 0) / 100;
-        data[o + 12] = num(p.structure, 0) / 100; data[o + 13] = 0; data[o + 14] = 0; data[o + 15] = 0;
-    }
-    return { data, width: 4, height: Math.max(1, n), n };
-}
 
 /**
  * The colour a point compares every pixel with: the 3 x 3 mean (2 x 2 at a corner) under image point x, y of the
@@ -91,7 +86,7 @@ function turnMatrix(op, W, H) {
 
 /**
  * The old-to-new image matrix [a, b, c, d, e, f] (x' = a x + c y + e, y' = b x + d y + f) of a "geometry" event
- * (PLAN_0_1_31 §7: a turn, crop, extend, resize or straighten): its `m`, or for an editor that only sends 23a's `op`,
+ * (PLAN_0_1_31 S7: a turn, crop, extend, resize or straighten): its `m`, or for an editor that only sends 23a's `op`,
  * the turn's; null for anything else (an unknown op is never taken for a turn).
  */
 export function geometryMatrix(ev) {
@@ -102,16 +97,11 @@ export function geometryMatrix(ev) {
     return turnMatrix(ev.op, ev.from.width, ev.from.height);
 }
 
-/** A control point moved by the matrix `m`: its centre mapped, its radius scaled by sqrt(|det m|) (`s`); a new object. */
-function mapPoint(q, m, s) {
-    const x = +q.x, y = +q.y;
-    return { ...q, x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5], r: +q.r * s };
-}
-
 export function makePoints(scumble) {
     const run = makeRunner(scumble);
     const { ui } = scumble;
     let drag = null;   // { docId, layerId, mode, pt, start, orig, changed }
+    let newShape = "circle";
 
     // ---- the filter ---------------------------------------------------------------------------
     const filter = {
@@ -126,10 +116,10 @@ export function makePoints(scumble) {
         reach: (p) => (Array.isArray(p.points) && p.points.some((q) => num(q.structure, 0) !== 0) ? 16 : 0),
         apply(src, p, info) {
             const scale = info.scale || 1;
-            const points = Array.isArray(p.points) ? p.points : [];
+            const points = Array.isArray(p.points) ? p.points.map((q) => normalisePoint(q)) : [];
             const strength = pct(p.strength, 100);
             if (!points.length || strength <= 0) return src;
-            const tex = pointsTexture(points, scale);
+            const tex = pointsTexture2(points, scale);
             const useBlur = points.some((q) => num(q.structure, 0) !== 0);
             const b = useBlur ? blur(src, 4 * scale) : null;
             // where the input's corner sits in the image, in its own pixels: a pass over a box or a view that does not start at
@@ -139,27 +129,7 @@ export function makePoints(scumble) {
                 const d = tex.data, n = tex.n;
                 return loop(src, (c, x, y, j, g) => {
                     const px = x + 0.5 + ox, py = y + 0.5 + oy;
-                    const o3 = opp(c[0], c[1], c[2]);
-                    let ev = 0, con = 0, sat = 0, warm = 0, str = 0, wsum = 0;
-                    for (let i = 0; i < n; i++) {
-                        const o = i * 16;
-                        const dist = Math.hypot(px - d[o], py - d[o + 1]) / Math.max(d[o + 2], 1);
-                        const wd = 1 - sstep(0.25, 1, dist);
-                        if (wd <= 0) continue;
-                        const d0 = o3[0] - d[o + 4], d1 = o3[1] - d[o + 5], d2 = o3[2] - d[o + 6];
-                        const dd = d0 * d0 + 4 * (d1 * d1 + d2 * d2);
-                        const w = wd * Math.exp(-dd / (2 * d[o + 3] * d[o + 3]));
-                        ev += w * d[o + 8]; con += w * d[o + 9]; sat += w * d[o + 10]; warm += w * d[o + 11]; str += w * d[o + 12]; wsum += w;
-                    }
-                    if (wsum <= 0) return;
-                    const e = Math.pow(2, ev);
-                    let r = c[0] * e, gg = c[1] * e, bb = c[2] * e;
-                    const L = luma(r, gg, bb);
-                    r = L + (r - L) * (1 + sat); gg = L + (gg - L) * (1 + sat); bb = L + (bb - L) * (1 + sat);
-                    r = 0.5 + (r - 0.5) * (1 + con); gg = 0.5 + (gg - 0.5) * (1 + con); bb = 0.5 + (bb - 0.5) * (1 + con);
-                    r *= 1 + warm / 3; bb *= 1 - warm / 3;
-                    if (useBlur) { const dL = luma(c[0], c[1], c[2]) - luma(g[0], g[1], g[2]); r += dL * str * 1.5; gg += dL * str * 1.5; bb += dL * str * 1.5; }
-                    c[0] = mix(c[0], clamp01(r), strength); c[1] = mix(c[1], clamp01(gg), strength); c[2] = mix(c[2], clamp01(bb), strength);
+                    pointsPixel(c, px, py, d, n, useBlur, g, strength);
                 }, b);
             });
         },
@@ -182,7 +152,27 @@ export function makePoints(scumble) {
     function addPoint(doc, layer, x, y, r, attrs = {}) {
         const points = Array.isArray(layer.params.points) ? layer.params.points.slice() : [];
         const id = points.reduce((m, q) => Math.max(m, q.id || 0), 0) + 1;
-        const pt = { id, x: Math.round(x), y: Math.round(y), r: Math.round(r), tol: 50, ev: 0, contrast: 0, sat: 0, warmth: 0, structure: 0, ...attrs };
+        const shape = attrs.shape || newShape || "circle";
+        const ry = attrs.ry != null ? Math.round(attrs.ry) : Math.round(0.6 * r);
+        const angle = attrs.angle != null ? +attrs.angle : 0;
+        const soft = attrs.soft != null ? +attrs.soft : 75;
+        const pt = normalisePoint({
+            id,
+            shape,
+            x: Math.round(x),
+            y: Math.round(y),
+            r: Math.round(r),
+            ry,
+            angle,
+            soft,
+            tol: 50,
+            ev: 0,
+            contrast: 0,
+            sat: 0,
+            warmth: 0,
+            structure: 0,
+            ...attrs,
+        });
         pt.color = attrs.color || sampleColor(doc, layer, pt.x, pt.y);
         points.push(pt);
         layer._fpSel = id;
@@ -201,9 +191,9 @@ export function makePoints(scumble) {
         const points = Array.isArray(layer.params.points) ? layer.params.points : [];
         const tol = 8 * view.dpr / view.scale;
         for (let i = points.length - 1; i >= 0; i--) {
-            const q = points[i], d = Math.hypot(ev.x - q.x, ev.y - q.y);
-            if (Math.abs(d - q.r) < tol) return { pt: q, mode: "resize" };
-            if (d < Math.max(tol * 1.5, q.r * 0.12)) return { pt: q, mode: "move" };
+            const q = points[i];
+            const mode = hitShape(q, ev.x, ev.y, tol);
+            if (mode) return { pt: q, mode };
         }
         return null;
     }
@@ -226,7 +216,16 @@ export function makePoints(scumble) {
                 const h = hitTest(layer, ev, view);
                 if (h) {
                     layer._fpSel = h.pt.id;
-                    drag = { docId: doc.id, layerId: layer.id, mode: h.mode, ptId: h.pt.id, start: [ev.x, ev.y], orig: { x: h.pt.x, y: h.pt.y, r: h.pt.r }, changed: false };
+                    const dragMode = h.mode === "ring" ? "r" : h.mode;
+                    drag = {
+                        docId: doc.id,
+                        layerId: layer.id,
+                        mode: dragMode,
+                        ptId: h.pt.id,
+                        start: [ev.x, ev.y],
+                        orig: { x: h.pt.x, y: h.pt.y, r: h.pt.r, ry: h.pt.ry, angle: h.pt.angle },
+                        changed: false,
+                    };
                     doc.editor.activeLayerId = layer.id;
                     doc.editor.renderLayers();
                     doc.draw();
@@ -239,7 +238,15 @@ export function makePoints(scumble) {
             const { points, pt } = addPoint(doc, layer, ev.x, ev.y, defaultRadius(doc));
             doc.editor.activeLayerId = layer.id;
             doc.setFilterParams(layer.id, { points }, { preview: true });
-            drag = { docId: doc.id, layerId: layer.id, mode: "new", ptId: pt.id, start: [ev.x, ev.y], orig: { x: pt.x, y: pt.y, r: pt.r }, changed: true };
+            drag = {
+                docId: doc.id,
+                layerId: layer.id,
+                mode: "new",
+                ptId: pt.id,
+                start: [ev.x, ev.y],
+                orig: { x: pt.x, y: pt.y, r: pt.r, ry: pt.ry, angle: pt.angle },
+                changed: true,
+            };
             doc.status(`Point ${pt.id} added: drag to set its size, then adjust it in the layer row.`);
         },
         onMove(doc, ev) {
@@ -249,22 +256,49 @@ export function makePoints(scumble) {
             const pt = points.find((q) => q.id === drag.ptId);
             if (!pt) return;
             const dx = ev.x - drag.start[0], dy = ev.y - drag.start[1];
-            if (drag.mode === "move") { pt.x = Math.round(drag.orig.x + dx); pt.y = Math.round(drag.orig.y + dy); }
-            else {
-                const d = Math.hypot(ev.x - pt.x, ev.y - pt.y);
-                if (drag.mode === "new" && d < 6) return;
+            if (drag.mode === "move") {
+                pt.x = Math.round(drag.orig.x + dx);
+                pt.y = Math.round(drag.orig.y + dy);
+            } else if (drag.mode === "new") {
+                const ex = ev.x - pt.x, ey = ev.y - pt.y;
+                const d = Math.hypot(ex, ey);
+                if (d < 6) return;
                 pt.r = Math.max(4, Math.round(d));
+                if (pt.shape === "ellipse") {
+                    pt.angle = Math.round((Math.atan2(ey, ex) * 180 / Math.PI) * 10) / 10;
+                    pt.ry = Math.max(2, Math.round(0.6 * pt.r * 10) / 10);
+                }
+            } else if (drag.mode === "r") {
+                const ex = ev.x - pt.x, ey = ev.y - pt.y;
+                const d = Math.hypot(ex, ey);
+                pt.r = Math.max(4, Math.round(d));
+                if (pt.shape === "ellipse") {
+                    pt.angle = Math.round((Math.atan2(ey, ex) * 180 / Math.PI) * 10) / 10;
+                }
+            } else if (drag.mode === "ry") {
+                if (pt.shape === "ellipse") {
+                    const A = ((pt.angle || 0) * Math.PI) / 180;
+                    const sinA = Math.sin(A), cosA = Math.cos(A);
+                    const proj = -(ev.x - pt.x) * sinA + (ev.y - pt.y) * cosA;
+                    pt.ry = Math.max(2, Math.round(Math.abs(proj) * 10) / 10);
+                }
             }
             drag.changed = true;
             doc.setFilterParams(layer.id, { points }, { preview: true });
-            doc.status(`Point ${pt.id}: ${pt.x}, ${pt.y}, radius ${pt.r} px`);
+            const info = pt.shape === "ellipse"
+                ? `Point ${pt.id}: ${pt.x}, ${pt.y}, r ${pt.r} px, ry ${pt.ry} px, angle ${pt.angle}\u00B0`
+                : `Point ${pt.id}: ${pt.x}, ${pt.y}, radius ${pt.r} px`;
+            doc.status(info);
         },
         onUp(doc) {
             if (!drag || drag.docId !== doc.id) return;
             const layer = doc.rawLayer(drag.layerId);
             if (drag.changed) {
                 const points = (layer.params.points || []).map((q) => ({ ...q }));
-                if (drag.mode === "move") { const pt = points.find((q) => q.id === drag.ptId); if (pt) pt.color = sampleColor(doc, layer, pt.x, pt.y); }
+                if (drag.mode === "move") {
+                    const pt = points.find((q) => q.id === drag.ptId);
+                    if (pt) pt.color = sampleColor(doc, layer, pt.x, pt.y);
+                }
                 doc.setFilterParams(layer.id, { points });
             }
             drag = null;
@@ -284,7 +318,12 @@ export function makePoints(scumble) {
                 doc.status(`Point ${sel.id} removed.`);
                 return true;
             }
-            if (ev.key === "Escape" && layer._fpSel != null) { layer._fpSel = null; doc.editor.renderLayers(); doc.draw(); return true; }
+            if (ev.key === "Escape" && layer._fpSel != null) {
+                layer._fpSel = null;
+                doc.editor.renderLayers();
+                doc.draw();
+                return true;
+            }
             return false;
         },
         draw(doc, ctx, view) {
@@ -300,10 +339,30 @@ export function makePoints(scumble) {
             ctx.textAlign = "center";
             for (const q of points) {
                 const sel = q.id === layer._fpSel;
+                const angleRad = ((q.angle || 0) * Math.PI) / 180;
+                const ry = q.shape === "ellipse" ? (q.ry != null ? q.ry : Math.round(0.6 * q.r)) : q.r;
                 ctx.strokeStyle = sel ? "#ffd166" : "rgba(255,255,255,0.9)";
                 ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 3 * view.dpr;
-                ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2); ctx.stroke();
-                if (sel) { ctx.setLineDash([4 * lw, 4 * lw]); ctx.beginPath(); ctx.arc(q.x, q.y, q.r * 0.25, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+                ctx.beginPath();
+                ctx.ellipse(q.x, q.y, q.r, ry, angleRad, 0, Math.PI * 2);
+                ctx.stroke();
+                if (sel) {
+                    const inner = innerOf(q);
+                    ctx.setLineDash([4 * lw, 4 * lw]);
+                    ctx.beginPath();
+                    ctx.ellipse(q.x, q.y, q.r * inner, ry * inner, angleRad, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    const hdls = handlesOf(q);
+                    const hr = 4.5 * view.dpr / s;
+                    for (const h of hdls) {
+                        if (h.id === "move") continue;
+                        ctx.fillStyle = "#ffd166";
+                        ctx.beginPath();
+                        ctx.arc(h.x, h.y, hr, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
                 const cr = 9 * view.dpr / s;
                 ctx.fillStyle = sel ? "#ffd166" : "rgba(255,255,255,0.9)";
                 ctx.beginPath(); ctx.arc(q.x, q.y, cr, 0, Math.PI * 2); ctx.fill();
@@ -315,22 +374,27 @@ export function makePoints(scumble) {
     };
 
     // ---- the control in the layer row ---------------------------------------------------------------
-    const SLIDERS = [
-        ["r", "Size", 4, 4000, 1, "px"],
-        ["tol", "Tolerance", 0, 100, 1, "%"],
-        ["ev", "Exposure", -2, 2, 0.05, " EV"],
-        ["contrast", "Contrast", -100, 100, 1, ""],
-        ["sat", "Saturation", -100, 100, 1, ""],
-        ["warmth", "Warmth", -100, 100, 1, ""],
-        ["structure", "Structure", -100, 100, 1, ""],
-    ];
-
     function buildControl(layer, param, callbacks) {
         const wrap = ui.el("div", "film-points");
         for (const evn of ["click", "pointerdown", "dblclick", "keydown"]) wrap.addEventListener(evn, callbacks.stop);
         const points = Array.isArray(layer.params.points) ? layer.params.points : [];
         const redraw = () => { for (const e of scumble.host.editors()) if (e.layers.includes(layer)) { e.draw(); break; } };
         const rerender = () => { for (const e of scumble.host.editors()) if (e.layers.includes(layer)) { e.renderLayers(); break; } };
+
+        const newRow = ui.el("div", "film-head");
+        const newLbl = ui.el("span", "film-note", "New: ");
+        newRow.appendChild(newLbl);
+        for (const s of ["circle", "ellipse"]) {
+            const b = ui.el("button", "film-shape-btn" + (newShape === s ? " film-shape-btn-on" : ""), s);
+            b.type = "button";
+            b.addEventListener("click", () => {
+                newShape = s;
+                rerender();
+            });
+            newRow.appendChild(b);
+        }
+        wrap.appendChild(newRow);
+
         if (!points.length) {
             wrap.appendChild(ui.el("div", "shell-help", "No points yet: pick the Control point tool (U) and click on the image. Drag while placing to set the size."));
             return wrap;
@@ -348,14 +412,29 @@ export function makePoints(scumble) {
         const sel = selected(layer);
         if (!sel) { wrap.appendChild(ui.el("div", "shell-help", "Click a number (or a point on the image) to edit it.")); return wrap; }
         const maxR = Math.max(200, Math.round(Math.max(...points.map((q) => q.r), 1) * 2));
-        for (const [key, label, min, max0, step, unit] of SLIDERS) {
-            const max = key === "r" ? Math.max(maxR, sel.r) : max0;
-            const row = ui.slider(label, { min, max, step, value: num(sel[key], key === "tol" ? 50 : 0), unit }, (value, final) => {
+        const sliders = [
+            ["r", "Size", 4, 4000, 1, "px"],
+            ...(sel.shape === "ellipse" ? [
+                ["ry", "Height", 1, 4000, 1, "px"],
+                ["angle", "Angle", -180, 180, 1, "\u00B0"],
+            ] : []),
+            ["soft", "Softness", 0, 100, 1, "%"],
+            ["tol", "Tolerance", 0, 100, 1, "%"],
+            ["ev", "Exposure", -2, 2, 0.05, " EV"],
+            ["contrast", "Contrast", -100, 100, 1, ""],
+            ["sat", "Saturation", -100, 100, 1, ""],
+            ["warmth", "Warmth", -100, 100, 1, ""],
+            ["structure", "Structure", -100, 100, 1, ""],
+        ];
+        for (const [key, label, min, max0, step, unit] of sliders) {
+            const max = (key === "r" || key === "ry") ? Math.max(maxR, sel[key] || 1) : max0;
+            const defVal = key === "soft" ? 75 : key === "tol" ? 50 : key === "ry" ? Math.round(0.6 * sel.r) : 0;
+            const row = ui.slider(label, { min, max, step, value: num(sel[key], defVal), unit }, (value, final) => {
                 callbacks.begin();
                 const pts = (layer.params.points || []).map((q) => (q.id === sel.id ? { ...q, [key]: value } : q));
                 layer.params.points = pts;
                 if (final) callbacks.commit(); else callbacks.preview();
-                if (key === "r") redraw();
+                if (key === "r" || key === "ry" || key === "angle" || key === "soft") redraw();
             });
             row.classList.add("film-row");
             wrap.appendChild(row);
@@ -381,7 +460,11 @@ export function makePoints(scumble) {
             params: {
                 x: { type: "number", description: "centre x in image pixels", required: true },
                 y: { type: "number", description: "centre y in image pixels", required: true },
+                shape: { type: "string", enum: ["circle", "ellipse"], description: "point shape (default circle)" },
                 radius: { type: "number", description: "radius in pixels (default 10 % of the long side)" },
+                height: { type: "number", description: "ellipse: the second radius in px (default 60 % of radius)" },
+                angle: { type: "number", description: "degrees, clockwise from +x in image coordinates" },
+                softness: { type: "number", description: "diffusion 0..100 (default 75)" },
                 tolerance: { type: "number", description: "colour tolerance 0..100 (default 50; low = only the colour under the point)" },
                 exposure: { type: "number", description: "EV -2..2" },
                 contrast: { type: "number", description: "-100..100" },
@@ -392,10 +475,29 @@ export function makePoints(scumble) {
             needsImage: true,
             scope: "doc",
             run(doc, a) {
+                const shape = a.shape || "circle";
+                if (shape !== "circle" && shape !== "ellipse") {
+                    throw new Error("unknown shape: " + shape);
+                }
                 const layer = pointsLayer(doc, { create: true });
                 if (!layer) throw new Error("could not create the control points layer");
-                const { points, pt } = addPoint(doc, layer, +a.x, +a.y, a.radius != null ? +a.radius : defaultRadius(doc), {
-                    tol: a.tolerance != null ? +a.tolerance : 50, ev: num(a.exposure, 0), contrast: num(a.contrast, 0), sat: num(a.saturation, 0), warmth: num(a.warmth, 0), structure: num(a.structure, 0),
+                const r = a.radius != null ? +a.radius : defaultRadius(doc);
+                const ry = a.height != null ? +a.height : Math.round(0.6 * r);
+                const angle = a.angle != null ? +a.angle : 0;
+                const soft = a.softness != null ? +a.softness : 75;
+                const x = Number.isFinite(+a.x) ? +a.x : Math.round((doc.width || 512) / 2);
+                const y = Number.isFinite(+a.y) ? +a.y : Math.round((doc.height || 384) / 2);
+                const { points, pt } = addPoint(doc, layer, x, y, r, {
+                    shape,
+                    ry,
+                    angle,
+                    soft,
+                    tol: a.tolerance != null ? +a.tolerance : 50,
+                    ev: num(a.exposure, 0),
+                    contrast: num(a.contrast, 0),
+                    sat: num(a.saturation, 0),
+                    warmth: num(a.warmth, 0),
+                    structure: num(a.structure, 0),
                 });
                 const summary = doc.setFilterParams(layer.id, { points });
                 doc.editor.renderLayers();
@@ -418,7 +520,7 @@ export function makePoints(scumble) {
             const raw = doc.rawLayer(l.id);
             const pts = raw.params && Array.isArray(raw.params.points) ? raw.params.points : [];
             if (!pts.length) continue;
-            raw.params = { ...raw.params, points: pts.map((q) => mapPoint(q, m, s)) };
+            raw.params = { ...raw.params, points: pts.map((q) => mapShape(normalisePoint(q), m, s)) };
             doc.refresh(l.id);
         }
     }

@@ -276,7 +276,7 @@ Every filter layer ends with a **Limit** row. Set it to Depth, Luminosity or Col
 
 A fill layer works the same way but paints instead of filtering: the fill button in the layer list adds a layer of one colour (the paint colour to start with), and its row turns it into a gradient, linear, reflected or radial, between two colours that each have their own opacity (from the fill's colour to transparent to start with), with an angle, a scale and a centre set in per cent. It covers what is below it until its blend mode, its opacity or a mask lets the picture through, and it can be changed as long as the document exists. PSD and ORA exports write it as an ordinary layer of pixels.
 
-The film pack is a plugin that ships with the app and goes further: film looks with real film names, halation, glow, bleach bypass, cross processing, split toning, light leaks, frames, and control points that steer a look locally. The names are there so you know what a look is after; the values are Scumble's own approximations, not licensed manufacturer data, and the tooltip and the About dialog say so.
+The film pack is a plugin that ships with the app and goes further: film looks with real film names, halation, glow, bleach bypass, cross processing, split toning, light leaks, frames, and control points that steer a look locally. Control points (U) can be circles or oriented ellipses with adjustable softness (diffusion), size, and second axis height, in addition to colour tolerance, exposure, contrast, saturation, warmth, and structure. The names are there so you know what a look is after; the values are Scumble's own approximations, not licensed manufacturer data, and the tooltip and the About dialog say so.
 
 ### Notes
 

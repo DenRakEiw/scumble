@@ -64,33 +64,39 @@ a long shoulder, the 3200 stocks a short toe and long shoulder. `film.looks` lis
 
 ## Control points
 
-`film.points` is a filter layer with a list of points. Each point has a centre, a radius,
-a colour tolerance and adjustments (exposure in EV, contrast, saturation, warmth,
-structure). A pixel's weight for a point is a radial falloff (full inside a quarter of the
-radius, zero at the radius) times a Gaussian of the colour distance between the pixel and
-the colour sampled under the point when it was placed, measured in luma plus two opponent
-axes (the tolerance sets the width, 0 = only that colour, 100 = almost everything inside
-the circle). The adjustments of all points are summed with those weights and applied once,
-so a point on the sky darkens the sky and leaves the roof inside its circle alone.
+`film.points` is a filter layer with a list of points. Each point has a centre, a shape (`circle`
+or `ellipse`), a radius (and for ellipses a second radius `ry` and `angle`), a softness slider
+(diffusion 0..100, default 75 = smooth falloff full inside 25% of radius; 0 = sharp boundary,
+100 = linear falloff from centre), a colour tolerance and adjustments (exposure in EV, contrast,
+saturation, warmth, structure). A pixel's weight for a point is its spatial falloff times a
+Gaussian of the colour distance between the pixel and the colour sampled under the point when it
+was placed, measured in luma plus two opponent axes (the tolerance sets the width, 0 = only that
+colour, 100 = almost everything inside the boundary). The adjustments of all points are summed
+with those weights and applied once, so a point on the sky darkens the sky and leaves the roof
+inside its shape alone.
 
 The **Control point tool** (U, in the tool column under *Plugins*):
 
 - click on the picture: a new point on the active control points layer (the topmost one,
-  or a new layer); keep the button down and drag to set its radius;
-- drag the centre to move it (the colour is sampled again at the new place), drag the ring
-  to resize it;
-- a click on a centre selects; Delete / Backspace removes the selected point, Escape
-  deselects; every placement, move, resize and deletion is one undo step;
-- the layer row shows the points as numbered chips and the sliders of the selected one
-  (size, tolerance, exposure, contrast, saturation, warmth, structure) plus *Remove point*;
+  or a new layer) using the active shape mode (circle or ellipse); keep the button down and drag:
+  for a circle, sets its radius `r`; for an ellipse, drags along its long axis to set radius `r`
+  and orientation `angle` (default height `ry` is 60% of `r`);
+- drag the centre to move it (the colour is sampled again at the new place), drag the boundary
+  or `r` handle to resize it, or drag the perpendicular `ry` handle to adjust ellipse height;
+- a click on a centre selects; Delete / Backspace removes the selected point, Escape deselects
+  (routing also clears selection or active box in the boxes tool); every placement, move, resize,
+  shape change and deletion is one undo step;
+- the layer row shows the points as numbered chips, shape toggle buttons ("New: circle / ellipse"),
+  and the sliders of the selected one (size, height for ellipses, angle for ellipses, softness,
+  tolerance, exposure, contrast, saturation, warmth, structure) plus *Remove point*;
 - the points are drawn on the canvas while the tool is active or the layer is the active
   layer (the plugin overlay hook, `docs/PLUGINS.md`).
 
-`film.add_point` adds a point from a script or MCP (`x`, `y`, `radius`, `tolerance`,
-`exposure`, `contrast`, `saturation`, `warmth`, `structure`); `set_filter` with a `points`
-list edits them in bulk. A point's stored `color` is `[luma, r − luma, b − luma]` of the
-input under it; leaving it out when writing points makes the plugin sample it on the next
-tool interaction, but `add_point` samples it right away.
+`film.add_point` adds a point from a script or MCP (`x`, `y`, `shape`, `radius`, `height`,
+`angle`, `softness`, `tolerance`, `exposure`, `contrast`, `saturation`, `warmth`, `structure`);
+`set_filter` with a `points` list edits them in bulk. A point's stored `color` is
+`[luma, r − luma, b − luma]` of the input under it; leaving it out when writing points makes
+the plugin sample it on the next tool interaction, but `add_point` samples it right away.
 
 ## Panel, menu, commands
 

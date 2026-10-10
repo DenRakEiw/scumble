@@ -13,6 +13,7 @@ to out_dir/film.
 import asyncio
 import json
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -63,7 +64,12 @@ const cases = {
   "film.light_leak": [{ style: "edge" }, { style: "streak" }, { style: "corner" }, { style: "double" }, { style: "bars", seed: 5 }],
   "film.frame": [{ style: "line" }, { style: "matte" }, { style: "rebate", radius: 6 }, { style: "slide", colour: "cream" }, { style: "instant" }, { style: "rough", roughness: 80 }, { style: "oval", softness: 30 }],
   "film.bw": [{ preset: "red", filter_hue: 10, filter_strength: 90, structure: 50 }, { tone: "sepia", tone_strength: 80, grain: 40 }, { tone: "split", tone_strength: 100, structure: -50 }],
-  "film.points": [{ points: [{ id: 1, x: 130, y: 120, r: 110, tol: 60, ev: 1.2, contrast: 10, sat: 40, warmth: 40, structure: 30, color: [0.4, -0.2, 0.3] }, { id: 2, x: 380, y: 250, r: 120, tol: 60, ev: -1, contrast: 30, sat: -60, warmth: -40, structure: 0, color: [0.5, 0.3, -0.1] }] }],
+  "film.points": [
+    { points: [{ id: 1, x: 130, y: 120, r: 110, tol: 60, ev: 1.2, contrast: 10, sat: 40, warmth: 40, structure: 30, color: [0.4, -0.2, 0.3] }, { id: 2, x: 380, y: 250, r: 120, tol: 60, ev: -1, contrast: 30, sat: -60, warmth: -40, structure: 0, color: [0.5, 0.3, -0.1] }] },
+    { points: [{ id: 1, shape: "ellipse", x: 200, y: 150, r: 120, ry: 60, angle: 30, soft: 40, tol: 60, ev: 0.8, contrast: 20, sat: -30, warmth: 20, structure: 0, color: [0.4, -0.2, 0.3] }] },
+    { points: [{ id: 1, shape: "circle", x: 250, y: 180, r: 100, soft: 0, tol: 60, ev: 1.0, contrast: 15, sat: 20, warmth: 10, structure: 0, color: [0.5, 0.1, -0.1] }] },
+    { points: [{ id: 1, shape: "circle", x: 250, y: 180, r: 100, soft: 100, tol: 60, ev: -0.8, contrast: -20, sat: -40, warmth: -20, structure: 0, color: [0.5, 0.1, -0.1] }] },
+  ],
 };
 const out = {}, bad = [];
 for (const [id, list] of Object.entries(cases)) {
@@ -72,6 +78,13 @@ for (const [id, list] of Object.entries(cases)) {
     const a = F.applyFilter(id, src, p, { cpu: true, scale: 1, seed: 7, cache: {} });
     const b = F.applyFilter(id, src, p, { scale: 1, seed: 7, cache: {} });
     const pa = a.getContext("2d").getImageData(0, 0, W, H).data, pb = b.getContext("2d").getImageData(0, 0, W, H).data, ps = src.getContext("2d").getImageData(0, 0, W, H).data;
+    if (id === "film.points" && list.indexOf(over) === 0) {
+      const buf = await crypto.subtle.digest("SHA-256", pa);
+      const sha = Array.from(new Uint8Array(buf)).map((x) => x.toString(16).padStart(2, "0")).join("");
+      if (sha !== "47c19741e47fe18862de489e5c9e5fad2f6bb6353fbe5e002b72eaf28906510a") {
+        bad.push("film.points case 1 SHA mismatch: " + sha);
+      }
+    }
     let max = 0, over2 = 0, n = 0, changed = 0;
     for (let i = 0; i < pa.length; i++) { if ((i & 3) === 3) continue; const df = Math.abs(pa[i] - pb[i]); if (df > max) max = df; if (df > 2) over2++; if (pa[i] !== ps[i]) changed++; n++; }
     const key = id + " " + JSON.stringify(over).slice(0, 40);
@@ -106,6 +119,11 @@ try {
     const b = F.applyFilter("film.points", cv, params, { scale: 1, seed: 7, cache: {} });
     const pa = a.getContext("2d").getImageData(0, 0, W, H).data;
     const pb = b.getContext("2d").getImageData(0, 0, W, H).data;
+    const buf = await crypto.subtle.digest("SHA-256", pa);
+    const sha = Array.from(new Uint8Array(buf)).map((x) => x.toString(16).padStart(2, "0")).join("");
+    if (sha !== "d71190e1b0450c3192a5da9b06064b5f9ca32cc42591a9232008526c16203c67") {
+        throw new Error("points_structure_above_the_drawing_buffer SHA mismatch: " + sha);
+    }
     let max = 0, over2 = 0, n = 0;
     for (let i = 0; i < pa.length; i++) {
         if ((i & 3) === 3) continue;
@@ -118,7 +136,27 @@ try {
     if (GL.glFiltersAvailable() && (max > 4 || over2 / n > 0.001)) {
         throw new Error(`points_structure_above_the_drawing_buffer tolerance exceeded: max=${max}, over2=${over2Pct.toFixed(3)}%`);
     }
-    return { max, over2: +over2Pct.toFixed(3), pixels: W * H };
+    // Re-run with an ellipse
+    const elParams = {
+        ...F.filterDefaults("film.points"),
+        points: [{ id: 1, shape: "ellipse", x: 800, y: 600, r: 400, ry: 240, angle: 25, soft: 50, tol: 60, ev: 0.5, contrast: 20, sat: 30, warmth: 20, structure: 50, color: [0.5, 0.1, -0.2] }],
+    };
+    const aEl = F.applyFilter("film.points", cv, elParams, { cpu: true, scale: 1, seed: 7, cache: {} });
+    const bEl = F.applyFilter("film.points", cv, elParams, { scale: 1, seed: 7, cache: {} });
+    const paEl = aEl.getContext("2d").getImageData(0, 0, W, H).data;
+    const pbEl = bEl.getContext("2d").getImageData(0, 0, W, H).data;
+    let maxEl = 0, over2El = 0;
+    for (let i = 0; i < paEl.length; i++) {
+        if ((i & 3) === 3) continue;
+        const df = Math.abs(paEl[i] - pbEl[i]);
+        if (df > maxEl) maxEl = df;
+        if (df > 2) over2El++;
+    }
+    const over2ElPct = over2El / n * 100;
+    if (GL.glFiltersAvailable() && (maxEl > 4 || over2El / n > 0.001)) {
+        throw new Error(`ellipse points_structure tolerance exceeded: max=${maxEl}, over2=${over2ElPct.toFixed(3)}%`);
+    }
+    return { max, over2: +over2Pct.toFixed(3), maxEl, over2El: +over2ElPct.toFixed(3), pixels: W * H };
 } finally {
     GL.glTestLimits(null);
 }
@@ -432,12 +470,37 @@ await c("select_none", { doc: d.id });
     const src = ed.sampleRegion("image", [800, 600, 1400, 1000], 1, { forRun: true, upTo: idx });
     const info = { scale: 1, origin: [800, 600], seed: 7, cache: {} };
     const cpu = read(F.applyFilter("film.points", src, layer.params, { ...info, cpu: true }));
+    const buf = await crypto.subtle.digest("SHA-256", cpu);
+    const sha = Array.from(new Uint8Array(buf)).map((x) => x.toString(16).padStart(2, "0")).join("");
+    if (sha !== "4e35c9d84b02bbe8560cc8705c25e7c3429a992fd268976ef0b39d59233e2e0c") {
+        throw new Error("points_in_a_box CPU SHA mismatch: " + sha);
+    }
     const gpu = read(F.applyFilter("film.points", src, layer.params, { ...info, cache: {} }));
     const [cm, cn] = diff(cpu, read(src));
     const [gm, gn] = diff(cpu, gpu);
     out.cpu = { acts: cm, vsGpu: gm, gl: GL.glFiltersAvailable() };
     if (cm < 40) throw new Error("the CPU path over the point's region changed " + cm + " levels: the point is not where the image has it");
     if (GL.glFiltersAvailable() && gm > 2) throw new Error("the points' CPU and GPU paths with an origin differ by " + gm + " levels on " + gn + " bytes");
+}
+// (3b) an ellipse in a box away from the origin: box read equals the whole flatten exactly
+{
+    const layer = ed.layers.find((l) => l.id === r.layer);
+    const origPoints = layer.params.points;
+    layer.params.points = [{
+        id: 1, shape: "ellipse", x: 1100, y: 800, r: 250, ry: 150, angle: 35, soft: 60,
+        tol: 100, ev: 1, contrast: 0, sat: 0, warmth: 0, structure: 0, color: origPoints[0].color,
+    }];
+    try {
+        const wholeEl = ed.flattenToCanvas({ forRun: true });
+        const wantEl = read(wholeEl, box[0], box[1], 200, 200);
+        const [actsEl] = diff(wantEl, read(belowPts, box[0], box[1], 200, 200));
+        if (actsEl < 40) throw new Error("the ellipse point barely changes the picture: " + actsEl);
+        const [bmEl, bnEl] = diff(read(doc.flatten({ box, exact: true })), wantEl);
+        out.boxEllipse = { acts: actsEl, max: bmEl, over1: bnEl };
+        if (bmEl > 1) throw new Error("an exact box over the ellipse point differs from the whole flatten by " + bmEl + " levels on " + bnEl + " bytes");
+    } finally {
+        layer.params.points = origPoints;
+    }
 }
 // (4) a vignette under the points layer: its picture depends on the whole image. Since E3 it is placed in the whole
 // picture whatever part a pass composites (info.full, info.origin), so the point's colour is a box read and still the
@@ -484,33 +547,83 @@ try {
     // exposure -1 on white: the point darkens the picture where it is
     await c("film.add_point", { x: 300, y: 200, radius: 80, exposure: -1, doc: d.id });
     at([300, 200, 80], "placed");
+    await c("film.add_point", { shape: "ellipse", x: 450, y: 350, radius: 100, height: 60, angle: 30, exposure: -1, doc: d.id });
+    const ptEl = () => ed.layers.find((l) => l.kind === "filter" && l.filter === "film.points").params.points[1];
+    const makeBpts = (el) => {
+        const pts = [];
+        const rad = (el.angle || 0) * Math.PI / 180, co = Math.cos(rad), si = Math.sin(rad);
+        for (let i = 0; i < 8; i++) {
+            const t = (i * 2 * Math.PI) / 8;
+            const u = el.r * Math.cos(t), v = (el.ry || Math.round(0.6 * el.r)) * Math.sin(t);
+            pts.push([el.x + u * co - v * si, el.y + u * si + v * co]);
+        }
+        return pts;
+    };
+    const mapBpts = (pts, m) => pts.map(([x, y]) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]);
+    const checkEl = (el, pts, what, tol = 1e-6) => {
+        const rad = (el.angle || 0) * Math.PI / 180, co = Math.cos(rad), si = Math.sin(rad);
+        const ry = el.ry || Math.round(0.6 * el.r);
+        for (let i = 0; i < pts.length; i++) {
+            const dx = pts[i][0] - el.x, dy = pts[i][1] - el.y;
+            const u = (dx * co + dy * si) / el.r;
+            const v = (-dx * si + dy * co) / ry;
+            const dist = Math.hypot(u, v);
+            if (Math.abs(dist - 1) > tol) throw new Error(`${what}: boundary point ${i} |q|-1 = ${Math.abs(dist - 1)} on ${JSON.stringify(el)}`);
+        }
+    };
+    let bpts = makeBpts(ptEl());
+    const bpts0 = bpts.slice();
+    checkEl(ptEl(), bpts, "initial ellipse");
     // a crop: 50 off the left, 30 off the top, 20 and 10 off the other sides -> 730 x 560
     await c("extend_canvas", { left: -50, top: -30, right: -20, bottom: -10, doc: d.id });
     if (ed.width !== 730 || ed.height !== 560) throw new Error("the crop made " + ed.width + " x " + ed.height);
     at([250, 170, 80], "after the crop");
+    bpts = mapBpts(bpts, seen[seen.length - 1].m);
+    checkEl(ptEl(), bpts, "after the crop");
     await c("undo", { doc: d.id });
     at([300, 200, 80], "after the crop's undo");
+    checkEl(ptEl(), bpts0, "after the crop's undo");
     await c("redo", { doc: d.id });
     at([250, 170, 80], "after the crop's redo");
+    checkEl(ptEl(), bpts, "after the crop's redo");
     // a resize that is not uniform: 730 x 560 -> 365 x 420, x by 0.5 and y by 0.75, the radius by sqrt(0.375)
     await ed.resizeImage(365, 420);
     at([125, 127.5, 80 * Math.sqrt(0.375)], "after the resize");
+    bpts = mapBpts(bpts, seen[seen.length - 1].m);
+    checkEl(ptEl(), bpts, "after the resize");
     // a quarter turn clockwise: (H - y, x), the radius kept
     await c("rotate_canvas", { angle: 90, doc: d.id });
     at([420 - 127.5, 125, 80 * Math.sqrt(0.375)], "after the turn");
+    bpts = mapBpts(bpts, seen[seen.length - 1].m);
+    checkEl(ptEl(), bpts, "after the turn");
+    // a flip horizontal
+    const bptsBeforeFlip = bpts.slice();
+    await c("flip_canvas", { axis: "horizontal", doc: d.id });
+    at([127.5, 125, 80 * Math.sqrt(0.375)], "after the flip");
+    bpts = mapBpts(bpts, seen[seen.length - 1].m);
+    checkEl(ptEl(), bpts, "after the flip");
+    await c("undo", { doc: d.id });
+    at([420 - 127.5, 125, 80 * Math.sqrt(0.375)], "after flip undo");
+    checkEl(ptEl(), bptsBeforeFlip, "after flip undo");
+    await c("redo", { doc: d.id });
+    at([127.5, 125, 80 * Math.sqrt(0.375)], "after flip redo");
+    checkEl(ptEl(), bpts, "after flip redo");
     out.kinds = seen.map((e) => e.kind);
-    if (JSON.stringify(out.kinds) !== JSON.stringify(["crop", "resize", "turn"])) throw new Error("the editor sent " + JSON.stringify(seen) + " (one event per change, none for undo and redo)");
-    if (seen.some((e) => !Array.isArray(e.m) || e.m.length !== 6) || seen[2].op !== 1 || seen[0].op !== undefined) throw new Error("the events: " + JSON.stringify(seen));
+    if (JSON.stringify(out.kinds) !== JSON.stringify(["crop", "resize", "turn", "turn"])) throw new Error("the editor sent " + JSON.stringify(seen) + " (one event per change, none for undo and redo)");
+    if (seen.some((e) => !Array.isArray(e.m) || e.m.length !== 6) || seen[2].op !== 1 || seen[3].op !== "h" || seen[0].op !== undefined) throw new Error("the events: " + JSON.stringify(seen));
     // a straighten's matrix, sent by hand: 10 degrees clockwise about the picture's centre, the same size
     const W = ed.width, H = ed.height, t = 10 * Math.PI / 180, co = Math.cos(t), si = Math.sin(t);
     const m = [co, si, -si, co, W / 2 - co * W / 2 + si * H / 2, H / 2 - si * W / 2 - co * H / 2];
     const q = pt();
     H0.emit("geometry", { editor: ed, kind: "straighten", m, from: { width: W, height: H }, to: { width: W, height: H } });
     at([m[0] * q.x + m[2] * q.y + m[4], m[1] * q.x + m[3] * q.y + m[5], q.r], "after a straighten's matrix", 1e-6);
+    bpts = mapBpts(bpts, m);
+    checkEl(ptEl(), bpts, "after a straighten's matrix");
     // an event this plugin cannot read changes nothing (23a's code took any unknown op for a -90 turn)
     const q2 = pt();
     H0.emit("geometry", { editor: ed, kind: "turn", op: "sideways", from: { width: W, height: H }, to: { width: W, height: H } });
     at([q2.x, q2.y, q2.r], "after an event without a matrix or a known op", 0);
+    checkEl(ptEl(), bpts, "after an event without a matrix or a known op");
     // the point acts where it is now: dark at its centre, the picture untouched far from it
     const p = pt();
     const flat = ed.flattenToCanvas({ forRun: true }).getContext("2d");
@@ -518,8 +631,11 @@ try {
     const corners = [[2, 2], [W - 3, 2], [2, H - 3], [W - 3, H - 3]];
     const farC = corners.reduce((a, b) => (Math.hypot(b[0] - p.x, b[1] - p.y) > Math.hypot(a[0] - p.x, a[1] - p.y) ? b : a));
     const far = Array.from(flat.getImageData(farC[0], farC[1], 1, 1).data);
-    out.point = { x: p.x, y: p.y, r: p.r, centre, far };
+    const pEl2 = ptEl();
+    const centreEl = Array.from(flat.getImageData(Math.floor(pEl2.x), Math.floor(pEl2.y), 1, 1).data);
+    out.point = { x: p.x, y: p.y, r: p.r, centre, far, centreEl };
     if (!(centre[0] < 200)) throw new Error("the point does not act at its centre " + [p.x, p.y] + ": " + centre);
+    if (!(centreEl[0] < 200)) throw new Error("the ellipse does not act at its centre " + [pEl2.x, pEl2.y] + ": " + centreEl);
     if (Math.hypot(farC[0] - p.x, farC[1] - p.y) > p.r && far[0] < 250) throw new Error("the picture far from the point changed: " + far + " at " + farC);
     out.ok = true;
 } finally {
@@ -574,9 +690,54 @@ const row = editor.root.querySelector(".film-points");
 if (!row || row.querySelectorAll(".film-chip").length !== 3) throw new Error("layer-row control missing or wrong chip count");
 if (!row.querySelector(".film-chip-on")) throw new Error("no selected chip");
 if (row.querySelectorAll("input[type=range]").length < 7) throw new Error("point sliders missing");
-// the overlay draw hook runs for the tool (no exception, canvas repainted)
+
+// Switch new shape to ellipse via row button
+const shapeBtns = Array.from(row.querySelectorAll(".film-shape-btn"));
+const elBtn = shapeBtns.find((b) => b.textContent === "ellipse");
+if (!elBtn) throw new Error("ellipse shape button missing");
+elBtn.click();
+
+// Place a fourth point (ellipse) dragging 80 px at 30 deg: dx = 69.282, dy = 40
+H.pluginPointer(editor, "down", fake, 200, 200);
+H.pluginPointer(editor, "move", { ...fake, type: "pointermove" }, 200 + 69.282, 200 + 40);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 269.282, 240, editor.pointer); editor.pointer = null;
+pts = layer.params.points;
+const pEl = pts[3];
+if (!pEl || pEl.shape !== "ellipse") throw new Error("ellipse not placed: " + JSON.stringify(pEl));
+if (pEl.r !== 80 || Math.abs(pEl.angle - 30) > 0.5 || pEl.ry !== 48) {
+    throw new Error(`ellipse params mismatch: r=${pEl.r} (want 80), angle=${pEl.angle} (want 30), ry=${pEl.ry} (want 48)`);
+}
+
+// Drag ry handle: at (200, 200) with r 80, ry 48, angle 30:
+// ry handle is at x = 200 - 48*sin(30) = 176, y = 200 + 48*cos(30) = 241.569
+// Drag to (170, 252) -> proj = -(-30)*sin(30) + 52*cos(30) = 15 + 45.033 = 60.033 -> ry = 60
+H.pluginPointer(editor, "down", fake, 176, 241.6);
+H.pluginPointer(editor, "move", { ...fake, type: "pointermove" }, 170, 252);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 170, 252, editor.pointer); editor.pointer = null;
+pts = layer.params.points;
+if (pts[3].ry !== 60) throw new Error(`drag ry handle: got ry=${pts[3].ry}, want 60`);
+
+// Command tests: film.add_point with shape: "ellipse"
+const cmdEl = await c("film.add_point", { x: 300, y: 250, shape: "ellipse", height: 50, angle: 45, softness: 60 });
+if (!cmdEl.point || cmdEl.point.shape !== "ellipse" || cmdEl.point.ry !== 50 || cmdEl.point.angle !== 45 || cmdEl.point.soft !== 60) {
+    throw new Error("film.add_point command ellipse mismatch: " + JSON.stringify(cmdEl));
+}
+layer.params.points = layer.params.points.filter((q) => q.id !== cmdEl.point.id);
+
+let threwShape = false;
+try {
+    await c("film.add_point", { shape: "triangle" });
+} catch (e) {
+    threwShape = true;
+}
+if (!threwShape) throw new Error("film.add_point should refuse shape 'triangle'");
+
+const circBtn = Array.from(row.querySelectorAll(".film-shape-btn")).find((b) => b.textContent === "circle");
+if (circBtn) circBtn.click();
+
+layer._fpSel = pts[0].id;
+editor.renderLayers();
 editor.draw();
-editor.setTool("select");
 return { points: layer.params.points.map((q) => ({ x: q.x, y: q.y, r: q.r })), undoSteps: editor.undo.length - undo0 };
 """),
     ("panel_thumbnails", """
@@ -675,6 +836,13 @@ return { closed: true };
 async def main():
     sys.stdout.reconfigure(encoding="utf-8")
 
+    # Run Node unit tests first
+    proc = subprocess.run(["node", "tools/points_shapes_test.js"], capture_output=True, text=True)
+    if proc.returncode != 0:
+        print("FAIL points_shapes_test.js:\n", proc.stdout, proc.stderr)
+        return False
+    print("PASS points_shapes_test.js")
+
     async def run(cdp):
         ev = cdp.eval
         await ev("(() => { window.__log = []; return 1; })()")
@@ -684,6 +852,15 @@ async def main():
             try:
                 res = await ev(js)
                 print(f"PASS {name}: {json.dumps(res)[:300]}")
+                if name == "point_tool":
+                    await cdp.call("Emulation.setFocusEmulationEnabled", enabled=True)
+                    await cdp.call("Input.dispatchKeyEvent", type="keyDown", key="Escape", code="Escape", windowsVirtualKeyCode=27, nativeVirtualKeyCode=27)
+                    await cdp.call("Input.dispatchKeyEvent", type="keyUp", key="Escape", code="Escape", windowsVirtualKeyCode=27, nativeVirtualKeyCode=27)
+                    sel = await ev("(() => { const l = window.editor.layers.find(l => l.id === window.__pointsLayer); return l._fpSel; })()")
+                    if sel is not None:
+                        raise RuntimeError(f"Escape key did not deselect point: _fpSel is {sel}")
+                    await ev("(() => { const l = window.editor.layers.find(l => l.id === window.__pointsLayer); l.params.points = l.params.points.slice(0, 2); window.editor.setTool('select'); })()")
+                    print("  [ok] real Escape through CDP deselected point (_fpSel is null)")
             except Exception as err:  # noqa: BLE001
                 failed += 1
                 print(f"FAIL {name}: {err}")

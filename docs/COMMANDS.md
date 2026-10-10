@@ -1153,7 +1153,11 @@ Add a control point (local adjustment) to the control points layer (the active o
 | `doc` | integer | document id (default the active tab) |
 | `x` | number | centre x in image pixels (required) |
 | `y` | number | centre y in image pixels (required) |
+| `shape` | string | point shape (default circle) (one of `circle`, `ellipse`) |
 | `radius` | number | radius in pixels (default 10 % of the long side) |
+| `height` | number | ellipse: the second radius in px (default 60 % of radius) |
+| `angle` | number | degrees, clockwise from +x in image coordinates |
+| `softness` | number | diffusion 0..100 (default 75) |
 | `tolerance` | number | colour tolerance 0..100 (default 50; low = only the colour under the point) |
 | `exposure` | number | EV -2..2 |
 | `contrast` | number | -100..100 |

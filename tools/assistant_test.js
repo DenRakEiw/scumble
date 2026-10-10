@@ -1172,7 +1172,7 @@ async function main() {
             ["undo", {}, "ask"], ["redo", {}, "ask"],
             ["select_recipe", { id: "x" }, "ask"], ["set_node_params", {}, "ask"],
             ["set_brush", { size: 20 }, "auto"], ["set_brush", { spacing: 30 }, "ask"],
-            ["compare", {}, "auto"], ["film_apply_look", { preset: "x" }, "auto"], ["film_add_point", {}, "auto"],
+            ["compare", {}, "auto"], ["film_apply_look", { preset: "x" }, "auto"], ["film_add_point", {}, "auto"], ["film_add_point", { shape: "ellipse" }, "auto"],
             ["boxes_list", {}, "auto"], ["boxes_add", { kind: "new" }, "auto"], ["boxes_set", { id: "box_1" }, "auto"],
             ["boxes_from_selection", {}, "auto"], ["boxes_remove", { id: "box_1" }, "ask"], ["boxes_clear", {}, "ask"],
             ["sample_box", {}, "auto"], ["sample_box", { on: true }, "ask"],

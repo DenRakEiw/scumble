@@ -2883,7 +2883,7 @@ class InpaintEditor {
                 else if (this.flyout) this.closeFlyout();
                 else if (this.textEdit) this.endTextEdit(false);
                 else if (this.compare) { this.compare = null; if (this.compareBtn) this.compareBtn.classList.remove("ipc-on"); this.draw(); this.setStatus("Compare ended."); }
-                else host.onEscape(this);
+                else if (!host.pluginKey(this, e, "escape")) host.onEscape(this);
                 return;
             }
             // a key from inside the tip popover (a button there after Tab) is never an editor shortcut
@@ -3182,7 +3182,7 @@ class InpaintEditor {
                 this.setRangePreview(null);
             } else if (this.pending) {
                 this.cancelPending();
-            } else {
+            } else if (!host.pluginKey(this, e, k)) {
                 host.onEscape(this);
             }
             return;
