@@ -34,7 +34,17 @@ and the status bar says "MCP client connected." once.
 
 ## Registering with a client
 
-Register the **launcher**, not the executable directly: `electron/main/mcp/launch.js` is a
+**Claude Desktop: the `.mcpb` from the release.** Every release carries `scumble-<version>.mcpb`, an MCP Bundle:
+open it (double click, or *Settings › Extensions › Advanced settings › Install extension*) and Claude Desktop installs
+the server with one click. The bundle holds no copy of Scumble, only a small starter that finds the Scumble installed
+on this PC (the GitHub installer by its uninstall entry and the default folders, then the Microsoft Store copy by its
+execution alias) and runs its launcher, the same thing the lines below do by hand. A portable copy, or an install in
+another folder, is named in the extension's settings as *Scumble.exe*; an empty field means the installed one. Without
+a Scumble the extension offers one tool, `scumble_not_installed`, whose answer says what to install. `node
+server/index.js --where` inside the unpacked bundle prints what it found. The bundle is built by `npm run dist:mcpb`
+(`tools/mcpb_build.js`, `docs/PLAN_MCPB.md`) and is unsigned, like the installer.
+
+For every other client, and for Claude Desktop by hand: register the **launcher**, not the executable directly: `electron/main/mcp/launch.js` is a
 plain Node script that the same executable runs in Node mode (`ELECTRON_RUN_AS_NODE=1`),
 spawns the real app as its child and hands the client a stdout that starts with the first
 JSON message. Help > Copy MCP registration puts the two lines below on the clipboard with
@@ -288,6 +298,10 @@ Both PASS on 2026-09-09 with the dev electron and the packaged exe.
 
 `node_modules/.bin/electron . --cmd status` is the quickest check of the socket; a stray
 `\r\n` precedes the JSON on stdout (see above).
+
+`node tools/mcpb_test.js [--exe dist/win-unpacked/Scumble.exe] [--store]` (the `mcpb` gate) covers the `.mcpb`
+bundle: the manifest, the starter's search and start forms, the fallback over stdio, and with `--exe` a real headless
+start through the starter (`docs/TESTING.md`).
 
 ## Known small things
 

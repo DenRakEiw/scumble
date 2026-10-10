@@ -499,7 +499,7 @@ _Every feature is a command, the commands are an MCP server, and plugins can add
 
 ![Settings, the Plugins section: the built-in plugins with what each one adds to the app](https://www.denrakeiw.com/projects/scumble/manual/agents-plugins.jpg "1600x946")
 
-Underneath the interface, everything the editor can do is a named command with documented parameters. The assistant uses them. So can you: Help › Copy MCP registration puts the line for your MCP client on the clipboard, and after that Claude Code, Claude Desktop or any other MCP client drives Scumble directly — open a picture, select the handbag, generate, export. For scripts there are --headless and --cmd, which run the app without a window.
+Underneath the interface, everything the editor can do is a named command with documented parameters. The assistant uses them. So can you: Help › Copy MCP registration puts the line for your MCP client on the clipboard (Claude Desktop also takes the .mcpb file of every release: open it, and the server is installed with one click; it finds the installed Scumble by itself, a portable copy is named in the extension's settings), and after that Claude Code, Claude Desktop or any other MCP client drives Scumble directly — open a picture, select the handbag, generate, export. For scripts there are --headless and --cmd, which run the app without a window.
 
 Plugins are JavaScript. A plugin folder with a plugin.json can add filters (with a GPU and a processor path), panels, menu actions, tools and commands of its own. The film pack, the 3D object tool and the AI label panel are plugins themselves, which is the honest test of whether an extension point is good enough.
 

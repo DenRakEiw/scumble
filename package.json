@@ -28,7 +28,8 @@
     "mcp-test": "python tools/mcp_test.py",
     "mcp": "electron . --mcp",
     "lint": "eslint .",
-    "types": "tsc --noEmit -p tsconfig.check.json"
+    "types": "tsc --noEmit -p tsconfig.check.json",
+    "dist:mcpb": "node tools/mcpb_build.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -37,6 +38,7 @@
     "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@anthropic-ai/mcpb": "2.1.2",
     "@types/node": "^24.13.6",
     "electron": "^44.2.0",
     "electron-builder": "^26.15.3",

@@ -301,6 +301,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   infrastructure, Magnific's relight endpoint taking Scumble's own light map, a local generative recipe only on a current model (no IC-Light SD 1.5, the user), fal's two
   direction-word endpoints as presets; the user's questions R-D1 to R-D5 in its §5; about 6-8 sessions plus 4-5).
   Nothing built.
+- 44: **grow the Rust kernels, no rewrite** (the user, 2026-10-09, after asking whether Scumble should be rewritten in
+  Rust: no, the shell stays Electron; "schreibe auf den plan wasm kernel wachsen lassen"): `docs/PLAN_WASM.md` ranks
+  the CPU paths worth moving into `crates/px` (the edge snap and guided filter maps, histograms and the limit rows,
+  the compositor's CPU band, the stroke kernels, a threads spike), with the rules (measure first, the JS kernel stays
+  the reference and fallback, both wasm builds, one kernel per session). Nothing built.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
@@ -409,7 +414,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
@@ -465,6 +470,10 @@ there; add a new flake there, with the date and what was ruled out.
 - electron-updater installs a downloaded update on every normal quit (`autoInstallOnAppQuit`, on by default) and adds
   that quit handler only when a download ends with the switch on: a Skip has to turn it off in main, and a Skip taken
   back has to add the handler (`updater.js` `_applySkip`, 6.8.9).
+- Claude Desktop runs a `node` extension server in an Electron UtilityProcess whose `nodeHost.js` replaces
+  `process.stdout.write` and `process.stdin` by MessagePort messages and loads the entry with `import()`: a child
+  spawned with `stdio: "inherit"` answers nobody, and `require.main === module` is never true (the `.mcpb` starter,
+  `docs/PLAN_MCPB.md` §1; measured 2026-10-09).
 - In the main process `process.stdin` never emits `data` from a pipe (read fd 0 with `fs.createReadStream`); Electron prints
   a CR LF to stdout before any JS runs (hence the MCP launcher); a window created hidden stays hidden after `show()`,
   `restore()` brings it up.

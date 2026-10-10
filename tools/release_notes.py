@@ -49,12 +49,13 @@ def section(version):
 
 
 def files(version):
-    """The four downloads of a release, as electron-builder and tools/portable_zip.js name them on GitHub."""
+    """The downloads of a release, as electron-builder, tools/portable_zip.js and tools/mcpb_build.js name them on GitHub."""
     return {
         "exe": f"Scumble-Setup-{version}.exe",
         "zip": f"Scumble-{version}-portable-win-x64.zip",
         "appimage": f"scumble-{version}.AppImage",
         "deb": f"scumble-{version}.deb",
+        "mcpb": f"scumble-{version}.mcpb",
     }
 
 
@@ -104,6 +105,8 @@ def block(version, sizes=None):
          "itself."),
         ("**Linux AppImage**", f"[{f['appimage']}]({base}{f['appimage']})", f["appimage"], early),
         ("**Linux .deb**", f"[{f['deb']}]({base}{f['deb']})", f["deb"], early),
+        ("**Claude Desktop extension**", f"[{f['mcpb']}]({base}{f['mcpb']})", f["mcpb"],
+         "Adds Scumble's MCP tools to Claude Desktop with one click; needs Scumble installed (any of the above)."),
     ]
     out = ["### Get Scumble", ""]
     if sizes is None:

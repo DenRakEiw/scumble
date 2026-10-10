@@ -82,9 +82,9 @@ export default [
         rules: CORRECTNESS,
     },
 
-    // The main process and the Node-side tests: CommonJS.
+    // The main process, the Node-side tests and the .mcpb bundle's starter: CommonJS.
     {
-        files: ["electron/**/*.js", "tools/**/*.js"],
+        files: ["electron/**/*.js", "tools/**/*.js", "mcpb/**/*.js"],
         languageOptions: {
             ...ECMA,
             sourceType: "commonjs",

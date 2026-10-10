@@ -170,6 +170,27 @@ asar, a `data` folder), and reads `dist:portable` in `package.json` and the wind
 (installer, its artifact, the zip, the zip's artifact, the upload to the draft on a tag only). The real zip is checked
 by hand once per build (`docs/RELEASING.md`).
 
+The `mcpb` gate (`tools/mcpb_test.js`, plain Node; `docs/PLAN_MCPB.md`) covers the `.mcpb` bundle of the MCP server:
+the staged manifest validates with `@anthropic-ai/mcpb` and carries `package.json`'s version and one tool per `###`
+heading of `docs/COMMANDS.md`; the starter's `STORE_LAUNCH` equals `registration.js`'s and its uninstall GUID is the
+uuid v5 the test computes from the appId; the search order with injected registry, `exists` and `lstat` answers (an
+explicit path wins and reads no registry, one that does not exist is reported and nothing else searched, the empty
+field and the client's literal `${user_config.scumble_exe}` count as not set, `InstallLocation`, then the
+`UninstallString`'s folder, HKLM, the default folders, an exe without `resources\app.asar` is no install, the Store
+alias by `lstat` after the installer, an explicit alias or version folder takes the Store route); the two start forms
+against `registration.server()`; the fallback as a process over stdio (`initialize` echoing the client's protocol
+version, one read-only tool, its text naming the missing path and the downloads, `ping`, an unknown method, exit 0 on
+stdin's end, nothing but JSON on stdout); `--where`. With `--exe` it starts the exe headless through the starter on a
+profile of its own with `--no-comfy` (`tools/list` ≥ 100 tools, `ping` in mode `headless`, the exit when stdin
+closes), and runs the starter **inside an Electron UtilityProcess the way Claude Desktop does**
+(`tools/mcpb_utility.js` with the dev tree's electron, forking `tools/mcpb_utility_host.js`: the shape of Claude
+Desktop's `nodeHost.js`, which replaces `process.stdout.write` and `process.stdin` by messages over a MessagePort and
+loads the entry with `import()`; found 2026-10-09 when the first bundle timed out in Claude Desktop after 120 s: its
+starter handed the launcher stdio "inherit", and no bytes reach a host that reads no handles; `require.main ===
+module` is never true under `import()` either). `--store` (by hand) does the same through the Store alias of this
+machine. PASS on 2026-10-09 (plain, the 0.1.44 exe, the Store copy 0.1.42). The install in Claude Desktop itself is
+a hand test (`docs/PLAN_MCPB.md` §7).
+
 The `portable` gate (P3, `tools/portable_test.py`, `--exe` only) starts portable copies of the exe's folder the way a
 user does, **without `--user-data-dir`**, so it is the one gate that could reach the user's own `%APPDATA%\Scumble`.
 It refuses, starting nothing and reading nothing there, without `--exe` and while any `Scumble.exe` runs (the user's
