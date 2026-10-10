@@ -371,7 +371,7 @@ async function compositeCases(ref, label, js) {
             const srcs = [], ops = [], alphas = [], masks = [];
             for (let l = 0; l < n; l++) {
                 srcs.push(pixelRow(pixels, 2000 + trial * 10 + l + pixels));
-                ops.push((trial + l) % 24);
+                ops.push((trial + l) % 30);
                 alphas.push([255, 0, 128, 200, 1][(trial + 2 * l) % 5]);
                 masks.push((trial + l) % 3 === 0 ? null : randomMask(pixels, 3000 + trial * 10 + l));
             }
@@ -380,11 +380,11 @@ async function compositeCases(ref, label, js) {
             if (!eqBytes(a, b)) { ok = false; detail = `${pixels}px trial ${trial} ops ${ops} alphas ${alphas} ${firstDiff(a, b)}`; }
         }
     }
-    check(`js compositeTile equals the ${label} (5 ops and 19 blend modes, partial alpha, opacity, masks, tails)`, ok, detail);
+    check(`js compositeTile equals the ${label} (5 ops and 25 blend modes, partial alpha, opacity, masks, tails)`, ok, detail);
 
     // every blend mode alone: over an opaque tile (four opaque pixels at a time in the SIMD build), over a mixed one, masked or not
     let okModes = true, detailModes = "";
-    for (let op = 5; op <= 23; op++) {
+    for (let op = 5; op <= 29; op++) {
         for (const [pixels, opaque, o, masked] of [[4099, true, 255, false], [4099, true, 170, true], [4099, false, 255, true], [4099, false, 90, false], [3, false, 255, false]]) {
             const dst = pixelRow(pixels, 40 + op, { opaque }), src = pixelRow(pixels, 60 + op + pixels), mask = masked ? [randomMask(pixels, 80 + op)] : null;
             const a = js.compositeTile(dst.slice(), [src], [op], [o], mask);
@@ -555,7 +555,7 @@ async function compositeCases(ref, label, js) {
     }
     if (/rust/.test(label)) {
         const N = 1 << 20, dstT = pixelRow(N, 5, { opaque: true }), srcT = pixelRow(N, 6), parts = [];
-        for (const op of [5, 7, 10, 13, 14, 18, 20]) {
+        for (const op of [5, 7, 10, 13, 14, 18, 20, 24, 28]) {
             const best = (k) => { let b = Infinity; for (let i = 0; i < 5; i++) { const w = dstT.slice(), t0 = performance.now(); k.compositeTile(w, [srcT], [op], [200], null); b = Math.min(b, performance.now() - t0); } return b; };
             parts.push(`${BLEND_NAMES[op - 5]} ${label} ${best(ref).toFixed(1)} ms, twin ${best(js).toFixed(1)}`);
         }
@@ -579,7 +579,7 @@ async function compositeShaCases(js, simd, scalar) {
 
     function hashKernel(k) {
         const h = crypto.createHash("sha256");
-        for (let op = 0; op <= 23; op++) {
+        for (let op = 0; op <= 29; op++) {
             const outO = k.compositeTile(dstOpaque.slice(), [srcOpaque], [op], [255], null);
             const outT = k.compositeTile(dstTrans.slice(), [srcTrans], [op], [255], null);
             h.update(outO);
@@ -591,23 +591,142 @@ async function compositeShaCases(js, simd, scalar) {
     const shaJ = hashKernel(js);
     const shaS = hashKernel(simd);
     const shaC = hashKernel(scalar);
-    check("compositeTile SHA-256 identical across twin, px.wasm, and px_scalar.wasm for ops 0-23",
+    check("compositeTile SHA-256 identical across twin, px.wasm, and px_scalar.wasm for ops 0-29",
         shaJ === shaS && shaJ === shaC,
         `sha ${shaJ.slice(0, 16)}`);
 
-    let op24Ok = true, op24Detail = "";
+    let op30Ok = true, op30Detail = "";
     for (const [name, k] of [["twin", js], ["simd", simd], ["scalar", scalar]]) {
-        const out24O = k.compositeTile(dstOpaque.slice(), [srcOpaque], [24], [255], null);
+        const out30O = k.compositeTile(dstOpaque.slice(), [srcOpaque], [30], [255], null);
         const out0O = k.compositeTile(dstOpaque.slice(), [srcOpaque], [0], [255], null);
-        const out24T = k.compositeTile(dstTrans.slice(), [srcTrans], [24], [255], null);
+        const out30T = k.compositeTile(dstTrans.slice(), [srcTrans], [30], [255], null);
         const out0T = k.compositeTile(dstTrans.slice(), [srcTrans], [0], [255], null);
-        if (!eqBytes(out24O, out0O) || !eqBytes(out24T, out0T)) {
-            op24Ok = false;
-            op24Detail = `${name} op 24 does not match op 0`;
+        if (!eqBytes(out30O, out0O) || !eqBytes(out30T, out0T)) {
+            op30Ok = false;
+            op30Detail = `${name} op 30 does not match op 0`;
             break;
         }
     }
-    check("compositeTile op 24 equals op 0 on twin, px.wasm, and px_scalar.wasm", op24Ok, op24Detail);
+    check("compositeTile op 30 equals op 0 on twin, px.wasm, and px_scalar.wasm", op30Ok, op30Detail);
+}
+
+async function tierCCases(js, simd, scalar, ref) {
+    const TIER_C_MODES = ["hue", "saturation", "color", "luminosity", "darker-color", "lighter-color"];
+    const TIER_C_OPS = [24, 25, 26, 27, 28, 29];
+
+    // 1. All 65,536 grey pairs
+    const dstGrey = new Uint8Array(65536 * 4), srcGrey = new Uint8Array(65536 * 4);
+    for (let bg = 0; bg < 256; bg++) for (let sg = 0; sg < 256; sg++) {
+        const i = (bg * 256 + sg) * 4;
+        dstGrey[i] = bg; dstGrey[i + 1] = bg; dstGrey[i + 2] = bg; dstGrey[i + 3] = 255;
+        srcGrey[i] = sg; srcGrey[i + 1] = sg; srcGrey[i + 2] = sg; srcGrey[i + 3] = 255;
+    }
+    for (let m = 0; m < 6; m++) {
+        const op = TIER_C_OPS[m], name = TIER_C_MODES[m];
+        const want = ref.compositeTile(dstGrey.slice(), [srcGrey], [op], [255], null);
+        const outJ = js.compositeTile(dstGrey.slice(), [srcGrey], [op], [255], null);
+        const outS = simd.compositeTile(dstGrey.slice(), [srcGrey], [op], [255], null);
+        const outC = scalar.compositeTile(dstGrey.slice(), [srcGrey], [op], [255], null);
+        const ok = eqBytes(outJ, want) && eqBytes(outS, want) && eqBytes(outC, want);
+        check(`Tier C ${name} over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)`, ok, firstDiff(outJ, want));
+    }
+
+    // 2. Edge sets: primaries and secondaries, black & white backdrops, equal max/min, darker/lighter ties
+    const pairs = [];
+    const corners = [];
+    for (const r of [0, 255]) for (const g of [0, 255]) for (const bl of [0, 255]) corners.push([r, g, bl]);
+    for (const b of corners) for (const s of corners) pairs.push({ b, s });
+    for (const bw of [[0, 0, 0], [255, 255, 255]]) {
+        for (let v = 0; v < 256; v += 15) {
+            pairs.push({ b: bw, s: [v, 255 - v, (v * 7) & 255] });
+            pairs.push({ b: [v, 255 - v, (v * 7) & 255], s: bw });
+        }
+    }
+    for (let v1 = 0; v1 < 256; v1 += 17) {
+        for (let v2 = 0; v2 < 256; v2 += 17) {
+            for (const b of [[v1, v1, v2], [v1, v2, v1], [v2, v1, v1], [v1, v2, v2], [v2, v1, v2], [v2, v2, v1]]) {
+                for (const s of [[v2, v2, v1], [v1, v2, v1]]) {
+                    pairs.push({ b, s });
+                }
+            }
+        }
+    }
+    for (let r = 0; r < 256; r += 16) {
+        for (let g = 0; g < 256; g += 16) {
+            const b = [r, g, 100];
+            const s = [g, 100, r];
+            pairs.push({ b, s });
+            pairs.push({ b: [100, r, g], s: [r, g, 100] });
+        }
+    }
+
+    const numEdges = pairs.length;
+    const dstEdgeO = new Uint8Array(numEdges * 4), srcEdgeO = new Uint8Array(numEdges * 4);
+    const dstEdgeT = new Uint8Array(numEdges * 4), srcEdgeT = new Uint8Array(numEdges * 4);
+    const maskEdge = new Uint8Array(numEdges);
+    for (let i = 0; i < numEdges; i++) {
+        const { b, s } = pairs[i];
+        dstEdgeO[i * 4] = b[0]; dstEdgeO[i * 4 + 1] = b[1]; dstEdgeO[i * 4 + 2] = b[2]; dstEdgeO[i * 4 + 3] = 255;
+        srcEdgeO[i * 4] = s[0]; srcEdgeO[i * 4 + 1] = s[1]; srcEdgeO[i * 4 + 2] = s[2]; srcEdgeO[i * 4 + 3] = 255;
+
+        dstEdgeT[i * 4] = b[0]; dstEdgeT[i * 4 + 1] = b[1]; dstEdgeT[i * 4 + 2] = b[2]; dstEdgeT[i * 4 + 3] = (i * 37) % 256;
+        srcEdgeT[i * 4] = s[0]; srcEdgeT[i * 4 + 1] = s[1]; srcEdgeT[i * 4 + 2] = s[2]; srcEdgeT[i * 4 + 3] = (i * 53) % 256;
+        maskEdge[i] = (i * 71) % 256;
+    }
+
+    for (let m = 0; m < 6; m++) {
+        const op = TIER_C_OPS[m], name = TIER_C_MODES[m];
+        let ok = true, detail = "";
+        for (const [dst, src, o, mask] of [
+            [dstEdgeO, srcEdgeO, 255, null],
+            [dstEdgeO, srcEdgeO, 140, [maskEdge]],
+            [dstEdgeT, srcEdgeT, 255, [maskEdge]],
+            [dstEdgeT, srcEdgeT, 140, null],
+        ]) {
+            const want = ref.compositeTile(dst.slice(), [src], [op], [o], mask);
+            const outJ = js.compositeTile(dst.slice(), [src], [op], [o], mask);
+            const outS = simd.compositeTile(dst.slice(), [src], [op], [o], mask);
+            const outC = scalar.compositeTile(dst.slice(), [src], [op], [o], mask);
+            if (!eqBytes(outJ, want) || !eqBytes(outS, want) || !eqBytes(outC, want)) {
+                ok = false;
+                detail = `failed at opacity ${o} masked ${!!mask} diff ${firstDiff(outJ, want)}`;
+                break;
+            }
+        }
+        check(`Tier C ${name} edge sets match BigInt reference across opacity/mask/backdrop combos`, ok, detail);
+    }
+
+    // 3. 2^18 random triplet pairs
+    const N18 = 1 << 18;
+    const countPerOp = Math.floor(N18 / 6);
+    let randOk = true, randDetail = "";
+    for (let m = 0; m < 6; m++) {
+        const op = TIER_C_OPS[m];
+        const seed = 5000 + m * 100;
+        const dstO = pixelRow(countPerOp, seed, { opaque: true });
+        const srcO = pixelRow(countPerOp, seed + 1, { opaque: true });
+        const dstT = pixelRow(countPerOp, seed + 2, { opaque: false });
+        const srcT = pixelRow(countPerOp, seed + 3, { opaque: false });
+        const mask = [randomMask(countPerOp, seed + 4)];
+
+        const configs = [
+            [dstO, srcO, 255, null],
+            [dstO, srcO, 140, mask],
+            [dstT, srcT, 255, mask],
+            [dstT, srcT, 140, null],
+        ];
+        const [d, s, o, mk] = configs[m % 4];
+        const want = ref.compositeTile(d.slice(), [s], [op], [o], mk);
+        const outJ = js.compositeTile(d.slice(), [s], [op], [o], mk);
+        const outS = simd.compositeTile(d.slice(), [s], [op], [o], mk);
+        const outC = scalar.compositeTile(d.slice(), [s], [op], [o], mk);
+        if (!eqBytes(outJ, want) || !eqBytes(outS, want) || !eqBytes(outC, want)) {
+            randOk = false;
+            randDetail = `op ${op} (${TIER_C_MODES[m]}) diff: ${firstDiff(outJ, want)}`;
+            break;
+        }
+    }
+    check("Tier C 2^18 random triplet pairs: twin == px.wasm == px_scalar.wasm == BigInt reference (0 differ)", randOk, randDetail);
 }
 
 // ---- the colour match (B item 7 part 3) ----------------------------------------------------------
@@ -1534,6 +1653,74 @@ const blendRef = (op, b, s) => [
     () => (s <= 127 ? burnRef(b, 2 * s) : dodgeRef(b, 2 * s - 255)),
     () => (s === 0 ? (b === 0 ? 0 : 65025) : Math.min(65025, Math.floor((130050 * b + s) / (2 * s)))),
 ][op - 5]();
+
+// BigInt fraction type for exact W3C pseudo-code reference (Tier C, ops 24 to 29):
+function frac(n, d = 1n) { if (d < 0n) { n = -n; d = -d; } return { n: BigInt(n), d: BigInt(d) }; }
+const fracAdd = (a, b) => frac(a.n * b.d + b.n * a.d, a.d * b.d);
+const fracSub = (a, b) => frac(a.n * b.d - b.n * a.d, a.d * b.d);
+const fracMul = (a, b) => frac(a.n * b.n, a.d * b.d);
+const fracDiv = (a, b) => frac(a.n * b.d, a.d * b.n);
+const fracCmp = (a, b) => { const diff = a.n * b.d - b.n * a.d; return diff < 0n ? -1 : diff > 0n ? 1 : 0; };
+const fracToB16 = (f) => { const N = f.n * 65025n, D = f.d; return Number((2n * N + D) / (2n * D)); };
+
+function lumRef(c) {
+    return fracAdd(fracAdd(fracMul(frac(3n, 10n), c[0]), fracMul(frac(59n, 100n), c[1])), fracMul(frac(11n, 100n), c[2]));
+}
+function clipColorRef(c) {
+    const l = lumRef(c), zero = frac(0n), one = frac(1n);
+    let n = c[0]; if (fracCmp(c[1], n) < 0) n = c[1]; if (fracCmp(c[2], n) < 0) n = c[2];
+    let x = c[0]; if (fracCmp(c[1], x) > 0) x = c[1]; if (fracCmp(c[2], x) > 0) x = c[2];
+    let r = c[0], g = c[1], b = c[2];
+    if (fracCmp(n, zero) < 0) {
+        const denom = fracSub(l, n);
+        r = fracAdd(l, fracDiv(fracMul(fracSub(r, l), l), denom));
+        g = fracAdd(l, fracDiv(fracMul(fracSub(g, l), l), denom));
+        b = fracAdd(l, fracDiv(fracMul(fracSub(b, l), l), denom));
+    }
+    if (fracCmp(x, one) > 0) {
+        const oneSubL = fracSub(one, l), denom = fracSub(x, l);
+        r = fracAdd(l, fracDiv(fracMul(fracSub(r, l), oneSubL), denom));
+        g = fracAdd(l, fracDiv(fracMul(fracSub(g, l), oneSubL), denom));
+        b = fracAdd(l, fracDiv(fracMul(fracSub(b, l), oneSubL), denom));
+    }
+    return [r, g, b];
+}
+function setLumRef(c, l) {
+    const d = fracSub(l, lumRef(c));
+    return clipColorRef([fracAdd(c[0], d), fracAdd(c[1], d), fracAdd(c[2], d)]);
+}
+function satRef(c) {
+    let n = c[0]; if (fracCmp(c[1], n) < 0) n = c[1]; if (fracCmp(c[2], n) < 0) n = c[2];
+    let x = c[0]; if (fracCmp(c[1], x) > 0) x = c[1]; if (fracCmp(c[2], x) > 0) x = c[2];
+    return fracSub(x, n);
+}
+function setSatRef(c, s) {
+    const zero = frac(0n), idx = [0, 1, 2];
+    idx.sort((i, j) => fracCmp(c[i], c[j]));
+    const minIdx = idx[0], midIdx = idx[1], maxIdx = idx[2];
+    const cMin = c[minIdx], cMid = c[midIdx], cMax = c[maxIdx];
+    const out = [zero, zero, zero];
+    if (fracCmp(cMax, cMin) > 0) {
+        out[midIdx] = fracDiv(fracMul(fracSub(cMid, cMin), s), fracSub(cMax, cMin));
+        out[maxIdx] = s;
+    }
+    return out;
+}
+function blendRef3(op, b3, s3) {
+    if (op < 24) return [blendRef(op, b3[0], s3[0]), blendRef(op, b3[1], s3[1]), blendRef(op, b3[2], s3[2])];
+    if (op === 28) return (s3[0] + s3[1] + s3[2] < b3[0] + b3[1] + b3[2]) ? [255 * s3[0], 255 * s3[1], 255 * s3[2]] : [255 * b3[0], 255 * b3[1], 255 * b3[2]];
+    if (op === 29) return (s3[0] + s3[1] + s3[2] > b3[0] + b3[1] + b3[2]) ? [255 * s3[0], 255 * s3[1], 255 * s3[2]] : [255 * b3[0], 255 * b3[1], 255 * b3[2]];
+    const cb = [frac(b3[0], 255n), frac(b3[1], 255n), frac(b3[2], 255n)];
+    const cs = [frac(s3[0], 255n), frac(s3[1], 255n), frac(s3[2], 255n)];
+    let res;
+    if (op === 24) res = setLumRef(setSatRef(cs, satRef(cb)), lumRef(cb));
+    else if (op === 25) res = setLumRef(setSatRef(cb, satRef(cs)), lumRef(cb));
+    else if (op === 26) res = setLumRef(cs, lumRef(cb));
+    else if (op === 27) res = setLumRef(cb, lumRef(cs));
+    else return [0, 0, 0];
+    return res.map(fracToB16);
+}
+
 /** The same in the specification's floats (W3C Compositing and Blending Level 1; linear light as Photoshop has it), 0..1. */
 const blendFloat = (op, b, s) => {
     const hl = (b, s) => (s <= 0.5 ? b * 2 * s : b + (2 * s - 1) - b * (2 * s - 1));
@@ -1592,19 +1779,29 @@ const reference = {
                 const sa = mul255(s[i + 3], alphas[l]), inv = 255 - sa, d = [dst[i], dst[i + 1], dst[i + 2], dst[i + 3]], da = d[3];
                 const sp = [mul255(s[i], sa), mul255(s[i + 1], sa), mul255(s[i + 2], sa), sa];
                 const ra = sa + mul255(da, inv);
-                const blended = (c) => {   // the blend modes: the W3C sum over 255³, rounded once, never more than the alpha
+                let b16_3 = null;
+                if (ops[l] >= 24 && ops[l] <= 29) {
+                    const h = da >> 1;
+                    const cb3 = da === 0 ? [0, 0, 0] : [
+                        Math.min(255, Math.floor((d[0] * 255 + h) / da)),
+                        Math.min(255, Math.floor((d[1] * 255 + h) / da)),
+                        Math.min(255, Math.floor((d[2] * 255 + h) / da)),
+                    ];
+                    b16_3 = blendRef3(ops[l], cb3, [s[i], s[i + 1], s[i + 2]]);
+                }
+                const blended = (c) => {   // the blend modes: the W3C sum over 255^3, rounded once, never more than the alpha
                     if (c === 3) return ra;
-                    const cb = da === 0 ? 0 : Math.min(255, Math.floor((d[c] * 255 + (da >> 1)) / da));
-                    const x = BigInt(s[i + c]) * BigInt(sa) * BigInt(255 - da) * 255n + BigInt(d[c]) * BigInt(inv) * 65025n + BigInt(sa) * BigInt(da) * BigInt(blendRef(ops[l], cb, s[i + c]));
+                    const b16 = b16_3 ? b16_3[c] : blendRef(ops[l], da === 0 ? 0 : Math.min(255, Math.floor((d[c] * 255 + (da >> 1)) / da)), s[i + c]);
+                    const x = BigInt(s[i + c]) * BigInt(sa) * BigInt(255 - da) * 255n + BigInt(d[c]) * BigInt(inv) * 65025n + BigInt(sa) * BigInt(da) * BigInt(b16);
                     return Math.min(ra, Number((x + 8290687n) / 16581375n));
                 };
-                const r = [0, 1, 2, 3].map((c) => ops[l] >= 5 ? blended(c) : [
+                const r = [0, 1, 2, 3].map((c) => (ops[l] >= 5 && ops[l] <= 29) ? blended(c) : [
                     sp[c] + mul255(d[c], inv),                  // source-over
                     mul255(d[c], inv),                          // destination-out
                     mul255(sp[c], da) + mul255(d[c], inv),      // source-atop
                     mul255(d[c], sa),                           // destination-in
                     sp[c],                                      // copy
-                ][ops[l]]);
+                ][ops[l] > 29 ? 0 : ops[l]]);
                 for (let c = 0; c < 4; c++) dst[i + c] = mul255(r[c], m) + mul255(d[c], 255 - m);
             }
         });
@@ -1699,6 +1896,8 @@ async function resampleCases(px, label, R) {
 async function main() {
     const { BLENDS } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "blend_modes.js")).href);
     for (const b of BLENDS) if (b.op >= 5) BLEND_NAMES[b.op - 5] = b.id;
+    const TIER_C_NAMES = ["hue", "saturation", "color", "luminosity", "darker-color", "lighter-color"];
+    for (let i = 0; i < TIER_C_NAMES.length; i++) BLEND_NAMES[19 + i] = TIER_C_NAMES[i];
     const js = await import(pathToFileURL(path.join(PX_DIR, "kernels_js.js")).href);
     const resample = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_resample.js")).href);
     const raster = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_raster.js")).href);
@@ -1724,6 +1923,7 @@ async function main() {
     const simdPx = await loadPx(fs.readFileSync(path.join(PX_DIR, "px.wasm")));
     const scalarPx = await loadPx(fs.readFileSync(path.join(PX_DIR, "px_scalar.wasm")));
     await compositeShaCases(js, simdPx, scalarPx);
+    await tierCCases(js, simdPx, scalarPx, ref);
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));

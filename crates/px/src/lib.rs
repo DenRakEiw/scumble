@@ -39,11 +39,11 @@ fn align_for(bytes: usize) -> usize {
     if bytes >= 16 * 1024 { 4096 } else { 8 }
 }
 
-/// Bumped whenever an export changes its signature or learns a new op (16: blend ops 20 to 23);
+/// Bumped whenever an export changes its signature or learns a new op (17: blend ops 24 to 29);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    16
+    17
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.

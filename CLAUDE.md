@@ -183,6 +183,14 @@ release at the end after the user's test; release 4 (blend modes) independent.
   - Unit tests: `tools/px_test.js` extended with closed-form exhaustive opaque pairs for all four ops; float checks <= 0.51; edge sets b in {0, 255} x s in {0, 127, 128, 254, 255}; SHA-256 test across twin, simd, and scalar for ops 0..=23; op 24 equals op 0; `tools/blend_table_test.js` (8/8 pass); `tools/layered_test.js` (111/111 pass).
   - Gates: `blendmodes` on both backends (`--tiles on` and `--tiles off`, 7s each).
   - Docs: `docs/COMMANDS.md`, `CHANGELOG.md`, `docs/DOCUMENTS.md` updated in pure ASCII.
+- **R4-S6 built** (2026-10-10): Tier C, the kernel (hue, saturation, colour, luminosity, darker colour, lighter colour: ops 24-29, ABI 17):
+  - Rust integer kernel `composite.rs` (`HUE` 24, `SATURATION` 25, `COLOR` 26, `LUMINOSITY` 27, `DARKER_COLOR` 28, `LIGHTER_COLOR` 29; `LAST_BLEND = LIGHTER_COLOR`; exact integer helpers `r_div` half-up rounding, `lum100`, `sat`, and `nonsep` in exact i64 arithmetic per section 5.4.2; channel sums for darker/lighter colour with backdrop tie-break per R4-D3; `blend3` and `blend_from` arms; scalar-only, `SIMD_BLENDS` kept at 14; header comments in pure ASCII).
+  - WASM bump: `px_abi_version()` = 17; `composite_tile` doc comments; `PX_ABI = 17` in `px.js`. `python tools/build_px.py --check` passed cleanly (`px.wasm` 144,718 bytes, `px_scalar.wasm` 130,514 bytes).
+  - JS twin: `nonsep` helper in exact integer math with `Math.floor`, `blendOp` cases 24..=29, and `blend3` cases 24..=29 in `renderer/editor/px/kernels_js.js`.
+  - Node sync: committed in custom node repo (`652826a`); verified with `python tools/build_node.py --check`.
+  - Unit tests & reference: `tools/px_test.js` extended with BigInt fraction `frac` reference `blendRef3(op, b3, s3)`, SHA-256 test across twin, simd, and scalar for ops 0..=29 (op 30 equals op 0), comprehensive `tierCCases` covering all 65,536 grey pairs, corner sets, sum ties, and 2^18 random triplet pairs across all 4 opacity/mask/backdrop combinations (0 diffs across twin, wasm simd, wasm scalar, BigInt reference); verified 6 mutation self-checks fail against reference.
+  - Megapixel timing: op 24 scalar 13.2 ms vs multiply 7.4 ms; op 28 scalar 7.6 ms (well within the 4x threshold).
+  - Gates: `composite` (6s on `--tiles on`), `export` (132s), `lint` (0 errors), `types` (0 errors), and `build_node.py --check` ALL PASS with `--offline`.
 **Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.

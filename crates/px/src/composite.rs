@@ -19,9 +19,10 @@
 //! taken as 255 for "sp", which is what lets the SIMD path treat the 16 bytes of four pixels
 //! alike. Canvas 2D keeps premultiplied 8-bit pixels too, so the precision is the same.
 //!
-//! The nineteen blend modes (B item 7, ops 5 to 12; linear light, op 13; tier A, ops 14 to 19: exclusion,
+//! The twenty-five blend modes (B item 7, ops 5 to 12; linear light, op 13; tier A, ops 14 to 19: exclusion,
 //! linear dodge, linear burn, subtract, pin light, hard mix; tier B, ops 20 to 23: colour dodge,
-//! colour burn, vivid light, divide) are the W3C compositing formula,
+//! colour burn, vivid light, divide; tier C, ops 24 to 29: hue, saturation, colour, luminosity, darker colour,
+//! lighter colour) are the W3C compositing formula,
 //! rounded ONCE per channel: with three rounded products the result was up to 1.45 levels from the exact value and a
 //! level from the compositor's shader on 29 % of the bytes of a half-transparent layer; rounded once it is within half a
 //! level (12 % from the shader, which reads its source back from a premultiplied 8-bit texture). Linear light is not in
@@ -77,7 +78,13 @@ pub const COLOR_DODGE: u8 = 20;
 pub const COLOR_BURN: u8 = 21;
 pub const VIVID_LIGHT: u8 = 22;
 pub const DIVIDE: u8 = 23;
-pub const LAST_BLEND: u8 = DIVIDE;
+pub const HUE: u8 = 24;
+pub const SATURATION: u8 = 25;
+pub const COLOR: u8 = 26;
+pub const LUMINOSITY: u8 = 27;
+pub const DARKER_COLOR: u8 = 28;
+pub const LIGHTER_COLOR: u8 = 29;
+pub const LAST_BLEND: u8 = LIGHTER_COLOR;
 
 #[allow(dead_code)]
 const SIMD_BLENDS: [u8; 14] = [
@@ -255,12 +262,134 @@ fn blend_of<const OP: u8>(b: u32, s: u32) -> u32 {
 }
 
 #[inline(always)]
+fn r_div(n: i64, d: i64) -> u32 {
+    ((2 * n + d) / (2 * d)) as u32
+}
+
+#[inline(always)]
+fn lum100(c: [i64; 3]) -> i64 {
+    30 * c[0] + 59 * c[1] + 11 * c[2]
+}
+
+#[inline(always)]
+fn sat(c: [i64; 3]) -> i64 {
+    c[0].max(c[1]).max(c[2]) - c[0].min(c[1]).min(c[2])
+}
+
+#[inline(always)]
+fn nonsep(op: u8, b: [u32; 3], s: [u32; 3]) -> [u32; 3] {
+    let b64 = [b[0] as i64, b[1] as i64, b[2] as i64];
+    let s64 = [s[0] as i64, s[1] as i64, s[2] as i64];
+    let mut p = [0i64; 3];
+    let d: i64;
+    let l: i64;
+
+    match op {
+        HUE => {
+            let min_s = s64[0].min(s64[1]).min(s64[2]);
+            let max_s = s64[0].max(s64[1]).max(s64[2]);
+            let sat_s = max_s - min_s;
+            if sat_s == 0 {
+                p = [0, 0, 0];
+                d = 1;
+            } else {
+                let sat_b = sat(b64);
+                p[0] = (s64[0] - min_s) * sat_b;
+                p[1] = (s64[1] - min_s) * sat_b;
+                p[2] = (s64[2] - min_s) * sat_b;
+                d = sat_s;
+            }
+            l = lum100(b64);
+        }
+        SATURATION => {
+            let min_b = b64[0].min(b64[1]).min(b64[2]);
+            let max_b = b64[0].max(b64[1]).max(b64[2]);
+            let sat_b = max_b - min_b;
+            if sat_b == 0 {
+                p = [0, 0, 0];
+                d = 1;
+            } else {
+                let sat_s = sat(s64);
+                p[0] = (b64[0] - min_b) * sat_s;
+                p[1] = (b64[1] - min_b) * sat_s;
+                p[2] = (b64[2] - min_b) * sat_s;
+                d = sat_b;
+            }
+            l = lum100(b64);
+        }
+        COLOR => {
+            p = s64;
+            d = 1;
+            l = lum100(b64);
+        }
+        LUMINOSITY => {
+            p = b64;
+            d = 1;
+            l = lum100(s64);
+        }
+        _ => return [0, 0, 0],
+    }
+
+    let lum_p = lum100(p);
+    let lu = l * d;
+    let u = [
+        100 * p[0] + lu - lum_p,
+        100 * p[1] + lu - lum_p,
+        100 * p[2] + lu - lum_p,
+    ];
+    let un = u[0].min(u[1]).min(u[2]);
+    let ux = u[0].max(u[1]).max(u[2]);
+
+    if un < 0 {
+        let denom = 100 * (lu - un);
+        [
+            r_div(255 * l * (u[0] - un), denom),
+            r_div(255 * l * (u[1] - un), denom),
+            r_div(255 * l * (u[2] - un), denom),
+        ]
+    } else if ux > 25500 * d {
+        let denom = 100 * (ux - lu);
+        let k1 = l * (ux - lu);
+        let k2 = 25500 - l;
+        [
+            r_div(255 * (k1 + (u[0] - lu) * k2), denom),
+            r_div(255 * (k1 + (u[1] - lu) * k2), denom),
+            r_div(255 * (k1 + (u[2] - lu) * k2), denom),
+        ]
+    } else {
+        let denom = 100 * d;
+        [
+            r_div(255 * u[0], denom),
+            r_div(255 * u[1], denom),
+            r_div(255 * u[2], denom),
+        ]
+    }
+}
+
+#[inline(always)]
 fn blend3<const OP: u8>(b: [u32; 3], s: [u32; 3]) -> [u32; 3] {
-    [
-        blend_of::<OP>(b[0], s[0]),
-        blend_of::<OP>(b[1], s[1]),
-        blend_of::<OP>(b[2], s[2]),
-    ]
+    match OP {
+        HUE | SATURATION | COLOR | LUMINOSITY => nonsep(OP, b, s),
+        DARKER_COLOR => {
+            if s[0] + s[1] + s[2] < b[0] + b[1] + b[2] {
+                [255 * s[0], 255 * s[1], 255 * s[2]]
+            } else {
+                [255 * b[0], 255 * b[1], 255 * b[2]]
+            }
+        }
+        LIGHTER_COLOR => {
+            if s[0] + s[1] + s[2] > b[0] + b[1] + b[2] {
+                [255 * s[0], 255 * s[1], 255 * s[2]]
+            } else {
+                [255 * b[0], 255 * b[1], 255 * b[2]]
+            }
+        }
+        _ => [
+            blend_of::<OP>(b[0], s[0]),
+            blend_of::<OP>(b[1], s[1]),
+            blend_of::<OP>(b[2], s[2]),
+        ],
+    }
 }
 
 /// The pixels from `start` on in the blend mode `op`.
@@ -285,6 +414,12 @@ fn blend_from(dst: &mut [u8], src: &[u8], op: u8, o: u32, mask: Option<&[u8]>, s
         COLOR_BURN => scalar_blend::<COLOR_BURN>(dst, src, o, mask, start),
         VIVID_LIGHT => scalar_blend::<VIVID_LIGHT>(dst, src, o, mask, start),
         DIVIDE => scalar_blend::<DIVIDE>(dst, src, o, mask, start),
+        HUE => scalar_blend::<HUE>(dst, src, o, mask, start),
+        SATURATION => scalar_blend::<SATURATION>(dst, src, o, mask, start),
+        COLOR => scalar_blend::<COLOR>(dst, src, o, mask, start),
+        LUMINOSITY => scalar_blend::<LUMINOSITY>(dst, src, o, mask, start),
+        DARKER_COLOR => scalar_blend::<DARKER_COLOR>(dst, src, o, mask, start),
+        LIGHTER_COLOR => scalar_blend::<LIGHTER_COLOR>(dst, src, o, mask, start),
         _ => scalar_blend::<DIFFERENCE>(dst, src, o, mask, start),
     }
 }
