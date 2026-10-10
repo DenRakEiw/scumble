@@ -34,6 +34,7 @@ für r/modelcontextprotocol"; asked, the user: "ja, reiche ein", every step, the
 | winget (Windows Package Manager) | **submitted 2026-10-10** (PR microsoft/winget-pkgs#450107, CLA signed and passed, CI checks in progress) |
 | awesome-alternative-uis-for-comfyui | **submitted 2026-10-10** (PR light-and-ray/awesome-alternative-uis-for-comfyui#120 under Category 4) |
 | OpenAlternative | **on hold / criteria barrier**: rejects repos < 6 months old or < 250 stars ("This repository is less than 6 months old and has fewer than 250 stars. Please come back once the project has gained more traction."); revisit when repo reaches >= 250 stars and >= 6 months age |
+| Media / Press Kit (Google Drive) | **live (2026-10-10)**: https://drive.google.com/drive/folders/1vQqpyuqygg1fVz0WEoqUbCB_Me3nrs0R?usp=drive_link |
 
 Every release: a new `server.json` version published (`docs/RELEASING.md`). Below, the research as it was before the
 submissions.
