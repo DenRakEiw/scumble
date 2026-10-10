@@ -1,0 +1,15 @@
+{
+  "name": "scumble",
+  "displayName": "Scumble",
+  "version": "0.1.45",
+  "description": "Desktop editor for AI inpainting with layers. Run selections, generative inpainting, GPU filter layers, and PSD/ORA exports directly from Claude.",
+  "author": {
+    "name": "Dennis Schoeneberg (DenRakEiw)",
+    "email": "schoenebergde@gmail.com",
+    "url": "https://www.denrakeiw.com"
+  },
+  "homepage": "https://www.denrakeiw.com/scumble",
+  "repository": "https://github.com/DenRakEiw/scumble",
+  "license": "GPL-3.0",
+  "category": "design"
+}
