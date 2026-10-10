@@ -91,9 +91,9 @@ in the test instance; `applyFilterLayer`). Exe gates on the final build: `recipe
 (tiles), earlier `mcpb recipes commands document edges depthfx grading film` (tiles) and `mcpb recipes commands`
 (canvas), all PASS. `server.json` is 0.1.45 **with the `packages` entry** (the asset's SHA-256, `mcp-publisher
 validate` ok). **The registry publish is done** (2026-10-10, `io.github.DenRakEiw/scumble` 0.1.45 with the `.mcpb` package, the user's
-device code; 0.1.44's publish was skipped on purpose). **Waiting for the user:** the Store update (`npm run dist:store` needs the user's test
-instance from `dist/win-unpacked` closed; then Partner Center through Claude in Chrome with
-`dist/store-listing/whats-new-0.1.45.txt`); the test profile `dist/test-profile-0.1.45` and the older
+device code; 0.1.44's publish was skipped on purpose). **The Store update of 0.1.45 was submitted by the user on 2026-10-10** (`dist/Scumble-0.1.45.msix`, 187,557,461 bytes, and
+`dist/store-listing/whats-new-0.1.45.txt`; Partner Center is blocked for Claude in Chrome by the site permissions, so the
+user's three steps by hand, `docs/RELEASING.md`). **Waiting for the user:** the test profile `dist/test-profile-0.1.45` and the older
 `dist/portable-test/` to delete; an answer on issue #4 (outward-facing, on the user's word); Smithery and GitHub's
 MCP registry with the `.mcpb` (`docs/PLAN_MCP_LISTINGS.md`).
 
