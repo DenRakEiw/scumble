@@ -90,8 +90,8 @@ live on the user's ComfyUI), and **a fill layer clipped to the picture** when th
 in the test instance; `applyFilterLayer`). Exe gates on the final build: `recipes commands composite limit film mcpb`
 (tiles), earlier `mcpb recipes commands document edges depthfx grading film` (tiles) and `mcpb recipes commands`
 (canvas), all PASS. `server.json` is 0.1.45 **with the `packages` entry** (the asset's SHA-256, `mcp-publisher
-validate` ok). **Waiting for the user:** the registry publish (`mcp-publisher login github` with the device code,
-then `publish`; 0.1.44's publish was skipped on purpose); the Store update (`npm run dist:store` needs the user's test
+validate` ok). **The registry publish is done** (2026-10-10, `io.github.DenRakEiw/scumble` 0.1.45 with the `.mcpb` package, the user's
+device code; 0.1.44's publish was skipped on purpose). **Waiting for the user:** the Store update (`npm run dist:store` needs the user's test
 instance from `dist/win-unpacked` closed; then Partner Center through Claude in Chrome with
 `dist/store-listing/whats-new-0.1.45.txt`); the test profile `dist/test-profile-0.1.45` and the older
 `dist/portable-test/` to delete; an answer on issue #4 (outward-facing, on the user's word); Smithery and GitHub's
