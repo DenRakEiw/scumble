@@ -93,7 +93,11 @@ in the test instance; `applyFilterLayer`). Exe gates on the final build: `recipe
 validate` ok). **The registry publish is done** (2026-10-10, `io.github.DenRakEiw/scumble` 0.1.45 with the `.mcpb` package, the user's
 device code; 0.1.44's publish was skipped on purpose). **Issue #4 answered and closed on 2026-10-10** (the cause, the fix, the three files' links; the user's word). **The Store update of 0.1.45 was submitted by the user on 2026-10-10** (`dist/Scumble-0.1.45.msix`, 187,557,461 bytes, and
 `dist/store-listing/whats-new-0.1.45.txt`; Partner Center is blocked for Claude in Chrome by the site permissions, so the
-user's three steps by hand, `docs/RELEASING.md`). **Waiting for the user:** the test profile `dist/test-profile-0.1.45` and the older
+user's three steps by hand, `docs/RELEASING.md`). **Decided 2026-10-10 (the user): the next release is Nik 9 release 4 (blend modes, R4-S1..S10), lens blur (R2-S15,
+R2-D7 answered yes) and item 34 (Generate new with presets and boxes, `docs/PLAN_NEW_PRESETS.md`)**, built by the other
+agent, a review by this account after every session, one release at the end after the user's test; the start command
+was given on 2026-10-10. Open for the user before the sessions that need them: R4-D1 (dissolve), R4-D2..D9, item 34's
+§5 questions. **Waiting for the user:** the test profile `dist/test-profile-0.1.45` and the older
 `dist/portable-test/` to delete; Smithery and GitHub's
 MCP registry with the `.mcpb` (`docs/PLAN_MCP_LISTINGS.md`).
 
@@ -310,7 +314,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   composite under it, moving or warping the layer as one undo step, with the report in the status line and a manual
   nudge as the fallback. Tests: normal tier (a result shifted and scaled by known amounts comes back within a pixel;
   a flat area or a too-large fit refuses). **Built 2026-10-08** (affine Lucas-Kanade edge ring fit in `renderer/editor/edgefit.js`, `matchEdges` on `InpaintEditor`, context menu entry, MCP command `match_edges`, live result alignment in `renderer/editor/stitch.js`, `tools/edgefit_test.js` 9/9 passing).
-- 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
+- 15: Qwen Image Edit 2.1: the local recipe ran live 2026-10-09/10 (issue #4 fixed in 0.1.45); the API side is open.
 - 43: **Relight: virtual lights on the picture** (the user, 2026-10-09, with a link to a commercial editor's beta of
   2026-09-28; **the update after the Nik 9 block**, releases 2 and 3). Up to a few lights dragged on the canvas, each
   with colour, intensity and diffusion, an Original light slider, a screen-only preview, the result as a new layer.
