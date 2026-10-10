@@ -31,7 +31,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   whose file is not on the server (the Qwen Image Edit 2.1 recipe on a Flux install, issue #4) kept its name only
   until the panel redrew, then quietly took the first file of the folder, and the run went with the wrong model. The
   row now keeps the recipe's file, marked "(not on the server)", and Generate refuses with the file's download link.
-- **Fixes.** Film looks with no grain ("None" or grainless stocks) no longer run an unnecessary grain pass. Pressing Escape in plugin tools and the boxes tool properly deselects or cancels.
+- **Fixes.** A fill layer (a colour or a gradient) painted the whole view when the picture was zoomed out, past the
+  picture's edges; it stays inside the picture now. Film looks with no grain ("None" or grainless stocks) no longer run an unnecessary grain pass. Pressing Escape in plugin tools and the boxes tool properly deselects or cancels.
 
 ## 0.1.44 — 2026-10-09
 
