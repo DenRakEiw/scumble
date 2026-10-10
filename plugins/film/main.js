@@ -23,7 +23,9 @@ export function activate(scumble) {
     const points = makePoints(scumble);
     scumble.filters.register({ ...points.filter, chain: true });
     scumble.tools.register(points.tool);
-    scumble.commands.register(points.command.name, points.command.def);
+    for (const cmd of (points.commands || [points.command])) {
+        scumble.commands.register(cmd.name, cmd.def);
+    }
     // the whole picture turned, mirrored, cropped, extended, resized or straightened (PLAN_0_1_31 §7): the points sit in
     // image pixels and follow it by the event's matrix
     scumble.events.on("geometry", (ev) => { const m = geometryMatrix(ev); if (ev.doc && m) points.follow(ev.doc, m); });

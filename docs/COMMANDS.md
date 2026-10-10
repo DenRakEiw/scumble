@@ -795,13 +795,14 @@ Remove the background of a layer with the cutout model the editor is set to (in-
 
 ### `set_mask`
 
-Change a layer's mask (white = the layer shows): invert it; reveal (all) or hide (all) - a white or a black mask, added when the layer has none, else replacing it; from_selection (the selection shows) or hide_selection (the selection is hidden); disable / enable (the mask stays with the layer but is not drawn, PSD's "disabled"); apply (baked into the pixels; not on a filter layer) or remove. One undo step; every operation but disable switches the mask on.
+Change a layer's mask (white = the layer shows): invert it; reveal (all) or hide (all) - a white or a black mask, added when the layer has none, else replacing it; from_selection (the selection shows) or hide_selection (the selection is hidden); from_layer (copied from source layer by image position); disable / enable (the mask stays with the layer but is not drawn, PSD's "disabled"); apply (baked into the pixels; not on a filter layer) or remove. One undo step; every operation but disable switches the mask on.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
-| `op` | string | what to do (required; one of `invert`, `reveal`, `hide`, `from_selection`, `hide_selection`, `enable`, `disable`, `apply`, `remove`) |
+| `op` | string | what to do (required; one of `invert`, `reveal`, `hide`, `from_selection`, `hide_selection`, `from_layer`, `enable`, `disable`, `apply`, `remove`) |
+| `source` | string | from_layer only: source layer whose mask is copied |
 
 ## Filters and text
 

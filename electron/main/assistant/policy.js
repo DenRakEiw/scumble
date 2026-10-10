@@ -13,7 +13,7 @@ const EXCLUDED = new Set(["list_commands", "run_action", "set_status", "ailabel_
 /** Tools that only read: no user-activity wait, no busy refusal, no undo step. */
 const READS = new Set([
     "ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips",
-    "filter_types", "status", "get_state", "read_log", "film_looks", "glb_info", "sample_mean_color",
+    "filter_types", "status", "get_state", "read_log", "film_looks", "film_copy_points", "glb_info", "sample_mean_color",
     "screenshot", "compare", "list_history", "boxes_list", "list_settings", "sample_depth",
 ]);
 
@@ -61,7 +61,7 @@ const POLICY = {
     move_layer: AUTO, duplicate_layer: AUTO, frequency_separation: AUTO, dodge_burn_layer: AUTO, flip_layer: AUTO, center_layer: AUTO, match_edges: AUTO, align_layers: AUTO,
     group_layers: AUTO, ungroup_layers: AUTO,
     set_group: (call) => (call.args && call.args.locked === false ? ASK("unlocks a group you locked") : AUTO()),
-    film_apply_look: AUTO, film_add_point: AUTO,
+    film_apply_look: AUTO, film_add_point: AUTO, film_copy_points: AUTO, film_paste_points: AUTO,
 
     // the Boxes plugin (docs/PLAN_BOXES.md §10): every change is one undo step of the document's plugin data
     boxes_list: AUTO, boxes_add: AUTO, boxes_set: AUTO, boxes_from_selection: AUTO,
@@ -230,9 +230,16 @@ function card(call, facts, fields) {
 function maskCard(call, facts) {
     const target = layerOf(call, facts);
     const now = !target ? undefined : !target.mask ? "none" : target.mask_off ? "switched off" : "on";
+    const op = String((call.args && call.args.op) || "");
+    const changes = [{ field: "mask", from: now, to: op }];
+    if (op === "from_layer") {
+        const srcId = call.args && (call.args.source !== undefined ? String(call.args.source) : "");
+        const src = (facts && facts.layers && facts.layers.find((l) => l.id === srcId || l.name === srcId)) || null;
+        changes.push({ field: "source", to: src ? src.name : srcId });
+    }
     return {
         layer: target ? { id: target.id, name: target.name } : null,
-        changes: [{ field: "mask", from: now, to: String((call.args && call.args.op) || "") }],
+        changes,
     };
 }
 

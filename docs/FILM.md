@@ -118,7 +118,9 @@ the plugin sample it on the next tool interaction, but `add_point` samples it ri
   layer, Frame layer, Control points layer (switches to the tool).
 - **Commands** (`docs/COMMANDS.md`): `film.looks` (the stock table, optionally one group),
   `film.apply_look` (`preset`, `strength`: change the active look layer or add one),
-  `film.add_point`. Everything else goes through `add_filter` / `set_filter` with the type
+  `film.add_point`, `film.copy_points` (`ids`: copy control points to module clipboard),
+  `film.paste_points` (`resample_color`: paste control points scaled to target document).
+  Everything else goes through `add_filter` / `set_filter` with the type
   ids above; `filter_types` lists their parameters.
 
 ## Files

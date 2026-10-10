@@ -1156,6 +1156,8 @@ async function main() {
             ["remove_layer", { layer: "Lyours" }, "ask"],
             ["set_mask", { layer: "Lmine", op: "invert" }, "auto"],
             ["set_mask", { layer: "Lyours", op: "hide" }, "ask"],
+            ["set_mask", { layer: "Lmine", op: "from_layer", source: "Lyours" }, "auto"],
+            ["set_mask", { layer: "Lyours", op: "from_layer", source: "Lmine" }, "ask"],
             ["merge_down", { layer: "Lmine" }, "ask"],
             ["flatten", {}, "ask"],
             ["rotate_canvas", { angle: 90 }, "ask"], ["flip_canvas", { axis: "horizontal" }, "ask"], ["straighten_canvas", { angle: 3 }, "ask"],
@@ -1173,6 +1175,7 @@ async function main() {
             ["select_recipe", { id: "x" }, "ask"], ["set_node_params", {}, "ask"],
             ["set_brush", { size: 20 }, "auto"], ["set_brush", { spacing: 30 }, "ask"],
             ["compare", {}, "auto"], ["film_apply_look", { preset: "x" }, "auto"], ["film_add_point", {}, "auto"], ["film_add_point", { shape: "ellipse" }, "auto"],
+            ["film_copy_points", {}, "auto"], ["film_paste_points", {}, "auto"],
             ["boxes_list", {}, "auto"], ["boxes_add", { kind: "new" }, "auto"], ["boxes_set", { id: "box_1" }, "auto"],
             ["boxes_from_selection", {}, "auto"], ["boxes_remove", { id: "box_1" }, "ask"], ["boxes_clear", {}, "ask"],
             ["sample_box", {}, "auto"], ["sample_box", { on: true }, "ask"],
@@ -1218,6 +1221,11 @@ async function main() {
                 d.action === "ask" && ch && ch.field === "mask" && ch.from === "switched off" && ch.to === "enable" && d.card.layer && d.card.layer.id === "Lyours"
                 && policy.undoStep({ name: "set_mask", args: { layer: "Lmine", op: "invert" } }) === null,
                 JSON.stringify(d));
+            const dFrom = policy.decide({ name: "set_mask", args: { layer: "Lyours", op: "from_layer", source: "Lmine" } }, f);
+            const chSrc = dFrom.card && dFrom.card.changes && dFrom.card.changes.find((c) => c.field === "source");
+            check("set_mask_from_layer_card_names_source",
+                dFrom.action === "ask" && chSrc && chSrc.to === "Result 1",
+                JSON.stringify(dFrom));
         }
         check("a_busy_document_refuses_a_run", policy.decide({ name: "generate", args: {} }, facts({ busy: true })).action === "refuse");
         check("export_without_a_path_is_refused", policy.decide({ name: "export", args: {} }, facts()).action === "refuse");

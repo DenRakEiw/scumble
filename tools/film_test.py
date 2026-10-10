@@ -36,8 +36,8 @@ const want = ["film.look", "film.halation", "film.glow", "film.tonal_contrast", 
 const missing = want.filter((w) => !ids.includes(w));
 if (missing.length) throw new Error("filters missing: " + missing);
 const cmds = (await c("list_commands")).commands.map((x) => x.name);
-for (const n of ["film.looks", "film.apply_look", "film.add_point"]) if (!cmds.includes(n)) throw new Error("command missing: " + n);
-return { filters: ids.length, commands: 3 };
+for (const n of ["film.looks", "film.apply_look", "film.add_point", "film.copy_points", "film.paste_points"]) if (!cmds.includes(n)) throw new Error("command missing: " + n);
+return { filters: ids.length, commands: 5 };
 """),
     ("document", """
 const d = await c("new_document");
@@ -1172,6 +1172,71 @@ const hover15kMs = performance.now() - t0;
 await c("remove_layer", { layer: look.id });
 sec.open = false;
 return { ok: true, targetStockId, hover15kMs: +hover15kMs.toFixed(1) };
+"""),
+    ("copy_paste_points", """
+// R3-D10: copy from 800 x 600, paste to 400 x 300
+// Positions and radii halved, anchor colours re-sampled, 1 undo step.
+const host = (await import("./editor/host.js")).host;
+
+const dA = await c("new_document");
+const edA = host.editors().find((e) => e.node.id === dA.id);
+const cA = document.createElement("canvas"); cA.width = 800; cA.height = 600;
+const ctxA = cA.getContext("2d"); ctxA.fillStyle = "#204060"; ctxA.fillRect(0, 0, 800, 600);
+await edA.setBaseFromCanvas(cA, { keepLayers: false });
+
+const pAdded = await c("film.add_point", { doc: dA.id, x: 200, y: 150, radius: 40, exposure: 1 });
+if (!pAdded || !pAdded.point) throw new Error("film.add_point failed: " + JSON.stringify(pAdded));
+const colorA = pAdded.point.color;
+
+// Copy all points to clipboard
+const cpRes = await c("film.copy_points", { doc: dA.id });
+if (!cpRes || cpRes.copied !== 1) throw new Error("copy_points should copy 1 point: " + JSON.stringify(cpRes));
+
+// Create destination document: 400 x 300 with reddish background #802010
+const dB = await c("new_document");
+const edB = host.editors().find((e) => e.node.id === dB.id);
+const cB = document.createElement("canvas"); cB.width = 400; cB.height = 300;
+const ctxB = cB.getContext("2d"); ctxB.fillStyle = "#802010"; ctxB.fillRect(0, 0, 400, 300);
+await edB.setBaseFromCanvas(cB, { keepLayers: false });
+const undo0 = edB.undo.length;
+
+// Paste points with resample_color = true
+const pstRes = await c("film.paste_points", { doc: dB.id, resample_color: true });
+if (!pstRes || pstRes.pasted !== 1) throw new Error("paste_points should paste 1 point: " + JSON.stringify(pstRes));
+
+const ptPasted = pstRes.point;
+// Check scaling: 800x600 -> 400x300 is 0.5 scale, so position and radius halved
+if (Math.abs(ptPasted.x - 100) > 1e-4 || Math.abs(ptPasted.y - 75) > 1e-4) {
+    throw new Error(`expected pasted pos (100, 75), got (${ptPasted.x}, ${ptPasted.y})`);
+}
+if (Math.abs(ptPasted.r - 20) > 1e-4) {
+    throw new Error(`expected pasted radius 20, got ${ptPasted.r}`);
+}
+
+// Check anchor colour re-sampled under the new picture's pixel (#802010 has rg > 0, #204060 has rg < 0)
+if (!Array.isArray(ptPasted.color) || ptPasted.color[1] <= 0 || colorA[1] >= 0) {
+    throw new Error(`expected re-sampled anchor color from #802010 (rg > 0), got ${JSON.stringify(ptPasted.color)}, source was ${JSON.stringify(colorA)}`);
+}
+
+// Check exactly 1 undo step
+if (edB.undo.length !== undo0 + 1) {
+    throw new Error(`expected undo length ${undo0 + 1}, got ${edB.undo.length}`);
+}
+
+// Undo step restores previous state
+await edB.undoStep();
+const lyr = edB.layers.find((l) => l.id === pstRes.layer);
+const ptsAfterUndo = lyr && lyr.params && lyr.params.points ? lyr.params.points : [];
+if (ptsAfterUndo.length !== 0) {
+    throw new Error(`undo should remove pasted point, got ${ptsAfterUndo.length} points`);
+}
+
+// Clean up tabs
+await c("close_document", { doc: dB.id, force: true });
+await c("close_document", { doc: dA.id, force: true });
+await c("activate_document", { doc: window.__filmDoc });
+
+return { ok: true, pasted: ptPasted, colorBefore: colorA, colorAfter: ptPasted.color };
 """),
     ("exports", """
 const H = (await import("./editor/host.js")).host;

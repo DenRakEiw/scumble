@@ -411,7 +411,7 @@ const P = {
     selMode: () => P.enum("replace, add, subtract or intersect", SEL_MODES, "replace"),
 };
 /** The operations of `set_mask` (the editor's `maskOp`). */
-const MASK_OPS = ["invert", "reveal", "hide", "from_selection", "hide_selection", "enable", "disable", "apply", "remove"];
+const MASK_OPS = ["invert", "reveal", "hide", "from_selection", "hide_selection", "from_layer", "enable", "disable", "apply", "remove"];
 /** How a new selection combines with the one there is. */
 const SEL_MODES = ["replace", "add", "subtract", "intersect"];
 function selMode(v) {
@@ -1682,22 +1682,31 @@ const COMMANDS = {
         },
     },
     set_mask: {
-        description: "Change a layer's mask (white = the layer shows): invert it; reveal (all) or hide (all) - a white or a black mask, added when the layer has none, else replacing it; from_selection (the selection shows) or hide_selection (the selection is hidden); disable / enable (the mask stays with the layer but is not drawn, PSD's \"disabled\"); apply (baked into the pixels; not on a filter layer) or remove. One undo step; every operation but disable switches the mask on.",
+        description: "Change a layer's mask (white = the layer shows): invert it; reveal (all) or hide (all) - a white or a black mask, added when the layer has none, else replacing it; from_selection (the selection shows) or hide_selection (the selection is hidden); from_layer (copy another layer's mask); disable / enable (the mask stays with the layer but is not drawn, PSD's \"disabled\"); apply (baked into the pixels; not on a filter layer) or remove. One undo step; every operation but disable switches the mask on.",
         params: {
             layer: P.layer(),
             op: P.str("what to do", { required: true, enum: MASK_OPS }),
+            source: P.layer("from_layer: the layer whose mask is copied", { default: undefined }),
         },
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
             const op = String(a.op || "");
             if (!MASK_OPS.includes(op)) throw new Error(`op must be one of ${MASK_OPS.join(", ")}`);
-            if (!l.maskPx && ["invert", "enable", "disable", "apply", "remove"].includes(op)) throw new Error(`${l.name} has no mask`);
-            if ((op === "from_selection" || op === "hide_selection") && !ed.getBounds()) throw new Error("nothing is selected");
-            // the switch standing that way already is no error: nothing changes, no step is pushed, the tab stays as it was
-            if ((op === "enable" && !l.maskOff) || (op === "disable" && !!l.maskOff)) {
-                return { ...layerSummary(ed, l), changed: false, status: `${l.name}: the mask is already ${op === "disable" ? "switched off" : "on"}.` };
+            if (op === "from_layer") {
+                if (a.source === undefined || a.source === null || a.source === "") throw new Error("from_layer needs source");
+                const srcLayer = findLayer(ed, a.source);
+                const ok = await ed.maskOp(l, op, { source: srcLayer });
+                if (!ok) throw new Error(ed.status || `the mask operation ${op} did nothing`);
+            } else {
+                if (!l.maskPx && ["invert", "enable", "disable", "apply", "remove"].includes(op)) throw new Error(`${l.name} has no mask`);
+                if ((op === "from_selection" || op === "hide_selection") && !ed.getBounds()) throw new Error("nothing is selected");
+                // the switch standing that way already is no error: nothing changes, no step is pushed, the tab stays as it was
+                if ((op === "enable" && !l.maskOff) || (op === "disable" && !!l.maskOff)) {
+                    return { ...layerSummary(ed, l), changed: false, status: `${l.name}: the mask is already ${op === "disable" ? "switched off" : "on"}.` };
+                }
+                const ok = await ed.maskOp(l, op);
+                if (!ok) throw new Error(ed.status || `the mask operation ${op} did nothing`);
             }
-            if (!ed.maskOp(l, op)) throw new Error(ed.status || `the mask operation ${op} did nothing`);
             touch(ed);
             return { ...layerSummary(ed, l), changed: true, status: ed.status };
         },

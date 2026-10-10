@@ -779,6 +779,79 @@ export function makePoints(scumble) {
         },
     };
 
+    let CLIPBOARD = null;
+
+    const copyCommand = {
+        name: "copy_points",
+        def: {
+            description: "Copy control points from the active or topmost control points layer into the clipboard.",
+            readOnly: true,
+            params: {
+                ids: { type: "array", items: { type: "integer" }, description: "point IDs to copy (copies all points if omitted)" },
+            },
+            needsImage: true,
+            scope: "doc",
+            run(doc, a) {
+                const layer = pointsLayer(doc, { create: false });
+                if (!layer || !layer.params || !Array.isArray(layer.params.points) || !layer.params.points.length) {
+                    throw new Error("no control points to copy");
+                }
+                const pts = layer.params.points;
+                const filterIds = Array.isArray(a.ids) && a.ids.length ? a.ids.map(Number) : null;
+                const chosen = filterIds ? pts.filter((q) => filterIds.includes(q.id)) : pts;
+                if (!chosen.length) throw new Error("no matching control points found");
+                CLIPBOARD = {
+                    points: JSON.parse(JSON.stringify(chosen)),
+                    width: doc.width || 512,
+                    height: doc.height || 384,
+                };
+                return { copied: chosen.length };
+            },
+        },
+    };
+
+    const pasteCommand = {
+        name: "paste_points",
+        def: {
+            description: "Paste control points from the clipboard onto the control points layer (creating one if needed). Scales positions and sizes to match the destination picture.",
+            params: {
+                resample_color: { type: "boolean", description: "sample colour under each anchor in the destination picture (default true)" },
+            },
+            needsImage: true,
+            scope: "doc",
+            run(doc, a) {
+                if (!CLIPBOARD || !Array.isArray(CLIPBOARD.points) || !CLIPBOARD.points.length) {
+                    throw new Error("clipboard has no control points to paste");
+                }
+                const layer = pointsLayer(doc, { create: true });
+                if (!layer) throw new Error("could not create the control points layer");
+                const dw = doc.width || 512, dh = doc.height || 384;
+                const sw = CLIPBOARD.width || dw, sh = CLIPBOARD.height || dh;
+                const sx = dw / sw, sy = dh / sh;
+                const sr = Math.sqrt(Math.abs(sx * sy));
+                const m = [sx, 0, 0, sy, 0, 0];
+                const existing = Array.isArray(layer.params.points) ? layer.params.points.slice() : [];
+                let nextId = existing.reduce((max, q) => Math.max(max, q.id || 0), 0) + 1;
+                const resample = a.resample_color !== false;
+                const pasted = [];
+                for (const orig of CLIPBOARD.points) {
+                    const mapped = mapShape(orig, m, sr);
+                    mapped.id = nextId++;
+                    if (resample) {
+                        mapped.color = sampleColor(doc, layer, mapped.x, mapped.y);
+                    }
+                    pasted.push(mapped);
+                    existing.push(mapped);
+                }
+                layer._fpSel = pasted[pasted.length - 1].id;
+                const summary = doc.setFilterParams(layer.id, { points: existing });
+                doc.editor.renderLayers();
+                doc.editor.draw();
+                return { layer: summary.id, point: pasted[pasted.length - 1], points: existing.length, pasted: pasted.length };
+            },
+        },
+    };
+
     /**
      * The whole picture changed its geometry (the "geometry" event, `m` its old-to-new matrix from `geometryMatrix`):
      * every control-points layer's points move with it, their radii scale by sqrt(|det m|). Points that land outside the
@@ -802,6 +875,7 @@ export function makePoints(scumble) {
         filter,
         tool,
         command,
+        commands: [command, copyCommand, pasteCommand],
         follow,
         reset: () => {
             drag = null;
