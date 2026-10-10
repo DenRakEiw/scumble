@@ -14,6 +14,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 
 const ROOT = path.dirname(__dirname);
@@ -484,6 +485,51 @@ async function compositeCases(ref, label, js) {
     }
     check(`js source-over over translucent pixels within 2.5·255/alpha + 0.6 levels, alpha within 1`, worstRatio <= 1 && alphaOff <= 1 && seen > 1000,
         `worst at ${(worstRatio * 100).toFixed(0)} % of the bound over ${seen} translucent pixels, alpha off by ${alphaOff.toFixed(2)}`);
+}
+
+async function compositeShaCases(js, simd, scalar) {
+    const dstOpaque = new Uint8Array(65536 * 4), srcOpaque = new Uint8Array(65536 * 4);
+    for (let b = 0; b < 256; b++) for (let s = 0; s < 256; s++) {
+        const i = (b * 256 + s) * 4;
+        dstOpaque[i] = b; srcOpaque[i] = s;
+        dstOpaque[i + 1] = s; srcOpaque[i + 1] = b;
+        dstOpaque[i + 2] = 255 - b; srcOpaque[i + 2] = 255 - s;
+        dstOpaque[i + 3] = 255; srcOpaque[i + 3] = 255;
+    }
+    const dstTrans = pixelRow(65536, 12345, { opaque: false });
+    const srcTrans = pixelRow(65536, 67890, { opaque: false });
+
+    function hashKernel(k) {
+        const h = crypto.createHash("sha256");
+        for (let op = 0; op <= 13; op++) {
+            const outO = k.compositeTile(dstOpaque.slice(), [srcOpaque], [op], [255], null);
+            const outT = k.compositeTile(dstTrans.slice(), [srcTrans], [op], [255], null);
+            h.update(outO);
+            h.update(outT);
+        }
+        return h.digest("hex");
+    }
+
+    const shaJ = hashKernel(js);
+    const shaS = hashKernel(simd);
+    const shaC = hashKernel(scalar);
+    check("compositeTile SHA-256 identical across twin, px.wasm, and px_scalar.wasm for ops 0-13",
+        shaJ === shaS && shaJ === shaC,
+        `sha ${shaJ.slice(0, 16)}`);
+
+    let op14Ok = true, op14Detail = "";
+    for (const [name, k] of [["twin", js], ["simd", simd], ["scalar", scalar]]) {
+        const out14O = k.compositeTile(dstOpaque.slice(), [srcOpaque], [14], [255], null);
+        const out0O = k.compositeTile(dstOpaque.slice(), [srcOpaque], [0], [255], null);
+        const out14T = k.compositeTile(dstTrans.slice(), [srcTrans], [14], [255], null);
+        const out0T = k.compositeTile(dstTrans.slice(), [srcTrans], [0], [255], null);
+        if (!eqBytes(out14O, out0O) || !eqBytes(out14T, out0T)) {
+            op14Ok = false;
+            op14Detail = `${name} op 14 does not match op 0`;
+            break;
+        }
+    }
+    check("compositeTile op 14 equals op 0 on twin, px.wasm, and px_scalar.wasm", op14Ok, op14Detail);
 }
 
 // ---- the colour match (B item 7 part 3) ----------------------------------------------------------
@@ -1554,8 +1600,10 @@ async function main() {
     await smudgeTwinCases(js);
     await poissonTwinCases(js);
     await pngCases(ref, label, js);
-    for (const [name, file] of [["simd", "px.wasm"], ["scalar", "px_scalar.wasm"]]) {
-        const px = await loadPx(fs.readFileSync(path.join(PX_DIR, file)));
+    const simdPx = await loadPx(fs.readFileSync(path.join(PX_DIR, "px.wasm")));
+    const scalarPx = await loadPx(fs.readFileSync(path.join(PX_DIR, "px_scalar.wasm")));
+    await compositeShaCases(js, simdPx, scalarPx);
+    for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));
         await mipCases(px, label, js);

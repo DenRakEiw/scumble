@@ -55,6 +55,19 @@ pub const SOFT_LIGHT: u8 = 10;
 pub const HARD_LIGHT: u8 = 11;
 pub const DIFFERENCE: u8 = 12;
 pub const LINEAR_LIGHT: u8 = 13;
+pub const LAST_BLEND: u8 = LINEAR_LIGHT;
+
+#[allow(dead_code)]
+const SIMD_BLENDS: [u8; 8] = [
+    MULTIPLY,
+    SCREEN,
+    OVERLAY,
+    DARKEN,
+    LIGHTEN,
+    HARD_LIGHT,
+    DIFFERENCE,
+    LINEAR_LIGHT,
+];
 
 /// round(65535 · d(b / 255)) of soft-light: d = ((16b − 12)b + 4)b up to a quarter (b ≤ 63), else the square root.
 static SOFT_D: [u16; 256] = [
@@ -109,13 +122,14 @@ pub fn apply(dst: &mut [u8], layer: &Layer) {
     let dst = &mut dst[..px * 4];
     let src = &layer.src[..px * 4];
     let mask = layer.mask.map(|m| &m[..px]);
-    if layer.op >= MULTIPLY && layer.op <= LINEAR_LIGHT {
+    if layer.op >= MULTIPLY && layer.op <= LAST_BLEND {
         let start = simd::blend(dst, src, layer.op, layer.alpha, mask);
         blend_from(dst, src, layer.op, layer.alpha as u32, mask, start);
         return;
     }
-    let start = simd::layer(dst, src, layer.op, layer.alpha, mask);
-    scalar_layer(dst, src, layer.op, layer.alpha as u32, mask, start);
+    let op = if layer.op > LAST_BLEND { SOURCE_OVER } else { layer.op };
+    let start = simd::layer(dst, src, op, layer.alpha, mask);
+    scalar_layer(dst, src, op, layer.alpha as u32, mask, start);
 }
 
 #[inline(always)]
@@ -146,8 +160,18 @@ fn blend_of<const OP: u8>(b: u32, s: u32) -> u32 {
         HARD_LIGHT => hard_light(b, s),
         // b + 2s is 0..765: clamp to 255..510 first, subtract after, so nothing underflows in u32
         LINEAR_LIGHT => 255 * ((b + 2 * s).max(255).min(510) - 255),
+        DIFFERENCE => 255 * (b.max(s) - b.min(s)),
         _ => 255 * (b.max(s) - b.min(s)),
     }
+}
+
+#[inline(always)]
+fn blend3<const OP: u8>(b: [u32; 3], s: [u32; 3]) -> [u32; 3] {
+    [
+        blend_of::<OP>(b[0], s[0]),
+        blend_of::<OP>(b[1], s[1]),
+        blend_of::<OP>(b[2], s[2]),
+    ]
 }
 
 /// The pixels from `start` on in the blend mode `op`.
@@ -161,6 +185,7 @@ fn blend_from(dst: &mut [u8], src: &[u8], op: u8, o: u32, mask: Option<&[u8]>, s
         SOFT_LIGHT => scalar_blend::<SOFT_LIGHT>(dst, src, o, mask, start),
         HARD_LIGHT => scalar_blend::<HARD_LIGHT>(dst, src, o, mask, start),
         LINEAR_LIGHT => scalar_blend::<LINEAR_LIGHT>(dst, src, o, mask, start),
+        DIFFERENCE => scalar_blend::<DIFFERENCE>(dst, src, o, mask, start),
         _ => scalar_blend::<DIFFERENCE>(dst, src, o, mask, start),
     }
 }
@@ -188,9 +213,12 @@ fn scalar_blend<const OP: u8>(dst: &mut [u8], src: &[u8], o: u32, mask: Option<&
         let inv = 255 - sa;
         let da = d[3] as u32;
         let mut r = [0u32; 4];
+        let s3 = [s[0] as u32, s[1] as u32, s[2] as u32];
         if da == 255 {
+            let cb = [d[0] as u32, d[1] as u32, d[2] as u32];
+            let bl = blend3::<OP>(cb, s3);
             for c in 0..3 {
-                r[c] = (d[c] as u32 * inv * 255 + sa * blend_of::<OP>(d[c] as u32, s[c] as u32) + 32512) / 65025;
+                r[c] = (d[c] as u32 * inv * 255 + sa * bl[c] + 32512) / 65025;
             }
             r[3] = 255;
         } else {
@@ -198,10 +226,19 @@ fn scalar_blend<const OP: u8>(dst: &mut [u8], src: &[u8], o: u32, mask: Option<&
             let both = sa * da;
             let only = sa * (255 - da) * 255;
             let h = da >> 1;
+            let cb = if da == 0 {
+                [0, 0, 0]
+            } else {
+                [
+                    ((d[0] as u32 * 255 + h) / da).min(255),
+                    ((d[1] as u32 * 255 + h) / da).min(255),
+                    ((d[2] as u32 * 255 + h) / da).min(255),
+                ]
+            };
+            let bl = blend3::<OP>(cb, s3);
             for c in 0..3 {
                 let dp = d[c] as u32;
-                let cb = if da == 0 { 0 } else { ((dp * 255 + h) / da).min(255) };
-                let x = s[c] as u32 * only + dp * inv * 65025 + both * blend_of::<OP>(cb, s[c] as u32) + 8290687;
+                let x = s[c] as u32 * only + dp * inv * 65025 + both * bl[c] + 8290687;
                 r[c] = (x / 16581375).min(ra);
             }
             r[3] = ra;
@@ -434,6 +471,7 @@ mod simd {
             HARD_LIGHT => hard_light(d, s),
             // lanes are unsigned 0..765: clamp d + 2s to 255..510, then subtract 255
             LINEAR_LIGHT => u32x4_mul(u32x4_sub(u32x4_min(u32x4_max(u32x4_add(d, u32x4_shl(s, 1)), c255), u32x4_splat(510)), c255), c255),
+            DIFFERENCE => u32x4_mul(u32x4_sub(u32x4_max(d, s), u32x4_min(d, s)), c255),
             _ => u32x4_mul(u32x4_sub(u32x4_max(d, s), u32x4_min(d, s)), c255),
         };
         let inv = u32x4_sub(c255, sa);
@@ -448,7 +486,7 @@ mod simd {
     /// One source in a blend mode, four pixels at a time where all four backdrop pixels are opaque (the
     /// others, and all of soft-light with its table, go the scalar way). Returns the pixels done.
     pub fn blend(dst: &mut [u8], src: &[u8], op: u8, o: u8, mask: Option<&[u8]>) -> usize {
-        if op == SOFT_LIGHT {
+        if !SIMD_BLENDS.contains(&op) {
             return 0;
         }
         let n = (dst.len() / 16) * 16;

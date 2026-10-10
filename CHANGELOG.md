@@ -6,6 +6,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 ## Unreleased
 
 - A layer in a blend mode this version does not know draws as normal everywhere.
+- Emulated blend modes share a unified GPU shader on screen, and kernel blend dispatch safely falls back to source-over for unknown operations.
 
 ## 0.1.45 - 2026-10-10
 
