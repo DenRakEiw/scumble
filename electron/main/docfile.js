@@ -33,6 +33,12 @@ const READER_OF_BLEND = {
     "color-burn": 5,
     "vivid-light": 5,
     "divide": 5,
+    "hue": 5,
+    "saturation": 5,
+    "color": 5,
+    "luminosity": 5,
+    "darker-color": 5,
+    "lighter-color": 5,
 };
 
 const BLEND_FEATURES = Object.entries(READER_OF_BLEND).map(([id, reader]) => ({

@@ -191,6 +191,14 @@ release at the end after the user's test; release 4 (blend modes) independent.
   - Unit tests & reference: `tools/px_test.js` extended with BigInt fraction `frac` reference `blendRef3(op, b3, s3)`, SHA-256 test across twin, simd, and scalar for ops 0..=29 (op 30 equals op 0), comprehensive `tierCCases` covering all 65,536 grey pairs, corner sets, sum ties, and 2^18 random triplet pairs across all 4 opacity/mask/backdrop combinations (0 diffs across twin, wasm simd, wasm scalar, BigInt reference); verified 6 mutation self-checks fail against reference.
   - Megapixel timing: op 24 scalar 13.2 ms vs multiply 7.4 ms; op 28 scalar 7.6 ms (well within the 4x threshold).
   - Gates: `composite` (6s on `--tiles on`), `export` (132s), `lint` (0 errors), `types` (0 errors), and `build_node.py --check` ALL PASS with `--offline`.
+- **R4-S7 built** (2026-10-10): Tier C, the paths (hue, saturation, colour, luminosity, darker colour, lighter colour: ops 24-29):
+  - GLSL compositor `BLEND_FN_GLSL` in `inpaint_compositor.js`: implemented `bm_lum`, `bm_clip`, `bm_setLum`, `bm_sat`, and `bm_setSat` helpers per section 5.4.2; `blendRGB` handles ops 24..=27 with W3C non-separable compositions, ops 28 and 29 comparing channel byte sums with backdrop tie-break.
+  - Blend registry: appended 6 frozen rows to `BLENDS` in `blend_modes.js` (hue, saturation, color, luminosity, darker-color, lighter-color) with `canvas: null`, `reader: 5`, and PSD/ORA keys.
+  - Docfile: updated `READER_OF_BLEND` in `electron/main/docfile.js` mapping ops 24..=29 to reader 5.
+  - Node sync: committed in custom node repo (`e1fbe79`); verified with `python tools/build_node.py --check`.
+  - Gate tests: `tools/blendmodes_test.py` `BOUNDS` updated (hue 12, darker-color 150, lighter-color 100) and step/nonsep tolerance classification; `tools/blend_table_test.js` updated to 26 modes.
+  - Docs: `docs/COMMANDS.md`, `CHANGELOG.md`, `docs/DOCUMENTS.md`, and `docs/PLAN_NIK9_BUILD.md` updated in pure ASCII.
+  - Gates: `blendmodes` (9s/8s on `--tiles on` and `--tiles off`), `composite` (7s), `export` (137s), `layered` (2s), `document` (40s), `commands` (13s), `lint` (0 errors), `types` (0 errors), and `build_node.py --check` ALL PASS with `--offline`. Ready for R4-S8.
 **Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.

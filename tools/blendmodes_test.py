@@ -55,6 +55,12 @@ BOUNDS = {
     "color-burn": {"gl_translucent": 42, "flips": 0},
     "vivid-light": {"gl_translucent": 42, "flips": 0},
     "divide": {"gl_translucent": 12, "flips": 0},
+    "hue": {"gl_translucent": 12, "flips": 0},
+    "saturation": {"gl_translucent": 2, "flips": 0},
+    "color": {"gl_translucent": 2, "flips": 0},
+    "luminosity": {"gl_translucent": 3, "flips": 0},
+    "darker-color": {"gl_translucent": 150, "flips": 0},
+    "lighter-color": {"gl_translucent": 100, "flips": 0},
 }
 DEFAULT_BOUNDS = {"gl_translucent": 3, "flips": 0}
 
@@ -468,9 +474,10 @@ async def run_gate(c, scratch_dir):
                 const flat = ed.flattenToCanvas({ forRun: true });
                 const flatData = flat.getContext("2d").getImageData(0, 0, 256, 256).data;
                 const df = diff(dec.data, flatData);
-                const isDiv = ["color-dodge", "color-burn", "vivid-light", "divide"].includes(m.id);
-                const maxAllowed = m.id === "hard-mix" ? 100 : (isDiv ? 50 : 3);
-                const fracAllowed = m.id === "hard-mix" ? 0.01 : (isDiv ? 0.01 : 1e-4);
+                const isStep = ["hard-mix", "darker-color", "lighter-color"].includes(m.id);
+                const isDivOrNonsep = ["color-dodge", "color-burn", "vivid-light", "divide", "hue", "saturation", "color", "luminosity"].includes(m.id);
+                const maxAllowed = isStep ? 100 : (isDivOrNonsep ? 50 : 3);
+                const fracAllowed = isStep ? 0.01 : (isDivOrNonsep ? 0.01 : 1e-4);
                 if (df.max > maxAllowed) throw new Error("mode " + m.id + ": clipped masked worker max diff " + df.max + " > " + maxAllowed);
                 if (df.over2Fraction > fracAllowed) throw new Error("mode " + m.id + ": clipped masked worker over2 fraction " + df.over2Fraction + " > " + fracAllowed);
                 out[m.id].clippedWorkerVsFlatten = { max: df.max, over2Fraction: +df.over2Fraction.toFixed(6) };
