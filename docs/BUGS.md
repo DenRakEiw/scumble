@@ -245,7 +245,11 @@ the server)` (class `ipc-sel-missing`, the tooltip says what to do; an empty val
 `host.missingSettingFiles` / `missingFilesRefusal` refuse a Generate and a whole-picture run before anything is queued,
 naming each row's file with the download link from the recipe's `models`; the `recipes` gate's step
 `a_file_the_server_lacks_stays_marked_and_refuses_the_run` stubs a Flux install's lists for the Qwen recipe and checks
-the rows, the marks, the refusal and that the run goes once the lists hold the files. The plan as it was written:
+the rows, the marks, the refusal and that the run goes once the lists hold the files. **Run live the same day** on the
+user's ComfyUI 0.38.0 (a dev instance on its own profile): the Model row set to a file the server lacks shows
+`... (not on the server)`, Generate refuses with "Your ComfyUI lacks a model file this recipe needs: Model · unet_name:
+..." and the queue stays empty; with the recipe's own files the rows are plain and the run goes (512 x 384 canvas, a
+200 x 160 selection, "a red apple on a wooden table": a result layer after 6.9 s). The plan as it was written:
 
 **Fix (as planned 2026-10-09; the other agent held `inpaint_canvas.js` and `host.js` then):** keep the recipe's value
 when the server lacks it, show it in the select marked as missing (`qwen3vl_8b_int8_convrot.safetensors (not on the
