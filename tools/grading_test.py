@@ -202,7 +202,7 @@ JS = r"""
     check("3a. add_filter created color_grade layer", !!filterLayer && filterLayer.kind === "filter" && filterLayer.filter === "color_grade", filterLayer);
     check("3a. list_layers shows mid_sat = 40 and mid_hue = 200", filterLayer && filterLayer.params && filterLayer.params.mid_sat === 40 && filterLayer.params.mid_hue === 200, filterLayer?.params);
 
-    // 3b. set_filter { params: { nope: 1 } } error message names the 14 valid keys
+    // 3b. set_filter { params: { nope: 1 } } error message names the valid keys
     let setFilterError = null;
     try {
         await commands.run("set_filter", {
@@ -224,15 +224,91 @@ JS = r"""
     const missingInError = valid14Keys.filter((k) => !setFilterError || !setFilterError.includes(k));
     check("3b. set_filter error names all 14 keys", missingInError.length === 0, { missing: missingInError, error: setFilterError });
 
-    // 3c. filter_types lists color_grade with 14 parameters
+    // 3c. filter_types lists color_grade with 15 parameters (wheels custom + 14 keys)
     const ftypesRes = await commands.run("filter_types", {});
     const ftypesList = Array.isArray(ftypesRes) ? ftypesRes : (ftypesRes.types || ftypesRes.filters || []);
     const gradeType = ftypesList.find((t) => t.id === "color_grade");
     check("3c. filter_types includes color_grade", !!gradeType, ftypesList.map((t) => t.id));
-    check("3c. filter_types color_grade has 14 parameters", gradeType && gradeType.params && gradeType.params.length === 14, gradeType?.params?.length);
+    check("3c. filter_types color_grade has 15 parameters", gradeType && gradeType.params && gradeType.params.length === 15, gradeType?.params?.length);
     const reportedKeys = (gradeType?.params || []).map((p) => p.key);
-    const missingParamKeys = valid14Keys.filter((k) => !reportedKeys.includes(k));
-    check("3c. filter_types parameters match all 14 keys exactly", missingParamKeys.length === 0 && reportedKeys.length === 14, { reportedKeys, missingParamKeys });
+    const missingParamKeys = ["wheels", ...valid14Keys].filter((k) => !reportedKeys.includes(k));
+    check("3c. filter_types parameters match all 15 keys exactly", missingParamKeys.length === 0 && reportedKeys.length === 15, { reportedKeys, missingParamKeys });
+    check("3c. filter_types wheels is custom", gradeType?.params?.find((p) => p.key === "wheels")?.type === "custom");
+    const hidden12 = ["sh_hue", "sh_sat", "sh_lum", "mid_hue", "mid_sat", "mid_lum", "hi_hue", "hi_sat", "hi_lum", "glob_hue", "glob_sat", "glob_lum"];
+    const allHiddenMarked = hidden12.every((k) => gradeType?.params?.find((p) => p.key === k)?.hidden === true);
+    check("3c. 12 wheel parameters are marked hidden: true", allHiddenMarked);
+
+    // -------------------------------------------------------------------------
+    // 3d. R3-S3 Wheel control in DOM and interactions (PLAN section 3.4)
+    // -------------------------------------------------------------------------
+    ed.activeLayerId = added.id;
+    ed.renderLayers();
+    const layerRow = ed.layerList.querySelector(`[data-layer="${added.id}"]`);
+    check("3d. layerRow found in DOM", !!layerRow, { addedId: added.id });
+
+    const fxBox = layerRow ? layerRow.querySelector(".ipc-fx") : null;
+    check("3d. fxBox found in layer row", !!fxBox);
+
+    const wheelCanvases = fxBox ? fxBox.querySelectorAll(".ipc-wheels canvas") : [];
+    check("3d. exactly 4 .ipc-wheels canvas", wheelCanvases.length === 4, wheelCanvases.length);
+
+    const rangeInputs = fxBox ? fxBox.querySelectorAll("input[type=range]") : [];
+    check("3d. exactly 6 input[type=range] in fx row", rangeInputs.length === 6, rangeInputs.length);
+
+    const wheelsRangeInputs = fxBox ? fxBox.querySelectorAll(".ipc-wheels input[type=range]") : [];
+    check("3d. exactly 4 brightness sliders in wheels", wheelsRangeInputs.length === 4, wheelsRangeInputs.length);
+
+    // Check no standard slider rows for the 12 hidden keys
+    const nonWheelsRangeInputs = fxBox ? Array.from(rangeInputs).filter((r) => !r.closest(".ipc-wheels")) : [];
+    check("3d. exactly 2 non-wheels sliders (balance and blending)", nonWheelsRangeInputs.length === 2, nonWheelsRangeInputs.length);
+
+    // Midtones canvas interaction
+    const midCanvas = fxBox ? fxBox.querySelector('canvas[data-wheel-range="mid"]') : null;
+    check("3d. midtones canvas found", !!midCanvas);
+
+    if (midCanvas) {
+        const targetLayer = ed.layers.find((l) => l.id === added.id);
+        targetLayer.params.mid_sat = 0;
+        targetLayer.params.mid_hue = 30;
+        ed.renderLayers();
+
+        const curMidCanvas = ed.layerList.querySelector(`[data-layer="${added.id}"] canvas[data-wheel-range="mid"]`);
+        const rect = curMidCanvas.getBoundingClientRect();
+        const cx = rect.left + (rect.width || 72) / 2;
+        const cy = rect.top + (rect.height || 72) / 2;
+        const targetY = cy - 16; // R/2 = 32/2 = 16 CSS px upwards (mathematical +y)
+
+        const undoBefore = ed.undo.length;
+
+        // Pointer drag from centre to (0, -R/2)
+        curMidCanvas.dispatchEvent(new PointerEvent("pointerdown", { clientX: cx, clientY: cy, bubbles: true, cancelable: true }));
+        curMidCanvas.dispatchEvent(new PointerEvent("pointermove", { clientX: cx, clientY: targetY, bubbles: true, cancelable: true }));
+        curMidCanvas.dispatchEvent(new PointerEvent("pointerup", { clientX: cx, clientY: targetY, bubbles: true, cancelable: true }));
+
+        check("3d. mid_hue is 90 +- 1", Math.abs((targetLayer.params.mid_hue ?? 0) - 90) <= 1, targetLayer.params.mid_hue);
+        check("3d. mid_sat is 50 +- 1", Math.abs((targetLayer.params.mid_sat ?? 0) - 50) <= 1, targetLayer.params.mid_sat);
+        check("3d. undo.length increased by 1", ed.undo.length === undoBefore + 1, { before: undoBefore, after: ed.undo.length });
+        const lastUndo = ed.undo[ed.undo.length - 1];
+        check("3d. undo step labelled 'Colour grading: Wheels'", lastUndo && lastUndo.label === "Colour grading: Wheels", lastUndo?.label);
+
+        // Calling undo restores sat = 0
+        await ed.undoStep();
+        check("3d. undo restores mid_sat = 0", targetLayer.params.mid_sat === 0, targetLayer.params.mid_sat);
+
+        // Double-click resets
+        targetLayer.params.mid_sat = 50;
+        const postUndoCanvas = ed.layerList.querySelector(`[data-layer="${added.id}"] canvas[data-wheel-range="mid"]`) || curMidCanvas;
+        postUndoCanvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+        check("3d. double-click resets sat to 0", targetLayer.params.mid_sat === 0, targetLayer.params.mid_sat);
+
+        // set_filter with sh_hue: 10 still works
+        await commands.run("set_filter", {
+            layer: added.id,
+            params: { sh_hue: 10 },
+            doc: ed.node.id
+        });
+        check("3d. set_filter { sh_hue: 10 } updates param", targetLayer.params.sh_hue === 10, targetLayer.params.sh_hue);
+    }
 
     // -------------------------------------------------------------------------
     // 4. Document round trip (PLAN section 3.4 item 4)

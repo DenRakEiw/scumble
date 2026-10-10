@@ -125,6 +125,45 @@ async function main() {
     assert.equal(hiOnlyTables.dB[0], 0, "highlights only gives dB(0) = 0");
     console.log("  [ok] shadows only gives d(255)=0; highlights only gives d(0)=0");
 
+    // 9. Wheel control: puck reference points (PLAN R3-S3)
+    const wheelsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_wheels.js")).href);
+    const { puckToHueSat, hueSatToPuck, WHEEL_R, WHEEL_SIZE } = wheelsMod;
+    assert.equal(WHEEL_SIZE, 72, "WHEEL_SIZE is 72 CSS px");
+    assert.equal(WHEEL_R, 32, "WHEEL_R is 32 CSS px");
+
+    // Puck at (R/2, 0) gives hue 0, sat 50
+    const ref0 = puckToHueSat(WHEEL_R / 2, 0, WHEEL_R);
+    assert.ok(Math.abs(ref0.hue - 0) < 1e-9, `puck at (R/2, 0) hue is 0, got ${ref0.hue}`);
+    assert.ok(Math.abs(ref0.sat - 50) < 1e-9, `puck at (R/2, 0) sat is 50, got ${ref0.sat}`);
+
+    // Puck at (0, -R/2) gives hue 90, sat 50
+    const ref90 = puckToHueSat(0, -WHEEL_R / 2, WHEEL_R);
+    assert.ok(Math.abs(ref90.hue - 90) < 1e-9, `puck at (0, -R/2) hue is 90, got ${ref90.hue}`);
+    assert.ok(Math.abs(ref90.sat - 50) < 1e-9, `puck at (0, -R/2) sat is 50, got ${ref90.sat}`);
+    console.log("  [ok] puck reference points (R/2, 0) -> (0, 50) and (0, -R/2) -> (90, 50)");
+
+    // 10. puckToHueSat / hueSatToPuck round trip within 1e-9 on a grid
+    for (let h = 0; h < 360; h += 15) {
+        for (let s = 10; s <= 100; s += 10) {
+            const [dx, dy] = hueSatToPuck(h, s, WHEEL_R);
+            const { hue: h2, sat: s2 } = puckToHueSat(dx, dy, WHEEL_R);
+            assert.ok(Math.abs(h2 - h) < 1e-9, `hue round trip at h=${h}, s=${s}: got ${h2}`);
+            assert.ok(Math.abs(s2 - s) < 1e-9, `sat round trip at h=${h}, s=${s}: got ${s2}`);
+        }
+    }
+    for (let dx = -WHEEL_R; dx <= WHEEL_R; dx += 4) {
+        for (let dy = -WHEEL_R; dy <= WHEEL_R; dy += 4) {
+            const dist = Math.hypot(dx, dy);
+            if (dist > 0.5 && dist <= WHEEL_R) {
+                const { hue, sat } = puckToHueSat(dx, dy, WHEEL_R);
+                const [dx2, dy2] = hueSatToPuck(hue, sat, WHEEL_R);
+                assert.ok(Math.abs(dx2 - dx) < 1e-9, `dx round trip at dx=${dx}, dy=${dy}: got ${dx2}`);
+                assert.ok(Math.abs(dy2 - dy) < 1e-9, `dy round trip at dx=${dx}, dy=${dy}: got ${dy2}`);
+            }
+        }
+    }
+    console.log("  [ok] puckToHueSat / hueSatToPuck round trip within 1e-9 on grid");
+
     console.log("\nALL COLOUR GRADING MATHS TESTS PASSED!");
 }
 
