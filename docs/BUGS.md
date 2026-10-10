@@ -11,6 +11,12 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### Release 3 bug fixes and speed confirmations (2026-10-10)
+
+- **BUGS:152: Film look "None (adjustments only)" still ran grain stage if stock had no grain**: In `plugins/film/filters.js`, `const g = stock ? stock.grain : null; if (g && gp > 0)` and `grainStage = (src, g, info) => (g && g.amount > 0 ...)` ensure that selecting "None" or any look without grain runs with zero grain on both CPU and GPU paths without unnecessary grain passes. Verified in `film` gate step `look_commands` (`noneGrain: {"cpu": 0, "gpu": 0}`).
+- **Escape routing to plugin tools and boxes tool**: Pressing Escape while a plugin tool or the boxes tool has an active element (such as an active point in `film.points` or active box in `boxes`) properly deselects the element or cancels drawing rather than bubbling up or being swallowed. Verified in `film_test.py` and `boxes_test.py`.
+- **15k glass speed confirmed (no :336 slowdown)**: Full 15000 x 10000 export benchmarks with glass displacement confirmed no tile stalling or performance regressions: `effects.glass` defaults completed in 1575 ms (112 ms main-thread blocked), frosted glass with blur (amount 10, frost 4) completed in 1512 ms (149 ms blocked), well within the multi-threaded tile pipeline budget and far faster than full film look (4606 ms).
+
 ### Generate new on WaveSpeed without references went to model ids that answer 404 - fixed for 0.1.44 (2026-10-08, not run live)
 
 Found 2026-10-07 while building Nano Banana 2.1's WaveSpeed variant. A WaveSpeed variant without `text.model` sent a

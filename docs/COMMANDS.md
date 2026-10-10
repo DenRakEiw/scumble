@@ -246,8 +246,8 @@ Compute or refresh the document's depth map (Depth Anything V2 Small).
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `force` | boolean | recompute even if already present and fresh (default `false`) |
-| `edges` | integer | edge snapping strength 0..100 (0 = off, default 50) |
-| `detail` | string | standard, fine (2×2) or finest (3×3) (default `"standard"`; one of `standard`, `fine`, `finest`) |
+| `edges` | integer | edge snap strength 0..100; 0 keeps the plain sample |
+| `detail` | string | standard, fine (2x2) or finest (3x3) (default `"standard"`; one of `standard`, `fine`, `finest`) |
 
 ### `sample_depth` *(image)* *(read-only)*
 
@@ -266,7 +266,7 @@ Change the document's depth map inside the selection (soft edges count partly): 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `op` | string | flatten, offset or smooth (one of `flatten`, `offset`, `smooth`) (required) |
+| `op` | string | flatten, offset or smooth (one of `flatten`, `offset`, `smooth`) |
 | `value` | number | see op |
 
 ### `depth_from_layer` *(image)*
@@ -276,7 +276,7 @@ Create the document's depth map from an existing layer (white is near, black is 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `layer` | string | the layer: id, name or unique name fragment (required) |
+| `layer` | string | the layer: id, name or unique name fragment (required; default `"active"`) |
 | `invert` | boolean | invert: treat black as near instead of white (default `false`) |
 
 ## Selection
@@ -795,14 +795,14 @@ Remove the background of a layer with the cutout model the editor is set to (in-
 
 ### `set_mask`
 
-Change a layer's mask (white = the layer shows): invert it; reveal (all) or hide (all) - a white or a black mask, added when the layer has none, else replacing it; from_selection (the selection shows) or hide_selection (the selection is hidden); from_layer (copied from source layer by image position); disable / enable (the mask stays with the layer but is not drawn, PSD's "disabled"); apply (baked into the pixels; not on a filter layer) or remove. One undo step; every operation but disable switches the mask on.
+Change a layer's mask (white = the layer shows): invert it; reveal (all) or hide (all) - a white or a black mask, added when the layer has none, else replacing it; from_selection (the selection shows) or hide_selection (the selection is hidden); from_layer (copy another layer's mask); disable / enable (the mask stays with the layer but is not drawn, PSD's "disabled"); apply (baked into the pixels; not on a filter layer) or remove. One undo step; every operation but disable switches the mask on.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
 | `op` | string | what to do (required; one of `invert`, `reveal`, `hide`, `from_selection`, `hide_selection`, `from_layer`, `enable`, `disable`, `apply`, `remove`) |
-| `source` | string | from_layer only: source layer whose mask is copied |
+| `source` | string | from_layer: the layer whose mask is copied |
 
 ## Filters and text
 
@@ -1147,18 +1147,18 @@ Remove every box of this document. One undo step.
 
 ### `film.add_point` *(plugin film)*
 
-Add a control point (local adjustment) to the control points layer (the active one, the topmost one, or a new one). Weights: radial falloff times colour similarity to the pixel under the point.
+Add a control point (local adjustment) to the control points layer (the active one, the topmost one, or a new one). Weights: shape falloff times colour similarity to the pixel under the point.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `x` | number | centre / anchor x in image pixels (default image centre or polygon anchor) |
-| `y` | number | centre / anchor y in image pixels (default image centre or polygon anchor) |
+| `x` | number | centre x in image pixels |
+| `y` | number | centre y in image pixels |
 | `shape` | string | point shape (default circle) (one of `circle`, `ellipse`, `polygon`, `line`) |
+| `vertices` | array | polygon: 3 to 16 [x, y] corners in image px |
 | `radius` | number | radius or feather in pixels (default 10 % of the long side) |
 | `height` | number | ellipse: the second radius in px (default 60 % of radius) |
-| `angle` | number | degrees, clockwise from +x in image coordinates (ellipse, line) |
-| `vertices` | array | polygon: array of 3..16 vertex pairs `[[x0, y0], [x1, y1], ...]` |
+| `angle` | number | degrees, clockwise from +x in image coordinates |
 | `softness` | number | diffusion 0..100 (default 75) |
 | `tolerance` | number | colour tolerance 0..100 (default 50; low = only the colour under the point) |
 | `exposure` | number | EV -2..2 |
@@ -1166,6 +1166,24 @@ Add a control point (local adjustment) to the control points layer (the active o
 | `saturation` | number | -100..100 |
 | `warmth` | number | -100..100 |
 | `structure` | number | -100..100 (local detail, negative softens) |
+
+### `film.copy_points` *(plugin film)* *(read-only)*
+
+Copy control points from the active or topmost control points layer into the clipboard.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `ids` | array | point IDs to copy (copies all points if omitted) |
+
+### `film.paste_points` *(plugin film)*
+
+Paste control points from the clipboard onto the control points layer (creating one if needed). Scales positions and sizes to match the destination picture.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `resample_color` | boolean | sample colour under each anchor in the destination picture (default true) |
 
 ### `film.looks` *(plugin film)* *(read-only)*
 

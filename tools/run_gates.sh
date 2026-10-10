@@ -99,6 +99,7 @@ for g in "$@"; do
     # mcp_attach_test.py: --attach-only (the dev .mcp.json) on a profile of its own, with an instance it starts (port 9573)
     mcp) if [ -n "$EXE" ]; then $T python tools/mcp_test.py --exe "$EXE" --user-data-dir "$PROFILE" "$OUT/mcp" > "$OUT/$g.log" 2>&1 && $T python tools/mcp_attach_test.py --exe "$EXE" "$OUT/mcp_attach" >> "$OUT/$g.log" 2>&1; else $T python tools/mcp_test.py --user-data-dir "$PROFILE" "$OUT/mcp" > "$OUT/$g.log" 2>&1 && $T python tools/mcp_attach_test.py "$OUT/mcp_attach" >> "$OUT/$g.log" 2>&1; fi; rc=$? ;;
     commands) $T python tools/commands_test.py "$OUT/commands" > "$OUT/$g.log" 2>&1; rc=$? ;;
+    commands_doc) $T python tools/commands_doc.py > "$OUT/$g.log" 2>&1; rc=$? ;;
     assistant) timeout 900 python tools/assistant_test.py --user-data-dir "$PROFILE" ${EXE:+--exe "$EXE"} "$OUT/assistant" > "$OUT/$g.log" 2>&1; rc=$? ;;
     film) $T python tools/film_test.py "$OUT/film" > "$OUT/$g.log" 2>&1; rc=$? ;;
     nodecopy) NC="$SP/nodecopy"; rm -rf "$NC"; mkdir -p "$NC"; (cd "/f/Comfyui/ComfyUI_windows_portable_nvidia/ComfyUI/custom_nodes/ComfyUI-InpaintCanvas" && tar --exclude=.git --exclude=__pycache__ -cf - .) | (cd "$NC" && tar -xf -); { $T python tools/build_node.py --node "$NC" && $T python tools/build_node.py --node "$NC" --check && $T python tools/node_test.py --node "$NC"; } > "$OUT/$g.log" 2>&1; rc=$? ;;

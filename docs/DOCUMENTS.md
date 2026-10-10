@@ -186,7 +186,7 @@ history entry would name it and it would be `false`.
 | `maskOff` | when true | the mask is switched off (kept, not applied; PSD's "disabled"); left out when false, and a reader that does not know it shows the mask on |
 | `match` | when on | colour match `{ strength, source }`, `source` `surroundings` or `underneath`; left out at strength 0 |
 | `locked`, `alphaLock` | when true | left out when false |
-| `filter`, `params`, `lut`, `plate` | filter | the filter type id (built-in, or `<plugin>.<id>`), its parameters (including `limit` since 0.1.44: `{ source, lo, hi, fLo, fHi, invert, color, tol }`, where a document with a limit writes `minReader` 3), a LUT `{ name, size, ref }` (the LUT stored as a PNG) or `null`, a grain plate `{ name, ref, w, h, mean, std }` or `null` |
+| `filter`, `params`, `lut`, `plate` | filter | the filter type id (built-in, or `<plugin>.<id>`), its parameters (including `limit` since 0.1.44: `{ source, lo, hi, fLo, fHi, invert, color, tol }`, where a document with a limit writes `minReader` 3), a LUT `{ name, size, ref }` (the LUT stored as a PNG) or `null`, a grain plate `{ name, ref, w, h, mean, std }` or `null`. For `film.points` layers, `params.points` holds a list of control points (circle, ellipse, polygon, line); see `docs/FILM.md` for the shape parameters and fields |
 | `text` | text | the description `{ content, font, fontRef, size, color, bold, italic, align, lineHeight, letterSpacing, outline, outlineColor, res, turn, flip, angle, box }`; the rendered pixels are the layer's `ref`. `fontRef` is a ref to a font the user added, `null` for a bundled or system font (named only; a machine without it falls back). `turn` (quarter turns clockwise) and `flip` (mirrored before the turn, 0.1.31) and `angle` (degrees clockwise beyond the quarter turns, 0.1.32) say how the text is turned; `box` `[w, h]` is the upright render's size in render pixels (0.1.32). A reader that does not know `angle` shows the stored pixels until the text is edited, then draws it upright |
 
 ### 4.2 Refs and entry names
@@ -396,6 +396,9 @@ Python's `zipfile` with `ZIP_STORED`, `mimetype` written first, is one way.
   - `haze` (since 0.1.45): `minReader` 4 (filter layers of type `haze`).
   - `dehaze` (since 0.1.45): `minReader` 4 (filter layers of type `dehaze`).
   - `color-grade` (since 0.1.45): `minReader` 4 (filter layers of type `color_grade`).
+  - `hsl` (since 0.1.45): `minReader` 4 (filter layers of type `hsl`).
+  - `point-shapes` (since 0.1.45): `minReader` 4 (`film.points` layers with non-circle shapes or softness != 75).
+  - `effects-filters` (since 0.1.45): `minReader` 4 (filter layers from the Effects pack, `effects.*`).
 - **Raise `version`** for an addition a v1 reader can carry without showing it and without harm: a new optional
   top-level field of `document` (it travels as an extra field), new plugin data, new keys inside `crop`, `gen`,
   `settings` and the other settings objects. A v1 reader opens such a file with a note and asks before saving over it.

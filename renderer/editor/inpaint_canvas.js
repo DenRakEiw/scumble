@@ -1382,7 +1382,7 @@ const STYLE = `
 .ipc-choices { max-height:60vh; overflow-y:auto; overflow-x:hidden; min-width:180px; }
 .ipc-choices-group { font-size:10px; font-weight:600; color:var(--sc-muted, #8a8a8a); padding:6px 10px 2px 10px; text-transform:uppercase; letter-spacing:0.5px; }
 .ipc-choice-item { display:flex; align-items:center; justify-content:flex-start; padding:5px 10px; border-radius:var(--sc-radius-sm, 4px); cursor:pointer; font-size:12px; color:var(--sc-fg, #ddd); white-space:nowrap; text-align:left; background:transparent; border:none; width:100%; box-sizing:border-box; }
-.ipc-choice-item:hover, .ipc-choice-item.ipc-active { background:var(--sc-hover, #333); color:var(--sc-fg-bright, #fff); }
+.ipc-choice-item:hover, .ipc-choice-item.ipc-active { background:var(--sc-btn-hover, #3a3a3a); color:var(--sc-fg-strong, #fff); }
 .ipc-choice-item.ipc-current { font-weight:600; color:var(--sc-accent, #4a90d9); }
 .ipc-view { flex:1; position:relative; overflow:hidden; min-width:0; cursor:crosshair;
   background-color:#2b2b2b;

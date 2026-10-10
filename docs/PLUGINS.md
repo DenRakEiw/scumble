@@ -60,7 +60,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 
 | member | what |
 |---|---|
-| `version` | API version, `3` (2 added `documents.data`, 3 `generate.register`, `documents.data().set(patch, { undo })` and the `recipe` event; a plugin that needs one checks `scumble.version >= 3`) |
+| `version` | API version, `4` (2 added `documents.data`, 3 `generate.register`, `documents.data().set(patch, { undo })` and the `recipe` event, 4 `wholeStats`, `wholeStatsSize`, param type `color`, `hidden` flag, `cancelFilterParams`; a plugin that needs one checks `scumble.version >= 4`) |
 | `id`, `name`, `manifest` | from `plugin.json` |
 | `url(rel)` | URL of a file in the plugin folder |
 | `log(...)`, `warn(...)` | console with the plugin id |
