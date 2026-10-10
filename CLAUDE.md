@@ -78,7 +78,25 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-10: **0.1.45 prepared locally for release**; Release 2 & 3 complete, packaged, and verified on packaged exe; waiting for the user's release word)
+## Where things stand (2026-10-10: **0.1.45 released and Latest**; the Nik block's releases 2 and 3, the Qwen fix, the fill fix and the `.mcpb` out; the registry publish and the Store update open)
+
+**0.1.45 is out** (tag v0.1.45, published 2026-10-10T08:38:53Z, title "colour grading, HSL, effects, haze and dehaze, a Claude
+Desktop extension"; the post `v0-1-45` on the website, the manual synced, hub 0.1.45). It holds releases 2 and 3 of
+`docs/PLAN_NIK9_BUILD.md` (R2-S1..S14, R3-S2..S13 by the other agent, each reviewed), plus three things of this
+account the same morning: **the `mcpb` branch merged** (the Claude Desktop extension `scumble-<version>.mcpb` as the
+sixth release asset, `docs/PLAN_MCPB.md`; `docs/PLAN_WASM.md`, item 44), **issue #4 fixed** (a model file the server
+lacks stays the recipe's choice, marked, the run refused with the download link; the `recipes` gate's step, and run
+live on the user's ComfyUI), and **a fill layer clipped to the picture** when the view is zoomed out (the user's find
+in the test instance; `applyFilterLayer`). Exe gates on the final build: `recipes commands composite limit film mcpb`
+(tiles), earlier `mcpb recipes commands document edges depthfx grading film` (tiles) and `mcpb recipes commands`
+(canvas), all PASS. `server.json` is 0.1.45 **with the `packages` entry** (the asset's SHA-256, `mcp-publisher
+validate` ok). **Waiting for the user:** the registry publish (`mcp-publisher login github` with the device code,
+then `publish`; 0.1.44's publish was skipped on purpose); the Store update (`npm run dist:store` needs the user's test
+instance from `dist/win-unpacked` closed; then Partner Center through Claude in Chrome with
+`dist/store-listing/whats-new-0.1.45.txt`); the test profile `dist/test-profile-0.1.45` and the older
+`dist/portable-test/` to delete; an answer on issue #4 (outward-facing, on the user's word); Smithery and GitHub's
+MCP registry with the `.mcpb` (`docs/PLAN_MCP_LISTINGS.md`).
+
 
 **0.1.44 is out** (tag v0.1.44, published 2026-10-09T10:07:52Z, title "depth maps, range selections, filter limits"; the post
 `v0-1-44` committed to the website with the manual synced, its deploy status to be read). It is **release 1 (masks) of
