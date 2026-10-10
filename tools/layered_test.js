@@ -760,7 +760,7 @@ async function writerChecks(readPsd) {
       <layer name="In group" src="data/in.png" x="1" y="2" opacity="1.0" />
     </stack>
     <layer name='Lost' src='data/missing.png' />
-    <layer name="Odd" src="data/odd.png" composite-op="svg:color-dodge" />
+    <layer name="Odd" src="data/odd.png" composite-op="svg:odd-blend" />
     <layer name="Background" src="data/bg.png" x="0" y="0" />
   </stack>
 </image>`;
@@ -780,7 +780,7 @@ async function writerChecks(readPsd) {
         check("position, opacity and blend of a layer", top.x === 10 && top.y === 20 && top.opacity === 0.5 && top.blend === "multiply" && top.visible, short(top));
         check("a nested stack adds its offset, opacity and visibility", inG.x === 6 && inG.y === 9 && inG.opacity === 0.5 && inG.visible === false, short(inG));
         check("stored and deflated pictures come back as written", Buffer.from(doc.layers[0].png).toString("latin1").endsWith("bg") && Buffer.from(inG.png).toString("latin1").endsWith("in") && Buffer.from(top.png).toString("latin1").endsWith("top"));
-        check("an unknown composite-op, a missing picture and the group are named", doc.notes.some((n) => /Odd \(svg:color-dodge\)/.test(n)) && doc.notes.some((n) => /1 layer without a picture left out \("Lost"\)/.test(n)) && doc.notes.some((n) => /1 group flattened/.test(n)), short(doc.notes));
+        check("an unknown composite-op, a missing picture and the group are named", doc.notes.some((n) => /Odd \(svg:odd-blend\)/.test(n)) && doc.notes.some((n) => /1 layer without a picture left out \("Lost"\)/.test(n)) && doc.notes.some((n) => /1 group flattened/.test(n)), short(doc.notes));
         const noXml = await throwsWith(() => readOra(zip([{ name: "mimetype", data: "image/openraster" }]), { inflateRaw }), /no stack.xml/);
         check("an ORA without stack.xml is refused", noXml.ok, noXml.msg);
         const noInflater = await throwsWith(() => readOra(file), /needs an inflater/);

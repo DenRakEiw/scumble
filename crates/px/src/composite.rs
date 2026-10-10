@@ -19,8 +19,9 @@
 //! taken as 255 for "sp", which is what lets the SIMD path treat the 16 bytes of four pixels
 //! alike. Canvas 2D keeps premultiplied 8-bit pixels too, so the precision is the same.
 //!
-//! The fifteen blend modes (B item 7, ops 5 to 12; linear light, op 13; tier A, ops 14 to 19: exclusion,
-//! linear dodge, linear burn, subtract, pin light, hard mix) are the W3C compositing formula,
+//! The nineteen blend modes (B item 7, ops 5 to 12; linear light, op 13; tier A, ops 14 to 19: exclusion,
+//! linear dodge, linear burn, subtract, pin light, hard mix; tier B, ops 20 to 23: colour dodge,
+//! colour burn, vivid light, divide) are the W3C compositing formula,
 //! rounded ONCE per channel: with three rounded products the result was up to 1.45 levels from the exact value and a
 //! level from the compositor's shader on 29 % of the bytes of a half-transparent layer; rounded once it is within half a
 //! level (12 % from the shader, which reads its source back from a premultiplied 8-bit texture). Linear light is not in
@@ -41,6 +42,10 @@
 //!     subtract    255 * (max(b, s) - s)
 //!     pin-light   s <= 127 ? 255 * min(b, 2s) : 255 * max(b, 2s - 255)
 //!     hard-mix    b + s >= 255 ? 65025 : 0
+//!     color-dodge   b == 0 ? 0 : s >= 255 ? 65025 : min(65025, (130050*b + (255-s)) / (2*(255-s)))
+//!     color-burn    b >= 255 ? 65025 : s == 0 ? 0 : 65025 - min(65025, (130050*(255-b) + s) / (2*s))
+//!     vivid-light   s <= 127 ? burn(b, 2s) : dodge(b, 2s - 255)
+//!     divide        s == 0 ? (b == 0 ? 0 : 65025) : min(65025, (130050*b + s) / (2*s))
 //!   over an opaque backdrop:  r = (dp*inv*255 + sa*B16 + 32512) / 65025
 //!   else, with cb = dp unpremultiplied as at the end and ra = sa + mul255(da, inv):
 //!     r = min(ra, (s.c*sa*(255 - da)*255 + dp*inv*65025 + sa*da*B16 + 8290687) / 16581375)
@@ -68,7 +73,11 @@ pub const LINEAR_BURN: u8 = 16;
 pub const SUBTRACT: u8 = 17;
 pub const PIN_LIGHT: u8 = 18;
 pub const HARD_MIX: u8 = 19;
-pub const LAST_BLEND: u8 = HARD_MIX;
+pub const COLOR_DODGE: u8 = 20;
+pub const COLOR_BURN: u8 = 21;
+pub const VIVID_LIGHT: u8 = 22;
+pub const DIVIDE: u8 = 23;
+pub const LAST_BLEND: u8 = DIVIDE;
 
 #[allow(dead_code)]
 const SIMD_BLENDS: [u8; 14] = [
@@ -160,7 +169,30 @@ fn hard_light(b: u32, s: u32) -> u32 {
     }
 }
 
-/// 255 · B(cb, cs) of the blend mode `OP`, both straight 0..255: 0..65025.
+#[inline(always)]
+fn dodge16(b: u32, s: u32) -> u32 {
+    if b == 0 {
+        0
+    } else if s >= 255 {
+        65025
+    } else {
+        let d = 255 - s;
+        65025.min((130050 * b + d) / (2 * d))
+    }
+}
+
+#[inline(always)]
+fn burn16(b: u32, s: u32) -> u32 {
+    if b >= 255 {
+        65025
+    } else if s == 0 {
+        0
+    } else {
+        65025 - 65025.min((130050 * (255 - b) + s) / (2 * s))
+    }
+}
+
+/// 255 * B(cb, cs) of the blend mode `OP`, both straight 0..255: 0..65025.
 #[inline(always)]
 fn blend_of<const OP: u8>(b: u32, s: u32) -> u32 {
     match OP {
@@ -198,6 +230,26 @@ fn blend_of<const OP: u8>(b: u32, s: u32) -> u32 {
                 0
             }
         }
+        COLOR_DODGE => dodge16(b, s),
+        COLOR_BURN => burn16(b, s),
+        VIVID_LIGHT => {
+            if s <= 127 {
+                burn16(b, 2 * s)
+            } else {
+                dodge16(b, 2 * s - 255)
+            }
+        }
+        DIVIDE => {
+            if s == 0 {
+                if b == 0 {
+                    0
+                } else {
+                    65025
+                }
+            } else {
+                65025.min((130050 * b + s) / (2 * s))
+            }
+        }
         _ => 255 * (b.max(s) - b.min(s)),
     }
 }
@@ -229,6 +281,10 @@ fn blend_from(dst: &mut [u8], src: &[u8], op: u8, o: u32, mask: Option<&[u8]>, s
         SUBTRACT => scalar_blend::<SUBTRACT>(dst, src, o, mask, start),
         PIN_LIGHT => scalar_blend::<PIN_LIGHT>(dst, src, o, mask, start),
         HARD_MIX => scalar_blend::<HARD_MIX>(dst, src, o, mask, start),
+        COLOR_DODGE => scalar_blend::<COLOR_DODGE>(dst, src, o, mask, start),
+        COLOR_BURN => scalar_blend::<COLOR_BURN>(dst, src, o, mask, start),
+        VIVID_LIGHT => scalar_blend::<VIVID_LIGHT>(dst, src, o, mask, start),
+        DIVIDE => scalar_blend::<DIVIDE>(dst, src, o, mask, start),
         _ => scalar_blend::<DIFFERENCE>(dst, src, o, mask, start),
     }
 }

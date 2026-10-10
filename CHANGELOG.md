@@ -5,7 +5,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
-- **Six more blend modes**: exclusion, linear dodge (add), linear burn, subtract, pin light and hard mix, computed the same way on screen, in an export and in a run; PSD files keep them both ways. A document with one of them needs this version or newer.
+- **Ten more blend modes**: exclusion, linear dodge (add), linear burn, subtract, pin light, hard mix, colour dodge, colour burn, vivid light and divide, computed the same way on screen, in an export and in a run; PSD and ORA files keep them. A document with one of them needs this version or newer.
 - A layer in a blend mode this version does not know draws as normal everywhere.
 - Emulated blend modes share a unified GPU shader on screen, and kernel blend dispatch safely falls back to source-over for unknown operations.
 

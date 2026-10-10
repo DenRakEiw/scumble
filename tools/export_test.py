@@ -974,13 +974,15 @@ for (const l of ed.layers) l.blend = "normal";
 // 66 to 382 of 25 million bytes in overlay, soft-light and hard-light, whose B has a slope of 2 to 4 (an error below it is doubled).
 // Hard mix is a step function (slope infinite at 255): sub-LSB alpha un-premultiplication differences in the canvas flatten cross
 // the threshold on ~0.1% of bytes, bounded by layer alpha (worst <= 180, mean <= 0.15).
+// Vivid light doubles the slope of colour burn/dodge (worst <= 6, over2 <= 10 / 10000, mean <= 0.05).
 const bad = Object.entries(out).filter(([k, v]) => {
     const isStep = k === "hard-mix";
-    const maxWorst = isStep ? 180 : 3;
-    const maxOver = isStep ? (W * ed.height * 4 * 20) / 10000 : (W * ed.height * 4) / 10000;
+    const isVivid = k === "vivid-light";
+    const maxWorst = isStep ? 180 : isVivid ? 6 : 3;
+    const maxOver = (W * ed.height * 4 * (isStep ? 20 : isVivid ? 10 : 1)) / 10000;
     return v.worst > maxWorst || v.over2 > maxOver;
 });
-if (bad.length) throw new Error("a blend mode composited by the workers differs from the flatten: " + JSON.stringify(out));
+if (bad.length) throw new Error("bad blend modes in export: " + JSON.stringify(bad));
 // with the blends switched off the plan turns the document away again (the A/B switch of the benchmark)
 ed.layers[0].blend = "screen";
 E.stackBlends = false;

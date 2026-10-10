@@ -172,6 +172,17 @@ release at the end after the user's test; release 4 (blend modes) independent.
   - Unit tests: `tools/px_test.js` extended with closed-form exhaustive opaque pairs for all six ops; timing row verified SIMD 2.5x to 2.8x faster than scalar; float checks <= 0.29; SHA-256 test across twin, simd, and scalar for ops 0..=19 (`9d072f9c8942b0f20953a5c2d3ca65fc34be5cfc9b6f5cfb5d7d91d0e5138139`).
   - Gates: `blendmodes` on both backends (`--tiles on` and `--tiles off`), `document_test.js` reader 5, `blend_table_test.js`.
   - Docs: `docs/COMMANDS.md` regenerated via `tools/commands_doc.py`; `CHANGELOG.md` updated under `## Unreleased`; `docs/DOCUMENTS.md` section 4 and section 6.2 updated in pure ASCII.
+- **R4-S5 built** (2026-10-10): Tier B blend modes (colour dodge, colour burn, vivid light, divide: ops 20-23, ABI 16):
+  - Rust scalar kernel `composite.rs` (`COLOR_DODGE` 20, `COLOR_BURN` 21, `VIVID_LIGHT` 22, `DIVIDE` 23; `LAST_BLEND = DIVIDE`; helpers `dodge16` and `burn16` in u32 with numerators < 2^25; `blend_of` and `blend_from` arms; scalar only, `SIMD_BLENDS` kept at 14; header comments in pure ASCII).
+  - WASM bump: `px_abi_version()` = 16; `composite_tile` doc comments; `PX_ABI = 16` in `px.js`. `python tools/build_px.py --check` passed cleanly (`px.wasm` 135,065 bytes, `px_scalar.wasm` 120,769 bytes).
+  - JS twin: `dodge16` and `burn16` helpers and `blendOf` cases 20..=23 in `renderer/editor/px/kernels_js.js`.
+  - GLSL twin: `bm_dodge` and `bm_burn` helpers and `blend1` cases 20..=23 in `renderer/editor/inpaint_compositor.js`.
+  - Blend registry: appended four frozen rows in `renderer/editor/blend_modes.js` (`color-dodge`, `color-burn`, `vivid-light`, `divide`; reader: 5, canvas: null, PSD and ORA mappings).
+  - Docfile: updated `READER_OF_BLEND` in `electron/main/docfile.js` mapping ops 20..=23 to reader 5.
+  - Node sync: committed in custom node repo (`811e425`); verified `build_node.py --check`.
+  - Unit tests: `tools/px_test.js` extended with closed-form exhaustive opaque pairs for all four ops; float checks <= 0.51; edge sets b in {0, 255} x s in {0, 127, 128, 254, 255}; SHA-256 test across twin, simd, and scalar for ops 0..=23; op 24 equals op 0; `tools/blend_table_test.js` (8/8 pass); `tools/layered_test.js` (111/111 pass).
+  - Gates: `blendmodes` on both backends (`--tiles on` and `--tiles off`, 7s each).
+  - Docs: `docs/COMMANDS.md`, `CHANGELOG.md`, `docs/DOCUMENTS.md` updated in pure ASCII.
 **Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.

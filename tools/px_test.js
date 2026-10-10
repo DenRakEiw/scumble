@@ -371,7 +371,7 @@ async function compositeCases(ref, label, js) {
             const srcs = [], ops = [], alphas = [], masks = [];
             for (let l = 0; l < n; l++) {
                 srcs.push(pixelRow(pixels, 2000 + trial * 10 + l + pixels));
-                ops.push((trial + l) % 20);
+                ops.push((trial + l) % 24);
                 alphas.push([255, 0, 128, 200, 1][(trial + 2 * l) % 5]);
                 masks.push((trial + l) % 3 === 0 ? null : randomMask(pixels, 3000 + trial * 10 + l));
             }
@@ -380,11 +380,11 @@ async function compositeCases(ref, label, js) {
             if (!eqBytes(a, b)) { ok = false; detail = `${pixels}px trial ${trial} ops ${ops} alphas ${alphas} ${firstDiff(a, b)}`; }
         }
     }
-    check(`js compositeTile equals the ${label} (5 ops and 15 blend modes, partial alpha, opacity, masks, tails)`, ok, detail);
+    check(`js compositeTile equals the ${label} (5 ops and 19 blend modes, partial alpha, opacity, masks, tails)`, ok, detail);
 
     // every blend mode alone: over an opaque tile (four opaque pixels at a time in the SIMD build), over a mixed one, masked or not
     let okModes = true, detailModes = "";
-    for (let op = 5; op <= 19; op++) {
+    for (let op = 5; op <= 23; op++) {
         for (const [pixels, opaque, o, masked] of [[4099, true, 255, false], [4099, true, 170, true], [4099, false, 255, true], [4099, false, 90, false], [3, false, 255, false]]) {
             const dst = pixelRow(pixels, 40 + op, { opaque }), src = pixelRow(pixels, 60 + op + pixels), mask = masked ? [randomMask(pixels, 80 + op)] : null;
             const a = js.compositeTile(dst.slice(), [src], [op], [o], mask);
@@ -426,7 +426,8 @@ async function compositeCases(ref, label, js) {
 
     // the blend modes against the specification in floats: co = cs·as·(1 − ab) + cb·ab·(1 − as) + as·ab·B(cb, cs)
     let worstB = 0, worstFull = 0, worstRatioB = 0, seenB = 0, worstMode = "", worstLL = 0, worstLLFull = 0, worstRatioLL = 0;
-    for (let op = 5; op <= 19; op++) {
+    let worstRatioTierB = 0, worstDevTierB = 0;
+    for (let op = 5; op <= 23; op++) {
         for (const o of [255, 140]) {
             const dst = pixelRow(8192, 11 + op + o, { opaque: true }), src = pixelRow(8192, 12 + op + o);
             const out = js.compositeTile(dst.slice(), [src], [op], [o], null);
@@ -452,15 +453,21 @@ async function compositeCases(ref, label, js) {
                     const cb = Math.min(255, Math.floor((dp * 255 + h) / da8)) / 255;
                     const cs = src[i + c] / 255;
                     const want = 255 * (cs * sa * (1 - da) + cb * da * (1 - sa) + sa * da * blendFloat(op, cb, cs)) / oa;
-                    worstRatioB = Math.max(worstRatioB, Math.abs(want - out2[i + c]) / bound);
-                    if (op === 13) worstRatioLL = Math.max(worstRatioLL, Math.abs(want - out2[i + c]) / bound);
+                    const ratio = Math.abs(want - out2[i + c]) / bound;
+                    if (op < 20) {
+                        worstRatioB = Math.max(worstRatioB, ratio);
+                    } else {
+                        worstRatioTierB = Math.max(worstRatioTierB, ratio);
+                        worstDevTierB = Math.max(worstDevTierB, Math.abs(want - out2[i + c]));
+                    }
+                    if (op === 13) worstRatioLL = Math.max(worstRatioLL, ratio);
                 }
             }
         }
     }
     // rounded once: half a level at full opacity; at an opacity the effective alpha is rounded to 8 bits first, which is up to half a level more
     check(`js blend modes over an opaque tile within one level of the specification's floats (half a level at full opacity)`, worstB <= 1 && worstFull <= 0.51, `worst ${worstB.toFixed(2)} (${worstMode}), at full opacity ${worstFull.toFixed(3)}; linear light ${worstLL.toFixed(3)}, at full opacity ${worstLLFull.toFixed(3)}`);
-    check(`js blend modes over translucent pixels within 2.5·255/alpha + 2.5·255/backdrop alpha + 0.6 levels`, worstRatioB <= 1 && seenB > 1000, `worst at ${(worstRatioB * 100).toFixed(0)} % of the bound over ${seenB} pixels; linear light ${(worstRatioLL * 100).toFixed(0)} %`);
+    check(`js blend modes over translucent pixels within 2.5*255/alpha + 2.5*255/backdrop alpha + 0.6 levels`, worstRatioB <= 1 && seenB > 1000, `worst at ${(worstRatioB * 100).toFixed(0)} % of the bound over ${seenB} pixels; linear light ${(worstRatioLL * 100).toFixed(0)} %; tier B raw dev ${worstDevTierB.toFixed(2)}, ratio ${(worstRatioTierB * 100).toFixed(0)} %`);
     // linear light over every opaque (b, s) pair, three channel arrangements: B16 is exact, so the result is clamp(b + 2s − 255, 0, 255) itself
     {
         const dst = new Uint8Array(65536 * 4), src = new Uint8Array(65536 * 4), ll = (b, s) => Math.min(255, Math.max(0, b + 2 * s - 255));
@@ -509,15 +516,52 @@ async function compositeCases(ref, label, js) {
             check(`${name} exclusion over every opaque (b, s) pair matches reference exactly`, eqBytes(out, want), firstDiff(out, want));
         }
     }
+    // tier B blend modes over every opaque (b, s) pair (65,536 pairs) against reference (0 differ)
+    {
+        const dst = new Uint8Array(65536 * 4), src = new Uint8Array(65536 * 4);
+        for (let b = 0; b < 256; b++) for (let s = 0; s < 256; s++) {
+            const i = (b * 256 + s) * 4;
+            dst[i] = b; src[i] = s; dst[i + 1] = s; src[i + 1] = b; dst[i + 2] = 255 - b; src[i + 2] = 255 - s; dst[i + 3] = 255; src[i + 3] = 255;
+        }
+        for (const mode of ["color-dodge", "color-burn", "vivid-light", "divide"]) {
+            const op = js.OPS[mode];
+            for (const [name, k] of [["js", js], [label, ref]]) {
+                const out = k.compositeTile(dst.slice(), [src], [op], [255], null);
+                const want = reference.compositeTile(dst.slice(), [src], [op], [255], null);
+                check(`${name} ${mode} over every opaque (b, s) pair matches reference exactly`, eqBytes(out, want), firstDiff(out, want));
+            }
+        }
+        // edge sets b in {0, 255} x s in {0, 127, 128, 254, 255}
+        const bEdges = [0, 255], sEdges = [0, 127, 128, 254, 255];
+        const numEdge = bEdges.length * sEdges.length;
+        const dstEdge = new Uint8Array(numEdge * 4), srcEdge = new Uint8Array(numEdge * 4);
+        let idx = 0;
+        for (const b of bEdges) for (const s of sEdges) {
+            const i = idx * 4;
+            dstEdge[i] = b; srcEdge[i] = s;
+            dstEdge[i + 1] = s; srcEdge[i + 1] = b;
+            dstEdge[i + 2] = 255 - b; srcEdge[i + 2] = 255 - s;
+            dstEdge[i + 3] = 255; srcEdge[i + 3] = 255;
+            idx++;
+        }
+        for (const mode of ["color-dodge", "color-burn", "vivid-light", "divide"]) {
+            const op = js.OPS[mode];
+            for (const [name, k] of [["js", js], [label, ref]]) {
+                const out = k.compositeTile(dstEdge.slice(), [srcEdge], [op], [255], null);
+                const want = reference.compositeTile(dstEdge.slice(), [srcEdge], [op], [255], null);
+                check(`${name} ${mode} edge set matches reference exactly`, eqBytes(out, want), firstDiff(out, want));
+            }
+        }
+    }
     if (/rust/.test(label)) {
         const N = 1 << 20, dstT = pixelRow(N, 5, { opaque: true }), srcT = pixelRow(N, 6), parts = [];
-        for (const op of [5, 7, 10, 13, 14, 18]) {
+        for (const op of [5, 7, 10, 13, 14, 18, 20]) {
             const best = (k) => { let b = Infinity; for (let i = 0; i < 5; i++) { const w = dstT.slice(), t0 = performance.now(); k.compositeTile(w, [srcT], [op], [200], null); b = Math.min(b, performance.now() - t0); } return b; };
             parts.push(`${BLEND_NAMES[op - 5]} ${label} ${best(ref).toFixed(1)} ms, twin ${best(js).toFixed(1)}`);
         }
         console.log(`       a megapixel over an opaque tile at 78 %: ${parts.join("; ")}`);
     }
-    check(`js source-over over translucent pixels within 2.5·255/alpha + 0.6 levels, alpha within 1`, worstRatio <= 1 && alphaOff <= 1 && seen > 1000,
+    check(`js source-over over translucent pixels within 2.5*255/alpha + 0.6 levels, alpha within 1`, worstRatio <= 1 && alphaOff <= 1 && seen > 1000,
         `worst at ${(worstRatio * 100).toFixed(0)} % of the bound over ${seen} translucent pixels, alpha off by ${alphaOff.toFixed(2)}`);
 }
 
@@ -535,7 +579,7 @@ async function compositeShaCases(js, simd, scalar) {
 
     function hashKernel(k) {
         const h = crypto.createHash("sha256");
-        for (let op = 0; op <= 19; op++) {
+        for (let op = 0; op <= 23; op++) {
             const outO = k.compositeTile(dstOpaque.slice(), [srcOpaque], [op], [255], null);
             const outT = k.compositeTile(dstTrans.slice(), [srcTrans], [op], [255], null);
             h.update(outO);
@@ -547,23 +591,23 @@ async function compositeShaCases(js, simd, scalar) {
     const shaJ = hashKernel(js);
     const shaS = hashKernel(simd);
     const shaC = hashKernel(scalar);
-    check("compositeTile SHA-256 identical across twin, px.wasm, and px_scalar.wasm for ops 0-19",
+    check("compositeTile SHA-256 identical across twin, px.wasm, and px_scalar.wasm for ops 0-23",
         shaJ === shaS && shaJ === shaC,
         `sha ${shaJ.slice(0, 16)}`);
 
-    let op20Ok = true, op20Detail = "";
+    let op24Ok = true, op24Detail = "";
     for (const [name, k] of [["twin", js], ["simd", simd], ["scalar", scalar]]) {
-        const out20O = k.compositeTile(dstOpaque.slice(), [srcOpaque], [20], [255], null);
+        const out24O = k.compositeTile(dstOpaque.slice(), [srcOpaque], [24], [255], null);
         const out0O = k.compositeTile(dstOpaque.slice(), [srcOpaque], [0], [255], null);
-        const out20T = k.compositeTile(dstTrans.slice(), [srcTrans], [20], [255], null);
+        const out24T = k.compositeTile(dstTrans.slice(), [srcTrans], [24], [255], null);
         const out0T = k.compositeTile(dstTrans.slice(), [srcTrans], [0], [255], null);
-        if (!eqBytes(out20O, out0O) || !eqBytes(out20T, out0T)) {
-            op20Ok = false;
-            op20Detail = `${name} op 20 does not match op 0`;
+        if (!eqBytes(out24O, out0O) || !eqBytes(out24T, out0T)) {
+            op24Ok = false;
+            op24Detail = `${name} op 24 does not match op 0`;
             break;
         }
     }
-    check("compositeTile op 20 equals op 0 on twin, px.wasm, and px_scalar.wasm", op20Ok, op20Detail);
+    check("compositeTile op 24 equals op 0 on twin, px.wasm, and px_scalar.wasm", op24Ok, op24Detail);
 }
 
 // ---- the colour match (B item 7 part 3) ----------------------------------------------------------
@@ -1457,7 +1501,18 @@ const mul255 = (x, y) => { const t = x * y + 128; return (t + (t >> 8)) >> 8; };
 // soft-light's d(b), in 16 bits: the table the kernels carry, made here from the specification
 const SOFT_D_REF = Array.from({ length: 256 }, (_, b8) => { const b = b8 / 255; return Math.floor((b8 <= 63 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b)) * 65535 + 0.5); });
 const hardLightRef = (b, s) => (s <= 127 ? 2 * b * s : 65025 - (255 - b) * (510 - 2 * s));
-/** 255 * B(cb, cs) of the ops 5 to 19 in the kernels' integers (0..65025). */
+const dodgeRef = (b, s) => {
+    if (b === 0) return 0;
+    if (s >= 255) return 65025;
+    const d = 255 - s;
+    return Math.min(65025, Math.floor((130050 * b + d) / (2 * d)));
+};
+const burnRef = (b, s) => {
+    if (b >= 255) return 65025;
+    if (s === 0) return 0;
+    return 65025 - Math.min(65025, Math.floor((130050 * (255 - b) + s) / (2 * s)));
+};
+/** 255 * B(cb, cs) of the ops 5 to 23 in the kernels' integers (0..65025). */
 const blendRef = (op, b, s) => [
     () => b * s,
     () => 65025 - (255 - b) * (255 - s),
@@ -1474,11 +1529,17 @@ const blendRef = (op, b, s) => [
     () => 255 * Math.max(0, b - s),
     () => (s <= 127 ? 255 * Math.min(b, 2 * s) : 255 * Math.max(b, 2 * s - 255)),
     () => (b + s >= 255 ? 65025 : 0),
+    () => dodgeRef(b, s),
+    () => burnRef(b, s),
+    () => (s <= 127 ? burnRef(b, 2 * s) : dodgeRef(b, 2 * s - 255)),
+    () => (s === 0 ? (b === 0 ? 0 : 65025) : Math.min(65025, Math.floor((130050 * b + s) / (2 * s)))),
 ][op - 5]();
 /** The same in the specification's floats (W3C Compositing and Blending Level 1; linear light as Photoshop has it), 0..1. */
 const blendFloat = (op, b, s) => {
     const hl = (b, s) => (s <= 0.5 ? b * 2 * s : b + (2 * s - 1) - b * (2 * s - 1));
     const d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b);
+    const dodge = (b, s) => (b <= 0 ? 0 : s >= 1 ? 1 : Math.min(1, b / (1 - s)));
+    const burn = (b, s) => (b >= 1 ? 1 : s <= 0 ? 0 : 1 - Math.min(1, (1 - b) / s));
     return [
         b * s,
         b + s - b * s,
@@ -1495,6 +1556,10 @@ const blendFloat = (op, b, s) => {
         Math.max(0, b - s),
         s <= 0.5 ? Math.min(b, 2 * s) : Math.max(b, 2 * s - 1),
         Math.floor(b * 255 + 0.5) + Math.floor(s * 255 + 0.5) >= 255 ? 1 : 0,
+        dodge(b, s),
+        burn(b, s),
+        s <= 0.5 ? burn(b, 2 * s) : dodge(b, 2 * s - 1),
+        s <= 0 ? (b <= 0 ? 0 : 1) : Math.min(1, b / s),
     ][op - 5];
 };
 let BLEND_NAMES = [];
