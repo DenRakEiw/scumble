@@ -223,6 +223,10 @@ The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27
   Center (the user logged in; the upload of the ~190 MB MSIX through the extension never tried yet; *Submit for
   certification* only after the user's yes in chat each time). If the upload does not work: essential changes only,
   the user's three steps by hand (`docs/RELEASING.md`).
+- **The GitHub Pages site** (2026-10-10, a Discord comment asked for a github.io page): https://denrakeiw.github.io/scumble/,
+  one `index.html` on the branch `gh-pages` (downloads, what it does, links to the hub, manual, videos, blog, MCP docs;
+  canonical to the hub, which stays the one source). Update: edit `index.html` on `gh-pages` and push; Pages rebuilds
+  in a minute. A `scumble.github.io` would need a GitHub organisation named scumble (not made).
 - **Not started:** B3, the macOS build (`docs/PLAN_0_1_24.md`); Comfy Router
   live runs beyond GPT Image 2, Nano Banana 2 (2026-09-23) and FLUX 3 Image (2026-10-03; the key in `dist/live-keys`); Linux built by CI, never run; types stage 3 (`docs/PLAN_TYPES.md`);
   the manual's empty assistant and log screenshots and a missing colour-match figure (`docs/MANUAL.md` is the one
