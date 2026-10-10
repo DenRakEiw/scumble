@@ -28,8 +28,8 @@ für r/modelcontextprotocol"; asked, the user: "ja, reiche ein", every step, the
 | mcpservers.org, mcp.directory | submitted 2026-10-04; their search pages answer nothing useful to a crawler (a generic page, a 404); not checked by hand |
 | PulseMCP | **not listed**; "new server submissions and listing changes are still paused" (their banner); the earlier note that it read the registry did not hold |
 | Glama | not listed; *Add Server* is a signed-in flow (GitHub login in the user's browser) |
-| Smithery | not listed; needs an account and their form (the `.mcpb` URL now exists) |
-| GitHub MCP registry (github.com/mcp) | not listed; **manual curation** (trent-j, 2026-05: "onboarding a new server is still a manual curation process"; after onboarding, new versions sync from the OSS registry); the request goes as a comment on github/github-mcp-server#1257 with the registry name, the package, repo, licence, a one-line description and the curl line |
+| Smithery | **out for Scumble** (read 2026-10-10 in the user's logged-in browser): its publish form ("Smithery is now a part of Arcade.dev") takes only an HTTP MCP server URL; the Publish menu offers MCP or Skill, no bundle or local package. A local stdio app cannot be listed there |
+| GitHub MCP registry (github.com/mcp) | **onboarding requested 2026-10-10** (github/github-mcp-server#1257, comment discussioncomment-18849188, the user's word); not listed yet; **manual curation** (trent-j, 2026-05: "onboarding a new server is still a manual curation process"; after onboarding, new versions sync from the OSS registry); the request goes as a comment on github/github-mcp-server#1257 with the registry name, the package, repo, licence, a one-line description and the curl line |
 
 Every release: a new `server.json` version published (`docs/RELEASING.md`). Below, the research as it was before the
 submissions.
