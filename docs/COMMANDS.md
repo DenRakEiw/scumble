@@ -596,7 +596,7 @@ Change a layer: name, visible, opacity (0..1 or percent), blend, locked, alpha_l
 | `name` | string |  |
 | `visible` | boolean |  |
 | `opacity` | number | 0..1 (or 0..100) |
-| `blend` | string | the blend mode (one of `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `soft-light`, `hard-light`, `linear-light`, `difference`, `exclusion`, `linear-dodge`, `linear-burn`, `subtract`, `pin-light`, `hard-mix`, `color-dodge`, `color-burn`, `vivid-light`, `divide`, `hue`, `saturation`, `color`, `luminosity`, `darker-color`, `lighter-color`) |
+| `blend` | string | the blend mode (one of `normal`, `darken`, `multiply`, `color-burn`, `linear-burn`, `darker-color`, `lighten`, `screen`, `color-dodge`, `linear-dodge`, `lighter-color`, `overlay`, `soft-light`, `hard-light`, `vivid-light`, `linear-light`, `pin-light`, `hard-mix`, `difference`, `exclusion`, `subtract`, `divide`, `hue`, `saturation`, `color`, `luminosity`) |
 | `locked` | boolean |  |
 | `alpha_lock` | boolean |  |
 | `clip` | boolean | clip to the layer below (true) or release (false) |

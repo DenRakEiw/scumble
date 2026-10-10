@@ -22,23 +22,23 @@ const layersOf = (d) => (d && Array.isArray(d.layers) ? d.layers : []);
 
 // kept equal to renderer/editor/blend_modes.js by tools/document_test.js
 const READER_OF_BLEND = {
-    "linear-light": 2,
-    "exclusion": 5,
-    "linear-dodge": 5,
+    "color-burn": 5,
     "linear-burn": 5,
-    "subtract": 5,
+    "darker-color": 5,
+    "color-dodge": 5,
+    "linear-dodge": 5,
+    "lighter-color": 5,
+    "vivid-light": 5,
+    "linear-light": 2,
     "pin-light": 5,
     "hard-mix": 5,
-    "color-dodge": 5,
-    "color-burn": 5,
-    "vivid-light": 5,
+    "exclusion": 5,
+    "subtract": 5,
     "divide": 5,
     "hue": 5,
     "saturation": 5,
     "color": 5,
     "luminosity": 5,
-    "darker-color": 5,
-    "lighter-color": 5,
 };
 
 const BLEND_FEATURES = Object.entries(READER_OF_BLEND).map(([id, reader]) => ({

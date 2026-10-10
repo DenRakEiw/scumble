@@ -21,6 +21,8 @@ Runs tools/blend_table_test.js under plain Node first, then connects to running 
 """
 import argparse
 import asyncio
+import base64
+import io
 import json
 import os
 import subprocess
@@ -33,6 +35,31 @@ from cdp import session  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+REFS = os.path.join(HERE, "refs")
+
+
+def compare(a_png, b_png):
+    """Max and mean absolute difference per channel between two PNGs of the same size."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    a = Image.open(io.BytesIO(a_png)).convert("RGBA")
+    b = Image.open(io.BytesIO(b_png)).convert("RGBA")
+    if a.size != b.size:
+        return {"size": (a.size, b.size), "max": 255, "mean": 255.0, "differing": -1}
+    da, db = a.tobytes(), b.tobytes()
+    worst = 0
+    total = 0
+    differing = 0
+    for x, y in zip(da, db):
+        d = abs(x - y)
+        if d:
+            differing += 1
+            total += d
+            if d > worst:
+                worst = d
+    return {"max": worst, "mean": total / max(1, len(da)), "differing": differing, "bytes": len(da)}
 
 # Dated 2026-10-10: measured maximum pixel differences and flips against kernel
 BOUNDS = {
@@ -190,7 +217,7 @@ def node_step():
     return {"passed": True}
 
 
-async def run_gate(c, scratch_dir):
+async def run_gate(c, scratch_dir, args=None):
     ok = True
 
     # a. pairs_document
@@ -757,6 +784,224 @@ async def run_gate(c, scratch_dir):
         ok = False
         print(f"[FAIL] tiff_png_and_merge_agree: {err}")
 
+    # l. references (showcase document 1024x640 with 25 non-normal columns)
+    update = getattr(args, "update", False) if args else False
+    tolerance = getattr(args, "tolerance", 3) if args else 3
+    ref_full_path = os.path.join(REFS, "blendmodes_full.png")
+    ref_view_path = os.path.join(REFS, "blendmodes_view.png")
+
+    js_l = """
+    const W = 1024, H = 640;
+    const d = await run("new_document");
+    const ed = ednow(d.id);
+    host.shell.activate(ed);
+    await new Promise((r) => setTimeout(r, 80));
+    ed.resizeCanvas();
+    const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    const base = mk(W, H);
+    {
+        const x = base.getContext("2d");
+        const g = x.createLinearGradient(0, 0, W, H);
+        g.addColorStop(0, "#12305a"); g.addColorStop(0.5, "#8a6a3a"); g.addColorStop(1, "#d8d0c0");
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+        for (let i = 0; i < 12; i++) {
+            x.fillStyle = `hsl(${i * 30},70%,${30 + (i % 4) * 12}%)`;
+            x.fillRect(20 + i * 70, 40 + (i % 3) * 90, 60, 120);
+        }
+        x.fillStyle = "#000"; x.fillRect(0, H - 60, W, 30);
+        x.fillStyle = "#fff"; x.fillRect(0, H - 30, W, 30);
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W });
+    Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "blendmodes_showcase.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    const { Layer: LayerPixels } = ed.pixels;
+
+    // 25 columns, one per non-normal mode with a formula, 32 px wide and 36 apart, opacity 0.75
+    const modes25 = BLENDS.filter((r) => r.id !== "normal");
+    const colW = 32, colH = 200;
+    const colCanvas = mk(colW, colH);
+    {
+        const x = colCanvas.getContext("2d");
+        const g = x.createLinearGradient(0, 0, 0, colH);
+        g.addColorStop(0, "#ff5020"); g.addColorStop(0.5, "#20ff80"); g.addColorStop(1, "#3050ff");
+        x.fillStyle = g; x.fillRect(0, 0, colW, colH);
+        x.fillStyle = "rgba(255,255,255,0.85)"; x.fillRect(4, 20, 12, 60);
+        x.fillStyle = "rgba(0,0,0,0.85)"; x.fillRect(16, 120, 12, 60);
+    }
+    try {
+        for (let i = 0; i < modes25.length; i++) {
+            const m = modes25[i];
+            const l = ed.addLayer({
+                name: "col_" + m.id,
+                kind: "paint",
+                px: LayerPixels.fromCanvas(colCanvas),
+                x: 64 + i * 36,
+                y: 30,
+                w: colW,
+                h: colH,
+                dirty: true,
+            });
+            l.blend = m.id;
+            l.opacity = 0.75;
+        }
+        ed.uploaded.baseHash = null;
+        ed.flatCache = null;
+        ed.sceneSig = null;
+        ed.renderLayers();
+        ed.view = { scale: 1, x: 40, y: 30, angle: 0 };
+        ed.draw();
+        await ed.mipsSettled();
+
+        // Full-resolution composite
+        ed.flatCache = null;
+        const fullC = ed.flattenToCanvas({ forRun: true });
+        const fullB64 = fullC.toDataURL("image/png").slice("data:image/png;base64,".length);
+
+        // View composite
+        await ed.mipsSettled();
+        ed.sceneSig = null;
+        ed.draw();
+        await new Promise((r) => setTimeout(r, 120));
+        const viewC = document.createElement("canvas");
+        viewC.width = Math.min(1200, ed.canvas.width);
+        viewC.height = Math.min(800, ed.canvas.height);
+        viewC.getContext("2d").drawImage(ed.canvas, 0, 0, viewC.width, viewC.height, 0, 0, viewC.width, viewC.height);
+        const viewB64 = viewC.toDataURL("image/png").slice("data:image/png;base64,".length);
+
+        return { full: fullB64, view: viewB64, count: modes25.length };
+    } finally {
+        host.shell.closeDocument(ed, { force: true });
+    }
+    """
+    try:
+        res_l = await c.eval(PRE % (HELPERS, js_l), timeout=90)
+        full_bytes = base64.b64decode(res_l["full"])
+        view_bytes = base64.b64decode(res_l["view"])
+
+        if update or not os.path.exists(ref_full_path):
+            with open(ref_full_path, "wb") as f:
+                f.write(full_bytes)
+            print(f"[ref] blendmodes_full.png: written ({len(full_bytes)} bytes)")
+        else:
+            with open(ref_full_path, "rb") as f:
+                want_full = f.read()
+            df = compare(want_full, full_bytes)
+            if df is None:
+                print("[skip] blendmodes_full: Pillow missing")
+            elif df.get("max", 999) <= tolerance:
+                if df.get("max", 0) == 0:
+                    print("[ok] blendmodes_full: identical")
+                else:
+                    print(f"[ok] blendmodes_full: max {df['max']} levels, mean {df.get('mean', 0):.3f} (within {tolerance})")
+            else:
+                ok = False
+                print(f"[FAIL] blendmodes_full: max {df.get('max')} levels ({df.get('differing')} bytes differ)")
+
+        if update or not os.path.exists(ref_view_path):
+            with open(ref_view_path, "wb") as f:
+                f.write(view_bytes)
+            print(f"[ref] blendmodes_view.png: written ({len(view_bytes)} bytes)")
+        else:
+            with open(ref_view_path, "rb") as f:
+                want_view = f.read()
+            dv = compare(want_view, view_bytes)
+            if dv is None:
+                print("[skip] blendmodes_view: Pillow missing")
+            elif dv.get("max", 999) <= tolerance:
+                print(f"[ok] blendmodes_view: max {dv['max']} levels, mean {dv['mean']:.3f} (within {tolerance})")
+            else:
+                ok = False
+                print(f"[FAIL] blendmodes_view: max {dv.get('max')} levels, mean {dv.get('mean')} (exceeds {tolerance})")
+
+        print(f"[ok] references: {res_l['count']} columns verified")
+    except Exception as err:
+        ok = False
+        print(f"[FAIL] references: {err}")
+
+    # m. live_psd_check (R4-D6, R4-D7, R4-D8)
+    psd_path = os.path.join(ROOT, "tools", "fixtures", "blendmodes", "blendmodes.psd").replace("\\", "/")
+    png_path = os.path.join(ROOT, "tools", "fixtures", "blendmodes", "blendmodes_merged.png")
+    modes_json_path = os.path.join(ROOT, "tools", "fixtures", "blendmodes", "modes.json")
+    js_m = f"""
+    const d = await run("new_document");
+    const ed = ednow(d.id);
+    host.shell.activate(ed);
+    await new Promise((r) => setTimeout(r, 80));
+    try {{
+        await run("load_image", {{ doc: d.id, path: {json.dumps(psd_path)} }});
+        const notes = (ed.notes && ed.notes.length) ? [...ed.notes] : (ed.status ? [ed.status] : []);
+        const flat = ed.flattenToCanvas({{ forRun: true }});
+        const png = flat.toDataURL("image/png").slice("data:image/png;base64,".length);
+        return {{ notes, png, layersCount: ed.layers.length }};
+    }} finally {{
+        host.shell.closeDocument(ed, {{ force: true }});
+    }}
+    """
+    try:
+        from PIL import Image
+        res_m = await c.eval(PRE % (HELPERS, js_m), timeout=60)
+        notes = res_m.get("notes", [])
+        if not any("dissolve" in n for n in notes):
+            raise Exception(f"Missing dissolve note in PSD notes: {notes}")
+        if not any("fill opacity below 100 %" in n for n in notes):
+            raise Exception(f"Missing fill opacity note in PSD notes: {notes}")
+
+        merged_img = Image.open(png_path).convert("RGBA")
+        flat_img = Image.open(io.BytesIO(base64.b64decode(res_m["png"]))).convert("RGBA")
+        if flat_img.size != merged_img.size:
+            raise Exception(f"Size mismatch: flattened {flat_img.size} vs merged {merged_img.size}")
+
+        with open(modes_json_path, "r", encoding="utf-8") as f:
+            modes_def = json.load(f)
+
+        patches_stats = {}
+        for p in modes_def.get("layers", []):
+            crop_merged = merged_img.crop((p["x"], p["y"], p["x"] + p["w"], p["y"] + p["h"]))
+            crop_flat = flat_img.crop((p["x"], p["y"], p["x"] + p["w"], p["y"] + p["h"]))
+            dm = crop_merged.tobytes()
+            df = crop_flat.tobytes()
+            worst = 0
+            total = 0
+            diff_count = 0
+            for i in range(0, len(dm), 4):
+                for ch in range(3):
+                    diff_val = abs(dm[i + ch] - df[i + ch])
+                    if diff_val:
+                        diff_count += 1
+                        total += diff_val
+                        if diff_val > worst:
+                            worst = diff_val
+            mean_val = total / (p["w"] * p["h"] * 3)
+            patches_stats[p["name"]] = {"max": worst, "mean": round(mean_val, 3), "diff_bytes": diff_count}
+
+        PSD_BOUNDS = {
+            "dissolve": 240,
+            "hard_mix": 255,
+            "darker_color": 25,
+            "lighter_color": 60,
+            "multiply_fill50": 70,
+            "hue": 50,
+            "color_dodge": 5,
+            "vivid_light": 5,
+            "linear_light": 4,
+            "pin_light": 4,
+            "divide": 4,
+        }
+        for p in modes_def.get("layers", []):
+            name = p["name"]
+            limit = PSD_BOUNDS.get(name, 2)
+            worst = patches_stats[name]["max"]
+            mean_val = patches_stats[name]["mean"]
+            if worst > limit:
+                raise Exception(f"Patch {name} max diff {worst} > {limit} against merged PSD")
+            if name not in ("dissolve", "multiply_fill50") and mean_val > 1.0:
+                raise Exception(f"Patch {name} mean diff {mean_val} > 1.0 against merged PSD")
+
+        print(f"[ok] live_psd_check: {res_m.get('layersCount', 0)} layers, {len(patches_stats)} patches verified")
+    except Exception as err:
+        ok = False
+        print(f"[FAIL] live_psd_check: {err}")
+
     print("PASS" if ok else "FAIL")
     return ok
 
@@ -771,11 +1016,17 @@ def main():
         print("FAIL")
         sys.exit(1)
 
-    scratch_dir = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else tempfile.gettempdir()
+    parser = argparse.ArgumentParser(description="Blend modes gate")
+    parser.add_argument("scratch", nargs="?", default=tempfile.gettempdir(), help="Scratch directory")
+    parser.add_argument("--update", action="store_true", help="Update reference PNGs")
+    parser.add_argument("--tolerance", type=int, default=3, help="Max allowed view diff levels")
+    args = parser.parse_args()
+
+    scratch_dir = args.scratch
     os.makedirs(scratch_dir, exist_ok=True)
 
     try:
-        ok = asyncio.run(session(lambda c: run_gate(c, scratch_dir)))
+        ok = asyncio.run(session(lambda c: run_gate(c, scratch_dir, args=args)))
         sys.exit(0 if ok else 1)
     except Exception as e:
         print(f"[FAIL] CDP session error: {e}")

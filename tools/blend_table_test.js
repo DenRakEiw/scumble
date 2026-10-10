@@ -54,13 +54,14 @@ async function main() {
         }
     }
 
-    // 4. BLEND_MODES equals today's list in order
+    // 4. BLEND_MODES equals grouped list in order (PLAN_NIK9_BUILD.md R4-S8)
     const EXPECTED_MODES = [
-        "normal", "multiply", "screen", "overlay", "darken", "lighten",
-        "soft-light", "hard-light", "linear-light", "difference",
-        "exclusion", "linear-dodge", "linear-burn", "subtract", "pin-light", "hard-mix",
-        "color-dodge", "color-burn", "vivid-light", "divide",
-        "hue", "saturation", "color", "luminosity", "darker-color", "lighter-color",
+        "normal",
+        "darken", "multiply", "color-burn", "linear-burn", "darker-color",
+        "lighten", "screen", "color-dodge", "linear-dodge", "lighter-color",
+        "overlay", "soft-light", "hard-light", "vivid-light", "linear-light", "pin-light", "hard-mix",
+        "difference", "exclusion", "subtract", "divide",
+        "hue", "saturation", "color", "luminosity",
     ];
     assert.deepStrictEqual(BLEND_MODES, EXPECTED_MODES, "BLEND_MODES must match today's list in order");
 
