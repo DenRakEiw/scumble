@@ -402,6 +402,7 @@ Python's `zipfile` with `ZIP_STORED`, `mimetype` written first, is one way.
   - `gradient-map` (since 0.1.46): `minReader` 5 (filter layers of type `gradient_map`).
   - `threshold` (since 0.1.46): `minReader` 5 (filter layers of type `threshold`).
   - `posterize` (since 0.1.46): `minReader` 5 (filter layers of type `posterize`).
+  - `lens-blur` (since 0.1.46): `minReader` 5 (filter layers of type `lens_blur`).
 - **Raise `version`** for an addition a v1 reader can carry without showing it and without harm: a new optional
   top-level field of `document` (it travels as an extra field), new plugin data, new keys inside `crop`, `gen`,
   `settings` and the other settings objects. A v1 reader opens such a file with a note and asks before saving over it.

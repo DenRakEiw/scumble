@@ -245,6 +245,7 @@ const special = {
     haze: [{ amount: 80, start: 0 }, 2, "depthRamp"],
     dehaze: [{ amount: 80 }, 3],
     "dehaze#depth": [{ mode: "depth", amount: 80 }, 8, "depthRamp"],
+    lens_blur: [{ focus: 30, dof: 15, aperture: 0.8 }, 4, "depthRamp"],
     color_grade: [{ mid_hue: 200, mid_sat: 60, hi_lum: 20, sh_sat: 40 }, 1],
     hsl: [{ red_h: 40, blue_s: -60, green_l: 30 }, 2],
     "film.frame": [{ width: 6 }, 1],

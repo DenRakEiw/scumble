@@ -125,6 +125,11 @@ const FEATURES = [
         sample: { layers: [{ kind: "filter", filter: "posterize" }] },
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "posterize"),
     },
+    {
+        id: "lens-blur", since: "0.1.46", reader: 5,
+        sample: { layers: [{ kind: "filter", filter: "lens_blur", params: {} }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "lens_blur"),
+    },
 ];
 
 

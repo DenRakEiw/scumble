@@ -5,6 +5,12 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
+- **Lens blur**: Built-in depth-aware lens blur and disc bokeh filter layer:
+  - 64-tap Vogel spiral disc aperture sampling with customizable focus plane, depth of field, and aperture radius (up to 1.5% of the image long side).
+  - Scatter-as-gather rule with foreground boundary protection: sharp foreground subjects are preserved without background blur bleeding over them.
+  - Specular highlight boost: bright out-of-focus highlights receive natural photographic bokeh glow based on adjustable luma threshold and boost amount.
+  - WebGL2 accelerated shader with edge-snapped depth sampling and matching CPU fallback twin.
+  - Persistence: `.scumble` documents with lens_blur filter layers require reader version 5 (0.1.46 or newer).
 - **Quick-Wins adjustment filters: Vibrance, Gradient Map, Threshold, and Posterize**:
   - **Vibrance**: Non-destructive vibrance adjustment with skin tone protection (boost halved where red > green > blue) and uniform saturation adjustment.
   - **Gradient Map**: Maps picture Rec. 601 luminosity across colour gradients with six presets (Cyberpunk, Sunset, Teal / Orange, Sepia, Infrared, B&W contrast) or custom two-tone gradients, with reverse mapping and opacity blending.

@@ -364,6 +364,9 @@ function listTree(dir) {
             const postFeat = doc.FEATURES.find((f) => f.id === "posterize");
             assert(postFeat && doc.readerFor(postFeat.sample) === 5, "readerFor of posterize sample is 5");
             assert(doc.readerFor({ layers: [{ kind: "filter", filter: "posterize" }] }) === 5, "explicit readerFor for posterize");
+            const lbFeat = doc.FEATURES.find((f) => f.id === "lens-blur");
+            assert(lbFeat && doc.readerFor(lbFeat.sample) === 5, "readerFor of lens-blur sample is 5");
+            assert(doc.readerFor({ layers: [{ kind: "filter", filter: "lens_blur" }] }) === 5, "explicit readerFor for lens_blur");
             const esm = await import("../renderer/editor/blend_modes.js");
             assert(same(esm.READER_OF_BLEND, doc.READER_OF_BLEND), "READER_OF_BLEND matches blend_modes.js");
             for (const feat of doc.FEATURES) {
@@ -373,7 +376,7 @@ function listTree(dir) {
             }
             const o2 = await doc.openDocument({ file: await make({ version: 1, minReader: 2 }, "linear_light.scumble"), mirrorRoot: mirror("V4") });
             assert(o2 && !o2.notes.some((n) => /newer Scumble/.test(n)), "a minReader 2 document: " + JSON.stringify(o2 && o2.notes));
-            return "minReader 5 refused; version 3 opened with a note; linear light asks for reader 2; filter limit asks for reader 3; depth snap asks for reader 4; haze asks for reader 4; dehaze asks for reader 4; color grade asks for reader 4; hsl asks for reader 4; point shapes asks for reader 4; effects filters asks for reader 4; vibrance asks for reader 5; gradient-map asks for reader 5; threshold asks for reader 5; posterize asks for reader 5; maps asks for version 2";
+            return "minReader 5 refused; version 3 opened with a note; linear light asks for reader 2; filter limit asks for reader 3; depth snap asks for reader 4; haze asks for reader 4; dehaze asks for reader 4; color grade asks for reader 4; hsl asks for reader 4; point shapes asks for reader 4; effects filters asks for reader 4; vibrance asks for reader 5; gradient-map asks for reader 5; threshold asks for reader 5; posterize asks for reader 5; lens-blur asks for reader 5; maps asks for version 2";
         });
 
         await check("a_full_disk_a_cancel_or_a_held_file_leave_the_target_as_it_was", async () => {

@@ -229,6 +229,21 @@ release at the end after the user's test; release 4 (blend modes) independent.
   - Custom node sync: added to `FILES` in `tools/build_node.py`; committed in custom node repo (`f6067ef`); verified with `python tools/build_node.py --check`.
   - Tests & verification: `tools/adjustments_test.js` (math bounds, skin tone protection, gradient interpolation, threshold, posterize quantization, uniforms); `tools/document_test.js` (reader 5 checks); `tools/export_test.py` (`special` test cases for all 4 filters).
   - Gates: `document`, `commands`, `export`, `adjustments_test`, `lint`, and `types` ALL PASS with `--offline`. Ready for review.
+- **R2-S15 built** (2026-10-10): Depth-aware lens blur and bokeh filter (reader 5, since "0.1.46"):
+  - Module `renderer/editor/inpaint_lensblur.js`: pure ASCII, `// @ts-check`, standalone without DOM access.
+    - 64-tap Vogel disc precomputed with golden angle ~2.39996323; radius = sqrt((i + 0.5) / 64).
+    - Circle of Confusion: `coc(far, focus, dof, rMax) = rMax * clamp((abs(far - focus) - dof * 0.5) / max(0.001, 1.0 - dof * 0.5), 0.0, 1.0)`.
+    - Scatter-as-gather: tap contributes when `tap_coc >= tap_dist`.
+    - Foreground boundary protection: background taps zeroed when centre is in focus (`center_coc <= 0.05 * rMax && tap_far > center_far`).
+    - Specular highlight boost: quadratic luma boost above threshold scaled by highlights slider.
+    - Aperture capped at 1.5% of long side (`lensBlurReach(params, size)` = `ceil(rMax) + 2`).
+    - CPU twin `applyLensBlur` and GLSL twin `LENS_BLUR_GLSL` with `registerLensBlurGL`.
+  - Registration: `FILTERS.lens_blur` in `renderer/editor/inpaint_filters.js` (`maps: () => ["depth"]`, focus 0..100 def 30, dof 0..100 def 15, aperture 0.1..1.5 def 0.8, highlights 0..100 def 20, threshold 50..100 def 75).
+  - WebGL2 pipeline: `registerLensBlurGL` registered in `renderer/editor/inpaint_filters_gl.js`.
+  - Persistence: `electron/main/docfile.js` reader 5 feature row for `lens-blur`.
+  - Custom node sync: added to `FILES` in `tools/build_node.py`; committed in custom node repo (`f0eb0ce`); verified with `python tools/build_node.py --check`.
+  - Tests & verification: `tools/lensblur_test.js` (Vogel disc geometry, CoC monotonicity, boundary protection, highlight boost, reach, GLSL); `tools/document_test.js` (reader 5 check); `tools/export_test.py` (`special` test case with depth ramp).
+  - Gates: `document`, `commands`, `export`, `lensblur_test`, `lint`, and `types` ALL PASS with `--offline`. Ready for review.
 **Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.
