@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scumble: free, open-source AI inpainting editor</title>
+<meta name="description" content="Scumble is a free, open-source desktop editor for AI inpainting: select, prompt, get a colour-matched layer. Layers, masks, filters, PSD export, MCP for agents. Runs on your own ComfyUI or your API keys.">
+<link rel="canonical" href="https://www.denrakeiw.com/scumble">
+<link rel="icon" href="https://raw.githubusercontent.com/DenRakEiw/scumble/main/build/icon.png">
+<meta property="og:title" content="Scumble: free, open-source AI inpainting editor">
+<meta property="og:description" content="Select, prompt, get a colour-matched layer. Layers, masks, filters, PSD export, MCP for agents. Your own ComfyUI or your API keys.">
+<meta property="og:image" content="https://raw.githubusercontent.com/DenRakEiw/scumble/main/docs/images/social-preview.png">
+<meta property="og:url" content="https://denrakeiw.github.io/scumble/">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root { --bg: #15120f; --panel: #1f1a16; --text: #efe8df; --muted: #a79d92; --accent: #e8a24a; --line: #332b25; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 48px 20px 64px; }
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+  header img { width: 56px; height: 56px; border-radius: 12px; }
+  h1 { font-size: 2rem; margin: 0; letter-spacing: 0.01em; }
+  .tag { color: var(--muted); margin: 0 0 28px; font-size: 1.1rem; }
+  .hero { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; margin: 0 0 28px; }
+  .get { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 0 0 32px; }
+  .get a { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; color: var(--text); text-decoration: none; }
+  .get a strong { display: block; color: var(--accent); margin-bottom: 4px; }
+  .get a span { color: var(--muted); font-size: 0.92rem; }
+  .get a:hover { border-color: var(--accent); }
+  h2 { font-size: 1.15rem; margin: 32px 0 10px; color: var(--accent); }
+  ul { margin: 0; padding-left: 20px; }
+  li { margin: 4px 0; }
+  p { margin: 10px 0; }
+  a { color: #f0c27c; }
+  nav a { margin-right: 18px; }
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+  code { background: var(--panel); padding: 1px 6px; border-radius: 5px; font-size: 0.92em; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="https://raw.githubusercontent.com/DenRakEiw/scumble/main/build/icon.png" alt="">
+    <h1>Scumble</h1>
+  </header>
+  <p class="tag">A free, open-source desktop editor for AI inpainting. Select, say what should be there, and the result comes back as a layer of its own, colour-matched to its surroundings.</p>
+
+  <img class="hero" src="https://raw.githubusercontent.com/DenRakEiw/scumble/main/docs/images/social-preview.png" alt="Scumble: a layered editor with an inpainted result over a photograph">
+
+  <div class="get">
+    <a href="https://apps.microsoft.com/detail/9NDBTNNMXF2R"><strong>Microsoft Store</strong><span>Windows, signed by Microsoft, updates itself. Or <code>winget install 9NDBTNNMXF2R</code>.</span></a>
+    <a href="https://github.com/DenRakEiw/scumble/releases/latest"><strong>Download from GitHub</strong><span>Windows installer, portable zip, Linux AppImage and .deb, and the Claude Desktop extension.</span></a>
+    <a href="https://github.com/DenRakEiw/scumble"><strong>Source on GitHub</strong><span>GPL-3.0. A star helps the project get found.</span></a>
+  </div>
+
+  <h2>What it does</h2>
+  <ul>
+    <li>Select by rectangle, brush, point, a text description, or by depth, brightness and colour; type a prompt; the result lands as a new layer with masks, blend modes and undo.</li>
+    <li>Draw boxes on an empty canvas, a caption each, and the whole picture is generated to that layout.</li>
+    <li>Layers, groups, masks, clipping; filter layers (curves, colour grading, HSL, grain, film looks, haze and dehaze on a depth map); text layers; retouch tools (heal, remove, liquify, dodge and burn, frequency separation); in-app cutout and depth maps.</li>
+    <li>Pictures up to 15,000 pixels stay fluid; export to PNG, JPEG, WebP, TIFF, and layered PSD and ORA.</li>
+    <li>The pixels come from your own ComfyUI (local or remote), Comfy Cloud, or image APIs on your own keys (FLUX 3 Image, FLUX.2, GPT Image, Nano Banana, Seedream, Qwen and more). No account, no subscription; keys stay in the OS credential store.</li>
+    <li>Every command is an MCP tool: Claude Desktop installs it with one click from the release's <code>.mcpb</code>, Claude Code and any MCP client drive the window you are looking at.</li>
+  </ul>
+
+  <h2>Learn more</h2>
+  <nav>
+    <a href="https://www.denrakeiw.com/scumble">Website</a>
+    <a href="https://www.denrakeiw.com/scumble/manual">Manual</a>
+    <a href="https://www.denrakeiw.com/scumble/videos">Videos</a>
+    <a href="https://www.denrakeiw.com/scumble/blog">Dev blog</a>
+    <a href="https://github.com/DenRakEiw/scumble/blob/main/docs/MCP.md">MCP docs</a>
+    <a href="https://github.com/DenRakEiw/scumble/blob/main/CHANGELOG.md">Changelog</a>
+    <a href="https://github.com/DenRakEiw/scumble/issues">Report a bug</a>
+    <a href="https://github.com/DenRakEiw/ComfyUI-InpaintCanvas">ComfyUI node</a>
+  </nav>
+
+  <footer>Windows 10/11 today, Linux builds from CI (untested by the author yet), no macOS build. Made by DenRakEiw. Film and model names belong to their owners; Scumble ships no models and runs no service.</footer>
+</main>
+</body>
+</html>
