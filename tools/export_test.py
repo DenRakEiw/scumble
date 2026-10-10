@@ -251,6 +251,7 @@ const special = {
 
     "film.light_leak": [{ strength: 80 }, 1],
     "film.look": [{ preset: "portra400", halation: 100, grain: 0 }, 3],
+    "effects.chromatic_shift": [{ style: "lateral", amount: 8 }, 1],
 };
 const cases = [];
 for (const id of Object.keys(FILTERS)) {

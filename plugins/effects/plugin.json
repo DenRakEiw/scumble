@@ -1,0 +1,9 @@
+{
+  "name": "Effects pack",
+  "version": "1.0.0",
+  "description": "Creative optical and distortion effects: chromatic shift with plates, lateral and linear dispersion styles, and procedural glass.",
+  "author": "Scumble",
+  "entry": "main.js",
+  "registers": ["filter", "action"],
+  "enabledByDefault": true
+}

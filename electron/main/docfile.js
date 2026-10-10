@@ -75,6 +75,11 @@ const FEATURES = [
         sample: { layers: [{ kind: "filter", filter: "film.points", params: { points: [{ shape: "ellipse" }] } }] },
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "film.points" && l.params && Array.isArray(l.params.points) && l.params.points.some((q) => q && ((q.shape && q.shape !== "circle") || (q.soft != null && q.soft !== 75)))),
     },
+    {
+        id: "effects-filters", since: "0.1.45", reader: 4,
+        sample: { layers: [{ kind: "filter", filter: "effects.chromatic_shift" }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && typeof l.filter === "string" && l.filter.startsWith("effects.")),
+    },
 ];
 
 
