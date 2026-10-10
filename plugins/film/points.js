@@ -15,6 +15,8 @@ import {
     mapShape,
     handlesOf,
     hitShape,
+    interiorAnchor,
+    lineFromDrag,
 } from "./shapes.js";
 
 const FILTER_ID = "film.points";
@@ -101,6 +103,7 @@ export function makePoints(scumble) {
     const run = makeRunner(scumble);
     const { ui } = scumble;
     let drag = null;   // { docId, layerId, mode, pt, start, orig, changed }
+    let drawing = null; // { pts: number[][], lastClickTime: number, lastClickPos: [number, number], cursor?: [number, number] }
     let newShape = "circle";
 
     // ---- the filter ---------------------------------------------------------------------------
@@ -206,24 +209,68 @@ export function makePoints(scumble) {
         title: "Control points (film pack): click to add a local adjustment point, drag while placing to set its size; drag the centre to move, the ring to resize; Delete removes the selected point",
         icon: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 4v-2M12 22v-2M4 12h-2M22 12h-2"/></svg>',
         key: "U",
-        hint: "Control points: click adds a point (drag to size it), drag the centre to move, the ring to resize, Delete removes it. Sliders for the point are in its layer row.",
+        hint: "Control points: click adds a point (drag to size it), drag the centre to move, handles to resize, Delete removes it. Sliders for the point are in its layer row.",
         drawAlways: true,
         onDown(doc, ev) {
             if (!doc.loaded) return;
             const view = viewOf(doc);
             let layer = pointsLayer(doc);
+
+            if (drawing != null) {
+                // Polygon creation in progress
+                const dt = Date.now() - (drawing.lastClickTime || 0);
+                const dp = Math.hypot(ev.x - drawing.lastClickPos[0], ev.y - drawing.lastClickPos[1]);
+                const isDouble = dt < 300 && dp < 4;
+                const dFirst = Math.hypot(ev.x - drawing.pts[0][0], ev.y - drawing.pts[0][1]);
+                const isFirstNear = dFirst <= 8 * view.dpr / view.scale && drawing.pts.length >= 3;
+
+                if (isDouble || isFirstNear) {
+                    if (drawing.pts.length >= 3) {
+                        const polyPts = drawing.pts.slice();
+                        drawing = null;
+                        if (!layer) layer = pointsLayer(doc, { create: true });
+                        if (!layer) return;
+                        const anc = interiorAnchor(polyPts);
+                        const { points, pt } = addPoint(doc, layer, anc[0], anc[1], 20, { shape: "polygon", pts: polyPts });
+                        doc.editor.activeLayerId = layer.id;
+                        doc.setFilterParams(layer.id, { points });
+                        doc.editor.renderLayers();
+                        doc.draw();
+                        doc.status(`Point ${pt.id} (polygon) added with ${polyPts.length} corners.`);
+                    }
+                    return;
+                }
+                if (drawing.pts.length < 16) {
+                    drawing.pts.push([Math.round(ev.x), Math.round(ev.y)]);
+                    drawing.lastClickTime = Date.now();
+                    drawing.lastClickPos = [ev.x, ev.y];
+                    doc.status(`Polygon point: ${drawing.pts.length} corners. Enter, double-click or first corner closes; Backspace drops corner.`);
+                    doc.draw();
+                } else {
+                    doc.status("Polygon reaches maximum 16 corners. Enter or double-click to close.");
+                }
+                return;
+            }
+
             if (layer) {
                 const h = hitTest(layer, ev, view);
                 if (h) {
                     layer._fpSel = h.pt.id;
-                    const dragMode = h.mode === "ring" ? "r" : h.mode;
+                    const dragMode = h.mode === "ring" ? (h.pt.shape === "polygon" ? "move" : "r") : h.mode;
                     drag = {
                         docId: doc.id,
                         layerId: layer.id,
                         mode: dragMode,
                         ptId: h.pt.id,
                         start: [ev.x, ev.y],
-                        orig: { x: h.pt.x, y: h.pt.y, r: h.pt.r, ry: h.pt.ry, angle: h.pt.angle },
+                        orig: {
+                            x: h.pt.x,
+                            y: h.pt.y,
+                            r: h.pt.r,
+                            ry: h.pt.ry,
+                            angle: h.pt.angle,
+                            pts: h.pt.pts ? h.pt.pts.map((v) => [v[0], v[1]]) : null,
+                        },
                         changed: false,
                     };
                     doc.editor.activeLayerId = layer.id;
@@ -233,8 +280,38 @@ export function makePoints(scumble) {
                 }
             }
             if (!ev.inside) return;
+
+            if (newShape === "polygon") {
+                drawing = {
+                    pts: [[Math.round(ev.x), Math.round(ev.y)]],
+                    lastClickTime: Date.now(),
+                    lastClickPos: [ev.x, ev.y],
+                };
+                doc.status("Polygon point: click next corner. Enter, double-click or first corner closes; Backspace drops corner; Escape cancels.");
+                doc.draw();
+                return;
+            }
+
             if (!layer) layer = pointsLayer(doc, { create: true });
             if (!layer) return;
+
+            if (newShape === "line") {
+                const { points, pt } = addPoint(doc, layer, ev.x, ev.y, 20, { shape: "line", angle: 0 });
+                doc.editor.activeLayerId = layer.id;
+                doc.setFilterParams(layer.id, { points }, { preview: true });
+                drag = {
+                    docId: doc.id,
+                    layerId: layer.id,
+                    mode: "new_line",
+                    ptId: pt.id,
+                    start: [ev.x, ev.y],
+                    orig: { x: pt.x, y: pt.y, r: pt.r, angle: pt.angle },
+                    changed: true,
+                };
+                doc.status(`Point ${pt.id} (line) added: drag to set orientation and feather.`);
+                return;
+            }
+
             const { points, pt } = addPoint(doc, layer, ev.x, ev.y, defaultRadius(doc));
             doc.editor.activeLayerId = layer.id;
             doc.setFilterParams(layer.id, { points }, { preview: true });
@@ -250,6 +327,11 @@ export function makePoints(scumble) {
             doc.status(`Point ${pt.id} added: drag to set its size, then adjust it in the layer row.`);
         },
         onMove(doc, ev) {
+            if (drawing != null) {
+                drawing.cursor = [ev.x, ev.y];
+                doc.draw();
+                return;
+            }
             if (!drag || drag.docId !== doc.id) return;
             const layer = doc.rawLayer(drag.layerId);
             const points = (layer.params.points || []).map((q) => ({ ...q }));
@@ -259,6 +341,9 @@ export function makePoints(scumble) {
             if (drag.mode === "move") {
                 pt.x = Math.round(drag.orig.x + dx);
                 pt.y = Math.round(drag.orig.y + dy);
+                if (pt.shape === "polygon" && Array.isArray(drag.orig.pts)) {
+                    pt.pts = drag.orig.pts.map((v) => [Math.round(v[0] + dx), Math.round(v[1] + dy)]);
+                }
             } else if (drag.mode === "new") {
                 const ex = ev.x - pt.x, ey = ev.y - pt.y;
                 const d = Math.hypot(ex, ey);
@@ -267,6 +352,36 @@ export function makePoints(scumble) {
                 if (pt.shape === "ellipse") {
                     pt.angle = Math.round((Math.atan2(ey, ex) * 180 / Math.PI) * 10) / 10;
                     pt.ry = Math.max(2, Math.round(0.6 * pt.r * 10) / 10);
+                }
+            } else if (drag.mode === "new_line") {
+                const d = Math.hypot(ev.x - drag.start[0], ev.y - drag.start[1]);
+                if (d >= 4) {
+                    const line = lineFromDrag(drag.start, [ev.x, ev.y]);
+                    pt.x = Math.round(line.x);
+                    pt.y = Math.round(line.y);
+                    pt.r = Math.max(1, Math.round(line.r));
+                    pt.angle = Math.round(line.angle * 10) / 10;
+                }
+            } else if (drag.mode === "handleA") {
+                const origA = ((drag.orig.angle || 0) * Math.PI) / 180;
+                const B = [drag.orig.x + drag.orig.r * Math.cos(origA), drag.orig.y + drag.orig.r * Math.sin(origA)];
+                const line = lineFromDrag([ev.x, ev.y], B);
+                pt.x = Math.round(line.x);
+                pt.y = Math.round(line.y);
+                pt.r = Math.max(1, Math.round(line.r));
+                pt.angle = Math.round(line.angle * 10) / 10;
+            } else if (drag.mode === "handleB") {
+                const origA = ((drag.orig.angle || 0) * Math.PI) / 180;
+                const A = [drag.orig.x - drag.orig.r * Math.cos(origA), drag.orig.y - drag.orig.r * Math.sin(origA)];
+                const line = lineFromDrag(A, [ev.x, ev.y]);
+                pt.x = Math.round(line.x);
+                pt.y = Math.round(line.y);
+                pt.r = Math.max(1, Math.round(line.r));
+                pt.angle = Math.round(line.angle * 10) / 10;
+            } else if (drag.mode.startsWith("corner_")) {
+                const idx = parseInt(drag.mode.slice(7), 10);
+                if (pt.shape === "polygon" && Array.isArray(pt.pts) && pt.pts[idx]) {
+                    pt.pts[idx] = [Math.round(ev.x), Math.round(ev.y)];
                 }
             } else if (drag.mode === "r") {
                 const ex = ev.x - pt.x, ey = ev.y - pt.y;
@@ -285,9 +400,16 @@ export function makePoints(scumble) {
             }
             drag.changed = true;
             doc.setFilterParams(layer.id, { points }, { preview: true });
-            const info = pt.shape === "ellipse"
-                ? `Point ${pt.id}: ${pt.x}, ${pt.y}, r ${pt.r} px, ry ${pt.ry} px, angle ${pt.angle}\u00B0`
-                : `Point ${pt.id}: ${pt.x}, ${pt.y}, radius ${pt.r} px`;
+            let info = "";
+            if (pt.shape === "ellipse") {
+                info = `Point ${pt.id}: ${pt.x}, ${pt.y}, r ${pt.r} px, ry ${pt.ry} px, angle ${pt.angle}\u00B0`;
+            } else if (pt.shape === "line") {
+                info = `Point ${pt.id} (line): ${pt.x}, ${pt.y}, feather ${pt.r} px, angle ${pt.angle}\u00B0`;
+            } else if (pt.shape === "polygon") {
+                info = `Point ${pt.id} (polygon): ${pt.pts.length} corners, feather ${pt.r} px`;
+            } else {
+                info = `Point ${pt.id}: ${pt.x}, ${pt.y}, radius ${pt.r} px`;
+            }
             doc.status(info);
         },
         onUp(doc) {
@@ -295,9 +417,9 @@ export function makePoints(scumble) {
             const layer = doc.rawLayer(drag.layerId);
             if (drag.changed) {
                 const points = (layer.params.points || []).map((q) => ({ ...q }));
-                if (drag.mode === "move") {
-                    const pt = points.find((q) => q.id === drag.ptId);
-                    if (pt) pt.color = sampleColor(doc, layer, pt.x, pt.y);
+                const pt = points.find((q) => q.id === drag.ptId);
+                if (pt && (drag.mode === "move" || drag.mode === "new" || drag.mode === "new_line")) {
+                    pt.color = sampleColor(doc, layer, pt.x, pt.y);
                 }
                 doc.setFilterParams(layer.id, { points });
             }
@@ -307,6 +429,45 @@ export function makePoints(scumble) {
         },
         onKey(doc, ev) {
             const layer = pointsLayer(doc);
+            if (drawing != null) {
+                if (ev.key === "Escape") {
+                    drawing = null;
+                    doc.status("Polygon creation cancelled.");
+                    doc.draw();
+                    return true;
+                }
+                if (ev.key === "Backspace") {
+                    if (drawing.pts.length > 1) {
+                        drawing.pts.pop();
+                        doc.status(`Polygon: corner removed (${drawing.pts.length} remaining).`);
+                        doc.draw();
+                        return true;
+                    }
+                    drawing = null;
+                    doc.status("Polygon creation cancelled.");
+                    doc.draw();
+                    return true;
+                }
+                if (ev.key === "Enter") {
+                    if (drawing.pts.length >= 3) {
+                        const polyPts = drawing.pts.slice();
+                        drawing = null;
+                        const l = layer || pointsLayer(doc, { create: true });
+                        if (!l) return true;
+                        const anc = interiorAnchor(polyPts);
+                        const { points, pt } = addPoint(doc, l, anc[0], anc[1], 20, { shape: "polygon", pts: polyPts });
+                        doc.editor.activeLayerId = l.id;
+                        doc.setFilterParams(l.id, { points });
+                        doc.editor.renderLayers();
+                        doc.draw();
+                        doc.status(`Point ${pt.id} (polygon) added with ${polyPts.length} corners.`);
+                    } else {
+                        doc.status("Polygon must have at least 3 corners.");
+                    }
+                    return true;
+                }
+            }
+
             if (!layer) return false;
             if (ev.key === "Delete" || ev.key === "Backspace") {
                 const sel = selected(layer);
@@ -328,44 +489,139 @@ export function makePoints(scumble) {
         },
         draw(doc, ctx, view) {
             const layer = pointsLayer(doc);
-            if (!layer || !layer.visible) return;
             const activeLayer = doc.editor.activeLayer && doc.editor.activeLayer();
+            const s = view.scale, lw = 1.5 * view.dpr / s;
+
+            // Draw polygon in progress
+            if (drawing && Array.isArray(drawing.pts) && drawing.pts.length) {
+                ctx.lineWidth = lw;
+                ctx.strokeStyle = "#ffd166";
+                ctx.beginPath();
+                ctx.moveTo(drawing.pts[0][0], drawing.pts[0][1]);
+                for (let i = 1; i < drawing.pts.length; i++) {
+                    ctx.lineTo(drawing.pts[i][0], drawing.pts[i][1]);
+                }
+                if (drawing.cursor) {
+                    ctx.lineTo(drawing.cursor[0], drawing.cursor[1]);
+                }
+                ctx.stroke();
+
+                const hr = 4.5 * view.dpr / s;
+                for (let i = 0; i < drawing.pts.length; i++) {
+                    const ptx = drawing.pts[i][0], pty = drawing.pts[i][1];
+                    ctx.fillStyle = i === 0 ? "#ff5555" : "#ffd166";
+                    ctx.beginPath();
+                    ctx.arc(ptx, pty, hr, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            if (!layer || !layer.visible) return;
             if (!view.active && activeLayer !== layer) return;
             const points = Array.isArray(layer.params.points) ? layer.params.points : [];
-            const s = view.scale, lw = 1.5 * view.dpr / s;
             ctx.lineWidth = lw;
             ctx.font = `${12 * view.dpr / s}px system-ui, sans-serif`;
             ctx.textBaseline = "middle";
             ctx.textAlign = "center";
+
             for (const q of points) {
                 const sel = q.id === layer._fpSel;
                 const angleRad = ((q.angle || 0) * Math.PI) / 180;
-                const ry = q.shape === "ellipse" ? (q.ry != null ? q.ry : Math.round(0.6 * q.r)) : q.r;
                 ctx.strokeStyle = sel ? "#ffd166" : "rgba(255,255,255,0.9)";
-                ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 3 * view.dpr;
-                ctx.beginPath();
-                ctx.ellipse(q.x, q.y, q.r, ry, angleRad, 0, Math.PI * 2);
-                ctx.stroke();
-                if (sel) {
-                    const inner = innerOf(q);
+                ctx.shadowColor = "rgba(0,0,0,0.6)";
+                ctx.shadowBlur = 3 * view.dpr;
+
+                if (q.shape === "circle" || q.shape === "ellipse") {
+                    const ry = q.shape === "ellipse" ? (q.ry != null ? q.ry : Math.round(0.6 * q.r)) : q.r;
+                    ctx.beginPath();
+                    ctx.ellipse(q.x, q.y, q.r, ry, angleRad, 0, Math.PI * 2);
+                    ctx.stroke();
+                    if (sel) {
+                        const inner = innerOf(q);
+                        ctx.setLineDash([4 * lw, 4 * lw]);
+                        ctx.beginPath();
+                        ctx.ellipse(q.x, q.y, q.r * inner, ry * inner, angleRad, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        const hdls = handlesOf(q);
+                        const hr = 4.5 * view.dpr / s;
+                        for (const h of hdls) {
+                            if (h.id === "move") continue;
+                            ctx.fillStyle = "#ffd166";
+                            ctx.beginPath();
+                            ctx.arc(h.x, h.y, hr, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+                } else if (q.shape === "polygon" && Array.isArray(q.pts) && q.pts.length >= 3) {
+                    ctx.beginPath();
+                    ctx.moveTo(q.pts[0][0], q.pts[0][1]);
+                    for (let i = 1; i < q.pts.length; i++) {
+                        ctx.lineTo(q.pts[i][0], q.pts[i][1]);
+                    }
+                    ctx.closePath();
+                    ctx.stroke();
+                    if (sel) {
+                        const hr = 4.5 * view.dpr / s;
+                        for (let i = 0; i < q.pts.length; i++) {
+                            ctx.fillStyle = "#ffd166";
+                            ctx.beginPath();
+                            ctx.arc(q.pts[i][0], q.pts[i][1], hr, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+                } else if (q.shape === "line") {
+                    const cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
+                    const r = Math.max(1, q.r || 1);
+                    const T = Math.max(0.5, (r * (q.soft == null ? 75 : q.soft)) / 100);
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(0, 0, doc.width, doc.height);
+                    ctx.clip();
+                    const diag = Math.hypot(doc.width, doc.height);
+                    const perpX = -sinA, perpY = cosA;
+
+                    // Centre line
+                    ctx.beginPath();
+                    ctx.moveTo(q.x - diag * perpX, q.y - diag * perpY);
+                    ctx.lineTo(q.x + diag * perpX, q.y + diag * perpY);
+                    ctx.stroke();
+
+                    // Dashed parallels at +-T
                     ctx.setLineDash([4 * lw, 4 * lw]);
                     ctx.beginPath();
-                    ctx.ellipse(q.x, q.y, q.r * inner, ry * inner, angleRad, 0, Math.PI * 2);
+                    ctx.moveTo(q.x + T * cosA - diag * perpX, q.y + T * sinA - diag * perpY);
+                    ctx.lineTo(q.x + T * cosA + diag * perpX, q.y + T * sinA + diag * perpY);
+                    ctx.moveTo(q.x - T * cosA - diag * perpX, q.y - T * sinA - diag * perpY);
+                    ctx.lineTo(q.x - T * cosA + diag * perpX, q.y - T * sinA + diag * perpY);
                     ctx.stroke();
                     ctx.setLineDash([]);
-                    const hdls = handlesOf(q);
-                    const hr = 4.5 * view.dpr / s;
-                    for (const h of hdls) {
-                        if (h.id === "move") continue;
+
+                    // Direction segment from handle A to handle B
+                    ctx.beginPath();
+                    ctx.moveTo(q.x - r * cosA, q.y - r * sinA);
+                    ctx.lineTo(q.x + r * cosA, q.y + r * sinA);
+                    ctx.stroke();
+
+                    if (sel) {
+                        const hr = 4.5 * view.dpr / s;
                         ctx.fillStyle = "#ffd166";
                         ctx.beginPath();
-                        ctx.arc(h.x, h.y, hr, 0, Math.PI * 2);
+                        ctx.arc(q.x - r * cosA, q.y - r * sinA, hr, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.beginPath();
+                        ctx.arc(q.x + r * cosA, q.y + r * sinA, hr, 0, Math.PI * 2);
                         ctx.fill();
                     }
+                    ctx.restore();
                 }
+
+                // Center badge with point ID
                 const cr = 9 * view.dpr / s;
                 ctx.fillStyle = sel ? "#ffd166" : "rgba(255,255,255,0.9)";
-                ctx.beginPath(); ctx.arc(q.x, q.y, cr, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath();
+                ctx.arc(q.x, q.y, cr, 0, Math.PI * 2);
+                ctx.fill();
                 ctx.shadowBlur = 0;
                 ctx.fillStyle = "#111";
                 ctx.fillText(String(q.id), q.x, q.y + 0.5 * view.dpr / s);
@@ -384,7 +640,7 @@ export function makePoints(scumble) {
         const newRow = ui.el("div", "film-head");
         const newLbl = ui.el("span", "film-note", "New: ");
         newRow.appendChild(newLbl);
-        for (const s of ["circle", "ellipse"]) {
+        for (const s of ["circle", "ellipse", "polygon", "line"]) {
             const b = ui.el("button", "film-shape-btn" + (newShape === s ? " film-shape-btn-on" : ""), s);
             b.type = "button";
             b.addEventListener("click", () => {
@@ -413,11 +669,18 @@ export function makePoints(scumble) {
         if (!sel) { wrap.appendChild(ui.el("div", "shell-help", "Click a number (or a point on the image) to edit it.")); return wrap; }
         const maxR = Math.max(200, Math.round(Math.max(...points.map((q) => q.r), 1) * 2));
         const sliders = [
-            ["r", "Size", 4, 4000, 1, "px"],
-            ...(sel.shape === "ellipse" ? [
-                ["ry", "Height", 1, 4000, 1, "px"],
+            ...(sel.shape === "line" ? [
+                ["r", "Feather", 1, 4000, 1, "px"],
                 ["angle", "Angle", -180, 180, 1, "\u00B0"],
-            ] : []),
+            ] : sel.shape === "polygon" ? [
+                ["r", "Feather", 0, 4000, 1, "px"],
+            ] : [
+                ["r", "Size", 4, 4000, 1, "px"],
+                ...(sel.shape === "ellipse" ? [
+                    ["ry", "Height", 1, 4000, 1, "px"],
+                    ["angle", "Angle", -180, 180, 1, "\u00B0"],
+                ] : []),
+            ]),
             ["soft", "Softness", 0, 100, 1, "%"],
             ["tol", "Tolerance", 0, 100, 1, "%"],
             ["ev", "Exposure", -2, 2, 0.05, " EV"],
@@ -456,12 +719,13 @@ export function makePoints(scumble) {
     const command = {
         name: "add_point",
         def: {
-            description: "Add a control point (local adjustment) to the control points layer (the active one, the topmost one, or a new one). Weights: radial falloff times colour similarity to the pixel under the point.",
+            description: "Add a control point (local adjustment) to the control points layer (the active one, the topmost one, or a new one). Weights: shape falloff times colour similarity to the pixel under the point.",
             params: {
-                x: { type: "number", description: "centre x in image pixels", required: true },
-                y: { type: "number", description: "centre y in image pixels", required: true },
-                shape: { type: "string", enum: ["circle", "ellipse"], description: "point shape (default circle)" },
-                radius: { type: "number", description: "radius in pixels (default 10 % of the long side)" },
+                x: { type: "number", description: "centre x in image pixels" },
+                y: { type: "number", description: "centre y in image pixels" },
+                shape: { type: "string", enum: ["circle", "ellipse", "polygon", "line"], description: "point shape (default circle)" },
+                vertices: { type: "array", items: { type: "array" }, description: "polygon: 3 to 16 [x, y] corners in image px" },
+                radius: { type: "number", description: "radius or feather in pixels (default 10 % of the long side)" },
                 height: { type: "number", description: "ellipse: the second radius in px (default 60 % of radius)" },
                 angle: { type: "number", description: "degrees, clockwise from +x in image coordinates" },
                 softness: { type: "number", description: "diffusion 0..100 (default 75)" },
@@ -476,8 +740,15 @@ export function makePoints(scumble) {
             scope: "doc",
             run(doc, a) {
                 const shape = a.shape || "circle";
-                if (shape !== "circle" && shape !== "ellipse") {
+                if (shape !== "circle" && shape !== "ellipse" && shape !== "polygon" && shape !== "line") {
                     throw new Error("unknown shape: " + shape);
+                }
+                let pts = null;
+                if (shape === "polygon") {
+                    if (!Array.isArray(a.vertices) || a.vertices.length < 3 || a.vertices.length > 16) {
+                        throw new Error("polygon must have 3 to 16 vertices");
+                    }
+                    pts = a.vertices.map((v) => [Number.isFinite(+v[0]) ? +v[0] : 0, Number.isFinite(+v[1]) ? +v[1] : 0]);
                 }
                 const layer = pointsLayer(doc, { create: true });
                 if (!layer) throw new Error("could not create the control points layer");
@@ -485,10 +756,12 @@ export function makePoints(scumble) {
                 const ry = a.height != null ? +a.height : Math.round(0.6 * r);
                 const angle = a.angle != null ? +a.angle : 0;
                 const soft = a.softness != null ? +a.softness : 75;
-                const x = Number.isFinite(+a.x) ? +a.x : Math.round((doc.width || 512) / 2);
-                const y = Number.isFinite(+a.y) ? +a.y : Math.round((doc.height || 384) / 2);
+                const anc = pts ? interiorAnchor(pts) : null;
+                const x = Number.isFinite(+a.x) ? +a.x : (anc ? anc[0] : Math.round((doc.width || 512) / 2));
+                const y = Number.isFinite(+a.y) ? +a.y : (anc ? anc[1] : Math.round((doc.height || 384) / 2));
                 const { points, pt } = addPoint(doc, layer, x, y, r, {
                     shape,
+                    pts,
                     ry,
                     angle,
                     soft,
@@ -525,5 +798,14 @@ export function makePoints(scumble) {
         }
     }
 
-    return { filter, tool, command, follow, reset: () => { drag = null; } };
+    return {
+        filter,
+        tool,
+        command,
+        follow,
+        reset: () => {
+            drag = null;
+            drawing = null;
+        },
+    };
 }

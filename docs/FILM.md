@@ -64,8 +64,9 @@ a long shoulder, the 3200 stocks a short toe and long shoulder. `film.looks` lis
 
 ## Control points
 
-`film.points` is a filter layer with a list of points. Each point has a centre, a shape (`circle`
-or `ellipse`), a radius (and for ellipses a second radius `ry` and `angle`), a softness slider
+`film.points` is a filter layer with a list of points. Each point has a centre or anchor, a shape
+(`circle`, `ellipse`, `polygon`, or `line`), size / feather parameters (radius `r`, ellipse second radius `ry`
+and `angle`, polygon corners `pts` with feather `r`, or line direction `angle` and feather `r`), a softness slider
 (diffusion 0..100, default 75 = smooth falloff full inside 25% of radius; 0 = sharp boundary,
 100 = linear falloff from centre), a colour tolerance and adjustments (exposure in EV, contrast,
 saturation, warmth, structure). A pixel's weight for a point is its spatial falloff times a
@@ -78,22 +79,28 @@ inside its shape alone.
 The **Control point tool** (U, in the tool column under *Plugins*):
 
 - click on the picture: a new point on the active control points layer (the topmost one,
-  or a new layer) using the active shape mode (circle or ellipse); keep the button down and drag:
-  for a circle, sets its radius `r`; for an ellipse, drags along its long axis to set radius `r`
-  and orientation `angle` (default height `ry` is 60% of `r`);
-- drag the centre to move it (the colour is sampled again at the new place), drag the boundary
-  or `r` handle to resize it, or drag the perpendicular `ry` handle to adjust ellipse height;
+  or a new layer) using the active shape mode (`circle`, `ellipse`, `polygon`, `line`):
+  - **circle**: keep the button down and drag to set its radius `r`;
+  - **ellipse**: drag along the long axis to set radius `r` and orientation `angle` (default height `ry` is 60% of `r`);
+  - **polygon**: click to place successive corners (3..16 vertices); close by pressing Enter, double-clicking,
+    or clicking within 8 screen px of the first corner; Escape cancels during placement; Backspace drops the last placed corner;
+  - **line**: drag from where the adjustment effect is 0 to where it is full; creates a graduated adjustment with centre $c = (A + B)/2$,
+    feather $r = |B - A|/2$, and normal direction $n = \text{normalize}(B - A)$;
+- drag handles:
+  - circle / ellipse: centre to move, perimeter / `r` handle to resize, perpendicular `ry` handle for ellipse height;
+  - polygon: individual corners can be dragged to reshape; dragging the centre anchor moves the entire polygon;
+  - line: handles $A$ (zero effect) and $B$ (full effect) adjust length and orientation; centre handle moves the line;
 - a click on a centre selects; Delete / Backspace removes the selected point, Escape deselects
   (routing also clears selection or active box in the boxes tool); every placement, move, resize,
   shape change and deletion is one undo step;
-- the layer row shows the points as numbered chips, shape toggle buttons ("New: circle / ellipse"),
-  and the sliders of the selected one (size, height for ellipses, angle for ellipses, softness,
+- the layer row shows the points as numbered chips, shape toggle buttons ("New: circle / ellipse / polygon / line"),
+  and the sliders of the selected one (size / feather, height for ellipses, angle for ellipses and lines, softness,
   tolerance, exposure, contrast, saturation, warmth, structure) plus *Remove point*;
 - the points are drawn on the canvas while the tool is active or the layer is the active
   layer (the plugin overlay hook, `docs/PLUGINS.md`).
 
 `film.add_point` adds a point from a script or MCP (`x`, `y`, `shape`, `radius`, `height`,
-`angle`, `softness`, `tolerance`, `exposure`, `contrast`, `saturation`, `warmth`, `structure`);
+`angle`, `vertices`, `softness`, `tolerance`, `exposure`, `contrast`, `saturation`, `warmth`, `structure`);
 `set_filter` with a `points` list edits them in bulk. A point's stored `color` is
 `[luma, r − luma, b − luma]` of the input under it; leaving it out when writing points makes
 the plugin sample it on the next tool interaction, but `add_point` samples it right away.
@@ -118,6 +125,7 @@ plugins/film/
   plugin.json   manifest
   main.js       registration, the Film looks panel, menu actions, commands
   filters.js    the eleven filter types (shaders + CPU twins), the look's colour stage
+  shapes.js     control point shapes (circle, ellipse, polygon, line), spatial falloffs, texture v2, handles, GLSL
   points.js     control points: filter, tool, layer-row control, add_point
   looks.js      the data: stocks (from GRAIN_PRESETS), toners, colour filters, processes, frames
   common.js     GLSL prelude, the CPU pixel loop, blur, tables, tone curve, hash noise, runner

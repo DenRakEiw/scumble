@@ -18,6 +18,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Colour grading**: a filter layer that tints the shadows, midtones, highlights and the whole picture separately, each with a hue, a strength and a brightness, with Balance and Blending for where the ranges meet.
 - **HSL in 8 channels**: a filter layer that adjusts hue, saturation and luminance separately across 8 colour channels (red, orange, yellow, green, aqua, blue, purple, magenta), with smooth bell-curve weighting leaving neutrals clean.
 - **Control points v2**: control points can now be oriented ellipses as well as circles, with an interactive softness slider (diffusion 0..100) controlling spatial falloff. Ellipses are placed by dragging along the long axis and resized via radius and height handles; Escape key cleanly deselects points and releases boxes in the boxes tool. Documents with shaped points require reader version 4 (Scumble 0.1.45).
+- **Polygonal and line control points**: control points can now also be closed polygons (3 to 16 corners with draggable vertices, Enter/double-click/first-corner closing, Backspace undo, and an interactive feather slider) or graduated lines (drag from zero to full effect, with feather, angle, and end handles). Bounding-box early out keeps GPU evaluation of 64 polygons on 24 MP bands under 3 ms.
 
 ## 0.1.44 — 2026-10-09
 

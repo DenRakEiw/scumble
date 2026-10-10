@@ -1151,12 +1151,13 @@ Add a control point (local adjustment) to the control points layer (the active o
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `x` | number | centre x in image pixels (required) |
-| `y` | number | centre y in image pixels (required) |
-| `shape` | string | point shape (default circle) (one of `circle`, `ellipse`) |
-| `radius` | number | radius in pixels (default 10 % of the long side) |
+| `x` | number | centre / anchor x in image pixels (default image centre or polygon anchor) |
+| `y` | number | centre / anchor y in image pixels (default image centre or polygon anchor) |
+| `shape` | string | point shape (default circle) (one of `circle`, `ellipse`, `polygon`, `line`) |
+| `radius` | number | radius or feather in pixels (default 10 % of the long side) |
 | `height` | number | ellipse: the second radius in px (default 60 % of radius) |
-| `angle` | number | degrees, clockwise from +x in image coordinates |
+| `angle` | number | degrees, clockwise from +x in image coordinates (ellipse, line) |
+| `vertices` | array | polygon: array of 3..16 vertex pairs `[[x0, y0], [x1, y1], ...]` |
 | `softness` | number | diffusion 0..100 (default 75) |
 | `tolerance` | number | colour tolerance 0..100 (default 50; low = only the colour under the point) |
 | `exposure` | number | EV -2..2 |

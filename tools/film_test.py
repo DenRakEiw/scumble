@@ -69,6 +69,8 @@ const cases = {
     { points: [{ id: 1, shape: "ellipse", x: 200, y: 150, r: 120, ry: 60, angle: 30, soft: 40, tol: 60, ev: 0.8, contrast: 20, sat: -30, warmth: 20, structure: 0, color: [0.4, -0.2, 0.3] }] },
     { points: [{ id: 1, shape: "circle", x: 250, y: 180, r: 100, soft: 0, tol: 60, ev: 1.0, contrast: 15, sat: 20, warmth: 10, structure: 0, color: [0.5, 0.1, -0.1] }] },
     { points: [{ id: 1, shape: "circle", x: 250, y: 180, r: 100, soft: 100, tol: 60, ev: -0.8, contrast: -20, sat: -40, warmth: -20, structure: 0, color: [0.5, 0.1, -0.1] }] },
+    { points: [{ id: 1, shape: "polygon", x: 220, y: 160, r: 30, soft: 50, tol: 60, ev: 0.8, contrast: 20, sat: 30, warmth: 20, structure: 0, color: [0.5, 0.1, -0.1], pts: [[200, 100], [225, 130], [260, 110], [250, 140], [290, 150], [260, 170], [280, 200], [240, 195], [230, 230], [210, 200], [180, 220], [190, 185], [150, 180], [180, 160], [160, 130], [195, 140]] }] },
+    { points: [{ id: 1, shape: "line", x: 250, y: 180, angle: 120, r: 60, soft: 75, tol: 60, ev: 1.0, contrast: -20, sat: 40, warmth: -20, structure: 0, color: [0.5, 0.1, -0.1] }] },
   ],
 };
 const out = {}, bad = [];
@@ -160,6 +162,77 @@ try {
 } finally {
     GL.glTestLimits(null);
 }
+"""),
+    ("points_24mp_band_measure", """
+const F = await import("./editor/inpaint_filters.js");
+const GL = await import("./editor/inpaint_filters_gl.js");
+
+// Build 64 polygon points of 16 corners each on a 15000 x 10000 document
+const points = [];
+for (let i = 0; i < 64; i++) {
+    const cx = 800 + (i % 8) * 1800;
+    const cy = 600 + Math.floor(i / 8) * 1100;
+    const pts = [];
+    for (let k = 0; k < 16; k++) {
+        const theta = (k * 2 * Math.PI) / 16;
+        const rad = (k % 2 === 0) ? 200 : 100;
+        pts.push([cx + rad * Math.cos(theta), cy + rad * Math.sin(theta)]);
+    }
+    points.push({
+        id: i + 1,
+        shape: "polygon",
+        x: cx,
+        y: cy,
+        r: 30,
+        soft: 50,
+        tol: 60,
+        ev: 0.5,
+        contrast: 10,
+        sat: 20,
+        warmth: 10,
+        structure: 0,
+        color: [0.5, 0.1, -0.1],
+        pts,
+    });
+}
+
+// 24 MP band: 6000 x 4000 = 24,000,000 px
+const bandW = 6000, bandH = 4000;
+const canvas = document.createElement("canvas");
+canvas.width = bandW;
+canvas.height = bandH;
+const ctx = canvas.getContext("2d");
+ctx.fillStyle = "#888888";
+ctx.fillRect(0, 0, bandW, bandH);
+
+const layer = {
+    id: "bench_pts",
+    kind: "filter",
+    filter: "film.points",
+    params: { points, strength: 100 },
+};
+
+// Measure GPU time of one 24 MP band through film.points (budget <= 150 ms)
+let gpuMs = 0;
+if (GL.glFiltersAvailable()) {
+    editor.bandFilter(layer, canvas, [0, 0], true);
+    const t0 = performance.now();
+    editor.bandFilter(layer, canvas, [0, 0], true);
+    gpuMs = performance.now() - t0;
+}
+
+// CPU fallback reported
+const cpuCrop = document.createElement("canvas");
+cpuCrop.width = 256; cpuCrop.height = 256;
+const tCpu0 = performance.now();
+F.applyFilter("film.points", cpuCrop, layer.params, { cpu: true, scale: 1, seed: 7, cache: {} });
+const cpuCropMs = performance.now() - tCpu0;
+const cpu24mpEstMs = cpuCropMs * (24000000 / (256 * 256));
+
+if (GL.glFiltersAvailable() && gpuMs > 150) {
+    throw new Error(`24 MP band GPU time exceeded 150 ms budget: ${gpuMs.toFixed(1)} ms`);
+}
+return { gpuMs: +gpuMs.toFixed(1), cpu24mpEstMs: +cpu24mpEstMs.toFixed(1), gl: GL.glFiltersAvailable(), passBudget: !GL.glFiltersAvailable() || gpuMs <= 150 };
 """),
     ("gl_scratch_and_static_cache", """
 const GL = await import("./editor/inpaint_filters_gl.js");
@@ -502,6 +575,47 @@ await c("select_none", { doc: d.id });
         layer.params.points = origPoints;
     }
 }
+// (3c) a polygon in a box away from the origin: box read equals the whole flatten exactly
+{
+    const layer = ed.layers.find((l) => l.id === r.layer);
+    const origPoints = layer.params.points;
+    layer.params.points = [{
+        id: 1, shape: "polygon", x: 1100, y: 800, r: 40, soft: 60,
+        tol: 100, ev: 1, contrast: 0, sat: 0, warmth: 0, structure: 0, color: origPoints[0].color,
+        pts: [[1050, 750], [1150, 750], [1180, 820], [1120, 860], [1040, 830]],
+    }];
+    try {
+        const wholePoly = ed.flattenToCanvas({ forRun: true });
+        const wantPoly = read(wholePoly, box[0], box[1], 200, 200);
+        const [actsPoly] = diff(wantPoly, read(belowPts, box[0], box[1], 200, 200));
+        if (actsPoly < 40) throw new Error("the polygon point barely changes the picture: " + actsPoly);
+        const [bmPoly, bnPoly] = diff(read(doc.flatten({ box, exact: true })), wantPoly);
+        out.boxPolygon = { acts: actsPoly, max: bmPoly, over1: bnPoly };
+        if (bmPoly > 1) throw new Error("an exact box over the polygon point differs from the whole flatten by " + bmPoly + " levels on " + bnPoly + " bytes");
+    } finally {
+        layer.params.points = origPoints;
+    }
+}
+// (3d) a line in a box away from the origin: box read equals the whole flatten exactly
+{
+    const layer = ed.layers.find((l) => l.id === r.layer);
+    const origPoints = layer.params.points;
+    layer.params.points = [{
+        id: 1, shape: "line", x: 1100, y: 800, angle: 45, r: 60, soft: 60,
+        tol: 100, ev: 1, contrast: 0, sat: 0, warmth: 0, structure: 0, color: origPoints[0].color,
+    }];
+    try {
+        const wholeLine = ed.flattenToCanvas({ forRun: true });
+        const wantLine = read(wholeLine, box[0], box[1], 200, 200);
+        const [actsLine] = diff(wantLine, read(belowPts, box[0], box[1], 200, 200));
+        if (actsLine < 40) throw new Error("the line point barely changes the picture: " + actsLine);
+        const [bmLine, bnLine] = diff(read(doc.flatten({ box, exact: true })), wantLine);
+        out.boxLine = { acts: actsLine, max: bmLine, over1: bnLine };
+        if (bmLine > 1) throw new Error("an exact box over the line point differs from the whole flatten by " + bmLine + " levels on " + bnLine + " bytes");
+    } finally {
+        layer.params.points = origPoints;
+    }
+}
 // (4) a vignette under the points layer: its picture depends on the whole image. Since E3 it is placed in the whole
 // picture whatever part a pass composites (info.full, info.origin), so the point's colour is a box read and still the
 // whole flatten's below the points layer; before, only the whole flatten gave it (a padded box was 40 levels off)
@@ -525,7 +639,7 @@ await c("activate_document", { doc: window.__filmDoc });
 return out;
 """),
     ("points_follow_crop_resize_and_turn", """
-// PLAN_0_1_31 §7 (23b): the control points follow the whole picture's geometry changes by the editor's "geometry"
+// PLAN_0_1_31 Section 7 (23b): the control points follow the whole picture's geometry changes by the editor's "geometry"
 // event matrix: the centre mapped, the radius scaled by sqrt(|det m|), no rounding (a turn gives 23a's numbers, a
 // non-uniform resize fractions); an undo of the change puts them back without an event, its redo brings the mapped
 // ones. A straighten's matrix is sent by hand (the editor's straighten is a later step). Its own document, closed at
@@ -549,6 +663,18 @@ try {
     at([300, 200, 80], "placed");
     await c("film.add_point", { shape: "ellipse", x: 450, y: 350, radius: 100, height: 60, angle: 30, exposure: -1, doc: d.id });
     const ptEl = () => ed.layers.find((l) => l.kind === "filter" && l.filter === "film.points").params.points[1];
+    await c("film.add_point", { shape: "polygon", vertices: [[400, 300], [500, 300], [450, 400]], radius: 25, exposure: -1, doc: d.id });
+    const ptPoly = () => ed.layers.find((l) => l.kind === "filter" && l.filter === "film.points").params.points[2];
+    let polyPts = [[400, 300], [500, 300], [450, 400]];
+    const polyPts0 = polyPts.slice();
+    const checkPoly = (poly, wantPts, what) => {
+        for (let i = 0; i < wantPts.length; i++) {
+            const exp = wantPts[i], got = poly.pts[i];
+            if (Math.abs(exp[0] - got[0]) > 1e-4 || Math.abs(exp[1] - got[1]) > 1e-4) {
+                throw new Error(`${what}: corner ${i} got ${JSON.stringify(got)}, want ${JSON.stringify(exp)}`);
+            }
+        }
+    };
     const makeBpts = (el) => {
         const pts = [];
         const rad = (el.angle || 0) * Math.PI / 180, co = Math.cos(rad), si = Math.sin(rad);
@@ -574,40 +700,54 @@ try {
     let bpts = makeBpts(ptEl());
     const bpts0 = bpts.slice();
     checkEl(ptEl(), bpts, "initial ellipse");
+    checkPoly(ptPoly(), polyPts0, "initial polygon");
     // a crop: 50 off the left, 30 off the top, 20 and 10 off the other sides -> 730 x 560
     await c("extend_canvas", { left: -50, top: -30, right: -20, bottom: -10, doc: d.id });
     if (ed.width !== 730 || ed.height !== 560) throw new Error("the crop made " + ed.width + " x " + ed.height);
     at([250, 170, 80], "after the crop");
     bpts = mapBpts(bpts, seen[seen.length - 1].m);
     checkEl(ptEl(), bpts, "after the crop");
+    polyPts = mapBpts(polyPts, seen[seen.length - 1].m);
+    checkPoly(ptPoly(), polyPts, "after the crop");
     await c("undo", { doc: d.id });
     at([300, 200, 80], "after the crop's undo");
     checkEl(ptEl(), bpts0, "after the crop's undo");
+    checkPoly(ptPoly(), polyPts0, "after the crop's undo");
     await c("redo", { doc: d.id });
     at([250, 170, 80], "after the crop's redo");
     checkEl(ptEl(), bpts, "after the crop's redo");
+    checkPoly(ptPoly(), polyPts, "after the crop's redo");
     // a resize that is not uniform: 730 x 560 -> 365 x 420, x by 0.5 and y by 0.75, the radius by sqrt(0.375)
     await ed.resizeImage(365, 420);
     at([125, 127.5, 80 * Math.sqrt(0.375)], "after the resize");
     bpts = mapBpts(bpts, seen[seen.length - 1].m);
     checkEl(ptEl(), bpts, "after the resize");
+    polyPts = mapBpts(polyPts, seen[seen.length - 1].m);
+    checkPoly(ptPoly(), polyPts, "after the resize");
     // a quarter turn clockwise: (H - y, x), the radius kept
     await c("rotate_canvas", { angle: 90, doc: d.id });
     at([420 - 127.5, 125, 80 * Math.sqrt(0.375)], "after the turn");
     bpts = mapBpts(bpts, seen[seen.length - 1].m);
     checkEl(ptEl(), bpts, "after the turn");
+    polyPts = mapBpts(polyPts, seen[seen.length - 1].m);
+    checkPoly(ptPoly(), polyPts, "after the turn");
     // a flip horizontal
     const bptsBeforeFlip = bpts.slice();
+    const polyPtsBeforeFlip = polyPts.slice();
     await c("flip_canvas", { axis: "horizontal", doc: d.id });
     at([127.5, 125, 80 * Math.sqrt(0.375)], "after the flip");
     bpts = mapBpts(bpts, seen[seen.length - 1].m);
     checkEl(ptEl(), bpts, "after the flip");
+    polyPts = mapBpts(polyPts, seen[seen.length - 1].m);
+    checkPoly(ptPoly(), polyPts, "after the flip");
     await c("undo", { doc: d.id });
     at([420 - 127.5, 125, 80 * Math.sqrt(0.375)], "after flip undo");
     checkEl(ptEl(), bptsBeforeFlip, "after flip undo");
+    checkPoly(ptPoly(), polyPtsBeforeFlip, "after flip undo");
     await c("redo", { doc: d.id });
     at([127.5, 125, 80 * Math.sqrt(0.375)], "after flip redo");
     checkEl(ptEl(), bpts, "after flip redo");
+    checkPoly(ptPoly(), polyPts, "after flip redo");
     out.kinds = seen.map((e) => e.kind);
     if (JSON.stringify(out.kinds) !== JSON.stringify(["crop", "resize", "turn", "turn"])) throw new Error("the editor sent " + JSON.stringify(seen) + " (one event per change, none for undo and redo)");
     if (seen.some((e) => !Array.isArray(e.m) || e.m.length !== 6) || seen[2].op !== 1 || seen[3].op !== "h" || seen[0].op !== undefined) throw new Error("the events: " + JSON.stringify(seen));
@@ -619,6 +759,8 @@ try {
     at([m[0] * q.x + m[2] * q.y + m[4], m[1] * q.x + m[3] * q.y + m[5], q.r], "after a straighten's matrix", 1e-6);
     bpts = mapBpts(bpts, m);
     checkEl(ptEl(), bpts, "after a straighten's matrix");
+    polyPts = mapBpts(polyPts, m);
+    checkPoly(ptPoly(), polyPts, "after a straighten's matrix");
     // an event this plugin cannot read changes nothing (23a's code took any unknown op for a -90 turn)
     const q2 = pt();
     H0.emit("geometry", { editor: ed, kind: "turn", op: "sideways", from: { width: W, height: H }, to: { width: W, height: H } });
@@ -732,7 +874,124 @@ try {
 }
 if (!threwShape) throw new Error("film.add_point should refuse shape 'triangle'");
 
-const circBtn = Array.from(row.querySelectorAll(".film-shape-btn")).find((b) => b.textContent === "circle");
+// Command tests for polygon vertex count
+let threwPoly2 = false;
+try {
+    await c("film.add_point", { shape: "polygon", vertices: [[100, 100], [200, 200]] });
+} catch (e) {
+    threwPoly2 = true;
+}
+if (!threwPoly2) throw new Error("film.add_point should refuse polygon with 2 vertices");
+
+let threwPoly17 = false;
+try {
+    await c("film.add_point", { shape: "polygon", vertices: Array.from({ length: 17 }, (_, i) => [i * 10, i * 10]) });
+} catch (e) {
+    threwPoly17 = true;
+}
+if (!threwPoly17) throw new Error("film.add_point should refuse polygon with 17 vertices");
+
+// --- Polygon tool interactive tests ---
+const polyBtn = Array.from(row.querySelectorAll(".film-shape-btn")).find((b) => b.textContent === "polygon");
+if (!polyBtn) throw new Error("polygon shape button missing in layer row");
+polyBtn.click();
+
+// 1. Five clicks + Enter -> one undo step and 5 corners
+const undoBeforePoly = editor.undo.length;
+const corners = [[100, 100], [150, 90], [180, 140], [140, 180], [90, 150]];
+for (const [cx, cy] of corners) {
+    H.pluginPointer(editor, "down", fake, cx, cy);
+    H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, cx, cy, editor.pointer);
+    editor.pointer = null;
+}
+H.pluginKey(editor, { key: "Enter", preventDefault() {} }, "enter");
+pts = layer.params.points;
+const pPoly = pts[pts.length - 1];
+if (!pPoly || pPoly.shape !== "polygon" || pPoly.pts.length !== 5) {
+    throw new Error("polygon 5 clicks + Enter failed: " + JSON.stringify(pPoly));
+}
+if (editor.undo.length !== undoBeforePoly + 1) {
+    throw new Error("polygon creation must be exactly 1 undo step: got " + (editor.undo.length - undoBeforePoly));
+}
+
+// 2. Escape halfway -> no point and no undo step
+const undoBeforeEscape = editor.undo.length;
+const countBeforeEscape = layer.params.points.length;
+H.pluginPointer(editor, "down", fake, 50, 50);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 50, 50, editor.pointer);
+editor.pointer = null;
+H.pluginPointer(editor, "down", fake, 70, 70);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 70, 70, editor.pointer);
+editor.pointer = null;
+H.pluginKey(editor, { key: "Escape", preventDefault() {} }, "escape");
+if (layer.params.points.length !== countBeforeEscape || editor.undo.length !== undoBeforeEscape) {
+    throw new Error("polygon Escape halfway must not create a point or push undo");
+}
+
+// 3. Backspace drops corner
+H.pluginPointer(editor, "down", fake, 60, 60);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 60, 60, editor.pointer);
+editor.pointer = null;
+H.pluginPointer(editor, "down", fake, 80, 60);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 80, 60, editor.pointer);
+editor.pointer = null;
+H.pluginPointer(editor, "down", fake, 200, 200); // 3rd corner to drop
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 200, 200, editor.pointer);
+editor.pointer = null;
+H.pluginKey(editor, { key: "Backspace", preventDefault() {} }, "backspace");
+H.pluginPointer(editor, "down", fake, 80, 80);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 80, 80, editor.pointer);
+editor.pointer = null;
+H.pluginPointer(editor, "down", fake, 60, 80);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 60, 80, editor.pointer);
+editor.pointer = null;
+H.pluginKey(editor, { key: "Enter", preventDefault() {} }, "enter");
+const pDrop = layer.params.points[layer.params.points.length - 1];
+if (!pDrop || pDrop.pts.length !== 4) {
+    throw new Error("polygon backspace corner drop failed: " + JSON.stringify(pDrop));
+}
+
+// 4. Double-click closes polygon
+H.pluginPointer(editor, "down", fake, 300, 100);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 300, 100, editor.pointer);
+editor.pointer = null;
+H.pluginPointer(editor, "down", fake, 350, 100);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 350, 100, editor.pointer);
+editor.pointer = null;
+H.pluginPointer(editor, "down", fake, 350, 150);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 350, 150, editor.pointer);
+editor.pointer = null;
+// Double-click on 4th corner (within 100 ms and 1 px)
+H.pluginPointer(editor, "down", fake, 300, 150);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 300, 150, editor.pointer);
+editor.pointer = null;
+H.pluginPointer(editor, "down", fake, 300, 150);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 300, 150, editor.pointer);
+editor.pointer = null;
+const pDbl = layer.params.points[layer.params.points.length - 1];
+if (!pDbl || pDbl.pts.length < 3) {
+    throw new Error("polygon double-click close failed: " + JSON.stringify(pDbl));
+}
+
+// --- Line tool interactive test ---
+const curRow = editor.root.querySelector(".film-points");
+const lineBtn = Array.from(curRow.querySelectorAll(".film-shape-btn")).find((b) => b.textContent === "line");
+if (!lineBtn) throw new Error("line shape button missing in layer row");
+lineBtn.click();
+
+H.pluginPointer(editor, "down", fake, 420, 20);
+H.pluginPointer(editor, "move", { ...fake, type: "pointermove" }, 480, 100);
+H.pluginPointer(editor, "up", { ...fake, type: "pointerup" }, 480, 100, editor.pointer);
+editor.pointer = null;
+pts = layer.params.points;
+const pLine = pts[pts.length - 1];
+if (!pLine || pLine.shape !== "line") throw new Error("line not placed: " + JSON.stringify(pLine));
+if (pLine.r !== 50 || Math.abs(pLine.angle - 53.1) > 0.5) {
+    throw new Error(`line params mismatch: r=${pLine.r} (want 50), angle=${pLine.angle} (want 53.1)`);
+}
+
+const curRow2 = editor.root.querySelector(".film-points");
+const circBtn = Array.from(curRow2.querySelectorAll(".film-shape-btn")).find((b) => b.textContent === "circle");
 if (circBtn) circBtn.click();
 
 layer._fpSel = pts[0].id;
