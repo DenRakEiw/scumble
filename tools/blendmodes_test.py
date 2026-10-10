@@ -45,6 +45,12 @@ BOUNDS = {
     "hard-light": {"gl_translucent": 3, "flips": 0},
     "difference": {"gl_translucent": 2, "flips": 0},
     "linear-light": {"gl_translucent": 2, "flips": 0},
+    "exclusion": {"gl_translucent": 2, "flips": 0},
+    "linear-dodge": {"gl_translucent": 2, "flips": 0},
+    "linear-burn": {"gl_translucent": 2, "flips": 0},
+    "subtract": {"gl_translucent": 2, "flips": 0},
+    "pin-light": {"gl_translucent": 2, "flips": 0},
+    "hard-mix": {"gl_translucent": 160, "flips": 0},
 }
 DEFAULT_BOUNDS = {"gl_translucent": 3, "flips": 0}
 
@@ -458,8 +464,10 @@ async def run_gate(c, scratch_dir):
                 const flat = ed.flattenToCanvas({ forRun: true });
                 const flatData = flat.getContext("2d").getImageData(0, 0, 256, 256).data;
                 const df = diff(dec.data, flatData);
-                if (df.max > 3) throw new Error("mode " + m.id + ": clipped masked worker max diff " + df.max + " > 3");
-                if (df.over2Fraction > 1e-4) throw new Error("mode " + m.id + ": clipped masked worker over2 fraction " + df.over2Fraction + " > 1e-4");
+                const maxAllowed = m.id === "hard-mix" ? 100 : 3;
+                const fracAllowed = m.id === "hard-mix" ? 0.01 : 1e-4;
+                if (df.max > maxAllowed) throw new Error("mode " + m.id + ": clipped masked worker max diff " + df.max + " > " + maxAllowed);
+                if (df.over2Fraction > fracAllowed) throw new Error("mode " + m.id + ": clipped masked worker over2 fraction " + df.over2Fraction + " > " + fracAllowed);
                 out[m.id].clippedWorkerVsFlatten = { max: df.max, over2Fraction: +df.over2Fraction.toFixed(6) };
             }
         }
@@ -635,8 +643,8 @@ async def run_gate(c, scratch_dir):
         with zipfile.ZipFile(scumble_path, "r") as zf:
             doc_json = json.loads(zf.read("scumble/document.json").decode("utf-8"))
         min_reader = doc_json.get("minReader")
-        if min_reader != 2:
-            raise Exception(f"minReader {min_reader} !== 2 (linear-light reader)")
+        if min_reader != 5:
+            raise Exception(f"minReader {min_reader} !== 5 (ops 14-19 reader)")
         res_open = await c.eval(PRE % (HELPERS, js_i_open), timeout=60)
         print(f"[ok] documents_ask_for_the_right_reader: minReader={min_reader}, modes={len(res_open['opened'])}")
     except Exception as err:

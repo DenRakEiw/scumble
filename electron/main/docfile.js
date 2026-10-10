@@ -21,7 +21,15 @@ const MIME = "application/x-scumble";
 const layersOf = (d) => (d && Array.isArray(d.layers) ? d.layers : []);
 
 // kept equal to renderer/editor/blend_modes.js by tools/document_test.js
-const READER_OF_BLEND = { "linear-light": 2 };
+const READER_OF_BLEND = {
+    "linear-light": 2,
+    "exclusion": 5,
+    "linear-dodge": 5,
+    "linear-burn": 5,
+    "subtract": 5,
+    "pin-light": 5,
+    "hard-mix": 5,
+};
 
 const BLEND_FEATURES = Object.entries(READER_OF_BLEND).map(([id, reader]) => ({
     id: "blend:" + id, since: id === "linear-light" ? "0.1.32" : "0.1.46", reader,

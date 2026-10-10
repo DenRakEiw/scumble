@@ -178,7 +178,7 @@ history entry would name it and it would be `false`.
 | `id`, `name` | every layer | the layer id (a string such as `"Lmg1x2k01"`, unique in the document; plugin data keys on it) and the shown name |
 | `kind` | every layer | `paint`, `image`, `result`, `text`, `filter`. Shapes are pixels drawn into an existing layer; the AI label and 3D renders are paint layers |
 | `role` | every layer | `none` (part of the picture), `reference`, or a control type: `scribble`, `lineart`, `depth`, `pose`, `canny`, `other` |
-| `blend` | every layer | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `soft-light`, `hard-light`, `linear-light` (since 0.1.32: a document with such a layer writes `minReader` 2), `difference` |
+| `blend` | every layer | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `soft-light`, `hard-light`, `linear-light` (since 0.1.32: a document with such a layer writes `minReader` 2), `difference`, `exclusion`, `linear-dodge`, `linear-burn`, `subtract`, `pin-light`, `hard-mix` (since 0.1.46: a document with one of these six writes `minReader` 5) |
 | `ref` | every layer | the layer's pixels, a PNG at its own size; `null` on a filter layer |
 | `x`, `y`, `w`, `h` | every layer | the placement in canvas pixels; `w` / `h` may differ from the PNG's size (a scaled layer keeps its source pixels) |
 | `opacity`, `visible` | every layer | 0 to 1; boolean |
@@ -276,7 +276,7 @@ listed, or listed as `required: false` and missing) leaves the history, with a n
 | Case | What happens |
 |---|---|
 | `format` is not `"scumble"`, `version` is not an integer >= 1, `document` is not an object, `files` is not an array | refused |
-| `minReader` (`version` when it is missing) above the reader's version (`READER_VERSION`, 1) | refused before anything is imported: "made by a newer Scumble ... update Scumble to open it" |
+| `minReader` (`version` when it is missing) above the reader's version (`READER_VERSION`, 5) | refused before anything is imported: "made by a newer Scumble ... update Scumble to open it" |
 | `version` above `FORMAT_VERSION` (1), `minReader` within reach | opens with a note; the tab's file is marked `newer`, and a save in place asks first (*Save As / Overwrite / Cancel*) |
 | otherwise | opens |
 

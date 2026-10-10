@@ -319,7 +319,8 @@ function listTree(dir) {
             // a layer in linear light (0.1.32) asks for reader 2, which this version is; every other document stays at 1
             const plain = doc.buildHeader({ document: { layers: [{ blend: "multiply" }, { blend: "normal" }] }, files: [] });
             const ll = doc.buildHeader({ document: { layers: [{ blend: "normal" }, { blend: "linear-light" }] }, files: [] });
-            assert(plain.minReader === 1 && ll.minReader === 2 && doc.READER_VERSION === 4, "minReader " + plain.minReader + " / " + ll.minReader + ", reader " + doc.READER_VERSION);
+            const excl = doc.buildHeader({ document: { layers: [{ blend: "normal" }, { blend: "exclusion" }] }, files: [] });
+            assert(plain.minReader === 1 && ll.minReader === 2 && excl.minReader === 5 && doc.READER_VERSION === 5, "minReader " + plain.minReader + " / " + ll.minReader + " / " + excl.minReader + ", reader " + doc.READER_VERSION);
             // maps (0.1.33) writes version 2, minReader 1
             const withMap = doc.buildHeader({ document: { maps: { depth: { ref: { filename: "d.png" } } } }, files: [] });
             assert(withMap.version === 2 && withMap.minReader === 1, "maps version " + withMap.version + " / " + withMap.minReader);

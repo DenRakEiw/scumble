@@ -19,27 +19,34 @@
 //! taken as 255 for "sp", which is what lets the SIMD path treat the 16 bytes of four pixels
 //! alike. Canvas 2D keeps premultiplied 8-bit pixels too, so the precision is the same.
 //!
-//! The nine blend modes (B item 7, ops 5 to 12; linear light, op 13, package 4 step 8) are the W3C compositing formula,
+//! The fifteen blend modes (B item 7, ops 5 to 12; linear light, op 13; tier A, ops 14 to 19: exclusion,
+//! linear dodge, linear burn, subtract, pin light, hard mix) are the W3C compositing formula,
 //! rounded ONCE per channel: with three rounded products the result was up to 1.45 levels from the exact value and a
 //! level from the compositor's shader on 29 % of the bytes of a half-transparent layer; rounded once it is within half a
 //! level (12 % from the shader, which reads its source back from a premultiplied 8-bit texture). Linear light is not in
-//! the W3C list; it is the separable B = clamp(cb + 2·cs − 1, 0, 1) of Photoshop, GIMP and Krita.
+//! the W3C list; it is the separable B = clamp(cb + 2*cs - 1, 0, 1) of Photoshop, GIMP and Krita.
 //!
-//!   B16(cb, cs) = 255 · B, exact integers:
-//!     multiply    b·s                          screen      65025 − (255 − b)(255 − s)
-//!     hard-light  s ≤ 127 ? 2·b·s : 65025 − (255 − b)(510 − 2s)        overlay: b and s swapped
-//!     darken, lighten, difference   255 · min, max, |b − s|
-//!     linear-light  255 · clamp(b + 2s − 255, 0, 255)
-//!     soft-light  s ≤ 127 ? 255·b − ((255 − 2s)·b·(255 − b) + 127) / 255
-//!                         : 255·b + ((2s − 255)·(D[b] − 257·b) + 128) / 257
-//!                 D[b] = round(65535 · d(b / 255)), d as the specification has it (a table, so that no square
+//!   B16(cb, cs) = 255 * B, exact integers:
+//!     multiply    b*s                          screen      65025 - (255 - b)(255 - s)
+//!     hard-light  s <= 127 ? 2*b*s : 65025 - (255 - b)(510 - 2s)        overlay: b and s swapped
+//!     darken, lighten, difference   255 * min, max, |b - s|
+//!     linear-light  255 * clamp(b + 2s - 255, 0, 255)
+//!     soft-light  s <= 127 ? 255*b - ((255 - 2s)*b*(255 - b) + 127) / 255
+//!                         : 255*b + ((2s - 255)*(D[b] - 257*b) + 128) / 257
+//!                 D[b] = round(65535 * d(b / 255)), d as the specification has it (a table, so that no square
 //!                 root is taken twice in two languages)
-//!   over an opaque backdrop:  r = (dp·inv·255 + sa·B16 + 32512) / 65025
+//!     exclusion   b*(255 - s) + s*(255 - b)
+//!     linear-dodge  255 * min(b + s, 255)
+//!     linear-burn   255 * (max(b + s, 255) - 255)
+//!     subtract    255 * (max(b, s) - s)
+//!     pin-light   s <= 127 ? 255 * min(b, 2s) : 255 * max(b, 2s - 255)
+//!     hard-mix    b + s >= 255 ? 65025 : 0
+//!   over an opaque backdrop:  r = (dp*inv*255 + sa*B16 + 32512) / 65025
 //!   else, with cb = dp unpremultiplied as at the end and ra = sa + mul255(da, inv):
-//!     r = min(ra, (s.c·sa·(255 − da)·255 + dp·inv·65025 + sa·da·B16 + 8290687) / 16581375)
-//!   which is the first line where da is 255. Everything fits 32 bits (255⁴ + 255³/2 < 2³²). The SIMD path takes four
+//!     r = min(ra, (s.c*sa*(255 - da)*255 + dp*inv*65025 + sa*da*B16 + 8290687) / 16581375)
+//!   which is the first line where da is 255. Everything fits 32 bits (255^4 + 255^3/2 < 2^32). The SIMD path takes four
 //!   pixels at a time where all four backdrop pixels are opaque, in 32-bit lanes, and divides through floats with the
-//!   remainder put right (the sums stay below 2²⁴, so the conversion is exact).
+//!   remainder put right (the sums stay below 2^24, so the conversion is exact).
 
 pub const SOURCE_OVER: u8 = 0;
 pub const DESTINATION_OUT: u8 = 1;
@@ -55,10 +62,16 @@ pub const SOFT_LIGHT: u8 = 10;
 pub const HARD_LIGHT: u8 = 11;
 pub const DIFFERENCE: u8 = 12;
 pub const LINEAR_LIGHT: u8 = 13;
-pub const LAST_BLEND: u8 = LINEAR_LIGHT;
+pub const EXCLUSION: u8 = 14;
+pub const LINEAR_DODGE: u8 = 15;
+pub const LINEAR_BURN: u8 = 16;
+pub const SUBTRACT: u8 = 17;
+pub const PIN_LIGHT: u8 = 18;
+pub const HARD_MIX: u8 = 19;
+pub const LAST_BLEND: u8 = HARD_MIX;
 
 #[allow(dead_code)]
-const SIMD_BLENDS: [u8; 8] = [
+const SIMD_BLENDS: [u8; 14] = [
     MULTIPLY,
     SCREEN,
     OVERLAY,
@@ -67,6 +80,12 @@ const SIMD_BLENDS: [u8; 8] = [
     HARD_LIGHT,
     DIFFERENCE,
     LINEAR_LIGHT,
+    EXCLUSION,
+    LINEAR_DODGE,
+    LINEAR_BURN,
+    SUBTRACT,
+    PIN_LIGHT,
+    HARD_MIX,
 ];
 
 /// round(65535 · d(b / 255)) of soft-light: d = ((16b − 12)b + 4)b up to a quarter (b ≤ 63), else the square root.
@@ -161,6 +180,24 @@ fn blend_of<const OP: u8>(b: u32, s: u32) -> u32 {
         // b + 2s is 0..765: clamp to 255..510 first, subtract after, so nothing underflows in u32
         LINEAR_LIGHT => 255 * ((b + 2 * s).max(255).min(510) - 255),
         DIFFERENCE => 255 * (b.max(s) - b.min(s)),
+        EXCLUSION => b * (255 - s) + s * (255 - b),
+        LINEAR_DODGE => 255 * (b + s).min(255),
+        LINEAR_BURN => 255 * ((b + s).max(255) - 255),
+        SUBTRACT => 255 * (b.max(s) - s),
+        PIN_LIGHT => {
+            if s <= 127 {
+                255 * b.min(2 * s)
+            } else {
+                255 * b.max(2 * s - 255)
+            }
+        }
+        HARD_MIX => {
+            if b + s >= 255 {
+                65025
+            } else {
+                0
+            }
+        }
         _ => 255 * (b.max(s) - b.min(s)),
     }
 }
@@ -186,6 +223,12 @@ fn blend_from(dst: &mut [u8], src: &[u8], op: u8, o: u32, mask: Option<&[u8]>, s
         HARD_LIGHT => scalar_blend::<HARD_LIGHT>(dst, src, o, mask, start),
         LINEAR_LIGHT => scalar_blend::<LINEAR_LIGHT>(dst, src, o, mask, start),
         DIFFERENCE => scalar_blend::<DIFFERENCE>(dst, src, o, mask, start),
+        EXCLUSION => scalar_blend::<EXCLUSION>(dst, src, o, mask, start),
+        LINEAR_DODGE => scalar_blend::<LINEAR_DODGE>(dst, src, o, mask, start),
+        LINEAR_BURN => scalar_blend::<LINEAR_BURN>(dst, src, o, mask, start),
+        SUBTRACT => scalar_blend::<SUBTRACT>(dst, src, o, mask, start),
+        PIN_LIGHT => scalar_blend::<PIN_LIGHT>(dst, src, o, mask, start),
+        HARD_MIX => scalar_blend::<HARD_MIX>(dst, src, o, mask, start),
         _ => scalar_blend::<DIFFERENCE>(dst, src, o, mask, start),
     }
 }
@@ -472,6 +515,19 @@ mod simd {
             // lanes are unsigned 0..765: clamp d + 2s to 255..510, then subtract 255
             LINEAR_LIGHT => u32x4_mul(u32x4_sub(u32x4_min(u32x4_max(u32x4_add(d, u32x4_shl(s, 1)), c255), u32x4_splat(510)), c255), c255),
             DIFFERENCE => u32x4_mul(u32x4_sub(u32x4_max(d, s), u32x4_min(d, s)), c255),
+            EXCLUSION => u32x4_add(u32x4_mul(d, u32x4_sub(c255, s)), u32x4_mul(s, u32x4_sub(c255, d))),
+            LINEAR_DODGE => u32x4_mul(u32x4_min(u32x4_add(d, s), c255), c255),
+            LINEAR_BURN => u32x4_mul(u32x4_sub(u32x4_max(u32x4_add(d, s), c255), c255), c255),
+            SUBTRACT => u32x4_mul(u32x4_sub(u32x4_max(d, s), s), c255),
+            PIN_LIGHT => {
+                let lo = u32x4_min(d, u32x4_shl(s, 1));
+                let hi = u32x4_max(d, u32x4_sub(u32x4_max(u32x4_shl(s, 1), c255), c255));
+                u32x4_mul(v128_bitselect(hi, lo, u32x4_gt(s, u32x4_splat(127))), c255)
+            }
+            HARD_MIX => {
+                let mask = u32x4_ge(u32x4_add(d, s), c255);
+                v128_and(mask, u32x4_splat(65025))
+            }
             _ => u32x4_mul(u32x4_sub(u32x4_max(d, s), u32x4_min(d, s)), c255),
         };
         let inv = u32x4_sub(c255, sa);

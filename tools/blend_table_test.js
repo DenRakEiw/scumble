@@ -58,6 +58,7 @@ async function main() {
     const EXPECTED_MODES = [
         "normal", "multiply", "screen", "overlay", "darken", "lighten",
         "soft-light", "hard-light", "linear-light", "difference",
+        "exclusion", "linear-dodge", "linear-burn", "subtract", "pin-light", "hard-mix",
     ];
     assert.deepStrictEqual(BLEND_MODES, EXPECTED_MODES, "BLEND_MODES must match today's list in order");
 
