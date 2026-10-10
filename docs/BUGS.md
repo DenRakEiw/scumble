@@ -218,58 +218,6 @@ only auto and 1K). Not run live.
 
 ## Open
 
-### Qwen Image Edit 2.1 local: a model file the server lacks is swapped for the first file in the list, silently (issue #4, 2026-10-09, read, not run)
-
-Reported by hwatik on GitHub (https://github.com/DenRakEiw/scumble/issues/4): "load clip is set to Flux (but it needs
-qwen)", and after changing it by hand "any edit returns almost the same image, no edits done" while Generate new works.
-
-**Found reading the code.** `renderSettings` (`renderer/editor/inpaint_canvas.js:20222`) replaces a combo value that is
-not in the server's list by the list's first entry, with no word in the status line:
-`if (!k.options.includes(entry.value) && k.options.length) entry.value = k.options[0]`. Every local recipe names its
-files by Comfy-Org's names (`qwen_image_2.1_int8_convrot.safetensors`, `qwen3vl_8b_int8_convrot.safetensors`,
-`qwen_image_2.1_vae_bf16.safetensors`); on a server whose files are named otherwise, or that lacks one, the Model, Text
-encoder and VAE rows each silently become the alphabetically first file of their folder, which is a Flux / SD file on
-most installs. That is the reporter's first finding; the recipe itself has `CLIPLoader` `type: "qwen_image"`, as
-ComfyUI's own template does. The same happens to `flux2_klein_local`, `upscale_model_local`, `rtx_vsr_local` and
-`realism_pass`. The reporter fixed the Text encoder row by hand; whether the Model or the VAE row still held a wrong
-file (the first VAE of a Flux install is `ae.safetensors`; a wrong VAE loads without an error) is unknown, and a wrong
-VAE on `TextEncodeQwenImage21`'s reference latents and on the decode is one candidate for "no edits done". The recipe itself was checked against ComfyUI's template `image_qwen_image_2_1_image_edit.json` on 2026-10-09:
-the same chain (UNETLoader, CLIPLoader `qwen_image`, VAELoader, QwenImage21Cache, TextEncodeQwenImage21 with the
-encoder's own latent into the KSampler, 25 steps, CFG 1, euler / simple, denoise 1); the only difference is
-`resolution` 0 (keep the crop's size, about 1 MP at `target_size` 1024) against the template's 1024 (about 1 MP as
-well). The canvas node's outputs the recipe wires (7 prompt, 10 seed, 12 negative) are right. The recipe has never
-run (the model files were not on the user's server, `docs/RECIPES.md`).
-
-**Fixed 2026-10-10 for 0.1.45:** `renderSettings` keeps a value the server's list lacks and shows it as `<file> (not on
-the server)` (class `ipc-sel-missing`, the tooltip says what to do; an empty value still takes the first file);
-`host.missingSettingFiles` / `missingFilesRefusal` refuse a Generate and a whole-picture run before anything is queued,
-naming each row's file with the download link from the recipe's `models`; the `recipes` gate's step
-`a_file_the_server_lacks_stays_marked_and_refuses_the_run` stubs a Flux install's lists for the Qwen recipe and checks
-the rows, the marks, the refusal and that the run goes once the lists hold the files. **Run live the same day** on the
-user's ComfyUI 0.38.0 (a dev instance on its own profile): the Model row set to a file the server lacks shows
-`... (not on the server)`, Generate refuses with "Your ComfyUI lacks a model file this recipe needs: Model · unet_name:
-..." and the queue stays empty; with the recipe's own files the rows are plain and the run goes (512 x 384 canvas, a
-200 x 160 selection, "a red apple on a wooden table": a result layer after 6.9 s). The plan as it was written:
-
-**Fix (as planned 2026-10-09; the other agent held `inpaint_canvas.js` and `host.js` then):** keep the recipe's value
-when the server lacks it, show it in the select marked as missing (`qwen3vl_8b_int8_convrot.safetensors (not on the
-server)`), say so in the status line with the recipe's download link (`models` in the recipe), and refuse the run with
-that message instead of queueing the first file. `applyPreset` (`host.js:1167`) already does the first half for presets
-(`missing`, "not on the server, kept the current choice there"). Test: the recipes gate with a stub `/object_info` whose
-lists lack the Qwen files; assert the rows keep the recipe's names and the run is refused naming the file.
-
-**Run live 2026-10-09 (the three files downloaded to the user's ComfyUI 0.38.0, a dev instance on its own profile,
-`test_base.png`, a 170 x 200 selection, "Change the white rectangle into a red apple on a wooden table", seed 12345):
-the recipe works.** The queued prompt held the recipe's own files and `CLIPLoader` `type: qwen_image`, the sampler ran
-25 steps, the prompt executed in 11.8 s, and the result layer shows a red apple on a wooden table inside the selection
-(the patch differs from the base by a mean of 26 levels per channel there). So the graph is not the cause of "no
-edits done"; the reporter's server most likely queued a wrong file in a row they did not change (the Model row, say,
-swapped for the first `diffusion_models` entry, or the VAE), which the silent swap above hides. Ask them which three
-files their rows show (and `/object_info` names for the Qwen 2.1 files on their server). Two things seen on the way,
-not bugs: the node's align fit refuses on this picture ("fit out of range", scale 2.0 in y, a gradient with no edges
-to fit), and a test that compares a result layer against `flattenToCanvas({ forRun: true })` compares it with itself
-(the flatten holds the layer; `tools/smoke_test.py`'s loopback step relies on that).
-
 ### Size limits: gaps found reading the code (2026-10-07, read, not run)
 
 Found while answering the user's question about the largest picture (a workflow of three readers and a checker,
