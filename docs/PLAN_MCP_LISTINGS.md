@@ -17,6 +17,20 @@ für r/modelcontextprotocol"; asked, the user: "ja, reiche ein", every step, the
 | Reddit | the user posts the draft of §3 |
 | Glama, punkpeye's list, Smithery, GitHub's MCP registry | not submitted: blocked without a Docker check or an `.mcpb` (§2). **The `.mcpb` is built (2026-10-09, `docs/PLAN_MCPB.md`)** and ships with the first release after 0.1.44; Smithery and GitHub's registry then, on the user's word |
 
+**Status read on 2026-10-10 (after 0.1.45 and the `.mcpb`):**
+
+| Channel | State on 2026-10-10 |
+| --- | --- |
+| Official MCP Registry | **0.1.45 live with the `.mcpb` package** (`packages[0]` mcpb, the asset's SHA-256), beside 0.1.41; 0.1.42-0.1.44 were never published |
+| TensorBlock awesome list | **listed** (`docs/multimedia-processing.md` names Scumble; issue #3083 closed) |
+| mcp.so | issue chatmcp/mcpso#4711 still open, no comment; the site's search finds nothing |
+| MCPMarket | submitted 2026-10-04 (4-6 weeks); not in the search yet |
+| mcpservers.org, mcp.directory | submitted 2026-10-04; their search pages answer nothing useful to a crawler (a generic page, a 404); not checked by hand |
+| PulseMCP | **not listed**; "new server submissions and listing changes are still paused" (their banner); the earlier note that it read the registry did not hold |
+| Glama | not listed; *Add Server* is a signed-in flow (GitHub login in the user's browser) |
+| Smithery | not listed; needs an account and their form (the `.mcpb` URL now exists) |
+| GitHub MCP registry (github.com/mcp) | not listed; **manual curation** (trent-j, 2026-05: "onboarding a new server is still a manual curation process"; after onboarding, new versions sync from the OSS registry); the request goes as a comment on github/github-mcp-server#1257 with the registry name, the package, repo, licence, a one-line description and the curl line |
+
 Every release: a new `server.json` version published (`docs/RELEASING.md`). Below, the research as it was before the
 submissions.
 
