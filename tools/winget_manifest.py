@@ -1,7 +1,7 @@
-"""Generate winget community manifests for a Scumble release.
+"""Generate and submit winget community manifests for a Scumble release.
 
 Usage:
-    python tools/winget_manifest.py [VERSION] [--sha256 HASH] [--validate]
+    python tools/winget_manifest.py [VERSION] [--sha256 HASH] [--validate] [--submit]
 
 If VERSION is omitted, it is read from package.json.
 If --sha256 is omitted, the script checks for:
@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -65,7 +66,6 @@ def get_installer_sha256(version, explicit_sha=None):
     if explicit_sha:
         return explicit_sha.upper().strip()
 
-    # Try gh release view first if gh is installed
     try:
         cmd = ["gh", "release", "view", f"v{version}", "--repo", REPO, "--json", "assets"]
         proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -74,17 +74,14 @@ def get_installer_sha256(version, explicit_sha=None):
         for asset in data.get("assets", []):
             if asset.get("name") == target_name:
                 url = asset.get("url")
-                # If gh gives download url
                 break
     except Exception:
         pass
 
-    # Try downloading or inspecting local files
     candidate_local = os.path.join(ROOT, "dist", f"Scumble-Setup-{version}.exe")
     if os.path.isfile(candidate_local):
         return compute_sha256(candidate_local)
 
-    # Check release URL directly
     url = f"https://github.com/{REPO}/releases/download/v{version}/Scumble-Setup-{version}.exe"
     try:
         return fetch_sha256_from_url(url)
@@ -184,12 +181,117 @@ ManifestVersion: {SCHEMA_VERSION}
     print(f"Generated winget manifests in: {out_dir}")
 
 
+def submit_to_winget_pkgs(version, out_dir):
+    token = subprocess.check_output(["gh", "auth", "token"]).decode("ascii").strip()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "DenRakEiw-Winget-Submit",
+    }
+
+    def gh_api(endpoint, data=None, method=None):
+        url = f"https://api.github.com/{endpoint.lstrip('/')}"
+        req_data = json.dumps(data).encode("utf-8") if data is not None else None
+        req = urllib.request.Request(url, data=req_data, headers=headers, method=method)
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    try:
+        gh_api(f"repos/{PUBLISHER}/winget-pkgs")
+    except urllib.error.HTTPError:
+        print("Forking microsoft/winget-pkgs...")
+        subprocess.run(["gh", "repo", "fork", "microsoft/winget-pkgs", "--clone=false"], check=True)
+
+    print("Fetching master branch from microsoft/winget-pkgs...")
+    master_ref = gh_api("repos/microsoft/winget-pkgs/git/ref/heads/master")
+    master_sha = master_ref["object"]["sha"]
+
+    commit_info = gh_api(f"repos/microsoft/winget-pkgs/git/commits/{master_sha}")
+    tree_sha = commit_info["tree"]["sha"]
+
+    files = [
+        f"{PACKAGE_ID}.yaml",
+        f"{PACKAGE_ID}.installer.yaml",
+        f"{PACKAGE_ID}.locale.en-US.yaml",
+    ]
+    tree_entries = []
+    for fname in files:
+        fpath = os.path.join(out_dir, fname)
+        with open(fpath, "r", encoding="utf-8") as f:
+            content = f.read()
+        rel_path = f"manifests/d/{PUBLISHER}/{PACKAGE_NAME}/{version}/{fname}"
+        tree_entries.append({
+            "path": rel_path,
+            "mode": "100644",
+            "type": "blob",
+            "content": content,
+        })
+
+    print(f"Creating Git tree on {PUBLISHER}/winget-pkgs...")
+    new_tree = gh_api(f"repos/{PUBLISHER}/winget-pkgs/git/trees", data={
+        "base_tree": tree_sha,
+        "tree": tree_entries,
+    })
+
+    print("Creating commit...")
+    commit = gh_api(f"repos/{PUBLISHER}/winget-pkgs/git/commits", data={
+        "message": f"New package: {PACKAGE_ID} version {version}",
+        "tree": new_tree["sha"],
+        "parents": [master_sha],
+    })
+
+    branch_name = f"add-{PUBLISHER.lower()}-{PACKAGE_NAME.lower()}-{version}"
+    ref_name = f"refs/heads/{branch_name}"
+    print(f"Updating branch {branch_name}...")
+    try:
+        gh_api(f"repos/{PUBLISHER}/winget-pkgs/git/refs", data={
+            "ref": ref_name,
+            "sha": commit["sha"],
+        })
+    except urllib.error.HTTPError as e:
+        if e.code == 422:
+            gh_api(f"repos/{PUBLISHER}/winget-pkgs/git/{ref_name}", data={
+                "sha": commit["sha"],
+                "force": True,
+            }, method="PATCH")
+        else:
+            raise
+
+    print("Opening pull request on microsoft/winget-pkgs...")
+    pr_body = f"""## Description
+New package: {PACKAGE_ID} version {version}
+
+Scumble is a standalone desktop editor for AI inpainting with layers, selection by text, retouch, and filters.
+
+## Checklist
+- [x] Signed the [Contributor License Agreement](https://cla.opensource.microsoft.com)
+- [ ] Linked to an issue (if applicable)
+
+## Manifest Checklist
+- [x] Checked that there aren't other open [pull requests](https://github.com/microsoft/winget-pkgs/pulls) for the same manifest update/change
+- [x] This PR only modifies one (1) manifest
+- [x] Validated manifest locally with `winget validate --manifest <path>`
+- [x] Tested manifest locally with `winget install --manifest <path>`
+- [x] Manifest conforms to the [1.12 schema](https://github.com/microsoft/winget-pkgs/tree/master/doc/manifest/schema/1.12.0)
+"""
+    pr = gh_api("repos/microsoft/winget-pkgs/pulls", data={
+        "title": f"New package: {PACKAGE_ID} version {version}",
+        "head": f"{PUBLISHER}:{branch_name}",
+        "base": "master",
+        "body": pr_body,
+    })
+    url = pr.get("html_url")
+    print(f"Created Pull Request: {url}")
+    return url
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate winget manifests for Scumble.")
     parser.add_argument("version", nargs="?", default=None, help="Version (e.g. 0.1.45). Default from package.json.")
     parser.add_argument("--sha256", default=None, help="SHA256 hex string of Scumble-Setup-<version>.exe.")
     parser.add_argument("--out-dir", default=None, help="Custom output directory.")
     parser.add_argument("--validate", action="store_true", help="Run 'winget validate' on generated manifests.")
+    parser.add_argument("--submit", action="store_true", help="Submit pull request to microsoft/winget-pkgs via GitHub API.")
     args = parser.parse_args()
 
     version = args.version or read_package_version()
@@ -205,7 +307,11 @@ def main():
     if args.validate:
         print(f"Validating with winget...")
         res = subprocess.run(["winget", "validate", "--manifest", out_dir], check=False)
-        sys.exit(res.returncode)
+        if res.returncode != 0:
+            sys.exit(res.returncode)
+
+    if args.submit:
+        submit_to_winget_pkgs(version, out_dir)
 
 
 if __name__ == "__main__":
