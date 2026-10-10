@@ -20,6 +20,11 @@ the section for its version; `docs/` and the commit history hold the technical d
   - **Fix depth maps by hand**: *Flatten*, *Nearer*, *Farther*, and *Smooth* inside a selection.
   - **Detail pass**: *Fine* (2x2) and *Finest* (3x3) detail passes for large pictures.
   - **Depth from layer**: turn any grey layer into the document's depth map (*From layer...*).
+- **One-click install in Claude Desktop.** Every release now carries `scumble-<version>.mcpb`: open it and Claude
+  Desktop installs Scumble's MCP server. The bundle finds the installed Scumble (installer or Microsoft Store) by
+  itself; a portable copy is named in the extension's settings. Without a Scumble it says what to install.
+- Plugin filters can take statistics of the whole picture below them, at a size they choose, and read the document's depth map (plugin API 4). Parameter type "color", hidden parameters, and cancelFilterParams.
+- Edge snapping and detail tile fusion foundation for depth maps: bilateral edge-aware color snapping maths, robust tile alignment and raised-cosine overlap blending, separable 4x4 range maps, and 256px tile edge detection.
 - **Documents.** A document with a colour grading, HSL or effects layer, or a control point of the new shapes, or a depth map with edge snap, needs Scumble 0.1.45 or newer to open (reader version 4).
 - **Plugin API 4.** Filter plugins can take statistics of the whole composite underneath them via `wholeStats` and `wholeStatsSize`, add `color` and `hidden` parameters, and rollback pending previews with `cancelFilterParams`.
 - **A model file your ComfyUI lacks is no longer swapped silently.** A local recipe's Model, Text encoder or VAE row
@@ -27,11 +32,6 @@ the section for its version; `docs/` and the commit history hold the technical d
   until the panel redrew, then quietly took the first file of the folder, and the run went with the wrong model. The
   row now keeps the recipe's file, marked "(not on the server)", and Generate refuses with the file's download link.
 - **Fixes.** Film looks with no grain ("None" or grainless stocks) no longer run an unnecessary grain pass. Pressing Escape in plugin tools and the boxes tool properly deselects or cancels.
-- **One-click install in Claude Desktop.** Every release now carries `scumble-<version>.mcpb`: open it and Claude
-  Desktop installs Scumble's MCP server. The bundle finds the installed Scumble (installer or Microsoft Store) by
-  itself; a portable copy is named in the extension's settings. Without a Scumble it says what to install.
-- Plugin filters can take statistics of the whole picture below them, at a size they choose, and read the document's depth map (plugin API 4). Parameter type "color", hidden parameters, and cancelFilterParams.
-- Edge snapping and detail tile fusion foundation for depth maps: bilateral edge-aware color snapping maths, robust tile alignment and raised-cosine overlap blending, separable 4x4 range maps, and 256px tile edge detection.
 
 ## 0.1.44 — 2026-10-09
 
