@@ -2148,6 +2148,28 @@ const COMMANDS = {
             return res;
         },
     },
+    depth_from_layer: {
+        needsImage: true,
+        description: "Create the document's depth map from an existing layer (white is near, black is far). The layer must cover the whole picture.",
+        params: {
+            layer: P.layer("the layer: id, name or unique name fragment", { required: true }),
+            invert: P.bool("invert: treat black as near instead of white", { default: false }),
+        },
+        async run(ed, a) {
+            if (a.layer === undefined || a.layer === null || a.layer === "") {
+                throw new Error("layer parameter required");
+            }
+            const l = findLayer(ed, a.layer);
+            const invert = !!a.invert;
+            const map = await ed.depthFromLayer(l, { invert });
+            if (!map) throw new Error("depth from layer failed");
+            return {
+                w: map.w,
+                h: map.h,
+                source: "layer",
+            };
+        },
+    },
     get_state: { readOnly: true, description: "The document's state JSON (the node's canvas_state without the selection bitmaps).", params: {}, async run(ed) { const v = JSON.parse(ed.getValue() || "{}"); delete v.selection; delete v.selections; return v; } },
     set_status: { description: "Write a line into the document's status bar.", params: { text: P.str("", { required: true }) }, async run(ed, a) { ed.setStatus(String(a.text)); return { status: ed.status }; } },
 

@@ -1193,6 +1193,7 @@ async function main() {
             ["select_range", { source: "luma", lo: .2, hi: .8 }, "auto"],
             ["depth_edit", { op: "flatten" }, "auto"],
             ["depth_map", { detail: "fine" }, "auto"],
+            ["depth_from_layer", { layer: "depth" }, "auto"],
             ["list_settings", {}, "auto"], ["apply_preset", { name: "M" }, "auto"], ["set_crop", { fill: "green", colorMatch: false }, "auto"],
             ["a_user_plugins_tool", {}, "ask"],
         ];

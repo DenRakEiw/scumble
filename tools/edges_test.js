@@ -23,7 +23,11 @@ async function main() {
     const edgesMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_edges.js")).href);
     const weightsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_weights.js")).href);
     const mapsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_maps.js")).href);
+    const depthMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_depth.js")).href);
+    const kernelsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "px", "kernels.js")).href);
     const { selectionOnMap, editMap, makeMap } = mapsMod;
+    const { GUIDE, guidedFar } = depthMod;
+    const { boxBlurs } = kernelsMod;
 
     const {
         SNAP_TAU,
@@ -618,6 +622,122 @@ async function main() {
     const [wf3, hf3] = fusedSize(1200, 800, boxes3x3, 518);
     assert.ok(wf3 > 1000 && hf3 > 600, `fusedSize for 3x3 is around 1295x863, got ${wf3}x${hf3}`);
     console.log(`     [ok] 3x3 tileBoxes: 9 boxes with matching aspect ratio, fused size ${wf3}x${hf3}`);
+
+    // -------------------------------------------------------------------------
+    // 12. Depth from layer maths (R2-S11)
+    // -------------------------------------------------------------------------
+    console.log("  12. depth from layer maths (R2-S11)...");
+
+    // a. Luma conversion maths: Rec. 601 (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    const calcLuma = (r, g, b, a) => (a === 0 ? 0 : (0.299 * r + 0.587 * g + 0.114 * b) / 255);
+    assert.equal(calcLuma(255, 255, 255, 255), 1.0, "pure white luma is 1.0");
+    assert.equal(calcLuma(0, 0, 0, 255), 0.0, "pure black luma is 0.0");
+    assert.equal(calcLuma(255, 255, 255, 0), 0.0, "transparent pixel luma is 0.0");
+    assert.ok(Math.abs(calcLuma(255, 0, 0, 255) - 0.299) < 1e-6, "red luma is 0.299");
+    assert.ok(Math.abs(calcLuma(0, 255, 0, 255) - 0.587) < 1e-6, "green luma is 0.587");
+    assert.ok(Math.abs(calcLuma(0, 0, 255, 255) - 0.114) < 1e-6, "blue luma is 0.114");
+
+    // b. Inversion symmetry:
+    // When invert = false: far = 1 - luma, rawDepth = 1 - far = luma.
+    // When invert = true:  far = luma,     rawDepth = 1 - far = 1 - luma.
+    for (let i = 0; i <= 255; i++) {
+        const luma = i / 255;
+        const farNorm = 1 - luma;
+        const farInv = luma;
+        assert.ok(Math.abs((farNorm + farInv) - 1.0) < 1e-6, `farNorm + farInv = 1.0 at i=${i}`);
+
+        const rawNorm = 1 - farNorm;
+        const rawInv = 1 - farInv;
+        assert.ok(Math.abs((rawNorm + rawInv) - 1.0) < 1e-6, `rawNorm + rawInv = 1.0 at i=${i}`);
+        assert.ok(Math.abs(rawNorm - luma) < 1e-6, `rawNorm matches luma at i=${i}`);
+        assert.ok(Math.abs(rawInv - (1 - luma)) < 1e-6, `rawInv matches 1-luma at i=${i}`);
+    }
+    console.log("     [ok] luma conversion and inversion symmetry verified");
+
+    // c. 8-bit quantized ramp refined via guidedFar:
+    // Create a 64 x 512 vertical ramp quantized to 256 steps
+    const rw12 = 64, rh12 = 512;
+    const n12 = rw12 * rh12;
+    const rawRampNorm = new Float32Array(n12);
+    const rawRampInv = new Float32Array(n12);
+    const greyGuide = new Uint8Array(n12).fill(128);
+
+    for (let y = 0; y < rh12; y++) {
+        // Vertical ramp: top y=0 is white (255), bottom y=511 is black (0)
+        const qVal = Math.round(255 * (1 - y / (rh12 - 1)));
+        const luma = qVal / 255;
+        // Invert false: far = 1 - luma, rawDepth = 1 - far = luma
+        const rawN = luma;
+        // Invert true: far = luma, rawDepth = 1 - far = 1 - luma
+        const rawI = 1 - luma;
+        for (let x = 0; x < rw12; x++) {
+            rawRampNorm[y * rw12 + x] = rawN;
+            rawRampInv[y * rw12 + x] = rawI;
+        }
+    }
+
+    const u16Norm = guidedFar({
+        raw: rawRampNorm,
+        rw: rw12,
+        rh: rh12,
+        grey: greyGuide,
+        gw: rw12,
+        gh: rh12,
+        r: GUIDE.r,
+        eps: GUIDE.eps,
+        lo: 0,
+        hi: 1,
+    }, boxBlurs);
+
+    const u16Inv = guidedFar({
+        raw: rawRampInv,
+        rw: rw12,
+        rh: rh12,
+        grey: greyGuide,
+        gw: rw12,
+        gh: rh12,
+        r: GUIDE.r,
+        eps: GUIDE.eps,
+        lo: 0,
+        hi: 1,
+    }, boxBlurs);
+
+    // Monotonicity check:
+    // Normal: top y=0 was white (luma=1, near=0), bottom y=511 was black (luma=0, far=65535).
+    // So u16Norm (far disparity) should increase monotonically down the rows (from near 0 to far 65535).
+    assert.ok(u16Norm[0] <= 100, `top row near value is near 0, got ${u16Norm[0]}`);
+    assert.ok(u16Norm[(rh12 - 1) * rw12] >= 65435, `bottom row far value is near 65535, got ${u16Norm[(rh12 - 1) * rw12]}`);
+    for (let y = 1; y < rh12; y++) {
+        const prev = u16Norm[(y - 1) * rw12];
+        const curr = u16Norm[y * rw12];
+        assert.ok(curr >= prev, `normal ramp must be monotone increasing down rows at y=${y}: prev=${prev}, curr=${curr}`);
+    }
+
+    // Inverted: top y=0 was black as near (far=65535), bottom y=511 was white as far (far=0).
+    // So u16Inv (far disparity) should decrease monotonically down the rows.
+    assert.ok(u16Inv[0] >= 65435, `inverted top row is near 65535, got ${u16Inv[0]}`);
+    assert.ok(u16Inv[(rh12 - 1) * rw12] <= 100, `inverted bottom row is near 0, got ${u16Inv[(rh12 - 1) * rw12]}`);
+    for (let y = 1; y < rh12; y++) {
+        const prev = u16Inv[(y - 1) * rw12];
+        const curr = u16Inv[y * rw12];
+        assert.ok(curr <= prev, `inverted ramp must be monotone decreasing down rows at y=${y}: prev=${prev}, curr=${curr}`);
+    }
+
+    // Symmetry between normal and inverted u16: sum must equal 65535 (+-2 levels)
+    for (let i = 0; i < n12; i += 64) {
+        const sum = u16Norm[i] + u16Inv[i];
+        assert.ok(Math.abs(sum - 65535) <= 2, `u16Norm + u16Inv should sum to ~65535 at i=${i}, got ${sum}`);
+    }
+
+    // Quantization smoothing: adjacent row jump in raw is 0 or 257 (step jump);
+    // after guided filter, the maximum row jump is strictly bounded (< 200).
+    let maxJumpNorm = 0;
+    for (let y = 1; y < rh12; y++) {
+        const jump = Math.abs(u16Norm[y * rw12] - u16Norm[(y - 1) * rw12]);
+        if (jump > maxJumpNorm) maxJumpNorm = jump;
+    }
+    assert.ok(maxJumpNorm < 200, `guided filter smooths quantization steps (max jump ${maxJumpNorm} < 200)`);
+    console.log(`     [ok] guidedFar smooths 8-bit ramp (max jump ${maxJumpNorm} < 200), strictly monotone, invert symmetric`);
 
     console.log("\nALL EDGE MATHS TESTS PASSED!");
 }

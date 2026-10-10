@@ -658,6 +658,149 @@ JS = r"""
     shell.closeDocument && shell.closeDocument(edOpen7, { force: true });
     shell.closeDocument && shell.closeDocument(ed7, { force: true });
 
+    // -------------------------------------------------------------------------
+    // R2-S11: depth from a layer (PLAN_NIK9_BUILD sec 3.3)
+    // -------------------------------------------------------------------------
+    const ed11 = shell.newDocument();
+    shell.activate(ed11);
+    await new Promise((r) => setTimeout(r, 100));
+    ed11.resizeCanvas();
+
+    const W11 = 600, H11 = 400;
+    const base11 = mk(W11, H11);
+    {
+        const ctx11 = base11.getContext("2d");
+        ctx11.fillStyle = "#808080";
+        ctx11.fillRect(0, 0, W11, H11);
+    }
+    Object.defineProperty(base11, "naturalWidth", { value: W11 });
+    Object.defineProperty(base11, "naturalHeight", { value: H11 });
+    await ed11.setBaseFromCanvas(base11, { keepLayers: false });
+    await settle(ed11);
+
+    // Create a vertical grey ramp layer: covers the whole picture (W11 x H11)
+    // Top (y=0) is white (255), bottom (y=H11-1) is black (0)
+    const rampCanvas = mk(W11, H11);
+    const rctx = rampCanvas.getContext("2d");
+    const rImgData = rctx.createImageData(W11, H11);
+    const rd = rImgData.data;
+    for (let y = 0; y < H11; y++) {
+        const val = Math.round(255 * (1 - y / (H11 - 1)));
+        for (let x = 0; x < W11; x++) {
+            const idx = (y * W11 + x) * 4;
+            rd[idx] = val;
+            rd[idx + 1] = val;
+            rd[idx + 2] = val;
+            rd[idx + 3] = 255;
+        }
+    }
+    rctx.putImageData(rImgData, 0, 0);
+
+    const rampLayer = ed11.addLayer({
+        name: "Grey Ramp",
+        kind: "paint",
+        px: ed11.pixels.Layer.fromCanvas(rampCanvas),
+        x: 0,
+        y: 0,
+        w: W11,
+        h: H11,
+    });
+    await settle(ed11);
+
+    // 1. depth_from_layer command with invert: false (default: white is near, black is far)
+    const resNorm = await commands.run("depth_from_layer", { doc: ed11.node.id, layer: rampLayer.id, invert: false });
+    check("R2-S11: depth_from_layer returned ok", resNorm && resNorm.source === "layer");
+
+    const mapNorm = ed11.maps.depth;
+    check("R2-S11: mapNorm exists", !!mapNorm);
+    check("R2-S11: meta.source is layer", mapNorm && mapNorm.meta && mapNorm.meta.source === "layer");
+    check("R2-S11: meta.layer is layer name", mapNorm && mapNorm.meta && mapNorm.meta.layer === "Grey Ramp");
+    check("R2-S11: meta.invert is false", mapNorm && mapNorm.meta && mapNorm.meta.invert === false);
+
+    // Check monotonicity down rows and accuracy:
+    // In Scumble depth convention: 0 is near, 65535 is far.
+    // Ramp: y=0 is white (near => 0), y=H11-1 is black (far => 65535).
+    // So mapNorm.data must be monotonically increasing down rows (from ~0 to ~65535).
+    const mw11 = mapNorm.w, mh11 = mapNorm.h;
+    let normMonotone = true;
+    let normMaxDiff = 0;
+    for (let y = 0; y < mh11; y++) {
+        let rowSum = 0;
+        for (let x = 0; x < mw11; x++) {
+            rowSum += mapNorm.data[y * mw11 + x];
+        }
+        const rowAvg = rowSum / mw11;
+        const normExpected = (y / (mh11 - 1)) * 65535;
+        const diffLevels = Math.abs(rowAvg - normExpected) / 257;
+        if (diffLevels > normMaxDiff) normMaxDiff = diffLevels;
+
+        if (y > 0) {
+            let prevRowSum = 0;
+            for (let x = 0; x < mw11; x++) prevRowSum += mapNorm.data[(y - 1) * mw11 + x];
+            const prevRowAvg = prevRowSum / mw11;
+            if (rowAvg < prevRowAvg - 1) normMonotone = false;
+        }
+    }
+    check("R2-S11: normal map is monotone down rows", normMonotone);
+    check("R2-S11: normal map equals ramp within 1.2 levels after quantisation", normMaxDiff <= 1.2, { normMaxDiff });
+
+    // 2. Invert: true flips monotonicity and values
+    const resInv = await commands.run("depth_from_layer", { doc: ed11.node.id, layer: rampLayer.id, invert: true });
+    check("R2-S11: depth_from_layer invert returned ok", resInv && resInv.source === "layer");
+
+    const mapInv = ed11.maps.depth;
+    check("R2-S11: mapInv meta.invert is true", mapInv && mapInv.meta && mapInv.meta.invert === true);
+
+    let invMonotone = true;
+    let invMaxDiff = 0;
+    for (let y = 0; y < mh11; y++) {
+        let rowSum = 0;
+        for (let x = 0; x < mw11; x++) {
+            rowSum += mapInv.data[y * mw11 + x];
+        }
+        const rowAvg = rowSum / mw11;
+        const invExpected = (1 - y / (mh11 - 1)) * 65535;
+        const diffLevels = Math.abs(rowAvg - invExpected) / 257;
+        if (diffLevels > invMaxDiff) invMaxDiff = diffLevels;
+
+        if (y > 0) {
+            let prevRowSum = 0;
+            for (let x = 0; x < mw11; x++) prevRowSum += mapInv.data[(y - 1) * mw11 + x];
+            const prevRowAvg = prevRowSum / mw11;
+            if (rowAvg > prevRowAvg + 1) invMonotone = false;
+        }
+    }
+    check("R2-S11: inverted map is monotone decreasing down rows", invMonotone);
+    check("R2-S11: inverted map equals inverted ramp within 1.2 levels after quantisation", invMaxDiff <= 1.2, { invMaxDiff });
+
+    // 3. Partial layer refusal throws "the layer must cover the whole picture"
+    const partialCanvas = mk(200, 200);
+    const partialLayer = ed11.addLayer({
+        name: "Partial Layer",
+        kind: "paint",
+        px: ed11.pixels.Layer.fromCanvas(partialCanvas),
+        x: 50,
+        y: 50,
+        w: 200,
+        h: 200,
+    });
+    let partialRefused = false;
+    let partialErrorMsg = "";
+    try {
+        await commands.run("depth_from_layer", { doc: ed11.node.id, layer: partialLayer.id });
+    } catch (err) {
+        partialRefused = true;
+        partialErrorMsg = err ? err.message : "";
+    }
+    check("R2-S11: partial layer is refused", partialRefused);
+    check("R2-S11: refusal message matches the layer must cover the whole picture", /the layer must cover the whole picture/i.test(partialErrorMsg), { partialErrorMsg });
+
+    // 4. Undo restores previous map object
+    await ed11.undoStep();
+    check("R2-S11: undo restores previous map object", ed11.maps.depth === mapNorm);
+
+    shell.closeDocument && shell.closeDocument(ed11, { force: true });
+
     return { fails, tiles: !!ed.tileMode, hash: hash50 };
 })()
 """

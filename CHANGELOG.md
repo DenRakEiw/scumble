@@ -14,6 +14,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Dehaze**, a filter layer that clears haze from the distance, found in the picture itself or taken from the depth map, with *Protect sky*.
 - **Fix the depth map by hand**: *Flatten*, *Nearer*, *Farther* and *Smooth* inside the selection; new `depth_edit` command.
 - **Finer depth maps** for large pictures: *Detail* › *Fine* / *Finest*.
+- **Your own depth map**: any grey layer can become the document's depth map (*From layer…*).
 
 ## 0.1.44 — 2026-10-09
 

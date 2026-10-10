@@ -269,6 +269,16 @@ Change the document's depth map inside the selection (soft edges count partly): 
 | `op` | string | flatten, offset or smooth (one of `flatten`, `offset`, `smooth`) (required) |
 | `value` | number | see op |
 
+### `depth_from_layer` *(image)*
+
+Create the document's depth map from an existing layer (white is near, black is far). The layer must cover the whole picture.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layer` | string | the layer: id, name or unique name fragment (required) |
+| `invert` | boolean | invert: treat black as near instead of white (default `false`) |
+
 ## Selection
 
 ### `select_rect` *(image)*
