@@ -19,6 +19,9 @@ float vnoise(vec2 p, int seed) {
     float a = hash2(x, y, seed), b = hash2(x + 1, y, seed), c = hash2(x, y + 1, seed), d = hash2(x + 1, y + 1, seed);
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
+float fbm(vec2 p, int seed) {
+    return (vnoise(p, seed) * 4.0 + vnoise(p * 2.0, seed) * 2.0 + vnoise(p * 4.0, seed)) / 7.0;
+}
 
 vec4 bilin(vec2 p) {
     vec2 p0 = p - 0.5;
@@ -65,6 +68,9 @@ export function vnoise(px, py, seed) {
     fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
     const a = hash2(ix, iy, seed), b = hash2(ix + 1, iy, seed), c = hash2(ix, iy + 1, seed), d = hash2(ix + 1, iy + 1, seed);
     return mix(mix(a, b, fx), mix(c, d, fx), fy);
+}
+export function fbm(px, py, seed) {
+    return (vnoise(px, py, seed) * 4 + vnoise(px * 2, py * 2, seed) * 2 + vnoise(px * 4, py * 4, seed)) / 7;
 }
 
 export function bilinAt(d, W, H, x, y) {
@@ -119,6 +125,34 @@ export function copyCanvas(src) {
     src = resolve(src);
     const out = makeCanvas(src.width, src.height);
     out.getContext("2d").drawImage(src, 0, 0);
+    return out;
+}
+
+export function blur(src, sigma) {
+    src = resolve(src);
+    const W = src.width, H = src.height;
+    if (sigma < 0.05) return copyCanvas(src);
+    const pad = Math.min(W, H, Math.ceil(sigma * 3) + 2);
+    const PW = W + 2 * pad, PH = H + 2 * pad;
+    const padded = makeCanvas(PW, PH);
+    const p = padded.getContext("2d");
+    p.drawImage(src, pad, pad);
+    p.save(); p.translate(pad, 0); p.scale(-1, 1); p.drawImage(src, 0, 0, pad, H, 0, pad, pad, H); p.restore();
+    p.save(); p.translate(PW, 0); p.scale(-1, 1); p.drawImage(src, W - pad, 0, pad, H, 0, pad, pad, H); p.restore();
+    p.save(); p.translate(0, pad); p.scale(1, -1); p.drawImage(src, 0, 0, W, pad, pad, 0, W, pad); p.restore();
+    p.save(); p.translate(0, PH); p.scale(1, -1); p.drawImage(src, 0, H - pad, W, pad, pad, 0, W, pad); p.restore();
+    p.save(); p.translate(pad, pad); p.scale(-1, -1); p.drawImage(src, 0, 0, pad, pad, 0, 0, pad, pad); p.restore();
+    p.save(); p.translate(PW, pad); p.scale(-1, -1); p.drawImage(src, W - pad, 0, pad, pad, 0, 0, pad, pad); p.restore();
+    p.save(); p.translate(pad, PH); p.scale(-1, -1); p.drawImage(src, 0, H - pad, pad, pad, 0, 0, pad, pad); p.restore();
+    p.save(); p.translate(PW, PH); p.scale(-1, -1); p.drawImage(src, W - pad, H - pad, pad, pad, 0, 0, pad, pad); p.restore();
+    const out = makeCanvas(W, H);
+    const o = out.getContext("2d");
+    try { o.filter = `blur(${sigma}px)`; } catch (_) { /* no filter support */ }
+    o.drawImage(padded, -pad, -pad);
+    o.filter = "none";
+    o.globalCompositeOperation = "destination-over";
+    o.drawImage(src, 0, 0);
+    o.globalCompositeOperation = "source-over";
     return out;
 }
 

@@ -178,7 +178,7 @@ function check(name, ok, msg) {
 // 5. glassField |d| <= 1 on 100,000 samples per style
 // -----------------------------------------------------------------------------
 {
-    const styles = ["ribbed", "reeded", "wavy", "blocks"];
+    const styles = ["ribbed", "reeded", "wavy", "blocks", "frosted", "pebbled"];
     for (const style of styles) {
         let maxLen = 0;
         let withinBound = true;
@@ -310,6 +310,65 @@ function check(name, ok, msg) {
     }
     const diffPct = (diffCount / totalCells) * 100;
     check("blocks new seed changes > 90% of cells", diffPct > 90, `${diffPct.toFixed(1)}% changed`);
+}
+
+// -----------------------------------------------------------------------------
+// 9. pebbled d = 0 at the jittered cell points
+// -----------------------------------------------------------------------------
+{
+    const { hash2 } = require("../plugins/effects/common.js");
+    let allZero = true;
+    let maxPebbledErr = 0;
+    const angles = [-90, -45, -20, 0, 15, 30, 45, 60, 90];
+    const sizes = [15, 30, 40, 80];
+    const seeds = [0, 1, 5, 42];
+
+    for (const angle of angles) {
+        const rad = (angle * Math.PI) / 180;
+        const cosA = Math.cos(rad);
+        const sinA = Math.sin(rad);
+
+        for (const size of sizes) {
+            for (const seed of seeds) {
+                for (let cx = -3; cx <= 3; cx++) {
+                    for (let cy = -3; cy <= 3; cy++) {
+                        const jx = 0.15 + 0.70 * hash2(cx, cy, seed);
+                        const jy = 0.15 + 0.70 * hash2(cx + 31, cy + 17, seed);
+                        const rx = (cx + jx) * size;
+                        const ry = (cy + jy) * size;
+                        const Px = rx * cosA - ry * sinA;
+                        const Py = rx * sinA + ry * cosA;
+                        const [dx, dy] = glassField("pebbled", Px, Py, size, angle, seed);
+                        const len = Math.hypot(dx, dy);
+                        if (len > maxPebbledErr) maxPebbledErr = len;
+                        if (len > 1e-12) allZero = false;
+                    }
+                }
+            }
+        }
+    }
+    check("pebbled d = 0 at the jittered cell points", allZero, `max error = ${maxPebbledErr}`);
+}
+
+// -----------------------------------------------------------------------------
+// 10. fbm bounds [0, 1]
+// -----------------------------------------------------------------------------
+{
+    const { fbm } = require("../plugins/effects/common.js");
+    let inBounds = true;
+    let minV = Infinity, maxV = -Infinity;
+    for (let i = 0; i < 10000; i++) {
+        const x = (i % 100) * 0.37;
+        const y = Math.floor(i / 100) * 0.37;
+        const v = fbm(x, y, 7);
+        if (v < minV) minV = v;
+        if (v > maxV) maxV = v;
+        if (v < 0 || v > 1) {
+            inBounds = false;
+            break;
+        }
+    }
+    check("fbm normalized to [0, 1]", inBounds, `range [${minV.toFixed(3)}, ${maxV.toFixed(3)}]`);
 }
 
 // -----------------------------------------------------------------------------

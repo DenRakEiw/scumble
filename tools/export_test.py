@@ -253,6 +253,7 @@ const special = {
     "film.look": [{ preset: "portra400", halation: 100, grain: 0 }, 3],
     "effects.chromatic_shift": [{ style: "lateral", amount: 8 }, 1],
     "effects.glass": [{ style: "ribbed", amount: 20, size: 60 }, 2],
+    "effects.glass#frost": [{ style: "frosted", amount: 10, frost: 3 }, 3],
 };
 const cases = [];
 for (const id of Object.keys(FILTERS)) {
@@ -1125,6 +1126,11 @@ if (mapW > 0 && mapH > 0) {
 {
     const { FILTERS } = await import("./editor/inpaint_filters.js");
     const fx = ed.addFilterLayer(FILTERS[__FILTER__] ? __FILTER__ : "levels");
+    const customParams = __FILTER_PARAMS__;
+    if (customParams && Object.keys(customParams).length > 0) {
+        fx.params = { ...fx.params, ...customParams };
+        ed.markFilterChanged(fx);
+    }
     if (__LIMIT__) {
         fx.params = { ...fx.params, limit: __LIMIT__ };
         ed.markFilterChanged(fx);
@@ -1194,6 +1200,17 @@ async def run_all(c):
     if "--perf" in sys.argv:
         w, h = sys.argv[sys.argv.index("--perf") + 1].lower().split("x")
         filter_id = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--filter=")), "levels")
+        filter_params_arg = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--filter-params=")), None)
+        filter_params = {}
+        if filter_params_arg:
+            for item in filter_params_arg.split("+"):
+                if ":" in item:
+                    k, v = item.split(":", 1)
+                    try:
+                        v = float(v) if "." in v else int(v)
+                    except ValueError:
+                        pass
+                    filter_params[k] = v
         limit_arg = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--limit=")), None)
         map_arg = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--map=")), "4096x2731")
         limit_obj = None
@@ -1214,6 +1231,7 @@ async def run_all(c):
         perf_js = (PERF.replace("__W__", w)
                        .replace("__H__", h)
                        .replace("__FILTER__", json.dumps(filter_id))
+                       .replace("__FILTER_PARAMS__", json.dumps(filter_params))
                        .replace("__LIMIT__", json.dumps(limit_obj))
                        .replace("__MAP_W__", str(map_w))
                        .replace("__MAP_H__", str(map_h)))

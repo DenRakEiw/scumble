@@ -44,24 +44,34 @@ the shader with no image assets (phase R3-S10 of `docs/PLAN_NIK9_BUILD.md`):
 | `reeded` | Fluted lens per rib | Linear fluted lens profile along `angle` with discontinuous transitions between adjacent ribs. $d = (2 \cdot \text{fract}(s) - 1) \cdot \text{dir}$. |
 | `wavy` | 2D orthogonal waves | Cross-corrugated surface displacement. $d = 0.7071 \cdot R(\text{angle}) \cdot (\sin(2\pi r_y / \text{size}), \sin(2\pi r_x / \text{size}))$. |
 | `blocks` | Hash-based glass tiles | Flat square tile facets with pseudo-random displacement per tile cell. $d = 0.7071 \cdot (2 \cdot \text{hash2}(\text{cell}) - 1)$. |
+| `frosted` | Fractal value noise | Continuous fine-grained glass roughness from three octaves of value noise. Clamped to $\|d\| \le 1.0$. |
+| `pebbled` | Voronoi-like lens cells | Organic rounded pebble facets with jittered cell centers ($[0.15, 0.85]$ margin) and radial lens displacement $d = (P - F) / (0.7 \cdot \text{size})$ clamped to $\|d\| \le 1.0$. At jittered centers, $d = 0$ exactly. |
 
 Parameters:
 
 | Parameter | Type | Range / Options | Default | Description |
 |---|---|---|---|---|
-| `style` | select | `ribbed`, `reeded`, `wavy`, `blocks` | `ribbed` | Glass surface pattern geometry. |
-| `size` | number | 4 .. 400 px | 40 px | Rib, wave period, or block tile size in image pixels. |
+| `style` | select | `ribbed`, `reeded`, `wavy`, `blocks`, `frosted`, `pebbled` | `ribbed` | Glass surface pattern geometry. |
+| `size` | number | 4 .. 400 px | 40 px | Rib, wave period, block, or pebble size in image pixels. |
 | `amount` | number | 0 .. 100 px | 12 px | Maximum glass displacement reach in image pixels. |
+| `frost` | number | 0 .. 20 px | 0 px | Radius of pre-displacement blur simulating internal glass scattering. |
 | `angle` | number | -90 .. 90 deg | 0 deg | Glass rib or tile rotation angle. |
 | `sheen` | number | 0 .. 100 % | 15 % | Specular surface highlight reflection intensity. |
-| `seed` | number | 0 .. 99 | 0 | Variation seed for block patterns. |
+| `seed` | number | 0 .. 99 | 0 | Variation seed for block, frosted, and pebbled patterns. |
 
 Reach:
 - When `amount > 0`: `Math.ceil(amount) + 2` pixels padding.
-- When `amount === 0`: `0`.
+- When `frost > 0`: `Math.ceil(3 * frost) + 2` pixels padding.
+- Total reach is the sum of displacement padding and frost blur padding.
+- When `amount === 0` and `frost === 0`: `0`.
 
 Skip:
-- When `amount === 0` and `sheen === 0`: skipped (returns source canvas unmodified).
+- When `amount <= 0 && sheen <= 0 && frost <= 0`: skipped (returns source canvas unmodified).
+
+Frost blur:
+- When `frost * scale > 0.05`, the source image is pre-blurred via `blur(src, frost * scale)` before glass displacement is evaluated.
+- Edge clamping uses mirrored padding (`edgePad = ceil(3 * sigma) + 2`) so blurred boundaries remain clean and artefact-free across image borders.
+- When `amount === 0` and `sheen === 0`, only the frost blur is rendered, producing identical output on both CPU and GPU paths ($\pm 1$).
 
 Specular sheen:
 - Fixed directional light source $L = \text{normalize}(-1.0, -1.0, 0.75)$.

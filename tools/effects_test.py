@@ -129,6 +129,8 @@ JS = r"""
         { name: "glass_wavy", params: { style: "wavy", size: 30, amount: 10, angle: -20, sheen: 15, seed: 0 }, kind: "smooth" },
         { name: "glass_reeded", params: { style: "reeded", size: 50, amount: 15, angle: 45, sheen: 10, seed: 0 }, kind: "discontinuous" },
         { name: "glass_blocks", params: { style: "blocks", size: 32, amount: 12, angle: 0, sheen: 15, seed: 7 }, kind: "discontinuous" },
+        { name: "glass_frosted", params: { style: "frosted", size: 30, amount: 10, angle: 15, sheen: 15, seed: 1 }, kind: "smooth" },
+        { name: "glass_pebbled", params: { style: "pebbled", size: 40, amount: 12, angle: -25, sheen: 20, seed: 2 }, kind: "discontinuous" },
     ];
 
     for (const gs of glassSets) {
@@ -201,6 +203,25 @@ JS = r"""
             }
             check("2. glass amount 0 sheen 0 CPU bitwise identity", cDiff === 0, { cDiff });
             check("2. glass amount 0 sheen 0 GPU bitwise identity", gDiff === 0, { gDiff });
+        }
+
+        // Glass frost with amount 0: GPU and CPU equal +-1
+        {
+            const frostP = { style: "frosted", amount: 0, frost: 5, sheen: 0 };
+            const cpuFrost = F.applyFilter("effects.glass", src1, frostP, { cpu: true });
+            const gpuFrostRaw = F.applyFilter("effects.glass", src1, frostP, { cpu: false });
+            const gpuFrost = GL.glToCanvas(gpuFrostRaw);
+
+            const cData = cpuFrost.getContext("2d").getImageData(0, 0, 360, 240).data;
+            const gData = gpuFrost.getContext("2d").getImageData(0, 0, 360, 240).data;
+
+            let maxFrostDiff = 0;
+            for (let i = 0; i < cData.length; i++) {
+                if ((i & 3) === 3) continue;
+                const d = Math.abs(cData[i] - gData[i]);
+                if (d > maxFrostDiff) maxFrostDiff = d;
+            }
+            check("2. glass frost with amount 0 GPU and CPU equal +-1", maxFrostDiff <= 1, { maxFrostDiff });
         }
     }
 
@@ -385,10 +406,11 @@ JS = r"""
     const glassType = filtersList.find((t) => t.id === "effects.glass");
     check("5. filter_types lists effects.glass", !!glassType, filtersList.map((t) => t.id));
     if (glassType) {
-        check("5. glass params count is 6", glassType.params && glassType.params.length === 6, glassType.params);
+        check("5. glass params count is 7", glassType.params && glassType.params.length === 7, glassType.params);
         check("5. glass style param exists", glassType.params.some((p) => p.key === "style"));
         check("5. glass size param exists", glassType.params.some((p) => p.key === "size"));
         check("5. glass amount param exists", glassType.params.some((p) => p.key === "amount"));
+        check("5. glass frost param exists", glassType.params.some((p) => p.key === "frost"));
         check("5. glass angle param exists", glassType.params.some((p) => p.key === "angle"));
         check("5. glass sheen param exists", glassType.params.some((p) => p.key === "sheen"));
         check("5. glass seed param exists", glassType.params.some((p) => p.key === "seed"));
@@ -446,7 +468,7 @@ JS = r"""
     // Add glass filter via command
     const addGlassRes = await commands.run("add_filter", {
         type: "effects.glass",
-        params: { style: "reeded", size: 50, amount: 15, angle: 25, sheen: 20, seed: 3 },
+        params: { style: "reeded", size: 50, amount: 15, frost: 4, angle: 25, sheen: 20, seed: 3 },
         doc: d.id,
     });
     check("5. add_filter returned glass layer id", !!addGlassRes && !!(addGlassRes.id || addGlassRes.layer));
@@ -461,6 +483,7 @@ JS = r"""
     check("5. glass style is reeded", gLayer && gLayer.params && gLayer.params.style === "reeded");
     check("5. glass size is 50", gLayer && gLayer.params && gLayer.params.size === 50);
     check("5. glass amount is 15", gLayer && gLayer.params && gLayer.params.amount === 15);
+    check("5. glass frost is 4", gLayer && gLayer.params && gLayer.params.frost === 4);
     check("5. glass angle is 25", gLayer && gLayer.params && gLayer.params.angle === 25);
     check("5. glass sheen is 20", gLayer && gLayer.params && gLayer.params.sheen === 20);
     check("5. glass seed is 3", gLayer && gLayer.params && gLayer.params.seed === 3);
@@ -515,6 +538,7 @@ JS = r"""
             check("5. open glass style is reeded", openGlass.params && openGlass.params.style === "reeded");
             check("5. open glass size is 50", openGlass.params && openGlass.params.size === 50);
             check("5. open glass amount is 25", openGlass.params && openGlass.params.amount === 25);
+            check("5. open glass frost is 4", openGlass.params && openGlass.params.frost === 4);
             check("5. open glass angle is 25", openGlass.params && openGlass.params.angle === 25);
             check("5. open glass sheen is 20", openGlass.params && openGlass.params.sheen === 20);
             check("5. open glass seed is 3", openGlass.params && openGlass.params.seed === 3);
