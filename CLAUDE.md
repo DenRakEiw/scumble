@@ -97,13 +97,13 @@ user's three steps by hand, `docs/RELEASING.md`). **Decided 2026-10-10 (the user
 R2-D7 answered yes) and item 34 (Generate new with presets and boxes, `docs/PLAN_NEW_PRESETS.md`)**, built by the other
 agent, a review by this account after every session, one release at the end after the user's test; the start command
 was given on 2026-10-10. Open for the user before the sessions that need them: R4-D1 (dissolve), R4-D2..D5, D7..D9, item 34's
-§5 questions. **R4-D6 is done (2026-10-10):** the blend-mode fixture from the user's own Photoshop 27.11.0 lies in
-`dist/fixtures/blendmodes/` (`blendmodes.psd` 12 MB with maximize compatibility, `blendmodes_merged.png` Photoshop's
-merged picture, `modes.json` with every layer's cell, `backdrop.png`, `patch.png`), made by `tools/blendmodes_fixture.py`
+§5 questions. **R4-D6 is done (2026-10-10):** the blend-mode fixture from the user's own Photoshop 27.11.0 is committed in
+`tools/fixtures/blendmodes/` (`blendmodes.psd` 1.5 MB, maximize compatibility off and the 10.6 MB of `shmd` layer metadata
+stripped by `--strip`; `blendmodes_merged.png` Photoshop's merged picture, `modes.json` with every layer's cell, `backdrop.png`, `patch.png`), made by `tools/blendmodes_fixture.py`
 (the deterministic sources) and `tools/blendmodes_fixture.jsx` (run by Photoshop: 27 modes in a 6 x 5 grid of 80 px
 cells, plus multiply at opacity 50, multiply at fill 50, normal at opacity 50 for R4-D8). Scumble 0.1.45 opens the PSD
 with 30 layers and reads the 9 modes it has; the other 18 (dissolve included) come in as normal, which is R4-S3's
-baseline. Whether the PSD goes into the repo (tools/fixtures) or stays regenerated: the user's call. **Waiting for the user:** the test profile `dist/test-profile-0.1.45` and the older
+baseline. R4-S3 reads the committed copy; `dist/fixtures/blendmodes` is the workbench when the fixture is rebuilt. **Waiting for the user:** the test profile `dist/test-profile-0.1.45` and the older
 `dist/portable-test/` to delete; Smithery and GitHub's
 MCP registry with the `.mcpb` (`docs/PLAN_MCP_LISTINGS.md`).
 

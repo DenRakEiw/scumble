@@ -1,7 +1,10 @@
 """The source pictures of the blend-mode fixture (docs/PLAN_NIK9_BUILD.md R4-D6 / R4-S3): a backdrop and a patch,
 deterministic, so the PSD another editor writes from them (tools/blendmodes_fixture.jsx in Photoshop) can be rebuilt.
 
-    python tools/blendmodes_fixture.py [out-dir]      default dist/fixtures/blendmodes
+    python tools/blendmodes_fixture.py [out-dir]      default dist/fixtures/blendmodes (the sources)
+    python tools/blendmodes_fixture.py --strip        after Photoshop: drop the layer metadata (12 MB -> 1.5 MB)
+
+The committed copy is tools/fixtures/blendmodes/ (the gates read it there); dist/fixtures/blendmodes is the workbench.
 
 Writes backdrop.png (512 x 512, opaque: a hue sweep across, a luminance sweep down, a soft checker so every mode has
 light and dark, saturated and grey backdrop pixels to act on) and patch.png (80 x 80 RGBA: a diagonal colour gradient
@@ -15,7 +18,8 @@ import sys
 import numpy as np
 from PIL import Image
 
-OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dist", "fixtures", "blendmodes")
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
+OUT = ARGS[0] if ARGS else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dist", "fixtures", "blendmodes")
 W = H = 512
 P = 80
 
@@ -60,7 +64,53 @@ def patch():
     return out
 
 
+def strip_shmd(path):
+    """Drop every layer's `shmd` block (Photoshop's layer metadata, about 350 KB per layer here, 10.6 MB of the 12 MB
+    file, nothing a reader needs) and rewrite the three lengths above it: the file shrinks to about 1 MB for the repo.
+    Readers tolerate a layer without it (Scumble, psd-tools, Krita read the fixture the same)."""
+    import struct
+    b = bytearray(open(path, "rb").read())
+    o = 26
+    cm = struct.unpack(">I", b[o:o + 4])[0]; o += 4 + cm
+    ir = struct.unpack(">I", b[o:o + 4])[0]; o += 4 + ir
+    lm_at = o; lm = struct.unpack(">I", b[o:o + 4])[0]; o += 4
+    li_at = o; li = struct.unpack(">I", b[o:o + 4])[0]; o += 4
+    n = abs(struct.unpack(">h", b[o:o + 2])[0]); o += 2
+    removed = 0
+    for _ in range(n):
+        o += 16
+        nc = struct.unpack(">H", b[o:o + 2])[0]; o += 2 + 6 * nc
+        o += 12
+        ex_at = o; ex = struct.unpack(">I", b[o:o + 4])[0]; o += 4
+        e_start, e_end = o, o + ex
+        p = o
+        ml = struct.unpack(">I", b[p:p + 4])[0]; p += 4 + ml
+        bl = struct.unpack(">I", b[p:p + 4])[0]; p += 4 + bl
+        nl = b[p]; p += 1 + nl; p = e_start + ((p - e_start + 3) // 4 * 4)
+        cut = []
+        while p + 12 <= e_end and b[p:p + 4] in (b"8BIM", b"8B64"):
+            key = bytes(b[p + 4:p + 8]); ln = struct.unpack(">I", b[p + 8:p + 12])[0]
+            blk = 12 + ln + (ln & 1)
+            if key == b"shmd":
+                cut.append((p, p + blk))
+            p += blk
+        for s, e in reversed(cut):
+            del b[s:e]
+            removed += e - s
+            ex -= e - s
+        b[ex_at:ex_at + 4] = struct.pack(">I", ex)
+        o = e_start + ex
+    b[li_at:li_at + 4] = struct.pack(">I", li - removed)
+    b[lm_at:lm_at + 4] = struct.pack(">I", lm - removed)
+    open(path, "wb").write(bytes(b))
+    return removed
+
+
 def main():
+    if "--strip" in sys.argv:
+        psd = os.path.join(OUT, "blendmodes.psd")
+        print("stripped", strip_shmd(psd), "bytes of layer metadata from", psd, "->", os.path.getsize(psd), "bytes")
+        return
     os.makedirs(OUT, exist_ok=True)
     Image.fromarray(backdrop(), "RGB").save(os.path.join(OUT, "backdrop.png"))
     Image.fromarray(patch(), "RGBA").save(os.path.join(OUT, "patch.png"))

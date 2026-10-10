@@ -1,6 +1,6 @@
 // The blend-mode fixture, written by Photoshop (docs/PLAN_NIK9_BUILD.md R4-D6 / R4-S3): backdrop.png as the
 // background, the patch once per blend mode in a 6 x 5 grid, each layer named after its mode, saved as
-// blendmodes.psd (maximize compatibility on, so the file carries Photoshop's own merged picture), the merged picture
+// blendmodes.psd (maximize compatibility off: small, the merged picture is the PNG), the merged picture
 // as blendmodes_merged.png, and modes.json with each mode's cell. The sources come from tools/blendmodes_fixture.py.
 //
 //   python tools/blendmodes_fixture.py
@@ -55,7 +55,7 @@ for (var i = 0; i < all.length; i++) {
 patchDoc.close(SaveOptions.DONOTSAVECHANGES);
 
 var psd = new PhotoshopSaveOptions();
-psd.maximizeCompatibility = true;
+psd.maximizeCompatibility = false;   // no embedded composite: blendmodes_merged.png is the merged picture, and the file stays small for the repo
 psd.layers = true;
 doc.saveAs(new File(DIR.fsName + "/blendmodes.psd"), psd, true, Extension.LOWERCASE);
 
