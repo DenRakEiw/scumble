@@ -475,6 +475,27 @@ WINDOW = """
 })()
 """
 
+EVERY_MODE_NATIVE_OR_EMULATED = """
+(async () => {
+    const { BLENDS, EMULATED_BLENDS } = await import("./editor/blend_modes.js");
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const failures = [];
+    for (const row of BLENDS) {
+        if (row.canvas !== null) {
+            ctx.globalCompositeOperation = row.canvas;
+            if (ctx.globalCompositeOperation !== row.canvas) {
+                failures.push(row.id + ": assigned " + row.canvas + " but read back " + ctx.globalCompositeOperation);
+            }
+        } else if (!EMULATED_BLENDS.has(row.id)) {
+            failures.push(row.id + ": canvas is null but not in EMULATED_BLENDS");
+        }
+    }
+    return { count: BLENDS.length, failures };
+})()
+"""
+
+
 def compare(a_png, b_png):
     """Max and mean absolute difference per channel between two PNGs of the same size."""
     try:
@@ -506,6 +527,13 @@ async def run(c, args):
     print("document:", info)
     ok = True
     try:
+        # every blend mode is native or emulated
+        ne = await c.eval(EVERY_MODE_NATIVE_OR_EMULATED, timeout=30)
+        if ne.get("failures"):
+            ok = False
+            print(f"[FAIL] every_mode_is_native_or_emulated: {'; '.join(ne['failures'])}")
+        else:
+            print(f"[ok] every_mode_is_native_or_emulated: {ne.get('count')} modes verified")
         for name, js in (("full", FULL), ("view", VIEW)):
             data = base64.b64decode(await c.eval(js, timeout=300))
             cur = os.path.join(OUT, f"{name}.png")

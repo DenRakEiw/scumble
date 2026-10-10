@@ -537,6 +537,7 @@ async function writerChecks(readPsd) {
     if (at > 0) { writeFixtures(process.argv[at + 1]); return; }
     const mod = await editorModule("inpaint_layered.js");
     const { readPsd, readOra, isPsd, isOra, LAYERED_EXT } = mod;
+    const { BLENDS } = await editorModule("blend_modes.js");
 
     console.log("\n--- PSD: channels, compression, depth ---");
     {
@@ -570,7 +571,7 @@ async function writerChecks(readPsd) {
             { name: "Background", top: 0, left: 0, w: W, h: H, ch: solid(W, H, 200, 200, 200) },
             { name: "latin", luni: "Ebene äöü ✓", top: 2, left: 3, w: 4, h: 3, ch: solid(4, 3, 255, 0, 0), blend: "mul ", opacity: 128 },
             { name: "hidden", top: -2, left: -1, w: 3, h: 3, ch: solid(3, 3, 0, 0, 255), flags: 2 },
-            { name: "odd blend", top: 0, left: 0, w: 2, h: 2, ch: solid(2, 2, 1, 2, 3), blend: "vLit" },
+            { name: "odd blend", top: 0, left: 0, w: 2, h: 2, ch: solid(2, 2, 1, 2, 3), blend: "xxxx" },
             { name: "clipped", top: 0, left: 0, w: 2, h: 2, ch: solid(2, 2, 1, 2, 3), clipping: 1 },
             { name: "empty", top: 0, left: 0, w: 0, h: 0, ch: {} },
             { name: "Levels 1", top: 0, left: 0, w: 0, h: 0, ch: {}, info: { levl: new Uint8Array(4) } },
@@ -585,14 +586,14 @@ async function writerChecks(readPsd) {
         check("the Unicode name wins over the Pascal one", L.name === "Ebene äöü ✓");
         check("position, size, blend and opacity", L.x === 3 && L.y === 2 && L.w === 4 && L.h === 3 && L.blend === "multiply" && Math.abs(L.opacity - 128 / 255) < 1e-9, short({ x: L.x, y: L.y, w: L.w, h: L.h, blend: L.blend, opacity: L.opacity }));
         check("a hidden layer (flag 2) is hidden, a negative offset kept", doc.layers[2].visible === false && doc.layers[2].x === -1 && doc.layers[2].y === -2 && doc.layers[1].visible === true);
-        check("an unknown blend mode becomes normal and is named", doc.layers[3].blend === "normal" && doc.notes.some((n) => /blend modes.*odd blend \(vLit\)/.test(n)), short(doc.notes));
+        check("an unknown blend mode becomes normal and is named", doc.layers[3].blend === "normal" && doc.notes.some((n) => /blend modes.*odd blend \(xxxx\)/.test(n)), short(doc.notes));
         // PLAN_0_1_31 §6 step 3: a clip onto a kept layer stays, a clip onto a left-out one (an adjustment here) goes and is named
         check("a clipped layer stays clipped", doc.layers[4].clip === true && doc.layers.filter((l) => l.clip).length === 1 && doc.notes.some((n) => /1 clipped layer kept clipped/.test(n)), short(doc.notes));
         check("a clip onto a left-out layer is dropped and named", !doc.layers[5].clip && doc.notes.some((n) => /not kept.*"clipped to curves"/.test(n)), short(doc.notes));
         check("adjustment layers are named, with and without pixels", doc.notes.some((n) => /2 adjustment or fill layers left out \("Levels 1", "Curves over pixels"\)/.test(n)), short(doc.notes));
         check("the merged picture is read", doc.composite && doc.composite.length === W * H * 4 && doc.composite[3] === 255);
-        const every = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "linear-light", "difference"];
-        const keys = ["norm", "mul ", "scrn", "over", "dark", "lite", "sLit", "hLit", "lLit", "diff"];
+        const every = BLENDS.map((b) => b.id);
+        const keys = BLENDS.map((b) => b.psd);
         const bd = await readPsd(psd({ width: 2, height: 2, layers: keys.map((k) => ({ name: k, top: 0, left: 0, w: 1, h: 1, ch: solid(1, 1, 1, 1, 1), blend: k })) }));
         check("every blend mode the editor writes comes back", JSON.stringify(bd.layers.map((l) => l.blend)) === JSON.stringify(every), short(bd.layers.map((l) => l.blend)));
     }
@@ -784,6 +785,19 @@ async function writerChecks(readPsd) {
         check("an ORA without stack.xml is refused", noXml.ok, noXml.msg);
         const noInflater = await throwsWith(() => readOra(file), /needs an inflater/);
         check("a deflated entry without an inflater is an error", noInflater.ok, noInflater.msg);
+        const oraXml = `<?xml version='1.0' encoding='UTF-8'?>
+<image version="0.0.3" w="10" h="10">
+  <stack>
+${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.id}.png" composite-op="${b.ora}" />`).join("\n")}
+  </stack>
+</image>`;
+        const oraFile = zip([
+            { name: "mimetype", data: "image/openraster" },
+            { name: "stack.xml", data: oraXml, deflate: true },
+            ...BLENDS.map((b) => ({ name: `data/${b.id}.png`, data: png(b.id) })),
+        ]);
+        const oraDoc = await readOra(oraFile, { inflateRaw });
+        check("every blend mode in ORA comes back", JSON.stringify(oraDoc.layers.map((l) => l.blend)) === JSON.stringify(BLENDS.map((b) => b.id)), short(oraDoc.layers.map((l) => l.blend)));
     }
 
     console.log("\n--- PSD writers: layer masks (PsdWriter, PsdBandWriter) ---");

@@ -20,15 +20,21 @@ const zlib = require("node:zlib");
 const MIME = "application/x-scumble";
 const layersOf = (d) => (d && Array.isArray(d.layers) ? d.layers : []);
 
+// kept equal to renderer/editor/blend_modes.js by tools/document_test.js
+const READER_OF_BLEND = { "linear-light": 2 };
+
+const BLEND_FEATURES = Object.entries(READER_OF_BLEND).map(([id, reader]) => ({
+    id: "blend:" + id, since: id === "linear-light" ? "0.1.32" : "0.1.46", reader,
+    sample: { layers: [{ blend: id }] },
+    test: (d) => layersOf(d).some((l) => l && l.blend === id),
+}));
+
 /**
  * One row per document feature: an older reader shows it wrongly (reader) or only carries it (version).
  * sample: the smallest document that has it (for tests).
  */
 const FEATURES = [
-    {
-        id: "linear-light", since: "0.1.32", reader: 2, sample: { layers: [{ blend: "linear-light" }] },
-        test: (d) => layersOf(d).some((l) => l && l.blend === "linear-light"),
-    },
+    ...BLEND_FEATURES,
     {
         id: "maps", since: "0.1.44", version: 2, sample: { maps: { depth: {} } },
         test: (d) => !!(d && d.maps && typeof d.maps === "object" && Object.keys(d.maps).length > 0),
@@ -678,4 +684,5 @@ module.exports = {
     setLimits, resetLimits, mirrorPath, keyOf, entryOf, refOfEntry, collectRefs, renameRefs,
     buildHeader, checkHeader, writeDocument, readDirectory, openDocument, sweepTemps, registerTemp, unregisterTemp,
     isScumble, crcOfFile, fmtBytes, FEATURES, featuresOf, readerFor, versionFor,
+    READER_OF_BLEND,
 };

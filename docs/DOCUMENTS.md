@@ -389,7 +389,7 @@ Python's `zipfile` with `ZIP_STORED`, `mimetype` written first, is one way.
 - `FORMAT_VERSION` in `docfile.js` is what the app writes as `version`, `READER_VERSION` the highest `minReader` it
   opens; derived from the `FEATURES` table. The current format is version 2 / reader 4.
 - The `FEATURES` table (`electron/main/docfile.js`) controls version requirements:
-  - `linear-light` (since 0.1.32): `minReader` 2.
+  - Blend modes with reader requirements: rows generated dynamically from `READER_OF_BLEND` in `docfile.js` (kept equal to `renderer/editor/blend_modes.js`), e.g. `linear-light` (since 0.1.32): `minReader` 2.
   - `maps` (since 0.1.33): format `version` 2.
   - `filter-limit` (since 0.1.44): `minReader` 3 (filter layers with `params.limit`).
   - `depth-snap` (since 0.1.45): `minReader` 4 (document maps with `meta.snap.strength > 0`).

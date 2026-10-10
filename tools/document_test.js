@@ -351,6 +351,8 @@ function listTree(dir) {
             const effFeat = doc.FEATURES.find((f) => f.id === "effects-filters");
             assert(effFeat && doc.readerFor(effFeat.sample) === 4, "readerFor of effects-filters sample is 4");
             assert(doc.readerFor({ layers: [{ kind: "filter", filter: "effects.chromatic_shift" }] }) === 4, "explicit readerFor for effects-filters");
+            const esm = await import("../renderer/editor/blend_modes.js");
+            assert(same(esm.READER_OF_BLEND, doc.READER_OF_BLEND), "READER_OF_BLEND matches blend_modes.js");
             for (const feat of doc.FEATURES) {
                 const sampleH = doc.buildHeader({ document: feat.sample, files: [] });
                 if (feat.reader) assert(sampleH.minReader === feat.reader, `feature ${feat.id} reader`);

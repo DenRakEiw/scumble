@@ -944,7 +944,8 @@ const E = Editor(ed);
 const W = ed.width;
 const out = {};
 let worstOf = 0;
-for (const mode of ["multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "linear-light", "difference"]) {
+const blendModes = (await import("./editor/blend_modes.js")).BLEND_MODES.filter((m) => m !== "normal");
+for (const mode of blendModes) {
     for (const l of ed.layers) l.blend = mode;
     ed.renderLayers();
     const plan = ed.stackPlan({ forRun: true });

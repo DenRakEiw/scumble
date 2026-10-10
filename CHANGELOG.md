@@ -3,6 +3,10 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- A layer in a blend mode this version does not know draws as normal everywhere.
+
 ## 0.1.45 - 2026-10-10
 
 - **Colour grading.** A filter layer that tints the shadows, midtones, highlights and the whole picture separately, each with a colour wheel for hue and saturation, a brightness slider, and Balance and Blending controls where the tonal ranges meet.

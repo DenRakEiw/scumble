@@ -47,6 +47,7 @@ import { SNAP_DEFAULT, SNAP_TAU, snapParams, snapField, rangeMax, edgeTiles } fr
 import { normalizeLimit, u16Bilinear, rangeWeight, opp, colourSimilarity, hexToRgb as hexToRgb01, WEIGHTS_GLSL } from "./inpaint_weights.js";
 import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
+import { BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend } from "./blend_modes.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -311,9 +312,6 @@ const SIDE_MIN_PX = 310;                   // an expanded layer row fits from he
 const SIDE_MAX_SHARE = 0.6;                // of the editor's body: the picture keeps the rest
 const RULER_PX = 18;
 const CURSOR_CLASSES = ["ipc-scale", "ipc-scale-ne", "ipc-scale-x", "ipc-scale-y", "ipc-rotate"];
-const BLEND_MODES = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "linear-light", "difference"];
-// modes Canvas 2D has no globalCompositeOperation for: drawn through `blendEmulated` (PLAN_0_1_31 §4 step 8)
-const EMULATED_BLENDS = new Set(["linear-light"]);
 
 // the tone brush's dab through the smudge engine: the whole of its curve at every dab, nothing carried (§4 step 9)
 const TONE_DAB = Object.freeze({ strength: 100, length: 0 });
@@ -1497,14 +1495,15 @@ const STYLE = `
 .ipc-text input[type=color] { width:26px; height:22px; padding:0; border:1px solid var(--sc-border, #4a4a4a); border-radius:var(--sc-radius, 4px); background:var(--sc-btn, #333); cursor:pointer; }
 .ipc-text .ipc-sel { flex:1; min-width:0; }
 .ipc-text .ipc-num { width:52px; }
-.ipc-fx { display:grid; grid-template-columns:auto 1fr auto; gap:3px 6px; align-items:center; font-size:11px; color:var(--sc-muted, #888); }
-.ipc-fx .ipc-sel { grid-column:1 / -1; max-width:none; }
+.ipc-fx { display:grid; grid-template-columns:auto minmax(0, 1fr) auto; gap:3px 6px; align-items:center; font-size:11px; color:var(--sc-muted, #888); min-width:0; }
+.ipc-fx .ipc-sel { grid-column:1 / -1; width:100%; min-width:0; max-width:100%; box-sizing:border-box; }
+.ipc-fx select { width:100%; min-width:0; max-width:100%; box-sizing:border-box; }
 .ipc-fx input[type=range] { width:100%; min-width:0; margin:0; }
 .ipc-fx input.ipc-fxcolor { width:100%; min-width:0; height:20px; margin:0; padding:0 2px; border:1px solid var(--sc-line, #111); border-radius:var(--sc-radius-sm, 3px); background:none; cursor:pointer; }
 .ipc-fx b.ipc-hex { width:auto; font-family:ui-monospace, monospace; }
 .ipc-fx b { width:42px; text-align:right; font-weight:500; color:var(--sc-fg-2, #bbb); }
 .ipc-fx .ipc-lutrow { grid-column:1 / -1; display:flex; gap:6px; align-items:center; min-width:0; }
-.ipc-fx .ipc-lutrow span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--sc-fg-2, #aaa); }
+.ipc-fx .ipc-lutrow span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--sc-fg-2, #aaa); }
 .ipc-wheels { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 .ipc-wheel { display:flex; flex-direction:column; align-items:center; gap:2px; }
 .ipc-wheel span { color:var(--sc-muted, #888); }
@@ -14072,7 +14071,7 @@ class InpaintEditor {
             ctx.save();
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
-            ctx.globalCompositeOperation = mode && mode !== "normal" ? mode : "source-over";
+            ctx.globalCompositeOperation = canvasOp(mode);
             ctx.drawImage(s, 0, 0);
             ctx.restore();
             return;
@@ -15142,7 +15141,7 @@ class InpaintEditor {
                 return null;
             }
             ctx.globalAlpha = limitView ? 1 : layer.opacity;
-            ctx.globalCompositeOperation = limitView ? "source-over" : ((layer.blend && layer.blend !== "normal") ? layer.blend : "source-over");
+            ctx.globalCompositeOperation = limitView ? "source-over" : canvasOp(layer.blend);
             ctx.drawImage(src, rx, ry, rw, rh);
             ctx.globalAlpha = 1;
             ctx.globalCompositeOperation = "source-over";
@@ -15767,7 +15766,7 @@ class InpaintEditor {
                     }
                     this.holdGroups = (this.holdGroups || 0) + 1;
                     try {
-                        for (const L of order) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, group: (L.group && gid.get(L.group)) || null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx, clip: role !== "reference" && !!L.clip }, { activate: false });
+                        for (const L of order) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, group: (L.group && gid.get(L.group)) || null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: normalBlend(L.blend), dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx, clip: role !== "reference" && !!L.clip }, { activate: false });
                     } finally { this.holdGroups--; }
                     this.renderLayers();
                     if (last) this.activeLayerId = last.id;
@@ -16060,7 +16059,7 @@ class InpaintEditor {
                 if (EMULATED_BLENDS.has(layer.blend)) this.blendEmulated(ctx, layer.blend, (lc) => { this.drawLayer(lc, layer); }, layer.opacity);
                 else {
                     ctx.globalAlpha = layer.opacity;
-                    ctx.globalCompositeOperation = layer.blend && layer.blend !== "normal" ? layer.blend : "source-over";
+                    ctx.globalCompositeOperation = canvasOp(layer.blend);
                     this.drawLayer(ctx, layer);
                 }
                 ctx.globalAlpha = 1;
@@ -16168,7 +16167,7 @@ class InpaintEditor {
             }
         } else {
             ctx.globalAlpha = layer.opacity;
-            ctx.globalCompositeOperation = layer.blend && layer.blend !== "normal" ? layer.blend : "source-over";
+            ctx.globalCompositeOperation = canvasOp(layer.blend);
             ctx.drawImage(this.layerPixels(layer), (layer.x - x0) * res, (layer.y - y0) * res, layer.w * res, layer.h * res);
         }
         // no alpha, blend or smoothing left on the new pixels' context (PLAN_BCE §C1 rule 11)
@@ -17384,7 +17383,7 @@ class InpaintEditor {
         this.groups = (doc.groups || []).map((g) => ({ id: gid.get(g.id), name: g.name, visible: g.visible !== false, locked: false, collapsed: !!g.collapsed, parent: g.parent ? gid.get(g.parent) || null : null }));
         this.holdGroups = (this.holdGroups || 0) + 1;   // the groups wait for their layers: addLayer's list would drop them as empty
         try {
-            for (const L of layers) top = this.addLayer({ name: L.name, kind: "image", ref: null, group: L.group ? gid.get(L.group) || null : null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx, clip: !!L.clip }, { activate: false });
+            for (const L of layers) top = this.addLayer({ name: L.name, kind: "image", ref: null, group: L.group ? gid.get(L.group) || null : null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: normalBlend(L.blend), dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx, clip: !!L.clip }, { activate: false });
         } finally { this.holdGroups--; }
         if (top) this.activeLayerId = top.id;
         this.renderLayers();
@@ -17446,7 +17445,7 @@ class InpaintEditor {
         if (layer.visible == null) layer.visible = true;
         if (layer.opacity == null) layer.opacity = 1;
         if (!layer.kind) layer.kind = "result";
-        if (!layer.blend) layer.blend = "normal";
+        layer.blend = normalBlend(layer.blend);
         if (!layer.role) layer.role = "none";
         if (layer.maskPx === undefined) layer.maskPx = null;
         if (!layer.maskPx) { layer.maskRef = null; layer.maskDirty = false; layer.maskEdit = false; layer.maskOff = false; }
@@ -19177,6 +19176,8 @@ class InpaintEditor {
             if (!this.shown(l)) continue;
             if (l.kind === "filter") return false;             // the filter chain is step 2
             if (l.maskEdit) return false;
+            const b = l.blend || "normal";
+            if (b !== "normal" && !(b in BLEND_OPS)) return false;
         }
         return !!this.compositor();
     }
@@ -19397,7 +19398,7 @@ class InpaintEditor {
                 drawn.add(layer);
                 if (cb || (!controlOnly && EMULATED_BLENDS.has(layer.blend))) { this.blendEmulated(ctx, layer.blend, (lc) => { this.drawLayer(lc, layer, { skipFilters: skip }); }, layer.opacity, cb ? coverage(cb) : null); continue; }
                 ctx.globalAlpha = layer.opacity;
-                ctx.globalCompositeOperation = (!controlOnly && layer.blend && layer.blend !== "normal") ? layer.blend : "source-over";
+                ctx.globalCompositeOperation = controlOnly ? "source-over" : canvasOp(layer.blend);
                 this.drawLayer(ctx, layer, { skipFilters: skip });
             }
             chain = this.flushFilterChain(ctx, chain);
@@ -21677,7 +21678,7 @@ class InpaintEditor {
                             // its params: applyFilter passes the picture through, and the next save writes it back unchanged
                             const fid = typeof l.filter === "string" && l.filter ? l.filter : "grain";
                             this.layers.push(installLayerAliases({
-                                id: l.id, name: l.name, kind: "filter", role: "none", blend: l.blend || "normal", ref: null, px: pixels,
+                                id: l.id, name: l.name, kind: "filter", role: "none", blend: normalBlend(l.blend), ref: null, px: pixels,
                                 x: 0, y: 0, w: this.width, h: this.height, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, clip: !!l.clip, group: l.group || null,
                                 maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
                                 filter: fid, params: FILTERS[fid] ? { ...filterDefaults(fid), ...(l.params || {}) } : { ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,
@@ -21691,7 +21692,7 @@ class InpaintEditor {
                     }
                     if (l.kind === "text" && l.text && !l.ref) {
                         // never uploaded (editor closed without sync): render it again from its description
-                        const layer = { id: l.id, name: l.name, kind: "text", role: l.role || "none", blend: l.blend || "normal", ref: null, px: this.pixels.Layer.empty(1, 1), x: l.x, y: l.y, w: 1, h: 1, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: true, locked: !!l.locked, alphaLock: !!l.alphaLock, clip: !!l.clip, group: l.group || null, maskPx: null, maskRef: null, maskDirty: false, maskEdit: false, match: { strength: 0, source: "surroundings" }, text: { ...TEXT_DEFAULTS, ...l.text } };
+                        const layer = { id: l.id, name: l.name, kind: "text", role: l.role || "none", blend: normalBlend(l.blend), ref: null, px: this.pixels.Layer.empty(1, 1), x: l.x, y: l.y, w: 1, h: 1, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: true, locked: !!l.locked, alphaLock: !!l.alphaLock, clip: !!l.clip, group: l.group || null, maskPx: null, maskRef: null, maskDirty: false, maskEdit: false, match: { strength: 0, source: "surroundings" }, text: { ...TEXT_DEFAULTS, ...l.text } };
                         this.layers.push(installLayerAliases(layer, this.pixels));
                         this.textCounter = (this.textCounter || 0) + 1;
                         textToRender.push(layer);
@@ -21713,7 +21714,7 @@ class InpaintEditor {
                             if (stale()) return;
                         }
                         this.layers.push(installLayerAliases({
-                            id: l.id, name: l.name, kind: l.kind || "result", role: l.role || "none", blend: l.blend || "normal",
+                            id: l.id, name: l.name, kind: l.kind || "result", role: l.role || "none", blend: normalBlend(l.blend),
                             ref: l.ref, px: pixels,
                             x: l.x, y: l.y, w: l.w, h: l.h, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, alphaLock: !!l.alphaLock, clip: !!l.clip, group: l.group || null,
                             maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),

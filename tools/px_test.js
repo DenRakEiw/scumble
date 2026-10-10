@@ -1395,7 +1395,7 @@ const blendFloat = (op, b, s) => {
     const d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b);
     return [b * s, b + s - b * s, hl(s, b), Math.min(b, s), Math.max(b, s), s <= 0.5 ? b - (1 - 2 * s) * b * (1 - b) : b + (2 * s - 1) * (d - b), hl(b, s), Math.abs(b - s), Math.min(1, Math.max(0, b + 2 * s - 1))][op - 5];
 };
-const BLEND_NAMES = ["multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "difference", "linear-light"];
+let BLEND_NAMES = [];
 
 const reference = {
     /** 2×2 box weighted by alpha: alpha (A + 2) >> 2, colour floor((Σ c·a + A/2) / A), 0 when A is 0. */
@@ -1530,6 +1530,8 @@ async function resampleCases(px, label, R) {
 }
 
 async function main() {
+    const { BLENDS } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "blend_modes.js")).href);
+    for (const b of BLENDS) if (b.op >= 5) BLEND_NAMES[b.op - 5] = b.id;
     const js = await import(pathToFileURL(path.join(PX_DIR, "kernels_js.js")).href);
     const resample = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_resample.js")).href);
     const raster = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_raster.js")).href);
