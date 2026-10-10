@@ -3,27 +3,26 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.45 - 2026-10-10
 
-- Plugin filters can take statistics of the whole picture below them, at a size they choose, and read the document's depth map (plugin API 4). Parameter type "color", hidden parameters, and cancelFilterParams.
-- Edge snapping and detail tile fusion foundation for depth maps: bilateral edge-aware color snapping maths, robust tile alignment and raised-cosine overlap blending, separable 4x4 range maps, and 256px tile edge detection.
-- Depth map color guide and edge snap settings are saved in the document; documents with edge snap require reader version 4 (Scumble 0.1.45). Live preview and undo/redo support for map meta changes without copying large pixel buffers.
-- Depth-limited filter layers snap cleanly to fine edges (hairs, leaves, silhouettes) via real-time bilateral color guidance; interactive *Edges* slider in depth map controls with live preview and Escape cancellation, and so does a selection by depth.
-- Built-in Haze by depth filter: simulates atmospheric haze and aerial perspective using the scene's depth map, with density, start threshold, falloff curve, and desaturation controls. Automatically samples airlight color from the scene's far distance or takes a custom color. Edge snapping aligns haze cleanly to fine object contours.
-- Mathematical foundations for dehazing: Dark Channel Prior calculation via O(1) van Herk / Gil-Werman running min filter, atmospheric light estimation, and transmission refinement using gray guided filter.
-- **Dehaze**, a filter layer that clears haze from the distance, found in the picture itself or taken from the depth map, with *Protect sky*.
-- **Fix the depth map by hand**: *Flatten*, *Nearer*, *Farther* and *Smooth* inside the selection; new `depth_edit` command.
-- **Finer depth maps** for large pictures: *Detail* › *Fine* / *Finest*.
-- **Your own depth map**: any grey layer can become the document's depth map (*From layer…*).
-- **Colour grading**: a filter layer that tints the shadows, midtones, highlights and the whole picture separately, each with a hue, a strength and a brightness, with Balance and Blending for where the ranges meet.
-- **HSL in 8 channels**: a filter layer that adjusts hue, saturation and luminance separately across 8 colour channels (red, orange, yellow, green, aqua, blue, purple, magenta), with smooth bell-curve weighting leaving neutrals clean.
-- **Control points v2**: control points can now be oriented ellipses as well as circles, with an interactive softness slider (diffusion 0..100) controlling spatial falloff. Ellipses are placed by dragging along the long axis and resized via radius and height handles; Escape key cleanly deselects points and releases boxes in the boxes tool. Documents with shaped points require reader version 4 (Scumble 0.1.45).
-- **Polygonal and line control points**: control points can now also be closed polygons (3 to 16 corners with draggable vertices, Enter/double-click/first-corner closing, Backspace undo, and an interactive feather slider) or graduated lines (drag from zero to full effect, with feather, angle, and end handles). Bounding-box early out keeps GPU evaluation of 64 polygons on 24 MP bands under 3 ms.
-- **Preset hover preview**: holding the pointer over a stock in the Film looks panel previews it on the active film look layer; moving between cells previews each in turn, leaving the grid restores the original, and clicking applies it as a single undo step. Every select dropdown in a filter layer row now has a mini list button to preview entries on hover and pick with a click. Fixed "None (adjustments only)" adding grain in film looks.
-- **Paste a mask and control points**: copy a layer's mask and paste it onto another layer (*Copy mask* / *Paste mask from <name>* in the mask menu, or `set_mask` with `op: "from_layer"` and `source: <layer>`); masks match position in the picture and hide outside the source area. Control points can now be copied and pasted across pictures (`film.copy_points` and `film.paste_points`), automatically scaled to the destination picture with anchor colours re-sampled.
-- **Effects pack and chromatic shift**: a second built-in plugin, the Effects pack, starting with **Chromatic shift** (simulates colour plates out of register 120 degrees apart, lateral chromatic aberration radiating outward from the picture centre, or directional linear dispersion), with WebGL2 shader acceleration and an identical CPU twin. Documents with effects filters require reader version 4 (Scumble 0.1.45).
-- **Glass displacement**: a creative optical filter in the Effects pack with ribbed sine ridges, reeded fluted lenses, 2D wavy ridges, and hash-based blocks displacement, with adjustable size, displacement reach, orientation angle, specular sheen, and seed, accelerated in WebGL2 with an identical CPU twin.
-- **Frosted and pebbled glass**: two new styles in the Glass displacement filter - Frosted (fine-grained fractal value noise) and Pebbled (rounded lens cells with jittered centres) - plus a Frost blur parameter (0..20 px) that scatters light inside the glass before displacement.
+- **Colour grading.** A filter layer that tints the shadows, midtones, highlights and the whole picture separately, each with a colour wheel for hue and saturation, a brightness slider, and Balance and Blending controls where the tonal ranges meet.
+- **HSL in 8 channels.** A filter layer with individual hue, saturation and luminance adjustments across 8 separate colour channels (red, orange, yellow, green, aqua, blue, purple, magenta), with smooth transitions that leave neutral greys untouched.
+- **Control points that take any shape.** Control points can now be oriented ellipses as well as circles, with an interactive softness slider (diffusion 0..100) for edge falloff. Control points can also be closed polygons (3 to 16 corners with draggable vertices) or graduated lines (drag from zero to full effect with feather and angle handles). Escape deselects the active point.
+- **Effects pack: Chromatic shift and Glass displacement.** A second built-in plugin, the Effects pack:
+  - **Chromatic shift** simulates optical colour fringe dispersion (colour plates 120 degrees apart, lateral dispersion radiating from the picture centre, or directional linear shifts).
+  - **Glass displacement** refracts the picture through ribbed sine ridges, reeded fluted lenses, wavy corrugations, blocks, frosted glass (fractal noise), or pebbled lens cells, with specular sheen and an optional frost blur.
+- **Preset hover preview.** Hovering over a preset or stock in the Film looks panel previews it on the active film look layer, restoring on pointer leave and committing with a single undo step. Every dropdown select in a filter layer row now provides a mini list button to preview choices on hover.
+- **Paste a mask and control points.** Copy a layer's mask and paste it onto any other layer (*Copy mask* / *Paste mask from <name>* in the mask menu); masks match image position and hide outside the source area. Control points can also be copied and pasted across pictures, automatically scaling to destination picture bounds with colours re-sampled.
+- **Edge-snapped depth and atmospheric filters.**
+  - Depth-limited filter layers and selections by depth snap cleanly to fine contours (hair, silhouettes, foliage) using bilateral colour guidance; set with the interactive *Edges* slider.
+  - **Haze**: simulates atmospheric perspective using the depth map, automatically sampling airlight from the far distance or taking a custom colour.
+  - **Dehaze**: clears haze from the distance, found in the picture itself or taken from the depth map, with *Protect sky*.
+  - **Fix depth maps by hand**: *Flatten*, *Nearer*, *Farther*, and *Smooth* inside a selection.
+  - **Detail pass**: *Fine* (2x2) and *Finest* (3x3) detail passes for large pictures.
+  - **Depth from layer**: turn any grey layer into the document's depth map (*From layer...*).
+- **Documents.** A document with a colour grading, HSL or effects layer, or a control point of the new shapes, or a depth map with edge snap, needs Scumble 0.1.45 or newer to open (reader version 4).
+- **Plugin API 4.** Filter plugins can take statistics of the whole composite underneath them via `wholeStats` and `wholeStatsSize`, add `color` and `hidden` parameters, and rollback pending previews with `cancelFilterParams`.
+- **Fixes.** Film looks with no grain ("None" or grainless stocks) no longer run an unnecessary grain pass. Pressing Escape in plugin tools and the boxes tool properly deselects or cancels.
 
 ## 0.1.44 — 2026-10-09
 
