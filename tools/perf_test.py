@@ -93,7 +93,8 @@ BENCH = """
             x.fillStyle = `hsl(${(k * 53 + i * 90) %% 360},70%%,60%%)`;
             x.fillRect((k * 811) %% W, (k * 457) %% H, W / 25, H / 25);
         }
-        ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: LayerPixels.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
+        const l = ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: LayerPixels.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
+        if (%(blend_id)s) l.blend = %(blend_id)s;
     }
     // a result layer with colour match, like an inpaint result over the selection
     const rw = Math.min(2048, Math.round(W / 3)), rh = Math.min(2048, Math.round(H / 3));
@@ -888,6 +889,7 @@ async def chain_main():
 
 async def main():
     filter_id = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--filter=")), "film.look")
+    blend_id = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--blend=")), None)
     limit_arg = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--limit=")), None)
     map_arg = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--map=")), "4096x2731")
     limit_obj = None
@@ -919,6 +921,7 @@ async def main():
                 "limit_obj": json.dumps(limit_obj),
                 "map_w": map_w,
                 "map_h": map_h,
+                "blend_id": json.dumps(blend_id),
             }
             results.append(json.loads(await c.eval(js, timeout=900)))
         return results

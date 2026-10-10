@@ -12,7 +12,7 @@
 #
 # A gate is a tools/ script name without .py (editor, composite, pixels, shape, brush, commands,
 # film, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, oxen, magnific, recipes, assistant, mcp, smoke,
-# node, perf:<args>; mcpb is tools/mcpb_test.js in plain Node).
+# node, blendmodes, perf:<args>; mcpb is tools/mcpb_test.js in plain Node).
 # Gate "toapis" (tools/toapis_test.py) runs tools/toapis_test.js in plain Node first, then the app against
 # tools/toapis_mock.py; it needs no ToAPIs key and refuses a profile that holds one. Gate "openrouter"
 # (tools/openrouter_test.py) does the same with tools/openrouter_test.js and tools/openrouter_mock.py, and gate

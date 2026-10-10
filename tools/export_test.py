@@ -1114,7 +1114,8 @@ for (let i = 0; i < 3; i++) {
     x.globalAlpha = 0.5;
     x.fillStyle = `hsla(${i * 60},80%,50%,0.35)`; x.fillRect(i * 40, i * 40, W - i * 120, H - i * 120);
     for (let k = 0; k < 20; k++) { x.fillStyle = `hsl(${(k * 53 + i * 90) % 360},70%,60%)`; x.fillRect((k * 811) % W, (k * 457) % H, W / 25, H / 25); }
-    ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: L.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
+    const l = ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: L.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
+    if (__BLEND__) l.blend = __BLEND__;
     c.width = 1; c.height = 1;
 }
 const mapW = __MAP_W__, mapH = __MAP_H__;
@@ -1229,13 +1230,15 @@ async def run_all(c):
             if limit_obj["source"] == "depth":
                 mw, mh = map_arg.lower().split("x")
                 map_w, map_h = int(mw), int(mh)
+        blend_id = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--blend=")), None)
         perf_js = (PERF.replace("__W__", w)
                        .replace("__H__", h)
                        .replace("__FILTER__", json.dumps(filter_id))
                        .replace("__FILTER_PARAMS__", json.dumps(filter_params))
                        .replace("__LIMIT__", json.dumps(limit_obj))
                        .replace("__MAP_W__", str(map_w))
-                       .replace("__MAP_H__", str(map_h)))
+                       .replace("__MAP_H__", str(map_h))
+                       .replace("__BLEND__", json.dumps(blend_id)))
         res = await c.eval(PRE % (HELPERS, perf_js), timeout=1800)
         print(json.dumps(res, indent=1))
         return True

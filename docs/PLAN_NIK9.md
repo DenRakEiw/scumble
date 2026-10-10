@@ -268,3 +268,37 @@ Executed and measured via `tools/depth_bench.py` on Depth Anything V2 Small (CPU
    - **Decision: Snap + Flatten.** Bilateral snap (`SNAP_GLSL`) plus *Flatten* provides clean selection boundaries without requiring complex stored tile atlases.
 4. **R2-D10 (Guide memory):**
    - **Decision: Accept 44.7 MB guide.** RGBA8 guide preserves chroma transitions (e.g. red against blue of equal luminance) that luma-only guides miss.
+
+## Release 4 baseline (measured 2026-10-10, R4-S3)
+
+### 1. Parity Against Kernel on 65,536 Pairs & Triplets (Gate `blendmodes`)
+
+| Blend Mode | Op | GL View vs Kernel (opaque) | GL View vs Kernel (translucent) | Canvas View vs Kernel (translucent) | Worker vs Flatten (clipped/masked) | Export vs Kernel (tiles on) |
+|---|---|---|---|---|---|---|
+| `multiply` | 5 | max 1 (6224 diffs) | max 1, mean 0.0746, over2 0 | max 1, mean 0.0681, over2 0 | max 2, over2 0 | 0 bytes diff |
+| `screen` | 6 | max 1 (5646 diffs) | max 1, mean 0.0652, over2 0 | max 2, mean 0.1064, over2 0 | max 2, over2 0 | 0 bytes diff |
+| `overlay` | 7 | max 1 (5966 diffs) | max 1, mean 0.0531, over2 0 | max 1, mean 0.0523, over2 0 | max 2, over2 0 | 0 bytes diff |
+| `darken` | 8 | max 0 (0 diffs) | max 1, mean 0.0562, over2 0 | max 1, mean 0.0528, over2 0 | max 2, over2 0 | 0 bytes diff |
+| `lighten` | 9 | max 0 (0 diffs) | max 1, mean 0.0518, over2 0 | max 1, mean 0.0523, over2 0 | max 2, over2 0 | 0 bytes diff |
+| `soft-light` | 10 | max 1 (5806 diffs) | max 1, mean 0.0388, over2 0 | max 1, mean 0.0387, over2 0 | max 2, over2 0 | 0 bytes diff |
+| `hard-light` | 11 | max 1 (5966 diffs) | max 2, mean 0.1003, over2 0 | max 2, mean 0.0988, over2 0 | max 2, over2 0 | 0 bytes diff |
+| `difference` | 12 | max 0 (0 diffs) | max 1, mean 0.1227, over2 0 | max 1, mean 0.1130, over2 0 | max 2, over2 0 | 0 bytes diff |
+| `linear-light` | 13 | max 0 (0 diffs) | max 2, mean 0.1290, over2 0 | max 2, mean 0.0836, over2 0 | max 2, over2 0 | 0 bytes diff |
+
+### 2. Large Document Export Baseline (15000 x 10000, 150 MP)
+
+| Blend Mode | Composite Bands (SIMD tiles) | Composite Canvas (Canvas 2D) | Layer From Tiles | Layer Canvas | PSD | PSD Masked |
+|---|---|---|---|---|---|---|
+| `multiply` | **1624 ms** (blocked 99 ms) | 4833 ms (blocked 3006 ms) | 715 ms | 1859 ms | 1994 ms | 2285 ms |
+| `linear-light` | **1831 ms** (blocked 98 ms) | 9498 ms (blocked 8011 ms) | 668 ms | 1483 ms | 1943 ms | 2439 ms |
+
+*Note: In `composite_canvas`, linear-light takes 9498 ms due to CPU shader emulation per pixel across the Canvas 2D path, whereas the SIMD worker tile stack (`composite_bands`) finishes in 1831 ms (comparable to native multiply at 1624 ms).*
+
+### 3. Screen Drawing Baseline at 6000 x 4000 (24 MP, `--tiles off`)
+
+- `linear-light` full composite: **574.9 ms** (wall 930.6 ms)
+- `pan at 1:1`: 5.8 ms (worst 49.8 ms)
+- `film point add (look under it)`: 963 ms
+- `opacity slider tick`: 12.6 ms
+- `colour match tick`: 12.8 ms
+- `filter slider tick`: 12.5 ms
