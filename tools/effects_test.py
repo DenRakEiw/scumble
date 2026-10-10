@@ -55,6 +55,20 @@ JS = r"""
         check("0. reach 0 for amount 0", filterDef.reach({ amount: 0, strength: 100 }) === 0);
     }
 
+    check("0. glass registered in FILTERS", !!F.FILTERS["effects.glass"]);
+    const glassDef = F.FILTERS["effects.glass"];
+    check("0. glass reach defined", typeof glassDef.reach === "function");
+    if (glassDef && glassDef.reach) {
+        check("0. glass reach > 0 for amount 12", glassDef.reach({ amount: 12 }) === 14);
+        check("0. glass reach 0 for amount 0", glassDef.reach({ amount: 0 }) === 0);
+    }
+    check("0. glass skip defined", typeof glassDef.skip === "function");
+    if (glassDef && glassDef.skip) {
+        check("0. glass skip true for amount 0 sheen 0", glassDef.skip({ amount: 0, sheen: 0 }) === true);
+        check("0. glass skip false for amount 12", glassDef.skip({ amount: 12, sheen: 0 }) === false);
+        check("0. glass skip false for sheen 15", glassDef.skip({ amount: 0, sheen: 15 }) === false);
+    }
+
     // -------------------------------------------------------------------------
     // 1. GPU against CPU parity (gpu_vs_cpu for all three styles, max <= 2)
     // -------------------------------------------------------------------------
@@ -110,6 +124,45 @@ JS = r"""
         check(`1. gpu_vs_cpu ${ts.name} max <= 2`, maxDiff <= 2, { maxDiff, meanDiff, over2 });
     }
 
+    const glassSets = [
+        { name: "glass_ribbed", params: { style: "ribbed", size: 40, amount: 12, angle: 30, sheen: 20, seed: 0 }, kind: "smooth" },
+        { name: "glass_wavy", params: { style: "wavy", size: 30, amount: 10, angle: -20, sheen: 15, seed: 0 }, kind: "smooth" },
+        { name: "glass_reeded", params: { style: "reeded", size: 50, amount: 15, angle: 45, sheen: 10, seed: 0 }, kind: "discontinuous" },
+        { name: "glass_blocks", params: { style: "blocks", size: 32, amount: 12, angle: 0, sheen: 15, seed: 7 }, kind: "discontinuous" },
+    ];
+
+    for (const gs of glassSets) {
+        const info = { scale: 1, full: [360, 240], origin: [0, 0], cache: {} };
+        const cpuCanvas = F.applyFilter("effects.glass", src1, gs.params, { ...info, cpu: true });
+        const gpuRaw = F.applyFilter("effects.glass", src1, gs.params, { ...info, cpu: false });
+        const gpuCanvas = GL.glToCanvas(gpuRaw);
+
+        const cpuData = cpuCanvas.getContext("2d").getImageData(0, 0, 360, 240).data;
+        const gpuData = gpuCanvas.getContext("2d").getImageData(0, 0, 360, 240).data;
+
+        let maxDiff = 0, sumDiff = 0, count = 0, over2 = 0, over4 = 0;
+        for (let i = 0; i < cpuData.length; i++) {
+            if ((i & 3) === 3) continue; // skip alpha
+            const d = Math.abs(cpuData[i] - gpuData[i]);
+            if (d > maxDiff) maxDiff = d;
+            if (d > 2) over2++;
+            if (d > 4) over4++;
+            sumDiff += d;
+            count++;
+        }
+        const meanDiff = +(sumDiff / count).toFixed(4);
+        const over2Pct = +((over2 / count) * 100).toFixed(4);
+        const over4Pct = +((over4 / count) * 100).toFixed(4);
+        out.gpu_vs_cpu[gs.name] = { max: maxDiff, mean: meanDiff, over2Pct, over4Pct };
+        if (gs.kind === "smooth") {
+            check(`1. gpu_vs_cpu ${gs.name} max <= 4`, maxDiff <= 4, { maxDiff, meanDiff, over2Pct });
+            check(`1. gpu_vs_cpu ${gs.name} over2 <= 0.1%`, over2Pct <= 0.1, { over2Pct });
+        } else {
+            check(`1. gpu_vs_cpu ${gs.name} over2 <= 0.1%`, over2Pct <= 0.1, { maxDiff, meanDiff, over2Pct });
+            check(`1. gpu_vs_cpu ${gs.name} over4 <= 0.02%`, over4Pct <= 0.02, { over4Pct });
+        }
+    }
+
     // -------------------------------------------------------------------------
     // 2. amount: 0 returns the input's bytes on both paths
     // -------------------------------------------------------------------------
@@ -130,6 +183,24 @@ JS = r"""
             }
             check(`2. ${mode} CPU bitwise identity`, cDiff === 0, { cDiff });
             check(`2. ${mode} GPU bitwise identity`, gDiff === 0, { gDiff });
+        }
+
+        // Glass amount 0, sheen 0 identity
+        {
+            const cpuZero = F.applyFilter("effects.glass", src1, { amount: 0, sheen: 0 }, { cpu: true });
+            const gpuZeroRaw = F.applyFilter("effects.glass", src1, { amount: 0, sheen: 0 }, { cpu: false });
+            const gpuZero = GL.glToCanvas(gpuZeroRaw);
+
+            const cData = cpuZero.getContext("2d").getImageData(0, 0, 360, 240).data;
+            const gData = gpuZero.getContext("2d").getImageData(0, 0, 360, 240).data;
+
+            let cDiff = 0, gDiff = 0;
+            for (let i = 0; i < srcOrig.length; i++) {
+                if (Math.abs(srcOrig[i] - cData[i]) > cDiff) cDiff = Math.abs(srcOrig[i] - cData[i]);
+                if (Math.abs(srcOrig[i] - gData[i]) > gDiff) gDiff = Math.abs(srcOrig[i] - gData[i]);
+            }
+            check("2. glass amount 0 sheen 0 CPU bitwise identity", cDiff === 0, { cDiff });
+            check("2. glass amount 0 sheen 0 GPU bitwise identity", gDiff === 0, { gDiff });
         }
     }
 
@@ -170,6 +241,51 @@ JS = r"""
             check(`3. ${name} blue at x=103`, p103[0] === 0 && p103[1] === 0 && p103[2] === 255, { p103 });
             check(`3. ${name} black at x=96`, p96[0] === 0 && p96[1] === 0 && p96[2] === 0, { p96 });
             check(`3. ${name} black at x=104`, p104[0] === 0 && p104[1] === 0 && p104[2] === 0, { p104 });
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3b. Ribbed on an x-ramp unchanged +-1 where sin = 0
+    // -------------------------------------------------------------------------
+    {
+        const Wramp = 410, Hramp = 40;
+        const cvRamp = mk(Wramp, Hramp);
+        const ctxRamp = cvRamp.getContext("2d");
+        const imgRamp = ctxRamp.createImageData(Wramp, Hramp);
+        for (let y = 0; y < Hramp; y++) {
+            for (let x = 0; x < Wramp; x++) {
+                const idx = (y * Wramp + x) * 4;
+                const v = Math.round((x / Wramp) * 200);
+                imgRamp.data[idx] = v;
+                imgRamp.data[idx + 1] = v;
+                imgRamp.data[idx + 2] = v;
+                imgRamp.data[idx + 3] = 255;
+            }
+        }
+        ctxRamp.putImageData(imgRamp, 0, 0);
+
+        const rampParams = { style: "ribbed", size: 41, amount: 20, angle: 0, sheen: 0, seed: 0 };
+        const cpuRamp = F.applyFilter("effects.glass", cvRamp, rampParams, { cpu: true, scale: 1 });
+        const gpuRampRaw = F.applyFilter("effects.glass", cvRamp, rampParams, { cpu: false, scale: 1 });
+        const gpuRamp = GL.glToCanvas(gpuRampRaw);
+
+        for (const [backend, cv] of [["CPU", cpuRamp], ["GPU", gpuRamp]]) {
+            const d = cv.getContext("2d").getImageData(0, 0, Wramp, Hramp).data;
+            let maxErrAtZero = 0;
+            // With size 41 and angle 0, picX = x + 0.5.
+            // At x = 20: picX = 20.5 = 41/2, s = 0.5, sin(2 pi s) = 0.
+            // At x = 20 + 41 * k (k = 0..9): x = 20, 61, 102, 143, 184, 225, 266, 307, 348, 389.
+            for (let k = 0; k < 10; k++) {
+                const x = 20 + 41 * k;
+                for (let y = 5; y < 35; y++) {
+                    const idx = (y * Wramp + x) * 4;
+                    const origV = imgRamp.data[idx];
+                    const curV = d[idx];
+                    const err = Math.abs(curV - origV);
+                    if (err > maxErrAtZero) maxErrAtZero = err;
+                }
+            }
+            check(`3b. ${backend} ribbed on x-ramp unchanged +-1 where sin=0`, maxErrAtZero <= 1, { maxErrAtZero });
         }
     }
 
@@ -220,6 +336,35 @@ JS = r"""
         const meanDiff = +(sumDiff / count).toFixed(4);
         out.scale_half = { mean: meanDiff };
         check("4. scale 0.5 offsets halve against downscaled full-res mean <= 2", meanDiff <= 2.0, { meanDiff });
+
+        // ---------------------------------------------------------------------
+        // 4b. Glass scale 0.5 preview mean <= 3
+        // ---------------------------------------------------------------------
+        const fullGlass = F.applyFilter("effects.glass", cv4, { style: "ribbed", size: 40, amount: 12, angle: 30, sheen: 15 }, { scale: 1 });
+        const fullGlassCanvas = GL.glToCanvas(fullGlass);
+
+        const dfGlass = mk(200, 150);
+        const dfgCtx = dfGlass.getContext("2d");
+        dfgCtx.drawImage(fullGlassCanvas, 0, 0, 200, 150);
+        const dfgData = dfgCtx.getImageData(0, 0, 200, 150).data;
+
+        const halfGlass = F.applyFilter("effects.glass", downInput, { style: "ribbed", size: 40, amount: 12, angle: 30, sheen: 15 }, { scale: 0.5 });
+        const halfGlassCanvas = GL.glToCanvas(halfGlass);
+        const hgData = halfGlassCanvas.getContext("2d").getImageData(0, 0, 200, 150).data;
+
+        let sumDiffG = 0, countG = 0;
+        for (let y = 14; y < 136; y++) {
+            for (let x = 14; x < 186; x++) {
+                const idx = (y * 200 + x) * 4;
+                sumDiffG += Math.abs(dfgData[idx] - hgData[idx]);
+                sumDiffG += Math.abs(dfgData[idx + 1] - hgData[idx + 1]);
+                sumDiffG += Math.abs(dfgData[idx + 2] - hgData[idx + 2]);
+                countG += 3;
+            }
+        }
+        const meanDiffG = +(sumDiffG / countG).toFixed(4);
+        out.glass_scale_half = { mean: meanDiffG };
+        check("4b. glass scale 0.5 preview mean <= 3", meanDiffG <= 3.0, { meanDiff: meanDiffG });
     }
 
     // -------------------------------------------------------------------------
@@ -235,6 +380,18 @@ JS = r"""
         check("5. amount param exists", chromType.params.some((p) => p.key === "amount"));
         check("5. angle param exists", chromType.params.some((p) => p.key === "angle"));
         check("5. strength param exists", chromType.params.some((p) => p.key === "strength"));
+    }
+
+    const glassType = filtersList.find((t) => t.id === "effects.glass");
+    check("5. filter_types lists effects.glass", !!glassType, filtersList.map((t) => t.id));
+    if (glassType) {
+        check("5. glass params count is 6", glassType.params && glassType.params.length === 6, glassType.params);
+        check("5. glass style param exists", glassType.params.some((p) => p.key === "style"));
+        check("5. glass size param exists", glassType.params.some((p) => p.key === "size"));
+        check("5. glass amount param exists", glassType.params.some((p) => p.key === "amount"));
+        check("5. glass angle param exists", glassType.params.some((p) => p.key === "angle"));
+        check("5. glass sheen param exists", glassType.params.some((p) => p.key === "sheen"));
+        check("5. glass seed param exists", glassType.params.some((p) => p.key === "seed"));
     }
 
     // Document test
@@ -263,7 +420,7 @@ JS = r"""
     check("5. layer params angle is 45", layer && layer.params && layer.params.angle === 45);
     check("5. layer params strength is 85", layer && layer.params && layer.params.strength === 85);
 
-    // Test set_filter and undo / redo
+    // Test set_filter and undo / redo on chromatic layer
     await commands.run("set_filter", {
         doc: d.id,
         layer: addedId,
@@ -286,6 +443,51 @@ JS = r"""
     curLayer = layers.find((l) => l.id === addedId);
     check("5. redo restores amount 20", curLayer && curLayer.params && curLayer.params.amount === 20);
 
+    // Add glass filter via command
+    const addGlassRes = await commands.run("add_filter", {
+        type: "effects.glass",
+        params: { style: "reeded", size: 50, amount: 15, angle: 25, sheen: 20, seed: 3 },
+        doc: d.id,
+    });
+    check("5. add_filter returned glass layer id", !!addGlassRes && !!(addGlassRes.id || addGlassRes.layer));
+    const addedGlassId = addGlassRes.id || addGlassRes.layer;
+
+    layerRes = await commands.run("list_layers", { doc: d.id });
+    layers = (layerRes && layerRes.layers) || layerRes;
+    const gLayer = layers.find((l) => l.id === addedGlassId);
+    check("5. glass layer present in list_layers", !!gLayer);
+    check("5. glass layer is filter", gLayer && gLayer.kind === "filter");
+    check("5. glass layer filter is effects.glass", gLayer && gLayer.filter === "effects.glass");
+    check("5. glass style is reeded", gLayer && gLayer.params && gLayer.params.style === "reeded");
+    check("5. glass size is 50", gLayer && gLayer.params && gLayer.params.size === 50);
+    check("5. glass amount is 15", gLayer && gLayer.params && gLayer.params.amount === 15);
+    check("5. glass angle is 25", gLayer && gLayer.params && gLayer.params.angle === 25);
+    check("5. glass sheen is 20", gLayer && gLayer.params && gLayer.params.sheen === 20);
+    check("5. glass seed is 3", gLayer && gLayer.params && gLayer.params.seed === 3);
+
+    // Test set_filter and undo/redo on glass layer
+    await commands.run("set_filter", {
+        doc: d.id,
+        layer: addedGlassId,
+        params: { amount: 25 },
+    });
+    layerRes = await commands.run("list_layers", { doc: d.id });
+    layers = (layerRes && layerRes.layers) || layerRes;
+    let curGLayer = layers.find((l) => l.id === addedGlassId);
+    check("5. set_filter updated glass amount to 25", curGLayer && curGLayer.params && curGLayer.params.amount === 25);
+
+    await ed.undoStep();
+    layerRes = await commands.run("list_layers", { doc: d.id });
+    layers = (layerRes && layerRes.layers) || layerRes;
+    curGLayer = layers.find((l) => l.id === addedGlassId);
+    check("5. undo restores glass amount 15", curGLayer && curGLayer.params && curGLayer.params.amount === 15);
+
+    await ed.redoStep();
+    layerRes = await commands.run("list_layers", { doc: d.id });
+    layers = (layerRes && layerRes.layers) || layerRes;
+    curGLayer = layers.find((l) => l.id === addedGlassId);
+    check("5. redo restores glass amount 25", curGLayer && curGLayer.params && curGLayer.params.amount === 25);
+
     // Save and re-open document
     const savePath = window.__effectsDocPath;
     if (savePath) {
@@ -307,6 +509,17 @@ JS = r"""
             check("5. open strength is 85", openFilter.params && openFilter.params.strength === 85);
         }
 
+        const openGlass = openLayers.find((l) => l.filter === "effects.glass");
+        check("5. open document has effects.glass", !!openGlass);
+        if (openGlass) {
+            check("5. open glass style is reeded", openGlass.params && openGlass.params.style === "reeded");
+            check("5. open glass size is 50", openGlass.params && openGlass.params.size === 50);
+            check("5. open glass amount is 25", openGlass.params && openGlass.params.amount === 25);
+            check("5. open glass angle is 25", openGlass.params && openGlass.params.angle === 25);
+            check("5. open glass sheen is 20", openGlass.params && openGlass.params.sheen === 20);
+            check("5. open glass seed is 3", openGlass.params && openGlass.params.seed === 3);
+        }
+
         // Test action effects.add_chromatic
         const { runAction } = await import("./plugins.js");
         await runAction("effects.add_chromatic", edOpen);
@@ -314,6 +527,13 @@ JS = r"""
         const postActLayers = (postActRes && postActRes.layers) || postActRes;
         const chromCount = postActLayers.filter((l) => l.filter === "effects.chromatic_shift").length;
         check("5. action effects.add_chromatic added second chromatic shift layer", chromCount === 2);
+
+        // Test action effects.add_glass
+        await runAction("effects.add_glass", edOpen);
+        const postGlassRes = await commands.run("list_layers", { doc: openRes.id });
+        const postGlassLayers = (postGlassRes && postGlassRes.layers) || postGlassRes;
+        const glassCount = postGlassLayers.filter((l) => l.filter === "effects.glass").length;
+        check("5. action effects.add_glass added second glass layer", glassCount === 2);
 
         await commands.run("close_document", { doc: openRes.id, force: true });
     }

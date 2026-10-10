@@ -310,7 +310,8 @@ function registerFilter(entry, def) {
     let maps;
     if (typeof def.maps === "function") maps = def.maps;
     else if (Array.isArray(def.maps)) maps = () => def.maps;
-    FILTERS[id] = { label: def.label || def.id, params, apply, plugin: entry.id, chain: !!def.chain, control: typeof def.control === "function" ? def.control : undefined, reach, wholeStats, wholeStatsSize, maps };
+    const skip = typeof def.skip === "function" ? def.skip : undefined;
+    FILTERS[id] = { label: def.label || def.id, params, apply, plugin: entry.id, chain: !!def.chain, control: typeof def.control === "function" ? def.control : undefined, reach, wholeStats, wholeStatsSize, maps, skip };
     FILTER_IDS.push(id);
     if (def.glsl) {
         if (typeof def.glsl.code !== "string") throw new Error(`filter "${id}": glsl.code must be the fragment source defining vec4 shade(vec4 color, vec2 uv)`);

@@ -5,6 +5,7 @@
 "use strict";
 
 const { offsets } = require("../plugins/effects/chromatic.js");
+const { glassField } = require("../plugins/effects/glass.js");
 const { bilinAt } = require("../plugins/effects/common.js");
 
 let failed = 0;
@@ -171,6 +172,144 @@ function check(name, ok, msg) {
     check("bilinAt preserves color during premultiplied alpha blend",
         Math.abs(midAlpha[0] - 1.0) < 1e-6 && Math.abs(midAlpha[3] - 0.5) < 1e-6,
         `got [${midAlpha.map((v) => v.toFixed(3)).join(", ")}]`);
+}
+
+// -----------------------------------------------------------------------------
+// 5. glassField |d| <= 1 on 100,000 samples per style
+// -----------------------------------------------------------------------------
+{
+    const styles = ["ribbed", "reeded", "wavy", "blocks"];
+    for (const style of styles) {
+        let maxLen = 0;
+        let withinBound = true;
+        // Deterministic pseudo-random sequence
+        let state = 123456789;
+        const rnd = () => {
+            state = (state * 1664525 + 1013904223) >>> 0;
+            return state / 4294967296;
+        };
+
+        for (let i = 0; i < 100000; i++) {
+            const Px = (rnd() - 0.5) * 4000;
+            const Py = (rnd() - 0.5) * 4000;
+            const size = 4 + rnd() * 396;
+            const angle = (rnd() - 0.5) * 180;
+            const seed = Math.floor(rnd() * 100);
+            const [dx, dy] = glassField(style, Px, Py, size, angle, seed);
+            const len = Math.hypot(dx, dy);
+            if (len > maxLen) maxLen = len;
+            if (len > 1.00001) {
+                withinBound = false;
+                break;
+            }
+        }
+        check(`glassField ${style} |d| <= 1 on 100,000 samples`, withinBound, `max |d| = ${maxLen}`);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 6. ribbed d = 0 at s = k/2
+// -----------------------------------------------------------------------------
+{
+    let allZero = true;
+    let maxRibbedErr = 0;
+    const angles = [-90, -45, 0, 30, 45, 60, 90];
+    const sizes = [10, 40, 100, 250];
+
+    for (const angle of angles) {
+        const rad = (angle * Math.PI) / 180;
+        const dirX = Math.cos(rad);
+        const dirY = Math.sin(rad);
+
+        for (const size of sizes) {
+            for (let k = -20; k <= 20; k++) {
+                const s = k / 2;
+                const Px = s * size * dirX;
+                const Py = s * size * dirY;
+                const [dx, dy] = glassField("ribbed", Px, Py, size, angle, 0);
+                const len = Math.hypot(dx, dy);
+                if (len > maxRibbedErr) maxRibbedErr = len;
+                if (len > 1e-12) allZero = false;
+            }
+        }
+    }
+    check("ribbed d = 0 at s = k/2", allZero, `max error = ${maxRibbedErr}`);
+}
+
+// -----------------------------------------------------------------------------
+// 7. blocks constant inside a cell
+// -----------------------------------------------------------------------------
+{
+    let allConstant = true;
+    const angles = [-60, -30, 0, 45, 80];
+    const sizes = [16, 40, 64];
+
+    for (const angle of angles) {
+        const rad = (angle * Math.PI) / 180;
+        const cosA = Math.cos(rad);
+        const sinA = Math.sin(rad);
+
+        for (const size of sizes) {
+            for (let cx = -5; cx <= 5; cx++) {
+                for (let cy = -5; cy <= 5; cy++) {
+                    const offsets = [
+                        [0.05, 0.05],
+                        [0.2, 0.8],
+                        [0.5, 0.5],
+                        [0.75, 0.25],
+                        [0.95, 0.95],
+                    ];
+                    let baseD = null;
+                    for (const [fx, fy] of offsets) {
+                        const rx = (cx + fx) * size;
+                        const ry = (cy + fy) * size;
+                        // Transform back from rotated coordinate:
+                        // rx = Px * cosA + Py * sinA
+                        // ry = -Px * sinA + Py * cosA
+                        // Px = rx * cosA - ry * sinA
+                        // Py = rx * sinA + ry * cosA
+                        const Px = rx * cosA - ry * sinA;
+                        const Py = rx * sinA + ry * cosA;
+                        const d = glassField("blocks", Px, Py, size, angle, 42);
+                        if (!baseD) {
+                            baseD = d;
+                        } else {
+                            if (Math.abs(d[0] - baseD[0]) > 1e-12 || Math.abs(d[1] - baseD[1]) > 1e-12) {
+                                allConstant = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    check("blocks constant inside a cell", allConstant);
+}
+
+// -----------------------------------------------------------------------------
+// 8. blocks new seed changes > 90% of cells
+// -----------------------------------------------------------------------------
+{
+    const size = 32;
+    const angle = 0;
+    const seedA = 0;
+    const seedB = 1;
+    let diffCount = 0;
+    const totalCells = 1000;
+
+    for (let i = 0; i < totalCells; i++) {
+        const cx = (i % 40) - 20;
+        const cy = Math.floor(i / 40) - 12;
+        const Px = (cx + 0.5) * size;
+        const Py = (cy + 0.5) * size;
+        const dA = glassField("blocks", Px, Py, size, angle, seedA);
+        const dB = glassField("blocks", Px, Py, size, angle, seedB);
+        if (Math.abs(dA[0] - dB[0]) > 1e-6 || Math.abs(dA[1] - dB[1]) > 1e-6) {
+            diffCount++;
+        }
+    }
+    const diffPct = (diffCount / totalCells) * 100;
+    check("blocks new seed changes > 90% of cells", diffPct > 90, `${diffPct.toFixed(1)}% changed`);
 }
 
 // -----------------------------------------------------------------------------

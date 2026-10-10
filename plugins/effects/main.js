@@ -3,15 +3,24 @@
 // Registers filters and plugins menu actions.
 
 import { makeChromaticShift } from "./chromatic.js";
+import { makeGlass } from "./glass.js";
 
 export function activate(scumble) {
     const chromatic = makeChromaticShift(scumble);
     scumble.filters.register({ ...chromatic.filter, chain: true });
+
+    const glass = makeGlass(scumble);
+    scumble.filters.register({ ...glass.filter, chain: true });
 
     const addFilter = (type, name) => (doc) => doc.run("add_filter", { type, name });
     scumble.actions.register({
         id: "add_chromatic",
         label: "Chromatic shift layer",
         run: addFilter("effects.chromatic_shift", "Chromatic shift"),
+    });
+    scumble.actions.register({
+        id: "add_glass",
+        label: "Glass layer",
+        run: addFilter("effects.glass", "Glass"),
     });
 }
