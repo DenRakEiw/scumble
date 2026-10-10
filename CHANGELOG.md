@@ -5,7 +5,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
-- **Sixteen more blend modes**: colour burn, linear burn and darker colour; colour dodge, linear dodge (add) and lighter colour; vivid light, pin light and hard mix; exclusion, subtract and divide; hue, saturation, colour and luminosity. The layer row's list is grouped by what the modes do. Every mode is computed the same way on screen, in an export and in a run, PSD files keep them both ways, and a PSD layer in one of them no longer opens as normal. A document with one of the new modes needs 0.1.46 or newer; `set_layer` takes the new names.
+- **Seventeen more blend modes**: dissolve; colour burn, linear burn and darker colour; colour dodge, linear dodge (add) and lighter colour; vivid light, pin light and hard mix; exclusion, subtract and divide; hue, saturation, colour and luminosity. Dissolve keeps a random share of the layer's pixels, as many as its alpha and opacity say, fixed in the picture. The layer row's list is grouped by what the modes do. Every mode is computed the same way on screen, in an export and in a run, PSD files keep them both ways, and a PSD layer in one of them no longer opens as normal. A document with one of the new modes needs 0.1.46 or newer; `set_layer` takes the new names.
 - A layer in a blend mode this version does not know draws as normal everywhere.
 - Emulated blend modes share a unified GPU shader on screen, and kernel blend dispatch safely falls back to source-over for unknown operations.
 - Integer pixel-exact kernels and JS twin for non-separable whole-pixel blend modes (hue, saturation, colour, luminosity, darker colour, lighter colour; ABI 17).

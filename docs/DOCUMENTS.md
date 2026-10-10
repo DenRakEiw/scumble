@@ -178,7 +178,7 @@ history entry would name it and it would be `false`.
 | `id`, `name` | every layer | the layer id (a string such as `"Lmg1x2k01"`, unique in the document; plugin data keys on it) and the shown name |
 | `kind` | every layer | `paint`, `image`, `result`, `text`, `filter`. Shapes are pixels drawn into an existing layer; the AI label and 3D renders are paint layers |
 | `role` | every layer | `none` (part of the picture), `reference`, or a control type: `scribble`, `lineart`, `depth`, `pose`, `canny`, `other` |
-| `blend` | every layer | `normal`, `darken`, `multiply`, `color-burn`, `linear-burn`, `darker-color`, `lighten`, `screen`, `color-dodge`, `linear-dodge`, `lighter-color`, `overlay`, `soft-light`, `hard-light`, `vivid-light`, `linear-light` (since 0.1.32: a document with such a layer writes `minReader` 2), `pin-light`, `hard-mix`, `difference`, `exclusion`, `subtract`, `divide`, `hue`, `saturation`, `color`, `luminosity` (since 0.1.46: a document with one of these sixteen writes `minReader` 5) |
+| `blend` | every layer | `normal`, `dissolve`, `darken`, `multiply`, `color-burn`, `linear-burn`, `darker-color`, `lighten`, `screen`, `color-dodge`, `linear-dodge`, `lighter-color`, `overlay`, `soft-light`, `hard-light`, `vivid-light`, `linear-light` (since 0.1.32: a document with such a layer writes `minReader` 2), `pin-light`, `hard-mix`, `difference`, `exclusion`, `subtract`, `divide`, `hue`, `saturation`, `color`, `luminosity` (since 0.1.46: a document with one of these seventeen writes `minReader` 5) |
 | `x`, `y`, `w`, `h` | every layer | the placement in canvas pixels; `w` / `h` may differ from the PNG's size (a scaled layer keeps its source pixels) |
 | `opacity`, `visible` | every layer | 0 to 1; boolean |
 | `mask` | every layer | the layer mask as a ref (a PNG), or `null` |
@@ -388,7 +388,7 @@ Python's `zipfile` with `ZIP_STORED`, `mimetype` written first, is one way.
 - `FORMAT_VERSION` in `docfile.js` is what the app writes as `version`, `READER_VERSION` the highest `minReader` it
   opens; derived from the `FEATURES` table. The current format is version 2 / reader 5.
 - The `FEATURES` table (`electron/main/docfile.js`) controls version requirements:
-  - Blend modes with reader requirements: rows generated dynamically from `READER_OF_BLEND` in `docfile.js` (kept equal to `renderer/editor/blend_modes.js`), e.g. `linear-light` (since 0.1.32): `minReader` 2; `exclusion`, `linear-dodge`, `linear-burn`, `subtract`, `pin-light`, `hard-mix`, `color-dodge`, `color-burn`, `vivid-light`, `divide`, `hue`, `saturation`, `color`, `luminosity`, `darker-color`, `lighter-color` (since 0.1.46): `minReader` 5.
+  - Blend modes with reader requirements: rows generated dynamically from `READER_OF_BLEND` in `docfile.js` (kept equal to `renderer/editor/blend_modes.js`), e.g. `linear-light` (since 0.1.32): `minReader` 2; `dissolve`, `exclusion`, `linear-dodge`, `linear-burn`, `subtract`, `pin-light`, `hard-mix`, `color-dodge`, `color-burn`, `vivid-light`, `divide`, `hue`, `saturation`, `color`, `luminosity`, `darker-color`, `lighter-color` (since 0.1.46): `minReader` 5.
   - `maps` (since 0.1.33): format `version` 2.
   - `filter-limit` (since 0.1.44): `minReader` 3 (filter layers with `params.limit`).
   - `depth-snap` (since 0.1.45): `minReader` 4 (document maps with `meta.snap.strength > 0`).

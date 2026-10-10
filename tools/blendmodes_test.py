@@ -16,6 +16,9 @@ Steps:
   i. documents_ask_for_the_right_reader (header minReader matches highest READER_OF_BLEND)
   j. set_layer_takes_every_mode (each valid id accepted; invalid refused with list)
   k. tiff_png_and_merge_agree (encodeTiff vs encodeComposite; merge into base agrees)
+  l. references (1024x640 showcase compared against reference PNGs)
+  m. live_psd_check (R4-D6, R4-D7, R4-D8)
+  n. dissolve (export vs flatten 0 bytes; 1:1 view 0 bytes; kept share 50% +- 1%; PSD key round-trip)
 
 Runs tools/blend_table_test.js under plain Node first, then connects to running app via CDP.
 """
@@ -92,7 +95,7 @@ BOUNDS = {
 DEFAULT_BOUNDS = {"gl_translucent": 3, "flips": 0}
 
 HELPERS = r"""
-const { BLENDS, BLEND_MODES, BLEND_OPS, EMULATED_BLENDS, READER_OF_BLEND } = await import("./editor/blend_modes.js");
+const { BLENDS, BLEND_MODES, BLEND_OPS, EMULATED_BLENDS, READER_OF_BLEND, seedOfLayer, hash32, mul255 } = await import("./editor/blend_modes.js");
 const kernels_js = await import("./editor/px/kernels_js.js");
 const PNG = await import("./editor/inpaint_png.js");
 const TIFF = await import("./editor/inpaint_tiff.js");
@@ -817,7 +820,7 @@ async def run_gate(c, scratch_dir, args=None):
     const { Layer: LayerPixels } = ed.pixels;
 
     // 25 columns, one per non-normal mode with a formula, 32 px wide and 36 apart, opacity 0.75
-    const modes25 = BLENDS.filter((r) => r.id !== "normal");
+    const modes25 = BLENDS.filter((r) => r.id !== "normal" && r.id !== "dissolve");
     const colW = 32, colH = 200;
     const colCanvas = mk(colW, colH);
     {
@@ -930,9 +933,11 @@ async def run_gate(c, scratch_dir, args=None):
     try {{
         await run("load_image", {{ doc: d.id, path: {json.dumps(psd_path)} }});
         const notes = (ed.notes && ed.notes.length) ? [...ed.notes] : (ed.status ? [ed.status] : []);
+        const dissolveLayer = ed.layers.find((l) => l.name === "dissolve" || l.blend === "dissolve");
+        const dissolveBlend = dissolveLayer ? dissolveLayer.blend : null;
         const flat = ed.flattenToCanvas({{ forRun: true }});
         const png = flat.toDataURL("image/png").slice("data:image/png;base64,".length);
-        return {{ notes, png, layersCount: ed.layers.length }};
+        return {{ notes, png, layersCount: ed.layers.length, dissolveBlend }};
     }} finally {{
         host.shell.closeDocument(ed, {{ force: true }});
     }}
@@ -941,8 +946,10 @@ async def run_gate(c, scratch_dir, args=None):
         from PIL import Image
         res_m = await c.eval(PRE % (HELPERS, js_m), timeout=60)
         notes = res_m.get("notes", [])
-        if not any("dissolve" in n for n in notes):
-            raise Exception(f"Missing dissolve note in PSD notes: {notes}")
+        if any("blend modes the editor lacks" in n for n in notes):
+            raise Exception(f"Unexpected missing blend modes note in PSD notes: {notes}")
+        if res_m.get("dissolveBlend") != "dissolve":
+            raise Exception(f"Dissolve layer blend is {res_m.get('dissolveBlend')}, expected dissolve")
         if not any("fill opacity below 100 %" in n for n in notes):
             raise Exception(f"Missing fill opacity note in PSD notes: {notes}")
 
@@ -975,7 +982,7 @@ async def run_gate(c, scratch_dir, args=None):
             patches_stats[p["name"]] = {"max": worst, "mean": round(mean_val, 3), "diff_bytes": diff_count}
 
         PSD_BOUNDS = {
-            "dissolve": 240,
+            "dissolve": 255,
             "hard_mix": 255,
             "darker_color": 25,
             "lighter_color": 60,
@@ -1001,6 +1008,127 @@ async def run_gate(c, scratch_dir, args=None):
     except Exception as err:
         ok = False
         print(f"[FAIL] live_psd_check: {err}")
+
+    # n. dissolve (PLAN_NIK9_BUILD.md Section 3.5 R4-S9)
+    psd_dissolve_path = os.path.join(scratch_dir, f"test_dissolve_{os.getpid()}.psd").replace("\\", "/")
+    js_n = f"""
+    const psdPath = {json.dumps(psd_dissolve_path)};
+    const {{ ed, docId, layer, baseData, layerData }} = await setupPairsDoc();
+    try {{
+        layer.blend = "dissolve";
+        layer.opacity = 128 / 255;
+        ed.markLayerChanged(layer);
+        ed.renderLayers();
+
+        // 1. Flatten to canvas
+        const flat = ed.flattenToCanvas({{ forRun: true }});
+        const flatData = flat.getContext("2d").getImageData(0, 0, 256, 256).data;
+
+        // 2. Kernel dither reference
+        const kref = new Uint8ClampedArray(256 * 256 * 4);
+        const seed = seedOfLayer(layer.id);
+        let keptCount = 0;
+        for (let y = 0; y < 256; y++) {{
+            for (let x = 0; x < 256; x++) {{
+                const idx = (y * 256 + x) * 4;
+                const srcA = layerData[idx + 3];
+                const alpha255 = Math.round(Math.max(0, Math.min(1, layer.opacity ?? 1)) * 255);
+                const c = mul255(srcA, alpha255);
+                const keep = (c === 255) || ((hash32(x, y, seed) >>> 24) < c);
+                if (keep) {{
+                    keptCount++;
+                    kref[idx] = layerData[idx];
+                    kref[idx + 1] = layerData[idx + 1];
+                    kref[idx + 2] = layerData[idx + 2];
+                    kref[idx + 3] = 255;
+                }} else {{
+                    kref[idx] = baseData[idx];
+                    kref[idx + 1] = baseData[idx + 1];
+                    kref[idx + 2] = baseData[idx + 2];
+                    kref[idx + 3] = baseData[idx + 3];
+                }}
+            }}
+        }}
+
+        // 3. Kept share at alpha 128 is 50 % +- 1 %
+        const keptShare = keptCount / (256 * 256);
+        if (Math.abs(keptShare - 0.50) > 0.01) {{
+            throw new Error(`kept share ${{keptShare}} not within 50 % +- 1 %`);
+        }}
+
+        // Flatten vs kernel dither: 0 bytes differ
+        const dFlat = diff(flatData, kref);
+        if (dFlat.count !== 0) {{
+            throw new Error(`flatten differs from kernel dither by ${{dFlat.count}} bytes (max ${{dFlat.max}})`);
+        }}
+
+        // 4. Export composite against flatten: 0 bytes differ (tiles backend)
+        let exportDiff = 0;
+        if (ed.tileMode) {{
+            const comp = await ed.encodeComposite({{ forRun: true }}, {{ hash: false }});
+            if (!comp || !comp.blob) throw new Error("no composite for dissolve");
+            const dec = await decodePng(comp.blob);
+            const dExport = diff(dec.data, flatData);
+            if (dExport.count !== 0) {{
+                throw new Error(`export differs from flatten by ${{dExport.count}} bytes (max ${{dExport.max}})`);
+            }}
+            exportDiff = dExport.count;
+        }}
+
+        // 5. Canvas view at 1:1 against kernel dither: 0 bytes differ
+        ed.view = {{ scale: 1, x: 0, y: 0, angle: 0 }};
+        ed.compositorOff = true;
+        ed.sceneSig = null;
+        ed.draw();
+        const sc = document.createElement("canvas"); sc.width = 256; sc.height = 256;
+        sc.getContext("2d").drawImage(ed.canvas, 0, 0, 256, 256, 0, 0, 256, 256);
+        const screenData = sc.getContext("2d").getImageData(0, 0, 256, 256).data;
+        const dView = diff(screenData, kref);
+        if (dView.count !== 0) {{
+            throw new Error(`canvas view at 1:1 differs from kernel dither by ${{dView.count}} bytes (max ${{dView.max}})`);
+        }}
+
+        // 6. Export to PSD to verify "diss"
+        await run("export", {{ doc: docId, format: "psd", path: psdPath }});
+
+        return {{ keptShare, exportDiff, viewDiff: dView.count }};
+    }} finally {{
+        host.shell.closeDocument(ed, {{ force: true }});
+    }}
+    """
+    try:
+        res_n = await c.eval(PRE % (HELPERS, js_n), timeout=60)
+        with open(psd_dissolve_path, "rb") as f:
+            psd_bytes = f.read()
+        if b"diss" not in psd_bytes:
+            raise Exception("PSD file does not contain blend mode key 'diss'")
+
+        js_n_reopen = f"""
+        const dPsd = await run("new_document");
+        await run("load_image", {{ doc: dPsd.id, path: {json.dumps(psd_dissolve_path)} }});
+        const edPsd = ednow(dPsd.id);
+        try {{
+            const l = edPsd.layers.find((x) => x.blend === "dissolve");
+            if (!l) throw new Error("PSD reopened missing layer with blend dissolve");
+            return {{ blend: l.blend }};
+        }} finally {{
+            host.shell.closeDocument(edPsd, {{ force: true }});
+        }}
+        """
+        res_reopen = await c.eval(PRE % (HELPERS, js_n_reopen), timeout=60)
+        if res_reopen.get("blend") != "dissolve":
+            raise Exception(f"Reopened PSD layer blend {res_reopen.get('blend')} != dissolve")
+
+        print(f"[ok] dissolve: kept share {res_n.get('keptShare', 0):.4f}, export diff {res_n.get('exportDiff')}, view diff {res_n.get('viewDiff')}, psd round-trip verified")
+    except Exception as err:
+        ok = False
+        print(f"[FAIL] dissolve: {err}")
+    finally:
+        if os.path.exists(psd_dissolve_path):
+            try:
+                os.remove(psd_dissolve_path)
+            except OSError:
+                pass
 
     print("PASS" if ok else "FAIL")
     return ok

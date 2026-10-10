@@ -199,6 +199,24 @@ release at the end after the user's test; release 4 (blend modes) independent.
   - Gate tests: `tools/blendmodes_test.py` `BOUNDS` updated (hue 12, darker-color 150, lighter-color 100) and step/nonsep tolerance classification; `tools/blend_table_test.js` updated to 26 modes.
   - Docs: `docs/COMMANDS.md`, `CHANGELOG.md`, `docs/DOCUMENTS.md`, and `docs/PLAN_NIK9_BUILD.md` updated in pure ASCII.
   - Gates: `blendmodes` (9s/8s on `--tiles on` and `--tiles off`), `composite` (7s), `export` (137s), `layered` (2s), `document` (40s), `commands` (13s), `lint` (0 errors), `types` (0 errors), and `build_node.py --check` ALL PASS with `--offline`. Ready for R4-S8.
+- **R4-S8 built** (2026-10-10): The grouped list, references, docs, and the live PSD check:
+  - Reordered `BLENDS` in `blend_modes.js` into section 5.4.1 group order (normal, darken, lighten, contrast, inversion, component) with `BLEND_GROUPS` exported.
+  - Added `selectGrouped` beside `selectInput` in `inpaint_canvas.js` with `<optgroup>` rendering; replaced `selectInput` with `selectGrouped` for the layer row blend mode selector.
+  - Added fill opacity reader in `inpaint_layered.js` reading `L.info.iOpa[0]` with note on `< 100%`.
+  - Updated `tools/blend_table_test.js` and `docfile.js` `READER_OF_BLEND` key order.
+  - Added showcase references step (1024x640 with 25 non-normal columns) and live PSD check step in `tools/blendmodes_test.py`.
+  - Generated `tools/refs/blendmodes_full.png` and `blendmodes_view.png` with `--update` on tiles; live PSD comparison against Photoshop 27.11 merged output verified (all 25 standard formula patches max diff <= 2, dissolve note and fill opacity note verified).
+  - Updated `docs/MANUAL.md`, `docs/DOCUMENTS.md`, `CHANGELOG.md`, `docs/COMMANDS.md`, and `docs/TESTING.md`.
+  - Gates: `blendmodes`, `composite`, `layered`, `document`, `commands`, `lint`, and `types` ALL PASS with `--offline`. Ready for R4-S9.
+- **R4-S9 built** (2026-10-10): Dissolve blend mode (F11/F12 complete, 27 blend modes):
+  - Row `{ id: "dissolve", label: "Dissolve", group: "normal", op: 0, dither: true, canvas: null, psd: "diss", ora: "scumble:dissolve", oraRead: ["krita:dissolve"], reader: 5 }` in `renderer/editor/blend_modes.js` right after normal; op 0 excludes it from `BLEND_OPS`, routing viewport compositing to Canvas 2D without shader compositor branch.
+  - Lowbias32 hash and layer seed: exported `lowbias32(x)`, `hash32(x, y, seed)` with lowbias32 over `(x*0x9E3779B1) ^ (y*0x85EBCA77) ^ seed`, and `seedOfLayer(id)` (FNV-1a 32-bit of layer id).
+  - Stack planning: `stackPlan` in `renderer/editor/inpaint_canvas.js` populates `dissolve: seedOfLayer(l.id)` and `op: 0`; forwarded in `holdStackNow` and `stackArgs` in `renderer/editor/inpaint_bands.js`.
+  - Dither implementations: `rowsOfStack` and `stackPoints` in `renderer/editor/inpaint_worker.js`, `compositeBox` in `renderer/editor/inpaint_boxstack.js`, and `blendEmulated` in `renderer/editor/inpaint_canvas.js` dither at image coordinates using `(hash32(imgX, imgY, seed) >>> 24) < c` with `c = mul255(mul255(srcA, alpha255), mask)`; kept pixels set to opaque alpha 255 and dropped to 0, compositing with normal op 0.
+  - Viewport & shader: `DISSOLVE_SHADER` and `DISSOLVE_CLIP_SHADER` defined in `renderer/editor/inpaint_canvas.js`; `blendEmulated` passes `seedOfLayer(layer.id)` across all 4 call sites (masked layer, merge into base, merge layer down, draw layers into).
+  - Docfile & PSD: `READER_OF_BLEND` in `electron/main/docfile.js` maps `dissolve` to reader 5 (17 blend modes at reader 5); PSD maps 'diss' to 'dissolve' without missing blend mode notes.
+  - Node sync: committed in custom node repo (`1609185`); verified with `python tools/build_node.py --check`.
+  - Tests & verification: `blend_table_test.js` updated to 27 modes (PASS); `blendmodes_test.py` step `n. dissolve` verifies export against flatten (0 bytes differ), 1:1 canvas view against kernel dither (0 bytes differ), kept share at alpha 128 is 50% +- 1% (50.10%), and PSD round-trip keeping 'diss'; docs and changelog updated in pure ASCII. Ready for R4-S10.
 **Waiting for the user:**
 - **The Store update**: `dist/Scumble-0.1.44.msix` (187,490,440 bytes) and `dist/store-listing/whats-new-0.1.44.txt`
   built; Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.

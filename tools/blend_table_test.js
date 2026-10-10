@@ -56,7 +56,7 @@ async function main() {
 
     // 4. BLEND_MODES equals grouped list in order (PLAN_NIK9_BUILD.md R4-S8)
     const EXPECTED_MODES = [
-        "normal",
+        "normal", "dissolve",
         "darken", "multiply", "color-burn", "linear-burn", "darker-color",
         "lighten", "screen", "color-dodge", "linear-dodge", "lighter-color",
         "overlay", "soft-light", "hard-light", "vivid-light", "linear-light", "pin-light", "hard-mix",

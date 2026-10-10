@@ -22,6 +22,7 @@ const layersOf = (d) => (d && Array.isArray(d.layers) ? d.layers : []);
 
 // kept equal to renderer/editor/blend_modes.js by tools/document_test.js
 const READER_OF_BLEND = {
+    "dissolve": 5,
     "color-burn": 5,
     "linear-burn": 5,
     "darker-color": 5,
