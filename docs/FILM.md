@@ -109,8 +109,11 @@ the plugin sample it on the next tool interaction, but `add_point` samples it ri
 
 - **Film looks** (a section at the end of the Image pane): a group select and one
   thumbnail per stock, rendered from the current picture through the look's colour stage
-  (no grain) at 96 px, refreshed after edits when the section is open. A click applies the
-  stock to the active film look layer or adds one.
+  (no grain) at 96 px, refreshed after edits when the section is open. Holding the pointer
+  over a stock for 120 ms previews it on the active film look layer; moving between cells
+  re-previews; leaving the grid cancels back to the pre-hover state. A click applies the
+  stock to the active film look layer (as a single undo step whose "before" is the state before
+  the hover began) or adds one.
 - **Plugins menu**: Film look layer, Black & white film layer, Halation layer, Light leak
   layer, Frame layer, Control points layer (switches to the tool).
 - **Commands** (`docs/COMMANDS.md`): `film.looks` (the stock table, optionally one group),
@@ -141,5 +144,6 @@ app's modules as unstable.
 the mirror): plugin state, every filter type on the GPU and the CPU path with several
 parameter sets (max difference ≤ 2 levels, ≤ 0.1 % of samples above 2), the look commands
 with undo, `film.add_point`, the tool through the pointer and key hooks (place with size,
-move, resize, select, delete, undo), the layer-row control, the panel thumbnails and a click
-on one, exports to `dist/smoke/film/`. First PASS 2026-09-09 on the RTX 5090.
+move, resize, select, delete, undo), the layer-row control, the panel thumbnails, a click
+on one, the preset hover preview (`panel_hover_preview` measuring 15000 x 10000 response time),
+and exports to `dist/smoke/film/`. First PASS 2026-09-09 on the RTX 5090.

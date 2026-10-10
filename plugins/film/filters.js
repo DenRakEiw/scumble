@@ -347,7 +347,7 @@ const S = (key, label, min, max, step, def, unit = "", extra = {}) => ({ key, la
 /** Filter definitions for scumble.filters.register (ids get the plugin prefix). */
 export function makeFilters(scumble) {
     const run = makeRunner(scumble);
-    const grainStage = (src, g, info) => (g.amount > 0 ? scumble.filters.apply("grain", src, { preset: "custom", look: null, look_strength: 0, amount: g.amount, size: g.size, speckle: g.speckle, chroma: g.chroma }, info) : src);
+    const grainStage = (src, g, info) => (g && g.amount > 0 ? scumble.filters.apply("grain", src, { preset: "custom", look: null, look_strength: 0, amount: g.amount, size: g.size, speckle: g.speckle, chroma: g.chroma }, info) : src);
 
     const look = {
         id: "look",
@@ -385,9 +385,9 @@ export function makeFilters(scumble) {
                 out = halationStage(run, out, { thr: 0.62, sigma: longSide * 0.012, strength: hal * 0.9, tint: hueRgb(12).map((v) => mix(1, v, 0.85)) }, info);
             }
             // "None (adjustments only)" (no stock) adds no grain: the Grain slider scales a stock's grain, and there is none
-            const g = stock ? stock.grain : { amount: 0, size: 1.5, speckle: 25, chroma: 0 };
+            const g = stock ? stock.grain : null;
             const gp = pct(p.grain, 100) * strength * (1 + 0.35 * push);
-            if (gp > 0) out = grainStage(out, { amount: g.amount * gp, size: g.size * (1 + 0.12 * push), speckle: g.speckle, chroma: g.chroma }, { ...info, cache });
+            if (g && gp > 0) out = grainStage(out, { amount: g.amount * gp, size: g.size * (1 + 0.12 * push), speckle: g.speckle, chroma: g.chroma }, { ...info, cache });
             return out;
         },
     };

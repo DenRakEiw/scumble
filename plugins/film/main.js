@@ -69,6 +69,21 @@ export function activate(scumble) {
             box.appendChild(grid);
             const cells = new Map();   // stock id -> canvas
 
+            let cellHoverTimer = null;
+            const cancelLookHover = () => {
+                clearTimeout(cellHoverTimer);
+                cellHoverTimer = null;
+                if (!doc.loaded) return;
+                const active = doc.activeLayer();
+                if (active && active.kind === "filter" && active.filter === LOOK_ID) {
+                    doc.cancelFilterParams(active.id);
+                }
+            };
+
+            grid.addEventListener("pointerleave", () => {
+                cancelLookHover();
+            });
+
             const buildGrid = () => {
                 grid.innerHTML = "";
                 cells.clear();
@@ -76,12 +91,27 @@ export function activate(scumble) {
                 for (const s of STOCKS) {
                     if (g !== "All" && s.group !== g) continue;
                     const cell = ui.el("div", "film-cell");
+                    cell.setAttribute("data-id", s.id);
                     cell.title = `${s.label}${s.iso ? ` · ISO ${s.iso}` : ""} · ${s.group}. ${TRADEMARK}`;
                     const cv = document.createElement("canvas");
                     cv.width = 96; cv.height = 64;
                     cell.appendChild(cv);
                     cell.appendChild(ui.el("span", null, s.label.replace(/ \(.*\)$/, "")));
-                    cell.addEventListener("click", (e) => { e.stopPropagation(); Promise.resolve(applyLook(doc, s.id)).catch((err) => doc.status(String(err.message || err))); });
+                    cell.addEventListener("pointerenter", () => {
+                        clearTimeout(cellHoverTimer);
+                        cellHoverTimer = setTimeout(() => {
+                            if (!doc.loaded) return;
+                            const active = doc.activeLayer();
+                            if (active && active.kind === "filter" && active.filter === LOOK_ID) {
+                                doc.setFilterParams(active.id, { preset: s.id }, { preview: true });
+                            }
+                        }, 120);
+                    });
+                    cell.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        clearTimeout(cellHoverTimer);
+                        Promise.resolve(applyLook(doc, s.id)).catch((err) => doc.status(String(err.message || err)));
+                    });
                     grid.appendChild(cell);
                     cells.set(s.id, cv);
                 }
@@ -122,7 +152,7 @@ export function activate(scumble) {
             const paint = () => { render().catch((err) => { console.warn("film looks panel:", err); }); };
             const schedule = () => { clearTimeout(timer); timer = setTimeout(() => { if (visible()) paint(); else dirty = true; }, 500); };
 
-            groupSel.addEventListener("change", () => { scumble.storage.set({ group: groupSel.value }); buildGrid(); dirty = true; schedule(); });
+            groupSel.addEventListener("change", () => { scumble.storage.set({ group: groupSel.value }); cancelLookHover(); buildGrid(); dirty = true; schedule(); });
             buildGrid();
             schedule();
             scumble.events.on("changed", (ev) => { if (ev.doc && ev.doc.id === doc.id) { dirty = true; schedule(); } });

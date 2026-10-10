@@ -284,6 +284,7 @@ The film pack is a plugin that ships with the app and goes further: film looks w
 - A gradient fill from a colour to transparent in multiply or overlay is a quick graduated filter for a sky; a warm colour fill in soft light at a low opacity warms the whole picture.
 - LUTs: drop a .cube file into the LUT filter and it is applied at full precision, with a strength slider.
 - Filters render in tiles on large documents, so a 15,000 pixel picture does not stall the window.
+- Preset preview: every select dropdown in a filter layer row has a small list button to preview entries directly on the picture as you hover over them (120 ms dwell); clicking an entry commits it as a single undo step whose "before" is the state before the hover began, and pressing Escape or clicking outside closes and cancels the preview. The Film looks panel previews stocks the same way on the active film look layer.
 
 ## Text, shapes, brushes and 3D objects
 

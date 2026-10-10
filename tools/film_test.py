@@ -1069,6 +1069,110 @@ await c("remove_layer", { layer: look.id });
 sec.open = false;
 return { active, other, clicked, cols, width: Math.round(grid.getBoundingClientRect().width), section: Math.round(sec.getBoundingClientRect().width) };
 """),
+    ("panel_hover_preview", """
+const sec = Array.from(editor.root.querySelectorAll("details")).find((d) => d.querySelector("summary") && d.querySelector("summary").textContent === "Film looks");
+if (!sec) throw new Error("Film looks panel missing");
+sec.open = true;
+const grp = sec.querySelector("select");
+grp.value = "Slide"; grp.dispatchEvent(new Event("change"));
+await new Promise((r) => setTimeout(r, 600));
+
+const grid = sec.querySelector(".film-grid");
+const cells = Array.from(sec.querySelectorAll(".film-cell"));
+if (!cells.length) throw new Error("no film cells in Slide group");
+const targetCell = cells[0];
+const targetStockId = targetCell.getAttribute("data-id");
+
+// 1. Without look layer: hover on cell changes nothing
+editor.activeLayerId = null;
+editor.renderLayers();
+const lookBefore = editor.layers.find((l) => l.kind === "filter" && l.filter === "film.look");
+if (lookBefore) throw new Error("expected no look layer initially");
+const undo0 = editor.undo.length;
+
+targetCell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 200));
+
+if (editor.layers.find((l) => l.kind === "filter" && l.filter === "film.look")) {
+    throw new Error("hover without look layer should not create a look layer");
+}
+if (editor.filterPreview !== null) {
+    throw new Error("filterPreview should be null without look layer");
+}
+if (editor.undo.length !== undo0) {
+    throw new Error("hover without look layer should not change undo");
+}
+
+// 2. With look layer active: hover on Slide cell changes preset, pushes no undo step
+const added = await c("add_filter", { type: "film.look", params: { preset: "portra400" }, name: "Kodak Portra 400" });
+await c("set_active_layer", { layer: added.id });
+const look = editor.layers.find((l) => l.id === added.id);
+editor.renderLayers();
+const initialPreset = look.params.preset;
+const initialName = look.name;
+const undo1 = editor.undo.length;
+
+targetCell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 200));
+
+if (look.params.preset !== targetStockId) {
+    throw new Error(`hover should change preset to ${targetStockId}, got ${look.params.preset}`);
+}
+if (editor.filterPreview !== look.id) {
+    throw new Error(`filterPreview should be ${look.id}, got ${editor.filterPreview}`);
+}
+if (editor.undo.length !== undo1) {
+    throw new Error(`hover should push NO undo step, had ${undo1} now ${editor.undo.length}`);
+}
+
+// 3. Leaving grid restores initial preset with _undoPending null
+grid.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
+if (look.params.preset !== initialPreset) {
+    throw new Error(`pointerleave should restore initial preset ${initialPreset}, got ${look.params.preset}`);
+}
+if (look._undoPending !== null) {
+    throw new Error(`pointerleave should leave _undoPending null, got ${look._undoPending}`);
+}
+if (editor.filterPreview !== null) {
+    throw new Error(`pointerleave should clear filterPreview, got ${editor.filterPreview}`);
+}
+
+// 4. Hover plus click pushes 1 undo step; undo restores initial state
+targetCell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 200));
+targetCell.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 300));
+
+if (look.params.preset !== targetStockId) {
+    throw new Error(`click should apply preset ${targetStockId}, got ${look.params.preset}`);
+}
+if (editor.undo.length !== undo1 + 1) {
+    throw new Error(`hover plus click should push exactly 1 undo step: expected ${undo1 + 1}, got ${editor.undo.length}`);
+}
+
+// Undo restores initial state
+await editor.undoStep();
+if (look.params.preset !== initialPreset) {
+    throw new Error(`undo should restore initial preset ${initialPreset}, got ${look.params.preset}`);
+}
+if (look.name !== initialName) {
+    throw new Error(`undo should restore initial name ${initialName}, got ${look.name}`);
+}
+
+// 5. Measure and report 15000 x 10000 hover response time
+const vpCanvas = document.createElement("canvas");
+vpCanvas.width = 1200; vpCanvas.height = 800;
+const vpCtx = vpCanvas.getContext("2d");
+vpCtx.fillStyle = "#808080";
+vpCtx.fillRect(0, 0, 1200, 800);
+const t0 = performance.now();
+editor.filteredCanvas(look, vpCanvas, false, true);
+const hover15kMs = performance.now() - t0;
+
+await c("remove_layer", { layer: look.id });
+sec.open = false;
+return { ok: true, targetStockId, hover15kMs: +hover15kMs.toFixed(1) };
+"""),
     ("exports", """
 const H = (await import("./editor/host.js")).host;
 const cases = [["look_portra400", "film.look", { preset: "portra400" }], ["halation", "film.halation", { strength: 80 }], ["frame_instant", "film.frame", { style: "instant" }], ["bw_red", "film.bw", { preset: "red", filter_hue: 10, filter_strength: 90 }], ["points", null, null]];

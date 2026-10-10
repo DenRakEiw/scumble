@@ -13,6 +13,12 @@ Tests the colour grading filter layer (color_grade) across CPU and WebGL2:
      - set_filter { params: { nope: 1 } } error message names the 14 valid keys
      - filter_types lists color_grade with 14 parameters
   4. Document round trip: save_document to scratch path, open_document preserves all 14 parameters.
+  5. Preset hover preview on a grain layer (PLAN_NIK9_BUILD.md R3-S7):
+     - Open list via list button
+     - Pointerenter previews preset after 120 ms dwell (filterPreview set, undo unchanged)
+     - Pointerleave restores pre-hover state
+     - Click commits: pushes 1 undo step, renames layer, matches native select change
+     - Escape key and outside click cancel preview and close flyout.
 
 Runs tools/grade_test.js under plain Node first, then connects to running app via CDP.
 """
@@ -514,6 +520,137 @@ JS = r"""
     if (openedEd) {
         try { await commands.run("close_document", { doc: openedEd.node.id, force: true }); } catch (_) {}
     }
+
+    // -------------------------------------------------------------------------
+    // 5. Preset hover preview on a grain layer (PLAN_NIK9_BUILD.md R3-S7)
+    // -------------------------------------------------------------------------
+    const testEd = shell.newDocument();
+    shell.activate(testEd);
+    await new Promise((r) => setTimeout(r, 200));
+    testEd.resizeCanvas();
+    const testCanvas = mk(400, 300);
+    testCanvas.getContext("2d").fillStyle = "#777777";
+    testCanvas.getContext("2d").fillRect(0, 0, 400, 300);
+    await testEd.setBaseFromCanvas(testCanvas, { keepLayers: false });
+
+    const grainLayer = testEd.addFilterLayer("grain");
+    testEd.renderLayers();
+    check("5. grain layer added", !!grainLayer);
+
+    const grainRow = testEd.root.querySelector(`.ipc-layer[data-layer="${grainLayer.id}"]`);
+    check("5. grain layer row rendered", !!grainRow);
+
+    const listBtn = grainRow ? grainRow.querySelector('button[title*="Preview the entries"]') : null;
+    check("5. list button found", !!listBtn);
+
+    if (listBtn) {
+        // Open list via list button
+        listBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        const fly = testEd.root.querySelector(".ipc-choices");
+        check("5. choice flyout opened", !!fly);
+
+        const items = fly ? Array.from(fly.querySelectorAll(".ipc-choice-item[data-id]")) : [];
+        check("5. flyout has choice items", items.length > 5, items.length);
+
+        const curPreset = grainLayer.params.preset;
+        const targetItem = items.find((it) => it.getAttribute("data-id") !== curPreset && it.getAttribute("data-id") !== "custom");
+        const targetId = targetItem ? targetItem.getAttribute("data-id") : null;
+        check("5. target preset item found", !!targetItem && !!targetId, targetId);
+
+        const nameBefore = grainLayer.name;
+        const undoLenBefore = testEd.undo.length;
+        const paramsBefore = JSON.parse(JSON.stringify(grainLayer.params));
+
+        // Dispatch pointerenter on target preset row
+        targetItem.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+
+        // Wait 200 ms: verify params.preset is hovered one, filterPreview === layer.id, undo.length and name unchanged
+        await new Promise((r) => setTimeout(r, 200));
+        check("5. params.preset is hovered preset", grainLayer.params.preset === targetId, { actual: grainLayer.params.preset, expected: targetId });
+        check("5. filterPreview is layer id", testEd.filterPreview === grainLayer.id, testEd.filterPreview);
+        check("5. undo.length unchanged during hover", testEd.undo.length === undoLenBefore, { actual: testEd.undo.length, expected: undoLenBefore });
+        check("5. layer name unchanged during hover", grainLayer.name === nameBefore, { actual: grainLayer.name, expected: nameBefore });
+
+        // Dispatch pointerleave on list: verify params equals pre-hover state, filterPreview and _hoverSnap null
+        fly.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
+        check("5. pointerleave restored params", JSON.stringify(grainLayer.params) === JSON.stringify(paramsBefore), { actual: grainLayer.params, expected: paramsBefore });
+        check("5. filterPreview is null after leave", testEd.filterPreview === null, testEd.filterPreview);
+        check("5. _hoverSnap is null after leave", grainLayer._hoverSnap === null, grainLayer._hoverSnap);
+
+        // Hover again then click: verify undo.length +1, layer renamed, params JSON equals native select change on twin layer, undo restores pre-hover state
+        targetItem.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 200));
+        targetItem.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+        check("5. undo.length increased by 1 on commit", testEd.undo.length === undoLenBefore + 1, { actual: testEd.undo.length, expected: undoLenBefore + 1 });
+        check("5. layer renamed on commit", grainLayer.name !== nameBefore, grainLayer.name);
+        check("5. flyout closed on commit", !testEd.root.querySelector(".ipc-choices"));
+        const committedParams = JSON.parse(JSON.stringify(grainLayer.params));
+
+        // Undo restores pre-hover state
+        await testEd.undoStep();
+        check("5. undo restores pre-hover params", JSON.stringify(grainLayer.params) === JSON.stringify(paramsBefore), { actual: grainLayer.params, expected: paramsBefore });
+        check("5. undo restores pre-hover name", grainLayer.name === nameBefore, { actual: grainLayer.name, expected: nameBefore });
+
+        // Compare against native select change on twin layer in a separate twin document
+        const twinEd = shell.newDocument();
+        shell.activate(twinEd);
+        await new Promise((r) => setTimeout(r, 100));
+        twinEd.resizeCanvas();
+        await twinEd.setBaseFromCanvas(testCanvas, { keepLayers: false });
+        const twinLayer = twinEd.addFilterLayer("grain");
+        twinEd.renderLayers();
+        const twinRow = twinEd.root.querySelector(`.ipc-layer[data-layer="${twinLayer.id}"]`);
+        const twinSel = twinRow ? twinRow.querySelector('select[data-param="preset"]') : null;
+        check("5. twin select found", !!twinSel);
+        if (twinSel) {
+            twinSel.value = targetId;
+            twinSel.dispatchEvent(new Event("change"));
+            check("5. params JSON equals native select change on twin layer", JSON.stringify(committedParams) === JSON.stringify(twinLayer.params), {
+                committedParams,
+                twinParams: twinLayer.params
+            });
+        }
+        try { await commands.run("close_document", { doc: twinEd.node.id, force: true }); } catch (_) {}
+        shell.activate(testEd);
+
+        // Test Escape key and outside click both close and cancel preview
+        // Re-open list
+        listBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        const flyEsc = testEd.root.querySelector(".ipc-choices");
+        check("5. choice flyout reopened for Escape test", !!flyEsc);
+        const itemEsc = flyEsc ? Array.from(flyEsc.querySelectorAll(".ipc-choice-item[data-id]")).find((it) => it.getAttribute("data-id") === "velvia50" || it.getAttribute("data-id") === "tmax400") : null;
+        if (itemEsc) {
+            const preEscParams = JSON.parse(JSON.stringify(grainLayer.params));
+            itemEsc.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 200));
+            check("5. preview active before Escape", grainLayer.params.preset === itemEsc.getAttribute("data-id"));
+
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+            check("5. Escape closes flyout", !testEd.root.querySelector(".ipc-choices"));
+            check("5. Escape cancels preview params", JSON.stringify(grainLayer.params) === JSON.stringify(preEscParams), { actual: grainLayer.params, expected: preEscParams });
+            check("5. filterPreview is null after Escape", testEd.filterPreview === null);
+        }
+
+        // Test outside click
+        listBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        const flyOut = testEd.root.querySelector(".ipc-choices");
+        check("5. choice flyout reopened for outside click test", !!flyOut);
+        const itemOut = flyOut ? Array.from(flyOut.querySelectorAll(".ipc-choice-item[data-id]")).find((it) => it.getAttribute("data-id") === "gold200" || it.getAttribute("data-id") === "trix400") : null;
+        if (itemOut) {
+            const preOutParams = JSON.parse(JSON.stringify(grainLayer.params));
+            itemOut.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 200));
+            check("5. preview active before outside click", grainLayer.params.preset === itemOut.getAttribute("data-id"));
+
+            document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+            check("5. outside click closes flyout", !testEd.root.querySelector(".ipc-choices"));
+            check("5. outside click cancels preview params", JSON.stringify(grainLayer.params) === JSON.stringify(preOutParams), { actual: grainLayer.params, expected: preOutParams });
+            check("5. filterPreview is null after outside click", testEd.filterPreview === null);
+        }
+    }
+
+    try { await commands.run("close_document", { doc: testEd.node.id, force: true }); } catch (_) {}
 
     out.tiles = !!ed.tileMode;
     out.fails = fails;
