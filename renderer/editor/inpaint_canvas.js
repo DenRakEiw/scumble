@@ -21213,8 +21213,8 @@ class InpaintEditor {
             const commit = (v) => { entry.value = v; if (t.widget) { try { t.widget.value = v; } catch (_) { /* read-only */ } } this.notifyChanged(); this.refreshRefLayout(); };
             if (k.kind === "combo") {
                 // a file the server's list lacks stays the recipe's choice, marked in the select (issue #4: until 0.1.45
-                // the row silently became the folder's first file, a Flux file on most installs); the run is refused
-                // with the file and its download link (host.missingFilesRefusal). An empty value still takes the first.
+                // the row silently became the folder's first file, a Flux file on most installs); the app's host refuses
+                // the run with the file and its download link (missingFilesRefusal). An empty value still takes the first.
                 const options = k.options.map(String), value = String(entry.value ?? "");
                 const known = options.includes(value);
                 const missing = !known && options.length > 0 && value !== "";
