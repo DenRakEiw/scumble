@@ -1173,6 +1173,47 @@ export const host = {
         list.appendChild(lab);
     },
 
+    /**
+     * The Settings rows of the selected local recipe whose file the server's list lacks: `[{ label, value, link }]`.
+     * Until 0.1.45 such a row silently became the folder's first file (issue #4: a Flux file on most installs, and
+     * "no edits done"); now the recipe's value stays (the select marks it, inpaint_canvas.js renderSettings) and the
+     * run is refused with the download link from the recipe's `models`. `r` must be the selected recipe, since the
+     * rows are its targets.
+     */
+    missingSettingFiles(editor, r = this.recipe) {
+        if (!r || r !== this.recipe || !r.prompt || !editor || !editor.settings) return [];
+        const out = [];
+        for (const t of this.settingTargets()) {
+            const entry = editor.settings[String(t.index)];
+            if (!entry || entry.value == null || entry.value === "") continue;
+            const k = editor.settingKind(t);
+            if (k.kind !== "combo" || !k.options.length) continue;
+            const value = String(entry.value);
+            if (k.options.map(String).includes(value)) continue;
+            out.push({ label: entry.label, value, link: this.modelLink(r, value) });
+        }
+        return out;
+    },
+
+    /** The download link a recipe's `models` gives for a file name (rows of "file (url)" per folder), or null. */
+    modelLink(r, file) {
+        for (const list of Object.values((r && r.models) || {})) {
+            for (const row of Array.isArray(list) ? list : []) {
+                const m = /^(.*?)\s*\((https?:\/\/[^)]+)\)\s*$/.exec(String(row));
+                if (m && m[1] === String(file)) return m[2];
+            }
+        }
+        return null;
+    },
+
+    /** The refusal for a run whose Settings rows name files the server lacks, or null when every file is there. */
+    missingFilesRefusal(editor, r = this.recipe) {
+        const miss = this.missingSettingFiles(editor, r);
+        if (!miss.length) return null;
+        const rows = miss.map((m) => `${m.label}: ${m.value}${m.link ? " (" + m.link + ")" : ""}`).join("; ");
+        return `Your ComfyUI lacks ${miss.length === 1 ? "a model file this recipe needs" : "model files this recipe needs"}: ${rows}. Put the file in that models folder (and restart or refresh ComfyUI), or pick one of the server's files in the Settings panel, then try again.`;
+    },
+
     /** A preset's values into the document's Settings rows; `{ rows, missing }` (rows named, files the server lacks). */
     applyPreset(editor, targets, preset) {
         const missing = [];
@@ -1980,6 +2021,10 @@ export const host = {
                     }, 250);
                     upload.then((v) => done(resolve, v), (err) => done(reject, err));
                 });
+                {
+                    const refusal = this.missingFilesRefusal(editor, r);   // a file the server lacks (issue #4): refused before the queue
+                    if (refusal) throw new Error(refusal);
+                }
                 const prompt = comfyprompt.wholePicturePrompt(r, ref, factor, editor.settings);
                 res = await this.comfyPictureRun(editor, prompt, comfyprompt.WHOLE_OUTPUT, { label, token, front: false, deadline, timeoutMs: 1800000 });
                 // a Cancel during the answer's fetch (comfyPictureRun stops watching the token once the job answered):
@@ -2982,6 +3027,11 @@ export const host = {
         delete canvas.inputs.result; delete canvas.inputs.result_local;
         delete canvas.inputs.result_source; delete canvas.inputs.result_source_local;
         canvas.inputs[r.mode === "api" ? "result_source" : "result_source_local"] = r.result;
+        {
+            // a row naming a file the server lacks refuses here, before anything is queued (issue #4)
+            const refusal = this.missingFilesRefusal(editor, r);
+            if (refusal) throw new Error(refusal);
+        }
         for (const s of r.settings || []) {
             const entry = editor.settings[String(s.index)];
             const node = prompt[s.node];

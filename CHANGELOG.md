@@ -22,6 +22,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   - **Depth from layer**: turn any grey layer into the document's depth map (*From layer...*).
 - **Documents.** A document with a colour grading, HSL or effects layer, or a control point of the new shapes, or a depth map with edge snap, needs Scumble 0.1.45 or newer to open (reader version 4).
 - **Plugin API 4.** Filter plugins can take statistics of the whole composite underneath them via `wholeStats` and `wholeStatsSize`, add `color` and `hidden` parameters, and rollback pending previews with `cancelFilterParams`.
+- **A model file your ComfyUI lacks is no longer swapped silently.** A local recipe's Model, Text encoder or VAE row
+  whose file is not on the server (the Qwen Image Edit 2.1 recipe on a Flux install, issue #4) kept its name only
+  until the panel redrew, then quietly took the first file of the folder, and the run went with the wrong model. The
+  row now keeps the recipe's file, marked "(not on the server)", and Generate refuses with the file's download link.
 - **Fixes.** Film looks with no grain ("None" or grainless stocks) no longer run an unnecessary grain pass. Pressing Escape in plugin tools and the boxes tool properly deselects or cancels.
 - **One-click install in Claude Desktop.** Every release now carries `scumble-<version>.mcpb`: open it and Claude
   Desktop installs Scumble's MCP server. The bundle finds the installed Scumble (installer or Microsoft Store) by

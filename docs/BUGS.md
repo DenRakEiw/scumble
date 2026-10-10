@@ -240,7 +240,14 @@ encoder's own latent into the KSampler, 25 steps, CFG 1, euler / simple, denoise
 well). The canvas node's outputs the recipe wires (7 prompt, 10 seed, 12 negative) are right. The recipe has never
 run (the model files were not on the user's server, `docs/RECIPES.md`).
 
-**Fix (not written; the other agent holds `inpaint_canvas.js` and `host.js` on 2026-10-09):** keep the recipe's value
+**Fixed 2026-10-10 for 0.1.45:** `renderSettings` keeps a value the server's list lacks and shows it as `<file> (not on
+the server)` (class `ipc-sel-missing`, the tooltip says what to do; an empty value still takes the first file);
+`host.missingSettingFiles` / `missingFilesRefusal` refuse a Generate and a whole-picture run before anything is queued,
+naming each row's file with the download link from the recipe's `models`; the `recipes` gate's step
+`a_file_the_server_lacks_stays_marked_and_refuses_the_run` stubs a Flux install's lists for the Qwen recipe and checks
+the rows, the marks, the refusal and that the run goes once the lists hold the files. The plan as it was written:
+
+**Fix (as planned 2026-10-09; the other agent held `inpaint_canvas.js` and `host.js` then):** keep the recipe's value
 when the server lacks it, show it in the select marked as missing (`qwen3vl_8b_int8_convrot.safetensors (not on the
 server)`), say so in the status line with the recipe's download link (`models` in the recipe), and refuse the run with
 that message instead of queueing the first file. `applyPreset` (`host.js:1167`) already does the first half for presets

@@ -281,6 +281,72 @@ try {
 }
 """
 
+MISSING_FILES = """
+// issue #4 (docs/BUGS.md): a Settings row whose file the server's list lacks keeps the recipe's file, the select marks
+// it "(not on the server)", and the run is refused naming the file and its download link; nothing is queued. Once the
+// files are in the server's lists the rows are plain and the run goes. ComfyUI is stubbed.
+const ed = ednow(window.__r);
+const doc = window.__r;
+const { api } = await import("./editor/host.js");
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, helper: ed.helperUsed };
+const QWEN = "qwen_image_edit_2_1_local";
+let sent = null;
+const out = {};
+try {
+    const r = host.shell.recipes().find((x) => x.id === QWEN);
+    const oi = {};
+    for (const n of r.needs || []) oi[n] = { input: { required: {} } };
+    // the server's lists hold other files than the recipe names: a Flux install
+    oi.UNETLoader = { input: { required: { unet_name: [["flux1-dev.safetensors", "other.safetensors"]] } } };
+    oi.CLIPLoader = { input: { required: { clip_name: [["clip_l.safetensors", "t5xxl_fp16.safetensors"]], type: [["flux", "qwen_image"]] } } };
+    oi.VAELoader = { input: { required: { vae_name: [["ae.safetensors"]] } } };
+    host.objectInfo = oi;
+    host.connected = true;
+    host.ensureOnServer = async () => null;
+    api.queuePrompt = async (n, body) => { sent = body; return { prompt_id: "gate-missing" }; };
+    ed.helperUsed = false;
+    await run("new_canvas", { doc, width: 512, height: 384 });
+    await run("select_rect", { doc, x: 64, y: 64, w: 200, h: 150 });
+    await run("set_prompt", { doc, text: "a red hat", negative: "" });
+    window.__shell.selectRecipe(QWEN);
+    if (!host.recipe || host.recipe.id !== QWEN) throw new Error("Qwen was not selected");
+    ed.settingsChanged();
+    const rows = (r.settings || []).map((s) => ({ input: s.input, value: String(ed.settings[String(s.index)].value), want: String(s.default !== undefined ? s.default : r.prompt[s.node].inputs[s.input]) }));
+    const wrong = rows.filter((x) => x.value !== x.want);
+    if (wrong.length) throw new Error("rows swapped for the server's files: " + JSON.stringify(wrong));
+    const fileRows = rows.filter((x) => /[.]safetensors$/.test(x.want));
+    if (fileRows.length < 3) throw new Error("the recipe has fewer file rows than expected: " + JSON.stringify(rows));
+    const sels = Array.from(ed.settingsList.querySelectorAll("select.ipc-sel"));
+    const marked = sels.filter((s) => s.selectedOptions[0] && /not on the server/.test(s.selectedOptions[0].textContent));
+    if (marked.length !== fileRows.length) throw new Error("the selects marking a missing file: " + marked.length + " of " + fileRows.length + ": " + sels.map((s) => s.selectedOptions[0] && s.selectedOptions[0].textContent).join(" | "));
+    out.marked = marked.map((s) => s.selectedOptions[0].textContent);
+    const miss = host.missingSettingFiles(ed);
+    if (miss.length !== fileRows.length || !miss.every((m) => m.link && /^https:/.test(m.link))) throw new Error("missingSettingFiles: " + JSON.stringify(miss));
+    let msg = null;
+    try { await host.queueGenerate(ed); } catch (err) { msg = String(err.message || err); }
+    const file = new RegExp(fileRows[0].want.replace(/[.]/g, "[.]"));
+    if (!msg || !/lacks/.test(msg) || !file.test(msg) || !/huggingface[.]co/.test(msg)) throw new Error("the run was not refused with the file and its link: " + msg);
+    if (sent) throw new Error("a refused run queued a prompt");
+    out.refused = msg.slice(0, 160);
+    // the files in the server's lists again: plain rows, and the run goes with the recipe's own files
+    oi.UNETLoader.input.required.unet_name = [[fileRows[0].want]];
+    oi.CLIPLoader.input.required.clip_name = [[fileRows[1].want]];
+    oi.VAELoader.input.required.vae_name = [[fileRows[2].want]];
+    ed.settingsChanged();
+    if (host.missingSettingFiles(ed).length) throw new Error("still missing: " + JSON.stringify(host.missingSettingFiles(ed)));
+    if (ed.settingsList.querySelector("select.ipc-sel-missing")) throw new Error("a select is still marked");
+    await host.queueGenerate(ed);
+    if (!sent) throw new Error("nothing was queued once the files are there");
+    if (sent.output.unet.inputs.unet_name !== fileRows[0].want) throw new Error("the queued file: " + sent.output.unet.inputs.unet_name);
+    out.queued = sent.output.unet.inputs.unet_name;
+    return out;
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; ed.helperUsed = saved.helper;
+    try { await run("set_prompt", { doc, text: "", negative: "" }); } catch (_) { /* gone */ }
+    if (window.__prev) window.__shell.selectRecipe(window.__prev);
+}
+"""
+
 CLEANUP = """
 const out = {};
 try { await window.scumble.recipes.remove("%s"); out.removed = true; } catch (err) { out.removed = String(err.message || err); }
@@ -315,6 +381,7 @@ async def run_all(c):
                  IMPORT_MINE % (json.dumps(good), MINE, MINE, MY_MODEL, MINE, MINE, MY_MODEL))
         await js("a_provider_recipe_without_a_provider_is_refused_and_writes_nothing", IMPORT_BAD % json.dumps(bad))
         await js("local_recipes_name_the_batch_pictures_and_trim_the_unused_slots", LOCAL_REFS)
+        await js("a_file_the_server_lacks_stays_marked_and_refuses_the_run", MISSING_FILES)
     except Exception as err:  # noqa: BLE001
         ok = False
         print("[FAIL]", err)
