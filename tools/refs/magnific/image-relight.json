@@ -1,0 +1,144 @@
+{
+ "$comment": "The request body of POST /v1/ai/image-relight, resolved from https://storage.googleapis.com/fc-freepik-pro-rev1-eu-api-specs/magnific-api-v1-openapi.yaml (read 2026-10-11); descriptions and examples dropped, advanced_settings inlined. The poll is GET /v1/ai/image-relight/{task-id} (the upscalers' shape). transfer_light_from_lightmap and transfer_light_from_reference_image exclude each other; change_background defaults to true.",
+ "route": "image-relight",
+ "schema": {
+  "properties": {
+   "webhook_url": {
+    "format": "uri",
+    "type": "string"
+   },
+   "image": {
+    "type": "string"
+   },
+   "prompt": {
+    "type": "string"
+   },
+   "transfer_light_from_reference_image": {
+    "type": "string"
+   },
+   "transfer_light_from_lightmap": {
+    "type": "string"
+   },
+   "light_transfer_strength": {
+    "default": 100,
+    "maximum": 100,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "interpolate_from_original": {
+    "default": false,
+    "type": "boolean"
+   },
+   "change_background": {
+    "default": true,
+    "type": "boolean"
+   },
+   "style": {
+    "default": "standard",
+    "enum": [
+     "standard",
+     "darker_but_realistic",
+     "clean",
+     "smooth",
+     "brighter",
+     "contrasted_n_hdr",
+     "just_composition"
+    ],
+    "type": "string"
+   },
+   "preserve_details": {
+    "default": true,
+    "type": "boolean"
+   },
+   "advanced_settings": {
+    "properties": {
+     "whites": {
+      "default": 50,
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+     },
+     "blacks": {
+      "default": 50,
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+     },
+     "brightness": {
+      "default": 50,
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+     },
+     "contrast": {
+      "default": 50,
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+     },
+     "saturation": {
+      "default": 50,
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+     },
+     "engine": {
+      "default": "automatic",
+      "enum": [
+       "automatic",
+       "balanced",
+       "cool",
+       "real",
+       "illusio",
+       "fairy",
+       "colorful_anime",
+       "hard_transform",
+       "softy"
+      ],
+      "type": "string"
+     },
+     "transfer_light_a": {
+      "default": "automatic",
+      "enum": [
+       "automatic",
+       "low",
+       "medium",
+       "normal",
+       "high",
+       "high_on_faces"
+      ],
+      "type": "string"
+     },
+     "transfer_light_b": {
+      "default": "automatic",
+      "enum": [
+       "automatic",
+       "composition",
+       "straight",
+       "smooth_in",
+       "smooth_out",
+       "smooth_both",
+       "reverse_both",
+       "soft_in",
+       "soft_out",
+       "soft_mid",
+       "strong_mid",
+       "style_shift",
+       "strong_shift"
+      ],
+      "type": "string"
+     },
+     "fixed_generation": {
+      "default": false,
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "required": [
+   "image"
+  ],
+  "type": "object"
+ }
+}

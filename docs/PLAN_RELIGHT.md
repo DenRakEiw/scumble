@@ -1,19 +1,30 @@
 # Relight: virtual lights on the picture (item 43)
 
-**Status: researched 2026-10-09, not planned in sessions yet, nothing built.** The user's ask (2026-10-09): rebuild the
-relight feature Photoshop's beta got on 2026-09-28, as an update after the Nik 9 parity block (`docs/PLAN_NIK9_BUILD.md`
-releases 2 and 3, one block; release 4 independent). This file names other products: the rule of 2026-09-29 covers
-CLAUDE.md, the posts, the CHANGELOG, the manual and the README, not the plans.
+**Status: researched 2026-10-09; the build plan is `docs/PLAN_RELIGHT_BUILD.md` (2026-10-11: the design decided,
+sessions L0a-L6 and the release, phase 2 N1-N3, the questions R-D1 to R-D9); nothing built.** The other agent builds
+it, this account reviews each session and releases. The user's ask (2026-10-09): rebuild the relight feature
+Photoshop's beta got on 2026-09-28, as an update after the Nik 9 parity block (`docs/PLAN_NIK9_BUILD.md` releases 2
+and 3, one block; release 4 independent). This file names other products: the rule of 2026-09-29 covers CLAUDE.md,
+the posts, the CHANGELOG, the manual and the README, not the plans. §§2-7 below are the research of 2026-10-09; where
+the build plan decides differently (the orthographic height field, the filter layer, four lights, the light types,
+the detail ratio), the build plan wins.
 
-## 1. What the model feature does (Adobe's post of 2026-09-28, build 27.12.0)
+## 1. What the model feature does (Adobe's post of 2026-09-28, build 27.12.0; the guides read 2026-10-11)
 
-- A **Relight layer** (Layer menu, Layers panel flyout) over a pixel or smart-object layer; the original pixels stay.
-- Up to **three lights**, dragged anywhere on the canvas, also outside the picture; each with **position, intensity,
-  colour, diffusion**, an eye to switch it off, delete. At least one light stays.
-- An **Original lighting** slider (0-100 %): the feature first takes the picture's own light away, then lights it with
-  its own lights; all lights off leaves the ambient remainder.
-- A **low-resolution preview** while dragging; **Done** renders at full input resolution, server-side, 30 generative
-  credits (about $0.30) per Done; needs the internet. Supports Actions and scripting.
+- A **Relight layer** (Layer menu, Layers panel flyout) over an unlocked pixel, Rotate Object or Smart Object layer;
+  the source is hidden and the Relight layer holds the rendered result (8-bit, a badge on its thumbnail); the
+  original pixels stay; a mask on the source is copied over, selections are ignored; it reads the active layer alone.
+- Up to **three lights**, dragged anywhere on the canvas, also outside the picture (not below its bottom edge); each
+  with **Left/Right, Low/High, Close/Far** (depth: Close in front of the subject towards the camera, Far behind it for a
+  rim light; the handle grows with Close), **Intensity**, **Colour** (Kelvin presets 1000-10000 K, default 5500 K, or
+  a custom colour; no eyedropper), **Diffusion** (the source's size: hard like a bulb, soft like a softbox), an eye,
+  Reset, delete. At least one light stays; *Add light* greys out at three. Visible sources in the frame (a window)
+  stay lit as scene lights.
+- An **Original lighting** slider (0-100 %, global): the feature first takes the picture's own light away, then lights
+  it with its own lights; all lights off leaves the ambient remainder; on a landscape the sun cannot be removed.
+- A **low-resolution preview** while dragging; **Done** renders at the document's pixel size (generated smaller and
+  upscaled: hair, skin and fabric softer), server-side, 30 generative credits (about $0.30) per Done, *Edit lighting*
+  re-renders for 30 again; needs the internet. Supports Actions and scripting; Content Credentials attached.
 - Users report: fine detail lost in the final render; the 3D placement of a light in front of / behind an object is
   clumsy; a light inside an object misbehaves; works best on a clear subject (a person, an interior), weak on
   landscapes ("a flashlight, not the sun"); only the active layer is processed, so composites suffer.

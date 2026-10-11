@@ -310,7 +310,15 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   first from its gradient, in phase 2 from MoGe-2 ViT-S normal, MIT, ONNX; routes: an in-app shader on the filter
   infrastructure, Magnific's relight endpoint taking Scumble's own light map, a local generative recipe only on a current model (no IC-Light SD 1.5, the user), fal's two
   direction-word endpoints as presets; the user's questions R-D1 to R-D5 in its §5; about 6-8 sessions plus 4-5).
-  Nothing built.
+  **The build plan is `docs/PLAN_RELIGHT_BUILD.md` (2026-10-11, anchors at `0d0be6b`)**: lights of three kinds (point,
+  sun, spot) with Kelvin or custom colour, diffusion, Close/Far on an orthographic height field from the depth map; the
+  in-app route a filter layer `relight` (a WebGL2 shader with a CPU twin; the normals and the per-light shadow maps as
+  **Rust kernels** `height_normals` and `shadow_march` at map resolution, ABI 19, cached on the layer); the generative
+  routes (Magnific's light map, the Qwen Image Edit 2509 relight LoRA local and on Comfy Cloud, fal iclight-v2, Bria)
+  land a pixel layer with the model's light laid on the original's pixels by a ratio; sessions L0a-L6 by the other
+  agent (about 10 days), the review after each and the release by this account; phase 2 N1-N3 (MoGe-2 normals and
+  camera, AO, gloss, presets, the 15k measurement); the questions R-D1 to R-D9 in its §6 (the user, 2026-10-11:
+  "der plan wird dann dem anderen agent zum umsetzen gegeben ... du machst am ende den release"). Nothing built.
 - 44: **grow the Rust kernels, no rewrite** (the user, 2026-10-09, after asking whether Scumble should be rewritten in
   Rust: no, the shell stays Electron; "schreibe auf den plan wasm kernel wachsen lassen"): `docs/PLAN_WASM.md` ranks
   the CPU paths worth moving into `crates/px` (the edge snap and guided filter maps, histograms and the limit rows,
