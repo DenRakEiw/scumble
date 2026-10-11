@@ -144,6 +144,27 @@ export function kelvinToRgb(k) {
 }
 
 /**
+ * Returns an sRGB hex colour string ("#rrggbb") for a light colour
+ * (which can be a Kelvin number or a hex string).
+ * @param {number|string} color
+ * @returns {string}
+ */
+export function lightColorHex(color) {
+    if (typeof color === "string" && color.trim().startsWith("#")) {
+        const h = color.trim().toLowerCase();
+        if (h.length === 4) {
+            return "#" + h[1] + h[1] + h[2] + h[2] + h[3] + h[3];
+        }
+        if (h.length === 7) return h;
+    }
+    const [lr, lg, lb] = kelvinToRgb(color);
+    const sr = Math.max(0, Math.min(255, Math.round(linearToSrgb(lr) * 255)));
+    const sg = Math.max(0, Math.min(255, Math.round(linearToSrgb(lg) * 255)));
+    const sb = Math.max(0, Math.min(255, Math.round(linearToSrgb(lb) * 255)));
+    return "#" + [sr, sg, sb].map((c) => c.toString(16).padStart(2, "0")).join("");
+}
+
+/**
  * Creates a default light configuration object.
  * @param {number} [i=0]
  * @param {{ width?: number, height?: number }|null} [size=null]

@@ -78,10 +78,10 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-11: Relight L1a built; **0.1.46 released and Latest**; the Store update open)
+## Where things stand (2026-10-11: Relight L1b built; **0.1.46 released and Latest**; the Store update open)
 
-- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** L1a built (filter layer `relight` in `FILTERS`, GL twin and CPU twin, depth normals, shadow march, bilateral depth edge snap, reader 6, layer cache and worker ops, commands integration, in-app test gate `tools/relight_test.py` PASS on `--tiles on` and `--tiles off` [labels `l1a_on`, `l1a_off`]; node repo synced; visual proof `scratch/shot_l1a.png` inspected; next session is L1b: the layer row UI).
-Open questions for L1a (R-D2, R-D4, R-D6, R-D9) taking proposed values: filter layer `relight` with lights in params, shadows default 60%, 4 lights max (single RGBA8 texture), first light white 5500 K 100% diffusion 30 front of centre dist -30 original light 100 ambient 15 depth 50.
+- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** L1b built (the row's light block: `buildRelightBlock(layer)` in `inpaint_canvas.js`, light list with colour dot, index, type select, eye toggle, reset and trash, selected light controls with Intensity, Diffusion, Close/Far, Range, spot Cone and Edge, colour row with Kelvin presets, custom colour and eyedropper `pickOnce`, Add light button capped at 4 lights, missing depth map hint row with Compute depth map button, deep-copy filter params undo snapshots, `list_layers` reporting `lights_count` and `selected_light`; in-app test gates `relight` PASS on `--tiles on` and `--tiles off` [labels `l1b_on`, `l1b_off`], `skins` [label `l1b_skins`], and `help` [label `l1b_help`]; node repo synced; visual proof `scratch/shot_l1b.png` inspected; next session is L2: the `lights` canvas tool).
+Open questions for L1a/L1b (R-D2, R-D4, R-D6, R-D9) taking proposed values: filter layer `relight` with lights in params, shadows default 60%, 4 lights max (single RGBA8 texture), first light white 5500 K 100% diffusion 30 front of centre dist -30 original light 100 ambient 15 depth 50.
 
 
 **0.1.46 is out** (tag v0.1.46, published 2026-10-11T12:03:29Z, title "seventeen blend modes, lens blur, New with a

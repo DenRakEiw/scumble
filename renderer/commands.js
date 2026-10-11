@@ -76,7 +76,16 @@ export function layerSummary(ed, l) {
     }
     if (l.maskPx && l.maskOff) out.mask_off = true;   // the mask is kept but switched off
     if (l.match && l.match.strength > 0) out.match = { strength: l.match.strength, source: l.match.source };
-    if (l.kind === "filter") { out.filter = l.filter; out.params = { ...(l.params || {}) }; if (l.lut) out.lut = l.lut.name || true; }
+    if (l.kind === "filter") {
+        out.filter = l.filter;
+        out.params = { ...(l.params || {}) };
+        if (l.lut) out.lut = l.lut.name || true;
+        if (l.filter === "relight") {
+            const lights = Array.isArray(l.params && l.params.lights) ? l.params.lights : [];
+            out.lights_count = lights.length;
+            out.selected_light = l._selectedLightId || (lights[0] ? lights[0].id : null);
+        }
+    }
     if (l.kind === "text" && l.text) {
         out.text = { content: l.text.content, font: l.text.font, size: l.text.size, color: l.text.color, bold: !!l.text.bold, italic: !!l.text.italic, align: l.text.align };
         // how the text is turned on the screen in all (its quarter turns and its free angle), and mirrored

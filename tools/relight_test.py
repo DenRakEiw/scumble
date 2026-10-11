@@ -40,9 +40,12 @@ JS = r"""
     const { host } = await import("./editor/host.js");
     const { makeMap } = await import("./editor/inpaint_maps.js");
     const PNG = await import("./editor/inpaint_png.js");
+    const { defaultLight } = await import("./editor/inpaint_relight.js");
 
     const fails = [];
+    let checkCount = 0;
     const check = (name, ok, info) => {
+        checkCount++;
         if (!ok) fails.push(name + (info !== undefined ? ": " + JSON.stringify(info).slice(0, 400) : ""));
     };
     const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
@@ -452,7 +455,145 @@ JS = r"""
     ed.draw();
     await settle(ed);
 
-    return { fails, checks: 25 - fails.length, tiles: !!ed.tileMode };
+    // -------------------------------------------------------------------------
+    // Case k: The row light block controls change params and push 1 undo step
+    // -------------------------------------------------------------------------
+    // Reset to exactly 1 light:
+    fx.params.lights = [defaultLight(0, { width: W, height: H })];
+    fx.params.lights[0].intensity = 100;
+    fx.params.lights[0].type = "point";
+    fx.params.lights[0].color = 5500;
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+
+    // k1. Add light
+    const bk1 = ed.buildRelightBlock(fx);
+    const addBtn1 = bk1.querySelector(".ipc-add-light");
+    addBtn1.click();
+    check("k: add light increased lights array to 2", fx.params.lights.length === 2);
+    const llRes = await commands.run("list_layers", { doc: ed.node.id });
+    const llRelight = llRes.layers.find((l) => l.id === fx.id);
+    check("k: list_layers reports lights_count === 2", llRelight && llRelight.lights_count === 2, llRelight);
+    await ed.undoStep();
+    check("k: undo restores 1 light", fx.params.lights.length === 1);
+
+    // k2. Light type select
+    const bk2 = ed.buildRelightBlock(fx);
+    const typeSel2 = bk2.querySelector(".ipc-relight-type-sel");
+    typeSel2.value = "spot";
+    typeSel2.dispatchEvent(new Event("change"));
+    check("k: type select changed light type to spot", fx.params.lights[0].type === "spot");
+    await ed.undoStep();
+    check("k: undo restores point type", fx.params.lights[0].type === "point");
+
+    // k3. Intensity slider
+    const bk3 = ed.buildRelightBlock(fx);
+    const sliders3 = bk3.querySelectorAll(".ipc-relight-controls input[type='range']");
+    const intSlider = Array.from(sliders3).find((s) => s.title === "Intensity");
+    if (intSlider) {
+        intSlider.value = "150";
+        intSlider.dispatchEvent(new Event("input"));
+        intSlider.dispatchEvent(new Event("change"));
+    }
+    check("k: intensity slider updated intensity to 150", fx.params.lights[0].intensity === 150);
+    await ed.undoStep();
+    check("k: undo restores initial intensity", fx.params.lights[0].intensity === 100);
+
+    // k4. Kelvin colour select
+    const bk4 = ed.buildRelightBlock(fx);
+    const kelvinSel4 = bk4.querySelector(".ipc-relight-kelvin-sel");
+    if (kelvinSel4) {
+        kelvinSel4.value = "2700";
+        kelvinSel4.dispatchEvent(new Event("change"));
+    }
+    check("k: kelvin select changed colour to 2700", fx.params.lights[0].color === 2700);
+    await ed.undoStep();
+    check("k: undo restores colour", fx.params.lights[0].color === 5500);
+
+    // k5. Reset button
+    const bk5 = ed.buildRelightBlock(fx);
+    fx.params.lights[0].intensity = 180;
+    const resetBtn5 = bk5.querySelector(".ipc-relight-reset");
+    if (resetBtn5) resetBtn5.click();
+    check("k: reset button restores default intensity 100", fx.params.lights[0].intensity === 100);
+    await ed.undoStep();
+    check("k: undo restores intensity 180", fx.params.lights[0].intensity === 180);
+    fx.params.lights[0].intensity = 100;
+
+    // k6. Delete button
+    const bk6 = ed.buildRelightBlock(fx);
+    const delBtn6 = bk6.querySelector(".ipc-relight-del");
+    if (delBtn6) delBtn6.click();
+    check("k: delete button removed light", fx.params.lights.length === 0);
+    await ed.undoStep();
+    check("k: undo restores light", fx.params.lights.length === 1);
+
+    // -------------------------------------------------------------------------
+    // Case l: Add light greys out at four
+    // -------------------------------------------------------------------------
+    while (fx.params.lights.length < 4) {
+        const bl = ed.buildRelightBlock(fx);
+        const btn = bl.querySelector(".ipc-add-light");
+        btn.click();
+    }
+    check("l: 4 lights reached", fx.params.lights.length === 4);
+    const bl4 = ed.buildRelightBlock(fx);
+    const btn4 = bl4.querySelector(".ipc-add-light");
+    check("l: add light button is disabled at 4", btn4 && btn4.disabled === true);
+    // Pop back to 1 light:
+    while (fx.params.lights.length > 1) {
+        fx.params.lights.pop();
+    }
+
+    // -------------------------------------------------------------------------
+    // Case m: The eye turns a light's contribution off
+    // -------------------------------------------------------------------------
+    fx.params.lights = [defaultLight(0, { width: W, height: H })];
+    fx.params.lights[0].x = 100;
+    fx.params.lights[0].y = 200;
+    fx.params.lights[0].intensity = 100;
+    fx.params.lights[0].on = true;
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+
+    const flatLit = ed.flattenToCanvas({ forRun: true });
+    const pxLit = flatLit.getContext("2d").getImageData(0, 0, W, H).data;
+
+    const bmEye = ed.buildRelightBlock(fx);
+    const eyeBtn = bmEye.querySelector(".ipc-relight-eye");
+    eyeBtn.click();
+    check("m: eye toggle turned on to false", fx.params.lights[0].on === false);
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+
+    const flatUnlit = ed.flattenToCanvas({ forRun: true });
+    const pxUnlit = flatUnlit.getContext("2d").getImageData(0, 0, W, H).data;
+    let diffBase = 0;
+    for (let i = 0; i < pxUnlit.length; i++) {
+        if (pxUnlit[i] !== pxBase[i]) diffBase++;
+    }
+    check("m: light turned off leaves picture bitwise equal to base", diffBase === 0, { diffBase });
+
+    eyeBtn.click();
+    check("m: eye toggle turned on back to true", fx.params.lights[0].on === true);
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+
+    const flatRelit = ed.flattenToCanvas({ forRun: true });
+    const pxRelit = flatRelit.getContext("2d").getImageData(0, 0, W, H).data;
+    let diffRelit = 0;
+    for (let i = 0; i < pxRelit.length; i++) {
+        if (pxRelit[i] !== pxLit[i]) diffRelit++;
+    }
+    check("m: light turned back on matches original lit picture bitwise", diffRelit === 0, { diffRelit });
+
+    return { fails, checks: checkCount - fails.length, tiles: !!ed.tileMode };
 })
 """
 
@@ -471,7 +612,7 @@ async def run_cdp(cdp, doc_path):
         backend = "tiles" if val.get("tiles") else "canvas"
         print(f"[ok] relight test on {backend}: {val.get('checks', 0)} in-app checks passed")
 
-    shot_path = os.path.join(ROOT, "scratch", "shot_l1a.png")
+    shot_path = os.path.join(ROOT, "scratch", "shot_l1b.png")
     try:
         await cdp.screenshot(shot_path)
         print(f"[ok] screenshot captured: {shot_path}")

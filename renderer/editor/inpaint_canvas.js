@@ -49,7 +49,7 @@ import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
 import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend, seedOfLayer, hash32, mul255 } from "./blend_modes.js";
 import { heightNormals, shadowMarch } from "./px/kernels.js";
-import { lightToMap } from "./inpaint_relight.js";
+import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex } from "./inpaint_relight.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -1767,6 +1767,21 @@ const STYLE = `
 .ipc-depth-edges-label { display:flex; align-items:center; gap:6px; width:100%; font-size:11px; color:var(--sc-fg-2, #aaa); cursor:pointer; }
 .ipc-depth-edges-slider { flex:1; height:4px; accent-color:var(--sc-active, #7cc7ff); cursor:pointer; }
 .ipc-depth-edges-val { font-variant-numeric:tabular-nums; min-width:24px; text-align:right; color:var(--sc-fg, #ddd); }
+.ipc-relight-block { grid-column:1 / -1; display:flex; flex-direction:column; gap:6px; margin-top:4px; padding-top:4px; border-top:1px solid var(--sc-line, #333); }
+.ipc-relight-head { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:11px; }
+.ipc-relight-title { font-weight:600; color:var(--sc-fg-2, #aaa); }
+.ipc-relight-note { font-size:11px; color:var(--sc-warn, #e5a040); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.ipc-relight-list { display:flex; flex-direction:column; gap:3px; }
+.ipc-relight-row { display:flex; align-items:center; gap:6px; padding:3px 6px; border-radius:var(--sc-radius, 3px); background:var(--sc-well, #161616); border:1px solid transparent; cursor:pointer; }
+.ipc-relight-row:hover { background:var(--sc-raised, #262626); }
+.ipc-relight-row.ipc-selected { background:var(--sc-selected, #2b3a4f); border-color:var(--sc-active, #4a90d9); }
+.ipc-relight-row.ipc-light-off { opacity:0.5; }
+.ipc-relight-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; border:1px solid var(--sc-border, #444); }
+.ipc-relight-num { font-size:11px; font-weight:600; min-width:12px; color:var(--sc-fg-strong, #eee); }
+.ipc-relight-type-sel { flex:1; min-width:0; height:20px; font-size:11px; padding:0 4px; }
+.ipc-relight-controls { display:grid; grid-template-columns:auto 1fr auto; gap:4px 6px; align-items:center; margin-top:4px; padding:6px; border-radius:var(--sc-radius, 3px); background:var(--sc-well, #161616); font-size:11px; }
+.ipc-relight-color-row { grid-column:1 / -1; display:flex; align-items:center; gap:6px; font-size:11px; }
+.ipc-relight-kelvin-sel { flex:1; min-width:0; height:22px; font-size:11px; }
 `;
 
 function injectStyle() {
@@ -13419,7 +13434,8 @@ class InpaintEditor {
     snapshotLayer(l) {
         const c = { ...l };
         if (l.text) c.text = JSON.parse(JSON.stringify(l.text));
-        for (const k of ["params", "match", "lut", "plate"]) if (l[k] && typeof l[k] === "object") c[k] = { ...l[k] };
+        if (l.params && typeof l.params === "object") c.params = JSON.parse(JSON.stringify(l.params));
+        for (const k of ["match", "lut", "plate"]) if (l[k] && typeof l[k] === "object") c[k] = { ...l[k] };
         return c;
     }
 
@@ -13629,7 +13645,7 @@ class InpaintEditor {
             return { kind: "mask", id: layer.id, ...(!m ? { url: null } : tiles ? { maskPx: m.clone() } : { url: this.snapUrl(m.toCanvas()) }), mw: m ? m.width : 0, mh: m ? m.height : 0, maskOff: !!layer.maskOff };
         }
         if (step.kind === "match") return { kind: "match", id: layer.id, match: { ...(layer.match || { strength: 0, source: "surroundings" }) } };
-        if (step.kind === "filter") return { kind: "filter", id: layer.id, filter: layer.filter, params: { ...(layer.params || {}) }, lut: layer.lut ? { ...layer.lut } : null, lutData: layer._lutData || null, plate: layer.plate ? { ...layer.plate } : null, plateImg: layer._plateImg || null, name: layer.name };
+        if (step.kind === "filter") return { kind: "filter", id: layer.id, filter: layer.filter, params: JSON.parse(JSON.stringify(layer.params || {})), lut: layer.lut ? { ...layer.lut } : null, lutData: layer._lutData || null, plate: layer.plate ? { ...layer.plate } : null, plateImg: layer._plateImg || null, name: layer.name, _selectedLightId: layer._selectedLightId || null };
         if (step.kind === "text") return { kind: "text", id: layer.id, text: JSON.parse(JSON.stringify(layer.text || TEXT_DEFAULTS)), ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
             behind: !!layer._textRendering };
         if (step.kind === "layerfull") return { kind: "layerfull", id: layer.id, ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
@@ -13991,7 +14007,11 @@ class InpaintEditor {
                 this.renderLayers();
             } else if (snap.kind === "filter") {
                 layer.filter = snap.filter;
-                layer.params = { ...snap.params };
+                layer.params = JSON.parse(JSON.stringify(snap.params || {}));
+                if (snap._selectedLightId !== undefined) layer._selectedLightId = snap._selectedLightId;
+                else if (layer._selectedLightId && (!layer.params.lights || !layer.params.lights.some((x) => x && x.id === layer._selectedLightId))) {
+                    layer._selectedLightId = layer.params.lights && layer.params.lights[0] ? layer.params.lights[0].id : null;
+                }
                 layer.lut = snap.lut ? { ...snap.lut } : null;
                 layer._lutData = snap.lutData || null;
                 layer.plate = snap.plate ? { ...snap.plate } : null;
@@ -18691,6 +18711,10 @@ class InpaintEditor {
             box.appendChild(range);
             box.appendChild(val);
         }
+        if (layer.filter === "relight") {
+            const relightBlock = this.buildRelightBlock(layer);
+            if (relightBlock) box.appendChild(relightBlock);
+        }
         const limitBlock = this.buildLimitBlock(layer);
         if (limitBlock) {
             box.appendChild(limitBlock);
@@ -18957,6 +18981,316 @@ class InpaintEditor {
                 this.renderLayers();
             }
         });
+
+        return block;
+    }
+
+    /**
+     * Builds the light controls block for a relight filter layer (L1b):
+     * the light list, type selector, eye toggle, reset, trash, add light button,
+     * selected light sliders (Intensity, Diffusion, Close/Far, Range, plus Cone/Edge for spot),
+     * colour temperature / custom colour with eyedropper pickOnce, and missing depth hint.
+     * @param {Object} layer
+     * @returns {HTMLElement}
+     */
+    buildRelightBlock(layer) {
+        const block = el("div", "ipc-relight-block");
+        block.style.gridColumn = "1 / -1";
+        const stop = (e) => e.stopPropagation();
+
+        layer.params = layer.params || {};
+        if (!Array.isArray(layer.params.lights)) {
+            layer.params.lights = [];
+        }
+        const lights = layer.params.lights;
+        if (lights.length > 0) {
+            if (!layer._selectedLightId || !lights.some((l) => l && l.id === layer._selectedLightId)) {
+                layer._selectedLightId = lights[0].id;
+            }
+        } else {
+            layer._selectedLightId = null;
+        }
+
+        // 1. Missing depth map hint (if applicable)
+        const hasDepth = !!((this.maps && this.maps.depth) || this.depth);
+        if (!hasDepth) {
+            const noteRow = el("div", "ipc-relight-note");
+            noteRow.appendChild(el("span", null, "Needs a depth map: compute it first"));
+            if (host.depthSupported !== false) {
+                const compBtn = iconButton("magic", "Compute 16-bit depth map with Depth Anything V2 Small", async () => {
+                    try {
+                        await this.ensureDepthMap();
+                        this.renderLayers();
+                    } catch (err) {
+                        console.error("Depth estimation failed:", err);
+                    }
+                }, "Compute depth map");
+                compBtn.classList.add("ipc-small", "ipc-primary");
+                noteRow.appendChild(compBtn);
+            }
+            block.appendChild(noteRow);
+        }
+
+        // 2. Header: title and "Add light" button
+        const head = el("div", "ipc-relight-head");
+        const title = el("span", "ipc-relight-title", "Lights");
+        head.appendChild(title);
+
+        const count = lights.length;
+        const addBtn = iconButton("plus", count >= LIGHT_MAX ? "Maximum 4 lights reached" : "Add a new light", () => {
+            if (layer.params.lights.length >= LIGHT_MAX) return;
+            this.pushUndo({ kind: "filter", id: layer.id, label: "Add light" });
+            const w = this.doc ? this.doc.width : 1024;
+            const h = this.doc ? this.doc.height : 1024;
+            const nl = defaultLight(layer.params.lights.length, { width: w, height: h });
+            layer.params.lights.push(nl);
+            layer._selectedLightId = nl.id;
+            this.markFilterChanged(layer);
+            this.renderLayers();
+        }, "Add light");
+        addBtn.classList.add("ipc-small", "ipc-add-light");
+        if (count >= LIGHT_MAX) {
+            addBtn.disabled = true;
+            addBtn.classList.add("disabled");
+        }
+        head.appendChild(addBtn);
+        block.appendChild(head);
+
+        // 3. Light list
+        const list = el("div", "ipc-relight-list");
+        block.appendChild(list);
+
+        if (count === 0) {
+            const emptyHint = el("div", "ipc-faint", "No lights yet: click Add light");
+            emptyHint.style.fontSize = "11px";
+            emptyHint.style.padding = "4px 0";
+            list.appendChild(emptyHint);
+        }
+
+        for (let i = 0; i < count; i++) {
+            const l = lights[i];
+            if (!l) continue;
+            const row = el("div", "ipc-relight-row");
+            if (l.id === layer._selectedLightId) row.classList.add("ipc-selected");
+            if (l.on === false) row.classList.add("ipc-light-off");
+            row.title = `Light ${i + 1}`;
+            row.addEventListener("click", (e) => {
+                stop(e);
+                if (layer._selectedLightId !== l.id) {
+                    layer._selectedLightId = l.id;
+                    this.renderLayers();
+                }
+            });
+
+            // Dot with light colour
+            const dot = el("span", "ipc-relight-dot");
+            dot.style.backgroundColor = lightColorHex(l.color);
+            row.appendChild(dot);
+
+            // Number
+            const num = el("span", "ipc-relight-num", String(i + 1));
+            row.appendChild(num);
+
+            // Type select
+            const typeSel = document.createElement("select");
+            typeSel.className = "ipc-sel ipc-relight-type-sel";
+            typeSel.title = "Light type";
+            for (const t of ["point", "sun", "spot"]) {
+                const opt = document.createElement("option");
+                opt.value = t;
+                opt.textContent = t[0].toUpperCase() + t.slice(1);
+                typeSel.appendChild(opt);
+            }
+            typeSel.value = l.type || "point";
+            typeSel.addEventListener("click", stop);
+            typeSel.addEventListener("keydown", stop);
+            typeSel.addEventListener("change", () => {
+                this.pushUndo({ kind: "filter", id: layer.id, label: "Change light type" });
+                l.type = typeSel.value;
+                this.markFilterChanged(layer);
+                this.renderLayers();
+            });
+            row.appendChild(typeSel);
+
+            // Eye toggle
+            const eyeBtn = miniButton(l.on !== false ? "eye" : "eyeOff", l.on !== false ? "Hide light" : "Show light", (e) => {
+                stop(e);
+                this.pushUndo({ kind: "filter", id: layer.id, label: l.on !== false ? "Hide light" : "Show light" });
+                l.on = l.on === false ? true : false;
+                this.markFilterChanged(layer);
+                this.renderLayers();
+            }, "ipc-relight-eye");
+            row.appendChild(eyeBtn);
+
+            // Reset button
+            const resetBtn = miniButton("restore", "Reset light to defaults", (e) => {
+                stop(e);
+                this.pushUndo({ kind: "filter", id: layer.id, label: "Reset light" });
+                const w = this.doc ? this.doc.width : 1024;
+                const h = this.doc ? this.doc.height : 1024;
+                const def = defaultLight(i, { width: w, height: h });
+                Object.assign(l, def, { id: l.id });
+                this.markFilterChanged(layer);
+                this.renderLayers();
+            }, "ipc-relight-reset");
+            row.appendChild(resetBtn);
+
+            // Delete button
+            const delBtn = miniButton("trash", "Delete light", (e) => {
+                stop(e);
+                this.pushUndo({ kind: "filter", id: layer.id, label: "Delete light" });
+                const idx = layer.params.lights.indexOf(l);
+                if (idx >= 0) layer.params.lights.splice(idx, 1);
+                if (layer._selectedLightId === l.id) {
+                    layer._selectedLightId = layer.params.lights[0] ? layer.params.lights[0].id : null;
+                }
+                this.markFilterChanged(layer);
+                this.renderLayers();
+            }, "ipc-del ipc-relight-del");
+            row.appendChild(delBtn);
+
+            list.appendChild(row);
+        }
+
+        // 4. Selected light controls panel
+        const selLight = lights.find((l) => l && l.id === layer._selectedLightId);
+        if (selLight) {
+            const controlsBox = el("div", "ipc-relight-controls");
+
+            const addSlider = (label, key, min, max, step, defVal, unit = "%") => {
+                const lab = el("span", null, label);
+                controlsBox.appendChild(lab);
+                const curVal = selLight[key] ?? defVal;
+                const range = document.createElement("input");
+                range.type = "range";
+                range.min = String(min);
+                range.max = String(max);
+                range.step = String(step);
+                range.value = String(curVal);
+                range.title = label;
+                range.addEventListener("click", stop);
+                range.addEventListener("pointerdown", stop);
+                range.addEventListener("keydown", stop);
+                const val = el("b", null, `${Math.round(curVal)}${unit}`);
+                range.addEventListener("input", () => {
+                    if (!layer._undoPending) layer._undoPending = this.snapshot({ kind: "filter", id: layer.id });
+                    selLight[key] = +range.value;
+                    val.textContent = `${Math.round(+range.value)}${unit}`;
+                    this.filterPreview = layer.id;
+                    this.markFilterChanged(layer, { soon: true });
+                });
+                range.addEventListener("change", () => {
+                    this.filterPreview = null;
+                    if (layer._undoPending) {
+                        this.pushUndoSnapshot(layer._undoPending, { label: `Relight: ${label}` });
+                        layer._undoPending = null;
+                    }
+                    selLight[key] = +range.value;
+                    val.textContent = `${Math.round(+range.value)}${unit}`;
+                    this.markFilterChanged(layer);
+                });
+                controlsBox.appendChild(range);
+                controlsBox.appendChild(val);
+            };
+
+            addSlider("Intensity", "intensity", 0, 200, 1, 100, "%");
+            addSlider("Diffusion", "diffusion", 0, 100, 1, 30, "%");
+            addSlider("Close/Far", "dist", -100, 100, 1, -30, "%");
+            addSlider("Range", "range", 5, 500, 1, 50, "%");
+
+            if (selLight.type === "spot") {
+                addSlider("Cone", "cone", 1, 89, 1, 30, "\u00b0");
+                addSlider("Edge", "edge", 0, 100, 1, 20, "%");
+            }
+
+            // Colour row
+            const colorRow = el("div", "ipc-relight-color-row");
+            const colorLab = el("span", null, "Colour");
+            colorRow.appendChild(colorLab);
+
+            const kelvinSel = document.createElement("select");
+            kelvinSel.className = "ipc-sel ipc-relight-kelvin-sel";
+            kelvinSel.title = "Colour temperature (Kelvin)";
+            for (const kp of KELVIN_PRESETS) {
+                const opt = document.createElement("option");
+                opt.value = String(kp.kelvin);
+                opt.textContent = `${kp.kelvin} K (${kp.label})`;
+                kelvinSel.appendChild(opt);
+            }
+            const customOpt = document.createElement("option");
+            customOpt.value = "custom";
+            customOpt.textContent = "Custom";
+            kelvinSel.appendChild(customOpt);
+
+            const curCol = selLight.color ?? 5500;
+            const isPreset = KELVIN_PRESETS.some((kp) => kp.kelvin === curCol);
+            kelvinSel.value = isPreset ? String(curCol) : "custom";
+            kelvinSel.addEventListener("click", stop);
+            kelvinSel.addEventListener("keydown", stop);
+
+            const colorInput = document.createElement("input");
+            colorInput.type = "color";
+            colorInput.className = "ipc-fxcolor";
+            colorInput.value = lightColorHex(curCol);
+            colorInput.title = "Custom light colour";
+            colorInput.addEventListener("click", stop);
+            colorInput.addEventListener("pointerdown", stop);
+            colorInput.addEventListener("keydown", stop);
+
+            kelvinSel.addEventListener("change", () => {
+                this.pushUndo({ kind: "filter", id: layer.id, label: "Relight: Colour" });
+                if (kelvinSel.value === "custom") {
+                    selLight.color = colorInput.value;
+                } else {
+                    selLight.color = +kelvinSel.value;
+                    colorInput.value = lightColorHex(selLight.color);
+                }
+                this.markFilterChanged(layer);
+                this.renderLayers();
+            });
+
+            colorInput.addEventListener("input", () => {
+                if (!layer._undoPending) layer._undoPending = this.snapshot({ kind: "filter", id: layer.id });
+                selLight.color = colorInput.value;
+                kelvinSel.value = "custom";
+                const dot = block.querySelector(".ipc-relight-row.ipc-selected .ipc-relight-dot");
+                if (dot) dot.style.backgroundColor = colorInput.value;
+                this.filterPreview = layer.id;
+                this.markFilterChanged(layer, { soon: true });
+            });
+            colorInput.addEventListener("change", () => {
+                this.filterPreview = null;
+                if (layer._undoPending) {
+                    this.pushUndoSnapshot(layer._undoPending, { label: "Relight: Colour" });
+                    layer._undoPending = null;
+                }
+                selLight.color = colorInput.value;
+                kelvinSel.value = "custom";
+                this.markFilterChanged(layer);
+                this.renderLayers();
+            });
+
+            colorRow.appendChild(kelvinSel);
+            colorRow.appendChild(colorInput);
+
+            const pickBtn = miniButton("eyedropper", "Pick colour from picture", async () => {
+                try {
+                    const hex = await this.pickOnce("color");
+                    if (hex && typeof hex === "string") {
+                        this.pushUndo({ kind: "filter", id: layer.id, label: "Relight: Pick colour" });
+                        selLight.color = hex;
+                        this.markFilterChanged(layer);
+                        this.renderLayers();
+                    }
+                } catch (err) {
+                    console.error("pickOnce colour failed:", err);
+                }
+            }, "ipc-relight-pick");
+            colorRow.appendChild(pickBtn);
+
+            controlsBox.appendChild(colorRow);
+            block.appendChild(controlsBox);
+        }
 
         return block;
     }
