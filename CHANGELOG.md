@@ -3,27 +3,18 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.46 - 2026-10-11
 
-- **Lens blur**: Built-in depth-aware lens blur and disc bokeh filter layer:
-  - 64-tap Vogel spiral disc aperture sampling with customizable focus plane, depth of field, and aperture radius (up to 1.5% of the image long side).
-  - Scatter-as-gather rule with foreground boundary protection: sharp foreground subjects are preserved without background blur bleeding over them.
-  - Specular highlight boost: bright out-of-focus highlights receive natural photographic bokeh glow based on adjustable luma threshold and boost amount.
-  - WebGL2 accelerated shader with edge-snapped depth sampling and matching CPU fallback twin.
-  - Persistence: `.scumble` documents with lens_blur filter layers require reader version 5 (0.1.46 or newer).
-- **Quick-Wins adjustment filters: Vibrance, Gradient Map, Threshold, and Posterize**:
-  - **Vibrance**: Non-destructive vibrance adjustment with skin tone protection (boost halved where red > green > blue) and uniform saturation adjustment.
-  - **Gradient Map**: Maps picture Rec. 601 luminosity across colour gradients with six presets (Cyberpunk, Sunset, Teal / Orange, Sepia, Infrared, B&W contrast) or custom two-tone gradients, with reverse mapping and opacity blending.
-  - **Threshold**: Binary black-and-white conversion at an adjustable luminosity cutoff level (1 to 254), preserving layer alpha.
-  - **Posterize**: Step-based tonal quantization to a chosen number of levels (2 to 32 per channel).
-  - WebGL2 fragment shader twins with identical floating-point math and CPU fallback paths.
-  - Persistence: `.scumble` documents with vibrance, gradient_map, threshold, or posterize layers require reader version 5 (0.1.46 or newer).
-- **Seventeen more blend modes**: dissolve; colour burn, linear burn and darker colour; colour dodge, linear dodge (add) and lighter colour; vivid light, pin light and hard mix; exclusion, subtract and divide; hue, saturation, colour and luminosity. Dissolve keeps a random share of the layer's pixels, as many as its alpha and opacity say, fixed in the picture. The layer row's list is grouped by what the modes do. Every mode is computed the same way on screen, in an export and in a run, PSD files keep them both ways, and a PSD layer in one of them no longer opens as normal. A document with one of the new modes needs 0.1.46 or newer; `set_layer` takes the new names.
-- A layer in a blend mode this version does not know draws as normal everywhere.
-- Emulated blend modes share a unified GPU shader on screen, and kernel blend dispatch safely falls back to source-over for unknown operations.
-- Integer pixel-exact kernels and JS twin for non-separable whole-pixel blend modes (hue, saturation, colour, luminosity, darker colour, lighter colour; ABI 17).
-- **Qwen Image Edit 2.1 Turbo (ComfyUI)**: a local recipe for Qwen's 8-step checkpoint of Qwen Image 2.1, on the same edit chain with up to ten pictures; needs `qwen_image_2.1_turbo_int8_convrot.safetensors` (the recipe's model row links it).
-- **Rust WASM kernel: range_max**: 4x4 separable block range filter in `crates/px` (ABI 18) accelerates edge analysis and depth snapping by 5x while reducing memory footprint from 67 MB down to a 64 KB L1 cache ring buffer.
+- **New and Generate new with a model.** The New empty canvas dialog now takes a model, its provider, an aspect from that model's own list and a size class (1k, 2k, 4k or whatever the model calls them), and makes a canvas in exactly that shape to draw on, with boxes too. The document keeps the choice: Generate new opens on that model, aspect and size. Generate new offers each model's own aspects and names its size classes, and when boxes go, a line says if the chosen aspect would stretch them. `new_canvas` takes the same choices (`recipe`, `provider`, `aspect`, `size`), `generate_new` without a size uses the document's, and `list_recipes` lists each model's aspects and classes.
+- **Seventeen more blend modes**: dissolve; colour burn, linear burn and darker colour; colour dodge, linear dodge (add) and lighter colour; vivid light, pin light and hard mix; exclusion, subtract and divide; hue, saturation, colour and luminosity. Dissolve keeps a random share of the layer's pixels, as many as its alpha and opacity say, fixed in the picture. The layer row's list is grouped by what the modes do. Every mode is computed the same way on screen, in an export, in a merge and in a run; PSD files keep them both ways, and a PSD layer in one of them no longer opens as normal. `set_layer` takes the new names. A layer in a blend mode this version does not know draws as normal everywhere.
+- **Lens blur.** A filter layer that blurs the picture by its depth map the way a camera lens does: a focus depth, a sharp range around it, a round aperture up to 1.5 % of the picture's long side, and bright highlights out of focus that open into discs. A blurred foreground falls off softly, and a sharp subject keeps its edge. It runs on the graphics card, and what the screen shows at any zoom is what the export writes.
+- **Vibrance, gradient map, threshold and posterize** as filter layers. Vibrance lifts muted colours more than saturated ones and spares skin tones; gradient map lays the picture's brightness onto a colour gradient (six presets or two colours of your own, reversible, with an opacity); threshold turns the picture black and white at a level from 1 to 254; posterize cuts each channel into 2 to 32 steps.
+- **Qwen Image Edit 2.1 Turbo (ComfyUI).** A local recipe for Qwen's 8-step checkpoint of Qwen Image 2.1, on the same edit chain with up to ten pictures; about 5 seconds a run on a fast card once the model is loaded. It needs `qwen_image_2.1_turbo_int8_convrot.safetensors` (the recipe's model row links it).
+- **Haze runs on the graphics card.** Its GPU path was never switched on, so every haze layer was computed on the processor; large pictures export and redraw much faster now.
+- Select by depth with edge snap finds the picture's edges faster on large pictures.
+- On a new image, a From box for FLUX 3 is refused with words of its own (FLUX 3 places New and Text boxes there).
+- `winget install scumble` installs the Microsoft Store version.
+- **Documents.** A document with one of the new blend modes or one of the new filter layers needs Scumble 0.1.46 or newer to open (reader version 5). The New preset is stored inside the document's generation settings, which older versions keep as they are.
 
 ## 0.1.45 - 2026-10-10
 
