@@ -17,6 +17,7 @@ import { PromptField, RefBar } from "./editor/prompt_field.js";
 import { remap, compare, checkNote, normalize as normalizeTokens, referencesText, referencesRule } from "./editor/reftokens.js";
 import * as realism from "./editor/realism.js";
 import * as comfyprompt from "./editor/comfyprompt.js";
+import * as genpresets from "./editor/genpresets.js";
 
 // the editor's style, in the app's cascade layer (docs/SKINS.md): created here before the first editor, so the
 // editor's own injectStyle() finds it and adds nothing; a skin's rules then beat it as they beat shell.css
@@ -71,7 +72,7 @@ const ui = {
     genProviderRow: $("gen-provider-row"), genNote: $("gen-note"), genPrompt: null, genRefbar: $("gen-refbar"), genPromptHost: $("gen-prompt-host"),
     genUpsample: $("gen-upsample"), genUpsampleGo: $("gen-upsample-go"), genUpsampleNote: $("gen-upsample-note"),
     genAspect: $("gen-aspect"), genResolution: $("gen-resolution"), genWidth: $("gen-width"), genHeight: $("gen-height"),
-    genSeed: $("gen-seed"), genSeedRandom: $("gen-seed-random"), genSizeNote: $("gen-size-note"),
+    genSeed: $("gen-seed"), genSeedRandom: $("gen-seed-random"), genSizeNote: $("gen-size-note"), genBoxNote: $("gen-box-note"),
     genAlpha: $("gen-alpha"), genAlphaRow: $("gen-alpha-row"),
     genState: $("gen-state"), genGo: $("gen-go"), genCancel: $("gen-cancel"),
     genTemplate: $("gen-template"), genTemplateNote: $("gen-template-note"),
@@ -287,6 +288,9 @@ host.createDocument = (id) => newDocument(id);
 host.onDocsChanged = () => renderTabs();
 // the command core (renderer/commands.js) reaches the shell through this
 host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, modeOf: (r) => modeOf(r), openSettings, openGenerateNew: (ed) => openGenerateNew(ed), openUpscale: (ed) => openUpscale(ed), genField: () => genField, genSyncRefs: () => genSyncRefs(),
+    // New with a model (item 34, docs/PLAN_NEW_PRESETS.md section 8): the models with their aspects and size classes, the
+    // preset New made (remembered, its recipe selected), and what Generate new offers for a recipe on a provider
+    newCanvasChoices: (ed) => newCanvasChoices(ed), newCanvasChosen: (ed, target) => newCanvasChosen(ed, target), genPresetOf: (r, pid) => genPresetOf(r, pid),
     // list_recipes' readiness (docs/PLAN_0_1_42.md F2a): a resolved recipe's key or in-app model ({ ok, text } or null for
     // a ComfyUI recipe), and the API providers with whether a key is stored, as booleans only (never the key's hint)
     keyState: (r) => providerKeyState(r),
@@ -1031,6 +1035,127 @@ ui.lmAdd.addEventListener("click", async () => {
 
 const GEN_ASPECTS = ["free", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
 const GEN_RESOLUTIONS = [768, 1024, 1280, 1536, 2048, 3072, 4096];
+/** The general aspects (the dialog's list without "free"): what a variant that names none of its own is offered. */
+const GEN_GENERAL = GEN_ASPECTS.filter((a) => a !== "free");
+
+/**
+ * What Generate new offers for a recipe on one of its providers (item 34, docs/PLAN_NEW_PRESETS.md section 8): the
+ * variant's own aspects (genpresets.aspectsOf, else the general list) and its size classes (`text.sizes`, named by its
+ * tiers: "2k (2048 px)"); a recipe on ComfyUI takes any shape and size, so it gets the general lists. Null when the
+ * variant makes no new image. The dialog, New's presets (newCanvasChoices) and list_recipes all read this.
+ */
+function genPresetOf(r, pid) {
+    if (!r) return null;
+    if (r.kind !== "provider") return { aspects: GEN_GENERAL.slice(), classes: genpresets.classesOf(null, GEN_RESOLUTIONS) };
+    const v = r.providers && pid ? r.providers[pid] : null;
+    if (!v || !v.text) return null;
+    return { aspects: genpresets.aspectsOf(v, GEN_GENERAL), classes: genpresets.classesOf(v, GEN_RESOLUTIONS) };
+}
+
+/** The dialog's model on its provider: the raw recipe, what it offers, and the resolved recipe a run would use. */
+function genChoice() {
+    const r = recipes.find((x) => x.id === ui.genRecipe.value) || null;
+    const pid = r && r.kind === "provider" ? ui.genProvider.value : "";
+    const preset = genPresetOf(r, pid) || { aspects: GEN_GENERAL.slice(), classes: genpresets.classesOf(null, GEN_RESOLUTIONS) };
+    return { r, pid, preset, resolved: r && r.kind === "provider" && pid ? resolveRecipe(r, pid) : r };
+}
+
+/**
+ * A document's preset (`genSettings.target`, item 34) while it holds: the picture still has its size and the recipe is
+ * one the dialog lists (in the mode it would run in). Null otherwise; a stale one is left where it is.
+ */
+function genTargetOf(ed) {
+    const t = ed && ed.genSettings ? ed.genSettings.target : null;
+    if (!genpresets.targetValid(t, ed)) return null;
+    const raw = recipes.find((x) => x.id === t.recipe);
+    if (!raw) return null;
+    const mode = raw.kind === "comfy" ? "local" : modeOf(raw);
+    if (!genRecipesFor(mode).some((x) => x.id === raw.id)) return null;
+    return { mode, recipe: raw.id, provider: t.provider || null, aspect: t.aspect || "free", size: +t.size || null };
+}
+
+/** The boxes a Generate new with the dialog's model would send (host.newBoxes: the run's own rule). */
+function genBoxes() {
+    if (!genEditor) return { schema: null, on: false, count: 0, goes: false };
+    return host.newBoxes(genEditor, genChoice().resolved);
+}
+
+/**
+ * The line under the aspect (item 34): while the boxes go, an asked shape other than the document's stretches them
+ * (they are fractions of the picture they were drawn on), and it says so; empty otherwise. Run with genSyncSize.
+ */
+function genSyncBoxNote() {
+    if (!ui.genBoxNote) return;
+    let note = "";
+    if (genEditor && genBoxes().goes) {
+        note = genpresets.stretchNote([genEditor.width || 0, genEditor.height || 0], genSize(), genChoice().preset.aspects, genAspectFree() ? null : ui.genAspect.value);
+    }
+    ui.genBoxNote.textContent = note;
+    ui.genBoxNote.hidden = !note;
+}
+
+// ---- New with a model (item 34): the editor's New dialog asks through host.newCanvasChoices ------------------------
+
+/** The last New preset of this session ({ model, provider, aspect, size }): what New opens on without a document's own. */
+let newPresetLast = null;
+const NEW_GROUPS = [["api", "API models"], ["cloud", "Comfy Cloud"], ["local", "ComfyUI"]];
+
+/**
+ * The New dialog's choices (host.newCanvasChoices): "Any size" first, then every model that makes a new image, grouped
+ * API models / Comfy Cloud / ComfyUI, each with its providers (the remembered one first; a recipe on ComfyUI or a Comfy
+ * Cloud graph has one entry, value ""), their aspects and size classes; `pick` the preset to open on (the document's
+ * while it holds, else this session's last), `working` the canvas a preset makes.
+ */
+function newCanvasChoices(editor) {
+    const entry = (value, label, p) => (p ? { value, label, aspects: p.aspects.slice(), classes: p.classes.map((c) => ({ value: c.px, label: c.label })) } : null);
+    const models = [{ value: "", label: "Any size", group: "", providers: [] }];
+    for (const [mode, group] of NEW_GROUPS) {
+        for (const r of genRecipesFor(mode)) {
+            let providers;
+            if (mode === "api") {
+                const ids = genProviderIds(r), first = chosenProvider(r);
+                const order = ids.includes(first) ? [first, ...ids.filter((x) => x !== first)] : ids;
+                providers = order.map((pid) => entry(pid, providerOptionLabel(pid), genPresetOf(r, pid)));
+            } else {
+                providers = [entry("", mode === "cloud" ? "Comfy Cloud" : "ComfyUI", genPresetOf(r, r.kind === "provider" ? chosenProvider(r) : ""))];
+            }
+            providers = providers.filter(Boolean);
+            if (providers.length) models.push({ value: r.id, label: r.name || r.id, group, providers });
+        }
+    }
+    return { models, pick: newCanvasPick(editor, models), working: (aspect, size) => genpresets.workingSize(aspect, size) };
+}
+
+/** The preset New opens on: the document's (while its picture keeps the preset's size), else this session's last New. */
+function newCanvasPick(editor, models) {
+    const t = editor && editor.genSettings ? editor.genSettings.target : null;
+    const own = genpresets.targetValid(t, editor);
+    const tries = [own ? { model: t.recipe, provider: t.provider || "", aspect: t.aspect || null, size: +t.size || null, doc: [editor.width, editor.height] } : null, newPresetLast];
+    for (const src of tries) {
+        if (!src) continue;
+        const m = models.find((x) => x.value && x.value === src.model);
+        if (!m) continue;
+        const p = m.providers.find((x) => x.value === (src.provider || "")) || m.providers[0];
+        const shape = genpresets.parseAspect(src.aspect) || src.doc || null;
+        const aspect = p.aspects.includes(src.aspect) ? src.aspect : (shape && genpresets.nearestAspect(shape[0], shape[1], p.aspects)) || p.aspects[0] || null;
+        return { model: m.value, provider: p.value, aspect, size: genpresets.nearestSize(p.classes.map((c) => c.value), src.size) };
+    }
+    return null;
+}
+
+/**
+ * New made a canvas for a preset (target = { recipe, provider, aspect, size, width, height }, already stored in the
+ * document by the editor): remember it for the next New of this session and select its recipe on its provider, for
+ * every tab as Generate new's button does (the recipe is the app's). A null target (a New of a size given by hand)
+ * forgets the last preset, so the next New opens on "Any size".
+ */
+async function newCanvasChosen(editor, target) {
+    if (!target) { newPresetLast = null; return; }
+    const raw = target.recipe ? recipes.find((x) => x.id === target.recipe) : null;
+    if (!raw) return;
+    newPresetLast = { model: raw.id, provider: target.provider || "", aspect: target.aspect || null, size: +target.size || null };
+    selectRecipe(raw.id, target.provider || undefined);
+}
 
 let genEditor = null;
 // the prompt field with reference chips (docs/PLAN_REFS.md 26f): the tab's references, named as the dialog's model gets them
@@ -1098,10 +1223,14 @@ function genProviderIds(r) {
     return (r.providerIds || []).filter((pid) => r.providers && r.providers[pid] && r.providers[pid].text);
 }
 
-function genFillRecipes() {
+/**
+ * `opening`: the dialog is being opened ({ recipe, provider, aspect, size } of the document's preset, or {} without one),
+ * so the aspect is chosen afresh (genFillAspects); null on a change of the mode, model or provider.
+ */
+function genFillRecipes(opening = null) {
     const mode = ui.genMode.value;
     const list = genRecipesFor(mode);
-    const keep = ui.genRecipe.value;
+    const keep = opening && opening.recipe && list.some((r) => r.id === opening.recipe) ? opening.recipe : ui.genRecipe.value;
     ui.genRecipe.innerHTML = "";
     for (const r of list) {
         const o = document.createElement("option");
@@ -1117,39 +1246,55 @@ function genFillRecipes() {
     }
     if (list.some((r) => r.id === keep)) ui.genRecipe.value = keep;
     else if (list.some((r) => r.id === settings.recipe)) ui.genRecipe.value = settings.recipe;
-    genFillProviders();
+    genFillProviders(opening);
 }
 
 /** The long sides the chosen model offers; a local recipe takes any size. */
 function genSizes() {
-    const r = recipes.find((x) => x.id === ui.genRecipe.value);
-    if (!r || r.kind !== "provider") return GEN_RESOLUTIONS;
-    const v = (r.providers || {})[ui.genProvider.value] || {};
-    const list = v.text && Array.isArray(v.text.sizes) && v.text.sizes.length ? v.text.sizes : GEN_RESOLUTIONS;
-    return list.slice().sort((a, b) => a - b);
+    return genChoice().preset.classes.map((c) => c.px);
 }
 
-function genFillSizes() {
-    const list = genSizes();
-    const keep = +ui.genResolution.value || 1024;
+/** The size classes of the chosen model, labelled by its tiers ("4k (4096 px)") where it names them; `want` first. */
+function genFillSizes(want = null) {
+    const classes = genChoice().preset.classes;
+    const keep = +want || +ui.genResolution.value || 1024;
     ui.genResolution.innerHTML = "";
-    for (const px of list) {
+    for (const c of classes) {
         const o = document.createElement("option");
-        o.value = String(px);
-        o.textContent = `${px} px`;
+        o.value = String(c.px);
+        o.textContent = c.label;
         ui.genResolution.appendChild(o);
     }
     // keep what was chosen when the model offers it, otherwise the nearest it does offer
-    const pick = list.includes(keep) ? keep : list.reduce((best, px) => (Math.abs(px - keep) < Math.abs(best - keep) ? px : best), list[0]);
-    ui.genResolution.value = String(pick);
+    ui.genResolution.value = String(genpresets.nearestSize(classes.map((c) => c.px), keep));
     genSyncSize();
 }
 
-function genFillProviders() {
+/**
+ * The aspects of the chosen model on its provider ("free" first, then its own list, else the general one). Opening:
+ * the document's preset (`want`), else while the boxes go the aspect nearest the document, else the last choice, else
+ * 1:1 or the first offered; on a change of the model: the choice when offered, else the same rule.
+ */
+function genFillAspects(want = null, opening = false) {
+    const list = ["free", ...genChoice().preset.aspects];
+    const keep = ui.genAspect.value || null;
+    ui.genAspect.innerHTML = "";
+    for (const a of list) {
+        const o = document.createElement("option");
+        o.value = a;
+        o.textContent = a === "free" ? "free (width \u00d7 height)" : a;
+        ui.genAspect.appendChild(o);
+    }
+    const doc = genEditor ? [genEditor.width || 0, genEditor.height || 0] : null;
+    // a preset's aspect this variant lacks (an agent's 16:10) opens on the nearest it offers
+    ui.genAspect.value = genpresets.chooseAspect(list, { want: opening ? want : keep, keep: opening && want ? want : keep, doc, boxes: genBoxes().goes }) || "free";
+}
+
+function genFillProviders(opening = null) {
     const r = recipes.find((x) => x.id === ui.genRecipe.value);
     const ids = r && r.kind === "provider" ? genProviderIds(r) : [];
     ui.genProviderRow.hidden = !ids.length;
-    const keep = ui.genProvider.value;
+    const keep = opening && opening.provider && r && opening.recipe === r.id && ids.includes(opening.provider) ? opening.provider : ui.genProvider.value;
     ui.genProvider.innerHTML = "";
     for (const pid of ids) {
         const o = document.createElement("option");
@@ -1160,7 +1305,10 @@ function genFillProviders() {
     if (ids.includes(keep)) ui.genProvider.value = keep;
     else if (ids.includes((settings.recipeProviders || {})[r && r.id])) ui.genProvider.value = settings.recipeProviders[r.id];
     else if (r && ids.includes(r.default)) ui.genProvider.value = r.default;
-    genFillSizes();
+    // the preset's aspect and class count only on the model it was made for
+    const own = !!(opening && r && opening.recipe === r.id);
+    genFillAspects(own ? opening.aspect : null, !!opening);
+    genFillSizes(own ? opening.size : null);
     genTransparencyRow();
     genSyncNote();
     genSyncRefs();
@@ -1201,6 +1349,7 @@ function genSyncSize() {
     ui.gen.classList.toggle("gen-fixed", !genAspectFree());
     const [w, h] = genSize();
     ui.genSizeNote.textContent = `${w} × ${h} px`;
+    genSyncBoxNote();
 }
 
 /** What the dialog asks for, always a multiple of 16. */
@@ -1278,23 +1427,17 @@ export async function openGenerateNew(editor) {
     genEditor = editor || host.editor;
     if (!genEditor) return;
     genOpenSeq++;
-    if (!ui.genAspect.options.length) {
-        for (const a of GEN_ASPECTS) {
-            const o = document.createElement("option");
-            o.value = a;
-            o.textContent = a === "free" ? "free (width × height)" : a;
-            ui.genAspect.appendChild(o);
-        }
-        ui.genAspect.value = "1:1";
-    }
-    // the dialog opens on the editor's mode (local, api or cloud) when that has a recipe for a new image
+    // the document's preset (item 34: New with a model, or the last Generate new on it) while its picture keeps that
+    // size: the dialog opens on its mode, model, provider, aspect and size class
+    const target = genTargetOf(genEditor);
+    // else on the editor's mode (local, api or cloud) when that has a recipe for a new image
     const curRaw = host.recipe && recipes.find((x) => x.id === host.recipe.id);
     const curMode = curRaw ? (curRaw.kind === "comfy" ? "local" : modeOf(curRaw)) : "api";
-    ui.genMode.value = genRecipesFor(curMode).length ? curMode : (genRecipesFor("local").length ? "local" : "api");
-    if (!ui.genResolution.options.length) ui.genResolution.value = "1024";
+    ui.genMode.value = target ? target.mode : genRecipesFor(curMode).length ? curMode : (genRecipesFor("local").length ? "local" : "api");
     genMountField();
     genInfo = null;
-    genFillRecipes();
+    // the aspect select is filled per model (genFillAspects): the first opening starts on 1:1 (or the first offered)
+    genFillRecipes(target || {});
     genFillUpsample();
     genFillTemplates();
     // the tab's prompt with its @img tokens as chips (26f): they name the reference layers, which go along where the
@@ -1316,9 +1459,9 @@ export async function openGenerateNew(editor) {
     genField.focus();
 }
 
-ui.genMode.addEventListener("change", genFillRecipes);
-ui.genRecipe.addEventListener("change", genFillProviders);
-ui.genProvider.addEventListener("change", () => { genFillSizes(); genTransparencyRow(); genSyncNote(); genSyncRefs(); });
+ui.genMode.addEventListener("change", () => genFillRecipes());
+ui.genRecipe.addEventListener("change", () => genFillProviders());
+ui.genProvider.addEventListener("change", () => { genFillAspects(); genFillSizes(); genTransparencyRow(); genSyncNote(); genSyncRefs(); });
 ui.genTemplate.addEventListener("change", () => {
     genSyncTemplateNote();
     window.scumble.settings.set({ promptTemplates: { ...(settings.promptTemplates || {}), generate: ui.genTemplate.value } }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });

@@ -164,7 +164,10 @@ const POLICY = {
 
     // ---- replace, close, tabs -----------------------------------------------------------
     load_image: () => ASK("replaces the image and clears the undo history"),
-    new_canvas: () => ASK("replaces the image and clears the undo history"),
+    // with a model preset (recipe, item 34) it also selects that recipe for every tab, as select_recipe does
+    new_canvas: (call) => ASK(call && call.args && call.args.recipe
+        ? "replaces the image and clears the undo history, and selects the recipe every tab generates with (saved to your settings)"
+        : "replaces the image and clears the undo history"),
     close_document: () => ASK("closes the tab without saving it to its file; File › Reopen Closed Tab brings it back"),
     new_document: AUTO, activate_document: AUTO,
 

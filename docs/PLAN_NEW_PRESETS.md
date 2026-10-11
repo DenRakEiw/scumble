@@ -95,3 +95,55 @@ note when the aspect is changed with boxes on. One look in the app; the live che
 ## 7. Size (a guess from the reading, not measured)
 
 3.1 a few hours; 3.2 with 3.3 about one session; 3.4 half a session plus the live check.
+
+## 8. The build (2026-10-11, after the user's answers; code read at c29f457)
+
+**Corrections to §1-§5 found in the reading** (five read-only agents, maps in the session):
+- A Text box is not a kind: it is a New box with a `text` field, and it already goes on a FLUX 3 new image as a row
+  `{ id, bbox, desc: 'text reading "..."' }`. Only Keep, Move, Remove and From reach the refusal in
+  `electron/main/providers/boxes.js` `rowsFlux3`; its words ("no source to keep or move") are wrong only for From.
+- There is no recipe per tab: `host.recipe` is the app's. "The model chosen at New selects the recipe" means
+  `selectRecipe(recipe, provider)` at New (app-wide, as Generate new's button already does) and the preset kept in the
+  document, so Generate new opens on it.
+- The New dialog is the editor's own `ask()` modal (number fields only) behind the top bar's New button; File has only
+  "New Tab", and the empty tab's hint is passive text. Extending it (the user's answer 1) means `ask()` learns select
+  fields, a note line and a change hook.
+- The dialog's aspect list is the fixed `GEN_ASPECTS` and is not remembered across starts; the variants carry their own
+  lists under four different keys (`text.aspects` none yet, `options.text.ratios`, `options.ratios`,
+  `options.aspect_ratios`, `limits.aspects`), many variants none (they take any shape).
+- Since 0.1.43 (B6) boxes follow an answer of another size per axis, so a stretched run stretches them in the document
+  as well.
+
+**The shape built** (S34):
+- `renderer/editor/genpresets.js` (pure, app only, not in the node build): `aspectsOf(variant, fallback)` (the four
+  keys in that order, else the dialog's list), `nearestAspect`, `sameShape` (3 %), `shapeLabel`, `sizeFor` (= genSize),
+  `workingSize` (the class's long side, at most 2048), `classesOf` (one per `text.sizes`, named by the variant's
+  `options.tiers` or FLUX 3's 1k / 2k / 4k: "2k (2048 px)"), `stretchNote`, `targetValid`.
+- The preset lives in the document as `genSettings.target = { recipe, provider, aspect, size, width, height }` (inside
+  `gen`, like `gen.boxes`: saved, autosaved and restored without new code, no FEATURES row, no reader bump; older
+  versions keep it untouched). It counts only while the picture has `width` x `height`: a crop, a resize or another
+  picture makes it inert without clean-up. Generate new writes it again after a run (the answer's size).
+- New (the editor's `newCanvas` dialog, app only through `host.newCanvasChoices(editor)`; the node's host answers null
+  and its dialog stays as it is): Model (with "Any size" first, grouped API / Comfy Cloud / ComfyUI), Provider, Aspect
+  (the variant's own list), Size class, a note with the working size; Width and Height follow and are disabled while a
+  model is chosen. Create makes the working canvas, stores the target and calls `host.newCanvasChosen(editor, target)`
+  (the shell's `selectRecipe`). `new_canvas` keeps `{ width, height }` exactly as before and gains optional `recipe`,
+  `provider`, `aspect`, `size` for agents.
+- Generate new: the aspect select is filled from the chosen variant's list ("free" first); it opens on the document's
+  valid target (mode, recipe, provider, aspect, class), else, while boxes go, on the variant's aspect nearest the
+  document, else on the last choice. A line under the aspect says when boxes go stretched ("The boxes were drawn on
+  16:9; at 1:1 they go stretched."); the run adds the same note (`host.runGenerate`), so agents see it.
+  `generate_new` without width, height and aspect uses a valid target. `list_recipes` reports `aspects` and `classes`
+  beside `sizes`; `status.generation` reports the target.
+- Labels per model: the class select shows "1k (1024 px)" where the variant names its tiers, else "1024 px". A Settings
+  row that is not on auto (Gemini's Size 2K and others) still decides the size: noted in the manual, not changed.
+- The refusal for a From box on a FLUX 3 new image gets its own words; Keep, Move and Remove say "no source to keep,
+  move or remove".
+
+Tests (by risk, Light + one Normal step): `tools/genpresets_test.js` (plain Node over the shipped recipes: every text
+variant has at least one aspect and one class; FLUX 3 bfl 15 aspects, fal and WaveSpeed 14, classes 1k / 2k / 4k, and
+`flux3._tierOf` of `sizeFor(aspect, px)` is that class for every aspect; nearest, working size, stretch note), wired
+into `recipes_test.py`'s Node step; `tools/boxes_test.js` (a Text box on a text run, the From refusal); one step in the
+`generate` gate (New with a FLUX 3 bfl 7:5 4k preset makes 2048 x 1456 and selects the recipe, Generate new opens on
+7:5 / 4096, the stretch line with boxes at 1:1, the run's note through loopback); `new_dialog_has_two_boxes` keeps its
+two number inputs; the `commands` gate for `new_canvas`'s new parameters.

@@ -128,18 +128,18 @@ function descOf(req, lay, b) {
 
 /**
  * The FLUX 3 rows of a request's boxes against its layout: on an edit { id, from, src_bbox, tgt_bbox, desc } per kind,
- * on a text run { id, bbox, desc } (only new boxes: a new image has no source to keep or move).
+ * on a text run { id, bbox, desc } (New boxes, a Text box among them: a new image has no source to keep, move or remove,
+ * and its rows take no picture to copy from).
  */
 function rowsFlux3(req, lay) {
     const boxes = checkBoxes(req.boxes);
     const text = req.kind === "text";
     const frame = frameName(lay);
     return boxes.map((b) => {
+        if (text && b.kind === "from") throw new Error(`Box ${b.id} is a from box: on a new image FLUX 3 places New and Text boxes only (a New box whose description names the reference picture places it): nothing was sent.`);
+        if (text && b.kind !== "new") throw new Error(`Box ${b.id} is a ${b.kind} box, and a new image has no source to keep, move or remove: nothing was sent.`);
         const desc = descOf(req, lay, b);
-        if (text) {
-            if (b.kind !== "new") throw new Error(`Box ${b.id} is a ${b.kind} box, and a new image has no source to keep or move: nothing was sent.`);
-            return { id: b.id, bbox: grid(b.rect), desc };
-        }
+        if (text) return { id: b.id, bbox: grid(b.rect), desc };
         if (!frame) throw new Error(`Box ${b.id}: this route sends no crop the box could be placed in: nothing was sent.`);
         switch (b.kind) {
             case "new": return { id: b.id, from: null, src_bbox: null, tgt_bbox: grid(b.rect), desc };

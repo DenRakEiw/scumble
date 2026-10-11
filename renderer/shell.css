@@ -200,6 +200,8 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 #gen-dialog .shell-check { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 #gen-dialog .shell-note, #gen-dialog .shell-help { white-space: normal; overflow: visible; text-overflow: clip; }
 #gen-dialog #gen-note { color: var(--sc-muted, #9a9a9a); }
+#gen-dialog #gen-box-note { color: var(--sc-warn, #e0a05a); margin: 2px 0 0; }
+#gen-dialog #gen-box-note[hidden] { display: none; }
 #gen-dialog.gen-fixed .gen-free { display: none; }
 #gen-dialog.gen-free-size #gen-res-row { display: none; }
 #up-dialog .shell-check { display: flex; gap: 6px; align-items: center; white-space: nowrap; }

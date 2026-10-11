@@ -36,6 +36,9 @@ pass made while they were on their way, and a flatten right after them does not 
 0.1.31, the Undo history (docs/PLAN_0_1_31.md section 2): three edits as three labelled rows in the panel, a click on a row
 that jumps back and forward to the state of that edit, named snapshots restored twice and taken back (tiles; refused on
 canvases), the depth that drops the oldest steps, and the history commands against the list.
+Item 34 (docs/PLAN_NEW_PRESETS.md section 8): in the app the New dialog also offers the models (selects beside the two
+number boxes); one made with FLUX 3 on BFL at 7:5 and the 4k class is 2048 x 1456, keeps that preset in the document,
+selects the recipe and opens the next New on it, and "Any size" makes a canvas without one (the recipes restored after).
 
     python tools/editor_test.py
 
@@ -2365,6 +2368,17 @@ const box = ed.root.querySelector(".ipc-askbox");
 const inputs = Array.from(box.querySelectorAll(".ipc-askfield input"));
 const labels = Array.from(box.querySelectorAll(".ipc-askfield span")).map((s) => s.textContent);
 const focusedFirst = document.activeElement === inputs[0];
+// item 34: in the app the dialog also offers the models (host.newCanvasChoices; the node's host has none), as selects
+// beside the two number boxes; "Any size" leaves the two boxes free
+const ch = typeof host.newCanvasChoices === "function" ? host.newCanvasChoices(ed) : null;
+const wantModel = !!(ch && Array.isArray(ch.models) && ch.models.some((m) => m && m.value));
+const modelSel = box.querySelector('.ipc-askfield select[data-key="model"]');
+if (!!modelSel !== wantModel) throw new Error("the Model select is " + (modelSel ? "there without" : "missing with") + " the host's models");
+if (modelSel) {
+    modelSel.value = "";
+    modelSel.dispatchEvent(new Event("change"));
+    if (inputs.some((i) => i.disabled)) throw new Error("Any size left a number box disabled");
+}
 const link = box.querySelector(".ipc-asklink input");
 link.checked = true;                             // the ratio tie
 inputs[0].value = "2048";
@@ -2376,7 +2390,121 @@ Array.from(box.querySelectorAll("button")).find((b) => b.textContent === "Create
 await p;
 if (inputs.length !== 2) throw new Error("not two boxes");
 if (ed.width !== 1440 || ed.height !== 900) throw new Error("size " + ed.width + "x" + ed.height);
-return { labels, focusedFirst, tiedHeight, size: [ed.width, ed.height] };
+if (ed.genSettings.target) throw new Error("a New of a typed size kept a preset: " + JSON.stringify(ed.genSettings.target));
+return { labels, focusedFirst, tiedHeight, size: [ed.width, ed.height], models: wantModel };
+"""),
+    # item 34 (docs/PLAN_NEW_PRESETS.md section 8): the New dialog with a model (FLUX 3 on BFL, 7:5, the 4k class) makes
+    # the working canvas of that preset (2048 x 1456, Width and Height disabled and showing it), keeps the preset in the
+    # document, selects the recipe, opens on it the next time, and "Any size" makes a plain canvas that keeps none
+    ("new_dialog_with_a_model", """
+const ch = typeof host.newCanvasChoices === "function" ? host.newCanvasChoices(ednow(window.__t)) : null;
+const flux = ch && Array.isArray(ch.models) ? ch.models.find((m) => m && m.value === "flux3") : null;
+if (!flux || !flux.providers.some((p) => p.value === "bfl")) return { skipped: "FLUX 3 on BFL is not among the New dialog's models (" + (ch ? ch.models.length + " models" : "no host choices") + ")" };
+const prev = host.recipe ? host.recipe.id : null;
+const prevProvider = host.recipe && host.recipe.kind === "provider" ? host.recipe.provider : undefined;
+let s0 = {};
+try { s0 = await window.scumble.settings.get(); } catch (_) { /* none */ }
+const prevApi = (s0.recipeByMode || {}).api || null;
+const prevFlux3 = (s0.recipeProviders || {}).flux3 || null;
+const dialog = async (ed) => {
+    const p = ed.newCanvas();                    // not awaited: the dialog is open now
+    await wait(150);
+    const box = ed.root.querySelector(".ipc-askbox");
+    if (!box) throw new Error("no New dialog (" + ed.status + ")");
+    const sel = (k) => box.querySelector('.ipc-askfield select[data-key="' + k + '"]');
+    const num = (k) => box.querySelector('.ipc-askfield input[data-key="' + k + '"]');
+    const pick = (k, v) => {
+        const s = sel(k);
+        if (!s) throw new Error("no " + k + " select");
+        s.value = v;
+        if (s.value !== v) throw new Error(k + " offers no " + v + ": " + Array.from(s.options).map((o) => o.value).join(", "));
+        s.dispatchEvent(new Event("change"));
+    };
+    const create = () => Array.from(box.querySelectorAll("button")).find((b) => b.textContent === "Create").click();
+    return { p, box, sel, num, pick, create };
+};
+const out = {};
+let doc = null, failure = null, restored = true;
+try {
+    const d = await run("new_document");
+    doc = d.id;
+    const ed = ednow(doc);
+    host.shell.activate(ed);
+    const a = await dialog(ed);
+    if (a.box.querySelectorAll(".ipc-askfield input").length !== 2) throw new Error("not two number boxes beside the selects");
+    a.pick("model", "flux3");
+    a.pick("provider", "bfl");
+    a.pick("aspect", "7:5");
+    a.pick("size", "4096");
+    const note = a.box.querySelector(".ipc-asknote");
+    out.shown = { width: a.num("width").value, height: a.num("height").value, disabled: [a.num("width").disabled, a.num("height").disabled],
+        provider: !a.sel("provider").closest(".ipc-askfield").hidden, note: note ? note.textContent : null };
+    if (!out.shown.disabled[0] || !out.shown.disabled[1]) throw new Error("Width and Height are not disabled with a model: " + JSON.stringify(out.shown));
+    if (out.shown.width !== "2048" || out.shown.height !== "1456") throw new Error("the preset's canvas in the boxes: " + JSON.stringify(out.shown));
+    if (!out.shown.note || out.shown.note.indexOf("2048") < 0 || out.shown.note.indexOf("7:5") < 0) throw new Error("the note: " + out.shown.note);
+    a.create();
+    await a.p;
+    if (ed.width !== 2048 || ed.height !== 1456) throw new Error("the canvas: " + ed.width + "x" + ed.height + " (" + ed.status + ")");
+    const t = ed.genSettings.target;
+    if (!t || t.recipe !== "flux3" || t.provider !== "bfl" || t.aspect !== "7:5" || t.size !== 4096 || t.width !== 2048 || t.height !== 1456) throw new Error("the preset in the document: " + JSON.stringify(t));
+    if (!host.recipe || host.recipe.id !== "flux3") throw new Error("the recipe was not selected: " + JSON.stringify(host.recipe && [host.recipe.id, host.recipe.provider]));
+    out.made = { size: [ed.width, ed.height], target: t, recipe: [host.recipe.id, host.recipe.provider || null], status: ed.status };
+    // the next New opens on the document's preset; "Any size" makes the size typed in and drops the preset
+    const b = await dialog(ed);
+    out.reopened = { model: b.sel("model").value, provider: b.sel("provider").value, aspect: b.sel("aspect").value, size: b.sel("size").value };
+    b.pick("model", "");
+    if (b.num("width").disabled || b.num("height").disabled) throw new Error("Any size left Width or Height disabled");
+    b.num("width").value = "800"; b.num("width").dispatchEvent(new Event("input"));
+    b.num("height").value = "600"; b.num("height").dispatchEvent(new Event("input"));
+    b.create();
+    await b.p;
+    if (out.reopened.model !== "flux3" || out.reopened.provider !== "bfl" || out.reopened.aspect !== "7:5" || out.reopened.size !== "4096") throw new Error("the next New did not open on the preset: " + JSON.stringify(out.reopened));
+    if (ed.width !== 800 || ed.height !== 600) throw new Error("Any size: " + ed.width + "x" + ed.height);
+    if (ed.genSettings.target) throw new Error("a New of a typed size kept the preset: " + JSON.stringify(ed.genSettings.target));
+    return out;
+} catch (err) {
+    failure = err;
+    throw err;
+} finally {
+    const open = doc ? ednow(doc) : null;
+    const box = open ? open.root.querySelector(".ipc-askbox") : null;
+    if (box) { const c = Array.from(box.querySelectorAll("button")).find((x) => x.textContent === "Cancel"); if (c) c.click(); }
+    // the next New of this session opens on "Any size" again
+    try { host.shell.newCanvasChosen(null, null); } catch (_) { /* gone */ }
+    // the window's recipes back through the shell, each write waited for (the generate gate's pattern)
+    const settled = async (pred) => {
+        for (let k = 0; k < 100; k++) {
+            let s = null;
+            try { s = await window.scumble.settings.get(); } catch (_) { /* again */ }
+            if (s && pred(s)) return true;
+            await wait(50);
+        }
+        return false;
+    };
+    const known = (id) => host.shell.recipes().find((x) => x.id === id) || null;
+    if (prevFlux3 && prevFlux3 !== "bfl") {
+        host.shell.selectRecipe("flux3", prevFlux3);
+        restored = (await settled((s) => (s.recipeProviders || {}).flux3 === prevFlux3)) && restored;
+        await wait(100);
+    }
+    if (prevApi && prevApi !== "flux3" && known(prevApi)) {
+        host.shell.selectRecipe(prevApi);
+        restored = (await settled((s) => (s.recipeByMode || {}).api === prevApi)) && restored;
+        await wait(100);   // the shell's copy takes the write's answer
+    }
+    if (prev && known(prev)) {
+        host.shell.selectRecipe(prev, prevProvider);
+        restored = (await settled((s) => s.recipe === prev)) && restored;
+        await wait(100);
+    }
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+    try { host.shell.activate(ednow(window.__t) || host.editor); } catch (_) { /* gone */ }
+    if (!restored && !failure) {
+        let s = null;
+        try { s = await window.scumble.settings.get(); } catch (_) { /* none */ }
+        throw new Error("the recipes were not restored: recipe " + (s && s.recipe) + ", recipeByMode " + JSON.stringify(s && s.recipeByMode) + " (want " + prev + " / api " + prevApi + ")");
+    }
+}
 """),
     ("every_panel_sits_in_the_tab_it_belongs_to", """
 // the dialog is built by inpaint_modal.js, one function per panel, and the Generate tab is filled after the

@@ -1752,6 +1752,125 @@ document.getElementById("gen-cancel").click();
 await wait(120);
 return { options: ids };
 """),
+    # item 34 (docs/PLAN_NEW_PRESETS.md section 8): a model preset at New (FLUX 3 on BFL, 7:5, 4k) makes a 2048 x 1456
+    # canvas, selects the recipe and stays with the document; Generate new opens on it (7:5 is FLUX 3's own aspect, not
+    # one of the general list); with two boxes another aspect gets the line that they go stretched, and so does a run
+    # (the loopback with FLUX 3's boxes stands in for the model); generate_new without a size asks for the preset
+    ("new_with_a_preset_and_generate_new_on_it", """
+const LOOP_BOXES = { id: "loopback_boxes", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", text: { model: "loopback" }, options: { boxes: "flux3" }, name: "Loopback boxes", settings: [] };
+const WANT = "The boxes were drawn on 7:5; at 1:1 they go stretched.";
+const prev = host.recipe ? host.recipe.id : null;
+const prevProvider = host.recipe && host.recipe.kind === "provider" ? host.recipe.provider : undefined;
+let s0 = {};
+try { s0 = await window.scumble.settings.get(); } catch (_) { /* none */ }
+const prevApi = (s0.recipeByMode || {}).api || null;
+const prevFlux3 = (s0.recipeProviders || {}).flux3 || null;
+const dlg = document.getElementById("gen-dialog");
+const val = (id) => document.getElementById(id).value;
+const pick = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event("change")); };
+const line = () => { const el = document.getElementById("gen-box-note"); return el.hidden ? "" : el.textContent; };
+const close = async () => { if (dlg.open) { document.getElementById("gen-cancel").click(); await wait(100); } };
+const out = {};
+let doc = null, failure = null, restored = true;
+try {
+    const d = await run("new_document");
+    doc = d.id;
+    const ed = ednow(doc);
+    host.shell.activate(ed);
+    // New with a preset: the working canvas (the 4k class on a 2048 px canvas of the same shape), the recipe selected
+    const made = await run("new_canvas", { doc, recipe: "flux3", provider: "bfl", aspect: "7:5", size: 4096 });
+    if (ed.width !== 2048 || ed.height !== 1456 || made.width !== 2048 || made.height !== 1456) throw new Error("the preset's canvas: " + JSON.stringify(made) + " / " + ed.width + "x" + ed.height);
+    if (!host.recipe || host.recipe.id !== "flux3" || host.recipe.provider !== "bfl") throw new Error("the recipe was not selected: " + JSON.stringify(host.recipe && [host.recipe.id, host.recipe.provider]));
+    const t = ed.genSettings.target;
+    if (!t || t.recipe !== "flux3" || t.provider !== "bfl" || t.aspect !== "7:5" || t.size !== 4096 || t.width !== 2048 || t.height !== 1456) throw new Error("the preset in the document: " + JSON.stringify(t));
+    // Generate new opens on it
+    await host.shell.openGenerateNew(ed);
+    if (!dlg.open) throw new Error("the dialog did not open");
+    const opened = { mode: val("gen-mode"), recipe: val("gen-recipe"), provider: val("gen-provider"), aspect: val("gen-aspect"), size: val("gen-resolution"), note: document.getElementById("gen-size-note").textContent,
+        aspects: Array.from(document.getElementById("gen-aspect").options).map((o) => o.value), classes: Array.from(document.getElementById("gen-resolution").options).map((o) => o.textContent), line: line() };
+    out.opened = { ...opened, aspects: opened.aspects.length };
+    await close();
+    if (opened.mode !== "api" || opened.recipe !== "flux3" || opened.provider !== "bfl" || opened.aspect !== "7:5" || opened.size !== "4096" || !/4096 . 2928/.test(opened.note)) throw new Error("the dialog did not open on the preset: " + JSON.stringify(opened));
+    if (opened.aspects.length !== 16 || opened.aspects[0] !== "free" || !opened.aspects.includes("9:21") || opened.classes.join("|") !== "1k (1024 px)|2k (2048 px)|4k (4096 px)") throw new Error("FLUX 3's own aspects and classes: " + JSON.stringify([opened.aspects, opened.classes]));
+    if (opened.line) throw new Error("a boxes line without boxes: " + opened.line);
+    // two New boxes (the first turns the Boxes switch on): the line under the aspect while they would go stretched
+    await run("boxes.add", { doc, kind: "new", rect: [200, 200, 800, 700], desc: "a red ball" });
+    await run("boxes.add", { doc, kind: "new", rect: [1100, 600, 1800, 1300], desc: "a blue cube" });
+    if (!ed.genSettings.boxes) throw new Error("the first box did not turn the Boxes switch on");
+    const lines = {};
+    await host.shell.openGenerateNew(ed);
+    lines.opened = [val("gen-aspect"), line()];
+    pick("gen-aspect", "1:1");
+    lines.square = line();
+    pick("gen-aspect", "7:5");
+    lines.back = line();
+    pick("gen-aspect", "free");   // the document's own size
+    lines.free = line();
+    await close();
+    await run("set_generation", { doc, boxes: false });
+    await host.shell.openGenerateNew(ed);
+    pick("gen-aspect", "1:1");
+    lines.off = line();
+    await close();
+    await run("set_generation", { doc, boxes: true });
+    out.lines = lines;
+    if (lines.opened[0] !== "7:5" || lines.opened[1] !== "" || lines.square !== WANT || lines.back !== "" || lines.free !== "" || lines.off !== "") throw new Error("the boxes line: " + JSON.stringify(lines));
+    // the run: the same shape sends the boxes as they are, another shape adds the note (agents read it)
+    host.setRecipe(LOOP_BOXES);
+    const same = await run("generate_new", { doc, prompt: "a ball and a cube", aspect: "7:5", resolution: 1024 });
+    if (same.boxes !== 2 || same.notes.some((n) => /go stretched/.test(n)) || same.width !== 1024 || same.height !== 736) throw new Error("7:5 with the boxes: " + JSON.stringify({ boxes: same.boxes, notes: same.notes, size: [same.width, same.height] }));
+    const t2 = ed.genSettings.target;
+    if (!t2 || t2.recipe !== "loopback_boxes" || t2.provider !== "loopback" || t2.aspect !== "7:5" || t2.size !== 1024 || t2.width !== 1024 || t2.height !== 736) throw new Error("the preset after the run: " + JSON.stringify(t2));
+    // without a size generate_new asks for the document's preset (its recipe is the selected one)
+    const auto = await run("generate_new", { doc, prompt: "a ball and a cube again" });
+    if (auto.width !== 1024 || auto.height !== 736 || !auto.info || auto.info.aspect !== "7:5" || auto.boxes !== 2) throw new Error("generate_new without a size: " + JSON.stringify({ size: [auto.width, auto.height], info: auto.info && auto.info.aspect, boxes: auto.boxes }));
+    const sq = await run("generate_new", { doc, prompt: "a ball and a cube", aspect: "1:1", resolution: 1024 });
+    if (sq.boxes !== 2 || !sq.info || sq.info.aspect !== "1:1" || !sq.notes.includes(WANT)) throw new Error("1:1 with the boxes: " + JSON.stringify({ boxes: sq.boxes, notes: sq.notes, info: sq.info && sq.info.aspect }));
+    const st = (await run("status", { doc })).generation.target;
+    if (!st || st.aspect !== "1:1" || st.size !== 1024 || st.valid !== true) throw new Error("status generation.target: " + JSON.stringify(st));
+    out.runs = { same: same.notes, sq: sq.notes, target: st };
+    return out;
+} catch (err) {
+    failure = err;
+    throw err;
+} finally {
+    await close();
+    try { host.shell.newCanvasChosen(null, null); } catch (_) { /* gone */ }
+    // the window's recipes back through the shell, each write waited for (the realism step's pattern below)
+    const settled = async (pred) => {
+        for (let k = 0; k < 100; k++) {
+            let s = null;
+            try { s = await window.scumble.settings.get(); } catch (_) { /* again */ }
+            if (s && pred(s)) return true;
+            await wait(50);
+        }
+        return false;
+    };
+    const known = (id) => host.shell.recipes().find((x) => x.id === id) || null;
+    if (prevFlux3 && prevFlux3 !== "bfl") {
+        host.shell.selectRecipe("flux3", prevFlux3);
+        restored = (await settled((s) => (s.recipeProviders || {}).flux3 === prevFlux3)) && restored;
+        await wait(100);
+    }
+    if (prevApi && prevApi !== "flux3" && known(prevApi)) {
+        host.shell.selectRecipe(prevApi);
+        restored = (await settled((s) => (s.recipeByMode || {}).api === prevApi)) && restored;
+        await wait(100);   // the shell's copy takes the write's answer
+    }
+    if (prev && known(prev)) {
+        host.shell.selectRecipe(prev, prevProvider);
+        restored = (await settled((s) => s.recipe === prev)) && restored;
+        await wait(100);
+    }
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+    try { host.shell.activate(ednow(window.__g)); } catch (_) { /* gone */ }
+    if (!restored && !failure) {
+        let s = null;
+        try { s = await window.scumble.settings.get(); } catch (_) { /* none */ }
+        throw new Error("the recipes were not restored: recipe " + (s && s.recipe) + ", recipeByMode " + JSON.stringify(s && s.recipeByMode) + " (want " + prev + " / api " + prevApi + ")");
+    }
+}
+"""),
     ("provider_markers_over_ipc", """
 // docs/PLAN_REFS.md 26a1: main turns a marker {@ref:i} into the name the route gives that picture, refuses a raw @img
 // token, and provider:layout answers the names a request of that shape would carry

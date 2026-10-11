@@ -61,8 +61,15 @@ def node_step():
     ctail = c.stdout.strip()
     if c.returncode != 0 or not ctail.endswith("PASS"):
         raise Exception("tools/comfyrefs_test.js: " + (ctail + c.stderr)[-1500:])
+    # tools/genpresets_test.js (item 34): Generate new's aspects and size classes per text route, the New presets;
+    # stderr carries Node's note that it read renderer/editor/genpresets.js as an ES module
+    g = subprocess.run(["node", os.path.join(ROOT, "tools", "genpresets_test.js")], cwd=ROOT,
+                       capture_output=True, text=True, encoding="utf-8", timeout=120)
+    gtail = g.stdout.strip()
+    if g.returncode != 0 or not gtail.endswith("PASS"):
+        raise Exception("tools/genpresets_test.js: " + (gtail + g.stderr)[-1500:])
     last = lambda t: (t.splitlines()[-2:-1] or [""])[0]  # noqa: E731  the "N of M checks passed" line
-    return {"checks": tail.count("[ok]"), "comfyrefs_checks": ctail.count("[ok]"), "realism_checks": ptail.count("[ok]"), "tails": [last(tail), last(ctail), last(ptail)]}
+    return {"checks": tail.count("[ok]"), "comfyrefs_checks": ctail.count("[ok]"), "realism_checks": ptail.count("[ok]"), "genpresets_checks": gtail.count("[ok]"), "tails": [last(tail), last(ctail), last(ptail), last(gtail)]}
 
 
 def write_files(dirname):

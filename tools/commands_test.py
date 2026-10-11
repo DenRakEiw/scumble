@@ -2187,6 +2187,106 @@ await c("remove_layer", { layer: fl.id });
 await c("remove_layer", { layer: made.id });
 return out;
 """),
+    ("new_canvas_model_presets", """
+// item 34 (docs/PLAN_NEW_PRESETS.md section 8): new_canvas's model preset (recipe, provider, aspect, size) is checked
+// against what the New dialog offers, each refusal naming the values allowed and changing nothing; a preset makes the
+// working canvas (2048 px at most), selects the recipe on its provider and stays with the document (status
+// generation.target, valid while the picture keeps that size); a canvas of a size given by hand drops it; list_recipes
+// reports each text route's aspects and classes
+const H = (await import("./editor/host.js")).host;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const prev = H.recipe ? H.recipe.id : null;
+const prevProvider = H.recipe && H.recipe.kind === "provider" ? H.recipe.provider : undefined;
+let s0 = {};
+try { s0 = await window.scumble.settings.get(); } catch (_) { /* none */ }
+const prevApi = (s0.recipeByMode || {}).api || null, prevLocal = (s0.recipeByMode || {}).local || null;
+const prevF = (s0.recipeProviders || {}).flux3 || "bfl";
+const d = await c("new_document");
+const ed = H.editorById(d.id);
+const out = {};
+const refused = async (args, re) => {
+    let m = "";
+    try { await c("new_canvas", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); }
+    if (!re.test(m)) throw new Error("new_canvas " + JSON.stringify(args) + ": " + (m || "not refused"));
+    return m.slice(0, 90);
+};
+let failure = null, restored = true;
+try {
+    await c("new_canvas", { doc: d.id, width: 640, height: 480 });
+    out.refusals = [
+        await refused({ recipe: "no_such_recipe", aspect: "1:1", size: 1024 }, /^no recipe "no_such_recipe" \\(the models that do: .*flux3/),
+        await refused({ recipe: "rtx_vsr_local", aspect: "1:1", size: 1024 }, /^recipe "rtx_vsr_local" makes no new image/),
+        await refused({ recipe: "flux3", provider: "openai", aspect: "1:1", size: 1024 }, /^recipe "flux3" has no provider "openai" that makes a new image \\(.*bfl.*\\)$/),
+        await refused({ recipe: "flux3", provider: "bfl", size: 1024 }, /^a model preset needs aspect: flux3 on bfl offers 21:9, 2:1, 16:9, 3:2, 7:5/),
+        await refused({ recipe: "flux3", provider: "fal", aspect: "9:21", size: 1024 }, /^flux3 on fal offers no aspect "9:21" \\(21:9, .*, 1:2\\)$/),
+        await refused({ recipe: "flux3", provider: "bfl", aspect: "7:5" }, /^a model preset needs size: flux3 on bfl offers 1k \\(1024 px\\), 2k \\(2048 px\\), 4k \\(4096 px\\)/),
+        await refused({ recipe: "flux3", provider: "bfl", aspect: "7:5", size: 3000 }, /^flux3 on bfl offers no size class 3000/),
+        await refused({ recipe: "flux2_klein_local", provider: "bfl", aspect: "1:1", size: 1024 }, /^recipe "flux2_klein_local" runs on ComfyUI and takes no provider/),
+        await refused({ aspect: "7:5", size: 4096 }, /pass recipe with them/),
+        await refused({ recipe: "flux3", aspect: "7:5", size: 4096, width: 800 }, /not both/),
+    ];
+    if (ed.width !== 640 || ed.height !== 480 || ed.genSettings.target || H.recipe && H.recipe.id !== prev) throw new Error("a refusal changed something: " + ed.width + "x" + ed.height + " " + JSON.stringify(ed.genSettings.target));
+    // FLUX 3 on fal, 9:16, 4k: a 1152 x 2048 canvas (the 4k class on 2048 px), flux3 on fal selected, the preset kept
+    const r = await c("new_canvas", { doc: d.id, recipe: "flux3", provider: "fal", aspect: "9:16", size: 4096 });
+    const want = { recipe: "flux3", provider: "fal", aspect: "9:16", size: 4096, width: 1152, height: 2048 };
+    if (r.width !== 1152 || r.height !== 2048 || ed.width !== 1152 || ed.height !== 2048 || JSON.stringify(r.target) !== JSON.stringify(want) || r.recipe !== "flux3" || r.provider !== "fal") throw new Error("the preset: " + JSON.stringify(r));
+    if (!H.recipe || H.recipe.id !== "flux3" || H.recipe.provider !== "fal") throw new Error("the recipe was not selected on fal");
+    let st = (await c("status", { doc: d.id })).generation.target;
+    if (JSON.stringify(st) !== JSON.stringify({ ...want, valid: true })) throw new Error("status generation.target: " + JSON.stringify(st));
+    out.preset = st;
+    // list_recipes: the chosen provider's own aspects and the named classes; a local recipe the general lists
+    const L = (await c("list_recipes")).recipes;
+    const f3 = L.find((x) => x.id === "flux3"), loc = L.find((x) => x.id === "flux2_klein_local"), up = L.find((x) => x.task === "upscale");
+    if (!f3 || f3.provider !== "fal" || !Array.isArray(f3.aspects) || f3.aspects.length !== 14 || f3.aspects.includes("9:21") || JSON.stringify(f3.classes) !== JSON.stringify([{ size: 1024, name: "1k", label: "1k (1024 px)" }, { size: 2048, name: "2k", label: "2k (2048 px)" }, { size: 4096, name: "4k", label: "4k (4096 px)" }])) throw new Error("list_recipes flux3: " + JSON.stringify(f3 && [f3.provider, f3.aspects, f3.classes]));
+    if (!loc || JSON.stringify(loc.aspects) !== JSON.stringify(["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"]) || !Array.isArray(loc.classes) || loc.classes.some((x) => x.name !== null || x.label !== x.size + " px")) throw new Error("list_recipes local: " + JSON.stringify(loc && [loc.aspects, loc.classes]));
+    if (!up || up.aspects !== undefined || up.classes !== undefined) throw new Error("an upscaler has aspects: " + JSON.stringify(up));
+    // without a provider: the remembered one (fal, since the preset above); a recipe on ComfyUI has none
+    const r2 = await c("new_canvas", { doc: d.id, recipe: "flux3", aspect: "1:1", size: 1024 });
+    if (r2.width !== 1024 || r2.height !== 1024 || r2.target.provider !== "fal") throw new Error("the remembered provider: " + JSON.stringify(r2));
+    const r3 = await c("new_canvas", { doc: d.id, recipe: "flux2_klein_local", aspect: "16:9", size: 3072 });
+    if (r3.width !== 2048 || r3.height !== 1152 || r3.target.provider !== null || r3.recipe !== "flux2_klein_local" || r3.provider !== null) throw new Error("a local recipe's preset: " + JSON.stringify(r3));
+    // a resize leaves the preset inert (no clean-up), a canvas of a size given by hand drops it
+    await c("resize_image", { doc: d.id, width: 1024, height: 576 });
+    st = (await c("status", { doc: d.id })).generation.target;
+    if (!st || st.valid !== false) throw new Error("the preset after a resize: " + JSON.stringify(st));
+    await c("new_canvas", { doc: d.id, width: 800, height: 600 });
+    if (ed.genSettings.target !== undefined || "target" in (await c("status", { doc: d.id })).generation) throw new Error("a canvas of a size given by hand kept the preset: " + JSON.stringify(ed.genSettings.target));
+    out.local = r3.target;
+    return out;
+} catch (err) {
+    failure = err;
+    throw err;
+} finally {
+    // the window's recipes back through the shell, each write waited for (tools/generate_test.py, the Realism Pass step)
+    const settled = async (pred) => {
+        for (let k = 0; k < 100; k++) {
+            let s = null;
+            try { s = await window.scumble.settings.get(); } catch (_) { /* again */ }
+            if (s && pred(s)) return true;
+            await wait(50);
+        }
+        return false;
+    };
+    const known = (id) => H.shell.recipes().find((x) => x.id === id) || null;
+    H.shell.selectRecipe("flux3", prevF);
+    restored = (await settled((s) => (s.recipeProviders || {}).flux3 === prevF)) && restored;
+    await wait(100);
+    for (const [mode, id] of [["api", prevApi], ["local", prevLocal]]) {
+        if (!id || !known(id)) continue;
+        H.shell.selectRecipe(id);
+        restored = (await settled((s) => (s.recipeByMode || {})[mode] === id)) && restored;
+        await wait(100);
+    }
+    if (prev && known(prev)) {
+        H.shell.selectRecipe(prev, prevProvider);
+        restored = (await settled((s) => s.recipe === prev)) && restored;
+        await wait(100);
+    }
+    try { await c("close_document", { doc: d.id, force: true }); } catch (_) { /* gone */ }
+    try { await c("activate_document", { doc: window.__testDoc }); } catch (_) { /* gone */ }
+    if (!restored && !failure) throw new Error("the recipes were not restored (want " + prev + ", api " + prevApi + ", local " + prevLocal + ", flux3 on " + prevF + ")");
+}
+"""),
     ("boxes_follow_generate_new", """
 // docs/PLAN_0_1_43.md B6: Generate new whose answer is another size than the document (FLUX 3's 4k tier answers
 // 5456 x 3072 for 4096 x 2304) left the boxes at their old pixel rects; they follow the answer as after a resize now.

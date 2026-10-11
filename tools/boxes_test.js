@@ -118,7 +118,15 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     rows = boxes.rowsFlux3({ ...rt, boxes: [box({ desc: "a lamp like {@ref:0}" })] }, layT);
     check("a layout row: { id, bbox, desc }, no from, the reference ref_image_0 named 'image 1' in the desc", eq(rows, [{ id: "edit_1", bbox: [250, 250, 750, 750], desc: "a lamp like image 1" }]), short(rows));
     e = throws(() => boxes.rowsFlux3({ ...rt, boxes: [box({ id: "sofa_1", kind: "move", src: [0, 0, 0.5, 0.5] })] }, layT));
-    check("a move box on a new image refuses (no source)", /^Box sofa_1 is a move box, and a new image has no source to keep or move/.test(e), e);
+    check("a move box on a new image refuses (no source)", e === "Box sofa_1 is a move box, and a new image has no source to keep, move or remove: nothing was sent.", e);
+    const noSource = ["keep", "remove"].map((k) => throws(() => boxes.rowsFlux3({ ...rt, boxes: [box({ id: "it_1", kind: k, src: [0, 0, 0.5, 0.5] })] }, layT)));
+    check("a keep and a remove box on a new image refuse with the same words (item 34)", noSource[0] === "Box it_1 is a keep box, and a new image has no source to keep, move or remove: nothing was sent." && noSource[1] === "Box it_1 is a remove box, and a new image has no source to keep, move or remove: nothing was sent.", short(noSource));
+    e = throws(() => boxes.rowsFlux3({ ...rt, boxes: [box({ id: "lamp_1", kind: "from", src: [0, 0, 1, 1], ref: 0 })] }, layT));
+    check("a from box on a new image refuses with its own words, though its reference is sent (item 34)", e === "Box lamp_1 is a from box: on a new image FLUX 3 places New and Text boxes only (a New box whose description names the reference picture places it): nothing was sent.", e);
+    rows = boxes.rowsFlux3({ ...rt, boxes: [box({ id: "sign_1", desc: "red neon", text: "  OPEN\nNOW " })] }, layT);
+    check("a Text box (a new box with words) on a new image is a row { id, bbox, desc: 'text reading \"...\"' } (item 34)", eq(rows, [{ id: "sign_1", bbox: [250, 250, 750, 750], desc: "text reading \"OPEN NOW\", red neon" }]), short(rows));
+    rows = boxes.rowsFlux3({ ...rt, boxes: [box({ id: "sign_1", desc: "", text: "SALE" })] }, layT);
+    check("a Text box without a description reads only its words", eq(rows, [{ id: "sign_1", bbox: [250, 250, 750, 750], desc: "text reading \"SALE\"" }]), short(rows));
     check("the text layout has no frame", boxes.frameName(layT) === null, "");
 
     // ---- 5. the instruction ----------------------------------------------------------------------------------------------
@@ -340,6 +348,12 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     const ft = F.rowsText(pxBoxes, docFrame);
     check("format.rowsText: new boxes only ({ id, bbox, desc }), the others noted", ft.rows.length === 1 && eq(ft.rows[0], { id: "dog_1", bbox: [93, 52, 278, 208], desc: "a dog" }) && ft.notes.length === 5, short(ft));
     check("format.rowsText equals main's text rows", eq(ft.rows, boxes.rowsFlux3({ ...req({ kind: "text" }), boxes: viaCore.boxes.filter((b) => b.kind === "new") }, flux3.layout(req({ kind: "text" }))).map((r) => r)), "");
+    // the notes say what main's refusals say (item 34): From its own words, Keep, Move and Remove "no source"
+    const mainSays = (b) => throws(() => boxes.rowsFlux3({ ...req({ kind: "text" }), boxes: [b] }, flux3.layout(req({ kind: "text" }))));
+    const coreOf = (id) => viaCore.boxes.find((b) => b.id === id);
+    const pairs = [["lamp_1", "places New and Text boxes only"], ["log_1", "no source to keep, move or remove"], ["ox_1", "no source to keep, move or remove"], ["cat_1", "no source to keep, move or remove"]]
+        .map(([id, words]) => [id, ft.notes.find((n) => n.startsWith(id + ":")) || "", mainSays(coreOf(id)) || ""].concat([words]));
+    check("format.rowsText's notes carry main's refusal words per kind (from: its own, keep / move / remove: no source)", pairs.every(([, note, main, words]) => note.includes(words) && main.includes(words)), short(pairs.map((p) => p.slice(0, 3))));
     const fi = F.instructionFlux3("make it night", pxBoxes, fr.rows);
     const mi = boxes.instructionFlux3("make it night", viaCore.boxes, lay2, mainRows);
     check("format.instructionFlux3 equals main's instruction (one sentence per box, In <ref_image_0> first)", fi === mi && fi.startsWith("make it night. In <ref_image_0>, place a dog <dog_1> at the top left. Keep a log <log_1> as it is. Move an ox <ox_1> up and to the right."), short(fi));

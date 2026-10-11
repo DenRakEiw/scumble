@@ -62,11 +62,15 @@ export function rowsFlux3(boxes, frame, { nameOf, descOf = (b) => fold(b.desc), 
     return { rows, notes };
 }
 
-/** The rows of a new image (Generate new): only New boxes have a place in a picture that does not exist yet. */
+/**
+ * The rows of a new image (Generate new): only New boxes (a Text box among them) have a place in a picture that does
+ * not exist yet; the notes say the same as main's refusals (electron/main/providers/boxes.js rowsFlux3).
+ */
 export function rowsText(boxes, frame, { descOf = (b) => fold(b.desc) } = {}) {
     const rows = [], notes = [];
     for (const b of boxes || []) {
-        if (b.kind !== "new") { notes.push(`${b.id}: a new image has no source to keep or move (${b.kind}).`); continue; }
+        if (b.kind === "from") { notes.push(`${b.id}: on a new image FLUX 3 places New and Text boxes only (from: a New box whose description names the reference picture places it).`); continue; }
+        if (b.kind !== "new") { notes.push(`${b.id}: a new image has no source to keep, move or remove (${b.kind}).`); continue; }
         if (outside(b.rect, frame)) { notes.push(`${b.id} lies outside the picture.`); continue; }
         rows.push({ id: b.id, bbox: grid(b.rect, frame), desc: descOf(b) });
     }

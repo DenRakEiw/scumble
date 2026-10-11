@@ -684,6 +684,20 @@ image field), byte for byte. The answer replaces the document's base image throu
 `editor.setBaseFromCanvas(c, { keepRefs: true })`. **The size is a request**: a model answers
 with the shape it supports, and the document takes whatever comes back.
 
+**Aspects and size classes for a new image (`text.aspects`, item 34).** The Generate new dialog, the New dialog's
+model presets and `new_canvas`'s `recipe` / `aspect` / `size` offer a variant's own aspects: `text.aspects` (a list of
+`"W:H"`, e.g. `["1:1", "7:5", "2.35:1"]`; `normalize()` keeps the W:H entries, each once, and drops anything else
+with a warning), else `options.text.ratios`, `options.ratios`, `options.aspect_ratios`, then a non-empty
+`limits.aspects`. A variant that names none takes any shape and gets the dialog's general list (1:1, 3:2, 2:3, 4:3,
+3:4, 16:9, 9:16, 21:9; a recipe on ComfyUI too). `text.aspects` is for a route whose list lives only in the adapter's
+code (Gemini direct's ratios, Replicate's presets): a recipe that names it keeps the dialog from offering a shape the
+route refuses. The size classes are `text.sizes` (long sides, numbers), labelled with the variant's tier names where
+`options.tiers` has them (`"1K (1024 px)"`; with `tier_unit: "area"` a class counts by the square of its long side,
+`"2 MP (1440 px)"`) or FLUX 3's 1k / 2k / 4k (`options.boxes: "flux3"`), else `"1024 px"`. A Settings row that is not
+on auto (Gemini's Size 2K, fal's resolution 2K) still decides the size the model makes. The pure helpers are
+`renderer/editor/genpresets.js`; `tools/genpresets_test.js` checks that every shipped variant offers at least one of
+each, and that FLUX 3 counts each class's size of each of its aspects into that class.
+
 **Reference layers for a new image (`text.refs`, step 26f).** A text shape with `refs` sends the
 shown reference layers along; one without makes pictures from the prompt alone.
 

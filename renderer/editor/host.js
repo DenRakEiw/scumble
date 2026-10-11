@@ -22,6 +22,7 @@ import { comfyRefSpec, comfyLayout, trimSlots, refName, resolveMarkers as resolv
 import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from "./boxes.js";
 import * as realism from "./realism.js";
 import * as comfyprompt from "./comfyprompt.js";
+import * as genpresets from "./genpresets.js";
 import * as dialogs from "../dialogs.js";
 import { tileBoxes, fusedSize } from "./inpaint_edges.js";
 import { modelSize, DEPTH_LARGE, roundHalfEven } from "./inpaint_depth.js";
@@ -39,6 +40,18 @@ const boxesSchema = (r) => {
     if (!r || r.kind !== "provider") return null;
     const own = (r.options || {}).boxes, text = ((r.text && r.text.refs && r.text.refs.options) || {}).boxes;
     return typeof own === "string" ? own : typeof text === "string" ? text : null;
+};
+
+/**
+ * The options a Generate new run sends (one rule for runGenerate and the Generate new dialog's boxes line, item 34): the
+ * text route's own options where it has them (a Comfy Cloud recipe's text-to-image graph, item 35 V6), else the
+ * variant's; with references the reference route's options over them.
+ */
+const textOptions = (r, withRefs) => {
+    const t = (r && r.text) || {};
+    const tr = t.refs || {};
+    const own = t.options || (r && r.options) || null;
+    return withRefs && tr.options ? { ...(own || {}), ...tr.options } : own;
 };
 const SUBFOLDER = "inpaint_canvas";
 
@@ -298,6 +311,8 @@ export const api = {
  * @property {(editor: any, opts?: { refs?: any }) => Promise<any>} queueGenerate   run the recipe; `refs`: the click's reference snapshot (docs/PLAN_REFS.md C3)
  * @property {() => boolean} generateNewAvailable
  * @property {(editor: any) => void} openGenerateNew
+ * @property {(editor: any) => ({ models: { value: string, label: string, group: string, providers: { value: string, label: string, aspects: string[], classes: { value: number, label: string }[] }[] }[], pick: { model: string, provider: string, aspect: string | null, size: number | null } | null, working: (aspect: string, size: number) => [number, number] } | null)} [newCanvasChoices]   New with a model (item 34): the models, the preset to open on, the canvas of a preset; the node answers null
+ * @property {(editor: any, target: { recipe: string, provider?: string | null, aspect: string | null, size: number, width: number, height: number } | null) => Promise<void>} [newCanvasChosen]   New made a canvas for a preset: remember it, select its recipe; null (a New of a size given by hand): forget the last preset
  * @property {(editor: any, fmt?: string) => any} exportCanvas
  * @property {(editor: any) => boolean} exportIsPlain
  * @property {(editor: any) => number} exportQuality
@@ -470,6 +485,23 @@ export const host = {
     boxSwitch(editor) {
         const schema = boxesSchema(this.recipe);
         return { takes: !!schema, count: editor && this.plugins ? this.plugins.countBoxes(editor) : 0, schema };
+    },
+
+    /**
+     * Whether Generate new with `recipe` (a resolved recipe; the selected one by default) sends the document's boxes
+     * (item 34): `schema` the format its text route takes them in (null: none), `on` the Boxes switch, `count` how many
+     * the document holds, `goes` all three. The rule runGenerate follows (textOptions; the references go where the text
+     * route takes them), so the Generate new dialog says what the run will do.
+     */
+    newBoxes(editor, recipe = this.recipe) {
+        const r = recipe;
+        if (!editor || !r || r.kind !== "provider" || !r.text) return { schema: null, on: false, count: 0, goes: false };
+        const withRefs = !!(this.refTokens && r.text.refs && editor.refSnapshot().refIds.length);
+        const options = textOptions(r, withRefs);
+        const schema = options && typeof options.boxes === "string" ? options.boxes : null;
+        const on = !!(editor.genSettings && editor.genSettings.boxes);
+        const count = schema && this.plugins ? this.plugins.countBoxes(editor) : 0;
+        return { schema, on, count, goes: !!schema && on && count > 0 };
     },
 
     setApiSize(mode) {
@@ -2112,9 +2144,8 @@ export const host = {
             editor.setStatus(`Asking ${label} for a new ${width} × ${height} image${withRefs ? ` with ${references.length} reference image${references.length > 1 ? "s" : ""}` : ""}${cutout ? " on a transparent ground" : ""} ...`);
             const model = (withRefs && tr.model) || t.model;
             // the text route's own options where it has them (a Comfy Cloud recipe's text-to-image graph, item 35 V6),
-            // else the variant's
-            const own = t.options || r.options || null;
-            const options = withRefs && tr.options ? { ...(own || {}), ...tr.options } : own;
+            // else the variant's (textOptions: the Generate new dialog reads the same rule)
+            const options = textOptions(r, withRefs);
             // the plugins' boxes (item 28 S2) when the variant takes them and the document's Boxes switch is on (S3d): a
             // new image has no selection, so the boxes come from scumble.generate sources alone, drawn on the document
             // (the frame; the new image is made at the requested size, so the fractions carry over, stretched when the
@@ -2130,6 +2161,10 @@ export const host = {
                 preNotes.push(...got.notes);
                 const small = smallNote(smallBoxes(got.boxes, [width, height]));
                 if (small) preNotes.push(small);
+                // the boxes are fractions of the document: an asked shape other than its own stretches them (item 34;
+                // the dialog says the same under its aspect)
+                const stretched = boxes.length ? genpresets.stretchNote([drawnOn.width, drawnOn.height], [width, height], genpresets.aspectsOf(r), opts.aspect || null) : "";
+                if (stretched) preNotes.push(stretched);
             }
             request = {
                 provider: r.provider, model, kind: "text",
@@ -2302,6 +2337,24 @@ export const host = {
 
     openGenerateNew(editor) {
         if (this.shell && this.shell.openGenerateNew) this.shell.openGenerateNew(editor);
+    },
+
+    /**
+     * New with a model (item 34, docs/PLAN_NEW_PRESETS.md section 8): the models that make a new image with their
+     * providers' aspects and size classes ({ models, pick, working(aspect, size) }, the shell's newCanvasChoices), or
+     * null without the shell (the dialog then asks for width and height only). The node's host answers null.
+     */
+    newCanvasChoices(editor) {
+        return this.shell && this.shell.newCanvasChoices ? this.shell.newCanvasChoices(editor) : null;
+    },
+
+    /**
+     * New made a canvas for a preset ({ recipe, provider, aspect, size, width, height }, stored by the editor as
+     * `genSettings.target`): the shell remembers it for the next New and selects the recipe (app-wide). Null after a New
+     * of a size given by hand: the next New opens on "Any size".
+     */
+    async newCanvasChosen(editor, target) {
+        if (this.shell && this.shell.newCanvasChosen) await this.shell.newCanvasChosen(editor, target);
     },
 
     /** Store a result patch in the mirror's output folder (where the node's stitch writes its results). */

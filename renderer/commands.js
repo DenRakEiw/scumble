@@ -21,6 +21,7 @@ import { normalizeLimit } from "./editor/inpaint_weights.js";
 import { fontList } from "./editor/inpaint_text.js";
 import { parse, remap } from "./editor/reftokens.js";
 import { LABEL as REALISM_LABEL } from "./editor/realism.js";
+import * as genpresets from "./editor/genpresets.js";
 
 const VERSION = 2;   // 1 = the node's bridge
 
@@ -318,7 +319,7 @@ export function status(ed) {
     return {
         doc: ed.node.id, name: docName(ed), loaded: !!ed.base, width: ed.width || 0, height: ed.height || 0,
         base: ed.base ? ed.base.ref : null, prompt: ed.promptText || "", negative: ed.negativeText || "",
-        generation: { mode: ed.genSettings.mode, seed: ed.genSettings.seed, seed_random: !!ed.genSettings.seedRandom, denoise: ed.genSettings.denoise, boxes: !!ed.genSettings.boxes },
+        generation: { mode: ed.genSettings.mode, seed: ed.genSettings.seed, seed_random: !!ed.genSettings.seedRandom, denoise: ed.genSettings.denoise, boxes: !!ed.genSettings.boxes, ...targetView(ed) },
         crop: cropView(ed), selection: bounds(ed), active_layer: ed.activeLayerId,
         layers: ed.layers.map((l) => layerSummary(ed, l)), results: results.length, history: ed.history.length,
         // every reference layer top first: its label (what @img<n> names; null while hidden) and, from the `status`
@@ -331,6 +332,39 @@ export function status(ed) {
         pixels: { tiles: !!ed.tileMode, from: ed.tileModeFrom || null },
         realism: realismState(ed),
     };
+}
+
+/**
+ * The document's preset for Generate new (item 34, `genSettings.target`: new_canvas with a recipe, the New dialog with a
+ * model, or the last generate_new), as status reports it: `valid` while the picture keeps the size it was made at.
+ */
+function targetView(ed) {
+    const t = ed.genSettings && ed.genSettings.target;
+    if (!t || typeof t !== "object") return {};
+    return { target: { recipe: t.recipe || null, provider: t.provider || null, aspect: t.aspect || null, size: +t.size || null, width: +t.width || 0, height: +t.height || 0, valid: genpresets.targetValid(t, ed) } };
+}
+
+/**
+ * The preset generate_new asks for when it is given no width, height or aspect: the document's valid target on the
+ * selected recipe (and its provider), else null (1024 x 1024 as before). A target without an aspect (a free size) keeps
+ * the document's shape at its size class.
+ */
+function targetSize(ed, r) {
+    const t = ed.genSettings && ed.genSettings.target;
+    if (!r || !genpresets.targetValid(t, ed) || t.recipe !== r.id) return null;
+    if (r.kind === "provider" && t.provider && t.provider !== r.provider) return null;
+    const size = clampInt(t.size, 64, 8192, 1024);
+    if (t.aspect && genpresets.parseAspect(t.aspect)) return { aspect: String(t.aspect), size, wh: genpresets.sizeFor(t.aspect, size) };
+    return { aspect: null, size, wh: genpresets.sizeFor(`${ed.width}:${ed.height}`, size) };
+}
+
+/**
+ * After a generate_new: the document's preset is what it was made with (the selected recipe and provider, the aspect,
+ * the size class asked for) at the size the answer came back at, so the next Generate new opens on it (item 34).
+ */
+function writeTarget(ed, r, aspect, size) {
+    if (!ed.base || !ed.width || !ed.height) return;
+    ed.genSettings.target = { recipe: r.id, provider: r.kind === "provider" ? r.provider || null : null, aspect: aspect || null, size, width: ed.width, height: ed.height };
 }
 
 /**
@@ -704,7 +738,7 @@ const COMMANDS = {
     },
     list_recipes: {
         readOnly: true,
-        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the ${REALISM_LABEL} recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).`,
+        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the ${REALISM_LABEL} recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); aspects: the aspects the Generate new dialog and new_canvas's model preset offer for it (its chosen provider's own list, else the general one); classes: its size classes for those, [{ size, name, label }] (size: the long side in pixels, name: the provider's tier such as 1k, 2K or 2 MP, null where it names none); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).`,
         params: {},
         async run() {
             const cur = host.recipe;
@@ -717,12 +751,16 @@ const COMMANDS = {
                     const text = api ? v.text || null : null;
                     const makes = !up && !pass && (!api || !!text);
                     const rows = text ? text.settings || v.settings || [] : [];
+                    // the aspects and size classes the Generate new dialog and new_canvas's preset offer (item 34)
+                    const preset = makes && host.shell.genPresetOf ? host.shell.genPresetOf(r, api ? v.provider : "") : null;
                     return {
                         id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit",
                         ...recipeReadiness(r, v),
                         keys: api ? Object.fromEntries((r.providerIds || []).map((pid) => { const ks = host.shell.keyState(host.shell.resolveRecipe(r, pid)); return [pid, !ks || !!ks.ok]; })) : undefined,
                         new_image: makes, edit: up || pass ? undefined : !api || v.edit !== false,
                         sizes: makes ? (text && Array.isArray(text.sizes) && text.sizes.length ? text.sizes.slice().sort((x, y) => x - y) : null) : undefined,
+                        aspects: makes ? (preset ? preset.aspects : null) : undefined,
+                        classes: makes ? (preset ? preset.classes.map((x) => ({ size: x.px, name: x.name, label: x.label })) : null) : undefined,
                         background: makes ? rows.some((s) => s.key === "background") : undefined,
                         factor: up ? v.factor || null : undefined, limits: up && !api ? r.limits || null : undefined, document_max: up ? documentMax(r, v) : undefined,
                         usesPrompt: up ? !!v.usesPrompt : undefined,
@@ -761,7 +799,7 @@ const COMMANDS = {
     // -- document --
     status: {
         readOnly: true,
-        description: `What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends.`,
+        description: `What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends.`,
         params: {},
         async run(ed) {
             const s = status(ed);
@@ -773,13 +811,35 @@ const COMMANDS = {
     },
     new_canvas: {
         destructive: true,
-        description: "Start a new white canvas of the given size in this tab (discards its image and layers).",
-        params: { width: P.int("width in pixels (16..16384)", { default: 1024 }), height: P.int("height in pixels", { default: 1024 }) },
+        description: "Start a new white canvas of the given size in this tab (discards its image and layers). With recipe, aspect and size instead (a model preset, as the New dialog's Model): the canvas is made in that aspect at the size class's long side, at most 2048 px (boxes are fractions of the picture, so the class is kept for later instead of a canvas that large), the recipe is selected on its provider (for every tab, as select_recipe), and the document keeps the preset: generate_new without width, height and aspect then asks for that aspect and size class, and the Generate new dialog opens on it. list_recipes gives each recipe's aspects and classes.",
+        params: {
+            width: P.int("width in pixels (16..16384)", { default: 1024 }), height: P.int("height in pixels", { default: 1024 }),
+            recipe: P.str("a model preset instead of width and height: the recipe id (list_recipes, one with new_image true); needs aspect and size"),
+            provider: P.str("with recipe: the provider of a model recipe (one of its providers with a text-to-image route); its remembered or default one when left out"),
+            aspect: P.str("with recipe: one of the aspects it offers on that provider (list_recipes aspects), e.g. 7:5"),
+            size: P.int("with recipe: the size class, its long side in pixels (list_recipes classes: size), e.g. 4096 for FLUX 3's 4k"),
+        },
         async run(ed, a) {
-            const w = clampInt(a.width, 16, 16384, 1024), h = clampInt(a.height, 16, 16384, 1024);
-            await ed.newCanvas(`${w}x${h}`);
-            if (ed.width !== w || ed.height !== h) throw new Error(ed.status);
-            return { width: ed.width, height: ed.height };
+            const preset = a.recipe != null || a.provider != null || a.aspect != null || a.size != null;
+            if (!preset) {
+                const w = clampInt(a.width, 16, 16384, 1024), h = clampInt(a.height, 16, 16384, 1024);
+                await ed.newCanvas(`${w}x${h}`);
+                if (ed.width !== w || ed.height !== h) throw new Error(ed.status);
+                // a preset of the picture before (item 34) does not hold for a canvas of a size given by hand, and the
+                // next New opens on "Any size" as this one was made
+                if (ed.genSettings && ed.genSettings.target) { delete ed.genSettings.target; ed.notifyChanged(); }
+                await host.newCanvasChosen(ed, null);
+                return { width: ed.width, height: ed.height };
+            }
+            const t = newCanvasPreset(ed, a);
+            await ed.newCanvas(`${t.width}x${t.height}`);
+            if (ed.width !== t.width || ed.height !== t.height) throw new Error(ed.status);
+            const target = { recipe: t.recipe, provider: t.provider, aspect: t.aspect, size: t.size, width: ed.width, height: ed.height };
+            ed.genSettings.target = target;
+            await host.newCanvasChosen(ed, target);
+            ed.notifyChanged();
+            const r = host.recipe;
+            return { width: ed.width, height: ed.height, target: { ...target }, recipe: r ? r.id : null, provider: r && r.kind === "provider" ? r.provider : null };
         },
     },
     load_image: {
@@ -1169,7 +1229,7 @@ const COMMANDS = {
     },
     generate_new: {
         destructive: true,
-        description: "Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture (\"image 1\"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first.",
+        description: "Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture (\"image 1\"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first. Without width, height and aspect it asks for the document's preset while its recipe is the selected one (new_canvas with a recipe, or the last generate_new on this picture: its aspect and size class; status generation.target), else 1024 x 1024; after the run the document keeps what was asked as its preset. With the Boxes switch on, the document's boxes go as fractions of the picture: an aspect of another shape stretches them, and the notes say so.",
         params: {
             prompt: P.str("what to make; the tab's current prompt when left out. An @img token names a shown reference layer; a model that makes new images from the prompt alone refuses it"),
             negative: P.str("negative prompt (local chains only)"),
@@ -1191,9 +1251,18 @@ const COMMANDS = {
             const blocked = host.generateNewBlocked(ed);
             if (blocked) throw new Error(blocked);
             let w = clampInt(a.width, 64, 8192, 1024), h = clampInt(a.height, 64, 8192, 1024);
+            // the document's preset (item 34: new_canvas with a recipe, or the last generate_new on it) when no size is
+            // given and its recipe is the selected one; else 1024 x 1024 as before
+            const auto = a.width == null && a.height == null && !a.aspect ? targetSize(ed, r) : null;
+            let aspect = a.aspect || null;
+            let asked = a.aspect ? clampInt(a.resolution, 64, 8192, 1024) : Math.max(w, h);
             if (a.aspect) {
-                const [aw, ah] = sizeForAspect(a.aspect, clampInt(a.resolution, 64, 8192, 1024));
+                const [aw, ah] = sizeForAspect(a.aspect, asked);
                 w = aw; h = ah;
+            } else if (auto) {
+                [w, h] = auto.wh;
+                aspect = auto.aspect;
+                asked = auto.size;
             }
             if (a.prompt != null) ed.setPromptText(agentRefs(ed, String(a.prompt), a.refs));
             if (a.negative != null) ed.setNegativeText(agentRefs(ed, String(a.negative), a.refs));
@@ -1201,7 +1270,8 @@ const COMMANDS = {
             if (a.seed != null) { ed.genSettings.seed = Math.abs(Math.round(+a.seed)) >>> 0; ed.genSettings.seedRandom = false; if (ed.seedInput) ed.seedInput.value = ed.genSettings.seed; }
             const t0 = Date.now();
             if (r.kind === "provider") {
-                const out = await host.runGenerate(ed, { width: w, height: h, aspect: a.aspect || null, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed, background: a.background || null });
+                const out = await host.runGenerate(ed, { width: w, height: h, aspect, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed, background: a.background || null });
+                writeTarget(ed, r, aspect, asked);
                 ed.notifyChanged();
                 return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, prompt_sent: out.prompt, references: out.references, kept: out.kept, dropped: out.dropped, notes: out.notes || [], info: out.info || null, boxes: out.boxes || 0, status: ed.status };
             }
@@ -1222,6 +1292,7 @@ const COMMANDS = {
             ed.applyMaskToSelection(rectMask(ed, 0, 0, ed.width, ed.height), "replace");
             const res = await COMMANDS.generate.run(ed, { timeout: a.timeout });
             await ed.flatten();
+            writeTarget(ed, r, aspect, asked);
             ed.notifyChanged();
             return { mode: "local", recipe: r.id, width: ed.width, height: ed.height, seconds: Math.round((Date.now() - t0) / 1000), result: res && res.layer ? res.layer : null, prompt_sent: res ? res.prompt_sent : null, notes: res ? res.notes || [] : [], status: ed.status };
         },
@@ -2394,6 +2465,43 @@ function editorFor(name, args) {
     const ed = host.editor;
     if (!ed) throw new Error("no document is open");
     return ed;
+}
+
+/**
+ * new_canvas's model preset (item 34): recipe, provider, aspect and size checked against what the New dialog offers
+ * (host.newCanvasChoices), each refusal naming the values allowed; then the canvas the preset makes (its aspect at the
+ * class's long side, at most 2048 px).
+ */
+function newCanvasPreset(ed, a) {
+    if (a.width != null || a.height != null) throw new Error("new_canvas takes width and height, or a model preset (recipe, aspect, size), not both: the preset sets the canvas size");
+    if (a.recipe == null || a.recipe === "") throw new Error("provider, aspect and size belong to a model preset: pass recipe with them, or width and height alone");
+    const ch = host.newCanvasChoices(ed);
+    if (!ch) throw new Error("model presets are not available here");
+    const models = ch.models.filter((x) => x.value);
+    const m = models.find((x) => x.value === String(a.recipe));
+    if (!m) {
+        const known = host.shell.recipes().some((x) => x.id === String(a.recipe));
+        throw new Error(`${known ? `recipe "${a.recipe}" makes no new image` : `no recipe "${a.recipe}"`} (the models that do: ${models.map((x) => x.value).join(", ") || "none"})`);
+    }
+    let p = m.providers[0];   // the remembered or default provider: newCanvasChoices lists it first
+    if (a.provider != null && a.provider !== "") {
+        p = m.providers.find((x) => x.value === String(a.provider));
+        if (!p) {
+            const fixed = m.providers.length === 1 && !m.providers[0].value;
+            throw new Error(fixed ? `recipe "${m.value}" runs on ${m.providers[0].label} and takes no provider` : `recipe "${m.value}" has no provider "${a.provider}" that makes a new image (${m.providers.map((x) => x.value).join(", ")})`);
+        }
+    }
+    const on = p.value ? ` on ${p.value}` : "";
+    if (a.aspect == null || a.aspect === "") throw new Error(`a model preset needs aspect: ${m.value}${on} offers ${p.aspects.join(", ")}`);
+    const pa = genpresets.parseAspect(a.aspect);
+    const aspect = pa ? `${pa[0]}:${pa[1]}` : String(a.aspect);
+    if (!p.aspects.includes(aspect)) throw new Error(`${m.value}${on} offers no aspect "${a.aspect}" (${p.aspects.join(", ")})`);
+    const classes = `${p.classes.map((c) => c.label).join(", ")}; size is the long side in pixels`;
+    if (a.size == null || a.size === "") throw new Error(`a model preset needs size: ${m.value}${on} offers ${classes}`);
+    const size = Math.round(+a.size);
+    if (!p.classes.some((c) => c.value === size)) throw new Error(`${m.value}${on} offers no size class ${JSON.stringify(a.size)} (${classes})`);
+    const [width, height] = ch.working(aspect, size);
+    return { recipe: m.value, provider: p.value || null, aspect, size, width, height };
 }
 
 /** "16:9" plus a long side -> [width, height], both a multiple of 16. */

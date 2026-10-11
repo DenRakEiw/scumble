@@ -79,7 +79,7 @@ Open a .scumble file as a tab (the tab that already holds it is activated instea
 
 ### `list_recipes` *(app)* *(read-only)*
 
-The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the Realism Pass (Windows only, RTX only) recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).
+The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the Realism Pass (Windows only, RTX only) recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); aspects: the aspects the Generate new dialog and new_canvas's model preset offer for it (its chosen provider's own list, else the general one); classes: its size classes for those, [{ size, name, label }] (size: the long side in pixels, name: the provider's tier such as 1k, 2K or 2 MP, null where it names none); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).
 
 (no parameters)
 
@@ -162,7 +162,7 @@ Brush settings of this document: the tip (round, or an imported tip by id or nam
 
 ### `status` *(read-only)*
 
-What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (Realism Pass (Windows only, RTX only)) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends.
+What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (Realism Pass (Windows only, RTX only)) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends.
 
 | param | type | description |
 |---|---|---|
@@ -170,13 +170,17 @@ What the document holds: image size, prompt, generation settings, selection boun
 
 ### `new_canvas` *(destructive)*
 
-Start a new white canvas of the given size in this tab (discards its image and layers).
+Start a new white canvas of the given size in this tab (discards its image and layers). With recipe, aspect and size instead (a model preset, as the New dialog's Model): the canvas is made in that aspect at the size class's long side, at most 2048 px (boxes are fractions of the picture, so the class is kept for later instead of a canvas that large), the recipe is selected on its provider (for every tab, as select_recipe), and the document keeps the preset: generate_new without width, height and aspect then asks for that aspect and size class, and the Generate new dialog opens on it. list_recipes gives each recipe's aspects and classes.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `width` | integer | width in pixels (16..16384) (default `1024`) |
 | `height` | integer | height in pixels (default `1024`) |
+| `recipe` | string | a model preset instead of width and height: the recipe id (list_recipes, one with new_image true); needs aspect and size |
+| `provider` | string | with recipe: the provider of a model recipe (one of its providers with a text-to-image route); its remembered or default one when left out |
+| `aspect` | string | with recipe: one of the aspects it offers on that provider (list_recipes aspects), e.g. 7:5 |
+| `size` | integer | with recipe: the size class, its long side in pixels (list_recipes classes: size), e.g. 4096 for FLUX 3's 4k |
 
 ### `load_image` *(destructive)*
 
@@ -519,7 +523,7 @@ Generate with the selected recipe: the selected area (with context) goes to the 
 
 ### `generate_new` *(destructive)*
 
-Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture ("image 1"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first.
+Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture ("image 1"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first. Without width, height and aspect it asks for the document's preset while its recipe is the selected one (new_canvas with a recipe, or the last generate_new on this picture: its aspect and size class; status generation.target), else 1024 x 1024; after the run the document keeps what was asked as its preset. With the Boxes switch on, the document's boxes go as fractions of the picture: an aspect of another shape stretches them, and the notes say so.
 
 | param | type | description |
 |---|---|---|

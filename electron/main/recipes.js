@@ -84,6 +84,8 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {string} note
  * @property {TextRefs | null} refs   the reference layers go along to a new image (26f); null: the prompt alone
  * @property {any} [options]   the route's own options instead of the variant's (a Comfy Cloud recipe's text-to-image graph)
+ * @property {string[]} [aspects]   the aspects the route takes for a new image ("W:H"), where the variant's options and
+ *   limits do not list them (item 34: the Generate new dialog and the New dialog's presets offer them; renderer/editor/genpresets.js)
  */
 
 /**
@@ -323,7 +325,29 @@ function textVariant(providerId, v, where = providerId) {
         note: t.note || "",
         refs: textRefsOf(t.refs, where),
         ...(t.options && typeof t.options === "object" ? { options: t.options } : {}),
+        ...textAspectsOf(t.aspects, where),
     };
+}
+
+/**
+ * A text shape's own `aspects` (item 34): the "W:H" strings of a list, each once; anything else is dropped with a
+ * warning. Absent: nothing (the dialog reads the variant's options and limits, else its general list).
+ * @param {any} list
+ * @param {string} where
+ * @returns {{ aspects?: string[] }}
+ */
+function textAspectsOf(list, where) {
+    if (list == null) return {};
+    if (!Array.isArray(list)) { console.warn(`recipe ${where}: text.aspects is not a list, ignored`); return {}; }
+    /** @type {string[]} */
+    const out = [];
+    for (const a of list) {
+        const m = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(String(a));
+        if (!m || !(+m[1] > 0) || !(+m[2] > 0)) { console.warn(`recipe ${where}: text.aspects entry ${JSON.stringify(a)} is not W:H, dropped`); continue; }
+        const s = `${+m[1]}:${+m[2]}`;
+        if (!out.includes(s)) out.push(s);
+    }
+    return out.length ? { aspects: out } : {};
 }
 
 /**
