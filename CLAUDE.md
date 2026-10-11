@@ -105,8 +105,10 @@ timeline "04 Scumble part four"; to rebuild it from fresh copies (`dist/video/v4
 `rec/resolve4_run.py` with `SCUMBLE_RESOLVE_IN` / `SCUMBLE_TL_NAME` (TUTORIAL.md §7). The first pass's Resolve render
 stays as `04_scumble_part_four_resolve.mp4` (4.25 GB, the old joins; delete it when the new master is accepted). The
 YouTube text: `dist/video/youtube_descriptions.md` "Video 4". **Waiting for the user:** watch the master; the tally
-"about $1.20" against the Black Forest Labs dashboard; upload, the website entry and the commit of the material
-(`docs/images/video/`, the TUTORIAL.md section) only on the user's word. Resolve is open at the Project Manager; the
+"about $1.20" against the Black Forest Labs dashboard; the YouTube upload and the commit of the material
+(`docs/images/video/`, the TUTORIAL.md section) only on the user's word. **On the website since 2026-10-12** (the
+user's word): `04_web.mp4` as `public/scumble/videos/scumble-part-four.mp4` with the poster and the eight chapters,
+"four parts" on the hub and the videos page (`Portfolio_vercel` `41f46f6`, Vercel success). Resolve is open at the Project Manager; the
 recording instance on port 9571 is closed, the HEAD worktree removed.
 
 **The B-Side agent (2026-10-11):** the user registered "Claude in Scumble" on The AI Art Magazine's agent platform
