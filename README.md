@@ -28,7 +28,7 @@
 
 | Platform | Get it | Notes |
 |---|---|---|
-| **Windows** | [Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R), or `winget install 9NDBTNNMXF2R` | Signed by Microsoft, no SmartScreen warning, updated by the Store |
+| **Windows** | [Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R), or `winget install scumble` | Signed by Microsoft, no SmartScreen warning, updated by the Store |
 | **Windows** | [Installer](https://github.com/DenRakEiw/scumble/releases/latest): `Scumble-Setup-<version>.exe` | Updates itself; not code-signed yet, so SmartScreen asks once |
 | **Windows, portable** | [Zip](https://github.com/DenRakEiw/scumble/releases/latest): `Scumble-<version>-portable-win-x64.zip` | No install; keeps its data in a folder beside it |
 | **Linux** (x64) | [AppImage or .deb](https://github.com/DenRakEiw/scumble/releases/latest) | Early builds made by CI, not run by the author yet; reports welcome |
@@ -109,7 +109,7 @@ Three boxes drawn and described on an empty canvas (left), and the picture FLUX 
   terminal:
 
   ```
-  winget install 9NDBTNNMXF2R
+  winget install scumble
   ```
 
   (winget installs the same Store copy and may ask you to accept the Store's terms first.) Microsoft signs the Store
