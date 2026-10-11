@@ -2195,12 +2195,14 @@ return out;
 // reports each text route's aspects and classes
 const H = (await import("./editor/host.js")).host;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const prev = H.recipe ? H.recipe.id : null;
-const prevProvider = H.recipe && H.recipe.kind === "provider" ? H.recipe.provider : undefined;
-let s0 = {};
+const prevRecipe = H.recipe || null;
+const prev = prevRecipe ? prevRecipe.id : null;
+const prevProvider = prevRecipe && prevRecipe.kind === "provider" ? prevRecipe.provider : undefined;
+// the stored recipe settings as they were, written back whole at the end: each preset selects its recipe, which stores
+// recipeByMode and recipeProviders entries the profile may not have had
+let s0 = null;
 try { s0 = await window.scumble.settings.get(); } catch (_) { /* none */ }
-const prevApi = (s0.recipeByMode || {}).api || null, prevLocal = (s0.recipeByMode || {}).local || null;
-const prevF = (s0.recipeProviders || {}).flux3 || "bfl";
+const saved = s0 && s0.recipe ? JSON.parse(JSON.stringify({ recipe: s0.recipe, recipeByMode: s0.recipeByMode || {}, recipeProviders: s0.recipeProviders || {} })) : null;
 const d = await c("new_document");
 const ed = H.editorById(d.id);
 const out = {};
@@ -2245,6 +2247,15 @@ try {
     if (r2.width !== 1024 || r2.height !== 1024 || r2.target.provider !== "fal") throw new Error("the remembered provider: " + JSON.stringify(r2));
     const r3 = await c("new_canvas", { doc: d.id, recipe: "flux2_klein_local", aspect: "16:9", size: 3072 });
     if (r3.width !== 2048 || r3.height !== 1152 || r3.target.provider !== null || r3.recipe !== "flux2_klein_local" || r3.provider !== null) throw new Error("a local recipe's preset: " + JSON.stringify(r3));
+    // a Comfy Cloud graph takes the provider list_recipes reports for it ("comfycloud") as well as none; another is refused
+    const cloud = L.find((x) => x.mode === "cloud" && x.new_image && x.provider && Array.isArray(x.aspects) && x.aspects.length && Array.isArray(x.classes) && x.classes.length);
+    if (cloud) {
+        const args = { recipe: cloud.id, aspect: cloud.aspects[0], size: cloud.classes[0].size };
+        const rc = await c("new_canvas", { doc: d.id, ...args, provider: cloud.provider });
+        if (!rc.target || rc.target.recipe !== cloud.id || rc.target.provider !== null || rc.recipe !== cloud.id) throw new Error("a Comfy Cloud recipe on its own provider: " + JSON.stringify(rc));
+        const head = 'recipe "' + cloud.id + '" runs on Comfy Cloud: its provider is "' + cloud.provider + '"';
+        out.cloud = [cloud.id, cloud.provider, await refused({ ...args, provider: "fal" }, { test: (m) => m.startsWith(head) })];
+    } else out.cloud = "no Comfy Cloud recipe makes a new image here";
     // a resize leaves the preset inert (no clean-up), a canvas of a size given by hand drops it
     await c("resize_image", { doc: d.id, width: 1024, height: 576 });
     st = (await c("status", { doc: d.id })).generation.target;
@@ -2257,34 +2268,27 @@ try {
     failure = err;
     throw err;
 } finally {
-    // the window's recipes back through the shell, each write waited for (tools/generate_test.py, the Realism Pass step)
-    const settled = async (pred) => {
-        for (let k = 0; k < 100; k++) {
-            let s = null;
-            try { s = await window.scumble.settings.get(); } catch (_) { /* again */ }
-            if (s && pred(s)) return true;
-            await wait(50);
-        }
-        return false;
-    };
+    // the window's recipe back through the shell, then the stored recipe, recipeByMode and recipeProviders written back
+    // whole (a key the step added goes too) and the shell's own copy read again (tools/ark_test.py's cleanup)
     const known = (id) => H.shell.recipes().find((x) => x.id === id) || null;
-    H.shell.selectRecipe("flux3", prevF);
-    restored = (await settled((s) => (s.recipeProviders || {}).flux3 === prevF)) && restored;
+    if (prev && known(prev)) H.shell.selectRecipe(prev, prevProvider);
+    else if (prevRecipe) H.setRecipe(prevRecipe);
     await wait(100);
-    for (const [mode, id] of [["api", prevApi], ["local", prevLocal]]) {
-        if (!id || !known(id)) continue;
-        H.shell.selectRecipe(id);
-        restored = (await settled((s) => (s.recipeByMode || {})[mode] === id)) && restored;
-        await wait(100);
+    let now = null;
+    if (saved) {
+        try {
+            await window.scumble.settings.set(saved);
+            const shell = await import("./shell.js");
+            await shell.openSettings();
+            document.getElementById("shell-settings").close();
+            now = await window.scumble.settings.get();
+        } catch (err) { console.warn("new_canvas_model_presets: restore", err); }
     }
-    if (prev && known(prev)) {
-        H.shell.selectRecipe(prev, prevProvider);
-        restored = (await settled((s) => s.recipe === prev)) && restored;
-        await wait(100);
-    }
+    const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+    restored = !!(saved && now && same(now.recipe, saved.recipe) && same(now.recipeByMode || {}, saved.recipeByMode) && same(now.recipeProviders || {}, saved.recipeProviders));
     try { await c("close_document", { doc: d.id, force: true }); } catch (_) { /* gone */ }
     try { await c("activate_document", { doc: window.__testDoc }); } catch (_) { /* gone */ }
-    if (!restored && !failure) throw new Error("the recipes were not restored (want " + prev + ", api " + prevApi + ", local " + prevLocal + ", flux3 on " + prevF + ")");
+    if (!restored && !failure) throw new Error("the recipe settings were not restored: " + JSON.stringify(now && { recipe: now.recipe, recipeByMode: now.recipeByMode, recipeProviders: now.recipeProviders }) + " (want " + JSON.stringify(saved) + ")");
 }
 """),
     ("boxes_follow_generate_new", """

@@ -1759,12 +1759,14 @@ return { options: ids };
     ("new_with_a_preset_and_generate_new_on_it", """
 const LOOP_BOXES = { id: "loopback_boxes", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", text: { model: "loopback" }, options: { boxes: "flux3" }, name: "Loopback boxes", settings: [] };
 const WANT = "The boxes were drawn on 7:5; at 1:1 they go stretched.";
-const prev = host.recipe ? host.recipe.id : null;
-const prevProvider = host.recipe && host.recipe.kind === "provider" ? host.recipe.provider : undefined;
-let s0 = {};
+const prevRecipe = host.recipe || null;
+const prev = prevRecipe ? prevRecipe.id : null;
+const prevProvider = prevRecipe && prevRecipe.kind === "provider" ? prevRecipe.provider : undefined;
+// the stored recipe settings as they were, written back whole at the end: new_canvas selects flux3 on bfl, which
+// stores recipeByMode.api and recipeProviders.flux3 even where the profile had neither
+let s0 = null;
 try { s0 = await window.scumble.settings.get(); } catch (_) { /* none */ }
-const prevApi = (s0.recipeByMode || {}).api || null;
-const prevFlux3 = (s0.recipeProviders || {}).flux3 || null;
+const saved = s0 && s0.recipe ? JSON.parse(JSON.stringify({ recipe: s0.recipe, recipeByMode: s0.recipeByMode || {}, recipeProviders: s0.recipeProviders || {} })) : null;
 const dlg = document.getElementById("gen-dialog");
 const val = (id) => document.getElementById(id).value;
 const pick = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event("change")); };
@@ -1836,38 +1838,28 @@ try {
 } finally {
     await close();
     try { host.shell.newCanvasChosen(null, null); } catch (_) { /* gone */ }
-    // the window's recipes back through the shell, each write waited for (the realism step's pattern below)
-    const settled = async (pred) => {
-        for (let k = 0; k < 100; k++) {
-            let s = null;
-            try { s = await window.scumble.settings.get(); } catch (_) { /* again */ }
-            if (s && pred(s)) return true;
-            await wait(50);
-        }
-        return false;
-    };
+    // the window's recipe back through the shell, then the stored recipe, recipeByMode and recipeProviders written back
+    // whole (a key the step added goes too) and the shell's own copy read again (tools/ark_test.py's cleanup)
     const known = (id) => host.shell.recipes().find((x) => x.id === id) || null;
-    if (prevFlux3 && prevFlux3 !== "bfl") {
-        host.shell.selectRecipe("flux3", prevFlux3);
-        restored = (await settled((s) => (s.recipeProviders || {}).flux3 === prevFlux3)) && restored;
-        await wait(100);
+    if (prev && known(prev)) host.shell.selectRecipe(prev, prevProvider);
+    else if (prevRecipe) host.setRecipe(prevRecipe);
+    await wait(100);
+    let now = null;
+    if (saved) {
+        try {
+            await window.scumble.settings.set(saved);
+            const shell = await import("./shell.js");
+            await shell.openSettings();
+            document.getElementById("shell-settings").close();
+            now = await window.scumble.settings.get();
+        } catch (err) { console.warn("new_with_a_preset_and_generate_new_on_it: restore", err); }
     }
-    if (prevApi && prevApi !== "flux3" && known(prevApi)) {
-        host.shell.selectRecipe(prevApi);
-        restored = (await settled((s) => (s.recipeByMode || {}).api === prevApi)) && restored;
-        await wait(100);   // the shell's copy takes the write's answer
-    }
-    if (prev && known(prev)) {
-        host.shell.selectRecipe(prev, prevProvider);
-        restored = (await settled((s) => s.recipe === prev)) && restored;
-        await wait(100);
-    }
+    const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+    restored = !!(saved && now && same(now.recipe, saved.recipe) && same(now.recipeByMode || {}, saved.recipeByMode) && same(now.recipeProviders || {}, saved.recipeProviders));
     if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
     try { host.shell.activate(ednow(window.__g)); } catch (_) { /* gone */ }
     if (!restored && !failure) {
-        let s = null;
-        try { s = await window.scumble.settings.get(); } catch (_) { /* none */ }
-        throw new Error("the recipes were not restored: recipe " + (s && s.recipe) + ", recipeByMode " + JSON.stringify(s && s.recipeByMode) + " (want " + prev + " / api " + prevApi + ")");
+        throw new Error("the recipe settings were not restored: " + JSON.stringify(now && { recipe: now.recipe, recipeByMode: now.recipeByMode, recipeProviders: now.recipeProviders }) + " (want " + JSON.stringify(saved) + ")");
     }
 }
 """),

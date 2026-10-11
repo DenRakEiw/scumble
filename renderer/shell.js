@@ -1041,22 +1041,27 @@ const GEN_GENERAL = GEN_ASPECTS.filter((a) => a !== "free");
 /**
  * What Generate new offers for a recipe on one of its providers (item 34, docs/PLAN_NEW_PRESETS.md section 8): the
  * variant's own aspects (genpresets.aspectsOf, else the general list) and its size classes (`text.sizes`, named by its
- * tiers: "2k (2048 px)"); a recipe on ComfyUI takes any shape and size, so it gets the general lists. Null when the
- * variant makes no new image. The dialog, New's presets (newCanvasChoices) and list_recipes all read this.
+ * tiers as the provider counts them at `aspect`, 1:1 without one: "2k (2048 px)"); a recipe on ComfyUI takes any shape
+ * and size, so it gets the general lists. Null when the variant makes no new image. The dialog, New's presets
+ * (newCanvasChoices) and list_recipes all read this.
  */
-function genPresetOf(r, pid) {
+function genPresetOf(r, pid, aspect = null) {
     if (!r) return null;
     if (r.kind !== "provider") return { aspects: GEN_GENERAL.slice(), classes: genpresets.classesOf(null, GEN_RESOLUTIONS) };
     const v = r.providers && pid ? r.providers[pid] : null;
     if (!v || !v.text) return null;
-    return { aspects: genpresets.aspectsOf(v, GEN_GENERAL), classes: genpresets.classesOf(v, GEN_RESOLUTIONS) };
+    return { aspects: genpresets.aspectsOf(v, GEN_GENERAL), classes: genpresets.classesOf(v, GEN_RESOLUTIONS, { provider: pid, aspect }) };
 }
 
-/** The dialog's model on its provider: the raw recipe, what it offers, and the resolved recipe a run would use. */
+/**
+ * The dialog's model on its provider: the raw recipe, what it offers (the classes named at the chosen aspect), and the
+ * resolved recipe a run would use.
+ */
 function genChoice() {
     const r = recipes.find((x) => x.id === ui.genRecipe.value) || null;
     const pid = r && r.kind === "provider" ? ui.genProvider.value : "";
-    const preset = genPresetOf(r, pid) || { aspects: GEN_GENERAL.slice(), classes: genpresets.classesOf(null, GEN_RESOLUTIONS) };
+    const aspect = genpresets.parseAspect(ui.genAspect.value) ? ui.genAspect.value : null;
+    const preset = genPresetOf(r, pid, aspect) || { aspects: GEN_GENERAL.slice(), classes: genpresets.classesOf(null, GEN_RESOLUTIONS) };
     return { r, pid, preset, resolved: r && r.kind === "provider" && pid ? resolveRecipe(r, pid) : r };
 }
 
@@ -1103,11 +1108,23 @@ const NEW_GROUPS = [["api", "API models"], ["cloud", "Comfy Cloud"], ["local", "
 /**
  * The New dialog's choices (host.newCanvasChoices): "Any size" first, then every model that makes a new image, grouped
  * API models / Comfy Cloud / ComfyUI, each with its providers (the remembered one first; a recipe on ComfyUI or a Comfy
- * Cloud graph has one entry, value ""), their aspects and size classes; `pick` the preset to open on (the document's
- * while it holds, else this session's last), `working` the canvas a preset makes.
+ * Cloud graph has one entry, value ""), their aspects and size classes (each class's `labels`: its name at an aspect
+ * where a tier counted by area names it otherwise than at 1:1); `pick` the preset to open on (the document's while it
+ * holds; in a tab without a picture this session's last), `working` the canvas a preset makes.
  */
 function newCanvasChoices(editor) {
-    const entry = (value, label, p) => (p ? { value, label, aspects: p.aspects.slice(), classes: p.classes.map((c) => ({ value: c.px, label: c.label })) } : null);
+    const entry = (value, label, r, pid) => {
+        const p = genPresetOf(r, pid);
+        if (!p) return null;
+        const classes = p.classes.map((c) => ({ value: c.px, label: c.label }));
+        for (const a of p.aspects) {
+            const at = genPresetOf(r, pid, a).classes;
+            classes.forEach((c, i) => {
+                if (at[i] && at[i].px === c.value && at[i].label !== c.label) c.labels = { ...(c.labels || {}), [a]: at[i].label };
+            });
+        }
+        return { value, label, aspects: p.aspects.slice(), classes };
+    };
     const models = [{ value: "", label: "Any size", group: "", providers: [] }];
     for (const [mode, group] of NEW_GROUPS) {
         for (const r of genRecipesFor(mode)) {
@@ -1115,9 +1132,9 @@ function newCanvasChoices(editor) {
             if (mode === "api") {
                 const ids = genProviderIds(r), first = chosenProvider(r);
                 const order = ids.includes(first) ? [first, ...ids.filter((x) => x !== first)] : ids;
-                providers = order.map((pid) => entry(pid, providerOptionLabel(pid), genPresetOf(r, pid)));
+                providers = order.map((pid) => entry(pid, providerOptionLabel(pid), r, pid));
             } else {
-                providers = [entry("", mode === "cloud" ? "Comfy Cloud" : "ComfyUI", genPresetOf(r, r.kind === "provider" ? chosenProvider(r) : ""))];
+                providers = [entry("", mode === "cloud" ? "Comfy Cloud" : "ComfyUI", r, r.kind === "provider" ? chosenProvider(r) : "")];
             }
             providers = providers.filter(Boolean);
             if (providers.length) models.push({ value: r.id, label: r.name || r.id, group, providers });
@@ -1126,11 +1143,14 @@ function newCanvasChoices(editor) {
     return { models, pick: newCanvasPick(editor, models), working: (aspect, size) => genpresets.workingSize(aspect, size) };
 }
 
-/** The preset New opens on: the document's (while its picture keeps the preset's size), else this session's last New. */
+/**
+ * The preset New opens on: the document's (while its picture keeps the preset's size); in a tab without a picture this
+ * session's last New; else none ("Any size": a tab with a picture of its own keeps its size by default).
+ */
 function newCanvasPick(editor, models) {
     const t = editor && editor.genSettings ? editor.genSettings.target : null;
     const own = genpresets.targetValid(t, editor);
-    const tries = [own ? { model: t.recipe, provider: t.provider || "", aspect: t.aspect || null, size: +t.size || null, doc: [editor.width, editor.height] } : null, newPresetLast];
+    const tries = [own ? { model: t.recipe, provider: t.provider || "", aspect: t.aspect || null, size: +t.size || null, doc: [editor.width, editor.height] } : null, editor && editor.base ? null : newPresetLast];
     for (const src of tries) {
         if (!src) continue;
         const m = models.find((x) => x.value && x.value === src.model);
@@ -1466,7 +1486,8 @@ ui.genTemplate.addEventListener("change", () => {
     genSyncTemplateNote();
     window.scumble.settings.set({ promptTemplates: { ...(settings.promptTemplates || {}), generate: ui.genTemplate.value } }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
 });
-ui.genAspect.addEventListener("change", genSyncSize);
+// a tier counted by area names a class per aspect (Oxen's 1024 px: 2 MP at 1:1, 1 MP at 16:9): the labels follow it
+ui.genAspect.addEventListener("change", () => genFillSizes());
 ui.genResolution.addEventListener("change", genSyncSize);
 for (const el of [ui.genWidth, ui.genHeight]) el.addEventListener("input", genSyncSize);
 ui.gen.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopPropagation(); });

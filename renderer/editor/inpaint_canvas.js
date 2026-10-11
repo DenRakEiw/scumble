@@ -3198,8 +3198,10 @@ class InpaintEditor {
                     lab.appendChild(link);
                     lab.appendChild(el("span", null, "Keep the ratio"));
                     box.appendChild(lab);
-                    // the ratio of the two values: taken at the start, when the tie is ticked, and when set() changes
-                    // them while they are not tied (a disabled box is not tied)
+                    // the ratio of the two values: taken at the start; with onChange (a dialog whose fields the caller
+                    // changes, New with a model) also when the tie is ticked and when set() changes them while they are
+                    // not tied (a disabled box is not tied). A plain dialog (the two-number New, the node's, SVG import)
+                    // keeps the ratio it opened with
                     let ratio = 1;
                     retie = () => { const a = +nums[0].value, b = +nums[1].value; if (a > 0 && b > 0) ratio = b / a; };
                     retie();
@@ -3213,7 +3215,7 @@ class InpaintEditor {
                     };
                     nums[0].addEventListener("input", tie(nums[0], nums[1], () => ratio));
                     nums[1].addEventListener("input", tie(nums[1], nums[0], () => (ratio ? 1 / ratio : 1)));
-                    link.addEventListener("change", () => { if (link.checked) retie(); });
+                    if (typeof onChange === "function") link.addEventListener("change", () => { if (link.checked) retie(); });
                 }
             } else if (value != null) {
                 input = document.createElement("input");
@@ -17428,27 +17430,36 @@ class InpaintEditor {
 
     // ---- layers: management ------------------------------------------------
 
-    /** A new base from a file in the mirror (`ref`), all else dropped: a large one decoded off the window on tiles. */
+    /**
+     * A new base from a file in the mirror (`ref`), all else dropped: a large one decoded off the window on tiles.
+     * Another picture is not the canvas a preset was made for: Generate new's preset (`genSettings.target`, item 34)
+     * goes with the old one, as in loadFile (Generate new's own base, setBaseFromCanvas, keeps it: the run writes it).
+     */
     async setBaseFromRef(ref) {
-        if (TIFF_EXT.test(ref.filename || "")) {
-            const blob = await (await fetch(viewUrl(ref))).blob();
-            if (await isTiffFile(blob)) {
-                const info = await tiffInfo(blob);
-                this.checkBaseSize(info.width, info.height);
-                const { px } = await pixelsFromTiff(blob, this.pixels.Layer);
-                const up = await uploadPixels(px, String(ref.filename).replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image");
-                return this.setBasePixels(up.ref, px, { keepLayers: false });
+        const before = this.base;
+        try {
+            if (TIFF_EXT.test(ref.filename || "")) {
+                const blob = await (await fetch(viewUrl(ref))).blob();
+                if (await isTiffFile(blob)) {
+                    const info = await tiffInfo(blob);
+                    this.checkBaseSize(info.width, info.height);
+                    const { px } = await pixelsFromTiff(blob, this.pixels.Layer);
+                    const up = await uploadPixels(px, String(ref.filename).replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image");
+                    return await this.setBasePixels(up.ref, px, { keepLayers: false });
+                }
             }
+            if (this.tileMode) {
+                const blob = await (await fetch(viewUrl(ref))).blob();
+                const big = (await hugePngSize(blob)) || (await imageFileSize(blob));
+                if (big) this.checkBaseSize(big.width, big.height);
+                const px = big ? await pixelsOffThread(blob, this.pixels.Layer) : null;
+                if (px) return await this.setBasePixels(ref, px, { keepLayers: false });
+                return await this.setBase(ref, await imageOfBlob(blob), { keepLayers: false });
+            }
+            return await this.setBase(ref, await loadImageEl(viewUrl(ref)), { keepLayers: false });
+        } finally {
+            if (this.base !== before && this.genSettings && this.genSettings.target) { delete this.genSettings.target; this.notifyChanged(); }
         }
-        if (this.tileMode) {
-            const blob = await (await fetch(viewUrl(ref))).blob();
-            const big = (await hugePngSize(blob)) || (await imageFileSize(blob));
-            if (big) this.checkBaseSize(big.width, big.height);
-            const px = big ? await pixelsOffThread(blob, this.pixels.Layer) : null;
-            if (px) return this.setBasePixels(ref, px, { keepLayers: false });
-            return this.setBase(ref, await imageOfBlob(blob), { keepLayers: false });
-        }
-        return this.setBase(ref, await loadImageEl(viewUrl(ref)), { keepLayers: false });
     }
 
     /** A new base from an <img> (or a canvas with `naturalWidth` / `naturalHeight`): its pixels are made here, the image is not kept. */
@@ -17538,6 +17549,7 @@ class InpaintEditor {
         // over a later one: the last file asked for is the base
         const token = (this._openToken = (this._openToken || 0) + 1);
         const later = () => this._openToken !== token;
+        const before = this.base;
         try {
             const layered = await layeredKind(file);
             if (layered) { await this.loadLayered(file, layered, later); return; }
@@ -17569,6 +17581,10 @@ class InpaintEditor {
         } catch (err) {
             console.error(err);
             this.setStatus(String(err.message || err));
+        } finally {
+            // another picture (open, drag and drop, paste, load_image) is not the canvas a preset was made for: Generate
+            // new's preset (`genSettings.target`, item 34) goes with the old one, even at the same size
+            if (this.base !== before && this.genSettings && this.genSettings.target) { delete this.genSettings.target; this.notifyChanged(); }
         }
     }
 
@@ -19072,11 +19088,15 @@ class InpaintEditor {
      * has one way to run), the provider's own Aspect and Size class, a note with the canvas the preset makes, then Width
      * and Height, which show that canvas and are disabled while a model is chosen, and are free with "Any size" (from
      * the document's size). A change of model or provider keeps the aspect and the class where the new lists have them,
-     * else takes the nearest. Resolves with { width, height, target, about } (target null for "Any size") or null when
-     * cancelled.
+     * else takes the nearest. A class may carry `labels` ({ aspect: label }): its name at an aspect where the provider
+     * counts it otherwise (a tier by area). Resolves with { width, height, target, about } (target null for "Any size")
+     * or null when cancelled.
      */
     async askNewCanvas(choices, message, curW, curH) {
         const models = choices.models.filter((m) => m && typeof m === "object" && typeof m.value === "string");
+        // "Any size" (value "") is what the dialog opens on without a preset: added when the host's list lacks it, or the
+        // Model select would show the first model while the boxes are free, and Create would make that model's canvas
+        if (!models.some((m) => m.value === "")) models.unshift({ value: "", label: "Any size", group: "", providers: [] });
         const ASPECT = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/;
         const ratioOf = (a) => { const m = ASPECT.exec(String(a == null ? "" : a)); return m && +m[1] > 0 && +m[2] > 0 ? +m[1] / +m[2] : null; };
         const nearestAspect = (r, list) => {
@@ -19128,7 +19148,9 @@ class InpaintEditor {
             if (px) st.size = px;
             return { m, p, aspect, cls, single: provs.length === 1 && !provs[0].value, wh: working(aspect, px) };
         };
-        const asks = (c) => [c.cls ? c.cls.label || `${c.cls.value} px` : "", c.aspect ? `at ${c.aspect}` : ""].filter(Boolean).join(" ");
+        // a class's name at the aspect shown (its `labels` where the provider counts that aspect otherwise)
+        const classLabel = (k, aspect) => (k.labels && aspect && k.labels[aspect]) || k.label || `${k.value} px`;
+        const asks = (c) => [c.cls ? classLabel(c.cls, c.aspect) : "", c.aspect ? `at ${c.aspect}` : ""].filter(Boolean).join(" ");
         const noteOf = (c) => {
             if (!c.m) return "Choose a model to make the canvas in its aspect, at a working size for its size class.";
             const a = asks(c);
@@ -19136,7 +19158,7 @@ class InpaintEditor {
         };
         const providerOptions = (c) => providersOf(c.m).map((p) => ({ value: p.value, label: p.label || p.value }));
         const aspectOptions = (c) => aspectsOf(c.p).map((a) => ({ value: a, label: a }));
-        const classOptions = (c) => classesOf(c.p).map((k) => ({ value: String(k.value), label: k.label || `${k.value} px` }));
+        const classOptions = (c) => classesOf(c.p).map((k) => ({ value: String(k.value), label: classLabel(k, c.aspect) }));
         const c0 = current();
         const fields = [
             { key: "model", label: "Model", type: "select", wide: true, value: c0.m ? c0.m.value : "",

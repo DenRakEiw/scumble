@@ -360,11 +360,13 @@ function targetSize(ed, r) {
 
 /**
  * After a generate_new: the document's preset is what it was made with (the selected recipe and provider, the aspect,
- * the size class asked for) at the size the answer came back at, so the next Generate new opens on it (item 34).
+ * the size class asked for) at the size the answer came back at, so the next Generate new opens on it (item 34). The
+ * aspect is kept as "W:H" (what the dialogs and genpresets read), else null (a free size).
  */
 function writeTarget(ed, r, aspect, size) {
     if (!ed.base || !ed.width || !ed.height) return;
-    ed.genSettings.target = { recipe: r.id, provider: r.kind === "provider" ? r.provider || null : null, aspect: aspect || null, size, width: ed.width, height: ed.height };
+    const pa = genpresets.parseAspect(aspect);
+    ed.genSettings.target = { recipe: r.id, provider: r.kind === "provider" ? r.provider || null : null, aspect: pa ? `${pa[0]}:${pa[1]}` : null, size, width: ed.width, height: ed.height };
 }
 
 /**
@@ -1254,10 +1256,11 @@ const COMMANDS = {
             // the document's preset (item 34: new_canvas with a recipe, or the last generate_new on it) when no size is
             // given and its recipe is the selected one; else 1024 x 1024 as before
             const auto = a.width == null && a.height == null && !a.aspect ? targetSize(ed, r) : null;
-            let aspect = a.aspect || null;
+            // "16x9" and "16/9" are taken as 16:9: the run and the document's preset get the one spelling the dialogs read
+            let aspect = a.aspect ? aspectText(a.aspect) : null;
             let asked = a.aspect ? clampInt(a.resolution, 64, 8192, 1024) : Math.max(w, h);
-            if (a.aspect) {
-                const [aw, ah] = sizeForAspect(a.aspect, asked);
+            if (aspect) {
+                const [aw, ah] = sizeForAspect(aspect, asked);
                 w = aw; h = ah;
             } else if (auto) {
                 [w, h] = auto.wh;
@@ -2486,8 +2489,14 @@ function newCanvasPreset(ed, a) {
     let p = m.providers[0];   // the remembered or default provider: newCanvasChoices lists it first
     if (a.provider != null && a.provider !== "") {
         p = m.providers.find((x) => x.value === String(a.provider));
+        const fixed = m.providers.length === 1 && !m.providers[0].value;
+        // a Comfy Cloud graph has one entry (value ""), on the provider list_recipes reports for it ("comfycloud"): that
+        // id names the entry too; a recipe on ComfyUI has none
+        const raw = fixed ? host.shell.recipes().find((x) => x.id === m.value) : null;
+        const own = raw && raw.kind === "provider" ? host.shell.resolveRecipe(raw).provider || null : null;
+        if (!p && own && own === String(a.provider)) p = m.providers[0];
         if (!p) {
-            const fixed = m.providers.length === 1 && !m.providers[0].value;
+            if (own) throw new Error(`recipe "${m.value}" runs on ${m.providers[0].label}: its provider is "${own}" (or leave provider out)`);
             throw new Error(fixed ? `recipe "${m.value}" runs on ${m.providers[0].label} and takes no provider` : `recipe "${m.value}" has no provider "${a.provider}" that makes a new image (${m.providers.map((x) => x.value).join(", ")})`);
         }
     }
@@ -2504,12 +2513,23 @@ function newCanvasPreset(ed, a) {
     return { recipe: m.value, provider: p.value || null, aspect, size, width, height };
 }
 
+/** "16:9", "16x9" or "16/9" -> [16, 9]; anything else is refused. */
+function aspectParts(aspect) {
+    const m = /^\s*(\d+(?:\.\d+)?)\s*[:x\/]\s*(\d+(?:\.\d+)?)\s*$/.exec(String(aspect || ""));
+    const aw = m ? +m[1] : 0, ah = m ? +m[2] : 0;
+    if (!(aw > 0) || !(ah > 0)) throw new Error(`aspect "${aspect}" is not W:H, e.g. 16:9`);
+    return [aw, ah];
+}
+
+/** An aspect as "W:H" (genpresets.parseAspect's form), from any spelling aspectParts takes ("16x9" -> "16:9"). */
+function aspectText(aspect) {
+    const [aw, ah] = aspectParts(aspect);
+    return `${aw}:${ah}`;
+}
+
 /** "16:9" plus a long side -> [width, height], both a multiple of 16. */
 function sizeForAspect(aspect, longSide) {
-    const m = /^\s*(\d+(?:\.\d+)?)\s*[:x\/]\s*(\d+(?:\.\d+)?)\s*$/.exec(String(aspect || ""));
-    if (!m) throw new Error(`aspect "${aspect}" is not W:H, e.g. 16:9`);
-    const aw = +m[1], ah = +m[2];
-    if (!(aw > 0) || !(ah > 0)) throw new Error(`aspect "${aspect}" is not W:H, e.g. 16:9`);
+    const [aw, ah] = aspectParts(aspect);
     const round16 = (v) => Math.max(64, Math.round(v / 16) * 16);
     return aw >= ah ? [round16(longSide), round16(longSide * ah / aw)] : [round16(longSide * aw / ah), round16(longSide)];
 }

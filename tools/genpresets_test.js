@@ -17,7 +17,8 @@ const { pathToFileURL } = require("node:url");
 
 const ROOT = path.join(__dirname, "..");
 const RECIPES = path.join(ROOT, "recipes");
-const flux3 = require(path.join(ROOT, "electron", "main", "providers", "flux3.js"));
+const PROVIDERS = path.join(ROOT, "electron", "main", "providers");
+const flux3 = require(path.join(PROVIDERS, "flux3.js"));
 
 const results = [];
 function check(what, ok, detail) {
@@ -98,6 +99,50 @@ const GENERAL = GEN_ASPECTS.filter((a) => a !== "free");
         check("BFL's classes are named 1k, 2k and 4k: '1k (1024 px)', '2k (2048 px)', '4k (4096 px)'", eq(labels.bfl, ["1k (1024 px)", "2k (2048 px)", "4k (4096 px)"]) && eq(labels.fal, labels.bfl) && eq(labels.wavespeed, labels.bfl), short(labels));
         check("every FLUX 3 route: flux3.js counts the dialog's size of each aspect at each class into that class", !wrongTier.length, wrongTier.slice(0, 4).join(" | ") || `${Object.keys(labels).length} routes`);
     }
+
+    // ---- 2b. every route with a tier table: the label is the tier its adapter picks -----------------------------------
+    // The adapters' own tier functions (each module's exported helper); which one a provider calls for a text run is
+    // mirrored here from its request builder: OpenRouter tierByArea / tierFor by tier_unit, Oxen tierFor with the unit
+    // (FLUX 3's shape where it sends one), ToAPIs sizeFor (its tier_sizes rows), Comfy Router and WaveSpeed util.js
+    // tierFor on the long side, FLUX 3's hosts flux3.js tierOf.
+    console.log("\n--- 2b. the size classes are named as each route counts them ---");
+    const openrouter = require(path.join(PROVIDERS, "openrouter.js")), oxen = require(path.join(PROVIDERS, "oxen.js"));
+    const toapis = require(path.join(PROVIDERS, "toapis.js")), util = require(path.join(PROVIDERS, "util.js"));
+    const adapterTier = (pid, v, w, h, aspect) => {
+        const o = v.options || {};
+        const f3 = o.boxes === "flux3";
+        if (pid === "openrouter" && o.tiers) return o.tier_unit === "area" ? openrouter._tierByArea(w, h, o.tiers) : openrouter._tier(w, h, o.tiers);
+        if (pid === "oxen" && o.tiers && o.sizing !== "flux3") return oxen._tier(w, h, o.tiers, o.tier_unit);
+        if (pid === "toapis" && o.tiers) return toapis._size({ kind: "text", width: w, height: h, aspect }, toapis._channel({ options: o, params: {}, model: v.model || "model" })).tier;
+        if (f3 && (!o.tiers || o.sizing === "flux3")) return flux3._tierOf(w, h);
+        if (o.tiers) return util.tierFor(Math.max(w, h), o.tiers);
+        return undefined;
+    };
+    const misnamed = [], swept = [];
+    let named = 0;
+    for (const r of list.filter((x) => x.kind === "provider")) {
+        for (const [pid, v] of Object.entries(r.providers || {})) {
+            const o = (v && v.options) || {};
+            if (!v.text || !(o.tiers || o.boxes === "flux3")) continue;
+            swept.push(`${r.id}/${pid}`);
+            // 1:1 (what list_recipes and a class without an aspect show) and every aspect the route offers, its widest
+            // among them
+            for (const aspect of [null, ...gp.aspectsOf(v, GENERAL)]) {
+                for (const c of gp.classesOf(v, GEN_RESOLUTIONS, { provider: pid, aspect })) {
+                    const [w, h] = gp.sizeFor(aspect || "1:1", c.px);
+                    const tier = adapterTier(pid, v, w, h, aspect || "1:1");
+                    named++;
+                    if (tier === undefined || String(tier) !== String(c.name)) misnamed.push(`${r.id}/${pid} ${aspect || "1:1"} at ${c.px} (${w} x ${h}): adapter ${tier}, label ${c.name}`);
+                }
+            }
+        }
+    }
+    check(`every route with a tier table, at 1:1 and at each of its aspects: the class's name is the tier its adapter sends (${swept.length} routes)`, swept.length >= 30 && !misnamed.length, misnamed.slice(0, 4).join(" | ") || `${named} labels`);
+    const oxenPro = (list.find((x) => x.id === "flux2_pro") || { providers: {} }).providers.oxen;
+    const oxLabel = (aspect) => (oxenPro ? gp.classesOf(oxenPro, GEN_RESOLUTIONS, { provider: "oxen", aspect })[0].label : null);
+    check("Oxen's FLUX.2 [pro] counts the area without slack: 1024 px is 2 MP at 1:1 and 1 MP at 16:9", oxLabel(null) === "2 MP (1024 px)" && oxLabel("1:1") === "2 MP (1024 px)" && oxLabel("16:9") === "1 MP (1024 px)", short([oxLabel(null), oxLabel("16:9")]));
+    const orArea = { text: { sizes: [1024, 2048] }, options: { tiers: { "1K": 1024, "2K": 2048 }, tier_unit: "area" } };
+    check("OpenRouter's area tiers keep the 15 % slack (1088 x 1088 is still 1K), Oxen's do not (1 MP ends at 1,000,000 px)", gp.classesOf({ ...orArea, text: { sizes: [1088] } }, [], { provider: "openrouter" })[0].name === "1K" && openrouter._tierByArea(1088, 1088, orArea.options.tiers) === "1K" && gp.classesOf({ text: { sizes: [1008] }, options: { tiers: { "1 MP": 1000000, "2 MP": 2000000 }, tier_unit: "area" } }, [], { provider: "oxen" })[0].name === "2 MP", "");
 
     // ---- 3. the helpers ----------------------------------------------------------------------------------------------
     console.log("\n--- 3. the helpers ---");

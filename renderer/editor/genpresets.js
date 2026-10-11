@@ -155,57 +155,94 @@ export function workingSize(aspect, long, cap = WORKING_MAX) {
     return sizeFor(aspect, Math.min(+long || 1024, cap));
 }
 
+/** A size up to this much over a tier's area still takes that tier, where the route counts so (flux3.js TIER_SLACK). */
+const AREA_SLACK = 1.15;
+
 /**
- * The tier table a variant names its classes by (`options.tiers`, { name: value }), with how it counts: "long" (the
- * value is a long side) or "area" (`tier_unit: "area"`: a pixel count, or a long side of a square when below 10,000).
- * FLUX 3 without a table counts by area in 1k, 2k and 4k (flux3.js).
+ * How a provider's adapter counts an area table (`tier_unit: "area"`): OpenRouter squares each value (a long side) and
+ * takes a size up to 15 % over it (openrouter.js tierByArea); Oxen compares the pixel count with each value as it is,
+ * without slack (oxen.js tierFor, FLUX.2's "0.5 MP" / "1 MP" / "2 MP"). Another provider (none ships an area table)
+ * counts by the values: below 10,000 a long side, squared, with the slack; else a pixel count without.
+ *
+ * @type {Record<string, { square: boolean, slack: number }>}
+ */
+const AREA_COUNT = { openrouter: { square: true, slack: AREA_SLACK }, oxen: { square: false, slack: 1 } };
+
+/**
+ * The tier table a variant names its classes by (`options.tiers`, { name: value }), with how its route counts:
+ * `area` false compares the long side with each value (util.js, openrouter.js and oxen.js tierFor; toapis.js tierFor
+ * where the variant has no `tier_sizes` row for the size); `area` true compares the pixel count with each value, squared when `square`, times `slack` (AREA_COUNT). FLUX 3
+ * without a table counts by area in 1k, 2k and 4k with the 15 % slack (flux3.js tierOf, on every host that sends its
+ * shape).
  *
  * @param {any} v
- * @returns {{ tiers: Record<string, number>, area: boolean } | null}
+ * @param {string | null} [provider] the variant's provider id (its key in the recipe's `providers`)
+ * @returns {TierTable | null}
  */
-function tierTable(v) {
+function tierTable(v, provider = null) {
     const o = (v && v.options) || {};
-    if (o.tiers && typeof o.tiers === "object" && Object.keys(o.tiers).length) return { tiers: o.tiers, area: o.tier_unit === "area" };
-    if (o.boxes === "flux3") return { tiers: FLUX3_TIERS, area: true };
+    if (o.tiers && typeof o.tiers === "object" && Object.keys(o.tiers).length) {
+        if (o.tier_unit !== "area") return { tiers: o.tiers, area: false, square: false, slack: 1 };
+        const how = provider && Object.prototype.hasOwnProperty.call(AREA_COUNT, provider) ? AREA_COUNT[provider] : null;
+        return { tiers: o.tiers, area: true, square: how ? how.square : null, slack: how ? how.slack : null };
+    }
+    if (o.boxes === "flux3") return { tiers: FLUX3_TIERS, area: true, square: true, slack: AREA_SLACK };
     return null;
 }
 
 /**
- * The name a variant gives the class of long side `px`: the smallest tier that holds it (util.js tierFor), compared
- * on the long side or, for an area table, on the square of it. Null without a table.
+ * @typedef {{ tiers: Record<string, number>, area: boolean, square: boolean | null, slack: number | null }} TierTable
+ * `square` and `slack` null: counted by the values (AREA_COUNT)
+ */
+
+/**
+ * The name a variant gives the class of long side `px` at `aspect` (1:1 without one): the smallest tier that holds
+ * the size Generate new asks for (sizeFor), counted as its route counts (tierTable), else the largest. An area table
+ * can name one long side differently per aspect (Oxen's 1024 px is 2 MP at 1:1, 1 MP at 16:9). Null without a table.
  *
  * @param {number} px
- * @param {{ tiers: Record<string, number>, area: boolean } | null} table
+ * @param {TierTable | null} table
+ * @param {string | null} [aspect]
  * @returns {string | null}
  */
-function tierName(px, table) {
+function tierName(px, table, aspect = null) {
     if (!table) return null;
-    const want = table.area ? px * px : px;
+    const [w, h] = sizeFor(aspect && parseAspect(aspect) ? aspect : "1:1", px);
+    const want = table.area ? w * h : Math.max(w, h);
+    /** @param {number} v */
+    const counted = (v) => {
+        if (!table.area) return v;
+        const square = table.square == null ? v < 10000 : table.square;
+        const slack = table.slack == null ? (square ? AREA_SLACK : 1) : table.slack;
+        return (square ? v * v : v) * slack;
+    };
     const list = Object.entries(table.tiers)
-        .map(([name, v]) => [name, table.area ? (+v < 10000 ? +v * +v : +v) : +v])
-        .filter(([, v]) => +v > 0)
-        .sort((a, b) => +a[1] - +b[1]);
+        .map(([name, v]) => /** @type {[string, number]} */ ([name, counted(+v)]))
+        .filter(([, v]) => v > 0)
+        .sort((a, b) => a[1] - b[1]);
     if (!list.length) return null;
-    // 15 % slack, as FLUX 3 and OpenRouter count a size into a tier (flux3.js tierOf)
-    const hit = list.find(([, v]) => +v * (table.area ? 1.15 : 1) >= want);
+    const hit = list.find(([, v]) => v >= want);
     return String((hit || list[list.length - 1])[0]);
 }
 
 /**
  * The size classes of a variant's text route: one per long side of `text.sizes` (or `fallback`), smallest first,
- * labelled with the variant's own tier name where it has one ("2k (2048 px)"), else "2048 px".
+ * labelled with the variant's own tier name where it has one ("2k (2048 px)"), else "2048 px". `provider` (the
+ * variant's id) says how an area table counts; `aspect` the shape the class is asked in (1:1 without one), since an
+ * area tier depends on it.
  *
  * @param {any} v
  * @param {number[]} [fallback]
+ * @param {{ provider?: string | null, aspect?: string | null }} [o]
  * @returns {{ px: number, name: string | null, label: string }[]}
  */
-export function classesOf(v, fallback = []) {
+export function classesOf(v, fallback = [], { provider = null, aspect = null } = {}) {
     const t = (v && v.text) || {};
     const raw = Array.isArray(t.sizes) && t.sizes.length ? t.sizes : fallback;
     const sizes = [...new Set(raw.map(Number).filter((x) => x > 0))].sort((a, b) => a - b);
-    const table = tierTable(v);
+    const table = tierTable(v, provider);
     return sizes.map((px) => {
-        const name = tierName(px, table);
+        const name = tierName(px, table, aspect);
         return { px, name, label: name ? `${name} (${px} px)` : `${px} px` };
     });
 }

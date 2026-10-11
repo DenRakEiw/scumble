@@ -121,29 +121,41 @@ note when the aspect is changed with boxes on. One look in the app; the live che
   `options.tiers` or FLUX 3's 1k / 2k / 4k: "2k (2048 px)"), `stretchNote`, `targetValid`.
 - The preset lives in the document as `genSettings.target = { recipe, provider, aspect, size, width, height }` (inside
   `gen`, like `gen.boxes`: saved, autosaved and restored without new code, no FEATURES row, no reader bump; older
-  versions keep it untouched). It counts only while the picture has `width` x `height`: a crop, a resize or another
-  picture makes it inert without clean-up. Generate new writes it again after a run (the answer's size).
+  versions keep it untouched). It counts only while the picture has `width` x `height`: a crop or a resize makes it
+  inert without clean-up; another picture opened in the tab (`loadFile`, `setBaseFromRef`: open, drag and drop, paste,
+  `load_image`) deletes it whatever its size. Generate new writes it again after a run (the answer's size, the aspect
+  as "W:H": `generate_new` takes "16x9" and "16/9" and keeps "16:9").
 - New (the editor's `newCanvas` dialog, app only through `host.newCanvasChoices(editor)`; the node's host answers null
   and its dialog stays as it is): Model (with "Any size" first, grouped API / Comfy Cloud / ComfyUI), Provider, Aspect
   (the variant's own list), Size class, a note with the working size; Width and Height follow and are disabled while a
   model is chosen. Create makes the working canvas, stores the target and calls `host.newCanvasChosen(editor, target)`
-  (the shell's `selectRecipe`). `new_canvas` keeps `{ width, height }` exactly as before and gains optional `recipe`,
-  `provider`, `aspect`, `size` for agents.
+  (the shell's `selectRecipe`). New opens on the document's valid target; in a tab without a picture on the session's
+  last preset; else on "Any size" (a tab with a picture keeps its size by default). The editor adds "Any size" itself
+  when a host's list lacks it; the plain two-number dialog keeps the ratio it opened with (only a dialog with a change
+  hook re-measures it when the tie is ticked). `new_canvas` keeps `{ width, height }` exactly as before and gains
+  optional `recipe`, `provider`, `aspect`, `size` for agents (a Comfy Cloud recipe takes its own provider id, as
+  `list_recipes` reports it, or none).
 - Generate new: the aspect select is filled from the chosen variant's list ("free" first); it opens on the document's
   valid target (mode, recipe, provider, aspect, class), else, while boxes go, on the variant's aspect nearest the
   document, else on the last choice. A line under the aspect says when boxes go stretched ("The boxes were drawn on
   16:9; at 1:1 they go stretched."); the run adds the same note (`host.runGenerate`), so agents see it.
   `generate_new` without width, height and aspect uses a valid target. `list_recipes` reports `aspects` and `classes`
   beside `sizes`; `status.generation` reports the target.
-- Labels per model: the class select shows "1k (1024 px)" where the variant names its tiers, else "1024 px". A Settings
+- Labels per model: the class select shows "1k (1024 px)" where the variant names its tiers, else "1024 px"; the name
+  is the tier the route's adapter sends for that class at the chosen aspect (FLUX 3 and OpenRouter count area with
+  15 % slack, Oxen's FLUX.2 "0.5 / 1 / 2 MP" without, so 1024 px is 2 MP at 1:1 and 1 MP at 16:9; long-side tables
+  compare the long side); the dialogs relabel on an aspect change, `list_recipes` reports the 1:1 names. A Settings
   row that is not on auto (Gemini's Size 2K and others) still decides the size: noted in the manual, not changed.
 - The refusal for a From box on a FLUX 3 new image gets its own words; Keep, Move and Remove say "no source to keep,
   move or remove".
 
 Tests (by risk, Light + one Normal step): `tools/genpresets_test.js` (plain Node over the shipped recipes: every text
 variant has at least one aspect and one class; FLUX 3 bfl 15 aspects, fal and WaveSpeed 14, classes 1k / 2k / 4k, and
-`flux3._tierOf` of `sizeFor(aspect, px)` is that class for every aspect; nearest, working size, stretch note), wired
-into `recipes_test.py`'s Node step; `tools/boxes_test.js` (a Text box on a text run, the From refusal); one step in the
-`generate` gate (New with a FLUX 3 bfl 7:5 4k preset makes 2048 x 1456 and selects the recipe, Generate new opens on
-7:5 / 4096, the stretch line with boxes at 1:1, the run's note through loopback); `new_dialog_has_two_boxes` keeps its
-two number inputs; the `commands` gate for `new_canvas`'s new parameters.
+`flux3._tierOf` of `sizeFor(aspect, px)` is that class for every aspect; every route with a tier table names each
+class, at 1:1 and at each of its aspects, as the tier its adapter's own helper picks; nearest, working size, stretch
+note), wired into `recipes_test.py`'s Node step; `tools/boxes_test.js` (a Text box on a text run, the From refusal);
+one step in the `generate` gate (New with a FLUX 3 bfl 7:5 4k preset makes 2048 x 1456 and selects the recipe,
+Generate new opens on 7:5 / 4096, the stretch line with boxes at 1:1, the run's note through loopback);
+`new_dialog_has_two_boxes` keeps its two number inputs; the `commands` gate for `new_canvas`'s new parameters (a Comfy
+Cloud recipe on its own provider id). The three gate steps write the stored `recipe`, `recipeByMode` and
+`recipeProviders` back whole and read the shell's copy again (as `tools/ark_test.py`), and fail on any residue.
