@@ -409,13 +409,17 @@ A Relight layer illuminates your picture with up to four interactive light sourc
 - **Diffusion and intensity**: Roll the mouse wheel over a handle to adjust light diffusion (softness), or hold Shift while scrolling to adjust intensity.
 - **Nudge**: Press the Arrow keys to nudge the selected light by 1 pixel, or Shift+Arrow for 10 pixels.
 - **Add and delete**: Click anywhere on the picture to add a new light at that point (up to four lights per layer), or press Delete / Backspace to remove the selected light.
+- **Hide handles**: Press **H** or click the handles eye toggle button in the relight controls header to hide on-canvas handles for an unobstructed view of the relit picture.
 - **Own light**: A grey compass ring at the bottom right indicates the estimated direction of the original scene lighting.
 
 **Light types and controls.** Each light can be configured individually in the layer row:
+- **Presets**: The Presets dropdown in the relight header provides 8 curated setups (*Studio portrait*, *Warm sunset*, *Cyberpunk neon*, *Rembrandt*, *Soft window*, *Dramatic rim*, *Golden hour*, *Film noir*) scaled to your document's dimensions, undoable in a single step.
 - **Point light**: Casts omnidirectional light with smooth inverse-distance attenuation and distance-based falloff.
 - **Sun**: Casts parallel directional sunlight from a distant azimuth and elevation angle, illuminating the entire scene without radial falloff.
 - **Spot**: Projects a focused cone of light with adjustable cone angle, soft feathered boundary, and target aiming.
+- **Gobo patterns**: Spot lights support procedural gobo masks (*None*, *Blinds*, *Window*, *Leaves*, *Stripes*) that project architectural slats, window mullions, or foliage silhouettes into the beam.
 - **Colour and temperature**: Set the light tint using standard photographic Kelvin presets (warm candlelight 1850 K, tungsten 3200 K, daylight 5500 K, cool sky 8000 K) or a custom colour picker.
+- **Gloss (specular)**: Adds Blinn-Phong specular highlight reflection off 3D surface normals (0% to 100%, default 0%), enhancing eye catchlights, shiny surfaces, or moist skin without altering diffuse shadow tones.
 
 **Global parameters.** The relight filter row provides four master controls:
 - **Original light**: Fades down the existing lighting in the original photograph (100% preserves original shading, 0% flattens shading) using an estimated ambient-diffuse reflectance decomposition.

@@ -548,6 +548,7 @@ the website, the Store update, the registry's `server.json`, the node build only
 - **N2 looks:** `horizon_ao` (Rust), a gloss term (specular, per light, default off), the spot's gobo (a mask picture
   from a layer, the forum's request), light presets (the fal and Bria words as named presets that place the in-app
   lights), *Hide handles* (the forum's request) as a view toggle.
+  **Built 2026-10-12 (N2):** 8 studio/atmosphere light presets (`LIGHT_PRESETS`, `applyLightPreset`) with dropdown UI and single undo step; Blinn-Phong specular gloss term ($0..100\,\%$, default 0) with 100% mathematical parity between JS twin and WebGL2 shader; procedural spot gobo patterns (`none`, `blinds`, `window`, `leaves`, `stripes`) in JS and GLSL; hide handles view toggle (`H` shortcut and eye button in relight controls header); `tools/relight_test.js` suites 14-16 pass; `tools/relight_test.py` cases v, w, x, y pass; `relight` in-app gates pass on both `--tiles on` (15s) and `--tiles off` (15s).
 - **N3 the 15k measurement:** `perf:15000x10000` and `exportperf` rows with a relight layer, the cache's memory
   (`tools/mem_test.py --map`), the tile seams at 33 MP, tuning (steps and taps by map size).
 

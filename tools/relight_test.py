@@ -52,7 +52,7 @@ JS = r"""
     const { host } = await import("./editor/host.js");
     const { makeMap } = await import("./editor/inpaint_maps.js");
     const PNG = await import("./editor/inpaint_png.js");
-    const { defaultLight } = await import("./editor/inpaint_relight.js");
+    const { defaultLight, applyLightPreset, LIGHT_PRESETS, SPOT_GOBOS } = await import("./editor/inpaint_relight.js");
 
     const fails = [];
     let checkCount = 0;
@@ -1018,7 +1018,81 @@ JS = r"""
     if (!hadKey) {
         await window.scumble.keys.clear("magnific");
     }
-    shell.activate(ed);
+    // -------------------------------------------------------------------------
+    // Case v: Specular (gloss) term: GL vs CPU parity and highlight boost
+    // -------------------------------------------------------------------------
+    const specLight = {
+        id: "light_1",
+        type: "point",
+        x: 200,
+        y: 200,
+        dist: -30,
+        intensity: 120,
+        color: 5500,
+        diffusion: 20,
+        specular: 75,
+        range: 60,
+        on: true,
+    };
+    const paramsSpec = { lights: [specLight], original: 100, ambient: 10, shadows: 0 };
+    const infoV = { ...ed.filterInfo(fx, { scale: 1, origin: [0, 0], full: [W, H], forRun: true }), maps: ed.maps, relight: fx._relight };
+    glVsCpu("v: specular gloss GL vs CPU", "relight", base, paramsSpec, infoV, { max: 2, over2Pct: 0.2, mean: 1.0 });
+
+    const diffLight = { ...specLight, specular: 0 };
+    const canSpec = F.applyFilter("relight", base, paramsSpec, { ...infoV, cpu: true });
+    const canDiff = F.applyFilter("relight", base, { ...paramsSpec, lights: [diffLight] }, { ...infoV, cpu: true });
+    const pxSpec = canSpec.getContext("2d").getImageData(0, 0, W, H).data;
+    const pxDiff = canDiff.getContext("2d").getImageData(0, 0, W, H).data;
+    const idxH = (200 * W + 200) * 4;
+    check("v: gloss increases brightness at highlight", pxSpec[idxH] >= pxDiff[idxH]);
+
+    // -------------------------------------------------------------------------
+    // Case w: Spot Gobo blinds: GL vs CPU parity
+    // -------------------------------------------------------------------------
+    const goboLight = {
+        id: "light_1",
+        type: "spot",
+        x: 200,
+        y: 200,
+        dist: -40,
+        intensity: 150,
+        color: 5500,
+        diffusion: 10,
+        cone: 35,
+        edge: 15,
+        gobo: "blinds",
+        aim: [200, 300],
+        on: true,
+    };
+    const paramsGobo = { lights: [goboLight], original: 100, ambient: 10, shadows: 0 };
+    glVsCpu("w: spot gobo blinds GL vs CPU", "relight", base, paramsGobo, infoV, { max: 2, over2Pct: 0.2, mean: 1.0 });
+
+    // -------------------------------------------------------------------------
+    // Case x: Light presets: applyLightPreset and undo restore
+    // -------------------------------------------------------------------------
+    const presetLights = applyLightPreset("cyberpunk_neon", { width: W, height: H });
+    check("x: cyberpunk_neon preset returns 3 lights", Array.isArray(presetLights) && presetLights.length === 3);
+    check("x: first light is magenta", presetLights[0].color === "#ff0077");
+    check("x: second light is cyan", presetLights[1].color === "#00e5ff");
+    const prevLightCount = fx.params.lights.length;
+    ed.pushUndo({ kind: "filter", id: fx.id, label: "Light preset: Cyberpunk neon" });
+    fx.params.lights = presetLights;
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+    check("x: layer has preset lights", fx.params.lights.length === 3);
+    await ed.undoStep();
+    check("x: undo restores previous lights", fx.params.lights.length === prevLightCount);
+
+    // -------------------------------------------------------------------------
+    // Case y: Hide handles view toggle
+    // -------------------------------------------------------------------------
+    check("y: initial hideLightHandles is false", ed.hideLightHandles === false);
+    ed.hideLightHandles = true;
+    check("y: hideLightHandles set to true", ed.hideLightHandles === true);
+    ed.draw();
+    ed.hideLightHandles = false;
+    check("y: hideLightHandles restored to false", ed.hideLightHandles === false);
+    ed.draw();
 
     // Keep lights tool active for visual screenshot
     ed.setTool("lights");

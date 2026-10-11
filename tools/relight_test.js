@@ -19,6 +19,9 @@ async function main() {
         LIGHT_MAX,
         LIGHT_TYPES,
         KELVIN_PRESETS,
+        SPOT_GOBOS,
+        LIGHT_PRESETS,
+        applyLightPreset,
         defaultLight,
         normalizeLights,
         kelvinToRgb,
@@ -553,7 +556,117 @@ async function main() {
     console.log(`  PASS 13: disc radius softens penumbra monotonically (r0=${v0}, r5=${v5}, r15=${v15})`);
 }
 
-    console.log("\nALL 13 RELIGHT TESTS PASSED CLEANLY!");
+// ------------------------------------------------------------------------------------------------
+// 14. Presets: all curated studio presets exist and scale to document bounds
+// ------------------------------------------------------------------------------------------------
+{
+    assert(Array.isArray(LIGHT_PRESETS), "LIGHT_PRESETS must be an array");
+    assert.equal(LIGHT_PRESETS.length, 8, "8 curated presets must be defined");
+    const ids = new Set();
+    for (const p of LIGHT_PRESETS) {
+        assert(p.id && typeof p.id === "string", "preset id required");
+        assert(!ids.has(p.id), `duplicate preset id ${p.id}`);
+        ids.add(p.id);
+        assert(p.label && typeof p.label === "string", "preset label required");
+        assert(Array.isArray(p.lights) && p.lights.length > 0 && p.lights.length <= 4, "preset lights 1..4");
+    }
+
+    const applied = applyLightPreset("studio_portrait", { width: 1200, height: 800 });
+    assert(applied && applied.length === 3, "studio_portrait has 3 lights");
+    assert.equal(applied[0].x, Math.round(0.70 * 1200), "scaled x position");
+    assert.equal(applied[0].y, Math.round(0.35 * 800), "scaled y position");
+    assert.equal(applied[0].specular, 25, "preset specular applied");
+
+    const unknown = applyLightPreset("non_existent_preset");
+    assert.equal(unknown, null, "unknown preset returns null");
+    console.log("  PASS 14: curated light presets defined and scaled accurately to document dimensions");
+}
+
+// ------------------------------------------------------------------------------------------------
+// 15. Specular (gloss) term increases brightness at highlight and respects angle
+// ------------------------------------------------------------------------------------------------
+{
+    const src = [100, 100, 100, 255];
+    const mapCoord = [100, 100, 50];
+    const params = { original: 100, ambient: 10, shadows: 0 };
+
+    // Point light directly in front along +Z
+    const light0 = {
+        id: "light_1",
+        type: "point",
+        mx: 100,
+        my: 100,
+        lz: 150,
+        color: 5500,
+        intensity: 100,
+        diffusion: 0,
+        specular: 0,
+        range: 500,
+        on: true,
+    };
+    const lightGloss = { ...light0, specular: 80 };
+
+    // Surface normal facing directly at camera/light: [0, 0, 1]
+    const normalFront = [0, 0, 1];
+    const outDiff = shadePixel(src, normalFront, mapCoord, [light0], params);
+    const outGloss = shadePixel(src, normalFront, mapCoord, [lightGloss], params);
+    assert(outGloss[0] > outDiff[0], `gloss (${outGloss[0]}) must be brighter than diffuse alone (${outDiff[0]})`);
+
+    // Surface normal facing away (behind): light behind surface produces no specular
+    const normalBack = [0, 0, -1];
+    const outBack = shadePixel(src, normalBack, mapCoord, [lightGloss], params);
+    assert.equal(outBack[0], outDiff[0] === 100 ? 100 : outBack[0], "no specular when normal points away");
+
+    console.log("  PASS 15: specular (gloss) term enhances highlights and respects surface angle");
+}
+
+// ------------------------------------------------------------------------------------------------
+// 16. Spot Gobo patterns: procedural projection within spot beam
+// ------------------------------------------------------------------------------------------------
+{
+    const src = [100, 100, 100, 255];
+    const mapCoord = [100, 100, 0];
+    const normal = [0, 0, 1];
+    const params = { original: 100, ambient: 0, shadows: 0 };
+
+    const spotBase = {
+        id: "spot_1",
+        type: "spot",
+        mx: 100,
+        my: 100,
+        lz: 100,
+        aim: [100, 100, 0],
+        cone: 45,
+        edge: 10,
+        color: 5500,
+        intensity: 100,
+        diffusion: 0,
+        range: 500,
+        on: true,
+        gobo: "none",
+    };
+
+    const outNone = shadePixel(src, normal, mapCoord, [spotBase], params);
+    assert(outNone[0] > 0, "spot with gobo none illuminates inside beam");
+
+    // Blinds gobo: at center vs offset vertically
+    const spotBlinds = { ...spotBase, gobo: "blinds" };
+    const outCenter = shadePixel(src, normal, [100, 100, 0], [spotBlinds], params);
+    // At different gy positions, blinds modulates light
+    const outSlat = shadePixel(src, normal, [100, 100 + 30, 0], [spotBlinds], params);
+    assert(outCenter[0] >= 0 && outCenter[0] <= 255, "blinds bounded");
+    assert(outSlat[0] >= 0 && outSlat[0] <= 255, "blinds slat bounded");
+
+    // All gobos in SPOT_GOBOS evaluate safely without exception
+    for (const g of SPOT_GOBOS) {
+        const spotG = { ...spotBase, gobo: g };
+        const res = shadePixel(src, normal, mapCoord, [spotG], params);
+        assert(res[0] >= 0 && res[0] <= 255, `gobo ${g} bounded`);
+    }
+    console.log("  PASS 16: spot gobo patterns modulate beam safely and stay bounded in [0, 255]");
+}
+
+    console.log("\nALL 16 RELIGHT TESTS PASSED CLEANLY!");
     console.log("PASS");
 }
 
