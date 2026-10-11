@@ -2,6 +2,9 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
+## Unreleased
+
+- Relight: pure light model, original light fit, Kelvin color conversion, and JS kernel twins for height normals and shadow march (L0a).
 
 ## 0.1.46 - 2026-10-11
 

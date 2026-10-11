@@ -78,7 +78,9 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-11: **0.1.46 released and Latest**; the Store update open)
+## Where things stand (2026-10-11: Relight L0a built; **0.1.46 released and Latest**; the Store update open)
+
+- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** L0a built (pure light model, original light fit, Kelvin conversion, lights-to-words, JS kernel twins `heightNormals` and `shadowMarch` in `renderer/editor/px/kernels_js.js`, 13 unit tests in `tools/relight_test.js` pass, node repo synced; next session is L0b: the Rust kernels).
 
 **0.1.46 is out** (tag v0.1.46, published 2026-10-11T12:03:29Z, title "seventeen blend modes, lens blur, New with a
 model"; the post `v0-1-46` live (Vercel success), the manual synced, hub 0.1.46; `server.json` 0.1.46 published to the
