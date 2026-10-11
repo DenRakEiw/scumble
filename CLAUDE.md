@@ -78,10 +78,13 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-11: **0.1.46 prepared locally, not released**: Nik 9 release 4, lens blur, the adjustments, item 34, Qwen Turbo; the user's test and word open)
+## Where things stand (2026-10-11: **0.1.46 released and Latest**; the Store update open)
 
-**0.1.46 is prepared locally, not released** (2026-10-11, this account; nothing pushed, no tag; `main` is ahead of
-`origin/main` by every commit since 0.1.45). It holds Nik 9 release 4 (R4-S1..S9 by the other agent: 27 blend modes,
+**0.1.46 is out** (tag v0.1.46, published 2026-10-11T12:03:29Z, title "seventeen blend modes, lens blur, New with a
+model"; the post `v0-1-46` live (Vercel success), the manual synced, hub 0.1.46; `server.json` 0.1.46 published to the
+MCP Registry (the user's device code); the node merged with the remote's 0.3.4 commits and pushed, `ecae956`, no new
+node version). **Waiting for the user: the Store update** (`dist/Scumble-0.1.46.msix`, 187,616,110 bytes, and
+`dist/store-listing/whats-new-0.1.46.txt`; Partner Center by hand, `docs/RELEASING.md`). It holds Nik 9 release 4 (R4-S1..S9 by the other agent: 27 blend modes,
 dissolve; R4-S10 is this release), lens blur (R2-S15), the adjustment filters vibrance, gradient map, threshold and
 posterize (the other agent's own addition, kept on the user's word), the `range_max` wasm kernel (ABI 18), **item 34**
 (New and Generate new with presets, built 2026-10-11 by this account's agents from `docs/PLAN_NEW_PRESETS.md` section 8
@@ -107,8 +110,7 @@ ambiguous with the Store app, check `winget show scumble` then).
 - **Built:** `dist/Scumble Setup 0.1.46.exe`, `dist/win-unpacked`, `dist/Scumble-0.1.46-portable-win-x64.zip`,
   `dist/scumble-0.1.46.mcpb`. Not built: the Store MSIX (`npm run dist:store`, from the tag state).
 - **Not done:** R2-S15c (the 15k `exportperf` of lens blur, now on the GPU; the plan wants it before the cap decision);
-  the user's look at the build; then the chain of `docs/RELEASING.md` on the user's word (push, tag, CI, publish, manual
-  sync, blog post `v0-1-46`, Store, registry with `node tools/mcpb_build.js --server-json v0.1.46`, the node push).
+  the Store submission (above). The user's dev-app test profile `dist/test-profile-0.1.46` can be deleted after their test.
 - A detached worktree in the scratchpad (node_modules as a junction, removed with `cmd /c rmdir` before `git worktree
   remove --force`) gated the commits while agents edited `main`; it is gone.
 
