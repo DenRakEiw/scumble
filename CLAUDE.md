@@ -88,11 +88,15 @@ Open questions for L1a/L1b (R-D2, R-D4, R-D6, R-D9) taking proposed values: filt
 stimmen wieder elevenlabs"):** "Scumble, part four: the show is on Friday", the new features of 0.1.44-0.1.46 in the
 dialogue style of parts one to three on seven of the user's FLUX 3 pictures (`dist/video/v4/src/`): plan, feature
 table, script and production notes in `docs/TUTORIAL.md` §7; **the 83 voice lines are made** (ElevenLabs, Annika and
-Mark, `docs/images/video/voice/v4_eleven/`, the listening file `dist/video/v4/voices_elevenlabs.mp3`, 3:27). Next:
-the takes (`rec/scene4_*.py` on `rec3.py`: the recording profile needs the depth model file, the film and effects
-packs, the Qwen Turbo recipe ready and FLUX 3's key; one FLUX 3 run in the close, about $0.60, and one Qwen run on
-the user's ComfyUI need the user's ok), then the scenes, the mix and the Resolve timeline as in part three. The
-tutorial material stays uncommitted (`docs/images/video/`, the TUTORIAL.md section) until the user says so.
+Mark, `docs/images/video/voice/v4_eleven/`, the listening file `dist/video/v4/voices_elevenlabs.mp3`, 3:27; Note 6
+re-voiced for FLUX 3 on the user's word, four lines, the listening file not rejoined yet). **Seven of eight takes are
+recorded** (`docs/images/video/rec/scene4.py setup|take <name>`, the instance on port 9571 on `dist/video/profile`;
+`dist/video/v4/rec/<take>/`, states in `dist/video/v4/takes/`; TUTORIAL.md §7 "Takes as made" has the table and
+what was learned): cold, n1-n6 (n6 with one FLUX 3 run, 52 s, the crown on the helmet). Open: the `close` take (one
+FLUX 3 run, the camel onto the canvas he holds, the text layer FRIDAY in Difference, the export), then the scene
+specs `motion/scenes/v4_*.json` and the engine's v4 paths (`build_scene.py` OUT / VOICE are v3's; the coat strip
+becomes the wall), the mix, the Resolve timeline, as in part three. The tutorial material stays uncommitted
+(`docs/images/video/`, the TUTORIAL.md section) until the user says so.
 
 **The B-Side agent (2026-10-11):** the user registered "Claude in Scumble" on The AI Art Magazine's agent platform
 (space.art-magazine.ai; the key in `dist/live-keys/bside_claude.txt`, pasted in chat once, to be rotated after the
@@ -103,8 +107,13 @@ user's yes in chat. The A-side open call (humans, no theme, no fee, deadline 202
 
 **Antigravity builds the relight plan** (`docs/PLAN_RELIGHT_BUILD.md`) without waiting for reviews: L0a `62a15bf`
 (15:23), L0b `0bebaec`, L1a `3a892bf`, L1b `6be4fc5` (16:44), the R-D questions answered with the plan's suggested
-values; a node build pushed to the node repo (ComfyUI answered `/system_stats` afterwards). **No session of it is
-reviewed yet** (this account's job before the release). Found 2026-10-11: four of the builder's tests
+values; a node build pushed to the node repo (ComfyUI answered `/system_stats` afterwards). **Reviewed 2026-10-11
+evening** (two agents, L0a+L0b and L1a+L1b): ten must-fix findings, the message for the builder given to the user
+in chat (the z axis inverted against the depth map in both kernels, the shader and `lightToMap`; the sun's direction
+is the handle's absolute position; the identity breaks once a light is on; `fitOriginalLight` one unconstrained
+solve; `relightStats` never gets a fit in the app, the hook hands it a canvas; `shadow_march` 0.8x of JS; the shared
+`default: []` array; canvas-backend exports do not wait for the maps; the CPU twin without the snap; duplicate light
+ids), about twenty smaller ones, and the tests that pass vacuously. Found 2026-10-11: four of the builder's tests
 (`tools/limit_test.py`, `maps_test.py`, `edges_test.py`, `selection_test.py`) print "node test passed" when no app
 is reachable; they are to end with exit 1 instead; the builder never starts the app by hand and never takes a
 screenshot (the user has three rules to paste: gates only through `run_gates.sh`, never `Stop-Process electron`, a
