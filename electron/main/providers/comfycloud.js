@@ -515,6 +515,7 @@ module.exports = {
     keyUrl: "https://platform.comfy.org/profile/api-keys",
     keyHint: "API key from platform.comfy.org (Comfy Cloud needs a paid plan; Comfy Router and the Partner API run on the same key with credits only)",
     edit(req, ctx) { return run(req, ctx, EDIT_WAIT_MS); },
+    relight(req, ctx) { return run(req, ctx, EDIT_WAIT_MS); },
     // Generate new: only a Comfy Cloud recipe's own text-to-image graph (V6 step 5); the partner nodes take no text run
     generate(req, ctx) {
         if (!(req.options && req.options.graph)) return Promise.reject(new Error("Comfy Cloud makes a new image only through a Comfy Cloud recipe's own graph; pick another provider for this model."));

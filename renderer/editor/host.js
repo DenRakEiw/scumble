@@ -3082,24 +3082,136 @@ export const host = {
             const sentPrompt = [words.prompt, prompt].filter(Boolean).join(" ");
 
             const p = layer.params || {};
-            const req = {
-                provider: route,
-                model: "image-relight",
-                kind: "relight",
-                image: picBytes,
-                lightmap: lightmapBytes,
-                prompt: sentPrompt,
-                params: {
-                    light_transfer_strength: p.strength != null ? p.strength : (p.light_transfer_strength != null ? p.light_transfer_strength : 100),
-                    style: p.style || "standard",
-                    preserve_details: p.preserve_details !== false,
-                    interpolate_from_original: !!(p.interpolate != null ? p.interpolate : p.interpolate_from_original),
-                    ...(p.advanced_settings ? { advanced_settings: p.advanced_settings } : {}),
-                },
-            };
+            let out;
+            if (route === "comfyui") {
+                if (!this.comfy || !this.comfy.connected) {
+                    throw new Error("ComfyUI is not connected: connect under Settings > ComfyUI.");
+                }
+                const list = this.shell && this.shell.recipes ? this.shell.recipes() : [];
+                const localRecipe = list.find((r) => r.id === "relight_qwen_local");
+                let info = null;
+                try { info = await this.objectInfo(); } catch (_) {}
+                if (info) {
+                    const loras = info.LoraLoaderModelOnly?.input?.required?.lora_name?.[0] || [];
+                    const unets = info.UNETLoader?.input?.required?.unet_name?.[0] || [];
+                    const missing = [];
+                    if (loras.length && !loras.includes("Qwen-Image-Edit-2509-Relight.safetensors")) {
+                        missing.push("Relight LoRA: Qwen-Image-Edit-2509-Relight.safetensors (https://huggingface.co/dx8152/Qwen-Image-Edit-2509-Relight/resolve/main/Qwen-Image-Edit-2509-Relight.safetensors)");
+                    }
+                    if (loras.length && !loras.includes("Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors")) {
+                        missing.push("Lightning LoRA: Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors (https://huggingface.co/lightx2v/Qwen-Image-Lightning/resolve/main/Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors)");
+                    }
+                    if (unets.length && !unets.includes("qwen_image_edit_2509_fp8_e4m3fn.safetensors")) {
+                        missing.push("UNet: qwen_image_edit_2509_fp8_e4m3fn.safetensors (https://huggingface.co/Comfy-Org/Qwen-Image-Edit-2509/resolve/main/split_files/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors)");
+                    }
+                    if (missing.length) {
+                        throw new Error(`Your ComfyUI lacks model files this recipe needs: ${missing.join("; ")}. Put the file in that models folder (and restart or refresh ComfyUI), then try again.`);
+                    }
+                }
+                editor.setStatus(`${L}: sending picture (${wSend} x ${hSend}) to your local ComfyUI ...`);
+                const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
+                const upload = this.uploadInput(new Blob([picBytes], { type: "image/png" }), `n${editor.node.id}_relight_${stamp}.png`);
+                const ref = await new Promise((resolve, reject) => {
+                    const t0 = Date.now(), end = Math.min(t0 + 300000, deadline || Infinity);
+                    let iv = null;
+                    const done = (fn, v) => { clearInterval(iv); fn(v); };
+                    iv = setInterval(() => {
+                        if (token && token.cancelled) done(reject, cancelled());
+                        else if (Date.now() > end) done(reject, new Error(`${L}: your ComfyUI did not take the picture within ${Math.round((Date.now() - t0) / 1000)} s.`));
+                    }, 250);
+                    upload.then((v) => done(resolve, v), (err) => done(reject, err));
+                });
+                const promptGraph = JSON.parse(JSON.stringify((localRecipe && localRecipe.prompt) || {}));
+                promptGraph["canvas"] = {
+                    class_type: "InpaintCanvasLoadRef",
+                    inputs: { ref: JSON.stringify({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" }) },
+                };
+                if (promptGraph.concat_prompt && promptGraph.concat_prompt.inputs) {
+                    promptGraph.concat_prompt.inputs.string_b = sentPrompt;
+                }
+                if (promptGraph.encode_neg && promptGraph.encode_neg.inputs) {
+                    promptGraph.encode_neg.inputs.prompt = "";
+                }
+                if (promptGraph.run && promptGraph.run.inputs) {
+                    promptGraph.run.inputs.seed = Math.floor(Math.random() * 1000000000);
+                    if (p.steps != null) promptGraph.run.inputs.steps = p.steps;
+                    if (p.cfg != null) promptGraph.run.inputs.cfg = p.cfg;
+                }
+                if (promptGraph.lora_relight && promptGraph.lora_relight.inputs && p.lora_strength != null) {
+                    promptGraph.lora_relight.inputs.strength_model = p.lora_strength / 100;
+                }
+                promptGraph["relight_out"] = { class_type: "PreviewImage", inputs: { images: ["decode", 0] } };
+                out = await this.comfyPictureRun(editor, promptGraph, "relight_out", { label: L, token, deadline, timeoutMs: 300000 });
+            } else {
+                let req;
+                if (route === "fal-iclight") {
+                    req = {
+                        provider: "fal",
+                        model: "fal-ai/iclight-v2",
+                        kind: "relight",
+                        image: picBytes,
+                        prompt: sentPrompt,
+                        initial_latent: words.latent || "None",
+                        enable_hr_fix: p.enable_hr_fix !== false,
+                        width: wSend,
+                        height: hSend,
+                        params: {
+                            initial_latent: words.latent || "None",
+                            enable_hr_fix: p.enable_hr_fix !== false,
+                        },
+                    };
+                } else if (route === "fal-bria") {
+                    req = {
+                        provider: "fal",
+                        model: "bria/fibo-edit/relight",
+                        kind: "relight",
+                        image: picBytes,
+                        prompt: sentPrompt,
+                        light_direction: words.bria?.direction || "front",
+                        light_type: p.light_type || words.bria?.type || "soft overcast daylight lighting",
+                        params: {
+                            light_direction: words.bria?.direction || "front",
+                            light_type: p.light_type || words.bria?.type || "soft overcast daylight lighting",
+                        },
+                    };
+                } else if (route === "comfycloud") {
+                    const list = this.shell && this.shell.recipes ? this.shell.recipes() : [];
+                    const relightRecipe = list.find((r) => r.id === "relight");
+                    const cloudOpts = (relightRecipe && relightRecipe.providers && relightRecipe.providers.comfycloud && relightRecipe.providers.comfycloud.options) || null;
+                    req = {
+                        provider: "comfycloud",
+                        model: "image_qwen_image_edit_2509_relight",
+                        kind: "relight",
+                        image: picBytes,
+                        prompt: sentPrompt,
+                        options: cloudOpts ? JSON.parse(JSON.stringify(cloudOpts)) : {},
+                        params: {
+                            "10:118|strength_model": (p.lora_strength ?? p.strength_model ?? 100) / 100,
+                            "10:3|steps": p.steps ?? 4,
+                            "10:3|cfg": p.cfg ?? 1.0,
+                        },
+                    };
+                } else {
+                    req = {
+                        provider: route === "magnific" ? "magnific" : route,
+                        model: "image-relight",
+                        kind: "relight",
+                        image: picBytes,
+                        lightmap: lightmapBytes,
+                        prompt: sentPrompt,
+                        params: {
+                            light_transfer_strength: p.strength != null ? p.strength : (p.light_transfer_strength != null ? p.light_transfer_strength : 100),
+                            style: p.style || "standard",
+                            preserve_details: p.preserve_details !== false,
+                            interpolate_from_original: !!(p.interpolate != null ? p.interpolate : p.interpolate_from_original),
+                            ...(p.advanced_settings ? { advanced_settings: p.advanced_settings } : {}),
+                        },
+                    };
+                }
 
-            editor.setStatus(`${L}: sending picture and light map (${wSend} x ${hSend}) to ${route} ...`);
-            const out = await providerEdit(req, token);
+                editor.setStatus(`${L}: sending picture and guidance (${wSend} x ${hSend}) to ${route} ...`);
+                out = await providerEdit(req, token);
+            }
             if (gone()) return { layer: null, seconds: 0, note: "", changed: false, route, seed: null };
             if (token.cancelled) throw cancelled();
 

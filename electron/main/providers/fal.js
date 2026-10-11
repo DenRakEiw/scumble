@@ -132,6 +132,9 @@ function layout(req) {
     const f = req.fields || {}, o = req.options || {};
     const max = +o.max_images > 0 ? +o.max_images : null;
     const own = req.mask && req.kind !== "edit" && f.mask !== false ? [["mask", f.mask || "mask_url"]] : [];
+    if (req.kind === "relight") {
+        return layoutOf({ seq: [["crop", f.image || "image_url"]], own, max, drops: "Relight takes the picture alone: reference images are left out." });
+    }
     if (req.kind === "edit" || f.images) {
         const F = f.images || "image_urls";
         return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])], own, max });
@@ -167,6 +170,39 @@ function upscaleInput(req) {
     for (const [k, v] of Object.entries(p)) {
         if (k === "random_seed" || v === "" || v == null || v === "auto") continue;
         input[k] = numbers.has(k) && Number.isFinite(+v) ? +v : v;
+    }
+    for (const k of (req.options && req.options.omit) || []) delete input[k];
+    return input;
+}
+
+/** The input of a relight request: the picture, prompt, directional latents or light type. */
+function relightInput(req) {
+    const model = String(req.model || "").replace(/^\/+|\/+$/g, "");
+    const p = req.params || {};
+    const f = req.fields || {};
+    const input = { [f.image || "image_url"]: dataUri(req.image), output_format: "png", num_images: 1 };
+    if (req.seed != null && !p.random_seed) input.seed = req.seed >>> 0;
+
+    if (model.includes("iclight")) {
+        input.prompt = req.prompt || "";
+        input.initial_latent = p.initial_latent !== undefined ? p.initial_latent : (req.initial_latent || "None");
+        input.enable_hr_fix = p.enable_hr_fix !== undefined ? !!p.enable_hr_fix : (req.enable_hr_fix !== undefined ? !!req.enable_hr_fix : true);
+        if (req.width && req.height) {
+            input.image_size = { width: req.width, height: req.height };
+        } else if (req.aspect) {
+            input.image_size = req.aspect;
+        }
+    } else if (model.includes("fibo-edit") || model.includes("bria")) {
+        input.light_direction = p.light_direction !== undefined ? p.light_direction : (req.light_direction || "front");
+        input.light_type = p.light_type !== undefined ? p.light_type : (req.light_type || "soft overcast daylight lighting");
+        if (req.prompt) input.prompt = String(req.prompt);
+    } else {
+        if (req.prompt) input.prompt = String(req.prompt);
+    }
+
+    for (const [k, v] of Object.entries(p)) {
+        if (k === "random_seed" || k === "model" || v === "" || v == null) continue;
+        input[k] = v;
     }
     for (const k of (req.options && req.options.omit) || []) delete input[k];
     return input;
@@ -273,6 +309,18 @@ module.exports = {
         const file = await fetchImage(img.url, ctx.fetch);
         return { bytes: file.bytes, mime: img.content_type || file.mime, seed: num(out.seed, req.seed), info: { model, factor: input[(req.fields && req.fields.factor) || "upscale_factor"] || null, width: img.width, height: img.height } };
     },
-    // exported for tools/upscale_test.js
+    async relight(req, ctx) {
+        const model = modelOf(req);
+        if (!req.image) throw new Error(`fal.ai ${model}: no picture to relight.`);
+        const input = relightInput(req);
+        const out = await queued(model, input, ctx, EDIT_WAIT_MS);
+        const img = (out.images && out.images[0]) || out.image;
+        if (!img || !img.url) throw new Error("fal.ai: no image in the result (" + JSON.stringify(out).slice(0, 200) + ")");
+        if (Array.isArray(out.has_nsfw_concepts) && out.has_nsfw_concepts[0]) ctx.log("result flagged as nsfw by fal.ai, image may be blurred");
+        const file = await fetchImage(img.url, ctx.fetch);
+        return { bytes: file.bytes, mime: img.content_type || file.mime, seed: num(out.seed, "seed" in input ? req.seed : null), info: { model, width: img.width, height: img.height } };
+    },
+    // exported for tools/upscale_test.js and tools/relight_request_test.js
     _upscaleInput: upscaleInput,
+    _relightInput: relightInput,
 };

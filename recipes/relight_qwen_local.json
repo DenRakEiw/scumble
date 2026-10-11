@@ -1,0 +1,173 @@
+{
+  "id": "relight_qwen_local",
+  "name": "Qwen Image Edit 2509 Relight (ComfyUI)",
+  "task": "relight",
+  "description": "Qwen Image Edit 2509 with the Qwen-Image-Edit-2509-Relight LoRA (trigger: \u91cd\u65b0\u7167\u660e) and Lightning 4-step LoRA. Relights the whole picture based on the lighting prompt. Needs Qwen-Image-Edit-2509 unet, Qwen 2.5 VL text encoder, Qwen Image VAE, and both LoRA models.",
+  "mode": "local",
+  "canvas": "canvas",
+  "result": "decode:0",
+  "needs": [
+    "InpaintCanvas",
+    "ImageFromBatch",
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "LoraLoaderModelOnly",
+    "ModelSamplingAuraFlow",
+    "CFGNorm",
+    "StringConcatenate",
+    "TextEncodeQwenImageEditPlus",
+    "VAEEncode",
+    "KSampler",
+    "VAEDecode"
+  ],
+  "settings": [
+    { "index": 1, "node": "unet", "input": "unet_name", "label": "Model" },
+    { "index": 2, "node": "clip", "input": "clip_name", "label": "Text encoder" },
+    { "index": 3, "node": "vae", "input": "vae_name", "label": "VAE" },
+    { "index": 4, "node": "lora_relight", "input": "strength_model", "label": "Relight LoRA strength" },
+    { "index": 5, "node": "run", "input": "steps", "label": "Steps" },
+    { "index": 6, "node": "run", "input": "cfg", "label": "CFG" }
+  ],
+  "models": {
+    "diffusion_models": [
+      "qwen_image_edit_2509_fp8_e4m3fn.safetensors (https://huggingface.co/Comfy-Org/Qwen-Image-Edit-2509/resolve/main/split_files/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors)"
+    ],
+    "text_encoders": [
+      "qwen_2.5_vl_7b_fp8_scaled.safetensors (https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors)"
+    ],
+    "vae": [
+      "qwen_image_vae.safetensors (https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_vae.safetensors)"
+    ],
+    "loras": [
+      "Qwen-Image-Edit-2509-Relight.safetensors (https://huggingface.co/dx8152/Qwen-Image-Edit-2509-Relight/resolve/main/Qwen-Image-Edit-2509-Relight.safetensors)",
+      "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors (https://huggingface.co/lightx2v/Qwen-Image-Lightning/resolve/main/Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors)"
+    ]
+  },
+  "prompt": {
+    "canvas": {
+      "class_type": "InpaintCanvas",
+      "inputs": {
+        "padding": 0,
+        "target_size": 0,
+        "feather": 0,
+        "multiple_of": 16
+      }
+    },
+    "img0": {
+      "class_type": "ImageFromBatch",
+      "inputs": {
+        "image": ["canvas", 0],
+        "batch_index": 0,
+        "length": 1
+      }
+    },
+    "unet": {
+      "class_type": "UNETLoader",
+      "inputs": {
+        "unet_name": "qwen_image_edit_2509_fp8_e4m3fn.safetensors",
+        "weight_dtype": "default"
+      }
+    },
+    "clip": {
+      "class_type": "CLIPLoader",
+      "inputs": {
+        "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        "type": "qwen_image",
+        "device": "default"
+      }
+    },
+    "vae": {
+      "class_type": "VAELoader",
+      "inputs": {
+        "vae_name": "qwen_image_vae.safetensors"
+      }
+    },
+    "lora_relight": {
+      "class_type": "LoraLoaderModelOnly",
+      "inputs": {
+        "model": ["unet", 0],
+        "lora_name": "Qwen-Image-Edit-2509-Relight.safetensors",
+        "strength_model": 1
+      }
+    },
+    "lora_lightning": {
+      "class_type": "LoraLoaderModelOnly",
+      "inputs": {
+        "model": ["lora_relight", 0],
+        "lora_name": "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors",
+        "strength_model": 1
+      }
+    },
+    "sampling": {
+      "class_type": "ModelSamplingAuraFlow",
+      "inputs": {
+        "model": ["lora_lightning", 0],
+        "shift": 3
+      }
+    },
+    "cfgnorm": {
+      "class_type": "CFGNorm",
+      "inputs": {
+        "model": ["sampling", 0],
+        "strength": 1,
+        "pre_cfg": false
+      }
+    },
+    "concat_prompt": {
+      "class_type": "StringConcatenate",
+      "inputs": {
+        "string_a": "\u91cd\u65b0\u7167\u660e,",
+        "string_b": ["canvas", 7],
+        "delimiter": ""
+      }
+    },
+    "encode_pos": {
+      "class_type": "TextEncodeQwenImageEditPlus",
+      "inputs": {
+        "prompt": ["concat_prompt", 0],
+        "clip": ["clip", 0],
+        "vae": ["vae", 0],
+        "image1": ["img0", 0]
+      }
+    },
+    "encode_neg": {
+      "class_type": "TextEncodeQwenImageEditPlus",
+      "inputs": {
+        "prompt": ["canvas", 12],
+        "clip": ["clip", 0],
+        "vae": ["vae", 0],
+        "image1": ["img0", 0]
+      }
+    },
+    "vae_encode": {
+      "class_type": "VAEEncode",
+      "inputs": {
+        "pixels": ["img0", 0],
+        "vae": ["vae", 0]
+      }
+    },
+    "run": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": ["cfgnorm", 0],
+        "positive": ["encode_pos", 0],
+        "negative": ["encode_neg", 0],
+        "latent_image": ["vae_encode", 0],
+        "seed": ["canvas", 10],
+        "steps": 4,
+        "cfg": 1,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 1
+      }
+    },
+    "decode": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": ["run", 0],
+        "vae": ["vae", 0]
+      }
+    }
+  }
+}

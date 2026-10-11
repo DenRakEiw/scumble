@@ -516,6 +516,7 @@ the fal variants (`fal.js`: two models, `lightsToWords` into `prompt` / `initial
 
 **Tests.** Light: `tools/relight_request_test.js` extended (the fal bodies, the ComfyUI prompt's LoRA nodes and the
 trigger word, the Cloud graph's shape); `recipes` gate. **Effort** 1 d.
+**Built 2026-10-11:** `recipes/relight_qwen_local.json` local ComfyUI recipe; `recipes/relight.json` prompt routes (fal IC-Light v2, fal Bria with 13 light types, Comfy Cloud); `fal.js` layout and `relightInput`; `comfycloud.js` relight call; `inpaint_canvas.js` route controls; `host.js` ComfyUI local model checks and prompt execution; `tools/relight_request_test.js` suites 7, 8, 9 pass; `recipes_test.js` (195 checks pass); `relight` in-app gates pass on tiles and canvas.
 
 ### 5.10 L6: the docs pass and the hand-over
 

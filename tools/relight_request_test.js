@@ -14,8 +14,9 @@ const { pathToFileURL } = require("node:url");
 const ROOT = path.join(__dirname, "..");
 const REFS = path.join(ROOT, "tools", "refs", "magnific");
 
-// Load Magnific provider
+// Load Magnific and fal providers
 const mag = require(path.join(ROOT, "electron", "main", "providers", "magnific.js"));
+const fal = require(path.join(ROOT, "electron", "main", "providers", "fal.js"));
 const providers = require(path.join(ROOT, "electron", "main", "providers", "index.js"));
 
 // Schema validator matching tools/magnific_test.js
@@ -466,6 +467,142 @@ async function main() {
         assert.equal(lay.pictures[1].role, "lightmap", "Picture 1 is lightmap (transfer_light_from_lightmap)");
 
         console.log("  PASS 6: Providers index relight layout returns crop and lightmap");
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // 7. fal relight mappings and layout check
+    // ------------------------------------------------------------------------------------------------
+    {
+        // IC-Light v2
+        const reqIclight = {
+            model: "fal-ai/iclight-v2",
+            kind: "relight",
+            image: tinyPng(),
+            prompt: "Relight: a warm light from the left",
+            initial_latent: "Left",
+            enable_hr_fix: true,
+            width: 1024,
+            height: 768,
+            seed: 42,
+        };
+        const inIclight = fal._relightInput(reqIclight);
+        assert(inIclight.image_url.startsWith("data:image/png;base64,"), "image_url is base64 dataUri");
+        assert.equal(inIclight.prompt, "Relight: a warm light from the left");
+        assert.equal(inIclight.initial_latent, "Left");
+        assert.equal(inIclight.enable_hr_fix, true);
+        assert.deepEqual(inIclight.image_size, { width: 1024, height: 768 });
+        assert.equal(inIclight.seed, 42);
+        assert.equal(inIclight.num_images, 1);
+        assert.equal(inIclight.output_format, "png");
+
+        // Bria FIBO Relight
+        const reqBria = {
+            model: "bria/fibo-edit/relight",
+            kind: "relight",
+            image: tinyPng(),
+            prompt: "Relight: bright sunlight",
+            light_direction: "top-down",
+            light_type: "low-angle sunlight",
+            seed: 99,
+        };
+        const inBria = fal._relightInput(reqBria);
+        assert(inBria.image_url.startsWith("data:image/png;base64,"), "image_url is base64 dataUri");
+        assert.equal(inBria.prompt, "Relight: bright sunlight");
+        assert.equal(inBria.light_direction, "top-down");
+        assert.equal(inBria.light_type, "low-angle sunlight");
+        assert.equal(inBria.seed, 99);
+        assert.equal(inBria.output_format, "png");
+
+        // fal.layout({ kind: "relight" })
+        const lay = fal.layout({
+            model: "fal-ai/iclight-v2",
+            kind: "relight",
+            references: [tinyPng()],
+        });
+        assert(lay, "fal.layout returns layout");
+        assert.equal(lay.pictures.length, 1, "Relight layout specifies only 1 picture (the crop)");
+        assert.equal(lay.pictures[0].role, "crop");
+        assert(lay.drops && lay.drops.includes("Relight takes the picture alone"), "drops mentions reference images left out");
+
+        console.log("  PASS 7: fal relight inputs (IC-Light v2, Bria) and layout drops verified");
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // 8. ComfyUI local recipe relight_qwen_local structure and trigger word
+    // ------------------------------------------------------------------------------------------------
+    {
+        const localPath = path.join(ROOT, "recipes", "relight_qwen_local.json");
+        assert(fs.existsSync(localPath), "relight_qwen_local.json exists");
+        const raw = fs.readFileSync(localPath, "utf8");
+        assert(!/[^\x00-\x7F]/.test(raw), "relight_qwen_local.json is 100% pure ASCII");
+        const recipe = JSON.parse(raw);
+
+        assert.equal(recipe.id, "relight_qwen_local");
+        assert.equal(recipe.task, "relight");
+        assert.equal(recipe.mode, "local");
+        assert.equal(recipe.canvas, "canvas");
+        assert.equal(recipe.result, "decode:0");
+
+        // InpaintCanvas inputs
+        assert.deepEqual(recipe.prompt.canvas.inputs, {
+            padding: 0,
+            target_size: 0,
+            feather: 0,
+            multiple_of: 16,
+        });
+
+        // Two LoraLoaderModelOnly nodes
+        assert.equal(recipe.prompt.lora_relight.class_type, "LoraLoaderModelOnly");
+        assert.equal(recipe.prompt.lora_relight.inputs.lora_name, "Qwen-Image-Edit-2509-Relight.safetensors");
+        assert.equal(recipe.prompt.lora_lightning.class_type, "LoraLoaderModelOnly");
+        assert.equal(recipe.prompt.lora_lightning.inputs.lora_name, "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors");
+
+        // Trigger word concatenation
+        assert.equal(recipe.prompt.concat_prompt.class_type, "StringConcatenate");
+        assert.equal(recipe.prompt.concat_prompt.inputs.string_a, "\u91cd\u65b0\u7167\u660e,");
+
+        // Download models links
+        assert(recipe.models && recipe.models.loras, "models.loras exists");
+        assert(recipe.models.loras.some((l) => l.includes("Qwen-Image-Edit-2509-Relight.safetensors") && l.includes("https://huggingface.co/")), "Relight LoRA download link present");
+        assert(recipe.models.loras.some((l) => l.includes("Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors") && l.includes("https://huggingface.co/")), "Lightning LoRA download link present");
+
+        console.log("  PASS 8: ComfyUI local recipe relight_qwen_local structure, LoRA nodes, and trigger word verified");
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // 9. Comfy Cloud relight variant in recipes/relight.json
+    // ------------------------------------------------------------------------------------------------
+    {
+        const relightPath = path.join(ROOT, "recipes", "relight.json");
+        const raw = fs.readFileSync(relightPath, "utf8");
+        assert(!/[^\x00-\x7F]/.test(raw), "recipes/relight.json is 100% pure ASCII");
+        const rec = JSON.parse(raw);
+
+        assert(rec.providers && rec.providers.comfycloud, "comfycloud provider exists");
+        const cc = rec.providers.comfycloud;
+        assert(cc.options && cc.options.graph, "comfycloud holds options.graph");
+        const g = cc.options.graph;
+
+        // Node 11 is picture 0 LoadImage
+        assert.equal(g["11"].class_type, "LoadImage");
+        assert.equal(g["11"]._meta.title, "scumble:picture:0");
+
+        // Node 12 is SaveImage
+        assert.equal(g["12"].class_type, "SaveImage");
+
+        // Node 14 is StringConcatenate with trigger word
+        assert.equal(g["14"].class_type, "StringConcatenate");
+        assert.equal(g["14"].inputs.string_a, "\u91cd\u65b0\u7167\u660e,");
+
+        // Node 15 is user prompt
+        assert.equal(g["15"].class_type, "PrimitiveStringMultiline");
+
+        // Settings rows
+        assert(Array.isArray(cc.settings), "cc.settings is array");
+        assert(cc.settings.some((s) => s.key === "10:118|strength_model"), "Settings row for LoRA strength exists");
+        assert(cc.settings.some((s) => s.key === "10:3|steps"), "Settings row for steps exists");
+
+        console.log("  PASS 9: Comfy Cloud relight graph shape, trigger word, and settings verified");
     }
 
     console.log("\nALL RELIGHT REQUEST TESTS PASSED CLEANLY!");

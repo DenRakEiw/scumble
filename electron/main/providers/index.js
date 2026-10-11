@@ -94,6 +94,11 @@ function upscaleProviders() {
     return Object.entries(PROVIDERS).filter(([, p]) => typeof p.upscale === "function").map(([id]) => id);
 }
 
+/** Which providers have a relight endpoint (the recipes' `task: "relight"` variants). */
+function relightProviders() {
+    return Object.entries(PROVIDERS).filter(([, p]) => typeof p.relight === "function").map(([id]) => id);
+}
+
 /** Which providers can make an image from the prompt alone (Generate new). */
 function textProviders() {
     return Object.entries(PROVIDERS).filter(([, p]) => typeof p.generate === "function").map(([id]) => id);
@@ -390,4 +395,4 @@ async function balance(id) {
     }
 }
 
-module.exports = { edit, cancel, layout, balance, describeAll, textProviders, upscaleProviders, PROVIDERS };
+module.exports = { edit, cancel, layout, balance, describeAll, textProviders, upscaleProviders, relightProviders, PROVIDERS };
