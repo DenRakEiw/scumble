@@ -84,21 +84,29 @@ code.
 Open questions for L1a/L1b (R-D2, R-D4, R-D6, R-D9) taking proposed values: filter layer `relight` with lights in params, shadows default 60%, 4 lights max (single RGBA8 texture), first light white 5500 K 100% diffusion 30 front of centre dist -30 original light 100 ambient 15 depth 50.
 
 
-**Video 4 started (2026-10-11 afternoon, the user: "mache einen neuen tutorial, das die neuen features zeigt ...
-stimmen wieder elevenlabs"):** "Scumble, part four: the show is on Friday", the new features of 0.1.44-0.1.46 in the
-dialogue style of parts one to three on seven of the user's FLUX 3 pictures (`dist/video/v4/src/`): plan, feature
-table, script and production notes in `docs/TUTORIAL.md` §7; **the 83 voice lines are made** (ElevenLabs, Annika and
-Mark, `docs/images/video/voice/v4_eleven/`, the listening file `dist/video/v4/voices_elevenlabs.mp3`, 3:27; Note 6
-re-voiced for FLUX 3 on the user's word, four lines, the listening file not rejoined yet). **Seven of eight takes are
-recorded** (`docs/images/video/rec/scene4.py setup|take <name>`, the instance on port 9571 on `dist/video/profile`;
-`dist/video/v4/rec/<take>/`, states in `dist/video/v4/takes/`; TUTORIAL.md §7 "Takes as made" has the table and
-what was learned): cold, n1-n6 and close, two FLUX 3 runs (the crown 52 s, the camel onto the canvas 55 s, about
-$1.20 together; the export `dist/video/v4/final/show_poster.png`). **All eight takes are in.** Next (its own
-section): the scene specs `motion/scenes/v4_*.json` and the engine's v4 paths (`build_scene.py` OUT / VOICE are
-v3's; the coat strip becomes the wall), the listening file rejoined after Note 6's four new lines, the mix, the
-Resolve timeline "04 Scumble part four", the master and the web file, as in part three (TUTORIAL.md "Video 3 as
-made"). The recording instance on port 9571 can be closed (`SCUMBLE_CDP_PORT=9571 python tools/close_app.py`). The
-tutorial material stays uncommitted (`docs/images/video/`, the TUTORIAL.md section) until the user says so.
+**Video 4 is cut (2026-10-11 night; the user: "mache einen neuen tutorial, das die neuen features zeigt ... stimmen
+wieder elevenlabs", then "mit tollem motion design ja? und cut in davinci resolve"):** "Scumble, part four: the show
+is on Friday", the features of 0.1.44-0.1.46 in the dialogue style of parts one to three on seven of the user's FLUX 3
+pictures; plan, script, "Voices as made", "Takes as made" and **"The cut as made"** in `docs/TUTORIAL.md` §7. The 83
+ElevenLabs lines (`voice/v4_eleven/`), ten takes (`rec/scene4.py`; cold retaken, n6b and close2 retaken from the saved
+states with the selection cleared, so Note 06 and the close are two scenes each, joined by a plain cut), ten scene
+specs `motion/scenes/v4_*.json` (two agents, validated with `--plan` and check frames), the engine changes
+(`build_scene.py` a scene file and engine page per scene for parallel renders; `scene_engine.html` `cut: true` and the
+`wall` strip; `order4.py` for the progress line; `title4.html` the title card), `build_final4.py` (the mix at -14.0
+LUFS / -1.8 dBTP, the three bed splices inside drops, SRT, chapters, a 720p preview), `rec/resolve4.py` (Resolve 21.1.1
+through the DaVinci MCP: project "Scumble Tutorials", timeline "04 Scumble part four", 9,555 frames, the end card's
+overhang cut by `MarkOut`). **Files** in `dist/video/v4/final/`: `04_scumble_part_four_resolve.mp4` (Resolve's H.264
+NVIDIA at 106 Mbps, 4.25 GB: the "H.264 Master" preset ignores `VideoQuality` in 21.1.1 and writes a `.mov` unless the
+format is set to mp4; "YouTube - 1440p" gives 10 Mbps), the master `04_scumble_part_four.mp4` (its x264 CRF 16 encode,
+5:18.5, the audio copied) and `04_web.mp4` (1080p, CRF 25), `04_scumble_part_four.en.srt` (83 cues), `chapters.txt`
+(0:00 / 0:37 / 1:10 / 1:44 / 2:23 / 2:59 / 3:34 / 4:16), `poster.jpg`, the stems, `timeline.json`; the YouTube text in
+`dist/video/youtube_descriptions.md` "Video 4" (4,831 characters, three part links to fill in). An independent check of
+the Resolve render (frames, freezes, OCR for names and paths, the SRT against `lines.json`) runs as an agent; its report
+lands in `dist/video/v4/check/report.md`. **Waiting for the user:** watch it; the close's status line shows the dev
+path "Saved F:/canvas/dist/video/v4/final/show_poster.png" under the status cam (keep, or retake close2 into a neutral
+folder and run the three steps again); the tally "about $1.20" against the Black Forest Labs dashboard; upload,
+website entry and the commit of the material (`docs/images/video/`, the TUTORIAL.md section) only on the user's word.
+The recording instance on port 9571 is closed.
 
 **The B-Side agent (2026-10-11):** the user registered "Claude in Scumble" on The AI Art Magazine's agent platform
 (space.art-magazine.ai; the key in `dist/live-keys/bside_claude.txt`, pasted in chat once, to be rotated after the
