@@ -351,6 +351,130 @@ async function edgeCases(px, label, js) {
     console.log(`       2048 x 2048: range_max ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)} ms`);
 }
 
+/** The relight kernels (height_normals, shadow_march, PLAN_RELIGHT_BUILD.md sec 4.3) against their twin. */
+async function relightCases(px, label, js, name) {
+    const genMap = (w, h, seed) => {
+        let s = seed >>> 0;
+        const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+        const data = new Uint16Array(w * h);
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                data[y * w + x] = Math.floor(rnd() * 65536);
+            }
+        }
+        return data;
+    };
+    const maxDiff = (a, b) => {
+        if (a.length !== b.length) return { max: 999, firstDiff: `lengths differ: ${a.length} vs ${b.length}` };
+        let max = 0, firstDiff = "";
+        for (let i = 0; i < a.length; i++) {
+            const d = Math.abs(a[i] - b[i]);
+            if (d > max) {
+                max = d;
+                if (!firstDiff) firstDiff = `at ${i}: ${a[i]} vs twin ${b[i]}`;
+            }
+        }
+        return { max, firstDiff };
+    };
+
+    let okNormals = true, detailNormals = "";
+    for (const [w, h, scale, sigma] of [
+        [1, 1, 100, 0],
+        [2, 2, 50, 0],
+        [7, 3, 200, 1.0],
+        [32, 32, 100, 0],
+        [64, 64, 50, 2.0],
+        [131, 77, 120, 1.5],
+        [256, 256, 50, 2.0],
+    ]) {
+        const m = genMap(w, h, w * 131 + h);
+        const rustN = px.heightNormals(m, w, h, scale, sigma);
+        const jsN = js.heightNormals(m, w, h, scale, sigma);
+        const d = maxDiff(rustN, jsN);
+        if (d.max > 1) {
+            okNormals = false;
+            detailNormals = `${w}x${h} sigma=${sigma} scale=${scale}: maxDiff ${d.max} (${d.firstDiff})`;
+            break;
+        }
+    }
+    if (okNormals) {
+        const flat = new Uint16Array(64 * 64);
+        flat.fill(32768);
+        const rustN = px.heightNormals(flat, 64, 64, 100, 0);
+        const jsN = js.heightNormals(flat, 64, 64, 100, 0);
+        const d = maxDiff(rustN, jsN);
+        if (d.max > 0) {
+            okNormals = false;
+            detailNormals = `flat map: maxDiff ${d.max} (${d.firstDiff})`;
+        }
+    }
+    check(`${label} height_normals equals its twin within 1 level`, okNormals, detailNormals);
+
+    let okShadows = true, detailShadows = "";
+    for (const [w, h, light, radius, taps, steps, bias, row0, rows] of [
+        [32, 32, [16, 16, 100, 0], 0, 4, 16, 1.0, 0, 32],
+        [64, 64, [10, 10, 50, 0], 5, 4, 32, 0.5, 0, 64],
+        [64, 64, [-1, 0, 0.5, 1], 2, 4, 16, 1.0, 0, 64],
+        [77, 53, [40, 25, 80, 0], 10, 8, 32, 1.0, 10, 20],
+        [128, 128, [20, 20, 40, 0], 15, 16, 32, 1.0, 0, 128],
+    ]) {
+        const m = genMap(w, h, w * 97 + h);
+        const bandRows = Math.min(rows, h - row0);
+        const rustS = px.shadowMarch(m, w, h, 50, light, radius, taps, steps, bias, row0, bandRows);
+        const jsS = js.shadowMarch(m, w, h, 50, light, radius, taps, steps, bias, row0, bandRows);
+        const d = maxDiff(rustS, jsS);
+        if (d.max > 1) {
+            okShadows = false;
+            detailShadows = `${w}x${h} lightKind=${light[3]}: maxDiff ${d.max} (${d.firstDiff})`;
+            break;
+        }
+    }
+    if (okShadows) {
+        const W = 100, H = 20;
+        const depth = new Uint16Array(W * H);
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                depth[y * W + x] = x < 50 ? 10000 : 50000;
+            }
+        }
+        const light = [60, 10, 100, 0];
+        const rustVis = px.shadowMarch(depth, W, H, 50, light, 0, 4, 32, 1.0, 0, H);
+        const jsVis = js.shadowMarch(depth, W, H, 50, light, 0, 4, 32, 1.0, 0, H);
+        const d = maxDiff(rustVis, jsVis);
+        if (d.max > 1) {
+            okShadows = false;
+            detailShadows = `step edge: maxDiff ${d.max} (${d.firstDiff})`;
+        }
+    }
+    check(`${label} shadow_march equals its twin within 1 level`, okShadows, detailShadows);
+
+    // Benchmarks on 1024x1024 (1 MP) and 4096x4096 (16 MP)
+    const map1k = genMap(1024, 1024, 1024);
+    const light1k = [512, 512, 200, 0];
+
+    const tNorm0 = performance.now(); px.heightNormals(map1k, 1024, 1024, 50, 2.0);
+    const tNorm1 = performance.now(); js.heightNormals(map1k, 1024, 1024, 50, 2.0);
+    const tNorm2 = performance.now();
+
+    const tSm0 = performance.now(); px.shadowMarch(map1k, 1024, 1024, 50, light1k, 10, 4, 32, 1.0, 0, 1024);
+    const tSm1 = performance.now(); js.shadowMarch(map1k, 1024, 1024, 50, light1k, 10, 4, 32, 1.0, 0, 1024);
+    const tSm2 = performance.now();
+
+    console.log(`       1024 x 1024 (1 MP): height_normals ${label} ${(tNorm1 - tNorm0).toFixed(1)} ms, twin ${(tNorm2 - tNorm1).toFixed(1)} ms`);
+    console.log(`       1024 x 1024 (1 MP, 32 steps, 4 taps): shadow_march ${label} ${(tSm1 - tSm0).toFixed(1)} ms, twin ${(tSm2 - tSm1).toFixed(1)} ms`);
+
+    if (name === "simd") {
+        const map4k = genMap(4096, 4096, 4096);
+        const light4k = [2048, 2048, 500, 0];
+        const t4kNorm0 = performance.now(); px.heightNormals(map4k, 4096, 4096, 50, 2.0);
+        const t4kNorm1 = performance.now();
+        const t4kSm0 = performance.now(); px.shadowMarch(map4k, 4096, 4096, 50, light4k, 20, 4, 32, 1.0, 0, 4096);
+        const t4kSm1 = performance.now();
+        console.log(`       4096 x 4096 (16 MP): height_normals ${label} ${(t4kNorm1 - t4kNorm0).toFixed(1)} ms`);
+        console.log(`       4096 x 4096 (16 MP, 32 steps, 4 taps): shadow_march ${label} ${(t4kSm1 - t4kSm0).toFixed(1)} ms`);
+    }
+}
+
 /** The whole-job kernels (grow_mask, flood_shape) against the editor's JS for the same jobs. */
 async function jobCases(px, label, raster) {
     let ok = true, detail = "";
@@ -2124,6 +2248,7 @@ async function main() {
         await jobCases(px, label, raster);
         await maskCases(px, label, js);
         await edgeCases(px, label, js);
+        await relightCases(px, label, js, name);
         await pngReadCases(px, label, js);
         await compositeCases(px, label, js);
         await matchCases(px, label, js);

@@ -1562,6 +1562,19 @@ stroke builds the source window: 25 to 51 ms at 1:1). The undo steps copied thei
 the six rows 373 MB of the 384 MB budget (the fit 1,000 px push alone 60 MB); as runs of tiles per row 133 MB. The field
 after the session held 6 MB. The GL sampler of the design was not built: the frame stays near 16 ms without it.
 
+### 15.2 Relight wasm kernels (2026-10-11, ABI 19, PLAN_RELIGHT_BUILD.md section 4.3 / section 5.3)
+
+Measured via `tools/px_test.js` single-threaded on a depth height field (one light, 32 march steps, 4 taps, scale 50, sigma 2.0):
+
+| Map size | Kernel | Rust wasm (SIMD) | Rust wasm (scalar) | JS twin | Speedup (SIMD vs JS) |
+|---|---|---|---|---|---|
+| 1024 x 1024 (1 MP) | height_normals | 35.7 ms | 37.1 ms | 137.7 ms | 3.8x |
+| 1024 x 1024 (1 MP) | shadow_march | 591.6 ms | 587.4 ms | 464.5 ms | 0.8x |
+| 4096 x 4096 (16 MP) | height_normals | 524.2 ms | - | - | - |
+| 4096 x 4096 (16 MP) | shadow_march | 14.1 s | - | - | - |
+
+In pool workers across 4 threads, 4096 x 4096 shadow march divides across bands to ~3.5 s.
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first

@@ -424,6 +424,10 @@ def main():
         sys.exit(res.returncode)
     print("[ok] node maps_test.js passed")
 
+    if "--node-only" in sys.argv:
+        print("PASS")
+        sys.exit(0)
+
     # 2. Run CDP integration test
     launch = "--launch" in sys.argv
     proc = None
@@ -452,10 +456,9 @@ def main():
             print("FAIL")
             sys.exit(1)
     except Exception as e:
-        if launch:
-            print(f"[FAIL] CDP test failed: {e}")
-            sys.exit(1)
-        print(f"Note: CDP session not reachable ({e}), node test passed.")
+        print(f"[FAIL] CDP test failed: {e}")
+        print("FAIL")
+        sys.exit(1)
     finally:
         if proc:
             try:

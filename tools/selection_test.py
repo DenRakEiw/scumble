@@ -935,11 +935,14 @@ if __name__ == "__main__":
         sys.exit(1)
     print("[ok] node selection_test.js passed")
 
+    if "--node-only" in sys.argv:
+        print("PASS")
+        sys.exit(0)
+
     try:
         ok = asyncio.run(session(run_all))
         sys.exit(0 if ok else 1)
     except Exception as err:
-        # If no CDP connection could be made, but node tests passed and offline flag or standalone:
-        print("Note: CDP session not reachable (%s), node test passed." % err)
-        print("PASS")
-        sys.exit(0)
+        print(f"[FAIL] CDP session not reachable: {err}")
+        print("FAIL")
+        sys.exit(1)

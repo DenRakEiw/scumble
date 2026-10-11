@@ -29,6 +29,7 @@ mod mip;
 mod png;
 mod poisson;
 mod psd;
+mod relight;
 mod resample;
 mod smudge;
 
@@ -40,11 +41,11 @@ fn align_for(bytes: usize) -> usize {
     if bytes >= 16 * 1024 { 4096 } else { 8 }
 }
 
-/// Bumped whenever an export changes its signature or learns a new op (18: range_max);
+/// Bumped whenever an export changes its signature or learns a new op (19: height_normals, shadow_march);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    18
+    19
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -349,4 +350,68 @@ pub unsafe extern "C" fn range_max(src: *const u16, w: usize, h: usize, out: *mu
         slice::from_raw_parts_mut(out, w * h),
     );
 }
+
+// ---- relight kernels (PLAN_RELIGHT_BUILD.md sec 4.3) --------------------------------------
+
+/// Surface normals from u16 height field: n = normalize(-dz/dx, -dz/dy, 1.0)
+/// after Gaussian blur with sigma; packed as RGBA8 (n * 127.5 + 127.5, A=255).
+#[no_mangle]
+pub unsafe extern "C" fn height_normals(
+    depth: *const u16,
+    w: usize,
+    h: usize,
+    scale: f32,
+    sigma: f32,
+    out: *mut u8,
+) {
+    if depth.is_null() || out.is_null() || w == 0 || h == 0 {
+        return;
+    }
+    relight::height_normals(
+        slice::from_raw_parts(depth, w * h),
+        w,
+        h,
+        scale,
+        sigma,
+        slice::from_raw_parts_mut(out, w * h * 4),
+    );
+}
+
+/// Marches shadow rays through u16 depth height field.
+/// Output is u8 visibility (0=shadow, 255=lit) for rows [row0 .. row0 + rows].
+#[no_mangle]
+pub unsafe extern "C" fn shadow_march(
+    depth: *const u16,
+    w: usize,
+    h: usize,
+    scale: f32,
+    light: *const f32,
+    radius: f32,
+    taps: u32,
+    steps: u32,
+    bias: f32,
+    row0: usize,
+    rows: usize,
+    out: *mut u8,
+) {
+    if depth.is_null() || light.is_null() || out.is_null() || w == 0 || h == 0 || row0 >= h {
+        return;
+    }
+    let band_rows = rows.min(h - row0);
+    relight::shadow_march(
+        slice::from_raw_parts(depth, w * h),
+        w,
+        h,
+        scale,
+        slice::from_raw_parts(light, 4),
+        radius,
+        taps,
+        steps,
+        bias,
+        row0,
+        band_rows,
+        slice::from_raw_parts_mut(out, w * band_rows),
+    );
+}
+
 

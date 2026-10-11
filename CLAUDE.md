@@ -78,9 +78,12 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-11: Relight L0a built; **0.1.46 released and Latest**; the Store update open)
+## Where things stand (2026-10-11: Relight L0b built; **0.1.46 released and Latest**; the Store update open)
 
-- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** L0a built (pure light model, original light fit, Kelvin conversion, lights-to-words, JS kernel twins `heightNormals` and `shadowMarch` in `renderer/editor/px/kernels_js.js`, 13 unit tests in `tools/relight_test.js` pass, node repo synced; next session is L0b: the Rust kernels).
+- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** L0b built (Rust kernels `height_normals` and `shadow_march` in `crates/px` ABI 19, dispatch in `kernels.js` with JS twins as fallback, `tools/px_test.js` SIMD and scalar PASS within 1 level, performance documented in `docs/PERFORMANCE.md` section 15.2; rule 1 tests updated with strict app check; node repo synced; next session is L1a: the filter layer).
+Before L1a: "The in-app route lays a geometry-aware light over the visible picture: each light brightens the surfaces that face it, falls off with distance, is blocked where the depth map says a nearer surface lies between, and can flatten the picture's own directional shading (the Original light slider); it never regenerates pixels, so there are no new highlights in eyes, no reflections, no shadows the depth map cannot see, and every texture stays exactly as it is. A filter layer, instant, free, re-editable, maskable."
+Open questions for L1a (R-D2, R-D4, R-D6, R-D9) taking proposed values: filter layer `relight` with lights in params, shadows default 60%, 4 lights max (single RGBA8 texture), first light white 5500 K 100% diffusion 30 front of centre dist -30 original light 100 ambient 15 depth 50.
+
 
 **0.1.46 is out** (tag v0.1.46, published 2026-10-11T12:03:29Z, title "seventeen blend modes, lens blur, New with a
 model"; the post `v0-1-46` live (Vercel success), the manual synced, hub 0.1.46; `server.json` 0.1.46 published to the

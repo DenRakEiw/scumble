@@ -848,14 +848,20 @@ def main():
         sys.exit(res.returncode)
     print("[ok] node limit_test.js passed")
 
-    # 2. Run CDP integration test if browser session is reachable
+    if "--node-only" in sys.argv:
+        print("PASS")
+        sys.exit(0)
+
+    # 2. Run CDP integration test
     try:
         ok = asyncio.run(session(run))
         if not ok:
             print("FAIL")
             sys.exit(1)
     except Exception as e:
-        print(f"Note: CDP session not reachable ({e}), node test passed.")
+        print(f"[FAIL] CDP session not reachable: {e}")
+        print("FAIL")
+        sys.exit(1)
 
     print("PASS")
     sys.exit(0)
