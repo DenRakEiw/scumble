@@ -451,6 +451,7 @@ async function main() {
 }
 
     console.log("\nALL 13 RELIGHT TESTS PASSED CLEANLY!");
+    console.log("PASS");
 }
 
 main().catch((err) => {

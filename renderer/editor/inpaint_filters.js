@@ -18,6 +18,7 @@ import { colorGradeTables, gradeIdentity, hslPixel, hslIdentity } from "./inpain
 import { buildWheelsControl, buildHslControl } from "./inpaint_wheels.js";
 import { applyVibrance, applyGradientMap, applyThreshold, applyPosterize } from "./inpaint_adjustments.js";
 import { applyLensBlur, lensBlurReach } from "./inpaint_lensblur.js";
+import { applyRelight, relightStats } from "./inpaint_relight.js";
 
 
 function makeCanvas(w, h) {
@@ -1196,6 +1197,25 @@ export const FILTERS = {
         reach: (p, info) => lensBlurReach(p, info || { width: 1024, height: 1024 }),
         apply: applyLensBlur,
     },
+    relight: {
+        label: "Relight",
+        params: [
+            { key: "lights", type: "custom", default: [] },
+            { key: "original", label: "Original light", min: 0, max: 100, step: 1, default: 100, unit: "%" },
+            { key: "ambient", label: "Ambient", min: 0, max: 100, step: 1, default: 15, unit: "%" },
+            { key: "depth_scale", label: "Depth", min: 5, max: 200, step: 1, default: 50, unit: "%" },
+            { key: "shadows", label: "Shadows", min: 0, max: 100, step: 1, default: 60, unit: "%" },
+            { key: "sigma", label: "Smooth normals", min: 0, max: 8, step: 0.5, default: 2, hidden: true },
+            { key: "recover", label: "Recover shadows", min: 1, max: 6, step: 0.1, default: 3, hidden: true },
+            { key: "route", type: "custom", default: "app" },
+        ],
+        maps: () => ["depth"],
+        wholeStats: relightStats,
+        wholeStatsSize: 256,
+        reach: 0,
+        skip: (p, info) => !(info && info.maps && info.maps.depth) || (p?.mode !== 1 && (!p?.lights || p.lights.every((l) => !l || !l.on)) && (p?.original === undefined || Number(p.original) === 100)),
+        apply: applyRelight,
+    },
     vibrance: {
         label: "Vibrance",
         params: [
@@ -1315,3 +1335,6 @@ export function applyFilter(id, src, params, info = {}) {
     if (params && params.limit && limitStage) out = limitStage(src, out, params.limit, info, f);
     return out;
 }
+
+export { applyRelight };
+

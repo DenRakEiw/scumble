@@ -18,6 +18,7 @@ import { api, host } from "./editor/host.js";
 import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { normalizeLimit } from "./editor/inpaint_weights.js";
+import { normalizeLights } from "./editor/inpaint_relight.js";
 import { fontList } from "./editor/inpaint_text.js";
 import { parse, remap } from "./editor/reftokens.js";
 import { LABEL as REALISM_LABEL } from "./editor/realism.js";
@@ -2368,7 +2369,13 @@ export function checkParams(filterId, params) {
             else if (v === false || v === "false") out[k] = false;
             else throw new Error(`${k} takes true or false, not ${JSON.stringify(v)}`);
         }
-        else if (p.type === "custom") out[k] = v;
+        else if (p.type === "custom") {
+            if (filterId === "relight" && k === "lights") {
+                out[k] = normalizeLights(v);
+            } else {
+                out[k] = v;
+            }
+        }
         else if (p.type === "color") {
             const m = /^#?([0-9a-f]{6})$/i.exec(String(v).trim());
             if (!m) throw new Error(`${k} takes a colour as "#rrggbb", not "${v}"`);

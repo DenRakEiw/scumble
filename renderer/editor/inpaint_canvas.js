@@ -21,7 +21,7 @@ import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SM
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds, selModeOf, selectionGco, tilesSource, bytesSource, rectSource } from "./inpaint_raster.js";
 import { GLCompositor, BLEND_FN_GLSL } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
-import { INTERACTIVE, EXPORT } from "./inpaint_pool.js";
+import { INTERACTIVE, NORMAL, EXPORT } from "./inpaint_pool.js";
 import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.js";
 import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter, writeTiff } from "./inpaint_bands.js";
 import { compositeBox, releaseBoxBuffers } from "./inpaint_boxstack.js";
@@ -48,6 +48,8 @@ import { normalizeLimit, u16Bilinear, rangeWeight, opp, colourSimilarity, hexToR
 import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
 import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend, seedOfLayer, hash32, mul255 } from "./blend_modes.js";
+import { heightNormals, shadowMarch } from "./px/kernels.js";
+import { lightToMap } from "./inpaint_relight.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -2005,6 +2007,7 @@ class InpaintEditor {
         this.activeGroupId = null;   // the group whose header row was clicked (its layers are the selection)
         this._solo = null;           // { ids, visible }: the layers shown alone, and what was visible before the first solo
         this.sel = null;             // MaskPixels WxH (red, alpha = selected); null before an image is loaded
+        this._relightPending = new Set();
         this.history = [];           // { key, ref, x, y, w, h, prompt, layerId, thumb }
         this.view = { scale: 1, x: 0, y: 0, angle: 0 };
         this.guides = { x: [], y: [] };
@@ -5063,6 +5066,24 @@ class InpaintEditor {
                 anyMap = true;
             }
             if (anyMap) this.mapsVersion++;
+        }
+        for (const l of this.layers || []) {
+            if (l && l.kind === "filter" && l.filter === "relight" && l.params && Array.isArray(l.params.lights)) {
+                for (const light of l.params.lights) {
+                    if (!light) continue;
+                    const [nx, ny] = xfApply(A, light.x, light.y);
+                    light.x = Math.round(nx);
+                    light.y = Math.round(ny);
+                    if (Array.isArray(light.aim)) {
+                        const [ax, ay] = xfApply(A, light.aim[0], light.aim[1]);
+                        light.aim[0] = Math.round(ax);
+                        light.aim[1] = Math.round(ay);
+                    }
+                }
+                if (l._relight) {
+                    l._relight.vis = null;
+                }
+            }
         }
         const e = this._export;   // the app's export settings (host.js); the node has none
         if (e && kind === "turn" && o && (o.turn & 1)) {
@@ -14592,6 +14613,9 @@ class InpaintEditor {
         layer._fcache = null;
         layer._fcacheView = null; layer._fcacheSample = null; layer._fxCacheSample = null;
         this.uploaded.baseHash = null;
+        if (layer && layer.kind === "filter" && layer.filter === "relight") {
+            this.ensureRelightMaps(layer, { quick: !!this.filterPreview });
+        }
         if (this.isFillLayer(layer)) this.redrawThumbsOf(layer);   // a fill layer's row shows its fill
         if (soon) { this.drawSoon(); return; }   // slider drag: one draw per frame, thumbnail and save on release
         this.draw();
@@ -14706,6 +14730,11 @@ class InpaintEditor {
         if (pass.site) {
             if (!this._lastFilterInfoBySite) this._lastFilterInfoBySite = {};
             this._lastFilterInfoBySite[pass.site] = info;
+        }
+        if (layer.filter === "relight") {
+            info.layer = layer;
+            info.relight = layer._relight;
+            this.ensureRelightMaps(layer, { quick: !!this.filterPreview });
         }
         if (this._filterInfoHook) this._filterInfoHook(info, layer, pass);
         return info;
@@ -20677,6 +20706,7 @@ class InpaintEditor {
      * the read once, a second one fails it.
      */
     async encodeComposite(opts = { forRun: true }, { hash = false, texts = null, chunks = null, each = null, progress = null } = {}) {
+        if (opts && opts.forRun) await this.relightSettled();
         // B item 1: a plain stack is composited by the workers that pack it, from the tiles; `each` wants the rows here
         const stack = each ? null : await this.stackSource(opts);
         if (stack) {
@@ -21120,6 +21150,167 @@ class InpaintEditor {
     mipsSettled() {
         return chainScheduler().settled();
     }
+
+    /**
+     * Resolves when all pending relight worker pool operations are completed.
+     */
+    async relightSettled() {
+        if (this.layers) {
+            for (const l of this.layers) {
+                if (l.kind === "filter" && l.filter === "relight") {
+                    this.ensureRelightMaps(l);
+                }
+            }
+        }
+        while (this._relightPending && this._relightPending.size > 0) {
+            await Promise.all(Array.from(this._relightPending));
+        }
+    }
+
+    /**
+     * Ensures normals and visibility maps for a relight filter layer are up to date.
+     * Manages layer._relight cache and dispatches worker pool jobs.
+     * @param {any} layer
+     * @param {{ quick?: boolean }} [opts]
+     */
+    ensureRelightMaps(layer, { quick = false } = {}) {
+        const depthMap = (this.maps && this.maps.depth) || null;
+        if (!depthMap || !depthMap.data || depthMap.w <= 0 || depthMap.h <= 0) return;
+
+        const cache = layer._relight || (layer._relight = {
+            key: null,
+            normals: null,
+            vis: null,
+            fit: null,
+            pending: new Set(),
+        });
+
+        const mapVersion = depthMap.dataVersion || 0;
+        const depthScale = Number.isFinite(layer.params?.depth_scale) ? Number(layer.params.depth_scale) : 50;
+        const sigma = Number.isFinite(layer.params?.sigma) ? Number(layer.params.sigma) : 2.0;
+        const mapLongSide = Math.max(depthMap.w, depthMap.h);
+        const scaleZ = (depthScale / 100.0) * mapLongSide;
+
+        // Normals cache
+        const nKey = `${mapVersion}_${depthScale}_${sigma}`;
+        if ((!cache.normals || cache.normals.key !== nKey) && !cache.pending.has("n:" + nKey)) {
+            cache.pending.add("n:" + nKey);
+            const p = (async () => {
+                try {
+                    const pool = editorPool();
+                    if (pool && !pool.off) {
+                        const res = await pool.run("relight_normals", {
+                            depth: depthMap.data,
+                            w: depthMap.w,
+                            h: depthMap.h,
+                            scale: scaleZ,
+                            sigma,
+                        }, [], { priority: quick ? INTERACTIVE : NORMAL });
+                        cache.normals = {
+                            data: new Uint8Array(res.normals),
+                            w: depthMap.w,
+                            h: depthMap.h,
+                            key: nKey,
+                        };
+                    } else {
+                        const normals = heightNormals(depthMap.data, depthMap.w, depthMap.h, scaleZ, sigma);
+                        cache.normals = {
+                            data: normals,
+                            w: depthMap.w,
+                            h: depthMap.h,
+                            key: nKey,
+                        };
+                    }
+                    cache.key = nKey;
+                    this.markFilterChanged(layer, { soon: true });
+                } catch (err) {
+                    console.warn("relight_normals failed:", err);
+                } finally {
+                    cache.pending.delete("n:" + nKey);
+                }
+            })();
+            this._relightPending.add(p);
+            p.finally(() => this._relightPending.delete(p));
+        }
+
+        // Vis cache
+        const lights = Array.isArray(layer.params?.lights) ? layer.params.lights : [];
+        if (!cache.vis || cache.vis.w !== depthMap.w || cache.vis.h !== depthMap.h) {
+            const visData = new Uint8Array(depthMap.w * depthMap.h * 4);
+            visData.fill(255);
+            cache.vis = {
+                data: visData,
+                w: depthMap.w,
+                h: depthMap.h,
+                keys: [null, null, null, null],
+            };
+        }
+
+        for (let i = 0; i < 4; i++) {
+            const l = lights[i];
+            if (!l || !l.on) {
+                if (cache.vis.keys[i] !== null) {
+                    for (let idx = 0; idx < depthMap.w * depthMap.h; idx++) {
+                        cache.vis.data[idx * 4 + i] = 255;
+                    }
+                    cache.vis.keys[i] = null;
+                }
+                continue;
+            }
+
+            const vKey = `${l.type}_${l.x}_${l.y}_${l.dist}_${l.diffusion}_${l.range}_${depthScale}_${mapVersion}_${quick ? "q" : "f"}`;
+            if (cache.vis.keys[i] !== vKey && !cache.pending.has(`v:${i}:${vKey}`)) {
+                cache.pending.add(`v:${i}:${vKey}`);
+                const chan = i;
+                const p = (async () => {
+                    try {
+                        const lm = lightToMap(l, depthMap, { depth_scale: depthScale });
+                        const lightVec = [lm.mx, lm.my, lm.mz, l.type === "sun" ? 1 : 0];
+                        const diff = Number.isFinite(l.diffusion) ? Number(l.diffusion) : 30;
+                        const radius = (diff / 100.0) * (0.05 * mapLongSide);
+                        const bias = 0.005 * scaleZ;
+                        const taps = quick ? 1 : 4;
+                        const steps = quick ? 16 : 32;
+
+                        const pool = editorPool();
+                        if (pool && !pool.off) {
+                            const res = await pool.run("relight_shadow", {
+                                depth: depthMap.data,
+                                w: depthMap.w,
+                                h: depthMap.h,
+                                scale: scaleZ,
+                                light: lightVec,
+                                radius,
+                                taps,
+                                steps,
+                                bias,
+                                row0: 0,
+                                rows: depthMap.h,
+                            }, [], { priority: quick ? INTERACTIVE : NORMAL });
+                            const vChan = new Uint8Array(res.vis);
+                            for (let idx = 0; idx < depthMap.w * depthMap.h; idx++) {
+                                cache.vis.data[idx * 4 + chan] = vChan[idx];
+                            }
+                        } else {
+                            const vChan = shadowMarch(depthMap.data, depthMap.w, depthMap.h, scaleZ, lightVec, radius, taps, steps, bias, 0, depthMap.h);
+                            for (let idx = 0; idx < depthMap.w * depthMap.h; idx++) {
+                                cache.vis.data[idx * 4 + chan] = vChan[idx];
+                            }
+                        }
+                        cache.vis.keys[chan] = vKey;
+                        this.markFilterChanged(layer, { soon: true });
+                    } catch (err) {
+                        console.warn(`relight_shadow channel ${chan} failed:`, err);
+                    } finally {
+                        cache.pending.delete(`v:${chan}:${vKey}`);
+                    }
+                })();
+                this._relightPending.add(p);
+                p.finally(() => this._relightPending.delete(p));
+            }
+        }
+    }
+
 
     /**
      * Everything the composited image depends on. While it stays the same the last
@@ -21790,6 +21981,11 @@ class InpaintEditor {
             l._mstatsStack = null;
             l._mstatsStackRun = null;
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
+            if (l._relight) {
+                if (l._relight.normals && l._relight.normals.data) freed += l._relight.normals.data.byteLength;
+                if (l._relight.vis && l._relight.vis.data) freed += l._relight.vis.data.byteLength;
+                l._relight = null;
+            }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }
         for (const name of ["sceneCanvas", "viewCanvas", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView", "_filterMaskView", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest", "_dabMask", "_blendScratchGpu", "_blendScratchCpu"]) {

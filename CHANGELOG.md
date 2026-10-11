@@ -6,6 +6,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 - Relight: pure light model, original light fit, Kelvin color conversion, and JS kernel twins for height normals and shadow march (L0a).
 - Relight: Rust wasm kernels height_normals and shadow_march in crates/px (ABI 19), wasm dispatch with JS fallback, and performance benchmarks (L0b).
+- Relight filter layer: GLSL shader and CPU twin, depth normal generation, soft shadow marching, depth map bilateral edge snap, reader version 6 (L1a).
 
 ## 0.1.46 - 2026-10-11
 

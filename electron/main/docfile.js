@@ -130,6 +130,11 @@ const FEATURES = [
         sample: { layers: [{ kind: "filter", filter: "lens_blur", params: {} }] },
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "lens_blur"),
     },
+    {
+        id: "relight", since: "0.1.47", reader: 6,
+        sample: { layers: [{ kind: "filter", filter: "relight" }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "relight"),
+    },
 ];
 
 

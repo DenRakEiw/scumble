@@ -52,7 +52,7 @@ import { liquifyStore } from "./inpaint_liquify.js";
 import { guidedFar } from "./inpaint_depth.js";
 import { u16Bilinear, rangeWeight, LUMA, opp, colourSimilarity, hexToRgb as hexToRgb01 } from "./inpaint_weights.js";
 import { snapField, fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, poissonBlend, boxBlurs } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch } from "./px/kernels.js";
 import { hash32, mul255 } from "./blend_modes.js";
 
 const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
@@ -1196,9 +1196,25 @@ export function rangeSelectJob(msg) {
     };
 }
 
+function relightNormalsJob(msg) {
+    const { depth, w, h, scale, sigma } = msg;
+    const depthArr = depth instanceof Uint16Array ? depth : new Uint16Array(depth);
+    const normals = heightNormals(depthArr, w, h, scale, sigma);
+    return { normals: normals.buffer, transfer: [normals.buffer] };
+}
+
+function relightShadowJob(msg) {
+    const { depth, w, h, scale, light, radius, taps, steps, bias, row0, rows } = msg;
+    const depthArr = depth instanceof Uint16Array ? depth : new Uint16Array(depth);
+    const vis = shadowMarch(depthArr, w, h, scale, light, radius, taps, steps, bias, row0, rows);
+    return { vis: vis.buffer, row0, rows, transfer: [vis.buffer] };
+}
+
 async function run(msg) {
     setKernels(msg.kernels);
     await kernelsReady();
+    if (msg.op === "relight_normals") return relightNormalsJob(msg);
+    if (msg.op === "relight_shadow") return relightShadowJob(msg);
     if (msg.op === "range_select") return rangeSelectJob(msg);
     if (msg.op === "depth_guide") return depthGuide(msg);
     if (msg.op === "depth_fuse") return depthFuse(msg);
