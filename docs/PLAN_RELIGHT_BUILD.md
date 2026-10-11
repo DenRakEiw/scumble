@@ -475,6 +475,7 @@ entries (`electron/main/main.js` the Layer and Image menus; `shell.js`'s command
 **Tests.** Normal: `relight_test.py` (s) `relight` on a document without a map computes the map through the stand-in
 (`host.helperCall` replaced as `editor_test.py:3426-3443` does) and lands the layer, (t) `relight` with `layer` edits
 the existing one; the `commands`, `assistant`, `help`, `lint`, `types` gates. **Effort** 1 d.
+**Built 2026-10-11:** `relight` command in `renderer/commands.js` with `P.arr` helper; `electron/main/assistant/policy.js` AUTO for in-app route, ASK card for generative routes; menu entries in Image and Layer; MANUAL.md chapter; `relight` gate in `tools/run_gates.sh`; cases (s) and (t) pass in `tools/relight_test.py`.
 
 ### 5.8 L4: the Magnific route
 

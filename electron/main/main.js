@@ -660,8 +660,19 @@ function buildMenu() {
                 { label: "New Dodge && Burn Layer", click: () => send("menu", "dodge-burn-layer") },
                 { label: "New Dodge && Burn Layer (50 % Grey)", click: () => send("menu", "dodge-burn-layer:grey") },
                 { type: "separator" },
+                { label: "Relight...", click: () => send("menu", "new-relight-layer") },
+                { type: "separator" },
                 // the Upscale dialog with the pass chosen; not greyed (main has no server state: the dialog says why)
                 { label: "Realism Pass (Windows only, RTX only)...", click: () => send("menu", "realism-pass") },
+            ],
+        },
+        {
+            label: "&Layer",
+            submenu: [
+                { label: "New Relight Layer", click: () => send("menu", "new-relight-layer") },
+                { type: "separator" },
+                { label: "New Dodge && Burn Layer", click: () => send("menu", "dodge-burn-layer") },
+                { label: "New Dodge && Burn Layer (50 % Grey)", click: () => send("menu", "dodge-burn-layer:grey") },
             ],
         },
         {

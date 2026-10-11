@@ -78,9 +78,9 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-11: Relight L2 built; **0.1.46 released and Latest**; the Store update open)
+## Where things stand (2026-10-11: Relight L3 built; **0.1.46 released and Latest**; the Store update open)
 
-- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** L2 built (the lights tool on canvas: interactive light handles with rings in light colour, type glyphs, number badges, dist radius scaling with Close/Far, spot aim dashed lines + handle, fitted own-light ring; drag to reposition light/aim handle, Alt+drag changes Close/Far (dist) with 1 undo step ("Relight: Close/Far"), wheel over handle adjusts diffusion / Shift for intensity, arrow keys nudge selected light, click on empty canvas adds a light, Delete removes it; quarter-size quick shadow map during drag and full resolution on release; overlay view-only and absent in exports; in-app test gates `relight` PASS on `--tiles on` and `--tiles off` [labels `l2_on`, `l2_off`], and `editor` [label `l2_ed`]; node repo synced; visual proof `scratch/shot_l2.png` captured and inspected; next session is L3: the command, policy, entries, gate, manual).
+- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** L3 built (`relight` command in `renderer/commands.js` with `P.arr` helper; `electron/main/assistant/policy.js` AUTO for in-app route, ASK card for generative routes; menu entries in Image and Layer; MANUAL.md chapter; `relight` gate in `tools/run_gates.sh`; cases (s) and (t) pass in `tools/relight_test.py`; gates `l3_on`, `l3_off`, `l3_cmds`, `l3_asst` pass; next session is L4: the Magnific route).
 Open questions for L1a/L1b (R-D2, R-D4, R-D6, R-D9) taking proposed values: filter layer `relight` with lights in params, shadows default 60%, 4 lights max (single RGBA8 texture), first light white 5500 K 100% diffusion 30 front of centre dist -30 original light 100 ambient 15 depth 50.
 
 

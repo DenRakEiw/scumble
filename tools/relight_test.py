@@ -817,6 +817,83 @@ JS = r"""
     await ed.undoStep();
     check("l2: undo restores diffusion", fx.params.lights[0].diffusion === diff0);
 
+    // -------------------------------------------------------------------------
+    // Case s: relight command on a document without a depth map computes the map
+    //         through the helperCall stand-in and lands the layer.
+    // -------------------------------------------------------------------------
+    const doc2 = await commands.run("new_document");
+    await commands.run("new_canvas", { width: 400, height: 300, doc: doc2.id, color: "#808080" });
+    const ed2 = host.editorById(doc2.id);
+
+    const origHelperCall = host.helperCall;
+    const origDepthModel = host.depthModel;
+    let depthHelperCalled = false;
+    host.depthModel = () => ({ id: "mock_depth", label: "Mock Depth Anything V2 Small", kind: "depth" });
+    host.helperCall = async (name, args) => {
+        if (name === "depth") {
+            depthHelperCalled = true;
+            const n = args.width * args.height;
+            const f32 = new Float32Array(n);
+            for (let i = 0; i < n; i++) f32[i] = 10.0;
+            return { depth: f32, width: args.width, height: args.height, min: 0, max: 10, provider: "mock", ms: 1 };
+        }
+        return origHelperCall.call(host, name, args);
+    };
+
+    let sRes = null;
+    try {
+        sRes = await commands.run("relight", { doc: doc2.id });
+    } finally {
+        host.helperCall = origHelperCall;
+        host.depthModel = origDepthModel;
+    }
+
+    check("s: depth helper was called automatically", depthHelperCalled === true);
+    check("s: relight returned layer summary with relight filter", sRes && sRes.layer && sRes.layer.filter === "relight", sRes);
+    check("s: relight returned default 1 light", Array.isArray(sRes && sRes.lights) && sRes.lights.length === 1);
+    check("s: relight returned fit with direction", Array.isArray(sRes && sRes.fit && sRes.fit.direction) && sRes.fit.direction.length === 3);
+    check("s: relight returned route app", sRes && sRes.route === "app");
+    check("s: ed2 tool switched to lights", ed2.tool === "lights");
+    check("s: ed2 now has depth map", !!(ed2.maps && ed2.maps.depth));
+
+    // -------------------------------------------------------------------------
+    // Case t: relight command with layer edits the existing relight layer
+    // -------------------------------------------------------------------------
+    const editedLights = [{
+        id: "light_1",
+        on: true,
+        type: "sun",
+        x: 200,
+        y: 150,
+        dist: -40,
+        intensity: 120,
+        color: 3200,
+        diffusion: 45,
+    }];
+    const tRes = await commands.run("relight", {
+        doc: doc2.id,
+        layer: sRes.layer.id,
+        lights: editedLights,
+        original: 80,
+        ambient: 25,
+        depth_scale: 60,
+        shadows: 70,
+    });
+    check("t: relight edited existing layer", tRes && tRes.layer && tRes.layer.id === sRes.layer.id);
+    check("t: lights updated to sun type", tRes && tRes.lights && tRes.lights[0].type === "sun");
+    check("t: lights updated to 3200 colour", tRes && tRes.lights && tRes.lights[0].color === 3200);
+    check("t: layer params updated original to 80", tRes && tRes.layer && tRes.layer.params && tRes.layer.params.original === 80);
+    check("t: layer params updated ambient to 25", tRes && tRes.layer && tRes.layer.params && tRes.layer.params.ambient === 25);
+    check("t: layer params updated depth_scale to 60", tRes && tRes.layer && tRes.layer.params && tRes.layer.params.depth_scale === 60);
+    check("t: layer params updated shadows to 70", tRes && tRes.layer && tRes.layer.params && tRes.layer.params.shadows === 70);
+
+    await ed2.undoStep();
+    const lAfterUndo = ed2.layers.find((l) => l.id === sRes.layer.id);
+    check("t: undo step reverts original light to 100", lAfterUndo && lAfterUndo.params.original === 100);
+
+    await commands.run("close_document", { doc: doc2.id, force: true });
+    shell.activate(ed);
+
     // Keep lights tool active for visual screenshot
     ed.setTool("lights");
     ed.selectLayers([fx.id]);

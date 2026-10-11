@@ -11,7 +11,7 @@
 # ($SCUMBLE_GATES/nodecopy), so the real node repo is never written.
 #
 # A gate is a tools/ script name without .py (editor, composite, pixels, shape, brush, commands,
-# film, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, oxen, magnific, recipes, assistant, mcp, smoke,
+# film, relight, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, oxen, magnific, recipes, assistant, mcp, smoke,
 # node, blendmodes, perf:<args>; mcpb is tools/mcpb_test.js in plain Node).
 # Gate "toapis" (tools/toapis_test.py) runs tools/toapis_test.js in plain Node first, then the app against
 # tools/toapis_mock.py; it needs no ToAPIs key and refuses a profile that holds one. Gate "openrouter"
@@ -102,6 +102,7 @@ for g in "$@"; do
     commands_doc) $T python tools/commands_doc.py > "$OUT/$g.log" 2>&1; rc=$? ;;
     assistant) timeout 900 python tools/assistant_test.py --user-data-dir "$PROFILE" ${EXE:+--exe "$EXE"} "$OUT/assistant" > "$OUT/$g.log" 2>&1; rc=$? ;;
     film) $T python tools/film_test.py "$OUT/film" > "$OUT/$g.log" 2>&1; rc=$? ;;
+    relight) $T python tools/relight_test.py "$OUT/relight" > "$OUT/$g.log" 2>&1; rc=$? ;;
     nodecopy) NC="$SP/nodecopy"; rm -rf "$NC"; mkdir -p "$NC"; (cd "/f/Comfyui/ComfyUI_windows_portable_nvidia/ComfyUI/custom_nodes/ComfyUI-InpaintCanvas" && tar --exclude=.git --exclude=__pycache__ -cf - .) | (cd "$NC" && tar -xf -); { $T python tools/build_node.py --node "$NC" && $T python tools/build_node.py --node "$NC" --check && $T python tools/node_test.py --node "$NC"; } > "$OUT/$g.log" 2>&1; rc=$? ;;
     node) $T python tools/build_node.py --check > "$OUT/$g.log" 2>&1 && $T python tools/node_test.py >> "$OUT/$g.log" 2>&1; rc=$? ;;
     perf:*) $T python tools/perf_test.py $(echo "${g#perf:}" | tr ',' ' ') > "$OUT/perf.log" 2>&1; rc=$? ;;

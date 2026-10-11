@@ -1353,6 +1353,27 @@ async function main() {
                 && eq([...policy.REALISM_FACTORS].sort((a, b) => a - b), want) && want.length === 6,
                 JSON.stringify({ badF, factors: policy.REALISM_FACTORS, want }));
 
+            // relight (L3): route "app" is auto, paid route is ask with card, busy document refuses, 600 s timeout
+            const fr = (extra) => { const x = facts(extra); x.tools.add("relight"); return x; };
+            const rApp = policy.decide({ name: "relight", args: { route: "app" } }, fr());
+            const rNoRoute = policy.decide({ name: "relight", args: {} }, fr());
+            const rPaid = policy.decide({ name: "relight", args: { route: "magnific", prompt: "warm sun" } }, fr());
+            const rBusy = policy.decide({ name: "relight", args: { route: "app" } }, fr({ busy: true }));
+            const rClamped = policy.clamp({ name: "relight", args: {} });
+            check("relight_policy_auto_for_app_ask_for_paid_and_refuses_when_busy",
+                policy.RUNS.has("relight")
+                && rApp.action === "auto"
+                && rNoRoute.action === "auto"
+                && rPaid.action === "ask"
+                && /relights the whole picture through magnific/.test(rPaid.reason)
+                && eq(rPaid.card && rPaid.card.changes, [{ field: "route", to: "magnific" }, { field: "prompt", to: "warm sun" }])
+                && rBusy.action === "refuse"
+                && rClamped.args.timeout === 600
+                && policy.undoStep({ name: "relight", args: {} }) === "layers"
+                && policy.undoStep({ name: "relight", args: { layer: "Lmine" } }) === null,
+                JSON.stringify({ rApp, rPaid, rBusy, rClamped }));
+
+
             // a whole turn: the card shows the values status answers, the call goes out with 1800 s and no undo step of
             // the shell's, and the layer it adds is the chat's (the opacity change on it asks nothing)
             class PassEditor extends FakeEditor {

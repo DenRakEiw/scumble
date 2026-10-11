@@ -396,6 +396,44 @@ The steps below follow the pack's README as it was on 2026-10-04 (pack version 1
 - Agents and scripts run the pass with `realism_pass` (`factor` 1, 1.5, 1.7, 2 or 3); `status` says whether it would start on the document at 1× and why not, and `list_recipes` whether the connected ComfyUI can run it. The assistant asks before it runs the pass, showing the Style, Strength and preset it sends, and above 1× the factor.
 - NVIDIA, RTX and DLSS are trademarks of NVIDIA Corporation. Scumble is not affiliated with or endorsed by NVIDIA, nor by the authors of the node pack or its runtime; the pass runs what you installed on your ComfyUI.
 
+## Relight: scene relighting from depth
+
+<!-- slug: relight -->
+_Cast directional light, shadows and colour onto any picture using 3D depth._
+
+A Relight layer illuminates your picture with up to four interactive light sources in 3D space, calculated in real time from the scene's 16-bit depth map. Add one from the Layer menu (*New Relight Layer*), the Image menu (*Relight...*), or the Add Filter list. If the document has no depth map yet, Scumble calculates one automatically using Depth Anything V2 Small.
+
+**The Lights tool.** Select the Lights tool (L) or click *Edit lights* in the layer row to interact with light sources directly in the viewport:
+- **Move**: Drag a light handle across the picture to move its source in 2D coordinates. While dragging, a fast quarter-resolution preview updates interactively.
+- **Distance**: Hold Alt and drag up or down over a handle to bring the light closer or push it deeper into the scene (negative values place the light in front of the image plane; positive values place it behind).
+- **Diffusion and intensity**: Roll the mouse wheel over a handle to adjust light diffusion (softness), or hold Shift while scrolling to adjust intensity.
+- **Nudge**: Press the Arrow keys to nudge the selected light by 1 pixel, or Shift+Arrow for 10 pixels.
+- **Add and delete**: Click anywhere on the picture to add a new light at that point (up to four lights per layer), or press Delete / Backspace to remove the selected light.
+- **Own light**: A grey compass ring at the bottom right indicates the estimated direction of the original scene lighting.
+
+**Light types and controls.** Each light can be configured individually in the layer row:
+- **Point light**: Casts omnidirectional light with smooth inverse-distance attenuation and distance-based falloff.
+- **Sun**: Casts parallel directional sunlight from a distant azimuth and elevation angle, illuminating the entire scene without radial falloff.
+- **Spot**: Projects a focused cone of light with adjustable cone angle, soft feathered boundary, and target aiming.
+- **Colour and temperature**: Set the light tint using standard photographic Kelvin presets (warm candlelight 1850 K, tungsten 3200 K, daylight 5500 K, cool sky 8000 K) or a custom colour picker.
+
+**Global parameters.** The relight filter row provides four master controls:
+- **Original light**: Fades down the existing lighting in the original photograph (100% preserves original shading, 0% flattens shading) using an estimated ambient-diffuse reflectance decomposition.
+- **Ambient**: Sets the minimum fill floor so deep shadow recesses remain visible.
+- **Depth**: Adjusts the extrusion scale of the 3D surface normals generated from the depth map (5% to 200%).
+- **Shadows**: Enables screen-space raymarched cast shadows with contact hardening and soft penumbra. Setting the slider to 0 turns off shadow raymarching for instant rendering.
+
+**Routes and generative relighting.** Relighting can run directly inside the app or route to generative models:
+- **App (default)**: Runs entirely on your local GPU via WebGL2 shaders and compiled Rust kernels. It is completely non-destructive, instant, and free.
+- **Magnific and prompt routes**: Send the image and rendered light map to cloud AI providers or local ComfyUI models for photorealistic generative relighting. Generative routes require API credits or local setup.
+- **Detail from original**: When enabled on generative routes, Scumble extracts high-frequency detail from your base image using a guided filter ratio pass, ensuring your original texture and resolution remain sharp.
+
+### Notes
+
+- The in-app route uses surface normal estimation from monocular relative depth maps. It does not perform full intrinsic inverse-rendering or subsurface light scattering; complex multi-bounce illumination and specularity are best achieved through generative routes.
+- The depth map's *Edges* slider snaps depth boundaries cleanly to object silhouettes, preventing light and shadows from bleeding between foreground subjects and backgrounds.
+- The assistant can relight pictures automatically using the `relight` command (`route: "app"` runs automatically; generative routes ask before sending).
+
 ## Documents: your work as a .scumble file
 
 <!-- slug: documents -->

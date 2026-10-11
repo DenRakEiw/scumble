@@ -3123,6 +3123,7 @@ export function menuCommand(cmd) {
     }
     else if (cmd === "frequency-separation") frequencySeparation();
     else if (cmd === "dodge-burn-layer" || cmd === "dodge-burn-layer:grey") { if (host.editor) host.editor.dodgeBurnLayer({ grey: cmd.endsWith(":grey") }); }
+    else if (cmd === "new-relight-layer" || cmd === "relight") { if (host.editor) host.editor.addFilterLayer("relight"); }
     else if (cmd === "realism-pass") { if (host.editor) openUpscale(host.editor, { recipe: realism.RECIPE_ID }); }
     else if (cmd === "new-tab") activate(newDocument());
     else if (cmd === "close-tab") closeDocument(host.editor);

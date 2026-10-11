@@ -561,6 +561,23 @@ Realism Pass (Windows only, RTX only): the whole visible picture (every visible 
 | `factor` | number | 1 (the default: refine at the picture's own size), 1.5, 1.7, 2 or 3: above 1 the document becomes that many times larger and the pass layer comes at the new size |
 | `timeout` | integer | seconds to wait for the result (default 570) (default `570`) |
 
+### `relight` *(image)*
+
+Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (the default) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Paid/generative routes answer 'not built yet' until later releases.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layer` | string | relight filter layer to edit (default adds a new one) (default `"active"`) |
+| `lights` | array | array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}] |
+| `original` | number | original light strength 0..100 % (default 100) |
+| `ambient` | number | ambient light 0..100 % (default 15) |
+| `depth_scale` | number | depth scale 5..200 % (default 50) |
+| `shadows` | number | shadow strength 0..100 % (default 60) |
+| `route` | string | relight route ('app' default; paid routes answer 'not built yet' until L4/L5) (default `"app"`) |
+| `prompt` | string | additional prompt text for generative routes |
+| `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
+
 ### `cancel_run` *(app)*
 
 Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends at once with the cancel, and nothing lands. A provider may still finish a job it already had and charge it. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running); landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 10 s).
@@ -1083,72 +1100,6 @@ The label variants, positions and the current defaults, plus where the icons com
 
 (no parameters)
 
-### `boxes.list` *(plugin boxes)* *(read-only)*
-
-The boxes of this document (image pixels), whether the selected recipe takes boxes and whether the document's Boxes switch is on (set_generation boxes): a run sends them only when both are.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-
-### `boxes.add` *(plugin boxes)*
-
-Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image; Ideogram 4 takes new, text and keep) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `id` | string | lowercase words and a number joined by underscores (knight_1, red_scarf_2); default made from the last two words of the description's first phrase ("a red scarf" -> red_scarf_1, "a small black cat sitting in the grass" -> black_cat_1), else the next free box_n |
-| `kind` | string | new (an element added in the box), keep, move, remove (an element of the picture), from (a reference layer placed in the box) (one of `new`, `keep`, `move`, `remove`, `from`) |
-| `rect` | array | [left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was |
-| `src` | array | keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer) |
-| `layer` | string | from only: the reference layer (id, name or a unique part of it) |
-| `desc` | string | what the element is, at most 400 characters; a reference as @img1 |
-| `text` | string | new only: words to render in the box (the box becomes a Text box) |
-
-### `boxes.set` *(plugin boxes)*
-
-Change a box: only the given fields change (new_id renames it). A box whose id is still a default one (box_1, edit_2) is named after a new description (red_scarf_1) unless the prompt names it as <id>; the answer carries the id. One undo step.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `id` | string | the box to change (required) |
-| `new_id` | string | a new id |
-| `kind` | string | new (an element added in the box), keep, move, remove (an element of the picture), from (a reference layer placed in the box) (one of `new`, `keep`, `move`, `remove`, `from`) |
-| `rect` | array | [left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was |
-| `src` | array | keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer) |
-| `layer` | string | from only: the reference layer (id, name or a unique part of it) |
-| `desc` | string | what the element is, at most 400 characters; a reference as @img1 |
-| `text` | string | new only: words to render in the box (the box becomes a Text box) |
-
-### `boxes.remove` *(plugin boxes)*
-
-Remove a box. One undo step.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `id` | string | the box to remove (required) |
-
-### `boxes.from_selection` *(plugin boxes)*
-
-The selection's bounds as a box: a new box described by the prompt (or desc); when the prompt names a reference with @img1, that layer placed into the selection (a from box). One undo step.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `id` | string | default made from the description's words (red_door_1), else the next free edit_n |
-| `desc` | string | the description (default the prompt) |
-
-### `boxes.clear` *(plugin boxes)*
-
-Remove every box of this document. One undo step.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-
 ### `film.add_point` *(plugin film)*
 
 Add a control point (local adjustment) to the control points layer (the active one, the topmost one, or a new one). Weights: shape falloff times colour similarity to the pixel under the point.
@@ -1268,6 +1219,72 @@ Switch the sample's box source on or off: on, every run of a recipe that takes b
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `on` | boolean | true switches the source on, false off |
+
+### `boxes.list` *(plugin boxes)* *(read-only)*
+
+The boxes of this document (image pixels), whether the selected recipe takes boxes and whether the document's Boxes switch is on (set_generation boxes): a run sends them only when both are.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `boxes.add` *(plugin boxes)*
+
+Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image; Ideogram 4 takes new, text and keep) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `id` | string | lowercase words and a number joined by underscores (knight_1, red_scarf_2); default made from the last two words of the description's first phrase ("a red scarf" -> red_scarf_1, "a small black cat sitting in the grass" -> black_cat_1), else the next free box_n |
+| `kind` | string | new (an element added in the box), keep, move, remove (an element of the picture), from (a reference layer placed in the box) (one of `new`, `keep`, `move`, `remove`, `from`) |
+| `rect` | array | [left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was |
+| `src` | array | keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer) |
+| `layer` | string | from only: the reference layer (id, name or a unique part of it) |
+| `desc` | string | what the element is, at most 400 characters; a reference as @img1 |
+| `text` | string | new only: words to render in the box (the box becomes a Text box) |
+
+### `boxes.set` *(plugin boxes)*
+
+Change a box: only the given fields change (new_id renames it). A box whose id is still a default one (box_1, edit_2) is named after a new description (red_scarf_1) unless the prompt names it as <id>; the answer carries the id. One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `id` | string | the box to change (required) |
+| `new_id` | string | a new id |
+| `kind` | string | new (an element added in the box), keep, move, remove (an element of the picture), from (a reference layer placed in the box) (one of `new`, `keep`, `move`, `remove`, `from`) |
+| `rect` | array | [left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was |
+| `src` | array | keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer) |
+| `layer` | string | from only: the reference layer (id, name or a unique part of it) |
+| `desc` | string | what the element is, at most 400 characters; a reference as @img1 |
+| `text` | string | new only: words to render in the box (the box becomes a Text box) |
+
+### `boxes.remove` *(plugin boxes)*
+
+Remove a box. One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `id` | string | the box to remove (required) |
+
+### `boxes.from_selection` *(plugin boxes)*
+
+The selection's bounds as a box: a new box described by the prompt (or desc); when the prompt names a reference with @img1, that layer placed into the selection (a from box). One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `id` | string | default made from the description's words (red_door_1), else the next free edit_n |
+| `desc` | string | the description (default the prompt) |
+
+### `boxes.clear` *(plugin boxes)*
+
+Remove every box of this document. One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
 
 ## Differences from the node's bridge
 

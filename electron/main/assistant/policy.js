@@ -18,7 +18,7 @@ const READS = new Set([
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
-const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "select_by_text", "cutout_layer", "upsample_prompt"]);
+const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "select_by_text", "cutout_layer", "upsample_prompt", "relight"]);
 
 /** The Realism Pass's name, verbatim wherever the feature is named (renderer/editor/realism.js LABEL). */
 const REALISM_LABEL = "Realism Pass (Windows only, RTX only)";
@@ -161,6 +161,11 @@ const POLICY = {
     // `status` says whether it can run on the document (the server, the size), and its values are the app's (no
     // command sets them)
     realism_pass: (call, facts) => realismRow(call, facts),
+    relight: (call, facts) => {
+        const route = (call.args && call.args.route) || "app";
+        if (route === "app") return AUTO();
+        return ASK(`relights the whole picture through ${route}: this costs money, or queues on your ComfyUI`, relightCard(call, facts));
+    },
 
     // ---- replace, close, tabs -----------------------------------------------------------
     load_image: () => ASK("replaces the image and clears the undo history"),
@@ -258,6 +263,18 @@ function renderCard(call, facts) {
     };
 }
 
+function relightCard(call, facts) {
+    const route = (call.args && call.args.route) || "app";
+    const target = layerOf(call, facts);
+    const changes = [{ field: "route", to: route }];
+    if (call.args && call.args.prompt) changes.push({ field: "prompt", to: call.args.prompt });
+    return {
+        layer: target ? { id: target.id, name: target.name } : null,
+        changes,
+    };
+}
+
+
 /**
  * realism_pass: refused with `status`'s reason when it cannot run, else asked with the values it sends on the card.
  * `status` answers for factor 1, and its every reason refuses at any factor (release review 2026-10-05): a picture past
@@ -340,7 +357,7 @@ function clampInt(value, min, max, fallback) {
 }
 
 /** The command's own default `timeout`, filled in so the Bridge's timer is long enough (§5). */
-const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, generate: 600, generate_new: 600, upscale: 1800, realism_pass: 1800 };
+const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, generate: 600, generate_new: 600, upscale: 1800, realism_pass: 1800, relight: 600 };
 
 /**
  * The arguments as they are sent: a screenshot small enough to be cheap, a log page bounded, and
@@ -419,6 +436,7 @@ function undoStep(call, facts = {}) {
     if (name === "upscale") return args.scope === "document" ? null : "layers";
     // the pass pushes its own "layers" step for the layer it adds (a second one would be an empty step)
     if (name === "realism_pass") return null;
+    if (name === "relight") return args.layer ? null : "layers";
     // set_filter pushes its own "filter" step since docs/PLAN_0_1_42.md F2b (a second one would be an empty step)
     // an angle turns the mask with the text, which only a "layers" step holds
     if (name === "set_text") return args.angle !== undefined ? "layers" : "text";

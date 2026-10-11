@@ -18,7 +18,7 @@ import { api, host } from "./editor/host.js";
 import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { normalizeLimit } from "./editor/inpaint_weights.js";
-import { normalizeLights } from "./editor/inpaint_relight.js";
+import { defaultLight, normalizeLights } from "./editor/inpaint_relight.js";
 import { fontList } from "./editor/inpaint_text.js";
 import { parse, remap } from "./editor/reftokens.js";
 import { LABEL as REALISM_LABEL } from "./editor/realism.js";
@@ -443,7 +443,7 @@ async function memoryMB() {
 
 /**
  * @typedef {(description?: string, extra?: Partial<CommandParam>) => CommandParam} ParamFn
- * @type {{ layer: ParamFn, timeout: (seconds: number) => CommandParam, num: ParamFn, int: ParamFn, str: ParamFn, bool: ParamFn, obj: ParamFn, enum: (description: string, values: string[], def?: string) => CommandParam, selMode: () => CommandParam }}
+ * @type {{ layer: ParamFn, timeout: (seconds: number) => CommandParam, num: ParamFn, int: ParamFn, str: ParamFn, bool: ParamFn, obj: ParamFn, arr: ParamFn, enum: (description: string, values: string[], def?: string) => CommandParam, selMode: () => CommandParam }}
  */
 const P = {
     layer: (d, extra = {}) => ({ type: "string", description: d || "the layer: id, name, a unique part of the name, or \"active\"", default: "active", ...extra }),
@@ -453,6 +453,7 @@ const P = {
     str: (description, extra = {}) => ({ type: "string", description, ...extra }),
     bool: (description, extra = {}) => ({ type: "boolean", description, ...extra }),
     obj: (description, extra = {}) => ({ type: "object", description, ...extra }),
+    arr: (description, extra = {}) => ({ type: "array", description, ...extra }),
     enum: (description, values, def) => ({ type: "string", description, enum: values.slice(), ...(def !== undefined ? { default: def } : {}) }),
     selMode: () => P.enum("replace, add, subtract or intersect", SEL_MODES, "replace"),
 };
@@ -1385,6 +1386,82 @@ const COMMANDS = {
                 factor: out.factor, from: out.from || null, width: out.width == null ? null : out.width, height: out.height == null ? null : out.height,
                 // the tab was closed while the pass ran: the job was taken off the server, nothing was added
                 status: out.layer ? ed.status : "The document was closed while the pass ran; nothing was added.",
+            };
+        },
+    },
+    relight: {
+        needsImage: true,
+        description: "Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (the default) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Paid/generative routes answer 'not built yet' until later releases.",
+        params: {
+            layer: P.layer("relight filter layer to edit (default adds a new one)"),
+            lights: P.arr("array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}]"),
+            original: P.num("original light strength 0..100 % (default 100)"),
+            ambient: P.num("ambient light 0..100 % (default 15)"),
+            depth_scale: P.num("depth scale 5..200 % (default 50)"),
+            shadows: P.num("shadow strength 0..100 % (default 60)"),
+            route: P.str("relight route ('app' default; paid routes answer 'not built yet' until L4/L5)", { default: "app" }),
+            prompt: P.str("additional prompt text for generative routes"),
+            timeout: P.timeout(600),
+        },
+        async run(ed, a) {
+            const route = a.route != null && a.route !== "" ? String(a.route) : "app";
+            if (route !== "app") {
+                throw new Error(`${route} route is not built yet (available in a future release)`);
+            }
+            let l;
+            if (a.layer != null && a.layer !== "") {
+                l = findLayer(ed, a.layer);
+                if (l.kind !== "filter" || l.filter !== "relight") {
+                    throw new Error(`${l.name} is not a relight filter layer`);
+                }
+                const raw = {};
+                if (a.lights !== undefined) raw.lights = a.lights;
+                if (a.original !== undefined) raw.original = a.original;
+                if (a.ambient !== undefined) raw.ambient = a.ambient;
+                if (a.depth_scale !== undefined) raw.depth_scale = a.depth_scale;
+                if (a.shadows !== undefined) raw.shadows = a.shadows;
+                const vals = Object.keys(raw).length ? checkParams("relight", raw) : {};
+                if (vals.lights) vals.lights = normalizeLights(vals.lights, { width: ed.width, height: ed.height });
+                const keys = Object.keys(vals);
+                if (keys.length) {
+                    ed.pushUndo({ kind: "filter", id: l.id, label: filterStepLabel("relight", keys) });
+                    writeParams(ed, l, vals);
+                    touch(ed);
+                }
+            } else {
+                const hasDepth = !!(ed.maps && ed.maps.depth && (ed.maps.depth.data || ed.maps.depth.u16));
+                if (!hasDepth && ed.ensureDepthMap) {
+                    await ed.ensureDepthMap();
+                }
+                l = ed.addFilterLayer("relight");
+                if (!l) throw new Error(ed.status || "Failed to add relight layer");
+                const raw = {};
+                if (a.lights !== undefined) raw.lights = a.lights;
+                else if (!l.params?.lights?.length) raw.lights = [defaultLight(0, { width: ed.width, height: ed.height })];
+                if (a.original !== undefined) raw.original = a.original;
+                if (a.ambient !== undefined) raw.ambient = a.ambient;
+                if (a.depth_scale !== undefined) raw.depth_scale = a.depth_scale;
+                if (a.shadows !== undefined) raw.shadows = a.shadows;
+                const vals = Object.keys(raw).length ? checkParams("relight", raw) : {};
+                if (vals.lights) vals.lights = normalizeLights(vals.lights, { width: ed.width, height: ed.height });
+                if (Object.keys(vals).length) {
+                    writeParams(ed, l, vals);
+                }
+                if (ed.setTool) ed.setTool("lights");
+                touch(ed);
+            }
+            if (ed.relightSettled) await ed.relightSettled();
+            const fitStats = l._relight?.stats?.fit || null;
+            const fit = fitStats
+                ? { direction: fitStats.l0, l0: fitStats.l0, ka: fitStats.ka, kd: fitStats.kd }
+                : { direction: [0, 0, 1], l0: [0, 0, 1], ka: 1, kd: 0 };
+            return {
+                layer: layerSummary(ed, l),
+                lights: l.params?.lights || [],
+                fit,
+                route: "app",
+                seconds: 0,
+                notes: [],
             };
         },
     },
