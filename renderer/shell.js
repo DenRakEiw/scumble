@@ -18,6 +18,7 @@ import { remap, compare, checkNote, normalize as normalizeTokens, referencesText
 import * as realism from "./editor/realism.js";
 import * as comfyprompt from "./editor/comfyprompt.js";
 import * as genpresets from "./editor/genpresets.js";
+import { getSecretGreeting, getScumbleWord, runBrainfuck } from "./easteregg.js";
 
 // the editor's style, in the app's cascade layer (docs/SKINS.md): created here before the first editor, so the
 // editor's own injectStyle() finds it and adds nothing; a skin's rules then beat it as they beat shell.css
@@ -59,6 +60,15 @@ if (window.scumble && window.scumble.pixels) {
 // docs/PLAN_BCE.md §E1: the scheme's COOP / COEP headers make the window cross-origin isolated, which the tile arena's
 // SharedArrayBuffer needs; without it the worker pool copies tiles, which works but costs the copies
 try { window.scumble.log.add({ level: crossOriginIsolated ? "info" : "warn", source: "renderer", message: `cross-origin isolated: ${crossOriginIsolated}` }); } catch (_) { /* preload missing */ }
+try {
+    const greeting = getSecretGreeting();
+    if (typeof window !== "undefined") {
+        /** @type {any} */ (window).scumbleGreeting = getSecretGreeting;
+        /** @type {any} */ (window).scumbleWord = getScumbleWord;
+        /** @type {any} */ (window).runBrainfuck = runBrainfuck;
+    }
+    console.log(`%c${greeting}`, "color: #e28743; font-weight: bold; font-family: monospace;");
+} catch (_) { /* ignore */ }
 
 const ui = {
     recipe: $("shell-recipe"), recipeNote: $("shell-recipe-note"), url: $("shell-url"), connect: $("shell-connect"),
