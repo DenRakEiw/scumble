@@ -108,13 +108,13 @@ JS = r"""
     await settle(ed);
 
     // Step at x = 75 in map (x = 300 in doc):
-    // x < 75: high ground (depth = 50000)
-    // x >= 75: low ground (depth = 10000)
+    // x < 75: near subject / high ground (depth = 10000)
+    // x >= 75: far background / low ground (depth = 50000)
     const Mw = 150, Mh = 100;
     const ramp = new Uint16Array(Mw * Mh);
     for (let y = 0; y < Mh; y++) {
         for (let x = 0; x < Mw; x++) {
-            ramp[y * Mw + x] = x < 75 ? 50000 : 10000;
+            ramp[y * Mw + x] = x < 75 ? 10000 : 50000;
         }
     }
     const depthMap = makeMap("depth", Mw, Mh, ramp, [W, 0, 0, H, 0, 0]);

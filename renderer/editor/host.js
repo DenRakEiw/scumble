@@ -698,7 +698,8 @@ export const host = {
     },
 
     /** What exportImage() encodes: the flattened image, scaled when the Size row asks for it, framed when the Canvas row does. */
-    exportCanvas(editor, fmt) {
+    async exportCanvas(editor, fmt) {
+        if (editor.relightSettled) await editor.relightSettled();
         let canvas = editor.flattenToCanvas({ forRun: true });
         if (fmt === "psd" || fmt === "ora") return canvas;
         const size = this.exportPixels(editor);
@@ -2875,6 +2876,7 @@ export const host = {
             const enc = await editor.encodeComposite({ forRun: true, upTo });
             if (enc) bytes = new Uint8Array(await enc.blob.arrayBuffer());
             else {
+                if (editor.relightSettled) await editor.relightSettled();
                 const c = editor.flattenToCanvas({ forRun: true, upTo });
                 try { bytes = await canvasBytes(c); } finally { c.width = c.height = 0; }
             }
@@ -3899,6 +3901,7 @@ export const host = {
             const sample = await editor.sampleRegionSettled("image", [0, 0, W, H], s, { forRun: true, skipFilters });
             ctx.drawImage(sample, 0, 0, w, h);
         } else {
+            if (editor.relightSettled) await editor.relightSettled();
             const flat = editor.flattenToCanvas({ forRun: true, skipFilters });
             ctx.drawImage(flat, 0, 0, w, h);
         }
@@ -4148,6 +4151,7 @@ export const host = {
             const sample = await editor.sampleRegionSettled("image", [bx0, by0, bx1, by1], s, { forRun: true, skipFilters });
             ctx.drawImage(sample, 0, 0, w, h);
         } else {
+            if (editor.relightSettled) await editor.relightSettled();
             const flat = editor.flattenToCanvas({ forRun: true, skipFilters });
             ctx.drawImage(flat, bx0, by0, bw, bh, 0, 0, w, h);
         }

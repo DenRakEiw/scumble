@@ -102,8 +102,7 @@ pixels (the *Smooth normals* slider, default 2; the depth's edge snap already pu
 map). Phase 2 replaces them by a normal model's map where present (§5 N1).
 
 **Lights**, up to four (R-D6), each `{ id, type, x, y, dist, intensity, color, diffusion, on, angle?, cone?, edge? }`:
-- `type`: **point** (default), **sun** (directional: parallel rays, no falloff; the handle's position gives the
-  direction together with `dist`), **spot** (a point with a cone: `cone` the half angle in degrees, `edge` the
+- `type`: **point** (default), **sun** (directional: parallel rays, no falloff; direction vector is `(mx - cx, my - cy, -dist / 100 * scaleZ)` relative to the map centre `(cx, cy)`, giving elevation via `dist` and azimuth via handle displacement from the centre), **spot** (a point with a cone: `cone` the half angle in degrees, `edge` the
   softness of the rim in percent; it aims at `aim: [x, y]`, a second handle). "Different kinds of rays" (the user).
 - `x, y`: picture pixels, may lie outside the picture (the preview draws the handle on the view).
 - `dist`: Close/Far, −100..100; the light's height `lz = zSurface(x, y) − dist / 100 * depthScale * long` where

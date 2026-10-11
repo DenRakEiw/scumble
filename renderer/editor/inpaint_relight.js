@@ -4,7 +4,8 @@
 // Pure ASCII, no DOM at import: runs under plain Node, in Web Workers, and in the renderer.
 
 import { sampleMap, passToMap, rg8View, guideView, SAMPLE_GLSL } from "./inpaint_maps.js";
-import { snapField, snapParams, SNAP_GLSL } from "./inpaint_edges.js";
+import { snapField, snapParams, u16At, snapRgb, SNAP_GLSL } from "./inpaint_edges.js";
+import { sstep } from "./inpaint_weights.js";
 import { registerGLFilter } from "./inpaint_filters_gl.js";
 import { heightNormals, shadowMarch } from "./px/kernels.js";
 
@@ -126,21 +127,26 @@ function rawKelvinLinear(kelvin) {
     return [srgbToLinear(rNorm), srgbToLinear(gNorm), srgbToLinear(bNorm)];
 }
 
-const KELVIN_5500_REF = rawKelvinLinear(5500);
-
 /**
  * Converts a Kelvin colour temperature (1000..10000 K) or hex colour string
- * into linear RGB, normalized so 5500 K produces exactly (1, 1, 1).
+ * into linear RGB, normalized so luminance (Rec. 709) is exactly 1.0.
  * @param {number|string} k - Kelvin number or hex colour string
  * @returns {[number, number, number]} Linear RGB components
  */
 export function kelvinToRgb(k) {
     if (typeof k === "string" && k.trim().startsWith("#")) {
         const [sr, sg, sb] = hexToRgb(k);
-        return [srgbToLinear(sr), srgbToLinear(sg), srgbToLinear(sb)];
+        const lr = srgbToLinear(sr), lg = srgbToLinear(sg), lb = srgbToLinear(sb);
+        const luma = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+        if (luma > 1e-6) return [lr / luma, lg / luma, lb / luma];
+        return [0, 0, 0];
     }
     const raw = rawKelvinLinear(typeof k === "number" ? k : Number(k) || 5500);
-    return [raw[0] / KELVIN_5500_REF[0], raw[1] / KELVIN_5500_REF[1], raw[2] / KELVIN_5500_REF[2]];
+    const luma = 0.2126 * raw[0] + 0.7152 * raw[1] + 0.0722 * raw[2];
+    if (luma > 1e-6) {
+        return [raw[0] / luma, raw[1] / luma, raw[2] / luma];
+    }
+    return [1, 1, 1];
 }
 
 /**
@@ -201,23 +207,37 @@ export function defaultLight(i = 0, size = null) {
 
 /**
  * Normalizes an array of lights, clamping fields, dropping unknown fields,
- * and capping at LIGHT_MAX (4) entries.
+ * deduplicating IDs, and capping at LIGHT_MAX (4) entries.
+ * Returns an empty array if passed [] or non-array.
  * @param {any[]} list
  * @param {{ width?: number, height?: number }|null} [size=null]
  * @returns {object[]}
  */
 export function normalizeLights(list, size = null) {
-    if (!Array.isArray(list)) return [defaultLight(0, size)];
+    if (!Array.isArray(list) || list.length === 0) return [];
     const out = [];
     const count = Math.min(LIGHT_MAX, list.length);
+    const seenIds = new Set();
+
     for (let i = 0; i < count; i++) {
         const item = list[i] || {};
-        const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : `light_${i + 1}`;
+        let id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : "";
+        if (!id || seenIds.has(id)) {
+            let n = 1;
+            while (seenIds.has(`light_${n}`)) n++;
+            id = `light_${n}`;
+        }
+        seenIds.add(id);
+
         const type = LIGHT_TYPES.includes(item.type) ? item.type : "point";
-        const x = Number.isFinite(item.x) ? Number(item.x) : (size?.width ? size.width * 0.5 : 512);
-        const y = Number.isFinite(item.y) ? Number(item.y) : (size?.height ? size.height * 0.5 : 512);
-        const dist = Math.max(-100, Math.min(100, Number.isFinite(item.dist) ? Number(item.dist) : -30));
-        const intensity = Math.max(0, Math.min(300, Number.isFinite(item.intensity) ? Number(item.intensity) : 100));
+        const xVal = Number(item.x);
+        const yVal = Number(item.y);
+        const x = Number.isFinite(xVal) ? Math.max(-50000, Math.min(50000, xVal)) : (size?.width ? size.width * 0.5 : 512);
+        const y = Number.isFinite(yVal) ? Math.max(-50000, Math.min(50000, yVal)) : (size?.height ? size.height * 0.5 : 512);
+        const distVal = Number(item.dist);
+        const dist = Math.max(-100, Math.min(100, Number.isFinite(distVal) ? distVal : -30));
+        const intVal = Number(item.intensity);
+        const intensity = Math.max(0, Math.min(300, Number.isFinite(intVal) ? intVal : 100));
 
         let color = 5500;
         if (typeof item.color === "string" && item.color.trim().startsWith("#")) {
@@ -225,19 +245,30 @@ export function normalizeLights(list, size = null) {
             if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(h)) {
                 color = h.toLowerCase();
             }
-        } else if (Number.isFinite(Number(item.color))) {
-            color = Math.max(1000, Math.min(10000, Math.round(Number(item.color))));
+        } else {
+            const cNum = Number(item.color);
+            if (Number.isFinite(cNum)) {
+                color = Math.max(1000, Math.min(10000, Math.round(cNum)));
+            }
         }
 
-        const diffusion = Math.max(0, Math.min(100, Number.isFinite(item.diffusion) ? Number(item.diffusion) : 30));
-        const range = Math.max(5, Math.min(500, Number.isFinite(item.range) ? Number(item.range) : 50));
-        const on = item.on !== false;
-        const cone = Math.max(1, Math.min(89, Number.isFinite(item.cone) ? Number(item.cone) : 30));
-        const edge = Math.max(0, Math.min(100, Number.isFinite(item.edge) ? Number(item.edge) : 20));
+        const diffVal = Number(item.diffusion);
+        const diffusion = Math.max(0, Math.min(100, Number.isFinite(diffVal) ? diffVal : 30));
+        const rangeVal = Number(item.range);
+        const range = Math.max(5, Math.min(500, Number.isFinite(rangeVal) ? rangeVal : 50));
+        const on = item.on === false || item.on === "false" || item.on === 0 || item.on === "0" ? false : true;
+        const coneVal = Number(item.cone);
+        const cone = Math.max(1, Math.min(89, Number.isFinite(coneVal) ? coneVal : 30));
+        const edgeVal = Number(item.edge);
+        const edge = Math.max(0, Math.min(100, Number.isFinite(edgeVal) ? edgeVal : 20));
 
         let aim = [Math.round(x), Math.round(y + 100)];
-        if (Array.isArray(item.aim) && item.aim.length >= 2 && Number.isFinite(item.aim[0]) && Number.isFinite(item.aim[1])) {
-            aim = [Number(item.aim[0]), Number(item.aim[1])];
+        if (Array.isArray(item.aim) && item.aim.length >= 2) {
+            const ax = Number(item.aim[0]);
+            const ay = Number(item.aim[1]);
+            if (Number.isFinite(ax) && Number.isFinite(ay)) {
+                aim = [Math.max(-50000, Math.min(50000, ax)), Math.max(-50000, Math.min(50000, ay))];
+            }
         }
 
         out.push({
@@ -256,7 +287,7 @@ export function normalizeLights(list, size = null) {
             aim,
         });
     }
-    return out.length > 0 ? out : [defaultLight(0, size)];
+    return out;
 }
 
 /**
@@ -284,7 +315,7 @@ export function lightToMap(light, map = null, params = null) {
         far01 = sampleMap(map, light.x, light.y);
     }
 
-    const zSurface = far01 * scaleZ;
+    const zSurface = (1.0 - far01) * scaleZ;
     const dist = Number.isFinite(light.dist) ? Number(light.dist) : -30;
     const lz = zSurface - (dist / 100.0) * scaleZ;
 
@@ -303,11 +334,30 @@ export function lightToMap(light, map = null, params = null) {
             }
             aimFar01 = sampleMap(map, light.aim[0], light.aim[1]);
         }
-        aimMap = [ax, ay, aimFar01 * scaleZ];
+        aimMap = [ax, ay, (1.0 - aimFar01) * scaleZ];
     }
 
     const rangeVal = Math.max(1, Number.isFinite(light.range) ? Number(light.range) : 50);
     const rangeInMapPixels = (rangeVal / 100.0) * longSide;
+
+    if (light.type === "sun") {
+        const cx = map && map.w > 0 ? map.w * 0.5 : (longSide * 0.5);
+        const cy = map && map.h > 0 ? map.h * 0.5 : (longSide * 0.5);
+        const dirX = mx - cx;
+        const dirY = my - cy;
+        const dirZ = -(dist / 100.0) * scaleZ;
+        return {
+            mx: dirX,
+            my: dirY,
+            mz: dirZ,
+            lz: dirZ,
+            zSurface,
+            scaleZ,
+            longSide,
+            aim: aimMap,
+            rangeInMapPixels,
+        };
+    }
 
     return {
         mx,
@@ -323,8 +373,41 @@ export function lightToMap(light, map = null, params = null) {
 }
 
 /**
+ * Solves a 3x3 linear system M * x = V using Gaussian elimination with partial pivoting.
+ * @param {number[][]} M - 3x3 matrix
+ * @param {number[]} V - 3-element vector
+ * @returns {[number, number, number]|null} Solution vector or null if singular
+ */
+function solve3x3(M, V) {
+    const aug = [
+        [M[0][0], M[0][1], M[0][2], V[0]],
+        [M[1][0], M[1][1], M[1][2], V[1]],
+        [M[2][0], M[2][1], M[2][2], V[2]],
+    ];
+    for (let i = 0; i < 3; i++) {
+        let maxR = i;
+        for (let k = i + 1; k < 3; k++) {
+            if (Math.abs(aug[k][i]) > Math.abs(aug[maxR][i])) maxR = k;
+        }
+        const tmp = aug[i];
+        aug[i] = aug[maxR];
+        aug[maxR] = tmp;
+        const p = aug[i][i];
+        if (Math.abs(p) < 1e-9) return null;
+        for (let j = i; j <= 3; j++) aug[i][j] /= p;
+        for (let k = 0; k < 3; k++) {
+            if (k === i) continue;
+            const f = aug[k][i];
+            for (let j = i; j <= 3; j++) aug[k][j] -= f * aug[i][j];
+        }
+    }
+    return [aug[0][3], aug[1][3], aug[2][3]];
+}
+
+/**
  * Solves for the dominant light direction l0 and ambient/diffuse terms (ka, kd)
- * by least-squares fit against picture luminance and normals over opaque pixels.
+ * by least-squares fit against picture luminance and normals over opaque pixels
+ * using alternating passes (PLAN_RELIGHT_BUILD.md sec 4.1).
  * S_fit = ka + kd * max(0, n . l0) is normalized so its mean is 1.0.
  *
  * @param {Uint8Array|Uint8ClampedArray} small - Composite RGBA8 bytes (256x256)
@@ -335,8 +418,7 @@ export function lightToMap(light, map = null, params = null) {
  */
 export function fitOriginalLight(small, normalsSmall, w = 256, h = 256) {
     const N = w * h;
-    const M = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
-    const V = [0, 0, 0, 0];
+    let sumNx = 0, sumNy = 0, sumNz = 0;
     let sumY = 0;
     let count = 0;
 
@@ -347,15 +429,11 @@ export function fitOriginalLight(small, normalsSmall, w = 256, h = 256) {
         const nx = (normalsSmall[off] - 127.5) / 127.5;
         const ny = (normalsSmall[off + 1] - 127.5) / 127.5;
         const nz = (normalsSmall[off + 2] - 127.5) / 127.5;
-        const feats = [1.0, nx, ny, nz];
+        sumNx += Y * nx;
+        sumNy += Y * ny;
+        sumNz += Y * nz;
         sumY += Y;
         count++;
-        for (let r = 0; r < 4; r++) {
-            V[r] += Y * feats[r];
-            for (let c = 0; c < 4; c++) {
-                M[r][c] += feats[r] * feats[c];
-            }
-        }
     }
 
     if (count === 0) {
@@ -363,45 +441,80 @@ export function fitOriginalLight(small, normalsSmall, w = 256, h = 256) {
     }
 
     const meanY = sumY / count;
-
-    // Solve 4x4 system M * b = V using Gaussian elimination with partial pivoting
-    const aug = M.map((row, idx) => [...row, V[idx]]);
-    let singular = false;
-    for (let i = 0; i < 4; i++) {
-        let maxRow = i;
-        for (let k = i + 1; k < 4; k++) {
-            if (Math.abs(aug[k][i]) > Math.abs(aug[maxRow][i])) maxRow = k;
-        }
-        [aug[i], aug[maxRow]] = [aug[maxRow], aug[i]];
-        const p = aug[i][i];
-        if (Math.abs(p) < 1e-6) {
-            singular = true;
-            break;
-        }
-        for (let j = i; j <= 4; j++) aug[i][j] /= p;
-        for (let k = 0; k < 4; k++) {
-            if (k === i) continue;
-            const factor = aug[k][i];
-            for (let j = i; j <= 4; j++) aug[k][j] -= factor * aug[i][j];
-        }
-    }
-
+    const lLen = Math.hypot(sumNx, sumNy, sumNz);
     /** @type {[number, number, number]} */
-    let l0 = [0, 0, 1];
-    let bLen = 0;
-    if (!singular) {
-        const b = aug.map(row => row[4]);
-        bLen = Math.hypot(b[1], b[2], b[3]);
-        if (bLen > 1e-4) {
-            l0 = [b[1] / bLen, b[2] / bLen, b[3] / bLen];
+    let l0 = lLen > 1e-6 ? [sumNx / lLen, sumNy / lLen, Math.max(0, sumNz / lLen)] : [0, 0, 1];
+    let l0Len = Math.hypot(l0[0], l0[1], l0[2]) || 1;
+    l0 = [l0[0] / l0Len, l0[1] / l0Len, l0[2] / l0Len];
+
+    let ka = meanY;
+    let kd = 0;
+
+    for (let pass = 0; pass < 3; pass++) {
+        // Step A: 2x2 solve for ka >= 0, kd >= 0
+        let sC = 0, sC2 = 0, sYC = 0;
+        for (let i = 0; i < N; i++) {
+            const off = i * 4;
+            if (small[off + 3] < 128 || normalsSmall[off + 3] < 128) continue;
+            const Y = (0.299 * small[off] + 0.587 * small[off + 1] + 0.114 * small[off + 2]) / 255.0;
+            const nx = (normalsSmall[off] - 127.5) / 127.5;
+            const ny = (normalsSmall[off + 1] - 127.5) / 127.5;
+            const nz = (normalsSmall[off + 2] - 127.5) / 127.5;
+            const c = Math.max(0, nx * l0[0] + ny * l0[1] + nz * l0[2]);
+            sC += c;
+            sC2 += c * c;
+            sYC += Y * c;
+        }
+
+        const det = count * sC2 - sC * sC;
+        const varC = det / (count * count);
+        if (varC > 1e-4) {
+            ka = (sumY * sC2 - sC * sYC) / det;
+            kd = (count * sYC - sC * sumY) / det;
+            if (kd < 0) {
+                kd = 0;
+                ka = meanY;
+            } else if (ka < 0) {
+                ka = 0;
+                kd = sC2 > 0 ? sYC / sC2 : 0;
+            }
+        } else {
+            ka = meanY;
+            kd = 0;
+        }
+
+        // Step B: solve 3x3 for L over pixels with n . l0 > 0
+        const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+        const V = [0, 0, 0];
+        for (let i = 0; i < N; i++) {
+            const off = i * 4;
+            if (small[off + 3] < 128 || normalsSmall[off + 3] < 128) continue;
+            const Y = (0.299 * small[off] + 0.587 * small[off + 1] + 0.114 * small[off + 2]) / 255.0;
+            const nx = (normalsSmall[off] - 127.5) / 127.5;
+            const ny = (normalsSmall[off + 1] - 127.5) / 127.5;
+            const nz = (normalsSmall[off + 2] - 127.5) / 127.5;
+            const dot = nx * l0[0] + ny * l0[1] + nz * l0[2];
+            if (dot > 0) {
+                const res = Y - ka;
+                const n = [nx, ny, nz];
+                for (let r = 0; r < 3; r++) {
+                    V[r] += res * n[r];
+                    for (let c = 0; c < 3; c++) M[r][c] += n[r] * n[c];
+                }
+            }
+        }
+
+        const sol = solve3x3(M, V);
+        if (sol) {
+            sol[2] = Math.max(0, sol[2]); // light in front of image plane
+            const sLen = Math.hypot(sol[0], sol[1], sol[2]);
+            if (sLen > 1e-6) {
+                l0 = [sol[0] / sLen, sol[1] / sLen, sol[2] / sLen];
+            }
         }
     }
 
-    if (bLen <= 1e-4) {
-        return { l0: [0, 0, 1], ka: 1.0, kd: 0.0 };
-    }
-
-    // Solve for ka >= 0, kd >= 0 in Y ~= ka + kd * max(0, n . l0)
+    // Final 2x2 solve for ka, kd with converged l0
     let sC = 0, sC2 = 0, sYC = 0;
     for (let i = 0; i < N; i++) {
         const off = i * 4;
@@ -415,11 +528,9 @@ export function fitOriginalLight(small, normalsSmall, w = 256, h = 256) {
         sC2 += c * c;
         sYC += Y * c;
     }
-
-    let ka = meanY;
-    let kd = 0;
     const det = count * sC2 - sC * sC;
-    if (det > 1e-9) {
+    const varC = det / (count * count);
+    if (varC > 1e-4) {
         ka = (sumY * sC2 - sC * sYC) / det;
         kd = (count * sYC - sC * sumY) / det;
         if (kd < 0) {
@@ -429,6 +540,9 @@ export function fitOriginalLight(small, normalsSmall, w = 256, h = 256) {
             ka = 0;
             kd = sC2 > 0 ? sYC / sC2 : 0;
         }
+    } else {
+        ka = meanY;
+        kd = 0;
     }
 
     const meanFit = ka + kd * (sC / count);
@@ -441,6 +555,10 @@ export function fitOriginalLight(small, normalsSmall, w = 256, h = 256) {
     }
 
     return { l0, ka, kd };
+}
+
+function rolloff(x) {
+    return x > 0.8 ? 0.8 + 0.2 * (1.0 - Math.exp(-(x - 0.8) / 0.2)) : x;
 }
 
 /**
@@ -529,10 +647,10 @@ export function shadePixel(srcRgba, normal, mapCoord, lights, params = null, fit
         const l = lights[i];
         if (!l || !l.on) continue;
 
-        const rgbLin = kelvinToRgb(l.color);
+        const rgbLin = l.rgbLin || kelvinToRgb(l.color);
         const intensity = (Number.isFinite(l.intensity) ? Number(l.intensity) : 100) / 100.0;
         const diffusion = (Number.isFinite(l.diffusion) ? Number(l.diffusion) : 30) / 100.0;
-        const range = Number.isFinite(l.rangeInMapPixels) ? Number(l.rangeInMapPixels) : Math.max(1, Number.isFinite(l.range) ? Number(l.range) : 50);
+        const range = Number.isFinite(l.rangeInMapPixels) ? Number(l.rangeInMapPixels) : Math.max(1, (Number.isFinite(l.range) ? Number(l.range) : 50) / 100.0 * 1024);
 
         let lx = Number(l.mx ?? l.x) || 0;
         let ly = Number(l.my ?? l.y) || 0;
@@ -625,18 +743,13 @@ export function shadePixel(srcRgba, normal, mapCoord, lights, params = null, fit
         ];
     }
 
-    const termR = o * sFit + (1.0 - o) * ambient + lsumR;
-    const termG = o * sFit + (1.0 - o) * ambient + lsumG;
-    const termB = o * sFit + (1.0 - o) * ambient + lsumB;
+    const addedR = fr * ((1.0 - o) * ambient + lsumR);
+    const addedG = fg * ((1.0 - o) * ambient + lsumG);
+    const addedB = fb * ((1.0 - o) * ambient + lsumB);
 
-    let outLinR = fr * termR;
-    let outLinG = fg * termG;
-    let outLinB = fb * termB;
-
-    // Highlight soft shoulder rolloff
-    if (outLinR > 0.8) outLinR = 0.8 + 0.2 * (1.0 - Math.exp(-(outLinR - 0.8) / 0.2));
-    if (outLinG > 0.8) outLinG = 0.8 + 0.2 * (1.0 - Math.exp(-(outLinG - 0.8) / 0.2));
-    if (outLinB > 0.8) outLinB = 0.8 + 0.2 * (1.0 - Math.exp(-(outLinB - 0.8) / 0.2));
+    const outLinR = o * pr + rolloff(addedR);
+    const outLinG = o * pg + rolloff(addedG);
+    const outLinB = o * pb + rolloff(addedB);
 
     const outSrgbR = Math.max(0, Math.min(255, Math.round(linearToSrgb(outLinR) * 255)));
     const outSrgbG = Math.max(0, Math.min(255, Math.round(linearToSrgb(outLinG) * 255)));
@@ -700,9 +813,10 @@ export function lightsToWords(lights, size = null) {
 
         const diffWord = (Number(l.diffusion) || 30) >= 50 ? "soft" : "hard";
         const typeWord = l.type === "sun" ? "sunlight" : (l.type === "spot" ? "spotlight" : "light");
+        const prep = (dir === "above" || dir === "below" || dir.startsWith("behind")) ? "from" : "from the";
 
         return {
-            phrase: `a ${diffWord} ${colWord} ${typeWord} from the ${dir}`,
+            phrase: `a ${diffWord} ${colWord} ${typeWord} ${prep} ${dir}`,
             dir,
         };
     };
@@ -748,13 +862,47 @@ export function lightsToWords(lights, size = null) {
  * wholeStats provider for the relight filter (PLAN_RELIGHT_BUILD.md sec 4.4).
  * Samples 256x256 composite below the layer and depth normals to compute original light fit.
  *
- * @param {{ data: Uint8Array|Uint8ClampedArray, w: number, h: number }} small
+ * @param {any} small
  * @param {{ width: number, height: number }} size
  * @param {any} ctx
  * @returns {{ fit: { l0: [number, number, number], ka: number, kd: number }, seq: number }}
  */
 export function relightStats(small, size, ctx) {
-    if (!small || !small.data || small.w <= 0 || small.h <= 0) {
+    if (!small) {
+        return { fit: { l0: [0, 0, 1], ka: 1.0, kd: 0.0 }, seq: 0 };
+    }
+
+    let pxData = null;
+    let W = 0, H = 0;
+    if (small.data && (small.w || small.width) && (small.h || small.height)) {
+        pxData = small.data;
+        W = small.w || small.width;
+        H = small.h || small.height;
+    } else if (small.width && small.height) {
+        W = small.width;
+        H = small.height;
+        let sctx = null;
+        if (typeof small.getContext === "function") {
+            try { sctx = small.getContext("2d"); } catch (_) {}
+        }
+        if (sctx && typeof sctx.getImageData === "function") {
+            try {
+                pxData = sctx.getImageData(0, 0, W, H).data;
+            } catch (_) {}
+        }
+        if (!pxData) {
+            try {
+                const helper = makeCanvas(W, H);
+                const hctx = helper.getContext("2d");
+                if (hctx) {
+                    hctx.drawImage(small, 0, 0, W, H);
+                    pxData = hctx.getImageData(0, 0, W, H).data;
+                }
+            } catch (_) {}
+        }
+    }
+
+    if (!pxData || W <= 0 || H <= 0) {
         return { fit: { l0: [0, 0, 1], ka: 1.0, kd: 0.0 }, seq: 0 };
     }
 
@@ -763,23 +911,25 @@ export function relightStats(small, size, ctx) {
         return { fit: { l0: [0, 0, 1], ka: 1.0, kd: 0.0 }, seq: 0 };
     }
 
-    // Build 256x256 depth map sample
-    const W = small.w;
-    const H = small.h;
+    const docW = size?.width || W;
+    const docH = size?.height || H;
     const depthSmall = new Uint16Array(W * H);
     for (let y = 0; y < H; y++) {
-        const docY = ((y + 0.5) / H) * size.height;
+        const docY = ((y + 0.5) / H) * docH;
         for (let x = 0; x < W; x++) {
-            const docX = ((x + 0.5) / W) * size.width;
+            const docX = ((x + 0.5) / W) * docW;
             const far01 = sampleMap(depthMap, docX, docY);
             depthSmall[y * W + x] = Math.round(Math.max(0, Math.min(1, far01)) * 65535);
         }
     }
 
+    const params = ctx?.params || ctx?.layer?.params || null;
+    const depthScale = Math.max(5, Math.min(200, Number(params?.depth_scale) || 50));
+    const sigma = Math.max(0, Math.min(10, Number.isFinite(params?.sigma) ? Number(params?.sigma) : 2.0));
     const longSide = Math.max(W, H);
-    const scale = (50 / 100.0) * longSide;
-    const normalsSmall = heightNormals(depthSmall, W, H, scale, 2.0);
-    const fit = fitOriginalLight(small.data, normalsSmall, W, H);
+    const scaleZ = (depthScale / 100.0) * longSide;
+    const normalsSmall = heightNormals(depthSmall, W, H, scaleZ, sigma);
+    const fit = fitOriginalLight(pxData, normalsSmall, W, H);
 
     return { fit, seq: Date.now() };
 }
@@ -899,15 +1049,90 @@ export function applyRelight(src, params, info = {}) {
             if (sa === 0) continue;
 
             const far = snapField(map, guide, mx, my, sr / 255.0, sg / 255.0, sb / 255.0, sigmaR, tau);
-            const nRgba = sampleRgbaBilinear(normalsData, map.w, map.h, mx, my);
+            let nRgba = sampleRgbaBilinear(normalsData, map.w, map.h, mx, my);
+            let vRgba = sampleRgbaBilinear(visData, map.w, map.h, mx, my);
+
+            if (sigmaR > 0 && guide) {
+                const qx = mx - 0.5;
+                const qy = my - 0.5;
+                const i0x = Math.floor(qx);
+                const i0y = Math.floor(qy);
+
+                let lo = 1.0, hi = 0.0;
+                for (let j = -1; j <= 2; j++) {
+                    for (let i = -1; i <= 2; i++) {
+                        const d = u16At(map.data, map.w, map.h, i0x + i, i0y + j);
+                        if (d < lo) lo = d;
+                        if (d > hi) hi = d;
+                    }
+                }
+
+                const k = sstep(tau, 2.0 * tau, hi - lo);
+                if (k > 0) {
+                    const gData = guide.data || guide;
+                    const gw = guide.w || map.w;
+                    const gh = guide.h || map.h;
+                    let sw = 0.0;
+                    let sdN0 = 0.0, sdN1 = 0.0, sdN2 = 0.0, sdN3 = 0.0;
+                    let sdV0 = 0.0, sdV1 = 0.0, sdV2 = 0.0, sdV3 = 0.0;
+                    const inv = 0.5 / (sigmaR * sigmaR);
+
+                    for (let j = -1; j <= 2; j++) {
+                        for (let i = -1; i <= 2; i++) {
+                            const pX = i0x + i;
+                            const pY = i0y + j;
+                            const ddx = pX - qx;
+                            const ddy = pY - qy;
+                            const [gr, gg, gb] = snapRgb(gData, gw, gh, pX, pY);
+                            const er = (sr / 255.0) - gr;
+                            const eg = (sg / 255.0) - gg;
+                            const eb = (sb / 255.0) - gb;
+                            const distSpatial2 = ddx * ddx + ddy * ddy;
+                            const distColor2 = er * er + eg * eg + eb * eb;
+                            const w = Math.exp(-0.5 * distSpatial2) * Math.exp(-distColor2 * inv);
+                            sw += w;
+
+                            const clpX = Math.max(0, Math.min(map.w - 1, pX));
+                            const clpY = Math.max(0, Math.min(map.h - 1, pY));
+                            const offNorm = (clpY * map.w + clpX) * 4;
+                            sdN0 += w * normalsData[offNorm];
+                            sdN1 += w * normalsData[offNorm + 1];
+                            sdN2 += w * normalsData[offNorm + 2];
+                            sdN3 += w * normalsData[offNorm + 3];
+
+                            const offVis = (clpY * map.w + clpX) * 4;
+                            sdV0 += w * visData[offVis];
+                            sdV1 += w * visData[offVis + 1];
+                            sdV2 += w * visData[offVis + 2];
+                            sdV3 += w * visData[offVis + 3];
+                        }
+                    }
+
+                    if (sw > 1e-6) {
+                        const invSw = 1.0 / sw;
+                        nRgba = [
+                            nRgba[0] + (sdN0 * invSw - nRgba[0]) * k,
+                            nRgba[1] + (sdN1 * invSw - nRgba[1]) * k,
+                            nRgba[2] + (sdN2 * invSw - nRgba[2]) * k,
+                            nRgba[3] + (sdN3 * invSw - nRgba[3]) * k,
+                        ];
+                        vRgba = [
+                            vRgba[0] + (sdV0 * invSw - vRgba[0]) * k,
+                            vRgba[1] + (sdV1 * invSw - vRgba[1]) * k,
+                            vRgba[2] + (sdV2 * invSw - vRgba[2]) * k,
+                            vRgba[3] + (sdV3 * invSw - vRgba[3]) * k,
+                        ];
+                    }
+                }
+            }
+
             const nx = (nRgba[0] - 127.5) / 127.5;
             const ny = (nRgba[1] - 127.5) / 127.5;
             const nz = (nRgba[2] - 127.5) / 127.5;
 
-            const vRgba = sampleRgbaBilinear(visData, map.w, map.h, mx, my);
             const vVals = [vRgba[0] / 255.0, vRgba[1] / 255.0, vRgba[2] / 255.0, vRgba[3] / 255.0];
 
-            const outRgba = shadePixel([sr, sg, sb, sa], [nx, ny, nz], [mx, my, far * scaleZ], mappedLights, p, fit, vVals);
+            const outRgba = shadePixel([sr, sg, sb, sa], [nx, ny, nz], [mx, my, (1.0 - far) * scaleZ], mappedLights, p, fit, vVals);
             px[idx] = outRgba[0];
             px[idx + 1] = outRgba[1];
             px[idx + 2] = outRgba[2];
@@ -1002,52 +1227,63 @@ vec4 shade(vec4 c, vec2 uv) {
     vec2 mpx = vec2(dot(u_m0.xy, pp) + u_m1.x, dot(u_m0.zw, pp) + u_m1.y);
 
     float far = snapField(u_map, u_guide, mpx, c.rgb, u_snap);
-    vec2 suv_map = mpx / vec2(textureSize(u_normals, 0));
 
-    vec4 nTex = texture(u_normals, suv_map);
-    vec4 vTex = texture(u_vis, suv_map);
+    vec3 normal = vec3(0.0, 0.0, 1.0);
+    vec4 vis = vec4(1.0);
 
-    if (u_snap.x > 0.0) {
-        vec2 q = mpx - 0.5;
-        ivec2 i0 = ivec2(floor(q));
-        float lo = 1.0, hi = 0.0;
-        for (int j = -1; j <= 2; j++) {
-            for (int i = -1; i <= 2; i++) {
-                float d = u16At(u_map, i0 + ivec2(i, j));
-                lo = min(lo, d);
-                hi = max(hi, d);
-            }
-        }
-        float k = w_sstep(u_snap.y, 2.0 * u_snap.y, hi - lo);
-        if (k > 0.0) {
-            float sw = 0.0;
-            vec4 sdN = vec4(0.0);
-            vec4 sdV = vec4(0.0);
-            float inv = 0.5 / (u_snap.x * u_snap.x);
+    ivec2 normSize = textureSize(u_normals, 0);
+    ivec2 visSize = textureSize(u_vis, 0);
+
+    if (normSize.x > 1 && normSize.y > 1) {
+        vec2 suv_map = mpx / vec2(normSize);
+        vec4 nTex = texture(u_normals, suv_map);
+        vec2 suv_vis = visSize.x > 1 ? mpx / vec2(visSize) : suv_map;
+        vec4 vTex = visSize.x > 1 ? texture(u_vis, suv_vis) : vec4(1.0);
+
+        if (u_snap.x > 0.0) {
+            vec2 q = mpx - 0.5;
+            ivec2 i0 = ivec2(floor(q));
+            float lo = 1.0, hi = 0.0;
             for (int j = -1; j <= 2; j++) {
                 for (int i = -1; i <= 2; i++) {
-                    ivec2 p = i0 + ivec2(i, j);
-                    vec2 dd = vec2(p) - q;
-                    vec3 e = c.rgb - snapRgb(u_guide, p);
-                    float w = exp(-0.5 * dot(dd, dd)) * exp(-dot(e, e) * inv);
-                    sw += w;
-                    ivec2 clp = clamp(p, ivec2(0), textureSize(u_normals, 0) - 1);
-                    sdN += w * texelFetch(u_normals, clp, 0);
-                    sdV += w * texelFetch(u_vis, clp, 0);
+                    float d = u16At(u_map, i0 + ivec2(i, j));
+                    lo = min(lo, d);
+                    hi = max(hi, d);
                 }
             }
-            if (sw > 1e-6) {
-                nTex = mix(nTex, sdN / sw, k);
-                vTex = mix(vTex, sdV / sw, k);
+            float k = w_sstep(u_snap.y, 2.0 * u_snap.y, hi - lo);
+            if (k > 0.0) {
+                float sw = 0.0;
+                vec4 sdN = vec4(0.0);
+                vec4 sdV = vec4(0.0);
+                float inv = 0.5 / (u_snap.x * u_snap.x);
+                for (int j = -1; j <= 2; j++) {
+                    for (int i = -1; i <= 2; i++) {
+                        ivec2 p = i0 + ivec2(i, j);
+                        vec2 dd = vec2(p) - q;
+                        vec3 e = c.rgb - snapRgb(u_guide, p);
+                        float w = exp(-0.5 * dot(dd, dd)) * exp(-dot(e, e) * inv);
+                        sw += w;
+                        ivec2 clpN = clamp(p, ivec2(0), normSize - 1);
+                        ivec2 clpV = clamp(p, ivec2(0), visSize - 1);
+                        sdN += w * texelFetch(u_normals, clpN, 0);
+                        sdV += w * texelFetch(u_vis, clpV, 0);
+                    }
+                }
+                if (sw > 1e-6) {
+                    nTex = mix(nTex, sdN / sw, k);
+                    vTex = mix(vTex, sdV / sw, k);
+                }
             }
         }
+
+        vec3 nRaw = (nTex.xyz - 0.5) * 2.0;
+        float nLen = length(nRaw);
+        normal = nLen > 1e-5 ? nRaw / nLen : vec3(0.0, 0.0, 1.0);
+        vis = vTex;
     }
 
-    vec3 nRaw = (nTex.xyz - 0.5) * 2.0;
-    float nLen = length(nRaw);
-    vec3 normal = nLen > 1e-5 ? nRaw / nLen : vec3(0.0, 0.0, 1.0);
-    vec4 vis = vTex;
-    vec3 mpos = vec3(mpx.x, mpx.y, far * u_depth_scale);
+    vec3 mpos = vec3(mpx.x, mpx.y, (1.0 - far) * u_depth_scale);
 
     vec3 pLin = rl_srgbToLinear(c.rgb);
 
@@ -1076,16 +1312,11 @@ vec4 shade(vec4 c, vec2 uv) {
         return vec4(rl_linearToSrgb(lm), c.a);
     }
 
-    if (u_original >= 0.999 && dot(lsum, vec3(1.0)) <= 1e-5) {
-        return c;
-    }
-
-    vec3 term = vec3(u_original * sFit + (1.0 - u_original) * u_ambient) + lsum;
-    vec3 outLin = fLin * term;
-
-    outLin.r = rl_rolloff(outLin.r);
-    outLin.g = rl_rolloff(outLin.g);
-    outLin.b = rl_rolloff(outLin.b);
+    vec3 added = fLin * (vec3((1.0 - u_original) * u_ambient) + lsum);
+    added.r = rl_rolloff(added.r);
+    added.g = rl_rolloff(added.g);
+    added.b = rl_rolloff(added.b);
+    vec3 outLin = u_original * pLin + added;
 
     return vec4(rl_linearToSrgb(outLin), c.a);
 }

@@ -57,7 +57,17 @@ async function main() {
     assert.equal(outOff[0], src[0], "identity with lights off: red");
     assert.equal(outOff[1], src[1], "identity with lights off: green");
     assert.equal(outOff[2], src[2], "identity with lights off: blue");
-    console.log("  PASS 1: identity at defaults");
+
+    // Test with a light turned ON but intensity 0: MUST return exact input pixel bit-identical
+    const zeroIntensityLight = [{ ...defaultLight(0), on: true, intensity: 0 }];
+    for (const testColor of [[180, 120, 60, 255], [243, 120, 12, 255], [255, 255, 255, 255], [0, 0, 0, 255]]) {
+        const outZero = shadePixel(testColor, normal, mapCoord, zeroIntensityLight, { original: 100, ambient: 15 });
+        assert.equal(outZero[0], testColor[0], `identity with intensity 0: red for [${testColor}]`);
+        assert.equal(outZero[1], testColor[1], `identity with intensity 0: green for [${testColor}]`);
+        assert.equal(outZero[2], testColor[2], `identity with intensity 0: blue for [${testColor}]`);
+        assert.equal(outZero[3], testColor[3], `identity with intensity 0: alpha for [${testColor}]`);
+    }
+    console.log("  PASS 1: identity at defaults and with lights at intensity 0");
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -154,15 +164,29 @@ async function main() {
 }
 
 // ------------------------------------------------------------------------------------------------
-// 5. A light behind the surface lights nothing without wrap
+// 5. Ground plane points up, and a light behind the surface lights nothing without wrap
 // ------------------------------------------------------------------------------------------------
 {
+    // A ground plane: far at horizon (y=0, depth 50000), near at bottom (y=31, depth 10000)
+    const GW = 32, GH = 32;
+    const gdepth = new Uint16Array(GW * GH);
+    for (let y = 0; y < GH; y++) {
+        const d = Math.round(50000 - (y / (GH - 1)) * 40000); // 50000 -> 10000
+        for (let x = 0; x < GW; x++) {
+            gdepth[y * GW + x] = d;
+        }
+    }
+    const gnormals = heightNormals(gdepth, GW, GH, 50.0, 0);
+    const midIdx = (16 * GW + 16) * 4;
+    const gny = (gnormals[midIdx + 1] - 127.5) / 127.5;
+    assert(gny < -0.2, `ground plane normal ny must point UP (negative y in canvas): got ${gny}`);
+
     // Surface normal facing camera: n = (0, 0, 1)
     const normal = [0, 0, 1];
     const src = [100, 100, 100, 255];
     const params = { original: 0, ambient: 0, shadows: 0 };
 
-    // Light behind edge: normal is (0, 0, 1), light is to the side and behind (dirZ = -0.2)
+    // Light behind edge: normal is (0, 0, 1), surface at z=50, light at lz=30 (behind surface)
     const lightBehindNoWrap = {
         id: "rim_1",
         type: "point",
@@ -185,22 +209,27 @@ async function main() {
     };
     const outWrap = shadePixel(src, normal, [100, 100, 50], [lightBehindWrap], params);
     assert(outWrap[0] > 0, "light behind surface with wrap diffuses around edge");
-    console.log("  PASS 5: light behind surface requires diffusion wrap to illuminate front face");
+    console.log("  PASS 5: ground plane normal points up and light behind surface requires wrap");
 }
 
 // ------------------------------------------------------------------------------------------------
-// 6. kelvinToRgb(5500) ~= 1
+// 6. kelvinToRgb normalized to Rec. 709 luminance = 1.0
 // ------------------------------------------------------------------------------------------------
 {
+    for (const k of [2700, 3200, 5500, 6500, 8000, "#ff8800", "#00ffff"]) {
+        const rgb = kelvinToRgb(k);
+        const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+        assert(Math.abs(luma - 1.0) < 1e-4, `Rec. 709 luminance of ${k} should be 1.0: got ${luma}`);
+    }
     const rgb5500 = kelvinToRgb(5500);
-    assert(Math.abs(rgb5500[0] - 1.0) < 1e-6, "5500K red is 1.0");
-    assert(Math.abs(rgb5500[1] - 1.0) < 1e-6, "5500K green is 1.0");
-    assert(Math.abs(rgb5500[2] - 1.0) < 1e-6, "5500K blue is 1.0");
-    console.log("  PASS 6: kelvinToRgb(5500) is exactly [1, 1, 1]");
+    const luma5500 = 0.2126 * rgb5500[0] + 0.7152 * rgb5500[1] + 0.0722 * rgb5500[2];
+    assert(Math.abs(luma5500 - 1.0) < 1e-6, "5500K luminance is 1.0");
+    assert(rgb5500[0] > 0 && rgb5500[1] > 0 && rgb5500[2] > 0, "5500K components are positive");
+    console.log("  PASS 6: kelvinToRgb normalizes to Rec. 709 luminance = 1.0");
 }
 
 // ------------------------------------------------------------------------------------------------
-// 7. 2700 K warmer than 8000 K
+// 7. 2700 K warmer than 8000 K, sun relative direction, and canvas relightStats
 // ------------------------------------------------------------------------------------------------
 {
     const rgb2700 = kelvinToRgb(2700);
@@ -222,66 +251,115 @@ async function main() {
     assert(Math.abs(linearToSrgb(srgbToLinear(0.5)) - 0.5) < 1e-4, "sRGB/linear round-trip");
     assert.equal(LIGHT_TYPES.length, 3, "3 light types");
     assert(KELVIN_PRESETS.some((p) => p.kelvin === 2700), "2700K in presets");
-    const mapped = lightToMap({ type: "point", x: 10, y: 20, z: 30, dist: 40 }, null, null);
-    assert(Number.isFinite(mapped.lz), "lightToMap lz finite");
-    const stats = relightStats(null, null, null);
-    assert(stats && stats.fit, "relightStats fallback fit");
-    console.log("  PASS 7: 2700 K is warmer than 8000 K and color helpers work");
+
+    // Sun light direction vector relative to center
+    const sunMapped = lightToMap({ type: "sun", x: 60, y: 70, dist: -30 }, { w: 100, h: 100 }, null);
+    // cx=50, cy=50 -> dx = 60-50 = 10, dy = 70-50 = 20, lz = -(-30)/100 * 50 = 15
+    assert.equal(sunMapped.mx, 10, "sun dx relative to center");
+    assert.equal(sunMapped.my, 20, "sun dy relative to center");
+    assert.equal(sunMapped.lz, 15, "sun lz positive elevation for negative dist");
+
+    // relightStats with null fallback
+    const statsFallback = relightStats(null, null, null);
+    assert(statsFallback && statsFallback.fit, "relightStats fallback fit");
+    assert.deepEqual(statsFallback.fit.l0, [0, 0, 1], "fallback l0 is [0, 0, 1]");
+
+    // relightStats with a real canvas/canvas-like object
+    const CW = 64, CH = 64;
+    const canvasPixels = new Uint8ClampedArray(CW * CH * 4);
+    // Fill with gradient
+    for (let y = 0; y < CH; y++) {
+        for (let x = 0; x < CW; x++) {
+            const idx = (y * CW + x) * 4;
+            canvasPixels[idx + 0] = x * 4;
+            canvasPixels[idx + 1] = y * 4;
+            canvasPixels[idx + 2] = 128;
+            canvasPixels[idx + 3] = 255;
+        }
+    }
+    const mockCanvas = {
+        width: CW,
+        height: CH,
+        getContext(type) {
+            if (type === "2d") {
+                return {
+                    getImageData(sx, sy, sw, sh) {
+                        return { data: canvasPixels, width: sw, height: sh };
+                    }
+                };
+            }
+            return null;
+        }
+    };
+    const cDepth = { data: new Uint16Array(CW * CH), w: CW, h: CH };
+    for (let i = 0; i < CW * CH; i++) cDepth.data[i] = 30000;
+    const ctxMock = { params: { depth_scale: 60, sigma: 1.5 } };
+    const statsCanvas = relightStats(mockCanvas, cDepth, ctxMock);
+    assert(statsCanvas && statsCanvas.fit, "relightStats computes fit with canvas");
+    assert(Number.isFinite(statsCanvas.fit.ka), "statsCanvas ka is finite");
+    assert(Number.isFinite(statsCanvas.fit.kd), "statsCanvas kd is finite");
+    console.log("  PASS 7: 2700 K is warmer than 8000 K, sun relative direction, and canvas relightStats works");
 }
 
 // ------------------------------------------------------------------------------------------------
-// 8. fitOriginalLight on a synthetic sphere recovers the direction within 10 degrees
+// 8. fitOriginalLight on synthetic spheres (front and side-lit) recovers direction within 10 degrees
 // ------------------------------------------------------------------------------------------------
 {
     const W = 256, H = 256;
-    const small = new Uint8Array(W * H * 4);
-    const normals = new Uint8Array(W * H * 4);
+    function testFitSphere(L_true, label) {
+        const small = new Uint8Array(W * H * 4);
+        const normals = new Uint8Array(W * H * 4);
+        const lenL = Math.hypot(...L_true);
+        const lx = L_true[0] / lenL, ly = L_true[1] / lenL, lz = L_true[2] / lenL;
+        const ka_true = 0.2, kd_true = 0.8;
 
-    const L_true = [-0.5, -0.3, 0.8];
-    const lenL = Math.hypot(...L_true);
-    const lx = L_true[0] / lenL, ly = L_true[1] / lenL, lz = L_true[2] / lenL;
-    const ka_true = 0.2, kd_true = 0.8;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const idx = (y * W + x) * 4;
+                const dx = (x - 128) / 100;
+                const dy = (y - 128) / 100;
+                const r2 = dx * dx + dy * dy;
+                if (r2 <= 1.0) {
+                    const nz = Math.sqrt(1.0 - r2);
+                    const nx = dx, ny = dy;
+                    normals[idx + 0] = Math.round(nx * 127.5 + 127.5);
+                    normals[idx + 1] = Math.round(ny * 127.5 + 127.5);
+                    normals[idx + 2] = Math.round(nz * 127.5 + 127.5);
+                    normals[idx + 3] = 255;
 
-    for (let y = 0; y < H; y++) {
-        for (let x = 0; x < W; x++) {
-            const idx = (y * W + x) * 4;
-            const dx = (x - 128) / 100;
-            const dy = (y - 128) / 100;
-            const r2 = dx * dx + dy * dy;
-            if (r2 <= 1.0) {
-                const nz = Math.sqrt(1.0 - r2);
-                const nx = dx, ny = dy;
-                normals[idx + 0] = Math.round(nx * 127.5 + 127.5);
-                normals[idx + 1] = Math.round(ny * 127.5 + 127.5);
-                normals[idx + 2] = Math.round(nz * 127.5 + 127.5);
-                normals[idx + 3] = 255;
-
-                const ndl = Math.max(0, nx * lx + ny * ly + nz * lz);
-                const Y = Math.min(1.0, ka_true + kd_true * ndl);
-                const yByte = Math.round(Y * 255);
-                small[idx + 0] = yByte;
-                small[idx + 1] = yByte;
-                small[idx + 2] = yByte;
-                small[idx + 3] = 255;
-            } else {
-                normals[idx + 0] = 128;
-                normals[idx + 1] = 128;
-                normals[idx + 2] = 255;
-                normals[idx + 3] = 0;
-                small[idx + 0] = 0;
-                small[idx + 1] = 0;
-                small[idx + 2] = 0;
-                small[idx + 3] = 0;
+                    const ndl = Math.max(0, nx * lx + ny * ly + nz * lz);
+                    const Y = Math.min(1.0, ka_true + kd_true * ndl);
+                    const yByte = Math.round(Y * 255);
+                    small[idx + 0] = yByte;
+                    small[idx + 1] = yByte;
+                    small[idx + 2] = yByte;
+                    small[idx + 3] = 255;
+                } else {
+                    normals[idx + 0] = 128;
+                    normals[idx + 1] = 128;
+                    normals[idx + 2] = 255;
+                    normals[idx + 3] = 0;
+                    small[idx + 0] = 0;
+                    small[idx + 1] = 0;
+                    small[idx + 2] = 0;
+                    small[idx + 3] = 0;
+                }
             }
         }
+
+        const fit = fitOriginalLight(small, normals, W, H);
+        const dotProd = fit.l0[0] * lx + fit.l0[1] * ly + fit.l0[2] * lz;
+        const angleDeg = Math.acos(Math.min(1, Math.max(-1, dotProd))) * (180 / Math.PI);
+        assert(angleDeg <= 10.0, `${label}: fit direction angle error ${angleDeg.toFixed(2)} deg <= 10 deg`);
+        assert(fit.l0[2] >= 0, `${label}: l0.z must be non-negative (light in front of image plane): got ${fit.l0[2]}`);
+        assert(fit.ka >= 0, `${label}: ka non-negative`);
+        assert(fit.kd >= 0, `${label}: kd non-negative`);
+        return angleDeg;
     }
 
-    const fit = fitOriginalLight(small, normals, W, H);
-    const dotProd = fit.l0[0] * lx + fit.l0[1] * ly + fit.l0[2] * lz;
-    const angleDeg = Math.acos(Math.min(1, Math.max(-1, dotProd))) * (180 / Math.PI);
-    assert(angleDeg <= 10.0, `fit direction angle error ${angleDeg.toFixed(2)} deg <= 10 deg`);
-    assert(fit.ka >= 0, "ka non-negative");
-    assert(fit.kd >= 0, "kd non-negative");
+    const angle1 = testFitSphere([-0.5, -0.3, 0.8], "front-lit sphere");
+    const angle2 = testFitSphere([0.85, 0.2, 0.35], "side-lit sphere (right)");
+    const angle3 = testFitSphere([-0.8, -0.4, 0.3], "side-lit sphere (left)");
 
     // Flat picture test: no normals
     const flatNormals = new Uint8Array(W * H * 4);
@@ -299,16 +377,16 @@ async function main() {
     const flatFit = fitOriginalLight(flatSmall, flatNormals, W, H);
     assert.equal(flatFit.kd, 0.0, "flat picture kd is 0");
     assert.equal(flatFit.ka, 1.0, "flat picture ka normalized to 1.0");
-    console.log(`  PASS 8: fitOriginalLight recovered sphere direction within ${angleDeg.toFixed(2)} deg (<= 10 deg)`);
+    console.log(`  PASS 8: fitOriginalLight recovered front and side-lit spheres within 10 deg (max ${Math.max(angle1, angle2, angle3).toFixed(2)} deg)`);
 }
 
 // ------------------------------------------------------------------------------------------------
-// 9. normalizeLights drops the fifth light and clamps fields
+// 9. normalizeLights drops the fifth light, deduplicates IDs, and clamps fields
 // ------------------------------------------------------------------------------------------------
 {
     const rawList = [
-        { id: "custom_a", type: "point", x: 10, y: 20, dist: -150, intensity: 500, color: 15000, unknownField: "bad" },
-        { id: "custom_b", type: "spot", x: 100, y: 100, dist: 200, intensity: -50, color: 500 },
+        { id: "light_1", type: "point", x: 10, y: 20, dist: -150, intensity: 500, range: 600, color: 15000, unknownField: "bad" },
+        { id: "light_1", type: "spot", x: 100, y: 100, dist: 200, intensity: -50, color: 500 }, // duplicate ID!
         { id: "custom_c", type: "sun", x: 200, y: 200, dist: 50, intensity: 100, color: "#ff8800" },
         { id: "custom_d", type: "invalid_type", x: 300, y: 300 },
         { id: "custom_e", type: "point", x: 400, y: 400 }, // Fifth light - should be dropped!
@@ -317,18 +395,24 @@ async function main() {
     assert.equal(norm.length, LIGHT_MAX, `at most ${LIGHT_MAX} lights kept`);
     assert.equal(norm[0].dist, -100, "dist clamped to -100");
     assert.equal(norm[0].intensity, 300, "intensity clamped to 300");
+    assert.equal(norm[0].range, 500, "range clamped to 500");
     assert.equal(norm[0].color, 10000, "color clamped to 10000");
     assert.equal(norm[0].unknownField, undefined, "unknown field dropped");
+    assert.notEqual(norm[0].id, norm[1].id, "duplicate id was reallocated");
     assert.equal(norm[1].dist, 100, "dist clamped to 100");
     assert.equal(norm[1].intensity, 0, "intensity clamped to 0");
     assert.equal(norm[1].color, 1000, "color clamped to 1000");
     assert.equal(norm[2].color, "#ff8800", "valid hex color preserved");
     assert.equal(norm[3].type, "point", "invalid type falls back to point");
-    console.log("  PASS 9: normalizeLights clamps, drops 5th light and unknown fields");
+
+    // Empty and non-array handling
+    assert.deepEqual(normalizeLights(null), []);
+    assert.deepEqual(normalizeLights([]), []);
+    console.log("  PASS 9: normalizeLights deduplicates IDs, clamps range <= 500, drops 5th light and unknown fields");
 }
 
 // ------------------------------------------------------------------------------------------------
-// 10. lightsToWords for the four corners and a rim light
+// 10. lightsToWords for the four corners, rim light, and grammar
 // ------------------------------------------------------------------------------------------------
 {
     const size = { width: 1000, height: 1000 };
@@ -348,7 +432,22 @@ async function main() {
     // Rim light from behind
     const lightRim = [{ ...defaultLight(0, size), x: 500, y: 500, dist: 50 }];
     const wordsRim = lightsToWords(lightRim, size);
-    assert(wordsRim.prompt.includes("rim light") || wordsRim.prompt.includes("behind"), "identifies rim light");
+    assert(wordsRim.prompt.includes("from behind (rim light)"), `grammar: identifies rim light as 'from behind (rim light)': ${wordsRim.prompt}`);
+
+    // Light from above
+    const lightAbove = [{ ...defaultLight(0, size), x: 500, y: 100, dist: -30 }];
+    const wordsAbove = lightsToWords(lightAbove, size);
+    assert(wordsAbove.prompt.includes("from above"), "grammar: from above");
+
+    // Light from below
+    const lightBelow = [{ ...defaultLight(0, size), x: 500, y: 900, dist: -30 }];
+    const wordsBelow = lightsToWords(lightBelow, size);
+    assert(wordsBelow.prompt.includes("from below"), "grammar: from below");
+
+    // Light from the front
+    const lightFront = [{ ...defaultLight(0, size), x: 500, y: 500, dist: -50 }];
+    const wordsFront = lightsToWords(lightFront, size);
+    assert(wordsFront.prompt.includes("from the front"), "grammar: from the front");
 
     // ICLight latent enum check
     const lightLeft = [{ ...defaultLight(0, size), x: 100, y: 500, dist: -30 }];
@@ -359,18 +458,20 @@ async function main() {
     const wordsRight = lightsToWords(lightRight, size);
     assert.equal(wordsRight.latent, "Right", "latent is Right for light on right");
 
-    console.log("  PASS 10: lightsToWords describes directions, corners, and rim lights");
+    console.log("  PASS 10: lightsToWords describes directions with correct grammar, corners, and rim lights");
 }
 
 // ------------------------------------------------------------------------------------------------
-// 11. heightNormals on a ramp gives the ramp's normal
+// 11. heightNormals on a depth ramp gives the correct surface normal (height = (1 - far) * scale)
 // ------------------------------------------------------------------------------------------------
 {
     const W = 64, H = 32;
     const depth = new Uint16Array(W * H);
     const scale = 50.0;
 
-    // Linear horizontal ramp: depth increases from left (0) to right (65535)
+    // Linear horizontal ramp: depth increases from left (0 = near, high ground) to right (65535 = far, low ground)
+    // Height z = (1 - far01) * scale decreases from left to right.
+    // Therefore dz/dx < 0, so normal nx = -dz/dx > 0 (points rightwards/upwards along slope)
     for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
             depth[y * W + x] = Math.round((x / (W - 1)) * 65535);
@@ -384,66 +485,68 @@ async function main() {
     const ny = (normals[idx + 1] - 127.5) / 127.5;
     const nz = (normals[idx + 2] - 127.5) / 127.5;
 
-    // dz/dx > 0, so normal nx = -dz/dx should be negative
-    assert(nx < -0.1, `ramp normal nx should be negative: got ${nx}`);
+    // Height decreases as x increases (dz/dx < 0), so normal nx = -dz/dx should be POSITIVE
+    assert(nx > 0.1, `ramp normal nx should be positive: got ${nx}`);
     assert(Math.abs(ny) < 0.05, `ramp normal ny should be approximately 0: got ${ny}`);
     assert(nz > 0.5, `ramp normal nz should be positive: got ${nz}`);
-    console.log("  PASS 11: heightNormals computes analytic normal on depth ramp");
+    console.log("  PASS 11: heightNormals computes analytic normal on depth ramp with height = (1 - far) * scale");
 }
 
 // ------------------------------------------------------------------------------------------------
-// 12. shadowMarch on a step occludes behind the step and not in front
+// 12. shadowMarch on a step: near subject (low far) casts shadow on far background (high far)
 // ------------------------------------------------------------------------------------------------
 {
     const W = 100, H = 20;
     const depth = new Uint16Array(W * H);
     const scale = 100.0;
 
-    // Step at x = 50: low ground on left (depth = 10000), high ground on right (depth = 50000)
+    // Step at x = 50: near subject on left (depth = 10000 -> near, height ~ 84.7)
+    // and far background on right (depth = 50000 -> far, height ~ 23.7)
     for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
             depth[y * W + x] = x < 50 ? 10000 : 50000;
         }
     }
 
-    // Light above the high ground at (80, 10, 100)
-    const light = [80, 10, 100, 0];
+    // Light in front of the subject at (20, 10, 100) (z=100 is in front of subject z=84.7)
+    const light = [20, 10, 100, 0];
     const vis = shadowMarch(depth, W, H, scale, light, 0, 4, 32, 1.0, 0, H);
 
-    // Pixel at x = 20 (on low ground, behind the step from the light)
-    const visBehind = vis[10 * W + 20];
-    assert.equal(visBehind, 0, `behind step must be in shadow: got ${visBehind}`);
+    // Pixel at x = 20 (on near subject, directly in front of the light): lit
+    const visSubject = vis[10 * W + 20];
+    assert.equal(visSubject, 255, `subject in front of step must be lit: got ${visSubject}`);
 
-    // Pixel at x = 80 (directly under the light, in front of the step)
-    const visInFront = vis[10 * W + 80];
-    assert.equal(visInFront, 255, `in front of step must be lit: got ${visInFront}`);
-    console.log("  PASS 12: shadowMarch occludes behind step and illuminates in front");
+    // Pixel at x = 80 (on background, occluded by the tall subject): in shadow
+    const visBackground = vis[10 * W + 80];
+    assert.equal(visBackground, 0, `background behind step must be in shadow: got ${visBackground}`);
+    console.log("  PASS 12: shadowMarch illuminates near subject and casts shadow on far background");
 }
 
 // ------------------------------------------------------------------------------------------------
-// 13. A disc radius softens the edge monotonically
+// 13. A disc radius softens the edge penumbra monotonically
 // ------------------------------------------------------------------------------------------------
 {
     const W = 100, H = 20;
     const depth = new Uint16Array(W * H);
     const scale = 100.0;
+    // Step at x = 50: near subject on left (10000), far background on right (50000)
     for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
             depth[y * W + x] = x < 50 ? 10000 : 50000;
         }
     }
 
-    // Light at (60, 10, 100)
-    const light = [60, 10, 100, 0];
+    // Light in front of subject at (30, 10, 100)
+    const light = [30, 10, 100, 0];
     const visR0 = shadowMarch(depth, W, H, scale, light, 0, 16, 32, 1.0, 0, H);
     const visR5 = shadowMarch(depth, W, H, scale, light, 5, 16, 32, 1.0, 0, H);
     const visR15 = shadowMarch(depth, W, H, scale, light, 15, 16, 32, 1.0, 0, H);
 
-    // At edge x = 49 (just on the shadowed side of the step)
+    // At edge x = 51 (just behind the step on the background)
     // Larger radius should cast partial light over the edge into the shadow
-    const v0 = visR0[10 * W + 49];
-    const v5 = visR5[10 * W + 49];
-    const v15 = visR15[10 * W + 49];
+    const v0 = visR0[10 * W + 51];
+    const v5 = visR5[10 * W + 51];
+    const v15 = visR15[10 * W + 51];
 
     assert(v0 <= v5, `penumbra: r0 (${v0}) <= r5 (${v5})`);
     assert(v5 <= v15, `penumbra: r5 (${v5}) <= r15 (${v15})`);

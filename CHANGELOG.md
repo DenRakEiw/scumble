@@ -4,10 +4,9 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
-- Relight: pure light model, original light fit, Kelvin color conversion, and JS kernel twins for height normals and shadow march (L0a).
-- Relight: Rust wasm kernels height_normals and shadow_march in crates/px (ABI 19), wasm dispatch with JS fallback, and performance benchmarks (L0b).
-- Relight filter layer: GLSL shader and CPU twin, depth normal generation, soft shadow marching, depth map bilateral edge snap, reader version 6 (L1a).
-- Relight controls: light list in layer row, selected light controls with Kelvin and custom colours, eyedropper, undo/redo, and live previews (L1b).
+- **Relight.** A filter layer that adds virtual 3D lights to the picture using its depth map: point lights, spotlights with directional cones, and sunlight. Lights can be placed anywhere in 3D space with interactive handles, adjustable colour temperature (Kelvin) or custom hues, intensity, diffusion, and soft shadows cast across the scene.
+- Virtual lights cast accurate soft shadows using ray-marched depth height fields, with surface normals computed from depth and aligned to fine picture contours via bilateral edge guidance.
+- Documents with relight filter layers require reader version 6.
 
 ## 0.1.46 - 2026-10-11
 

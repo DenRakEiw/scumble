@@ -58,7 +58,7 @@ pub fn height_normals(
     let inv65535 = scale / 65535.0;
     let mut heights = vec![0.0f32; n];
     for i in 0..n {
-        heights[i] = depth[i] as f32 * inv65535;
+        heights[i] = (65535.0 - depth[i] as f32) * inv65535;
     }
 
     if sigma > 0.0 {
@@ -125,7 +125,7 @@ pub fn shadow_march(
     let n_taps = (taps as usize).clamp(1, 16);
     let n_steps = (steps as usize).clamp(1, 64);
     let r = radius.max(0.0);
-    let z_bias = bias;
+    let z_bias = bias.max(0.0);
     let long_side = (w.max(h)) as f32;
     let sun_dist = long_side * 1.5;
     let inv65535 = scale / 65535.0;
@@ -136,7 +136,7 @@ pub fn shadow_march(
         let out_offset = r_idx * w;
 
         for x in 0..w {
-            let z0 = depth[row_offset + x] as f32 * inv65535;
+            let z0 = (65535.0 - depth[row_offset + x] as f32) * inv65535;
             let px = x as f32;
             let py = y as f32;
             let pz = z0 + z_bias;
@@ -176,13 +176,17 @@ pub fn shadow_march(
                     let sy = py + frac * rdy;
                     let sz = pz + frac * rdz;
 
-                    let ix = sx.round() as isize;
-                    let iy = sy.round() as isize;
-                    if ix < 0 || ix >= w as isize || iy < 0 || iy >= h as isize {
-                        continue;
+                    if rdz >= 0.0 && sz > scale {
+                        break;
                     }
 
-                    let map_z = depth[iy as usize * w + ix as usize] as f32 * inv65535;
+                    let ix = (sx + 0.5).floor() as isize;
+                    let iy = (sy + 0.5).floor() as isize;
+                    if ix < 0 || ix >= w as isize || iy < 0 || iy >= h as isize {
+                        break;
+                    }
+
+                    let map_z = (65535.0 - depth[iy as usize * w + ix as usize] as f32) * inv65535;
                     if map_z > sz + z_bias {
                         blocked = true;
                         break;

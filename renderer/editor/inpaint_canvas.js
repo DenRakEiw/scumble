@@ -13434,7 +13434,12 @@ class InpaintEditor {
     snapshotLayer(l) {
         const c = { ...l };
         if (l.text) c.text = JSON.parse(JSON.stringify(l.text));
-        if (l.params && typeof l.params === "object") c.params = JSON.parse(JSON.stringify(l.params));
+        if (l.params && typeof l.params === "object") {
+            c.params = { ...l.params };
+            if (Array.isArray(l.params.lights)) {
+                c.params.lights = JSON.parse(JSON.stringify(l.params.lights));
+            }
+        }
         for (const k of ["match", "lut", "plate"]) if (l[k] && typeof l[k] === "object") c[k] = { ...l[k] };
         return c;
     }
@@ -13645,7 +13650,11 @@ class InpaintEditor {
             return { kind: "mask", id: layer.id, ...(!m ? { url: null } : tiles ? { maskPx: m.clone() } : { url: this.snapUrl(m.toCanvas()) }), mw: m ? m.width : 0, mh: m ? m.height : 0, maskOff: !!layer.maskOff };
         }
         if (step.kind === "match") return { kind: "match", id: layer.id, match: { ...(layer.match || { strength: 0, source: "surroundings" }) } };
-        if (step.kind === "filter") return { kind: "filter", id: layer.id, filter: layer.filter, params: JSON.parse(JSON.stringify(layer.params || {})), lut: layer.lut ? { ...layer.lut } : null, lutData: layer._lutData || null, plate: layer.plate ? { ...layer.plate } : null, plateImg: layer._plateImg || null, name: layer.name, _selectedLightId: layer._selectedLightId || null };
+        if (step.kind === "filter") {
+            const p = { ...(layer.params || {}) };
+            if (Array.isArray(p.lights)) p.lights = JSON.parse(JSON.stringify(p.lights));
+            return { kind: "filter", id: layer.id, filter: layer.filter, params: p, lut: layer.lut ? { ...layer.lut } : null, lutData: layer._lutData || null, plate: layer.plate ? { ...layer.plate } : null, plateImg: layer._plateImg || null, name: layer.name, _selectedLightId: layer._selectedLightId || null };
+        }
         if (step.kind === "text") return { kind: "text", id: layer.id, text: JSON.parse(JSON.stringify(layer.text || TEXT_DEFAULTS)), ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
             behind: !!layer._textRendering };
         if (step.kind === "layerfull") return { kind: "layerfull", id: layer.id, ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
@@ -14007,7 +14016,10 @@ class InpaintEditor {
                 this.renderLayers();
             } else if (snap.kind === "filter") {
                 layer.filter = snap.filter;
-                layer.params = JSON.parse(JSON.stringify(snap.params || {}));
+                layer.params = { ...(snap.params || {}) };
+                if (Array.isArray(snap.params?.lights)) {
+                    layer.params.lights = JSON.parse(JSON.stringify(snap.params.lights));
+                }
                 if (snap._selectedLightId !== undefined) layer._selectedLightId = snap._selectedLightId;
                 else if (layer._selectedLightId && (!layer.params.lights || !layer.params.lights.some((x) => x && x.id === layer._selectedLightId))) {
                     layer._selectedLightId = layer.params.lights && layer.params.lights[0] ? layer.params.lights[0].id : null;
@@ -14849,7 +14861,7 @@ class InpaintEditor {
         const small = this.sampleRegion("image", [0, 0, this.width, this.height], s, { forRun: !!forRun, upTo: Math.max(0, index) });
         if (def && typeof def.wholeStats === "function") {
             try {
-                entry.stats = def.wholeStats(small, { width: this.width, height: this.height }, { maps: this.maps || {}, sampleMap });
+                entry.stats = def.wholeStats(small, { width: this.width, height: this.height }, { maps: this.maps || {}, sampleMap, layer, params: layer?.params });
             } catch (err) {
                 console.warn(`filter ${def.label || layer.filter} wholeStats failed:`, err);
                 if (host.pluginReport && def.plugin) host.pluginReport(def.plugin, `filter ${layer.filter} wholeStats`, err);
@@ -17075,7 +17087,8 @@ class InpaintEditor {
                 }
             }
             if (!source) {
-                flat = plain ? this.flattenToCanvas({ forRun: true }) : host.exportCanvas(this, "tiff");
+                if (this.relightSettled) await this.relightSettled();
+                flat = plain ? this.flattenToCanvas({ forRun: true }) : await host.exportCanvas(this, "tiff");
                 source = canvasRows(flat);
             }
             const run = pooled ? partsRun(group) : (op, args) => tiffPart(args, deflate);
@@ -17156,7 +17169,7 @@ class InpaintEditor {
                 const r = await this.encodeTiff((f) => this.setStatus(`Saving ... ${Math.round(f * 100)} %`));
                 blob = r.blob; size = [r.width, r.height]; note = `, ${Math.round(performance.now() - t0)} ms`;
             }
-            const canvas = blob ? { width: size ? size[0] : this.width, height: size ? size[1] : this.height } : host.exportCanvas(this, fmt);
+            const canvas = blob ? { width: size ? size[0] : this.width, height: size ? size[1] : this.height } : await host.exportCanvas(this, fmt);
             if (blob) { /* written in bands */ }
             else if (fmt === "psd" || fmt === "ora") {
                 const t0 = performance.now();
@@ -19042,7 +19055,10 @@ class InpaintEditor {
             this.pushUndo({ kind: "filter", id: layer.id, label: "Add light" });
             const w = this.doc ? this.doc.width : 1024;
             const h = this.doc ? this.doc.height : 1024;
-            const nl = defaultLight(layer.params.lights.length, { width: w, height: h });
+            let n = 1;
+            while (layer.params.lights.some((l) => l && l.id === `light_${n}`)) n++;
+            const nl = defaultLight(n - 1, { width: w, height: h });
+            nl.id = `light_${n}`;
             layer.params.lights.push(nl);
             layer._selectedLightId = nl.id;
             this.markFilterChanged(layer);
@@ -22315,7 +22331,7 @@ class InpaintEditor {
             l._mstatsStack = null;
             l._mstatsStackRun = null;
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
-            if (l._relight) {
+            if (deep && l._relight) {
                 if (l._relight.normals && l._relight.normals.data) freed += l._relight.normals.data.byteLength;
                 if (l._relight.vis && l._relight.vis.data) freed += l._relight.vis.data.byteLength;
                 l._relight = null;

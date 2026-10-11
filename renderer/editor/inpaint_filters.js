@@ -1200,7 +1200,17 @@ export const FILTERS = {
     relight: {
         label: "Relight",
         params: [
-            { key: "lights", type: "custom", default: [] },
+            {
+                key: "lights",
+                type: "custom",
+                default: [],
+                schema: {
+                    type: "array",
+                    description: "Up to 4 lights: [{ id, type, x, y, dist, intensity, color, diffusion, on, range?, cone?, edge?, aim? }]",
+                    items: { type: "object" },
+                },
+                example: [{ id: "light_1", type: "point", x: 256, y: 256, dist: -30, intensity: 100, color: 5500, diffusion: 30, on: true }],
+            },
             { key: "original", label: "Original light", min: 0, max: 100, step: 1, default: 100, unit: "%" },
             { key: "ambient", label: "Ambient", min: 0, max: 100, step: 1, default: 15, unit: "%" },
             { key: "depth_scale", label: "Depth", min: 5, max: 200, step: 1, default: 50, unit: "%" },
@@ -1306,7 +1316,15 @@ export { applyLensBlur, lensBlurReach };
 
 export function filterDefaults(id) {
     const out = {};
-    for (const p of (FILTERS[id] || FILTERS.grain).params) out[p.key] = p.default;
+    for (const p of (FILTERS[id] || FILTERS.grain).params) {
+        if (Array.isArray(p.default)) {
+            out[p.key] = [...p.default];
+        } else if (p.default !== null && typeof p.default === "object") {
+            out[p.key] = { ...p.default };
+        } else {
+            out[p.key] = p.default;
+        }
+    }
     return out;
 }
 

@@ -1816,6 +1816,8 @@ const COMMANDS = {
                             offset: hasPreset && p.key !== "preset" && p.keepPreset ? true : undefined,
                             ...(p.hidden ? { hidden: true } : {}),
                             ...(p.when ? { when: p.when } : {}),
+                            ...(p.schema ? { schema: p.schema } : {}),
+                            ...(p.example !== undefined ? { example: p.example } : {}),
                         })),
                     };
                 }),
