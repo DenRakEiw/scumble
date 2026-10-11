@@ -29,7 +29,7 @@ The app alone can do a great deal — open, paint, select, layer, filter, save, 
 
 ### Steps
 
-1. **Get it.** On Windows: Scumble in the Microsoft Store, or `winget install 9NDBTNNMXF2R`; or Scumble-Setup-\<version\>.exe from the latest release on GitHub. On Linux: the .AppImage (chmod +x, start it) or the .deb.
+1. **Get it.** On Windows: Scumble in the Microsoft Store, or `winget install scumble`; or Scumble-Setup-\<version\>.exe from the latest release on GitHub. On Linux: the .AppImage (chmod +x, start it) or the .deb.
 2. **Run it.** The Store installs it by itself. The installer from GitHub: More info, then Run anyway, when SmartScreen asks. Either way the app installs per user, no admin rights needed.
 3. **Start it.** First start opens an empty tab. Nothing is configured yet and nothing has to be.
 

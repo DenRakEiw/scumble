@@ -120,7 +120,7 @@ function getBlock({ api = false, rule = true } = {}) {
     const table = [
         api ? '<markdown-accessiblity-table><table role="table">' : "<table>",
         "<thead>", "<tr>", "<th>Package</th>", "<th>Download</th>", "<th>Size</th>", "<th>Notes</th>", "</tr>", "</thead>", "<tbody>",
-        ...row("Microsoft Store", `<a href="https://apps.microsoft.com/detail/9NDBTNNMXF2R" rel="nofollow">Scumble in the Store</a> or ${code}winget install 9NDBTNNMXF2R</code>`, "–", "Signed by Microsoft and updated by the Store."),
+        ...row("Microsoft Store", `<a href="https://apps.microsoft.com/detail/9NDBTNNMXF2R" rel="nofollow">Scumble in the Store</a> or ${code}winget install scumble</code>`, "–", "Signed by Microsoft and updated by the Store."),
         ...row("Windows installer", '<a href="https://github.com/DenRakEiw/scumble/releases/download/v0.1.43/Scumble-Setup-0.1.43.exe">Scumble-Setup-0.1.43.exe</a>', "123 MB", "Updates itself."),
         ...row("Linux .deb", '<a href="https://github.com/DenRakEiw/scumble/releases/download/v0.1.43/scumble-0.1.43.deb">scumble-0.1.43.deb</a>', "118 MB", "Early build made by CI, not tested by the author yet."),
         "</tbody>",

@@ -95,7 +95,7 @@ def block(version, sizes=None):
     f = files(version)
     early = "Early build made by CI, not tested by the author yet."
     rows = [
-        ("**Microsoft Store** (Windows)", f"[Scumble in the Store]({STORE_URL}) or `winget install {STORE_ID}`", None,
+        ("**Microsoft Store** (Windows)", f"[Scumble in the Store]({STORE_URL}) or `winget install scumble`", None,
          "Signed by Microsoft and updated by the Store; a new version can reach the Store a few days after GitHub "
          "(Microsoft's certification)."),
         ("**Windows installer**", f"[{f['exe']}]({base}{f['exe']})", f["exe"],

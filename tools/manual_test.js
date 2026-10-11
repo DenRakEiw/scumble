@@ -94,7 +94,7 @@ async function main() {
     check("the_chat_context_is_the_whole_chapter", () => {
         const c = manual.chapters.find((x) => x.slug === "install");
         const t = chapterText(c);
-        for (const bit of [c.title, c.summary, "winget install 9NDBTNNMXF2R", "Scumble-Setup-", "Windows 10 and 11"]) if (!t.includes(bit)) throw new Error("missing " + bit);
+        for (const bit of [c.title, c.summary, "winget install scumble", "Scumble-Setup-", "Windows 10 and 11"]) if (!t.includes(bit)) throw new Error("missing " + bit);
     });
 
     console.log(failed ? "FAIL" : "PASS");
