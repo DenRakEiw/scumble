@@ -84,6 +84,14 @@ through a prompt of its own, `realism.passPrompt`, which takes the recipe's `DLS
   `TextEncodeQwenImage21` and `QwenImage21Cache` and the three model files the recipe's `models` names. Checked
   against the user's `/object_info` on 2026-09-21 (every class, input and link, with three inputs); **not run** (the
   model files were not on that server yet), and the ten-input graph has not run either.
+- `qwen_image_edit_2_1_turbo_local`, **Qwen Image Edit 2.1 Turbo** (added for 0.1.46, the user, 2026-10-11): the
+  same graph as `qwen_image_edit_2_1_local` with Qwen's 8-step checkpoint `qwen_image_2.1_turbo_int8_convrot`
+  (Comfy-Org's repackage; Qwen's model card: 8 steps, CFG 1, the checkpoint carries its own sigma schedule, which
+  ComfyUI does not read: the server samples it with its Qwen Image 2.1 shift like the base model, Comfy-Org's README
+  says only "Uses 8 steps"). 8 steps, CFG 1, the other settings as the base recipe. The bf16 file
+  (`qwen_image_2.1_turbo_bf16`, 14.2 GB) works in the Model row too. **Run live 2026-10-11** on the user's ComfyUI
+  (RTX 5090): a 848 x 698 crop of `docs/images/tutorial/scene.jpg` with "a red vintage bicycle leaning against the wall"
+  came back in 11.4 s with the models loading, 5.3 s warm, placed and lit right, the edge fit within a pixel.
 - `upscale_model_local`, **Upscale model (ComfyUI)** (added for 0.1.25, session U2): `InpaintCanvas` ->
   `ImageFromBatch` (the crop only) -> `UpscaleModelLoader` (`model_name` as *Model*, slot 1, the server's
   `models/upscale_models` list from `/object_info`; default `4x-UltraSharp.pth`) -> `ImageUpscaleWithModel` ->

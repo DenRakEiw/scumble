@@ -579,7 +579,7 @@ async function main() {
         // refused: the Realism Pass runs on the user's own ComfyUI only (the user: "nein, kein anderes comfy cloud rezept")
         // `notes`: what detach says about the copy, in order (RTX Video Super Resolution's copy has no factor row: its
         // graph's own 2× runs, docs/PLAN_0_1_42.md U1)
-        const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] },
+        const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, qwen_image_edit_2_1_turbo_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] },
             rtx_vsr_local: { pictures: 1, values: [], notes: [/^the Comfy Cloud copy runs at the factor its graph holds \(2×\); change it in its graph$/] }, realism_pass: { refused: /Cloud copy/ } };
         const unlisted = comfy.map((r) => r.id).filter((id) => !want[id]);
         check("every shipped ComfyUI recipe has its row in the table", !unlisted.length, unlisted.join(", "));

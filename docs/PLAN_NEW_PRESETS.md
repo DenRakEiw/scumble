@@ -78,6 +78,14 @@ note in 3.1 warns of.
 - Does the model chosen at New select the recipe for the tab, or only fill the Generate new dialog?
 - Presets for FLUX 3 first, or for every recipe with a text route at once?
 
+**Answered 2026-10-11 (the user, all four as recommended), and item 34 goes into 0.1.46** (the user: "nein" to a
+0.1.46 without it):
+- the existing "New empty canvas" dialog is extended (model, the variant's own aspects, the size class);
+- a working size in the right aspect (long side at most 2048 px), the target class kept in the document's metadata
+  and used by Generate new;
+- the model chosen at New selects the recipe for the tab and fills Generate new (model, aspect, class);
+- every recipe with a text route at once, each with its variant's own aspects and classes.
+
 ## 6. Tests (by risk: Light, plus one Normal step)
 
 Plain-Node: the aspect list per variant, the nearest preset to a document, the tier per class and aspect, the labels.
