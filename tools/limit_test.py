@@ -1,4 +1,4 @@
-"""Filter pass context and params.limit gate (PLAN_NIK9_BUILD.md §F6 / §R1-S7a).
+"""Filter pass context and params.limit gate (PLAN_NIK9_BUILD.md sec F6 / sec R1-S7a).
 
 Tests limit on filter layers (the stage):
   * Case 1: No limit anywhere (composite --strict reference check)
@@ -67,7 +67,7 @@ JS = r"""
     }
 
     // 2a. luma limit
-    const pLuma = { in_min: 50, in_max: 200, limit: { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } };
+    const pLuma = { inBlack: 50, inWhite: 200, limit: { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } };
     const cpuLuma = F.applyFilter("levels", ramp256, pLuma, { cpu: true, cache: {} });
     const gpuLuma = F.applyFilter("levels", ramp256, pLuma, { cache: {} });
     const statLuma = diffStat(cpuLuma, gpuLuma, 256, 256);
@@ -81,14 +81,14 @@ JS = r"""
         }
     }
     const mapDepth = makeMap("depth", 256, 256, u16Ramp, [256, 0, 0, 256, 0, 0], {});
-    const pDepth = { in_min: 50, in_max: 200, limit: { source: "depth", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } };
+    const pDepth = { inBlack: 50, inWhite: 200, limit: { source: "depth", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } };
     const cpuDepth = F.applyFilter("levels", ramp256, pDepth, { cpu: true, maps: { depth: mapDepth }, cache: {} });
     const gpuDepth = F.applyFilter("levels", ramp256, pDepth, { maps: { depth: mapDepth }, cache: {} });
     const statDepth = diffStat(cpuDepth, gpuDepth, 256, 256);
     check("Case 2 depth compareFilterPaths (max <= 2, over2 <= 0.1%)", statDepth.max <= 2 && statDepth.over2Pct <= 0.1, statDepth);
 
     // 2c. colour limit
-    const pColor = { in_min: 50, in_max: 200, limit: { source: "color", color: "#808080", tol: 40, lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } };
+    const pColor = { inBlack: 50, inWhite: 200, limit: { source: "color", color: "#808080", tol: 40, lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } };
     const cpuColor = F.applyFilter("levels", ramp256, pColor, { cpu: true, cache: {} });
     const gpuColor = F.applyFilter("levels", ramp256, pColor, { cache: {} });
     const statColor = diffStat(cpuColor, gpuColor, 256, 256);
@@ -96,10 +96,10 @@ JS = r"""
 
     // 2d. the weight in the alpha (`limitOver`: the result is drawn over the picture, under a blend mode, an
     // opacity or a mask): where w = 0 the result is transparent, where w = 1 it is the filtered picture, both paths
-    const pOver = { in_min: 50, in_max: 200, limit: { source: "luma", lo: 0.3, hi: 0.7, fLo: 0, fHi: 0 } };
+    const pOver = { inBlack: 50, inWhite: 200, limit: { source: "luma", lo: 0.3, hi: 0.7, fLo: 0, fHi: 0 } };
     const overGpu = GL.glToCanvas(F.applyFilter("levels", ramp256, pOver, { cache: {}, limitOver: true }));
     const overCpu = GL.glToCanvas(F.applyFilter("levels", ramp256, pOver, { cpu: true, cache: {}, limitOver: true }));
-    const plainCpu = GL.glToCanvas(F.applyFilter("levels", ramp256, { in_min: 50, in_max: 200 }, { cpu: true, cache: {} }));
+    const plainCpu = GL.glToCanvas(F.applyFilter("levels", ramp256, { inBlack: 50, inWhite: 200 }, { cpu: true, cache: {} }));
     const pxAt = (c, x) => Array.from(c.getContext("2d").getImageData(x, 128, 1, 1).data);
     for (const [name, c] of [["gpu", overGpu], ["cpu", overCpu]]) {
         const out = pxAt(c, 40), inn = pxAt(c, 128), ref = pxAt(plainCpu, 128);
@@ -130,13 +130,13 @@ JS = r"""
     // 0. a limited filter layer under a blend mode: where the limit is 0 it shows nothing, so the picture stays
     // as it is (not multiplied by itself); where the limit is 1 the filtered picture is multiplied in
     {
-        const mul = await commands.run("add_filter", { doc: ed.node.id, type: "levels", params: { in_min: 0, in_max: 128, limit: { source: "luma", lo: 0.9, hi: 1, fLo: 0, fHi: 0 } } });
+        const mul = await commands.run("add_filter", { doc: ed.node.id, type: "levels", params: { inBlack: 0, inWhite: 128, limit: { source: "luma", lo: 0.9, hi: 1, fLo: 0, fHi: 0 } } });
         await commands.run("set_layer", { doc: ed.node.id, layer: mul.id, blend: "multiply" });
         await settle(ed);
         const flat = ed.flattenToCanvas({ forRun: true });
         const p = Array.from(flat.getContext("2d").getImageData(200, 150, 1, 1).data);
         check("Case 0 multiply under a limit of 0 leaves the picture (#204060)", p[0] === 0x20 && p[1] === 0x40 && p[2] === 0x60, p);
-        await commands.run("set_filter", { doc: ed.node.id, layer: mul.id, params: { in_min: 0, in_max: 128, limit: { source: "luma", lo: 0, hi: 1, fLo: 0, fHi: 0 } } });
+        await commands.run("set_filter", { doc: ed.node.id, layer: mul.id, params: { inBlack: 0, inWhite: 128, limit: { source: "luma", lo: 0, hi: 1, fLo: 0, fHi: 0 } } });
         await settle(ed);
         const flat1 = ed.flattenToCanvas({ forRun: true });
         const q = Array.from(flat1.getContext("2d").getImageData(200, 150, 1, 1).data);
@@ -272,7 +272,7 @@ JS = r"""
     await commands.run("set_filter", {
         doc: ed3.node.id,
         layer: fl3.id,
-        params: { in_min: 30, in_max: 220, limit: { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } },
+        params: { inBlack: 30, inWhite: 220, limit: { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } },
     });
     await settle(ed3);
 
@@ -378,7 +378,7 @@ JS = r"""
     await commands.run("set_filter", {
         doc: ed8.node.id,
         layer: fl8_1.id,
-        params: { in_min: 40, in_max: 200, limit: { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } },
+        params: { inBlack: 40, inWhite: 200, limit: { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1 } },
     });
     const fl8_2 = await commands.run("add_filter", { doc: ed8.node.id, type: "invert" });
     await settle(ed8);
@@ -568,15 +568,8 @@ JS = r"""
     shell.closeDocument && shell.closeDocument(edClip, { force: true });
 
     // -------------------------------------------------------------------------
-    // Case 12: docfile readerFor checks
+    // Case 12: docfile readerFor checks (covered by tools/limit_test.js in Node pre-step)
     // -------------------------------------------------------------------------
-    const { featuresOf, readerFor } = await import("../electron/main/docfile.js");
-    const docWithLimit = {
-        layers: [{ kind: "filter", filter: "invert", params: { limit: { source: "depth", lo: 0.2, hi: 0.8 } } }],
-    };
-    check("Case 12 featuresOf contains filter-limit", featuresOf(docWithLimit).includes("filter-limit"));
-    check("Case 12 readerFor doc with limit is 3", readerFor(docWithLimit) === 3);
-    check("Case 12 readerFor empty doc is 1", readerFor({ layers: [] }) === 1);
 
     // -------------------------------------------------------------------------
     // Row group (R1-S8): Limit on filter layers, the row
@@ -623,7 +616,7 @@ JS = r"""
         fillOpts);
 
     // 3. Set limit on filter layer, test bar lifecycle:
-    // bar.set through begin, preview ×3, commit gives one undo step,
+    // bar.set through begin, preview x3, commit gives one undo step,
     // params.limit is a new object at each preview (identity check),
     // undo restores the old limit object; Off removes it and list_layers shows no limit.
     const initialLimit = { source: "depth", lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
@@ -725,9 +718,9 @@ JS = r"""
     for (let y = 0; y < Mh; y++) {
         for (let x = 0; x < Mw; x++) {
             let val;
-            if (x < 144) val = 0.2;
-            else if (x > 156) val = 0.8;
-            else val = 0.2 + (0.8 - 0.2) * (x - 144) / 12;
+            if (x < 148) val = 0.2;
+            else if (x > 152) val = 0.8;
+            else val = 0.2 + (0.8 - 0.2) * (x - 148) / 4;
             mapSnapU16[y * Mw + x] = Math.round(val * 65535);
         }
     }
@@ -740,15 +733,23 @@ JS = r"""
     const rawSnapFx = edSnap.layers.find((l) => l.id === snapFx.id);
     rawSnapFx.params = {
         ...rawSnapFx.params,
-        out_white: 0,
+        outWhite: 0,
         limit: { source: "depth", lo: 0, hi: 0.5, fLo: 0, fHi: 0.05, invert: false },
     };
     edSnap.markFilterChanged(rawSnapFx);
     await settle(edSnap);
 
     // a. GL against CPU
+    edSnap.filterChainOff = false;
+    edSnap.releaseCaches();
     const glOut = edSnap.flattenToCanvas({ forRun: true });
-    const cpuOut = edSnap.filteredCanvas(rawSnapFx, baseSnap, true, false, false, { cpu: true });
+
+    edSnap.filterChainOff = true;
+    edSnap.releaseCaches();
+    const cpuOut = edSnap.flattenToCanvas({ forRun: true });
+    edSnap.filterChainOff = false;
+    edSnap.releaseCaches();
+
     if (glOut && cpuOut) {
         const stat = diffStat(glOut, cpuOut, Ws, Hs);
         check("R2-S5 a. GL against CPU (max <= 2, over2 <= 0.1%)", stat.max <= 2 && stat.over2Pct <= 0.1, stat);

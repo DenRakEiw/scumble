@@ -78,10 +78,9 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-11: Relight L3 built; **0.1.46 released and Latest**; the Store update open)
+## Where things stand (2026-10-12: Relight Phase 1 complete L0a-L6; release preparation open)
 
-- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** L3 built (`relight` command in `renderer/commands.js` with `P.arr` helper; `electron/main/assistant/policy.js` AUTO for in-app route, ASK card for generative routes; menu entries in Image and Layer; MANUAL.md chapter; `relight` gate in `tools/run_gates.sh`; cases (s) and (t) pass in `tools/relight_test.py`; gates `l3_on`, `l3_off`, `l3_cmds`, `l3_asst` pass; next session is L4: the Magnific route).
-Open questions for L1a/L1b (R-D2, R-D4, R-D6, R-D9) taking proposed values: filter layer `relight` with lights in params, shadows default 60%, 4 lights max (single RGBA8 texture), first light white 5500 K 100% diffusion 30 front of centre dist -30 original light 100 ambient 15 depth 50.
+- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** Phase 1 complete (L0a pure model, L0b Rust kernels ABI 19, L1a filter layer, L1b row block, L2 lights tool, L3 command and policy, L4 Magnific route, L5 prompt routes [local ComfyUI, Comfy Cloud, fal IC-Light v2, fal Bria], L6 docs and verification). All gates (`relight`, `depthfx`, `limit`, `document`, `commands`, `assistant`, `export`, `skins`, `help`, `nodecopy`) pass cleanly on both `--tiles on` and `--tiles off` with `--offline`. Ready for independent review and release preparation.
 
 
 **Video 4 is cut, second pass (2026-10-11 night; the user: "mache einen neuen tutorial, das die neuen features

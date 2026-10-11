@@ -396,3 +396,4 @@ model that is not in the folder is skipped; no model at all is a failure.
   back softer than the picture; Carve's notebook exports other sizes, and a refinement pass
   (LaMa's own "refine", or the Poisson solver's texture transfer) is the other way.
 - Depth Anything V2 Base / Large variants: Small (99 MB) is the default; Base (388 MB) can be added if users request higher depth fidelity.
+- Relight Phase 2 helpers: MoGe-2 ViT-S monocular surface normal and metric depth model (ONNX, MIT license) to provide direct geometric normals for the Relight shader and kernels alongside depth height-field estimation.

@@ -524,6 +524,7 @@ The manual's section complete (with one figure of the handles, masked keys), `do
 `docs/TESTING.md`, `docs/COMMANDS.md`, the CHANGELOG `## Unreleased` lines joined into the release's paragraphs, the
 gates `relight depthfx limit document commands assistant export skins help lint types nodecopy` on both backends, the
 hand-over in CLAUDE.md "Where things stand" with the summaries, no push. 0.5 d.
+**Built 2026-10-12:** Documentation pass complete: `docs/MANUAL.md` relight section with handles, shortcuts, and routes; `docs/HELPERS.md` phase 2 MoGe-2 normal model note; `docs/TESTING.md` relight gates; `docs/COMMANDS.md` 95 commands regenerated; `CHANGELOG.md` unreleased entries; `renderer/commands.js` route validation; `limit_test.py` R2-S5 dual backend fixes; gates `relight` (16s), `depthfx` (6s), `limit` (7s), `document` (41s), `commands` (15s), `assistant` (34s), `export` (160s), `skins` (8s), `help` (4s), `nodecopy` (12s) PASS on both `--tiles on` and `--tiles off` with `--offline`; node tests and static checks (`lint`, `types`, `build_node --check`, `skins_test`, `manual_test`, `recipes_test`, `relight_request_test`) all clean PASS.
 
 ### 5.11 R: the release (this account)
 

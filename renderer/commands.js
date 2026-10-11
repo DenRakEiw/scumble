@@ -1391,7 +1391,7 @@ const COMMANDS = {
     },
     relight: {
         needsImage: true,
-        description: "Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (the default) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Paid/generative routes answer 'not built yet' until later releases.",
+        description: "Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (the default) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer.",
         params: {
             layer: P.layer("relight filter layer to edit (default adds a new one)"),
             lights: P.arr("array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}]"),
@@ -1399,14 +1399,15 @@ const COMMANDS = {
             ambient: P.num("ambient light 0..100 % (default 15)"),
             depth_scale: P.num("depth scale 5..200 % (default 50)"),
             shadows: P.num("shadow strength 0..100 % (default 60)"),
-            route: P.str("relight route ('app' default, 'magnific')", { default: "app" }),
+            route: P.str("relight route ('app' default, 'magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui')", { default: "app" }),
             prompt: P.str("additional prompt text for generative routes"),
             timeout: P.timeout(600),
         },
         async run(ed, a) {
             const route = a.route != null && a.route !== "" ? String(a.route) : "app";
-            if (route !== "app" && route !== "magnific") {
-                throw new Error(`${route} route is not built yet (available in a future release)`);
+            const validRoutes = ["app", "magnific", "fal-iclight", "fal-bria", "comfycloud", "comfyui"];
+            if (!validRoutes.includes(route)) {
+                throw new Error(`Unknown relight route "${route}" (must be one of: ${validRoutes.join(", ")})`);
             }
             let l;
             if (a.layer != null && a.layer !== "") {
