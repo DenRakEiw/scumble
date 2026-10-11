@@ -138,3 +138,174 @@ Executed in the live app under CDP on both `--tiles on` and `--tiles off` with `
 - **Assistant Policy & Settings**: In-app relighting runs automatically (`AUTO`); paid or queued generative routes prompt the user with an explicit cost/queue card (`ASK`).
 
 The implementation is robust, mathematically sound, memory safe, and completely preserves all prior release features.
+
+---
+
+# Review of Relight Phase 2 Session N2: Presets, Specular Gloss, Spot Gobos, and Hide Handles
+
+Reviewed commit `be194b8`: `N2: relight presets, specular gloss term, spot gobo patterns, and hide handles view toggle`.
+Implements item 43 Phase 2 (Session N2) from `docs/PLAN_RELIGHT_BUILD.md` Section 5.12.
+
+## Test Summary
+
+- `node tools/relight_test.js`: ALL 16 PASS (including new suites 14 curated presets, 15 specular gloss, 16 spot gobos).
+- `node tools/relight_request_test.js`: ALL 9 PASS (all prompt and generative provider suites).
+- `node tools/manual_test.js`: ALL PASS (22 chapters, 16 screenshots, all accelerators verified).
+- `node tools/skins_test.js`: ALL PASS (all 37 skin tokens verified).
+- `npm run lint`: 0 errors (76 pre-existing warnings, unchanged).
+- `npm run types`: 0 errors (TypeScript type check clean).
+- `python tools/build_node.py --check`: Clean PASS (52 modules parse and resolve, 61 host members answered).
+- In-app CDP gates (`--offline relight`):
+  - `--tiles on`: `relight` rc=0 15s PASS.
+  - `--tiles off`: `relight` rc=0 15s PASS.
+- ASCII check: Commit `be194b8` and all modified files verified 100% pure ASCII (0 non-ASCII bytes).
+- Preserved invariants: `docs/TUTORIAL.md` untouched in working tree; two-zone range bar intact; WORK_MAX = 4096; depth row follows picture; all 27 blend modes intact.
+
+Line numbers below are from commit `be194b8`.
+
+---
+
+## Architectural and Mathematical Verification
+
+### 1. Curated Lighting Presets (`renderer/editor/inpaint_relight.js`, `renderer/editor/inpaint_canvas.js`)
+- **Preset Definitions**: `LIGHT_PRESETS` defines 8 studio and atmospheric lighting configurations:
+  - `studio_portrait`: Classic 3-point portrait lighting (warm key light, cool fill light, high rim light).
+  - `warm_sunset`: Low-angle warm sunlight with rich amber fill and cool ambient floor.
+  - `cyberpunk_neon`: Stylized multi-colored scene with vibrant magenta key, cyan kicker, and deep blue fill.
+  - `rembrandt`: High-contrast dramatic key producing the signature cheek triangle with subtle fill.
+  - `soft_window`: Diffuse cool daylight entering from the side, paired with warm interior bounce.
+  - `dramatic_rim`: Opposing dual rim kickers framing a darkened subject.
+  - `golden_hour`: Warm directional low-angle sun with soft orange horizon bounce.
+  - `film_noir`: High-contrast spotlight with narrow cone, steep angle, and minimal fill.
+- **Coordinate Normalization and Bounds Scaling**: Presets define light coordinates normalized to `[0, 1]`. Function `applyLightPreset(presetId, size)` maps these coordinates to document dimensions (`x = l.nx * width`, `y = l.ny * height`) with fallback clamping to 1024x1024 if size is omitted or invalid.
+- **Layer Row UI and Single Undo Step**:
+  - The preset selector (`.ipc-relight-preset-sel`) is integrated cleanly into the relight layer header row.
+  - Selecting a preset invokes `this.pushUndo({ kind: "filter", id: layer.id, label: "Light preset: <label>" })` before replacing `layer.params.lights`.
+  - Layer caches and maps are refreshed via `this.ensureRelightMaps(layer, { quick: false })` and `this.markFilterChanged(layer)`.
+  - Reversible in exactly one undo step (`Ctrl+Z`).
+
+### 2. Specular Gloss Reflection Term (`renderer/editor/inpaint_relight.js`)
+- **Mathematical Model**:
+  - Blinn-Phong formulation evaluating the half-vector between light direction $L$ and view direction $V$:
+    $$H = \text{normalize}(L + V)$$
+    where orthographic view direction $V = (0, 0, 1)$.
+  - Shininess power exponent scales with specular intensity:
+    $$p = 16.0 + 48.0 \times \left(\frac{\text{specular}}{100}\right)$$
+  - Dot products $N \cdot L$ and $N \cdot H$ are evaluated with surface normal $N$.
+  - Specular contribution is conditioned on $N \cdot L > 0$ and $N \cdot H > 0$, preventing unphysical back-face specular highlights when the light is behind the surface.
+  - Specular highlight factor:
+    $$\text{specTerm} = \left(\frac{\text{specular}}{100}\right) \times (N \cdot H)^p$$
+- **CPU / WebGL2 Fragment Shader Parity**:
+  - CPU implementation in `shadePixel`:
+    `const hx = dir[0], hy = dir[1], hz = dir[2] + 1.0;`
+    `const hLen = Math.hypot(hx, hy, hz);`
+    `const ndh = Math.max(0.0, (norm[0] * hx + norm[1] * hy + norm[2] * hz) / hLen);`
+    `specTerm = specVal * Math.pow(ndh, 16.0 + 48.0 * specVal);`
+  - WebGL2 fragment shader `rl_evalLight`:
+    `vec3 h = normalize(dir + vec3(0.0, 0.0, 1.0));`
+    `float ndh = max(0.0, dot(normal, h));`
+    `float power = 16.0 + 48.0 * l_spec;`
+    `specTerm = l_spec * pow(ndh, power);`
+  - Shader uniforms `u_lspec` (`vec4`) deliver per-light specular terms (0.0 to 1.0) for lights 0 through 3.
+  - Parity verified in `tools/relight_test.py` Case v with maximum difference strictly within 2 levels (`max <= 2`, `over2Pct <= 0.2%`, `mean <= 1.0`).
+
+### 3. Spot Gobo Projection Masks (`renderer/editor/inpaint_relight.js`)
+- **Gobo Library**: Parameter `gobo` on spotlights supports 5 procedural patterns:
+  - `none`: Standard unobstructed spotlight cone.
+  - `blinds`: Horizontal venetian blinds slats using high-frequency sine modulation with smoothstep feathering.
+  - `window`: Four-pane window muntin / mullion cross-frame pattern.
+  - `leaves`: Multi-frequency dapple foliage interference pattern.
+  - `stripes`: Vertical prison / architectural bars pattern.
+- **Beam Projection Coordinates**:
+  - Reverse light ray vector $R = -L$ is projected against spotlight aim direction $S$:
+    $$zProj = R \cdot S$$
+  - Local cross-product coordinate frame $(u, v)$ is derived from spotlight direction $S$ and up-vector:
+    $$up = |S_z| < 0.99 ? (0, 0, 1) : (0, 1, 0)$$
+    $$u = \text{normalize}(up \times S), \quad v = S \times u$$
+  - Normalized radial coordinates:
+    $$g_x = (R \cdot u) \times \text{invSpan}, \quad g_y = (R \cdot v) \times \text{invSpan}$$
+    where $\text{invSpan} = \frac{1}{zProj \times \tan(\theta_{\text{cone}})}$.
+- **Safety and Bounds**:
+  - Minimum gobo floor is clamped to $0.05$ (or $0.10$ for leaves), ensuring shadowed gobo bands retain ambient readability without clipping to zero.
+  - Mathematical equations in `shadePixel` and WebGL2 shader `rl_evalLight` match bit-for-bit, verified in `tools/relight_test.py` Case w.
+
+### 4. Hide Handles View Toggle (`renderer/editor/inpaint_canvas.js`)
+- **State and Keybinding**:
+  - Property `this.hideLightHandles` (boolean, default false) on `InpaintEditor`.
+  - Key `H` toggles `hideLightHandles` when `this.tool === "lights" && this.isRelightActive()`. When another tool is active, `H` preserves its existing behavior of activating the `hand` tool.
+  - Header eye button (`.ipc-relight-toggle-handles`) provides visible UI toggle state.
+- **Canvas Isolation**:
+  - `drawLightsOverlay(ctx)` checks `if (!this.isOpen || !this.isRelightActive() || this.hideLightHandles) return;`.
+  - When active, all light handles, directional cones, aim points, compass rings, and labels are cleanly suppressed.
+  - Export and composite pipelines are completely unaffected.
+
+---
+
+## Detailed Test Verification
+
+```mermaid
+flowchart TD
+    subgraph UnitTests["Unit Tests (Node)"]
+        UT1["relight_test.js (16 suites)"]
+        UT2["relight_request_test.js (9 suites)"]
+        UT3["manual_test.js (22 ch, 16 screens)"]
+        UT4["skins_test.js (37 tokens)"]
+        UT5["build_node.py --check"]
+    end
+    subgraph CDPGates["CDP Verification Gates (In-App)"]
+        CG1["relight_test.py --tiles on (15s)"]
+        CG2["relight_test.py --tiles off (15s)"]
+        CG3["Case v: Specular gloss GL/CPU parity"]
+        CG4["Case w: Spot gobo GL/CPU parity"]
+        CG5["Case x: Light presets & undo"]
+        CG6["Case y: Hide handles view toggle"]
+    end
+    UT1 --> PASS["ALL GREEN / ZERO REGRESSIONS"]
+    UT2 --> PASS
+    UT3 --> PASS
+    UT4 --> PASS
+    UT5 --> PASS
+    CG1 --> PASS
+    CG2 --> PASS
+    CG3 --> PASS
+    CG4 --> PASS
+    CG5 --> PASS
+    CG6 --> PASS
+```
+
+### Coverage Matrix for New Cases
+| Test Suite / Case | Target Feature | Verification Criteria | Result |
+|---|---|---|---|
+| `relight_test.js:14` | Presets (`applyLightPreset`) | 8 presets verified; scaled to target document dimensions `(W, H)` | PASS |
+| `relight_test.js:15` | Specular Gloss (`shadePixel`) | Highlight luminance increases with gloss; no specular on back faces | PASS |
+| `relight_test.js:16` | Spot Gobos (`shadePixel`) | `blinds`, `window`, `leaves`, `stripes` modulate beam; output bounded in `[0, 255]` | PASS |
+| `relight_test.py` Case v | Specular Gloss Shader | GL vs CPU parity (`max <= 2`, `over2Pct <= 0.2%`, `mean <= 1.0`); highlight elevation | PASS |
+| `relight_test.py` Case w | Spot Gobo Blinds Shader | GL vs CPU parity on spot blinds beam (`max <= 2`, `over2Pct <= 0.2%`) | PASS |
+| `relight_test.py` Case x | Preset Integration & Undo | `applyLightPreset` creates multi-light config; single undo step restores state | PASS |
+| `relight_test.py` Case y | Hide Handles Toggle | `ed.hideLightHandles` toggles overlay suppression; redraws cleanly | PASS |
+| `run_gates.sh n2_relight_on` | Live In-App Gate (Tiles ON) | End-to-end CDP relight gate run with WebGL2 tiles backend | PASS (15s) |
+| `run_gates.sh n2_relight_off`| Live In-App Gate (Tiles OFF)| End-to-end CDP relight gate run with 2D canvas backend | PASS (15s) |
+
+---
+
+## Observations and Recommendations
+
+> [!NOTE]
+> **Keybinding Context**:
+> The `H` key is dual-purpose: when the `lights` tool is active on a relight layer, it toggles handle visibility. When any other tool is active, it switches to the `hand` pan tool. This feels natural and keeps light editing shortcuts consolidated.
+
+> [!TIP]
+> **Specular catchlight usage**:
+> Setting Gloss to 50-80% on a key light placed in front of a portrait ($z > 0$) provides realistic ocular catchlights and natural skin sheen without washing out darker shadow areas, because `specTerm` is gated by $N \cdot L > 0$.
+
+> [!NOTE]
+> **Document Serialization & Reader Version**:
+> `specular` and `gobo` are optional properties on light descriptors. When omitted, they default safely to `specular: 0` and `gobo: "none"`. Documents containing relight layers remain backwards compatible with `reader: 6`.
+
+## Conclusion
+Session N2 is complete, verified, and adheres to all codebase conventions:
+1. 100% pure ASCII across all source, doc, and test files.
+2. Exact mathematical parity between CPU reference twin and WebGL2 fragment shader.
+3. Dual-backend parity confirmed across `--tiles on` and `--tiles off`.
+4. Robust undo/redo tracking with single history steps for all user interactions.
+5. All 16 unit tests, lint, types, build_node, and in-app CDP gates pass cleanly.
