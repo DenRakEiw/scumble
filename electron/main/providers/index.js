@@ -116,6 +116,11 @@ function layoutFor(id, p, req) {
         return checkLayout(l, { ...req, provider: id });
     }
     if (req.kind === "upscale") return checkLayout(layoutOf({ seq: [["crop", "image"]], drops: "An upscale sends the picture alone: reference images are left out." }), req);
+    if (req.kind === "relight") {
+        if (typeof p.relight !== "function") throw new Error(`${p.label} has no relight endpoint in Scumble; pick another provider for this model.`);
+        const l = typeof p.layout === "function" ? p.layout(req) : layoutOf({ seq: [["crop", "image"], ["lightmap", "transfer_light_from_lightmap"]] });
+        return checkLayout(l, { ...req, provider: id });
+    }
     if (typeof p.edit !== "function") throw new Error(`${p.label} edits no images in Scumble; pick another provider for this model.`);
     const l = typeof p.layout === "function" ? p.layout(req) : layoutOf({ seq: [["crop", "image"], ...refRoles(req).map(([role, i]) => [role, `references[${i}]`, i])] });
     return checkLayout(l, { ...req, provider: id });
@@ -177,15 +182,18 @@ async function edit(request) {
     if (!p) throw new Error("Unknown provider: " + id);
     const text = request.kind === "text";
     const upscale = request.kind === "upscale";
+    const relight = request.kind === "relight";
     if (text && typeof p.generate !== "function") throw new Error(`${p.label} has no text-to-image endpoint in Scumble; pick another provider for this model.`);
     if (upscale && typeof p.upscale !== "function") throw new Error(`${p.label} has no upscaler in Scumble; pick another provider for this model.`);
-    const verb = text ? "generate" : upscale ? "upscale" : "edit";
+    if (relight && typeof p.relight !== "function") throw new Error(`${p.label} has no relight endpoint in Scumble; pick another provider for this model.`);
+    const verb = text ? "generate" : upscale ? "upscale" : relight ? "relight" : "edit";
     const key = p.needsKey === false ? "" : keys.get(keyNameOf(id, p));
     if (p.needsKey !== false && !key) throw new Error(noKeyText(p.label, keys.describe(keyNameOf(id, p)).stale));
     const given = (request.references || []).length;
     let req = {
         ...request,
         image: toBuffer(request.image),
+        lightmap: toBuffer(request.lightmap),
         mask: toBuffer(request.mask),
         maskAlpha: toBuffer(request.maskAlpha),   // RGBA mask, alpha 0 where to repaint (OpenAI's convention)
         fields: request.fields || null,           // model-specific input names (Replicate, fal)
@@ -204,7 +212,7 @@ async function edit(request) {
     if (runId && cancelledEarly.delete(runId)) ac.abort();
     const ctx = contextFor(id, p, key, ac.signal);
     // the request's shape for the log: never the key, never the pixels
-    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, boxes: req.boxes.length, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
+    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : relight ? "relight" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, boxes: req.boxes.length, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
     let out, named, lay, notes = [], sentBoxes = 0;
     try {
         if (req.original && !req.references.length) throw new Error("The request marks an Original picture but carries no reference picture: nothing was sent.");
@@ -233,7 +241,7 @@ async function edit(request) {
                 for (const n of a.notes) notes.push(n);
             }
         }
-        out = text ? await p.generate(req, ctx) : upscale ? await p.upscale(req, ctx) : await p.edit(req, ctx);
+        out = text ? await p.generate(req, ctx) : upscale ? await p.upscale(req, ctx) : relight ? await p.relight(req, ctx) : await p.edit(req, ctx);
         if (ac.signal.aborted) throw aborted();   // an adapter that finished its last call as Cancel came: dropped too
     } catch (err) {
         const secs = ((Date.now() - t0) / 1000).toFixed(1);
@@ -264,8 +272,9 @@ function layout(shape) {
     const id = String(s.provider || "");
     const p = Object.prototype.hasOwnProperty.call(PROVIDERS, id) ? PROVIDERS[id] : null;
     if (!p) throw new Error("Unknown provider: " + id);
-    const kind = ["fill", "edit", "text", "upscale"].includes(s.kind) ? s.kind : "fill";
+    const kind = ["fill", "edit", "text", "upscale", "relight"].includes(s.kind) ? s.kind : "fill";
     if (kind === "text" && typeof p.generate !== "function") throw new Error(`${p.label} has no text-to-image endpoint in Scumble; pick another provider for this model.`);
+    if (kind === "relight" && typeof p.relight !== "function") throw new Error(`${p.label} has no relight endpoint in Scumble; pick another provider for this model.`);
     const count = Math.max(0, Math.min(64, Math.floor(+s.count) || 0));
     const stand = Buffer.from([0]);   // a picture as far as a layout looks: there
     const withMask = kind === "fill" || kind === "edit";

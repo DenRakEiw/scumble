@@ -6,6 +6,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 - **Relight.** A filter layer that adds virtual 3D lights to the picture using its depth map: point lights, spotlights with directional cones, and sunlight. Lights can be placed anywhere in 3D space with interactive handles, adjustable colour temperature (Kelvin) or custom hues, intensity, diffusion, and soft shadows cast across the scene.
 - Virtual lights cast accurate soft shadows using ray-marched depth height fields, with surface normals computed from depth and aligned to fine picture contours via bilateral edge guidance.
+- **Generative relighting with Magnific.** The Relight layer can render through Magnific's Relight service (route `image-relight`), sending the picture and an accurate light map (lights alone with ambient as floor). High-frequency base texture is preserved through guided ratio transfer (detail from original), landing as an editable pixel layer underneath the filter run in a single undo step.
 - Documents with relight filter layers require reader version 6.
 
 ## 0.1.46 - 2026-10-11

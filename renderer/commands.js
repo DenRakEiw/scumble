@@ -1399,13 +1399,13 @@ const COMMANDS = {
             ambient: P.num("ambient light 0..100 % (default 15)"),
             depth_scale: P.num("depth scale 5..200 % (default 50)"),
             shadows: P.num("shadow strength 0..100 % (default 60)"),
-            route: P.str("relight route ('app' default; paid routes answer 'not built yet' until L4/L5)", { default: "app" }),
+            route: P.str("relight route ('app' default, 'magnific')", { default: "app" }),
             prompt: P.str("additional prompt text for generative routes"),
             timeout: P.timeout(600),
         },
         async run(ed, a) {
             const route = a.route != null && a.route !== "" ? String(a.route) : "app";
-            if (route !== "app") {
+            if (route !== "app" && route !== "magnific") {
                 throw new Error(`${route} route is not built yet (available in a future release)`);
             }
             let l;
@@ -1455,6 +1455,18 @@ const COMMANDS = {
             const fit = fitStats
                 ? { direction: fitStats.l0, l0: fitStats.l0, ka: fitStats.ka, kd: fitStats.kd }
                 : { direction: [0, 0, 1], l0: [0, 0, 1], ka: 1, kd: 0 };
+            if (route !== "app") {
+                const deadline = a.timeout ? Date.now() + a.timeout * 1000 : 0;
+                const rendered = await host.relightWhole(ed, l, { route, prompt: a.prompt || "", deadline });
+                return {
+                    layer: layerSummary(ed, rendered.layer || l),
+                    lights: l.params?.lights || [],
+                    fit,
+                    route,
+                    seconds: rendered.seconds || 0,
+                    notes: rendered.note ? [rendered.note] : [],
+                };
+            }
             return {
                 layer: layerSummary(ed, l),
                 lights: l.params?.lights || [],

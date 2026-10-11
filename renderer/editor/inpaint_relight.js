@@ -7,7 +7,8 @@ import { sampleMap, passToMap, rg8View, guideView, SAMPLE_GLSL } from "./inpaint
 import { snapField, snapParams, u16At, snapRgb, SNAP_GLSL } from "./inpaint_edges.js";
 import { sstep } from "./inpaint_weights.js";
 import { registerGLFilter } from "./inpaint_filters_gl.js";
-import { heightNormals, shadowMarch } from "./px/kernels.js";
+import { bilinearResize } from "./inpaint_depth.js";
+import { heightNormals, shadowMarch, boxBlurs } from "./px/kernels.js";
 
 const DUMMY_NORMALS = { data: new Uint8Array([128, 128, 255, 255]), width: 1, height: 1, channels: 4, linear: true };
 const DUMMY_VIS = { data: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1, channels: 4, linear: true };
@@ -739,7 +740,7 @@ export function shadePixel(srcRgba, normal, mapCoord, lights, params = null, fit
             Math.max(0, Math.min(255, Math.round(linearToSrgb(lmR) * 255))),
             Math.max(0, Math.min(255, Math.round(linearToSrgb(lmG) * 255))),
             Math.max(0, Math.min(255, Math.round(linearToSrgb(lmB) * 255))),
-            sa
+            255
         ];
     }
 
@@ -1309,7 +1310,7 @@ vec4 shade(vec4 c, vec2 uv) {
 
     if (u_mode == 1) {
         vec3 lm = lsum + vec3(u_ambient);
-        return vec4(rl_linearToSrgb(lm), c.a);
+        return vec4(rl_linearToSrgb(lm), 1.0);
     }
 
     vec3 added = fLin * (vec3((1.0 - u_original) * u_ambient) + lsum);
@@ -1489,3 +1490,120 @@ export function registerRelightGL() {
     relightRegistered = true;
 }
 
+/**
+ * Guided filter for lighting ratios: clamps q to [0.2, 5.0] instead of [0, 1].
+ *
+ * @param {Float32Array} I guide image (floats 0..1)
+ * @param {Float32Array} p input ratio image to filter (floats 0.2..5.0)
+ * @param {number} w width
+ * @param {number} h height
+ * @param {number} r radius in working pixels
+ * @param {number} eps regularization parameter
+ * @param {(data: Float32Array, w: number, h: number, radii: number[]) => Float32Array} box box blur function
+ * @returns {Float32Array}
+ */
+export function guidedFilterRatio(I, p, w, h, r, eps, box) {
+    const n = w * h;
+    const meanI = box(I, w, h, [r]);
+    const meanP = box(p, w, h, [r]);
+
+    const Ip = new Float32Array(n);
+    const II = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+        const iv = I[i];
+        Ip[i] = iv * p[i];
+        II[i] = iv * iv;
+    }
+    const meanIp = box(Ip, w, h, [r]);
+    const meanII = box(II, w, h, [r]);
+
+    const a = new Float32Array(n);
+    const b = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+        const mi = meanI[i];
+        const covIp = meanIp[i] - mi * meanP[i];
+        const varI = meanII[i] - mi * mi;
+        const av = covIp / (varI + eps);
+        a[i] = av;
+        b[i] = meanP[i] - av * mi;
+    }
+
+    const meanA = box(a, w, h, [r]);
+    const meanB = box(b, w, h, [r]);
+
+    const q = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+        let v = meanA[i] * I[i] + meanB[i];
+        if (v < 0.2) v = 0.2;
+        else if (v > 5.0) v = 5.0;
+        q[i] = v;
+    }
+    return q;
+}
+
+/**
+ * Transfers generative relighting lighting from low-res / route answer ansPx
+ * onto full-resolution fullPx while preserving fullPx microtexture detail.
+ *
+ * @param {Uint8Array|Uint8ClampedArray} fullPx - Full-resolution RGBA image (W x H)
+ * @param {Uint8Array|Uint8ClampedArray|null} lowPx - Downscaled RGBA image (wAns x hAns) or null
+ * @param {Uint8Array|Uint8ClampedArray} ansPx - Route relit answer RGBA image (wAns x hAns)
+ * @param {number} W - Full width
+ * @param {number} H - Full height
+ * @param {number} wAns - Route answer width
+ * @param {number} hAns - Route answer height
+ * @param {(data: Float32Array, w: number, h: number, radii: number[]) => Float32Array} [box] - Box blur function
+ * @returns {Uint8Array} - Relit RGBA image at (W x H)
+ */
+export function detailRatio(fullPx, lowPx, ansPx, W, H, wAns, hAns, box = null) {
+    const boxFn = box || boxBlurs;
+    const nFull = W * H;
+    const nAns = wAns * hAns;
+    const out = new Uint8Array(nFull * 4);
+    const haveLow = lowPx && lowPx.length >= nAns * 4;
+
+    for (let c = 0; c < 3; c++) {
+        let lowC;
+        if (haveLow) {
+            lowC = new Float32Array(nAns);
+            for (let i = 0; i < nAns; i++) {
+                lowC[i] = lowPx[i * 4 + c] / 255.0;
+            }
+        } else {
+            const fullC = new Float32Array(nFull);
+            for (let i = 0; i < nFull; i++) {
+                fullC[i] = fullPx[i * 4 + c] / 255.0;
+            }
+            lowC = (W === wAns && H === hAns) ? fullC : bilinearResize(fullC, W, H, wAns, hAns);
+        }
+
+        const ratioLow = new Float32Array(nAns);
+        for (let i = 0; i < nAns; i++) {
+            const ansVal = ansPx[i * 4 + c] / 255.0;
+            const pVal = lowC[i];
+            const r = ansVal / Math.max(pVal, 0.01);
+            ratioLow[i] = Math.max(0.2, Math.min(5.0, r));
+        }
+
+        const pRatio = (wAns === W && hAns === H) ? ratioLow : bilinearResize(ratioLow, wAns, hAns, W, H);
+
+        const I = new Float32Array(nFull);
+        for (let i = 0; i < nFull; i++) {
+            I[i] = fullPx[i * 4 + c] / 255.0;
+        }
+
+        const q = guidedFilterRatio(I, pRatio, W, H, 8, 1e-3, boxFn);
+
+        for (let i = 0; i < nFull; i++) {
+            const origByte = fullPx[i * 4 + c];
+            const multiplied = Math.round(origByte * q[i]);
+            out[i * 4 + c] = Math.max(0, Math.min(255, multiplied));
+        }
+    }
+
+    for (let i = 0; i < nFull; i++) {
+        out[i * 4 + 3] = fullPx[i * 4 + 3];
+    }
+
+    return out;
+}

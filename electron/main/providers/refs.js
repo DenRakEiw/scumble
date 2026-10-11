@@ -156,7 +156,7 @@ function referenceSentences(ns, pat) {
  */
 function instruction(req, lay, text) {
     const t = String(text == null ? "" : text);
-    if (req && req.kind === "upscale") return t;
+    if (req && (req.kind === "upscale" || req.kind === "relight")) return t;
     if (req && req.kind === "text") {
         const ns = lay && !lay.style ? numbered(lay).filter((p) => p.role === "reference").map((p) => p.n) : [];
         return ns.length ? [t.trim(), ...referenceSentences(ns, patternOf(req))].filter(Boolean).join(" ") : t;
@@ -218,7 +218,7 @@ function partsOf(lay) {
  */
 function checkPictures(lay, req, who) {
     const given = (req.references || []).length;
-    if (!given || req.kind === "upscale") return { req, notes: [] };
+    if (!given || req.kind === "upscale" || req.kind === "relight") return { req, notes: [] };
     const marker = MARKER_ONE.test(`${req.prompt || ""} ${req.negative || ""}`);
     const drops = lay.drops ? String(lay.drops).replace(/[\s.]+$/, "") : "";
     if (drops) {

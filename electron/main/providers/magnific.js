@@ -105,6 +105,7 @@ const ROUTES = Object.freeze({
     "text-to-image/gpt-image-2-5": { label: "GPT Image 2.5 on Magnific", dialect: "gpt", text: true, auto: true, aspects: GPT_ASPECTS, tiers: TIERS, accepts: ["quality", "background", "moderation", "variant"] },
     "text-to-image/z-image": { label: "Z-Image on Magnific", dialect: "zimage", text: true, seedMax: UINT32_MAX, accepts: ["num_inference_steps", "enable_safety_checker", "output_format"] },
     "mystic": { label: "Mystic on Magnific", dialect: "mystic", text: true, aspects: MYSTIC_ASPECTS, tiers: TIERS, accepts: ["model", "engine", "creative_detailing", "fixed_generation"] },
+    "image-relight": { label: "Magnific Relight", dialect: "relight", relight: true, maxImages: 2, accepts: ["light_transfer_strength", "change_background", "interpolate_from_original", "style", "preserve_details", "engine", "transfer_light_a", "transfer_light_b", "fixed_generation"] },
 });
 
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
@@ -450,6 +451,41 @@ const DIALECTS = {
             }
         },
     },
+
+    relight: {
+        async body(req, R) {
+            const params = req.params || {};
+            if (!req.image) throw new Error(`${R.label}: no picture to relight.`);
+            if (!req.lightmap) throw new Error(`${R.label}: no light map.`);
+            const body = {
+                image: b64(req.image),
+                transfer_light_from_lightmap: b64(req.lightmap),
+                prompt: String(req.prompt || ""),
+                light_transfer_strength: params.light_transfer_strength != null ? Math.round(+params.light_transfer_strength) : 100,
+                change_background: false,
+                interpolate_from_original: !!params.interpolate_from_original,
+                style: params.style || "standard",
+                preserve_details: params.preserve_details !== false,
+            };
+            let adv = null;
+            if (params.advanced_settings && typeof params.advanced_settings === "object") {
+                adv = {};
+                for (const k of ["engine", "transfer_light_a", "transfer_light_b", "fixed_generation"]) {
+                    if (params.advanced_settings[k] !== undefined) adv[k] = params.advanced_settings[k];
+                }
+            } else if (params.advanced) {
+                adv = {};
+                for (const k of ["engine", "transfer_light_a", "transfer_light_b", "fixed_generation"]) {
+                    if (params[k] !== undefined) adv[k] = params[k];
+                }
+            }
+            if (adv && Object.keys(adv).length) body.advanced_settings = adv;
+            return { body, info: { model: "image-relight" }, pictures: 2 };
+        },
+        layout(req, R) {
+            return layoutOf({ seq: [["crop", "image"], ["lightmap", "transfer_light_from_lightmap"]], max: maxOf(R) });
+        },
+    },
 };
 
 // ---- errors ----------------------------------------------------------------------------------------------------
@@ -621,6 +657,7 @@ async function run(req, ctx, kind) {
     const route = routeOf(req.model);
     const R = own(ROUTES, route) ? ROUTES[route] : null;
     if (kind === "upscale" && !(R && R.upscale)) throw new Error(`Magnific: no upscaler route "${route}" (${Object.keys(ROUTES).filter((k) => ROUTES[k].upscale).join(", ")}).`);
+    if (kind === "relight" && !(R && R.relight)) throw new Error(`Magnific: no relight route "${route}".`);
     if (!R) throw new Error(`Magnific: Scumble knows no route "${route}".`);
     const test = testBase(ctx.base);
     checkKey(!!test, ctx.key);
@@ -634,10 +671,19 @@ async function run(req, ctx, kind) {
         const size = pngSize(Buffer.from(req.image));
         const f = Math.round(+req.factor || 2);
         if (route === "image-upscaler" && size && size[0] * f * size[1] * f > CREATIVE_MAX_PIXELS) {
-            throw new Error(`Magnific Creative: ${size[0]} × ${size[1]} at ${f}x would be ${Math.round(size[0] * f * size[1] * f / 1e6)} MP, over its 25.3 MP cap; pick a smaller factor or a smaller selection.`);
+            throw new Error(`Magnific Creative: ${size[0]} x ${size[1]} at ${f}x would be ${Math.round(size[0] * f * size[1] * f / 1e6)} MP, over its 25.3 MP cap; pick a smaller factor or a smaller selection.`);
         }
         info = { model: route, factor: body.scale_factor };
         pictures = 1;
+    } else if (kind === "relight") {
+        if (!req.image) throw new Error(`${R.label}: no picture to relight.`);
+        if (!req.lightmap) throw new Error(`${R.label}: no light map.`);
+        const d = DIALECTS[R.dialect];
+        req = { ...req, params: req.params || {} };
+        const made = await d.body(req, R, ctx, kind);
+        body = made.body;
+        info = { ...made.info };
+        pictures = made.pictures || 2;
     } else {
         if (R.upscale) throw new Error(`${R.label} is an upscaler; run it with Upscale.`);
         if (kind === "edit" && !R.edit) throw new Error(`${R.label} makes pictures from the prompt alone: use Generate new.`);
@@ -683,6 +729,7 @@ function layout(req) {
     const R = own(ROUTES, route) ? ROUTES[route] : null;
     if (!R) throw new Error(`Magnific: Scumble knows no route "${route}".`);
     if (R.upscale) throw new Error(`${R.label} is an upscaler; run it with Upscale.`);
+    if (R.relight) return DIALECTS[R.dialect].layout(req, R);
     if (!R.edit) throw new Error(`${R.label} makes pictures from the prompt alone: use Generate new.`);
     if (R.fill && !(req.kind === "fill" && req.mask && req.mask.length)) throw new Error(`${R.label} needs the selection as a mask (the variant's input must be fill).`);
     return DIALECTS[R.dialect].layout(req, R);
@@ -706,6 +753,7 @@ module.exports = {
     keyUrl: "https://www.magnific.com/user/organization/api-keys",
     keyHint: "API key from Magnific's organization settings (every API call costs credits)",
     edit(req, ctx) { return run(req, ctx, "edit"); },
+    relight(req, ctx) { return run(req, ctx, "relight"); },
     layout,
     textLayout,
     generate(req, ctx) { return run(req, ctx, "text"); },

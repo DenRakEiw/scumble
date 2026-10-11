@@ -133,7 +133,7 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {"comfy" | "provider"} [kind]
  * @property {string} [file]
  * @property {"builtin" | "user"} [source]
- * @property {"edit" | "upscale" | "pass"} [task]   pass: the Realism Pass (ComfyUI recipes only)
+ * @property {"edit" | "upscale" | "pass" | "relight"} [task]   pass: the Realism Pass (ComfyUI recipes only)
  * @property {ShippedPreset[]} [presets]       presets the recipe file ships for its Settings rows
  * @property {Record<string, ProviderVariant>} [providers]
  * @property {string[]} [providerIds]
@@ -432,7 +432,7 @@ function normalize(r) {
         // or the Realism Pass (task "pass", recipes/realism_pass.json): the box at its own size through DLSS 5
         // RTX Video Super Resolution (recipes/rtx_vsr_local.json) names the input its factor goes into
         if (r.task === "upscale") { r.factor = comfyFactor(r); comfyLimits(r); }
-        else if (r.task !== undefined && r.task !== "pass") r.task = "edit";
+        else if (r.task !== undefined && r.task !== "pass" && r.task !== "relight") r.task = "edit";
         comfyRefs(r);
         return r;
     }
@@ -441,7 +441,7 @@ function normalize(r) {
         r.providers = { [id]: { model: r.model || "", input: r.input || "fill", fields: r.fields || null, fixed: r.fixed || null, settings: r.settings || [], options: r.options || null, note: r.note || "" } };
         r.default = id;
     }
-    r.task = r.task === "upscale" ? "upscale" : "edit";
+    r.task = r.task === "upscale" ? "upscale" : r.task === "relight" ? "relight" : "edit";
     for (const [id, v] of Object.entries(r.providers)) {
         v.limits = editLimits(r, v);
         v.refs = refsOf(v.refs !== undefined ? v.refs : r.refs, `${r.id}/${id}`);
@@ -452,6 +452,11 @@ function normalize(r) {
             v.factor = upscaleFactor(r, v);
             // the tab's prompt goes along as guidance only where the model takes one (Clarity, Magnific Creative)
             v.usesPrompt = v.usesPrompt === true || (v.usesPrompt === undefined && r.usesPrompt === true);
+            continue;
+        }
+        if (r.task === "relight") {
+            v.text = null;
+            v.edit = true;
             continue;
         }
         v.text = textVariant(id, v, `${r.id}/${id}`);

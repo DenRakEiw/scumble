@@ -19580,6 +19580,206 @@ class InpaintEditor {
             block.appendChild(controlsBox);
         }
 
+        // 5. Route block
+        const routeBox = el("div", "ipc-relight-route-box");
+        routeBox.style.marginTop = "8px";
+        routeBox.style.paddingTop = "8px";
+        routeBox.style.borderTop = "1px solid var(--sc-border, rgba(255, 255, 255, 0.1))";
+
+        const routeHead = el("div", "ipc-relight-route-head");
+        routeHead.style.display = "flex";
+        routeHead.style.alignItems = "center";
+        routeHead.style.gap = "8px";
+        routeHead.style.marginBottom = "6px";
+
+        const routeTitle = el("span", "ipc-relight-title", "Route");
+        routeHead.appendChild(routeTitle);
+
+        const routeSel = document.createElement("select");
+        routeSel.className = "ipc-sel ipc-relight-route-sel";
+        routeSel.title = "Relight route";
+        const routes = [
+            { id: "app", label: "In-app shader (preview & export)" },
+            { id: "magnific", label: "Magnific Relight" },
+        ];
+        for (const r of routes) {
+            const opt = document.createElement("option");
+            opt.value = r.id;
+            opt.textContent = r.label;
+            routeSel.appendChild(opt);
+        }
+        routeSel.value = layer.params.route || "app";
+        routeSel.addEventListener("click", stop);
+        routeSel.addEventListener("keydown", stop);
+        routeSel.addEventListener("change", () => {
+            this.pushUndo({ kind: "filter", id: layer.id, label: "Relight route" });
+            layer.params.route = routeSel.value;
+            this.markFilterChanged(layer);
+            this.renderLayers();
+        });
+        routeHead.appendChild(routeSel);
+
+        // Render button (active when route !== "app")
+        if (layer.params.route && layer.params.route !== "app") {
+            const renderBtn = iconButton("play", "Render with " + (layer.params.route === "magnific" ? "Magnific Relight" : layer.params.route), async () => {
+                try {
+                    renderBtn.disabled = true;
+                    await host.relightWhole(this, layer, { route: layer.params.route });
+                } catch (err) {
+                    console.error("Relight render failed:", err);
+                } finally {
+                    renderBtn.disabled = false;
+                }
+            }, "Render");
+            renderBtn.classList.add("ipc-small", "ipc-primary", "ipc-relight-render");
+            routeHead.appendChild(renderBtn);
+        }
+
+        routeBox.appendChild(routeHead);
+
+        // Magnific settings when route === "magnific"
+        if (layer.params.route === "magnific") {
+            const magControls = el("div", "ipc-relight-mag-controls");
+            magControls.style.display = "grid";
+            magControls.style.gridTemplateColumns = "1fr 1fr";
+            magControls.style.gap = "6px";
+            magControls.style.fontSize = "12px";
+
+            // Strength slider (0..100)
+            const strengthRow = el("div", "ipc-relight-mag-row");
+            strengthRow.style.gridColumn = "1 / -1";
+            strengthRow.style.display = "flex";
+            strengthRow.style.alignItems = "center";
+            strengthRow.style.gap = "8px";
+            const strLabel = el("span", null, "Strength");
+            strLabel.style.width = "70px";
+            const strSlider = document.createElement("input");
+            strSlider.type = "range";
+            strSlider.min = "0"; strSlider.max = "100";
+            strSlider.value = String(layer.params.strength ?? layer.params.light_transfer_strength ?? 100);
+            strSlider.className = "ipc-slider";
+            strSlider.addEventListener("click", stop);
+            strSlider.addEventListener("keydown", stop);
+            const strVal = el("span", "ipc-val", strSlider.value + "%");
+            strSlider.addEventListener("input", () => {
+                strVal.textContent = strSlider.value + "%";
+                layer.params.strength = +strSlider.value;
+                layer.params.light_transfer_strength = +strSlider.value;
+            });
+            strSlider.addEventListener("change", () => {
+                this.pushUndo({ kind: "filter", id: layer.id, label: "Relight: Strength" });
+                layer.params.strength = +strSlider.value;
+                layer.params.light_transfer_strength = +strSlider.value;
+                this.markFilterChanged(layer);
+            });
+            strengthRow.appendChild(strLabel);
+            strengthRow.appendChild(strSlider);
+            strengthRow.appendChild(strVal);
+            magControls.appendChild(strengthRow);
+
+            // Style select
+            const styleRow = el("div", "ipc-relight-mag-row");
+            styleRow.style.display = "flex";
+            styleRow.style.alignItems = "center";
+            styleRow.style.gap = "6px";
+            const styLabel = el("span", null, "Style");
+            styLabel.style.width = "40px";
+            const styleSel = document.createElement("select");
+            styleSel.className = "ipc-sel";
+            const styles = ["standard", "darker_but_realistic", "clean", "smooth", "brighter", "contrasted_n_hdr", "just_composition"];
+            for (const st of styles) {
+                const opt = document.createElement("option");
+                opt.value = st;
+                opt.textContent = st.replace(/_/g, " ");
+                styleSel.appendChild(opt);
+            }
+            styleSel.value = layer.params.style || "standard";
+            styleSel.addEventListener("click", stop);
+            styleSel.addEventListener("keydown", stop);
+            styleSel.addEventListener("change", () => {
+                this.pushUndo({ kind: "filter", id: layer.id, label: "Relight: Style" });
+                layer.params.style = styleSel.value;
+                this.markFilterChanged(layer);
+            });
+            styleRow.appendChild(styLabel);
+            styleRow.appendChild(styleSel);
+            magControls.appendChild(styleRow);
+
+            // Preserve details checkbox
+            const pdRow = el("label", "ipc-checkbox-row");
+            pdRow.style.display = "flex";
+            pdRow.style.alignItems = "center";
+            pdRow.style.gap = "6px";
+            pdRow.style.cursor = "pointer";
+            const pdCheck = document.createElement("input");
+            pdCheck.type = "checkbox";
+            pdCheck.checked = layer.params.preserve_details !== false;
+            pdCheck.addEventListener("click", stop);
+            pdCheck.addEventListener("change", () => {
+                this.pushUndo({ kind: "filter", id: layer.id, label: "Relight: Preserve details" });
+                layer.params.preserve_details = pdCheck.checked;
+                this.markFilterChanged(layer);
+            });
+            pdRow.appendChild(pdCheck);
+            pdRow.appendChild(el("span", null, "Preserve details"));
+            magControls.appendChild(pdRow);
+
+            // Interpolate from original checkbox
+            const intRow = el("label", "ipc-checkbox-row");
+            intRow.style.display = "flex";
+            intRow.style.alignItems = "center";
+            intRow.style.gap = "6px";
+            intRow.style.cursor = "pointer";
+            const intCheck = document.createElement("input");
+            intCheck.type = "checkbox";
+            intCheck.checked = !!(layer.params.interpolate ?? layer.params.interpolate_from_original);
+            intCheck.addEventListener("click", stop);
+            intCheck.addEventListener("change", () => {
+                this.pushUndo({ kind: "filter", id: layer.id, label: "Relight: Interpolate" });
+                layer.params.interpolate = intCheck.checked;
+                layer.params.interpolate_from_original = intCheck.checked;
+                this.markFilterChanged(layer);
+            });
+            intRow.appendChild(intCheck);
+            intRow.appendChild(el("span", null, "Interpolate"));
+            magControls.appendChild(intRow);
+
+            // Detail from original switch (default true)
+            const detRow = el("label", "ipc-checkbox-row");
+            detRow.style.display = "flex";
+            detRow.style.alignItems = "center";
+            detRow.style.gap = "6px";
+            detRow.style.cursor = "pointer";
+            const detCheck = document.createElement("input");
+            detCheck.type = "checkbox";
+            detCheck.checked = layer.params.detail !== false;
+            detCheck.title = "Apply lighting ratio guided by the full-resolution original to preserve 100% fine texture";
+            detCheck.addEventListener("click", stop);
+            detCheck.addEventListener("change", () => {
+                this.pushUndo({ kind: "filter", id: layer.id, label: "Relight: Detail from original" });
+                layer.params.detail = detCheck.checked;
+                this.markFilterChanged(layer);
+            });
+            detRow.appendChild(detCheck);
+            detRow.appendChild(el("span", null, "Detail from original"));
+            magControls.appendChild(detRow);
+
+            routeBox.appendChild(magControls);
+        }
+
+        // Last run note
+        if (layer.params.last && layer.params.last.ms) {
+            const lastNote = el("div", "ipc-relight-last-note");
+            lastNote.style.fontSize = "11px";
+            lastNote.style.color = "var(--sc-fg-muted, #888)";
+            lastNote.style.marginTop = "4px";
+            const s = (layer.params.last.ms / 1000).toFixed(1);
+            lastNote.textContent = `Last render: ${layer.params.last.route} in ${s} s${layer.params.last.seed != null ? ` (seed ${layer.params.last.seed})` : ""}`;
+            routeBox.appendChild(lastNote);
+        }
+
+        block.appendChild(routeBox);
+
         return block;
     }
 

@@ -501,6 +501,7 @@ against the loopback mock lands the layer, hides the relight layer, one undo ste
 the base (the base's high-frequency variance survives within 10 %); the `export` gate. **Risks.** Magnific's input cap
 for this route is not in the schema (2048 until measured live); the ratio where the model changed content (the switch,
 §4.6). **Effort** 1.5 d.
+**Built 2026-10-11:** Magnific relight route (`image-relight`) with opaque light map mode 1, dialect body and layout; `recipes/relight.json` with `task: "relight"`; `detailRatio` guided filter ratio transfer in `inpaint_relight.js` and `inpaint_worker.js`; `host.relightWhole` landing under filter run in 1 undo step; `tools/relight_request_test.js` (all 6 suites pass); Case (u) in `tools/relight_test.py` (passes on both tiles and canvas backends).
 
 ### 5.9 L5: the prompt routes
 

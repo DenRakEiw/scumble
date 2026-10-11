@@ -40,7 +40,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PNG_SIGNATURE = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
 REFS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "refs", "magnific")
-PICTURE_FIELDS = ("image", "mask", "input_image", "input_image_2", "input_image_3", "input_image_4")
+PICTURE_FIELDS = ("image", "mask", "input_image", "input_image_2", "input_image_3", "input_image_4", "transfer_light_from_lightmap")
 LIST_FIELDS = ("reference_images", "style_reference_images")
 EXPAND = ("image-expand/flux-pro", "image-expand/ideogram", "image-expand/seedream-v4-5")
 SEEDREAM_SIZES = {"square_1_1": (2048, 2048), "widescreen_16_9": (2730, 1536), "social_story_9_16": (1536, 2730), "portrait_2_3": (1664, 2496),
@@ -464,7 +464,7 @@ class Handler(BaseHTTPRequestHandler):
             if "mock-aspect" in prompt:
                 W = round(W * 1.024)
             return png_bytes(W, H, marker=8)
-        if route == "ideogram-image-edit":
+        if route == "ideogram-image-edit" or route == "image-relight":
             return b64decode(body.get("image"))
         pics = pictures_of(body)
         if pics and pics[0][1]:

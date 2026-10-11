@@ -38,12 +38,13 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
+from magnific_mock import Mock  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 JS = r"""
-(async (docPath) => {
+(async (docPath, mockUrl) => {
     const shell = await import("./shell.js");
     const { commands } = await import("./commands.js");
     const F = await import("./editor/inpaint_filters.js");
@@ -894,6 +895,131 @@ JS = r"""
     await commands.run("close_document", { doc: doc2.id, force: true });
     shell.activate(ed);
 
+    // -------------------------------------------------------------------------
+    // Case u: Render against loopback mock lands layer, hides relight layer, 1 undo
+    // -------------------------------------------------------------------------
+    const prevSettings = await window.scumble.settings.get();
+    await window.scumble.settings.set({ magnific: { base: mockUrl } });
+    const had = await window.scumble.keys.list();
+    const hadKey = !!((had.keys || {}).magnific && had.keys.magnific.set);
+    if (!hadKey) {
+        await window.scumble.keys.set("magnific", "test-magnific-relight-mock");
+    }
+
+    const docU = shell.newDocument();
+    shell.activate(docU);
+    await new Promise((r) => setTimeout(r, 150));
+    docU.resizeCanvas();
+
+    // Create high-frequency 1-pixel checkerboard base (256x256)
+    const uW = 256, uH = 256;
+    const cU = mk(uW, uH);
+    const ctxU = cU.getContext("2d");
+    const idU = ctxU.createImageData(uW, uH);
+    for (let y = 0; y < uH; y++) {
+        for (let x = 0; x < uW; x++) {
+            const idx = (y * uW + x) * 4;
+            const v = ((x + y) % 2 === 0) ? 60 : 200;
+            idU.data[idx] = v;
+            idU.data[idx + 1] = v;
+            idU.data[idx + 2] = v;
+            idU.data[idx + 3] = 255;
+        }
+    }
+    ctxU.putImageData(idU, 0, 0);
+    Object.defineProperty(cU, "naturalWidth", { value: uW });
+    Object.defineProperty(cU, "naturalHeight", { value: uH });
+    await docU.setBaseFromCanvas(cU, { keepLayers: false });
+    await settle(docU);
+
+    // Install depth map on docU
+    const uRamp = new Uint16Array(64 * 64);
+    for (let i = 0; i < 64 * 64; i++) uRamp[i] = 25000;
+    await docU.setMap("depth", makeMap("depth", 64, 64, uRamp, [uW, 0, 0, uH, 0, 0]));
+
+    // Add relight filter layer
+    const uFx = docU.addFilterLayer("relight");
+    uFx.params = {
+        ...uFx.params,
+        route: "magnific",
+        lights: [defaultLight(0, { width: uW, height: uH })],
+        original: 80,
+    };
+    docU.markFilterChanged(uFx);
+    docU.renderLayers();
+    docU.draw();
+    await settle(docU);
+    check("u: relight layer added on docU", !!uFx && uFx.filter === "relight");
+    check("u: initial relight filter layer is visible", !uFx.hidden);
+
+    // Measure original base checkerboard contrast
+    let initCount = 0, initContrastSum = 0;
+    const basePxU = idU.data;
+    for (let y = 10; y < uH - 10; y++) {
+        for (let x = 10; x < uW - 10; x += 2) {
+            const i0 = (y * uW + x) * 4;
+            const i1 = (y * uW + (x + 1)) * 4;
+            initContrastSum += Math.max(basePxU[i0], basePxU[i1]) / Math.max(1, Math.min(basePxU[i0], basePxU[i1]));
+            initCount++;
+        }
+    }
+    const initAvgContrast = initContrastSum / initCount;
+
+    // Run relight command with route magnific
+    const uRes = await commands.run("relight", {
+        doc: docU.id,
+        layer: uFx.id,
+        route: "magnific",
+        timeout: 60,
+    });
+
+    check("u: relight command succeeded", !!uRes && uRes.route === "magnific", uRes);
+    check("u: landed layer returned", !!(uRes && uRes.layer));
+    const landedId = uRes && uRes.layer && uRes.layer.id;
+    const landedLayer = docU.layers.find((l) => l.id === landedId);
+    check("u: pixel layer landed in document", !!landedLayer && landedLayer.kind === "image");
+    check("u: landed layer name is Relight (magnific)", landedLayer && landedLayer.name === "Relight (magnific)");
+
+    // Verify filter layer is now hidden
+    const uFxAfter = docU.layers.find((l) => l.id === uFx.id);
+    check("u: filter layer is hidden after render", !!uFxAfter && (uFxAfter.visible === false || uFxAfter.hidden === true));
+
+    // Verify landed layer is under top filter run
+    const landedIdx = docU.layers.findIndex((l) => l.id === landedId);
+    const filterIdx = docU.layers.findIndex((l) => l.id === uFx.id);
+    check("u: pixel layer is positioned under filter layer", landedIdx < filterIdx);
+
+    // Verify detail preservation on the landed layer pixels
+    const landedCanvas = docU.flattenToCanvas({ forRun: true, upTo: landedIdx + 1 });
+    const landedPx = landedCanvas.getContext("2d").getImageData(0, 0, uW, uH).data;
+    let landedCount = 0, landedContrastSum = 0;
+    for (let y = 10; y < uH - 10; y++) {
+        for (let x = 10; x < uW - 10; x += 2) {
+            const i0 = (y * uW + x) * 4;
+            const i1 = (y * uW + (x + 1)) * 4;
+            landedContrastSum += Math.max(landedPx[i0], landedPx[i1]) / Math.max(1, Math.min(landedPx[i0], landedPx[i1]));
+            landedCount++;
+        }
+    }
+    const landedAvgContrast = landedContrastSum / landedCount;
+    const contrastDiff = Math.abs(landedAvgContrast - initAvgContrast) / initAvgContrast;
+    check("u: high-frequency texture contrast preserved within 10%", contrastDiff <= 0.10, { contrastDiff, initAvgContrast, landedAvgContrast });
+
+    // Verify 1 undo step restores the stack
+    await docU.undoStep();
+    const layersAfterUndo = docU.layers.map((l) => l.id);
+    check("u: 1 undo step removes landed pixel layer", !layersAfterUndo.includes(landedId));
+    const uFxUndone = docU.layers.find((l) => l.id === uFx.id);
+    check("u: 1 undo step unhides relight filter layer", !!uFxUndone && uFxUndone.visible !== false);
+
+    // Clean up docU and restore settings/keys
+    await commands.run("close_document", { doc: docU.id, force: true });
+    await window.scumble.settings.set({ magnific: prevSettings.magnific || {} });
+    if (!hadKey) {
+        await window.scumble.keys.clear("magnific");
+    }
+    shell.activate(ed);
+
     // Keep lights tool active for visual screenshot
     ed.setTool("lights");
     ed.selectLayers([fx.id]);
@@ -905,9 +1031,9 @@ JS = r"""
 """
 
 
-async def run_cdp(cdp, doc_path):
+async def run_cdp(cdp, doc_path, mock_url):
     escaped_path = doc_path.replace("\\", "\\\\")
-    expr = f"({JS})('{escaped_path}')"
+    expr = f"({JS})('{escaped_path}', '{mock_url}')"
     val = await cdp.eval(expr, timeout=120)
     if not val:
         print("[FAIL] no result from JS evaluate")
@@ -932,7 +1058,7 @@ async def run_cdp(cdp, doc_path):
 
 
 def node_step():
-    r = subprocess.run(
+    r1 = subprocess.run(
         ["node", os.path.join(HERE, "relight_test.js")],
         cwd=ROOT,
         capture_output=True,
@@ -940,17 +1066,30 @@ def node_step():
         encoding="utf-8",
         timeout=60,
     )
-    tail = r.stdout.strip()
-    if r.returncode != 0 or "PASS" not in tail:
-        raise Exception("tools/relight_test.js: " + (tail + r.stderr)[-1500:])
-    return {"checks": tail.count("PASS")}
+    tail1 = r1.stdout.strip()
+    if r1.returncode != 0 or "PASS" not in tail1:
+        raise Exception("tools/relight_test.js: " + (tail1 + r1.stderr)[-1500:])
+
+    r2 = subprocess.run(
+        ["node", os.path.join(HERE, "relight_request_test.js")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    tail2 = r2.stdout.strip()
+    if r2.returncode != 0 or "PASS" not in tail2:
+        raise Exception("tools/relight_request_test.js: " + (tail2 + r2.stderr)[-1500:])
+
+    return {"checks": tail1.count("PASS") + tail2.count("PASS")}
 
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     try:
         nres = node_step()
-        print(f"[ok] relight_test.js: {nres['checks']} checks passed")
+        print(f"[ok] relight node tests: {nres['checks']} checks passed")
     except Exception as err:
         print(f"[FAIL] node: {err}")
         print("FAIL")
@@ -960,8 +1099,9 @@ def main():
     os.makedirs(scratch_dir, exist_ok=True)
     doc_path = os.path.join(scratch_dir, f"relight_test_{os.getpid()}.scumble")
 
+    mock = Mock().start()
     try:
-        ok = asyncio.run(session(lambda c: run_cdp(c, doc_path)))
+        ok = asyncio.run(session(lambda c: run_cdp(c, doc_path, mock.url)))
         if not ok:
             print("FAIL")
             sys.exit(1)
@@ -985,6 +1125,7 @@ def main():
         print("FAIL")
         sys.exit(1)
     finally:
+        mock.stop()
         if os.path.exists(doc_path):
             try:
                 os.remove(doc_path)

@@ -1,0 +1,151 @@
+{
+  "id": "relight",
+  "kind": "provider",
+  "task": "relight",
+  "name": "Relight",
+  "family": "Relight",
+  "description": "Relight a picture with Magnific Relight: transfers lighting from a rendered light map or prompt guidance to the scene. Detail from the original preserves high-frequency microtexture.",
+  "default": "magnific",
+  "limits": {
+    "min": 256,
+    "max": 2048,
+    "step": 16
+  },
+  "providers": {
+    "magnific": {
+      "model": "image-relight",
+      "settings": [
+        {
+          "index": 1,
+          "key": "light_transfer_strength",
+          "label": "Strength",
+          "spec": [
+            "INT",
+            {
+              "default": 100,
+              "min": 0,
+              "max": 100
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "style",
+          "label": "Style",
+          "spec": [
+            [
+              "standard",
+              "darker_but_realistic",
+              "clean",
+              "smooth",
+              "brighter",
+              "contrasted_n_hdr",
+              "just_composition"
+            ],
+            {
+              "default": "standard"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "preserve_details",
+          "label": "Preserve details",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": true
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "key": "interpolate_from_original",
+          "label": "Interpolate from original",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": false
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "key": "engine",
+          "label": "Engine",
+          "spec": [
+            [
+              "automatic",
+              "balanced",
+              "cool",
+              "real",
+              "illusio",
+              "fairy",
+              "colorful_anime",
+              "hard_transform",
+              "softy"
+            ],
+            {
+              "default": "automatic"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "key": "transfer_light_a",
+          "label": "Transfer light A",
+          "spec": [
+            [
+              "automatic",
+              "low",
+              "medium",
+              "normal",
+              "high",
+              "high_on_faces"
+            ],
+            {
+              "default": "automatic"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "key": "transfer_light_b",
+          "label": "Transfer light B",
+          "spec": [
+            [
+              "automatic",
+              "composition",
+              "straight",
+              "smooth_in",
+              "smooth_out",
+              "smooth_both",
+              "reverse_both",
+              "soft_in",
+              "soft_out",
+              "soft_mid",
+              "strong_mid",
+              "style_shift",
+              "strong_shift"
+            ],
+            {
+              "default": "automatic"
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "key": "fixed_generation",
+          "label": "Fixed generation",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": false
+            }
+          ]
+        }
+      ],
+      "note": "POST /v1/ai/image-relight, transfers light from the light map to the picture."
+    }
+  }
+}
