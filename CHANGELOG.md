@@ -22,6 +22,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - A layer in a blend mode this version does not know draws as normal everywhere.
 - Emulated blend modes share a unified GPU shader on screen, and kernel blend dispatch safely falls back to source-over for unknown operations.
 - Integer pixel-exact kernels and JS twin for non-separable whole-pixel blend modes (hue, saturation, colour, luminosity, darker colour, lighter colour; ABI 17).
+- **Rust WASM kernel: range_max**: 4x4 separable block range filter in `crates/px` (ABI 18) accelerates edge analysis and depth snapping by 5x while reducing memory footprint from 67 MB down to a 64 KB L1 cache ring buffer.
 
 ## 0.1.45 - 2026-10-10
 

@@ -20,6 +20,7 @@ use std::alloc::{alloc, dealloc, Layout};
 
 mod cmatch;
 mod composite;
+mod edges;
 mod edt;
 mod flood;
 mod jobs;
@@ -39,11 +40,11 @@ fn align_for(bytes: usize) -> usize {
     if bytes >= 16 * 1024 { 4096 } else { 8 }
 }
 
-/// Bumped whenever an export changes its signature or learns a new op (17: blend ops 24 to 29);
+/// Bumped whenever an export changes its signature or learns a new op (18: range_max);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    17
+    18
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -335,3 +336,17 @@ pub extern "C" fn psd_pack_rows_cap(w: usize, rows: usize) -> usize {
 pub unsafe extern "C" fn psd_pack_rows(rgba: *const u8, w: usize, rows: usize, channel: usize, out: *mut u8, cap: usize, lens: *mut u8) -> isize {
     psd::pack_rows(slice::from_raw_parts(rgba, w * 4 * rows), w, rows, channel & 3, slice::from_raw_parts_mut(out, cap), slice::from_raw_parts_mut(lens, rows * 2))
 }
+
+// ---- edge & map kernels (PLAN_WASM #1) ----------------------------------------------------
+
+/// Computes max - min over each texel's 4x4 block of a w x h Uint16Array.
+#[no_mangle]
+pub unsafe extern "C" fn range_max(src: *const u16, w: usize, h: usize, out: *mut u16) {
+    edges::range_max(
+        slice::from_raw_parts(src, w * h),
+        w,
+        h,
+        slice::from_raw_parts_mut(out, w * h),
+    );
+}
+

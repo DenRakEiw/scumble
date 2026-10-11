@@ -298,6 +298,59 @@ async function maskCases(px, label, js) {
     console.log(`       1492 x 1492: dilate ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)}; three box blurs ${label} ${(t3 - t2).toFixed(1)} ms, twin ${(t4 - t3).toFixed(1)}`);
 }
 
+/** The edge and map kernels (range_max, docs/PLAN_WASM.md #1) against their twin. */
+async function edgeCases(px, label, js) {
+    const genMap = (w, h, seed) => {
+        let s = seed >>> 0;
+        const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+        const data = new Uint16Array(w * h);
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                data[y * w + x] = Math.floor(rnd() * 65536);
+            }
+        }
+        return data;
+    };
+    const same = (a, b) => {
+        if (a.length !== b.length) return `lengths differ: ${a.length} vs ${b.length}`;
+        for (let i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) return `value ${i} is ${a[i]}, the twin has ${b[i]}`;
+        }
+        return "";
+    };
+    let ok = true, detail = "";
+    // Test various geometries: tiny, 1D strips, primes, non-multiples of 8, power of 2
+    for (const [w, h] of [[1, 1], [2, 2], [3, 1], [1, 3], [7, 3], [3, 97], [64, 64], [131, 77], [256, 256], [300, 211]]) {
+        const m = genMap(w, h, w * 131 + h);
+        const d = same(px.rangeMax(m, w, h), js.rangeMax(m, w, h));
+        if (d) { ok = false; detail = `range_max ${w}x${h}: ${d}`; break; }
+    }
+    // Test constant / flat map
+    if (ok) {
+        const flat = new Uint16Array(64 * 64);
+        flat.fill(32768);
+        const res = px.rangeMax(flat, 64, 64);
+        let nonZero = 0;
+        for (let i = 0; i < res.length; i++) if (res[i] !== 0) nonZero++;
+        if (nonZero > 0) { ok = false; detail = `flat map has non-zero range values (${nonZero})`; }
+    }
+    // Test sharp step edge
+    if (ok) {
+        const step = new Uint16Array(64 * 64);
+        for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) step[y * 64 + x] = x < 32 ? 10000 : 50000;
+        const d = same(px.rangeMax(step, 64, 64), js.rangeMax(step, 64, 64));
+        if (d) { ok = false; detail = `step edge: ${d}`; }
+    }
+    check(`${label} range_max equals its twin bit for bit`, ok, detail);
+
+    // Benchmark on a 2048 x 2048 map (4 MP)
+    const big = genMap(2048, 2048, 42);
+    const t0 = performance.now(); px.rangeMax(big, 2048, 2048);
+    const t1 = performance.now(); js.rangeMax(big, 2048, 2048);
+    const t2 = performance.now();
+    console.log(`       2048 x 2048: range_max ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)} ms`);
+}
+
 /** The whole-job kernels (grow_mask, flood_shape) against the editor's JS for the same jobs. */
 async function jobCases(px, label, raster) {
     let ok = true, detail = "";
@@ -1932,6 +1985,7 @@ async function main() {
         await floodCases(px, label, js, raster);
         await jobCases(px, label, raster);
         await maskCases(px, label, js);
+        await edgeCases(px, label, js);
         await pngReadCases(px, label, js);
         await compositeCases(px, label, js);
         await matchCases(px, label, js);
