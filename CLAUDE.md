@@ -314,6 +314,12 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   the CPU paths worth moving into `crates/px` (the edge snap and guided filter maps, histograms and the limit rows,
   the compositor's CPU band, the stroke kernels, a threads spike), with the rules (measure first, the JS kernel stays
   the reference and fallback, both wasm builds, one kernel per session). Nothing built.
+- 45: **error lines in the status bar red and blinking** (the user, 2026-10-11, testing 0.1.46, with a screenshot of
+  "Depth estimation needs Depth Anything V2 Small: download it in Settings > Helpers.": "fuer das naechste update: bei
+  einer fehlermeldung ist der fehler text unten rot blinkend"). For the update after 0.1.46. Today `setStatus(text)`
+  (`renderer/editor/inpaint_canvas.js`, 446 calls) has no kind, so an error looks like any other line: a kind
+  (`setStatus(text, { error: true })` or a small `setError`) at the error sites, the line red, a short blink (a few
+  pulses, then steady red until the next line; none under `prefers-reduced-motion`), in every skin. Nothing built.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
