@@ -13,6 +13,12 @@ Tests haze filter layer across CPU and WebGL2 paths via CDP:
   * Case g: Snap integration: when depth map has guide + snap meta (strength = 50), haze respects picture edges.
   * Case h: Tile boundary test: with --tiles on, 2x2 or 3x3 tiles show no seams across tile boundaries (diff <= 1 level).
   * Case i: Export: flattenToCanvas and encodeComposite produce matching output (within rounding, <= 2 levels).
+  * Cases j-o: dehaze (R2-S14), GL against CPU in both modes, recovery, identity, sky, stats, byte-stable exports.
+  * Case p: lens blur (R2-S15), GL against CPU at scale 1 and at a scaled pass.
+
+Every GL-against-CPU comparison first checks that applyFilterGL returns a result: haze's and lens blur's GL twins
+were never registered before 0.1.46 (their flag was set before registerGLFilter threw inside the import cycle), so
+the CPU path ran on both sides and the comparisons held vacuously.
 
 Connects to running app via CDP.
 """
@@ -32,6 +38,7 @@ JS = r"""
     const shell = await import("./shell.js");
     const { commands } = await import("./commands.js");
     const F = await import("./editor/inpaint_filters.js");
+    const GLM = await import("./editor/inpaint_filters_gl.js");
     const { host } = await import("./editor/host.js");
     const { makeMap } = await import("./editor/inpaint_maps.js");
     const PNG = await import("./editor/inpaint_png.js");
@@ -42,6 +49,32 @@ JS = r"""
     };
     const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
     const settle = async (ed) => { await ed.mipsSettled(); await new Promise((r) => setTimeout(r, 100)); };
+
+    // The GL twin against the CPU twin on the same input. The GL twin has to run first of all: applyFilterGL
+    // returning null means the twin is not registered (or failed), and the CPU path would then run on both sides.
+    // `tol`: { max, over2Pct, mean } over the largest channel difference per pixel, alpha included.
+    const glVsCpu = (label, id, src, params, info, tol) => {
+        const infoGL = { ...info, cpu: false };
+        const gl = GLM.applyFilterGL(id, src, params, infoGL);
+        check(label + ": applyFilterGL runs the GL twin (not null)", !!gl);
+        const cpu = F.applyFilter(id, src, params, { ...info, cpu: true });
+        check(label + ": CPU twin ran", !!cpu);
+        if (!gl || !cpu) return null;
+        const w = src.width, h = src.height;
+        const pa = GLM.glToCanvas(gl).getContext("2d").getImageData(0, 0, w, h).data;
+        const pb = cpu.getContext("2d").getImageData(0, 0, w, h).data;
+        let max = 0, over2 = 0, sum = 0;
+        for (let i = 0; i < w * h * 4; i += 4) {
+            const d = Math.max(Math.abs(pa[i] - pb[i]), Math.abs(pa[i + 1] - pb[i + 1]), Math.abs(pa[i + 2] - pb[i + 2]), Math.abs(pa[i + 3] - pb[i + 3]));
+            if (d > max) max = d;
+            if (d > 2) over2++;
+            sum += d;
+        }
+        const stats = { max, over2Pct: (over2 / (w * h)) * 100, mean: sum / (w * h) };
+        check(label + ": GL vs CPU (max <= " + tol.max + ", over2 <= " + tol.over2Pct + "%, mean <= " + tol.mean + ")",
+            stats.max <= tol.max && stats.over2Pct <= tol.over2Pct && stats.mean <= tol.mean, stats);
+        return stats;
+    };
 
     const decode = async (blob) => {
         let out = null, W = 0, H = 0;
@@ -124,6 +157,8 @@ JS = r"""
         const over2Pct = (over2Count / (W * H)) * 100;
         check("b: compareFilterPaths GL vs CPU (max <= 2, over2 <= 0.1%)", maxDiffGLvsCPU <= 2 && over2Pct <= 0.1, { maxDiffGLvsCPU, over2Pct });
     }
+    // the flatten above takes the GL path only when the haze twin is registered: ask for it directly
+    glVsCpu("b: haze", "haze", base, fx.params, infoB, { max: 2, over2Pct: 0.1, mean: 1 });
 
     // -------------------------------------------------------------------------
     // Case c: amount = 0 is bitwise identical to source (skip hook)
@@ -408,6 +443,7 @@ JS = r"""
         const over2Pct = (over2Count / (W * H)) * 100;
         check("j: dehaze auto GL vs CPU parity (max <= 2, over2 <= 0.1%)", maxDiff <= 2 && over2Pct <= 0.1, { maxDiff, over2Pct });
     }
+    glVsCpu("j1: dehaze auto", "dehaze", dbg, dfx.params, infoAuto, { max: 2, over2Pct: 0.1, mean: 1 });
 
     // j2: Depth mode GL vs CPU parity
     await ed.setMap("depth", depthMap);
@@ -438,6 +474,7 @@ JS = r"""
         const over2Pct = (over2Count / (W * H)) * 100;
         check("j: dehaze depth GL vs CPU parity (max <= 2, over2 <= 0.1%)", maxDiff <= 2 && over2Pct <= 0.1, { maxDiff, over2Pct });
     }
+    glVsCpu("j2: dehaze depth", "dehaze", dbg, dfx.params, infoDepth, { max: 2, over2Pct: 0.1, mean: 1 });
 
     // Case k: Synthetic hazy document recovery
     const synW = 240, synH = 120;
@@ -587,6 +624,35 @@ JS = r"""
 
     // Cleanup dehaze
     ed.removeLayer(skyDfx.id);
+    await ed.setMap("depth", null);
+
+    // =========================================================================
+    // Case p: lens blur GL twin against the CPU twin (R2-S15)
+    // =========================================================================
+    // The textured picture over the depth ramp with the focus in the middle: in focus, partly and fully blurred
+    // regions in one picture. Both twins read colour nearest (the GL source textures are NEAREST, CLAMP_TO_EDGE)
+    // and depth bilinear, at whole-pixel tap offsets (floor(delta + 0.5) = Math.round), so the sampler rounds
+    // nothing of its own and there is no nearest-against-bilinear difference. What is left is float32 against
+    // double: a tap whose circle of confusion lies within float error of its distance can flip on single pixels,
+    // hence a bound on the share of pixels over 2 levels rather than on the largest difference.
+    await ed.setBaseFromCanvas(dbg, { keepLayers: false });
+    await settle(ed);
+    await ed.setMap("depth", depthMap);
+    const lfx = ed.addFilterLayer("lens_blur");
+    check("p: lens blur layer created", !!lfx && lfx.filter === "lens_blur");
+    if (lfx) {
+        Object.assign(lfx.params, { focus: 50, dof: 10, aperture: 1.5, highlights: 40, threshold: 70 });
+        ed.markFilterChanged(lfx);
+        const lensTol = { max: 255, over2Pct: 0.1, mean: 0.25 };
+        const infoLens = { ...ed.filterInfo(lfx, { scale: 1, origin: [0, 0], full: [W, H], forRun: true }), maps: ed.maps };
+        glVsCpu("p: lens blur", "lens_blur", dbg, lfx.params, infoLens, lensTol);
+        // a scaled pass (the view at 50 %): the input and info.full at that scale, as filteredCanvas passes them
+        const half = mk(W / 2, H / 2);
+        half.getContext("2d").drawImage(dbg, 0, 0, W / 2, H / 2);
+        const infoHalf = { ...ed.filterInfo(lfx, { scale: 0.5, origin: [0, 0], full: [W / 2, H / 2], forRun: false }), maps: ed.maps };
+        glVsCpu("p: lens blur at scale 0.5", "lens_blur", half, lfx.params, infoHalf, lensTol);
+        ed.removeLayer(lfx.id);
+    }
     await ed.setMap("depth", null);
 
     return { fails, tiles: !!ed.tiles };

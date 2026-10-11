@@ -338,9 +338,14 @@ const EMULATED_BLEND_CLIP_SHADER = {
     code: EMULATED_BLEND_SHADER.code.replace("float as = S.a * u_opacity,", "float as = S.a * u_opacity * texture(u_clip, uv).a,"),
 };
 
+// dissolve over the backdrop (R4-S9): a kept pixel is the layer's colour at full alpha, a dropped one the backdrop. The
+// hash runs on image pixels (`u_invX`, `u_invY`: the canvas-to-image map), and the layer's opacity comes in as the
+// integer the CPU paths take (`u_alpha255`, Math.round in JS): GLSL's round() leaves the direction at .5 to the GPU
+// (half to even is allowed, and ANGLE's D3D11 backend may take it), and float32 0.3 * 255 is exactly 76.5, so at 30 %
+// the screen could keep other pixels than the export. Every rounding here is floor(x + 0.5), as Math.round
 const DISSOLVE_SHADER = {
     label: "dissolve",
-    uniforms: { u_layer: "sampler2D", u_opacity: "float", u_seed_hi: "float", u_seed_lo: "float", u_invX: "vec3", u_invY: "vec3" },
+    uniforms: { u_layer: "sampler2D", u_alpha255: "float", u_seed_hi: "float", u_seed_lo: "float", u_invX: "vec3", u_invY: "vec3" },
     code: `
 uint lowbias32(uint x) {
     x ^= x >> 16u;
@@ -366,8 +371,8 @@ vec4 shade(vec4 B, vec2 uv) {
     int imgX = int(floor(dot(u_invX, vec3(fragPx, 1.0))));
     int imgY = int(floor(dot(u_invY, vec3(fragPx, 1.0))));
     uint seed = uint(u_seed_lo) | (uint(u_seed_hi) << 16u);
-    int srcA = int(round(S.a * 255.0));
-    int alpha255 = int(round(u_opacity * 255.0));
+    int srcA = int(floor(S.a * 255.0 + 0.5));
+    int alpha255 = int(floor(u_alpha255 + 0.5));
     int c = mul255(srcA, alpha255);
     bool keep = (c == 255) || ((hash32(uint(imgX), uint(imgY), seed) >> 24u) < uint(c));
     return keep ? vec4(S.rgb, 1.0) : B;
@@ -377,10 +382,10 @@ vec4 shade(vec4 B, vec2 uv) {
 
 const DISSOLVE_CLIP_SHADER = {
     label: "dissolve, clipped",
-    uniforms: { u_layer: "sampler2D", u_clip: "sampler2D", u_opacity: "float", u_seed_hi: "float", u_seed_lo: "float", u_invX: "vec3", u_invY: "vec3" },
+    uniforms: { u_layer: "sampler2D", u_clip: "sampler2D", u_alpha255: "float", u_seed_hi: "float", u_seed_lo: "float", u_invX: "vec3", u_invY: "vec3" },
     code: DISSOLVE_SHADER.code.replace(
         "int c = mul255(srcA, alpha255);",
-        "int mask = int(round(texture(u_clip, uv).a * 255.0));\n    int c = mul255(mul255(srcA, alpha255), mask);"
+        "int mask = int(floor(texture(u_clip, uv).a * 255.0 + 0.5));\n    int c = mul255(mul255(srcA, alpha255), mask);"
     ),
 };
 
@@ -8195,7 +8200,17 @@ class InpaintEditor {
         // `release`; the region tier keeps the press by first reads (above)
         const clones = [];
         const held = (s) => { if (!snapshot || !s) return s; const c = s.clone(); clones.push(c); return c; };
-        const stack = plan.map((s) => s && { px: held(s.px), mask: held(s.mask || null), x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0, match: s.match ? this.boxMatchOf(s.match) : null });
+        // a clipped entry's `clip` becomes its base's mapped entry (held clones included), as `holdStackNow` does; a base
+        // comes before its layers. `dissolve` (the layer's seed) goes on: without it compositeBox drew a dissolve layer as
+        // a smooth normal blend at its opacity, and clipped layers over their whole extent, where the screen shows dots
+        // and the base's coverage (the canvas backend's region read did, so the two backends wrote different pixels)
+        const mapped = new Map();
+        const stack = plan.map((s) => {
+            if (!s) return s;
+            const e = { px: held(s.px), mask: held(s.mask || null), x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0, match: s.match ? this.boxMatchOf(s.match) : null, clip: s.clip ? mapped.get(s.clip) || null : null, dissolve: s.dissolve ?? null };
+            mapped.set(s, e);
+            return e;
+        });
         const src = {
             tier: "tiles",
             read: (box, slot = 0) => {
@@ -14124,8 +14139,14 @@ class InpaintEditor {
      * `clip` (PLAN_0_1_31 §6 step 3): the coverage of a clipped layer's base (`clipCoverage`, a canvas of `ctx`'s size in
      * its pixels): the scratch keeps the layer only where the base is (`destination-in`), and then goes over the canvas
      * in any blend mode, the ones Canvas 2D has as well.
+     *
+     * Dissolve (`seed`, the layer's `seedOfLayer`): a pixel is kept or dropped by a hash of its image pixel, so the dots
+     * stay where they are on every path. `toImage` maps the canvas's pixels to image pixels for that hash; without it
+     * the inverse of `ctx`'s transform does, which is right for a canvas the image is drawn into through its transform
+     * (the screen, the region pass, the flatten). A canvas whose transform does not say where its origin lies in the
+     * image (a merge's union box, drawn at offsets of its own) passes the map.
      */
-    blendEmulated(ctx, mode, draw, opacity = 1, clip = null, seed = null) {
+    blendEmulated(ctx, mode, draw, opacity = 1, clip = null, seed = null, toImage = null) {
         const cv = ctx.canvas, W = cv.width, H = cv.height;
         if (!W || !H) return;
         const screen = !!(this.viewPass && this.viewPass.screen);
@@ -14164,11 +14185,11 @@ class InpaintEditor {
         if (screen && EMULATED_BLENDS.has(mode)) {
             let out = null;
             if (mode === "dissolve") {
-                const inv = ctx.getTransform().inverse();
+                const inv = toImage || ctx.getTransform().inverse();
                 const seedVal = seed !== null ? (seed >>> 0) : 0;
                 const uniforms = {
                     u_layer: s,
-                    u_opacity: Math.max(0, Math.min(1, opacity)),
+                    u_alpha255: Math.round(Math.max(0, Math.min(1, opacity)) * 255),
                     u_seed_hi: (seedVal >>> 16) & 0xffff,
                     u_seed_lo: seedVal & 0xffff,
                     u_invX: [inv.a, inv.c, inv.e],
@@ -14214,7 +14235,7 @@ class InpaintEditor {
             else for (let i = 0; i < mask.length; i++) { const t = cd[i * 4 + 3] * ca + 128; mask[i] = (t + (t >> 8)) >> 8; }
         }
         if (mode === "dissolve") {
-            const inv = ctx.getTransform().inverse();
+            const inv = toImage || ctx.getTransform().inverse();
             const td = t.data;
             const alpha255 = Math.round(Math.max(0, Math.min(1, opacity)) * 255);
             const seedVal = seed !== null ? (seed >>> 0) : 0;
@@ -16299,7 +16320,10 @@ class InpaintEditor {
             // the layer's pixels where `below` (all the canvas holds yet) is; in a blend mode the base's alpha is put back after
             const cov = clipTo ? cpuDab(null, c.width, c.height) : null;
             if (cov) cov.getContext("2d").drawImage(c, 0, 0);
-            this.blendEmulated(ctx, layer.blend, (lc) => { lc.imageSmoothingEnabled = true; lc.imageSmoothingQuality = "high"; lc.drawImage(this.layerPixels(layer), (layer.x - x0) * res, (layer.y - y0) * res, layer.w * res, layer.h * res); }, layer.opacity, cov, seedOfLayer(layer.id));
+            // the canvas is the union box at `res` with no transform: dissolve hashes the image pixel, (x0, y0) + p / res,
+            // as the screen and the export do (the identity hashed the box's own pixels and moved half the dots)
+            const toImage = new DOMMatrix([1 / res, 0, 0, 1 / res, x0, y0]);
+            this.blendEmulated(ctx, layer.blend, (lc) => { lc.imageSmoothingEnabled = true; lc.imageSmoothingQuality = "high"; lc.drawImage(this.layerPixels(layer), (layer.x - x0) * res, (layer.y - y0) * res, layer.w * res, layer.h * res); }, layer.opacity, cov, seedOfLayer(layer.id), toImage);
             if (cov) {
                 const a = cov.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
                 const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data;

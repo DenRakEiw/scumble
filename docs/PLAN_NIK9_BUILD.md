@@ -3656,7 +3656,7 @@ is what `blend_of` / `blend3` return, and it enters `composite.rs`' composite fo
 | 16 | `linear-burn` | Linear burn | darken | A | `255·(max(255, b+s) − 255)` | `max(0, b+s−1)` | yes | `lbrn` | `scumble:linear-burn` | `krita:linear_burn` |
 | 17 | `subtract` | Subtract | inversion | A | `255·(max(b,s) − s)` | `max(0, b−s)` | yes | `fsub` | `scumble:subtract` | `krita:subtract` |
 | 18 | `pin-light` | Pin light | contrast | A | `s ≤ 127 ? 255·min(b, 2s) : 255·max(b, 2s−255)` | `s ≤ ½ ? min(b,2s) : max(b, 2s−1)` | yes | `pLit` | `scumble:pin-light` | `krita:pin_light` |
-| 19 | `hard-mix` | Hard mix | contrast | A | `b + s ≥ 255 ? 65025 : 0` (tie: R4-D2) | the same on rounded bytes (GLSL) | yes | `hMix` | `scumble:hard-mix` | `krita:hard mix`, `krita:hard_mix_photoshop` |
+| 19 | `hard-mix` | Hard mix | contrast | A | `b + s >= 255 + (s >> 7) ? 65025 : 0` (tie: R4-D2, Photoshop's) | the same on rounded bytes (GLSL) | yes | `hMix` | `scumble:hard-mix` | `krita:hard mix`, `krita:hard_mix_photoshop` |
 | 20 | `color-dodge` | Colour dodge | lighten | B | `b=0 → 0; s=255 → 65025; else min(65025, R(65025·b, 255−s))` | `b=0 → 0; s=1 → 1; else min(1, b/(1−s))` | no | `div ` | `svg:color-dodge` | - |
 | 21 | `color-burn` | Colour burn | darken | B | `b=255 → 65025; s=0 → 0; else 65025 − min(65025, R(65025·(255−b), s))` | `b=1 → 1; s=0 → 0; else 1 − min(1, (1−b)/s)` | no | `idiv` | `svg:color-burn` | - |
 | 22 | `vivid-light` | Vivid light | contrast | B | `s ≤ 127 ? burn16(b, 2s) : dodge16(b, 2s−255)` | `s ≤ ½ ? burn(b,2s) : dodge(b, 2s−1)` | no | `vLit` | `scumble:vivid-light` | `krita:vivid_light` |
@@ -4125,7 +4125,7 @@ session never starts on a default the user has not seen.
 | Id | Question | Needed by |
 |---|---|---|
 | R4-D1 | **Dissolve** in this release (R4-S9) or not; it sets "sixteen" against "seventeen" in the texts. | R4-S4 (wording), R4-S9 |
-| R4-D2 | **Hard mix at b + s = 255**: white (default) or black. | R4-S4 |
+| R4-D2 | **Hard mix at b + s = 255**: white (default) or black. **Answered 2026-10-11 (the user): follow Photoshop.** Measured on the R4-D6 fixture, Photoshop 27.11 is neither: white for s <= 127, black for s >= 128 (vivid light's branch), so white iff `b + s >= 255 + (s >> 7)` in every twin (Rust scalar and SIMD, JS, GLSL on rounded bytes); the hard-mix cell now matches the merged picture with max 0 (it was 255 on 44 bytes, all ties; `px_test.js` checks it, `PSD_BOUNDS` hard_mix 2). | R4-S4 |
 | R4-D3 | **Darker / lighter colour**: by channel sum (default; what the other editor's documentation says) or by luminance; a tie keeps the backdrop. | R4-S6 |
 | R4-D4 | **Emulate all new modes** (default: the screen equals the export; a shader pass per such layer per frame on the Canvas 2D view path), or Canvas 2D's native op for the seven it has, after R4-S3's measurement. | R4-S1, R4-S4 |
 | R4-D5 | **Labels**: British spelling ("Colour dodge") and group names (default), or unlabelled separators. | R4-S8 |

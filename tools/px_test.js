@@ -550,7 +550,8 @@ async function compositeCases(ref, label, js) {
             ["linear-burn", (b, s) => Math.max(0, b + s - 255)],
             ["subtract", (b, s) => Math.max(0, b - s)],
             ["pin-light", (b, s) => (s <= 127 ? Math.min(b, 2 * s) : Math.max(b, 2 * s - 255))],
-            ["hard-mix", (b, s) => (b + s >= 255 ? 255 : 0)],
+            // the tie b + s = 255 as Photoshop has it: white for s <= 127, black for s >= 128 (R4-D2)
+            ["hard-mix", (b, s) => (b + s > 255 || (b + s === 255 && s <= 127) ? 255 : 0)],
         ];
         for (const [mode, fn] of closed) {
             for (const [name, k] of [["js", js], [label, ref]]) {
@@ -661,6 +662,141 @@ async function compositeShaCases(js, simd, scalar) {
         }
     }
     check("compositeTile op 30 equals op 0 on twin, px.wasm, and px_scalar.wasm", op30Ok, op30Detail);
+}
+
+/** An 8-bit, non-interlaced PNG of colour type 2 (RGB) or 6 (RGBA) as RGBA bytes (alpha 255 for RGB). */
+function readPngFile(file) {
+    const zlib = require("node:zlib");
+    const b = fs.readFileSync(file);
+    let o = 8, w = 0, h = 0, type = 0;
+    const idat = [];
+    while (o < b.length) {
+        const len = b.readUInt32BE(o), name = b.toString("latin1", o + 4, o + 8);
+        if (name === "IHDR") { w = b.readUInt32BE(o + 8); h = b.readUInt32BE(o + 12); type = b[o + 17]; }
+        if (name === "IDAT") idat.push(b.subarray(o + 8, o + 8 + len));
+        o += 12 + len;
+    }
+    const bpp = type === 6 ? 4 : 3, n = w * bpp, f = zlib.inflateSync(Buffer.concat(idat)), raw = new Uint8Array(h * n);
+    for (let y = 0; y < h; y++) {
+        const t = f[y * (n + 1)], src = y * (n + 1) + 1, r = y * n;
+        for (let i = 0; i < n; i++) {
+            const a = i >= bpp ? raw[r + i - bpp] : 0, up = y ? raw[r - n + i] : 0, c = i >= bpp && y ? raw[r - n + i - bpp] : 0;
+            const pred = t === 0 ? 0 : t === 1 ? a : t === 2 ? up : t === 3 ? (a + up) >> 1 : paeth(a, up, c);
+            raw[r + i] = (f[src + i] + pred) & 255;
+        }
+    }
+    const out = new Uint8Array(w * h * 4);
+    for (let p = 0; p < w * h; p++) {
+        for (let c = 0; c < 3; c++) out[p * 4 + c] = raw[p * bpp + c];
+        out[p * 4 + 3] = bpp === 4 ? raw[p * bpp + 3] : 255;
+    }
+    return { w, h, data: out };
+}
+
+// The blend-mode fixture made by Photoshop 27.11 (tools/fixtures/blendmodes, R4-D6): the patch over the backdrop in the
+// hard-mix cell, composited by the twin and both wasm builds, against Photoshop's merged picture. The JSX places the
+// patch by its opaque bounds, which start 4 px into patch.png, so the patch's origin is the cell's x - 4, y - 4 (the
+// normal cell is within a level there). Hard mix is a step: a tie rule other than Photoshop's is 255 levels off.
+async function blendFixtureCases(js, simd, scalar) {
+    const dir = path.join(ROOT, "tools", "fixtures", "blendmodes");
+    const back = readPngFile(path.join(dir, "backdrop.png")), patch = readPngFile(path.join(dir, "patch.png"));
+    const merged = readPngFile(path.join(dir, "blendmodes_merged.png"));
+    const modes = JSON.parse(fs.readFileSync(path.join(dir, "modes.json"), "utf8"));
+    const cell = (name) => {
+        const L = modes.layers.find((l) => l.name === name), ox = L.x - 4, oy = L.y - 4, P = patch.w;
+        const dst = new Uint8Array(P * P * 4), want = new Uint8Array(P * P * 4);
+        for (let y = 0; y < P; y++) for (let x = 0; x < P; x++) {
+            const bi = ((oy + y) * back.w + ox + x) * 4, i = (y * P + x) * 4;
+            for (let c = 0; c < 4; c++) { dst[i + c] = back.data[bi + c]; want[i + c] = merged.data[bi + c]; }
+        }
+        return { dst, want };
+    };
+    const worst = (out, want, dst) => {
+        let max = 0, ties = 0;
+        for (let i = 0; i < out.length; i++) {
+            if ((i & 3) === 3) continue;
+            const d = Math.abs(out[i] - want[i]);
+            if (d > max) max = d;
+            if (d > 2 && dst[i] + patch.data[i] === 255) ties++;
+        }
+        return { max, ties };
+    };
+    const normal = cell("normal");
+    const n = worst(js.compositeTile(normal.dst.slice(), [patch.data], [0], [255], null), normal.want, normal.dst);
+    check("the fixture's normal cell (twin) is within a level of Photoshop's merged picture (the patch's origin)", n.max <= 1, `max ${n.max}`);
+    const hm = cell("hard_mix");
+    for (const [name, k] of [["twin", js], ["px.wasm", simd], ["px_scalar.wasm", scalar]]) {
+        const r = worst(k.compositeTile(hm.dst.slice(), [patch.data], [js.OPS["hard-mix"]], [255], null), hm.want, hm.dst);
+        check(`${name} hard mix equals Photoshop 27.11's merged fixture cell exactly (the tie b + s = 255 included)`, r.max === 0,
+            `max ${r.max}${r.ties ? `, ${r.ties} bytes off at b + s = 255` : ""}`);
+    }
+}
+
+// The GPU paths' blend maths (BLEND_FN_GLSL in inpaint_compositor.js; the canvas backend's screen shader uses the same
+// text) read as text and run in a small model: the hard-mix branch of blend1 against the kernel's rule on every byte
+// pair, and bm_clip against an exactly grey colour with the luminosity weights summed in float32 in every order, plain
+// and fused (a GPU picks one; where lum(v, v, v) rounds to v itself the unguarded clip divided 0 by 0, a NaN that
+// reached the framebuffer as black). Text in, JS out: GLSL types become `let`, the built-ins Math's, a vector
+// assignment one per channel.
+async function blendGlslCases() {
+    const text = fs.readFileSync(path.join(ROOT, "renderer", "editor", "inpaint_compositor.js"), "utf8");
+    const glsl = (text.match(/export const BLEND_FN_GLSL = `([\s\S]*?)`;/) || [])[1] || "";
+    const toJs = (src) => src
+        .replace(/\b(?:float|int|vec3)\s+(?=[a-z_]\w*\s*=)/g, "let ")
+        .replace(/\b(floor|min|max|abs)\(/g, "Math.$1(")
+        .replace(/\.([rgb])\b/g, (_, ch) => `[${"rgb".indexOf(ch)}]`)
+        .replace(/^(\s*)c = (.*);$/gm, "$1c = c.map((c) => $2);");
+    const step = (edge, x) => (x < edge ? 0 : 1);
+    // blend1's mode 19 branch, up to mode 20's
+    const at = glsl.indexOf("if (mode == 19)"), end = glsl.indexOf("if (mode == 20)");
+    let hardMix = null;
+    try { hardMix = at >= 0 && end > at ? new Function("step", `return (mode, b, s) => { ${toJs(glsl.slice(at, end))} return -1; };`)(step) : null; } catch (_) { hardMix = null; }
+    let bad = 0, first = "";
+    if (hardMix) {
+        for (let b8 = 0; b8 < 256; b8++) for (let s8 = 0; s8 < 256; s8++) {
+            const got = hardMix(19, Math.fround(b8 / 255), Math.fround(s8 / 255));
+            const want = b8 + s8 >= 255 + (s8 >> 7) ? 1 : 0;
+            if (got !== want && !bad++) first = `b ${b8} s ${s8}: ${got}, want ${want}`;
+        }
+    }
+    check("GLSL blend1 hard mix gives the kernel's rule on every byte pair (Photoshop's tie)", !!hardMix && bad === 0,
+        hardMix ? (bad ? `${bad} off, first ${first}` : "65,536 pairs") : "could not read the mode 19 branch of BLEND_FN_GLSL");
+    // bm_clip, with bm_setLum's c + (l - lum(c)) in float32 around it
+    const clipSrc = (glsl.match(/vec3 bm_clip\(vec3 c\) \{([\s\S]*?)\n\}/) || [])[1];
+    let clip = null;
+    try { clip = clipSrc ? new Function("bm_lum", `return (c) => { ${toJs(clipSrc)} };`) : null; } catch (_) { clip = null; }
+    const f = Math.fround, W = [f(0.3), f(0.59), f(0.11)];
+    const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+    const lumOf = (order, fused) => (c) => {
+        const [i, j, k] = order;
+        let acc = f(W[i] * c[i]);
+        acc = fused ? f(W[j] * c[j] + acc) : f(acc + f(W[j] * c[j]));
+        return fused ? f(W[k] * c[k] + acc) : f(acc + f(W[k] * c[k]));
+    };
+    let nan = 0, off = 0, cases = 0, firstClip = "";
+    const probe = (c, t, what) => {
+        cases++;
+        if (c.some((x) => Number.isNaN(x))) { if (!nan++ && !off) firstClip = `${what}: NaN`; }
+        else if (c.some((x) => Math.abs(x - t) > 1e-5)) { if (!off++ && !nan) firstClip = `${what}: ${c.join(", ")}`; }
+    };
+    if (clip) {
+        for (const order of orders) for (const fused of [false, true]) {
+            const lum = lumOf(order, fused), run = clip(lum), how = `${order.join("")}${fused ? " fused" : ""}`;
+            // setLum of every grey level to a few targets (0: a transparent or black source in luminosity mode)
+            for (let g = 0; g < 256; g++) for (const t of [0, 1, f(29 / 255), f(116 / 255)]) {
+                const v = f(g / 255), d = f(t - lum([v, v, v])), w = f(v + d);
+                probe(run([w, w, w]), t, `grey ${g} to ${t}, ${how}`);
+            }
+            // greys a few ulps outside 0..1 straight into the clip: both branches meet l == n and l == x there
+            for (let k = 1; k <= 64; k++) {
+                const above = f(1 + k * 2 ** -23), below = f(-k * 2 ** -30);
+                probe(run([above, above, above]), 1, `grey 1 + ${k} ulp, ${how}`);
+                probe(run([below, below, below]), 0, `grey -${k} * 2^-30, ${how}`);
+            }
+        }
+    }
+    check("GLSL bm_clip keeps an exactly grey colour grey, no 0 / 0, in every float32 order of the luminosity sum", !!clip && nan === 0 && off === 0,
+        clip ? (nan || off ? `${nan} NaN, ${off} off, first ${firstClip}` : `${cases} cases`) : "could not read bm_clip from BLEND_FN_GLSL");
 }
 
 async function tierCCases(js, simd, scalar, ref) {
@@ -1700,7 +1836,7 @@ const blendRef = (op, b, s) => [
     () => 255 * Math.max(0, b + s - 255),
     () => 255 * Math.max(0, b - s),
     () => (s <= 127 ? 255 * Math.min(b, 2 * s) : 255 * Math.max(b, 2 * s - 255)),
-    () => (b + s >= 255 ? 65025 : 0),
+    () => (b + s > 255 || (b + s === 255 && s <= 127) ? 65025 : 0),   // Photoshop's tie (R4-D2)
     () => dodgeRef(b, s),
     () => burnRef(b, s),
     () => (s <= 127 ? burnRef(b, 2 * s) : dodgeRef(b, 2 * s - 255)),
@@ -1795,7 +1931,7 @@ const blendFloat = (op, b, s) => {
         Math.max(0, b + s - 1),
         Math.max(0, b - s),
         s <= 0.5 ? Math.min(b, 2 * s) : Math.max(b, 2 * s - 1),
-        Math.floor(b * 255 + 0.5) + Math.floor(s * 255 + 0.5) >= 255 ? 1 : 0,
+        Math.floor(b * 255 + 0.5) + Math.floor(s * 255 + 0.5) >= (s <= 127.5 / 255 ? 255 : 256) ? 1 : 0,
         dodge(b, s),
         burn(b, s),
         s <= 0.5 ? burn(b, 2 * s) : dodge(b, 2 * s - 1),
@@ -1976,6 +2112,8 @@ async function main() {
     const simdPx = await loadPx(fs.readFileSync(path.join(PX_DIR, "px.wasm")));
     const scalarPx = await loadPx(fs.readFileSync(path.join(PX_DIR, "px_scalar.wasm")));
     await compositeShaCases(js, simdPx, scalarPx);
+    await blendFixtureCases(js, simdPx, scalarPx);
+    await blendGlslCases();
     await tierCCases(js, simdPx, scalarPx, ref);
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;

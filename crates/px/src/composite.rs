@@ -42,7 +42,8 @@
 //!     linear-burn   255 * (max(b + s, 255) - 255)
 //!     subtract    255 * (max(b, s) - s)
 //!     pin-light   s <= 127 ? 255 * min(b, 2s) : 255 * max(b, 2s - 255)
-//!     hard-mix    b + s >= 255 ? 65025 : 0
+//!     hard-mix    b + s >= 255 + (s >> 7) ? 65025 : 0     (the tie b + s = 255 as Photoshop has it: white for
+//!                 s <= 127, black for s >= 128, vivid light's branch; measured on its merged fixture, R4-D2)
 //!     color-dodge   b == 0 ? 0 : s >= 255 ? 65025 : min(65025, (130050*b + (255-s)) / (2*(255-s)))
 //!     color-burn    b >= 255 ? 65025 : s == 0 ? 0 : 65025 - min(65025, (130050*(255-b) + s) / (2*s))
 //!     vivid-light   s <= 127 ? burn(b, 2s) : dodge(b, 2s - 255)
@@ -231,7 +232,7 @@ fn blend_of<const OP: u8>(b: u32, s: u32) -> u32 {
             }
         }
         HARD_MIX => {
-            if b + s >= 255 {
+            if b + s >= 255 + (s >> 7) {
                 65025
             } else {
                 0
@@ -716,7 +717,7 @@ mod simd {
                 u32x4_mul(v128_bitselect(hi, lo, u32x4_gt(s, u32x4_splat(127))), c255)
             }
             HARD_MIX => {
-                let mask = u32x4_ge(u32x4_add(d, s), c255);
+                let mask = u32x4_ge(u32x4_add(d, s), u32x4_add(c255, u32x4_shr(s, 7)));
                 v128_and(mask, u32x4_splat(65025))
             }
             _ => u32x4_mul(u32x4_sub(u32x4_max(d, s), u32x4_min(d, s)), c255),

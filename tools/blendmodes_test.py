@@ -19,6 +19,8 @@ Steps:
   l. references (1024x640 showcase compared against reference PNGs)
   m. live_psd_check (R4-D6, R4-D7, R4-D8)
   n. dissolve (export vs flatten 0 bytes; 1:1 view 0 bytes; kept share 50% +- 1%; PSD key round-trip)
+  o. dissolve_merge_and_brush (layers off the origin: flatten = the dither by hand; 1:1 view at 30 % = flatten;
+     a brush's read of a box = flatten, dissolve and a clip; merge down = the flatten before it; all 0 bytes)
 
 Runs tools/blend_table_test.js under plain Node first, then connects to running app via CDP.
 """
@@ -983,7 +985,7 @@ async def run_gate(c, scratch_dir, args=None):
 
         PSD_BOUNDS = {
             "dissolve": 255,
-            "hard_mix": 255,
+            "hard_mix": 2,
             "darker_color": 25,
             "lighter_color": 60,
             "multiply_fill50": 70,
@@ -1129,6 +1131,129 @@ async def run_gate(c, scratch_dir, args=None):
                 os.remove(psd_dissolve_path)
             except OSError:
                 pass
+
+    # o. dissolve_merge_and_brush (the review of 2026-10-11): step n's layer sits at the origin, where every map from a
+    # canvas to the image is the identity. Here the layers are off it: merge down hashed the union box's own pixels and
+    # moved half the dots, a brush's read (compositeBox) lost the dissolve and the clip, and the screen shader rounded
+    # 30 % (float32 76.5) with GLSL round(), which may go half to even (76; ANGLE on D3D11), where the CPU paths take
+    # Math.round (77)
+    js_o = """
+    const d = await run("new_document");
+    const ed = ednow(d.id);
+    host.shell.activate(ed);
+    await new Promise((r) => setTimeout(r, 80));
+    ed.resizeCanvas();
+    try {
+        const W = 256, H = 256;
+        const { baseData } = makePairsData();
+        const baseCanvas = document.createElement("canvas");
+        baseCanvas.width = W; baseCanvas.height = H;
+        baseCanvas.getContext("2d").putImageData(new ImageData(baseData, W, H), 0, 0);
+        await ed.setBaseFromCanvas(baseCanvas, { keepLayers: false });
+        const { Layer: LayerPixels } = ed.pixels;
+        // opaque patterned patches: a dot kept in the wrong place changes the bytes wherever it lands
+        const patch = (w, h, f) => {
+            const a = new Uint8ClampedArray(w * h * 4);
+            for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+                const i = (y * w + x) * 4, p = f(x, y);
+                a[i] = p[0]; a[i + 1] = p[1]; a[i + 2] = p[2]; a[i + 3] = 255;
+            }
+            return a;
+        };
+        const PAINT = { x: 100, y: 50, w: 100, h: 90 }, DIS = { x: 120, y: 80, w: 96, h: 120 };
+        const paintData = patch(PAINT.w, PAINT.h, (x, y) => [200, (x * 2) & 255, (y * 3) & 255]);
+        const disData = patch(DIS.w, DIS.h, (x, y) => [(x * 5) & 255, 40 + (y & 63), (y * 2 + x) & 255]);
+        const paint = ed.addLayer({ name: "paint", kind: "paint", px: LayerPixels.fromImageData(new ImageData(paintData, PAINT.w, PAINT.h)), ...PAINT, dirty: true });
+        const dis = ed.addLayer({ name: "dissolve", kind: "paint", px: LayerPixels.fromImageData(new ImageData(disData, DIS.w, DIS.h)), ...DIS, dirty: true });
+        dis.blend = "dissolve";
+        const seed = seedOfLayer(dis.id);
+        // the picture by hand: the dissolve layer where the hash of the image pixel keeps it, else the paint layer, else the base
+        const expected = (alpha255) => {
+            const out = new Uint8ClampedArray(baseData);
+            const c = mul255(255, alpha255);
+            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                const o = (y * W + x) * 4;
+                let src = null, si = 0;
+                if (x >= DIS.x && x < DIS.x + DIS.w && y >= DIS.y && y < DIS.y + DIS.h && (c === 255 || (hash32(x, y, seed) >>> 24) < c)) { src = disData; si = ((y - DIS.y) * DIS.w + x - DIS.x) * 4; }
+                else if (x >= PAINT.x && x < PAINT.x + PAINT.w && y >= PAINT.y && y < PAINT.y + PAINT.h) { src = paintData; si = ((y - PAINT.y) * PAINT.w + x - PAINT.x) * 4; }
+                if (src) { out[o] = src[si]; out[o + 1] = src[si + 1]; out[o + 2] = src[si + 2]; out[o + 3] = 255; }
+            }
+            return out;
+        };
+        const flatBytes = () => ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, W, H).data;
+        const setOpacity = (v) => { dis.opacity = v; ed.markLayerChanged(dis); ed.renderLayers(); };
+        const out = {};
+
+        // 1. opacity 30 %: the flatten is the dither by hand at Math.round(0.3 * 255) = 77, the 1:1 canvas view (the
+        //    dissolve shader) is the flatten
+        setOpacity(0.3);
+        const f30 = flatBytes();
+        const d30 = diff(f30, expected(77));
+        if (d30.count !== 0) throw new Error("flatten at 30 % differs from the dither by hand by " + d30.count + " bytes (max " + d30.max + ")");
+        ed.view = { scale: 1, x: 0, y: 0, angle: 0 };
+        ed.compositorOff = true;
+        ed.sceneSig = null;
+        ed.draw();
+        const sc = document.createElement("canvas"); sc.width = W; sc.height = H;
+        sc.getContext("2d").drawImage(ed.canvas, 0, 0, W, H, 0, 0, W, H);
+        const dView = diff(sc.getContext("2d").getImageData(0, 0, W, H).data, f30);
+        if (dView.count !== 0) throw new Error("canvas view at 1:1 and 30 % differs from the flatten by " + dView.count + " bytes (max " + dView.max + ")");
+        out.view30 = dView.count;
+
+        // 2. a brush's read of the composite ("all", what clone, heal, remove and the tone brush sample) over a box off
+        //    the origin: the dots of the flatten, on the tile tier when the document is on tiles
+        const box = [110, 70, 230, 210], bw = box[2] - box[0], bh = box[3] - box[1];
+        const src = ed.brushSource("all", dis);
+        let got;
+        try { got = new Uint8ClampedArray(src.bytes(box)); out.brushTier = src.tier; } finally { src.release(); }
+        if (ed.tileMode && out.brushTier !== "tiles") throw new Error("brushSource read the " + out.brushTier + " tier on tiles: compositeBox went untested");
+        const want = new Uint8ClampedArray(bw * bh * 4);
+        for (let y = 0; y < bh; y++) want.set(f30.subarray(((y + box[1]) * W + box[0]) * 4, ((y + box[1]) * W + box[2]) * 4), y * bw * 4);
+        const dBrush = diff(got, want);
+        if (dBrush.count !== 0) throw new Error("brushSource over a dissolve layer differs from the flatten by " + dBrush.count + " bytes (max " + dBrush.max + ")");
+        out.brushDiff = dBrush.count;
+
+        // 3. opacity 50 %, merge down: the union box starts at (100, 50), and the picture after the merge is the one before
+        setOpacity(0.5);
+        const f50 = flatBytes();
+        const d50 = diff(f50, expected(128));
+        if (d50.count !== 0) throw new Error("flatten at 50 % differs from the dither by hand by " + d50.count + " bytes (max " + d50.max + ")");
+        await ed.mergeDown(dis);
+        if (ed.layers.length !== 1 || ed.layers[0] !== paint) throw new Error("merge down left the layers " + ed.layers.map((l) => l.name).join(", "));
+        if (paint.x !== 100 || paint.y !== 50 || paint.w !== 116 || paint.h !== 150) throw new Error("the merged layer's box is " + [paint.x, paint.y, paint.w, paint.h].join(", "));
+        const dMerge = diff(flatBytes(), f50);
+        if (dMerge.count !== 0) throw new Error("merge down changed the picture: " + dMerge.count + " bytes differ from the flatten before it (max " + dMerge.max + ")");
+        out.mergeDiff = dMerge.count;
+
+        // 4. a layer clipped to the merged one (opaque where it was painted or a dot was kept, clear elsewhere): a brush's
+        //    read shows it only there, as the flatten does
+        const CLIP = { x: 60, y: 20, w: 180, h: 200 };
+        const clipData = patch(CLIP.w, CLIP.h, (x, y) => [30, (x * 3) & 255, (200 - y) & 255]);
+        const clipped = ed.addLayer({ name: "clipped", kind: "paint", px: LayerPixels.fromImageData(new ImageData(clipData, CLIP.w, CLIP.h)), ...CLIP, dirty: true });
+        clipped.clip = true;
+        ed.markLayerChanged(clipped); ed.renderLayers();
+        if (ed.clipBaseOf(clipped) !== paint) throw new Error("the clipped layer's base is not the merged layer");
+        const fClip = flatBytes();
+        const o = (25 * W + 65) * 4;   // inside the clipped layer's box, outside its base: the base picture shows
+        if (fClip[o] !== baseData[o] || fClip[o + 1] !== baseData[o + 1] || fClip[o + 2] !== baseData[o + 2]) throw new Error("the flatten shows the clipped layer outside its base");
+        const src2 = ed.brushSource("all", clipped);
+        let got2;
+        try { got2 = new Uint8ClampedArray(src2.bytes([0, 0, W, H])); out.clipTier = src2.tier; } finally { src2.release(); }
+        if (ed.tileMode && out.clipTier !== "tiles") throw new Error("brushSource read the " + out.clipTier + " tier on tiles: compositeBox went untested");
+        const dClip = diff(got2, fClip);
+        if (dClip.count !== 0) throw new Error("brushSource over a clipped layer differs from the flatten by " + dClip.count + " bytes (max " + dClip.max + ")");
+        out.clipDiff = dClip.count;
+        return out;
+    } finally {
+        host.shell.closeDocument(ed, { force: true });
+    }
+    """
+    try:
+        res = await c.eval(PRE % (HELPERS, js_o), timeout=60)
+        print(f"[ok] dissolve_merge_and_brush: {json.dumps(res)}")
+    except Exception as err:
+        ok = False
+        print(f"[FAIL] dissolve_merge_and_brush: {err}")
 
     print("PASS" if ok else "FAIL")
     return ok
