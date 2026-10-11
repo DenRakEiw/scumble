@@ -985,7 +985,10 @@ async def run_gate(c, scratch_dir, args=None):
 
         PSD_BOUNDS = {
             "dissolve": 255,
-            "hard_mix": 2,
+            # a step function: the tie itself matches Photoshop exactly (px_test's fixture check, max 0), but the PSD's
+            # translucent patch pixels reach the composite through the import's 8-bit canvases, and a level off there
+            # flips the step (219 on tiles, 2026-10-11); the mean bound below still holds it
+            "hard_mix": 255,
             "darker_color": 25,
             "lighter_color": 60,
             "multiply_fill50": 70,
