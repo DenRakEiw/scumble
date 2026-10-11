@@ -1373,6 +1373,7 @@ const ICONS = {
     broom: '<path d="M14 3l7 7"/><path d="M17.5 6.5L9 15"/><path d="M9 15l-5 5"/><path d="M6 12l6 6"/><path d="M11 13l-4 8"/>',
     extend: '<rect x="8" y="8" width="8" height="8"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M10 4l2-2 2 2"/><path d="M10 20l2 2 2-2"/><path d="M4 10l-2 2 2 2"/><path d="M20 10l2 2-2 2"/>',
     list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    lights: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"/>',
 };
 
 function icon(name, size = 18) {
@@ -2994,6 +2995,15 @@ class InpaintEditor {
                 else if (this.flyout) this.closeFlyout();
                 else if (this.textEdit) this.endTextEdit(false);
                 else if (this.compare) { this.compare = null; if (this.compareBtn) this.compareBtn.classList.remove("ipc-on"); this.draw(); this.setStatus("Compare ended."); }
+                else if (this.tool === "lights" && this.isRelightActive()) {
+                    const l = this.activeLayer();
+                    if (l && l._selectedLightId) {
+                        l._selectedLightId = null;
+                        this.renderLayers();
+                        this.draw();
+                        this.setStatus("Light deselected.");
+                    }
+                }
                 else if (!host.pluginKey(this, e, "escape")) host.onEscape(this);
                 return;
             }
@@ -3051,6 +3061,7 @@ class InpaintEditor {
         if (this.textEdit) this.endTextEdit(true);
         this.closeFlyout();
         this.closeTipPicker();
+        if (this._wheelRelightTimer) { clearTimeout(this._wheelRelightTimer); this._wheelRelightTimer = null; }
         if (this.promptField) this.promptField.closePopups();
         clearTimeout(this._autosave);
         this.compare = null;
@@ -3360,6 +3371,12 @@ class InpaintEditor {
             this.setStatus(this.moveOpts.mode === "extend" ? "Lasso what to copy (or select it), then drag it to where the copy should go." : "Lasso the object (or select it), then drag it: it blends in where you let go, and LaMa fills where it was.");
             if (this.moveOpts.mode === "move") this.warmRemove();
         }
+        if (tool === "lights") {
+            this.setStatus("Lights: drag a light to move it, Alt+drag for Close/Far, wheel for diffusion (Shift: intensity). Click to add a light, Delete removes.");
+        }
+        if (prevTool === "lights" && tool !== "lights") {
+            this.viewEl.style.cursor = "";
+        }
         this.updateSubbar();
         this.updateOptsBar();
         this.drawAfterPaint();
@@ -3392,6 +3409,14 @@ class InpaintEditor {
                 this.setRangePreview(null);
             } else if (this.pending) {
                 this.cancelPending();
+            } else if (this.tool === "lights" && this.isRelightActive()) {
+                const l = this.activeLayer();
+                if (l && l._selectedLightId) {
+                    l._selectedLightId = null;
+                    this.renderLayers();
+                    this.draw();
+                    this.setStatus("Light deselected.");
+                }
             } else if (!host.pluginKey(this, e, k)) {
                 host.onEscape(this);
             }
@@ -3419,6 +3444,33 @@ class InpaintEditor {
                 }
                 this.uploaded.baseHash = null; this.uploaded.controlHash = null;
                 this.renderLayers(); this.draw(); this.drawThumb(); this.notifyChanged();
+            }
+            return;
+        }
+        if (this.tool === "lights" && this.isRelightActive() && e.key.startsWith("Arrow")) {
+            const l = this.activeLayer();
+            if (l && l.params && Array.isArray(l.params.lights) && l.params.lights.length > 0) {
+                const selected = l.params.lights.find((item) => item && item.id === l._selectedLightId) || l.params.lights[0];
+                if (selected) {
+                    e.preventDefault();
+                    const step = e.shiftKey ? 10 : 1;
+                    this.pushUndo({ kind: "filter", id: l.id, label: "Move light" });
+                    let dx = 0, dy = 0;
+                    if (e.key === "ArrowLeft") dx = -step;
+                    if (e.key === "ArrowRight") dx = step;
+                    if (e.key === "ArrowUp") dy = -step;
+                    if (e.key === "ArrowDown") dy = step;
+                    selected.x += dx;
+                    selected.y += dy;
+                    if (selected.type === "spot" && Array.isArray(selected.aim)) {
+                        selected.aim[0] += dx;
+                        selected.aim[1] += dy;
+                    }
+                    this.ensureRelightMaps(l, { quick: false });
+                    this.markFilterChanged(l);
+                    this.renderLayers();
+                    this.draw();
+                }
             }
             return;
         }
@@ -3464,7 +3516,13 @@ class InpaintEditor {
             case "5": if (this.view.angle) this.rotateView(-this.view.angle); break;
             case "b": this.setTool("select"); break;
             case "r": this.setTool("rect"); break;
-            case "l": this.setTool("lasso"); break;
+            case "l":
+                if (this.isRelightActive()) {
+                    this.setTool("lights");
+                } else {
+                    this.setTool("lasso");
+                }
+                break;
             case "o": this.setTool(e.shiftKey ? "tone" : "object"); break;
             case "d": this.setTool("deselect"); break;
             case "p": this.setTool("paint"); break;
@@ -3488,6 +3546,23 @@ class InpaintEditor {
             case "g": this.setTool(e.shiftKey ? "gradient" : "bucket"); break;
             case "f": this.fitView(); break;
             case "delete": case "backspace": {
+                if (this.tool === "lights" && this.isRelightActive()) {
+                    const l = this.activeLayer();
+                    if (l && l.params && Array.isArray(l.params.lights) && l.params.lights.length > 0) {
+                        const selId = l._selectedLightId;
+                        const idx = l.params.lights.findIndex((item) => item && item.id === selId);
+                        if (idx >= 0) {
+                            this.pushUndo({ kind: "filter", id: l.id, label: "Delete light" });
+                            l.params.lights.splice(idx, 1);
+                            l._selectedLightId = l.params.lights.length > 0 ? l.params.lights[Math.min(idx, l.params.lights.length - 1)].id : null;
+                            this.ensureRelightMaps(l, { quick: false });
+                            this.markFilterChanged(l);
+                            this.renderLayers();
+                            this.draw();
+                            break;
+                        }
+                    }
+                }
                 // with a selection: clear the selected pixels of the active layer (Krita / Photoshop); without: delete the layer
                 if (this.getBounds()) { this.clearSelectedPixels(); break; }
                 if (this.multiSelected()) { this.removeLayers(this.selectedLayers().map((l) => l.id)); break; }
@@ -3719,6 +3794,46 @@ class InpaintEditor {
 
     onWheel(e) {
         if (!this.width) return;
+        if (this.tool === "lights" && this.isRelightActive()) {
+            const [ix, iy] = this.toImage(e);
+            const layer = this.activeLayer();
+            const hit = this.hitLight(layer, ix, iy);
+            if (hit && hit.light) {
+                if (e.preventDefault) e.preventDefault();
+                const l = hit.light;
+                layer._selectedLightId = l.id;
+                const dir = Math.sign(-e.deltaY || 0);
+                if (dir !== 0) {
+                    if (!layer._undoPending) {
+                        layer._undoPending = this.snapshot({ kind: "filter", id: layer.id });
+                    }
+                    if (e.shiftKey) {
+                        l.intensity = Math.max(0, Math.min(300, Math.round((l.intensity || 100) + dir * 5)));
+                    } else {
+                        l.diffusion = Math.max(0, Math.min(100, Math.round((l.diffusion != null ? l.diffusion : 30) + dir * 2)));
+                    }
+                    this.filterPreview = layer.id;
+                    this.ensureRelightMaps(layer, { quick: true });
+                    this.markFilterChanged(layer);
+                    this.renderLayers();
+                    this.draw();
+                    if (this._wheelRelightTimer) clearTimeout(this._wheelRelightTimer);
+                    this._wheelRelightTimer = setTimeout(() => {
+                        this._wheelRelightTimer = null;
+                        this.filterPreview = null;
+                        if (layer._undoPending) {
+                            this.pushUndoSnapshot(layer._undoPending, { label: e.shiftKey ? "Relight: Intensity" : "Relight: Diffusion" });
+                            layer._undoPending = null;
+                        }
+                        this.ensureRelightMaps(layer, { quick: false });
+                        this.markFilterChanged(layer);
+                        this.renderLayers();
+                        this.draw();
+                    }, 300);
+                    return;
+                }
+            }
+        }
         const [cx, cy] = this.toCanvasPx(e);
         const factor = Math.exp(-e.deltaY * 0.0015);
         const ns = Math.min(40, Math.max(0.02, this.view.scale * factor));
@@ -4409,7 +4524,16 @@ class InpaintEditor {
             ctx.restore();
         }
         // a plugin draws on the picture: under the straighten preview it turns with it
-        if (this.viewTilt()) { ctx.save(); this.applyTilt(ctx); host.pluginOverlay(this, ctx); ctx.restore(); } else host.pluginOverlay(this, ctx);
+        if (this.viewTilt()) {
+            ctx.save();
+            this.applyTilt(ctx);
+            host.pluginOverlay(this, ctx);
+            if (this.tool === "lights" && this.isRelightActive()) this.drawLightsOverlay(ctx);
+            ctx.restore();
+        } else {
+            host.pluginOverlay(this, ctx);
+            if (this.tool === "lights" && this.isRelightActive()) this.drawLightsOverlay(ctx);
+        }
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         if (this.compare && this.compare.a && this.compare.b) {
             const split = Math.min(0.95, Math.max(0.05, this.compare.split ?? 0.5));
@@ -6033,6 +6157,102 @@ class InpaintEditor {
             if (handle) this.pointer = { kind: "frame", handle, start: [ix, iy], orig: { ...f } };
             else if (inside) this.pointer = { kind: "framemove", start: [ix, iy], orig: { ...f } };
             else this.pointer = { kind: "framerotate", start: [ix, iy], orig: { ...f }, a0: Math.atan2(iy - this.height / 2, ix - this.width / 2) };
+        } else if (this.tool === "lights") {
+            if (!this.isRelightActive()) return;
+            const layer = this.activeLayer();
+            if (!layer) return;
+            layer.params = layer.params || {};
+            if (!Array.isArray(layer.params.lights)) layer.params.lights = [];
+            const hit = this.hitLight(layer, ix, iy);
+            if (hit && hit.mode === "aim") {
+                layer._selectedLightId = hit.light.id;
+                this.renderLayers();
+                this.pointer = {
+                    kind: "relight",
+                    mode: "aim",
+                    layer,
+                    light: hit.light,
+                    startX: ix,
+                    startY: iy,
+                    startAx: hit.light.aim[0],
+                    startAy: hit.light.aim[1],
+                    undoLabel: "Move light aim",
+                    hasPushedUndo: false,
+                    moved: false,
+                };
+            } else if (hit && hit.mode === "light") {
+                layer._selectedLightId = hit.light.id;
+                this.renderLayers();
+                if ((e.detail >= 2 || isDouble)) {
+                    if (e.preventDefault) e.preventDefault();
+                    const kelvinSel = this.layerList?.querySelector(".ipc-relight-kelvin-sel");
+                    if (kelvinSel) kelvinSel.focus();
+                    this.draw();
+                    return;
+                }
+                if (e.altKey) {
+                    this.pointer = {
+                        kind: "relight",
+                        mode: "dist",
+                        layer,
+                        light: hit.light,
+                        startX: ix,
+                        startY: iy,
+                        startDist: hit.light.dist != null ? hit.light.dist : -30,
+                        undoLabel: "Relight: Close/Far",
+                        hasPushedUndo: false,
+                        moved: false,
+                    };
+                } else {
+                    const startAim = hit.light.aim ? [hit.light.aim[0], hit.light.aim[1]] : null;
+                    this.pointer = {
+                        kind: "relight",
+                        mode: "move",
+                        layer,
+                        light: hit.light,
+                        startX: ix,
+                        startY: iy,
+                        startLx: hit.light.x,
+                        startLy: hit.light.y,
+                        startAim,
+                        undoLabel: "Move light",
+                        hasPushedUndo: false,
+                        moved: false,
+                    };
+                }
+            } else if (hit && hit.mode === "own_light") {
+                if (layer.params.lights.length < LIGHT_MAX) {
+                    this.pushUndo({ kind: "filter", id: layer.id, label: "Add light" });
+                    const nl = defaultLight(layer.params.lights.length, { width: this.width, height: this.height });
+                    nl.x = Math.round(hit.pos[0]);
+                    nl.y = Math.round(hit.pos[1]);
+                    nl.aim = [Math.round(hit.pos[0]), Math.round(hit.pos[1] + 100)];
+                    layer.params.lights.push(nl);
+                    layer._selectedLightId = nl.id;
+                    this.ensureRelightMaps(layer, { quick: false });
+                    this.markFilterChanged(layer);
+                    this.renderLayers();
+                    this.draw();
+                }
+            } else {
+                if (layer.params.lights.length < LIGHT_MAX) {
+                    this.pushUndo({ kind: "filter", id: layer.id, label: "Add light" });
+                    const nl = defaultLight(layer.params.lights.length, { width: this.width, height: this.height });
+                    nl.x = Math.round(ix);
+                    nl.y = Math.round(iy);
+                    nl.aim = [Math.round(ix), Math.round(iy + 100)];
+                    layer.params.lights.push(nl);
+                    layer._selectedLightId = nl.id;
+                    this.ensureRelightMaps(layer, { quick: false });
+                    this.markFilterChanged(layer);
+                    this.renderLayers();
+                    this.draw();
+                } else {
+                    layer._selectedLightId = null;
+                    this.renderLayers();
+                    this.draw();
+                }
+            }
         }
         this.draw();
     }
@@ -6048,6 +6268,7 @@ class InpaintEditor {
             if (this.tool === "transform") this.updateTransformCursor(ix, iy);
             if (this.tool === "canvas") this.updateCanvasCursor(ix, iy);
             if (this.tool === "object") this.updateObjectHover(ix, iy);
+            if (this.tool === "lights") this.updateLightsCursor(ix, iy);
             this.drawSoon();
             return;
         }
@@ -6204,6 +6425,35 @@ class InpaintEditor {
             p.cur = [ix, iy];
         } else if (p.kind === "pending") {
             this.pendingPointerMove(ix, iy, e);
+        } else if (p.kind === "relight") {
+            const dx = Math.round(ix - p.startX);
+            const dy = Math.round(iy - p.startY);
+            if (!p.hasPushedUndo) {
+                if (Math.hypot(dx, dy) >= 2 || (p.mode === "dist" && Math.abs(dy) >= 2)) {
+                    p.hasPushedUndo = true;
+                    this.pushUndo({ kind: "filter", id: p.layer.id, label: p.undoLabel });
+                }
+            }
+            if (p.hasPushedUndo) {
+                p.moved = true;
+                if (p.mode === "move") {
+                    p.light.x = p.startLx + dx;
+                    p.light.y = p.startLy + dy;
+                    if (p.startAim && p.light.aim) {
+                        p.light.aim[0] = p.startAim[0] + dx;
+                        p.light.aim[1] = p.startAim[1] + dy;
+                    }
+                } else if (p.mode === "aim") {
+                    p.light.aim[0] = p.startAx + dx;
+                    p.light.aim[1] = p.startAy + dy;
+                } else if (p.mode === "dist") {
+                    const deltaDist = Math.round(-dy * (100.0 / Math.max(100, (this.height || 1024) * 0.4)));
+                    p.light.dist = Math.max(-100, Math.min(100, p.startDist + deltaDist));
+                }
+                this.filterPreview = p.layer.id;
+                this.ensureRelightMaps(p.layer, { quick: true });
+                this.markFilterChanged(p.layer);
+            }
         }
         this.drawSoon();
     }
@@ -6398,6 +6648,13 @@ class InpaintEditor {
         } else if (p.kind === "frame" || p.kind === "framemove" || p.kind === "framerotate") {
             // nothing is applied on release: Enter, Apply or a double click inside the frame does
             this.setStatus(this.frameStatus());
+        } else if (p.kind === "relight") {
+            this.filterPreview = null;
+            if (p.moved) {
+                this.ensureRelightMaps(p.layer, { quick: false });
+                this.markFilterChanged(p.layer);
+                this.renderLayers();
+            }
         }
         this.draw();
     }
@@ -14582,6 +14839,9 @@ class InpaintEditor {
         this.setStatus(FILTERS[id].over
             ? `${layer.name} added. It covers everything below it; set the colour in the layer list, the blend mode, the opacity or a mask to let the picture through.`
             : `${layer.name} added. It filters everything below it; pick the type and drag the sliders in the layer list.`);
+        if (id === "relight") {
+            this.setTool("lights");
+        }
         return layer;
     }
 
@@ -14605,6 +14865,9 @@ class InpaintEditor {
         if (seed && id === "gradient") { layer.params.from = seed; layer.params.to = seed; layer.params.to_opacity = 0; }
         // layer names are not editable: the type (or a preset, see the preset select) names the layer
         layer.name = `${FILTERS[id].label} ${this.filterCounter}`;
+        if (id === "relight") {
+            this.setTool("lights");
+        }
         this.markFilterChanged(layer);
         this.renderLayers();
     }
@@ -17930,6 +18193,9 @@ class InpaintEditor {
     }
 
     renderLayers() {
+        if (this.tool === "lights" && !this.isRelightActive()) {
+            this.setTool("select");
+        }
         this.normalizeGroups();
         if (!this.layerList) return;
         const list = this.layerList;
@@ -19048,6 +19314,12 @@ class InpaintEditor {
         const head = el("div", "ipc-relight-head");
         const title = el("span", "ipc-relight-title", "Lights");
         head.appendChild(title);
+
+        const editBtn = iconButton("lights", "Edit lights on canvas (L)", () => {
+            this.setTool("lights");
+        }, "Edit lights");
+        editBtn.classList.add("ipc-small", "ipc-edit-lights");
+        head.appendChild(editBtn);
 
         const count = lights.length;
         const addBtn = iconButton("plus", count >= LIGHT_MAX ? "Maximum 4 lights reached" : "Add a new light", () => {
@@ -21502,6 +21774,23 @@ class InpaintEditor {
     }
 
     /**
+     * Downsample 16-bit depth map for quarter-size shadow march.
+     */
+    downsampleDepth(src, srcW, srcH, dstW, dstH) {
+        const dst = new Uint16Array(dstW * dstH);
+        for (let dy = 0; dy < dstH; dy++) {
+            const sy = Math.min(srcH - 1, Math.floor((dy / dstH) * srcH));
+            const sRow = sy * srcW;
+            const dRow = dy * dstW;
+            for (let dx = 0; dx < dstW; dx++) {
+                const sx = Math.min(srcW - 1, Math.floor((dx / dstW) * srcW));
+                dst[dRow + dx] = src[sRow + sx];
+            }
+        }
+        return dst;
+    }
+
+    /**
      * Resolves when all pending relight worker pool operations are completed.
      */
     async relightSettled() {
@@ -21514,6 +21803,226 @@ class InpaintEditor {
         }
         while (this._relightPending && this._relightPending.size > 0) {
             await Promise.all(Array.from(this._relightPending));
+        }
+    }
+
+    isRelightActive() {
+        const l = this.activeLayer();
+        return !!(l && l.kind === "filter" && l.filter === "relight");
+    }
+
+    ownLightPos(layer) {
+        const stats = this.belowStats(layer, false);
+        const fit = stats?.fit;
+        const l0 = (fit && Array.isArray(fit.l0) && fit.l0.length >= 3) ? fit.l0 : [0, 0, 1];
+        const cx = this.width * 0.5;
+        const cy = this.height * 0.5;
+        const spread = Math.min(this.width, this.height) * 0.35;
+        return [cx + l0[0] * spread, cy + l0[1] * spread, l0];
+    }
+
+    hitLight(layer, ix, iy) {
+        if (!layer || !layer.params || !Array.isArray(layer.params.lights)) return null;
+        const lights = layer.params.lights;
+        const s = this.view.scale;
+
+        // 1. Aim handles (spot lights)
+        for (let i = lights.length - 1; i >= 0; i--) {
+            const l = lights[i];
+            if (l && l.on !== false && l.type === "spot" && Array.isArray(l.aim)) {
+                if (Math.hypot(ix - l.aim[0], iy - l.aim[1]) <= 14 / s) {
+                    return { light: l, mode: "aim", index: i };
+                }
+            }
+        }
+
+        // 2. Light rings
+        for (let i = lights.length - 1; i >= 0; i--) {
+            const l = lights[i];
+            if (!l) continue;
+            const rScreen = Math.max(10, Math.min(36, 18 - ((l.dist || 0) / 100.0) * 8));
+            const hitRadius = (rScreen + 6) / s;
+            if (Math.hypot(ix - l.x, iy - l.y) <= hitRadius) {
+                return { light: l, mode: "light", index: i };
+            }
+        }
+
+        // 3. Own light handle
+        const [ox, oy, l0] = this.ownLightPos(layer);
+        if (Math.hypot(ix - ox, iy - oy) <= 16 / s) {
+            return { mode: "own_light", pos: [ox, oy], l0 };
+        }
+
+        return null;
+    }
+
+    updateLightsCursor(ix, iy) {
+        if (!this.isRelightActive()) {
+            this.viewEl.style.cursor = "";
+            return;
+        }
+        const layer = this.activeLayer();
+        const hit = this.hitLight(layer, ix, iy);
+        if (hit) {
+            if (hit.mode === "aim") {
+                this.viewEl.style.cursor = "crosshair";
+            } else if (hit.mode === "light") {
+                this.viewEl.style.cursor = "move";
+            } else if (hit.mode === "own_light") {
+                this.viewEl.style.cursor = "copy";
+            }
+        } else {
+            this.viewEl.style.cursor = "crosshair";
+        }
+    }
+
+    drawLightsOverlay(ctx) {
+        if (!this.isOpen || !this.isRelightActive()) return;
+        const activeLayer = this.activeLayer();
+        if (!activeLayer || !activeLayer.params || !Array.isArray(activeLayer.params.lights)) return;
+        const lights = activeLayer.params.lights;
+        const selId = activeLayer._selectedLightId;
+        const s = this.view.scale;
+        const invScale = 1.0 / s;
+
+        // 1. Fitted original light ("own light")
+        const [ox, oy] = this.ownLightPos(activeLayer);
+        const or = 14 * invScale;
+        ctx.save();
+        ctx.strokeStyle = "rgba(180, 180, 180, 0.7)";
+        ctx.lineWidth = 1.5 * invScale;
+        ctx.setLineDash([3 * invScale, 3 * invScale]);
+        ctx.beginPath();
+        ctx.arc(ox, oy, or, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(180, 180, 180, 0.9)";
+        ctx.beginPath();
+        ctx.arc(ox, oy, 2.5 * invScale, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = `600 ${Math.round(10 * invScale)}px system-ui, sans-serif`;
+        const ownText = "own light";
+        const tw = ctx.measureText(ownText).width + 6 * invScale;
+        const th = 13 * invScale;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+        ctx.fillRect(ox - tw / 2, oy + or + 3 * invScale, tw, th);
+        ctx.fillStyle = "rgba(220, 220, 220, 0.9)";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(ownText, ox, oy + or + 3 * invScale + th / 2);
+        ctx.restore();
+
+        // 2. Active lights
+        for (let i = 0; i < lights.length; i++) {
+            const l = lights[i];
+            if (!l) continue;
+            const x = l.x;
+            const y = l.y;
+            const isSelected = l.id === selId;
+            const colorHex = lightColorHex(l.color);
+            const rScreen = Math.max(10, Math.min(36, 18 - ((l.dist || 0) / 100.0) * 8));
+            const r = rScreen * invScale;
+
+            ctx.save();
+
+            // Spot aim line and aim handle
+            if (l.type === "spot" && Array.isArray(l.aim)) {
+                const [ax, ay] = l.aim;
+                ctx.save();
+                ctx.strokeStyle = colorHex;
+                ctx.lineWidth = 1.5 * invScale;
+                ctx.setLineDash([4 * invScale, 3 * invScale]);
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(ax, ay);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.strokeStyle = colorHex;
+                ctx.lineWidth = 1.5 * invScale;
+                ctx.beginPath();
+                ctx.arc(ax, ay, 6 * invScale, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.fillStyle = colorHex;
+                ctx.beginPath();
+                ctx.arc(ax, ay, 2 * invScale, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Outer halo if selected
+            if (isSelected) {
+                ctx.strokeStyle = "rgba(74, 144, 217, 0.5)";
+                ctx.lineWidth = 5 * invScale;
+                ctx.beginPath();
+                ctx.arc(x, y, r + 2 * invScale, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Main ring
+            ctx.strokeStyle = colorHex;
+            ctx.lineWidth = (isSelected ? 2.5 : 1.5) * invScale;
+            if (l.on === false) {
+                ctx.setLineDash([4 * invScale, 4 * invScale]);
+            } else {
+                ctx.setLineDash([]);
+            }
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Inner glyph
+            if (l.type === "point") {
+                ctx.fillStyle = colorHex;
+                ctx.beginPath();
+                ctx.arc(x, y, 3 * invScale, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (l.type === "sun") {
+                ctx.fillStyle = colorHex;
+                ctx.beginPath();
+                ctx.arc(x, y, 2.5 * invScale, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = colorHex;
+                ctx.lineWidth = 1.2 * invScale;
+                const ray = 5 * invScale;
+                ctx.beginPath();
+                ctx.moveTo(x - ray, y); ctx.lineTo(x + ray, y);
+                ctx.moveTo(x, y - ray); ctx.lineTo(x, y + ray);
+                ctx.stroke();
+            } else if (l.type === "spot") {
+                const aim = l.aim || [x, y + 100];
+                const angle = Math.atan2(aim[1] - y, aim[0] - x);
+                const halfCone = ((l.cone || 30) * Math.PI) / 180;
+                ctx.strokeStyle = colorHex;
+                ctx.lineWidth = 1.2 * invScale;
+                const cr = 6 * invScale;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + cr * Math.cos(angle - halfCone), y + cr * Math.sin(angle - halfCone));
+                ctx.arc(x, y, cr, angle - halfCone, angle + halfCone);
+                ctx.lineTo(x, y);
+                ctx.stroke();
+            }
+
+            // Number badge
+            const bx = x + r * 0.72 + 6 * invScale;
+            const by = y - r * 0.72 - 6 * invScale;
+            const br = 7 * invScale;
+            ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+            ctx.beginPath();
+            ctx.arc(bx, by, br, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = isSelected ? "#7cc7ff" : "rgba(255, 255, 255, 0.4)";
+            ctx.lineWidth = 1 * invScale;
+            ctx.stroke();
+            ctx.font = `bold ${Math.round(9 * invScale)}px system-ui, sans-serif`;
+            ctx.fillStyle = isSelected ? "#7cc7ff" : "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(String(i + 1), bx, by);
+
+            ctx.restore();
         }
     }
 
@@ -21585,22 +22094,30 @@ class InpaintEditor {
 
         // Vis cache
         const lights = Array.isArray(layer.params?.lights) ? layer.params.lights : [];
-        if (!cache.vis || cache.vis.w !== depthMap.w || cache.vis.h !== depthMap.h) {
-            const visData = new Uint8Array(depthMap.w * depthMap.h * 4);
+        const targetW = quick ? Math.max(1, Math.floor(depthMap.w / 4)) : depthMap.w;
+        const targetH = quick ? Math.max(1, Math.floor(depthMap.h / 4)) : depthMap.h;
+        if (!cache.vis || cache.vis.w !== targetW || cache.vis.h !== targetH) {
+            const visData = new Uint8Array(targetW * targetH * 4);
             visData.fill(255);
             cache.vis = {
                 data: visData,
-                w: depthMap.w,
-                h: depthMap.h,
+                w: targetW,
+                h: targetH,
                 keys: [null, null, null, null],
             };
         }
+
+        const marchDepth = quick
+            ? this.downsampleDepth(depthMap.data, depthMap.w, depthMap.h, targetW, targetH)
+            : depthMap.data;
+        const scaleFactor = targetW / depthMap.w;
+        const marchScale = scaleZ * scaleFactor;
 
         for (let i = 0; i < 4; i++) {
             const l = lights[i];
             if (!l || !l.on) {
                 if (cache.vis.keys[i] !== null) {
-                    for (let idx = 0; idx < depthMap.w * depthMap.h; idx++) {
+                    for (let idx = 0; idx < targetW * targetH; idx++) {
                         cache.vis.data[idx * 4 + i] = 255;
                     }
                     cache.vis.keys[i] = null;
@@ -21615,39 +22132,49 @@ class InpaintEditor {
                 const p = (async () => {
                     try {
                         const lm = lightToMap(l, depthMap, { depth_scale: depthScale });
-                        const lightVec = [lm.mx, lm.my, lm.mz, l.type === "sun" ? 1 : 0];
+                        const lightVec = [
+                            (lm.mx / depthMap.w) * targetW,
+                            (lm.my / depthMap.h) * targetH,
+                            lm.mz * scaleFactor,
+                            l.type === "sun" ? 1 : 0,
+                        ];
                         const diff = Number.isFinite(l.diffusion) ? Number(l.diffusion) : 30;
-                        const radius = (diff / 100.0) * (0.05 * mapLongSide);
-                        const bias = 0.005 * scaleZ;
+                        const radius = (diff / 100.0) * (0.05 * Math.max(targetW, targetH));
+                        const bias = 0.005 * marchScale;
                         const taps = quick ? 1 : 4;
                         const steps = quick ? 16 : 32;
 
                         const pool = editorPool();
                         if (pool && !pool.off) {
                             const res = await pool.run("relight_shadow", {
-                                depth: depthMap.data,
-                                w: depthMap.w,
-                                h: depthMap.h,
-                                scale: scaleZ,
+                                depth: marchDepth,
+                                w: targetW,
+                                h: targetH,
+                                scale: marchScale,
                                 light: lightVec,
                                 radius,
                                 taps,
                                 steps,
                                 bias,
                                 row0: 0,
-                                rows: depthMap.h,
+                                rows: targetH,
                             }, [], { priority: quick ? INTERACTIVE : NORMAL });
-                            const vChan = new Uint8Array(res.vis);
-                            for (let idx = 0; idx < depthMap.w * depthMap.h; idx++) {
-                                cache.vis.data[idx * 4 + chan] = vChan[idx];
+                            if (cache.vis && cache.vis.w === targetW && cache.vis.h === targetH) {
+                                const vChan = new Uint8Array(res.vis);
+                                for (let idx = 0; idx < targetW * targetH; idx++) {
+                                    cache.vis.data[idx * 4 + chan] = vChan[idx];
+                                }
+                                cache.vis.keys[chan] = vKey;
                             }
                         } else {
-                            const vChan = shadowMarch(depthMap.data, depthMap.w, depthMap.h, scaleZ, lightVec, radius, taps, steps, bias, 0, depthMap.h);
-                            for (let idx = 0; idx < depthMap.w * depthMap.h; idx++) {
-                                cache.vis.data[idx * 4 + chan] = vChan[idx];
+                            const vChan = shadowMarch(marchDepth, targetW, targetH, marchScale, lightVec, radius, taps, steps, bias, 0, targetH);
+                            if (cache.vis && cache.vis.w === targetW && cache.vis.h === targetH) {
+                                for (let idx = 0; idx < targetW * targetH; idx++) {
+                                    cache.vis.data[idx * 4 + chan] = vChan[idx];
+                                }
+                                cache.vis.keys[chan] = vKey;
                             }
                         }
-                        cache.vis.keys[chan] = vKey;
                         this.markFilterChanged(layer, { soon: true });
                     } catch (err) {
                         console.warn(`relight_shadow channel ${chan} failed:`, err);

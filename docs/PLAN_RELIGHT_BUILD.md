@@ -460,6 +460,7 @@ step ("Move light"), (o) Alt-drag changes `dist`, (p) a click adds a light, Dele
 quick cache is used (its `w` is a quarter), after it the full one, (r) the overlay is not in an export; the `editor`
 gate unchanged. **Risks.** Pointer events in a hidden gate window (CLAUDE.md "An occluded window ... drops keys": the
 gate uses `Input.dispatchMouseEvent` with focus emulation on). **Effort** 1.5 d.
+**Built 2026-10-11:** `lights` canvas tool implemented with handles, drag, Alt-dist, wheel diffusion/intensity, arrow nudge, click-add, delete, quick quarter-size preview, and view-only overlays; cases (n)-(r) green in `tools/relight_test.py`; gates `l2_on`, `l2_off`, and `l2_ed` pass.
 
 ### 5.7 L3: the command, the policy, the entries, the gate
 

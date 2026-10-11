@@ -1,4 +1,4 @@
-"""Relight filter layer in-app CDP gate (PLAN_RELIGHT_BUILD.md section 5.4 L1a).
+"""Relight filter layer in-app CDP gate (PLAN_RELIGHT_BUILD.md sections 5.4 L1a, 5.5 L1b, 5.6 L2).
 
 Tests relight filter layer across CPU and WebGL2 paths via CDP:
   * Case a: Fresh 600x400 document, shaded background, linear depth ramp with step installed.
@@ -14,6 +14,17 @@ Tests relight filter layer across CPU and WebGL2 paths via CDP:
   * Case h: Export after change waits: encodeComposite equals flattenToCanvas within 2 levels.
   * Case i: Without depth map: filter is no-op (bitwise equal to base) and hint shows.
   * Case j: Document round trip keeps lights and requires reader 6.
+  * Case k: Relight row block controls (add, type, intensity, Kelvin, reset, delete).
+  * Case l: Add light greys out at 4 lights.
+  * Case m: Eye toggle turns a light's contribution off/on.
+  * Case n: Drag light through pointer events moves light to new coordinates,
+            pushes exactly 1 undo step ("Move light"), undo restores light.
+  * Case o: Alt-drag changes dist, pushes exactly 1 undo step ("Relight: Close/Far"),
+            undo restores dist.
+  * Case p: Click empty canvas adds light at click coords, Delete key removes it,
+            undo restores it.
+  * Case q: During drag fx._relight.vis.w === Math.floor(W / 4), after pointer up W.
+  * Case r: Overlay is not in an export (flattenToCanvas({ forRun: true })).
 
 Rule 1: Strict gate test. If CDP session is unreachable, exits with 1 and prints FAIL.
 """
@@ -593,6 +604,225 @@ JS = r"""
     }
     check("m: light turned back on matches original lit picture bitwise", diffRelit === 0, { diffRelit });
 
+    // -------------------------------------------------------------------------
+    // Session L2 Tests: Cases n, o, p, q, r
+    // -------------------------------------------------------------------------
+
+    const toClient = (imgX, imgY) => {
+        const rect = ed.canvas.getBoundingClientRect();
+        const kx = rect.width / ed.canvas.width;
+        const ky = rect.height / ed.canvas.height;
+        const [sx, sy] = ed.imageToScreen(imgX, imgY);
+        return {
+            clientX: rect.left + sx * kx,
+            clientY: rect.top + sy * ky,
+        };
+    };
+
+    const firePointer = (type, imgX, imgY, opts = {}) => {
+        const pt = toClient(imgX, imgY);
+        const ev = new PointerEvent(type, {
+            clientX: pt.clientX,
+            clientY: pt.clientY,
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            buttons: type === "pointerup" ? 0 : 1,
+            pointerId: 1,
+            pointerType: "mouse",
+            ...opts,
+        });
+        ed.canvas.dispatchEvent(ev);
+    };
+
+    // Ensure we start with lights tool and exactly 1 light:
+    ed.selectLayers([fx.id]);
+    ed.setTool("lights");
+    check("l2: lights tool is active", ed.tool === "lights" && ed.isRelightActive());
+
+    fx.params.lights = [{
+        id: "light_1",
+        on: true,
+        type: "point",
+        x: 150,
+        y: 200,
+        dist: -30,
+        color: "#ffffff",
+        intensity: 100,
+        diffusion: 30,
+        range: 600,
+        shadows: true,
+    }];
+    fx._selectedLightId = "light_1";
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+
+    // -------------------------------------------------------------------------
+    // Case n: Drag light through pointer events moves light to new coordinates,
+    //         pushes exactly 1 undo step ("Move light"), undo restores light.
+    // -------------------------------------------------------------------------
+    ed._lastDown = null;
+    const undoLenN0 = ed.undo.length;
+    firePointer("pointerdown", 150, 200);
+    check("n: pointer down on light ring starts relight gesture", ed.pointer && ed.pointer.kind === "relight");
+    check("n: no undo step pushed before movement", ed.undo.length === undoLenN0);
+
+    // Drag light by (+30, +20) to (180, 220)
+    firePointer("pointermove", 180, 220);
+    check("n: exactly 1 undo step pushed during drag", ed.undo.length === undoLenN0 + 1);
+    check("n: undo step label is Move light", ed.undo[ed.undo.length - 1]?.label === "Move light");
+    check("n: light position updated during drag", fx.params.lights[0].x === 180 && fx.params.lights[0].y === 220);
+
+    firePointer("pointerup", 180, 220);
+    check("n: pointer is cleared after pointerup", ed.pointer === null);
+    check("n: still exactly 1 undo step after pointerup", ed.undo.length === undoLenN0 + 1);
+    await settle(ed);
+    check("n: light remains at moved coordinates after pointerup", fx.params.lights[0].x === 180 && fx.params.lights[0].y === 220);
+
+    await ed.undoStep();
+    check("n: undo step restores original coordinates (150, 200)", fx.params.lights[0].x === 150 && fx.params.lights[0].y === 200);
+    check("n: undo stack returned to original length", ed.undo.length === undoLenN0);
+
+    // -------------------------------------------------------------------------
+    // Case o: Alt-drag changes dist, pushes exactly 1 undo step ("Relight: Close/Far"),
+    //         undo restores dist.
+    // -------------------------------------------------------------------------
+    ed._lastDown = null;
+    const undoLenO0 = ed.undo.length;
+    const origDist = fx.params.lights[0].dist;
+    firePointer("pointerdown", 150, 200, { altKey: true });
+    check("o: alt pointerdown enters dist mode", ed.pointer && ed.pointer.kind === "relight" && ed.pointer.mode === "dist");
+
+    // Drag up by 32px (dy = -32)
+    firePointer("pointermove", 150, 168, { altKey: true });
+    check("o: exactly 1 undo step pushed on alt-drag", ed.undo.length === undoLenO0 + 1);
+    check("o: undo step label is Relight: Close/Far", ed.undo[ed.undo.length - 1]?.label === "Relight: Close/Far");
+    const changedDist = fx.params.lights[0].dist;
+    check("o: dist value changed on alt-drag", changedDist !== origDist && changedDist > origDist, { origDist, changedDist });
+
+    firePointer("pointerup", 150, 168, { altKey: true });
+    check("o: still 1 undo step after pointerup", ed.undo.length === undoLenO0 + 1);
+    await settle(ed);
+
+    await ed.undoStep();
+    check("o: undo restores original dist", fx.params.lights[0].dist === origDist, { dist: fx.params.lights[0].dist, origDist });
+    check("o: undo stack restored", ed.undo.length === undoLenO0);
+
+    // -------------------------------------------------------------------------
+    // Case p: Click empty canvas adds light at click coords, Delete key removes it,
+    //         undo restores it.
+    // -------------------------------------------------------------------------
+    ed._lastDown = null;
+    check("p: starts with 1 light", fx.params.lights.length === 1);
+    const undoLenP0 = ed.undo.length;
+
+    // Click at empty canvas at (300, 150)
+    firePointer("pointerdown", 300, 150);
+    firePointer("pointerup", 300, 150);
+    check("p: clicking empty canvas adds light", fx.params.lights.length === 2);
+    check("p: new light coords match click coords (300, 150)", fx.params.lights[1].x === 300 && fx.params.lights[1].y === 150);
+    check("p: new light is selected", fx._selectedLightId === fx.params.lights[1].id);
+    check("p: undo stack pushed Add light", ed.undo[ed.undo.length - 1]?.label === "Add light");
+
+    // Press Delete key
+    ed.onKey({ key: "Delete", preventDefault: () => {} });
+    check("p: Delete key removes selected light", fx.params.lights.length === 1);
+    check("p: undo stack pushed Delete light", ed.undo[ed.undo.length - 1]?.label === "Delete light");
+
+    // Undo delete
+    await ed.undoStep();
+    check("p: undo restores deleted light", fx.params.lights.length === 2);
+    check("p: restored light coordinates are (300, 150)", fx.params.lights[1].x === 300 && fx.params.lights[1].y === 150);
+
+    // Undo add light
+    await ed.undoStep();
+    check("p: undo restores initial 1 light", fx.params.lights.length === 1);
+    check("p: undo stack returned to original length", ed.undo.length === undoLenP0);
+
+    // -------------------------------------------------------------------------
+    // Case q: During drag fx._relight.vis.w === Math.floor(W / 4), after pointer up W
+    // -------------------------------------------------------------------------
+    ed._lastDown = null;
+    await settle(ed);
+    check("q: initially vis is full resolution", fx._relight?.vis?.w === Mw, { visW: fx._relight?.vis?.w, Mw });
+
+    firePointer("pointerdown", 150, 200);
+    firePointer("pointermove", 190, 230);
+    const quickW = fx._relight?.vis?.w;
+    check("q: during drag vis.w is quarter size Math.floor(Mw / 4)", quickW === Math.floor(Mw / 4), { quickW, expected: Math.floor(Mw / 4) });
+
+    firePointer("pointerup", 190, 230);
+    await settle(ed);
+    const fullW = fx._relight?.vis?.w;
+    check("q: after pointerup vis.w is full resolution Mw", fullW === Mw, { fullW, Mw });
+
+    // Restore light position
+    await ed.undoStep();
+    check("q: undo restores position to 150, 200", fx.params.lights[0].x === 150 && fx.params.lights[0].y === 200);
+
+    // -------------------------------------------------------------------------
+    // Case r: Overlay is not in an export (flattenToCanvas({ forRun: true }))
+    // -------------------------------------------------------------------------
+    ed.setTool("lights");
+    ed.selectLayers([fx.id]);
+    ed.draw();
+    await settle(ed);
+    const flatLightsTool = ed.flattenToCanvas({ forRun: true });
+    const pxLightsTool = flatLightsTool.getContext("2d").getImageData(0, 0, W, H).data;
+
+    ed.setTool("select");
+    ed.draw();
+    await settle(ed);
+    const flatSelectTool = ed.flattenToCanvas({ forRun: true });
+    const pxSelectTool = flatSelectTool.getContext("2d").getImageData(0, 0, W, H).data;
+
+    let diffOverlay = 0;
+    for (let i = 0; i < pxLightsTool.length; i++) {
+        if (pxLightsTool[i] !== pxSelectTool[i]) diffOverlay++;
+    }
+    check("r: overlay is not in export (0 bytes differ between lights and select tools)", diffOverlay === 0, { diffOverlay });
+
+    // Extra L2 checks: Nudge with arrow keys and wheel diffusion
+    ed.setTool("lights");
+    ed.selectLayers([fx.id]);
+    ed.draw();
+    await settle(ed);
+
+    const xBeforeNudge = fx.params.lights[0].x;
+    ed.onKey({ key: "ArrowRight", shiftKey: false, preventDefault: () => {} });
+    check("l2: arrow right nudged light by 1px", fx.params.lights[0].x === xBeforeNudge + 1);
+    await ed.undoStep();
+    check("l2: undo restores nudge", fx.params.lights[0].x === xBeforeNudge);
+
+    const yBeforeNudge = fx.params.lights[0].y;
+    ed.onKey({ key: "ArrowDown", shiftKey: true, preventDefault: () => {} });
+    check("l2: shift+arrow down nudged light by 10px", fx.params.lights[0].y === yBeforeNudge + 10);
+    await ed.undoStep();
+    check("l2: undo restores shift nudge", fx.params.lights[0].y === yBeforeNudge);
+
+    // Wheel over handle changes diffusion
+    const diff0 = fx.params.lights[0].diffusion;
+    const ptWheel = toClient(150, 200);
+    ed.onWheel({
+        clientX: ptWheel.clientX,
+        clientY: ptWheel.clientY,
+        deltaY: -100,
+        shiftKey: false,
+        preventDefault: () => {},
+    });
+    check("l2: wheel over handle changed diffusion", fx.params.lights[0].diffusion !== diff0);
+    await new Promise((r) => setTimeout(r, 350));
+    await ed.undoStep();
+    check("l2: undo restores diffusion", fx.params.lights[0].diffusion === diff0);
+
+    // Keep lights tool active for visual screenshot
+    ed.setTool("lights");
+    ed.selectLayers([fx.id]);
+    ed.draw();
+    await settle(ed);
+
     return { fails, checks: checkCount - fails.length, tiles: !!ed.tileMode };
 })
 """
@@ -613,9 +843,11 @@ async def run_cdp(cdp, doc_path):
         print(f"[ok] relight test on {backend}: {val.get('checks', 0)} in-app checks passed")
 
     shot_path = os.path.join(ROOT, "scratch", "shot_l1b.png")
+    shot_l2 = os.path.join(ROOT, "scratch", "shot_l2.png")
     try:
         await cdp.screenshot(shot_path)
-        print(f"[ok] screenshot captured: {shot_path}")
+        await cdp.screenshot(shot_l2)
+        print(f"[ok] screenshots captured: {shot_path} and {shot_l2}")
     except Exception as e:
         print(f"[warn] screenshot: {e}")
 
