@@ -92,11 +92,13 @@ Mark, `docs/images/video/voice/v4_eleven/`, the listening file `dist/video/v4/vo
 re-voiced for FLUX 3 on the user's word, four lines, the listening file not rejoined yet). **Seven of eight takes are
 recorded** (`docs/images/video/rec/scene4.py setup|take <name>`, the instance on port 9571 on `dist/video/profile`;
 `dist/video/v4/rec/<take>/`, states in `dist/video/v4/takes/`; TUTORIAL.md §7 "Takes as made" has the table and
-what was learned): cold, n1-n6 (n6 with one FLUX 3 run, 52 s, the crown on the helmet). Open: the `close` take (one
-FLUX 3 run, the camel onto the canvas he holds, the text layer FRIDAY in Difference, the export), then the scene
-specs `motion/scenes/v4_*.json` and the engine's v4 paths (`build_scene.py` OUT / VOICE are v3's; the coat strip
-becomes the wall), the mix, the Resolve timeline, as in part three. The tutorial material stays uncommitted
-(`docs/images/video/`, the TUTORIAL.md section) until the user says so.
+what was learned): cold, n1-n6 and close, two FLUX 3 runs (the crown 52 s, the camel onto the canvas 55 s, about
+$1.20 together; the export `dist/video/v4/final/show_poster.png`). **All eight takes are in.** Next (its own
+section): the scene specs `motion/scenes/v4_*.json` and the engine's v4 paths (`build_scene.py` OUT / VOICE are
+v3's; the coat strip becomes the wall), the listening file rejoined after Note 6's four new lines, the mix, the
+Resolve timeline "04 Scumble part four", the master and the web file, as in part three (TUTORIAL.md "Video 3 as
+made"). The recording instance on port 9571 can be closed (`SCUMBLE_CDP_PORT=9571 python tools/close_app.py`). The
+tutorial material stays uncommitted (`docs/images/video/`, the TUTORIAL.md section) until the user says so.
 
 **The B-Side agent (2026-10-11):** the user registered "Claude in Scumble" on The AI Art Magazine's agent platform
 (space.art-magazine.ai; the key in `dist/live-keys/bside_claude.txt`, pasted in chat once, to be rotated after the
