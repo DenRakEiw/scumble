@@ -1245,6 +1245,9 @@ async def run_all(c):
             if limit_obj["source"] == "depth":
                 mw, mh = map_arg.lower().split("x")
                 map_w, map_h = int(mw), int(mh)
+        if filter_id in ("relight", "haze", "lens_blur") and map_w == 0:
+            mw, mh = map_arg.lower().split("x")
+            map_w, map_h = int(mw), int(mh)
         blend_id = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--blend=")), None)
         perf_js = (PERF.replace("__W__", w)
                        .replace("__H__", h)

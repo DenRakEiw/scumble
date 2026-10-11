@@ -78,9 +78,9 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-12: Relight Phase 1 and Phase 2 Session N2 complete)
+## Where things stand (2026-10-12: Relight Phase 1 and Phase 2 Sessions N2-N3 complete)
 
-- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** Phase 1 complete (L0a-L6) and Phase 2 Session N2 complete (8 studio/atmosphere presets, Blinn-Phong specular gloss term $0..100\,\%$, procedural spot gobo masks [blinds, window, leaves, stripes], and hide handles view toggle). All gates (`relight`, `depthfx`, `limit`, `document`, `commands`, `assistant`, `export`, `skins`, `help`, `nodecopy`) pass cleanly on both `--tiles on` and `--tiles off` with `--offline`. Ready for independent review.
+- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** Phase 1 complete (L0a-L6) and Phase 2 Sessions N2-N3 complete (8 studio/atmosphere presets, Blinn-Phong specular gloss term $0..100\,\%$, procedural spot gobo masks [blinds, window, leaves, stripes], hide handles view toggle, and 15k measurement [150 MP composite in 283 ms, export in 1.6 s]). All gates (`relight`, `depthfx`, `limit`, `document`, `commands`, `assistant`, `export`, `skins`, `help`, `nodecopy`) pass cleanly on both `--tiles on` and `--tiles off` with `--offline`. Ready for independent review and release preparation.
 
 
 **Video 4 is cut, second pass (2026-10-11 night; the user: "mache einen neuen tutorial, das die neuen features

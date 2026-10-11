@@ -159,7 +159,9 @@ BENCH = """
     if (fx) {
         out.filter_tick = bench((i) => {
             const p = fx.params || {};
-            if ("amount" in p) p.amount = 20 + (i %% 5) * 6; else p.strength = 20 + (i %% 5) * 6;
+            if ("ambient" in p) p.ambient = 10 + (i %% 5) * 5;
+            else if ("amount" in p) p.amount = 20 + (i %% 5) * 6;
+            else p.strength = 20 + (i %% 5) * 6;
             ed.filterPreview = fx.id;
             fx._fcache = null;
             fx._fcacheView = null;
@@ -907,6 +909,9 @@ async def main():
         if limit_obj["source"] == "depth":
             mw, mh = map_arg.lower().split("x")
             map_w, map_h = int(mw), int(mh)
+    if filter_id in ("relight", "haze", "lens_blur") and map_w == 0:
+        mw, mh = map_arg.lower().split("x")
+        map_w, map_h = int(mw), int(mh)
 
     async def run(c):
         await c.eval(SETUP)
