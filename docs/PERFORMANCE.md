@@ -1562,18 +1562,55 @@ stroke builds the source window: 25 to 51 ms at 1:1). The undo steps copied thei
 the six rows 373 MB of the 384 MB budget (the fit 1,000 px push alone 60 MB); as runs of tiles per row 133 MB. The field
 after the session held 6 MB. The GL sampler of the design was not built: the frame stays near 16 ms without it.
 
-### 15.2 Relight wasm kernels (2026-10-11, ABI 20, PLAN_RELIGHT_BUILD.md section 4.3 / section 5.3)
+### 15.2 Relight kernels (2026-10-12, ABI 20, PLAN_RELIGHT_BUILD.md section 4.3 / section 5.3)
 
-Measured via `tools/px_test.js` single-threaded on a depth height field (one light, 32 march steps, 4 taps, scale 512 / 2048, bias 2.56 / 10.24, radius 15.36 / 61.44):
+`tools/px_test.js` times the kernels as the app calls them: `renderer/editor/px/kernels.js`, which loads `px.wasm` (the
+SIMD build) the way a pool worker does, against the JS twin and the SIMD build called directly. The map is smooth (a
+ground plane receding upwards, three soft objects, slow waves); the parameters are `ensureRelightMaps`' at the defaults
+(depth_scale 50: scale 0.5 x the long side; diffusion 30: radius 0.015 x the long side; bias 0.005 x scale; the full map
+with 4 taps and 32 steps, the drag's quarter map with 1 tap and 16 steps); the lights where `lightToMap` puts a point
+at (0.30, 0.35) of the map with dist -30, a spot at (0.65, 0.12) with dist -60 and a sun at (0.15, 0.20) with dist -30.
+Each call warmed up twice, then five rounds with the implementations in a rotating order; medians. Single-threaded,
+Ryzen 9 7900X3D, Electron 44.2.0's V8 (15.2): `ELECTRON_RUN_AS_NODE=1 PX_BENCH=large
+node_modules/electron/dist/electron.exe tools/px_test.js` (`PX_BENCH=1` the 1024 rows alone; without it px_test only
+checks the routing, byte for byte).
 
-| Map size | Kernel | Rust wasm (SIMD) | Rust wasm (scalar) | JS twin | Speedup (SIMD vs JS) |
-|---|---|---|---|---|---|
-| 1024 x 1024 (1 MP) | height_normals | 35.7 ms | 37.1 ms | 137.7 ms | 3.8x |
-| 1024 x 1024 (1 MP) | shadow_march | 591.6 ms | 587.4 ms | 464.5 ms | 0.8x |
-| 4096 x 4096 (16 MP) | height_normals | 524.2 ms | - | - | - |
-| 4096 x 4096 (16 MP) | shadow_march | 14.1 s | - | - | - |
+| Map (taps, steps) | Kernel, light | The app runs | kernels.js | JS twin | Rust SIMD | Twin / SIMD |
+|---|---|---|---|---|---|---|
+| 1024 x 1024 | height_normals | Rust | 26.7 ms | 48.4 ms | | |
+| 1024 x 1024 (4, 32) | shadow_march, point | twin | 243.3 ms | 245.3 ms | 331.9 ms | 0.74 |
+| 1024 x 1024 (4, 32) | shadow_march, spot | twin | 250.8 ms | 263.3 ms | 355.9 ms | 0.74 |
+| 1024 x 1024 (4, 32) | shadow_march, sun | Rust | 139.0 ms | 189.2 ms | 141.8 ms | 1.33 |
+| 1024 x 682, quick (1, 16) | shadow_march, point | twin | 22.3 ms | 22.6 ms | 29.0 ms | 0.78 |
+| 1024 x 682, quick (1, 16) | shadow_march, spot | twin | 23.7 ms | 24.5 ms | 31.3 ms | 0.78 |
+| 1024 x 682, quick (1, 16) | shadow_march, sun | Rust | 14.9 ms | 25.4 ms | 14.3 ms | 1.77 |
+| 2048 x 1365 | height_normals | Rust | 72.2 ms | 151.3 ms | | |
+| 2048 x 1365 (4, 32) | shadow_march, point | twin | 738.8 ms | 710.3 ms | 936.1 ms | 0.76 |
+| 2048 x 1365 (4, 32) | shadow_march, spot | twin | 702.0 ms | 701.2 ms | 967.5 ms | 0.72 |
+| 2048 x 1365 (4, 32) | shadow_march, sun | Rust | 317.1 ms | 474.9 ms | 321.6 ms | 1.48 |
+| 4096 x 2731 | height_normals | Rust | 319.6 ms | 596.4 ms | | |
+| 4096 x 2731 (4, 32) | shadow_march, point | twin | 2.64 s | 2.63 s | 3.56 s | 0.74 |
+| 4096 x 2731 (4, 32) | shadow_march, spot | twin | 2.91 s | 2.87 s | 3.93 s | 0.73 |
+| 4096 x 2731 (4, 32) | shadow_march, sun | Rust | 1.31 s | 1.96 s | 1.31 s | 1.49 |
 
-In pool workers across 4 threads, 4096 x 4096 shadow march divides across bands to ~3.5 s. Point and spot lights (`light[3] !== 1`) route to the JS twin where V8 JIT loop optimization outperforms scalar WASM; parallel sun lights (`light[3] === 1`) route to Rust WASM.
+4096 x 2731 is the map of every 3:2 picture with a long side of 4096 or more (the map follows the picture up to
+`WORK_MAX`, inpaint_depth.js); the quick row is its quarter. kernels.js and the twin run the same code for point and spot,
+so their spread (up to 5 %) is the noise of a row.
+
+`shadowMarch` in kernels.js sends a sun (`light[3] === 1`) to the Rust build and every other light to the twin;
+`ensureRelightMaps` sends a spot as kind 0, so a spot is marched as a point (the cone shapes the shading, not the shadow).
+The twin beat the SIMD build for a point light at eight sizes from 768 x 512 to 4096 x 4096 and for a spot at 1024 x
+1024, 2048 x 1365 and 4096 x 2731 (twin / SIMD 0.67 to 0.83 in five Electron processes, two of them pinned to one CCD
+each and timing point and sun only); the sun ran 1.3 to 1.8 times faster in Rust. One process of six (the first, beside
+other gate runs) had Rust ahead for point and spot by 9 to 14 % at 2048 and 4096; no re-run repeated it.
+One march is one pool job over the whole map (`row0` 0, `rows` its height), one job per light: up to four lights march
+side by side on the pool's workers (min(8, cores - 2)); one light's map is not split into bands. The app loads only
+`px.wasm`; `px_scalar.wasm` is px_test's second build, and the two march at the same speed (the kernel has no SIMD code
+of its own; 1024 x 1024 point 409 / 411 ms, sun 172 / 174 ms, scalar / SIMD).
+
+Before 2026-10-12 the table came from one cold call of each build on uniform noise with the light at z 200 of 512 (and
+a 4096 x 4096 march: 14.1 s then, 1.7 s at 2f9aa60); in one run at 2f9aa60 those cold calls put the SIMD build ahead of
+the twin for a point light (98.5 / 107.4 ms) and the scalar build behind it (100.0 / 90.3 ms).
 
 ## 8. What goes where
 

@@ -19,8 +19,8 @@ Line numbers below are at 77da63f. Every finding was confirmed by a second agent
   full tier: `document` and `editor` on both backends.
 - Gates run `--offline`, never on port 9555 while the other agent might use it; plain `node tools/*_test.js` runs (no
   `--loader`); the export gate skips on `--tiles off` and does not count there.
-- The relight gate has 251 in-app checks on tiles and 250 on canvas since F3 (150 / 149 after F1, 198 after F2, 141 /
-  140 at 77da63f; case h is tile-only).
+- The relight gate has 270 in-app checks on tiles and 269 on canvas since F4 (251 / 250 after F3, 150 / 149 after F1,
+  198 after F2, 141 / 140 at 77da63f; case h is tile-only).
 
 ## Verified fixed in 77da63f (no action)
 
@@ -267,6 +267,70 @@ round's instance ran beside it, the known flake of docs/TESTING.md; 25/25 alone)
   document commands skins help recipes mcp film grading brush comfyview magnific, export on tiles), every
   `node tools/*_test.js`, lint, types,
   `build_node.py --check` (then the node build when the release comes), the CHANGELOG, then the user's test.
+
+**F4 as built (2026-10-12, the commit after 2f9aa60).** Mapped by a workflow (one reader per item, each with a scratch
+prototype and its red-before-fix run), reviewed by a workflow (four areas; two shoulds, each judged a nit by its skeptic;
+no must), and a mutation round on copies of the tree (each mutation on a fresh instance, the untouched and the restored
+copy PASS).
+- **Case u:** the base has a darker top half (30 / 100 over 60 / 200); a spy on `host.relightSend` keeps what goes to the
+  mock and what it answers. Checks: one picture sent, at 2048 x 512; the answer 1024 x 256; the landed layer's own size;
+  the sent picture keeps the base's top/bottom ratio and its levels under the light (65 / 130 within 1.5); the landed
+  layer keeps the base's top/bottom ratio within 5 %; after getValue / setValue (now settled) the relit layer shows; a
+  second render through host and the mock sends the picture under the first one's relit layer (four corner bands within
+  1.5 levels); the Python side checks the mock's own record (two requests, each picture 2048 x 512). The copied skip
+  logic is gone. Mutations, each red: e1ebe65's low-res read (ratio 0.365 against 0.5; the old case u stayed green, as
+  did the old contrast and left/right checks on the uniform base), host's hide of the previous relit layer off (the
+  second send's bands 79 / 57 / 158 / 114 against 65 / 65 / 130 / 130; the old copied check stayed green), the mock
+  echoing (the answer size), the read taking the relight layer in (upTo past the run and the layer left visible: only the
+  levels under the light catch it, 73.9 / 146.1, since the light sits on the line the ratio splits at).
+- **Case r:** `ed.hover = null` before every screen read; the run's flatten equal with the handles shown and hidden and
+  under the lights and select tools (bitwise); the H key hides the handles and keeps the tool, H again shows them; the
+  screen with handles shown and hidden differs by more than 200 px, each light and the own light have more than 20 of
+  them within 48 px, none elsewhere; hidden equals the select tool's screen. Measured: 1978 px, 1131 / 847 near, 0 far.
+  Mutations, each red: the handles never drawn (the old case r stayed green), H ignored, the handles under every tool,
+  the handles drawn into a run's flatten (also red in cases a, e, h, i, m).
+- **Case w2 (new):** a sun on the map centre with dist 0, GL against CPU, on a gradient base (see the nits).
+- **Array schemas:** `assistant_test.js` loads every plugin with a plugin.json through `renderer/plugins.js`
+  `loadPlugins()` (`tools/loader.mjs` maps `/plugins/<id>/...?v=` onto plugins/), so commands are registered under
+  `<id>.<name>` by plugins.js itself: six plugins, 114 tools. New checks: every plugin with code loads, every plugin
+  command carries its plugin's id, every array serves the items its command declares, and boxes rect / src (depth 1)
+  and film vertices (depth 2) are numbers. Mutations on a copy (the converter serving `{type:"object"}`, nested arrays
+  rewritten, ec60f14's fallback with rect undeclared, src typed string, a plugin array without items, fullId bare): the
+  old block passed all six, the new one fails each.
+- **shadow_march:** px_test's one-cold-call benchmark is gone. `relightBench` loads `kernels.js` as a pool worker does
+  (a fetch shim for `file:`), checks the routing by a call counter on the routed Px (kind 0 runs the twin, kind 1 Rust,
+  byte for byte; red with the routing inverted) and switches kernels.js back to JS for the later cases (the review: else
+  jobCases compared Rust against Rust). The times only with `PX_BENCH=1` / `large`. `docs/PERFORMANCE.md` 15.2
+  rewritten from the routed numbers on a smooth map (Electron's V8, warmed, interleaved, medians): point and spot
+  0.72-0.78 twin / SIMD, the sun 1.33-1.77; one job per light over the whole map, no bands, only `px.wasm` in the app.
+- **Nits:** a filter record keeps `_deselected` and `applySnapshot` restores it with the id (not the plan's
+  `!_selectedLightId`, which turns a step taken before any pick into "none"); relight_test.js suite 24 (red on 2f9aa60:
+  an undo over Escape showed light_2 while list_layers said none; an undo over a pick lost "none"). `lightToMap` and
+  `shadePixel` turn a sun vector shorter than 1e-5 into (0, 0, 1), the shader's rule; suite 25 (red on 2f9aa60:
+  direction (0, 0, 0), 8-10 levels under the shader, 1828 of 2048 texels shadowed) and gate case w2 (red without the
+  shadePixel half: max 16 levels). The GL registration's skip is `relightSkip` itself. PLAN_RELIGHT_BUILD.md 4.1 / 4.3:
+  near-high heights `z = scaleZ * (1 - far01)`, `lz` with `scaleZ`, the sun's zero rule, shadow_march as built (ABI 20,
+  one job per light, kind 0 in the twin). TESTING.md: the no-app exit 1 of selection / limit / maps / edges_test.py
+  (measured with `SCUMBLE_CDP_PORT=9599`) and of relight_test.py; `PX_BENCH`.
+- **Foreign reds:** `magnific_test.py` LISTS leaves task relight out of the edit list and checks the Relight recipe on
+  its own (providers magnific, fal, comfycloud; provider magnific; model image-relight; no Generate; with the key
+  keys.magnific true): the gate runs all 11 steps again, the later ones for the first time since L4, all green; mutations
+  (default fal, the filter dropped, magnific removed from relight.json) each red. `ideogram45_test.js` expects
+  `google/nano-banana-2/text-to-image` (ad19457 moved the WaveSpeed text route there, the bare id answers 404) and prints
+  the URL on a failure: 242/242; red with ad19457's line removed.
+- The manual's Kelvin presets (it named 1850 K candlelight; the code has Tungsten 2700 to Blue sky 10000); the CHANGELOG's
+  Unreleased section rewritten for the people who use Scumble (the relight entries, the Layer menu, reader version 6).
+Gates on the fix: relight (270 / 269), editor, assistant (38/38), selection, limit, maps, edges, depthfx, document,
+commands, skins, help, recipes, mcp, film, grading, brush, magnific on both backends, export on tiles: all PASS.
+comfyview 24 of 25 three times, its control step (the known flake of docs/TESTING.md: the user's Scumble open with this
+session's MCP server attached; 2f9aa60 in a worktree failed the same way). All 74 `node tools/*_test.js`, eslint 0
+errors, types. `build_node.py --check`: inpaint_canvas, inpaint_filters and inpaint_relight differ (the node build waits
+for the release).
+Left, noted: case u's spy on `host.relightSend` is restored only around the second render (an exception before it ends
+the whole eval, and the spy passes every call on); w2 runs with shadows 0, so the march's use of the frontal sun is
+covered by suite 25 alone; the routing check proves kernels.js dispatches on the kind, not that ensureRelightMaps sends
+a spot as kind 0; `applySnapshot`'s fallback for a filter record without `_selectedLightId` cannot run any more (every
+record carries the key; kept); assistant_test now prints the plugins' load lines; case y's flag read-backs stay.
 
 ## Open questions for the user
 

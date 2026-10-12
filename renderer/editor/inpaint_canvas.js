@@ -14064,7 +14064,7 @@ class InpaintEditor {
         if (step.kind === "filter") {
             const p = { ...(layer.params || {}) };
             if (Array.isArray(p.lights)) p.lights = JSON.parse(JSON.stringify(p.lights));
-            return { kind: "filter", id: layer.id, filter: layer.filter, params: p, lut: layer.lut ? { ...layer.lut } : null, lutData: layer._lutData || null, plate: layer.plate ? { ...layer.plate } : null, plateImg: layer._plateImg || null, name: layer.name, _selectedLightId: layer._selectedLightId || null };
+            return { kind: "filter", id: layer.id, filter: layer.filter, params: p, lut: layer.lut ? { ...layer.lut } : null, lutData: layer._lutData || null, plate: layer.plate ? { ...layer.plate } : null, plateImg: layer._plateImg || null, name: layer.name, _selectedLightId: layer._selectedLightId || null, _deselected: !!layer._deselected };
         }
         if (step.kind === "text") return { kind: "text", id: layer.id, text: JSON.parse(JSON.stringify(layer.text || TEXT_DEFAULTS)), ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
             behind: !!layer._textRendering };
@@ -14439,8 +14439,12 @@ class InpaintEditor {
                 if (Array.isArray(snap.params?.lights)) {
                     layer.params.lights = JSON.parse(JSON.stringify(snap.params.lights));
                 }
-                if (snap._selectedLightId !== undefined) layer._selectedLightId = snap._selectedLightId;
-                else if (layer._selectedLightId && (!layer.params.lights || !layer.params.lights.some((x) => x && x.id === layer._selectedLightId))) {
+                if (snap._selectedLightId !== undefined) {
+                    layer._selectedLightId = snap._selectedLightId;
+                    // Escape's "no light" belongs to the selection the step recorded; a step taken before any light was
+                    // picked (id null, no flag) stays "the first light", not "none" (docs/PLAN_RELIGHT_FIXES.md F4)
+                    layer._deselected = !!snap._deselected;
+                } else if (layer._selectedLightId && (!layer.params.lights || !layer.params.lights.some((x) => x && x.id === layer._selectedLightId))) {
                     layer._selectedLightId = layer.params.lights && layer.params.lights[0] ? layer.params.lights[0].id : null;
                 }
                 layer.lut = snap.lut ? { ...snap.lut } : null;

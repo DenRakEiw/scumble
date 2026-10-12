@@ -7,7 +7,8 @@ on 127.0.0.1 (the only base besides api.magnific.com that the adapter accepts) a
 key starts with "test-": the adapter sends such a key only to a loopback base, and any other key never to one.
 
 - the lists: one Magnific key row without "check balance", "(no key)" on its option until the key is stored, magnific
-  the last provider of every recipe it joined with the defaults kept, the six new recipes on it, Generate new offering
+  the last provider of every recipe it joined with the defaults kept (the Relight recipe apart: magnific its first route and
+  default, no Generate, the Magnific key in its keys), the six new recipes on it, Generate new offering
   Mystic and the text variants, the upscale list as it was;
 - an instruction edit on Seedream 5.0 Pro widens the crop to a preset shape: the picture sent is within 1 % of the
   aspect_ratio it names, the prompt starts "Edit Image 1" (refs.instruction with the recipe's refs.name), no mask goes
@@ -106,7 +107,13 @@ const row = list.find((p) => p.id === "magnific");
 if (!row || row.label !== "Magnific" || row.balance !== false || row.sharesKey !== null || (row.key && row.key.set)) throw new Error("the Magnific provider entry: " + JSON.stringify(row));
 const remembered = (await window.scumble.settings.get()).recipeProviders || {};
 const rl = await run("list_recipes");
-const on = rl.recipes.filter((r) => (r.providers || []).includes("magnific"));
+// the Relight recipe names magnific among its routes (first, its default), but each relight layer picks its route in its
+// Relight panel (no Generate, no provider select): it is no edit recipe here and is checked on its own
+const on = rl.recipes.filter((r) => (r.providers || []).includes("magnific") && r.task !== "relight");
+const relit = rl.recipes.filter((r) => r.task === "relight" && (r.providers || []).includes("magnific"));
+const rel = relit[0] || {};
+if (relit.length !== 1 || rel.id !== "relight" || JSON.stringify(rel.providers) !== JSON.stringify(["magnific", "fal", "comfycloud"]) || rel.provider !== "magnific" || rel.model !== "image-relight" || rel.new_image !== false || rel.edit !== undefined)
+    throw new Error("the Relight recipe on magnific: " + JSON.stringify(relit.map((r) => ({ id: r.id, providers: r.providers, provider: r.provider, model: r.model, new_image: r.new_image, edit: r.edit }))));
 const edits = on.filter((r) => r.task !== "upscale").map((r) => r.id).sort();
 const ups = on.filter((r) => r.task === "upscale").map((r) => r.id).sort();
 if (JSON.stringify(edits) !== JSON.stringify(__EDITS__)) throw new Error("recipes that list magnific: " + edits.join(", "));
@@ -146,7 +153,9 @@ const after = sel && sel.options[sel.options.length - 1].textContent;
 const withKey = (rowOf(/^Magnific/) || {}).textContent || "";
 document.getElementById("shell-settings").close();
 if (after !== "Magnific" || !/key set/.test(withKey)) throw new Error("with the key: the option " + after + ", the row " + withKey);
-return { keyRow: keyRow.slice(0, 60), options, after, edits: edits.length, text: text.length };
+const relKeyed = (await run("list_recipes")).recipes.find((r) => r.id === "relight");
+if (!relKeyed || !relKeyed.keys || relKeyed.keys.magnific !== true) throw new Error("with the key: the Relight recipe's keys " + JSON.stringify(relKeyed && relKeyed.keys));
+return { keyRow: keyRow.slice(0, 60), options, after, edits: edits.length, text: text.length, relight: rel.providers };
 """
 
 SEEDREAM_EDIT = """

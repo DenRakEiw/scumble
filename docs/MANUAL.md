@@ -418,7 +418,7 @@ A Relight layer illuminates your picture with up to four interactive light sourc
 - **Sun**: Casts parallel directional sunlight from a distant azimuth and elevation angle, illuminating the entire scene without radial falloff.
 - **Spot**: Projects a focused cone of light with adjustable cone angle, soft feathered boundary, and target aiming.
 - **Gobo patterns**: Spot lights support procedural gobo masks (*None*, *Blinds*, *Window*, *Leaves*, *Stripes*) that project architectural slats, window mullions, or foliage silhouettes into the beam.
-- **Colour and temperature**: Set the light tint using standard photographic Kelvin presets (warm candlelight 1850 K, tungsten 3200 K, daylight 5500 K, cool sky 8000 K) or a custom colour picker.
+- **Colour and temperature**: Set the light tint using Kelvin presets (Tungsten 2700 K, Halogen 3200 K, Fluorescent 4000 K, Daylight 5500 K, Overcast 6500 K, Shade 8000 K, Blue sky 10000 K) or a custom colour picker.
 - **Gloss (specular)**: Adds Blinn-Phong specular highlight reflection off 3D surface normals (0% to 100%, default 0%), enhancing eye catchlights, shiny surfaces, or moist skin without altering diffuse shadow tones.
 
 **Global parameters.** The relight filter row provides four master controls:

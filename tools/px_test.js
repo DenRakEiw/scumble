@@ -15,7 +15,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { pathToFileURL } = require("node:url");
+const { pathToFileURL, fileURLToPath } = require("node:url");
 
 const ROOT = path.dirname(__dirname);
 const PX_DIR = path.join(ROOT, "renderer", "editor", "px");
@@ -352,7 +352,7 @@ async function edgeCases(px, label, js) {
 }
 
 /** The relight kernels (height_normals, shadow_march, PLAN_RELIGHT_BUILD.md sec 4.3) against their twin. */
-async function relightCases(px, label, js, name) {
+async function relightCases(px, label, js) {
     const genMap = (w, h, seed) => {
         let s = seed >>> 0;
         const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
@@ -447,32 +447,100 @@ async function relightCases(px, label, js, name) {
         }
     }
     check(`${label} shadow_march equals its twin within 1 level`, okShadows, detailShadows);
+}
 
-    // Benchmarks on 1024x1024 (1 MP) and 4096x4096 (16 MP) with app parameters
-    const map1k = genMap(1024, 1024, 1024);
-    const light1k = [512, 512, 200, 0];
-
-    const tNorm0 = performance.now(); px.heightNormals(map1k, 1024, 1024, 512, 2.0);
-    const tNorm1 = performance.now(); js.heightNormals(map1k, 1024, 1024, 512, 2.0);
-    const tNorm2 = performance.now();
-
-    const tSm0 = performance.now(); px.shadowMarch(map1k, 1024, 1024, 512, light1k, 15.36, 4, 32, 2.56, 0, 1024);
-    const tSm1 = performance.now(); js.shadowMarch(map1k, 1024, 1024, 512, light1k, 15.36, 4, 32, 2.56, 0, 1024);
-    const tSm2 = performance.now();
-
-    console.log(`       1024 x 1024 (1 MP): height_normals ${label} ${(tNorm1 - tNorm0).toFixed(1)} ms, twin ${(tNorm2 - tNorm1).toFixed(1)} ms`);
-    console.log(`       1024 x 1024 (1 MP, 32 steps, 4 taps): shadow_march ${label} ${(tSm1 - tSm0).toFixed(1)} ms, twin ${(tSm2 - tSm1).toFixed(1)} ms`);
-
-    if (name === "simd") {
-        const map4k = genMap(4096, 4096, 4096);
-        const light4k = [2048, 2048, 500, 0];
-        const t4kNorm0 = performance.now(); px.heightNormals(map4k, 4096, 4096, 2048, 2.0);
-        const t4kNorm1 = performance.now();
-        const t4kSm0 = performance.now(); px.shadowMarch(map4k, 4096, 4096, 2048, light4k, 61.44, 4, 32, 10.24, 0, 4096);
-        const t4kSm1 = performance.now();
-        console.log(`       4096 x 4096 (16 MP): height_normals ${label} ${(t4kNorm1 - t4kNorm0).toFixed(1)} ms`);
-        console.log(`       4096 x 4096 (16 MP, 32 steps, 4 taps): shadow_march ${label} ${(t4kSm1 - t4kSm0).toFixed(1)} ms`);
+/** A smooth depth map (0 near, 65535 far): a ground plane receding upwards, three soft objects, slow waves. */
+function smoothDepth(w, h) {
+    const d = new Uint16Array(w * h), L = Math.max(w, h);
+    const bumps = [[0.30, 0.62, 0.16, 0.42], [0.68, 0.55, 0.10, 0.35], [0.52, 0.80, 0.07, 0.25]];   // cx, cy, r, height
+    for (let y = 0; y < h; y++) {
+        const v = y / Math.max(1, h - 1);
+        for (let x = 0; x < w; x++) {
+            const u = x / Math.max(1, w - 1);
+            let far = 0.92 - 0.55 * v + 0.025 * Math.sin(u * 7.1 + v * 2.3) + 0.02 * Math.cos(v * 5.7 - u * 1.9);
+            for (const [cx, cy, r, hgt] of bumps) {
+                const dx = (x - cx * w) / (r * L), dy = (y - cy * h) / (r * L);
+                far -= hgt * Math.exp(-(dx * dx + dy * dy) * 1.5);
+            }
+            d[y * w + x] = Math.max(0, Math.min(65535, Math.round(far * 65535)));
+        }
     }
+    return d;
+}
+
+/**
+ * The relight kernels as the app runs them (docs/PERFORMANCE.md section 15.2): kernels.js, which loads px.wasm as a
+ * pool worker does, against the JS twin and the SIMD build called directly, on a smooth depth map with
+ * ensureRelightMaps' parameters (depth_scale 50, diffusion 30; the drag's quarter map with 1 tap and 16 steps). Each
+ * call warmed up twice, then five rounds in a rotating order, medians. Always checks the routing: point and spot (a
+ * spot goes as kind 0) run the twin, sun (kind 1) the Rust build, byte for byte. The times only with `PX_BENCH=1`
+ * (1024 x 1024 and the quick 1024 x 682) or `PX_BENCH=large` (also 2048 x 1365 and 4096 x 2731, the map of a 3:2
+ * picture with a long side of 4096 or more, WORK_MAX); without it the check runs once on a 512 x 341 map.
+ */
+async function relightBench(js, simd) {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (u, ...rest) => {   // kernels.js fetches ./px.wasm; Node's fetch reads no file: URL
+        const s = String(u && u.href ? u.href : u);
+        return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+    };
+    let K = null, routed = null;
+    try {
+        K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+        routed = await K.kernelsReady();
+    } finally { globalThis.fetch = realFetch; }
+    check("kernels.js loads px.wasm (SIMD) as in a worker", !!routed && K.kernelsInUse() === "rust" && routed.simd === true);
+    if (!routed) return;
+    const { lightToMap, defaultLight } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
+    let rustCalls = 0;
+    const march = routed.shadowMarch;
+    routed.shadowMarch = function (...a) { rustCalls++; return march.apply(this, a); };
+    const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
+    const time = (fns) => {
+        for (let k = 0; k < 2; k++) for (const [, fn] of fns) fn();
+        const t = Object.fromEntries(fns.map(([n]) => [n, []]));
+        for (let r = 0; r < 5; r++) {
+            for (let j = 0; j < fns.length; j++) {
+                const [n, fn] = fns[(j + r) % fns.length];
+                const t0 = performance.now(); fn(); t[n].push(performance.now() - t0);
+            }
+        }
+        return Object.fromEntries(Object.entries(t).map(([n, a]) => [n, median(a)]));
+    };
+    const bench = !!process.env.PX_BENCH;
+    const sizes = bench ? [[1024, 1024, false], [1024, 682, true]] : [[512, 341, false]];
+    if (process.env.PX_BENCH === "large") sizes.push([2048, 1365, false], [4096, 2731, false]);
+    let ok = true, detail = "";
+    for (const [w, h, quick] of sizes) {
+        const depth = smoothDepth(w, h), map = { data: depth, w, h };
+        const long = Math.max(w, h), scale = 0.5 * long, radius = 0.3 * 0.05 * long, bias = 0.005 * scale;
+        const taps = quick ? 1 : 4, steps = quick ? 16 : 32, tag = `${w} x ${h}${quick ? " quick" : ""}`;
+        if (bench && !quick) {
+            const m = time([["routed", () => K.heightNormals(depth, w, h, scale, 2.0)], ["twin", () => js.heightNormals(depth, w, h, scale, 2.0)]]);
+            console.log(`       ${tag}: height_normals routed (rust) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms`);
+        }
+        for (const [name, fx, fy, dist] of [["point", 0.30, 0.35, -30], ["spot", 0.65, 0.12, -60], ["sun", 0.15, 0.20, -30]]) {
+            const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type: name, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
+            const light = [lm.mx, lm.my, lm.mz, name === "sun" ? 1 : 0];   // ensureRelightMaps' lightVec
+            const run = {
+                routed: () => K.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
+                twin: () => js.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
+                simd: () => simd.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
+            };
+            const c0 = rustCalls;
+            const out = run.routed();
+            const ran = rustCalls > c0 ? "rust" : "twin", want = name === "sun" ? "rust" : "twin";
+            if (ran !== want || !eqBytes(out, want === "rust" ? run.simd() : run.twin())) {
+                ok = false; detail += `${detail ? "; " : ""}${tag} ${name}: ran ${ran}${ran === want ? ", other bytes" : ""}`;
+            }
+            if (!bench) continue;
+            const m = time(Object.entries(run));
+            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd ${m.simd.toFixed(1)} ms (twin / simd ${(m.twin / m.simd).toFixed(2)})`);
+        }
+    }
+    routed.shadowMarch = march;
+    K.setKernels("js");   // kernels.js stays loaded for the process: the later cases (jobCases) compare against the editor's JS
+    check("shadow_march as routed: kind 0 (a point; ensureRelightMaps sends a spot as kind 0) runs the twin, kind 1 (a sun) the Rust build (byte for byte)", ok, detail);
+    check("kernels.js back on the JS kernels for the later cases", K.kernelsInUse() === "js");
 }
 
 /** The whole-job kernels (grow_mask, flood_shape) against the editor's JS for the same jobs. */
@@ -2239,6 +2307,7 @@ async function main() {
     await blendFixtureCases(js, simdPx, scalarPx);
     await blendGlslCases();
     await tierCCases(js, simdPx, scalarPx, ref);
+    await relightBench(js, simdPx);   // before memoryCases grows simdPx past 2 GB
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));
@@ -2248,7 +2317,7 @@ async function main() {
         await jobCases(px, label, raster);
         await maskCases(px, label, js);
         await edgeCases(px, label, js);
-        await relightCases(px, label, js, name);
+        await relightCases(px, label, js);
         await pngReadCases(px, label, js);
         await compositeCases(px, label, js);
         await matchCases(px, label, js);

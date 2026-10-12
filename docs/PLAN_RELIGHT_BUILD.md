@@ -90,8 +90,9 @@ picture** (like the Realism Pass), never one layer alone.
 
 **The scene is a height field in map pixels** (orthographic, phase 1): the depth map `ed.maps.depth` (u16 "far", 0
 near, 65535 far, at map resolution up to `WORK_MAX` 4096 on the long side, `inpaint_depth.js:7`, with the guide and
-the edge snap of R2-S4 / R2-S5) gives every map texel a height `z = depthScale * far01`, where `depthScale` is the
-filter's *Depth* slider in percent of the map's long side (default 50: the scene is half as deep as it is wide; relative
+the edge snap of R2-S4 / R2-S5) gives every map texel a height `z = scaleZ * (1 - far01)`, `scaleZ = depthScale / 100 *
+long` (near is high: +z points towards the camera, the nearest texel lies at `scaleZ`, the farthest at 0; the code since
+the review of L0a, F4 the text), where `depthScale` is the filter's *Depth* slider in percent of the map's long side (default 50: the scene is half as deep as it is wide; relative
 depth from the model is disparity, not metres, so this is a look, not a measurement). A pixel's 3D point is `p = (mx,
 my, z)` in map pixels; picture pixels go to map pixels through the map's `xf` (`passToMap`, `inpaint_maps.js:320`).
 Perspective (a FOV) is phase 2 with MoGe-2's camera (§5 N1); the orthographic field needs no FOV, matches Photoshop's
@@ -102,10 +103,10 @@ pixels (the *Smooth normals* slider, default 2; the depth's edge snap already pu
 map). Phase 2 replaces them by a normal model's map where present (§5 N1).
 
 **Lights**, up to four (R-D6), each `{ id, type, x, y, dist, intensity, color, diffusion, on, angle?, cone?, edge? }`:
-- `type`: **point** (default), **sun** (directional: parallel rays, no falloff; direction vector is `(mx - cx, my - cy, -dist / 100 * scaleZ)` relative to the map centre `(cx, cy)`, giving elevation via `dist` and azimuth via handle displacement from the centre), **spot** (a point with a cone: `cone` the half angle in degrees, `edge` the
+- `type`: **point** (default), **sun** (directional: parallel rays, no falloff; direction vector is `(mx - cx, my - cy, -dist / 100 * scaleZ)` relative to the map centre `(cx, cy)`, giving elevation via `dist` and azimuth via handle displacement from the centre; `(0, 0, 1)`, straight from the front, when that vector is shorter than 1e-5, a sun on the centre at dist 0, as the shader takes it: F4), **spot** (a point with a cone: `cone` the half angle in degrees, `edge` the
   softness of the rim in percent; it aims at `aim: [x, y]`, a second handle). "Different kinds of rays" (the user).
 - `x, y`: picture pixels, may lie outside the picture (the preview draws the handle on the view).
-- `dist`: Close/Far, −100..100; the light's height `lz = zSurface(x, y) − dist / 100 * depthScale * long` where
+- `dist`: Close/Far, −100..100; the light's height `lz = zSurface(x, y) − dist / 100 * scaleZ` where
   `zSurface` is the map's height under the handle (clamped into the map): 0 puts the light on the surface it hovers
   over, negative towards the camera (in front), positive behind it (a rim light). The handle's radius shows it
   (larger in front, smaller behind), and the map's height under it is read off the depth map, which answers the
@@ -180,7 +181,7 @@ within one level), the dispatch in `kernels.js` (the `rangeMax` template, `kerne
 `--check`, one measurement row in `docs/PERFORMANCE.md`.
 
 - **`height_normals(depth: *const u16, w, h, scale: f32, sigma: f32, out: *mut u8)`** → RGBA8 (`n * 127.5 + 127.5`,
-  A 255). A f32 copy of the heights (`scale * far / 65535`), three box passes from `sigma` (`maskf::box_blurs`,
+  A 255). A f32 copy of the heights (`scale * (65535 - far) / 65535`: near high, as §4.1), three box passes from `sigma` (`maskf::box_blurs`,
   `lib.rs:149`, the radii as `gaussBlur` in `inpaint_edges.js:333` derives them), central differences with clamped
   borders, normalise, pack. Scratch: one f32 plane (`px_alloc`, sized before the loop: a wasm memory growth invalidates
   every view). Expected 3-5× over JS; about 60-100 ms at 4096² single-threaded.
@@ -193,7 +194,9 @@ within one level), the dispatch in `kernels.js` (the `rangeMax` template, `kerne
   for it), and the tap is blocked when the surface there lies in front of the ray by more than `bias`; the texel's
   visibility is the share of taps that reach the light. A spot is a point for the march (its cone is in the shader).
   Expected 3-6× over JS; the quick quarter-size pass under 20 ms per light, the full 1024-2048² pass 50-300 ms per
-  light over four workers.
+  light over four workers. **As built** (ABI 20 with the near-high heights; `docs/PERFORMANCE.md` 15.2): one pool job
+  per light over the whole map (no bands); the JS twin measured faster than Rust for a point (and so for a spot, which
+  goes as kind 0), so `kernels.js` marches kind 0 in the twin and only a sun (kind 1) in Rust.
 - Not Rust: the fit (65 k samples), `kelvinToRgb`, `lightsToWords`, the light map composition (the shader does it).
 - Phase 2 kernels (§5 N2): `horizon_ao` (a horizon-based ambient occlusion from the height field, the same march
   shape, darkens the `ambient` term in creases), and the normals' guided upsample if the normal model's map is smaller

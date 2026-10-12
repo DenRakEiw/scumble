@@ -26,7 +26,8 @@ Tests relight filter layer across CPU and WebGL2 paths via CDP:
   * Case q: Over a box: the drag shows the quick shadow map at the light's new position, every reader of a
             run's picture (crop read, screenshot, a plugin's settled flatten) waits for the full map, and the
             drag reads the picture below back no time (docs/PLAN_RELIGHT_FIXES.md F2.5-F2.7).
-  * Case r: Overlay is not in an export (flattenToCanvas({ forRun: true })).
+  * Case r: the light handles are drawn on the screen under the lights tool, the H key hides all of them, and they are never
+            in a run's flatten (shown / hidden and lights / select tool bitwise; F4).
   * Case fit: The fitted original light follows the picture below (a new base lit from the other side, F2.6).
   * Case route: an edit without route keeps the layer's route and renders nothing; a route goes in its own undo step
             (F3.4, inside case t).
@@ -34,6 +35,10 @@ Tests relight filter layer across CPU and WebGL2 paths via CDP:
   * Case undo: a relight nudge or wheel burst and a slider are two undo steps; no undo record holds an edit in
             progress (F3.1, F3.2).
   * Case cl: close() closes the tip popover and drops a pending nudge whole (F3.3).
+  * Case u: a Magnific render through the loopback mock: the sent and answered sizes, the base's top/bottom ratio kept
+            (a low-res read with the wrong row width breaks it), a second render sends the picture under the first
+            one's relit layer (F4).
+  * Case w2: a sun on the map's centre with dist 0, GL against CPU (both frontal, F4).
 
 Rule 1: Strict gate test. If CDP session is unreachable, exits with 1 and prints FAIL.
 """
@@ -1052,47 +1057,72 @@ JS = r"""
     }
 
     // -------------------------------------------------------------------------
-    // Case r: Overlay is not in an export (flattenToCanvas({ forRun: true }))
+    // Case r (docs/PLAN_RELIGHT_FIXES.md F4): the handles are drawn on the screen and never in a run's picture. No
+    // brush ring: ed.hover is left at case q's last pointermove, and the select tool's ring there was the whole
+    // difference of the old screen check (1450 px with drawLightsOverlay returning at once, review round 3).
+    // drawLightsOverlay does not look at the tool (only its callers in drawOverlays do), so a run's flatten is also
+    // compared with one where it returns at once (hideLightHandles).
     // -------------------------------------------------------------------------
-    ed.setTool("lights");
-    ed.selectLayers([fx.id]);
-    ed.draw();
-    await settle(ed);
-    const flatLightsTool = ed.flattenToCanvas({ forRun: true });
-    const pxLightsTool = flatLightsTool.getContext("2d").getImageData(0, 0, W, H).data;
-
-    ed.setTool("select");
-    ed.draw();
-    await settle(ed);
-    const flatSelectTool = ed.flattenToCanvas({ forRun: true });
-    const pxSelectTool = flatSelectTool.getContext("2d").getImageData(0, 0, W, H).data;
-
-    let diffOverlay = 0;
-    for (let i = 0; i < pxLightsTool.length; i++) {
-        if (pxLightsTool[i] !== pxSelectTool[i]) diffOverlay++;
-    }
-    check("r: overlay is not in export (0 bytes differ between lights and select tools)", diffOverlay === 0, { diffOverlay });
-
-    // Switch between lights tool and select tool to verify screen displays handles overlay
+    ed.hover = null;
     ed.selectLayers([fx.id]);
     ed.setTool("lights");
-    ed.draw();
+    ed.hideLightHandles = false;
     await settle(ed);
-    const scW = ed.canvas.width, scH = ed.canvas.height;
-    const pxScreenLights = ed.canvas.getContext("2d").getImageData(0, 0, scW, scH).data;
-
-    ed.setTool("select");
-    ed.draw();
-    await settle(ed);
-    const pxScreenSelect = ed.canvas.getContext("2d").getImageData(0, 0, scW, scH).data;
-
-    let handleOverlayDiff = 0;
-    for (let i = 0; i < pxScreenLights.length; i += 4) {
-        if (pxScreenLights[i] !== pxScreenSelect[i] || pxScreenLights[i + 1] !== pxScreenSelect[i + 1] || pxScreenLights[i + 2] !== pxScreenSelect[i + 2]) {
-            handleOverlayDiff++;
+    ed.hover = null;   // a real pointer over the window during the settle sets it again
+    check("r: the relight layer is active under the lights tool and nothing hovers", ed.tool === "lights" && ed.isRelightActive() && ed.hover === null);
+    const rFlat = () => ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, W, H).data;
+    const rScreen = () => {
+        ed.draw();
+        const w = ed.canvas.width, h = ed.canvas.height;
+        return { w, h, d: ed.canvas.getContext("2d").getImageData(0, 0, w, h).data };
+    };
+    // screen pixels whose colour differs; `near[k]` of them within `reach` canvas px of anchors[k], `far` near none
+    const rDiff = (a, b, anchors = [], reach = 48) => {
+        if (a.w !== b.w || a.h !== b.h) return { n: -1, sizes: [a.w, a.h, b.w, b.h] };
+        let n = 0, far = 0;
+        const near = anchors.map(() => 0);
+        for (let i = 0; i < a.d.length; i += 4) {
+            if (a.d[i] === b.d[i] && a.d[i + 1] === b.d[i + 1] && a.d[i + 2] === b.d[i + 2]) continue;
+            n++;
+            const x = (i >> 2) % a.w, y = Math.floor((i >> 2) / a.w);
+            let hit = false;
+            anchors.forEach(([ax, ay], k) => { if (Math.hypot(x - ax, y - ay) <= reach) { near[k]++; hit = true; } });
+            if (!hit) far++;
         }
-    }
-    check("r: screen with lights tool displays handles overlay compared to select tool", handleOverlayDiff > 0, { handleOverlayDiff });
+        return { n, near, far };
+    };
+    const rBytes = (a, b) => { let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; };
+
+    const pxFlatShown = rFlat();          // the lights tool, the handles shown
+    const scrShown = rScreen();
+    ed.onKey({ key: "h", preventDefault: () => {} });   // H under the lights tool hides the handles (and keeps the tool)
+    check("r: H hides the handles and keeps the lights tool", ed.hideLightHandles === true && ed.tool === "lights", { hidden: ed.hideLightHandles, tool: ed.tool });
+    ed.hover = null;
+    const scrHidden = rScreen();
+    const pxFlatHidden = rFlat();         // drawLightsOverlay returns at once
+    ed.onKey({ key: "h", preventDefault: () => {} });
+    check("r: H again shows them", ed.hideLightHandles === false && ed.tool === "lights", { hidden: ed.hideLightHandles, tool: ed.tool });
+    ed.hideLightHandles = false;
+    ed.setTool("select");
+    await settle(ed);
+    ed.hover = null;
+    const scrSelect = rScreen();          // the select tool, the handles not hidden: drawOverlays does not call it
+    const pxFlatSelect = rFlat();
+
+    const rLeak = { hidden: rBytes(pxFlatShown, pxFlatHidden), select: rBytes(pxFlatShown, pxFlatSelect) };
+    check("r: the handles are not in a run's flatten (shown and hidden equal, bitwise)", rLeak.hidden === 0, rLeak);
+    check("r: the handles are not in a run's flatten (lights and select tool equal, bitwise)", rLeak.select === 0, rLeak);
+
+    const rAnchors = fx.params.lights.filter((l) => l).map((l) => ed.imageToScreen(l.x, l.y));
+    const [rOx, rOy] = ed.ownLightPos(fx);
+    rAnchors.push(ed.imageToScreen(rOx, rOy));
+    const rHandles = rDiff(scrShown, scrHidden, rAnchors);
+    const rPlain = rDiff(scrHidden, scrSelect);
+    notes.r = { handles: rHandles, plain: rPlain, anchors: rAnchors.map(([x, y]) => [Math.round(x), Math.round(y)]) };
+    check("r: the lights tool draws the handles on the screen (shown and hidden differ)", rHandles.n > 200, rHandles);
+    check("r: every light and the own light have their handle where they are", rHandles.n > 0 && rHandles.near.every((k) => k > 20), rHandles);
+    check("r: hiding the handles changes nothing else on the screen", rHandles.n > 0 && rHandles.far === 0, rHandles);
+    check("r: the lights tool with the handles hidden draws what the select tool draws", rPlain.n === 0, rPlain);
 
     // Extra L2 checks: Nudge with arrow keys and wheel diffusion
     ed.setTool("lights");
@@ -1356,15 +1386,18 @@ JS = r"""
     await new Promise((r) => setTimeout(r, 150));
     docU.resizeCanvas();
 
-    // Create high-frequency 1-pixel checkerboard base (>2048px: 2400x600)
+    // A 1-pixel checkerboard, 2400 x 600 (over 2048: the send goes at 2048 x 512, the mock answers at half that), with a
+    // darker top half (30 / 100 over 60 / 200, the same contrast): low-frequency variation that a low-res read with the
+    // wrong row width (e1ebe65: the send's 2048-wide rows read as the answer's 1024) turns into a wrong top/bottom ratio.
     const uW = 2400, uH = 600;
     const cU = mk(uW, uH);
     const ctxU = cU.getContext("2d");
     const idU = ctxU.createImageData(uW, uH);
     for (let y = 0; y < uH; y++) {
+        const top = y < uH / 2;
         for (let x = 0; x < uW; x++) {
             const idx = (y * uW + x) * 4;
-            const v = ((x + y) % 2 === 0) ? 60 : 200;
+            const v = ((x + y) % 2 === 0) ? (top ? 30 : 60) : (top ? 100 : 200);
             idU.data[idx] = v;
             idU.data[idx + 1] = v;
             idU.data[idx + 2] = v;
@@ -1410,6 +1443,27 @@ JS = r"""
     }
     const initAvgContrast = initContrastSum / initCount;
 
+    // channel 0's mean over rows [y0, y1) and columns [x0, x1) of an RGBA picture w wide
+    const bandMean = (px, w, y0, y1, x0 = 0, x1 = w) => {
+        let s = 0, n = 0;
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { s += px[(y * w + x) * 4]; n++; }
+        return s / Math.max(1, n);
+    };
+    // top half / bottom half, 40 px (in the document) clear of the edge at uH / 2, on a picture h high
+    const topBottom = (px, w, h) => {
+        const k = h / uH;
+        return bandMean(px, w, Math.round(20 * k), Math.round(260 * k)) / Math.max(1e-6, bandMean(px, w, Math.round(340 * k), Math.round(580 * k)));
+    };
+    // what host sends (magnific.js puts these bytes into the body's image unchanged) and what the mock answers
+    const uSent = [];
+    const uSend0 = host.relightSend;
+    host.relightSend = async (req, token) => {
+        const image = req && req.image ? req.image.slice() : null;
+        const out = await uSend0.call(host, req, token);
+        uSent.push({ image, answer: out && out.bytes ? out.bytes.slice() : null });
+        return out;
+    };
+
     // Run relight command with route magnific
     const uRes = await commands.run("relight", {
         doc: docU.id,
@@ -1435,9 +1489,24 @@ JS = r"""
     const filterIdx = docU.layers.findIndex((l) => l.id === uFx.id);
     check("u: pixel layer is positioned under filter layer", landedIdx < filterIdx);
 
-    // Verify detail preservation on the landed layer pixels
+    // The sizes: the picture as sent, the mock's answer as host got it (half the send: the low-res read must be drawn at
+    // the answer's size, or its rows go with the wrong width), the landed layer at the document's size
+    check("u: one picture went to the mock", uSent.length === 1, uSent.length);
+    const uS1 = uSent[0] && uSent[0].image ? await decode(new Blob([uSent[0].image])) : null;
+    const uA1 = uSent[0] && uSent[0].answer ? await decode(new Blob([uSent[0].answer])) : null;
+    check("u: the picture went at 2048 x 512", !!uS1 && uS1.width === 2048 && uS1.height === 512, uS1 && [uS1.width, uS1.height]);
+    check("u: the mock answered at 1024 x 256 (half the send)", !!uA1 && uA1.width === 1024 && uA1.height === 256, uA1 && [uA1.width, uA1.height]);
+    check("u: the landed layer is 2400 x 600", !!landedLayer && landedLayer.w === uW && landedLayer.h === uH && !!landedLayer.px && landedLayer.px.width === uW && landedLayer.px.height === uH,
+        landedLayer && { w: landedLayer.w, h: landedLayer.h, pw: landedLayer.px && landedLayer.px.width, ph: landedLayer.px && landedLayer.px.height });
+    const tbBase = topBottom(idU.data, uW, uH);
+    check("u: the picture sent keeps the base's top/bottom ratio within 3 %", !!uS1 && Math.abs(topBottom(uS1.data, uS1.width, uS1.height) / tbBase - 1) <= 0.03,
+        uS1 && { tbBase, tbSent: topBottom(uS1.data, uS1.width, uS1.height) });
+    // and its levels where the layer's light falls (the light sits at the centre, on the line topBottom splits at, so a read
+    // that took the relight layer's own picture in would keep the ratio; it lifts these bands by about 7 %)
+    const uLit = uS1 ? [bandMean(uS1.data, uS1.width, 17, 222, 850, 1200), bandMean(uS1.data, uS1.width, 290, 495, 850, 1200)] : [];
+    check("u: the picture sent has the base's levels under the light (65 and 130 within 1.5)", uLit.length === 2 && Math.abs(uLit[0] - 65) <= 1.5 && Math.abs(uLit[1] - 130) <= 1.5, uLit);
+    // the landed layer's pixels: it is opaque and covers the picture, so the stack up to it shows only it
     const landedCanvas = docU.flattenToCanvas({ forRun: true, upTo: landedIdx + 1 });
-    check("u: answer size is full resolution 2400x600", landedCanvas.width === uW && landedCanvas.height === uH, { w: landedCanvas.width, h: landedCanvas.height });
     const landedPx = landedCanvas.getContext("2d").getImageData(0, 0, uW, uH).data;
     let landedCount = 0, landedContrastSum = 0;
     for (let y = 10; y < uH - 10; y += 5) {
@@ -1470,6 +1539,9 @@ JS = r"""
     const rightMean = rightSum / Math.max(1, nRight);
     const ratioLR = leftMean / Math.max(1, rightMean);
     check("u: left/right brightness > 1.2", ratioLR > 1.2, { ratioLR, leftMean, rightMean });
+    // the mock's light varies along x only: the landed layer keeps the base's top/bottom ratio
+    const tbLand = topBottom(landedPx, uW, uH);
+    check("u: the landed layer keeps the base's top/bottom ratio within 5 %", Math.abs(tbLand / tbBase - 1) <= 0.05, { tbBase, tbLand });
 
     // Verify 1 undo step restores the stack
     await docU.undoStep();
@@ -1484,24 +1556,32 @@ JS = r"""
     // Verify relightOf round-trip through getValue -> setValue and second read skipping result
     const valU = docU.getValue();
     await docU.setValue(valU);
+    await settle(docU);
     const restoredLanded = docU.layers.find((l) => l.id === landedId);
     check("u: relightOf restored after getValue -> setValue", restoredLanded && restoredLanded.relightOf === uFx.id);
 
-    const isFillU = (l) => docU.isFillLayer(l);
-    const skipU = (l) => docU.isReference(l) || docU.isControl(l) || (l.kind !== "filter" && !l.visible) || (l.relightOf && l.relightOf === uFx.id);
-    const { topFilterRun } = await import("./editor/realism.js");
-    const upTo2 = topFilterRun(docU.layers, isFillU, skipU);
-    const hiddenRelight = [];
-    for (const l of docU.layers) {
-        if (l.relightOf && l.relightOf === uFx.id && l.visible) {
-            l.visible = false;
-            hiddenRelight.push(l);
-        }
+    // the relit layer shows again after the round trip (else a read that took it in would look like the base)
+    const shownPx = docU.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, uW, uH).data;
+    const leftBaseU = bandMean(idU.data, uW, 0, uH, 0, 300), leftShownU = bandMean(shownPx, uW, 0, uH, 0, 300);
+    check("u: after the round trip the relit layer shows (its left band over 1.1 x the base's)", leftShownU > leftBaseU * 1.1, { leftBaseU, leftShownU });
+    // a second render reads the picture under the first one's relit layer (host's own skip, through the mock): the same
+    // picture as the first send, not the relit one
+    let uRes2 = null;
+    try {
+        uRes2 = await commands.run("relight", { doc: docU.id, layer: uFx.id, route: "magnific", timeout: 60 });
+    } finally {
+        host.relightSend = uSend0;
     }
-    const readCanvas = docU.flattenToCanvas({ forRun: true, upTo: upTo2 });
-    for (const l of hiddenRelight) l.visible = true;
-    const readPx = readCanvas.getContext("2d").getImageData(0, 0, uW, uH).data;
-    check("u: re-read after getValue->setValue skips previous relit layer and reads base pixel 60", Math.abs(readPx[0] - 60) <= 2, { readPx0: readPx[0] });
+    check("u: the second render ran and landed a new layer", !!uRes2 && !!uRes2.layer && uRes2.layer.id !== landedId && uSent.length === 2,
+        { layer: uRes2 && uRes2.layer && uRes2.layer.id, sends: uSent.length });
+    const uS2 = uSent[1] && uSent[1].image ? await decode(new Blob([uSent[1].image])) : null;
+    const quadU = (p) => (p ? [[0, 128, 0, 300], [0, 128, 1748, 2048], [384, 512, 0, 300], [384, 512, 1748, 2048]].map(([y0, y1, x0, x1]) => bandMean(p.data, p.width, y0, y1, x0, x1)) : []);
+    const q1 = quadU(uS1), q2 = quadU(uS2);
+    const qOff = q1.length === 4 && q2.length === 4 ? Math.max(...q1.map((v, i) => Math.abs(v - q2[i]))) : Infinity;
+    check("u: the second render sent the picture under the relit layer (four band means within 1.5 levels of the first send)",
+        !!uS2 && uS2.width === 2048 && uS2.height === 512 && qOff <= 1.5, { q1, q2 });
+    check("u: the first render's relit layer is shown again after the second read", docU.layers.some((l) => l.id === landedId && l.visible));
+    notes.u = { tbBase, tbLand, sent: uS1 && [uS1.width, uS1.height], answer: uA1 && [uA1.width, uA1.height], q1, q2, leftBaseU, leftShownU };
 
     // Clean up docU and restore settings/keys
     await commands.run("close_document", { doc: docU.id, force: true });
@@ -1557,6 +1637,19 @@ JS = r"""
     };
     const paramsGobo = { lights: [goboLight], original: 100, ambient: 10, shadows: 0 };
     glVsCpu("w: spot gobo blinds GL vs CPU", "relight", base, paramsGobo, infoV, { max: 2, over2Pct: 0.2, mean: 1.0 });
+
+    // Case w2 (F4): a sun on the map's centre with dist 0 has no direction of its own; the shader lights it from the
+    // front, and so must the CPU twin (at 2f9aa60 it kept the zero vector: diffusion / (1 + diffusion) for every normal)
+    const centreSun = { id: "light_1", type: "sun", x: W / 2, y: H / 2, dist: 0, intensity: 40, color: 5500, diffusion: 30, on: true };
+    const w2Base = mk(W, H);
+    {
+        const g = w2Base.getContext("2d"), grad = g.createLinearGradient(0, 0, W, H);
+        grad.addColorStop(0, "#203040");
+        grad.addColorStop(1, "#e0c0a0");
+        g.fillStyle = grad;
+        g.fillRect(0, 0, W, H);
+    }
+    glVsCpu("w2: sun at the centre with dist 0, GL vs CPU", "relight", w2Base, { lights: [centreSun], original: 100, ambient: 10, shadows: 0 }, infoV, { max: 2, over2Pct: 0.2, mean: 1.0 });
 
     // -------------------------------------------------------------------------
     // Case x: Light presets: applyLightPreset and undo restore
@@ -2033,14 +2126,19 @@ JS = r"""
 """
 
 
-async def run_cdp(cdp, doc_path, mock_url, scratch_dir=None):
+async def run_cdp(cdp, doc_path, mock, scratch_dir=None):
     escaped_path = doc_path.replace("\\", "\\\\")
-    expr = f"({JS})('{escaped_path}', '{mock_url}')"
+    expr = f"({JS})('{escaped_path}', '{mock.url}')"
     val = await cdp.eval(expr, timeout=120)
     if not val:
         print("[FAIL] no result from JS evaluate")
         return False
     fails = val.get("fails", [])
+    # case u from the mock's side: the render and the second render each sent the picture at 2048 x 512
+    sent = [[p.get("dims") for p in (c.get("pictures") or []) if p.get("field") == "image"]
+            for c in mock.all_calls() if c.get("method") == "POST" and c.get("path", "").split("?")[0] == "/v1/ai/image-relight"]
+    if sent != [[[2048, 512]], [[2048, 512]]]:
+        fails.append(f"u: the mock's record of relight requests: {sent} (expected two, each picture 2048 x 512)")
     for f in fails:
         print(f"[FAIL] {f}")
     if val.get("notes"):
@@ -2111,7 +2209,7 @@ def main():
 
     mock = Mock().start()
     try:
-        ok = asyncio.run(session(lambda c: run_cdp(c, doc_path, mock.url, scratch_dir)))
+        ok = asyncio.run(session(lambda c: run_cdp(c, doc_path, mock, scratch_dir)))
         if not ok:
             print("FAIL")
             sys.exit(1)

@@ -1066,7 +1066,117 @@ async function main() {
     console.log("  PASS 23: the relight command keeps the layer's route unless one is given, writes a given one in its own step, refuses unknown routes");
 }
 
-    console.log("\nALL 23 RELIGHT TESTS PASSED CLEANLY!");
+// ------------------------------------------------------------------------------------------------
+// 24. An undo puts the light selection back as the step recorded it, Escape's explicit "no light" included
+//     (docs/PLAN_RELIGHT_FIXES.md F4). At 2f9aa60 a filter record held the selected id but not `_deselected`: an
+//     undo over Escape showed light_2 on the canvas while list_layers said none, and an undo over a pick made after
+//     Escape brought "no light" back without the flag, so the panel picked lights[0]. A step taken before any light was
+//     picked stays "the first light" (the plan's `_deselected = !_selectedLightId` would turn it into "none").
+// ------------------------------------------------------------------------------------------------
+{
+    const { InpaintEditor } = await import(editorUrl("inpaint_canvas.js"));
+    const { layerSummary } = await import(pathToFileURL(path.join(ROOT, "renderer", "commands.js")).href);
+    const P = InpaintEditor.prototype;
+    const fails = [];
+    const want = (ok, msg) => { if (!ok) fails.push(msg); };
+    const show = (v) => JSON.stringify(v);
+    const light = (id, x) => ({ id, type: "point", x, y: 20, dist: -30, intensity: 100, color: 5500, diffusion: 30, on: true });
+    /** @param {any} layer @returns {any} */
+    const stub = (layer) => Object.assign(Object.create(P), {
+        layers: [layer], tileMode: false, activeLayerId: layer.id,
+        markFilterChanged() {}, renderLayers() {}, draw() {},
+        isReference() { return false; },
+    });
+    const sel = (l) => ({ id: l._selectedLightId ?? null, deselected: !!l._deselected });
+
+    // light_2 selected, a step, Escape, undo: light_2 selected again, and list_layers says so
+    {
+        /** @type {any} */
+        const layer = { id: "R1", name: "Relight 1", kind: "filter", filter: "relight", visible: true, params: { lights: [light("light_1", 10), light("light_2", 40)] }, _selectedLightId: "light_2", _deselected: false };
+        const ed = stub(layer);
+        const step = P.snapshot.call(ed, { kind: "filter", id: layer.id, label: "Light intensity" });
+        layer.params.lights[1].intensity = 150;
+        layer._selectedLightId = null; layer._deselected = true;   // Escape (the window handler's two writes)
+        P.applySnapshot.call(ed, step);
+        want(layer._selectedLightId === "light_2" && !layer._deselected, `undo over Escape: light_2 selected, not deselected, got ${show(sel(layer))}`);
+        want(layerSummary(ed, layer).selected_light === "light_2", `list_layers after that undo reports light_2, got ${show(layerSummary(ed, layer).selected_light)}`);
+    }
+    // a step taken with no light selected (after Escape), a light picked, undo: none selected again
+    {
+        /** @type {any} */
+        const layer = { id: "R2", name: "Relight 2", kind: "filter", filter: "relight", visible: true, params: { lights: [light("light_1", 10), light("light_2", 40)], original: 100 }, _selectedLightId: null, _deselected: true };
+        const ed = stub(layer);
+        const step = P.snapshot.call(ed, { kind: "filter", id: layer.id, label: "Original light" });
+        layer.params.original = 60;
+        layer._selectedLightId = "light_1"; layer._deselected = false;   // a click on light_1's row
+        P.applySnapshot.call(ed, step);
+        want(layer._selectedLightId === null && layer._deselected === true, `undo of a step taken with no light selected: none selected, got ${show(sel(layer))}`);
+        want(layerSummary(ed, layer).selected_light === null, `list_layers reports no light, got ${show(layerSummary(ed, layer).selected_light)}`);
+    }
+    // a step taken before the panel ever chose a light (an agent's edit of a layer never shown): the choice stays the panel's
+    {
+        /** @type {any} */
+        const layer = { id: "R3", name: "Relight 3", kind: "filter", filter: "relight", visible: true, params: { lights: [light("light_1", 10)] } };
+        const ed = stub(layer);
+        const step = P.snapshot.call(ed, { kind: "filter", id: layer.id, label: "Filter" });
+        layer.params.lights[0].x = 90;
+        P.applySnapshot.call(ed, step);
+        want(!layer._deselected, `undo of a step taken before any choice is no explicit deselect, got ${show(sel(layer))}`);
+        want(layerSummary(ed, layer).selected_light === "light_1", `list_layers reports lights[0], got ${show(layerSummary(ed, layer).selected_light)}`);
+    }
+    assert.deepEqual(fails, [], `suite 24:\n    ${fails.join("\n    ")}`);
+    console.log("  PASS 24: an undo puts the light selection back as the step recorded it, Escape's \"no light\" included");
+}
+
+// ------------------------------------------------------------------------------------------------
+// 25. A sun on the map's centre with dist 0 has no direction of its own: the CPU twin and the shadow march light it
+//     from the front, the shader's rule (rl_evalLight: a sun vector of length <= 1e-5 is (0, 0, 1)) (F4). At 2f9aa60
+//     lightToMap gave (0, 0, 0), shadePixel kept it (8 to 10 levels under the shader, the normal ignored) and the march
+//     cast jittered horizontal shadows (1828 of 2048 texels on a sloped step).
+// ------------------------------------------------------------------------------------------------
+{
+    const fails = [];
+    const want = (ok, msg) => { if (!ok) fails.push(msg); };
+    const show = (v) => JSON.stringify(v);
+    const map = { w: 120, h: 80 };   // no data: far 0.5 everywhere, the centre is (60, 40)
+    const sun = (x, y, dist) => ({ id: "s", type: "sun", x, y, dist, on: true, intensity: 40, color: 5500, diffusion: 30 });
+    const dir = (l) => { const m = lightToMap(l, map, { depth_scale: 50 }); const n = Math.hypot(m.mx, m.my, m.mz); return n > 0 ? [m.mx / n, m.my / n, m.mz / n] : [0, 0, 0]; };
+    const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-9);
+
+    // the direction lightToMap hands every reader (the CPU twin, the shader's uniforms, the shadow march)
+    want(near(dir(sun(60, 40, 0)), [0, 0, 1]), `a sun on the centre with dist 0 points straight at the picture, got ${show(dir(sun(60, 40, 0)))}`);
+    want(near(dir(sun(60, 40, -30)), [0, 0, 1]), `the same sun Close stays frontal, got ${show(dir(sun(60, 40, -30)))}`);
+    want(dir(sun(60, 40, 30))[2] < -0.99, `the same sun Far is behind the picture, got ${show(dir(sun(60, 40, 30)))}`);
+    want(dir(sun(90, 40, 0))[0] > 0.99, `off the centre with dist 0 it grazes from the right, got ${show(dir(sun(90, 40, 0)))}`);
+
+    // the CPU twin: the centre sun at dist 0 shades as the limit from the Close side, under any normal
+    const px = [60, 70, 80, 255];
+    const shade = (l, normal) => shadePixel(px, normal, [60, 40, 20], [{ ...l, ...lightToMap(l, map, { depth_scale: 50 }) }],
+        { original: 100, ambient: 10 }, null, [1, 1, 1, 1]).slice(0, 3);
+    for (const normal of [[0, 0, 1], [0.6, 0, 0.8], [0, -0.6, 0.8]]) {
+        const at0 = shade(sun(60, 40, 0), normal), close = shade(sun(60, 40, -0.01), normal);
+        want(show(at0) === show(close), `normal ${show(normal)}: dist 0 shades as dist -0.01 (${show(close)}), got ${show(at0)}`);
+    }
+    // a zero vector handed to shadePixel directly is (0, 0, 1) too
+    const raw = (mx, my, lz) => shadePixel(px, [0, 0, 1], [60, 40, 20], [{ type: "sun", on: true, intensity: 40, color: 5500, diffusion: 30, mx, my, lz }],
+        { original: 100, ambient: 10 }, null, [1, 1, 1, 1]).slice(0, 3);
+    want(show(raw(0, 0, 0)) === show(raw(0, 0, 1)), `shadePixel: a zero sun vector is (0, 0, 1), got ${show(raw(0, 0, 0))} vs ${show(raw(0, 0, 1))}`);
+
+    // the march of that sun over a sloped step (near left, far right), radius as diffusion 30: no shadows
+    const Mw = 64, Mh = 32, depth = new Uint16Array(Mw * Mh);
+    for (let y = 0; y < Mh; y++) for (let x = 0; x < Mw; x++) depth[y * Mw + x] = x < 32 ? 10000 + 300 * y : 50000 - 200 * y;
+    const lm = lightToMap(sun(Mw / 2, Mh / 2, 0), { w: Mw, h: Mh, data: depth }, { depth_scale: 50 });
+    const scaleZ = 0.5 * Mw;
+    const vis = await shadowMarch(depth, Mw, Mh, scaleZ, [lm.mx, lm.my, lm.mz, 1], 0.3 * 0.05 * Mw, 4, 32, 0.005 * scaleZ, 0, Mh);
+    let dark = 0;
+    for (let i = 0; i < Mw * Mh; i++) if (vis[i] < 255) dark++;
+    want(dark === 0, `the centre sun at dist 0 casts no shadows (a frontal sun), got ${dark} of ${Mw * Mh} texels below 255`);
+
+    assert.deepEqual(fails, [], `suite 25:\n    ${fails.join("\n    ")}`);
+    console.log("  PASS 25: a sun on the centre with dist 0 is frontal on the CPU and in the march, as the shader takes it");
+}
+
+    console.log("\nALL 25 RELIGHT TESTS PASSED CLEANLY!");
     console.log("PASS");
 }
 

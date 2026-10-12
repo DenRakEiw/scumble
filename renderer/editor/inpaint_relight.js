@@ -496,9 +496,12 @@ export function lightToMap(light, map = null, params = null) {
     if (light.type === "sun") {
         const cx = map && map.w > 0 ? map.w * 0.5 : (longSide * 0.5);
         const cy = map && map.h > 0 ? map.h * 0.5 : (longSide * 0.5);
-        const dirX = mx - cx;
-        const dirY = my - cy;
-        const dirZ = -(dist / 100.0) * scaleZ;
+        let dirX = mx - cx;
+        let dirY = my - cy;
+        let dirZ = -(dist / 100.0) * scaleZ;
+        // a sun on the map's centre with dist 0 has no direction of its own: straight from the front, the shader's rule
+        // (rl_evalLight: a sun vector of length <= 1e-5 is (0, 0, 1)); the CPU twin, the shader and the march read this
+        if (!(Math.hypot(dirX, dirY, dirZ) > 1e-5)) { dirX = 0; dirY = 0; dirZ = 1; }
         return {
             mx: dirX,
             my: dirY,
@@ -816,10 +819,8 @@ export function shadePixel(srcRgba, normal, mapCoord, lights, params = null, fit
             dirX = lx;
             dirY = ly;
             dirZ = lz;
-            const dLen = Math.hypot(dirX, dirY, dirZ) || 1.0;
-            dirX /= dLen;
-            dirY /= dLen;
-            dirZ /= dLen;
+            const dLen = Math.hypot(dirX, dirY, dirZ);
+            if (dLen > 1e-5) { dirX /= dLen; dirY /= dLen; dirZ /= dLen; } else { dirX = 0; dirY = 0; dirZ = 1; }   // as the shader
             att = 1.0;
         } else {
             const dx = lx - mx;
@@ -1889,7 +1890,7 @@ export function registerRelightGL() {
                 u_mode: p.mode === 1 ? 1 : 0,
             };
         },
-        skip: (p, info) => !(info && info.maps && info.maps.depth) || (p?.mode !== 1 && (!p?.lights || p.lights.every((l) => !l || !l.on)) && (p?.original === undefined || Number(p.original) === 100)),
+        skip: relightSkip,   // the CPU twin's own predicate (applyRelight), not a copy of it
     });
     relightRegistered = true;
 }

@@ -78,9 +78,10 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-12: relight reviewed three times, this account fixes the rest)
+## Where things stand (2026-10-12: relight fixed by this account, F1-F4 done; waiting for the user's test)
 
-- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`): not releasable yet; the fix plan is `docs/PLAN_RELIGHT_FIXES.md`.**
+- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`): the fix plan `docs/PLAN_RELIGHT_FIXES.md` is done (F1-F4); next the
+  user's test, then a release on the user's word.**
   The other agent built L0a-L6, N2 (presets, gloss, gobos, hide handles) and N3 (the 15k measurement) and two fix
   rounds (ec60f14 + 81178aa, then 77da63f). This account reviewed each round with a workflow (2026-10-12; round 3:
   55 agents, every finding verified by a second agent): each round fixed most of the list and brought new defects.
@@ -97,9 +98,17 @@ code.
   copies, close() closes the tip popover and drops a pending nudge, the relight command keeps the layer's route when
   none is given, Bria's light type "From the lights", only the user's picks stored as settings.relight, a relight id
   keeps the recipe in use, an undo cancels a shown preview first; reviewed by a workflow, its must and should fixed).
-  **Next F4** (vacuous tests, measurements, nits; the closing gate list; the magnific gate red since L4 and
-  ideogram45_test.js red, both found in F3). Relight gate: 251 in-app checks on tiles, 250 on canvas;
-  `RELIGHT_GATE_SKIP_NODE=1` runs the in-app checks alone for a mutation round.
+  **F4 done 2026-10-12** ("F4 as built": gate cases u and r no longer vacuous (each mutation that the old cases
+  passed is red now), w2 new; the array-schema test loads every plugin through plugins.js; px_test checks the
+  shadow_march routing and times it only with `PX_BENCH`, PERFORMANCE.md 15.2 rewritten; undo keeps Escape's "no
+  light"; a sun on the centre at dist 0 is frontal on the CPU and in the march; the magnific gate (all 11 steps) and
+  ideogram45_test.js green again; the manual's Kelvin list, the CHANGELOG's Unreleased section rewritten; the full gate
+  list green on both backends, comfyview's control step the known flake). Relight gate: 270 in-app checks on tiles,
+  269 on canvas; `RELIGHT_GATE_SKIP_NODE=1` runs the in-app checks alone for a mutation round. **Before the release:**
+  the user's test of relight; the plan's two open questions (the Brainfuck easter egg of 4cc2f76: keep it?; highlights
+  clip hard at 255 since the identity fix: a soft shoulder?); then the release chain (`docs/RELEASING.md`: the node
+  build, `build_node.py --check` differs in inpaint_canvas, inpaint_filters and inpaint_relight; the version in the
+  CHANGELOG's "Documents" line).
   The other agent's `docs/REVIEW_RELIGHT_2026-10-12.md` is its own self-review.
 
 
@@ -146,8 +155,8 @@ is the handle's absolute position; the identity breaks once a light is on; `fitO
 solve; `relightStats` never gets a fit in the app, the hook hands it a canvas; `shadow_march` 0.8x of JS; the shared
 `default: []` array; canvas-backend exports do not wait for the maps; the CPU twin without the snap; duplicate light
 ids), about twenty smaller ones, and the tests that pass vacuously. Found 2026-10-11: four of the builder's tests
-(`tools/limit_test.py`, `maps_test.py`, `edges_test.py`, `selection_test.py`) print "node test passed" when no app
-is reachable; they are to end with exit 1 instead; the builder never starts the app by hand and never takes a
+(`tools/limit_test.py`, `maps_test.py`, `edges_test.py`, `selection_test.py`) printed "node test passed" when no app
+was reachable; they exit 1 since 0bebaec (`docs/TESTING.md`); the builder never starts the app by hand and never takes a
 screenshot (the user has three rules to paste: gates only through `run_gates.sh`, never `Stop-Process electron`, a
 screenshot per visible change).
 

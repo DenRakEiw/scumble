@@ -139,11 +139,23 @@ in `tools/run_gates.sh` runs `tools/X_test.py`.
 
 Release 2 gates: `tools/edges_test.py` / `node tools/edges_test.js` (gate `edges`, depth edge snap mathematics, bilateral colour guidance, robust tile fitting and raised-cosine overlap fusion, rangeMax and edgeTiles detection, and edge-snapped Select by depth on both backends with bounded scratch allocations and 15k memory limits); `tools/depthfx_test.py` / `node tools/haze_test.js` (gate `depthfx`, built-in `haze` and `dehaze` filters, bilateral edge snap, dark-channel prior, airlight estimation, van Herk / Gil-Werman minFilter, and guided transmission refinement).
 
+With no app reachable on `SCUMBLE_CDP_PORT` (default 9555), `tools/selection_test.py`, `limit_test.py`, `maps_test.py` and
+`edges_test.py` run their node suite, then print `[FAIL] CDP session not reachable` (`maps_test.py`: `[FAIL] CDP test
+failed`) and `FAIL` and exit 1 (since 0bebaec, 2026-10-11; before, they printed "node test passed" and exited 0;
+measured 2026-10-12 with `SCUMBLE_CDP_PORT=9599`). `--node-only` runs the node suite alone and exits 0; `maps_test.py
+--launch` starts its own instance on port 9555. `tools/relight_test.py` also exits 1 with no app (`[FAIL] CDP session
+error`); it has no `--node-only`, and `RELIGHT_GATE_SKIP_NODE=1` skips its node suites (Release 5 below).
+
 Release 3 gates: `tools/grading_test.py` / `node tools/grade_test.js` (gate `grading`, colour grading 3-way split toning with Shadows/Midtones/Highlights/Global wheels, smooth partition of unity, 8-channel HSL filter layer with swatched hue/saturation/luminance controls, GLSL and CPU parity, neutral greys preservation, and preset hover previews in filter rows); `tools/masks_test.py` / `node tools/points_shapes_test.js` (gate `masks`, paste mask from layer across transformations, control point softness falloffs, ellipse shapes, polygon points 3..16 vertices with interior anchor, line points with directional feather, and points clipboard copy/paste); `tools/effects_test.py` / `node tools/effects_math_test.js` (gate `effects`, Effects pack plugin with `effects.chromatic_shift` lateral/plates/linear chromatic aberration and `effects.glass` ribbed/reeded/wavy/blocks/frosted/pebbled glass displacement, fractal value noise fbm, frost pre-blur with mirrored edge padding, specular sheen, and WebGL2 / CPU twin parity).
 
 Release 4 gates: `tools/blendmodes_test.py` / `node tools/blend_table_test.js` (gate `blendmodes`, blend modes gate across all 26 modes on both backends: 65,536 exhaustive pair and triplet checks, export against kernel parity with 0 diff bytes on tile engine, flatten against kernel with emulated modes 0 bytes and native modes gated <= 3, GPU view vs kernel <= 1 level, canvas view vs kernel, translucent layer at opacity 0.75 and masked/clipped layer on half-transparent base with worker against flatten <= 3 and over2 <= 10^-4, fill filter layers across all modes, PSD and ORA round-trip preservation, reader version requirements, command validation for `set_layer`, TIFF/PNG export and merge agreement, showcase references on 1024x640 with 25 non-normal columns against blendmodes_full.png and blendmodes_view.png, and live PSD fixture verification against Photoshop-merged output).
 
 Release 5 gates: `tools/relight_test.py` / `node tools/relight_test.js` (gate `relight`, relight filter layer with point, spot, and sun virtual lights, ray-marched soft shadows from depth height fields, Rust wasm kernels height_normals and shadow_march with JS fallbacks, alternating least-squares fit of original scene lighting, Kelvin colour temperature conversion, bilateral edge-guided depth normals and shadow visibility, and GPU / CPU twin parity; note: `tools/relight_test.py` requires an active app instance or gate runner and exits 1 if no app is reachable; it runs the node suites first, and `RELIGHT_GATE_SKIP_NODE=1` skips them for a mutation round of `inpaint_relight.js`, whose node suites would fail before the in-app checks run) and `node tools/relight_request_test.js` (generative relighting requests: Magnific image-relight with light map mode 1, fal IC-Light v2, fal Bria with 13 lighting styles, Comfy Cloud detached graph, local ComfyUI recipe relight_qwen_local with LoRA loaders and trigger word, and guided-filter detail ratio texture transfer).
+
+`node tools/px_test.js` checks the relight kernels as the app routes them (kernels.js loads `px.wasm` as a pool worker
+does: point and spot march in the JS twin, a sun in Rust, byte for byte); `PX_BENCH=1` also times them at 1024 x 1024
+and on the drag's quick map, `PX_BENCH=large` at 2048 x 1365 and 4096 x 2731 too (`docs/PERFORMANCE.md` 15.2; run it
+under Electron's V8 with `ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe tools/px_test.js`).
 
 Item 32 (the update question, `docs/PLAN_0_1_38.md` A1): `node tools/updater_test.js` runs `electron/main/updater.js`
 with Electron and electron-updater stubbed: the release notes and one line per bullet from the 0.1.37 feed
@@ -437,6 +449,9 @@ Known flakes; **re-run before believing any of these**:
   ComfyUI window's guards (the step passed in the same session with the user away). Again on 2026-10-04 (R1 of
   0.1.42): four of six runs, the user's own Scumble open with this session's MCP server attached; port 9556 did not
   help, and the unchanged HEAD (3d89bd3, a worktree on port 9571) failed the same way, so R1 is ruled out.
+  Again on 2026-10-12 (F4 of `docs/PLAN_RELIGHT_FIXES.md`): three runs of three, alone on fresh instances (ports 9581 and
+  9583), the user's Scumble open with this session's MCP server attached (`--mcp --attach-only`); 2f9aa60 in a worktree
+  (port 9584) failed the same control, so F4 is ruled out. The other 24 steps passed each time.
 - `commands_test.py` hangs after every step has printed `[ok]` (the runner's 420 s timeout, sometimes in
   `Page.captureScreenshot`).
 - `editor_test.py` `closed_tabs_are_collected` fails with the last tabs still alive, or against an instance with 50+ tabs

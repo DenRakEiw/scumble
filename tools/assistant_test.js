@@ -626,53 +626,55 @@ async function main() {
         for (const t of chat.tools) for (const [family, re] of Object.entries(NAME_RULES)) if (!re.test(t.name)) bad.push(`${t.name} fails ${family}`);
         check("every_tool_name_passes_each_familys_rule", !bad.length, bad.join("; ") || `${chat.tools.length} names against six rules`);
 
-        // Array schemas check on all built tools (with plugins activated)
+        // Array schemas on every tool the app serves, with every plugin loaded the way the app loads it: renderer/plugins.js
+        // loadPlugins() over each folder under plugins/ with a plugin.json (a skin is listed, never loaded as code), so each
+        // plugin command is registered under "<id>.<name>" by plugins.js itself, through the plugin's real api
         {
-            // tools/loader.mjs maps the editor's "/editor/..." imports onto renderer/editor; a failed register is an error
+            // tools/loader.mjs maps "/editor/..." onto renderer/editor and "/plugins/<id>/..." onto plugins/; a failed
+            // register is an error
             const { register } = require("node:module");
             const { pathToFileURL } = require("node:url");
+            const fs = require("node:fs");
             register(pathToFileURL(path.join(ROOT, "tools", "loader.mjs")).href);
-            if (typeof window === "undefined") {
-                global.window = {
-                    scumble: { comfy: { onEvent: () => {} }, helpers: { free: async () => {} } },
-                    addEventListener: () => {},
-                    removeEventListener: () => {},
-                };
-            }
+            const PLUGINS = path.join(ROOT, "plugins");
+            const manifests = fs.readdirSync(PLUGINS, { withFileTypes: true })
+                .filter((d) => d.isDirectory() && fs.existsSync(path.join(PLUGINS, d.name, "plugin.json")))
+                .map((d) => {
+                    const m = JSON.parse(fs.readFileSync(path.join(PLUGINS, d.name, "plugin.json"), "utf8"));
+                    const skin = Array.isArray(m.registers) && m.registers.includes("skin");
+                    return { ...m, id: d.name, entry: m.entry || "main.js", kind: skin ? "skin" : undefined, enabled: !skin };
+                });
+            const code = manifests.filter((m) => m.kind !== "skin");
+            if (typeof window === "undefined") global.window = { addEventListener: () => {}, removeEventListener: () => {} };
+            global.window.scumble = {
+                ...(global.window.scumble || {}),
+                comfy: { onEvent: () => {} },
+                helpers: { free: async () => {}, status: async () => ({ models: [] }) },
+                plugins: { list: async () => manifests, getData: async () => ({}), setData: async (_id, p) => p, menu: async () => {} },
+            };
             if (typeof document === "undefined") {
                 global.document = {
-                    createElement: () => ({ getContext: () => ({}) }),
+                    createElement: (tag) => ({ tagName: String(tag).toUpperCase(), style: {}, classList: { add: () => {}, remove: () => {} }, appendChild: () => {}, addEventListener: () => {}, getContext: () => ({}) }),
+                    getElementById: () => null,
+                    head: { appendChild: () => {} },
                 };
             }
             const cmdMod = await import(pathToFileURL(path.join(ROOT, "renderer", "commands.js")).href);
-            const filmMod = await import(pathToFileURL(path.join(ROOT, "plugins", "film", "main.js")).href);
-            const boxesMod = await import(pathToFileURL(path.join(ROOT, "plugins", "boxes", "main.js")).href);
-            const effectsMod = await import(pathToFileURL(path.join(ROOT, "plugins", "effects", "main.js")).href);
-
-            const fakeApi = (pluginId) => ({
-                filters: { register: () => {} },
-                tools: { register: () => {} },
-                commands: { register: (name, def) => cmdMod.commands.register(name, def, pluginId) },
-                actions: { register: () => {} },
-                panels: { register: () => {} },
-                generate: { register: () => {} },
-                events: { on: () => {} },
-                ui: {
-                    miniButton: () => ({}),
-                    sliderRow: () => ({}),
-                    buttonRow: () => ({}),
-                },
-                makeCanvas: () => ({ getContext: () => ({}) }),
-                log: () => {},
-                host: {},
-            });
-
-            filmMod.activate(fakeApi("film"));
-            boxesMod.activate(fakeApi("boxes"));
-            effectsMod.activate(fakeApi("effects"));
+            const pluginsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "plugins.js")).href);
+            const loaded = await pluginsMod.loadPlugins();
+            const notLoaded = code.filter((m) => { const p = loaded.find((x) => x.id === m.id); return !p || !p.loaded || p.error; })
+                .map((m) => { const p = loaded.find((x) => x.id === m.id); return `${m.id}: ${p ? String(p.error || "not loaded").split("\n")[0] : "not listed"}`; });
+            check("every_plugin_with_code_loads_in_plain_node", code.length >= 6 && !notLoaded.length,
+                notLoaded.join("; ") || `${code.length} of ${manifests.length} folders (${code.map((m) => m.id).join(", ")})`);
 
             const descs = cmdMod.commands.describe();
             const tools = descs.map(toTool);
+            // every plugin that says it registers a command has some, each under "<id>.<name>"
+            const owners = new Set(descs.filter((d) => d.plugin).map((d) => d.plugin));
+            const misnamed = descs.filter((d) => d.plugin && !d.name.startsWith(d.plugin + ".")).map((d) => d.name);
+            const silent = code.filter((m) => (m.registers || []).includes("command") && !owners.has(m.id)).map((m) => m.id);
+            check("every_plugin_command_is_registered_under_its_plugin_id", owners.size >= 5 && !misnamed.length && !silent.length,
+                `owners ${[...owners].join(", ")}${misnamed.length ? `; misnamed ${misnamed.join(", ")}` : ""}${silent.length ? `; no command from ${silent.join(", ")}` : ""}`);
 
             const badArrays = [];
             function walkSchema(schema, at) {
@@ -692,6 +694,26 @@ async function main() {
             }
             for (const t of tools) walkSchema(t.inputSchema, t.name);
             check("every_array_schema_at_any_depth_has_items", badArrays.length === 0, badArrays.join("; ") || `${tools.length} tools checked`);
+
+            // what a command declares for an array's items is what the tool serves, at every depth
+            const rewritten = [];
+            for (const d of descs) {
+                const t = tools.find((x) => x.name === toolName(d.name));
+                for (const [k, p] of Object.entries(d.params || {})) {
+                    if (p.type === "array" && p.items && !eq(t.inputSchema.properties[k].items, p.items)) rewritten.push(`${t.name}.${k}: ${JSON.stringify(t.inputSchema.properties[k].items)}`);
+                }
+            }
+            check("every_array_serves_the_items_its_command_declares", !rewritten.length, rewritten.join("; ") || "declared = served");
+
+            // the leaves: a box is four numbers, a polygon corner an [x, y] of numbers
+            const leafOf = (s) => { let depth = 0; while (s && s.type === "array") { s = s.items; depth++; } return { type: s ? s.type : undefined, depth }; };
+            const WANT = [["boxes_add", "rect", 1], ["boxes_add", "src", 1], ["boxes_set", "rect", 1], ["boxes_set", "src", 1], ["film_add_point", "vertices", 2]];
+            const wrongLeaf = WANT.map(([name, key, depth]) => {
+                const t = tools.find((x) => x.name === name);
+                const leaf = leafOf(t && t.inputSchema.properties[key]);
+                return leaf.type === "number" && leaf.depth === depth ? null : `${name}.${key}: ${leaf.depth} deep, leaf ${JSON.stringify(leaf.type)}`;
+            }).filter(Boolean);
+            check("box_rect_src_and_polygon_vertices_are_numbers", !wrongLeaf.length, wrongLeaf.join("; ") || WANT.map(([n, k]) => `${n}.${k}`).join(", "));
         }
 
         // the golden body: a history with text, a call, an image result, an error result and thinking
