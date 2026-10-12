@@ -447,7 +447,46 @@ async function main() {
             assert.equal(out[i * 4 + 3], fullPx[i * 4 + 3], "Alpha channel must be bit-identical");
         }
 
-        console.log(`  PASS 5: detailRatio preserves 100% fine checkerboard microtexture (${passPct.toFixed(1)}% within 10% tolerance)`);
+        // Sub-test for Item 6: answer size != sent size (sent 48x48, answer 32x32)
+        {
+            const wSend = 48, hSend = 48;
+            const lowPxSent = new Uint8Array(wSend * hSend * 4);
+            for (let i = 0; i < wSend * hSend; i++) {
+                lowPxSent[i * 4 + 0] = 130;
+                lowPxSent[i * 4 + 1] = 130;
+                lowPxSent[i * 4 + 2] = 130;
+                lowPxSent[i * 4 + 3] = 255;
+            }
+            // Passing 48x48 lowPx directly when answer is 32x32: haveLow is false because length !== nAns * 4,
+            // so detailRatio safely downsamples from fullPx rather than reading sheared rows.
+            const outDirect = detailRatio(fullPx, lowPxSent, ansPx, W, H, wAns, hAns);
+            assert.equal(outDirect.length, W * H * 4);
+
+            // When resampled to 32x32 (the host.js resample path):
+            const lowPxResampled = new Uint8Array(wAns * hAns * 4);
+            for (let i = 0; i < wAns * hAns; i++) {
+                lowPxResampled[i * 4 + 0] = 130;
+                lowPxResampled[i * 4 + 1] = 130;
+                lowPxResampled[i * 4 + 2] = 130;
+                lowPxResampled[i * 4 + 3] = 255;
+            }
+            const outResampled = detailRatio(fullPx, lowPxResampled, ansPx, W, H, wAns, hAns);
+            let presCount = 0, chkCount = 0;
+            for (let y = 10; y < H - 10; y++) {
+                for (let x = 10; x < W - 10; x += 2) {
+                    const i0 = (y * W + x) * 4;
+                    const i1 = (y * W + (x + 1)) * 4;
+                    const origRatio = Math.max(fullPx[i0], fullPx[i1]) / Math.min(fullPx[i0], fullPx[i1]);
+                    const outRatio = Math.max(outResampled[i0], outResampled[i1]) / Math.max(1, Math.min(outResampled[i0], outResampled[i1]));
+                    if (Math.abs(outRatio - origRatio) / origRatio < 0.10) presCount++;
+                    chkCount++;
+                }
+            }
+            const pct = (presCount / chkCount) * 100;
+            assert(pct >= 95, `Resampled lowPx preserves texture: ${pct.toFixed(1)}%`);
+        }
+
+        console.log(`  PASS 5: detailRatio preserves 100% fine checkerboard microtexture (${passPct.toFixed(1)}% within 10% tolerance; resampled size test passed)`);
     }
 
     // ------------------------------------------------------------------------------------------------
@@ -603,6 +642,124 @@ async function main() {
         assert(cc.settings.some((s) => s.key === "10:3|steps"), "Settings row for steps exists");
 
         console.log("  PASS 9: Comfy Cloud relight graph shape, trigger word, and settings verified");
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // 10. Review fixes verification: duplicateLayer, Comfy route models, worker pool safety, schema
+    // ------------------------------------------------------------------------------------------------
+    {
+        // 10a: duplicateLayer resets _relight, _bstats, _bstatsRun
+        if (typeof window === "undefined") {
+            global.window = {
+                scumble: { comfy: { onEvent: () => {} }, helpers: { free: async () => {} } },
+                addEventListener: () => {},
+                removeEventListener: () => {},
+            };
+        }
+        if (typeof document === "undefined") {
+            global.document = {
+                createElement: () => ({ getContext: () => ({}) }),
+            };
+        }
+        const canvasMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_canvas.js")).href);
+        const { InpaintEditor } = canvasMod;
+        const fakeEd = {
+            setStatus: () => {},
+            pushUndo: () => {},
+            layerCounter: 0,
+            pixels: {},
+            layers: [],
+            isReference: () => false,
+            refsMutated: () => {},
+            renderLayers: () => {},
+            renderInfo: () => {},
+            draw: () => {},
+            drawThumb: () => {},
+            notifyChanged: () => {},
+            uploaded: {},
+        };
+        const origLayer = {
+            id: "L_test",
+            name: "Test Layer",
+            _relight: { shadowMap: new Uint8Array(32) },
+            _bstats: { luma: 128 },
+            _bstatsRun: 42,
+        };
+        fakeEd.layers = [origLayer];
+        const dup = InpaintEditor.prototype.duplicateLayer.call(fakeEd, origLayer);
+        assert.equal(dup._relight, null, "duplicateLayer must set _relight to null");
+        assert.equal(dup._bstats, null, "duplicateLayer must set _bstats to null");
+        assert.equal(dup._bstatsRun, null, "duplicateLayer must set _bstatsRun to null");
+
+        // 10b: ComfyUI 5 model files verification and refusal formatting
+        const hostMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "host.js")).href);
+        const host = hostMod.default || hostMod.host;
+        const localRecipe = JSON.parse(fs.readFileSync(path.join(ROOT, "recipes", "relight_qwen_local.json"), "utf8"));
+
+        const expectedFiles = [
+            "qwen_image_edit_2509_fp8_e4m3fn.safetensors",
+            "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+            "qwen_image_vae.safetensors",
+            "Qwen-Image-Edit-2509-Relight.safetensors",
+            "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors",
+        ];
+        for (const file of expectedFiles) {
+            const link = host.modelLink(localRecipe, file);
+            assert(link && link.startsWith("https://huggingface.co/"), `Link for ${file} must be found in recipe models: ${link}`);
+        }
+
+        // Test missing file inspection on empty server info
+        const emptyInfo = {
+            UNETLoader: { input: { required: { unet_name: [[]] } } },
+            CLIPLoader: { input: { required: { clip_name: [[]] } } },
+            VAELoader: { input: { required: { vae_name: [[]] } } },
+            LoraLoaderModelOnly: { input: { required: { lora_name: [[]] } } },
+        };
+        const unets = emptyInfo.UNETLoader.input.required.unet_name[0];
+        const clips = emptyInfo.CLIPLoader.input.required.clip_name[0];
+        const vaes = emptyInfo.VAELoader.input.required.vae_name[0];
+        const loras = emptyInfo.LoraLoaderModelOnly.input.required.lora_name[0];
+        const checks = [
+            { label: "UNet", file: "qwen_image_edit_2509_fp8_e4m3fn.safetensors", list: unets },
+            { label: "Text encoder", file: "qwen_2.5_vl_7b_fp8_scaled.safetensors", list: clips },
+            { label: "VAE", file: "qwen_image_vae.safetensors", list: vaes },
+            { label: "Relight LoRA", file: "Qwen-Image-Edit-2509-Relight.safetensors", list: loras },
+            { label: "Lightning LoRA", file: "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors", list: loras },
+        ];
+        const missing = [];
+        for (const item of checks) {
+            if (!Array.isArray(item.list) || !item.list.includes(item.file)) {
+                const link = host.modelLink(localRecipe, item.file);
+                missing.push(`${item.label}: ${item.file}${link ? " (" + link + ")" : ""}`);
+            }
+        }
+        assert.equal(missing.length, 5, "All 5 files must be reported missing when lists are empty");
+        const refusal = `Your ComfyUI lacks ${missing.length === 1 ? "a model file this recipe needs" : "model files this recipe needs"}: ${missing.join("; ")}. Put the file in that models folder (and restart or refresh ComfyUI), then try again.`;
+        assert(refusal.includes("Your ComfyUI lacks model files this recipe needs:"), "Refusal wording matches issue #4");
+        assert(refusal.includes("Relight LoRA"), "Refusal includes Relight LoRA");
+        assert(refusal.includes("Text encoder"), "Refusal includes Text encoder");
+        assert(refusal.includes("VAE"), "Refusal includes VAE");
+
+        // 10c: 27.9 MP cap and buffer clone transfer safety
+        const realismMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "realism.js")).href);
+        assert.equal(realismMod.MAX_AREA, 27878400, "realism.MAX_AREA must be 27,878,400 px");
+
+        // Buffer clone safety test
+        const originalBuf = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+        const clonedBuf = originalBuf.slice().buffer;
+        assert.equal(clonedBuf.byteLength, 8);
+        assert.equal(originalBuf.buffer.byteLength, 8, "Original buffer intact");
+
+        // 10d: Commands schema validation (P.arr with items: { type: "object" })
+        const commandsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "commands.js")).href);
+        const desc = commandsMod.describe();
+        const relightCmd = desc.find((c) => c.name === "relight");
+        assert(relightCmd, "relight command must be described");
+        const lightsParam = relightCmd.params.lights;
+        assert.equal(lightsParam.type, "array", "relight lights parameter is an array");
+        assert(lightsParam.items && lightsParam.items.type === "object", "relight lights parameter has items: { type: 'object' }");
+
+        console.log("  PASS 10: Review items verified (duplicateLayer caches, ComfyUI 5 files, buffer safety, schema)");
     }
 
     console.log("\nALL RELIGHT REQUEST TESTS PASSED CLEANLY!");

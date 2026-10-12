@@ -64,7 +64,7 @@ function toTool(c) {
         if (p.default !== undefined && p.default !== null && p.default !== "") d += (d ? " " : "") + `Default: ${JSON.stringify(p.default)}.`;
         if (d) prop.description = d;
         if (Array.isArray(p.enum)) prop.enum = p.enum;
-        if (t === "array" && p.items) prop.items = p.items;
+        if (t === "array") prop.items = p.items || { type: "object" };
         properties[k] = prop;
         if (p.required) required.push(k);
     }

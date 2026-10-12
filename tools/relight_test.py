@@ -753,6 +753,14 @@ JS = r"""
     firePointer("pointermove", 190, 230);
     const quickW = fx._relight?.vis?.w;
     check("q: during drag vis.w is quarter size Math.floor(Mw / 4)", quickW === Math.floor(Mw / 4), { quickW, expected: Math.floor(Mw / 4) });
+    const dragCanvas = ed.flattenToCanvas({ forRun: true });
+    const dragPx = dragCanvas.getContext("2d").getImageData(0, 0, dragCanvas.width, dragCanvas.height).data;
+    let nonZeroDrag = 0;
+    for (let i = 0; i < dragPx.length; i += 4) {
+        if (dragPx[i + 3] > 0 && (dragPx[i] > 0 || dragPx[i + 1] > 0 || dragPx[i + 2] > 0)) nonZeroDrag++;
+    }
+    const dragPxPct = (nonZeroDrag / (dragCanvas.width * dragCanvas.height)) * 100;
+    check("q: during drag rendered canvas has valid non-zero pixels", dragPxPct > 95, { dragPxPct });
 
     firePointer("pointerup", 190, 230);
     await settle(ed);

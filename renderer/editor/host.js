@@ -3084,28 +3084,36 @@ export const host = {
             const p = layer.params || {};
             let out;
             if (route === "comfyui") {
-                if (!this.comfy || !this.comfy.connected) {
+                if (!this.connected) {
                     throw new Error("ComfyUI is not connected: connect under Settings > ComfyUI.");
                 }
                 const list = this.shell && this.shell.recipes ? this.shell.recipes() : [];
                 const localRecipe = list.find((r) => r.id === "relight_qwen_local");
-                let info = null;
-                try { info = await this.objectInfo(); } catch (_) {}
+                let info = this.objectInfo;
+                if (!info && typeof this.loadObjectInfo === "function") {
+                    try { info = await this.loadObjectInfo(); } catch (_) {}
+                }
                 if (info) {
                     const loras = info.LoraLoaderModelOnly?.input?.required?.lora_name?.[0] || [];
                     const unets = info.UNETLoader?.input?.required?.unet_name?.[0] || [];
+                    const clips = info.CLIPLoader?.input?.required?.clip_name?.[0] || [];
+                    const vaes = info.VAELoader?.input?.required?.vae_name?.[0] || [];
+                    const checks = [
+                        { label: "UNet", file: "qwen_image_edit_2509_fp8_e4m3fn.safetensors", list: unets },
+                        { label: "Text encoder", file: "qwen_2.5_vl_7b_fp8_scaled.safetensors", list: clips },
+                        { label: "VAE", file: "qwen_image_vae.safetensors", list: vaes },
+                        { label: "Relight LoRA", file: "Qwen-Image-Edit-2509-Relight.safetensors", list: loras },
+                        { label: "Lightning LoRA", file: "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors", list: loras },
+                    ];
                     const missing = [];
-                    if (loras.length && !loras.includes("Qwen-Image-Edit-2509-Relight.safetensors")) {
-                        missing.push("Relight LoRA: Qwen-Image-Edit-2509-Relight.safetensors (https://huggingface.co/dx8152/Qwen-Image-Edit-2509-Relight/resolve/main/Qwen-Image-Edit-2509-Relight.safetensors)");
-                    }
-                    if (loras.length && !loras.includes("Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors")) {
-                        missing.push("Lightning LoRA: Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors (https://huggingface.co/lightx2v/Qwen-Image-Lightning/resolve/main/Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors)");
-                    }
-                    if (unets.length && !unets.includes("qwen_image_edit_2509_fp8_e4m3fn.safetensors")) {
-                        missing.push("UNet: qwen_image_edit_2509_fp8_e4m3fn.safetensors (https://huggingface.co/Comfy-Org/Qwen-Image-Edit-2509/resolve/main/split_files/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors)");
+                    for (const item of checks) {
+                        if (!Array.isArray(item.list) || !item.list.includes(item.file)) {
+                            const link = this.modelLink(localRecipe, item.file);
+                            missing.push(`${item.label}: ${item.file}${link ? " (" + link + ")" : ""}`);
+                        }
                     }
                     if (missing.length) {
-                        throw new Error(`Your ComfyUI lacks model files this recipe needs: ${missing.join("; ")}. Put the file in that models folder (and restart or refresh ComfyUI), then try again.`);
+                        throw new Error(`Your ComfyUI lacks ${missing.length === 1 ? "a model file this recipe needs" : "model files this recipe needs"}: ${missing.join("; ")}. Put the file in that models folder (and restart or refresh ComfyUI), then try again.`);
                     }
                 }
                 editor.setStatus(`${L}: sending picture (${wSend} x ${hSend}) to your local ComfyUI ...`);
@@ -3221,25 +3229,46 @@ export const host = {
             const useDetail = p.detail !== false;
             let finCanvas = null;
             if (useDetail) {
+                if (W * H > realism.MAX_AREA) {
+                    throw new Error(`${L}: detail restoration supports pictures up to 27.9 megapixels (${W} x ${H} is ${((W * H) / 1e6).toFixed(1)} MP). Turn off detail restoration or scale the picture down first.`);
+                }
                 editor.setStatus(`${L}: transferring lighting and restoring original details ...`);
                 const cAns = document.createElement("canvas");
                 cAns.width = wAns; cAns.height = hAns;
                 cAns.getContext("2d").drawImage(img, 0, 0);
                 const ansPx = cAns.getContext("2d").getImageData(0, 0, wAns, hAns).data;
                 const fullPx = cFull.getContext("2d").getImageData(0, 0, W, H).data;
-                const lowPx = (wSend === W && hSend === H) ? null : cSend.getContext("2d").getImageData(0, 0, wSend, hSend).data;
+
+                let lowPx = null;
+                if (wSend !== W || hSend !== H || wAns !== W || hAns !== H) {
+                    if (wSend === wAns && hSend === hAns) {
+                        lowPx = cSend.getContext("2d").getImageData(0, 0, wSend, hSend).data;
+                    } else {
+                        const cLowAns = document.createElement("canvas");
+                        cLowAns.width = wAns;
+                        cLowAns.height = hAns;
+                        const ctxLow = cLowAns.getContext("2d");
+                        ctxLow.imageSmoothingEnabled = true;
+                        ctxLow.imageSmoothingQuality = "high";
+                        ctxLow.drawImage(cSend, 0, 0, wAns, hAns);
+                        lowPx = ctxLow.getImageData(0, 0, wAns, hAns).data;
+                    }
+                }
 
                 let resBytes = null;
-                if (editor.pool) {
+                const pool = editorPool();
+                if (pool && !pool.off) {
                     try {
-                        const poolRes = await editor.pool.run({
-                            op: "relight_ratio",
-                            fullPx: fullPx.buffer,
-                            lowPx: lowPx ? lowPx.buffer : null,
-                            ansPx: ansPx.buffer,
+                        const fullBuf = fullPx.slice().buffer;
+                        const ansBuf = ansPx.slice().buffer;
+                        const lowBuf = lowPx ? lowPx.slice().buffer : null;
+                        const transfer = lowBuf ? [fullBuf, lowBuf, ansBuf] : [fullBuf, ansBuf];
+                        const poolRes = await pool.run("relight_ratio", {
+                            fullPx: fullBuf,
+                            lowPx: lowBuf,
+                            ansPx: ansBuf,
                             W, H, wAns, hAns,
-                            transfer: lowPx ? [fullPx.buffer, lowPx.buffer, ansPx.buffer] : [fullPx.buffer, ansPx.buffer],
-                        });
+                        }, transfer, { priority: INTERACTIVE, timeout: 180000 });
                         if (poolRes && poolRes.out) resBytes = new Uint8Array(poolRes.out);
                     } catch (err) {
                         console.warn("relight_ratio pool job failed, falling back to main thread:", err);

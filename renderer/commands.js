@@ -1394,7 +1394,7 @@ const COMMANDS = {
         description: "Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (the default) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer.",
         params: {
             layer: P.layer("relight filter layer to edit (default adds a new one)"),
-            lights: P.arr("array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}]"),
+            lights: P.arr("array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}]", { items: { type: "object" } }),
             original: P.num("original light strength 0..100 % (default 100)"),
             ambient: P.num("ambient light 0..100 % (default 15)"),
             depth_scale: P.num("depth scale 5..200 % (default 50)"),

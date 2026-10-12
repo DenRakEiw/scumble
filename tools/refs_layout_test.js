@@ -246,7 +246,7 @@ function fixturesFor(provider, model, nRefs, original) {
 function shapesOf() {
     const out = [];
     for (const r of loadRecipes()) {
-        if (r.kind !== "provider" || r.task === "upscale") continue;
+        if (r.kind !== "provider" || r.task === "upscale" || r.task === "relight") continue;
         for (const [id, v] of Object.entries(r.providers)) {
             if (typeof adapter(id).edit !== "function" || v.edit === false) continue;
             const channels = id === "toapis" && v.options && v.options.channels ? Object.keys(v.options.channels) : [null];

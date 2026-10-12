@@ -619,7 +619,7 @@ if (Math.abs(mid - expectedV) > 0.002) {
 }
 
 // (5) mapView = "depth" changes no export bytes.
-const expBefore = host.exportCanvas(ed, "png");
+const expBefore = await host.exportCanvas(ed, "png");
 const bytesBefore = expBefore.getContext("2d").getImageData(0, 0, expBefore.width, expBefore.height).data;
 
 ed.mapView = "depth";
@@ -629,7 +629,7 @@ if (ed.depthViewBtn && !ed.depthViewBtn.classList.contains("ipc-toggle-on")) {
     throw new Error("case 5: depthViewBtn missing ipc-toggle-on class");
 }
 
-const expAfter = host.exportCanvas(ed, "png");
+const expAfter = await host.exportCanvas(ed, "png");
 const bytesAfter = expAfter.getContext("2d").getImageData(0, 0, expAfter.width, expAfter.height).data;
 
 if (bytesBefore.length !== bytesAfter.length) throw new Error("case 5: export byte lengths differ");

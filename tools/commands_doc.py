@@ -120,7 +120,7 @@ def render(cmds):
 
 
 async def run(c):
-    cmds = json.loads(await c.eval("(async () => JSON.stringify((await import('./commands.js')).commands.describe()))()"))
+    cmds = json.loads(await c.eval("(async () => { try { const P = await import('./plugins.js'); if (P && P.loadPlugins) await P.loadPlugins(); } catch (_) {} return JSON.stringify((await import('./commands.js')).commands.describe()); })()"))
     io.open(OUT, "w", encoding="utf-8", newline=chr(10)).write(render(cmds))
     print("wrote docs/COMMANDS.md:", len(cmds), "commands")
     return True
@@ -148,15 +148,53 @@ def run_node():
                 drawImage: () => {},
                 fillRect: () => {},
             }),
+            classList: { add: () => {}, remove: () => {} },
+            appendChild: () => {},
+            addEventListener: () => {},
         }),
     };
-    import('./renderer/commands.js').then(({ commands }) => {
+    import('./renderer/commands.js').then(async ({ commands }) => {
+        const fs = await import('node:fs');
+        const path = await import('node:path');
+        const pluginsDir = path.resolve('plugins');
+        const dirs = fs.readdirSync(pluginsDir).filter(d => fs.existsSync(path.join(pluginsDir, d, 'plugin.json')) && !d.startsWith('skin_'));
+        for (const d of dirs) {
+            try {
+                const manifest = JSON.parse(fs.readFileSync(path.join(pluginsDir, d, 'plugin.json'), 'utf8'));
+                const mod = await import('./plugins/' + d + '/' + (manifest.main || 'main.js'));
+                const api = {
+                    id: d,
+                    manifest,
+                    log: () => {},
+                    warn: () => {},
+                    commands: {
+                        register: (name, def) => {
+                            commands.register(d + '.' + name, def, d);
+                        }
+                    },
+                    panels: { register: () => {} },
+                    filters: { register: () => {} },
+                    tools: { register: () => {} },
+                    actions: { register: () => {} },
+                    events: { on: () => {} },
+                    generate: { register: () => {} },
+                    ui: { el: () => global.document.createElement() },
+                    makeCanvas: () => global.document.createElement()
+                };
+                if (typeof mod.activate === 'function') {
+                    await mod.activate(api);
+                }
+            } catch (err) {
+                console.error('Plugin', d, err);
+            }
+        }
         console.log('__COMMANDS_JSON_START__');
         console.log(JSON.stringify(commands.describe()));
         console.log('__COMMANDS_JSON_END__');
     });
     """
-    res = subprocess.run(["node", "-e", script], capture_output=True, text=True, encoding="utf-8", cwd=os.path.join(os.path.dirname(__file__), ".."))
+    cmd = ["node", "--loader", "./tools/loader.mjs", "-e", script]
+    res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", cwd=os.path.join(os.path.dirname(__file__), ".."))
     out = res.stdout
     start = out.find("__COMMANDS_JSON_START__") + len("__COMMANDS_JSON_START__")
     end = out.find("__COMMANDS_JSON_END__")

@@ -6236,7 +6236,10 @@ class InpaintEditor {
             } else if (hit && hit.mode === "own_light") {
                 if (layer.params.lights.length < LIGHT_MAX) {
                     this.pushUndo({ kind: "filter", id: layer.id, label: "Add light" });
-                    const nl = defaultLight(layer.params.lights.length, { width: this.width, height: this.height });
+                    let n = 1;
+                    while (layer.params.lights.some((l) => l && l.id === `light_${n}`)) n++;
+                    const nl = defaultLight(n - 1, { width: this.width, height: this.height });
+                    nl.id = `light_${n}`;
                     nl.x = Math.round(hit.pos[0]);
                     nl.y = Math.round(hit.pos[1]);
                     nl.aim = [Math.round(hit.pos[0]), Math.round(hit.pos[1] + 100)];
@@ -6250,7 +6253,10 @@ class InpaintEditor {
             } else {
                 if (layer.params.lights.length < LIGHT_MAX) {
                     this.pushUndo({ kind: "filter", id: layer.id, label: "Add light" });
-                    const nl = defaultLight(layer.params.lights.length, { width: this.width, height: this.height });
+                    let n = 1;
+                    while (layer.params.lights.some((l) => l && l.id === `light_${n}`)) n++;
+                    const nl = defaultLight(n - 1, { width: this.width, height: this.height });
+                    nl.id = `light_${n}`;
                     nl.x = Math.round(ix);
                     nl.y = Math.round(iy);
                     nl.aim = [Math.round(ix), Math.round(iy + 100)];
@@ -14922,7 +14928,7 @@ class InpaintEditor {
         layer._fcacheView = null; layer._fcacheSample = null; layer._fxCacheSample = null;
         this.uploaded.baseHash = null;
         if (layer && layer.kind === "filter" && layer.filter === "relight") {
-            this.ensureRelightMaps(layer, { quick: !!this.filterPreview });
+            this.ensureRelightMaps(layer, { quick: this.filterPreview === layer.id });
         }
         if (this.isFillLayer(layer)) this.redrawThumbsOf(layer);   // a fill layer's row shows its fill
         if (soon) { this.drawSoon(); return; }   // slider drag: one draw per frame, thumbnail and save on release
@@ -15042,7 +15048,7 @@ class InpaintEditor {
         if (layer.filter === "relight") {
             info.layer = layer;
             info.relight = layer._relight;
-            this.ensureRelightMaps(layer, { quick: !!this.filterPreview });
+            this.ensureRelightMaps(layer, { quick: this.filterPreview === layer.id });
         }
         if (this._filterInfoHook) this._filterInfoHook(info, layer, pass);
         return info;
@@ -16615,6 +16621,7 @@ class InpaintEditor {
             ref: layer.dirty ? null : layer.ref, dirty: !!layer.dirty || !layer.ref, exportRef: null, locked: false,
             maskRef: layer.maskDirty ? null : layer.maskRef, maskDirty: !!layer.maskPx && (!!layer.maskDirty || !layer.maskRef), maskEdit: false,
             _masked: null, _maskedValid: false, _mcache: null, _fcache: null, _fxCache: null, _textUndo: null, _undoPending: null,
+            _relight: null, _bstats: null, _bstatsRun: null,
         };
         // the spread shares the pixels; the copy gets its own (the aliases are not enumerable, so they are installed again)
         if (layer.px) copy.px = layer.px.clone();

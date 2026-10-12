@@ -269,12 +269,14 @@ async function main() {
         for (const [route, R] of Object.entries(ROUTES)) {
             if (!R.label || !R.dialect) bad.push(`${route}: no label or dialect`);
             if (R.upscale && (R.edit || R.text)) bad.push(`${route}: an upscaler that edits`);
-            if (!R.upscale && !R.edit && !R.text) bad.push(`${route}: does nothing`);
+            if (!R.upscale && !R.edit && !R.text && !R.relight) bad.push(`${route}: does nothing`);
             if (!R.upscale && !mag._dialects[R.dialect]) bad.push(`${route}: no dialect ${R.dialect}`);
             if (!R.upscale && !Array.isArray(R.accepts)) bad.push(`${route}: no accepts`);
             if (R.fill && !R.edit) bad.push(`${route}: fill but no edit`);
             if (!fs.existsSync(path.join(REFS, route.replace(/\//g, "_") + ".json"))) bad.push(`${route}: no schema copy`);
-            for (const k of R.accepts || []) if (!(k in (flat(schemaOf(route)).properties || {}))) bad.push(`${route}: accepts ${k}, which its schema does not name`);
+            const topProps = flat(schemaOf(route)).properties || {};
+            const allProps = { ...topProps, ...(topProps.advanced_settings?.properties || {}) };
+            for (const k of R.accepts || []) if (!(k in allProps)) bad.push(`${route}: accepts ${k}, which its schema does not name`);
         }
         check("every route: a label, a dialect of its own, what it does, a schema copy; every accepted key is in the route's schema", !bad.length && Object.isFrozen(ROUTES), bad.join(" | "));
         const s = fakeServer();
@@ -293,6 +295,19 @@ async function main() {
         let n = 0;
         for (const r of loadRecipes().filter((x) => x.providers && x.providers.magnific && x.task !== "upscale")) {
             const v = r.providers.magnific;
+            if (r.task === "relight") {
+                const req = { model: v.model, image: pngOf(512, 512, 64, "IMG"), lightmap: pngOf(512, 512, 64, "LIGHTMAP"), prompt: "studio light", params: defaults(v.settings, v.fixed) };
+                const s = fakeServer();
+                const ctx = ctxFor(s);
+                let out = null, err = null;
+                try { out = await mag.relight(req, ctx); } catch (e) { err = String(e.message || e); }
+                const body = s.posts[0] && s.posts[0].body;
+                if (err || !out) { bad.push(`${r.id} relight: ${err || "no result"}`); continue; }
+                const p = validate(schemaOf(v.model), body);
+                if (p.length) bad.push(`${r.id} relight: ${p.slice(0, 3).join("; ")}`);
+                n++;
+                continue;
+            }
             if (v.edit !== false) {
                 const R = ROUTES[v.model.replace(/^\/+/, "")];
                 let req;
@@ -657,7 +672,7 @@ async function main() {
     // ---- 11. the recipes ----
     await section("11. recipes", async () => {
         const recipes = loadRecipes();
-        const served = recipes.filter((r) => r.providers && r.providers.magnific && r.task !== "upscale").map((r) => r.id).sort();
+        const served = recipes.filter((r) => r.providers && r.providers.magnific && r.task !== "upscale" && r.task !== "relight").map((r) => r.id).sort();
         const VARIANTS = ["flux2_flex", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "seedream_5_lite", "seedream_5_pro", "z_image_turbo"];
         const NEW = ["expand_flux_pro", "expand_ideogram", "expand_seedream_4_5", "ideogram_inpaint", "mystic", "seedream_4_5"];
         check("the magnific variants sit in exactly the eight recipes and the six new ones", eq(served, [...VARIANTS, ...NEW].sort()), served.join(", "));
@@ -705,6 +720,8 @@ async function main() {
         check("the expand limits from the docs' output sizes", lim("expand_flux_pro").pixels === 1600000 && lim("expand_ideogram").step === 32 && lim("expand_ideogram").pixels === 1048576 && lim("expand_seedream_4_5").minPixels === 3686400 && lim("expand_seedream_4_5").max === 4096 && lim("flux2_flex").max === 1920 && lim("flux2_pro").max === 1440, short([lim("expand_flux_pro"), lim("expand_ideogram")]));
         check("no background row on GPT Image 2 (its route has no transparency), one on 2.5", !variant("gpt_image_2").settings.some((s) => s.key === "background") && variant("gpt_image_2_5_flare").settings.some((s) => s.key === "background"));
         check("the upscalers keep magnific as their home", ["magnific_precision", "magnific_creative"].every((id) => recipes.find((x) => x.id === id).default === "magnific"));
+        const relightRec = recipes.find((x) => x.id === "relight");
+        check("relight recipe has magnific provider with image-relight route", !!relightRec && relightRec.providers.magnific.model === "image-relight" && ROUTES["image-relight"].dialect === "relight");
     });
 
     // ---- 12. providers/index.js ----
