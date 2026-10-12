@@ -988,6 +988,25 @@ JS = r"""
     await ed.undoStep();
     check("l2: undo restores diffusion", fx.params.lights[0].diffusion === diff0);
 
+    // docs/PLAN_RELIGHT_FIXES.md F1.3: a nudge begun while an undo waits (here for a tracked edit) is an edit made
+    // during the wait: that undo stops and leaves it, the next undo takes it back
+    {
+        const xWait = fx.params.lights[0].x;
+        let release = null;
+        ed.trackEdit(new Promise((r) => { release = r; }));
+        const u = ed.undoStep();
+        ed.onKey({ key: "ArrowRight", shiftKey: false, preventDefault: () => {} });
+        const xNudged = fx.params.lights[0].x;
+        release();
+        await u;
+        const xAfterWait = fx.params.lights[0].x;
+        check("l2: a nudge made while an undo waits is not undone by it", xNudged === xWait + 1 && xAfterWait === xWait + 1,
+            { xWait, xNudged, xAfterWait, status: ed.status });
+        check("l2: the waiting undo says it did nothing", /^Nothing undone/.test(ed.status || ""), ed.status);
+        await ed.undoStep();
+        check("l2: the next undo takes that nudge back", fx.params.lights[0].x === xWait, { x: fx.params.lights[0].x, xWait });
+    }
+
     // -------------------------------------------------------------------------
     // Case s: relight command on a document without a depth map computes the map
     //         through the helperCall stand-in and lands the layer.
@@ -1352,6 +1371,68 @@ JS = r"""
     ed.hideLightHandles = false;
     check("y: hideLightHandles restored to false", ed.hideLightHandles === false);
     ed.draw();
+
+    // -------------------------------------------------------------------------
+    // Case z: a fresh relight layer sends the relight LoRA at full strength (docs/PLAN_RELIGHT_FIXES.md F1.4): the
+    // 0..100 % strength becomes strength_model 1.0 on comfyui (the graph's lora_relight) and comfycloud (10:118)
+    // -------------------------------------------------------------------------
+    const docZ = shell.newDocument();
+    shell.activate(docZ);
+    await new Promise((r) => setTimeout(r, 150));
+    docZ.resizeCanvas();
+    const zW = 320, zH = 200;
+    const cZ = mk(zW, zH);
+    const ctxZ = cZ.getContext("2d");
+    ctxZ.fillStyle = "#808080";
+    ctxZ.fillRect(0, 0, zW, zH);
+    Object.defineProperty(cZ, "naturalWidth", { value: zW });
+    Object.defineProperty(cZ, "naturalHeight", { value: zH });
+    await docZ.setBaseFromCanvas(cZ, { keepLayers: false });
+    await settle(docZ);
+    const zRamp = new Uint16Array(32 * 32);
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) zRamp[y * 32 + x] = 10000 + x * 1000;
+    await docZ.setMap("depth", makeMap("depth", 32, 32, zRamp, [zW, 0, 0, zH, 0, 0]));
+    const zFx = docZ.addFilterLayer("relight");
+    zFx.params.lights = [defaultLight(0, { width: zW, height: zH })];
+    docZ.markFilterChanged(zFx);
+    await settle(docZ);
+    check("z: a fresh relight layer keeps the LoRA strength in percent (100)", zFx.params.lora_strength === 100, zFx.params.lora_strength);
+    const zStop = "relight gate z: stopped at the send";
+    const zSaved = { connected: host.connected, objectInfo: host.objectInfo, models: host.checkComfyRelightModels,
+        upload: host.uploadInput, run: host.comfyPictureRun, send: host.relightSend };
+    let zLocal = null, zCloud = null, zErrLocal = null, zErrCloud = null;
+    try {
+        host.connected = true;
+        if (!host.objectInfo) host.objectInfo = {};
+        host.checkComfyRelightModels = () => {};
+        host.uploadInput = async (blob, name) => ({ filename: name, subfolder: "", type: "input" });
+        host.comfyPictureRun = async (editor, graph) => { zLocal = JSON.parse(JSON.stringify(graph)); throw new Error(zStop); };
+        host.relightSend = async (req) => { zCloud = { provider: req.provider, params: { ...(req.params || {}) } }; throw new Error(zStop); };
+        try { await host.relightWhole(docZ, zFx, { route: "comfyui" }); } catch (e) { zErrLocal = String(e && e.message); }
+        try { await host.relightWhole(docZ, zFx, { route: "comfycloud" }); } catch (e) { zErrCloud = String(e && e.message); }
+        // 1.0 is also the local graph's own value: a strength the slider set (55 %) must reach both routes as 0.55
+        const zFresh = { local: zLocal, cloud: zCloud };
+        zFx.params.lora_strength = 55;
+        zLocal = null; zCloud = null;
+        try { await host.relightWhole(docZ, zFx, { route: "comfyui" }); } catch (_) { /* the stub stops it */ }
+        try { await host.relightWhole(docZ, zFx, { route: "comfycloud" }); } catch (_) { /* the stub stops it */ }
+        const z55 = { local: zLocal && zLocal.lora_relight && zLocal.lora_relight.inputs.strength_model, cloud: zCloud && zCloud.params["10:118|strength_model"] };
+        check("z: a 55 % LoRA strength goes as 0.55 on comfyui and comfycloud", z55.local === 0.55 && z55.cloud === 0.55, z55);
+        zLocal = zFresh.local; zCloud = zFresh.cloud;
+    } finally {
+        host.connected = zSaved.connected;
+        host.objectInfo = zSaved.objectInfo;
+        host.checkComfyRelightModels = zSaved.models;
+        host.uploadInput = zSaved.upload;
+        host.comfyPictureRun = zSaved.run;
+        host.relightSend = zSaved.send;
+    }
+    const zLora = zLocal && zLocal.lora_relight && zLocal.lora_relight.inputs;
+    check("z: comfyui reached the send", !!zLocal && (zErrLocal || "").includes(zStop), { zErrLocal });
+    check("z: comfyui sends lora_relight strength_model 1.0", !!zLora && zLora.strength_model === 1, zLora);
+    check("z: comfycloud reached the send", !!zCloud && zCloud.provider === "comfycloud" && (zErrCloud || "").includes(zStop), { zErrCloud });
+    check("z: comfycloud sends 10:118 strength_model 1.0", !!zCloud && zCloud.params["10:118|strength_model"] === 1, zCloud);
+    await commands.run("close_document", { doc: docZ.id, force: true });
 
     // Keep lights tool active for visual screenshot
     ed.setTool("lights");

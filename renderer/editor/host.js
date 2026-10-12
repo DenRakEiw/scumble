@@ -17,7 +17,7 @@
 import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, canvasBytes, referenceBytes, planFrame } from "./stitch.js";
 import { glReleasePool, glToCanvas } from "./inpaint_filters_gl.js";
 import { applyFilter } from "./inpaint_filters.js";
-import { lightsToWords, detailRatio } from "./inpaint_relight.js";
+import { lightsToWords, detailRatio, loraPercent } from "./inpaint_relight.js";
 import { withoutSecrets } from "./redact.js";
 import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
 import { comfyRefSpec, comfyLayout, trimSlots, refName, resolveMarkers as resolveComfyMarkers } from "./comfyrefs.js";
@@ -405,7 +405,11 @@ export const host = {
         if (typeof llmRefPictures === "boolean") this.llmRefPictures = llmRefPictures;
         if (realismStored !== undefined) this.realismStored = realismStored;
         if (depthDetail !== undefined) this.depthDetailSetting = depthDetail;
-        if (relight !== undefined) this.relightSettings = { ...this.relightSettings, ...(relight || {}) };
+        if (relight !== undefined) {
+            this.relightSettings = { ...this.relightSettings, ...(relight || {}) };
+            // a stored 0..1 strength (77da63f's default 1.0) is a fraction of the 0..100 slider
+            if (this.relightSettings.lora_strength != null) this.relightSettings.lora_strength = loraPercent(this.relightSettings.lora_strength);
+        }
     },
 
     relightSettings: {
@@ -417,7 +421,7 @@ export const host = {
         detail: true,
         enable_hr_fix: true,
         light_type: "soft overcast daylight lighting",
-        lora_strength: 1.0,
+        lora_strength: 100,   // percent, 0..100: the routes send it / 100 as strength_model
         steps: 4,
     },
 
@@ -3034,6 +3038,11 @@ export const host = {
         }
     },
 
+    /** A provider route's relight request, sent (`providerEdit`); a member so the relight gate can stand in for it. */
+    relightSend(request, token) {
+        return providerEdit(request, token);
+    },
+
     /**
      * Whole-picture relight pass: sends the composite picture and the light map to a generative route (Magnific),
      * applies the detail ratio from the original picture, lands as a pixel layer named "Relight (<route>)" under
@@ -3186,8 +3195,8 @@ export const host = {
                     if (p.steps != null) promptGraph.run.inputs.steps = p.steps;
                     if (p.cfg != null) promptGraph.run.inputs.cfg = p.cfg;
                 }
-                if (promptGraph.lora_relight && promptGraph.lora_relight.inputs && p.lora_strength != null) {
-                    promptGraph.lora_relight.inputs.strength_model = p.lora_strength / 100;
+                if (promptGraph.lora_relight && promptGraph.lora_relight.inputs) {
+                    promptGraph.lora_relight.inputs.strength_model = loraPercent(p.lora_strength ?? p.strength_model) / 100;
                 }
                 promptGraph["relight_out"] = { class_type: "PreviewImage", inputs: { images: ["decode", 0] } };
                 out = await this.comfyPictureRun(editor, promptGraph, "relight_out", { label: L, token, deadline, timeoutMs: 300000, front: false });
@@ -3235,7 +3244,7 @@ export const host = {
                         prompt: sentPrompt,
                         options: cloudOpts ? JSON.parse(JSON.stringify(cloudOpts)) : {},
                         params: {
-                            "10:118|strength_model": (p.lora_strength ?? p.strength_model ?? 100) / 100,
+                            "10:118|strength_model": loraPercent(p.lora_strength ?? p.strength_model) / 100,
                             "10:3|steps": p.steps ?? 4,
                             "10:3|cfg": p.cfg ?? 1.0,
                         },
@@ -3259,7 +3268,7 @@ export const host = {
                 }
 
                 editor.setStatus(`${L}: sending picture and guidance (${wSend} x ${hSend}) to ${route} ...`);
-                out = await providerEdit(req, token);
+                out = await this.relightSend(req, token);
             }
             if (gone()) return { layer: null, seconds: 0, note: "", changed: false, route, seed: null };
             if (token.cancelled) throw cancelled();

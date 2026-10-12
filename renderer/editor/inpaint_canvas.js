@@ -49,7 +49,7 @@ import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
 import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend, seedOfLayer, hash32, mul255 } from "./blend_modes.js";
 import { heightNormals, shadowMarch } from "./px/kernels.js";
-import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex, LIGHT_PRESETS, SPOT_GOBOS, applyLightPreset } from "./inpaint_relight.js";
+import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex, LIGHT_PRESETS, SPOT_GOBOS, applyLightPreset, loraPercent } from "./inpaint_relight.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -14433,9 +14433,10 @@ class InpaintEditor {
         }
     }
 
-    undoStep() { this.closeFlyout(); const gen = this.historyGen; return this.queueHistory(() => this.historyStepNow(false, gen)); }
+    // a nudge or wheel burst still in its 300 ms window is a step before the key press: pushed first, then `gen` is read
+    undoStep() { this.flushPendingDebounces(); this.closeFlyout(); const gen = this.historyGen; return this.queueHistory(() => this.historyStepNow(false, gen)); }
 
-    redoStep() { this.closeFlyout(); const gen = this.historyGen; return this.queueHistory(() => this.historyStepNow(true, gen)); }
+    redoStep() { this.flushPendingDebounces(); this.closeFlyout(); const gen = this.historyGen; return this.queueHistory(() => this.historyStepNow(true, gen)); }
 
     queueHistory(fn) {
         const prev = this._historyQueue;
@@ -14484,8 +14485,10 @@ class InpaintEditor {
         // `gen` was taken before the wait: an edit made during it is not the step this undo was pressed for
         while (this._pendingEdits && this._pendingEdits.size) await Promise.all(Array.from(this._pendingEdits));
         if (held()) return;
+        // a nudge or wheel burst begun before the key press was pushed by undoStep / redoStep before `gen` was read; one
+        // begun during the wait is pushed now and, like any edit made then, stops this step (the gen check below).
+        // Taking `gen` again here forgot every edit made while the wait ran, and an undo ran over them.
         this.flushPendingDebounces();
-        gen = this.historyGen;
         // the stacks are looked up now, not when the step was queued: an edit or a new image replaces them
         const stack = () => (redo ? this.redo : this.undo);
         const snap = stack()[stack().length - 1];
@@ -20130,7 +20133,7 @@ class InpaintEditor {
             const loraSlider = document.createElement("input");
             loraSlider.type = "range";
             loraSlider.min = "0"; loraSlider.max = "100"; loraSlider.step = "5";
-            loraSlider.value = String(layer.params.lora_strength ?? layer.params.strength_model ?? 100);
+            loraSlider.value = String(loraPercent(layer.params.lora_strength ?? layer.params.strength_model));
             loraSlider.className = "ipc-slider";
             loraSlider.addEventListener("click", stop);
             loraSlider.addEventListener("keydown", stop);

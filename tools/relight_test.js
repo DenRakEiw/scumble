@@ -733,14 +733,16 @@ async function main() {
     assert.equal(initial.strength, 100, "default strength is 100");
     assert.equal(initial.style, "standard", "default style is standard");
     assert.equal(initial.detail, true, "default detail is true");
+    // the LoRA strength is in percent (the slider's 0..100; the routes send it / 100): a fresh layer gets 100
+    assert.equal(initial.lora_strength, 100, `default lora_strength is 100 %, got ${initial.lora_strength}`);
 
     // Patch flat settings
-    host.setRelightSettings({ strength: 75, style: "dramatic", detail: false, lora_strength: 0.8 });
+    host.setRelightSettings({ strength: 75, style: "dramatic", detail: false, lora_strength: 80 });
     const updated = host.getRelightSettings();
     assert.equal(updated.strength, 75, "updated strength is 75");
     assert.equal(updated.style, "dramatic", "updated style is dramatic");
     assert.equal(updated.detail, false, "updated detail is false");
-    assert.equal(updated.lora_strength, 0.8, "updated lora_strength is 0.8");
+    assert.equal(updated.lora_strength, 80, "updated lora_strength is 80");
     assert.equal(updated.route, "app", "route remains app");
 
     // Restore initial settings
@@ -748,7 +750,32 @@ async function main() {
     console.log("  PASS 18: flat relight settings round-trip on host");
 }
 
-    console.log("\nALL 18 RELIGHT TESTS PASSED CLEANLY!");
+// ------------------------------------------------------------------------------------------------
+// 19. The relight LoRA strength in percent: a stored 0..1 value (77da63f's default 1.0) reads as a fraction
+// ------------------------------------------------------------------------------------------------
+{
+    const hostMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "host.js")).href);
+    const host = hostMod.host || hostMod.default || hostMod;
+    const { loraPercent } = relight;
+    assert.equal(typeof loraPercent, "function", "inpaint_relight.js exports loraPercent");
+    const cases = [[undefined, 100], [null, 100], ["", 100], ["x", 100], [1, 100], [1.0, 100], [0.8, 80], [0.05, 5],
+        [0, 0], [5, 5], [55, 55], [100, 100], [150, 100], [-3, 0]];
+    for (const [v, want] of cases) {
+        assert(Math.abs(loraPercent(v) - want) < 1e-9, `loraPercent(${JSON.stringify(v)}) is ${want}, got ${loraPercent(v)}`);
+    }
+    // the stored settings are read on configure (shell.js passes settings.relight): 1.0 and 0.8 are fractions
+    const before = { ...host.getRelightSettings() };
+    for (const [stored, want] of [[1, 100], [0.8, 80], [55, 55], [0, 0]]) {
+        host.configure({ relight: { lora_strength: stored } });
+        assert.equal(host.getRelightSettings().lora_strength, want, `configure with a stored lora_strength ${stored} reads ${want} %, got ${host.getRelightSettings().lora_strength}`);
+    }
+    host.configure({ relight: { route: "magnific" } });
+    assert.equal(host.getRelightSettings().route, "magnific", "configure without a lora_strength keeps the other fields");
+    host.relightSettings = before;
+    console.log("  PASS 19: the relight LoRA strength is in percent, stored fractions read x 100");
+}
+
+    console.log("\nALL 19 RELIGHT TESTS PASSED CLEANLY!");
     console.log("PASS");
 }
 

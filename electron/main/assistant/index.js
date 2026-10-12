@@ -859,6 +859,11 @@ class Assistant {
                 }
             } catch (_) { facts.realism = null; }
         }
+        if (call.name === "relight") {
+            // a new relight layer takes `detail` from the remembered relight settings (host.relightSettings, stored flat)
+            const all = (this.deps.settings && this.deps.settings.get && this.deps.settings.get()) || {};
+            facts.relightDetail = !(all.relight && all.relight.detail === false);
+        }
         if (/^export/.test(call.name) && call.args.path && this.deps.statFile) {
             facts.file = this.deps.statFile(String(call.args.path));
         }

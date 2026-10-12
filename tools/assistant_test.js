@@ -628,11 +628,10 @@ async function main() {
 
         // Array schemas check on all built tools (with plugins activated)
         {
+            // tools/loader.mjs maps the editor's "/editor/..." imports onto renderer/editor; a failed register is an error
             const { register } = require("node:module");
             const { pathToFileURL } = require("node:url");
-            try {
-                register(pathToFileURL(path.join(ROOT, "tools", "editor_loader.mjs")).href);
-            } catch (_) {}
+            register(pathToFileURL(path.join(ROOT, "tools", "loader.mjs")).href);
             if (typeof window === "undefined") {
                 global.window = {
                     scumble: { comfy: { onEvent: () => {} }, helpers: { free: async () => {} } },
@@ -1441,6 +1440,53 @@ async function main() {
                 && policy.undoStep({ name: "relight", args: {} }) === "layers"
                 && policy.undoStep({ name: "relight", args: { layer: "Lmine" } }) === null,
                 JSON.stringify({ rApp, rPaid, rBusy, rClamped }));
+
+            // docs/PLAN_RELIGHT_FIXES.md F1.1: the 27.9 MP cap is the generative routes' detail restoration, never the free
+            // app route; a paid route reads `detail` from the layer it runs on, or for a new layer the remembered setting
+            const AREA = +((/export const MAX_AREA = (\d+);/.exec(src) || [])[1]);
+            const big = { width: 7000, height: 4015 };   // 28.1 MP
+            const relLayer = (detail) => [{ id: "Lrel", name: "Relight 1", kind: "filter", filter: "relight", active: false, params: { route: "app", detail } }];
+            const capApp = policy.decide({ name: "relight", args: { route: "app" } }, fr(big));
+            const capAppEdit = policy.decide({ name: "relight", args: { layer: "Lrel" } }, fr({ ...big, layers: relLayer(true) }));
+            const capMagNew = policy.decide({ name: "relight", args: { route: "magnific" } }, fr(big));
+            const capMagOn = policy.decide({ name: "relight", args: { route: "magnific", layer: "Lrel" } }, fr({ ...big, layers: relLayer(true) }));
+            const capMagOff = policy.decide({ name: "relight", args: { route: "magnific", layer: "Lrel" } }, fr({ ...big, layers: relLayer(false) }));
+            const capNewOff = policy.decide({ name: "relight", args: { route: "comfyui" } }, fr({ ...big, relightDetail: false }));
+            const capNewOffOnLayer = policy.decide({ name: "relight", args: { route: "magnific", layer: "Lrel" } }, fr({ ...big, relightDetail: false, layers: relLayer(true) }));
+            const atCap = policy.decide({ name: "relight", args: { route: "magnific" } }, fr({ width: 6460, height: 4315 }));   // 27.87 MP
+            check("relight_cap_spares_the_app_route_and_reads_detail_from_the_layer",
+                policy.REALISM_MAX_AREA === AREA && AREA === 27878400 && big.width * big.height > AREA
+                && capApp.action === "auto" && capAppEdit.action === "auto"
+                && capMagNew.action === "refuse" && /up to 27\.9 megapixels \(7000 x 4015 is 28\.1 MP\)/.test(capMagNew.reason)
+                && capMagOn.action === "refuse"
+                && capMagOff.action === "ask" && /through magnific/.test(capMagOff.reason) && eq(capMagOff.card.layer, { id: "Lrel", name: "Relight 1" })
+                && capNewOff.action === "ask" && capNewOff.card.layer === null
+                && capNewOffOnLayer.action === "refuse"
+                && atCap.action === "ask",
+                JSON.stringify({ AREA, capApp, capAppEdit, capMagNew, capMagOn, capMagOff, capNewOff, capNewOffOnLayer, atCap }));
+
+            // factsFor reads a new layer's `detail` from the stored relight settings (host.setRelightSettings writes them flat;
+            // a fresh profile holds settings.js's nested DEFAULTS.relight, which has none: on, as host's default)
+            {
+                const factsFrom = async (stored) => {
+                    const { a } = assistantOn(new FakeEditor(), [], { settings: stored === undefined ? {} : { relight: stored } });
+                    a.read = async (name) => (name === "status" ? { width: 7000, height: 4015, realism: null } : { documents: [{ id: 1, busy: false }] });
+                    const chatStub = { names: fr().tools, owned: new Map(), failures: new Map(), recipe: null, changedSettings: [] };
+                    const call = { name: "relight", args: { doc: 1, route: "magnific" } };
+                    const fx = await a.factsFor(chatStub, {}, call, [], 1);
+                    return { fx: { relightDetail: fx.relightDetail, width: fx.width, height: fx.height }, d: policy.decide(call, fx).action };
+                };
+                const off = await factsFrom({ route: "app", detail: false });
+                const on = await factsFrom({ route: "app", detail: true });
+                const nested = await factsFrom({ route: "app", magnific: { strength: 100 }, detailFromOriginal: true });
+                const none = await factsFrom(undefined);
+                check("relight_facts_read_detail_from_the_stored_relight_settings",
+                    off.fx.relightDetail === false && off.d === "ask" && off.fx.width === 7000
+                    && on.fx.relightDetail === true && on.d === "refuse"
+                    && nested.fx.relightDetail === true && nested.d === "refuse"
+                    && none.fx.relightDetail === true && none.d === "refuse",
+                    JSON.stringify({ off, on, nested, none }));
+            }
 
             // relight through FakeEditor: with non-relight active layer, omitted layer adds new layer and turn.undo.kind === "layers"
             {

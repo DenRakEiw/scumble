@@ -19,7 +19,8 @@ Line numbers below are at 77da63f. Every finding was confirmed by a second agent
   full tier: `document` and `editor` on both backends.
 - Gates run `--offline`, never on port 9555 while the other agent might use it; plain `node tools/*_test.js` runs (no
   `--loader`); the export gate skips on `--tiles off` and does not count there.
-- The relight gate has 141 in-app checks on tiles and 140 on canvas (case h is tile-only).
+- The relight gate has 150 in-app checks on tiles and 149 on canvas since F1 (141 / 140 at 77da63f; case h is
+  tile-only).
 
 ## Verified fixed in 77da63f (no action)
 
@@ -51,6 +52,32 @@ shows the quick shadows (live: 0 levels off a settled render, 39 before).
    local, `:3238` Comfy Cloud), so every new layer sends strength_model 0.01 (81178aa: 1.0). Fix: default 100 (or no
    key, so the `?? 100` fallbacks apply), migrate stored values <= 1 as fractions, fix request suite 18 (its 0.8 is on
    the wrong scale), assert strength_model 1.0 for a fresh layer on comfyui and comfycloud.
+
+**F1 as built (2026-10-12, the commit after d6119ce).** Each fix reviewed by a workflow (16 agents, every finding
+refuted or confirmed by a second one); every new test run against the unfixed code.
+1. `policy.js` `relightRow`: route app is AUTO before any cap; a paid route is refused above `REALISM_MAX_AREA` (a copy of
+   realism.js MAX_AREA, CommonJS cannot import it; the test pins it to the source like REALISM_LABEL) when the layer it
+   runs on restores detail: the named layer's `params.detail` from list_layers, for a new layer `facts.relightDetail`,
+   which `factsFor` reads from the stored `settings.relight.detail` (absent = on, as host's default). `relightCard`
+   names no layer for a new one (it named the active layer). assistant_test `relight_cap_spares_the_app_route_and_reads_
+   detail_from_the_layer` (on 77da63f: 258/259, every case refused, the app route too) and `relight_facts_read_detail_
+   from_the_stored_relight_settings`.
+2. assistant_test registers `tools/loader.mjs` without a catch; the loader now resolves `/editor/` from its own folder,
+   so the test runs from any cwd (260/260; on 77da63f exit 1 after 14 checks, `C:\editor\inpaint_filters.js`).
+3. **Not the formula above:** the review found that `gen += this.historyGen - g0` forgives a nudge begun *during* the
+   wait (the waiting undo takes it back silently, the next undo goes one step further). As built: `undoStep` /
+   `redoStep` flush before reading gen (as at 81178aa), `historyStepNow` flushes again after the wait and keeps gen, so a
+   nudge begun during the wait stops that undo like any edit. New relight gate step "l2: a nudge made while an undo
+   waits is not undone by it" (+2 checks): red with the plan's formula (measured on a copy: x 151 -> 150, the next undo
+   to 100). The editor gate step passes on both backends.
+4. `host.relightSettings.lora_strength` 100; `loraPercent` (inpaint_relight.js: unset 100, (0, 1] x 100, clamped)
+   in `host.configure` (stored settings), both routes (comfyui always writes `lora_relight.strength_model`) and the
+   slider; `host.relightSend` is the provider routes' send, a member the gate stubs. relight_test.js suite 18 (80, the
+   default 100) and 19 (loraPercent, the configure migration); gate case z (6 checks: a fresh layer holds 100, comfyui
+   and comfycloud send 1.0, 55 % goes as 0.55): red with 77da63f's default and readers (0.01 on both routes, measured).
+Gates `relight editor assistant document` green on both backends (relight 150 / 149, assistant 38/38), every relight
+node test, eslint 0 errors, types. `build_node.py --check`: js/inpaint_canvas.js and js/inpaint_relight.js differ (the
+node build waits for the release, F4).
 
 ## F2: the quick map and the fit (pixel paths)
 

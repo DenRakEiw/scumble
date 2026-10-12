@@ -88,7 +88,9 @@ code.
   uncommitted file, the assistant gate is 37/38; historyStepNow resets gen, the editor gate is red; pickVis keys by
   version vs dataVersion; the fit cache ignores the picture below; default lora_strength 1.0 on a 0..100 scale).
   The user (2026-10-12): this account fixes them now, sessions F1-F4 of the plan, one per session with `/clear` in
-  between; the other agent does not edit relight meanwhile. Relight gate: 141 in-app checks on tiles, 140 on canvas.
+  between; the other agent does not edit relight meanwhile. **F1 done 2026-10-12** (the assistant cap, the loader,
+  historyStepNow built differently from the plan's formula, lora_strength; "F1 as built" in the plan); **next F2**
+  (pickVis keys, the fit cache, the quick map). Relight gate: 150 in-app checks on tiles, 149 on canvas.
   The other agent's `docs/REVIEW_RELIGHT_2026-10-12.md` is its own self-review.
 
 

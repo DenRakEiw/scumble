@@ -24,6 +24,8 @@ const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "se
 const REALISM_LABEL = "Realism Pass (Windows only, RTX only)";
 /** The factors realism_pass takes: renderer/editor/realism.js MODES' dialog factors and the pack's own F (1.724). */
 const REALISM_FACTORS = [1, 1.5, 1.7, 1.724, 2, 3];
+/** renderer/editor/realism.js MAX_AREA (27.9 MP): the most a generative relight's detail restoration takes (host.relightWhole). */
+const REALISM_MAX_AREA = 27878400;
 
 /** The fields of `set_layer` that the editor records no undo step for (§5). */
 const SET_LAYER_SOFT = ["name", "visible", "opacity", "blend", "role", "match", "match_source", "alpha_lock"];
@@ -161,17 +163,7 @@ const POLICY = {
     // `status` says whether it can run on the document (the server, the size), and its values are the app's (no
     // command sets them)
     realism_pass: (call, facts) => realismRow(call, facts),
-    relight: (call, facts) => {
-        const p = (call && call.args) || {};
-        const f = facts || {};
-        if (p.detail !== false && f.width && f.height && (f.width * f.height > 27878400)) {
-            const W = f.width, H = f.height;
-            return REFUSE(`Relight: detail restoration supports pictures up to 27.9 megapixels (${W} x ${H} is ${((W * H) / 1e6).toFixed(1)} MP). Turn off detail restoration or scale the picture down first.`);
-        }
-        const route = p.route || "app";
-        if (route === "app") return AUTO();
-        return ASK(`relights the whole picture through ${route}: this costs money, or queues on your ComfyUI`, relightCard(call, facts));
-    },
+    relight: (call, facts) => relightRow(call, facts),
 
     // ---- replace, close, tabs -----------------------------------------------------------
     load_image: () => ASK("replaces the image and clears the undo history"),
@@ -269,9 +261,37 @@ function renderCard(call, facts) {
     };
 }
 
+/**
+ * relight: route "app" (the default) is the in-app filter, free, and never capped. A generative route asks, and is
+ * refused above realism.js MAX_AREA when the layer it runs on restores detail, as host.relightWhole would refuse it after
+ * the ask: an existing layer's own `detail`, a new layer's from the remembered relight settings (`facts.relightDetail`,
+ * which addFilterLayer copies onto it). The command takes no `detail`.
+ */
+function relightRow(call, facts) {
+    const route = (call && call.args && call.args.route) || "app";
+    if (route === "app") return AUTO();
+    const f = facts || {};
+    const W = Number(f.width) || 0, H = Number(f.height) || 0;
+    if (W * H > REALISM_MAX_AREA && relightDetailOn(call, f)) {
+        return REFUSE(`Relight: detail restoration supports pictures up to ${(REALISM_MAX_AREA / 1e6).toFixed(1)} megapixels (${W} x ${H} is ${((W * H) / 1e6).toFixed(1)} MP). Turn off detail restoration or scale the picture down first.`);
+    }
+    return ASK(`relights the whole picture through ${route}: this costs money, or queues on your ComfyUI`, relightCard(call, facts));
+}
+
+/** Whether the relight layer a call runs on restores detail: its params when it names one, else the remembered setting. */
+function relightDetailOn(call, facts) {
+    const id = call.args && call.args.layer;
+    if (id) {
+        const target = ((facts && facts.layers) || []).find((l) => l.id === id);
+        return !(target && target.params && target.params.detail === false);
+    }
+    return !(facts && facts.relightDetail === false);
+}
+
 function relightCard(call, facts) {
     const route = (call.args && call.args.route) || "app";
-    const target = layerOf(call, facts);
+    // no `layer`: the command adds a new relight layer, so the card names none (not the active layer)
+    const target = call.args && call.args.layer ? layerOf(call, facts) : null;
     const changes = [{ field: "route", to: route }];
     if (call.args && call.args.prompt) changes.push({ field: "prompt", to: call.args.prompt });
     return {
@@ -465,6 +485,6 @@ function addsLayer(facts) {
 
 module.exports = {
     EXCLUDED, READS, RUNS, POLICY, decide, clamp, clampInt, timeoutOf, undoStep,
-    SET_LAYER_SOFT, SET_LAYER_GEOMETRY, TIMEOUT_DEFAULTS, REALISM_LABEL, REALISM_FACTORS,
+    SET_LAYER_SOFT, SET_LAYER_GEOMETRY, TIMEOUT_DEFAULTS, REALISM_LABEL, REALISM_FACTORS, REALISM_MAX_AREA,
     _layerOf: layerOf, _owns: owns, _extMatches: extMatches,
 };

@@ -296,6 +296,18 @@ export function lightColorHex(color) {
 }
 
 /**
+ * The relight LoRA's strength in percent (0..100; the routes send it / 100 as strength_model). Unset is 100. A value in
+ * (0, 1] is a fraction, stored under the default 1.0 that 77da63f shipped (the slider steps by 5): read as v x 100 %.
+ * @param {any} v
+ * @returns {number}
+ */
+export function loraPercent(v) {
+    const n = Number(v);
+    if (v == null || v === "" || !Number.isFinite(n)) return 100;
+    return Math.max(0, Math.min(100, n > 0 && n <= 1 ? n * 100 : n));
+}
+
+/**
  * Creates a default light configuration object.
  * @param {number} [i=0]
  * @param {{ width?: number, height?: number }|null} [size=null]
