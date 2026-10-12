@@ -385,12 +385,15 @@
             }
           },
           "10:117": {
-            "class_type": "FluxKontextImageScale",
+            "class_type": "ImageScaleToTotalPixels",
             "inputs": {
               "image": [
                 "11",
                 0
-              ]
+              ],
+              "upscale_method": "lanczos",
+              "megapixels": 1,
+              "resolution_steps": 16
             }
           },
           "10:89": {
@@ -452,7 +455,7 @@
           "VAEEncode",
           "VAEDecode",
           "KSampler",
-          "FluxKontextImageScale",
+          "ImageScaleToTotalPixels",
           "LoraLoaderModelOnly"
         ],
         "save": "12",
@@ -1642,7 +1645,7 @@
                   },
                   {
                     "id": 117,
-                    "type": "FluxKontextImageScale",
+                    "type": "ImageScaleToTotalPixels",
                     "pos": [
                       -450,
                       910
@@ -1675,7 +1678,7 @@
                       }
                     ],
                     "properties": {
-                      "Node name for S&R": "FluxKontextImageScale",
+                      "Node name for S&R": "ImageScaleToTotalPixels",
                       "cnr_id": "comfy-core",
                       "ver": "0.4.0",
                       "enableTabs": false,
@@ -1686,7 +1689,11 @@
                       "secondTabOffset": 80,
                       "secondTabWidth": 65
                     },
-                    "widgets_values": []
+                    "widgets_values": [
+                      "lanczos",
+                      1,
+                      16
+                    ]
                   },
                   {
                     "id": 89,

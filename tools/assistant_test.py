@@ -1543,9 +1543,9 @@ return { err, busy: (await A.state()).busy };""")
 
 def node_step():
     r = subprocess.run(["node", os.path.join(ROOT, "tools", "assistant_test.js")], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=600)
-    tail = (r.stdout + r.stderr).strip()
+    tail = r.stdout.strip()
     if r.returncode != 0 or not tail.endswith("PASS"):
-        raise Exception("tools/assistant_test.js: " + tail[-1500:])
+        raise Exception("tools/assistant_test.js: " + (tail + r.stderr)[-1500:])
     return f"{tail.count('[ok]')} checks"
 
 

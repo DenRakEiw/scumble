@@ -626,6 +626,75 @@ async function main() {
         for (const t of chat.tools) for (const [family, re] of Object.entries(NAME_RULES)) if (!re.test(t.name)) bad.push(`${t.name} fails ${family}`);
         check("every_tool_name_passes_each_familys_rule", !bad.length, bad.join("; ") || `${chat.tools.length} names against six rules`);
 
+        // Array schemas check on all built tools (with plugins activated)
+        {
+            const { register } = require("node:module");
+            const { pathToFileURL } = require("node:url");
+            try {
+                register(pathToFileURL(path.join(ROOT, "tools", "editor_loader.mjs")).href);
+            } catch (_) {}
+            if (typeof window === "undefined") {
+                global.window = {
+                    scumble: { comfy: { onEvent: () => {} }, helpers: { free: async () => {} } },
+                    addEventListener: () => {},
+                    removeEventListener: () => {},
+                };
+            }
+            if (typeof document === "undefined") {
+                global.document = {
+                    createElement: () => ({ getContext: () => ({}) }),
+                };
+            }
+            const cmdMod = await import(pathToFileURL(path.join(ROOT, "renderer", "commands.js")).href);
+            const filmMod = await import(pathToFileURL(path.join(ROOT, "plugins", "film", "main.js")).href);
+            const boxesMod = await import(pathToFileURL(path.join(ROOT, "plugins", "boxes", "main.js")).href);
+            const effectsMod = await import(pathToFileURL(path.join(ROOT, "plugins", "effects", "main.js")).href);
+
+            const fakeApi = (pluginId) => ({
+                filters: { register: () => {} },
+                tools: { register: () => {} },
+                commands: { register: (name, def) => cmdMod.commands.register(name, def, pluginId) },
+                actions: { register: () => {} },
+                panels: { register: () => {} },
+                generate: { register: () => {} },
+                events: { on: () => {} },
+                ui: {
+                    miniButton: () => ({}),
+                    sliderRow: () => ({}),
+                    buttonRow: () => ({}),
+                },
+                makeCanvas: () => ({ getContext: () => ({}) }),
+                log: () => {},
+                host: {},
+            });
+
+            filmMod.activate(fakeApi("film"));
+            boxesMod.activate(fakeApi("boxes"));
+            effectsMod.activate(fakeApi("effects"));
+
+            const descs = cmdMod.commands.describe();
+            const tools = descs.map(toTool);
+
+            const badArrays = [];
+            function walkSchema(schema, at) {
+                if (!schema || typeof schema !== "object") return;
+                if (schema.type === "array") {
+                    if (!schema.items || typeof schema.items !== "object" || Object.keys(schema.items).length === 0) {
+                        badArrays.push(`missing items at ${at}`);
+                    } else {
+                        walkSchema(schema.items, at + ".items");
+                    }
+                }
+                if (schema.properties) {
+                    for (const [k, v] of Object.entries(schema.properties)) {
+                        walkSchema(v, at + "." + k);
+                    }
+                }
+            }
+            for (const t of tools) walkSchema(t.inputSchema, t.name);
+            check("every_array_schema_at_any_depth_has_items", badArrays.length === 0, badArrays.join("; ") || `${tools.length} tools checked`);
+        }
+
         // the golden body: a history with text, a call, an image result, an error result and thinking
         const history = [
             chat.adapter.userMessage("Open documents (1):\n> #1 \"Untitled\", 1200 x 800, active", "look at it"),
@@ -1368,10 +1437,58 @@ async function main() {
                 && /relights the whole picture through magnific/.test(rPaid.reason)
                 && eq(rPaid.card && rPaid.card.changes, [{ field: "route", to: "magnific" }, { field: "prompt", to: "warm sun" }])
                 && rBusy.action === "refuse"
-                && rClamped.args.timeout === 600
+                && rClamped.args.timeout === 900
                 && policy.undoStep({ name: "relight", args: {} }) === "layers"
                 && policy.undoStep({ name: "relight", args: { layer: "Lmine" } }) === null,
                 JSON.stringify({ rApp, rPaid, rBusy, rClamped }));
+
+            // relight through FakeEditor: with non-relight active layer, omitted layer adds new layer and turn.undo.kind === "layers"
+            {
+                class RelightEditor extends FakeEditor {
+                    async describe() {
+                        return ALL_COMMANDS.concat([{
+                            name: "relight",
+                            description: "Relight.",
+                            needsImage: true,
+                            params: {
+                                doc: { type: "integer", description: "document id" },
+                                layer: { type: "string", description: "relight filter layer" },
+                                route: { type: "string", description: "route" },
+                            },
+                        }]);
+                    }
+                    async run(name, args, meta) {
+                        if (name === "relight") {
+                            this.calls.push({ name, args });
+                            this.metas.push(meta || null);
+                            if (args.layer) {
+                                const l = this.layersOf(1).find((x) => x.id === args.layer);
+                                if (!l || l.kind !== "relight") throw new Error((l ? l.name : args.layer) + " is not a relight filter layer");
+                                return { layer: { id: l.id, name: l.name }, changed: true };
+                            }
+                            const id = this.newId();
+                            for (const l of this.layersOf(1)) l.active = false;
+                            this.layersOf(1).unshift({ id, name: "Relight", kind: "relight", active: true });
+                            return { layer: { id, name: "Relight" }, changed: true };
+                        }
+                        return super.run(name, args, meta);
+                    }
+                }
+                const editor = new RelightEditor();
+                // Active layer is Lbase (kind paint/image, non-relight)
+                const { a } = assistantOn(editor, [
+                    anthropicStream([{ type: "tool_use", id: "c1", name: "relight", input: { doc: 1, route: "app" } }]),
+                    anthropicStream([{ type: "text", text: "Relit the picture." }]),
+                ]);
+                const out = await a.send("relight the scene");
+                const call = editor.calls.find((c) => c.name === "relight");
+                const meta = editor.metas[editor.calls.indexOf(call)];
+                const relightLayer = editor.layersOf(1).find((l) => l.kind === "relight");
+                check("relight_omitted_layer_adds_new_layer_with_layers_undo",
+                    out.reason === "end" && call && call.args.layer === undefined && !!relightLayer && meta && meta.undo && meta.undo.kind === "layers",
+                    JSON.stringify({ reason: out.reason, args: call && call.args, undo: meta && meta.undo, layers: editor.layersOf(1) }));
+                await a.close();
+            }
 
 
             // a whole turn: the card shows the values status answers, the call goes out with 1800 s and no undo step of

@@ -162,7 +162,13 @@ const POLICY = {
     // command sets them)
     realism_pass: (call, facts) => realismRow(call, facts),
     relight: (call, facts) => {
-        const route = (call.args && call.args.route) || "app";
+        const p = (call && call.args) || {};
+        const f = facts || {};
+        if (p.detail !== false && f.width && f.height && (f.width * f.height > 27878400)) {
+            const W = f.width, H = f.height;
+            return REFUSE(`Relight: detail restoration supports pictures up to 27.9 megapixels (${W} x ${H} is ${((W * H) / 1e6).toFixed(1)} MP). Turn off detail restoration or scale the picture down first.`);
+        }
+        const route = p.route || "app";
         if (route === "app") return AUTO();
         return ASK(`relights the whole picture through ${route}: this costs money, or queues on your ComfyUI`, relightCard(call, facts));
     },
@@ -357,7 +363,7 @@ function clampInt(value, min, max, fallback) {
 }
 
 /** The command's own default `timeout`, filled in so the Bridge's timer is long enough (§5). */
-const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, generate: 600, generate_new: 600, upscale: 1800, realism_pass: 1800, relight: 600 };
+const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, generate: 600, generate_new: 600, upscale: 1800, realism_pass: 1800, relight: 900 };
 
 /**
  * The arguments as they are sent: a screenshot small enough to be cheap, a log page bounded, and

@@ -451,18 +451,26 @@ async function main() {
         {
             const wSend = 48, hSend = 48;
             const lowPxSent = new Uint8Array(wSend * hSend * 4);
-            for (let i = 0; i < wSend * hSend; i++) {
-                lowPxSent[i * 4 + 0] = 130;
-                lowPxSent[i * 4 + 1] = 130;
-                lowPxSent[i * 4 + 2] = 130;
-                lowPxSent[i * 4 + 3] = 255;
+            for (let y = 0; y < hSend; y++) {
+                for (let x = 0; x < wSend; x++) {
+                    const idx = (y * wSend + x) * 4;
+                    const val = Math.round(120 + 20 * (x / (wSend - 1)));
+                    lowPxSent[idx + 0] = val;
+                    lowPxSent[idx + 1] = val;
+                    lowPxSent[idx + 2] = val;
+                    lowPxSent[idx + 3] = 255;
+                }
             }
             // Passing 48x48 lowPx directly when answer is 32x32: haveLow is false because length !== nAns * 4,
             // so detailRatio safely downsamples from fullPx rather than reading sheared rows.
+            // On e1ebe65 (where guard was lowPx.length > 0), reading sheared non-uniform lowPxSent produced corrupted output.
             const outDirect = detailRatio(fullPx, lowPxSent, ansPx, W, H, wAns, hAns);
             assert.equal(outDirect.length, W * H * 4);
+            const outRef = detailRatio(fullPx, null, ansPx, W, H, wAns, hAns);
+            assert.deepEqual(outDirect, outRef, "Mismatched non-uniform lowPx must fall back to downsampling fullPx");
 
-            // When resampled to 32x32 (the host.js resample path):
+            // When resampled to 32x32 to match answer image (the host.js resample path):
+            // For fullPx checkerboard, true downsampled low frequencies are 130 everywhere.
             const lowPxResampled = new Uint8Array(wAns * hAns * 4);
             for (let i = 0; i < wAns * hAns; i++) {
                 lowPxResampled[i * 4 + 0] = 130;
@@ -658,7 +666,15 @@ async function main() {
         }
         if (typeof document === "undefined") {
             global.document = {
-                createElement: () => ({ getContext: () => ({}) }),
+                createElement: () => ({
+                    width: 100, height: 100,
+                    getContext: () => ({
+                        drawImage: () => {},
+                        getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+                        putImageData: () => {},
+                    }),
+                    toBlob: (cb) => cb(new Blob([new Uint8Array(10)], { type: "image/png" })),
+                }),
             };
         }
         const canvasMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_canvas.js")).href);
@@ -715,40 +731,102 @@ async function main() {
             VAELoader: { input: { required: { vae_name: [[]] } } },
             LoraLoaderModelOnly: { input: { required: { lora_name: [[]] } } },
         };
-        const unets = emptyInfo.UNETLoader.input.required.unet_name[0];
-        const clips = emptyInfo.CLIPLoader.input.required.clip_name[0];
-        const vaes = emptyInfo.VAELoader.input.required.vae_name[0];
-        const loras = emptyInfo.LoraLoaderModelOnly.input.required.lora_name[0];
-        const checks = [
-            { label: "UNet", file: "qwen_image_edit_2509_fp8_e4m3fn.safetensors", list: unets },
-            { label: "Text encoder", file: "qwen_2.5_vl_7b_fp8_scaled.safetensors", list: clips },
-            { label: "VAE", file: "qwen_image_vae.safetensors", list: vaes },
-            { label: "Relight LoRA", file: "Qwen-Image-Edit-2509-Relight.safetensors", list: loras },
-            { label: "Lightning LoRA", file: "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors", list: loras },
-        ];
-        const missing = [];
-        for (const item of checks) {
-            if (!Array.isArray(item.list) || !item.list.includes(item.file)) {
-                const link = host.modelLink(localRecipe, item.file);
-                missing.push(`${item.label}: ${item.file}${link ? " (" + link + ")" : ""}`);
+        assert.throws(
+            () => host.checkComfyRelightModels(localRecipe, emptyInfo),
+            (err) => {
+                assert(err.message.includes("Your ComfyUI lacks model files this recipe needs:"), "Refusal wording matches issue #4");
+                assert(err.message.includes("Relight LoRA"), "Refusal includes Relight LoRA");
+                assert(err.message.includes("Text encoder"), "Refusal includes Text encoder");
+                assert(err.message.includes("VAE"), "Refusal includes VAE");
+                assert(err.message.includes("Lightning LoRA"), "Refusal includes Lightning LoRA");
+                assert(err.message.includes("UNet"), "Refusal includes UNet");
+                return true;
             }
+        );
+
+        // Test that fullInfo with all models present does NOT throw
+        const fullInfo = {
+            UNETLoader: { input: { required: { unet_name: [["qwen_image_edit_2509_fp8_e4m3fn.safetensors"]] } } },
+            CLIPLoader: { input: { required: { clip_name: [["qwen_2.5_vl_7b_fp8_scaled.safetensors"]] } } },
+            VAELoader: { input: { required: { vae_name: [["qwen_image_vae.safetensors"]] } } },
+            LoraLoaderModelOnly: { input: { required: { lora_name: [[
+                "Qwen-Image-Edit-2509-Relight.safetensors",
+                "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors",
+            ]] } } },
+        };
+        assert.doesNotThrow(() => host.checkComfyRelightModels(localRecipe, fullInfo));
+
+        // 10c: 27.9 MP cap refuses BEFORE paid run (providerEdit / comfyPictureRun called 0 times)
+        let providerCalls = 0;
+        let comfyCalls = 0;
+        const origProviders = global.window.scumble.providers;
+        global.window.scumble.providers = {
+            edit: async () => {
+                providerCalls++;
+                return { bytes: new Uint8Array(10), mime: "image/png" };
+            },
+        };
+        const origComfyRun = host.comfyPictureRun;
+        host.comfyPictureRun = async () => {
+            comfyCalls++;
+            return { bytes: new Uint8Array(10), mime: "image/png" };
+        };
+        if (typeof global.Image === "undefined") {
+            global.Image = class {
+                constructor() {
+                    this.width = 1024;
+                    this.height = 1024;
+                    setTimeout(() => this.onload && this.onload(), 0);
+                }
+            };
         }
-        assert.equal(missing.length, 5, "All 5 files must be reported missing when lists are empty");
-        const refusal = `Your ComfyUI lacks ${missing.length === 1 ? "a model file this recipe needs" : "model files this recipe needs"}: ${missing.join("; ")}. Put the file in that models folder (and restart or refresh ComfyUI), then try again.`;
-        assert(refusal.includes("Your ComfyUI lacks model files this recipe needs:"), "Refusal wording matches issue #4");
-        assert(refusal.includes("Relight LoRA"), "Refusal includes Relight LoRA");
-        assert(refusal.includes("Text encoder"), "Refusal includes Text encoder");
-        assert(refusal.includes("VAE"), "Refusal includes VAE");
 
-        // 10c: 27.9 MP cap and buffer clone transfer safety
-        const realismMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "realism.js")).href);
-        assert.equal(realismMod.MAX_AREA, 27878400, "realism.MAX_AREA must be 27,878,400 px");
+        const stubLayer = {
+            id: "L_relight",
+            name: "Relight",
+            kind: "filter",
+            filter: "relight",
+            params: { route: "magnific", detail: true, lights: [] },
+            visible: true,
+        };
+        let encodeCalls = 0;
+        const stubEd = {
+            width: 6000,
+            height: 5000, // 30 MP > 27.9 MP
+            layers: [stubLayer],
+            base: { ref: { filename: "test.png" } },
+            node: { id: "n1" },
+            setStatus: () => {},
+            relightSettled: async () => {},
+            readBox: () => ({ getContext: () => ({ getImageData: () => ({ data: new Uint8ClampedArray(4) }) }) }),
+            flattenToCanvas: () => ({
+                getContext: () => ({ getImageData: () => ({ data: new Uint8ClampedArray(4) }), drawImage: () => {}, putImageData: () => {} }),
+                toBlob: (cb) => cb(new Blob([new Uint8Array(10)], { type: "image/png" })),
+            }),
+            encodeComposite: async () => { encodeCalls++; return null; },
+            maps: { depth: { data: new Uint16Array(100), w: 10, h: 10, xf: [1, 0, 0, 1, 0, 0] } },
+            isFillLayer: () => false,
+            isReference: () => false,
+            isControl: () => false,
+            shown: () => true,
+        };
+        host._editors.push(stubEd);
 
-        // Buffer clone safety test
-        const originalBuf = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
-        const clonedBuf = originalBuf.slice().buffer;
-        assert.equal(clonedBuf.byteLength, 8);
-        assert.equal(originalBuf.buffer.byteLength, 8, "Original buffer intact");
+        let capRefusal = null;
+        try {
+            await host.relightWhole(stubEd, stubLayer, { route: "magnific" });
+        } catch (err) {
+            capRefusal = err.message;
+        } finally {
+            host._editors = host._editors.filter((e) => e !== stubEd);
+            global.window.scumble.providers = origProviders;
+            host.comfyPictureRun = origComfyRun;
+        }
+        assert(capRefusal && capRefusal.includes("detail restoration supports pictures up to 27.9 megapixels"),
+            `Expected 27.9 MP cap refusal, got: ${capRefusal}`);
+        assert.equal(providerCalls, 0, `providerEdit must be called 0 times above 27.9 MP cap: was called ${providerCalls} times`);
+        assert.equal(comfyCalls, 0, `comfyPictureRun must be called 0 times above 27.9 MP cap: was called ${comfyCalls} times`);
+        assert.equal(encodeCalls, 0, `encodeComposite must be called 0 times above 27.9 MP cap: was called ${encodeCalls} times`);
 
         // 10d: Commands schema validation (P.arr with items: { type: "object" })
         const commandsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "commands.js")).href);
@@ -759,7 +837,15 @@ async function main() {
         assert.equal(lightsParam.type, "array", "relight lights parameter is an array");
         assert(lightsParam.items && lightsParam.items.type === "object", "relight lights parameter has items: { type: 'object' }");
 
-        console.log("  PASS 10: Review items verified (duplicateLayer caches, ComfyUI 5 files, buffer safety, schema)");
+        // 10e: Relight recipes must not contain cropping scale nodes (e.g. FluxKontextImageScale)
+        const relightRecipeFiles = ["relight_qwen_local.json", "relight.json"];
+        for (const rf of relightRecipeFiles) {
+            const raw = fs.readFileSync(path.join(ROOT, "recipes", rf), "utf8");
+            assert(!raw.includes("FluxKontextImageScale"), `Recipe ${rf} must not contain cropping scale node FluxKontextImageScale`);
+            assert(!raw.includes('"center"'), `Recipe ${rf} must not use center crop scaling`);
+        }
+
+        console.log("  PASS 10: Review items verified (duplicateLayer caches, ComfyUI 5 files, detail cap pre-check, schema, scale nodes)");
     }
 
     console.log("\nALL RELIGHT REQUEST TESTS PASSED CLEANLY!");

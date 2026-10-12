@@ -9,7 +9,7 @@
   "needs": [
     "InpaintCanvas",
     "ImageFromBatch",
-    "FluxKontextImageScale",
+    "ImageScaleToTotalPixels",
     "UNETLoader",
     "CLIPLoader",
     "VAELoader",
@@ -42,7 +42,7 @@
     ],
     "loras": [
       "Qwen-Image-Edit-2509-Relight.safetensors (https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/resolve/main/split_files/loras/Qwen-Image-Edit-2509-Relight.safetensors)",
-      "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors (https://huggingface.co/lightx2v/Qwen-Image-Lightning/resolve/main/Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors)"
+      "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors (https://huggingface.co/lightx2v/Qwen-Image-Lightning/resolve/main/Qwen-Image-Edit-2509/Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors)"
     ]
   },
   "prompt": {
@@ -64,9 +64,12 @@
       }
     },
     "scale": {
-      "class_type": "FluxKontextImageScale",
+      "class_type": "ImageScaleToTotalPixels",
       "inputs": {
-        "image": ["img0", 0]
+        "image": ["img0", 0],
+        "upscale_method": "lanczos",
+        "megapixels": 1,
+        "resolution_steps": 16
       }
     },
     "unet": {

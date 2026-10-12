@@ -83,7 +83,7 @@ export function layerSummary(ed, l) {
         if (l.filter === "relight") {
             const lights = Array.isArray(l.params && l.params.lights) ? l.params.lights : [];
             out.lights_count = lights.length;
-            out.selected_light = l._selectedLightId || (lights[0] ? lights[0].id : null);
+            out.selected_light = l._deselected ? null : (l._selectedLightId || (lights[0] ? lights[0].id : null));
         }
     }
     if (l.kind === "text" && l.text) {
@@ -1394,7 +1394,7 @@ const COMMANDS = {
         needsImage: true,
         description: "Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (the default) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer.",
         params: {
-            layer: P.layer("relight filter layer to edit (default adds a new one)", { default: undefined }),
+            layer: P.layer("relight filter layer to edit (default adds a new one)", { default: null }),
             lights: P.arr("array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}]", { items: { type: "object" } }),
             original: P.num("original light strength 0..100 % (default 100)"),
             ambient: P.num("ambient light 0..100 % (default 15)"),
@@ -1430,6 +1430,7 @@ const COMMANDS = {
                     writeParams(ed, l, vals);
                     touch(ed);
                 }
+                if (l.params) l.params.route = route;
             } else {
                 const raw = {};
                 if (a.lights !== undefined) raw.lights = a.lights;
@@ -1452,6 +1453,7 @@ const COMMANDS = {
                 if (Object.keys(vals).length) {
                     writeParams(ed, l, vals);
                 }
+                if (l.params) l.params.route = route;
                 if (ed.setTool) ed.setTool("lights");
                 touch(ed);
             }
@@ -1939,6 +1941,12 @@ const COMMANDS = {
             if (!FILTERS[type]) throw new Error(`unknown filter "${type}" (${Object.keys(FILTERS).join(", ")})`);
             const vals = a.params != null ? checkParams(type, a.params, { width: ed.width, height: ed.height }) : null;
             if (FILTERS[type]?.over && vals?.limit && vals.limit.source !== "depth") throw new Error("a fill layer takes a depth limit only");
+            if (type === "relight") {
+                const hasDepth = !!(ed.maps && ed.maps.depth && (ed.maps.depth.data || ed.maps.depth.u16));
+                if (!hasDepth && ed.ensureDepthMap) {
+                    await ed.ensureDepthMap();
+                }
+            }
             const l = ed.addFilterLayer(type);
             if (!l) throw new Error(ed.status);
             if (vals) writeParams(ed, l, vals);
@@ -1962,6 +1970,12 @@ const COMMANDS = {
             if (FILTERS[targetType]?.over && vals?.limit && vals.limit.source !== "depth") throw new Error("a fill layer takes a depth limit only");
             const keys = vals ? Object.keys(vals) : [];
             const retype = !!type && type !== l.filter;
+            if (retype && type === "relight") {
+                const hasDepth = !!(ed.maps && ed.maps.depth && (ed.maps.depth.data || ed.maps.depth.u16));
+                if (!hasDepth && ed.ensureDepthMap) {
+                    await ed.ensureDepthMap();
+                }
+            }
             // the type select pushes its own step ("Filter type"), which holds the parameters as they were too
             if (retype) ed.setFilterType(l, type);
             else if (keys.length) ed.pushUndo({ kind: "filter", id: l.id, label: filterStepLabel(l.filter, keys) });
@@ -2477,6 +2491,7 @@ export function checkParams(filterId, params, size = null) {
         }
         else if (p.type === "custom") {
             if (filterId === "relight" && k === "lights") {
+                if (!Array.isArray(v)) throw new Error("lights must be an array of light objects");
                 out[k] = normalizeLights(v, size);
             } else {
                 out[k] = v;

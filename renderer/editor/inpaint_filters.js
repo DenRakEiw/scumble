@@ -18,7 +18,7 @@ import { colorGradeTables, gradeIdentity, hslPixel, hslIdentity } from "./inpain
 import { buildWheelsControl, buildHslControl } from "./inpaint_wheels.js";
 import { applyVibrance, applyGradientMap, applyThreshold, applyPosterize } from "./inpaint_adjustments.js";
 import { applyLensBlur, lensBlurReach } from "./inpaint_lensblur.js";
-import { applyRelight, relightStats } from "./inpaint_relight.js";
+import { applyRelight, relightStats, relightSkip } from "./inpaint_relight.js";
 
 
 function makeCanvas(w, h) {
@@ -1223,7 +1223,7 @@ export const FILTERS = {
         wholeStats: relightStats,
         wholeStatsSize: 256,
         reach: 0,
-        skip: (p, info) => !(info && info.maps && info.maps.depth) || (p?.mode !== 1 && (!p?.lights || p.lights.every((l) => !l || !l.on)) && (p?.original === undefined || Number(p.original) === 100)),
+        skip: relightSkip,
         apply: applyRelight,
     },
     vibrance: {
@@ -1354,5 +1354,5 @@ export function applyFilter(id, src, params, info = {}) {
     return out;
 }
 
-export { applyRelight };
+export { applyRelight, relightSkip };
 

@@ -674,16 +674,20 @@ function renderRecipeList() {
             const copy = document.createElement("button");
             copy.type = "button"; copy.textContent = "Cloud copy"; copy.title = "Save a copy without the Inpaint Canvas node that runs on Comfy Cloud (your Comfy Cloud key)";
             copy.addEventListener("click", () => cloudCopyOf(r));
-            // the Realism Pass runs on the user's own ComfyUI only (docs/PLAN_0_1_42.md §1): no Cloud copy
-            if (r.task === "pass") cell.append(edit); else cell.append(edit, copy);
+            // the Realism Pass and Relight run on the user's own ComfyUI only: no Cloud copy
+            if (r.task === "pass" || r.task === "relight") cell.append(edit); else cell.append(edit, copy);
             row.appendChild(cell);
         } else {
             row.appendChild(document.createElement("span"));
         }
-        const use = document.createElement("button");
-        use.type = "button"; use.textContent = "Use";
-        use.addEventListener("click", () => selectRecipe(r.id));
-        row.appendChild(use);
+        if (r.task === "relight") {
+            row.appendChild(document.createElement("span"));
+        } else {
+            const use = document.createElement("button");
+            use.type = "button"; use.textContent = "Use";
+            use.addEventListener("click", () => selectRecipe(r.id));
+            row.appendChild(use);
+        }
         // Remove only on the user's own recipes (imports, Cloud copies, saved graphs): a shipped one cannot be removed
         if (r.source === "user") {
             const del = document.createElement("button");

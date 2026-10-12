@@ -3065,8 +3065,18 @@ class InpaintEditor {
         this._docKeyUp = null;
         if (this.textEdit) this.endTextEdit(true);
         this.closeFlyout();
-        this.closeTipPicker();
+        if (this.layers) {
+            for (const l of this.layers) {
+                if (l) {
+                    if (l._nudgeRelightTimer) { clearTimeout(l._nudgeRelightTimer); l._nudgeRelightTimer = null; }
+                    if (l._wheelRelightTimer) { clearTimeout(l._wheelRelightTimer); l._wheelRelightTimer = null; }
+                    l._flushNudge = null;
+                    l._flushWheel = null;
+                }
+            }
+        }
         if (this._wheelRelightTimer) { clearTimeout(this._wheelRelightTimer); this._wheelRelightTimer = null; }
+        if (this._nudgeRelightTimer) { clearTimeout(this._nudgeRelightTimer); this._nudgeRelightTimer = null; }
         if (this.promptField) this.promptField.closePopups();
         clearTimeout(this._autosave);
         this.compare = null;
@@ -3480,12 +3490,13 @@ class InpaintEditor {
                     this.markFilterChanged(l, { soon: true });
                     this.renderLayers();
                     this.draw();
-                    if (this._nudgeRelightTimer) clearTimeout(this._nudgeRelightTimer);
-                    this._nudgeRelightTimer = setTimeout(() => {
-                        this._nudgeRelightTimer = null;
-                        this.filterPreview = null;
+                    if (l._nudgeRelightTimer) clearTimeout(l._nudgeRelightTimer);
+                    const flushNudge = () => {
+                        if (l._nudgeRelightTimer) { clearTimeout(l._nudgeRelightTimer); l._nudgeRelightTimer = null; }
+                        l._flushNudge = null;
+                        if (this.filterPreview === l.id) this.filterPreview = null;
                         if (l._undoPending) {
-                            this.pushUndoSnapshot(l._undoPending, { label: l._undoLabel || "Move light" });
+                            this.pushUndoSnapshot(l._undoPending, { label: l._undoLabel || "Move light", fromDebounce: true });
                             l._undoPending = null;
                             l._undoLabel = null;
                         }
@@ -3493,7 +3504,9 @@ class InpaintEditor {
                         this.markFilterChanged(l);
                         this.renderLayers();
                         this.draw();
-                    }, 300);
+                    };
+                    l._flushNudge = flushNudge;
+                    l._nudgeRelightTimer = setTimeout(flushNudge, 300);
                 }
             }
             return;
@@ -3852,12 +3865,14 @@ class InpaintEditor {
                     this.markFilterChanged(layer);
                     this.renderLayers();
                     this.draw();
-                    if (this._wheelRelightTimer) clearTimeout(this._wheelRelightTimer);
-                    this._wheelRelightTimer = setTimeout(() => {
-                        this._wheelRelightTimer = null;
-                        this.filterPreview = null;
+                    if (layer._wheelRelightTimer) clearTimeout(layer._wheelRelightTimer);
+                    const wheelLabel = layer._undoLabel || (e.shiftKey ? "Relight: Intensity" : "Relight: Diffusion");
+                    const flushWheel = () => {
+                        if (layer._wheelRelightTimer) { clearTimeout(layer._wheelRelightTimer); layer._wheelRelightTimer = null; }
+                        layer._flushWheel = null;
+                        if (this.filterPreview === layer.id) this.filterPreview = null;
                         if (layer._undoPending) {
-                            this.pushUndoSnapshot(layer._undoPending, { label: layer._undoLabel || (e.shiftKey ? "Relight: Intensity" : "Relight: Diffusion") });
+                            this.pushUndoSnapshot(layer._undoPending, { label: wheelLabel, fromDebounce: true });
                             layer._undoPending = null;
                             layer._undoLabel = null;
                         }
@@ -3865,7 +3880,9 @@ class InpaintEditor {
                         this.markFilterChanged(layer);
                         this.renderLayers();
                         this.draw();
-                    }, 300);
+                    };
+                    layer._flushWheel = flushWheel;
+                    layer._wheelRelightTimer = setTimeout(flushWheel, 300);
                     return;
                 }
             }
@@ -13977,8 +13994,9 @@ class InpaintEditor {
      */
     // `label`: what the Undo history calls the step (the edit it takes back); else the one the snapshot carries, else
     // its kind's
-    pushUndoSnapshot(snap, { tracked = false, label } = {}) {
+    pushUndoSnapshot(snap, { tracked = false, label, fromDebounce = false } = {}) {
         if (!snap) return;
+        if (!fromDebounce) this.flushPendingDebounces();
         if (!tracked) this.historyGen++;
         if (label) snap.label = label;
         if (!snap.label) snap.label = UNDO_LABELS[snap.kind] || snap.kind;
@@ -14039,6 +14057,7 @@ class InpaintEditor {
      * a step does not happen (a held stroke, an edit in between). Resolves with the steps taken.
      */
     async stepHistory(n) {
+        this.flushPendingDebounces();
         const redo = n > 0;
         let done = 0;
         for (let i = 0; i < Math.abs(Math.round(n) || 0); i++) {
@@ -14404,29 +14423,19 @@ class InpaintEditor {
     // `historyGen` is read when the key is pressed, not when the queued step runs: an edit made after
     // that stops it, and so a held Ctrl+Z that is still queued never takes back a stroke made meanwhile
     flushPendingDebounces() {
-        if (this._nudgeRelightTimer) {
-            clearTimeout(this._nudgeRelightTimer);
-            this._nudgeRelightTimer = null;
-        }
-        if (this._wheelRelightTimer) {
-            clearTimeout(this._wheelRelightTimer);
-            this._wheelRelightTimer = null;
-        }
-        this.filterPreview = null;
         if (this.layers) {
             for (const l of this.layers) {
-                if (l && l._undoPending) {
-                    this.pushUndoSnapshot(l._undoPending, { label: l._undoLabel || "Edit" });
-                    l._undoPending = null;
-                    l._undoLabel = null;
+                if (l) {
+                    if (typeof l._flushNudge === "function") l._flushNudge();
+                    if (typeof l._flushWheel === "function") l._flushWheel();
                 }
             }
         }
     }
 
-    undoStep() { this.flushPendingDebounces(); this.closeFlyout(); const gen = this.historyGen; return this.queueHistory(() => this.historyStepNow(false, gen)); }
+    undoStep() { this.closeFlyout(); const gen = this.historyGen; return this.queueHistory(() => this.historyStepNow(false, gen)); }
 
-    redoStep() { this.flushPendingDebounces(); this.closeFlyout(); const gen = this.historyGen; return this.queueHistory(() => this.historyStepNow(true, gen)); }
+    redoStep() { this.closeFlyout(); const gen = this.historyGen; return this.queueHistory(() => this.historyStepNow(true, gen)); }
 
     queueHistory(fn) {
         const prev = this._historyQueue;
@@ -14475,6 +14484,8 @@ class InpaintEditor {
         // `gen` was taken before the wait: an edit made during it is not the step this undo was pressed for
         while (this._pendingEdits && this._pendingEdits.size) await Promise.all(Array.from(this._pendingEdits));
         if (held()) return;
+        this.flushPendingDebounces();
+        gen = this.historyGen;
         // the stacks are looked up now, not when the step was queued: an edit or a new image replaces them
         const stack = () => (redo ? this.redo : this.undo);
         const snap = stack()[stack().length - 1];
@@ -14909,20 +14920,22 @@ class InpaintEditor {
             : `${layer.name} added. It filters everything below it; pick the type and drag the sliders in the layer list.`);
         if (id === "relight") {
             const relightConf = host.getRelightSettings ? host.getRelightSettings() : null;
-            if (relightConf && relightConf.route) {
-                params.route = relightConf.route;
-            }
-            if (relightConf && relightConf.magnific) {
-                params.strength = relightConf.magnific.strength ?? 100;
-                params.style = relightConf.magnific.style ?? "standard";
-            }
-            if (relightConf && relightConf.detailFromOriginal !== undefined) {
-                params.detail = relightConf.detailFromOriginal;
+            params.route = "app";
+            if (relightConf) {
+                if (relightConf.strength !== undefined) params.strength = relightConf.strength;
+                if (relightConf.style !== undefined) params.style = relightConf.style;
+                if (relightConf.preserve_details !== undefined) params.preserve_details = relightConf.preserve_details;
+                if (relightConf.interpolate !== undefined) params.interpolate = relightConf.interpolate;
+                if (relightConf.detail !== undefined) params.detail = relightConf.detail;
+                if (relightConf.enable_hr_fix !== undefined) params.enable_hr_fix = relightConf.enable_hr_fix;
+                if (relightConf.light_type !== undefined) params.light_type = relightConf.light_type;
+                if (relightConf.lora_strength !== undefined) params.lora_strength = relightConf.lora_strength;
+                if (relightConf.steps !== undefined) params.steps = relightConf.steps;
             }
             this.setTool("lights");
             const hasDepth = !!(this.maps && this.maps.depth && (this.maps.depth.data || this.maps.depth.u16));
             if (!hasDepth && this.ensureDepthMap) {
-                this.ensureDepthMap();
+                this.ensureDepthMap().catch(() => {});
             }
         }
         return layer;
@@ -14939,13 +14952,22 @@ class InpaintEditor {
         layer.params = filterDefaults(id);
         if (id === "relight") {
             const relightConf = host.getRelightSettings ? host.getRelightSettings() : null;
-            if (relightConf && relightConf.route) {
-                layer.params.route = relightConf.route;
+            layer.params.route = "app";
+            if (relightConf) {
+                if (relightConf.strength !== undefined) layer.params.strength = relightConf.strength;
+                if (relightConf.style !== undefined) layer.params.style = relightConf.style;
+                if (relightConf.preserve_details !== undefined) layer.params.preserve_details = relightConf.preserve_details;
+                if (relightConf.interpolate !== undefined) layer.params.interpolate = relightConf.interpolate;
+                if (relightConf.detail !== undefined) layer.params.detail = relightConf.detail;
+                if (relightConf.enable_hr_fix !== undefined) layer.params.enable_hr_fix = relightConf.enable_hr_fix;
+                if (relightConf.light_type !== undefined) layer.params.light_type = relightConf.light_type;
+                if (relightConf.lora_strength !== undefined) layer.params.lora_strength = relightConf.lora_strength;
+                if (relightConf.steps !== undefined) layer.params.steps = relightConf.steps;
             }
             this.setTool("lights");
             const hasDepth = !!(this.maps && this.maps.depth && (this.maps.depth.data || this.maps.depth.u16));
             if (!hasDepth && this.ensureDepthMap) {
-                this.ensureDepthMap();
+                this.ensureDepthMap().catch(() => {});
             }
         }
         if (prev.limit) {
@@ -15123,7 +15145,8 @@ class InpaintEditor {
         if (layer.filter === "relight") {
             info.layer = layer;
             info.relight = layer._relight;
-            this.ensureRelightMaps(layer, { quick: this.filterPreview === layer.id });
+            info.quick = !pass.forRun && this.filterPreview === layer.id;
+            this.ensureRelightMaps(layer, { quick: info.quick });
         }
         if (this._filterInfoHook) this._filterInfoHook(info, layer, pass);
         return info;
@@ -18919,7 +18942,7 @@ class InpaintEditor {
             box.appendChild(el("div", "ipc-hint", `The filter "${layer.filter}" is not installed (its plugin is off or missing). The layer passes the picture through and keeps its settings.`));
             return box;
         }
-        if (this.mapsOf(layer).includes("depth") && !(this.maps && this.maps.depth)) {
+        if (layer.filter !== "relight" && this.mapsOf(layer).includes("depth") && !(this.maps && this.maps.depth)) {
             box.appendChild(el("div", "ipc-hint", "Needs a depth map: compute it under Selection \u203A Depth"));
         }
         const def = FILTERS[layer.filter];
@@ -19389,7 +19412,7 @@ class InpaintEditor {
         // 1. Missing depth map hint (if applicable)
         const hasDepth = !!((this.maps && this.maps.depth) || this.depth);
         if (!hasDepth) {
-            const noteRow = el("div", "ipc-relight-note");
+            const noteRow = el("div", "ipc-hint ipc-relight-note");
             noteRow.appendChild(el("span", null, "Needs a depth map: compute it first"));
             if (host.depthSupported !== false) {
                 const compBtn = iconButton("magic", "Compute 16-bit depth map with Depth Anything V2 Small", async () => {
@@ -22415,11 +22438,11 @@ class InpaintEditor {
     downsampleDepth(src, srcW, srcH, dstW, dstH) {
         const dst = new Uint16Array(dstW * dstH);
         for (let dy = 0; dy < dstH; dy++) {
-            const sy = Math.min(srcH - 1, Math.floor((dy / dstH) * srcH));
+            const sy = Math.min(srcH - 1, Math.floor(((dy + 0.5) / dstH) * srcH));
             const sRow = sy * srcW;
             const dRow = dy * dstW;
             for (let dx = 0; dx < dstW; dx++) {
-                const sx = Math.min(srcW - 1, Math.floor((dx / dstW) * srcW));
+                const sx = Math.min(srcW - 1, Math.floor(((dx + 0.5) / dstW) * srcW));
                 dst[dRow + dx] = src[sRow + sx];
             }
         }
@@ -22538,7 +22561,7 @@ class InpaintEditor {
         ctx.arc(ox, oy, 2.5 * invScale, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.font = `600 ${Math.max(1, Math.round(10 * invScale))}px system-ui, sans-serif`;
+        ctx.font = `600 ${(10 * invScale).toFixed(2)}px system-ui, sans-serif`;
         const ownText = "own light";
         const tw = ctx.measureText(ownText).width + 6 * invScale;
         const th = 13 * invScale;
@@ -22653,7 +22676,7 @@ class InpaintEditor {
             ctx.strokeStyle = isSelected ? "#7cc7ff" : "rgba(255, 255, 255, 0.4)";
             ctx.lineWidth = 1 * invScale;
             ctx.stroke();
-            ctx.font = `bold ${Math.max(1, Math.round(9 * invScale))}px system-ui, sans-serif`;
+            ctx.font = `bold ${(9 * invScale).toFixed(2)}px system-ui, sans-serif`;
             ctx.fillStyle = isSelected ? "#7cc7ff" : "#ffffff";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
@@ -22740,7 +22763,27 @@ class InpaintEditor {
         let targetVis = quick ? cache.visQuick : cache.vis;
         if (!targetVis || targetVis.w !== targetW || targetVis.h !== targetH) {
             const visData = new Uint8Array(targetW * targetH * 4);
-            visData.fill(255);
+            if (quick && cache.vis && cache.vis.data && cache.vis.w && cache.vis.h) {
+                const srcVis = cache.vis.data;
+                const srcW = cache.vis.w;
+                const srcH = cache.vis.h;
+                for (let dy = 0; dy < targetH; dy++) {
+                    const sy = Math.min(srcH - 1, Math.floor(((dy + 0.5) / targetH) * srcH));
+                    const sRow = sy * srcW;
+                    const dRow = dy * targetW;
+                    for (let dx = 0; dx < targetW; dx++) {
+                        const sx = Math.min(srcW - 1, Math.floor(((dx + 0.5) / targetW) * srcW));
+                        const sIdx = (sRow + sx) * 4;
+                        const dIdx = (dRow + dx) * 4;
+                        visData[dIdx] = srcVis[sIdx];
+                        visData[dIdx + 1] = srcVis[sIdx + 1];
+                        visData[dIdx + 2] = srcVis[sIdx + 2];
+                        visData[dIdx + 3] = srcVis[sIdx + 3];
+                    }
+                }
+            } else {
+                visData.fill(255);
+            }
             targetVis = {
                 data: visData,
                 w: targetW,
@@ -22822,22 +22865,31 @@ class InpaintEditor {
                                 rows: targetH,
                             }, [], { priority: quick ? INTERACTIVE : NORMAL });
                             if (targetVis && targetVis.w === targetW && targetVis.h === targetH) {
-                                const vChan = new Uint8Array(res.vis);
-                                for (let idx = 0; idx < targetW * targetH; idx++) {
-                                    targetVis.data[idx * 4 + chan] = vChan[idx];
+                                const curL = (layer.params?.lights || [])[chan];
+                                const curVKey = curL && curL.on ? `${curL.type}_${curL.x}_${curL.y}_${curL.dist}_${curL.diffusion}_${curL.range}_${depthScale}_${mapVersion}_${quick ? "q" : "f"}` : null;
+                                if (curVKey === vKey) {
+                                    const vChan = new Uint8Array(res.vis);
+                                    for (let idx = 0; idx < targetW * targetH; idx++) {
+                                        targetVis.data[idx * 4 + chan] = vChan[idx];
+                                    }
+                                    targetVis.keys[chan] = vKey;
+                                    this.markFilterChanged(layer, { soon: true });
                                 }
-                                targetVis.keys[chan] = vKey;
                             }
                         } else {
                             const vChan = shadowMarch(marchDepth, targetW, targetH, marchScale, lightVec, radius, taps, steps, bias, 0, targetH);
                             if (targetVis && targetVis.w === targetW && targetVis.h === targetH) {
-                                for (let idx = 0; idx < targetW * targetH; idx++) {
-                                    targetVis.data[idx * 4 + chan] = vChan[idx];
+                                const curL = (layer.params?.lights || [])[chan];
+                                const curVKey = curL && curL.on ? `${curL.type}_${curL.x}_${curL.y}_${curL.dist}_${curL.diffusion}_${curL.range}_${depthScale}_${mapVersion}_${quick ? "q" : "f"}` : null;
+                                if (curVKey === vKey) {
+                                    for (let idx = 0; idx < targetW * targetH; idx++) {
+                                        targetVis.data[idx * 4 + chan] = vChan[idx];
+                                    }
+                                    targetVis.keys[chan] = vKey;
+                                    this.markFilterChanged(layer, { soon: true });
                                 }
-                                targetVis.keys[chan] = vKey;
                             }
                         }
-                        this.markFilterChanged(layer, { soon: true });
                     } catch (err) {
                         console.warn(`relight_shadow channel ${chan} failed:`, err);
                     } finally {
@@ -23523,6 +23575,8 @@ class InpaintEditor {
             if (deep && l._relight) {
                 if (l._relight.normals && l._relight.normals.data) freed += l._relight.normals.data.byteLength;
                 if (l._relight.vis && l._relight.vis.data) freed += l._relight.vis.data.byteLength;
+                if (l._relight.visQuick && l._relight.visQuick.data) freed += l._relight.visQuick.data.byteLength;
+                if (l._relight.depthQuick && l._relight.depthQuick.data) freed += l._relight.depthQuick.data.byteLength;
                 l._relight = null;
             }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
@@ -23742,6 +23796,7 @@ class InpaintEditor {
                 ...(l.group ? { group: l.group } : {}),
                 ...(l.kind === "filter" ? { filter: l.filter, params: l.params, lut: l.lut || null, plate: l.plate || null } : {}),
                 ...(l.kind === "text" && l.text ? { text: l.text } : {}),
+                ...(l.relightOf ? { relightOf: l.relightOf } : {}),
             })),
             history: this.history.slice(-100).map((h) => ({ key: h.key, name: h.name, ref: h.ref, x: h.x, y: h.y, w: h.w, h: h.h, prompt: h.prompt, layerId: h.layerId, time: h.time, seed: h.seed, mode: h.mode, denoise: h.denoise,
                 ...(orientIsUp(h.orient) ? {} : { orient: { ...h.orient } }), ...(validXf(h.xf) ? { xf: h.xf.slice() } : {}) })),
@@ -23908,6 +23963,7 @@ class InpaintEditor {
                             x: l.x, y: l.y, w: l.w, h: l.h, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, alphaLock: !!l.alphaLock, clip: !!l.clip, group: l.group || null,
                             maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
                             match: l.match && typeof l.match === "object" ? { strength: +l.match.strength || 0, source: l.match.source === "underneath" ? "underneath" : "surroundings" } : { strength: 0, source: "surroundings" },
+                            relightOf: l.relightOf || null,
                             ...(l.kind === "text" && l.text ? { text: { ...TEXT_DEFAULTS, ...l.text } } : {}),
                         }, this.pixels));
                         if (l.kind === "paint") this.paintCounter += 1;

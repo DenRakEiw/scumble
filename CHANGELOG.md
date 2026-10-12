@@ -11,6 +11,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Hide handles.** Press H or click the eye toggle in the relight controls header to hide on-canvas light handles for an unobstructed view of the relit picture.
 - **Generative relighting with Magnific.** The Relight layer can render through Magnific's Relight service (route `image-relight`), sending the picture and an accurate light map (lights alone with ambient as floor). High-frequency base texture is preserved through guided ratio transfer (detail from original), landing as an editable pixel layer underneath the filter run in a single undo step.
 - **Relight prompt routes.** Additional generative relighting routes in `recipes/relight.json`: local ComfyUI (`relight_qwen_local`) on Qwen-Image-Edit-2509 with the Relight and Lightning 4-step LoRAs, Comfy Cloud variant (`image_qwen_image_edit_2509_relight`), fal IC-Light v2 (`fal-ai/iclight-v2`), and fal Bria (`bria/fibo-edit/relight`) with 13 lighting atmosphere styles.
+- **Menu reorganization.** Dodge & Burn layers (*New Dodge & Burn Layer*) and Relight layers (*New Relight Layer*) are now created from the Layer menu beside other layer types.
 - Documents with relight filter layers require reader version 6.
 
 ## 0.1.46 - 2026-10-11

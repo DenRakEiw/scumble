@@ -84,10 +84,43 @@ async function main() {
     check("every_menu_item_the_manual_names_exists", () => {
         // "Copy MCP registration (Claude Code)" is named without its bracket
         // Electron's mnemonic rule: "&" marks the access key and "&&" is a literal ampersand ("Dodge && Burn")
-        const labels = [...main.matchAll(/label:\s*"([^"]+)"/g)].map((m) => m[1].replace(/&(&?)/g, "$1").replace(/\.\.\.$/, "").replace(/ \([^)]*\)$/, ""));
-        const named = [...md.matchAll(/\b(File|Edit|View|Help|Plugins|Image) › ([^.,;:)\n]+)/g)].map((m) => [m[1], m[2]]);
-        const bad = named.filter(([, n]) => !labels.some((l) => n.startsWith(l)));
-        if (bad.length) throw new Error(`no menu item for: ${bad.map(([m, n]) => m + " › " + n.slice(0, 40)).join(" | ")}`);
+        const menuBlocks = {};
+        const menuNames = ["File", "Edit", "Image", "Layer", "View", "Help", "Plugins"];
+        function extractSubmenu(src, menuName) {
+            const idx = src.indexOf(`label: "&${menuName}"`);
+            if (idx === -1) return [];
+            const subIdx = src.indexOf("submenu:", idx);
+            if (subIdx === -1) return [];
+            const start = src.indexOf("[", subIdx);
+            if (start === -1) return [];
+            let depth = 0;
+            let end = -1;
+            for (let i = start; i < src.length; i++) {
+                if (src[i] === "[") depth++;
+                else if (src[i] === "]") {
+                    depth--;
+                    if (depth === 0) { end = i; break; }
+                }
+            }
+            if (end === -1) return [];
+            const content = src.slice(start, end + 1);
+            return [...content.matchAll(/label:\s*"([^"\n]+)"/g)].map((m) =>
+                m[1].replace(/&(&?)/g, "$1").replace(/\.\.\.$/, "").replace(/ \([^)]*\)$/, "")
+            );
+        }
+        for (const name of menuNames) menuBlocks[name] = extractSubmenu(main, name);
+        if (menuBlocks["File"]) menuBlocks["File"].push("Open Recent", "Clear Recently Opened");
+        if (menuBlocks["View"]) menuBlocks["View"].push("Default");
+
+        const named = [...md.matchAll(/\b(File|Edit|View|Help|Plugins|Image|Layer) \u203a ([^.,;:)\n*]+)/g)].map((m) => [m[1], m[2].trim()]);
+        const bad = [];
+        for (const [mName, item] of named) {
+            const labels = menuBlocks[mName];
+            if (!labels || !labels.some((l) => item.startsWith(l))) {
+                bad.push(`${mName} \u203a ${item}`);
+            }
+        }
+        if (bad.length) throw new Error(`no menu item for: ${bad.map((b) => b.slice(0, 40)).join(" | ")}`);
         return `${named.length} menu paths`;
     });
 

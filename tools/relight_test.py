@@ -228,6 +228,120 @@ JS = r"""
     const lumShadow = 0.299 * pxB[idxShadow] + 0.587 * pxB[idxShadow + 1] + 0.114 * pxB[idxShadow + 2];
     check("b: step shadow side darker than lit side", lumLit > lumShadow + 10, { lumLit, lumShadow });
 
+    // Snap test: test that snap on vs off, and an r/b-swapped guide, differ in the band across the step
+    const snapBase = mk(W, H);
+    {
+        const sctx = snapBase.getContext("2d");
+        sctx.fillStyle = "#dc2828"; sctx.fillRect(0, 0, 300, H); // red on left
+        sctx.fillStyle = "#2828dc"; sctx.fillRect(300, 0, 300, H); // blue on right
+    }
+    Object.defineProperty(snapBase, "naturalWidth", { value: W });
+    Object.defineProperty(snapBase, "naturalHeight", { value: H });
+    await ed.setBaseFromCanvas(snapBase, { keepLayers: true });
+    await settle(ed);
+
+    const snapGuide = new Uint8ClampedArray(Mw * Mh * 4);
+    const snapGuideSwap = new Uint8ClampedArray(Mw * Mh * 4);
+    for (let y = 0; y < Mh; y++) {
+        for (let x = 0; x < Mw; x++) {
+            const idx = (y * Mw + x) * 4;
+            const isLeft = x < 75;
+            snapGuide[idx + 0] = isLeft ? 220 : 40;
+            snapGuide[idx + 1] = 40;
+            snapGuide[idx + 2] = isLeft ? 40 : 220;
+            snapGuide[idx + 3] = 255;
+
+            snapGuideSwap[idx + 0] = snapGuide[idx + 2];
+            snapGuideSwap[idx + 1] = 40;
+            snapGuideSwap[idx + 2] = snapGuide[idx + 0];
+            snapGuideSwap[idx + 3] = 255;
+        }
+    }
+    fx.params.original = 50;
+    fx.params.shadows = 80;
+    fx.params.lights = [{
+        id: "light_snap",
+        on: true,
+        type: "point",
+        x: 450,
+        y: 200,
+        dist: -30,
+        kelvin: 5500,
+        color: "#ffffff",
+        intensity: 100,
+        diffusion: 30,
+        range: 600,
+        shadows: true,
+    }];
+
+    ed.releaseCaches({ deep: true });
+    const mapSnapOff = makeMap("depth", Mw, Mh, ramp, [W, 0, 0, H, 0, 0], { snap: { strength: 0 } }, snapGuide);
+    fx._relight = null;
+    await ed.setMap("depth", mapSnapOff);
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+    const pxSnapOff = ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, W, H).data;
+
+    ed.releaseCaches({ deep: true });
+    const mapSnapOn = makeMap("depth", Mw, Mh, ramp, [W, 0, 0, H, 0, 0], { snap: { strength: 80 } }, snapGuide);
+    fx._relight = null;
+    await ed.setMap("depth", mapSnapOn);
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+    const pxSnapOn = ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, W, H).data;
+
+    ed.releaseCaches({ deep: true });
+    const mapSnapSwap = makeMap("depth", Mw, Mh, ramp, [W, 0, 0, H, 0, 0], { snap: { strength: 80 } }, snapGuideSwap);
+    fx._relight = null;
+    await ed.setMap("depth", mapSnapSwap);
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+    const pxSnapSwap = ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, W, H).data;
+
+    let diffSnapOnOff = 0, diffSnapSwap = 0;
+    for (let y = 150; y < 250; y++) {
+        for (let x = 280; x < 320; x++) {
+            const idx = (y * W + x) * 4;
+            const dOnOff = Math.max(Math.abs(pxSnapOn[idx] - pxSnapOff[idx]), Math.abs(pxSnapOn[idx + 2] - pxSnapOff[idx + 2]));
+            const dSwap = Math.max(Math.abs(pxSnapOn[idx] - pxSnapSwap[idx]), Math.abs(pxSnapOn[idx + 2] - pxSnapSwap[idx + 2]));
+            if (dOnOff > 2) diffSnapOnOff++;
+            if (dSwap > 2) diffSnapSwap++;
+        }
+    }
+    check("snap: snap on vs off differs in band", diffSnapOnOff > 0, { diffSnapOnOff });
+    check("snap: r/b swapped guide differs in band", diffSnapSwap > 0, { diffSnapSwap });
+
+    // Restore base and depthMap for subsequent cases
+    delete fx.params.original;
+    delete fx.params.shadows;
+    fx.params.lights = [{
+        id: "light_1",
+        on: true,
+        type: "point",
+        x: 100,
+        y: 200,
+        dist: -30,
+        kelvin: 5500,
+        color: "#ffffff",
+        intensity: 100,
+        diffusion: 30,
+        range: 600,
+        shadows: true,
+    }];
+    ed.releaseCaches({ deep: true });
+    await ed.setBaseFromCanvas(base, { keepLayers: true });
+    await ed.setMap("depth", depthMap);
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+
     // -------------------------------------------------------------------------
     // Case c: GL against CPU within 2 levels at scale 1 and scale 0.5 (glVsCpu)
     // -------------------------------------------------------------------------
@@ -820,18 +934,26 @@ JS = r"""
     }
     check("r: overlay is not in export (0 bytes differ between lights and select tools)", diffOverlay === 0, { diffOverlay });
 
-    // Switch back to lights tool to verify viewport canvas has the overlay
+    // Switch between lights tool and select tool to verify screen displays handles overlay
+    ed.selectLayers([fx.id]);
     ed.setTool("lights");
     ed.draw();
     await settle(ed);
-    const pxView = ed.canvas.getContext("2d").getImageData(0, 0, Math.min(W, ed.canvas.width), Math.min(H, ed.canvas.height)).data;
-    let viewDiff = 0;
-    for (let i = 0; i < Math.min(pxView.length, pxLightsTool.length); i += 4) {
-        if (pxView[i] !== pxLightsTool[i] || pxView[i + 1] !== pxLightsTool[i + 1] || pxView[i + 2] !== pxLightsTool[i + 2]) {
-            viewDiff++;
+    const scW = ed.canvas.width, scH = ed.canvas.height;
+    const pxScreenLights = ed.canvas.getContext("2d").getImageData(0, 0, scW, scH).data;
+
+    ed.setTool("select");
+    ed.draw();
+    await settle(ed);
+    const pxScreenSelect = ed.canvas.getContext("2d").getImageData(0, 0, scW, scH).data;
+
+    let handleOverlayDiff = 0;
+    for (let i = 0; i < pxScreenLights.length; i += 4) {
+        if (pxScreenLights[i] !== pxScreenSelect[i] || pxScreenLights[i + 1] !== pxScreenSelect[i + 1] || pxScreenLights[i + 2] !== pxScreenSelect[i + 2]) {
+            handleOverlayDiff++;
         }
     }
-    check("r: viewport canvas displays handles overlay while export does not", viewDiff > 0, { viewDiff });
+    check("r: screen with lights tool displays handles overlay compared to select tool", handleOverlayDiff > 0, { handleOverlayDiff });
 
     // Extra L2 checks: Nudge with arrow keys and wheel diffusion
     ed.setTool("lights");
@@ -871,8 +993,36 @@ JS = r"""
     //         through the helperCall stand-in and lands the layer.
     // -------------------------------------------------------------------------
     const doc2 = await commands.run("new_document");
-    await commands.run("new_canvas", { width: 400, height: 300, doc: doc2.id, color: "#808080" });
     const ed2 = host.editorById(doc2.id);
+    const W2 = 400, H2 = 300;
+    const baseSphere = mk(W2, H2);
+    const ctxSphere = baseSphere.getContext("2d");
+    const idSphere = ctxSphere.createImageData(W2, H2);
+    const cx2 = 200, cy2 = 150, R2 = 100;
+    const lx2 = -0.8, ly2 = -0.1, lz2 = 0.59;
+    for (let y = 0; y < H2; y++) {
+        for (let x = 0; x < W2; x++) {
+            const idx = (y * W2 + x) * 4;
+            const dx = (x - cx2) / R2;
+            const dy = (y - cy2) / R2;
+            const r2 = dx * dx + dy * dy;
+            if (r2 <= 1.0) {
+                const nz = Math.sqrt(1.0 - r2);
+                const nx = dx, ny = dy;
+                const ndl = Math.max(0, nx * lx2 + ny * ly2 + nz * lz2);
+                const Y = Math.min(1.0, 0.15 + 0.8 * ndl);
+                const val = Math.round(Y * 255);
+                idSphere.data[idx] = val; idSphere.data[idx + 1] = val; idSphere.data[idx + 2] = val; idSphere.data[idx + 3] = 255;
+            } else {
+                idSphere.data[idx] = 40; idSphere.data[idx + 1] = 40; idSphere.data[idx + 2] = 40; idSphere.data[idx + 3] = 255;
+            }
+        }
+    }
+    ctxSphere.putImageData(idSphere, 0, 0);
+    Object.defineProperty(baseSphere, "naturalWidth", { value: W2 });
+    Object.defineProperty(baseSphere, "naturalHeight", { value: H2 });
+    await ed2.setBaseFromCanvas(baseSphere, { keepLayers: false });
+    await settle(ed2);
 
     const origHelperCall = host.helperCall;
     const origDepthModel = host.depthModel;
@@ -883,12 +1033,21 @@ JS = r"""
             depthHelperCalled = true;
             const n = args.width * args.height;
             const f32 = new Float32Array(n);
+            const cxM = args.width / 2, cyM = args.height / 2, rM = (100 / 400) * args.width;
             for (let y = 0; y < args.height; y++) {
                 for (let x = 0; x < args.width; x++) {
-                    f32[y * args.width + x] = 2.0 + (x / args.width) * 8.0;
+                    const dx = (x - cxM) / rM;
+                    const dy = (y - cyM) / rM;
+                    const r2 = dx * dx + dy * dy;
+                    if (r2 <= 1.0) {
+                        const nz = Math.sqrt(1.0 - r2);
+                        f32[y * args.width + x] = 4.0 + 6.0 * nz;
+                    } else {
+                        f32[y * args.width + x] = 4.0;
+                    }
                 }
             }
-            return { depth: f32, width: args.width, height: args.height, min: 2.0, max: 10.0, provider: "mock", ms: 1 };
+            return { depth: f32, width: args.width, height: args.height, min: 4.0, max: 10.0, provider: "mock", ms: 1 };
         }
         return origHelperCall.call(host, name, args);
     };
@@ -905,6 +1064,8 @@ JS = r"""
     check("s: relight returned layer summary with relight filter", sRes && sRes.layer && sRes.layer.filter === "relight", sRes);
     check("s: relight returned default 1 light", Array.isArray(sRes && sRes.lights) && sRes.lights.length === 1);
     check("s: relight returned fit with direction", Array.isArray(sRes && sRes.fit && sRes.fit.direction) && sRes.fit.direction.length === 3);
+    check("s: kd > 0.2", sRes && sRes.fit && sRes.fit.kd > 0.2, sRes && sRes.fit);
+    check("s: direction[0] < -0.3 (lit from left)", sRes && sRes.fit && sRes.fit.direction && sRes.fit.direction[0] < -0.3, sRes && sRes.fit);
     check("s: relight returned route app", sRes && sRes.route === "app");
     check("s: ed2 tool switched to lights", ed2.tool === "lights");
     check("s: ed2 now has depth map", !!(ed2.maps && ed2.maps.depth));
@@ -963,8 +1124,8 @@ JS = r"""
     await new Promise((r) => setTimeout(r, 150));
     docU.resizeCanvas();
 
-    // Create high-frequency 1-pixel checkerboard base (256x256)
-    const uW = 256, uH = 256;
+    // Create high-frequency 1-pixel checkerboard base (>2048px: 2400x600)
+    const uW = 2400, uH = 600;
     const cU = mk(uW, uH);
     const ctxU = cU.getContext("2d");
     const idU = ctxU.createImageData(uW, uH);
@@ -1007,8 +1168,8 @@ JS = r"""
     // Measure original base checkerboard contrast
     let initCount = 0, initContrastSum = 0;
     const basePxU = idU.data;
-    for (let y = 10; y < uH - 10; y++) {
-        for (let x = 10; x < uW - 10; x += 2) {
+    for (let y = 10; y < uH - 10; y += 5) {
+        for (let x = 10; x < 400; x += 2) {
             const i0 = (y * uW + x) * 4;
             const i1 = (y * uW + (x + 1)) * 4;
             initContrastSum += Math.max(basePxU[i0], basePxU[i1]) / Math.max(1, Math.min(basePxU[i0], basePxU[i1]));
@@ -1031,6 +1192,7 @@ JS = r"""
     const landedLayer = docU.layers.find((l) => l.id === landedId);
     check("u: pixel layer landed in document", !!landedLayer && landedLayer.kind === "image");
     check("u: landed layer name is Relight (magnific)", landedLayer && landedLayer.name === "Relight (magnific)");
+    check("u: landed layer has relightOf", landedLayer && landedLayer.relightOf === uFx.id);
 
     // Verify filter layer is now hidden
     const uFxAfter = docU.layers.find((l) => l.id === uFx.id);
@@ -1043,10 +1205,11 @@ JS = r"""
 
     // Verify detail preservation on the landed layer pixels
     const landedCanvas = docU.flattenToCanvas({ forRun: true, upTo: landedIdx + 1 });
+    check("u: answer size is full resolution 2400x600", landedCanvas.width === uW && landedCanvas.height === uH, { w: landedCanvas.width, h: landedCanvas.height });
     const landedPx = landedCanvas.getContext("2d").getImageData(0, 0, uW, uH).data;
     let landedCount = 0, landedContrastSum = 0;
-    for (let y = 10; y < uH - 10; y++) {
-        for (let x = 10; x < uW - 10; x += 2) {
+    for (let y = 10; y < uH - 10; y += 5) {
+        for (let x = 10; x < 400; x += 2) {
             const i0 = (y * uW + x) * 4;
             const i1 = (y * uW + (x + 1)) * 4;
             landedContrastSum += Math.max(landedPx[i0], landedPx[i1]) / Math.max(1, Math.min(landedPx[i0], landedPx[i1]));
@@ -1057,12 +1220,56 @@ JS = r"""
     const contrastDiff = Math.abs(landedAvgContrast - initAvgContrast) / initAvgContrast;
     check("u: high-frequency texture contrast preserved within 10%", contrastDiff <= 0.10, { contrastDiff, initAvgContrast, landedAvgContrast });
 
+    // Verify left/right brightness > 1.2
+    let leftSum = 0, rightSum = 0, nLeft = 0, nRight = 0;
+    for (let y = 10; y < uH - 10; y += 5) {
+        for (let x = 10; x < 400; x += 2) {
+            const idx = (y * uW + x) * 4;
+            leftSum += landedPx[idx];
+            nLeft++;
+        }
+        for (let x = uW - 400; x < uW - 10; x += 2) {
+            const idx = (y * uW + x) * 4;
+            rightSum += landedPx[idx];
+            nRight++;
+        }
+    }
+    const leftMean = leftSum / Math.max(1, nLeft);
+    const rightMean = rightSum / Math.max(1, nRight);
+    const ratioLR = leftMean / Math.max(1, rightMean);
+    check("u: left/right brightness > 1.2", ratioLR > 1.2, { ratioLR, leftMean, rightMean });
+
     // Verify 1 undo step restores the stack
     await docU.undoStep();
     const layersAfterUndo = docU.layers.map((l) => l.id);
     check("u: 1 undo step removes landed pixel layer", !layersAfterUndo.includes(landedId));
     const uFxUndone = docU.layers.find((l) => l.id === uFx.id);
     check("u: 1 undo step unhides relight filter layer", !!uFxUndone && uFxUndone.visible !== false);
+
+    // Redo step restores the landed layer for subsequent checks
+    await docU.redoStep();
+
+    // Verify relightOf round-trip through getValue -> setValue and second read skipping result
+    const valU = docU.getValue();
+    await docU.setValue(valU);
+    const restoredLanded = docU.layers.find((l) => l.id === landedId);
+    check("u: relightOf restored after getValue -> setValue", restoredLanded && restoredLanded.relightOf === uFx.id);
+
+    const isFillU = (l) => docU.isFillLayer(l);
+    const skipU = (l) => docU.isReference(l) || docU.isControl(l) || (l.kind !== "filter" && !l.visible) || (l.relightOf && l.relightOf === uFx.id);
+    const { topFilterRun } = await import("./editor/realism.js");
+    const upTo2 = topFilterRun(docU.layers, isFillU, skipU);
+    const hiddenRelight = [];
+    for (const l of docU.layers) {
+        if (l.relightOf && l.relightOf === uFx.id && l.visible) {
+            l.visible = false;
+            hiddenRelight.push(l);
+        }
+    }
+    const readCanvas = docU.flattenToCanvas({ forRun: true, upTo: upTo2 });
+    for (const l of hiddenRelight) l.visible = true;
+    const readPx = readCanvas.getContext("2d").getImageData(0, 0, uW, uH).data;
+    check("u: re-read after getValue->setValue skips previous relit layer and reads base pixel 60", Math.abs(readPx[0] - 60) <= 2, { readPx0: readPx[0] });
 
     // Clean up docU and restore settings/keys
     await commands.run("close_document", { doc: docU.id, force: true });

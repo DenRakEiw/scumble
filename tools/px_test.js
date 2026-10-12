@@ -448,16 +448,16 @@ async function relightCases(px, label, js, name) {
     }
     check(`${label} shadow_march equals its twin within 1 level`, okShadows, detailShadows);
 
-    // Benchmarks on 1024x1024 (1 MP) and 4096x4096 (16 MP)
+    // Benchmarks on 1024x1024 (1 MP) and 4096x4096 (16 MP) with app parameters
     const map1k = genMap(1024, 1024, 1024);
     const light1k = [512, 512, 200, 0];
 
-    const tNorm0 = performance.now(); px.heightNormals(map1k, 1024, 1024, 50, 2.0);
-    const tNorm1 = performance.now(); js.heightNormals(map1k, 1024, 1024, 50, 2.0);
+    const tNorm0 = performance.now(); px.heightNormals(map1k, 1024, 1024, 512, 2.0);
+    const tNorm1 = performance.now(); js.heightNormals(map1k, 1024, 1024, 512, 2.0);
     const tNorm2 = performance.now();
 
-    const tSm0 = performance.now(); px.shadowMarch(map1k, 1024, 1024, 50, light1k, 10, 4, 32, 1.0, 0, 1024);
-    const tSm1 = performance.now(); js.shadowMarch(map1k, 1024, 1024, 50, light1k, 10, 4, 32, 1.0, 0, 1024);
+    const tSm0 = performance.now(); px.shadowMarch(map1k, 1024, 1024, 512, light1k, 15.36, 4, 32, 2.56, 0, 1024);
+    const tSm1 = performance.now(); js.shadowMarch(map1k, 1024, 1024, 512, light1k, 15.36, 4, 32, 2.56, 0, 1024);
     const tSm2 = performance.now();
 
     console.log(`       1024 x 1024 (1 MP): height_normals ${label} ${(tNorm1 - tNorm0).toFixed(1)} ms, twin ${(tNorm2 - tNorm1).toFixed(1)} ms`);
@@ -466,9 +466,9 @@ async function relightCases(px, label, js, name) {
     if (name === "simd") {
         const map4k = genMap(4096, 4096, 4096);
         const light4k = [2048, 2048, 500, 0];
-        const t4kNorm0 = performance.now(); px.heightNormals(map4k, 4096, 4096, 50, 2.0);
+        const t4kNorm0 = performance.now(); px.heightNormals(map4k, 4096, 4096, 2048, 2.0);
         const t4kNorm1 = performance.now();
-        const t4kSm0 = performance.now(); px.shadowMarch(map4k, 4096, 4096, 50, light4k, 20, 4, 32, 1.0, 0, 4096);
+        const t4kSm0 = performance.now(); px.shadowMarch(map4k, 4096, 4096, 2048, light4k, 61.44, 4, 32, 10.24, 0, 4096);
         const t4kSm1 = performance.now();
         console.log(`       4096 x 4096 (16 MP): height_normals ${label} ${(t4kNorm1 - t4kNorm0).toFixed(1)} ms`);
         console.log(`       4096 x 4096 (16 MP, 32 steps, 4 taps): shadow_march ${label} ${(t4kSm1 - t4kSm0).toFixed(1)} ms`);

@@ -1106,6 +1106,15 @@ export function relightStats(small, size, ctx) {
         return { fit: { l0: [0, 0, 1], ka: 1.0, kd: 0.0 }, seq: 0 };
     }
 
+    const params = ctx?.params || ctx?.layer?.params || null;
+    const depthScale = Math.max(5, Math.min(200, Number(params?.depth_scale) || 50));
+    const sigma = Math.max(0, Math.min(10, Number.isFinite(params?.sigma) ? Number(params?.sigma) : 2.0));
+    const fitKey = `${depthMap.version || 0}_${depthScale}_${sigma}_${W}_${H}`;
+    const rCache = ctx?.layer?._relight;
+    if (rCache && rCache._fitKey === fitKey && rCache._fit) {
+        return { fit: rCache._fit, seq: rCache._fitSeq || Date.now() };
+    }
+
     const docW = size?.width || W;
     const docH = size?.height || H;
     const depthSmall = new Uint16Array(W * H);
@@ -1118,15 +1127,18 @@ export function relightStats(small, size, ctx) {
         }
     }
 
-    const params = ctx?.params || ctx?.layer?.params || null;
-    const depthScale = Math.max(5, Math.min(200, Number(params?.depth_scale) || 50));
-    const sigma = Math.max(0, Math.min(10, Number.isFinite(params?.sigma) ? Number(params?.sigma) : 2.0));
     const longSide = Math.max(W, H);
     const scaleZ = (depthScale / 100.0) * longSide;
     const normalsSmall = heightNormals(depthSmall, W, H, scaleZ, sigma);
     const fit = fitOriginalLight(pxData, normalsSmall, W, H);
+    const seq = Date.now();
+    if (rCache) {
+        rCache._fitKey = fitKey;
+        rCache._fit = fit;
+        rCache._fitSeq = seq;
+    }
 
-    return { fit, seq: Date.now() };
+    return { fit, seq };
 }
 
 function makeCanvas(w, h) {
@@ -1163,6 +1175,50 @@ function copyCanvas(src) {
 }
 
 /**
+ * Skip predicate for the relight filter.
+ *
+ * @param {any} p
+ * @param {any} info
+ * @returns {boolean}
+ */
+export function relightSkip(p, info) {
+    return !(info && info.maps && info.maps.depth) || (p?.mode !== 1 && (!p?.lights || p.lights.every((l) => !l || !l.on)) && (p?.original === undefined || Number(p.original) === 100));
+}
+
+/**
+ * Select the visibility texture for shading (quick or full).
+ *
+ * @param {any} cache
+ * @param {any} info
+ * @param {any[]} [lights]
+ * @param {number} [depthScale=50]
+ * @param {number} [mapVersion=0]
+ * @returns {any}
+ */
+export function pickVis(cache, info, lights = [], depthScale = 50, mapVersion = 0) {
+    if (info?.quick && cache?.visQuick?.data) {
+        return cache.visQuick;
+    }
+    if (cache?.vis?.data && Array.isArray(cache.vis.keys)) {
+        let match = true;
+        const lightsList = Array.isArray(lights) ? lights : [];
+        for (let i = 0; i < 4; i++) {
+            const l = lightsList[i];
+            const expectedKey = l && l.on ? `${l.type}_${l.x}_${l.y}_${l.dist}_${l.diffusion}_${l.range}_${depthScale}_${mapVersion}_f` : null;
+            if (cache.vis.keys[i] !== expectedKey) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return cache.vis;
+    }
+    if (cache?.visQuick?.data) {
+        return cache.visQuick;
+    }
+    return cache?.vis || null;
+}
+
+/**
  * CPU twin for the relight filter (PLAN_RELIGHT_BUILD.md sec 4.2).
  * Shaded per-pixel with bilinear map sampling and bilateral edge snap.
  *
@@ -1175,9 +1231,7 @@ export function applyRelight(src, params, info = {}) {
     const map = (info && info.maps && info.maps.depth) || null;
     if (!map || !map.data || map.w <= 0 || map.h <= 0) return copyCanvas(src);
     const p = params || {};
-    const lightsList = Array.isArray(p.lights) ? p.lights : [];
-    const origPct = Number.isFinite(p.original) ? Number(p.original) : 100;
-    if (p.mode !== 1 && (!lightsList || lightsList.every((l) => !l || !l.on)) && origPct === 100) {
+    if (relightSkip(p, info)) {
         return copyCanvas(src);
     }
 
@@ -1203,10 +1257,11 @@ export function applyRelight(src, params, info = {}) {
         normalsData = heightNormals(map.data, map.w, map.h, scaleZ, sigma);
     }
 
+    const lightsList = Array.isArray(p.lights) ? p.lights : [];
     let visData = null;
     let visW = map.w;
     let visH = map.h;
-    const visObj = (info.quick && cache?.visQuick) || cache?.vis || null;
+    const visObj = pickVis(cache, info, lightsList, depthScale, map.version || 0);
     if (visObj && visObj.data) {
         visData = visObj.data;
         visW = visObj.w || map.w;
@@ -1231,7 +1286,7 @@ export function applyRelight(src, params, info = {}) {
     }
 
     const fit = (info && (info.wholeStats?.fit || info.stats?.fit || cache?.fit)) || { l0: [0, 0, 1], ka: 1.0, kd: 0.0 };
-    const mappedLights = lightsList.map((l) => ({ ...l, ...lightToMap(l, map, { depth_scale: depthScale }) }));
+    const mappedLights = lightsList.map((l) => ({ ...l, ...lightToMap(l, map, { depth_scale: depthScale }), rgbLin: kelvinToRgb(l.color) }));
     const scaleVisX = visW / map.w;
     const scaleVisY = visH / map.h;
 
@@ -1630,7 +1685,10 @@ export function registerRelightGL() {
                 key: "relight:n:" + (cache.normals.key || cache.key || 0),
             } : DUMMY_NORMALS;
 
-            const visObj = (info.quick && cache?.visQuick) || cache?.vis || null;
+            const lightsList = Array.isArray(p.lights) ? p.lights : [];
+            const depthScale = Number.isFinite(p.depth_scale) ? Number(p.depth_scale) : 50;
+            const visObj = pickVis(cache, info, lightsList, depthScale, map ? (map.version || 0) : 0);
+            const isQuick = visObj === cache?.visQuick;
             const visSampler = (visObj && visObj.data) ? {
                 data: visObj.data,
                 width: visObj.w,
@@ -1638,14 +1696,11 @@ export function registerRelightGL() {
                 channels: 4,
                 linear: true,
                 static: true,
-                key: (info.quick ? "relight:vq:" : "relight:v:") + (visObj.keys ? visObj.keys.join("_") : (visObj.key || cache?.key || 0)),
+                key: (isQuick ? "relight:vq:" : "relight:v:") + (visObj.keys ? visObj.keys.join("_") : (visObj.key || cache?.key || 0)),
             } : DUMMY_VIS;
 
             const fit = (info && (info.wholeStats?.fit || info.stats?.fit || cache?.fit)) || { l0: [0, 0, 1], ka: 1.0, kd: 0.0 };
-            const depthScale = Number.isFinite(p.depth_scale) ? Number(p.depth_scale) : 50;
             const depthScaleMap = (depthScale / 100.0) * (map ? Math.max(map.w, map.h) : 1024);
-
-            const lightsList = Array.isArray(p.lights) ? p.lights : [];
             const lPositions = [];
             const lColors = [];
             const lCones = [];

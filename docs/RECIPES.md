@@ -30,7 +30,7 @@ layer, exactly like in the ComfyUI node.
   "settings": [ { "index": 1, "node": "unet", "input": "unet_name", "label": "Model",
                   "spec": [["file.safetensors"], {}] } ],   // spec optional: /object_info wins when connected
   "presets": [ { "name": "L", "values": { "rp_settings:dlss_model_preset": "L" } } ],   // optional, see "Presets"
-  "task": "edit" | "upscale" | "pass",                      // optional, edit when left out; see below
+  "task": "edit" | "upscale" | "pass" | "relight",      // optional, edit when left out; see below
   "models": { "diffusion_models": ["..."] },                // informational
   "prompt": { "<id>": { "class_type": "...", "inputs": { ... } }, ... }
 }
@@ -51,7 +51,7 @@ the pass runs on the user's own ComfyUI only), is not offered by Generate new, a
 R3b): that entry does not run the recipe's graph and selects no recipe, it runs the `realism_pass` command
 (`host.realismWhole`: the whole visible picture at 1x, or at 1.5x to 3x with the document resized by the factor,
 through a prompt of its own, `realism.passPrompt`, which takes the recipe's `DLSS5Settings` inputs with the mode's
-`upscaling_mode`, and a new layer above the picture). Any other task is read as `edit`.
+`upscaling_mode`, and a new layer above the picture). `relight` is a relighting recipe (`relight_qwen_local`, `recipes/relight.json`). Any other task is read as `edit`.
 
 ### The shipped ComfyUI recipes
 
@@ -1127,7 +1127,7 @@ The two modes (`host.runUpscale(editor, { scope, factor })` in `renderer/editor/
 
 **On the user's ComfyUI** (`kind: "comfy"` with `"task": "upscale"`, e.g. `upscale_model_local`): `normalize()`
 gives the recipe `factor: { ..., fixed: true }` (the model picks its factor, the dialog shows none) and turns any
-other `task` into `edit`. A recipe that names the input its factor goes into, `"factor": { "default", "min", "max",
+other `task` (besides `pass` and `relight`) into `edit`. A recipe that names the input its factor goes into, `"factor": { "default", "min", "max",
 "input": "<node>|<input>" }` with the node in its graph (`rtx_vsr_local`: `"rtx|resize_type.scale"`, the dotted key of
 the node's dynamic combo, a flat key in the API prompt), keeps an unfixed factor: the dialog lists its whole steps, the
 `upscale` command's `factor` is checked against it, and `queueGenerate` writes it there (the factor rides on the

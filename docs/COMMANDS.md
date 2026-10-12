@@ -568,7 +568,7 @@ Relight the picture: edits an existing relight layer or adds a new one. Computes
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `layer` | string | relight filter layer to edit (default adds a new one) (default `"active"`) |
+| `layer` | string | relight filter layer to edit (default adds a new one) |
 | `lights` | array | array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}] |
 | `original` | number | original light strength 0..100 % (default 100) |
 | `ambient` | number | ambient light 0..100 % (default 15) |

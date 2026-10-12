@@ -312,11 +312,16 @@ async function main() {
         }
     };
     const ctxMock = { maps: { depth: cDepth }, params: { depth_scale: 60, sigma: 1.5 } };
-    const statsCanvas = relightStats(mockCanvas, cDepth, ctxMock, { width: CW, height: CH });
+    const statsCanvas = relightStats(mockCanvas, { width: CW, height: CH }, ctxMock);
     assert(statsCanvas && statsCanvas.fit, "relightStats computes fit with canvas");
     assert(Number.isFinite(statsCanvas.fit.ka), "statsCanvas ka is finite");
     assert(statsCanvas.fit.kd > 0, "statsCanvas kd is strictly positive with depth and shading gradient");
-    assert(statsCanvas.fit.l0[0] !== 0 || statsCanvas.fit.l0[1] !== 0, "non-zero recovered light direction");
+    const l0 = statsCanvas.fit.l0;
+    assert(l0[0] < 0, `l0[0] should be negative, got ${l0[0]}`);
+    assert(l0[1] < 0, `l0[1] should be negative, got ${l0[1]}`);
+    const dot = (l0[0] * lx + l0[1] * ly + l0[2] * lz) / (Math.hypot(...l0) * Math.hypot(lx, ly, lz));
+    const angleDeg = (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
+    assert(angleDeg < 30, `angle between recovered and true light < 30 deg, got ${angleDeg.toFixed(1)}`);
     console.log("  PASS 7: 2700 K is warmer than 8000 K, sun relative direction, and canvas relightStats works");
 }
 
@@ -682,7 +687,68 @@ async function main() {
     console.log("  PASS 16: spot gobo patterns modulate beam safely and stay bounded in [0, 255]");
 }
 
-    console.log("\nALL 16 RELIGHT TESTS PASSED CLEANLY!");
+// ------------------------------------------------------------------------------------------------
+// 17. checkParams for relight: non-array lights refuses
+// ------------------------------------------------------------------------------------------------
+{
+    if (typeof window === "undefined") {
+        global.window = {
+            scumble: { comfy: { onEvent: () => {} }, helpers: { free: async () => {} } },
+            addEventListener: () => {},
+            removeEventListener: () => {},
+        };
+    }
+    if (typeof document === "undefined") {
+        global.document = {
+            createElement: () => ({ getContext: () => ({}) }),
+        };
+    }
+    const commandsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "commands.js")).href);
+    const { checkParams } = commandsMod;
+
+    // A valid lights array should pass
+    const valid = checkParams("relight", { lights: [{ type: "point", x: 10, y: 20 }] });
+    assert(Array.isArray(valid.lights) && valid.lights.length === 1, "valid lights array passes");
+
+    // Non-array inputs must throw an error, not silently become []
+    for (const bad of ["invalid_string", 123, { x: 10, y: 20 }]) {
+        assert.throws(
+            () => checkParams("relight", { lights: bad }),
+            /lights must be an array/,
+            `checkParams should refuse non-array lights: ${JSON.stringify(bad)}`
+        );
+    }
+    console.log("  PASS 17: checkParams refuses non-array lights");
+}
+
+// ------------------------------------------------------------------------------------------------
+// 18. Flat relight settings round-trip on host
+// ------------------------------------------------------------------------------------------------
+{
+    const hostMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "host.js")).href);
+    const host = hostMod.host || hostMod.default || hostMod;
+    const initial = host.getRelightSettings();
+    assert.equal(typeof initial, "object", "initial settings is an object");
+    assert.equal(initial.route, "app", "default route is app");
+    assert.equal(initial.strength, 100, "default strength is 100");
+    assert.equal(initial.style, "standard", "default style is standard");
+    assert.equal(initial.detail, true, "default detail is true");
+
+    // Patch flat settings
+    host.setRelightSettings({ strength: 75, style: "dramatic", detail: false, lora_strength: 0.8 });
+    const updated = host.getRelightSettings();
+    assert.equal(updated.strength, 75, "updated strength is 75");
+    assert.equal(updated.style, "dramatic", "updated style is dramatic");
+    assert.equal(updated.detail, false, "updated detail is false");
+    assert.equal(updated.lora_strength, 0.8, "updated lora_strength is 0.8");
+    assert.equal(updated.route, "app", "route remains app");
+
+    // Restore initial settings
+    host.setRelightSettings(initial);
+    console.log("  PASS 18: flat relight settings round-trip on host");
+}
+
+    console.log("\nALL 18 RELIGHT TESTS PASSED CLEANLY!");
     console.log("PASS");
 }
 

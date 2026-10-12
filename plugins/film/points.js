@@ -724,7 +724,7 @@ export function makePoints(scumble) {
                 x: { type: "number", description: "centre x in image pixels" },
                 y: { type: "number", description: "centre y in image pixels" },
                 shape: { type: "string", enum: ["circle", "ellipse", "polygon", "line"], description: "point shape (default circle)" },
-                vertices: { type: "array", items: { type: "array" }, description: "polygon: 3 to 16 [x, y] corners in image px" },
+                vertices: { type: "array", items: { type: "array", items: { type: "number" } }, description: "polygon: 3 to 16 [x, y] corners in image px" },
                 radius: { type: "number", description: "radius or feather in pixels (default 10 % of the long side)" },
                 height: { type: "number", description: "ellipse: the second radius in px (default 60 % of radius)" },
                 angle: { type: "number", description: "degrees, clockwise from +x in image coordinates" },

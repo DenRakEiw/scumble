@@ -468,25 +468,22 @@ class Handler(BaseHTTPRequestHandler):
             return b64decode(body.get("image"))
         if route == "image-relight":
             raw = b64decode(body.get("image"))
-            try:
-                from io import BytesIO
-                from PIL import Image
-                im = Image.open(BytesIO(raw))
-                w, h = im.size
-                nw = max(64, w // 2)
-                nh = max(64, h // 2)
-                small = im.resize((nw, nh), Image.Resampling.BILINEAR).convert("RGBA")
-                spxs = small.load()
-                for y in range(nh):
-                    for x in range(nw):
-                        factor = 1.25 - 0.40 * (x / nw)
-                        r, g, b, a = spxs[x, y]
-                        spxs[x, y] = (min(255, int(r * factor)), min(255, int(g * factor)), min(255, int(b * factor)), a)
-                bio = BytesIO()
-                small.save(bio, format="PNG")
-                return bio.getvalue()
-            except Exception:
-                return raw
+            from io import BytesIO
+            from PIL import Image
+            im = Image.open(BytesIO(raw))
+            w, h = im.size
+            nw = max(64, w // 2)
+            nh = max(64, h // 2)
+            small = im.resize((nw, nh), Image.Resampling.BILINEAR).convert("RGBA")
+            spxs = small.load()
+            for y in range(nh):
+                for x in range(nw):
+                    factor = 1.25 - 0.40 * (x / nw)
+                    r, g, b, a = spxs[x, y]
+                    spxs[x, y] = (min(255, int(r * factor)), min(255, int(g * factor)), min(255, int(b * factor)), a)
+            bio = BytesIO()
+            small.save(bio, format="PNG")
+            return bio.getvalue()
         pics = pictures_of(body)
         if pics and pics[0][1]:
             return pics[0][1]

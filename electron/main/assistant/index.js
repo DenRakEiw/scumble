@@ -732,7 +732,7 @@ class Assistant {
                 }
                 return errorResult(`not run: could not read the document (${err.message})`);
             }
-            const resolved = resolveLayer(args, layers);
+            const resolved = resolveLayer(args, layers, name);
             if (resolved.error) return errorResult(resolved.error);
             args = resolved.args;
         }
@@ -847,12 +847,16 @@ class Assistant {
             facts.recipe = chat.recipe || null;
             facts.changedByChat = [...(chat.changedSettings || [])];
         }
-        if (call.name === "realism_pass") {
+        if (call.name === "realism_pass" || call.name === "relight") {
             // whether the pass can run on this document (refused with the reason, no card), and what the card shows:
             // the app's Style, Strength and model preset (no command sets them)
             try {
                 const answer = await this.read("status", { doc });
                 facts.realism = (answer && answer.realism) || null;
+                if (answer) {
+                    facts.width = answer.width;
+                    facts.height = answer.height;
+                }
             } catch (_) { facts.realism = null; }
         }
         if (/^export/.test(call.name) && call.args.path && this.deps.statFile) {
@@ -966,7 +970,7 @@ function idsNamedBy(name, result) {
  * Every layer reference to an id, the way the command core resolves it (`findLayer`): an id, a
  * name, a unique part of a name, "active" or nothing for the active layer.
  */
-function resolveLayer(args, layers) {
+function resolveLayer(args, layers, name) {
     const out = { ...args };
     for (const field of ["layer", "source", "target"]) {
         const raw = out[field];
@@ -975,7 +979,7 @@ function resolveLayer(args, layers) {
         if (found.error) return { error: found.error };
         out[field] = found.id;
     }
-    if (out.layer === undefined && layers.length) {
+    if (out.layer === undefined && layers.length && name !== "relight") {
         const active = layers.find((l) => l.active);
         if (active) out.layer = active.id;
     }

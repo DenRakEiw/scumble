@@ -478,8 +478,8 @@ export function activate(scumble) {
     // ---- commands ------------------------------------------------------------------------------------------------------
     const FIELDS = {
         kind: { type: "string", description: "new (an element added in the box), keep, move, remove (an element of the picture), from (a reference layer placed in the box)", enum: ["new", "keep", "move", "remove", "from"] },
-        rect: { type: "array", description: "[left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was" },
-        src: { type: "array", description: "keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer)" },
+        rect: { type: "array", items: { type: "number" }, description: "[left, top, right, bottom] in image pixels (or { x, y, w, h }): where the element goes; for remove, where it was" },
+        src: { type: "array", items: { type: "number" }, description: "keep / move / remove: where the element is now; from: the part of the reference layer, in image pixels where the layer sits (omit for the whole layer)" },
         layer: { type: "string", description: "from only: the reference layer (id, name or a unique part of it)" },
         desc: { type: "string", description: `what the element is, at most ${DESC_MAX} characters; a reference as @img1` },
         text: { type: "string", description: "new only: words to render in the box (the box becomes a Text box)" },

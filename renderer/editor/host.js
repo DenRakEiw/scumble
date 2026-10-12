@@ -410,8 +410,15 @@ export const host = {
 
     relightSettings: {
         route: "app",
-        magnific: { strength: 100, style: "standard", preserve: true, interpolate: false },
-        detailFromOriginal: true,
+        strength: 100,
+        style: "standard",
+        preserve_details: true,
+        interpolate: false,
+        detail: true,
+        enable_hr_fix: true,
+        light_type: "soft overcast daylight lighting",
+        lora_strength: 1.0,
+        steps: 4,
     },
 
     getRelightSettings() {
@@ -1257,6 +1264,32 @@ export const host = {
             }
         }
         return null;
+    },
+
+    /** Check if ComfyUI object info has the required models for the relight recipe; throws if missing. */
+    checkComfyRelightModels(recipe, info) {
+        if (!info) return;
+        const loras = info.LoraLoaderModelOnly?.input?.required?.lora_name?.[0] || [];
+        const unets = info.UNETLoader?.input?.required?.unet_name?.[0] || [];
+        const clips = info.CLIPLoader?.input?.required?.clip_name?.[0] || [];
+        const vaes = info.VAELoader?.input?.required?.vae_name?.[0] || [];
+        const checks = [
+            { label: "UNet", file: "qwen_image_edit_2509_fp8_e4m3fn.safetensors", list: unets },
+            { label: "Text encoder", file: "qwen_2.5_vl_7b_fp8_scaled.safetensors", list: clips },
+            { label: "VAE", file: "qwen_image_vae.safetensors", list: vaes },
+            { label: "Relight LoRA", file: "Qwen-Image-Edit-2509-Relight.safetensors", list: loras },
+            { label: "Lightning LoRA", file: "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors", list: loras },
+        ];
+        const missing = [];
+        for (const item of checks) {
+            if (!Array.isArray(item.list) || !item.list.includes(item.file)) {
+                const link = this.modelLink(recipe, item.file);
+                missing.push(`${item.label}: ${item.file}${link ? " (" + link + ")" : ""}`);
+            }
+        }
+        if (missing.length) {
+            throw new Error(`Your ComfyUI lacks ${missing.length === 1 ? "a model file this recipe needs" : "model files this recipe needs"}: ${missing.join("; ")}. Put the file in that models folder (and restart or refresh ComfyUI), then try again.`);
+        }
     },
 
     /** The refusal for a run whose Settings rows name files the server lacks, or null when every file is there. */
@@ -3043,6 +3076,9 @@ export const host = {
         try {
             if (editor.relightSettled) await editor.relightSettled();
             const W = editor.width, H = editor.height;
+            if ((layer.params || {}).detail !== false && W * H > realism.MAX_AREA) {
+                throw new Error(`${L}: detail restoration supports pictures up to 27.9 megapixels (${W} x ${H} is ${((W * H) / 1e6).toFixed(1)} MP). Turn off detail restoration or scale the picture down first.`);
+            }
             const upTo = realism.topFilterRun(editor.layers, isFill, skip);
             editor.setStatus(`${L}: reading the picture (${W} x ${H}) ...`);
             const sig0 = readSig(upTo);
@@ -3118,31 +3154,9 @@ export const host = {
                 const localRecipe = list.find((r) => r.id === "relight_qwen_local");
                 let info = this.objectInfo;
                 if (!info && typeof this.loadObjectInfo === "function") {
-                    try { info = await this.loadObjectInfo(); } catch (_) {}
+                    info = await this.loadObjectInfo();
                 }
-                if (info) {
-                    const loras = info.LoraLoaderModelOnly?.input?.required?.lora_name?.[0] || [];
-                    const unets = info.UNETLoader?.input?.required?.unet_name?.[0] || [];
-                    const clips = info.CLIPLoader?.input?.required?.clip_name?.[0] || [];
-                    const vaes = info.VAELoader?.input?.required?.vae_name?.[0] || [];
-                    const checks = [
-                        { label: "UNet", file: "qwen_image_edit_2509_fp8_e4m3fn.safetensors", list: unets },
-                        { label: "Text encoder", file: "qwen_2.5_vl_7b_fp8_scaled.safetensors", list: clips },
-                        { label: "VAE", file: "qwen_image_vae.safetensors", list: vaes },
-                        { label: "Relight LoRA", file: "Qwen-Image-Edit-2509-Relight.safetensors", list: loras },
-                        { label: "Lightning LoRA", file: "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors", list: loras },
-                    ];
-                    const missing = [];
-                    for (const item of checks) {
-                        if (!Array.isArray(item.list) || !item.list.includes(item.file)) {
-                            const link = this.modelLink(localRecipe, item.file);
-                            missing.push(`${item.label}: ${item.file}${link ? " (" + link + ")" : ""}`);
-                        }
-                    }
-                    if (missing.length) {
-                        throw new Error(`Your ComfyUI lacks ${missing.length === 1 ? "a model file this recipe needs" : "model files this recipe needs"}: ${missing.join("; ")}. Put the file in that models folder (and restart or refresh ComfyUI), then try again.`);
-                    }
-                }
+                this.checkComfyRelightModels(localRecipe, info);
                 editor.setStatus(`${L}: sending picture (${wSend} x ${hSend}) to your local ComfyUI ...`);
                 const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
                 const upload = this.uploadInput(new Blob([picBytes], { type: "image/png" }), `n${editor.node.id}_relight_${stamp}.png`);
@@ -3256,9 +3270,6 @@ export const host = {
             const useDetail = p.detail !== false;
             let finCanvas = null;
             if (useDetail) {
-                if (W * H > realism.MAX_AREA) {
-                    throw new Error(`${L}: detail restoration supports pictures up to 27.9 megapixels (${W} x ${H} is ${((W * H) / 1e6).toFixed(1)} MP). Turn off detail restoration or scale the picture down first.`);
-                }
                 editor.setStatus(`${L}: transferring lighting and restoring original details ...`);
                 const cAns = document.createElement("canvas");
                 cAns.width = wAns; cAns.height = hAns;
