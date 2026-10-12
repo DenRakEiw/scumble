@@ -11,8 +11,13 @@ electron/main/recipes.js importFile against a scratch userData folder). The rest
 - the shipped local recipes (Qwen Image Edit 2.1, Flux.2 Klein) write each @img token as their graph numbers its
   picture in the node's batch, leave out the encoder inputs the batch does not fill and refuse a token past their slots
   (docs/PLAN_REFS.md 26e); ComfyUI is stubbed, nothing is queued on any server.
+- a relight recipe's id (a copy of recipes/relight.json imported, a graph saved from the ComfyUI window into Relight
+  (Qwen, local), the shipped Relight with a provider) keeps the recipe in use and its provider, puts the select back
+  after loadRecipes() rebuilt its options and stores nothing; the relight rows in Settings > Recipes carry no provider
+  select (docs/PLAN_RELIGHT_FIXES.md F3; until then the id fell to the first other recipe, Flux.2 Klein local, which
+  was saved as the recipe in use). Both steps run even when the first fails.
 
-The imported recipe is removed again whatever happens, and the recipe select is put back where it was.
+The imported recipes are removed again whatever happens, and the recipe select is put back where it was.
 
     python tools/recipes_test.py
 
@@ -32,6 +37,7 @@ from cdp import session  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MINE = "flux2_flex_mine"
 MY_MODEL = "black-forest-labs/flux.2-flex:free"
+RELIGHT_MINE = "relight_mine"
 
 PRE = """(async () => {
     const commands = window.__cmds.commands, host = window.__host;
@@ -73,7 +79,8 @@ def node_step():
 
 
 def write_files(dirname):
-    """A copy of the shipped FLUX.2 [flex] recipe with an OpenRouter model the app does not ship, and a broken one."""
+    """A copy of the shipped FLUX.2 [flex] recipe with an OpenRouter model the app does not ship, a broken one, and a
+    copy of the shipped Relight recipe under an id of its own (task relight, a provider recipe with three variants)."""
     with open(os.path.join(ROOT, "recipes", "flux2_flex.json"), encoding="utf-8") as fh:
         mine = json.load(fh)
     mine["id"] = MINE
@@ -85,7 +92,14 @@ def write_files(dirname):
     bad = os.path.join(dirname, "no_provider.json")
     with open(bad, "w", encoding="utf-8", newline=chr(10)) as fh:
         json.dump({"kind": "provider", "id": "no_provider", "name": "No provider"}, fh, indent=2)
-    return good, bad
+    with open(os.path.join(ROOT, "recipes", "relight.json"), encoding="utf-8") as fh:
+        lit = json.load(fh)
+    lit["id"] = RELIGHT_MINE
+    lit["name"] = "Relight (mine)"
+    relight = os.path.join(dirname, RELIGHT_MINE + ".json")
+    with open(relight, "w", encoding="utf-8", newline=chr(10)) as fh:
+        json.dump(lit, fh, indent=2)
+    return good, bad, relight
 
 
 SETUP = """
@@ -354,17 +368,95 @@ try {
 }
 """
 
-CLEANUP = """
+RELIGHT_KEEPS = """
+// F3 (docs/PLAN_RELIGHT_FIXES.md): a relight recipe is never the window's recipe (the Relight panel and the relight
+// command pick it by the layer's route). Its id reaches selectRecipe from Settings > Recipes > Import and from a graph
+// saved in the ComfyUI window (comfyView.onSaved): the recipe in use stays with its provider, the select shows it again
+// after loadRecipes() rebuilt the options, and nothing is stored. Until F3 the id fell to the first other recipe
+// (Flux.2 Klein local), which went into the window and was saved as the recipe in use.
+const S = window.__shell;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const sel = () => document.getElementById("shell-recipe");
+const stored = (s) => JSON.stringify({ recipe: s.recipe, recipeByMode: s.recipeByMode || {}, recipeProviders: s.recipeProviders || {} });
 const out = {};
-try { await window.scumble.recipes.remove("%s"); out.removed = true; } catch (err) { out.removed = String(err.message || err); }
+try {
+    S.selectRecipe("flux2_flex", "fal");
+    // not vacuous: the recipe a relight id fell to is another one than the recipe in use, and loadRecipes() really
+    // moves the select away from it (a selectRecipe that only returned would leave it there)
+    const first = host.shell.recipes().find((x) => x.task !== "relight");
+    if (!first || first.id === "flux2_flex") throw new Error("the first recipe that is not relight is " + (first && first.id) + ": a kept recipe looks like the fallback");
+    await S.loadRecipes();
+    if (sel().value === "flux2_flex") throw new Error("loadRecipes() left the select on flux2_flex: a put-back select looks like an untouched one");
+    out.fallback = first.id;
+    out.rebuilt = sel().value;
+    S.selectRecipe("flux2_flex", "fal");
+    await wait(400);
+    const before = await window.scumble.settings.get();
+    if (before.recipe !== "flux2_flex") throw new Error("the stored recipe before the relight ids: " + before.recipe);
+    const same = (what) => {
+        const got = { recipe: host.recipe && host.recipe.id, provider: host.recipe && host.recipe.provider, select: sel().value };
+        if (got.recipe !== "flux2_flex" || got.provider !== "fal" || got.select !== "flux2_flex") throw new Error(what + ": the window shows " + JSON.stringify(got) + " instead of flux2_flex on fal");
+    };
+    // Settings > Recipes > Import of a relight recipe file
+    const r = await S.importRecipe(%s);
+    if (!r || r.id !== "relight_mine" || r.task !== "relight") throw new Error("the relight copy imported as " + JSON.stringify(r && { id: r.id, task: r.task }) + ": " + note());
+    same("after the import of relight_mine");
+    // the ComfyUI window's onSaved for a graph saved into Relight (Qwen, local), as shell.js runs it
+    await S.loadRecipes();
+    S.selectRecipe("relight_qwen_local");
+    same("after a graph saved into relight_qwen_local");
+    // the shipped Relight with a provider that flux2_flex has too: the kept recipe does not take it
+    S.selectRecipe("relight", "magnific");
+    same("after relight on magnific");
+    await wait(400);
+    const after = await window.scumble.settings.get();
+    if (stored(after) !== stored(before)) throw new Error("the relight ids stored " + stored(after) + " over " + stored(before));
+    out.stored = after.recipe;
+    return out;
+} finally {
+    if (window.__prev) S.selectRecipe(window.__prev);
+}
+"""
+
+RELIGHT_ROWS = """
+// F3: the relight rows in Settings > Recipes carry no provider select; the Relight panel's route picks the provider,
+// and the row's select only wrote settings.recipeProviders.relight, which no relight route reads
+const S = window.__shell;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+await S.openSettings();
+await wait(300);
+try {
+    const out = {};
+    // not vacuous: a provider row that is not relight still has its select
+    if (!document.querySelector('.shell-recipe[data-id="flux2_flex"] select')) throw new Error("flux2_flex's row has no provider select: the query finds none");
+    for (const id of ["relight", "relight_mine"]) {
+        const row = document.querySelector('.shell-recipe[data-id="' + id + '"]');
+        if (!row) throw new Error("Settings > Recipes has no row for " + id);
+        const s = row.querySelector("select");
+        if (s) throw new Error(id + "'s row has a provider select: " + Array.from(s.options).map((o) => o.value).join(", "));
+        out[id] = row.children.length;
+    }
+    return out;
+} finally {
+    document.getElementById("shell-settings").close();
+}
+"""
+
+CLEANUP = """
+// the FLUX.2 [flex] copy and the relight copy (a later gate must not read either)
+const mine = %s;
+const out = { removed: {} };
+for (const id of mine) {
+    try { await window.scumble.recipes.remove(id); out.removed[id] = true; } catch (err) { out.removed[id] = String(err.message || err); }
+}
 await window.__shell.loadRecipes();
 const list = await window.scumble.recipes.list();
-out.left = list.filter((x) => x.id === "%s").length;
+out.left = list.filter((x) => mine.includes(x.id)).map((x) => x.id);
 if (window.__prev) window.__shell.selectRecipe(window.__prev);
 out.recipe = document.getElementById("shell-recipe").value;
 try { await run("close_document", { doc: window.__r, force: true }); } catch (_) { /* gone */ }
 window.__r = null;
-if (out.left) throw new Error("the imported recipe is still served");
+if (out.left.length) throw new Error("an imported recipe is still served: " + out.left.join(", "));
 return out;
 """
 
@@ -372,7 +464,7 @@ return out;
 async def run_all(c):
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
     tmp = tempfile.mkdtemp(prefix="scumble-recipes-")
-    good, bad = write_files(tmp)
+    good, bad, relight = write_files(tmp)
     ok = True
 
     async def js(name, body, timeout=120):
@@ -389,12 +481,20 @@ async def run_all(c):
         await js("a_provider_recipe_without_a_provider_is_refused_and_writes_nothing", IMPORT_BAD % json.dumps(bad))
         await js("local_recipes_name_the_batch_pictures_and_trim_the_unused_slots", LOCAL_REFS)
         await js("a_file_the_server_lacks_stays_marked_and_refuses_the_run", MISSING_FILES)
+        # F3: each relight step runs even when the one before failed, so a red run names both
+        for name, body in (("a_relight_id_keeps_the_recipe_in_use_and_stores_nothing", RELIGHT_KEEPS % json.dumps(relight)),
+                           ("relight_rows_have_no_provider_select", RELIGHT_ROWS)):
+            try:
+                await js(name, body)
+            except Exception as err:  # noqa: BLE001
+                ok = False
+                print("[FAIL] %s: %s" % (name, err))
     except Exception as err:  # noqa: BLE001
         ok = False
         print("[FAIL]", err)
     finally:
         try:
-            await js("cleanup", CLEANUP % (MINE, MINE))
+            await js("cleanup", CLEANUP % json.dumps([MINE, RELIGHT_MINE]))
         except Exception as err:  # noqa: BLE001
             ok = False
             print("[FAIL] cleanup:", err)

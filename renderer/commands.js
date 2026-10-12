@@ -18,7 +18,7 @@ import { api, host } from "./editor/host.js";
 import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { normalizeLimit } from "./editor/inpaint_weights.js";
-import { defaultLight, normalizeLights } from "./editor/inpaint_relight.js";
+import { defaultLight, normalizeLights, RELIGHT_ROUTES } from "./editor/inpaint_relight.js";
 import { fontList } from "./editor/inpaint_text.js";
 import { parse, remap } from "./editor/reftokens.js";
 import { LABEL as REALISM_LABEL } from "./editor/realism.js";
@@ -1396,7 +1396,7 @@ const COMMANDS = {
     },
     relight: {
         needsImage: true,
-        description: "Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (the default) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer.",
+        description: "Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (a new layer's route; an edit without route keeps the layer's and renders nothing) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer.",
         params: {
             layer: P.layer("relight filter layer to edit (default adds a new one)", { default: null }),
             lights: P.arr("array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}]", { items: { type: "object" } }),
@@ -1404,16 +1404,18 @@ const COMMANDS = {
             ambient: P.num("ambient light 0..100 % (default 15)"),
             depth_scale: P.num("depth scale 5..200 % (default 50)"),
             shadows: P.num("shadow strength 0..100 % (default 60)"),
-            route: P.str("relight route ('app' default, 'magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui')", { default: "app" }),
+            route: P.str("relight route: 'app' (the in-app filter), 'magnific', 'fal-iclight', 'fal-bria', 'comfycloud' or 'comfyui' (a generative route renders now). Omitted: a new layer is 'app', an edited layer keeps its route and nothing renders"),
             prompt: P.str("additional prompt text for generative routes"),
             timeout: P.timeout(600),
         },
         async run(ed, a) {
-            const route = a.route != null && a.route !== "" ? String(a.route) : "app";
-            const validRoutes = ["app", "magnific", "fal-iclight", "fal-bria", "comfycloud", "comfyui"];
-            if (!validRoutes.includes(route)) {
-                throw new Error(`Unknown relight route "${route}" (must be one of: ${validRoutes.join(", ")})`);
+            // the route this call names; a generative one renders below. Omitted, an edit keeps the layer's route and
+            // renders nothing (the assistant's policy runs a relight without route unasked: it must never render)
+            const given = a.route != null && a.route !== "" ? String(a.route) : null;
+            if (given && !RELIGHT_ROUTES.includes(given)) {
+                throw new Error(`Unknown relight route "${given}" (must be one of: ${RELIGHT_ROUTES.join(", ")})`);
             }
+            const route = given || "app";
             let l;
             if (a.layer != null && a.layer !== "") {
                 l = findLayer(ed, a.layer);
@@ -1426,15 +1428,17 @@ const COMMANDS = {
                 if (a.ambient !== undefined) raw.ambient = a.ambient;
                 if (a.depth_scale !== undefined) raw.depth_scale = a.depth_scale;
                 if (a.shadows !== undefined) raw.shadows = a.shadows;
+                // a route goes in the same step as the values, and only when it changes (a render on the layer's own
+                // route pushes no empty step)
+                if (given && given !== ((l.params && l.params.route) || "app")) raw.route = given;
                 const vals = Object.keys(raw).length ? checkParams("relight", raw, { width: ed.width, height: ed.height }) : {};
                 if (vals.lights) vals.lights = normalizeLights(raw.lights, { width: ed.width, height: ed.height });
                 const keys = Object.keys(vals);
                 if (keys.length) {
-                    ed.pushUndo({ kind: "filter", id: l.id, label: filterStepLabel("relight", keys) });
+                    ed.pushUndo({ kind: "filter", id: l.id, label: keys.length === 1 && keys[0] === "route" ? "Relight route" : filterStepLabel("relight", keys) });
                     writeParams(ed, l, vals);
                     touch(ed);
                 }
-                if (l.params) l.params.route = route;
             } else {
                 const raw = {};
                 if (a.lights !== undefined) raw.lights = a.lights;
@@ -1479,13 +1483,14 @@ const COMMANDS = {
                     notes: rendered.note ? [rendered.note] : [],
                 };
             }
+            const own = (l.params && l.params.route) || "app";
             return {
                 layer: layerSummary(ed, l),
                 lights: l.params?.lights || [],
                 fit,
-                route: "app",
+                route: own,
                 seconds: 0,
-                notes: [],
+                notes: own !== "app" ? [`the layer's route is ${own}: nothing was rendered (route "${own}" renders it)`] : [],
             };
         },
     },
@@ -2497,6 +2502,10 @@ export function checkParams(filterId, params, size = null) {
             if (filterId === "relight" && k === "lights") {
                 if (!Array.isArray(v)) throw new Error("lights must be an array of light objects");
                 out[k] = normalizeLights(v, size);
+            } else if (filterId === "relight" && k === "route") {
+                // a route Render cannot send would only fail there ("Unknown provider")
+                if (!RELIGHT_ROUTES.includes(v)) throw new Error(`Unknown relight route ${JSON.stringify(v)} (must be one of: ${RELIGHT_ROUTES.join(", ")})`);
+                out[k] = v;
             } else {
                 out[k] = v;
             }

@@ -218,6 +218,16 @@ only auto and 1K). Not run live.
 
 ## Open
 
+### A relight recipe imported or saved under a new id is accepted and never run (found 2026-10-12, read)
+
+Found by the review of docs/PLAN_RELIGHT_FIXES.md F3. Settings › Recipes › Import of a copy of `recipes/relight.json`
+under another id, or the ComfyUI window's *Save as new recipe* on a graph opened from `relight_qwen_local`, stores a
+recipe with task relight. Since F3 it no longer replaces the recipe in use (`selectRecipe` keeps it), but the relight
+routes look up only the ids `relight` and `relight_qwen_local` (`renderer/editor/host.js` relightWhole), so the new
+one is never used: its row has no Use button and no provider select, and nothing says so. Before F3 too. Open: refuse
+such an import / save, or say in the note that the Relight panel uses only the shipped ids and that *Save to recipe*
+overwrites them, or let a relight layer pick its recipe. Not released (relight is not in 0.1.46).
+
 ### Size limits: gaps found reading the code (2026-10-07, read, not run)
 
 Found while answering the user's question about the largest picture (a workflow of three readers and a checker,

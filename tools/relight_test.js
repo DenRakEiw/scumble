@@ -764,7 +764,7 @@ async function main() {
         assert(Math.abs(loraPercent(v) - want) < 1e-9, `loraPercent(${JSON.stringify(v)}) is ${want}, got ${loraPercent(v)}`);
     }
     // the stored settings are read on configure (shell.js passes settings.relight): 1.0 and 0.8 are fractions
-    const before = { ...host.getRelightSettings() };
+    const before = { ...host.getRelightSettings() }, beforePicked = host.relightPicked;
     for (const [stored, want] of [[1, 100], [0.8, 80], [55, 55], [0, 0]]) {
         host.configure({ relight: { lora_strength: stored } });
         assert.equal(host.getRelightSettings().lora_strength, want, `configure with a stored lora_strength ${stored} reads ${want} %, got ${host.getRelightSettings().lora_strength}`);
@@ -772,6 +772,7 @@ async function main() {
     host.configure({ relight: { route: "magnific" } });
     assert.equal(host.getRelightSettings().route, "magnific", "configure without a lora_strength keeps the other fields");
     host.relightSettings = before;
+    host.relightPicked = beforePicked;
     console.log("  PASS 19: the relight LoRA strength is in percent, stored fractions read x 100");
 }
 
@@ -869,7 +870,203 @@ async function main() {
     console.log("  PASS 21: the fit follows the picture below: lit from the left, then from the right, then cached");
 }
 
-    console.log("\nALL 21 RELIGHT TESTS PASSED CLEANLY!");
+// ------------------------------------------------------------------------------------------------
+// 22. New relight layers read the flat remembered settings, always on route "app" (F3.6), and the Bria light type stays
+//     unset until the user picks one (F3.5); host stores only what the user picked. At 4192a6a host held a default
+//     light_type ("soft overcast daylight lighting") that every new layer copied, so the Bria route never sent the type
+//     its lights give, and setRelightSettings stored the whole object, defaults included. 81178aa read the remembered
+//     route (a paid one became the next new layer's) and a nested relightConf.magnific.strength.
+// ------------------------------------------------------------------------------------------------
+{
+    const { isDeepStrictEqual } = require("node:util");
+    const hostMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "host.js")).href);
+    const host = hostMod.host || hostMod.default || hostMod;
+    const { InpaintEditor } = await import(editorUrl("inpaint_canvas.js"));
+    const savedSettings = host.relightSettings, savedPicked = host.relightPicked, savedScumble = global.window.scumble;
+    const fails = [];
+    const want = (ok, msg) => { if (!ok) fails.push(msg); };
+    const show = (v) => JSON.stringify(v);
+    const size = { width: 64, height: 48 };
+    // what setRelightSettings hands the settings store (a shallow copy: a key kept as undefined still shows)
+    const writes = [];
+    // the members addFilterLayer and setFilterType call on the editor
+    const stubEditor = () => ({
+        width: size.width, height: size.height, filterCounter: 0, color: "#336699", tool: null, undo: [],
+        maps: { depth: { data: new Uint16Array(size.width * size.height) } },
+        pixels: { Layer: { empty: () => ({}) } },
+        addLayer(o) { return { id: "Lr" + this.filterCounter, ...o }; },
+        setStatus() {},
+        setTool(t) { this.tool = t; },
+        pushUndo(e) { this.undo.push(e); },
+        markFilterChanged() {},
+        renderLayers() {},
+    });
+    const addRelight = () => InpaintEditor.prototype.addFilterLayer.call(stubEditor(), "relight");
+    const retype = () => {
+        const ed = stubEditor();
+        const l = { id: "Lg", name: "Grain 1", kind: "filter", filter: "grain", params: { amount: 10 } };
+        InpaintEditor.prototype.setFilterType.call(ed, l, "relight");
+        return { ed, l };
+    };
+    try {
+        global.window.scumble = { ...savedScumble, settings: { set: async (patch) => { writes.push({ ...patch, relight: { ...patch.relight } }); } } };
+
+        // a fresh profile: nothing picked
+        host.relightSettings = { ...savedSettings };
+        host.relightPicked = {};
+        want(host.getRelightSettings().light_type === undefined, `a fresh profile has no light type (From the lights), got ${show(host.getRelightSettings().light_type)}`);
+        const a = addRelight();
+        want(!("light_type" in a.params), `a new relight layer has no light_type, got ${show(a.params.light_type)}`);
+
+        // the user picks a type: it is stored alone, and new and retyped layers take it
+        host.setRelightSettings({ light_type: "moonlight lighting" });
+        want(writes.length === 1 && isDeepStrictEqual(writes[0].relight, { light_type: "moonlight lighting" }),
+            `a picked light type is stored alone, not with the defaults: stored ${show(writes.map((w) => w.relight))}`);
+        want(isDeepStrictEqual(host.relightPicked, { light_type: "moonlight lighting" }), `host.relightPicked holds the pick alone, got ${show(host.relightPicked)}`);
+        const b = addRelight();
+        want(b.params.light_type === "moonlight lighting", `a new layer takes the picked light type, got ${show(b.params.light_type)}`);
+        const t1 = retype();
+        want(t1.l.params.light_type === "moonlight lighting", `a layer switched to Relight takes the picked light type, got ${show(t1.l.params.light_type)}`);
+
+        // From the lights again: the pick is forgotten in memory and in the store
+        host.setRelightSettings({ light_type: undefined });
+        want(!("light_type" in host.getRelightSettings()), `an undefined light_type forgets the pick, the settings still hold ${show(Object.keys(host.getRelightSettings()))}`);
+        want(!!host.relightPicked && !("light_type" in host.relightPicked), `... and host.relightPicked has no light_type, got ${show(host.relightPicked && Object.keys(host.relightPicked))}`);
+        const forgot = writes[writes.length - 1];
+        want(writes.length === 2 && !!forgot && !("light_type" in forgot.relight) && isDeepStrictEqual(forgot.relight, {}),
+            `forgetting the pick stores an empty relight, got keys ${show(forgot && Object.keys(forgot.relight))}`);
+        const c = addRelight();
+        want(!("light_type" in c.params), `after the pick is forgotten a new layer has no light_type, got ${show(c.params.light_type)}`);
+
+        // what the Bria route sends for an unset type: the one its first light gives (the default point light gives the
+        // same words as the old fixed default, so a spot and a sun)
+        const spot = lightsToWords([{ ...defaultLight(0, size), type: "spot" }], size);
+        const sun = lightsToWords([{ ...defaultLight(0, size), type: "sun" }], size);
+        want(spot.bria.type === "spotlight on subject", `a spot gives the Bria type "spotlight on subject", got ${show(spot.bria.type)}`);
+        want(sun.bria.type === "low-angle sunlight", `a sun gives the Bria type "low-angle sunlight", got ${show(sun.bria.type)}`);
+
+        // the remembered values, every one off its default (a paid route among them): stored as given, flat; a new layer
+        // and a retyped one read them, and both start on route "app"
+        host.relightSettings = { ...savedSettings };
+        host.relightPicked = {};
+        writes.length = 0;
+        const picks = { route: "magnific", strength: 40, style: "dramatic", preserve_details: false, interpolate: true,
+            detail: false, enable_hr_fix: false, lora_strength: 55, steps: 6 };
+        host.setRelightSettings(picks);
+        want(writes.length === 1 && isDeepStrictEqual(writes[0].relight, picks), `the picks are stored as given, flat and nothing else: stored ${show(writes.map((w) => w.relight))}`);
+        const nl = InpaintEditor.prototype.addFilterLayer.call(stubEditor(), "relight");
+        const t2 = retype();
+        for (const [what, l] of [["a new relight layer", nl], ["a layer switched to Relight", t2.l]]) {
+            want(l.params.route === "app", `${what} starts on route app, not the remembered ${picks.route}: got ${show(l.params.route)}`);
+            for (const [k, v] of Object.entries(picks)) {
+                if (k !== "route") want(l.params[k] === v, `${what} reads the remembered ${k} ${show(v)}, got ${show(l.params[k])}`);
+            }
+        }
+        want(t2.ed.undo.length === 1 && t2.ed.tool === "lights", `the switch is one undo step and picks the lights tool, got ${t2.ed.undo.length} / ${t2.ed.tool}`);
+    } finally {
+        host.relightSettings = savedSettings;
+        host.relightPicked = savedPicked;
+        global.window.scumble = savedScumble;
+    }
+    assert.deepEqual(fails, [], `suite 22:\n    ${fails.join("\n    ")}`);
+    console.log("  PASS 22: new relight layers read the flat picks on route app, the light type unset until picked; only picks are stored");
+}
+
+// ------------------------------------------------------------------------------------------------
+// 23. The relight command's route (F3.4): checkParams refuses a route Render cannot send; an edit without route keeps
+//     the layer's route and renders nothing; a route given goes into the call's own undo step, and only when it changes.
+//     At 4192a6a checkParams passed any route, and the command wrote route "app" after its step (or with no step at all)
+//     whenever a call named none, so the row's Render then sent provider "app" ("Unknown provider: app").
+// ------------------------------------------------------------------------------------------------
+{
+    const { checkParams, commands } = await import(pathToFileURL(path.join(ROOT, "renderer", "commands.js")).href);
+    const hostMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "host.js")).href);
+    const host = hostMod.host || hostMod.default || hostMod;
+    const fails = [];
+    const want = (ok, msg) => { if (!ok) fails.push(msg); };
+    const show = (v) => JSON.stringify(v);
+
+    for (const bad of ["bogus", "App", 3, null]) {
+        let err = null;
+        try { checkParams("relight", { route: bad }); } catch (e) { err = e; }
+        want(!!err && /relight route/.test(err.message), `checkParams refuses the relight route ${show(bad)}: ${err ? err.message : "it passed"}`);
+    }
+    try {
+        const ok = checkParams("relight", { route: "magnific" });
+        want(ok.route === "magnific", `checkParams keeps route magnific, got ${show(ok)}`);
+    } catch (e) {
+        fails.push(`checkParams refused route magnific: ${e.message}`);
+    }
+
+    // a document holding one relight layer on route magnific, with what the command calls on the editor
+    const W = 64, H = 48;
+    const layer = {
+        id: "Lm", name: "Relight 1", kind: "filter", filter: "relight", visible: true, opacity: 1, x: 0, y: 0, w: W, h: H,
+        params: { lights: [defaultLight(0, { width: W, height: H })], original: 100, ambient: 15, depth_scale: 50, shadows: 60, route: "magnific" },
+    };
+    let touches = 0, changed = 0, renders = 0;
+    const ed = {
+        base: {}, width: W, height: H, filterCounter: 1, layers: [layer], activeLayerId: layer.id, undo: [], uploaded: {},
+        isReference: () => false,
+        // the route the step's snapshot holds: what undo would bring back
+        pushUndo(e) { this.undo.push({ ...e, routeBefore: layer.params.route }); },
+        markFilterChanged() { changed++; },
+        renderLayers() { touches++; },
+        renderInfo() {}, draw() {}, drawThumb() {}, notifyChanged() {},
+        relightSettled: async () => {},
+        belowStats: () => null,
+    };
+    const savedEditor = host.editor, savedWhole = host.relightWhole;
+    const call = async (args) => {
+        try { return await commands.run("relight", args); } catch (e) { fails.push(`relight ${show(args)} threw: ${e.message}`); return null; }
+    };
+    try {
+        host.editor = ed;
+        host.relightWhole = async (_ed, _l, opts) => { renders++; throw new Error(`rendered on route ${opts && opts.route}`); };
+
+        // a value alone: one step and one touch, the layer's route kept and named in the answer
+        let n = ed.undo.length, t = touches;
+        let r = await call({ layer: layer.id, ambient: 30 });
+        want(layer.params.ambient === 30, `ambient 30 is written, got ${show(layer.params.ambient)}`);
+        want(layer.params.route === "magnific", `an edit without route keeps the layer's route magnific, got ${show(layer.params.route)}`);
+        want(ed.undo.length === n + 1 && touches === t + 1, `an edit without route is one step and one touch, got +${ed.undo.length - n} / +${touches - t}`);
+        want(!!r && r.route === "magnific", `the answer names the layer's route magnific, got ${show(r && r.route)}`);
+        want(!!r && r.notes.some((x) => /nothing was rendered/.test(x)), `the answer says nothing was rendered, got ${show(r && r.notes)}`);
+
+        // nothing given: no step, the route kept
+        layer.params.route = "magnific";
+        n = ed.undo.length; t = touches;
+        r = await call({ layer: layer.id });
+        want(layer.params.route === "magnific", `a call with the layer alone keeps route magnific, got ${show(layer.params.route)}`);
+        want(ed.undo.length === n && touches === t, `a call with the layer alone is no step and no touch, got +${ed.undo.length - n} / +${touches - t}`);
+
+        // the route alone: one step named "Relight route", taken before the route changed, written through and touched
+        layer.params.route = "magnific";
+        n = ed.undo.length; t = touches;
+        const c0 = changed;
+        r = await call({ layer: layer.id, route: "app" });
+        const step = ed.undo.length > n ? ed.undo[ed.undo.length - 1] : null;
+        want(layer.params.route === "app", `route app is written, got ${show(layer.params.route)}`);
+        want(ed.undo.length === n + 1, `the route alone is one undo step, got +${ed.undo.length - n}`);
+        want(!!step && step.label === "Relight route" && step.routeBefore === "magnific",
+            `the step is "Relight route" and holds route magnific, got ${show(step && { label: step.label, routeBefore: step.routeBefore })}`);
+        want(touches === t + 1 && changed === c0 + 1, `the route change is touched and marks the layer changed, got +${touches - t} / +${changed - c0}`);
+        want(!!r && r.route === "app" && r.notes.length === 0, `the answer is route app with no note, got ${show(r && { route: r.route, notes: r.notes })}`);
+
+        // the same route again: no empty step
+        n = ed.undo.length;
+        r = await call({ layer: layer.id, route: "app" });
+        want(ed.undo.length === n && layer.params.route === "app", `the layer's own route again is no step, got +${ed.undo.length - n} (route ${show(layer.params.route)})`);
+        want(renders === 0, `no call here renders, got ${renders}`);
+    } finally {
+        host.editor = savedEditor;
+        host.relightWhole = savedWhole;
+    }
+    assert.deepEqual(fails, [], `suite 23:\n    ${fails.join("\n    ")}`);
+    console.log("  PASS 23: the relight command keeps the layer's route unless one is given, writes a given one in its own step, refuses unknown routes");
+}
+
+    console.log("\nALL 23 RELIGHT TESTS PASSED CLEANLY!");
     console.log("PASS");
 }
 

@@ -692,6 +692,8 @@ async function main() {
             draw: () => {},
             drawThumb: () => {},
             notifyChanged: () => {},
+            committedFilter: InpaintEditor.prototype.committedFilter,
+            previewShown: InpaintEditor.prototype.previewShown,
             uploaded: {},
         };
         const origLayer = {

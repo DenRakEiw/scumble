@@ -77,6 +77,13 @@ const STITCH_CLASS = "InpaintCanvasStitch";
 const MAX_UNDO = 30;
 const MAX_UNDO_BYTES = 384 * 1024 * 1024;   // rect undo copies: older steps are dropped past this
 const MAX_SNAPSHOTS = 8;                    // named snapshots of the whole document (the Undo history section)
+/**
+ * What a layer holds of an edit still in progress: the "before" of a slider or preview, a text edit, a colour match drag,
+ * a choice list's hover, a relight nudge or wheel burst with its flush and timer. Never part of an undo step, a named
+ * snapshot or a copy: a record holding one would bring the edit back half done (docs/PLAN_RELIGHT_FIXES.md F3).
+ */
+const LAYER_PENDING_KEYS = ["_undoPending", "_textUndo", "_matchUndo", "_hoverSnap", "_nudgePending", "_wheelPending", "_wheelLabel",
+    "_flushNudge", "_flushWheel", "_nudgeRelightTimer", "_wheelRelightTimer"];
 /** Said when a run holds the document (the app's host; the node's sets no `providerPending`). */
 const RUN_GOING_TEXT = "A run is still going on this document: wait for it, or Cancel.";
 /** What an undo step is called in the Undo history when its site gives no label of its own. */
@@ -3076,18 +3083,18 @@ class InpaintEditor {
         this._docKeyUp = null;
         if (this.textEdit) this.endTextEdit(true);
         this.closeFlyout();
-        if (this.layers) {
-            for (const l of this.layers) {
-                if (l) {
-                    if (l._nudgeRelightTimer) { clearTimeout(l._nudgeRelightTimer); l._nudgeRelightTimer = null; }
-                    if (l._wheelRelightTimer) { clearTimeout(l._wheelRelightTimer); l._wheelRelightTimer = null; }
-                    l._flushNudge = null;
-                    l._flushWheel = null;
-                }
-            }
+        this.closeTipPicker();   // its window listener and preview slices go with the editor (8c14eee)
+        // a relight nudge or wheel burst still in its 300 ms is dropped, not committed: its timer and flush, the snapshot it
+        // would have pushed (the layer's next edit would take it as its own "before") and its preview
+        for (const l of this.layers || []) {
+            if (!l || !(l._flushNudge || l._flushWheel || l._nudgeRelightTimer || l._wheelRelightTimer || l._nudgePending || l._wheelPending)) continue;
+            clearTimeout(l._nudgeRelightTimer);
+            clearTimeout(l._wheelRelightTimer);
+            l._nudgeRelightTimer = l._wheelRelightTimer = null;
+            l._flushNudge = l._flushWheel = null;
+            l._nudgePending = l._wheelPending = l._wheelLabel = null;
+            if (this.filterPreview === l.id) this.filterPreview = null;
         }
-        if (this._wheelRelightTimer) { clearTimeout(this._wheelRelightTimer); this._wheelRelightTimer = null; }
-        if (this._nudgeRelightTimer) { clearTimeout(this._nudgeRelightTimer); this._nudgeRelightTimer = null; }
         if (this.promptField) this.promptField.closePopups();
         clearTimeout(this._autosave);
         this.compare = null;
@@ -3481,9 +3488,11 @@ class InpaintEditor {
                 if (selected) {
                     e.preventDefault();
                     const step = e.shiftKey ? 10 : 1;
-                    if (!l._undoPending) {
-                        l._undoPending = this.snapshot({ kind: "filter", id: l.id });
-                        l._undoLabel = "Move light";
+                    // a nudge burst is a step of its own: not a slider's `_undoPending` (its commit would push the same
+                    // snapshot again), and a wheel burst still open ends first so the two steps stay in order
+                    if (!l._nudgePending) {
+                        if (typeof l._flushWheel === "function") l._flushWheel();
+                        l._nudgePending = this.snapshot({ kind: "filter", id: l.id });
                     }
                     let dx = 0, dy = 0;
                     if (e.key === "ArrowLeft") dx = -step;
@@ -3505,15 +3514,14 @@ class InpaintEditor {
                     const flushNudge = () => {
                         if (l._nudgeRelightTimer) { clearTimeout(l._nudgeRelightTimer); l._nudgeRelightTimer = null; }
                         l._flushNudge = null;
+                        const snap = l._nudgePending;
+                        l._nudgePending = null;
                         if (this.filterPreview === l.id) this.filterPreview = null;
-                        if (l._undoPending) {
-                            this.pushUndoSnapshot(l._undoPending, { label: l._undoLabel || "Move light", fromDebounce: true });
-                            l._undoPending = null;
-                            l._undoLabel = null;
-                        }
+                        if (!this.layers || !this.layers.includes(l)) return;   // the layer left the document (an undo replaced it)
+                        if (snap) this.pushUndoSnapshot(snap, { label: "Move light", fromDebounce: true });
                         this.ensureRelightMaps(l, { quick: false });
                         this.markFilterChanged(l);
-                        this.renderLayers();
+                        this.renderLayersUnlessEditing();
                         this.draw();
                     };
                     l._flushNudge = flushNudge;
@@ -3862,9 +3870,11 @@ class InpaintEditor {
                 layer._selectedLightId = l.id;
                 const dir = Math.sign(-e.deltaY || 0);
                 if (dir !== 0) {
-                    if (!layer._undoPending) {
-                        layer._undoPending = this.snapshot({ kind: "filter", id: layer.id });
-                        layer._undoLabel = e.shiftKey ? "Relight: Intensity" : "Relight: Diffusion";
+                    // a wheel burst is a step of its own, as a nudge burst is (onKey); one still open ends first
+                    if (!layer._wheelPending) {
+                        if (typeof layer._flushNudge === "function") layer._flushNudge();
+                        layer._wheelPending = this.snapshot({ kind: "filter", id: layer.id });
+                        layer._wheelLabel = e.shiftKey ? "Relight: Intensity" : "Relight: Diffusion";
                     }
                     if (e.shiftKey) {
                         l.intensity = Math.max(0, Math.min(300, Math.round((l.intensity || 100) + dir * 5)));
@@ -3877,19 +3887,18 @@ class InpaintEditor {
                     this.renderLayers();
                     this.draw();
                     if (layer._wheelRelightTimer) clearTimeout(layer._wheelRelightTimer);
-                    const wheelLabel = layer._undoLabel || (e.shiftKey ? "Relight: Intensity" : "Relight: Diffusion");
                     const flushWheel = () => {
                         if (layer._wheelRelightTimer) { clearTimeout(layer._wheelRelightTimer); layer._wheelRelightTimer = null; }
                         layer._flushWheel = null;
+                        const snap = layer._wheelPending, label = layer._wheelLabel || "Relight: Diffusion";
+                        layer._wheelPending = null;
+                        layer._wheelLabel = null;
                         if (this.filterPreview === layer.id) this.filterPreview = null;
-                        if (layer._undoPending) {
-                            this.pushUndoSnapshot(layer._undoPending, { label: wheelLabel, fromDebounce: true });
-                            layer._undoPending = null;
-                            layer._undoLabel = null;
-                        }
+                        if (!this.layers || !this.layers.includes(layer)) return;   // the layer left the document (an undo replaced it)
+                        if (snap) this.pushUndoSnapshot(snap, { label, fromDebounce: true });
                         this.ensureRelightMaps(layer, { quick: false });
                         this.markFilterChanged(layer);
-                        this.renderLayers();
+                        this.renderLayersUnlessEditing();
                         this.draw();
                     };
                     layer._flushWheel = flushWheel;
@@ -13491,6 +13500,52 @@ class InpaintEditor {
     }
 
     /**
+     * Every preview still shown goes back to its committed values: a choice list's hover and a filter layer's
+     * `_undoPending` while `filterPreview` names its layer (a plugin's hover over a stock, a slider not let go). An
+     * `_undoPending` no preview shows any more is a slider the list was rebuilt under: it is not cancelled (that would
+     * put back the values from before it over every later edit of the layer). A relight nudge or wheel burst is not a
+     * preview but a step of its own (`_nudgePending` / `_wheelPending`, pushed by flushPendingDebounces).
+     */
+    cancelPreviews() {
+        this.cancelChoicePreview();
+        for (const l of this.layers || []) if (this.previewShown(l)) this.cancelFilterParams(l);
+    }
+
+    /**
+     * Whether `filterPreview` shows a preview whose "before" the layer holds in `_undoPending`: not a relight nudge's or
+     * wheel burst's preview (theirs is `_nudgePending` / `_wheelPending`), not an `_undoPending` left by a slider the list
+     * was rebuilt under (nothing shows it any more).
+     */
+    previewShown(l) {
+        return !!(l && l._undoPending && this.filterPreview === l.id && !l._nudgePending && !l._wheelPending);
+    }
+
+    /**
+     * The committed parameters (and name) of a filter layer whose preview is shown, as cancelPreviews would put them
+     * back (a choice list's hover first: its cancel ends the preview); null when none is. An undo record or a copy holds
+     * these, not the hovered or half-dragged ones.
+     */
+    committedFilter(l) {
+        if (!l || l.kind !== "filter") return null;
+        const snap = l._hoverSnap && this.filterPreview === l.id ? l._hoverSnap
+            : this.previewShown(l) && l._undoPending.kind === "filter" ? l._undoPending : null;
+        if (!snap) return null;
+        const params = { ...(snap.params || {}) };
+        if (Array.isArray(params.lights)) params.lights = JSON.parse(JSON.stringify(params.lights));
+        return { params, name: l._hoverSnap === snap ? snap.name || null : null };
+    }
+
+    /**
+     * renderLayers, unless a control of the list holds an edit still in progress (a slider being dragged): rebuilding the
+     * list under it ends the drag without its change event, and its step would never be pushed. The control's own
+     * change renders the list when it lets go.
+     */
+    renderLayersUnlessEditing() {
+        if ((this.layers || []).some((x) => x && (x._undoPending || x._matchUndo))) return;
+        this.renderLayers();
+    }
+
+    /**
      * Checks if the document map under `kind` is stale against the current picture.
      * Renders pictureInput through the map's xf into 64 x 64 and compares fingerprint against meta.fp.
      * @param {string} kind
@@ -13731,6 +13786,18 @@ class InpaintEditor {
     }
 
     /** Free a discarded undo step: its blob URLs, its pixels copy and its share of the memory budget. */
+    /**
+     * Layers an undo took out of the document (replaced by the objects of a record) let go of an edit still in progress:
+     * a text edit's or a colour match drag's "before" (on canvases a blob URL), which no record holds (LAYER_PENDING_KEYS).
+     */
+    releaseDroppedEdits(outgoing) {
+        for (const l of outgoing || []) {
+            if (!l || this.layers.includes(l)) continue;
+            if (l._textUndo) { this.releaseSnapshot(l._textUndo); l._textUndo = null; }
+            if (l._matchUndo) { this.releaseSnapshot(l._matchUndo); l._matchUndo = null; }
+        }
+    }
+
     releaseSnapshot(snap) {
         if (!snap) return;
         this.undoBytes -= snap.bytes || 0;
@@ -13771,6 +13838,7 @@ class InpaintEditor {
      */
     snapshotLayer(l) {
         const c = { ...l };
+        for (const k of LAYER_PENDING_KEYS) delete c[k];
         if (l.text) c.text = JSON.parse(JSON.stringify(l.text));
         if (l.params && typeof l.params === "object") {
             c.params = { ...l.params };
@@ -13778,6 +13846,10 @@ class InpaintEditor {
                 c.params.lights = JSON.parse(JSON.stringify(l.params.lights));
             }
         }
+        // a preview still shown is not the layer's value: the record holds what was committed (an undo of it brings back
+        // what was clicked, not what was hovered; its guard is not in the record to put it back later)
+        const committed = this.committedFilter(l);
+        if (committed) { c.params = committed.params; if (committed.name) c.name = committed.name; }
         for (const k of ["match", "lut", "plate"]) if (l[k] && typeof l[k] === "object") c[k] = { ...l[k] };
         return c;
     }
@@ -13836,6 +13908,7 @@ class InpaintEditor {
      */
     restoreTurn(snap, { label } = {}) {
         if (!snap || snap.kind !== "turn" || !this.tileMode) return false;
+        this.cancelPreviews();   // the present pushed below holds committed values, not a hover's (historyStepNow)
         const now = this.turnSnapshot();
         if (now) this.pushUndoSnapshot(now, { label });
         this.applySnapshot(snap);
@@ -14162,7 +14235,9 @@ class InpaintEditor {
         if (snap.kind === "layers") {
             if (this.pending) this.cancelPending();
             // a spread carries px / maskPx and not the non-enumerable aliases: installed again
+            const outgoing = this.layers;
             this.layers = snap.layers.map((l) => installLayerAliases({ ...l, _maskedValid: false, _mcache: null, _fcache: null }, this.pixels));
+            this.releaseDroppedEdits(outgoing);
             this.groups = (snap.groups || []).map((g) => ({ ...g }));
             this.activeLayerId = this.layers.some((l) => l.id === snap.activeLayerId) ? snap.activeLayerId : null;
             this.uploaded.baseHash = null;
@@ -14213,6 +14288,7 @@ class InpaintEditor {
             this.base = snap.base;
             this.width = snap.width;
             this.height = snap.height;
+            const outgoing = this.layers;
             this.layers = snap.layers.map((l) => {
                 const kept = byId.get(l.id);
                 const copy = installLayerAliases({ ...l, dirty: true, exportRef: null, _maskedValid: false, _mcache: null, _fcache: null, _fxCache: null }, this.pixels);
@@ -14223,6 +14299,7 @@ class InpaintEditor {
                 }
                 return copy;
             });
+            this.releaseDroppedEdits(outgoing);
             snap.pixels = null;
             this.activeLayerId = this.layers.some((l) => l.id === snap.activeLayerId) ? snap.activeLayerId : null;
             const sel = snap.selPx || this.pixels.Mask.empty(this.width, this.height);
@@ -14272,7 +14349,9 @@ class InpaintEditor {
             this.base = snap.base;
             this.width = snap.width;
             this.height = snap.height;
+            const outgoing = this.layers;
             this.layers = snap.layers.map((l) => installLayerAliases({ ...l, dirty: true, exportRef: null, _maskedValid: false, _mcache: null, _fxCache: null, maskDirty: !!l.maskPx }, this.pixels));
+            this.releaseDroppedEdits(outgoing);
             this.activeLayerId = snap.activeLayerId;
             let sel = snap.selPx || null;   // on tiles the step's clone, taken out of the step (it is released after this)
             snap.selPx = null;
@@ -14442,10 +14521,11 @@ class InpaintEditor {
     flushPendingDebounces() {
         if (this.layers) {
             for (const l of this.layers) {
-                if (l) {
-                    if (typeof l._flushNudge === "function") l._flushNudge();
-                    if (typeof l._flushWheel === "function") l._flushWheel();
-                }
+                if (!l) continue;
+                // the field is cleared on the layer that holds it, so a flush that returns early runs once, not on every push
+                const nudge = l._flushNudge, wheel = l._flushWheel;
+                if (typeof nudge === "function") { l._flushNudge = null; nudge(); }
+                if (typeof wheel === "function") { l._flushWheel = null; wheel(); }
             }
         }
     }
@@ -14541,6 +14621,9 @@ class InpaintEditor {
             this.releaseSnapshot(snap);
             return;
         }
+        // a preview still open is not the present (a plugin's hover over a stock, a slider not let go): its committed
+        // values go back first, or the other stack's copy below keeps the preview and the redo applies it
+        this.cancelPreviews();
         // the present, as the other stack's step: it keeps the step's label and time, so the list reads the same
         const current = this.snapshot(snap);
         if (current) { (redo ? this.undo : this.redo).push(current); this.undoBytes += current.bytes || 0; }
@@ -16779,12 +16862,16 @@ class InpaintEditor {
             _masked: null, _maskedValid: false, _mcache: null, _fcache: null, _fxCache: null, _textUndo: null, _undoPending: null,
             _relight: null, _bstats: null, _bstatsRun: null,
         };
+        for (const k of LAYER_PENDING_KEYS) delete copy[k];   // an edit still in progress stays with the original
         // the spread shares the pixels; the copy gets its own (the aliases are not enumerable, so they are installed again)
         if (layer.px) copy.px = layer.px.clone();
         if (layer.maskPx) copy.maskPx = layer.maskPx.clone();
         installLayerAliases(copy, this.pixels);
         if (layer.text) copy.text = JSON.parse(JSON.stringify(layer.text));
-        if (layer.params) copy.params = JSON.parse(JSON.stringify(layer.params));
+        // a preview still shown stays with the original: the copy takes the committed values (committedFilter)
+        const committed = this.committedFilter(layer);
+        if (layer.params) copy.params = JSON.parse(JSON.stringify(committed ? committed.params : layer.params));
+        if (committed && committed.name) copy.name = committed.name + " copy";
         if (layer.match) copy.match = { ...layer.match };
         if (layer.lut) copy.lut = { ...layer.lut };
         if (layer.plate) copy.plate = { ...layer.plate };
@@ -20116,6 +20203,11 @@ class InpaintEditor {
             ltLabel.style.width = "70px";
             const ltSel = document.createElement("select");
             ltSel.className = "ipc-sel";
+            ltSel.title = "From the lights: the first light that is on gives the type (a sun: low-angle sunlight, a spot: spotlight on subject, otherwise soft overcast daylight lighting). A type picked here is kept for new relight layers.";
+            const fromLights = document.createElement("option");
+            fromLights.value = "";
+            fromLights.textContent = "From the lights";
+            ltSel.appendChild(fromLights);
             const briaTypes = [
                 "soft overcast daylight lighting",
                 "midday",
@@ -20137,13 +20229,14 @@ class InpaintEditor {
                 opt.textContent = bt;
                 ltSel.appendChild(opt);
             }
-            ltSel.value = layer.params.light_type || "soft overcast daylight lighting";
+            ltSel.value = layer.params.light_type || "";
             ltSel.addEventListener("click", stop);
             ltSel.addEventListener("keydown", stop);
             ltSel.addEventListener("change", () => {
                 this.pushUndo({ kind: "filter", id: layer.id, label: "Relight: Light type" });
-                layer.params.light_type = ltSel.value;
-                host.setRelightSettings({ light_type: ltSel.value });
+                // "" is From the lights: the layer and the remembered settings forget the pick
+                if (ltSel.value) layer.params.light_type = ltSel.value; else delete layer.params.light_type;
+                host.setRelightSettings({ light_type: ltSel.value || undefined });
                 this.markFilterChanged(layer);
             });
             briaRow.appendChild(ltLabel);

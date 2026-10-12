@@ -324,9 +324,9 @@ forum's first complaint). Off: the answer itself, stretched to the picture as `r
   for a paid route ("relights the whole picture through <route>: this costs money, or queues on your ComfyUI"), the
   `upscale` row's shape (:157); `RUNS` (:21) and `TIMEOUT_DEFAULTS` (:343, 600) take it; `tools/assistant_test.js`
   counts it.
-- **Settings:** `settings.relight = { route: "app", magnific: { strength: 100, style: "standard", preserve: true,
-  interpolate: false }, detailFromOriginal: true }` (`electron/main/settings.js`); the Magnific rows in the layer's
-  route block, not in Settings.
+- **Settings:** `settings.relight` holds the relight panel's values the user picked, flat (`{ strength, style, detail,
+  light_type, lora_strength, ... }`, written by `host.setRelightSettings`; the defaults live in `host.relightSettings`,
+  never in the file; `docs/PLAN_RELIGHT_FIXES.md` F3); the Magnific rows in the layer's route block, not in Settings.
 - **Menus:** *Layer › New relight layer* (the Add Filter list has it too, under the depth filters), *Image › Relight*
   as the same entry; the tool column's L.
 - **Docs:** `docs/MANUAL.md` a "Relight" section after "Filter layers" (:260): the lights, the types, the sliders, the

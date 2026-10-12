@@ -19,8 +19,8 @@ Line numbers below are at 77da63f. Every finding was confirmed by a second agent
   full tier: `document` and `editor` on both backends.
 - Gates run `--offline`, never on port 9555 while the other agent might use it; plain `node tools/*_test.js` runs (no
   `--loader`); the export gate skips on `--tiles off` and does not count there.
-- The relight gate has 150 in-app checks on tiles and 149 on canvas since F1 (141 / 140 at 77da63f; case h is
-  tile-only).
+- The relight gate has 251 in-app checks on tiles and 250 on canvas since F3 (150 / 149 after F1, 198 after F2, 141 /
+  140 at 77da63f; case h is tile-only).
 
 ## Verified fixed in 77da63f (no action)
 
@@ -178,6 +178,71 @@ prints PASS (it says so in a [skip] line).
 - **Undo during a plugin hover preview** records the hover value, which redo then applies (since R3-S7, not in
   0.1.46): cancel a pending non-debounce preview in historyStepNow before the redo snapshot.
 
+**F3 as built (2026-10-12, the commit after 4192a6a).** Mapped by a workflow (one reader per item, a cross-checker), the
+tests written by three agents beside the main loop (each file its own, each port its own), reviewed by a workflow (four
+areas, every must and should checked by a skeptic): 1 must and 1 should found and fixed here, with four of the nits.
+Every new check was run on 4192a6a (red) and against a mutation of its fix (red).
+- **Undo (items 1, 2):** the relight nudge and wheel burst own `_nudgePending` / `_wheelPending` (+ `_wheelLabel`); each
+  flushes the other when it begins, so nudge, wheel, nudge are three steps in their order. A slider's `_undoPending` is
+  its own again: a slider moved within a burst's 300 ms is a second step (at 4192a6a the same snapshot was pushed twice;
+  the generic and limit sliders shared it too). `LAYER_PENDING_KEYS` (every edit in progress: `_undoPending`, `_textUndo`,
+  `_matchUndo`, `_hoverSnap`, the burst fields, flushes and timers) is dropped from `snapshotLayer`'s records (layers,
+  canvas and turn steps, named snapshots, the assistant's turn) and from `duplicateLayer`'s copy. The flush closures
+  clear their field first and return before any push or render when the layer left `this.layers`;
+  `flushPendingDebounces` nulls the holder before it calls. `releaseDroppedEdits`: layers an undo replaced let go of a
+  text edit's or a match drag's "before" (on canvases a blob URL no record holds any more).
+- **close() (item 3):** `closeTipPicker()` again; a nudge or wheel burst still in its 300 ms is dropped whole (timer,
+  flush, snapshot, its `filterPreview`), not committed (the plan's choice: no march or render on an editor being torn
+  down). In the node a reopened editor keeps the light where the dropped nudge put it, without a step of its own.
+- **The relight command (item 4):** an omitted route keeps the layer's route and renders nothing (the answer names the
+  layer's route, with a note when it is not "app"); a given route goes into the undo step with the values, only when it
+  changes ("Relight route" alone), then touch. `RELIGHT_ROUTES` (inpaint_relight.js) is the one list: `checkParams`
+  refuses another route in relight, set_filter and add_filter. The schema default is gone; COMMANDS.md regenerated.
+- **Light type (item 5):** no default; the Bria row has "From the lights" (value "") first, which forgets the pick on the
+  layer and in the settings; a pick is kept for new layers.
+- **Settings (item 6):** `DEFAULTS.relight = {}`. host keeps `RELIGHT_DEFAULTS` (frozen) and `relightPicked`, what the
+  user set, which is all `setRelightSettings` stores (undefined forgets a key); `configure` rebuilds
+  `relightSettings` from the defaults and the picks and drops object values. main's `get()` drops a stored nested
+  `magnific` / `detailFromOriginal` and, when those mark a store from before F3 (it wrote host's whole object), every key
+  at its old default (`PRE_F3_RELIGHT`, light_type's included).
+- **Recipes (item 7):** `selectRecipe` with a relight id keeps the recipe in use (selected again, so the select is right
+  after `loadRecipes`; no provider change, nothing stored); relight rows have no provider select, their meta says the
+  layer's Relight panel picks the route, they are not counted as keyed, and `chosenProvider` ignores a stored relight
+  provider; `onModeChanged` skips relight recipes.
+- **Previews (item 8):** `cancelPreviews()` (a choice hover, and every `_undoPending` whose preview is shown:
+  `previewShown`, `filterPreview` names the layer and no nudge or wheel burst owns it) runs in `historyStepNow` after
+  every wait and before the redo copy, and in `restoreTurn`.
+- **The review's must:** a list slider grabbed within a burst's 300 ms and still held when its flush ran was cut off by
+  the flush's `renderLayers` (no change event: its `_undoPending` stayed), and `cancelPreviews` then put that "before"
+  back at the next undo, over every edit since (the redo lost five nudges and the slider's value). The flushes call
+  `renderLayersUnlessEditing` (no rebuild while a layer holds `_undoPending` or `_matchUndo`), and an `_undoPending` no
+  preview shows any more is never cancelled. **The should:** a record taken while a preview is shown (Ctrl+J over a
+  hovered stock, an agent's step, a named snapshot) held the hovered values without the guard that would put the
+  clicked ones back: `committedFilter` gives the record and the copy the committed values.
+Tests: relight gate cases route (14 checks, in case t), z (+8), undo (24: a1-a5, b, c the list slider across the timer,
+d a slider cut off by a rebuild, e a flush of a replaced layer and a record during a nudge) and cl (7); relight_test.js
+suites 22 (the flat picks, route app, light_type) and 23 (the command's route), 19 restores `relightPicked`;
+settings_migration_test.js `relight()` (the real shape of a store from before F3); recipes_test.py
+`a_relight_id_keeps_the_recipe_in_use_and_stores_nothing`, `relight_rows_have_no_provider_select`; film_test.py
+`panel_hover_undo_redo`, `panel_hover_layers_step`. Relight gate: 251 in-app checks on tiles, 250 on
+canvas. Mutations, each red: the shared field, no cross-flush, records keeping the pending keys, an omitted route as
+app, a route step though unchanged, the light_type default, "" written for From the lights, close() without the tip
+picker, close() keeping the snapshot, the flush rebuilding the list, cancelling a preview no one shows, a nudge's
+preview counting as a slider's, records and copies keeping the preview (and in the agents' runs: the readers of
+81178aa, the whole object stored, undefined kept, the command's route branch and step, the selectRecipe guard and the
+row condition, `cancelPreviews` removed).
+Left, noted: an `_undoPending` some other rebuild cut off (an agent's command mid-drag) is no longer cancelled, but the
+next slider on that layer still takes it as its "before" (as before F3); an undo does not cancel a match drag or a
+text edit in progress (only an MCP undo reaches them); the magnific gate is red since L4 (6b61514: list_recipes lists the
+Relight recipe, which names magnific first; F4); a relight recipe imported or saved under a new id is accepted and never
+run (`docs/BUGS.md`); list_layers' params of a relight layer do not go back through set_filter (the panel keys are not in
+the spec; before F3 too).
+Gates on the fix: relight editor document on both backends (relight 251 / 250), assistant (38/38) commands film grading
+recipes brush comfyview help on tiles (comfyview's "Ctrl+S reaches the page" control failed once while the mutation
+round's instance ran beside it, the known flake of docs/TESTING.md; 25/25 alone); 73 of 74 `node tools/*_test.js` (the
+74th, ideogram45_test.js "Nano Banana 2 text run", fails on 4192a6a too; F4); eslint 0 errors, types; `build_node.py
+--check`: inpaint_canvas, inpaint_filters and inpaint_relight differ (the node build waits for the release).
+
 ## F4: vacuous tests, measurements, nits
 
 - Gate case (u): vacuous for the shear (passes with e1ebe65's sheared read); give the base low-frequency variation (a
@@ -195,8 +260,12 @@ prints PASS (it says so in a [skip] line).
 - Nits: applySnapshot sets `_deselected = !_selectedLightId`; the GL registration (`inpaint_relight.js:1802`) uses
   `relightSkip`; a sun at the centre with dist 0 (CPU (0,0,0) vs shader (0,0,1)); PLAN_RELIGHT_BUILD.md 4.1 / 4.3 z
   convention; a TESTING.md line that limit, maps, edges and selection_test.py exit 1 with no app.
+- Found in F3, not relight's own code: the magnific gate is red since L4 (6b61514): `magnific_test.py` LISTS takes the
+  Relight recipe (it lists magnific, first) into the edit list; leave task relight out there and check relight's
+  providers on their own. `tools/ideogram45_test.js` fails "Nano Banana 2 text run (640 x 1536)" (241/242, on 4192a6a too).
 - At the end: the full gate list on both backends (relight editor assistant selection limit maps edges depthfx
-  document commands skins help recipes mcp, export on tiles), every `node tools/*_test.js`, lint, types,
+  document commands skins help recipes mcp film grading brush comfyview magnific, export on tiles), every
+  `node tools/*_test.js`, lint, types,
   `build_node.py --check` (then the node build when the release comes), the CHANGELOG, then the user's test.
 
 ## Open questions for the user

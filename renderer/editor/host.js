@@ -165,6 +165,21 @@ const plainObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v 
 
 /** An API run, an upscale or a Realism Pass refused while another one holds the document (`editor.providerPending`). */
 const RUN_GOING = "A run is still going on this document: wait for it, or Cancel.";
+/**
+ * The relight panel's values for a new relight layer when the user picked none. `light_type` has none: unset is "From the
+ * lights" (the Bria route takes the type lightsToWords derives), until the user picks one.
+ */
+const RELIGHT_DEFAULTS = Object.freeze({
+    route: "app",
+    strength: 100,
+    style: "standard",
+    preserve_details: true,
+    interpolate: false,
+    detail: true,
+    enable_hr_fix: true,
+    lora_strength: 100,   // percent, 0..100: the routes send it / 100 as strength_model
+    steps: 4,
+});
 
 /** A run's id, for main's Cancel (providers/index.js `cancel`). */
 const runIdOf = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -406,33 +421,31 @@ export const host = {
         if (realismStored !== undefined) this.realismStored = realismStored;
         if (depthDetail !== undefined) this.depthDetailSetting = depthDetail;
         if (relight !== undefined) {
-            this.relightSettings = { ...this.relightSettings, ...(relight || {}) };
+            const picked = { ...(relight || {}) };
             // a stored 0..1 strength (77da63f's default 1.0) is a fraction of the 0..100 slider
-            if (this.relightSettings.lora_strength != null) this.relightSettings.lora_strength = loraPercent(this.relightSettings.lora_strength);
+            if (picked.lora_strength != null) picked.lora_strength = loraPercent(picked.lora_strength);
+            for (const k of Object.keys(picked)) if (picked[k] === undefined || (picked[k] && typeof picked[k] === "object")) delete picked[k];
+            this.relightPicked = picked;
+            this.relightSettings = { ...RELIGHT_DEFAULTS, ...picked };
         }
     },
 
-    relightSettings: {
-        route: "app",
-        strength: 100,
-        style: "standard",
-        preserve_details: true,
-        interpolate: false,
-        detail: true,
-        enable_hr_fix: true,
-        light_type: "soft overcast daylight lighting",
-        lora_strength: 100,   // percent, 0..100: the routes send it / 100 as strength_model
-        steps: 4,
-    },
+    /** The relight panel's values for a new relight layer: RELIGHT_DEFAULTS under what the user picked. */
+    relightSettings: { ...RELIGHT_DEFAULTS },
+    /** What the user picked (stored as settings.relight): never the defaults, so a later default reaches every profile. */
+    relightPicked: {},
 
     getRelightSettings() {
         return this.relightSettings || {};
     },
 
+    /** Remember the panel's values; a key set to undefined is forgotten (Light type: From the lights). */
     setRelightSettings(patch) {
-        this.relightSettings = { ...(this.relightSettings || {}), ...(patch || {}) };
+        const drop = (o) => { for (const k of Object.keys(o)) if (o[k] === undefined) delete o[k]; return o; };
+        this.relightSettings = drop({ ...(this.relightSettings || {}), ...(patch || {}) });
+        this.relightPicked = drop({ ...(this.relightPicked || {}), ...(patch || {}) });
         if (typeof window !== "undefined" && window.scumble && window.scumble.settings) {
-            window.scumble.settings.set({ relight: this.relightSettings }).catch(() => {});
+            window.scumble.settings.set({ relight: this.relightPicked }).catch(() => {});
         }
     },
 

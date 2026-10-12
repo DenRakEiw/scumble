@@ -5,7 +5,8 @@ on the GPU and the CPU path (same maths, at most two levels apart), the film loo
 the commands film.looks / film.apply_look / film.add_point, the control point tool through
 the pointer and key hooks (place, resize, move, delete, undo), the control points following a
 crop, a resize and a turn of the whole picture (and a straighten's matrix sent by hand), the
-layer-row control, the Film looks panel thumbnails and the exports. Writes one PNG per filter
+layer-row control, the Film looks panel thumbnails, its hover preview (and an undo / redo pressed during
+one, and a layers step taken during one) and the exports. Writes one PNG per filter
 to out_dir/film.
 
     python tools/film_test.py [out_dir]
@@ -1172,6 +1173,131 @@ const hover15kMs = performance.now() - t0;
 await c("remove_layer", { layer: look.id });
 sec.open = false;
 return { ok: true, targetStockId, hover15kMs: +hover15kMs.toFixed(1) };
+"""),
+    ("panel_hover_undo_redo", """
+// docs/PLAN_RELIGHT_FIXES.md F3 item 8: an undo pressed while a stock is hovered in the Film looks panel. The hover is a
+// preview (the layer's `_undoPending` holds the committed stock, `filterPreview` names the layer), not the present: the
+// undo cancels it before it copies the present for the redo, so the redo brings back the stock that was clicked (B) and
+// not the one only hovered (C), and the pointer leaving the grid after the undo does not put B back over it
+const sec = Array.from(editor.root.querySelectorAll("details")).find((d) => d.querySelector("summary") && d.querySelector("summary").textContent === "Film looks");
+if (!sec) throw new Error("Film looks panel missing");
+sec.open = true;
+const grp = sec.querySelector("select");
+grp.value = "Slide"; grp.dispatchEvent(new Event("change"));
+await new Promise((r) => setTimeout(r, 600));
+const grid = sec.querySelector(".film-grid");
+const cells = Array.from(sec.querySelectorAll(".film-cell"));
+if (cells.length < 2) throw new Error(`two cells needed in the Slide group, got ${cells.length}`);
+const cellB = cells[0], cellC = cells[1];
+const B = cellB.getAttribute("data-id"), C = cellC.getAttribute("data-id");
+const hover = async (cell) => { cell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true })); await new Promise((r) => setTimeout(r, 200)); };
+
+const added = await c("add_filter", { type: "film.look", params: { preset: "portra400" }, name: "Kodak Portra 400" });
+await c("set_active_layer", { layer: added.id });
+const L = () => editor.layers.find((l) => l.id === added.id);
+const seen = () => { const l = L(); return { preset: l ? l.params.preset : null, name: l ? l.name : null, pending: l && l._undoPending ? (l._undoPending.params || {}).preset : null, preview: editor.filterPreview }; };
+try {
+    if (!L()) throw new Error("add_filter gave no look layer");
+    const A = L().params.preset, nameA = L().name;
+    if (!A || !B || !C || A === B || B === C || A === C) throw new Error("A, B and C must be three different stocks: " + JSON.stringify({ A, B, C }));
+
+    // 1. commit B: hover, then click; one step, which holds A
+    const undo0 = editor.undo.length;
+    await hover(cellB);
+    cellB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 300));
+    const committed = seen();
+    if (committed.preset !== B || committed.pending !== null || committed.preview !== null || editor.undo.length !== undo0 + 1) {
+        throw new Error("committing B: " + JSON.stringify({ B, committed, steps: editor.undo.length - undo0 }));
+    }
+    const nameB = committed.name;
+    if (nameB === nameA) throw new Error(`the click on ${B} kept the name ${nameA}: the redo's name check would say nothing`);
+    const undoB = editor.undo.length;
+
+    // 2. hover C: a preview, no step
+    await hover(cellC);
+    const hovered = seen();
+    if (hovered.preset !== C || hovered.preview !== added.id || hovered.pending !== B || editor.undo.length !== undoB) {
+        throw new Error("hovering C: " + JSON.stringify({ C, hovered, steps: editor.undo.length - undoB }));
+    }
+
+    // 3. undo with the pointer still over the grid
+    await editor.undoStep();
+    const u = seen();
+    // 4. the pointer leaves the grid: the panel cancels its hover, which has nothing left to cancel
+    grid.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
+    const afterLeave = seen();
+    // 5. redo: the stock that was clicked comes back
+    await editor.redoStep();
+    const r = seen();
+
+    const bad = [];
+    if (u.preset !== A) bad.push(`undo gave ${u.preset}, expected ${A}`);
+    if (u.name !== nameA) bad.push(`undo gave the name ${u.name}, expected ${nameA}`);
+    if (u.pending !== null) bad.push(`the hover's pending snapshot (${u.pending}) survived the undo`);
+    if (u.preview !== null) bad.push(`filterPreview still ${u.preview} after the undo`);
+    if (afterLeave.preset !== A) bad.push(`leaving the grid after the undo put ${afterLeave.preset} back over ${A}`);
+    if (r.preset !== B) bad.push(`redo applied ${r.preset}: the committed stock was ${B}, ${C} was only hovered`);
+    if (r.name !== nameB) bad.push(`redo gave the name ${r.name}, expected ${nameB}`);
+    if (bad.length) throw new Error(bad.join("; ") + " " + JSON.stringify({ A, B, C, nameA, nameB, u, afterLeave, r }));
+    return { A, B, C, u, afterLeave, r };
+} finally {
+    grid.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
+    if (L()) await c("remove_layer", { layer: added.id });
+    sec.open = false;
+}
+"""),
+    ("panel_hover_layers_step", """
+// The review of F3: a layers step taken while a stock is hovered (here Ctrl+J, the pointer resting on the grid) holds the
+// stock that was clicked (B), not the hovered one (C): the undo record has no guard to put B back later, so a record of
+// C made the hovered stock the committed one after the undo. The copy takes B too; the hover stays with the original.
+const sec = Array.from(editor.root.querySelectorAll("details")).find((d) => d.querySelector("summary") && d.querySelector("summary").textContent === "Film looks");
+if (!sec) throw new Error("Film looks panel missing");
+sec.open = true;
+const grp = sec.querySelector("select");
+grp.value = "Slide"; grp.dispatchEvent(new Event("change"));
+await new Promise((r) => setTimeout(r, 600));
+const grid = sec.querySelector(".film-grid");
+const cells = Array.from(sec.querySelectorAll(".film-cell"));
+if (cells.length < 2) throw new Error(`two cells needed in the Slide group, got ${cells.length}`);
+const cellB = cells[0], cellC = cells[1];
+const B = cellB.getAttribute("data-id"), C = cellC.getAttribute("data-id");
+const hover = async (cell) => { cell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true })); await new Promise((r) => setTimeout(r, 200)); };
+const added = await c("add_filter", { type: "film.look", params: { preset: "portra400" }, name: "Kodak Portra 400" });
+await c("set_active_layer", { layer: added.id });
+const L = () => editor.layers.find((l) => l.id === added.id);
+let copyId = null;
+try {
+    if (!L()) throw new Error("add_filter gave no look layer");
+    await hover(cellB);
+    cellB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 300));
+    if (L().params.preset !== B || L()._undoPending) throw new Error("committing B: " + JSON.stringify({ B, preset: L().params.preset }));
+    const nameB = L().name;
+    await hover(cellC);
+    if (L().params.preset !== C || editor.filterPreview !== added.id) throw new Error("hovering C: " + JSON.stringify({ C, preset: L().params.preset, preview: editor.filterPreview }));
+    const copy = editor.duplicateLayer(L());
+    copyId = copy && copy.id;
+    const dup = { preset: copy && copy.params.preset, name: copy && copy.name, step: (editor.undo[editor.undo.length - 1] || {}).label };
+    await editor.undoStep();
+    const u = { preset: L() && L().params.preset, name: L() && L().name, copyGone: !editor.layers.some((l) => l.id === copyId) };
+    grid.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
+    const afterLeave = L() && L().params.preset;
+    const bad = [];
+    if (dup.preset !== B) bad.push(`the copy took ${dup.preset}, the committed stock is ${B}`);
+    if (dup.step !== "Duplicate layer") bad.push(`the last step is ${dup.step}`);
+    if (!u.copyGone) bad.push("the undo kept the copy");
+    if (u.preset !== B) bad.push(`after the undo the look is ${u.preset}: ${C} was only hovered, ${B} was clicked`);
+    if (u.name !== nameB) bad.push(`after the undo the name is ${u.name}, expected ${nameB}`);
+    if (afterLeave !== B) bad.push(`after the pointer left the grid the look is ${afterLeave}, expected ${B}`);
+    if (bad.length) throw new Error(bad.join("; ") + " " + JSON.stringify({ B, C, dup, u, afterLeave }));
+    return { B, C, dup, u, afterLeave };
+} finally {
+    grid.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
+    if (copyId && editor.layers.some((l) => l.id === copyId)) await c("remove_layer", { layer: copyId });
+    if (L()) await c("remove_layer", { layer: added.id });
+    sec.open = false;
+}
 """),
     ("copy_paste_points", """
 // R3-D10: copy from 800 x 600, paste to 400 x 300

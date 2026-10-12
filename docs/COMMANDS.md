@@ -563,7 +563,7 @@ Realism Pass (Windows only, RTX only): the whole visible picture (every visible 
 
 ### `relight` *(image)*
 
-Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (the default) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer.
+Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (a new layer's route; an edit without route keeps the layer's and renders nothing) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer.
 
 | param | type | description |
 |---|---|---|
@@ -574,7 +574,7 @@ Relight the picture: edits an existing relight layer or adds a new one. Computes
 | `ambient` | number | ambient light 0..100 % (default 15) |
 | `depth_scale` | number | depth scale 5..200 % (default 50) |
 | `shadows` | number | shadow strength 0..100 % (default 60) |
-| `route` | string | relight route ('app' default, 'magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') (default `"app"`) |
+| `route` | string | relight route: 'app' (the in-app filter), 'magnific', 'fal-iclight', 'fal-bria', 'comfycloud' or 'comfyui' (a generative route renders now). Omitted: a new layer is 'app', an edited layer keeps its route and nothing renders |
 | `prompt` | string | additional prompt text for generative routes |
 | `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
 

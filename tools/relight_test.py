@@ -28,6 +28,12 @@ Tests relight filter layer across CPU and WebGL2 paths via CDP:
             drag reads the picture below back no time (docs/PLAN_RELIGHT_FIXES.md F2.5-F2.7).
   * Case r: Overlay is not in an export (flattenToCanvas({ forRun: true })).
   * Case fit: The fitted original light follows the picture below (a new base lit from the other side, F2.6).
+  * Case route: an edit without route keeps the layer's route and renders nothing; a route goes in its own undo step
+            (F3.4, inside case t).
+  * Case z (F3.5): a fresh layer has no Bria light type ("From the lights"), a pick is kept and forgotten again.
+  * Case undo: a relight nudge or wheel burst and a slider are two undo steps; no undo record holds an edit in
+            progress (F3.1, F3.2).
+  * Case cl: close() closes the tip popover and drops a pending nudge whole (F3.3).
 
 Rule 1: Strict gate test. If CDP session is unreachable, exits with 1 and prints FAIL.
 """
@@ -1147,11 +1153,11 @@ JS = r"""
         const undoN = ed.undo.length;
         ed.onKey({ key: "ArrowRight", shiftKey: false, preventDefault: () => {} });
         if (fx._nudgeRelightTimer) { clearTimeout(fx._nudgeRelightTimer); fx._nudgeRelightTimer = null; }
-        check("l2: a nudge is pending", !!fx._undoPending && typeof fx._flushNudge === "function" && fx.params.lights[0].x === xN + 1);
+        check("l2: a nudge is pending", !!fx._nudgePending && typeof fx._flushNudge === "function" && fx.params.lights[0].x === xN + 1);
         await ed.readBoxBytes([0, 0, 16, 16]);
-        check("l2: a read leaves the pending nudge pending (no undo step)", !!fx._undoPending && ed.undo.length === undoN, { undo: ed.undo.length, undoN });
+        check("l2: a read leaves the pending nudge pending (no undo step)", !!fx._nudgePending && ed.undo.length === undoN, { undo: ed.undo.length, undoN });
         ed.flushPendingDebounces();
-        check("l2: the nudge commits as one step afterwards", !fx._undoPending && ed.undo.length === undoN + 1, { undo: ed.undo.length, undoN });
+        check("l2: the nudge commits as one step afterwards", !fx._nudgePending && ed.undo.length === undoN + 1, { undo: ed.undo.length, undoN });
         await ed.undoStep();
         check("l2: undo takes the nudge back", fx.params.lights[0].x === xN, { x: fx.params.lights[0].x, xN });
     }
@@ -1272,6 +1278,64 @@ JS = r"""
     await ed2.undoStep();
     const lAfterUndo = ed2.layers.find((l) => l.id === sRes.layer.id);
     check("t: undo step reverts original light to 100", lAfterUndo && lAfterUndo.params.original === 100);
+
+    // Case route (docs/PLAN_RELIGHT_FIXES.md F3.4): an edit without route keeps the layer's route and renders nothing; a
+    // route given goes in an undo step of its own and the row follows it. At 4192a6a every edit wrote route "app" after
+    // its step (no step, no rebuild): the row kept showing Magnific and Render sent provider "app".
+    {
+        ed2.selectLayers([sRes.layer.id]);
+        const rLayer = () => ed2.layers.find((l) => l.id === sRes.layer.id);
+        const rRow = () => ed2.layerList && ed2.layerList.querySelector(`.ipc-layer[data-layer="${CSS.escape(sRes.layer.id)}"]`);
+        const rSel = () => { const r = rRow(); const s = r && r.querySelector(".ipc-relight-route-sel"); return s ? s.value : null; };
+        const rBtn = () => { const r = rRow(); return r ? r.querySelector(".ipc-relight-render") : null; };
+        const rSends = [];
+        const rStop = "relight gate route: stopped at the send";
+        const rSaved = host.relightSend;
+        try {
+            host.relightSend = async (req) => { rSends.push(req.provider); throw new Error(rStop); };
+            await commands.run("set_filter", { doc: doc2.id, layer: sRes.layer.id, params: { route: "magnific" } });
+            ed2.renderLayers();
+            check("route: set_filter put the layer on magnific, its row shows it with Render", rLayer().params.route === "magnific" && rSel() === "magnific" && !!rBtn(),
+                { route: rLayer().params.route, sel: rSel(), btn: !!rBtn() });
+            const l0 = { ...rLayer().params.lights[0] };
+            let n0 = ed2.undo.length;
+            const rA = await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, lights: [{ ...l0, x: l0.x + 37, y: 61 }] });
+            check("route: lights alone keep the layer's route and say it", rLayer().params.route === "magnific" && rA.route === "magnific",
+                { route: rLayer().params.route, answer: rA.route });
+            check("route: lights alone are one undo step", ed2.undo.length === n0 + 1, { undo: ed2.undo.length, n0 });
+            check("route: the row shows the layer's route", rSel() === rLayer().params.route, { sel: rSel(), route: rLayer().params.route });
+            check("route: an edit without route renders nothing", rSends.length === 0, rSends);
+            const btn = rBtn();
+            if (btn) btn.click();
+            for (let i = 0; i < 200 && (!rSends.length || ed2.providerPending); i++) await new Promise((r) => setTimeout(r, 50));
+            check("route: Render sends the layer's route (magnific)", rSends.length === 1 && rSends[0] === "magnific", rSends);
+            await ed2.undoStep();
+            check("route: undo takes the lights back and keeps the route", rLayer().params.lights[0].x === l0.x && rLayer().params.route === "magnific",
+                { x: rLayer().params.lights[0].x, x0: l0.x, route: rLayer().params.route });
+            const rB = await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, original: 63 });
+            check("route: a value alone keeps the route", rLayer().params.original === 63 && rLayer().params.route === "magnific" && rB.route === "magnific",
+                { original: rLayer().params.original, route: rLayer().params.route });
+            await ed2.undoStep();
+            n0 = ed2.undo.length;
+            await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id });
+            check("route: nothing given changes nothing", rLayer().params.route === "magnific" && ed2.undo.length === n0, { route: rLayer().params.route, undo: ed2.undo.length, n0 });
+            const rC = await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, route: "app" });
+            check("route: route app alone is one step, the row follows", rLayer().params.route === "app" && rC.route === "app" && ed2.undo.length === n0 + 1
+                && ed2.undo[ed2.undo.length - 1].label === "Relight route" && rSel() === "app" && !rBtn(),
+                { route: rLayer().params.route, undo: ed2.undo.length, n0, label: (ed2.undo[ed2.undo.length - 1] || {}).label, sel: rSel(), btn: !!rBtn() });
+            await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, route: "app" });
+            check("route: the same route again pushes no empty step", ed2.undo.length === n0 + 1, { undo: ed2.undo.length, n0 });
+            await ed2.undoStep();
+            check("route: undo puts magnific back, the row with it", rLayer().params.route === "magnific" && rSel() === "magnific" && !!rBtn(),
+                { route: rLayer().params.route, sel: rSel(), btn: !!rBtn() });
+            let rErr = null;
+            try { await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, route: "bogus" }); } catch (e) { rErr = String(e && e.message); }
+            check("route: an unknown route is refused", /relight route/i.test(rErr || ""), rErr);
+            check("route: no command call sent anything", rSends.length === 1, rSends);
+        } finally {
+            host.relightSend = rSaved;
+        }
+    }
 
     await commands.run("close_document", { doc: doc2.id, force: true });
     shell.activate(ed);
@@ -1581,6 +1645,49 @@ JS = r"""
     check("z: comfyui sends lora_relight strength_model 1.0", !!zLora && zLora.strength_model === 1, zLora);
     check("z: comfycloud reached the send", !!zCloud && zCloud.provider === "comfycloud" && (zErrCloud || "").includes(zStop), { zErrCloud });
     check("z: comfycloud sends 10:118 strength_model 1.0", !!zCloud && zCloud.params["10:118|strength_model"] === 1, zCloud);
+
+    // Case z, F3.5: the Bria light type is "From the lights" until the user picks one. At 4192a6a every new layer took
+    // "soft overcast daylight lighting" from host's defaults, so Bria never got the type the lights give (a spot here;
+    // the default point light gives that same string, so it would prove nothing).
+    {
+        check("z: a fresh relight layer has no light type", zFx.params.light_type === undefined, zFx.params.light_type);
+        zFx.params.lights = [{ ...defaultLight(0, { width: zW, height: zH }), type: "spot" }];
+        docZ.markFilterChanged(zFx);
+        await settle(docZ);
+        const zbSaved = host.relightSend;
+        const zBria = [];
+        const zbStop = "relight gate z: stopped at the Bria send";
+        const sendBria = async () => { try { await host.relightWhole(docZ, zFx, { route: "fal-bria" }); } catch (_) { /* the stub stops it */ } };
+        try {
+            host.relightSend = async (req) => { zBria.push({ top: req.light_type, param: req.params && req.params.light_type }); throw new Error(zbStop); };
+            await sendBria();
+            check("z: Bria gets the type a spot gives", zBria.length === 1 && zBria[0].top === "spotlight on subject" && zBria[0].param === "spotlight on subject", zBria);
+            zFx.params.route = "fal-bria";
+            const ltSel = () => docZ.buildRelightBlock(zFx).querySelector(".ipc-relight-bria-row select");
+            const s1 = ltSel();
+            check("z: the Bria row starts on From the lights", !!s1 && s1.value === "" && !!s1.options[0] && s1.options[0].textContent === "From the lights",
+                s1 && { value: s1.value, first: s1.options[0] && s1.options[0].textContent });
+            if (s1) { s1.value = "moonlight lighting"; s1.dispatchEvent(new Event("change")); }
+            check("z: a picked type is the layer's and remembered", zFx.params.light_type === "moonlight lighting" && host.getRelightSettings().light_type === "moonlight lighting",
+                { layer: zFx.params.light_type, kept: host.getRelightSettings().light_type });
+            await sendBria();
+            check("z: Bria gets the picked type", zBria.length === 2 && zBria[1].top === "moonlight lighting", zBria);
+            const zNew = docZ.addFilterLayer("relight");
+            check("z: a new relight layer takes the picked type", !!zNew && zNew.params.light_type === "moonlight lighting", zNew && zNew.params.light_type);
+            const s2 = ltSel();
+            if (s2) { s2.value = ""; s2.dispatchEvent(new Event("change")); }
+            await new Promise((r) => setTimeout(r, 150));   // the settings write is not awaited by the panel
+            const zStored = await window.scumble.settings.get();
+            check("z: From the lights forgets the pick on the layer and in the stored settings",
+                !("light_type" in zFx.params) && host.getRelightSettings().light_type === undefined && !(zStored.relight && "light_type" in zStored.relight),
+                { layer: zFx.params.light_type, kept: host.getRelightSettings().light_type, stored: zStored.relight });
+            await docZ.undoStep();
+            check("z: undo brings the picked type back", zFx.params.light_type === "moonlight lighting", zFx.params.light_type);
+        } finally {
+            host.relightSend = zbSaved;
+            host.setRelightSettings({ light_type: undefined });   // the profile ends as it began: no pick
+        }
+    }
     await commands.run("close_document", { doc: docZ.id, force: true });
 
     // -------------------------------------------------------------------------
@@ -1677,6 +1784,243 @@ JS = r"""
     check("fit: a Normalise over the relight layer re-reads the picture when the shadow map lands", fMeanDiff(nPost, nFresh) < 1e-9, notes.norm);
     check("fit: a run's statistics fit the right too", !!fRun && fRun[0] > 0.2, fRun);
     await commands.run("close_document", { doc: docF.id, force: true });
+
+    // -------------------------------------------------------------------------
+    // Case undo (docs/PLAN_RELIGHT_FIXES.md F3.1 / F3.2): a relight nudge or wheel burst is an undo step of its own. A
+    // slider moved within the burst's 300 ms is a second step: at 4192a6a both used `_undoPending`, so the same snapshot
+    // was pushed twice (the slider's undo took the nudge back too, the next undo did nothing). And no undo record holds an
+    // edit still in progress: a nudge pending at Ctrl+J came back with the undo, its flush and its snapshot included.
+    // -------------------------------------------------------------------------
+    {
+        const docH = shell.newDocument();
+        shell.activate(docH);
+        await new Promise((r) => setTimeout(r, 150));
+        docH.resizeCanvas();
+        await docH.setBaseFromCanvas(fBall(-0.5), { keepLayers: false });
+        await settle(docH);
+        await docH.setMap("depth", makeMap("depth", fM, fM, fDepth, [fS, 0, 0, fS, 0, 0]));
+        const hFx = docH.addFilterLayer("relight");
+        hFx.params.lights = [{ ...defaultLight(0, { width: fS, height: fS }), x: 60, y: 128 }];
+        docH.markFilterChanged(hFx);
+        docH.selectLayers([hFx.id]);
+        docH.setTool("lights");
+        await settle(docH);
+        const hId = hFx.id;
+        const cur = () => docH.layers.find((l) => l.id === hId);
+        const lt = () => cur().params.lights[0];
+        cur()._selectedLightId = lt().id;
+        const nudge = () => docH.onKey({ key: "ArrowRight", shiftKey: false, preventDefault: () => {} });
+        const wheel = () => {
+            const rect = docH.canvas.getBoundingClientRect();
+            const [sx, sy] = docH.imageToScreen(lt().x, lt().y);
+            docH.onWheel({ clientX: rect.left + sx * rect.width / docH.canvas.width, clientY: rect.top + sy * rect.height / docH.canvas.height,
+                deltaY: -100, shiftKey: false, preventDefault: () => {} });
+        };
+        // a relight block slider of the layer as it is now (an undo may have put another object in its place)
+        const slider = (title, v, { input = true, change = true } = {}) => {
+            const s = Array.from(docH.buildRelightBlock(cur()).querySelectorAll(".ipc-relight-controls input[type='range']")).find((x) => x.title === title);
+            if (!s) return false;
+            s.value = String(v);
+            if (input) s.dispatchEvent(new Event("input"));
+            if (change) s.dispatchEvent(new Event("change"));
+            return true;
+        };
+        const steps = (n0) => docH.undo.slice(n0).map((s) => s.label);
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const state = () => ({ x: lt().x, i: lt().intensity, d: lt().diffusion, shadows: cur().params.shadows });
+
+        // a1: a nudge, then the Intensity slider (no wait between: the nudge's 300 ms have not run out)
+        let s0 = state(), n0 = docH.undo.length;
+        nudge();
+        const a1Slid = slider("Intensity", 150);
+        const a1 = { slid: a1Slid, labels: steps(n0), distinct: docH.undo[n0] !== docH.undo[n0 + 1] };
+        check("undo: a nudge and a slider within its 300 ms are two steps", a1.slid && a1.labels.length === 2 && a1.distinct
+            && a1.labels[0] === "Move light" && a1.labels[1] === "Relight: Intensity", a1);
+        await docH.undoStep();
+        const a1u1 = state();
+        await docH.undoStep();
+        const a1u2 = state();
+        await docH.redoStep();
+        const a1r1 = state();
+        await docH.redoStep();
+        const a1r2 = state();
+        check("undo: the slider's undo keeps the nudge", a1u1.x === s0.x + 1 && a1u1.i === s0.i, { a1u1, s0 });
+        check("undo: the next undo takes the nudge back", a1u2.x === s0.x && a1u2.i === s0.i, { a1u2, s0 });
+        check("undo: redo brings the nudge back alone", a1r1.x === s0.x + 1 && a1r1.i === s0.i, { a1r1, s0 });
+        check("undo: the next redo brings the slider back", a1r2.x === s0.x + 1 && a1r2.i === 150, { a1r2 });
+
+        // a2: a wheel burst (diffusion), then the Intensity slider
+        s0 = state(); n0 = docH.undo.length;
+        wheel();
+        const a2d = lt().diffusion;
+        slider("Intensity", 120);
+        const a2labels = steps(n0);
+        check("undo: a wheel burst and a slider within its 300 ms are two steps", a2d !== s0.d && a2labels.length === 2
+            && a2labels[0] === "Relight: Diffusion" && a2labels[1] === "Relight: Intensity", { a2labels, d: a2d, d0: s0.d });
+        await docH.undoStep();
+        const a2u1 = state();
+        check("undo: the slider's undo keeps the wheel's diffusion", a2u1.d === a2d && a2u1.i === s0.i, { a2u1, a2d, s0 });
+        await docH.undoStep();
+        check("undo: the next undo takes the diffusion back", lt().diffusion === s0.d, { d: lt().diffusion, s0 });
+
+        // a3: a slider drag that outlives the nudge's 300 ms: its step still begins where the drag began
+        s0 = state();
+        nudge();
+        slider("Intensity", 160, { change: false });
+        await sleep(350);   // the nudge's timer pushes its step mid-drag
+        slider("Intensity", 170);
+        await docH.undoStep();
+        const a3 = state();
+        check("undo: a slider drag across the nudge's timer undoes to where the drag began", a3.x === s0.x + 1 && a3.i === s0.i, { a3, s0 });
+        await docH.undoStep();
+
+        // a5: the generic sliders (here Shadows) share the rule
+        s0 = state(); n0 = docH.undo.length;
+        nudge();
+        const shRange = Array.from(docH.buildFilterControls(cur()).children).find((x) => x.type === "range" && x.title === "Shadows");
+        if (shRange) {
+            shRange.value = String((s0.shadows || 60) === 30 ? 40 : 30);
+            shRange.dispatchEvent(new Event("input"));
+            shRange.dispatchEvent(new Event("change"));
+        }
+        check("undo: a nudge and a generic slider are two steps", !!shRange && steps(n0).length === 2 && docH.undo[n0] !== docH.undo[n0 + 1], steps(n0));
+        await docH.undoStep();
+        check("undo: the generic slider's undo keeps the nudge", lt().x === s0.x + 1 && cur().params.shadows === s0.shadows, { s: state(), s0 });
+        await docH.undoStep();
+
+        // a4: nudge, wheel, nudge: three steps in their order, and undoing them all ends where it began
+        s0 = state(); n0 = docH.undo.length;
+        nudge();
+        wheel();
+        nudge();
+        await sleep(350);
+        let guard = 0;
+        while (docH.undo.length > n0 && guard++ < 6) await docH.undoStep();
+        check("undo: nudge, wheel, nudge undone step by step end at the start", lt().x === s0.x && lt().diffusion === s0.d, { s: state(), s0, guard });
+
+        // b: a nudge pending at Ctrl+J, then undo: the record holds no edit in progress
+        s0 = state(); n0 = docH.undo.length;
+        nudge();
+        docH.duplicateLayer(cur());
+        const bLabels = steps(n0);
+        check("undo: a pending nudge is its own step before the duplicate", bLabels.length === 2 && bLabels[0] === "Move light" && bLabels[1] === "Duplicate layer", bLabels);
+        const dup = docH.undo[docH.undo.length - 1];
+        const inProgress = ["_flushNudge", "_undoPending", "_nudgePending", "_nudgeRelightTimer", "_undoLabel"];
+        const carried = ((dup && dup.layers) || []).flatMap((r) => inProgress.filter((k) => r[k] != null).map((k) => `${r.name}.${k}`));
+        check("undo: the duplicate's undo record holds no nudge in progress", carried.length === 0, carried);
+        await docH.undoStep();
+        const held = docH.layers.flatMap((l) => ["_flushNudge", "_undoPending", "_nudgePending"].filter((k) => l[k] != null).map((k) => `${l.name}.${k}`));
+        check("undo: after the undo no layer holds a nudge in progress", held.length === 0, held);
+        const seen = [];
+        const hadOwn = Object.prototype.hasOwnProperty.call(docH, "ensureRelightMaps"), ensure0 = docH.ensureRelightMaps;
+        docH.ensureRelightMaps = function (layer, o) { seen.push(layer); return ensure0.call(this, layer, o); };
+        try { docH.flushPendingDebounces(); } finally { if (hadOwn) docH.ensureRelightMaps = ensure0; else delete docH.ensureRelightMaps; }
+        check("undo: a flush touches no layer that left the document", seen.every((l) => docH.layers.includes(l)), seen.map((l) => l && l.name));
+        const bx = lt().x, bi = lt().intensity;
+        slider("Intensity", 150);
+        await docH.undoStep();
+        check("undo: a slider after that undo takes only itself back", lt().x === bx && lt().intensity === bi, { s: state(), bx, bi });
+        nudge();
+        docH.flushPendingDebounces();
+        await docH.undoStep();
+        check("undo: a nudge after that undo takes only itself back", lt().x === bx, { x: lt().x, bx });
+
+        // c (the review of F3): the Intensity slider of the layer list itself, grabbed within a nudge's 300 ms and still
+        // held when the nudge's timer pushes its step: the list is not rebuilt under it (that ends the drag without its
+        // change, and its "before" stayed behind), so letting go pushes its own step
+        const listRange = () => docH.layerList && docH.layerList.querySelector(`.ipc-layer[data-layer="${CSS.escape(hId)}"] .ipc-relight-controls input[type='range'][title='Intensity']`);
+        s0 = state(); n0 = docH.undo.length;
+        nudge();
+        const lr = listRange();
+        if (lr) { lr.value = "140"; lr.dispatchEvent(new Event("input")); }
+        await sleep(350);   // the nudge's timer: its step, and (at 4192a6a + F3) a rebuild of the list
+        const lrHeld = !!lr && lr.isConnected;
+        if (lr) lr.dispatchEvent(new Event("change"));
+        const cLabels = steps(n0);
+        check("undo: a list slider held across the nudge's timer stays in the list", lrHeld, { found: !!lr });
+        check("undo: letting it go pushes its own step after the nudge's", cLabels.length === 2 && cLabels[0] === "Move light" && cLabels[1] === "Relight: Intensity"
+            && !cur()._undoPending, { cLabels, pending: !!cur()._undoPending });
+        await docH.undoStep();
+        check("undo: its undo keeps the nudge", lt().x === s0.x + 1 && lt().intensity === s0.i, { s: state(), s0 });
+        await docH.undoStep();
+        // d: a slider the list was rebuilt under (no change ever comes) leaves its "before" behind; an undo does not put
+        // that back over the edits made since (the redo then lost them, nudges and the slider's own value)
+        s0 = state();
+        const dr = listRange();
+        if (dr) { dr.value = "135"; dr.dispatchEvent(new Event("input")); }
+        docH.renderLayers();   // what an agent's command or a flush did to the list mid-drag
+        for (let i = 0; i < 5; i++) nudge();
+        docH.flushPendingDebounces();
+        const dMid = state();
+        await docH.undoStep();
+        await docH.redoStep();
+        const dRedo = state();
+        check("undo: an undo and a redo after a slider cut off keep the edits made since", !!dr && dMid.x === s0.x + 5 && dMid.i === 135
+            && dRedo.x === s0.x + 5 && dRedo.i === 135, { s0, dMid, dRedo });
+        await docH.undoStep();
+        // e: a nudge's flush whose layer an undo replaced pushes nothing and renders nothing for it (defence in depth: no
+        // record carries a flush since LAYER_PENDING_KEYS, so this calls the kept closure by hand)
+        const eX = lt().x, eI = lt().intensity;
+        nudge();
+        const fKept = cur()._flushNudge, eLayer = cur();
+        clearTimeout(cur()._nudgeRelightTimer);
+        const eStep = docH.snapshot({ kind: "layers" });
+        docH.applySnapshot(eStep);   // the same layers as new objects: eLayer leaves the document
+        // the record held the nudged light (a nudge's preview is no slider's: the "before" left at d is not taken for it)
+        check("undo: a layers record taken while a nudge waits holds the nudged light", lt().x === eX + 1 && lt().intensity === eI, { s: state(), eX, eI });
+        const eN = docH.undo.length;
+        const eSeen = [];
+        const eHad = Object.prototype.hasOwnProperty.call(docH, "ensureRelightMaps"), eEnsure = docH.ensureRelightMaps;
+        docH.ensureRelightMaps = function (layer, o) { eSeen.push(layer); return eEnsure.call(this, layer, o); };
+        try { if (typeof fKept === "function") fKept(); } finally { if (eHad) docH.ensureRelightMaps = eEnsure; else delete docH.ensureRelightMaps; }
+        check("undo: a flush of a layer that left the document pushes and maps nothing", typeof fKept === "function" && !docH.layers.includes(eLayer)
+            && docH.undo.length === eN && eSeen.length === 0, { kept: typeof fKept, gone: !docH.layers.includes(eLayer), undo: docH.undo.length, eN, seen: eSeen.length });
+        await commands.run("close_document", { doc: docH.id, force: true });
+    }
+
+    // -------------------------------------------------------------------------
+    // Case cl (docs/PLAN_RELIGHT_FIXES.md F3.3): close() closes the tip popover (its window listener and preview slices
+    // went on with a closed editor since 77da63f) and drops a relight nudge still in its 300 ms whole: its snapshot (the
+    // layer's next edit took it as its own "before"), its flush and its preview.
+    // -------------------------------------------------------------------------
+    {
+        const docC = shell.newDocument();
+        shell.activate(docC);
+        await new Promise((r) => setTimeout(r, 150));
+        docC.resizeCanvas();
+        await docC.setBaseFromCanvas(fBall(0.5), { keepLayers: false });
+        await settle(docC);
+        await docC.setMap("depth", makeMap("depth", fM, fM, fDepth, [fS, 0, 0, fS, 0, 0]));
+        const cFx = docC.addFilterLayer("relight");
+        cFx.params.lights = [{ ...defaultLight(0, { width: fS, height: fS }), x: 90, y: 100 }];
+        docC.markFilterChanged(cFx);
+        docC.selectLayers([cFx.id]);
+        docC.setTool("lights");
+        cFx._selectedLightId = cFx.params.lights[0].id;
+        await settle(docC);
+        const pk = docC.openTipPicker();
+        check("cl: the tip popover is open", !!pk && pk.isOpen);
+        const x0 = cFx.params.lights[0].x, n0 = docC.undo.length;
+        const cNudge = () => docC.onKey({ key: "ArrowRight", shiftKey: false, preventDefault: () => {} });
+        cNudge();
+        check("cl: a nudge is pending", typeof cFx._flushNudge === "function" && !!(cFx._nudgePending || cFx._undoPending)
+            && docC.filterPreview === cFx.id && cFx.params.lights[0].x === x0 + 1);
+        docC.close();
+        check("cl: close() closes the tip popover and lets go of its window listener", !pk.isOpen && !pk._outside, { open: pk.isOpen });
+        check("cl: close() drops the pending nudge (no snapshot, no flush, no preview left)",
+            !cFx._nudgePending && !cFx._undoPending && !cFx._flushNudge && docC.filterPreview === null,
+            { pending: !!(cFx._nudgePending || cFx._undoPending), flush: typeof cFx._flushNudge, preview: docC.filterPreview });
+        check("cl: the dropped nudge pushed no step and kept its move", docC.undo.length === n0 && cFx.params.lights[0].x === x0 + 1,
+            { undo: docC.undo.length, n0, x: cFx.params.lights[0].x, x0 });
+        // the layer's next edit (here a nudge on the closed editor: onKey reads neither isOpen nor the page) is a step of
+        // its own: its undo takes back only itself, not the dropped nudge as well
+        cNudge();
+        docC.flushPendingDebounces();
+        check("cl: the next nudge is one step", docC.undo.length === n0 + 1 && cFx.params.lights[0].x === x0 + 2, { undo: docC.undo.length, n0, x: cFx.params.lights[0].x });
+        await docC.undoStep();
+        check("cl: its undo takes back only the new nudge", cFx.params.lights[0].x === x0 + 1, { x: cFx.params.lights[0].x, x0 });
+        await commands.run("close_document", { doc: docC.id, force: true });
+    }
 
     // Keep lights tool active for visual screenshot
     ed.setTool("lights");

@@ -92,9 +92,14 @@ code.
   historyStepNow built differently from the plan's formula, lora_strength; "F1 as built" in the plan). **F2 done
   2026-10-12** ("F2 as built": one map key for both sides, pickVis never gives a run the quick map, the quick map trails
   a drag, the fit keyed on the picture, `belowStats` on the picture below instead of compositeVersion, `relightIdle` in
-  every async reader of a run's picture and in exports; reviewed by a workflow, the must it found fixed). **Next F3**
-  (undo, snapshots, routes and settings). Relight gate: 198 in-app checks on tiles; `RELIGHT_GATE_SKIP_NODE=1` runs the
-  in-app checks alone for a mutation round.
+  every async reader of a run's picture and in exports; reviewed by a workflow, the must it found fixed). **F3 done
+  2026-10-12** ("F3 as built": nudge and wheel bursts on their own undo fields, no edit in progress in undo records or
+  copies, close() closes the tip popover and drops a pending nudge, the relight command keeps the layer's route when
+  none is given, Bria's light type "From the lights", only the user's picks stored as settings.relight, a relight id
+  keeps the recipe in use, an undo cancels a shown preview first; reviewed by a workflow, its must and should fixed).
+  **Next F4** (vacuous tests, measurements, nits; the closing gate list; the magnific gate red since L4 and
+  ideogram45_test.js red, both found in F3). Relight gate: 251 in-app checks on tiles, 250 on canvas;
+  `RELIGHT_GATE_SKIP_NODE=1` runs the in-app checks alone for a mutation round.
   The other agent's `docs/REVIEW_RELIGHT_2026-10-12.md` is its own self-review.
 
 

@@ -475,7 +475,8 @@ function providerLabel(id) {
 /** The provider a model recipe runs on: the remembered choice, else the recipe's default. */
 function chosenProvider(r) {
     if (r.kind !== "provider" || !r.providers) return null;
-    const want = (settings.recipeProviders || {})[r.id];
+    // Relight's provider is each relight layer's route (its panel): a choice an older build stored is not read
+    const want = r.task === "relight" ? null : (settings.recipeProviders || {})[r.id];
     return want && r.providers[want] ? want : (r.default || Object.keys(r.providers)[0]);
 }
 
@@ -504,6 +505,13 @@ async function rememberProvider(recipeId, providerId) {
 }
 
 function selectRecipe(id, providerId) {
+    // a relight recipe is never the window's recipe (the Relight panel and the relight command pick it by the layer's
+    // route): its id (a graph saved from the ComfyUI window, an import) keeps the recipe in use and stores nothing. That
+    // recipe goes through the rest again, which puts the select back after loadRecipes() rebuilt its options.
+    if (recipes.some((x) => x.id === id && x.task === "relight")) {
+        const keep = [host.recipe && host.recipe.id, settings.recipe].find((k) => k && recipes.some((x) => x.id === k && x.task !== "relight"));
+        if (keep) { id = keep; providerId = undefined; }
+    }
     const raw = recipes.find((x) => x.id === id && x.task !== "relight") || recipes.find((x) => x.task !== "relight") || recipes[0];
     if (!raw) { ui.recipeNote.textContent = "no recipes found"; return; }
     if (providerId && raw.providers && raw.providers[providerId]) {
@@ -532,7 +540,7 @@ host.onModeChanged = (mode, editor) => {
     const cur = recipes.find((x) => x.id === ui.recipe.value);
     if (cur && modeOf(cur) === mode) return;
     const want = (settings.recipeByMode || {})[mode];
-    const r = recipes.find((x) => x.id === want && modeOf(x) === mode) || recipes.find((x) => modeOf(x) === mode);
+    const r = recipes.find((x) => x.id === want && modeOf(x) === mode && x.task !== "relight") || recipes.find((x) => modeOf(x) === mode && x.task !== "relight");
     if (r) { selectRecipe(r.id); return; }
     if (cur) { editor.genSettings.mode = modeOf(cur); editor.syncGenControls(); }
     editor.setStatus(mode === "api" ? "No API recipe: add a provider key in Settings (Ctrl+,) › API providers."
@@ -566,6 +574,7 @@ function providerOptionLabel(pid) {
 
 function recipeMeta(r) {
     if (r.kind !== "provider") return `ComfyUI · ${r.mode || "local"} · ${Object.keys(r.prompt || {}).length} nodes`;
+    if (r.task === "relight") return "each relight layer picks its route in its Relight panel";
     const v = resolveRecipe(r);
     const ks = providerKeyState(v);
     return `${v.model || ""}${ks && !ks.ok ? (v.provider === "inapp" ? " · model not downloaded" : " · no key") : ""}`;
@@ -603,7 +612,7 @@ const RECIPE_GROUPS = [["local", "ComfyUI"], ["cloud", "Comfy Cloud"], ["api", "
 /** A group's line: its name, how many, how many are ready to run (keys, models) and the recipe in use when inside. */
 function recipeGroupHead(mode, label) {
     const items = recipes.filter((r) => modeOf(r) === mode);
-    const keyed = items.filter((r) => r.kind === "provider" || cloudModeOf(r));
+    const keyed = items.filter((r) => (r.kind === "provider" && r.task !== "relight") || cloudModeOf(r));
     const ready = keyed.filter((r) => { const ks = providerKeyState(resolveRecipe(r)); return !ks || ks.ok; }).length;
     const using = host.recipe && items.find((r) => r.id === host.recipe.id);
     return `${label} (${items.length})${keyed.length ? ` · ${ready} ready` : ""}${using ? ` · in use: ${using.name || using.id}` : ""}`;
@@ -648,8 +657,9 @@ function renderRecipeList() {
         meta.textContent = recipeMeta(r);
         name.appendChild(meta);
         row.appendChild(name);
-        if (r.kind === "provider" && r.providerIds && r.providerIds.length) {
-            // which provider runs this model; the key state shows in the option label
+        if (r.kind === "provider" && r.task !== "relight" && r.providerIds && r.providerIds.length) {
+            // which provider runs this model; the key state shows in the option label (not Relight's: the Relight
+            // panel's route picks its provider)
             const sel = document.createElement("select");
             sel.title = "Provider this model runs on";
             for (const pid of r.providerIds) {

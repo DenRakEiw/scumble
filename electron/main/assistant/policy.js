@@ -262,7 +262,8 @@ function renderCard(call, facts) {
 }
 
 /**
- * relight: route "app" (the default) is the in-app filter, free, and never capped. A generative route asks, and is
+ * relight: route "app" is the in-app filter, free, and never capped; a call without route never renders either (a new
+ * layer is "app", an edit keeps the layer's route and renders nothing: renderer/commands.js). A generative route asks, and is
  * refused above realism.js MAX_AREA when the layer it runs on restores detail, as host.relightWhole would refuse it after
  * the ask: an existing layer's own `detail`, a new layer's from the remembered relight settings (`facts.relightDetail`,
  * which addFilterLayer copies onto it). The command takes no `detail`.

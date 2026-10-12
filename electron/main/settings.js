@@ -22,11 +22,9 @@ const DEFAULTS = {
     // <userData>/models, or a ComfyUI models folder), the SAM2, matting and inpaint (Remove) model ids
     helpers: { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama" },
     depth: { detail: "standard" },
-    relight: {
-        route: "app",
-        magnific: { strength: 100, style: "standard", preserve: true, interpolate: false },
-        detailFromOriginal: true,
-    },
+    // the relight panel's values the user picked, flat as host.setRelightSettings writes them; renderer/editor/host.js
+    // relightSettings holds the defaults (a new layer always starts on route "app")
+    relight: {},
     updates: { check: true },   // check GitHub Releases at start (electron/main/updater.js)
     // exported PNGs carry the prompt, seed and recipe as text chunks (the Export section's switch; docs/PLAN_0_1_29.md 3f);
     // on unless the user turns it off (the user, 2026-09-27; off from 0.1.30 to 0.1.31)
@@ -78,12 +76,28 @@ function writeJson(name, value) {
 
 let cache = null;
 
+/** The relight defaults the store before F3 wrote with every pick (77da63f..4192a6a; lora_strength 1 is 77da63f's 1.0). */
+const PRE_F3_RELIGHT = {
+    route: ["app"], strength: [100], style: ["standard"], preserve_details: [true], interpolate: [false], detail: [true],
+    enable_hr_fix: [true], light_type: ["soft overcast daylight lighting"], lora_strength: [100, 1], steps: [4],
+};
+
 function get() {
     if (!cache) {
         const stored = readJson("settings.json", {});
         // 0.1.30 and 0.1.31 stored their default `embedRecipe: false` with every write (set() writes the whole object); it
         // counts as the user's only when the switch itself wrote it, which marks it (host.setEmbedRecipe, since 0.1.32)
         if (stored && stored.embedRecipe === false && !stored.embedRecipeChosen) delete stored.embedRecipe;
+        // until F3 the relight block stored the panel's whole object (host's defaults with every pick) beside a nested
+        // default ({ magnific: {...}, detailFromOriginal }) only that store wrote: with it, a key at the old default is no
+        // pick (light_type above all: its default is gone, unset is "From the lights") and is dropped with the nested two
+        if (stored && stored.relight && typeof stored.relight === "object") {
+            const { magnific: _magnific, detailFromOriginal: _detail, ...flat } = stored.relight;
+            if (_magnific !== undefined || _detail !== undefined) {
+                for (const [k, v] of Object.entries(PRE_F3_RELIGHT)) if (v.includes(flat[k])) delete flat[k];
+            }
+            stored.relight = flat;
+        }
         cache = { ...DEFAULTS, ...stored };
     }
     return cache;

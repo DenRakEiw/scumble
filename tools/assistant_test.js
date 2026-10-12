@@ -1465,8 +1465,8 @@ async function main() {
                 && atCap.action === "ask",
                 JSON.stringify({ AREA, capApp, capAppEdit, capMagNew, capMagOn, capMagOff, capNewOff, capNewOffOnLayer, atCap }));
 
-            // factsFor reads a new layer's `detail` from the stored relight settings (host.setRelightSettings writes them flat;
-            // a fresh profile holds settings.js's nested DEFAULTS.relight, which has none: on, as host's default)
+            // factsFor reads a new layer's `detail` from the stored relight settings (host.setRelightSettings writes the picks
+            // flat; a profile from before F3 may hold the nested keys, which have no detail: on, as host's default)
             {
                 const factsFrom = async (stored) => {
                     const { a } = assistantOn(new FakeEditor(), [], { settings: stored === undefined ? {} : { relight: stored } });

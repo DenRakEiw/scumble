@@ -3,6 +3,8 @@
 // Then settings.realism (the Realism Pass, docs/PLAN_0_1_42.md R1): an older profile reads the defaults, a write of
 // another key keeps a stored object whole, a partial one comes back as stored and renderer/editor/realism.js
 // fillValues fills it.
+// Then settings.relight (docs/PLAN_RELIGHT_FIXES.md F3.6): flat, only what the user picked; a nested block an older build
+// stored is dropped on read, and renderer/editor/host.js stores the picks, never its defaults.
 //
 //     node tools/settings_migration_test.js
 //
@@ -102,10 +104,84 @@ async function realism() {
     check("the partial object survives a write of another key and a restart as it was stored (no key invented)", eq(s.get().realism, partial) && eq(onDisk().realism, partial), JSON.stringify(onDisk().realism));
 }
 
+// ---- settings.relight (docs/PLAN_RELIGHT_FIXES.md F3.6) ---------------------------------------------------------
+// The relight panel's values are stored flat and only as the user picked them (renderer/editor/host.js relightPicked);
+// the defaults stay in host.relightSettings. Until F3, DEFAULTS.relight was a nested object ({ route, magnific: {...},
+// detailFromOriginal }) that nothing read, get() handed it to the renderer, and setRelightSettings stored host's whole
+// object beside it: both shapes and every default on disk after the first slider move.
+async function relight() {
+    console.log("--- settings.relight ---");
+    const { isDeepStrictEqual } = require("node:util");
+    const savedWindow = global.window, savedDocument = global.document;
+    let s = fresh(undefined);
+    // host.js asks window.scumble.comfy.onEvent at import; its settings.set is main's set() of the profile in use
+    global.window = {
+        scumble: { comfy: { onEvent() {} }, helpers: { free: async () => {} }, settings: { set: async (patch) => s.set(patch) } },
+        addEventListener() {}, removeEventListener() {},
+    };
+    global.document = { createElement: () => ({ getContext: () => ({}) }) };
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    try {
+        const { host } = await import(pathToFileURL(path.join(__dirname, "..", "renderer", "editor", "host.js")).href);
+        const defaults = { ...host.relightSettings };
+        const freshHost = () => { host.relightSettings = { ...defaults }; host.relightPicked = {}; };
+        const nestedKeys = (o) => Object.keys(o || {}).filter((k) => o[k] && typeof o[k] === "object");
+
+        check("DEFAULTS.relight holds no nested object and no light type", nestedKeys(s.DEFAULTS.relight).length === 0 && !("light_type" in s.DEFAULTS.relight), JSON.stringify(s.DEFAULTS.relight));
+        // a new profile: a slider move stores that value alone
+        freshHost();
+        host.configure({ mount: {}, relight: s.get().relight });
+        host.setRelightSettings({ strength: 40 });
+        await tick();
+        check("a new profile stores only the value moved ({ strength: 40 })", isDeepStrictEqual(onDisk().relight, { strength: 40 }), JSON.stringify(onDisk().relight));
+
+        // a profile written before F3, as that store wrote it: host's whole object (every default, light_type's included)
+        // with the two picks, beside the nested default only that store wrote
+        const nested = { route: "app", strength: 55, style: "standard", preserve_details: true, interpolate: false, detail: false, enable_hr_fix: true,
+            light_type: "soft overcast daylight lighting", lora_strength: 100, steps: 4,
+            magnific: { strength: 100, style: "standard", preserve: true, interpolate: false }, detailFromOriginal: true };
+        const flat = { strength: 55, detail: false };
+        s = fresh({ recipe: "x", relight: nested });
+        check("get() drops the nested pair and the old defaults (light_type's too) and keeps the picks", isDeepStrictEqual(s.get().relight, flat), JSON.stringify(s.get().relight));
+        // without the nested pair the block is F3's own store: a light type equal to the old default is a real pick
+        s = fresh({ recipe: "x", relight: { light_type: "soft overcast daylight lighting", steps: 4 } });
+        check("an F3 store keeps a pick equal to an old default", isDeepStrictEqual(s.get().relight, { light_type: "soft overcast daylight lighting", steps: 4 }), JSON.stringify(s.get().relight));
+        s = fresh({ recipe: "x", relight: nested });
+        s.set({ apiSize: "x2" });
+        check("a write of another key stores relight flat", isDeepStrictEqual(onDisk().relight, flat) && onDisk().apiSize === "x2", JSON.stringify(onDisk().relight));
+
+        // the renderer reads that profile (shell.js configure) and the user moves the strength: the picks are stored, never
+        // the defaults (style, lora_strength, light_type ...) and no nested key
+        s = fresh({ recipe: "x", relight: nested });
+        freshHost();
+        host.configure({ mount: {}, relight: s.get().relight });
+        const got = host.getRelightSettings();
+        check("host reads the migrated picks (strength 55, detail false), no light type and no nested key",
+            got.strength === 55 && got.detail === false && got.light_type === undefined && !("magnific" in got) && !("detailFromOriginal" in got),
+            JSON.stringify({ strength: got.strength, detail: got.detail, light_type: got.light_type, nested: Object.keys(got).filter((k) => k === "magnific" || k === "detailFromOriginal") }));
+        host.setRelightSettings({ strength: 40 });
+        await tick();
+        const stored = onDisk().relight;
+        const extra = Object.keys(stored).filter((k) => !(k in flat));
+        check("a slider move then stores { strength 40, detail false } and nothing else", isDeepStrictEqual(stored, { strength: 40, detail: false }),
+            `${JSON.stringify(stored)}${extra.length ? "  extra: " + extra.join(", ") : ""}`);
+
+        // host's configure drops a nested value by itself (an older main, a hand-edited file)
+        freshHost();
+        host.configure({ mount: {}, relight: nested });
+        check("configure keeps no nested object in host (magnific), the flat picks read", !("magnific" in host.relightSettings) && !("magnific" in (host.relightPicked || {})) && host.relightSettings.strength === 55,
+            JSON.stringify(nestedKeys(host.relightSettings)));
+    } finally {
+        global.window = savedWindow;
+        global.document = savedDocument;
+    }
+}
+
 (async () => {
     try {
         embedRecipe();
         await realism();
+        await relight();
     } finally {
         Module._load = load;
         fs.rmSync(dir, { recursive: true, force: true });
