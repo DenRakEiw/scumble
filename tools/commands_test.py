@@ -1768,8 +1768,8 @@ try {
 // the text route, as the Generate new dialog offers it
 for (const r of L.recipes) {
     const rr = host.shell.recipes().find((x) => x.id === r.id);
-    if (r.task === "upscale" || r.task === "pass") {
-        if (r.new_image !== false || r.sizes !== undefined || r.edit !== undefined) throw new Error(r.id + ": an upscaler or the pass makes no new image: " + JSON.stringify(r));
+    if (r.task === "upscale" || r.task === "pass" || r.task === "relight") {
+        if (r.new_image !== false || r.sizes !== undefined || r.edit !== undefined) throw new Error(r.id + ": an upscaler, the pass or relight makes no new image: " + JSON.stringify(r));
         if (r.task === "upscale" && !(r.document_max === null || r.document_max >= 64)) throw new Error(r.id + " document_max " + r.document_max);
         continue;
     }

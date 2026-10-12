@@ -395,9 +395,9 @@ export const host = {
 
     /**
      * Shell setup: where editors mount and the persisted node params.
-     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string, embedRecipe?: boolean, llmRefPictures?: boolean, realism?: any, depthDetail?: string }} [opts]
+     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string, embedRecipe?: boolean, llmRefPictures?: boolean, realism?: any, depthDetail?: string, relight?: any }} [opts]
      */
-    configure({ mount, nodeParams, apiSize, embedRecipe, llmRefPictures, realism: realismStored, depthDetail } = {}) {
+    configure({ mount, nodeParams, apiSize, embedRecipe, llmRefPictures, realism: realismStored, depthDetail, relight } = {}) {
         this.mountEl = mount || document.body;
         if (nodeParams) this.nodeParams = { ...this.nodeParams, ...nodeParams };
         if (API_SIZES.some(([id]) => id === apiSize)) this.apiSize = apiSize;
@@ -405,6 +405,24 @@ export const host = {
         if (typeof llmRefPictures === "boolean") this.llmRefPictures = llmRefPictures;
         if (realismStored !== undefined) this.realismStored = realismStored;
         if (depthDetail !== undefined) this.depthDetailSetting = depthDetail;
+        if (relight !== undefined) this.relightSettings = { ...this.relightSettings, ...(relight || {}) };
+    },
+
+    relightSettings: {
+        route: "app",
+        magnific: { strength: 100, style: "standard", preserve: true, interpolate: false },
+        detailFromOriginal: true,
+    },
+
+    getRelightSettings() {
+        return this.relightSettings || {};
+    },
+
+    setRelightSettings(patch) {
+        this.relightSettings = { ...(this.relightSettings || {}), ...(patch || {}) };
+        if (typeof window !== "undefined" && window.scumble && window.scumble.settings) {
+            window.scumble.settings.set({ relight: this.relightSettings }).catch(() => {});
+        }
     },
 
     depthDetailSetting: "standard",
@@ -3008,12 +3026,12 @@ export const host = {
         const offRemoved = this.on("removed", (e) => { if (e && e.editor === editor) { closed = true; token.cancelled = true; } });
         const gone = () => closed || !this._editors.includes(editor);
         const isFill = (l) => editor.isFillLayer(l);
-        const skip = (l) => editor.isReference(l) || editor.isControl(l) || (l.kind !== "filter" && !l.visible);
+        const skip = (l) => editor.isReference(l) || editor.isControl(l) || (l.kind !== "filter" && !l.visible) || (l.relightOf && l.relightOf === layer.id);
         const pv = (p) => (p ? `${objectId(p)}.${p.version || 0}` : "-");
         const readSig = (upTo) => {
             const parts = [editor.width, editor.height, editor.pixelVersion || 0, pv(editor.basePx), editor.compareShow || ""];
             for (const l of editor.layers.slice(0, upTo)) {
-                if (editor.isReference(l) || editor.isControl(l) || l === layer) continue;
+                if (editor.isReference(l) || editor.isControl(l) || l === layer || (l.relightOf && l.relightOf === layer.id)) continue;
                 parts.push(l.id, editor.shown(l) ? 1 : 0, l.opacity, l.blend || "", l.clip ? 1 : 0, l.group || "", l.x, l.y, l.w, l.h, l.kind,
                     l.kind === "filter" ? `${l.filter}${JSON.stringify(l.params || {})}${objectId(l._lutData)}${objectId(l._plateImg)}` : "",
                     pv(l.px), pv(l.maskPx), l.maskOff ? 1 : 0, l.match ? `${l.match.strength}:${l.match.source}` : "");
@@ -3031,6 +3049,13 @@ export const host = {
 
             const wasVis = layer.visible;
             layer.visible = false;
+            const hiddenRelight = [];
+            for (const l of editor.layers) {
+                if (l.relightOf && l.relightOf === layer.id && l.visible) {
+                    l.visible = false;
+                    hiddenRelight.push(l);
+                }
+            }
             let picBytes = null;
             let cFull = null;
             try {
@@ -3048,6 +3073,7 @@ export const host = {
                 }
             } finally {
                 layer.visible = wasVis;
+                for (const l of hiddenRelight) l.visible = true;
             }
 
             const longSide = Math.max(W, H);
@@ -3068,6 +3094,7 @@ export const host = {
 
             const mapCanvas = document.createElement("canvas");
             mapCanvas.width = wSend; mapCanvas.height = hSend;
+            mapCanvas.getContext("2d").drawImage(cSend, 0, 0);
             const relightInfo = {
                 scale: wSend / W,
                 maps: editor.maps,
@@ -3149,7 +3176,7 @@ export const host = {
                     promptGraph.lora_relight.inputs.strength_model = p.lora_strength / 100;
                 }
                 promptGraph["relight_out"] = { class_type: "PreviewImage", inputs: { images: ["decode", 0] } };
-                out = await this.comfyPictureRun(editor, promptGraph, "relight_out", { label: L, token, deadline, timeoutMs: 300000 });
+                out = await this.comfyPictureRun(editor, promptGraph, "relight_out", { label: L, token, deadline, timeoutMs: 300000, front: false });
             } else {
                 let req;
                 if (route === "fal-iclight") {
@@ -3240,7 +3267,7 @@ export const host = {
                 const fullPx = cFull.getContext("2d").getImageData(0, 0, W, H).data;
 
                 let lowPx = null;
-                if (wSend !== W || hSend !== H || wAns !== W || hAns !== H) {
+                if (cSend && typeof cSend.getContext === "function") {
                     if (wSend === wAns && hSend === hAns) {
                         lowPx = cSend.getContext("2d").getImageData(0, 0, wSend, hSend).data;
                     } else {
@@ -3301,6 +3328,9 @@ export const host = {
 
             if (gone()) return { layer: null, seconds: 0, note: "", changed: false, route, seed: null };
             if (token.cancelled) throw cancelled();
+            if (editor.width !== W || editor.height !== H) {
+                throw new Error(`${L}: picture size changed during the run (was ${W} x ${H}, now ${editor.width} x ${editor.height}).`);
+            }
 
             const at0 = realism.topFilterRun(editor.layers, isFill, skip);
             const changed = readSig(at0) !== sig0;
@@ -3319,6 +3349,7 @@ export const host = {
                 w: W,
                 h: H,
                 match: { strength: 0, source: "underneath" },
+                relightOf: layer.id,
             });
             const top = editor.layers.length - 1;
             if (at < top) editor.moveLayer(pixelLayer.id, at - top, { undo: false });
@@ -3334,8 +3365,9 @@ export const host = {
             editor.draw();
 
             const secs = Math.max(1, Math.round(ms / 1000));
-            editor.setStatus(`${L} finished in ${secs} s: added a new layer above the picture under the filter layers (Ctrl+Z takes it back).`);
-            return { layer: pixelLayer, seconds: ms / 1000, note: "", changed, route, seed: out.seed };
+            const changedMsg = changed ? " The picture changed while the relight was running: the layer shows it as it was when the run started." : "";
+            editor.setStatus(`${L} finished in ${secs} s: added a new layer above the picture under the filter layers (Ctrl+Z takes it back).${changedMsg}`);
+            return { layer: pixelLayer, seconds: ms / 1000, note: changed ? "the picture changed while the relight was running" : "", changed, route, seed: out.seed };
         } catch (err) {
             if (gone()) return { layer: null, seconds: 0, note: "", changed: false, route, seed: null };
             const msg = String((err && err.message) || err);

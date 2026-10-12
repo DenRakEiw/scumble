@@ -130,6 +130,14 @@ pub fn shadow_march(
     let sun_dist = long_side * 1.5;
     let inv65535 = scale / 65535.0;
 
+    let (norm_lx, norm_ly, norm_lz) = if kind == 1 {
+        let l_len = (lx * lx + ly * ly + lz * lz).sqrt();
+        let inv_l = if l_len > 0.0 { 1.0 / l_len } else { 1.0 };
+        (lx * inv_l, ly * inv_l, lz * inv_l)
+    } else {
+        (0.0, 0.0, 0.0)
+    };
+
     for r_idx in 0..band_rows {
         let y = row0 + r_idx;
         let row_offset = y * w;
@@ -147,9 +155,9 @@ pub fn shadow_march(
                 let (tx, ty, tz) = if kind == 1 {
                     let jx = tap[0] * (r / long_side);
                     let jy = tap[1] * (r / long_side);
-                    let dir_x = lx + jx;
-                    let dir_y = ly + jy;
-                    let dir_z = lz;
+                    let dir_x = norm_lx + jx;
+                    let dir_y = norm_ly + jy;
+                    let dir_z = norm_lz;
                     let d_len = (dir_x * dir_x + dir_y * dir_y + dir_z * dir_z).sqrt();
                     let d_len = if d_len > 0.0 { d_len } else { 1.0 };
                     (
@@ -170,27 +178,39 @@ pub fn shadow_march(
                 let rdz = tz - pz;
                 let mut blocked = false;
 
-                for s in 1..=n_steps {
-                    let frac = s as f32 / n_steps as f32;
-                    let sx = px + frac * rdx;
-                    let sy = py + frac * rdy;
-                    let sz = pz + frac * rdz;
+                let inv_steps = 1.0 / (n_steps as f32);
+                let step_x = rdx * inv_steps;
+                let step_y = rdy * inv_steps;
+                let step_z = rdz * inv_steps;
+                let mut sx = px + step_x;
+                let mut sy = py + step_y;
+                let mut sz = pz + step_z;
 
+                for _ in 1..=n_steps {
                     if rdz >= 0.0 && sz > scale {
                         break;
                     }
 
-                    let ix = (sx + 0.5).floor() as isize;
-                    let iy = (sy + 0.5).floor() as isize;
-                    if ix < 0 || ix >= w as isize || iy < 0 || iy >= h as isize {
+                    let cx = sx + 0.5;
+                    let cy = sy + 0.5;
+                    if cx < 0.0 || cy < 0.0 {
+                        break;
+                    }
+                    let ix = cx as usize;
+                    let iy = cy as usize;
+                    if ix >= w || iy >= h {
                         break;
                     }
 
-                    let map_z = (65535.0 - depth[iy as usize * w + ix as usize] as f32) * inv65535;
+                    let map_z = (65535.0 - depth[iy * w + ix] as f32) * inv65535;
                     if map_z > sz + z_bias {
                         blocked = true;
                         break;
                     }
+
+                    sx += step_x;
+                    sy += step_y;
+                    sz += step_z;
                 }
 
                 if !blocked {

@@ -124,12 +124,19 @@ JS = r"""
     // x >= 75: far background / low ground (depth = 50000)
     const Mw = 150, Mh = 100;
     const ramp = new Uint16Array(Mw * Mh);
+    const guide = new Uint8ClampedArray(Mw * Mh * 4);
     for (let y = 0; y < Mh; y++) {
         for (let x = 0; x < Mw; x++) {
-            ramp[y * Mw + x] = x < 75 ? 10000 : 50000;
+            const idx = (y * Mw + x) * 4;
+            const isLeft = x < 75;
+            ramp[y * Mw + x] = isLeft ? 10000 : 50000;
+            guide[idx + 0] = isLeft ? 220 : 40;
+            guide[idx + 1] = isLeft ? 40 : 40;
+            guide[idx + 2] = isLeft ? 40 : 220;
+            guide[idx + 3] = 255;
         }
     }
-    const depthMap = makeMap("depth", Mw, Mh, ramp, [W, 0, 0, H, 0, 0]);
+    const depthMap = makeMap("depth", Mw, Mh, ramp, [W, 0, 0, H, 0, 0], { snap: { strength: 50 } }, guide);
     const setOk = await ed.setMap("depth", depthMap);
     check("setup: depth map installed", setOk === true && !!(ed.maps && ed.maps.depth));
 
@@ -152,6 +159,26 @@ JS = r"""
         if (pxA[i] !== pxBase[i]) diffA++;
     }
     check("a: identity at defaults bitwise", diffA === 0, { diffA });
+
+    fx.params.lights = [{
+        id: "light_0",
+        on: true,
+        type: "point",
+        x: 100,
+        y: 200,
+        intensity: 0,
+    }];
+    ed.markFilterChanged(fx);
+    ed.renderLayers();
+    ed.draw();
+    await settle(ed);
+    const flatZero = ed.flattenToCanvas({ forRun: true });
+    const pxZero = flatZero.getContext("2d").getImageData(0, 0, W, H).data;
+    let diffZero = 0;
+    for (let i = 0; i < pxZero.length; i++) {
+        if (pxZero[i] !== pxBase[i]) diffZero++;
+    }
+    check("a: identity with light at intensity 0", diffZero === 0, { diffZero });
 
     // -------------------------------------------------------------------------
     // Case b: One point light on the left
@@ -751,7 +778,7 @@ JS = r"""
 
     firePointer("pointerdown", 150, 200);
     firePointer("pointermove", 190, 230);
-    const quickW = fx._relight?.vis?.w;
+    const quickW = fx._relight?.visQuick?.w || fx._relight?.vis?.w;
     check("q: during drag vis.w is quarter size Math.floor(Mw / 4)", quickW === Math.floor(Mw / 4), { quickW, expected: Math.floor(Mw / 4) });
     const dragCanvas = ed.flattenToCanvas({ forRun: true });
     const dragPx = dragCanvas.getContext("2d").getImageData(0, 0, dragCanvas.width, dragCanvas.height).data;
@@ -792,6 +819,19 @@ JS = r"""
         if (pxLightsTool[i] !== pxSelectTool[i]) diffOverlay++;
     }
     check("r: overlay is not in export (0 bytes differ between lights and select tools)", diffOverlay === 0, { diffOverlay });
+
+    // Switch back to lights tool to verify viewport canvas has the overlay
+    ed.setTool("lights");
+    ed.draw();
+    await settle(ed);
+    const pxView = ed.canvas.getContext("2d").getImageData(0, 0, Math.min(W, ed.canvas.width), Math.min(H, ed.canvas.height)).data;
+    let viewDiff = 0;
+    for (let i = 0; i < Math.min(pxView.length, pxLightsTool.length); i += 4) {
+        if (pxView[i] !== pxLightsTool[i] || pxView[i + 1] !== pxLightsTool[i + 1] || pxView[i + 2] !== pxLightsTool[i + 2]) {
+            viewDiff++;
+        }
+    }
+    check("r: viewport canvas displays handles overlay while export does not", viewDiff > 0, { viewDiff });
 
     // Extra L2 checks: Nudge with arrow keys and wheel diffusion
     ed.setTool("lights");
@@ -843,8 +883,12 @@ JS = r"""
             depthHelperCalled = true;
             const n = args.width * args.height;
             const f32 = new Float32Array(n);
-            for (let i = 0; i < n; i++) f32[i] = 10.0;
-            return { depth: f32, width: args.width, height: args.height, min: 0, max: 10, provider: "mock", ms: 1 };
+            for (let y = 0; y < args.height; y++) {
+                for (let x = 0; x < args.width; x++) {
+                    f32[y * args.width + x] = 2.0 + (x / args.width) * 8.0;
+                }
+            }
+            return { depth: f32, width: args.width, height: args.height, min: 2.0, max: 10.0, provider: "mock", ms: 1 };
         }
         return origHelperCall.call(host, name, args);
     };
@@ -958,7 +1002,7 @@ JS = r"""
     docU.draw();
     await settle(docU);
     check("u: relight layer added on docU", !!uFx && uFx.filter === "relight");
-    check("u: initial relight filter layer is visible", !uFx.hidden);
+    check("u: initial relight filter layer is visible", uFx.visible !== false);
 
     // Measure original base checkerboard contrast
     let initCount = 0, initContrastSum = 0;
@@ -990,7 +1034,7 @@ JS = r"""
 
     // Verify filter layer is now hidden
     const uFxAfter = docU.layers.find((l) => l.id === uFx.id);
-    check("u: filter layer is hidden after render", !!uFxAfter && (uFxAfter.visible === false || uFxAfter.hidden === true));
+    check("u: filter layer is hidden after render", !!uFxAfter && uFxAfter.visible === false);
 
     // Verify landed layer is under top filter run
     const landedIdx = docU.layers.findIndex((l) => l.id === landedId);
@@ -1113,7 +1157,7 @@ JS = r"""
 """
 
 
-async def run_cdp(cdp, doc_path, mock_url):
+async def run_cdp(cdp, doc_path, mock_url, scratch_dir=None):
     escaped_path = doc_path.replace("\\", "\\\\")
     expr = f"({JS})('{escaped_path}', '{mock_url}')"
     val = await cdp.eval(expr, timeout=120)
@@ -1127,8 +1171,10 @@ async def run_cdp(cdp, doc_path, mock_url):
         backend = "tiles" if val.get("tiles") else "canvas"
         print(f"[ok] relight test on {backend}: {val.get('checks', 0)} in-app checks passed")
 
-    shot_path = os.path.join(ROOT, "scratch", "shot_l1b.png")
-    shot_l2 = os.path.join(ROOT, "scratch", "shot_l2.png")
+    out_dir = scratch_dir or os.path.join(ROOT, "scratch")
+    os.makedirs(out_dir, exist_ok=True)
+    shot_path = os.path.join(out_dir, "shot_l1b.png")
+    shot_l2 = os.path.join(out_dir, "shot_l2.png")
     try:
         await cdp.screenshot(shot_path)
         await cdp.screenshot(shot_l2)
@@ -1183,7 +1229,7 @@ def main():
 
     mock = Mock().start()
     try:
-        ok = asyncio.run(session(lambda c: run_cdp(c, doc_path, mock.url)))
+        ok = asyncio.run(session(lambda c: run_cdp(c, doc_path, mock.url, scratch_dir)))
         if not ok:
             print("FAIL")
             sys.exit(1)

@@ -270,14 +270,31 @@ async function main() {
     // relightStats with a real canvas/canvas-like object
     const CW = 64, CH = 64;
     const canvasPixels = new Uint8ClampedArray(CW * CH * 4);
-    // Fill with gradient
+    const cDepth = { data: new Uint16Array(CW * CH), w: CW, h: CH, xf: [CW, 0, 0, CH, 0, 0] };
+    const lx = -0.5, ly = -0.5, lz = 0.707;
     for (let y = 0; y < CH; y++) {
         for (let x = 0; x < CW; x++) {
             const idx = (y * CW + x) * 4;
-            canvasPixels[idx + 0] = x * 4;
-            canvasPixels[idx + 1] = y * 4;
-            canvasPixels[idx + 2] = 128;
-            canvasPixels[idx + 3] = 255;
+            const dx = (x - CW / 2) / (CW * 0.4);
+            const dy = (y - CH / 2) / (CH * 0.4);
+            const r2 = dx * dx + dy * dy;
+            if (r2 <= 1.0) {
+                const nz = Math.sqrt(1.0 - r2);
+                const nx = dx, ny = dy;
+                cDepth.data[y * CW + x] = Math.round(30000 - nz * 15000);
+                const ndl = Math.max(0, nx * lx + ny * ly + nz * lz);
+                const Y = Math.round(Math.min(1.0, 0.2 + 0.8 * ndl) * 255);
+                canvasPixels[idx + 0] = Y;
+                canvasPixels[idx + 1] = Y;
+                canvasPixels[idx + 2] = Y;
+                canvasPixels[idx + 3] = 255;
+            } else {
+                cDepth.data[y * CW + x] = 45000;
+                canvasPixels[idx + 0] = 50;
+                canvasPixels[idx + 1] = 50;
+                canvasPixels[idx + 2] = 50;
+                canvasPixels[idx + 3] = 255;
+            }
         }
     }
     const mockCanvas = {
@@ -294,13 +311,12 @@ async function main() {
             return null;
         }
     };
-    const cDepth = { data: new Uint16Array(CW * CH), w: CW, h: CH };
-    for (let i = 0; i < CW * CH; i++) cDepth.data[i] = 30000;
-    const ctxMock = { params: { depth_scale: 60, sigma: 1.5 } };
-    const statsCanvas = relightStats(mockCanvas, cDepth, ctxMock);
+    const ctxMock = { maps: { depth: cDepth }, params: { depth_scale: 60, sigma: 1.5 } };
+    const statsCanvas = relightStats(mockCanvas, cDepth, ctxMock, { width: CW, height: CH });
     assert(statsCanvas && statsCanvas.fit, "relightStats computes fit with canvas");
     assert(Number.isFinite(statsCanvas.fit.ka), "statsCanvas ka is finite");
-    assert(Number.isFinite(statsCanvas.fit.kd), "statsCanvas kd is finite");
+    assert(statsCanvas.fit.kd > 0, "statsCanvas kd is strictly positive with depth and shading gradient");
+    assert(statsCanvas.fit.l0[0] !== 0 || statsCanvas.fit.l0[1] !== 0, "non-zero recovered light direction");
     console.log("  PASS 7: 2700 K is warmer than 8000 K, sun relative direction, and canvas relightStats works");
 }
 
@@ -539,21 +555,21 @@ async function main() {
         }
     }
 
-    // Light in front of subject at (30, 10, 100)
-    const light = [30, 10, 100, 0];
+    // Light in front of subject near edge at (48, 10, 30)
+    const light = [48, 10, 30, 0];
     const visR0 = shadowMarch(depth, W, H, scale, light, 0, 16, 32, 1.0, 0, H);
     const visR5 = shadowMarch(depth, W, H, scale, light, 5, 16, 32, 1.0, 0, H);
     const visR15 = shadowMarch(depth, W, H, scale, light, 15, 16, 32, 1.0, 0, H);
 
     // At edge x = 51 (just behind the step on the background)
-    // Larger radius should cast partial light over the edge into the shadow
+    // Larger radius casts partial light over the edge into the penumbra
     const v0 = visR0[10 * W + 51];
     const v5 = visR5[10 * W + 51];
     const v15 = visR15[10 * W + 51];
 
-    assert(v0 <= v5, `penumbra: r0 (${v0}) <= r5 (${v5})`);
-    assert(v5 <= v15, `penumbra: r5 (${v5}) <= r15 (${v15})`);
-    console.log(`  PASS 13: disc radius softens penumbra monotonically (r0=${v0}, r5=${v5}, r15=${v15})`);
+    assert(v0 < v5, `penumbra strict: r0 (${v0}) < r5 (${v5})`);
+    assert(v5 < v15, `penumbra strict: r5 (${v5}) < r15 (${v15})`);
+    console.log(`  PASS 13: disc radius softens penumbra strictly monotonically (r0=${v0}, r5=${v5}, r15=${v15})`);
 }
 
 // ------------------------------------------------------------------------------------------------

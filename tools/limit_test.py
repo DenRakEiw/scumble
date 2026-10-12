@@ -744,11 +744,8 @@ JS = r"""
     edSnap.releaseCaches();
     const glOut = edSnap.flattenToCanvas({ forRun: true });
 
-    edSnap.filterChainOff = true;
-    edSnap.releaseCaches();
-    const cpuOut = edSnap.flattenToCanvas({ forRun: true });
-    edSnap.filterChainOff = false;
-    edSnap.releaseCaches();
+    const infoSnap = { cpu: true, maps: { depth: snapDocMap }, cache: {}, width: Ws, height: Hs };
+    const cpuOut = GL.glToCanvas(F.applyFilter("levels", baseSnap, rawSnapFx.params, infoSnap));
 
     if (glOut && cpuOut) {
         const stat = diffStat(glOut, cpuOut, Ws, Hs);

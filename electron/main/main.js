@@ -657,10 +657,6 @@ function buildMenu() {
                 { label: "Flip Vertical", click: () => send("menu", "canvas:turn:v") },
                 { type: "separator" },
                 { label: "Frequency Separation...", click: () => send("menu", "frequency-separation") },
-                { label: "New Dodge && Burn Layer", click: () => send("menu", "dodge-burn-layer") },
-                { label: "New Dodge && Burn Layer (50 % Grey)", click: () => send("menu", "dodge-burn-layer:grey") },
-                { type: "separator" },
-                { label: "Relight...", click: () => send("menu", "new-relight-layer") },
                 { type: "separator" },
                 // the Upscale dialog with the pass chosen; not greyed (main has no server state: the dialog says why)
                 { label: "Realism Pass (Windows only, RTX only)...", click: () => send("menu", "realism-pass") },

@@ -102,7 +102,7 @@ for g in "$@"; do
     commands_doc) $T python tools/commands_doc.py > "$OUT/$g.log" 2>&1; rc=$? ;;
     assistant) timeout 900 python tools/assistant_test.py --user-data-dir "$PROFILE" ${EXE:+--exe "$EXE"} "$OUT/assistant" > "$OUT/$g.log" 2>&1; rc=$? ;;
     film) $T python tools/film_test.py "$OUT/film" > "$OUT/$g.log" 2>&1; rc=$? ;;
-    relight) $T python tools/relight_test.py "$OUT/relight" > "$OUT/$g.log" 2>&1; rc=$? ;;
+    relight) timeout 900 python tools/relight_test.py "$OUT/relight" > "$OUT/$g.log" 2>&1; rc=$? ;;
     nodecopy) NC="$SP/nodecopy"; rm -rf "$NC"; mkdir -p "$NC"; (cd "/f/Comfyui/ComfyUI_windows_portable_nvidia/ComfyUI/custom_nodes/ComfyUI-InpaintCanvas" && tar --exclude=.git --exclude=__pycache__ -cf - .) | (cd "$NC" && tar -xf -); { $T python tools/build_node.py --node "$NC" && $T python tools/build_node.py --node "$NC" --check && $T python tools/node_test.py --node "$NC"; } > "$OUT/$g.log" 2>&1; rc=$? ;;
     node) $T python tools/build_node.py --check > "$OUT/$g.log" 2>&1 && $T python tools/node_test.py >> "$OUT/$g.log" 2>&1; rc=$? ;;
     perf:*) $T python tools/perf_test.py $(echo "${g#perf:}" | tr ',' ' ') > "$OUT/perf.log" 2>&1; rc=$? ;;

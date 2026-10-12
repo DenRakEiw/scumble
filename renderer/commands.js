@@ -759,10 +759,10 @@ const COMMANDS = {
                 selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null,
                 recipes: host.shell.recipes().map((r) => {
                     const v = host.shell.resolveRecipe(r);
-                    const pass = r.task === "pass", up = r.task === "upscale", api = r.kind === "provider";
+                    const pass = r.task === "pass", up = r.task === "upscale", relight = r.task === "relight", api = r.kind === "provider";
                     // what the Generate new dialog offers for it: the chosen variant's text route (a local recipe takes any size)
                     const text = api ? v.text || null : null;
-                    const makes = !up && !pass && (!api || !!text);
+                    const makes = !up && !pass && !relight && (!api || !!text);
                     const rows = text ? text.settings || v.settings || [] : [];
                     // the aspects and size classes the Generate new dialog and new_canvas's preset offer (item 34)
                     const preset = makes && host.shell.genPresetOf ? host.shell.genPresetOf(r, api ? v.provider : "") : null;
@@ -770,14 +770,14 @@ const COMMANDS = {
                         id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit",
                         ...recipeReadiness(r, v),
                         keys: api ? Object.fromEntries((r.providerIds || []).map((pid) => { const ks = host.shell.keyState(host.shell.resolveRecipe(r, pid)); return [pid, !ks || !!ks.ok]; })) : undefined,
-                        new_image: makes, edit: up || pass ? undefined : !api || v.edit !== false,
+                        new_image: makes, edit: up || pass || relight ? undefined : !api || v.edit !== false,
                         sizes: makes ? (text && Array.isArray(text.sizes) && text.sizes.length ? text.sizes.slice().sort((x, y) => x - y) : null) : undefined,
                         aspects: makes ? (preset ? preset.aspects : null) : undefined,
                         classes: makes ? (preset ? preset.classes.map((x) => ({ size: x.px, name: x.name, label: x.label })) : null) : undefined,
                         background: makes ? rows.some((s) => s.key === "background") : undefined,
                         factor: up ? v.factor || null : undefined, limits: up && !api ? r.limits || null : undefined, document_max: up ? documentMax(r, v) : undefined,
                         usesPrompt: up ? !!v.usesPrompt : undefined,
-                        textRefs: up || pass ? undefined : api ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots),
+                        textRefs: up || pass || relight ? undefined : api ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots),
                         description: r.description || "", source: r.source || "builtin",
                     };
                 }),
@@ -792,6 +792,7 @@ const COMMANDS = {
         async run(_, a) {
             const r = host.shell.recipes().find((x) => x.id === a.id);
             if (!r) throw new Error(`no recipe "${a.id}" (${host.shell.recipes().map((x) => x.id).join(", ")})`);
+            if (r.task === "relight") throw new Error(`recipe "${a.id}" is a relight recipe; run it via the relight command or the Relight tool`);
             if (a.provider && !(r.providerIds || []).includes(a.provider)) throw new Error(`recipe "${a.id}" has no provider "${a.provider}" (${(r.providerIds || []).join(", ") || "none"})`);
             host.shell.selectRecipe(r.id, a.provider || undefined);
             return { selected: host.recipe ? host.recipe.id : null, kind: r.kind || "comfy", provider: host.recipe && host.recipe.kind === "provider" ? host.recipe.provider : null };
@@ -1393,7 +1394,7 @@ const COMMANDS = {
         needsImage: true,
         description: "Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (the default) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer.",
         params: {
-            layer: P.layer("relight filter layer to edit (default adds a new one)"),
+            layer: P.layer("relight filter layer to edit (default adds a new one)", { default: undefined }),
             lights: P.arr("array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}]", { items: { type: "object" } }),
             original: P.num("original light strength 0..100 % (default 100)"),
             ambient: P.num("ambient light 0..100 % (default 15)"),
@@ -1421,8 +1422,8 @@ const COMMANDS = {
                 if (a.ambient !== undefined) raw.ambient = a.ambient;
                 if (a.depth_scale !== undefined) raw.depth_scale = a.depth_scale;
                 if (a.shadows !== undefined) raw.shadows = a.shadows;
-                const vals = Object.keys(raw).length ? checkParams("relight", raw) : {};
-                if (vals.lights) vals.lights = normalizeLights(vals.lights, { width: ed.width, height: ed.height });
+                const vals = Object.keys(raw).length ? checkParams("relight", raw, { width: ed.width, height: ed.height }) : {};
+                if (vals.lights) vals.lights = normalizeLights(raw.lights, { width: ed.width, height: ed.height });
                 const keys = Object.keys(vals);
                 if (keys.length) {
                     ed.pushUndo({ kind: "filter", id: l.id, label: filterStepLabel("relight", keys) });
@@ -1430,21 +1431,24 @@ const COMMANDS = {
                     touch(ed);
                 }
             } else {
+                const raw = {};
+                if (a.lights !== undefined) raw.lights = a.lights;
+                if (a.original !== undefined) raw.original = a.original;
+                if (a.ambient !== undefined) raw.ambient = a.ambient;
+                if (a.depth_scale !== undefined) raw.depth_scale = a.depth_scale;
+                if (a.shadows !== undefined) raw.shadows = a.shadows;
+                const vals = Object.keys(raw).length ? checkParams("relight", raw, { width: ed.width, height: ed.height }) : {};
+                if (vals.lights) vals.lights = normalizeLights(raw.lights, { width: ed.width, height: ed.height });
+
                 const hasDepth = !!(ed.maps && ed.maps.depth && (ed.maps.depth.data || ed.maps.depth.u16));
                 if (!hasDepth && ed.ensureDepthMap) {
                     await ed.ensureDepthMap();
                 }
                 l = ed.addFilterLayer("relight");
                 if (!l) throw new Error(ed.status || "Failed to add relight layer");
-                const raw = {};
-                if (a.lights !== undefined) raw.lights = a.lights;
-                else if (!l.params?.lights?.length) raw.lights = [defaultLight(0, { width: ed.width, height: ed.height })];
-                if (a.original !== undefined) raw.original = a.original;
-                if (a.ambient !== undefined) raw.ambient = a.ambient;
-                if (a.depth_scale !== undefined) raw.depth_scale = a.depth_scale;
-                if (a.shadows !== undefined) raw.shadows = a.shadows;
-                const vals = Object.keys(raw).length ? checkParams("relight", raw) : {};
-                if (vals.lights) vals.lights = normalizeLights(vals.lights, { width: ed.width, height: ed.height });
+                if (!vals.lights && !l.params?.lights?.length) {
+                    vals.lights = [defaultLight(0, { width: ed.width, height: ed.height })];
+                }
                 if (Object.keys(vals).length) {
                     writeParams(ed, l, vals);
                 }
@@ -1452,7 +1456,8 @@ const COMMANDS = {
                 touch(ed);
             }
             if (ed.relightSettled) await ed.relightSettled();
-            const fitStats = l._relight?.stats?.fit || null;
+            const stats = (ed.belowStats ? ed.belowStats(l) : null) || l._bstats?.stats || l._relight?.stats;
+            const fitStats = stats?.fit || null;
             const fit = fitStats
                 ? { direction: fitStats.l0, l0: fitStats.l0, ka: fitStats.ka, kd: fitStats.kd }
                 : { direction: [0, 0, 1], l0: [0, 0, 1], ka: 1, kd: 0 };
@@ -1932,7 +1937,7 @@ const COMMANDS = {
         async run(ed, a) {
             const type = String(a.type || "grain");
             if (!FILTERS[type]) throw new Error(`unknown filter "${type}" (${Object.keys(FILTERS).join(", ")})`);
-            const vals = a.params != null ? checkParams(type, a.params) : null;
+            const vals = a.params != null ? checkParams(type, a.params, { width: ed.width, height: ed.height }) : null;
             if (FILTERS[type]?.over && vals?.limit && vals.limit.source !== "depth") throw new Error("a fill layer takes a depth limit only");
             const l = ed.addFilterLayer(type);
             if (!l) throw new Error(ed.status);
@@ -1952,7 +1957,7 @@ const COMMANDS = {
             if (type && !FILTERS[type]) throw new Error(`unknown filter "${type}" (${Object.keys(FILTERS).join(", ")})`);
             // a fill layer stays a fill and a filter a filter, as the type select offers them
             if (type && FILTERS[l.filter] && !!FILTERS[type].over !== !!FILTERS[l.filter].over) throw new Error(`${l.name} is a ${FILTERS[l.filter].over ? "fill" : "filter"} layer: its type is one of the ${FILTERS[l.filter].over ? "fills" : "filters"} (filter_types: fill)`);
-            const vals = a.params != null ? checkParams(type || l.filter, a.params) : null;
+            const vals = a.params != null ? checkParams(type || l.filter, a.params, { width: ed.width, height: ed.height }) : null;
             const targetType = type || l.filter;
             if (FILTERS[targetType]?.over && vals?.limit && vals.limit.source !== "depth") throw new Error("a fill layer takes a depth limit only");
             const keys = vals ? Object.keys(vals) : [];
@@ -2441,7 +2446,7 @@ const optionIds = (p) => (p.options || []).map((o) => (o && typeof o === "object
  * A filter type's parameter values checked against its spec, before anything is written (docs/PLAN_0_1_42.md F2b): a
  * refused call changes nothing, and add_filter adds no layer for it. Returns `{ key: value }` as the layer stores them.
  */
-export function checkParams(filterId, params) {
+export function checkParams(filterId, params, size = null) {
     if (!FILTERS[filterId]) throw new Error(`filter "${filterId}" is not installed (its plugin is off or missing): its settings are kept as they are`);
     // some models send the object as a JSON string ("{\"color\":\"#ff2d2d\"}"): a string that parses to an object counts
     if (typeof params === "string") {
@@ -2472,7 +2477,7 @@ export function checkParams(filterId, params) {
         }
         else if (p.type === "custom") {
             if (filterId === "relight" && k === "lights") {
-                out[k] = normalizeLights(v);
+                out[k] = normalizeLights(v, size);
             } else {
                 out[k] = v;
             }

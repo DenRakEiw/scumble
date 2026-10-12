@@ -2540,7 +2540,7 @@ credits, whatever the web plan says ("Unlimited" allowances cover the web app on
 | FLUX Kontext Pro and Max | URL input only, and Scumble has no Kontext recipe |
 | FLUX.2 Turbo, Runway Gen4, HyperFlux, FLUX Pro 1.1, FLUX Dev, "Classic fast" | Text only, and Scumble has no recipe for them |
 | Mystic's structure / style references and LoRA styling | Generate new sends no pictures |
-| Relight, style transfer, change camera, skin enhancer, remove background, reimagine, improve-prompt | Out of scope |
+| Style transfer, change camera, skin enhancer, remove background, reimagine, improve-prompt | Out of scope (relight built in recipes/relight.json) |
 | A balance query | No route for normal plans (above) |
 
 **Only a real key can verify** (each costs credits; waits for the user's word): one task per route with a base64 PNG

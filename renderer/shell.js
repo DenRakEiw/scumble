@@ -121,7 +121,7 @@ ui.url.value = (settings.comfy && settings.comfy.url) || "http://127.0.0.1:8188"
 
 // ---- documents (tabs) --------------------------------------------------------------------
 
-host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize, embedRecipe: settings.embedRecipe, llmRefPictures: refPicturesOn(settings), realism: settings.realism, depthDetail: (settings.depth && settings.depth.detail) || "standard" });
+host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize, embedRecipe: settings.embedRecipe, llmRefPictures: refPicturesOn(settings), realism: settings.realism, depthDetail: (settings.depth && settings.depth.detail) || "standard", relight: settings.relight });
 
 /** settings.llm.refPictures: the reference pictures go to the upsampling model unless it is false (absent = on, 26d2). */
 function refPicturesOn(set) {
@@ -441,7 +441,7 @@ async function loadRecipes() {
     // ComfyUI first, then the model families in a fixed order, unknown families after, names within
     const rank = (r) => { const i = FAMILY_ORDER.indexOf(familyOf(r)); return i < 0 ? FAMILY_ORDER.length : i; };
     recipes.sort((a, b) => rank(a) - rank(b) || familyOf(a).localeCompare(familyOf(b)) || String(a.name || a.id).localeCompare(String(b.name || b.id)));
-    const cur = recipes.find((r) => r.id === (ui.recipe.value || settings.recipe));
+    const cur = recipes.find((r) => r.id === (ui.recipe.value || settings.recipe) && r.task !== "relight");
     renderRecipeOptions(cur ? modeOf(cur) : (ui.recipe.dataset.mode || "local"));
 }
 
@@ -449,7 +449,7 @@ async function loadRecipes() {
 function renderRecipeOptions(mode) {
     ui.recipe.innerHTML = "";
     ui.recipe.dataset.mode = mode;
-    const shown = recipes.filter((r) => modeOf(r) === mode);
+    const shown = recipes.filter((r) => modeOf(r) === mode && r.task !== "relight");
     // ComfyUI recipes first, then the model recipes grouped by family (Google, OpenAI, ...)
     const families = ["ComfyUI"];
     for (const r of shown) { const f = familyOf(r); if (!families.includes(f)) families.push(f); }
@@ -504,7 +504,7 @@ async function rememberProvider(recipeId, providerId) {
 }
 
 function selectRecipe(id, providerId) {
-    const raw = recipes.find((x) => x.id === id) || recipes[0];
+    const raw = recipes.find((x) => x.id === id && x.task !== "relight") || recipes.find((x) => x.task !== "relight") || recipes[0];
     if (!raw) { ui.recipeNote.textContent = "no recipes found"; return; }
     if (providerId && raw.providers && raw.providers[providerId]) {
         settings.recipeProviders = { ...(settings.recipeProviders || {}), [raw.id]: providerId };
@@ -1245,7 +1245,7 @@ async function genSyncRefs() {
 /** The recipes that can start from nothing, for the mode the dialog is on (cloud: the Comfy Cloud recipes, V6). */
 function genRecipesFor(mode) {
     // an upscaler or the Realism Pass makes nothing from a prompt: both work on a picture
-    return recipes.filter((r) => (mode === "local" ? r.kind === "comfy" && r.task !== "upscale" && r.task !== "pass" : r.kind === "provider" && (mode === "cloud") === cloudModeOf(r) && genProviderIds(r).length));
+    return recipes.filter((r) => (mode === "local" ? r.kind === "comfy" && r.task !== "upscale" && r.task !== "pass" && r.task !== "relight" : r.kind === "provider" && (mode === "cloud") === cloudModeOf(r) && r.task !== "relight" && genProviderIds(r).length));
 }
 
 /** The providers of a model recipe that have a text-to-image shape. */

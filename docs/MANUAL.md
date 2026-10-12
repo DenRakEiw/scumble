@@ -410,7 +410,7 @@ A Relight layer illuminates your picture with up to four interactive light sourc
 - **Nudge**: Press the Arrow keys to nudge the selected light by 1 pixel, or Shift+Arrow for 10 pixels.
 - **Add and delete**: Click anywhere on the picture to add a new light at that point (up to four lights per layer), or press Delete / Backspace to remove the selected light.
 - **Hide handles**: Press **H** or click the handles eye toggle button in the relight controls header to hide on-canvas handles for an unobstructed view of the relit picture.
-- **Own light**: A grey compass ring at the bottom right indicates the estimated direction of the original scene lighting.
+- **Own light**: A grey compass ring indicates the estimated direction of the original scene lighting.
 
 **Light types and controls.** Each light can be configured individually in the layer row:
 - **Presets**: The Presets dropdown in the relight header provides 8 curated setups (*Studio portrait*, *Warm sunset*, *Cyberpunk neon*, *Rembrandt*, *Soft window*, *Dramatic rim*, *Golden hour*, *Film noir*) scaled to your document's dimensions, undoable in a single step.
