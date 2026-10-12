@@ -78,9 +78,18 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-12: Relight Phase 1 and Phase 2 Sessions N2-N3 complete)
+## Where things stand (2026-10-12: relight reviewed three times, this account fixes the rest)
 
-- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`):** Phase 1 complete (L0a-L6) and Phase 2 Sessions N2-N3 complete (8 studio/atmosphere presets, Blinn-Phong specular gloss term $0..100\,\%$, procedural spot gobo masks [blinds, window, leaves, stripes], hide handles view toggle, and 15k measurement [150 MP composite in 283 ms, export in 1.6 s]). All gates (`relight`, `depthfx`, `limit`, `document`, `commands`, `assistant`, `export`, `skins`, `help`, `nodecopy`) pass cleanly on both `--tiles on` and `--tiles off` with `--offline`. Ready for independent review and release preparation.
+- **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`): not releasable yet; the fix plan is `docs/PLAN_RELIGHT_FIXES.md`.**
+  The other agent built L0a-L6, N2 (presets, gloss, gobos, hide handles) and N3 (the 15k measurement) and two fix
+  rounds (ec60f14 + 81178aa, then 77da63f). This account reviewed each round with a workflow (2026-10-12; round 3:
+  55 agents, every finding verified by a second agent): each round fixed most of the list and brought new defects.
+  At 77da63f six musts are open (the assistant refuses every relight above 27.9 MP; assistant_test.js loads an
+  uncommitted file, the assistant gate is 37/38; historyStepNow resets gen, the editor gate is red; pickVis keys by
+  version vs dataVersion; the fit cache ignores the picture below; default lora_strength 1.0 on a 0..100 scale).
+  The user (2026-10-12): this account fixes them now, sessions F1-F4 of the plan, one per session with `/clear` in
+  between; the other agent does not edit relight meanwhile. Relight gate: 141 in-app checks on tiles, 140 on canvas.
+  The other agent's `docs/REVIEW_RELIGHT_2026-10-12.md` is its own self-review.
 
 
 **Video 4 is cut, second pass (2026-10-11 night; the user: "mache einen neuen tutorial, das die neuen features
