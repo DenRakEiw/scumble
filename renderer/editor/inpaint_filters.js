@@ -1166,6 +1166,7 @@ export const FILTERS = {
         ],
         maps: () => ["depth"],
         wholeStats: hazeStats,
+        wholeStatsParams: [],   // the statistics read the picture and the depth map, none of the layer's parameters
         wholeStatsSize: 256,
         reach: 0,
         apply: applyHaze,
@@ -1180,6 +1181,7 @@ export const FILTERS = {
         ],
         maps: (p) => (p && p.mode === "depth" ? ["depth"] : []),
         wholeStats: dehazeStats,
+        wholeStatsParams: [],   // the statistics read the picture and the depth map, none of the layer's parameters
         wholeStatsSize: 768,
         reach: 0,
         apply: applyDehaze,
@@ -1222,6 +1224,7 @@ export const FILTERS = {
         maps: () => ["depth"],
         wholeStats: relightStats,
         wholeStatsSize: 256,
+        wholeStatsParams: ["depth_scale", "sigma"],   // what the fit reads of the layer's own parameters: a light drag keeps it
         reach: 0,
         skip: relightSkip,
         apply: applyRelight,

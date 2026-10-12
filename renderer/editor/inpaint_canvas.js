@@ -49,7 +49,7 @@ import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
 import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend, seedOfLayer, hash32, mul255 } from "./blend_modes.js";
 import { heightNormals, shadowMarch } from "./px/kernels.js";
-import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex, LIGHT_PRESETS, SPOT_GOBOS, applyLightPreset, loraPercent } from "./inpaint_relight.js";
+import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex, LIGHT_PRESETS, SPOT_GOBOS, applyLightPreset, loraPercent, relightMapKey, relightDepthScale, relightVisKey, relightVisCurrent } from "./inpaint_relight.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -1814,6 +1814,17 @@ const STROKE_BAND = 1024;
 
 // WeakMap caching rangeMax(map) keyed by map.data (immutable Uint16Array) for selectRange depth edge tiles (R2-S6)
 const RMAX_CACHE = new WeakMap();
+
+// A pixel source's identity and version as a key part, "-" for none (`belowSignature`): a source replaced by another
+// (an undo, a flip, a new base) is another key even where `pixelVersion` would not tell
+const SOURCE_IDS = new WeakMap();
+let sourceIdSeq = 0;
+function sourceTag(o) {
+    if (!o || typeof o !== "object") return "-";
+    let id = SOURCE_IDS.get(o);
+    if (id === undefined) { id = ++sourceIdSeq; SOURCE_IDS.set(o, id); }
+    return `${id}.${o.version || 0}`;
+}
 
 /**
  * What an editor has uploaded, by hash. Setting `baseHash` to null (the base or a layer that is
@@ -8793,6 +8804,7 @@ class InpaintEditor {
     async readBoxBytes(box, { forRun = true, priority = INTERACTIVE, held: given = undefined } = {}) {
         const [bx, by, bx1, by1] = box, w = bx1 - bx, h = by1 - by;
         if (!(w > 0 && h > 0)) throw new Error("an empty box");
+        await this.relightIdle();   // relight's full shadow maps, not the quick map of a light on the move (F2.7)
         if (this.tileMode && !this.huge && w * h * 4 <= 0x7fffffff && InpaintEditor.boxOverTiles !== false) {
             // `held`: the stack taken earlier by `holdRunStack` (the caller releases it); else held here, now
             const held = given !== undefined ? await given : await this.holdStack(this.stackPlan({ forRun, filters: true }), { forRun, priority });
@@ -8925,6 +8937,9 @@ class InpaintEditor {
      * the document may have changed meanwhile, exactly as for any other await.
      */
     async sampleRegionSettled(source, box, scale, opts = {}) {
+        // relight's full shadow maps first: a settled read of the picture never takes the quick map of a light on the move
+        // or the map of where it was (F2.7); a read without the filters or of the base alone does not wait for them
+        if (source !== "layer" && !opts.skipFilters && !opts.baseOnly && !opts.controlOnly) await this.relightIdle();
         if (!this.tileMode) return this.sampleRegion(source, box, scale, opts);
         const jobs = await this.primePass(source, box, scale, opts);
         try {
@@ -12333,6 +12348,7 @@ class InpaintEditor {
             ctx = c.getContext("2d");
             ctx.setTransform(1, 0, 0, 1, 0, 0);   // the pass left its transform on the context
         } else {
+            await this.relightIdle();   // as sampleRegionSettled waits on tiles (F2.7)
             const flat = this.flattenToCanvas({ forRun: true });
             c = makeCanvas(cw, ch);
             ctx = c.getContext("2d");
@@ -13515,6 +13531,7 @@ class InpaintEditor {
         const v = vals || this.extendValues();
         const top = Math.max(0, v.top || 0), right = Math.max(0, v.right || 0), bottom = Math.max(0, v.bottom || 0), left = Math.max(0, v.left || 0);
         if (!(top || right || bottom || left)) { this.setStatus("Enter how many pixels to add on each side (negative crops)."); return; }
+        await this.relightSettled();   // the flatten below becomes the new base: relight's full shadow maps first (F2.7)
         const W = this.width, H = this.height;
         const nw = W + left + right, nh = H + top + bottom;
         const before = this.snapshot({ kind: "canvas" });
@@ -15148,6 +15165,7 @@ class InpaintEditor {
         if (layer.filter === "relight") {
             info.layer = layer;
             info.relight = layer._relight;
+            info.forRun = !!pass.forRun;   // pickVis: a run never reads the quick shadow map
             info.quick = !pass.forRun && this.filterPreview === layer.id;
             this.ensureRelightMaps(layer, { quick: info.quick });
         }
@@ -15226,14 +15244,19 @@ class InpaintEditor {
     /**
      * `colourStats` or custom `wholeStats` of the whole picture below a filter layer (E3, F10):
      * from a sampled pass of the layers below it (size chosen by def.wholeStatsSize, 64..1024, default 256),
-     * kept per composite version and map version.
+     * kept while the picture below (`belowSignature`) and the parameters the statistics read stay the same: a custom
+     * `wholeStats` reads the ones `wholeStatsParams` names (relight's fit: depth_scale and sigma), or all of them.
+     * Keyed on `compositeVersion` before (F2.6), which every slider and light drag of the layer itself bumps: a drag of
+     * ten moves read the picture below back 22 times.
      */
     belowStats(layer, forRun) {
         if (!layer || !this.layers || !this.width || !this.height) return null;
         const def = FILTERS[layer.filter];
         const n = Math.max(64, Math.min(1024, (def && def.wholeStatsSize) || 256));
-        const readsMap = this.mapsOf(layer).length > 0;
-        const vKey = `${this.compositeVersion}:${readsMap ? (this.mapsVersion || 0) : 0}:${n}`;
+        const params = layer.params || {};
+        const reads = !def || typeof def.wholeStats !== "function" ? ""
+            : Array.isArray(def.wholeStatsParams) ? JSON.stringify(def.wholeStatsParams.map((k) => params[k] ?? null)) : JSON.stringify(params);
+        const vKey = `${this.belowSignature(layer)}#${reads}#${n}#${this.mapsOf(layer).length ? this.mapsVersion || 0 : 0}`;
         const slot = forRun ? "_bstatsRun" : "_bstats";
         const c = layer[slot];
         if (c && c.version === vKey) return c.stats;
@@ -15254,6 +15277,38 @@ class InpaintEditor {
             entry.stats = colourStats(small);
         }
         return entry.stats;
+    }
+
+    /**
+     * What the picture below `layer` is made of, as a string (F2.6): the base and every layer below it as the composite
+     * reads them - each pixel source by identity and version (every write reaches the display through `touchSource` /
+     * `touchSourceRect`, whose `touch()` moves the source's version on both backends), place, size, visibility (groups
+     * included), opacity, blend, clip, mask, colour match, role, a filter's parameters, LUT and plate, and a relight
+     * layer's shadow and normal maps (they land after its parameters change), the maps for a layer below that reads
+     * them - and the compare side shown and a filter preview of another layer. A change of the layer's own parameters or
+     * of a layer above it leaves it as it is, and so does a brush dab anywhere above (the document-wide `pixelVersion`
+     * is not in it: it moves with every dab). `belowStats` adds the maps when the layer itself reads them.
+     * @param {any} layer
+     */
+    belowSignature(layer) {
+        const index = this.layers.indexOf(layer);
+        const parts = [this.width, this.height, sourceTag(this.basePx),
+            this.compareShow || "", this.filterPreview && this.filterPreview !== layer.id ? this.filterPreview : ""];
+        for (const g of this.groups || []) parts.push(g.id, g.parent || "", g.visible === false ? 0 : 1);
+        for (let i = 0; i < index; i++) {
+            const l = this.layers[i];
+            let filter = "";
+            if (l.kind === "filter") {
+                filter = `${l.filter}${JSON.stringify(l.params || {})}${sourceTag(l._lutData)}${sourceTag(l._plateImg)}`;
+                const r = l.filter === "relight" ? l._relight : null;
+                if (r) filter += `:${r.seq || 0}:${r.visQuick ? r.visQuick.seq || 0 : "-"}:${(r.normals && r.normals.key) || ""}`;
+                if (this.mapsOf(l).length) filter += `@${this.mapsVersion || 0}`;
+            }
+            parts.push(l.id, l.kind, l.role || "", this.shown(l) ? 1 : 0, l.opacity, l.blend || "", l.clip ? 1 : 0, l.group || "",
+                l.x, l.y, l.w, l.h, sourceTag(l.px), sourceTag(l.maskPx), l.maskOff ? 1 : 0,
+                l.match ? `${l.match.strength}:${l.match.source}` : "", filter);
+        }
+        return parts.join("|");
     }
 
     /**
@@ -17520,6 +17575,7 @@ class InpaintEditor {
     async exportImage({ download = false } = {}) {
         if (!this.base) { this.setStatus("Nothing to save yet."); return null; }
         if (this.removePending || this.healPending || this.liquifyPending) { this.setStatus("Waiting for the stroke to land..."); await this.heldEdit(); }
+        await this.relightSettled();   // every format: the layered and TIFF writers read bands that do not wait by themselves (F2.7)
         const fmt = ["png", "jpg", "webp", "tiff", "psd", "ora"].includes(this.saveFormatSel && this.saveFormatSel.value) ? this.saveFormatSel.value : "png";
         const stem = ((this.saveNameInput && this.saveNameInput.value) || "inpaint_canvas").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._ -]/gi, "_") || "inpaint_canvas";
         try {
@@ -22453,19 +22509,32 @@ class InpaintEditor {
     }
 
     /**
-     * Resolves when all pending relight worker pool operations are completed.
+     * Resolves when a pending nudge or wheel step is committed and every relight layer's full shadow map is computed
+     * for its lights (`relightIdle`): what a run and an export wait for. `also`: a relight layer to settle even when it is
+     * hidden (a relight render reads its own maps for the light map).
      */
-    async relightSettled() {
+    async relightSettled(also = null) {
         this.flushPendingDebounces();
-        if (this.layers) {
-            for (const l of this.layers) {
-                if (l.kind === "filter" && l.filter === "relight") {
-                    this.ensureRelightMaps(l);
-                }
+        await this.relightIdle(also);
+    }
+
+    /**
+     * Resolves when every relight layer's full shadow map is computed for its current lights (F2.7): what a reader of
+     * the picture a run sees waits for (a crop, a screenshot, a plugin's settled flatten), so it reads neither the quick
+     * map of a light on the move nor the map of where a light was. Unlike `relightSettled` it leaves a pending nudge as it
+     * is: a read pushes no undo step. Each round waits for the jobs there are when it starts (a drag goes on adding quick
+     * ones); a light moved during the wait starts another round, three at most. Hidden relight layers are not read
+     * (`also` is one that is, whether shown or not).
+     * @param {any} [also]
+     */
+    async relightIdle(also = null) {
+        for (let round = 0; round < 3; round++) {
+            for (const l of this.layers || []) {
+                if (l.kind === "filter" && l.filter === "relight" && (l === also || this.shown(l))) this.ensureRelightMaps(l);
             }
-        }
-        while (this._relightPending && this._relightPending.size > 0) {
-            await Promise.all(Array.from(this._relightPending));
+            const jobs = this._relightPending ? Array.from(this._relightPending) : [];
+            if (!jobs.length) return;
+            await Promise.all(jobs);
         }
     }
 
@@ -22709,8 +22778,8 @@ class InpaintEditor {
             pending: new Set(),
         });
 
-        const mapVersion = depthMap.dataVersion || 0;
-        const depthScale = Number.isFinite(layer.params?.depth_scale) ? Number(layer.params.depth_scale) : 50;
+        const mapVersion = depthMap.dataVersion ?? depthMap.version ?? 0;   // the normals read the data alone
+        const depthScale = relightDepthScale(layer.params);
         const sigma = Number.isFinite(layer.params?.sigma) ? Number(layer.params.sigma) : 2.0;
         const mapLongSide = Math.max(depthMap.w, depthMap.h);
         const scaleZ = (depthScale / 100.0) * mapLongSide;
@@ -22757,19 +22826,24 @@ class InpaintEditor {
             p.finally(() => this._relightPending.delete(p));
         }
 
-        // Vis cache
+        // Shadow maps: a channel per light under relightVisKey, the keys pickVis reads (docs/PLAN_RELIGHT_FIXES.md F2.5)
         const shadows = Number.isFinite(layer.params?.shadows) ? Number(layer.params.shadows) : 60;
+        if (shadows === 0) return;   // pickVis hands an all-lit map; the maps stay as they are for when the shadows come back
+        const mapKey = relightMapKey(depthMap);
         const lights = Array.isArray(layer.params?.lights) ? layer.params.lights : [];
         const targetW = quick ? Math.max(1, Math.floor(depthMap.w / 4)) : depthMap.w;
         const targetH = quick ? Math.max(1, Math.floor(depthMap.h / 4)) : depthMap.h;
+        const stamp = () => (cache.ticket = (cache.ticket || 0) + 1);
 
         let targetVis = quick ? cache.visQuick : cache.vis;
         if (!targetVis || targetVis.w !== targetW || targetVis.h !== targetH) {
             const visData = new Uint8Array(targetW * targetH * 4);
-            if (quick && cache.vis && cache.vis.data && cache.vis.w && cache.vis.h) {
-                const srcVis = cache.vis.data;
-                const srcW = cache.vis.w;
-                const srcH = cache.vis.h;
+            let keys = [null, null, null, null], tickets = [0, 0, 0, 0], seq = 0;
+            const full = cache.vis;
+            if (quick && full && full.data && full.w && full.h) {
+                const srcVis = full.data;
+                const srcW = full.w;
+                const srcH = full.h;
                 for (let dy = 0; dy < targetH; dy++) {
                     const sy = Math.min(srcH - 1, Math.floor(((dy + 0.5) / targetH) * srcH));
                     const sRow = sy * srcW;
@@ -22784,23 +22858,22 @@ class InpaintEditor {
                         visData[dIdx + 3] = srcVis[sIdx + 3];
                     }
                 }
+                // the full map at a quarter of its size: current for every light that has not moved since it was made, so
+                // a drag marches only the light it moves, and its first frames show the shadows from before the drag
+                if (Array.isArray(full.keys)) keys = full.keys.map((k) => (k ? k.slice(0, -1) + "q" : null));
+                if (Array.isArray(full.tickets)) tickets = full.tickets.slice();
+                seq = full.seq || 0;
             } else {
                 visData.fill(255);
             }
-            targetVis = {
-                data: visData,
-                w: targetW,
-                h: targetH,
-                keys: [null, null, null, null],
-            };
+            if (!quick) {
+                // a new full map (a depth map of another size): newer than any quick map, which belongs to the old one
+                seq = cache.seq = (cache.seq || 0) + 1;
+                cache.visQuick = null;
+            }
+            targetVis = { data: visData, w: targetW, h: targetH, keys, tickets, seq };
             if (quick) cache.visQuick = targetVis;
             else cache.vis = targetVis;
-        }
-
-        if (shadows === 0) {
-            targetVis.data.fill(255);
-            targetVis.keys = [null, null, null, null];
-            return;
         }
 
         let marchDepth;
@@ -22822,86 +22895,121 @@ class InpaintEditor {
 
         for (let i = 0; i < 4; i++) {
             const l = lights[i];
-            if (!l || !l.on) {
+            const vKey = relightVisKey(l, depthScale, mapKey, quick);
+            if (vKey === null) {
                 if (targetVis.keys[i] !== null) {
                     for (let idx = 0; idx < targetW * targetH; idx++) {
                         targetVis.data[idx * 4 + i] = 255;
                     }
                     targetVis.keys[i] = null;
+                    (targetVis.tickets || (targetVis.tickets = [0, 0, 0, 0]))[i] = stamp();
+                    targetVis.seq = cache.seq = (cache.seq || 0) + 1;
                 }
                 continue;
             }
 
-            const vKey = `${l.type}_${l.x}_${l.y}_${l.dist}_${l.diffusion}_${l.range}_${depthScale}_${mapVersion}_${quick ? "q" : "f"}`;
             const pendingKey = `v:${quick ? "q" : "f"}:${i}:${vKey}`;
-            if (targetVis.keys[i] !== vKey && !cache.pending.has(pendingKey)) {
-                cache.pending.add(pendingKey);
-                const chan = i;
-                const p = (async () => {
-                    try {
-                        const lm = lightToMap(l, depthMap, { depth_scale: depthScale });
-                        const lightVec = [
-                            (lm.mx / depthMap.w) * targetW,
-                            (lm.my / depthMap.h) * targetH,
-                            lm.mz * scaleFactor,
-                            l.type === "sun" ? 1 : 0,
-                        ];
-                        const diff = Number.isFinite(l.diffusion) ? Number(l.diffusion) : 30;
-                        const radius = (diff / 100.0) * (0.05 * Math.max(targetW, targetH));
-                        const bias = 0.005 * marchScale;
-                        const taps = quick ? 1 : 4;
-                        const steps = quick ? 16 : 32;
+            if (targetVis.keys[i] === vKey || cache.pending.has(pendingKey)) continue;
+            cache.pending.add(pendingKey);
+            const chan = i;
+            const ticket = stamp();
+            const p = (async () => {
+                try {
+                    const lm = lightToMap(l, depthMap, { depth_scale: depthScale });
+                    const lightVec = [
+                        (lm.mx / depthMap.w) * targetW,
+                        (lm.my / depthMap.h) * targetH,
+                        lm.mz * scaleFactor,
+                        l.type === "sun" ? 1 : 0,
+                    ];
+                    const diff = Number.isFinite(l.diffusion) ? Number(l.diffusion) : 30;
+                    const radius = (diff / 100.0) * (0.05 * Math.max(targetW, targetH));
+                    const bias = 0.005 * marchScale;
+                    const taps = quick ? 1 : 4;
+                    const steps = quick ? 16 : 32;
 
-                        const pool = editorPool();
-                        if (pool && !pool.off) {
-                            const res = await pool.run("relight_shadow", {
-                                depth: marchDepth,
-                                w: targetW,
-                                h: targetH,
-                                scale: marchScale,
-                                light: lightVec,
-                                radius,
-                                taps,
-                                steps,
-                                bias,
-                                row0: 0,
-                                rows: targetH,
-                            }, [], { priority: quick ? INTERACTIVE : NORMAL });
-                            if (targetVis && targetVis.w === targetW && targetVis.h === targetH) {
-                                const curL = (layer.params?.lights || [])[chan];
-                                const curVKey = curL && curL.on ? `${curL.type}_${curL.x}_${curL.y}_${curL.dist}_${curL.diffusion}_${curL.range}_${depthScale}_${mapVersion}_${quick ? "q" : "f"}` : null;
-                                if (curVKey === vKey) {
-                                    const vChan = new Uint8Array(res.vis);
-                                    for (let idx = 0; idx < targetW * targetH; idx++) {
-                                        targetVis.data[idx * 4 + chan] = vChan[idx];
-                                    }
-                                    targetVis.keys[chan] = vKey;
-                                    this.markFilterChanged(layer, { soon: true });
-                                }
-                            }
-                        } else {
-                            const vChan = shadowMarch(marchDepth, targetW, targetH, marchScale, lightVec, radius, taps, steps, bias, 0, targetH);
-                            if (targetVis && targetVis.w === targetW && targetVis.h === targetH) {
-                                const curL = (layer.params?.lights || [])[chan];
-                                const curVKey = curL && curL.on ? `${curL.type}_${curL.x}_${curL.y}_${curL.dist}_${curL.diffusion}_${curL.range}_${depthScale}_${mapVersion}_${quick ? "q" : "f"}` : null;
-                                if (curVKey === vKey) {
-                                    for (let idx = 0; idx < targetW * targetH; idx++) {
-                                        targetVis.data[idx * 4 + chan] = vChan[idx];
-                                    }
-                                    targetVis.keys[chan] = vKey;
-                                    this.markFilterChanged(layer, { soon: true });
-                                }
-                            }
-                        }
-                    } catch (err) {
-                        console.warn(`relight_shadow channel ${chan} failed:`, err);
-                    } finally {
-                        cache.pending.delete(pendingKey);
+                    let vChan;
+                    const pool = editorPool();
+                    if (pool && !pool.off) {
+                        const res = await pool.run("relight_shadow", {
+                            depth: marchDepth,
+                            w: targetW,
+                            h: targetH,
+                            scale: marchScale,
+                            light: lightVec,
+                            radius,
+                            taps,
+                            steps,
+                            bias,
+                            row0: 0,
+                            rows: targetH,
+                        }, [], { priority: quick ? INTERACTIVE : NORMAL });
+                        vChan = new Uint8Array(res.vis);
+                    } else {
+                        vChan = shadowMarch(marchDepth, targetW, targetH, marchScale, lightVec, radius, taps, steps, bias, 0, targetH);
                     }
-                })();
-                this._relightPending.add(p);
-                p.finally(() => this._relightPending.delete(p));
-            }
+                    // Into the map of this size that is there now (a quick map seeded again meanwhile takes it too). A march for
+                    // the key the channel wants now (the light, the relief scale and the depth map at landing) always lands
+                    // and outranks any older march still on its way; one for a light that has moved on lands only in the
+                    // quick map and only over an older march: during a drag the quick map trails the pointer instead of
+                    // waiting for it to stop. pickVis tells current from trailing by the keys.
+                    const tv = quick ? cache.visQuick : cache.vis;
+                    const current = vKey === this.relightChannelKey(layer, chan, quick);
+                    if (tv && tv.w === targetW && tv.h === targetH && tv.keys[chan] !== vKey) {
+                        const tickets = tv.tickets || (tv.tickets = [0, 0, 0, 0]);
+                        if (current || (quick && ticket > (tickets[chan] || 0))) {
+                            for (let idx = 0; idx < targetW * targetH; idx++) {
+                                tv.data[idx * 4 + chan] = vChan[idx];
+                            }
+                            tv.keys[chan] = vKey;
+                            tickets[chan] = current ? stamp() : ticket;
+                            tv.seq = cache.seq = (cache.seq || 0) + 1;
+                            if (!quick) this.dropQuickVis(layer);
+                            this.markFilterChanged(layer, { soon: true });
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`relight_shadow channel ${chan} failed:`, err);
+                } finally {
+                    cache.pending.delete(pendingKey);
+                    // the channel still lacks the key it wants now and no march for that key is on its way (a light turned
+                    // off and on while its march ran, a march for a key left behind): ask for one
+                    const want = this.relightChannelKey(layer, chan, quick);
+                    const tvNow = quick ? cache.visQuick : cache.vis;
+                    if (want && tvNow && Array.isArray(tvNow.keys) && tvNow.keys[chan] !== want
+                        && !cache.pending.has(`v:${quick ? "q" : "f"}:${chan}:${want}`) && this.layers.includes(layer)) {
+                        this.markFilterChanged(layer, { soon: true });
+                    }
+                }
+            })();
+            this._relightPending.add(p);
+            p.finally(() => this._relightPending.delete(p));
+        }
+        if (!quick) this.dropQuickVis(layer);
+    }
+
+    /**
+     * The key shadow channel `chan` of a relight layer wants now: its light, relief scale and the depth map as they are
+     * (`relightVisKey`), null for a light that is off.
+     * @param {any} layer
+     * @param {number} chan
+     * @param {boolean} quick
+     */
+    relightChannelKey(layer, chan, quick) {
+        const p = layer.params || {};
+        return relightVisKey((Array.isArray(p.lights) ? p.lights : [])[chan], relightDepthScale(p), relightMapKey(this.maps && this.maps.depth), quick);
+    }
+
+    /**
+     * A relight layer's quick shadow map goes once its full map is current for its lights (F2.5): the next drag or slider
+     * preview seeds a quick map from the full one, instead of showing the shadows of an earlier drag in its first frames.
+     * @param {any} layer
+     */
+    dropQuickVis(layer) {
+        const cache = layer && layer._relight;
+        if (!cache || !cache.visQuick) return;
+        if (relightVisCurrent(cache.vis, layer.params?.lights, relightDepthScale(layer.params), relightMapKey(this.maps && this.maps.depth), false)) {
+            cache.visQuick = null;
         }
     }
 

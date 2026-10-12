@@ -287,7 +287,10 @@ take them from its input, or every band gets a frame of its own:
   where `small` is a canvas of the composite below the filter sampled at `wholeStatsSize` px (64..1024,
   default 256), `size` is `{ width, height }` document dimensions in image pixels, and `ctx` is `{ maps, sampleMap }`.
   `ctx.maps.depth` is read-only (`{ w, h, data, xf, meta }`, never written), and
-  `ctx.sampleMap(map, docX, docY) -> 0..1`. The function runs on the main thread once per composite version.
+  `ctx.sampleMap(map, docX, docY) -> 0..1`; `ctx.layer` and `ctx.params` are the filter layer and its parameters.
+  The function runs on the main thread, again whenever the picture below the layer changes (a layer below edited,
+  moved, shown or hidden, a filter below changed), the depth maps change while the layer reads them, or the layer's
+  parameters change; a change above the layer does not run it again.
 - `wholeStatsSize`: number (64..1024, default 256), the sampling resolution for `wholeStats`.
 
 A filter that does this has a `reach` (0 for a vignette), a box of the picture is exact under

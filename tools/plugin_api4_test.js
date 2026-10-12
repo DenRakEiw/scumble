@@ -50,6 +50,7 @@ async function main() {
     const { API_VERSION, Document } = pluginsMod;
     const { FILTERS, FILTER_IDS } = filtersMod;
     const { checkParams } = commandsMod;
+    const { InpaintEditor } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_canvas.js")).href);
 
     // 1. API_VERSION === 4
     assert.equal(API_VERSION, 4, "API_VERSION must be 4");
@@ -133,44 +134,13 @@ async function main() {
         },
         isReference() { return false; },
         isBackground() { return false; },
-        mapsOf(layer) {
-            if (!layer || layer.kind !== "filter") return [];
-            const def = FILTERS[layer.filter];
-            const res = new Set();
-            if (def && typeof def.maps === "function") {
-                try {
-                    const list = def.maps(layer.params || {});
-                    if (Array.isArray(list)) for (const k of list) if (k) res.add(k);
-                } catch (_) {}
-            }
-            if (layer.params && layer.params.limit && (layer.params.limit.source === "depth" || layer.params.limit.source === "map")) {
-                res.add("depth");
-            }
-            return Array.from(res);
-        },
-        belowStats(layer, forRun) {
-            if (!layer || !this.layers || !this.width || !this.height) return null;
-            const def = FILTERS[layer.filter];
-            const n = Math.max(64, Math.min(1024, (def && def.wholeStatsSize) || 256));
-            const readsMap = this.mapsOf(layer).length > 0;
-            const vKey = `${this.compositeVersion}:${readsMap ? (this.mapsVersion || 0) : 0}:${n}`;
-            const slot = forRun ? "_bstatsRun" : "_bstats";
-            const c = layer[slot];
-            if (c && c.version === vKey) return c.stats;
-            const index = this.layers.indexOf(layer);
-            const s = Math.min(1, n / Math.max(this.width, this.height));
-            const entry = { version: vKey, stats: null };
-            layer[slot] = entry;
-            const small = this.sampleRegion("image", [0, 0, this.width, this.height], s, { forRun: !!forRun, upTo: Math.max(0, index) });
-            if (def && typeof def.wholeStats === "function") {
-                try {
-                    entry.stats = def.wholeStats(small, { width: this.width, height: this.height }, { maps: this.maps || {}, sampleMap: () => 0.5 });
-                } catch (err) {
-                    entry.stats = null;
-                }
-            }
-            return entry.stats;
-        },
+        // the real methods (docs/PLAN_RELIGHT_FIXES.md F2.6): the statistics' key is the picture below, the maps when the
+        // layer or a layer below reads them, and the parameters a wholeStats function may read
+        mapsOf: InpaintEditor.prototype.mapsOf,
+        belowStats: InpaintEditor.prototype.belowStats,
+        belowSignature: InpaintEditor.prototype.belowSignature,
+        shown: InpaintEditor.prototype.shown,
+        groups: [],
         markFilterChanged() {},
         draw() {},
         cancelFilterParams(layer) {
@@ -184,8 +154,8 @@ async function main() {
         },
     };
 
-    const layerNoMap = { kind: "filter", filter: "testplug.map_reader", params: { useDepth: false }, _bstats: null, _bstatsRun: null };
-    const layerWithMap = { kind: "filter", filter: "testplug.map_reader", params: { useDepth: true }, _bstats: null, _bstatsRun: null };
+    const layerNoMap = { id: "f_nomap", visible: true, kind: "filter", filter: "testplug.map_reader", params: { useDepth: false }, _bstats: null, _bstatsRun: null };
+    const layerWithMap = { id: "f_map", visible: true, kind: "filter", filter: "testplug.map_reader", params: { useDepth: true }, _bstats: null, _bstatsRun: null };
     mockEditor.layers = [layerNoMap, layerWithMap];
 
     // Call belowStats on layerNoMap:
@@ -217,6 +187,68 @@ async function main() {
     const stMap2 = mockEditor.belowStats(layerWithMap, false);
     assert.equal(statsCallCount, 3, "layer reading map reruns wholeStats when mapsVersion changes");
     assert.equal(stMap2.w, 512);
+
+    // the layer's own parameters: a wholeStats function without wholeStatsParams may read any of them, so a change reruns
+    // it; a picture below that changes reruns it; a change above or of compositeVersion alone does not (F2.6)
+    layerWithMap.params = { ...layerWithMap.params, extra: 1 };
+    mockEditor.belowStats(layerWithMap, false);
+    assert.equal(statsCallCount, 4, "a parameter change of a wholeStats function without wholeStatsParams reruns it");
+    mockEditor.compositeVersion++;
+    mockEditor.belowStats(layerWithMap, false);
+    assert.equal(statsCallCount, 4, "compositeVersion alone (a slider of the layer itself) keeps the statistics");
+    layerNoMap.params = { ...layerNoMap.params, other: 2 };
+    mockEditor.belowStats(layerWithMap, false);
+    assert.equal(statsCallCount, 5, "a filter below that changes reruns the statistics above it");
+    layerNoMap.visible = false;
+    mockEditor.belowStats(layerWithMap, false);
+    assert.equal(statsCallCount, 6, "a layer below hidden reruns them");
+    layerNoMap.visible = true;
+    FILTERS["testplug.map_reader"].wholeStatsParams = ["useDepth"];
+    layerWithMap.params = { ...layerWithMap.params, extra: 2 };
+    mockEditor.belowStats(layerWithMap, false);
+    mockEditor.belowStats(layerWithMap, false);
+    assert.equal(statsCallCount, 7, "with wholeStatsParams the key changes once (the read parameters' form), then stays");
+    layerWithMap.params = { ...layerWithMap.params, extra: 3 };
+    mockEditor.belowStats(layerWithMap, false);
+    assert.equal(statsCallCount, 7, "a parameter wholeStatsParams does not name keeps the statistics");
+    delete FILTERS["testplug.map_reader"].wholeStatsParams;
+
+    // every part of the picture below in the signature: each change below reruns the statistics, a change above or of
+    // the layer's own geometry does not
+    const pxBelow = { version: 1 };
+    const paintBelow = { id: "p_below", visible: true, kind: "paint", px: pxBelow, maskPx: null, opacity: 1, blend: "normal", x: 0, y: 0, w: 2000, h: 1000 };
+    const paintAbove = { id: "p_above", visible: true, kind: "paint", px: { version: 1 }, opacity: 1, blend: "normal", x: 0, y: 0, w: 10, h: 10 };
+    mockEditor.layers = [paintBelow, layerNoMap, layerWithMap, paintAbove];
+    mockEditor.basePx = { version: 1 };
+    mockEditor.groupsOf = () => [];
+    let runs = statsCallCount;
+    const reran = (what, change, expect = true) => {
+        change();
+        mockEditor.belowStats(layerWithMap, false);
+        const did = statsCallCount > runs;
+        runs = statsCallCount;
+        assert.equal(did, expect, `${what} ${expect ? "reruns" : "keeps"} the statistics`);
+    };
+    mockEditor.belowStats(layerWithMap, false);
+    runs = statsCallCount;
+    reran("a write into a layer below (its version)", () => { pxBelow.version++; });
+    reran("its pixels replaced (an undo)", () => { paintBelow.px = { version: 1 }; });
+    reran("its opacity", () => { paintBelow.opacity = 0.5; });
+    reran("its blend mode", () => { paintBelow.blend = "multiply"; });
+    reran("its place", () => { paintBelow.x = 5; });
+    reran("its clip", () => { paintBelow.clip = true; });
+    reran("a mask", () => { paintBelow.maskPx = { version: 1 }; });
+    reran("the mask switched off", () => { paintBelow.maskOff = true; });
+    reran("a colour match", () => { paintBelow.match = { strength: 50, source: "below" }; });
+    reran("its group", () => { paintBelow.group = "g1"; });
+    reran("the base replaced", () => { mockEditor.basePx = { version: 1 }; });
+    reran("a write into the base", () => { mockEditor.basePx.version++; });
+    reran("the order below", () => { mockEditor.layers = [layerNoMap, paintBelow, layerWithMap, paintAbove]; });
+    reran("the compare side shown", () => { mockEditor.compareShow = "p_below"; });
+    reran("a layer above changed", () => { paintAbove.opacity = 0.2; paintAbove.px.version++; }, false);
+    reran("the layer's own geometry", () => { layerWithMap.opacity = 0.5; }, false);
+    reran("a brush dab elsewhere (pixelVersion)", () => { mockEditor.pixelVersion = (mockEditor.pixelVersion || 0) + 1; }, false);
+    mockEditor.layers = [layerNoMap, layerWithMap];
 
     // 5. Test cancelFilterParams
     const cancelLayer = {

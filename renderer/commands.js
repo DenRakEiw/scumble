@@ -210,6 +210,9 @@ export async function shotCanvas(ed, a) {
     const src = layer ? { w: layer.px.width, h: layer.px.height } : { w: r.w, h: r.h };
     const s = Math.min(1, max / Math.max(src.w, src.h));
     const w = Math.max(1, Math.round(src.w * s)), h = Math.max(1, Math.round(src.h * s));
+    // relight's full shadow maps, not the quick map of a light on the move (docs/PLAN_RELIGHT_FIXES.md F2.7): the canvas
+    // backend's flatten below does not wait by itself
+    if ((what === "image" || what === "editor") && ed.relightIdle) await ed.relightIdle();
     const c = makeCanvas(w, h);
     const ctx = c.getContext("2d");
     ctx.fillStyle = what === "mask" ? "#000000" : "#202020"; ctx.fillRect(0, 0, w, h);
@@ -587,6 +590,7 @@ function pendingSize(ed, p) {
  * editor's whole flatten, which a document past the canvas limits cannot make.
  */
 async function mergedClip(ed) {
+    if (ed.relightIdle) await ed.relightIdle();   // relight's full shadow maps (docs/PLAN_RELIGHT_FIXES.md F2.7)
     const b = ed.getBounds && ed.getBounds();
     const [x0, y0, x1, y1] = b || [0, 0, ed.width, ed.height];
     const w = x1 - x0, h = y1 - y0;

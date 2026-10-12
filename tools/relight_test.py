@@ -23,8 +23,11 @@ Tests relight filter layer across CPU and WebGL2 paths via CDP:
             undo restores dist.
   * Case p: Click empty canvas adds light at click coords, Delete key removes it,
             undo restores it.
-  * Case q: During drag fx._relight.vis.w === Math.floor(W / 4), after pointer up W.
+  * Case q: Over a box: the drag shows the quick shadow map at the light's new position, every reader of a
+            run's picture (crop read, screenshot, a plugin's settled flatten) waits for the full map, and the
+            drag reads the picture below back no time (docs/PLAN_RELIGHT_FIXES.md F2.5-F2.7).
   * Case r: Overlay is not in an export (flattenToCanvas({ forRun: true })).
+  * Case fit: The fitted original light follows the picture below (a new base lit from the other side, F2.6).
 
 Rule 1: Strict gate test. If CDP session is unreachable, exits with 1 and prints FAIL.
 """
@@ -46,15 +49,17 @@ ROOT = os.path.dirname(HERE)
 JS = r"""
 (async (docPath, mockUrl) => {
     const shell = await import("./shell.js");
-    const { commands } = await import("./commands.js");
+    const { commands, shotCanvas } = await import("./commands.js");
     const F = await import("./editor/inpaint_filters.js");
     const GLM = await import("./editor/inpaint_filters_gl.js");
     const { host } = await import("./editor/host.js");
     const { makeMap } = await import("./editor/inpaint_maps.js");
     const PNG = await import("./editor/inpaint_png.js");
-    const { defaultLight, applyLightPreset, LIGHT_PRESETS, SPOT_GOBOS } = await import("./editor/inpaint_relight.js");
+    const RL = await import("./editor/inpaint_relight.js");
+    const { defaultLight, applyLightPreset, LIGHT_PRESETS, SPOT_GOBOS } = RL;
 
     const fails = [];
+    const notes = {};   // measured values the run prints, for judging margins and flakes
     let checkCount = 0;
     const check = (name, ok, info) => {
         checkCount++;
@@ -884,33 +889,161 @@ JS = r"""
     check("p: undo stack returned to original length", ed.undo.length === undoLenP0);
 
     // -------------------------------------------------------------------------
-    // Case q: During drag fx._relight.vis.w === Math.floor(W / 4), after pointer up W
+    // Case q (docs/PLAN_RELIGHT_FIXES.md F2.5 / F2.7): over a box that casts its shadow behind it, a drag shows the
+    // quick map at the light's new position in the view (not a run's picture); every reader of the picture a run sees
+    // (a crop read, a screenshot, a plugin's settled flatten) waits for the full map instead of reading the map of where
+    // the light was or the quick map; the drag reads the picture below back no time at all (F2.6). The light moves
+    // between the box's two sides, so a reader that does not wait shows the other side's shadow.
     // -------------------------------------------------------------------------
     ed._lastDown = null;
     await settle(ed);
+    const qBox = new Uint16Array(Mw * Mh).fill(50000);
+    for (let y = 35; y < 65; y++) for (let x = 60; x < 90; x++) qBox[y * Mw + x] = 10000;   // the box: doc 240..360 x 140..260
+    const qUndo0 = ed.undo.length;
+    check("q: the box depth map is installed", (await ed.setMap("depth", makeMap("depth", Mw, Mh, qBox, [W, 0, 0, H, 0, 0], {}))) === true);
+    await settle(ed);
+    check("q: the light starts left of the box", fx.params.lights[0].x === 150 && fx.params.lights[0].y === 200, fx.params.lights[0]);
     check("q: initially vis is full resolution", fx._relight?.vis?.w === Mw, { visW: fx._relight?.vis?.w, Mw });
 
-    firePointer("pointerdown", 150, 200);
-    firePointer("pointermove", 190, 230);
-    const quickW = fx._relight?.visQuick?.w || fx._relight?.vis?.w;
-    check("q: during drag vis.w is quarter size Math.floor(Mw / 4)", quickW === Math.floor(Mw / 4), { quickW, expected: Math.floor(Mw / 4) });
-    const dragCanvas = ed.flattenToCanvas({ forRun: true });
-    const dragPx = dragCanvas.getContext("2d").getImageData(0, 0, dragCanvas.width, dragCanvas.height).data;
-    let nonZeroDrag = 0;
-    for (let i = 0; i < dragPx.length; i += 4) {
-        if (dragPx[i + 3] > 0 && (dragPx[i] > 0 || dragPx[i + 1] > 0 || dragPx[i + 2] > 0)) nonZeroDrag++;
+    const qPx = (c) => c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    const qView = () => qPx(ed.sampleRegion("image", [0, 0, W, H], 1, { forRun: false }));
+    // mean luminance left of the box (doc x 100..220) and right of it (380..440), rows 176..224
+    const qBands = (d) => {
+        const band = (x0, x1) => {
+            let s = 0, n = 0;
+            for (let y = 176; y < 224; y++) for (let x = x0; x < x1; x++) { const i = (y * W + x) * 4; s += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; n++; }
+            return Math.round((s / n) * 10) / 10;
+        };
+        return { left: band(100, 220), right: band(380, 440) };
+    };
+    const qDiff = (a, b) => {
+        if (!a || !b || a.length !== b.length) return { max: 999, mean: 999 };
+        let max = 0, sum = 0;
+        for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d > max) max = d; sum += d; }
+        return { max, mean: Math.round((sum / a.length) * 1000) / 1000 };
+    };
+    const qFullCurrent = () => RL.relightVisCurrent(fx._relight?.vis, fx.params.lights, RL.relightDepthScale(fx.params), RL.relightMapKey(ed.maps.depth), false);
+    const qShadowSide = (b, lightX) => (lightX < 300 ? b.right < b.left - 20 : b.left < b.right - 20);
+
+    const qPre = qBands(qView());
+    check("q: with the light on the left the box's shadow falls right of it", qShadowSide(qPre, 150), qPre);
+
+    // the drag: five moves to the right side, a frame drawn after each; the statistics below are not read back
+    let qReads = 0;
+    const qIndex = ed.layers.indexOf(fx);
+    const qProtoSample = Object.getPrototypeOf(ed).sampleRegion;
+    ed.sampleRegion = function (source, box, scale, opts = {}) {
+        if (opts && opts.upTo === qIndex) qReads++;
+        return qProtoSample.call(this, source, box, scale, opts);
+    };
+    let qDuring = null, qDuringBands = null;
+    try {
+        firePointer("pointerdown", 150, 200);
+        for (const x of [210, 270, 330, 390, 450]) { firePointer("pointermove", x, 200); ed.draw(); }
+        while (ed._relightPending.size) await Promise.all(Array.from(ed._relightPending));
+        ed.draw();
+        check("q: the drag reads the picture below back no time (the fit's statistics stay)", qReads === 0, { qReads });
+    } finally {
+        delete ed.sampleRegion;
     }
-    const dragPxPct = (nonZeroDrag / (dragCanvas.width * dragCanvas.height)) * 100;
-    check("q: during drag rendered canvas has valid non-zero pixels", dragPxPct > 95, { dragPxPct });
+    check("q: the light is at 450, 200 during the drag", fx.params.lights[0].x === 450 && fx.params.lights[0].y === 200, fx.params.lights[0]);
+    check("q: during the drag the quick map is a quarter of the full one", fx._relight?.visQuick?.w === Math.floor(Mw / 4), { w: fx._relight?.visQuick?.w });
+    check("q: the full map is still the one from before the drag", !qFullCurrent());
+    check("q: the view reads the quick map", RL.pickVis(fx._relight, { quick: true }, fx.params, ed.maps.depth) === fx._relight.visQuick);
+    check("q: and that quick map is current for the light at 450",
+        RL.relightVisCurrent(fx._relight?.visQuick, fx.params.lights, RL.relightDepthScale(fx.params), RL.relightMapKey(ed.maps.depth), true));
+    check("q: a run's picture never reads the quick map", RL.pickVis(fx._relight, { forRun: true }, fx.params, ed.maps.depth) === fx._relight.vis);
+    qDuring = qView();
+    qDuringBands = qBands(qDuring);
 
-    firePointer("pointerup", 190, 230);
+    // every reader of a run's picture, with the full map stale when it starts, against the same reader after a settle
+    const PL = await import("./plugins.js");
+    const qDoc = new PL.Document(ed);
+    const readers = [
+        ["readBoxBytes (a run's crop)", 450, async () => (await ed.readBoxBytes([0, 0, W, H])).data],
+        ["screenshot", 150, async () => qPx((await shotCanvas(ed, { what: "image", show_selection: false })).canvas)],
+        ["a plugin's settled flatten of a box", 450, async () => qPx(await qDoc.flatten({ box: [0, 0, W, H], maxSize: W, settled: true }))],
+        ["a plugin's settled flatten", 150, async () => qPx(await qDoc.flatten({ settled: true }))],
+        ["a plugin's exact settled flatten of a box", 450, async () => qPx(await qDoc.flatten({ box: [0, 0, W, H], exact: true, settled: true }))],
+    ];
+    let qAt = 450;
+    for (const [name, x, read] of readers) {
+        if (x !== qAt) {
+            firePointer("pointermove", x, 200);
+            qAt = x;
+        }
+        check(`q: ${name} starts with the full map of the other side`, !qFullCurrent());
+        const a = await read();
+        await settle(ed);
+        const b = await read();
+        const d = qDiff(a, b);
+        (notes.qReaders = notes.qReaders || []).push({ name, x, ...d });
+        check(`q: ${name} waits for the full map (equal to the same read after a settle)`, d.max <= 2 && d.mean <= 0.2, d);
+        check(`q: ${name} shows the shadow on the side away from the light`, qShadowSide(qBands(b), x), { x, bands: qBands(b) });
+    }
+
+    // a run's pass of the filter goes with forRun (filterInfo), which is what keeps pickVis from the quick map
+    firePointer("pointermove", 390, 200);
+    ed._lastFilterInfoBySite = {};
+    ed.flattenToCanvas({ forRun: true });
+    const qRunInfos = Object.values(ed._lastFilterInfoBySite || {}).filter((i) => i && i.layer === fx);
+    check("q: a run's pass of the relight filter is marked forRun", qRunInfos.length > 0 && qRunInfos.every((i) => i.forRun === true),
+        qRunInfos.map((i) => i.forRun));
+    qView();
+    const qViewInfos = Object.values(ed._lastFilterInfoBySite || {}).filter((i) => i && i.layer === fx && i.forRun === false);
+    check("q: the view's pass is not", qViewInfos.length > 0);
+
+    // back to 450 and let go: the quick view of the drag matches the settled picture there
+    firePointer("pointermove", 450, 200);
+    firePointer("pointerup", 450, 200);
     await settle(ed);
-    const fullW = fx._relight?.vis?.w;
-    check("q: after pointerup vis.w is full resolution Mw", fullW === Mw, { fullW, Mw });
+    check("q: after pointerup vis.w is full resolution Mw", fx._relight?.vis?.w === Mw, { w: fx._relight?.vis?.w, Mw });
+    check("q: the full map is current after the drag", qFullCurrent());
+    check("q: the quick map is dropped once the full one is current", !fx._relight?.visQuick);
+    const qAfter = qView();
+    const qAfterBands = qBands(qAfter);
+    notes.q = { pre: qPre, during: qDuringBands, after: qAfterBands, reads: qReads };
+    check("q: with the light on the right the box's shadow falls left of it", qShadowSide(qAfterBands, 450), qAfterBands);
+    check("q: the drag's quick view shows the shadows where the settled picture has them (within 6 levels in each band)",
+        Math.abs(qDuringBands.left - qAfterBands.left) <= 6 && Math.abs(qDuringBands.right - qAfterBands.right) <= 6,
+        { during: qDuringBands, after: qAfterBands, pre: qPre });
 
-    // Restore light position
+    // Restore light position and the step map
     await ed.undoStep();
     check("q: undo restores position to 150, 200", fx.params.lights[0].x === 150 && fx.params.lights[0].y === 200);
+    await ed.undoStep();
+    check("q: undo restores the step map", ed.maps.depth === depthMap && ed.undo.length === qUndo0, { undo: ed.undo.length, qUndo0 });
+    await settle(ed);
+
+    // the landing rule (the review of F2): a march for the key a channel wants now lands even when an older march was
+    // stamped later, and one for a key the light has left never lands in the full map. Only the jobs already on their
+    // way when the change ends are awaited first: the march that was running has to do it, not one started after it.
+    {
+        const qL = fx.params.lights[0];
+        const qFull = () => RL.relightVisCurrent(fx._relight?.vis, fx.params.lights, RL.relightDepthScale(fx.params), RL.relightMapKey(ed.maps.depth), false);
+        const drain = async () => { while (ed._relightPending.size) await Promise.all(Array.from(ed._relightPending)); };
+        const running = async () => { await Promise.all(Array.from(ed._relightPending)); };
+        check("q: the full map is current before the landing steps", qFull());
+        const d0 = qL.diffusion;
+        qL.diffusion = d0 + 7;                       // another key: its march starts
+        ed.markFilterChanged(fx);
+        qL.on = false; ed.markFilterChanged(fx);     // off and on again while it runs
+        qL.on = true; ed.markFilterChanged(fx);
+        await running();
+        check("q: a light turned off and on while its march ran gets its shadows from that march", qFull(), fx._relight?.vis?.keys);
+        await drain();
+        const x0 = qL.x;
+        qL.x = x0 + 60; ed.markFilterChanged(fx);     // B: its march starts
+        qL.x = x0; ed.markFilterChanged(fx);          // back to A, whose full map is still there
+        const seqA = fx._relight?.vis?.seq;
+        await running();
+        check("q: a march for a position the light has left does not land in the full map", qFull() && fx._relight?.vis?.seq === seqA,
+            { keys: fx._relight?.vis?.keys, seq: fx._relight?.vis?.seq, seqA });
+        await drain();
+        qL.diffusion = d0;
+        ed.markFilterChanged(fx);
+        await settle(ed);
+    }
 
     // -------------------------------------------------------------------------
     // Case r: Overlay is not in an export (flattenToCanvas({ forRun: true }))
@@ -1005,6 +1138,22 @@ JS = r"""
         check("l2: the waiting undo says it did nothing", /^Nothing undone/.test(ed.status || ""), ed.status);
         await ed.undoStep();
         check("l2: the next undo takes that nudge back", fx.params.lights[0].x === xWait, { x: fx.params.lights[0].x, xWait });
+    }
+
+    // F2.7: a reader of a run's picture waits for the full shadow map (relightIdle) and leaves a pending nudge pending:
+    // a read pushes no undo step (relightSettled would commit it). The nudge's timer is stopped so the check cannot race it.
+    {
+        const xN = fx.params.lights[0].x;
+        const undoN = ed.undo.length;
+        ed.onKey({ key: "ArrowRight", shiftKey: false, preventDefault: () => {} });
+        if (fx._nudgeRelightTimer) { clearTimeout(fx._nudgeRelightTimer); fx._nudgeRelightTimer = null; }
+        check("l2: a nudge is pending", !!fx._undoPending && typeof fx._flushNudge === "function" && fx.params.lights[0].x === xN + 1);
+        await ed.readBoxBytes([0, 0, 16, 16]);
+        check("l2: a read leaves the pending nudge pending (no undo step)", !!fx._undoPending && ed.undo.length === undoN, { undo: ed.undo.length, undoN });
+        ed.flushPendingDebounces();
+        check("l2: the nudge commits as one step afterwards", !fx._undoPending && ed.undo.length === undoN + 1, { undo: ed.undo.length, undoN });
+        await ed.undoStep();
+        check("l2: undo takes the nudge back", fx.params.lights[0].x === xN, { x: fx.params.lights[0].x, xN });
     }
 
     // -------------------------------------------------------------------------
@@ -1434,13 +1583,108 @@ JS = r"""
     check("z: comfycloud sends 10:118 strength_model 1.0", !!zCloud && zCloud.params["10:118|strength_model"] === 1, zCloud);
     await commands.run("close_document", { doc: docZ.id, force: true });
 
+    // -------------------------------------------------------------------------
+    // Case fit (docs/PLAN_RELIGHT_FIXES.md F2.6): the fitted original light follows the picture below. A ball lit from
+    // the left fits a light on the left; the same document over the ball lit from the right (a new base, the layer and
+    // the map kept) fits one on the right. At 77da63f the fit stayed on the left: its cache ignored the picture.
+    // -------------------------------------------------------------------------
+    const docF = shell.newDocument();
+    shell.activate(docF);
+    await new Promise((r) => setTimeout(r, 150));
+    docF.resizeCanvas();
+    const fS = 256, fM = 64;
+    const fBall = (lx) => {
+        const c = mk(fS, fS), g = c.getContext("2d"), img = g.createImageData(fS, fS);
+        for (let y = 0; y < fS; y++) {
+            for (let x = 0; x < fS; x++) {
+                const dx = (x + 0.5 - fS / 2) / (fS * 0.4), dy = (y + 0.5 - fS / 2) / (fS * 0.4), r2 = dx * dx + dy * dy, i = (y * fS + x) * 4;
+                let v = 50;
+                if (r2 <= 1) v = Math.round(Math.min(1, 0.2 + 0.8 * Math.max(0, dx * lx - dy * 0.5 + Math.sqrt(1 - r2) * 0.707)) * 255);
+                img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+                img.data[i + 3] = 255;
+            }
+        }
+        g.putImageData(img, 0, 0);
+        Object.defineProperty(c, "naturalWidth", { value: fS });
+        Object.defineProperty(c, "naturalHeight", { value: fS });
+        return c;
+    };
+    const fDepth = new Uint16Array(fM * fM);
+    for (let y = 0; y < fM; y++) {
+        for (let x = 0; x < fM; x++) {
+            const dx = (x + 0.5 - fM / 2) / (fM * 0.4), dy = (y + 0.5 - fM / 2) / (fM * 0.4), r2 = dx * dx + dy * dy;
+            fDepth[y * fM + x] = r2 <= 1 ? Math.round(30000 - Math.sqrt(1 - r2) * 15000) : 45000;
+        }
+    }
+    await docF.setBaseFromCanvas(fBall(-0.5), { keepLayers: false });
+    await settle(docF);
+    await docF.setMap("depth", makeMap("depth", fM, fM, fDepth, [fS, 0, 0, fS, 0, 0]));
+    const fFx = docF.addFilterLayer("relight");
+    fFx.params.lights = [defaultLight(0, { width: fS, height: fS })];
+    docF.markFilterChanged(fFx);
+    await settle(docF);
+    const fLeft = docF.belowStats(fFx, false)?.fit?.l0;
+    check("fit: a ball lit from the left fits a light on the left", !!fLeft && fLeft[0] < -0.2, fLeft);
+    // a run's statistics too: made after the layer's cache exists, so the fit is cached there as in a working document
+    const fLeftRun = docF.belowStats(fFx, true)?.fit?.l0;
+    check("fit: a run's statistics fit the left too", !!fLeftRun && fLeftRun[0] < -0.2, fLeftRun);
+    check("fit: the fit is cached on the layer", !!(fFx._relight && fFx._relight._fitKey));
+    await docF.setBaseFromCanvas(fBall(0.5), { keepLayers: true });
+    await settle(docF);
+    check("fit: the layer and the map stay over the new base", docF.layers.includes(fFx) && !!(docF.maps && docF.maps.depth));
+    const fRight = docF.belowStats(fFx, false)?.fit?.l0;
+    check("fit: the same document over the ball lit from the right fits a light on the right", !!fRight && fRight[0] > 0.2, fRight);
+    const fRun = docF.belowStats(fFx, true)?.fit?.l0;
+    notes.fit = { left: fLeft, right: fRight, run: fRun };
+
+    // the fit reads the layer's depth_scale and sigma (wholeStatsParams): a change refits, a light move does not
+    const fStats0 = docF.belowStats(fFx, false), fKey0 = fFx._relight && fFx._relight._fitKey, fDs0 = fFx.params.depth_scale;
+    fFx.params.lights[0].x += 20;
+    docF.markFilterChanged(fFx);
+    check("fit: a light move keeps the statistics", docF.belowStats(fFx, false) === fStats0);
+    fFx.params.depth_scale = 90;
+    docF.markFilterChanged(fFx);
+    const fStats1 = docF.belowStats(fFx, false);
+    check("fit: a depth_scale change refits", !!fStats1 && fStats1 !== fStats0 && !!fFx._relight && fFx._relight._fitKey !== fKey0,
+        { key0: fKey0, key1: fFx._relight && fFx._relight._fitKey });
+    fFx.params.depth_scale = fDs0;
+    docF.markFilterChanged(fFx);
+    await settle(docF);
+
+    // statistics above a relight layer follow its shadow maps as they land (the review of F2): a Normalise over it, the
+    // light moved to the other side of a box, the Normalise's statistics read before and after the march lands
+    const fBox = new Uint16Array(fM * fM).fill(50000);
+    for (let y = 24; y < 40; y++) for (let x = 24; x < 40; x++) fBox[y * fM + x] = 10000;
+    await docF.setMap("depth", makeMap("depth", fM, fM, fBox, [fS, 0, 0, fS, 0, 0]));
+    fFx.params.lights = [{ ...defaultLight(0, { width: fS, height: fS }), x: 40, y: 128, dist: -30, range: 400 }];
+    fFx.params.shadows = 100;
+    docF.markFilterChanged(fFx);
+    docF.selectLayers([fFx.id]);
+    const fNorm = docF.addFilterLayer("normalize");
+    check("fit: the Normalise sits over the relight layer", docF.layers.indexOf(fNorm) > docF.layers.indexOf(fFx));
+    await settle(docF);
+    docF.belowStats(fNorm, false);
+    fFx.params.lights[0].x = 216;   // the other side of the box
+    docF.markFilterChanged(fFx);
+    const nPre = docF.belowStats(fNorm, false);   // before the march lands: the shadow of the old side
+    while (docF._relightPending.size) await Promise.all(Array.from(docF._relightPending));
+    const nPost = docF.belowStats(fNorm, false);
+    fNorm._bstats = null;
+    const nFresh = docF.belowStats(fNorm, false);
+    const fMeanDiff = (a, b) => (a && b && a.mean && b.mean) ? Math.max(...a.mean.map((v, i) => Math.abs(v - b.mean[i]))) : 999;
+    notes.norm = { pre: nPre && nPre.mean, post: nPost && nPost.mean, fresh: nFresh && nFresh.mean };
+    check("fit: the box's shadow moves the statistics above (so the next check can fail)", fMeanDiff(nPre, nFresh) > 1e-6, notes.norm);
+    check("fit: a Normalise over the relight layer re-reads the picture when the shadow map lands", fMeanDiff(nPost, nFresh) < 1e-9, notes.norm);
+    check("fit: a run's statistics fit the right too", !!fRun && fRun[0] > 0.2, fRun);
+    await commands.run("close_document", { doc: docF.id, force: true });
+
     // Keep lights tool active for visual screenshot
     ed.setTool("lights");
     ed.selectLayers([fx.id]);
     ed.draw();
     await settle(ed);
 
-    return { fails, checks: checkCount - fails.length, tiles: !!ed.tileMode };
+    return { fails, notes, checks: checkCount - fails.length, tiles: !!ed.tileMode };
 })
 """
 
@@ -1455,6 +1699,8 @@ async def run_cdp(cdp, doc_path, mock_url, scratch_dir=None):
     fails = val.get("fails", [])
     for f in fails:
         print(f"[FAIL] {f}")
+    if val.get("notes"):
+        print(f"[info] measured: {json.dumps(val['notes'])}")
     if not fails:
         backend = "tiles" if val.get("tiles") else "canvas"
         print(f"[ok] relight test on {backend}: {val.get('checks', 0)} in-app checks passed")
@@ -1503,13 +1749,17 @@ def node_step():
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
-    try:
-        nres = node_step()
-        print(f"[ok] relight node tests: {nres['checks']} checks passed")
-    except Exception as err:
-        print(f"[FAIL] node: {err}")
-        print("FAIL")
-        sys.exit(1)
+    if os.environ.get("RELIGHT_GATE_SKIP_NODE") == "1":
+        # a mutation round of the in-app checks alone: a mutated module fails the node tests first and hides them
+        print("[skip] relight node tests (RELIGHT_GATE_SKIP_NODE=1)")
+    else:
+        try:
+            nres = node_step()
+            print(f"[ok] relight node tests: {nres['checks']} checks passed")
+        except Exception as err:
+            print(f"[FAIL] node: {err}")
+            print("FAIL")
+            sys.exit(1)
 
     scratch_dir = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else tempfile.gettempdir()
     os.makedirs(scratch_dir, exist_ok=True)

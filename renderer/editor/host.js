@@ -3083,7 +3083,7 @@ export const host = {
         const cancelled = () => Object.assign(new Error(`${L} cancelled.`), { hint: `${L} cancelled.` });
 
         try {
-            if (editor.relightSettled) await editor.relightSettled();
+            if (editor.relightSettled) await editor.relightSettled(layer);   // its own maps too when it is hidden: the light map reads them
             const W = editor.width, H = editor.height;
             if ((layer.params || {}).detail !== false && W * H > realism.MAX_AREA) {
                 throw new Error(`${L}: detail restoration supports pictures up to 27.9 megapixels (${W} x ${H} is ${((W * H) / 1e6).toFixed(1)} MP). Turn off detail restoration or scale the picture down first.`);
@@ -3145,6 +3145,7 @@ export const host = {
                 maps: editor.maps,
                 relight: layer._relight,
                 layer,
+                forRun: true,   // the full shadow map relightSettled waited for, never the quick one (F2.5)
             };
             const lmRes = applyFilter("relight", mapCanvas, { ...layer.params, mode: 1 }, relightInfo);
             const lmCanvas = glToCanvas(lmRes) || lmRes;
@@ -4217,7 +4218,10 @@ export const host = {
      */
     async objectInput(editor, layer) {
         const W = editor.width, H = editor.height;
-        if (!editor.tileMode) return this.modelInput(this.sourceCanvas(editor, layer), 1024, null);
+        if (!editor.tileMode) {
+            if (!layer && editor.relightIdle) await editor.relightIdle();   // as sampleRegionSettled waits on tiles (F2.7)
+            return this.modelInput(this.sourceCanvas(editor, layer), 1024, null);
+        }
         const s = Math.min(1, Math.max(1024 / W, 1024 / H));
         if (!layer) return this.modelInput(await editor.sampleRegionSettled("image", [0, 0, W, H], s, { forRun: true }), 1024, null);
         const px = layer.px;

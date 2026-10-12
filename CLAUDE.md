@@ -89,8 +89,12 @@ code.
   version vs dataVersion; the fit cache ignores the picture below; default lora_strength 1.0 on a 0..100 scale).
   The user (2026-10-12): this account fixes them now, sessions F1-F4 of the plan, one per session with `/clear` in
   between; the other agent does not edit relight meanwhile. **F1 done 2026-10-12** (the assistant cap, the loader,
-  historyStepNow built differently from the plan's formula, lora_strength; "F1 as built" in the plan); **next F2**
-  (pickVis keys, the fit cache, the quick map). Relight gate: 150 in-app checks on tiles, 149 on canvas.
+  historyStepNow built differently from the plan's formula, lora_strength; "F1 as built" in the plan). **F2 done
+  2026-10-12** ("F2 as built": one map key for both sides, pickVis never gives a run the quick map, the quick map trails
+  a drag, the fit keyed on the picture, `belowStats` on the picture below instead of compositeVersion, `relightIdle` in
+  every async reader of a run's picture and in exports; reviewed by a workflow, the must it found fixed). **Next F3**
+  (undo, snapshots, routes and settings). Relight gate: 198 in-app checks on tiles; `RELIGHT_GATE_SKIP_NODE=1` runs the
+  in-app checks alone for a mutation round.
   The other agent's `docs/REVIEW_RELIGHT_2026-10-12.md` is its own self-review.
 
 

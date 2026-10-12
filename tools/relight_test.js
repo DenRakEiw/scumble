@@ -775,7 +775,101 @@ async function main() {
     console.log("  PASS 19: the relight LoRA strength is in percent, stored fractions read x 100");
 }
 
-    console.log("\nALL 19 RELIGHT TESTS PASSED CLEANLY!");
+// ------------------------------------------------------------------------------------------------
+// 20. pickVis (docs/PLAN_RELIGHT_FIXES.md F2.5): the full shadow map is read under the keys ensureRelightMaps writes, an
+//     Edges change (a meta-only deriveMap) keeps it, and a quick map is read only when it is current or written last,
+//     never by a run. At 77da63f pickVis keyed on map.version (the maps on dataVersion) and returned the quick map
+//     whenever info.quick was set.
+// ------------------------------------------------------------------------------------------------
+{
+    const { pickVis, relightMapKey, relightVisKey, relightVisCurrent } = relight;
+    const { makeMap, deriveMap } = await import(editorUrl("inpaint_maps.js"));
+    const MW = 16, MH = 12;
+    const map = makeMap("depth", MW, MH, new Uint16Array(MW * MH).fill(30000), [64, 0, 0, 48, 0, 0], { snap: { strength: 50 } });
+    const at = (x, y) => ({ id: "l1", on: true, type: "point", x, y, dist: -30, diffusion: 30, range: 300, intensity: 100, color: 5500 });
+    const params = { lights: [at(40, 20)], depth_scale: 50, shadows: 60 };
+    // a map of either size written for these lights (the way ensureRelightMaps keys its channels)
+    const mapFor = (lights, m, quick, seq, fill) => ({
+        data: new Uint8Array((quick ? 4 * 3 : MW * MH) * 4).fill(fill), w: quick ? 4 : MW, h: quick ? 3 : MH, seq,
+        keys: [0, 1, 2, 3].map((i) => relightVisKey(lights[i], 50, relightMapKey(m), quick)),
+    });
+    const vis = mapFor(params.lights, map, false, 5, 0);
+
+    assert.equal(pickVis({ vis }, {}, params, map), vis, "the full map is read under the keys it was made with");
+    const edges = deriveMap(map, { meta: { snap: { strength: 80 } } });
+    assert.notEqual(edges.version, map.version, "an Edges change moves the map's version on");
+    assert.equal(edges.dataVersion, map.dataVersion, "and keeps its dataVersion");
+    assert.equal(relightMapKey(edges), relightMapKey(map), "the shadow maps' key part ignores the meta");
+    const staleQuick = mapFor([at(10, 10)], map, true, 3, 255);   // an earlier drag's quick map
+    const sameQuick = mapFor(params.lights, map, true, 9, 255);    // a quick map of the same lights, written after the full one
+    assert.equal(pickVis({ vis, visQuick: sameQuick }, {}, params, map), vis, "the current full map before a current quick one");
+    assert.equal(pickVis({ vis, visQuick: sameQuick }, {}, params, edges), vis, "after an Edges change the full map is still current and read");
+    assert.equal(pickVis({ vis, visQuick: staleQuick }, { quick: true }, params, edges), vis, "a slider preview reads the current full map, not an earlier drag's quick map");
+
+    // new depth data or another placement on the picture: the full map is not current any more
+    const redone = deriveMap(map, { data: new Uint16Array(MW * MH).fill(20000) });
+    assert.equal(relightVisCurrent(vis, params.lights, 50, relightMapKey(redone), false), false, "new depth data makes the map stale");
+    const moved = deriveMap(map, { xf: [64, 0, 0, 48, 8, 0] });
+    assert.equal(relightVisCurrent(vis, params.lights, 50, relightMapKey(moved), false), false, "the map moved on the picture makes it stale");
+
+    // a light on the move: the view reads the quick map when it is current, a run never does
+    const dragged = { ...params, lights: [at(52, 20)] };
+    const quickNow = mapFor(dragged.lights, map, true, 6, 128);
+    const cache = { vis, visQuick: quickNow };
+    assert.equal(pickVis(cache, { quick: true }, dragged, map), quickNow, "the drag preview reads the current quick map");
+    assert.equal(pickVis(cache, {}, dragged, map), quickNow, "after the drag the current quick map shows until the full one lands");
+    assert.equal(pickVis(cache, { forRun: true }, dragged, map), vis, "a run reads the full map, never the quick one");
+    // neither current: the one written last (the quick map trailing the pointer; an earlier drag's map loses to a newer full one)
+    const further = { ...params, lights: [at(60, 20)] };
+    assert.equal(pickVis(cache, { quick: true }, further, map), quickNow, "a trailing quick map written after the full one is read during the drag");
+    assert.equal(pickVis({ vis, visQuick: staleQuick }, { quick: true }, further, map), vis, "an older quick map is not read");
+    assert.equal(pickVis({ vis, visQuick: quickNow }, { forRun: true }, further, map), vis, "a run reads the full map even while neither is current");
+    // shadows at 0: an all-lit map, whatever the cache holds
+    const lit = pickVis(cache, { forRun: true }, { ...params, shadows: 0 }, map);
+    assert(lit && lit.w === 1 && lit.h === 1 && Array.from(lit.data).every((v) => v === 255), "shadows at 0 read an all-lit map");
+    assert.equal(pickVis(null, {}, params, map), null, "no map yet: null");
+    console.log("  PASS 20: pickVis reads the full map under the maps' own keys, after an Edges change too; quick maps only when current or newer, never for a run");
+}
+
+// ------------------------------------------------------------------------------------------------
+// 21. The fit is keyed on the picture below (F2.6): the same layer and depth map over a picture lit from the other
+//     side fits the other side. At 77da63f the second call returned the first fit (l0[0] stayed negative).
+// ------------------------------------------------------------------------------------------------
+{
+    const CW = 64, CH = 64;
+    const depth = { data: new Uint16Array(CW * CH), w: CW, h: CH, xf: [CW, 0, 0, CH, 0, 0], dataVersion: 7, version: 7 };
+    const picture = (lx, ly, lz) => {
+        const px = new Uint8ClampedArray(CW * CH * 4);
+        for (let y = 0; y < CH; y++) {
+            for (let x = 0; x < CW; x++) {
+                const i = y * CW + x;
+                const dx = (x - CW / 2) / (CW * 0.4), dy = (y - CH / 2) / (CH * 0.4), r2 = dx * dx + dy * dy;
+                let v = 50;
+                if (r2 <= 1) {
+                    const nz = Math.sqrt(1 - r2);
+                    depth.data[i] = Math.round(30000 - nz * 15000);
+                    v = Math.round(Math.min(1, 0.2 + 0.8 * Math.max(0, dx * lx + dy * ly + nz * lz)) * 255);
+                } else {
+                    depth.data[i] = 45000;
+                }
+                px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v;
+                px[i * 4 + 3] = 255;
+            }
+        }
+        return { data: px, w: CW, h: CH };
+    };
+    const layer = { params: { depth_scale: 60, sigma: 1.5 }, _relight: {} };
+    const ctx = { maps: { depth }, params: layer.params, layer };
+    const left = relightStats(picture(-0.5, -0.5, 0.707), { width: CW, height: CH }, ctx);
+    assert(left.fit.l0[0] < 0, `a picture lit from the left fits a light on the left, got l0[0] ${left.fit.l0[0]}`);
+    const right = relightStats(picture(0.5, -0.5, 0.707), { width: CW, height: CH }, ctx);
+    assert(right.fit.l0[0] > 0, `the same layer over a picture lit from the right fits a light on the right, got l0[0] ${right.fit.l0[0]}`);
+    const again = relightStats(picture(0.5, -0.5, 0.707), { width: CW, height: CH }, ctx);
+    assert.equal(again.fit, right.fit, "the same picture again is the cached fit");
+    console.log("  PASS 21: the fit follows the picture below: lit from the left, then from the right, then cached");
+}
+
+    console.log("\nALL 21 RELIGHT TESTS PASSED CLEANLY!");
     console.log("PASS");
 }
 

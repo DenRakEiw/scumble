@@ -102,6 +102,54 @@ node build waits for the release, F4).
    flatten({settled:true}) and the `commands.js` screenshot read the quarter map mid-march (mean 10.5 off): wait on
    `_relightPending` there, not `relightSettled` (it flushes a pending nudge).
 
+**F2 as built (2026-10-12, the commit after 2920bb1).** Reviewed by a workflow (5 reviewers, each area's findings checked
+by a skeptic): 1 must (found by three reviewers: statistics above a relight layer kept the picture from before its maps
+landed) and 6 should, all fixed here, with most of the nits; every new check run against a mutation of its fix.
+5. `inpaint_relight.js`: one key for both sides, `relightMapKey(map)` (dataVersion and `xf`: a meta-only change keeps
+   it, new data or another placement does not), `relightVisKey`, `relightVisCurrent`, `relightDepthScale`; `pickVis(cache,
+   info, params, map)`: the full map when current; a run (`info.forRun`, set by `filterInfo` and by the light map of
+   `relightWhole`) reads the full map, never the quick one; the view reads a current quick map, else the one written last
+   (`seq`); shadows at 0 read an all-lit 1x1 map. The GL key carries `seq`. `ensureRelightMaps`: a quick map is seeded from
+   the full one with its keys (`_f` to `_q`), so a drag marches only the light it moves; a march lands into the map there
+   is when it ends: one for the key the channel wants then always (and outranks older ones still running), one for a key
+   the light has left only into the quick map and only over an older march (the quick map trails the pointer; at
+   2920bb1 every result for a moved light was thrown away, so a continuous drag showed the shadows from before it); a
+   dropped result with nothing running for the wanted key asks for a march. A new full map drops the quick one;
+   `dropQuickVis` drops it once the full map is current. Shadows at 0 keep the maps (they were filled white).
+6. The fit's cache key holds an FNV hash of the 256 px sample. `belowStats` keys on `belowSignature(layer)` (the base and
+   every layer below: identity and version of each pixel source, geometry, visibility with groups, opacity, blend,
+   clip, mask, match, role, a filter's parameters, LUT, plate, a relight layer's shadow and normal maps, the maps for a
+   layer that reads them; the compare side; another layer's filter preview) plus the parameters the statistics read
+   (`wholeStatsParams`: relight depth_scale and sigma, haze and dehaze none; a plugin's function all of them) plus the
+   maps when the layer reads them. Not `pixelVersion`: it moves with every brush dab anywhere (the review measured a
+   re-read per frame while painting above a dehaze chain); each source's own version moves with `touch()`.
+7. `relightIdle(also)`: ensure the full maps of the shown relight layers (and `also`), wait for the jobs there are, three
+   rounds at most, no flush; `relightSettled(also)` = flush + `relightIdle`. Waiting now: `readBoxBytes`,
+   `sampleRegionSettled` (the picture, not skipFilters / baseOnly), `shotCanvas`, `Document.flatten({ settled })` (every
+   branch; the layer index read after the wait), `mergedClip`, the window crop fallback in `prepareCropAsync`, the canvas
+   backend's `promptContextCanvas` and `objectInput`, and `relightSettled` at the start of `exportImage` (PSD, ORA and TIFF
+   read bands that did not wait) and `extendCanvasNow` (its flatten becomes the base). Still not waiting, synchronous:
+   copy merged (`copySelection` / `copyLayer`), `matchEdges`, a plugin's unsettled flatten and getPixels; within a march's
+   time after a light change they read the full map of where the light was.
+Tests: relight_test.js 20 (pickVis: keys, Edges change, quick only when current or newer, never for a run, shadows 0)
+and 21 (the fit follows the picture); plugin_api4_test.js calls the real `belowStats` / `belowSignature` (it tested a
+copy of the old one). Gate case q rewritten over a box (the view shows the current quick map, 0 levels off the settled
+picture in both bands; five readers of a run's picture mid-drag each equal the same read after a settle; the drag reads
+the picture below back 0 times, 6 at 2920bb1; a run's pass is marked forRun; a light turned off and on while its march
+runs, and a march for a position the light has left), case fit (a new base lit from the other side flips the fit; a
+depth_scale change refits, a light move does not; a Normalise over the relight layer re-reads when the shadow map
+lands, 110.2 before, 113.4 after) and l2 (a read leaves a pending nudge pending). `RELIGHT_GATE_SKIP_NODE=1` runs the
+in-app checks alone (for mutations of `inpaint_relight.js`, which the node suites catch first). Relight gate: 198 in-app
+checks on tiles. Mutations, each red: the view never reading the quick map, a run reading it, the map key on `version`,
+the fit key without the hash, `belowStats` on compositeVersion, the signature without the base, without a relight
+layer's maps, no `wholeStatsParams`, `filterInfo` without `forRun`, the landing rule on tickets alone, each reader
+without its wait, a read flushing the nudge. Green on purpose: the landing's "ask for a march" alone removed (the
+landing rule already lands the running march in the cases a test can build; it stays as a safety net).
+Left (nits): `relightWhole` reads the lights after its settle and the encode (a light moved during that wait goes with
+the full map of before); `prepareCropAsync` holds the click's stack while `readBoxBytes` waits (relight is applied with
+the lights at the end of the wait); `RELIGHT_GATE_SKIP_NODE=1` left set in a shell skips the node suites and still
+prints PASS (it says so in a [skip] line).
+
 ## F3: undo, snapshots, routes and settings (should)
 
 - **The same snapshot pushed twice:** nudge / wheel and the relight sliders share `layer._undoPending`; a slider change

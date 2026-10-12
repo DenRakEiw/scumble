@@ -818,6 +818,7 @@ export async function prepareCropAsync(editor, params, limits, opts = {}) {
             else if (holding) holding.then((h) => { if (h) h.release(); }, () => {});
         }
     }
+    if (editor.relightIdle) await editor.relightIdle();   // the window's crop: relight's full shadow maps, as readBoxBytes waits (F2.7)
     const prep = prepareCrop(editor, params, limits, opts);
     const [image, mask, maskAlpha, ...references] = await Promise.all([canvasBytes(prep.crop), canvasBytes(prep.mask), canvasBytes(prep.maskAlpha), ...prep.references.map((c) => canvasBytes(c))]);
     return { image, mask, maskAlpha, references, width: prep.crop.width, height: prep.crop.height, info: prep.info, sel: prep.sel, how: "window" };

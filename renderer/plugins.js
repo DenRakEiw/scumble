@@ -91,17 +91,20 @@ export class Document {
     flatten({ maxSize = 0, box = null, below = null, pad = 0, exact = false, settled = false } = {}) {
         this._need();
         const ed = this.editor;
-        const upTo = below == null ? null : ed.layers.indexOf(findLayer(ed, below));
-        const o = upTo == null ? { forRun: true } : { forRun: true, upTo };
+        const belowLayer = below == null ? null : findLayer(ed, below);   // an unknown layer throws here, before any wait
+        // the options as the stack is when the picture is read (after a settled call's wait)
+        const o = () => (belowLayer ? { forRun: true, upTo: ed.layers.indexOf(belowLayer) } : { forRun: true });
         // a full-resolution flatten reads no mip level, so there is nothing to prime; `settled` still has to keep
-        // its promise, or a plugin that passes it with no maxSize and no box gets a canvas where it awaits one
-        if (!maxSize && !box) { const c = ed.flattenToCanvas(o); return settled ? Promise.resolve(c) : c; }
+        // its promise, or a plugin that passes it with no maxSize and no box gets a canvas where it awaits one. Every
+        // settled read waits for relight's full shadow maps first (docs/PLAN_RELIGHT_FIXES.md F2.7)
+        const idle = () => (ed.relightIdle ? ed.relightIdle() : Promise.resolve());
+        if (!maxSize && !box) return settled ? idle().then(() => ed.flattenToCanvas(o())) : ed.flattenToCanvas(o());
         const b = box ? [Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(ed.width, Math.ceil(box[2])), Math.min(ed.height, Math.ceil(box[3]))] : [0, 0, ed.width, ed.height];
         if (b[2] <= b[0] || b[3] <= b[1]) throw new Error(`the box ${JSON.stringify(box)} is outside the ${ed.width}x${ed.height} image`);
         const scale = maxSize > 0 ? Math.min(1, maxSize / Math.max(1, b[2] - b[0], b[3] - b[1])) : 1;
-        if (exact && box && scale === 1) return settled ? Promise.resolve(ed.readBox(b, o)) : ed.readBox(b, o);
-        const so = pad > 0 ? { ...o, pad } : o;
-        return settled ? ed.sampleRegionSettled("image", b, scale, so) : ed.sampleRegion("image", b, scale, so);
+        if (exact && box && scale === 1) return settled ? idle().then(() => ed.readBox(b, o())) : ed.readBox(b, o());
+        const so = () => (pad > 0 ? { ...o(), pad } : o());
+        return settled ? idle().then(() => ed.sampleRegionSettled("image", b, scale, so())) : ed.sampleRegion("image", b, scale, so());
     }
 
     /**

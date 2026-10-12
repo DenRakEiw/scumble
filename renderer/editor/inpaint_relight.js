@@ -1121,7 +1121,8 @@ export function relightStats(small, size, ctx) {
     const params = ctx?.params || ctx?.layer?.params || null;
     const depthScale = Math.max(5, Math.min(200, Number(params?.depth_scale) || 50));
     const sigma = Math.max(0, Math.min(10, Number.isFinite(params?.sigma) ? Number(params?.sigma) : 2.0));
-    const fitKey = `${depthMap.version || 0}_${depthScale}_${sigma}_${W}_${H}`;
+    // keyed on the picture below too (F2.6): a picture lit from the other side under the same layer and map is another fit
+    const fitKey = `${relightMapKey(depthMap)}_${depthScale}_${sigma}_${W}_${H}_${bytesHash(pxData)}`;
     const rCache = ctx?.layer?._relight;
     if (rCache && rCache._fitKey === fitKey && rCache._fit) {
         return { fit: rCache._fit, seq: rCache._fitSeq || Date.now() };
@@ -1151,6 +1152,21 @@ export function relightStats(small, size, ctx) {
     }
 
     return { fit, seq };
+}
+
+/**
+ * FNV-1a of a byte array, for a cache key: about a millisecond for the 256 px sample the fit reads.
+ *
+ * @param {ArrayLike<number>} d
+ * @returns {string}
+ */
+function bytesHash(d) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < d.length; i++) {
+        h ^= d[i];
+        h = Math.imul(h, 0x01000193);
+    }
+    return (h >>> 0).toString(36) + ":" + d.length;
 }
 
 function makeCanvas(w, h) {
@@ -1198,36 +1214,95 @@ export function relightSkip(p, info) {
 }
 
 /**
- * Select the visibility texture for shading (quick or full).
+ * What a relight layer's shadow maps are computed from on the depth map's side, as one key part: its data and where it
+ * lies on the picture (`xf`). A change of the map's meta alone (the Edges snap, `setMapMeta`) keeps the key: the shadow
+ * march does not read it. `ensureRelightMaps` keys the maps it makes on it and `pickVis` and the fit read them by it, so
+ * the two sides cannot drift apart again (docs/PLAN_RELIGHT_FIXES.md F2.5: one side keyed on `version`, the other on
+ * `dataVersion`, and after an Edges change the full map never matched).
  *
- * @param {any} cache
- * @param {any} info
- * @param {any[]} [lights]
- * @param {number} [depthScale=50]
- * @param {number} [mapVersion=0]
+ * @param {any} map
+ * @returns {string}
+ */
+export function relightMapKey(map) {
+    if (!map) return "none";
+    const v = map.dataVersion ?? map.version ?? 0;
+    return Array.isArray(map.xf) ? `${v}@${map.xf.join(",")}` : String(v);
+}
+
+/**
+ * The relief scale a relight layer's maps are made at: its `depth_scale`, 50 when unset.
+ *
+ * @param {any} params
+ * @returns {number}
+ */
+export function relightDepthScale(params) {
+    return Number.isFinite(params?.depth_scale) ? Number(params.depth_scale) : 50;
+}
+
+/**
+ * The key of one light's channel in a shadow map (`quick`: the quarter-size map of a drag); null for a light that is off,
+ * whose channel is all lit.
+ *
+ * @param {any} light
+ * @param {number} depthScale
+ * @param {string} mapKey `relightMapKey` of the depth map
+ * @param {boolean} quick
+ * @returns {string|null}
+ */
+export function relightVisKey(light, depthScale, mapKey, quick) {
+    if (!light || !light.on) return null;
+    const l = light;
+    return `${l.type}_${l.x}_${l.y}_${l.dist}_${l.diffusion}_${l.range}_${depthScale}_${mapKey}_${quick ? "q" : "f"}`;
+}
+
+/**
+ * Whether a shadow map was computed for exactly these lights, in all four channels.
+ *
+ * @param {any} vis
+ * @param {any[]} lights
+ * @param {number} depthScale
+ * @param {string} mapKey
+ * @param {boolean} quick
+ * @returns {boolean}
+ */
+export function relightVisCurrent(vis, lights, depthScale, mapKey, quick) {
+    if (!vis || !vis.data || !Array.isArray(vis.keys)) return false;
+    const list = Array.isArray(lights) ? lights : [];
+    for (let i = 0; i < 4; i++) {
+        if (vis.keys[i] !== relightVisKey(list[i], depthScale, mapKey, quick)) return false;
+    }
+    return true;
+}
+
+/** The shadow map of a layer whose shadows are at 0: all lit (the shading does not read it then). */
+const LIT_VIS = { data: new Uint8Array([255, 255, 255, 255]), w: 1, h: 1, keys: null, seq: 0, lit: true };
+
+/**
+ * The shadow map the shading reads (docs/PLAN_RELIGHT_FIXES.md F2.5). The full map when it was computed for the current
+ * lights. A run (`info.forRun`) never reads the quick one: it reads the full map, which its reader waited for
+ * (`relightIdle`), even when a light moved during that wait. The view reads the quick map when that one is current, and
+ * while neither is the one written last: during a drag the quick map trails the pointer, after it the quick map shows
+ * until the full one lands, and a quick map left from an earlier drag is older than the full map made since. A layer
+ * with its shadows at 0 reads an all-lit map. Null when the layer has no map yet.
+ *
+ * @param {any} cache the layer's `_relight`
+ * @param {any} info the pass (`forRun`)
+ * @param {any} params the layer's parameters
+ * @param {any} map the depth map
  * @returns {any}
  */
-export function pickVis(cache, info, lights = [], depthScale = 50, mapVersion = 0) {
-    if (info?.quick && cache?.visQuick?.data) {
-        return cache.visQuick;
-    }
-    if (cache?.vis?.data && Array.isArray(cache.vis.keys)) {
-        let match = true;
-        const lightsList = Array.isArray(lights) ? lights : [];
-        for (let i = 0; i < 4; i++) {
-            const l = lightsList[i];
-            const expectedKey = l && l.on ? `${l.type}_${l.x}_${l.y}_${l.dist}_${l.diffusion}_${l.range}_${depthScale}_${mapVersion}_f` : null;
-            if (cache.vis.keys[i] !== expectedKey) {
-                match = false;
-                break;
-            }
-        }
-        if (match) return cache.vis;
-    }
-    if (cache?.visQuick?.data) {
-        return cache.visQuick;
-    }
-    return cache?.vis || null;
+export function pickVis(cache, info, params, map) {
+    const p = params || {};
+    if ((Number.isFinite(p.shadows) ? Number(p.shadows) : 60) === 0) return LIT_VIS;
+    const lights = Array.isArray(p.lights) ? p.lights : [];
+    const ds = relightDepthScale(p), mk = relightMapKey(map);
+    const vis = cache?.vis?.data ? cache.vis : null;
+    if (relightVisCurrent(vis, lights, ds, mk, false)) return vis;
+    if (info?.forRun) return vis;
+    const quick = cache?.visQuick?.data ? cache.visQuick : null;
+    if (relightVisCurrent(quick, lights, ds, mk, true)) return quick;
+    if (vis && quick) return (quick.seq || 0) > (vis.seq || 0) ? quick : vis;
+    return vis || quick;
 }
 
 /**
@@ -1273,7 +1348,7 @@ export function applyRelight(src, params, info = {}) {
     let visData = null;
     let visW = map.w;
     let visH = map.h;
-    const visObj = pickVis(cache, info, lightsList, depthScale, map.version || 0);
+    const visObj = pickVis(cache, info, p, map);
     if (visObj && visObj.data) {
         visData = visObj.data;
         visW = visObj.w || map.w;
@@ -1699,8 +1774,9 @@ export function registerRelightGL() {
 
             const lightsList = Array.isArray(p.lights) ? p.lights : [];
             const depthScale = Number.isFinite(p.depth_scale) ? Number(p.depth_scale) : 50;
-            const visObj = pickVis(cache, info, lightsList, depthScale, map ? (map.version || 0) : 0);
+            const visObj = pickVis(cache, info, p, map);
             const isQuick = visObj === cache?.visQuick;
+            // `seq` in the key: a channel written in place under the keys it had (a trailing march) is uploaded again
             const visSampler = (visObj && visObj.data) ? {
                 data: visObj.data,
                 width: visObj.w,
@@ -1708,7 +1784,7 @@ export function registerRelightGL() {
                 channels: 4,
                 linear: true,
                 static: true,
-                key: (isQuick ? "relight:vq:" : "relight:v:") + (visObj.keys ? visObj.keys.join("_") : (visObj.key || cache?.key || 0)),
+                key: visObj.lit ? "relight:lit" : (isQuick ? "relight:vq:" : "relight:v:") + (visObj.seq || 0) + ":" + (visObj.keys ? visObj.keys.join("_") : ""),
             } : DUMMY_VIS;
 
             const fit = (info && (info.wholeStats?.fit || info.stats?.fit || cache?.fit)) || { l0: [0, 0, 1], ka: 1.0, kd: 0.0 };
