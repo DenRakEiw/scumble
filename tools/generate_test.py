@@ -1919,6 +1919,35 @@ if (ms > 12000) throw new Error("the two cancels took " + ms + " ms");
 if (!btn.hidden) throw new Error("the Cancel button stays after the run");
 return { early: msg, late, lateMs };
 """),
+    # docs/PLAN_0_1_48.md S4: an API run's history entry keeps the prompt and the references of the click, also when the
+    # field changes while the run goes
+    ("a_results_prompt_is_the_clicks", """
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("load_image", { doc: d.id, filename: "test_base.png", subfolder: "inpaint_canvas", type: "input" });
+const R = ed.addLayer({ name: "Ref S4", kind: "paint", ref: null, px: ed.pixels.Layer.empty(40, 40), x: 0, y: 0, w: 40, h: 40, dirty: true });
+R.px.fill([0, 0, 40, 40], "#3366cc"); ed.markLayerChanged(R);
+await run("set_layer", { layer: R.id, role: "reference", doc: d.id });
+await run("select_rect", { x: 20, y: 20, w: 64, h: 64, doc: d.id });
+const n = ed.refLabels().get(R.id);
+ed.setPromptText("a hat like @img" + n);
+const prev = host.recipe;
+host.setRecipe({ id: "loopback_s4", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", refs: { name: "image {n}" }, name: "Loopback S4", settings: [], fixed: { delay_ms: 1500 } });
+const before = ed.history.length;
+let res = null;
+try {
+    const p = host.runProvider(ed);
+    await wait(400);
+    ed.setPromptText("typed while it ran");
+    res = await p;
+} finally { host.setRecipe(prev); }
+const h = ed.history[ed.history.length - 1];
+await run("close_document", { doc: d.id, force: true });
+if (ed.history.length !== before + 1) throw new Error("no history entry: " + JSON.stringify(res && res.provider));
+if (h.prompt !== "a hat like @img" + n || !h.refs || h.refs["img" + n] !== R.id) throw new Error("the entry: " + JSON.stringify({ prompt: h.prompt, refs: h.refs }));
+return { prompt: h.prompt, refs: h.refs };
+"""),
     ("dialog_escape_closes_the_picker_first", dialog_escape_closes_the_picker_first),
     *STEPS_26F_AFTER,
     # docs/PLAN_0_1_42.md R1: the shipped Realism Pass recipe through Generate, the prompt caught before it leaves (nothing

@@ -21,6 +21,17 @@ import { lightsToWords, detailRatio, loraPercent } from "./inpaint_relight.js";
 import { withoutSecrets } from "./redact.js";
 import { failKind, refusal } from "./inpaint_status.js";
 
+/**
+ * What a result's history entry keeps of the click (S4): the prompt and the negative as typed, and which layer each
+ * @img token named then ({ img1: id }, set_prompt's shape), so a reuse writes them for the references shown now.
+ */
+function sentTexts(snap) {
+    if (!snap) return {};
+    const refs = {};
+    for (const [id, n] of snap.labels || []) refs["img" + n] = id;
+    return { prompt: snap.prompt || "", negative: snap.negative || "", refs: Object.keys(refs).length ? refs : null };
+}
+
 // a run note that only explains how the run went, not what it left out or changed (item 45: those show red)
 const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None /;
 /** The kind of a line that appends a run's notes to the one before: red when a note says something was left out. */
@@ -1832,7 +1843,7 @@ export const host = {
             const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
             editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
             const cutout = info.keepAlpha ? fin.cutout : false;
-            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res) }]);
+            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), ...sentTexts(snap) }]);
             // addResults writes its own line, so the cut-out note, the names the references went as and what the route
             // left out go on afterwards
             if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`, editor.statusKind || (cutout ? "info" : "warn"));
@@ -1994,7 +2005,8 @@ export const host = {
                 const fin = await finishResultAsync(editor, info, prep.sel, res.bytes, res.mime);
                 const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
                 const ref = await this.uploadResult(fin.blob, `n${editor.node.id}_upscale_${stamp}.png`);
-                await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res) }]);
+                // the prompt the upscale sent, its tokens already written as layer names
+                await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), prompt: r.usesPrompt ? texts.prompt : "", negative: r.usesPrompt ? texts.negative : "", refs: null }]);
                 const got = res.info && res.info.width ? ` (${res.info.width} × ${res.info.height} came back)` : "";
                 editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.${texts.note ? " " + texts.note : ""}`);
                 return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null, note: texts.note };
@@ -3533,6 +3545,8 @@ export const host = {
         if (r.kind === "provider" && r.task === "upscale") return this.runUpscale(editor, { scope: "selection", refs: opts.refs });
         if (r.kind === "provider") return this.runProvider(editor, { refs: opts.refs });
         if (!r.prompt) throw refusal("No recipe selected.");
+        // the generation values of the click, before anything is awaited: the result's history entry keeps them (S4)
+        const clickGen = { seed: editor.genSettings.seed, mode: editor.genSettings.mode, denoise: editor.genSettings.denoise };
         // the Realism Pass (task "pass") goes out like an upscale: the box as it is, no fill, no references, no refine
         const pass = r.task === "pass";
         const upscale = r.task === "upscale" || pass;
@@ -3659,6 +3673,16 @@ export const host = {
         // picture waits for it, since the result lands in the geometry it was made for (PLAN_0_1_31 §7)
         if (res && res.prompt_id) (editor._localRuns || (editor._localRuns = new Set())).add(res.prompt_id);
         if (res && res.prompt_id) this.trackRun(editor, res.prompt_id, this.runNodeCount(prompt));
+        // the result's history entry keeps the prompt of the click, not the field's text when it lands (S4)
+        if (res && res.prompt_id) {
+            const sent = editor._sentTexts || (editor._sentTexts = new Map());
+            // an upscale or the pass reads no prompt unless its recipe says so (as runUpscale records it); the seed, mode
+            // and denoise of the click too, which a later click changes before this result lands
+            const texts0 = upscale ? (r.usesPrompt ? { prompt: texts.prompt, negative: texts.negative, refs: null } : { prompt: "", negative: "", refs: null }) : sentTexts(snap);
+            sent.set(res.prompt_id, { ...texts0, ...clickGen });
+            // taken out when the result lands; the bound is only for prompts that never answer
+            while (sent.size > 500) sent.delete(sent.keys().next().value);
+        }
         return res;
     },
 
@@ -4818,7 +4842,9 @@ api.addEventListener("executed", ({ detail }) => {
     // decides; helper outputs carry the editor id the helper prompt was queued with.
     if (out.inpaint_result) {
         const ed = host.editorByPrompt(detail.prompt_id) || host.editor;
-        if (ed) ed.addResults(out.inpaint_result);
+        const sent = ed && ed._sentTexts && ed._sentTexts.get(detail.prompt_id);
+        if (sent) ed._sentTexts.delete(detail.prompt_id);
+        if (ed) ed.addResults(sent ? out.inpaint_result.map((r) => ({ ...r, ...sent })) : out.inpaint_result);
     }
     const forNode = (info) => host.editorById(info && info.canvas_node) || host.editorByPrompt(detail.prompt_id) || host.editor;
     if (out.inpaint_text) for (const info of out.inpaint_text) { const ed = forNode(info); if (ed) ed.applyTextResult(info); }

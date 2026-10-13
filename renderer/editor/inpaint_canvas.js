@@ -18508,8 +18508,14 @@ class InpaintEditor {
                 const n = this.history.length + 1;
                 const layer = this.addLayer({ name: "Result " + n, kind: "result", ref, px: this.pixels.Layer.fromImage(img), x: r.x || 0, y: r.y || 0, w: r.width || img.naturalWidth, h: r.height || img.naturalHeight });
                 // a provider run says which seed the model got (null: none went, FLUX 3 Image); a local result is the editor's
-                this.history.push({ key, name: layer.name, ref, x: layer.x, y: layer.y, w: layer.w, h: layer.h, prompt: this.promptText, layerId: layer.id, time: Date.now(),
-                    seed: r.seed !== undefined ? r.seed : this.genSettings.seed, mode: this.genSettings.mode, denoise: this.genSettings.denoise });
+                // the texts of the click when the host kept them (S4), else the field's as the result lands (the node)
+                const refsNow = () => { const o = {}; for (const [id, k] of this.refLabels()) o["img" + k] = id; return Object.keys(o).length ? o : null; };
+                this.history.push({ key, name: layer.name, ref, x: layer.x, y: layer.y, w: layer.w, h: layer.h, layerId: layer.id, time: Date.now(),
+                    prompt: r.prompt !== undefined ? String(r.prompt || "") : this.promptText,
+                    negative: r.negative !== undefined ? String(r.negative || "") : this.negativeText || "",
+                    refs: r.refs !== undefined ? r.refs : refsNow(),
+                    seed: r.seed !== undefined ? r.seed : this.genSettings.seed, mode: r.mode !== undefined ? r.mode : this.genSettings.mode,
+                    denoise: r.denoise !== undefined ? r.denoise : this.genSettings.denoise });
                 this.renderHistory();
                 const al = r.align && r.align.aligned ? ` · aligned (shift ${r.align.shift[0]}, ${r.align.shift[1]} px, scale ${r.align.scale[0]}, ${r.align.scale[1]})` : "";
                 this.setStatus(`Result ${n} added (${r.width} × ${r.height} at ${r.x}, ${r.y})${al}`);
@@ -20492,7 +20498,14 @@ class InpaintEditor {
             } else if (h.seed === null && h.mode) {
                 text.appendChild(el("span", null, `${h.mode} · no seed sent`));
             }
-            if (h.prompt) { const p = el("span", null, h.prompt); p.title = h.prompt; text.appendChild(p); }
+            if (h.prompt) {
+                // like the seed: a click puts the prompt back in the field, Ctrl+click copies it (node issue #1, ask 4)
+                const p = el("span", "ipc-hprompt", h.prompt);
+                p.title = h.prompt + "\n(click: use this prompt again; Ctrl+click: copy it)";
+                p.style.cursor = "pointer";
+                p.addEventListener("click", (e) => { e.stopPropagation(); this.reusePrompt(h, { copy: e.ctrlKey || e.metaKey }); });
+                text.appendChild(p);
+            }
             item.appendChild(text);
             if (layer) {
                 item.appendChild(miniButton("solo", "Solo: show only this result", () => this.soloResult(h)));
@@ -20502,6 +20515,55 @@ class InpaintEditor {
             }
             list.appendChild(item);
         }
+    }
+
+    /**
+     * A result's prompt (S4; node issue #1, ask 4): back into the prompt field, its @img tokens written for the references
+     * shown now (h.refs says which layer each one named at the click; one that is not shown waits as @img?), Revert
+     * holding the prompt before; `copy`: to the clipboard instead. Refused while an upsample's answer is on its way.
+     */
+    async reusePrompt(h, { copy = false } = {}) {
+        if (!h || !h.prompt) return false;
+        let text = String(h.prompt);
+        // an entry from before 0.1.48 kept no refs: its numbered tokens stay as they are, and the line says to check them
+        const legacy = !(h.refs && typeof h.refs === "object") && parse(text).some((s) => s.type === "token" && s.n != null);
+        if (host.refTokens) {
+            const before = new Map();
+            if (h.refs && typeof h.refs === "object") for (const [k, id] of Object.entries(h.refs)) { const m = /^img(\d+)$/.exec(k); if (m) before.set(id, +m[1]); }
+            // also with no refs: a parked token (@img?<id>) whose layer is shown again gets its number
+            text = remap(text, before, this.refLabels());
+        }
+        if (copy) {
+            try {
+                if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+                else {
+                    // the node opened over plain http on another machine has no clipboard API: the old way
+                    const ta = document.createElement("textarea");
+                    ta.value = text;
+                    ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+                    document.body.appendChild(ta);
+                    ta.select();
+                    const ok = document.execCommand("copy");
+                    ta.remove();
+                    if (!ok) throw new Error("the browser refused it");
+                }
+                this.setStatus(`The prompt of ${h.name} is on the clipboard.`, "info");
+                return true;
+            } catch (err) {
+                this.setStatus(`The prompt could not be copied: ${(err && err.message) || err}`, "error");
+                return false;
+            }
+        }
+        if (this.upsamplePending) { this.setStatus("Wait for the upsampling to finish: its answer would replace the prompt.", "info"); return false; }
+        this.promptBackup = this.promptText;
+        if (this.upRevertBtn) this.upRevertBtn.disabled = false;
+        this.setPromptText(text);
+        this.notifyChanged();
+        const parked = new Set(parse(text).filter((s) => s.type === "token" && s.id != null).map((s) => s.id)).size;
+        this.setStatus(`The prompt of ${h.name} is back in the field; Revert puts the one before back.`
+            + (parked ? ` ${parked} of its reference${parked > 1 ? "s are" : " is"} not shown now: ${parked > 1 ? "their tokens wait" : "its token waits"} as @img? until shown again.` : "")
+            + (legacy ? " It was saved before results kept their references: check that its @img chips name the pictures you mean." : ""), parked || legacy ? "warn" : "info");
+        return true;
     }
 
     drawHistoryThumb(canvas, h) {
@@ -24067,6 +24129,7 @@ class InpaintEditor {
                 ...(l.relightOf ? { relightOf: l.relightOf } : {}),
             })),
             history: this.history.slice(-100).map((h) => ({ key: h.key, name: h.name, ref: h.ref, x: h.x, y: h.y, w: h.w, h: h.h, prompt: h.prompt, layerId: h.layerId, time: h.time, seed: h.seed, mode: h.mode, denoise: h.denoise,
+                ...(h.negative ? { negative: h.negative } : {}), ...(h.refs && typeof h.refs === "object" ? { refs: { ...h.refs } } : {}),
                 ...(orientIsUp(h.orient) ? {} : { orient: { ...h.orient } }), ...(validXf(h.xf) ? { xf: h.xf.slice() } : {}) })),
             selection: this.selectionDataUrl,
             // E5: where the selection's PNG goes when it holds a box of the mask and not all of it ([x, y, w, h])

@@ -11401,6 +11401,84 @@ return out;
     *[(name, (lambda f: lambda c: f(c, PRE))(f)) for name, f in PROMPT_FIELD_STEPS],
     # item 26 step 26c2: the @ picker, the reference bar, the hover card, the swap menu, the chip drag (tools/ref_picker_steps.py)
     *[(name, (lambda f: lambda c: f(c, PRE))(f)) for name, f in REF_PICKER_STEPS],
+    # docs/PLAN_0_1_48.md S4 (node issue #1, ask 4): a result's prompt is the click's (not the field's when it lands),
+    # a click on it in the history puts it back with its tokens written for the references shown now, Revert holds the
+    # one before, a reference not shown parks its token, Ctrl+click copies, an upsample on its way refuses
+    ("a_results_prompt_comes_back", """
+const api = (await import('./editor/host.js')).api;
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 200, height: 120, doc: d.id });
+const mk = async (name, color) => {
+    const l = ed.addLayer({ name, kind: "paint", ref: null, px: ed.pixels.Layer.empty(40, 40), x: 0, y: 0, w: 40, h: 40, dirty: true });
+    l.px.fill([0, 0, 40, 40], color); ed.markLayerChanged(l);
+    await run("set_layer", { layer: l.id, role: "reference", doc: d.id });
+    return l;
+};
+const A = await mk("Ref A", "#ff0000"), B = await mk("Ref B", "#00ff00");
+const lab = ed.refLabels();
+const X = lab.get(A.id) === 2 ? A : B, Y = X === A ? B : A;
+if (lab.get(X.id) !== 2 || lab.get(Y.id) !== 1) throw new Error("labels: " + JSON.stringify(Array.from(lab)));
+const png = async (color) => { const c = new OffscreenCanvas(40, 40); const g = c.getContext("2d"); g.fillStyle = color; g.fillRect(0, 0, 40, 40); return c.convertToBlob({ type: "image/png" }); };
+// the gate runs --offline: the mirror holds the pictures, the server's ensure is stubbed (as the generate gate does)
+const savedEnsure = host.ensureRefs;
+host.ensureRefs = async () => ({ checked: 0, uploaded: [], missing: [] });
+try {
+// the host's record wins over the field's text when the result lands
+const up = await host.uploadInput(await png("#123456"), "s4_result_" + Date.now() + ".png");
+ed.setPromptText("typed while the run went");
+await ed.addResults([{ filename: up.filename, subfolder: up.subfolder, type: up.type, x: 10, y: 10, width: 40, height: 40, prompt: "a hat like @img2", negative: "blurry", refs: { img2: X.id } }]);
+const h = ed.history[ed.history.length - 1];
+if (h.prompt !== "a hat like @img2" || h.negative !== "blurry" || !h.refs || h.refs.img2 !== X.id) throw new Error("the record: " + JSON.stringify({ p: h.prompt, n: h.negative, r: h.refs }));
+// a local run's result: the texts kept for its prompt id merge into the node's answer
+const up2 = await host.uploadInput(await png("#654321"), "s4_local_" + Date.now() + ".png");
+ed._sentTexts = new Map([["s4_pid", { prompt: "the queued prompt", negative: "", refs: null }]]);
+ed.lastPromptId = "s4_pid";
+api.dispatch("executed", { prompt_id: "s4_pid", node: "x", output: { inpaint_result: [{ filename: up2.filename, subfolder: up2.subfolder, type: up2.type, x: 0, y: 0, width: 40, height: 40 }] } });
+for (let i = 0; i < 40 && ed.history.length < 2; i++) await wait(100);
+const hl = ed.history[ed.history.length - 1];
+if (ed.history.length < 2 || hl.prompt !== "the queued prompt") throw new Error("the local result's prompt: " + JSON.stringify(hl && hl.prompt));
+} finally { host.ensureRefs = savedEnsure; ed.lastPromptId = null; ed._sentTexts = null; }
+// hide Y: X is img1 now; the click writes the token for that
+await run("set_layer", { layer: Y.id, visible: false, doc: d.id });
+ed.setPromptText("my own prompt");
+ed.renderHistory();
+const span = () => Array.from(ed.historyList.querySelectorAll(".ipc-hprompt")).find((s) => s.textContent === "a hat like @img2");
+if (!span() || span().style.cursor !== "pointer") throw new Error("the prompt in the history is no click target");
+span().click();
+for (let i = 0; i < 20 && ed.promptText === "my own prompt"; i++) await wait(50);
+if (ed.promptText !== "a hat like @img1" || !/is back in the field/.test(ed.status) || ed.statusKind !== "") throw new Error("the reuse: " + ed.promptText + " / " + ed.status);
+ed.revertPrompt();
+if (ed.promptText !== "my own prompt") throw new Error("Revert gave " + ed.promptText);
+// X hidden too: its token waits
+await run("set_layer", { layer: X.id, visible: false, doc: d.id });
+ed.renderHistory();
+span().click();
+for (let i = 0; i < 20 && ed.promptText === "my own prompt"; i++) await wait(50);
+if (ed.promptText !== "a hat like @img?" + X.id || ed.statusKind !== "warn" || !/not shown now/.test(ed.status)) throw new Error("a hidden reference: " + ed.promptText + " / " + ed.status);
+ed.revertPrompt();
+await run("set_layer", { layer: X.id, visible: true, doc: d.id });
+// Ctrl+click copies, the field stays
+let got = null;
+Object.defineProperty(navigator.clipboard, "writeText", { value: async (t) => { got = t; }, configurable: true, writable: true });
+try {
+    ed.renderHistory();
+    span().dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    for (let i = 0; i < 20 && !/clipboard/.test(ed.status); i++) await wait(50);
+} finally { delete navigator.clipboard.writeText; }
+if (got !== "a hat like @img1" || ed.promptText !== "my own prompt" || !/clipboard/.test(ed.status)) throw new Error("the copy: " + got + " / " + ed.promptText + " / " + ed.status);
+// an upsample on its way refuses
+ed.upsamplePending = { useCase: "test" };
+try { ed.renderHistory(); span().click(); await wait(100); } finally { ed.upsamplePending = null; }
+if (ed.promptText !== "my own prompt" || !/Wait for the upsampling/.test(ed.status)) throw new Error("the refusal while upsampling: " + ed.promptText + " / " + ed.status);
+// saved with the document
+const v = JSON.parse(ed.getValue());
+const saved = v.history.find((e) => e.prompt === "a hat like @img2");
+if (!saved || saved.negative !== "blurry" || !saved.refs || saved.refs.img2 !== X.id) throw new Error("getValue: " + JSON.stringify(saved));
+await run("close_document", { doc: d.id, force: true });
+return { reuse: "a hat like @img1", parked: true, copy: got, saved: !!saved };
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

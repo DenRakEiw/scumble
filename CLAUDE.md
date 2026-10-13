@@ -79,7 +79,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-13: 0.1.47 released and in the Store; 0.1.48 being built, S1 to S3 done)
+## Where things stand (2026-10-13: 0.1.47 released and in the Store; 0.1.48 being built, S1 to S4 done)
 
 - **The open items, collected 2026-10-13** (a workflow of 11 agents over BUGS.md, the plans, the list, the outward
   threads and GitHub, each doubtful status checked in the code): `docs/OPEN_2026-10-13.md`, a dated snapshot (not
@@ -106,8 +106,11 @@ code.
   hiding the import in `host.js`) and the rest fixed; 14 gates green on tiles). **S3 done 2026-10-13** (the user's
   answer: both bars stay; "S3 as built": `renderer/editor/inpaint_progress.js`, the bar beside the status line, the
   host's tracking and event routing, the BUGS.md routing fix; a review workflow's 14 findings fixed; 9 gates green).
-  **Next: S4** (a prompt from the result history; no open question). The node side of the bar (its own
-  `js/inpaint_node.js` wrapper) is not built: the bar's DOM ships in the node build and stays hidden there.
+  The node side of the bar (its own `js/inpaint_node.js` wrapper) is not built: the bar's DOM ships in the node build
+  and stays hidden there. **S4 done 2026-10-13** ("S4 as built": a result keeps the click's prompt, negative, refs and
+  seed; a click on the prompt in the history puts it back, Ctrl+click copies; a review workflow's 8 findings fixed).
+  **Next: S5** (the size checks); say the behaviour first and ask the user (plan S5: an answer that arrives too large
+  after it was paid for is refused, "nothing was changed", rather than scaled down).
 - **Done 2026-10-13 on the user's word:** the awesome-alternative-uis-for-comfyui entry (PR #120) moved to the bottom
   of Category 4 as the reviewer asked (the fork's `add-scumble` rebuilt on upstream `babe4fd` and force-pushed; no
   reply comment posted). Video 4 is on YouTube (the user). CLAUDE.md brought up to date with the code.
