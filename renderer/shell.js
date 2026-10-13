@@ -18,7 +18,7 @@ import { remap, compare, checkNote, normalize as normalizeTokens, referencesText
 import * as realism from "./editor/realism.js";
 import * as comfyprompt from "./editor/comfyprompt.js";
 import * as genpresets from "./editor/genpresets.js";
-import { getSecretGreeting, getScumbleWord, runBrainfuck } from "./easteregg.js";
+import { getSecretGreeting, getScumbleWord, getScumbleLogo, runBrainfuck } from "./easteregg.js";
 
 // the editor's style, in the app's cascade layer (docs/SKINS.md): created here before the first editor, so the
 // editor's own injectStyle() finds it and adds nothing; a skin's rules then beat it as they beat shell.css
@@ -66,8 +66,11 @@ try {
         /** @type {any} */ (window).scumbleGreeting = getSecretGreeting;
         /** @type {any} */ (window).scumbleWord = getScumbleWord;
         /** @type {any} */ (window).runBrainfuck = runBrainfuck;
+        /** @type {any} */ (window).scumbleLogo = getScumbleLogo;
     }
-    console.log(`%c${greeting}`, "color: #e28743; font-weight: bold; font-family: monospace;");
+    const style = "color: #e28743; font-weight: bold; font-family: monospace;";
+    getScumbleLogo().then((logo) => console.log(`%c${logo}%c${greeting}`, "color: #c4663b; font-family: monospace; line-height: 1.15;", style),
+        () => console.log(`%c${greeting}`, style));
 } catch (_) { /* ignore */ }
 
 const ui = {

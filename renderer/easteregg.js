@@ -76,3 +76,23 @@ export function getSecretGreeting() {
 export function getScumbleWord() {
     return runBrainfuck(BF_SCUMBLE);
 }
+
+/** The mascot and wordmark as a Brainfuck program (built by tools/bf_logo.py). */
+export const LOGO_URL = new URL("./easteregg/logo.bf", import.meta.url);
+
+/** @type {Promise<string> | null} */
+let logo = null;
+
+/**
+ * Fetches logo.bf and returns what it prints: the Scumble mascot and wordmark in ASCII.
+ * @returns {Promise<string>}
+ */
+export function getScumbleLogo() {
+    if (!logo) {
+        logo = fetch(LOGO_URL)
+            .then((r) => { if (!r.ok) throw new Error("logo.bf: " + r.status); return r.text(); })
+            .then((code) => runBrainfuck(code));
+        logo.catch(() => { logo = null; });
+    }
+    return logo;
+}

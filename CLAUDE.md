@@ -428,6 +428,15 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   (`renderer/editor/inpaint_canvas.js`, 446 calls) has no kind, so an error looks like any other line: a kind
   (`setStatus(text, { error: true })` or a small `setError`) at the error sites, the line red, a short blink (a few
   pulses, then steady red until the next line; none under `prefers-reduced-motion`), in every skin. Nothing built.
+- 46: **the ASCII logo in Brainfuck** (the user, 2026-10-13: GitHub's language bar showed no Brainfuck although the
+  easter egg of 4cc2f76 is in the code, "baue das mit dem asci logo im nächsten update"). Linguist counts by file
+  extension and leaves out languages below about 0.1 % of the repository (the Dockerfile, 0.01 %, is not shown), so
+  the two programs as strings in `renderer/easteregg.js` count as JavaScript. **Built 2026-10-13 for 0.1.48:**
+  `renderer/easteregg/logo.bf` (20.5 KB, 0.17 % of 12 MB; the plain one-cell style on purpose, a multi-cell compiler
+  writes 5 KB) prints the mascot from `build/icon.png` and a block-letter wordmark; built by `python tools/bf_logo.py`
+  (`--check`, `--show`); `.gitattributes` `*.bf linguist-language=Brainfuck` (`.bf` is shared with other languages);
+  the window prints it to the DevTools console at start (`getScumbleLogo`, `window.scumbleLogo()`); `easteregg_test.js`
+  checks it. Whether GitHub shows it is seen only after a push (Linguist runs on the default branch).
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.

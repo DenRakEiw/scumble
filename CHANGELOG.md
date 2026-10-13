@@ -2,6 +2,10 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
+## Unreleased
+
+- **A greeting in the developer tools.** Open *View > Toggle Developer Tools* and the console shows the Scumble mascot and its name in ASCII, printed at every start by a small Brainfuck program (`renderer/easteregg/logo.bf`).
+
 ## 0.1.47 - 2026-10-13
 
 - **Relight.** A filter layer that lights the picture anew from its depth map: up to four lights, each a point light, a spotlight (a cone with a soft rim, aimed by a second handle) or the sun, with a colour temperature (seven Kelvin presets) or a colour of your own, an intensity, a softness and how close to the camera it sits. The lights cast soft shadows over the scene, and a strong light rolls bright areas off softly into white instead of clipping them flat. *Original light* fades the picture's own lighting (its direction, estimated from the picture, shows as a grey ring), *Ambient* keeps the deepest shadows readable, *Depth* sets how deep the scene is and *Shadows* how dark its shadows fall. If the document has no depth map yet, one is made first. *Layer > New Relight Layer*.
