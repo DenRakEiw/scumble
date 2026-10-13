@@ -91,9 +91,9 @@ code.
   (4) a whole-picture upscale refused against the document ceiling *before* it is paid for, and Resize / Extend
   checking the target size (both in `docs/BUGS.md` "Size limits"); (5) riding along: item 46 (`7d735b2`) and the
   Help fix on the branch `claude/vigorous-nobel-c9571c` (`bddbf74`, `*em*` in the manual as italics; never merged,
-  conflicts only in `CHANGELOG.md` and `tools/manual_test.js`). About five sessions, normal test tier. **Open for the
-  user:** the progress shown as a thin bar or as a step count; whether the node gets 0.3.5 (64 commits past 0.3.4);
-  the replies to node issues #1 and #2 (drafts on request).
+  conflicts only in `CHANGELOG.md` and `tools/manual_test.js`). About five sessions, normal test tier. **The user's
+  answers (2026-10-13):** the progress as a thin bar in the status row; no node 0.3.5 yet (the node stays 64 commits
+  past 0.3.4 on the registry). Open: the replies to node issues #1 and #2 (drafts on request).
 - **Done 2026-10-13 on the user's word:** the awesome-alternative-uis-for-comfyui entry (PR #120) moved to the bottom
   of Category 4 as the reviewer asked (the fork's `add-scumble` rebuilt on upstream `babe4fd` and force-pushed; no
   reply comment posted). Video 4 is on YouTube (the user). CLAUDE.md brought up to date with the code.
@@ -107,9 +107,10 @@ code.
   scene renders and frames, stems, the Resolve copies `v4/resolve_r2`, check frames, the recording profile's mirror,
   part four's first-pass Resolve render; sorted by a workflow of eight agents, every move checked by a second one).
   **Kept in `dist/video`:** every master, web copy, poster, thumbnail, SRT, chapters and timeline of parts one to four,
-  part three's Discord and X cuts and the cursed cut, `show_poster.png`, the final takes `v4/takes/n6b.scumble` and
-  `close2.scumble`, the paid 4x upscale `v2/big/scene_4x.jpg`, the big-cat master and web copy, the LinkedIn copies of
-  part one, `fun/`, and **all of `dist/video/trailer`** (until the challenge entry is in). A re-cut or a Resolve rebuild
+  part three's Discord and X cuts and the cursed cut, `show_poster.png`, the paid 4x upscale `v2/big/scene_4x.jpg`,
+  `fun/`, and **all of `dist/video/trailer`** (until the challenge entry is in). Moved on the user's second word the
+  same day: the final takes `v4/takes/n6b.scumble` / `close2.scumble`, the whole rejected big-cat pass `v3_bigcat`
+  (master, web copy, posters) and part one's two LinkedIn copies (68 GiB in the holding folder in all). A re-cut or a Resolve rebuild
   of parts one to four is no longer possible from `dist/video` (their scene clips and stems went; the Resolve
   timelines show them offline). Worktrees: all five stale ones removed (`hopeful-yonath`'s obsolete BUGS.md diff and
   `bisect`'s gate logs copied to the holding folder first; the merged `mcpb` worktree took its ignored `dist/` of
