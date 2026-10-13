@@ -11,208 +11,7 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
-### Release 3 bug fixes and speed confirmations (2026-10-10)
-
-- **BUGS:152: Film look "None (adjustments only)" still ran grain stage if stock had no grain**: In `plugins/film/filters.js`, `const g = stock ? stock.grain : null; if (g && gp > 0)` and `grainStage = (src, g, info) => (g && g.amount > 0 ...)` ensure that selecting "None" or any look without grain runs with zero grain on both CPU and GPU paths without unnecessary grain passes. Verified in `film` gate step `look_commands` (`noneGrain: {"cpu": 0, "gpu": 0}`).
-- **Escape routing to plugin tools and boxes tool**: Pressing Escape while a plugin tool or the boxes tool has an active element (such as an active point in `film.points` or active box in `boxes`) properly deselects the element or cancels drawing rather than bubbling up or being swallowed. Verified in `film_test.py` and `boxes_test.py`.
-- **15k glass speed confirmed (no :336 slowdown)**: Full 15000 x 10000 export benchmarks with glass displacement confirmed no tile stalling or performance regressions: `effects.glass` defaults completed in 1575 ms (112 ms main-thread blocked), frosted glass with blur (amount 10, frost 4) completed in 1512 ms (149 ms blocked), well within the multi-threaded tile pipeline budget and far faster than full film look (4606 ms).
-
-### Generate new on WaveSpeed without references went to model ids that answer 404 - fixed for 0.1.44 (2026-10-08, not run live)
-
-Found 2026-10-07 while building Nano Banana 2.1's WaveSpeed variant. A WaveSpeed variant without `text.model` sent a
-new image to its edit id with `/edit` cut off (`textModelOf`, `electron/main/recipes.js`); those pages answer 404 and
-the `/text-to-image` ones 200. The ten variants (flux2_flex, flux2_klein, flux2_max, flux2_pro, gpt_image_2,
-gpt_image_2_5_flare, gpt_image_2_5_sunburst, nano_banana_2, nano_banana_2_lite, nano_banana_pro) now name
-`text.model` `<id>/text-to-image`, as FLUX 3 and Nano Banana 2.1 do; references still go to `/edit`. `textModelOf`
-is unchanged (Seedream and Ideogram use the bare id, which answers 200). Test: `node tools/wavespeed_text_test.js`
-(every shipped WaveSpeed variant's normalised text route; it fails with one variant's fix reverted). **Still open:**
-the text pages' fields (aspect, resolution) were not compared against each edit variant's Settings rows, and Reve's
-`reve/2.1/text-to-image` page answers 404 while a search names that id; one Generate new with a key settles both.
-
-### Generate new left the boxes behind when the model answered at another size - fixed for 0.1.43 (B6 of docs/PLAN_0_1_43.md, 2026-10-07)
-
-Found in the video 3 test runs (a 4096 x 2304 canvas, FLUX 3's 4k tier answered 5456 x 3072, the boxes kept their old
-pixel rects). `host.runGenerate` keeps the document's size before the run and, when the answer lands at another size,
-emits a geometry event (kind "resize", the scale of both sides) through `host.changed`, so every plugin that keeps
-image coordinates follows (the boxes, the film points, 3D objects). Generate new clears the undo history, so there is
-no step to share. Test: `commands` step `boxes_follow_generate_new` (the loopback's new `answer_scale` answers 1.5x:
-two boxes scaled; an answer of the same size moves nothing). It fails on the old code.
-
-### The ComfyUI window: tab name, "Unsaved Workflow (2)", one column; the install messages - fixed for 0.1.43 (B4 of docs/PLAN_0_1_43.md, 2026-10-07)
-
-- **The tab name dropped everything before a "/"** ("Flux.2 Klein 4B / 9B (ComfyUI)" showed as "9B (ComfyUI)"): the
-  frontend reads the name as a workflow path (`loadApiJson(apiData, fileName)`, `loadGraphData(graph, clean,
-  restore_view, workflow)`, read in the installed `comfyui_frontend_package`). A slash or backslash goes as U+2215,
-  which looks the same.
-- **A recipe with a saved UI graph opened as "Unsaved Workflow (2)"**: `loadGraphData` now gets the recipe's name as
-  its fourth argument.
-- **An API recipe lay in one column**: after `loadApiJson` the window lays the nodes out by depth (columns by the
-  longest path from a source, rows in id order); the canvas node's `result*` inputs do not count (a recipe's graph is
-  a loop through them), any other loop is cut where a walk in id order meets it. A layout error leaves the page's own
-  layout and still counts as loaded. Checked on the stub's LiteGraph-shaped graph (the shipped Klein recipe: 11
-  columns, no input left of its source) and in Node; **not yet looked at in a real ComfyUI page** (the user's server
-  is a production machine).
-- **The two install messages** (`renderer/shell.js`, `renderer/editor/host.js`) said "Manager or git clone": now the
-  `git clone` line of README and MANUAL.
-- Test: the `comfyview` gate (25/25): V2 checks the name and the layout, V3 reopens the saved recipe through
-  `loadGraphData` with its name.
-
-### The Film looks panel: one column, thumbnails over the active look - fixed for 0.1.43 (B3 of docs/PLAN_0_1_43.md, 2026-10-07)
-
-- **One column of 46**: `.film-grid` shrank inside a section that centres its items; it takes the section's width now
-  (`width: 100%`, `align-self: stretch`): two columns in the 305 px section (three need 300 px of grid). No skin
-  overrides the rule.
-- **Thumbnails over the active look**: with a film look layer active (where a click replaces its stock) the panel
-  flattens `below` that layer, so each thumbnail shows the stock over the picture under it; otherwise as before (the
-  look on top of everything, where a click adds one). A click in the layer list or a key changes the active layer
-  without a "changed" event: the panel looks again after `click` / `pointerup` / `keyup` on the editor's root (deferred,
-  since the capture phase runs before the row's handler), and renders only when the active look changed.
-- Test: `film` gate step `panel_over_the_active_look` (look active: coloured; base active: grey; a click on the look's
-  row: coloured again; at least two columns). It fails on the old code. Tiles backend.
-
-### The assistant's privacy notice and a dead OpenRouter key - fixed for 0.1.43 (B2 of docs/PLAN_0_1_43.md, 2026-10-07)
-
-- **The privacy notice never cleared**: nothing in `renderer/` called `assistant:noticed`. The panel's `send()` now
-  calls it for the provider whose notice it showed, once the send went out, and reads the state again; the notice
-  leaves the head as `docs/ASSISTANT.md` says. Test: `assistant` gate step
-  `the_privacy_notice_clears_after_the_first_send` (fails on the old panel).
-- **A dead OpenRouter key showed as raw JSON** (`HTTP 401: {"error":{"message":"User not found."...}}`): OpenRouter's
-  dialect has a 401 line, "OpenRouter does not know this key: check it under Settings › API providers". No key check on
-  save: the key rows have no validation request today, and one more request per save was not worth a new path. Test:
-  `tools/assistant_test.js` `an_openrouter_401_names_the_key`.
-
-### `cutout_layer` after an in-app cutout; filter params as a JSON string - fixed for 0.1.43 (B1 of docs/PLAN_0_1_43.md, 2026-10-07)
-
-- **`cutout_layer` answered a failure after a successful in-app cutout** (seen 2026-10-07 by the trailer's setup agent:
-  `ok: false` with the success text as its error). The in-app path finishes inside `cutoutLayer`, so the command's
-  "nothing pending" check took success for "never started". `cutoutLayer` now answers `"started"` (a ComfyUI run that
-  `applyCutoutFile` finishes), `"done"` (the in-app mask applied) or `false` (nothing started or the in-app run failed,
-  the status says why); the command throws only on `false` and waits only on `"started"`.
-- **Filter params sent as a JSON string were refused** (Claude Sonnet 5 through OpenRouter sent
-  `"{\"color\": \"#ff2d2d\"}"` and retried until the assistant's step cap). `checkParams` parses a string that holds
-  a JSON object; any other string is refused as before. The MCP schema declares `params` as an object already.
-- Test: `commands` step `cutout_and_string_params` (a stub in-app model: done, failing, none; `add_filter` /
-  `set_filter` with string params, three refused strings, nothing added). It fails on the old code with the reported
-  symptom. Tiles backend.
-
-### The six the user picked for 0.1.42 - fixed for 0.1.42 (F1 of docs/PLAN_0_1_42.md, 2026-10-05)
-
-**Picked** 2026-10-04 ("alle sechs"). Five were found by reading while planning the in-app assistant (2026-09-19), the
-film look's grain by the gap review of 2026-09-26; none had been reported or run.
-
-- **`flip_layer` axis x flipped vertically.** The command passed `"x"` / `"y"`, and `flipLayer` mirrors horizontally
-  only for `"h"`. Now x is `"h"` (left to right), y `"v"` (top to bottom), and the description says so; an agent that
-  compensated gets the other flip (the CHANGELOG says so). Test: `commands` step `layer_flip_and_refusals` (a probe
-  layer's bytes against its mirror by x, by y, by the default axis; the three undo steps' labels).
-- **`remove_layer` reported success on a locked layer**, and `flip_layer` / `center_layer` were silent no-ops on a
-  locked or a filter layer. The commands refuse before the editor is called (`refuseLayer` in `renderer/commands.js`):
-  "layer <name> is locked: unlock it first (set_layer locked false)", "... locked by its group: unlock the group first
-  (set_group locked false)", "layer <name> is a filter layer: it cannot be flipped / centred". The ailabel and glb
-  plugins get the refusal as an error (ailabel's Add no longer adds a second label beside a locked one). Test: the
-  same step (each command on a locked layer, a group's lock, a filter layer; nothing changes).
-- **The compat key went to any URL `llm:models` was given.** `compatModels` sends the key only when the URL makes the
-  same base (`compatBase`) as the saved `settings.llm.compat.url`; any other URL, or any URL without a saved one, is
-  asked without it. The Test button saves the URL before it asks. Test: `tools/llm_images_test.js` section 9 (plain
-  Node, a stub fetch; the `llm` gate runs it).
-- **Ctrl+Enter started a second provider run while one was running.** `generate()` (shared with the node) refuses a
-  run that needs the document's slot (the app host's `resultInputState` now says `provider: true` for a provider
-  recipe) while `providerPending` is set, before the seed is rolled or the button is freed under the first run: "A run
-  is still going: wait for it, or Cancel." A recipe on the user's ComfyUI takes no slot and keeps queueing, also while
-  a pass or an upscale holds it; the node's host says no `provider` and has no slot. (Since R2a `runProvider` itself
-  refused a second run, but only after `generate()` had rolled the seed and re-enabled the button.) Test: `editor` step
-  `ctrl_enter_waits_for_the_api_run` (a stub run that never answers; the editor's keys and the prompt field; the
-  ComfyUI recipe queueing while the slot is held; the API recipe again after the run).
-- **The film look "None (adjustments only)" added grain** (`plugins/film/filters.js` fell back to `amount: 25`
-  without a stock): the fallback is `amount: 0`. Test: the `film` gate's `look_commands` step (None's Grain slider at
-  0, default and 200 % gives the same bytes on the CPU and the GPU path).
-- **The MCP annotations were incomplete.** The command definitions carry `readOnly` / `destructive`
-  (`renderer/commands.js`, the plugins through `commands.register`), `describe()` hands them on (null for a plugin
-  command that sets none) and `electron/main/mcp/server.js` reads them; a plugin command without flags is judged by
-  its name after the plugin id (read-only for `list...`, `get_...`, `info`, `status`; never destructive). The plan's
-  names plus `save_document`, `delete_snapshot`, `straighten_canvas` and `ailabel.remove` (destructive) and
-  `boxes.list` (read-only), which the 2026-09-19 reading predates or missed. Test: `mcp_test.py`'s tool list checks the
-  hints by name and the fallback through `toTool`; `docs/MCP.md` "Hints", `docs/COMMANDS.md` shows them.
-
-### A headless MCP instance of the dev tree took the user's profile - fixed for 0.1.36
-
-**Reported** 2026-09-16 ("wieso kann ich die app nicht starten?"), during a Claude Code session in `F:\canvas`.
-
-**Seen:** starting Scumble showed no window at all. Two processes were running, both started by that session's MCP
-registration (`.mcp.json`: `electron.exe electron/main/mcp/launch.js --mcp`, i.e. the dev app from `F:\canvas`):
-the launcher and `electron.exe F:\canvas --mcp`. No Scumble was running when the session began, so the MCP server had
-started the app **headless** (`AgentBackend` in `electron/main/main.js`), on the default profile `%APPDATA%\Scumble`.
-It held that profile's single-instance lock since the start of the session. After both were stopped, the packaged app
-started normally.
-
-**Known:** both instances use the same `userData`, so a second start is meant to hand over to the running one:
-`app.on("second-instance", () => showWindow())` (`main.js` 573 for the headless agent path, 626 for the normal start),
-and `showWindow()` creates the window or restores a hidden one. `docs/MCP.md` and CLAUDE.md say "a second start of
-Scumble shows it". Here nothing appeared.
-
-**Not known, to measure first:**
-- Which binary the user started (the installed 0.1.14 in `%LOCALAPPDATA%\Programs`, or `dist\win-unpacked\Scumble.exe`),
-  and whether a second start of the **same** build as the headless one shows the window (dev headless + dev start,
-  exe headless + exe start). A dev and a packaged Electron may not share the lock or the hand-over.
-- Whether `second-instance` fires in the headless instance at all (log it), and whether `showWindow()` then creates a
-  window that stays hidden or off screen.
-- Whether the headless instance's renderer was ready (`bridge` ready) when the second start arrived.
-
-**Measured 2026-10-01 (0.1.35 code, a scratch profile, port 9571):** the dev launcher with `--mcp` and stdin held open
-starts the app headless (no window in the process list); a second start on the same profile exits in 0.2 to 0.3 s and
-the headless instance's window comes up ("Scumble - 1 agent connected"), both with the dev app (`electron.exe F:\canvas`)
-and with the packaged `dist/win-unpacked/Scumble.exe` as the second start. The dev app's `productName` gives it the
-installed app's `%APPDATA%\Scumble`, so the two share the lock. The hand-over works; "no window at all" did not come
-back (the default profile itself was not tried: the user's app was running on it). `showWindow`'s `restore()` is in
-since 0.1.0. What stays (`docs/HISTORY.md`, 0.1.28): a Start-menu Scumble hands over to the **dev tree** on the
-user's own profile, so the user sees the dev window (its version, no updater) and dev code writes their autosave.
-
-**Workaround:** start Scumble before Claude Code, so the MCP server drives the visible window; or stop the leftover
-`electron.exe ... --mcp` processes. A fix belongs in the hand-over (the running headless instance shows its window on a
-second start of any build), with a gate step in `tools/mcp_test.py`: start headless through the launcher, start the
-app a second time, assert a visible window within a few seconds.
-
-**Fixed** 2026-10-01 on the user's pick ("nur verbinden"): `--attach-only` (with `--mcp` / `--cmd`) drives a running
-instance and never starts one; the repo's `.mcp.json` passes it. With no Scumble running the server lists `ping` alone
-and answers "Scumble is not running"; the first call that reaches a started Scumble sends `tools/list_changed`.
-`tools/mcp_attach_test.py` (in the `mcp` gate, a profile of its own, port 9573): ping alone and no renderer on the
-profile, the attach (proxy mode, 89 tools, one list_changed), the instance closed and still nothing started. Without the
-switch the server keeps its old behaviour (installed registrations, `Help > Copy MCP registration`).
-
-### Switching between the local recipes kept the other recipe's model files - fixed for 0.1.36
-
-**Found** by the review of item 26 step 26e (read, and reproduced in a plain-Node copy of the three functions; not run in
-the app, not queued): Qwen Image Edit 2.1 and FLUX.2 Klein (both local) name their loaders `unet`, `clip` and `vae`
-(settings rows 1-3). `host.settingTargets`' local branch sets the target's `node.id` to the bare node name, and
-`settingsChanged` (`inpaint_canvas.js`) keeps a stored value while `${node.id}:${inputName}` stays the same, so after Qwen
-then Klein the Klein chain is queued with `unet_name = qwen_image_2.1_int8_convrot.safetensors`, Qwen's text encoder
-(with `CLIPLoader` type `flux2`) and Qwen's VAE; the other way round too. The combo fallback only changes a value missing
-from the server's list, and both families' files can be installed. Older than 26e (the rows are the same before it). The
-provider branch of `settingTargets` already has the fix for the same collision (the recipe id in the node id). Fix: a
-target key with the recipe id (`${r.id}/${node}:${input}`) for the local rows, compared and stored by `settingsChanged`
-(the node's editor has no such key and keeps its behaviour); a document saved before the fix then resets these rows once
-to the recipe's defaults. Test: the recipes gate's 26e step queues Qwen then Klein; assert Klein's own `unet_name`,
-`clip_name`, `vae_name`, and the reverse.
-
-**Fixed** 2026-10-01: the local rows of `host.settingTargets` carry `key: ${r.id}/${node}:${input}`, and
-`settingsChanged` stores and compares `t.key` when there is one (the node's graph targets have none and keep
-`${node.id}:${input}`). `node.id` stays the bare node name, so saved presets (`recipePresets`, keyed by it) still match.
-The recipes gate's 26e step queues Qwen, Klein, Qwen, Klein and asserts every settings row of each run is its own
-recipe's default; without the key it fails on Klein with Qwen's three files. Tiles, offline; not queued on a server.
-
-### Generate new on Gemini direct ignored the asked aspect while the Aspect row said "auto" - fixed for 0.1.36
-
-**Found** by the adapter review of item 26 step 26f (read, not run live): `gemini.js` sets `imageConfig.aspectRatio =
-req.aspect` on a text run only when the params hold no `aspect_ratio`, and the variants' Aspect row defaults to "auto",
-which the later line skips; so a Generate new without reference layers sends no aspect at all and the model answers in its
-own shape, whatever the dialog asked (16:9 comes back square). With reference layers 26f already sends the asked aspect
-(or the closest of Gemini's ratios for a free size). Fix: treat "auto" like no row on a text run (`!p.aspect_ratio ||
-p.aspect_ratio === "auto"`); it changes the 0-reference request, so `tools/refs_layout_test.js`'s byte-for-byte check of
-Gemini's text body moves with it. The Router's vertexai dialect had the same gap with references and was fixed in 26f.
-
-**Fixed** 2026-10-01: the line reads `(!p.aspect_ratio || p.aspect_ratio === "auto")`. `refs_layout_test.js` lets the
-before-26f comparison take Gemini's new `aspectRatio` and checks each Gemini text variant at "auto" (16:9 goes) and at
-3:2 (3:2 goes); the three checks fail on the old adapter. The Size row's "auto" stays the model's own size (Lite offers
-only auto and 1K). Not run live.
+Nothing waiting.
 
 ---
 
@@ -226,7 +25,7 @@ recipe with task relight. Since F3 it no longer replaces the recipe in use (`sel
 routes look up only the ids `relight` and `relight_qwen_local` (`renderer/editor/host.js` relightWhole), so the new
 one is never used: its row has no Use button and no provider select, and nothing says so. Before F3 too. Open: refuse
 such an import / save, or say in the note that the Relight panel uses only the shipped ids and that *Save to recipe*
-overwrites them, or let a relight layer pick its recipe. Not released (relight is not in 0.1.46).
+overwrites them, or let a relight layer pick its recipe. Released with relight in 0.1.47 (2026-10-13), not fixed.
 
 ### Size limits: gaps found reading the code (2026-10-07, read, not run)
 
@@ -249,38 +48,28 @@ the tile backend (`inpaint_canvas.js` `checkBaseSize`, refusals tested in `edito
   section limit that the banded writer checks (`inpaint_bands.js` near 289).
 - **Files above 2 GiB fail to open from the dialog or a path** (`fsp.readFile` in `electron/main/main.js` near 760);
   drag and drop is not affected. Not documented.
-- `docs/PERFORMANCE.md` (near 147) still says about 8 GB of pixels per renderer; 15.5 GB was measured later (§14).
 - The `huge` gate (30k) last ran on 0.1.20 (2026-09-19); 0.1.21-0.1.42 were never checked at 30k, and nothing between
   600 MP and 1 GiP was ever opened.
 **To do first:** run `huge:30000x20000` on the current exe; then one check per item above (each refusal before any
 paid run or any canvas is made), and the manual's Upscale sentence corrected or made true.
 
-### The node cannot be installed through the Manager: every registry version is flagged (found 2026-10-07, read)
+### Generate new on WaveSpeed: the text pages' fields not compared, Reve's text page answers 404 (found 2026-10-08, read)
 
-Found by the promotion research (read-only, `https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions?include_status_reason=true`):
-every version of ComfyUI-InpaintCanvas on the Comfy Registry is `NodeVersionStatusFlagged`. 0.2.0-0.3.1 carry the
-manual verdict "policy-v0.4: PATH_TRAVERSAL", 0.3.2 and 0.3.3 "policy-v0.5: path-traversal" (all by the same Comfy
-reviewer; 0.3.3's verdict read again 2026-10-07 afternoon). The scanner's six info-level findings are all in
-`DEVELOPMENT.md`, `docs/shots.py` and `mcp/inpaint_canvas_mcp.py`, none in `nodes.py`. With no active version the Manager has nothing
-to install (registry downloads: 3), and the node is missing from ComfyUI-Manager's `custom-node-list.json` and
-`extension-node-map.json` too. So the local route of Scumble fails for anyone without a git clone.
-**Known (read, not verified against the reviewer):** the node's `_ref_path` (`nodes.py` near 64-77) checks
-`commonpath` on `abspath`, not `realpath` (a symlink or junction inside the input folder can lead out), and the routes
-`/inpaint_canvas/upload` and `/cleanup` take no authentication (`/command` answers loopback only). An earlier pack was accepted into the
-Manager list after a realpath + commonpath fix (DenRakEiw_Nodes, 2026-09-23).
-**Also:** `README.md` (near 124) and `docs/MANUAL.md` (near 55) say Scumble "offers to install it through the ComfyUI
-Manager"; the code only prints "install ComfyUI-InpaintCanvas there (Manager or git clone)" (`renderer/shell.js` near
-359, `renderer/editor/host.js` near 951). The node's `pyproject.toml` description still opens with another product's
-name (changes with the next node publish).
-**To do first:** ask the reviewer which path they mean (the registry issue), fix the path checks with realpath, decide
-on the routes, publish a node version, then a PR to the Manager list; correct README and manual now.
-**Texts corrected 2026-10-07 (local, not pushed):** README "What you need to render" and MANUAL "Where it renders"
-now say Scumble only reports a missing pack and give the `cd ComfyUI/custom_nodes` + `git clone` lines (the Manager
-once the pack is listed again), `CLAUDE.md`'s decision line too; the app's two messages said "Manager or git clone" until B4 of `docs/PLAN_0_1_43.md` (2026-10-07: now the `git clone` line, fixed for 0.1.43).
-**Node 0.3.4 prepared 2026-10-07 (local, not pushed):** the branch `registry-0.3.4` in the worktree `dist/node_wt`
-(realpath + commonpath for every client-given path, safe file-name tokens in Mask Out / Object Map / Stitch, a
-`.comfyignore` that keeps `docs/`, `mcp/`, `tests/`, `DEVELOPMENT.md` out of the package, the description without the
-comparison, 23 path tests); the push, the registry note and the Manager PR in `dist/node_release/`, all on the user's word.
+Left over from the fix released in 0.1.44 (ten WaveSpeed variants name `text.model` `<id>/text-to-image`;
+`node tools/wavespeed_text_test.js`). The text pages' fields (aspect, resolution) were not compared against each edit
+variant's Settings rows, and WaveSpeed's model page for Reve's `reve/2.1/text-to-image` (the id `recipes/reve.json` sends for Generate new) answered 404 while a search names
+that id. One Generate new with a key settles both.
+
+### The node is not in ComfyUI-Manager's own list; node 0.3.4 is the registry's first active version (2026-10-07; found 2026-10-07, read)
+
+Every Comfy Registry version up to 0.3.3 is flagged for path traversal. Node 0.3.4 (realpath + commonpath for every
+client-given path; published 2026-10-07) is `NodeVersionStatusActive`, "Passed automated checks" (read 2026-10-13 at
+`https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions`), so the registry has a version to install. **Still open
+(read 2026-10-13):** ComfyUI-InpaintCanvas is in neither `custom-node-list.json` nor `extension-node-map.json` of
+Comfy-Org/ComfyUI-Manager, and no PR for it was opened there (the draft is `dist/node_release/MANAGER_PR.md`, on the
+user's word). `README.md` (near 153) and `docs/MANUAL.md` (near 56) still say the Manager does not list the pack; not
+checked in a Manager whether its registry search finds 0.3.4. The node's `/inpaint_canvas/upload` and `/cleanup` routes
+still take no authentication (`/command` answers loopback only); nothing decided.
 
 ### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07; the cutout part fixed for 0.1.43, B5)
 
@@ -407,7 +196,7 @@ carry is laid down and picked up per dab), so a pen's smudge would change: the u
 **Written** 2026-09-26 when `docs/DOCUMENTS.md` was written from the code (package 3b). The other findings of that
 review are fixed (reserved Windows names, refs the document does not carry, `extra` in the ref walkers and the renames,
 the temp registry after the rename, `summary.name`); these touch the shared editor code and wait (the user font renamed
-on open is fixed for 0.1.32, above):
+on open is fixed in 0.1.32):
 
 - **A layer of an unknown kind without a `ref` is dropped on open without a note** (`inpaint_canvas.js` `setValue`,
   `if (!l.ref) continue;`); the plan wanted a note. Only a document from a newer Scumble can hold one.
@@ -475,7 +264,7 @@ items (`docs/RECIPES.md` "Reference images named in the prompt (local)"); the no
   every later reference moves up one place. Still open after 26e, where it would make a local run's names point one
   picture off. Since 26e the app sends `named_refs: true` in `canvas_state` when the prompt named a reference; the
   next node release should raise instead of print at `nodes.py:684-685` when it is set.
-- (The reference list's up / down: fixed by step 26b1, above under "Fixed".)
+- (The reference list's up / down: fixed by step 26b1, released in 0.1.34.)
 
 ### Found while planning item 26 (2026-09-29, read, not run)
 
@@ -527,9 +316,8 @@ start, no helper, no update. What is known to need a look on a real Linux deskto
 - **The whole-picture wand on a document above the canvas limit works for 4.6 s and then refuses** ("larger than any
   canvas", 30000 × 20000, `native_test.py 30000x20000 wand_whole_picture`). Why it gets
   that far before it refuses is not read yet. Either it says so at once, or it floods over tiles.
-- (The renderer's 15.5 GB of typed arrays: fixed for 0.1.32, "Fixed, waiting for its release" above.)
-- (The provider crop's block and the opening of a large JPEG, WebP or profiled PNG are fixed: "Fixed, waiting for its
-  release" above.)
+- (The renderer's 15.5 GB of typed arrays: fixed in 0.1.32.)
+- (The provider crop's block and the opening of a large JPEG, WebP or profiled PNG: fixed in 0.1.20.)
 
 ### What phase E left open on large documents
 
@@ -567,8 +355,8 @@ measured and not met, and what still needs a canvas of the picture. Each has a n
   So do the JPEG and WebP exports (`host.exportCanvas`). The screen keeps 7c's box means: on a textured matched
   layer a PNG differs from a JPEG of the same document, and the wand's edge from what the screen shows, by the few
   levels the two statistics are apart (`docs/PLAN_BCE.md` §3b "B item 7, part 3 as built", the photo table).
-- **Seen once, not reproduced**: `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed with
-  `requested: 0` in one of some twenty runs since the mip chains go through the pool.
+- `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` (`requested: 0`): a known flake,
+  `docs/TESTING.md` "Known flakes".
 
 ### A local run on a large document spends minutes in the node's stitch
 
@@ -584,16 +372,16 @@ k squared comparisons a pixel on the CPU: 35 s a megapixel at k = 137 (the Comfy
 min at 24 MP and 90 min at 15000 x 10000. The run's own crop (`_denoise_mask` on the crop) costs about a minute the same
 way (the 55 s between "got prompt" and the model load).
 
-**The fix is committed and pushed in the node repo, not live yet** (`fba1fd8` on master of ComfyUI-InpaintCanvas, on
-the user's word of 2026-09-19; the node folder is the user's live ComfyUI and its Python only loads after a restart): `_dilate_mask` as two separable `max_pool2d` passes (the same values: a square max is the max of the row
+**The fix is in the node** (`fba1fd8` on master of ComfyUI-InpaintCanvas since 2026-09-19, and in node 0.3.4, the
+registry's active version since 2026-10-07): `_dilate_mask` as two separable `max_pool2d` passes (the same values: a square max is the max of the row
 maxima), and the stitch's masks on a window around the region with the margin the app's `finishResult` uses. The
 patch and its tests are in the session's scratchpad (`node_fix_patch.py`, `node_mask_test.py`,
 `node_stitch_e2e.py`): the node's own `InpaintCanvasStitch.stitch`, today's `nodes.py` against the patched copy with
 ComfyUI stubbed out, gives the same returned image and the same patch PNG, byte for byte, with auto feather, colour
 match and alignment (71.5 s to 1.96 s at 2500 x 1800), with `paste` "crop" (43.1 to 0.61 s) and a plain feather; the
 masks alone at 6000 x 4000 889.5 s to 4.4 s, equal on eight cases; run again against the committed file, the same.
-**Next:** a ComfyUI restart when it suits the user, then one local run on a large document; the entry leaves this file
-when that run is fast (a node release with a `pyproject.toml` version takes it to the registry).
+**Still open:** one timed local run on a large document against a ComfyUI that runs the fix; the entry leaves this file
+when that run is fast.
 
 ### Selection undo and bounds lose isolated pixels above 1 MP (canvas backend)
 
@@ -665,8 +453,8 @@ their own 15k file (what to ask for: the 2026-09-15 update above).
   canvas: 150 million pixels per step. Phase 1 made *brush* undo a copy of the touched
   rectangle only, but the selection steps were not part of that. On a document this size
   that alone can be the stutter.
-- **Releasing an erase stroke is its own stutter** (fixed on tiles 2026-09-19: "Fixed, waiting for its release"
-  above; the text below is the record) (reported separately in the same session:
+- **Releasing an erase stroke is its own stutter** (fixed on tiles 2026-09-19, released in 0.1.20; the text below is
+  the record) (reported separately in the same session:
   the stroke itself follows, the hitch comes on mouse up). The `layerpaint` pointer-up runs
   `strokeRect`, `commitStroke` and `markLayerChanged(layer, box)`, which refreshes the display
   pyramid over the touched rectangle and re-uploads the layer's texture. With a big eraser

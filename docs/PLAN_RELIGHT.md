@@ -1,8 +1,11 @@
 # Relight: virtual lights on the picture (item 43)
 
 **Status: researched 2026-10-09; the build plan is `docs/PLAN_RELIGHT_BUILD.md` (2026-10-11: the design decided,
-sessions L0a-L6 and the release, phase 2 N1-N3, the questions R-D1 to R-D9); nothing built.** The other agent builds
-it, this account reviews each session and releases. The user's ask (2026-10-09): rebuild the relight feature
+sessions L0a-L6 and the release, phase 2 N1-N3, the questions R-D1 to R-D9).**
+**Status as of 2026-10-13: released as 0.1.47 on 2026-10-13.** The other agent built L0a-L6 (2026-10-11/12) and from
+phase 2 N2 (presets, gloss, gobos, *Hide handles*) and N3 (the 15k rows); this account fixed the rest
+(`docs/PLAN_RELIGHT_FIXES.md` F1-F4) and added the highlight shoulder. Not built: N1 (MoGe-2 normals and the camera)
+and N2's `horizon_ao`. The user's ask (2026-10-09): rebuild the relight feature
 Photoshop's beta got on 2026-09-28, as an update after the Nik 9 parity block (`docs/PLAN_NIK9_BUILD.md` releases 2
 and 3, one block; release 4 independent). This file names other products: the rule of 2026-09-29 covers CLAUDE.md,
 the posts, the CHANGELOG, the manual and the README, not the plans. §§2-7 below are the research of 2026-10-09; where

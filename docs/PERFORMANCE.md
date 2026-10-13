@@ -144,12 +144,13 @@ Measured in the running app and read from the Chromium tree on 2026-09-10:
 | WebGL drawing buffer | about 33 MP (measured 2026-09-09) | a framebuffer for a 100 MP image must be tiled (already done in `renderTiled`) |
 | WebGPU | available (`navigator.gpu`, `maxTextureDimension2D` 16384, buffers up to 2 GB) | compute shaders possible later; not required for the plan |
 | V8 heap ([Electron memory cage](https://www.electronjs.org/blog/v8-memory-cage)) | 4 GB, pointer compression since Electron 14 | data URLs and big strings count here; typed arrays are outside but capped by the cage |
-| Renderer process (Windows) | about 8 GB hard limit, closed as "not planned" ([electron#35218](https://github.com/electron/electron/issues/35218)) | canvases and images count towards it. 96 GB of system RAM do not change this: the limit is per Chromium renderer process, not the machine |
+| Renderer process (Windows) | about 8 GB as read from [electron#35218](https://github.com/electron/electron/issues/35218) (closed as "not planned"); **15.5 GB of typed arrays measured on 2026-09-17** (§14), then `RangeError: Array buffer allocation failed` with the renderer alive | canvases and images count towards it. 96 GB of system RAM do not change this: the limit is per Chromium renderer process, not the machine |
 | GPU memory | the card's VRAM (32 GB here) | textures we own in WebGL stay; Chromium's own caches (decoded images, Skia) are small and evict, which is why the 66 MP `<img>` is re-uploaded per frame |
 
 Practical consequences: at 12k × 8k one RGBA layer is 384 MB. Ten such layers as
-canvases plus the composite, the selection, undo strings and the objects map run past
-the 8 GB renderer limit; as GPU textures they are fine on a 16 GB+ card and tight on an
+canvases plus the composite, the selection, undo strings and the objects map were
+expected to run past the 8 GB read for the renderer (15.5 GB of typed arrays was measured
+on 2026-09-17, §14); as GPU textures they are fine on a 16 GB+ card and tight on an
 8 GB card. Memory, not speed, is the reason to keep tiles and pyramid levels in view for
 the later phases, and to move undo and autosave off data URLs.
 

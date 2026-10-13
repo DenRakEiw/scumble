@@ -430,13 +430,13 @@ A Relight layer illuminates your picture with up to four interactive light sourc
 Where a strong light pushes a bright area past white, it rolls off softly towards white instead of clipping flat; parts of the picture the lights leave alone keep their exact values.
 
 **Routes and generative relighting.** Relighting can run directly inside the app or route to generative models:
-- **App (default)**: Runs entirely on your local GPU via WebGL2 shaders and compiled Rust kernels (`height_normals`, `shadow_march`). It is completely non-destructive, instant, and runs with 0 network and 0 AI tokens.
+- **App (default)**: Runs on your own computer. The graphics card draws the light; the surface shape and the cast shadows are worked out on the processor in background threads. It is completely non-destructive and needs no network and no AI tokens; the depth model it uses is a one-time download in Settings › Helpers (in-app models).
 - **Generative routes**: The Relight layer offers alternative render passes that feed your lighting geometry and prompt words into external diffusion models:
   - **Magnific** (`image-relight`): Sends the picture and an isolated light map (ambient floor plus lighting term alone, mode 1) to Magnific Relight.
   - **ComfyUI local** (`relight_qwen_local`): Executes locally on your ComfyUI instance using Qwen-Image-Edit-2509 with the Relight LoRA and Lightning 4-step LoRA.
   - **Comfy Cloud** (`image_qwen_image_edit_2509_relight`): Runs the detached 2509 relighting workflow on Comfy Cloud.
   - **fal** (`fal-ai/iclight-v2` and `bria/fibo-edit/relight`): IC-Light v2 steers lighting via position and initial latent; Bria relighting takes its *Light type* from the lights by default (*From the lights*: a sun gives low-angle sunlight, a spot a spotlight on the subject, otherwise soft overcast daylight) or one of 13 curated lighting atmosphere styles (e.g. sunrise, midday, blue hour, studio lighting, moonlight); a style picked there is kept for new relight layers until *From the lights* is picked again.
-- **Detail from original**: On generative routes, Scumble computes a channel ratio between the generated result and the original base, upsampling it via a bilateral guided filter against the high-resolution picture. This transfers the model's new lighting while preserving 100% of the photograph's fine micro-texture and sharpness.
+- **Detail from original**: On generative routes, Scumble computes a channel ratio between the generated result and the original base, upsampling it via a bilateral guided filter against the high-resolution picture. This transfers the model's new lighting while preserving 100% of the photograph's fine micro-texture and sharpness. It works up to 27.9 megapixels: on a larger picture a render with it on is refused before anything is sent, so turn it off or scale the picture down.
 - **One-click landing**: Clicking *Render* lands the result as a new pixel layer named `Relight (<route>)` directly under the top filter run, hiding the filter layer in a single undo step so you can easily adjust lights and render again.
 
 ### Notes

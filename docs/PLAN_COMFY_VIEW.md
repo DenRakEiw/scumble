@@ -9,6 +9,10 @@ per session (the user's rule), **released together as one update** after V5. The
 window of its own, Comfy Cloud API access yes, *Save to recipe* overwrites, all in one update; then the *ComfyUI*
 button after *Help* and *Assistant*, and **Scumble keeps working without any ComfyUI installed** (§2.5, a rule for
 every step).
+**Status as of 2026-10-13: V1-V5 shipped in 0.1.41 (2026-10-03).** Of the live checks, the first Comfy Cloud runs went
+through the same night (§3, the V5 notes); the round trip on the user's own ComfyUI passed in the user's look before
+the release (`docs/HISTORY.md`, the 0.1.41 clean-up). Open: a look on a real RunPod pod, the window's 0.1.43 layout on
+a real ComfyUI page, and the `/api/assets` model check (§3 V5).
 
 The user's ask (2026-10-03): "ist es möglich eine art browser in scumble zu öffnen in dem dann comfyui läuft?", then,
 to the answer that a plain browser is nice but the point is the connection to the recipes: "ja, genau darum geht es

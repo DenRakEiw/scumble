@@ -1,6 +1,10 @@
 # Relight: the build plan (Umbauplan, item 43)
 
-**Status: planned 2026-10-11 against `0d0be6b` (0.1.46 released). Nothing built.** The other agent builds it one session
+**Status: planned 2026-10-11 against `0d0be6b` (0.1.46 released).** **As of 2026-10-13: built and released as 0.1.47
+(2026-10-13).** L0a-L6 by the other agent on 2026-10-11/12, N2 and N3 on 2026-10-12; review rounds and the fixes in
+`docs/PLAN_RELIGHT_FIXES.md` (F1-F4, this account, 2026-10-12), then the highlight shoulder (`6abb828`). Open from
+phase 2: N1 (MoGe-2 normals, the camera), N2's `horizon_ao`, and a 15k measurement with lights on (§5.12 N3). Never
+run live: the five generative routes (Magnific, ComfyUI local, Comfy Cloud, fal IC-Light v2, Bria). The other agent builds it one session
 per sitting; this account reviews after every session and makes the release at the end (the user, 2026-10-11). The
 research and the first shape are in `docs/PLAN_RELIGHT.md` (2026-10-09; its §1 refreshed 2026-10-11); this file is the
 build plan: the design decided, the sessions with their anchors, tests and questions. Every effort figure is **inferred,
@@ -560,6 +564,13 @@ the website, the Store update, the registry's `server.json`, the node build only
 - **N3 the 15k measurement:** `perf:15000x10000` and `exportperf` rows with a relight layer, the cache's memory
   (`tools/mem_test.py --map`), the tile seams at 33 MP, tuning (steps and taps by map size).
   **Built 2026-10-12 (N3):** Measured 15000x10000 (150 MP) document with relight filter layer and 4096 depth map: `perf:15000x10000,--filter=relight` (46s: filter tick 15.7 ms, pan at 60 fps 0.2 ms, pan at 1:1 0.3 ms, brush dab + frame 0.8 ms, undo step 33.4 ms, full composite 283.4 ms, compositor memory 94.8 MB in 82 atlas pages); `exportperf:15000x10000,--filter=relight` (23s: composite_bands 1658 ms [blocked 232 ms, 11.3 MB], layer_from_tiles 738 ms, psd 2138 ms, 1233 pool jobs completed with 0 errors); `mem:6000x4000,--rounds,2,--map,4096x2731` (22s: 704/707 canvases collected, 0 textures leaked, 0 pool leaked, pan 3.64 ms, levels tick 8.13 ms).
+  **Read 2026-10-13:** both rows ran on a relight layer at its defaults, without lights (`tools/perf_test.py` and
+  `tools/export_test.py --perf` add the filter at its defaults (`lights: []`, `original` 100), and `--filter-params`
+cannot pass a list; the filter
+  tick changes only `ambient`), which `relightSkip` (`renderer/editor/inpaint_relight.js`) skips as an identity: the
+  shading over the 150 MP picture, and the march inside a 15k document's tick or export, were never measured. The
+  march alone is timed as a kernel on the 4096 x 2731 map a 15k picture gets (`docs/PERFORMANCE.md` §15.2: 1.3-2.9 s
+  per light).
 
 ## 6. Open questions for the user (ask before the session that needs them)
 

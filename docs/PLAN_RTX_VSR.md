@@ -1,5 +1,10 @@
 # RTX Video Super Resolution as an upscaler (part of item 14; the user, 2026-10-03)
 
+**Status as of 2026-10-13: shipped in 0.1.42 (2026-10-05):** RTX Video Super Resolution as a local upscale recipe
+(`recipes/rtx_vsr_local.json`, a box and the whole picture) and on Comfy Cloud (`recipes/rtx_vsr_cloud.json`), and the
+Realism Pass (`recipes/realism_pass.json`, on a selection and over the whole picture, 1x to 3x; `docs/PLAN_0_1_42.md`).
+The open reimplementations of the network are parked (the last section). The dated notes below are the history.
+
 **Status (2026-10-03):** researched once, on the list of later updates (the user: "erst das dlss auf die liste
 späterer updates"); nothing built.
 **2026-10-04 (the user):** RTX VSR as an upscaler on both sides: "den können wir als lokalen upscaler und cloud.comfy

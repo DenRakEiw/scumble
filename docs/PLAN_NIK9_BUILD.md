@@ -2,7 +2,12 @@
 
 **Status: release 1 (masks) built 2026-10-08/09 and released as 0.1.44 on 2026-10-09 (F1-F8, R1-S1..S11, two reviews:
 `docs/REVIEW_NIK9_2026-10-08.md` and the fixes in 91fe509 / 6098ca7); releases 2 and 3 next as one block with one
-release at the end (the user, 2026-10-09), release 4 independent. Planned on 2026-10-04 against `b6c5238`.** The research and the shape are in
+release at the end (the user, 2026-10-09), release 4 independent. Planned on 2026-10-04 against `b6c5238`.**
+**As of 2026-10-13: releases 1-4 are out:** release 1 as 0.1.44 (2026-10-09), releases 2 and 3 as 0.1.45 (2026-10-10),
+release 4 (dissolve included) with lens blur (R2-S15) as 0.1.46 (2026-10-11). Open: R2-S15c (the 15k
+`exportperf` of lens blur, now on the GPU, and the cap decision). Not built: R2-S9 and R2-S10 (R2-D3 answered "Snap +
+Flatten", `docs/PLAN_NIK9.md`), the conditional R1-S1b and R2-S9b, and the folded packages of G4 apart from vibrance and
+the gradient map (in 0.1.46, beside threshold and posterize, which were not part of G4). The research and the shape are in
 `docs/PLAN_NIK9.md` (2026-09-25); this is CLAUDE.md "What comes next" item 22. Five agents re-read the code on
 2026-10-04 (nothing was run), one designed the shared foundations, four planned a release each; this file joins them,
 removes the overlaps and makes the ids and cross references agree. Every effort figure is **inferred, not measured**.

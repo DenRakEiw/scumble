@@ -80,6 +80,103 @@ The block of 2026-10-03 (midday to afternoon: items 34 and 35 planned) was moved
 
 The block of 2026-10-04 (evening: R3 dropped, the Realism Pass redesigned as a refiner, the MCP listings) was moved here the same night, when R3a was built.
 
+The blocks of 0.1.43, 0.1.45 and 0.1.46 and the relight build's first review (2026-10-07 to 2026-10-11) were moved here on 2026-10-13, after the 0.1.47 release, when the open items were collected.
+
+## Where things stand, 2026-10-07 to 2026-10-11 (0.1.43, 0.1.45, 0.1.46 and the relight build's first review; moved from CLAUDE.md on 2026-10-13 after 0.1.47)
+
+**Antigravity builds the relight plan** (`docs/PLAN_RELIGHT_BUILD.md`) without waiting for reviews: L0a `62a15bf`
+(15:23), L0b `0bebaec`, L1a `3a892bf`, L1b `6be4fc5` (16:44), the R-D questions answered with the plan's suggested
+values; a node build pushed to the node repo (ComfyUI answered `/system_stats` afterwards). **Reviewed 2026-10-11
+evening** (two agents, L0a+L0b and L1a+L1b): ten must-fix findings, the message for the builder given to the user
+in chat (the z axis inverted against the depth map in both kernels, the shader and `lightToMap`; the sun's direction
+is the handle's absolute position; the identity breaks once a light is on; `fitOriginalLight` one unconstrained
+solve; `relightStats` never gets a fit in the app, the hook hands it a canvas; `shadow_march` 0.8x of JS; the shared
+`default: []` array; canvas-backend exports do not wait for the maps; the CPU twin without the snap; duplicate light
+ids), about twenty smaller ones, and the tests that pass vacuously. Found 2026-10-11: four of the builder's tests
+(`tools/limit_test.py`, `maps_test.py`, `edges_test.py`, `selection_test.py`) printed "node test passed" when no app
+was reachable; they exit 1 since 0bebaec (`docs/TESTING.md`); the builder never starts the app by hand and never takes a
+screenshot (the user has three rules to paste: gates only through `run_gates.sh`, never `Stop-Process electron`, a
+screenshot per visible change).
+
+**0.1.46 is out** (tag v0.1.46, published 2026-10-11T12:03:29Z, title "seventeen blend modes, lens blur, New with a
+model"; the post `v0-1-46` live (Vercel success), the manual synced, hub 0.1.46; `server.json` 0.1.46 published to the
+MCP Registry (the user's device code); the node merged with the remote's 0.3.4 commits and pushed, `ecae956`, no new
+node version). The Store update of 0.1.46 was overtaken by 0.1.47's (live 2026-10-13). It holds Nik 9 release 4 (R4-S1..S9 by the other agent: 27 blend modes,
+dissolve; R4-S10 is this release), lens blur (R2-S15), the adjustment filters vibrance, gradient map, threshold and
+posterize (the other agent's own addition, kept on the user's word), the `range_max` wasm kernel (ABI 18), **item 34**
+(New and Generate new with presets, built 2026-10-11 by this account's agents from `docs/PLAN_NEW_PRESETS.md` section 8
+after the user's four answers), the **Qwen Image Edit 2.1 Turbo** local recipe (the user's download of
+`qwen_image_2.1_turbo_int8_convrot`, run live: 11.4 s cold, 5.3 s warm) and `winget install scumble` (README, manual,
+release notes; the winget-pkgs PR microsoft/winget-pkgs#450107 was still open: after its merge the short name may become
+ambiguous with the Store app, check `winget show scumble` then).
+- **Reviews:** the other agent's nine unreviewed commits since 0.1.45 (12 agents, each finding refuted or confirmed by a
+  second one), fixed in `189526c` / `8b13ff9`: hard mix at b + s = 255 now as Photoshop (R4-D2, the user: white iff
+  b + s >= 255 + (s >> 7); the fixture cell max 0); **the GL twins of haze and lens blur had never been registered**
+  (a flag set before a registration that threw in the import cycle: both ran on the CPU, lens blur 70-96 s per 24 MP
+  pass, and depthfx's GL-vs-CPU checks compared CPU with CPU); lens blur's radius scaled twice in the view, its centre
+  weight and premultiplied averaging (the user chose the look fix too); dissolve after merge down and in brush sampling;
+  gradient map opacity reset the preset; vibrance's skin step; posterize and threshold twins; a 0/0 in the GPU clip of
+  luminosity / colour. Item 34 reviewed by 6 agents, fixed in `ab8e6b2`.
+- **The node** is built and committed locally (`f08d536`, not pushed). Any change in the node folder (its `.git`
+  included) makes the user's ComfyUI-HotReloadHack reload InpaintCanvas: on 2026-10-11 two such reloads left
+  `/system_stats` answering 500 (no Scumble could connect) until the user restarted ComfyUI; the reload of the build at
+  13:03 was harmless. Check `/system_stats` after touching the node folder.
+- **Gates:** source on both backends green (`rel46-fix*`, `rel46-i34b*`); exe gates on `dist/win-unpacked/Scumble.exe` green: `rel46-exe` (tiles,
+  45 gates: the 0.1.41 list plus `fill clip groups blendmodes edges depthfx grading masks effects mcpb`) and `rel46-exe-canvas` (26).
+  The export gate had grown to 7 minutes from the CPU lens blur; 144 s again with the GPU twin.
+- **Built:** `dist/Scumble Setup 0.1.46.exe`, `dist/win-unpacked`, `dist/Scumble-0.1.46-portable-win-x64.zip`,
+  `dist/scumble-0.1.46.mcpb`. Not built: the Store MSIX (`npm run dist:store`, from the tag state).
+- **Not done:** R2-S15c (the 15k `exportperf` of lens blur, now on the GPU; the plan wants it before the cap decision);
+  the Store submission (above). The user's dev-app test profile `dist/test-profile-0.1.46` can be deleted after their test.
+- A detached worktree in the scratchpad (node_modules as a junction, removed with `cmd /c rmdir` before `git worktree
+  remove --force`) gated the commits while agents edited `main`; it is gone.
+
+**0.1.45 is out** (tag v0.1.45, published 2026-10-10T08:38:53Z, title "colour grading, HSL, effects, haze and dehaze, a Claude
+Desktop extension"; the post `v0-1-45` on the website, the manual synced, hub 0.1.45). It holds releases 2 and 3 of
+`docs/PLAN_NIK9_BUILD.md` (R2-S1..S14, R3-S2..S13 by the other agent, each reviewed), plus three things of this
+account the same morning: **the `mcpb` branch merged** (the Claude Desktop extension `scumble-<version>.mcpb` as the
+sixth release asset, `docs/PLAN_MCPB.md`; `docs/PLAN_WASM.md`, item 44), **issue #4 fixed** (a model file the server
+lacks stays the recipe's choice, marked, the run refused with the download link; the `recipes` gate's step, and run
+live on the user's ComfyUI), and **a fill layer clipped to the picture** when the view is zoomed out (the user's find
+in the test instance; `applyFilterLayer`). Exe gates on the final build: `recipes commands composite limit film mcpb`
+(tiles), earlier `mcpb recipes commands document edges depthfx grading film` (tiles) and `mcpb recipes commands`
+(canvas), all PASS. `server.json` is 0.1.45 **with the `packages` entry** (the asset's SHA-256, `mcp-publisher
+validate` ok). **The registry publish is done** (2026-10-10, `io.github.DenRakEiw/scumble` 0.1.45 with the `.mcpb` package, the user's
+device code; 0.1.44's publish was skipped on purpose). **Issue #4 answered and closed on 2026-10-10** (the cause, the fix, the three files' links; the user's word). **The Store update of 0.1.45 was submitted by the user on 2026-10-10** (`dist/Scumble-0.1.45.msix`, 187,557,461 bytes, and
+`dist/store-listing/whats-new-0.1.45.txt`; Partner Center is blocked for Claude in Chrome by the site permissions, so the
+user's three steps by hand, `docs/RELEASING.md`). **Decided 2026-10-10 (the user): the next release is Nik 9 release 4 (blend modes, R4-S1..S10), lens blur (R2-S15,
+R2-D7 answered yes) and item 34 (Generate new with presets and boxes, `docs/PLAN_NEW_PRESETS.md`)**, built by the other
+agent, a review by this account after every session, one release at the end after the user's test; the start command
+was given on 2026-10-10. Open for the user before the sessions that need them: R4-D1 (dissolve), R4-D2..D5, D7..D9, item 34's
+§5 questions. **R4-D6 is done (2026-10-10):** the blend-mode fixture from the user's own Photoshop 27.11.0 is committed in
+`tools/fixtures/blendmodes/` (`blendmodes.psd` 1.5 MB, maximize compatibility off and the 10.6 MB of `shmd` layer metadata
+stripped by `--strip`; `blendmodes_merged.png` Photoshop's merged picture, `modes.json` with every layer's cell, `backdrop.png`, `patch.png`), made by `tools/blendmodes_fixture.py`
+(the deterministic sources) and `tools/blendmodes_fixture.jsx` (run by Photoshop: 27 modes in a 6 x 5 grid of 80 px
+cells, plus multiply at opacity 50, multiply at fill 50, normal at opacity 50 for R4-D8). Scumble 0.1.45 opens the PSD
+with 30 layers and reads the 9 modes it has; the other 18 (dissolve included) come in as normal, which is R4-S3's
+baseline. R4-S3 reads the committed copy; `dist/fixtures/blendmodes` is the workbench when the fixture is rebuilt. **Waiting for the user:** the test profile `dist/test-profile-0.1.45` and the older
+`dist/portable-test/` to delete; Smithery and GitHub's
+MCP registry with the `.mcpb` (`docs/PLAN_MCP_LISTINGS.md`).
+
+
+**0.1.43 is out** (tag v0.1.43, published 2026-10-07T20:27:04Z; the post `v0-1-43` live; the manual synced). Built the
+same day from `docs/PLAN_0_1_43.md`, every row with its "As built": Nano Banana 2.1 on Gemini direct and seven hosts
+(N1, N2; never run live), B1-B6 (agent errors, the assistant's notices, the Film looks panel, the ComfyUI window, the
+cutout's 24 GB, the boxes after Generate new), S1 (Settings groups), S2 (star and share). The exe gates ran on both
+backends; the editor gate without two mips-worker steps that failed at the morning's commit too while DaVinci Resolve
+rendered a video (`docs/TESTING.md`). **Waiting for the user:**
+- **The Store update**: `dist/Scumble-0.1.43.msix` (187,427,628 bytes) and `dist/store-listing/whats-new-0.1.43.txt` are
+  built; the submission in Partner Center through Claude in Chrome, *Submit for certification* only on the user's yes.
+- **The MCP Registry**: `server.json` is 0.1.43; `mcp-publisher login github` (the user's device code), `validate`,
+  `publish`. 0.1.42's publish never happened either (its listing still says 96 tools; 105 now).
+- **P3's live run** (`bash tools/run_gates.sh rel42-portable --exe dist/win-unpacked/Scumble.exe portable`) once the
+  user's Scumble is closed.
+- Tell the user (still open from 0.1.42): their DLSS5 Fit Input Size node allows 33 MP outputs, above Scumble's 27.9 MP.
+- A live run of Nano Banana 2.1 (about $0.05 at 2K with the user's key) settles v1 / v1beta and the thinking level's
+  spelling (`docs/PLAN_0_1_43.md` §5); the ComfyUI window's new layout was never seen in a real ComfyUI page.
+- **Found and not built** (`docs/BUGS.md`): Generate new on WaveSpeed without references goes to ten model ids whose
+  pages answer 404.
+
 ## Where things stand, 2026-10-09 to 2026-10-11 (0.1.44, the Nik 9 sessions of releases 2 to 4, the adjustments, lens blur; moved from CLAUDE.md when 0.1.46 was prepared)
 
 **0.1.44 is out** (tag v0.1.44, published 2026-10-09T10:07:52Z, title "depth maps, range selections, filter limits"; the post
