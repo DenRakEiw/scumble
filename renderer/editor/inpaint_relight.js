@@ -52,7 +52,7 @@ function sampleRgbaBilinear(data, w, h, x, y) {
 
 export const LIGHT_MAX = 4;
 export const LIGHT_TYPES = Object.freeze(["point", "sun", "spot"]);
-/** The relight routes: the in-app filter and the generative ones (host.relightWhole), as the row's route select lists them. */
+/** The relight routes: the in-app filter and the generative ones (the host's relightWhole), as the row's route select lists them. */
 export const RELIGHT_ROUTES = Object.freeze(["app", "magnific", "fal-iclight", "fal-bria", "comfycloud", "comfyui"]);
 
 export const KELVIN_PRESETS = Object.freeze([
