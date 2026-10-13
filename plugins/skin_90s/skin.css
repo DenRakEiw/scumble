@@ -98,6 +98,7 @@
 #shell-status { padding: 3px 8px; }
 .ipc-bottom { border-top-color: #0b0c10; }
 .ipc-bottom .ipc-kbd { color: #1f9f1f; }
+.ipc-bottom .ipc-status-error { text-shadow: 0 0 2px rgba(255, 110, 80, 0.55); }
 .log-entry:hover { background: #16261a; }
 
 /* ---- 6. the logo: a small LCD with a still spectrum beside the name --------------------------------------- */

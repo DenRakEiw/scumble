@@ -2384,7 +2384,16 @@ const COMMANDS = {
         },
     },
     get_state: { readOnly: true, description: "The document's state JSON (the node's canvas_state without the selection bitmaps).", params: {}, async run(ed) { const v = JSON.parse(ed.getValue() || "{}"); delete v.selection; delete v.selections; return v; } },
-    set_status: { description: "Write a line into the document's status bar.", params: { text: P.str("", { required: true }) }, async run(ed, a) { ed.setStatus(String(a.text)); return { status: ed.status }; } },
+    set_status: {
+        description: "Write a line into the document's status bar. An error or warn line shows red, blinks five times (not under reduced motion) and stays red until the next line.",
+        params: { text: P.str("", { required: true }), kind: P.enum("error, warn or info (plain); left out, the text decides (a failure or a missing download shows red)", ["error", "warn", "info"]) },
+        async run(ed, a) {
+            const kind = a.kind == null || a.kind === "" ? undefined : String(a.kind);
+            if (kind && !["error", "warn", "info"].includes(kind)) throw new Error(`kind must be error, warn or info, not ${JSON.stringify(a.kind)}`);
+            ed.setStatus(String(a.text), kind ? { kind } : undefined);
+            return { status: ed.status, kind: ed.statusKind || "info" };
+        },
+    },
 
     // -- log --
     read_log: {

@@ -640,19 +640,20 @@ export const host = {
 
     /**
      * The status line is one clipped line without a tooltip in the editor: the app gives
-     * it the full text as a title, logs what looks like an error, and opens the console on a
-     * click. Hooked from outside, so no sync patch.
+     * it the full text as a title, logs an error or a warning line (the editor's statusKind), and
+     * opens the console on a click. Hooked from outside, so no sync patch.
      */
     hookStatus(editor) {
         if (editor._statusHooked || typeof editor.setStatus !== "function") return;
         editor._statusHooked = true;
         const orig = editor.setStatus.bind(editor);
-        editor.setStatus = (t) => {
-            orig(t);
+        editor.setStatus = (t, opts) => {
+            orig(t, opts);
             const text = String(t == null ? "" : t);
             if (editor.statusEl) editor.statusEl.title = text + (text ? "\n(click: the console)" : "");
-            if (/^(error|failed|could not|cannot|no api key)|error invoking|failed[:.]| failed /i.test(text)) {
-                try { window.scumble.log.add({ level: "error", source: "status", message: text }); } catch (_) { /* preload missing */ }
+            const kind = editor.statusKind;
+            if (kind === "error" || kind === "warn") {
+                try { window.scumble.log.add({ level: kind, source: "status", message: text }); } catch (_) { /* preload missing */ }
             }
         };
         if (editor.statusEl) {

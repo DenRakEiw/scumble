@@ -787,6 +787,24 @@ function makeCanvas(w, h) {
     return c;
 }
 
+// A status line's kind (item 45): "error" and "warn" show red and blink five times, "" is a plain line. Callers that
+// know pass a kind; a line without one is judged by its text (the failures the app log has always caught, and the
+// "... needs X: download it in Settings" lines, which the user counts as errors too).
+const STATUS_ERROR_TEXT = /^(error|failed|could not|cannot|no api key)|error invoking|failed[:.](?=\s|$)| failed /i;
+const STATUS_WARN_TEXT = /\bdownload (?:it|one) in settings\b|\bmodel is downloaded \(settings\b/i;
+/** The kind a status text has by itself: "error", "warn" or "". */
+function statusKindOf(text) {
+    const t = String(text == null ? "" : text);
+    return STATUS_ERROR_TEXT.test(t) ? "error" : STATUS_WARN_TEXT.test(t) ? "warn" : "";
+}
+/** setStatus's kind: `opts` is "error" / "warn" / "info" or { kind }; "info" keeps a line plain whatever it says. */
+function statusKindFor(text, opts) {
+    const k = typeof opts === "string" ? opts : opts && typeof opts === "object" ? opts.kind : undefined;
+    if (k === "error" || k === "warn") return k;
+    if (k === "info") return "";
+    return statusKindOf(text);
+}
+
 /**
  * A canvas of w x h the CPU keeps: `c` when it has that size, else a new one. A brush dab ends in a tile scratch, which
  * is on the CPU too, so a dab canvas on the GPU was a readback at every draw (PLAN_0_1_31 §4 step 2).
@@ -1737,6 +1755,10 @@ const STYLE = `
 .ipc-info b { color:var(--sc-fg, #ddd); font-weight:500; }
 .ipc-bottom { padding:5px 10px; background:var(--sc-chrome, #242424); border-top:1px solid var(--sc-chrome-edge, #0d0d0d); color:var(--sc-muted, #999); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; }
 .ipc-kbd { color:var(--sc-faint, #777); margin-left:auto; }
+.ipc-statusline.ipc-status-error, .ipc-node .ipc-status.ipc-status-error { color:var(--sc-error, #e0533d); }
+.ipc-status-blink { animation:ipc-status-blink .6s ease-in-out 5; }
+@keyframes ipc-status-blink { 50% { opacity:.2; } }
+@media (prefers-reduced-motion: reduce) { .ipc-status-blink { animation:none; } }
 .ipc-view.ipc-scale-x { cursor:ew-resize; }
 .ipc-view.ipc-scale-y { cursor:ns-resize; }
 .ipc-view.ipc-rotate { cursor:alias; }
@@ -2182,6 +2204,7 @@ class InpaintEditor {
         try { selDisplay = localStorage.getItem("ipc.selectionDisplay") || "ants"; } catch (_) { /* no storage */ }
         this.selectionDisplay = selDisplay === "tint" ? "tint" : "ants";   // marching ants (default) or red tint
         this.status = "No image loaded.";
+        this.statusKind = "";
         this.isOpen = false;
 
         injectStyle();
@@ -3360,10 +3383,33 @@ class InpaintEditor {
         });
     }
 
-    setStatus(text) {
+    /**
+     * The status line. `opts` gives its kind: "error" or "warn" (red, five blinks, then steady red until the next
+     * line; no blink under reduced motion), "info" (plain whatever the text says), or { kind }; left out, the text
+     * decides (statusKindOf). `status` stays the plain text, `statusKind` the kind ("" for a plain line).
+     */
+    setStatus(text, opts) {
+        const kind = statusKindFor(text, opts);
         this.status = text;
-        if (this.statusEl) this.statusEl.textContent = text;
-        if (this.nodeStatus) this.nodeStatus.textContent = text;
+        this.statusKind = kind;
+        for (const node of [this.statusEl, this.nodeStatus]) {
+            if (!node) continue;
+            // the same line again while it still blinks (a caller that repeats itself) keeps its blink going
+            const again = kind && node.textContent === String(text) && node.classList.contains("ipc-status-blink");
+            node.textContent = text;
+            node.classList.toggle("ipc-status-error", !!kind);
+            if (again) continue;
+            node.classList.remove("ipc-status-blink");
+            if (!kind) continue;
+            // the five pulses are over: drop the class, or a hidden tab shown again (display: none and back) would blink anew
+            if (!node._blinkEnds) {
+                node._blinkEnds = true;
+                node.addEventListener("animationend", (e) => { if (e.animationName === "ipc-status-blink") node.classList.remove("ipc-status-blink"); });
+            }
+            // every error line blinks anew, the same text after its blink too: the class comes back after a style flush
+            void node.offsetWidth;
+            node.classList.add("ipc-status-blink");
+        }
     }
 
     /** Hardness of the tool in use: the eraser has its own, softer default. */
@@ -12530,7 +12576,12 @@ class InpaintEditor {
     async ensureObjects() {
         if (!this.base || this.objectsPending) return;
         if (this.resizingRun()) { if (this.status !== RUN_GOING_TEXT) this.setStatus(RUN_GOING_TEXT); return; }
-        if (!objectBackendAvailable()) { this.setStatus(hostText("noObjectBackend", "Object selection needs a SAM2 model: download one in Settings › Helpers, or install ComfyUI-segment-anything-2 (Kijai) on the server.")); return; }
+        if (!objectBackendAvailable()) {
+            // asked on every pointer move while the tool hovers: write (and log) the line once
+            const t = hostText("noObjectBackend", "Object selection needs a SAM2 model: download one in Settings › Helpers, or install ComfyUI-segment-anything-2 (Kijai) on the server.");
+            if (this.status !== t) this.setStatus(t);
+            return;
+        }
         this.objectsPending = { stage: "upload" };
         try {
             if (host.objectsInApp()) {
@@ -17645,7 +17696,7 @@ class InpaintEditor {
             const stem = (l.name || "layer").replace(/[^a-z0-9._ -]/gi, "_");
             const saved = await host.saveExport(blob, `${stem}.png`, { editor: this });
             if (!saved) { this.setStatus("Save cancelled."); return null; }
-            this.setStatus(`Saved ${saved.path} (${l.name}, ${this.width} × ${this.height} with transparency).`);
+            this.setStatus(`Saved ${saved.path} (${l.name}, ${this.width} × ${this.height} with transparency).`, "info");
             return saved;
         } catch (err) { console.error(err); this.setStatus("Save failed: " + (err.message || err)); return null; }
     }
@@ -17658,7 +17709,7 @@ class InpaintEditor {
             const stem = ((this.saveNameInput && this.saveNameInput.value) || "inpaint_canvas").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._ -]/gi, "_") || "inpaint_canvas";
             const saved = await host.saveExport(blob, `${stem}_mask.png`, { editor: this });
             if (!saved) { this.setStatus("Save cancelled."); return null; }
-            this.setStatus(`Saved ${saved.path} (mask, white = selected).`);
+            this.setStatus(`Saved ${saved.path} (mask, white = selected).`, "info");
             return saved;
         } catch (err) { console.error(err); this.setStatus("Save failed: " + (err.message || err)); return null; }
     }
@@ -17716,7 +17767,7 @@ class InpaintEditor {
             const saved = await host.saveExport(blob, `${stem}.${fmt === "tiff" ? "tif" : fmt}`, { editor: this, download });
             if (!saved) { this.setStatus("Save cancelled."); return null; }
             const kb = Math.round(blob.size / 1024);
-            this.setStatus(`Saved ${saved.path} (${canvas.width} × ${canvas.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " kB"}${fmt === "png" && embedded ? ", " + hostText("pngEmbedded", "recipe embedded") : ""}${note}).`);
+            this.setStatus(`Saved ${saved.path} (${canvas.width} × ${canvas.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " kB"}${fmt === "png" && embedded ? ", " + hostText("pngEmbedded", "recipe embedded") : ""}${note}).`, "info");
             return saved;
         } catch (err) {
             console.error(err);

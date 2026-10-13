@@ -3,8 +3,10 @@
 No ComfyUI and no key needed: an entry from the renderer (console.error in the page), one from
 the main process (a provider run that fails before any network call), both read back through
 the log IPC and the read_log command, the file under <userData>/logs holding them, the rotation
-at 1 MB, the console dialog (filter by level and text, Escape closes it), and the status line
-hook (a title with the full text, an error logged).
+at 1 MB, the console dialog (filter by level and text, Escape closes it), the status line
+hook (a title with the full text, an error logged), and the status kinds of item 45 (an error
+or a missing download red with five blinks, steady after, plain again at the next line, no
+blink under reduced motion; set_status's kind).
 
     python tools/log_test.py
 
@@ -74,6 +76,74 @@ if (!logged) throw new Error("the error status was not logged");
 if (ed.statusEl.style.cursor !== "pointer") throw new Error("the status line is not clickable");
 return { title: title.slice(0, 60), logged: logged.level };
 """),
+    ("status_kinds", """
+// item 45: an error or warning line shows red (the skin's --sc-error) and blinks five times, then stays red until
+// the next line; an explicit kind beats the text; the log takes the kind's level
+const ed = host.editors().find((e) => e.node.id === window.__logDoc);
+const s = ed.statusEl;
+const has = (cls) => s.classList.contains(cls);
+const blinks = () => s.getAnimations().filter((a) => a.animationName === "ipc-status-blink");
+const last = (await window.scumble.log.list({})).slice(-1)[0].id;
+if (!has("ipc-statusline")) throw new Error("the status span has no ipc-statusline class: " + s.className);
+ed.setStatus("Saved.");
+if (has("ipc-status-error") || has("ipc-status-blink") || ed.statusKind !== "") throw new Error("a plain line is marked: " + s.className + " / " + ed.statusKind);
+const plain = getComputedStyle(s).color;
+const probe = document.createElement("span");
+probe.style.color = "var(--sc-error, #e0533d)";
+s.parentNode.appendChild(probe);
+const red = getComputedStyle(probe).color;
+probe.remove();
+// the user's line of 2026-10-11: a missing download counts as an error
+ed.setStatus("Depth estimation needs Depth Anything V2 Small: download it in Settings > Helpers. " + window.__logMark);
+const a1 = blinks();
+if (ed.statusKind !== "warn" || !has("ipc-status-error") || !has("ipc-status-blink")) throw new Error("the download line is not marked: " + ed.statusKind + " / " + s.className);
+if (a1.length !== 1) throw new Error("the download line has " + a1.length + " blink animations");
+if (getComputedStyle(s).animationIterationCount !== "5") throw new Error("the blink runs " + getComputedStyle(s).animationIterationCount + " times");
+if (getComputedStyle(s).color !== red || red === plain) throw new Error("the colour: " + getComputedStyle(s).color + ", --sc-error " + red + ", plain " + plain);
+if (ed.nodeStatus && !ed.nodeStatus.classList.contains("ipc-status-error")) throw new Error("the node thumbnail's line is not marked");
+await wait(700);
+const again = "Error: the same failure again " + window.__logMark;
+ed.setStatus(again);
+const a2 = blinks();
+if (ed.statusKind !== "error" || a2.length !== 1 || a2[0] === a1[0]) throw new Error("a second error did not restart the blink: " + ed.statusKind + " / " + a2.length);
+// a caller that repeats the same line while it blinks (the object tool asks on every pointer move) keeps the blink
+await wait(300);
+ed.setStatus(again);
+if (blinks().length !== 1 || blinks()[0] !== a2[0]) throw new Error("the same line again restarted the blink");
+// five pulses of 0.6 s: over after 3 s, the line steady red at full opacity, the blink class gone
+await wait(3200);
+if (blinks().length || has("ipc-status-blink") || !has("ipc-status-error") || getComputedStyle(s).opacity !== "1" || getComputedStyle(s).color !== red) throw new Error("not steady red after the blink: " + blinks().length + " / " + s.className + " / " + getComputedStyle(s).opacity);
+// a tab hidden and shown again (display: none and back) does not blink its old line anew
+const bar = s.parentNode;
+bar.style.display = "none";
+getComputedStyle(s).display;
+bar.style.display = "";
+getComputedStyle(s).display;
+if (blinks().length) throw new Error("an old error line blinked again after display none and back");
+// the same line after its blink is a new error: it blinks again
+ed.setStatus(again);
+if (blinks().length !== 1) throw new Error("the same error after its blink did not blink");
+ed.setStatus("Error invoking nothing: a hint the caller calls plain " + window.__logMark, "info");
+if (ed.statusKind !== "" || has("ipc-status-error") || has("ipc-status-blink")) throw new Error("kind info did not keep the line plain");
+ed.setStatus("The lights are off.", { kind: "error" });
+if (ed.statusKind !== "error" || !has("ipc-status-error")) throw new Error("kind error on a plain text did not mark it");
+ed.setStatus("Ready.");
+if (has("ipc-status-error") || has("ipc-status-blink") || getComputedStyle(s).color !== plain) throw new Error("the next plain line did not clear the mark");
+// the command
+const r = await c("set_status", { doc: window.__logDoc, text: "An agent's error " + window.__logMark, kind: "error" });
+if (r.kind !== "error" || !has("ipc-status-error")) throw new Error("set_status kind error: " + JSON.stringify(r));
+let bad = null;
+try { await c("set_status", { doc: window.__logDoc, text: "x", kind: "loud" }); } catch (e) { bad = String(e.message || e); }
+if (!/kind must be/.test(bad || "")) throw new Error("set_status took kind loud: " + bad);
+const r2 = await c("set_status", { doc: window.__logDoc, text: "Back to normal." });
+if (r2.kind !== "info" || has("ipc-status-error")) throw new Error("set_status without a kind: " + JSON.stringify(r2));
+await wait(300);
+const logged = (await window.scumble.log.list({ after: last })).filter((e) => e.source === "status" && e.message.includes(window.__logMark));
+const level = (re) => (logged.find((e) => re.test(e.message)) || {}).level;
+if (level(/^Depth estimation/) !== "warn" || level(/^Error: the same/) !== "error" || level(/^An agent's error/) !== "error") throw new Error("the log levels: " + JSON.stringify(logged.map((e) => [e.level, e.message.slice(0, 30)])));
+if (logged.some((e) => /a hint the caller calls plain/.test(e.message))) throw new Error("a line marked info was logged as an error");
+return { red, plain, iterations: 5, logged: logged.map((e) => e.level) };
+"""),
     ("console_dialog", """
 await shell.openConsole();
 await wait(200);
@@ -102,6 +172,19 @@ return { all, filtered, errorsOnly, allErrors };
 AFTER_ESCAPE = """
 if (document.querySelector("#log-dialog[open]")) throw new Error("the console is still open after Escape");
 return { closed: true };
+"""
+
+REDUCED = """
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches) throw new Error("the emulated reduced motion did not reach the page");
+const ed = host.editors().find((e) => e.node.id === window.__logDoc);
+const s = ed.statusEl;
+ed.setStatus("Failed: under reduced motion");
+const n = s.getAnimations().length;
+const red = s.classList.contains("ipc-status-error");
+const name = getComputedStyle(s).animationName;
+ed.setStatus("Ready.");
+if (n !== 0 || !red || name !== "none") throw new Error(JSON.stringify({ animations: n, red, name }));
+return { animations: n, red, name };
 """
 
 ROTATION = """
@@ -154,6 +237,12 @@ async def main():
             if size > 1024 * 1024 + 4096:
                 raise RuntimeError("the current file did not shrink: %d bytes" % size)
             print(f"PASS rotation: current {size} bytes, {os.path.getsize(rotated)} bytes rotated")
+            # item 45 under reduced motion: still red, no blink
+            await cdp.call("Emulation.setEmulatedMedia", features=[{"name": "prefers-reduced-motion", "value": "reduce"}])
+            try:
+                print(f"PASS status_reduced_motion: {json.dumps(await ev(PRE % REDUCED, timeout=30))}")
+            finally:
+                await cdp.call("Emulation.setEmulatedMedia", features=[])
             await ev(PRE % 'await c("close_document", { doc: window.__logDoc, force: true }); return 1;')
         except Exception as err:  # noqa: BLE001
             print(f"FAIL: {err!r}")

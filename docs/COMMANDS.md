@@ -235,12 +235,13 @@ The document's state JSON (the node's canvas_state without the selection bitmaps
 
 ### `set_status`
 
-Write a line into the document's status bar.
+Write a line into the document's status bar. An error or warn line shows red, blinks five times (not under reduced motion) and stays red until the next line.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `text` | string | (required) |
+| `kind` | string | error, warn or info (plain); left out, the text decides (a failure or a missing download shows red) (one of `error`, `warn`, `info`) |
 
 ### `depth_map` *(image)*
 

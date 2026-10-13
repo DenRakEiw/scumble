@@ -17,6 +17,15 @@ Nothing waiting.
 
 ## Open
 
+### Two local runs queued in one tab: the first one's result may land in the active tab (found 2026-10-13, read, not run)
+
+Seen by the 0.1.48 map (docs/PLAN_0_1_48.md S3). `host.queueGenerate` keeps one `lastPromptId` per editor and
+overwrites it with the second run's id (`renderer/editor/host.js` near 3540); `editorByPrompt` matches only
+`lastPromptId` and the helper ids, not `_localRuns` (near 1022), so the first run's `executed` finds no editor and falls
+back to `host.editor`, the active tab (near 4711); `addResults` does not check the canvas. Not run: whether a second
+Generate in the same tab while the first is queued, then a tab switch, really lands the first result in the other
+tab. The fix belongs to S3's lookup (it adds `_localRuns`).
+
 ### A relight recipe imported or saved under a new id is accepted and never run (found 2026-10-12, read)
 
 Found by the review of docs/PLAN_RELIGHT_FIXES.md F3. Settings › Recipes › Import of a copy of `recipes/relight.json`

@@ -105,7 +105,7 @@ reads it. A skin that leaves a token out leaves each of those places exactly as 
 | `--sc-go` | color | `#2f6b3f` | Generate, Upscale and the other primary buttons |
 | `--sc-warn` | color | `#f0c674` | warnings, the control-layer kind, a recipe's missing-key note |
 | `--sc-ok` | color | `#7cc47f` | success, the connected dot |
-| `--sc-error` | color | `#e0533d` | errors, the error dot, delete on hover |
+| `--sc-error` | color | `#e0533d` | errors, the error dot, delete on hover, an error line in the status bar (`.ipc-status-error`, blinking as `.ipc-status-blink`) |
 | `--sc-error-bg` | color | `#3a1f1c` | behind errors, a danger button on hover |
 | `--sc-link` | color | `#7cc7ff` | informational text: the log's source, a tool card's name, Help's links, the reference-layer kind |
 | `--sc-backdrop` | color | `rgba(0, 0, 0, 0.55)` | behind modal dialogs and the editor's question |

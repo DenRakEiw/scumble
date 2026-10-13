@@ -79,7 +79,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-13: 0.1.47 released and in the Store; 0.1.48 chosen, nothing of it built but item 46)
+## Where things stand (2026-10-13: 0.1.47 released and in the Store; 0.1.48 being built, S1 done)
 
 - **The open items, collected 2026-10-13** (a workflow of 11 agents over BUGS.md, the plans, the list, the outward
   threads and GitHub, each doubtful status checked in the code): `docs/OPEN_2026-10-13.md`, a dated snapshot (not
@@ -94,6 +94,12 @@ code.
   conflicts only in `CHANGELOG.md` and `tools/manual_test.js`). About five sessions, normal test tier. **The user's
   answers (2026-10-13):** the progress as a thin bar in the status row; no node 0.3.5 yet (the node stays 64 commits
   past 0.3.4 on the registry). Open: the replies to node issues #1 and #2 (drafts on request).
+  **The plan is `docs/PLAN_0_1_48.md`** (2026-10-13, six sessions S1-S6, anchors from a workflow of six readers; it
+  corrects the open-items list: the app's title row already has a progress bar from `progress` events and the API
+  seconds, the editor and the node have none). **S1 done 2026-10-13** ("S1 as built": `setStatus(text, kind)`,
+  `statusKind`, the classes `ipc-status-error` / `ipc-status-blink`, reduced motion, `set_status` `kind`; the `log`
+  gate's two new steps; reviewed by a workflow, its three findings fixed). **Next: S2** (marking the ~110 error sites);
+  ask the user first its two questions (does "a run is still going" go red; do degraded-but-landed lines go red).
 - **Done 2026-10-13 on the user's word:** the awesome-alternative-uis-for-comfyui entry (PR #120) moved to the bottom
   of Category 4 as the reviewer asked (the fork's `add-scumble` rebuilt on upstream `babe4fd` and force-pushed; no
   reply comment posted). Video 4 is on YouTube (the user). CLAUDE.md brought up to date with the code.
@@ -392,9 +398,12 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   einer fehlermeldung ist der fehler text unten rot blinkend"). For the update after 0.1.46. Today `setStatus(text)`
   (`renderer/editor/inpaint_canvas.js`, 446 calls) has no kind, so an error looks like any other line: a kind
   (`setStatus(text, { error: true })` or a small `setError`) at the error sites, the line red, a short blink (a few
-  pulses, then steady red until the next line; none under `prefers-reduced-motion`), in every skin. Nothing built.
+  pulses, then steady red until the next line; none under `prefers-reduced-motion`), in every skin.
   **The user's answers (2026-10-13): five blinks, then steady red until the next line; warnings such as "needs a
-  download" count as errors.** Planned as the core of 0.1.48 (above).
+  download" count as errors.** The core of 0.1.48 (above). **The mechanism built 2026-10-13 (S1 of
+  `docs/PLAN_0_1_48.md`):** `setStatus(text, kind)` (`"error"`, `"warn"`, `"info"` or `{ kind }`; without one the text
+  decides: the log's old failure regex and the "download it in Settings" lines), red from `--sc-error`, five 0.6 s
+  pulses; the error sites marked one by one in S2.
 - 46: **the ASCII logo in Brainfuck** (the user, 2026-10-13: GitHub's language bar showed no Brainfuck although the
   easter egg of 4cc2f76 is in the code, "baue das mit dem asci logo im nächsten update"). Linguist counts by file
   extension and leaves out languages below about 0.1 % of the repository (the Dockerfile, 0.01 %, is not shown), so
