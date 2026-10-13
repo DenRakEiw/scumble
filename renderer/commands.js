@@ -24,6 +24,7 @@ import { parse, remap } from "./editor/reftokens.js";
 import { LABEL as REALISM_LABEL } from "./editor/realism.js";
 import * as genpresets from "./editor/genpresets.js";
 import { refusal } from "./editor/inpaint_status.js";
+import { canvasSizeRefusal } from "./editor/inpaint_sizelimit.js";
 
 const VERSION = 2;   // 1 = the node's bridge
 
@@ -2106,6 +2107,12 @@ const COMMANDS = {
         params: { left: P.int("", { default: 0 }), top: P.int("", { default: 0 }), right: P.int("", { default: 0 }), bottom: P.int("", { default: 0 }) },
         async run(ed, a) {
             const v = { left: Math.round(+a.left || 0), top: Math.round(+a.top || 0), right: Math.round(+a.right || 0), bottom: Math.round(+a.bottom || 0) };
+            // refused before the crop: the extend after it is made as one canvas at the final size (S5)
+            const fw = ed.width + v.left + v.right, fh = ed.height + v.top + v.bottom;
+            // a crop alone makes no single canvas (a tile document above 268 MP is cropped on its tiles)
+            const grows = Object.values(v).some((x) => x > 0);
+            const tooBig = grows && fw >= 1 && fh >= 1 ? canvasSizeRefusal(fw, fh, "The extended picture") : "";
+            if (tooBig) throw refusal(tooBig, "warn");
             if (Object.values(v).some((x) => x < 0)) { await ed.cropCanvas(v); v.left = Math.max(0, v.left); v.top = Math.max(0, v.top); v.right = Math.max(0, v.right); v.bottom = Math.max(0, v.bottom); }
             if (Object.values(v).some((x) => x > 0)) await ed.extendCanvas(v);
             return { width: ed.width, height: ed.height, status: ed.status };

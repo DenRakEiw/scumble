@@ -20,6 +20,7 @@ import { applyFilter } from "./inpaint_filters.js";
 import { lightsToWords, detailRatio, loraPercent } from "./inpaint_relight.js";
 import { withoutSecrets } from "./redact.js";
 import { failKind, refusal } from "./inpaint_status.js";
+import { canvasFits, fitInCanvas, largestFactor, CANVAS_LIMIT_WORDS } from "./inpaint_sizelimit.js";
 
 /**
  * What a result's history entry keeps of the click (S4): the prompt and the negative as typed, and which layer each
@@ -1907,6 +1908,13 @@ export const host = {
         if (what === "picture" && factor != null && factor <= 1) {
             return `At 1× the whole picture would come back at its own size: upscale a selection at 1× (Select All for the whole picture), or pick a larger factor.`;
         }
+        // the whole picture lands as one canvas: past it the answer would be paid for and could not land (S5)
+        if (what === "picture" && factor != null && !canvasFits(Math.round(w * factor), Math.round(h * factor))) {
+            const best = largestFactor(w, h, r && r.factor);
+            // 1× is refused for the whole picture by the rule above, so it is never the advice
+            const fit = best != null && best > 1 && best < factor ? ` The largest factor that fits is ${best}×.` : " Upscale a selection instead, or scale the picture down first.";
+            return `The picture is ${w} × ${h}; at ${factor}× it would become ${Math.round(w * factor)} × ${Math.round(h * factor)} px, ${CANVAS_LIMIT_WORDS}.${fit}`;
+        }
         const out = r && r.limits && r.limits.out;
         if (!out || factor == null || Math.round(Math.max(w, h) * factor) <= out) return "";
         const { the, smaller } = upscaleWords(w, h, what);
@@ -2032,8 +2040,16 @@ export const host = {
         const img = await bytesToImage(bytes, mime);
         const aw = img.naturalWidth || img.width, ah = img.naturalHeight || img.height;
         if (!(aw > 0 && ah > 0)) throw new Error(`${label} answered with an empty picture.`);
-        const nw = aw, nh = Math.max(1, Math.round(H * aw / W));
+        let nw = aw, nh = Math.max(1, Math.round(H * aw / W));
         if (nw === W && nh === H) throw new Error(`${label} answered at the picture's own size (${aw} × ${ah}); nothing to do.`);
+        // a model that picks its own factor can answer past what one canvas holds: the paid answer lands scaled to fit
+        // (the user, 2026-10-13: scale it down rather than refuse it), and the line says so in red
+        let fitted = "";
+        if (!canvasFits(nw, nh)) {
+            const [fw, fh] = fitInCanvas(nw, nh);
+            fitted = ` The answer was ${aw} × ${ah}, ${CANVAS_LIMIT_WORDS}: it landed scaled to ${fw} × ${fh}.`;
+            nw = fw; nh = fh;
+        }
         const refused = await this.wholeLandingRefusal(editor, W, H, gone);
         if (refused) throw new Error(`${label}: ${refused}`);
         const nb = document.createElement("canvas");
@@ -2045,8 +2061,8 @@ export const host = {
         await editor.resizeImage(nw, nh, { base: nb });
         nb.width = nb.height = 0;
         if (editor.width !== nw || editor.height !== nh) throw new Error(editor.status || "the upscaled picture could not be taken");
-        editor.setStatus(`${label} upscaled the picture in ${Math.round(seconds)} s: ${W} × ${H} is now ${nw} × ${nh}, every layer scaled along (Ctrl+Z takes it back).${note ? " " + note : ""}`);
-        return { width: nw, height: nh, answered: [aw, ah] };
+        editor.setStatus(`${label} upscaled the picture in ${Math.round(seconds)} s: ${W} × ${H} is now ${nw} × ${nh}, every layer scaled along (Ctrl+Z takes it back).${fitted}${note ? " " + note : ""}`, fitted ? "warn" : "info");
+        return { width: nw, height: nh, answered: [aw, ah], fitted: !!fitted };
     },
 
     /**

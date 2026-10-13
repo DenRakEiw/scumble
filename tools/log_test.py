@@ -111,8 +111,9 @@ if (ed.statusKind !== "error" || a2.length !== 1 || a2[0] === a1[0]) throw new E
 await wait(300);
 ed.setStatus(again);
 if (blinks().length !== 1 || blinks()[0] !== a2[0]) throw new Error("the same line again restarted the blink");
-// five pulses of 0.6 s: over after 3 s, the line steady red at full opacity, the blink class gone
-await wait(3200);
+// five pulses of 0.6 s: over after 3 s (waited for up to 8 s: a loaded machine runs the animation late), the line
+// steady red at full opacity, the blink class gone
+for (let i = 0; i < 80 && (blinks().length || has("ipc-status-blink")); i++) await wait(100);
 if (blinks().length || has("ipc-status-blink") || !has("ipc-status-error") || getComputedStyle(s).opacity !== "1" || getComputedStyle(s).color !== red) throw new Error("not steady red after the blink: " + blinks().length + " / " + s.className + " / " + getComputedStyle(s).opacity);
 // a tab hidden and shown again (display: none and back) does not blink its old line anew
 const bar = s.parentNode;
@@ -238,7 +239,7 @@ return { file: await window.scumble.log.file() };
 async def main():
     sys.stdout.reconfigure(encoding="utf-8")
     # the status row's rules in plain Node first: the kinds (inpaint_status.js) and the run's bar (inpaint_progress.js)
-    for test in ("status_kind_test.js", "progress_test.js"):
+    for test in ("status_kind_test.js", "progress_test.js", "sizelimit_test.js"):
         node = subprocess.run(["node", os.path.join(os.path.dirname(os.path.abspath(__file__)), test)], capture_output=True, text=True, encoding="utf-8")
         if node.returncode != 0 or not node.stdout.strip().endswith("PASS"):
             print(node.stdout[-2000:], node.stderr[-1000:])

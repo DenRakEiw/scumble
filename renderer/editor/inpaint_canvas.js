@@ -51,6 +51,7 @@ import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp
 import { heightNormals, shadowMarch } from "./px/kernels.js";
 import { statusKindFor, failKind, refusal } from "./inpaint_status.js";
 import { RunProgress } from "./inpaint_progress.js";
+import { canvasSizeRefusal, CANVAS_MAX_SIDE } from "./inpaint_sizelimit.js";
 import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex, LIGHT_PRESETS, SPOT_GOBOS, applyLightPreset, loraPercent, relightMapKey, relightDepthScale, relightVisKey, relightVisCurrent } from "./inpaint_relight.js";
 
 /**
@@ -5484,6 +5485,8 @@ class InpaintEditor {
         if (!deg && frame[0] === 0 && frame[1] === 0 && frame[2] === W && frame[3] === H) { this.setStatus("Nothing to straighten or crop."); return false; }
         if (!deg && (frame[0] < 0 || frame[1] < 0 || frame[0] + frame[2] > W || frame[1] + frame[3] > H)) { this.setStatus("A frame past the picture extends the canvas: use Extend.", "warn"); return false; }
         if (deg && !frameInside(W, H, deg, ...frame)) { this.setStatus("The frame reaches past the turned picture: keep it inside when the picture is turned.", "warn"); return false; }
+        // a turned frame can be wider than the picture: no side past what a canvas draws (its area stays within the document's)
+        if (frame[2] > CANVAS_MAX_SIDE || frame[3] > CANVAS_MAX_SIDE) { this.setStatus(canvasSizeRefusal(frame[2], frame[3], "The straightened picture"), "warn"); return false; }
         const blocked = this.turnBlocked();
         if (blocked) { this.setStatus(blocked); return false; }
         const [fx, fy, nw, nh] = frame;
@@ -5785,6 +5788,17 @@ class InpaintEditor {
             const v = { top: -f.y, right: f.x + f.w - W, bottom: f.y + f.h - H, left: -f.x };
             const pos = {}, neg = {};
             for (const k of Object.keys(v)) { pos[k] = Math.max(0, v[k]); neg[k] = Math.min(0, v[k]); }
+            // the extend comes first and is made as one canvas: refused before either step, so the crop does not go alone;
+            // a crop alone makes no such canvas (a tile document above 268 MP is cropped on its tiles)
+            const extending = Object.values(pos).some((x) => x > 0);
+            const tooBig = extending ? canvasSizeRefusal(W + pos.left + pos.right, H + pos.top + pos.bottom, "The frame's picture before its crop") : "";
+            if (tooBig) {
+                this.setStatus(tooBig, "warn");
+                this.canvasFrame = f;
+                this.syncFrameControls({ force: true });
+                this.draw();
+                return false;
+            }
             if (Object.values(pos).some((x) => x > 0)) await this.extendCanvas(pos);
             if (Object.values(neg).some((x) => x < 0)) await this.cropCanvas(neg);
             ok = this.base !== base0;
@@ -5876,6 +5890,9 @@ class InpaintEditor {
         if (blocked) { this.setStatus(blocked); return; }
         nw = Math.round(nw); nh = Math.round(nh);
         if (!(nw >= 8 && nh >= 8) || (nw === this.width && nh === this.height)) { this.setStatus("Enter a new size."); return; }
+        // the new picture is made as one canvas (S5): refused before anything is made, not an empty base
+        const tooBig = canvasSizeRefusal(nw, nh, "The resized picture");
+        if (tooBig) { this.setStatus(tooBig, "warn"); return; }
         const W = this.width, H = this.height, sx = nw / W, sy = nh / H;
         let before = null, pushed = false;
         try {
@@ -13646,6 +13663,8 @@ class InpaintEditor {
         const v = vals || this.extendValues();
         const top = Math.max(0, v.top || 0), right = Math.max(0, v.right || 0), bottom = Math.max(0, v.bottom || 0), left = Math.max(0, v.left || 0);
         if (!(top || right || bottom || left)) { this.setStatus("Enter how many pixels to add on each side (negative crops)."); return; }
+        const tooBig = canvasSizeRefusal(this.width + left + right, this.height + top + bottom, "The extended picture");
+        if (tooBig) { this.setStatus(tooBig, "warn"); return; }
         await this.relightSettled();   // the flatten below becomes the new base: relight's full shadow maps first (F2.7)
         const W = this.width, H = this.height;
         const nw = W + left + right, nh = H + top + bottom;

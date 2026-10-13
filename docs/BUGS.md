@@ -11,6 +11,11 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+- Size limits, the first two items below (found 2026-10-07, read): a whole-picture upscale is refused before it is
+  paid for when its answer would pass one canvas (65,535 px a side, 268 MP), naming the largest factor that fits; an
+  answer of a model that picks its own factor that comes back larger lands scaled to fit (the user's answer,
+  2026-10-13); Resize, Extend, the frame and `extend_canvas` refuse such a size (0.1.48 S5,
+  `renderer/editor/inpaint_sizelimit.js`; the `editor` gate's step `the_size_ceiling_refuses_before_it_costs`).
 - Two local runs queued in one tab: the first one's result fell back to the active tab (found 2026-10-13, read):
   `editorByPrompt` matches a document's `_localRuns` since 0.1.48 S3 (`renderer/editor/host.js`); the `generate`
   gate's step `the_status_rows_bar_follows_the_run` checks the lookup. Not run with a real ComfyUI.
@@ -34,12 +39,12 @@ overwrites them, or let a relight layer pick its recipe. Released with relight i
 Found while answering the user's question about the largest picture (a workflow of three readers and a checker,
 every number checked at its file:line). The document ceiling itself holds: 65,535 px a side and 1,073,741,824 px on
 the tile backend (`inpaint_canvas.js` `checkBaseSize`, refusals tested in `editor_test.py`).
-- **A whole-picture upscale is not refused before it is paid for.** `docs/MANUAL.md` (the Upscale section) says a
+- **(Fixed for 0.1.48, above.) A whole-picture upscale is not refused before it is paid for.** `docs/MANUAL.md` (the Upscale section) says a
   factor that would pass 65,535 px / about a gigapixel is refused "before it costs you anything"; the code checks only
   the recipe's `limits.out` before sending (`host.js` near 1707-1716). The answer lands through `resizeImage` ->
   the unchecked `makeCanvas` of `inpaint_canvas.js` (about 698-702), so a result above the canvas limit (Magnific
   Precision 4096 px x 16 = 65,536 px, SeedVR2 4096 x 4096 x 8) fails or comes out empty after the provider was paid.
-- **Resize (the panel) and Extend check no target size.** Both use that unchecked `makeCanvas`; only the MCP
+- **(Fixed for 0.1.48, above.) Resize (the panel) and Extend check no target size.** Both use that unchecked `makeCanvas`; only the MCP
   `resize_image` checks (65,535 px, 268 MP). The panel's `max=16384` is an HTML attribute; typed values pass. Above
   268 MP Chromium's canvas draws and reads nothing, so an empty base is possible. Not measured.
 - **JPEG / WebP above 268 MP are not refused** although a comment in `inpaint_canvas.js` (near 548) and

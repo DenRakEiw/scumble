@@ -11479,6 +11479,53 @@ if (!saved || saved.negative !== "blurry" || !saved.refs || saved.refs.img2 !== 
 await run("close_document", { doc: d.id, force: true });
 return { reuse: "a hat like @img1", parked: true, copy: got, saved: !!saved };
 """),
+    # docs/PLAN_0_1_48.md S5: what one canvas holds (65,535 px a side, 268 MP): a whole-picture upscale past it is
+    # refused before anything is sent and names the largest factor that fits; an answer that comes back larger lands
+    # scaled to fit (the user's answer), red; Resize, Extend, the frame and extend_canvas refuse such a size
+    ("the_size_ceiling_refuses_before_it_costs", """
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 4096, height: 2304, doc: d.id });
+const r = { id: "loopback_up_s5", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", task: "upscale", input: "edit", name: "Loopback S5", factor: { min: 1, max: 16, default: 2 }, limits: { max: 8192 }, settings: [] };
+const said = host.upscaleOutRefusal(r, 4096, 2304, 8, "picture");
+if (!said.includes("at 8× it would become 32768 × 18432 px, more than one canvas holds") || !said.includes("The largest factor that fits is 5×")) throw new Error("the refusal: " + said);
+if (host.upscaleOutRefusal(r, 4096, 2304, 5, "picture") !== "") throw new Error("5× was refused: " + host.upscaleOutRefusal(r, 4096, 2304, 5, "picture"));
+const prev = host.recipe, orig = host.notifyProviderRuns;
+let notified = 0, err = null;
+host.notifyProviderRuns = function () { notified++; return orig.call(this); };
+try {
+    host.setRecipe(r);
+    await run("upscale", { scope: "document", factor: 8, doc: d.id });
+} catch (e) { err = String(e.message || e); } finally { host.notifyProviderRuns = orig; host.setRecipe(prev); }
+if (!err || !err.includes("more than one canvas holds") || notified || ed.width !== 4096 || ed.providerPending) throw new Error("the run: " + err + " / notified " + notified + " / " + ed.width);
+// a model that picks its own factor answers past it: the answer lands scaled to fit, the line red
+await run("new_canvas", { width: 16, height: 8000, doc: d.id });
+const c = new OffscreenCanvas(2000, 10);
+const g = c.getContext("2d"); g.fillStyle = "#808080"; g.fillRect(0, 0, 2000, 10);
+const bytes = new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer());
+const land = await host.landWholePicture(ed, bytes, "image/png", { label: "Test", seconds: 1, W: 16, H: 8000 });
+if (!land.fitted || ed.height > 65535 || ed.width * ed.height > 268435456 || ed.height < 60000 || ed.statusKind !== "warn" || !ed.status.includes("landed scaled to")) throw new Error("the landing: " + JSON.stringify(land) + " / " + ed.width + " x " + ed.height + " / " + ed.status);
+await run("undo", { doc: d.id });
+// Resize, Extend, the frame, extend_canvas
+await run("new_canvas", { width: 400, height: 300, doc: d.id });
+await ed.resizeImage(70000, 100);
+if (ed.width !== 400 || ed.statusKind !== "warn" || !ed.status.includes("The resized picture would be 70,000 × 100 px")) throw new Error("resize: " + ed.width + " / " + ed.status);
+await ed.extendCanvas({ right: 70000 });
+if (ed.width !== 400 || ed.statusKind !== "warn" || !ed.status.includes("The extended picture would be 70,400 × 300 px")) throw new Error("extend: " + ed.width + " / " + ed.status);
+ed.canvasFrame = { x: 10, y: 0, w: 70000, h: 300, angle: 0, base: ed.base };
+const applied = await ed.applyFrame();
+if (applied || ed.width !== 400 || !ed.canvasFrame || ed.canvasFrame.w !== 70000 || ed.statusKind !== "warn") throw new Error("the frame: " + applied + " / " + ed.width + " / " + JSON.stringify(ed.canvasFrame && ed.canvasFrame.w) + " / " + ed.status);
+ed.canvasFrame = null;
+let refusedExt = null;
+try { await run("extend_canvas", { right: 70000, left: -10, doc: d.id }); } catch (e) { refusedExt = String(e.message || e); }
+if (!refusedExt || !refusedExt.includes("more than one canvas holds") || ed.width !== 400) throw new Error("extend_canvas: " + refusedExt + " / " + ed.width);
+// a crop alone is never refused (no single canvas is made for it)
+const cropped = await run("extend_canvas", { left: -10, doc: d.id });
+if (cropped.width !== 390) throw new Error("a crop through extend_canvas: " + JSON.stringify(cropped));
+await run("close_document", { doc: d.id, force: true });
+return { refusal: said.slice(0, 80), landed: [land.width, land.height], resize: "refused", frame: "kept" };
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

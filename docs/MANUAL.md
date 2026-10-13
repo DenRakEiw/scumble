@@ -345,7 +345,7 @@ On your own ComfyUI, the Upscale model recipe runs any model in your server's up
 
 ### Notes
 
-- Upscaling the whole picture has a ceiling: the document can go to 65,535 pixels a side and about a gigapixel, and a factor that would pass it is refused before it costs you anything.
+- Upscaling the whole picture has a ceiling: the new picture is made as one canvas, so it can go to 65,535 pixels a side and 268 megapixels. A factor that would pass it is refused before it costs you anything, and the refusal names the largest factor that fits. A model that picks its own factor is only seen in its answer: one that comes back larger lands scaled down to fit, and the status line says so in red. Resize and Extend (the panel, the frame) refuse a size past the same ceiling.
 - The whole picture at 1× is refused before anything is sent: its answer would come back at the picture's own size. For a cleanup at 1× (RTX Video Super Resolution), select all and upscale the selection.
 - While an upscale of the whole picture runs, the document waits for it: Generate, a selection by text, a cutout, the object tool and Ctrl+Z of a crop, a resize or a turn are refused with the reason, since their result would land in the old size. A *Cancel* pressed while the answer is still being fetched lands nothing.
 - An upscale of the selection is a layer, so it can be masked back in partly — often nicer than a uniformly sharpened picture.

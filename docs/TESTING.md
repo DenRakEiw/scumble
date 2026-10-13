@@ -434,6 +434,11 @@ the run's profile, so it runs alone on a fresh instance per backend. The run: `b
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:
+
+- 2026-10-13 (0.1.48 S5): with the machine loaded (the `commands` gate took 44 s instead of 15, `upscale` 20 instead
+  of 12) the editor gate timed out after 421 s at its 55th step and the `log` gate's `status_kinds` found the blink
+  still running after 3.4 s; the rerun minutes later passed both (169 s). `status_kinds` now waits up to 8 s for the
+  blink to end.
 - `generate_test.py` `cancel_and_a_closed_tab_add_nothing` on the canvas backend against the exe ("the deadline's
   take-off": the stub's delete and interrupt both arrived, the step's deadline came first; 2026-10-09, 0.1.44's exe
   gates, the step passed on the re-run at once). A timing of the cancel against the stub's queue, not the cancel:

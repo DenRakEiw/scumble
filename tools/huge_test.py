@@ -273,7 +273,8 @@ try {
     const tiles0 = ed.basePx.tileCount;
     const ext = await run("extend_canvas", { doc: window.__hg, right: 64 }).catch((e) => ({ status: String(e.message || e) }));
     if (ed.width !== W || ed.basePx.tileCount !== tiles0) throw new Error("extend changed the document: " + ed.width + " x " + ed.height);
-    if (!/larger than any canvas/.test(ext.status || ed.status)) throw new Error("extend on a document above the canvas limit did not say why it cannot run: " + (ext.status || ed.status));
+    // since 0.1.48 S5 the command refuses before anything runs ("more than one canvas holds")
+    if (!/larger than any canvas|more than one canvas holds/.test(ext.status || ed.status)) throw new Error("extend on a document above the canvas limit did not say why it cannot run: " + (ext.status || ed.status));
     out.extend = ext.status || ed.status;
 } finally { host.saveExport = was; ed.saveFormatSel.value = "png"; }
 ed.removeLayer(fx.id); ed.removeLayer(res.id);

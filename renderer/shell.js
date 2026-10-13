@@ -1810,7 +1810,8 @@ function upSyncNote() {
     const f = v.factor && !v.factor.fixed ? +ui.upFactor.value || v.factor.default : null;
     const max = (v.limits && v.limits.max) || 2048;
     // an answer cap (limits.out: RTX Video Super Resolution on Comfy Cloud), refused here as host.runUpscale refuses it
-    const capped = { limits: v.limits };
+    // (and the canvas ceiling of a whole-picture landing, which names the largest factor of the variant that fits)
+    const capped = { limits: v.limits, factor: v.factor, name: r.name, id: r.id };
     let text = "", ok = true;
     if (ed && ed.width) {
         if (doc) {
