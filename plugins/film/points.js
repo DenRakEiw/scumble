@@ -247,7 +247,7 @@ export function makePoints(scumble) {
                     doc.status(`Polygon point: ${drawing.pts.length} corners. Enter, double-click or first corner closes; Backspace drops corner.`);
                     doc.draw();
                 } else {
-                    doc.status("Polygon reaches maximum 16 corners. Enter or double-click to close.");
+                    doc.status("Polygon reaches maximum 16 corners. Enter or double-click to close.", "warn");
                 }
                 return;
             }
@@ -462,7 +462,7 @@ export function makePoints(scumble) {
                         doc.draw();
                         doc.status(`Point ${pt.id} (polygon) added with ${polyPts.length} corners.`);
                     } else {
-                        doc.status("Polygon must have at least 3 corners.");
+                        doc.status("Polygon must have at least 3 corners.", "warn");
                     }
                     return true;
                 }

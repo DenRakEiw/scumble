@@ -29,8 +29,13 @@ function report(entry, where, err) {
     console.error(`plugin ${entry.id}: ${where}:`, err);
     entry.errors.push(`${where}: ${msg}`);
     if (entry.errors.length > 8) entry.errors.shift();
-    if (host.editor) { try { host.editor.setStatus(`Plugin ${entry.manifest.name || entry.id}: ${where}: ${msg}`); } catch (_) { /* ignore */ } }
+    if (host.editor) { try { host.editor.setStatus(`Plugin ${entry.manifest.name || entry.id}: ${where}: ${msg}`, (err && err.statusKind) || "error"); } catch (_) { /* ignore */ } }
     if (onChanged) onChanged();
+}
+
+/** A plugin's status kind as setStatus takes it: only "error", "warn" and "info" pass, anything else lets the text decide. */
+function statusKindArg(kind) {
+    return kind === "error" || kind === "warn" || kind === "info" ? kind : undefined;
 }
 
 let onChanged = null;   // set by the shell: () => void (the Settings › Plugins list)
@@ -53,7 +58,8 @@ export class Document {
     get active() { return host.isActive(this.editor); }
     get name() { const r = this.editor.base && this.editor.base.ref; return r ? String(r.filename || "image").replace(/\.[a-z0-9]+$/i, "") : "Untitled"; }
 
-    status(text) { this.editor.setStatus(String(text)); }
+    /** The status bar; `kind` "error" / "warn" (red, five blinks), "info" (plain) or left out (the text decides). */
+    status(text, kind) { this.editor.setStatus(String(text), statusKindArg(kind)); }
     run(name, args = {}) { return commands.run(name, { ...args, doc: this.id }); }
 
     layers() { return this.editor.layers.map((l) => layerSummary(this.editor, l)); }
@@ -779,7 +785,7 @@ function makeApi(entry) {
         },
 
         ui: {
-            status: (text) => { if (host.editor) host.editor.setStatus(String(text)); },
+            status: (text, kind) => { if (host.editor) host.editor.setStatus(String(text), statusKindArg(kind)); },
             // the old synchronous question (the browser's box); ask() is the app's own dialog (renderer/dialogs.js):
             // { title, message, detail, buttons, defaultId, cancelId, danger } -> the index of the button pressed
             confirm: (text) => window.confirm(String(text)),

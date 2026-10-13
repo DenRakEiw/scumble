@@ -18,6 +18,12 @@ import { remap, compare, checkNote, normalize as normalizeTokens, referencesText
 import * as realism from "./editor/realism.js";
 import * as comfyprompt from "./editor/comfyprompt.js";
 import * as genpresets from "./editor/genpresets.js";
+import { failKind } from "./editor/inpaint_status.js";
+
+/** failKind for an error that came over IPC (its fields stay behind): a cancelled or busy save or open is plain. */
+function ipcKind(err) {
+    return /(?:was cancell?ed|is already being saved|is already being opened)/i.test(String((err && err.message) || err)) ? "info" : failKind(err);
+}
 import { getSecretGreeting, getScumbleWord, getScumbleLogo, runBrainfuck } from "./easteregg.js";
 
 // the editor's style, in the app's cascade layer (docs/SKINS.md): created here before the first editor, so the
@@ -52,7 +58,7 @@ if (window.scumble && window.scumble.pixels) {
     }
     // the renderer's memory limit for pixels (PixelMemoryError, renderer/editor/inpaint_arena.js) reached where nothing
     // catches it, a stroke or a timer: the status line says so, as it does for an operation that catches it
-    const pixelMemory = (err) => { if (err && err.name === "PixelMemoryError" && host.editor) host.editor.setStatus(err.message); };
+    const pixelMemory = (err) => { if (err && err.name === "PixelMemoryError" && host.editor) host.editor.setStatus(err.message, failKind(err)); };
     window.addEventListener("error", (e) => { send("error", "uncaught: " + (e.message || e), e.error && e.error.stack); pixelMemory(e.error); });
     window.addEventListener("unhandledrejection", (e) => { send("error", "unhandled: " + ((e.reason && (e.reason.message || e.reason)) || e), e.reason && e.reason.stack); pixelMemory(e.reason); });
 })();
@@ -279,7 +285,7 @@ async function reopenClosedTab() {
         if (!ed && host.editor) host.editor.setStatus("No closed tab to reopen.");
         renderTabs();
     } catch (err) {
-        if (host.editor) host.editor.setStatus("Could not reopen the tab: " + String((err && err.message) || err));
+        if (host.editor) host.editor.setStatus("Could not reopen the tab: " + String((err && err.message) || err), failKind(err));
     }
 }
 
@@ -548,7 +554,7 @@ host.onModeChanged = (mode, editor) => {
     if (cur) { editor.genSettings.mode = modeOf(cur); editor.syncGenControls(); }
     editor.setStatus(mode === "api" ? "No API recipe: add a provider key in Settings (Ctrl+,) › API providers."
         : mode === "cloud" ? "No Comfy Cloud recipe yet: open a workflow or one of Comfy's templates in the ComfyUI window on Comfy Cloud and Save as new recipe, or import one exported from Comfy Cloud (Settings › Recipes)."
-        : "No ComfyUI recipe installed.");
+        : "No ComfyUI recipe installed.", "warn");
 };
 
 /** Update the meta text and the provider selects of the recipe rows without rebuilding them. */
@@ -1931,7 +1937,7 @@ ui.upGo.addEventListener("click", async () => {
         activate(ed);
         console.log("[upscale]", await run);
     } catch (err) {
-        ed.setStatus(String(err.message || err));
+        ed.setStatus(String(err.message || err), failKind(err));
     } finally {
         ui.upGo.disabled = false;
     }
@@ -2693,7 +2699,7 @@ async function installUpdate() {
     }
     let ok = false;
     try { ok = await window.scumble.updates.install(); } catch (_) { /* said below */ }
-    if (!ok && host.editor) host.editor.setStatus("The update did not start; Settings › Updates offers it again.");
+    if (!ok && host.editor) host.editor.setStatus("The update did not start; Settings › Updates offers it again.", "error");
     return ok;
 }
 
@@ -2938,7 +2944,7 @@ async function saveDocumentFromUi(ed, opts = {}) {
         renderTabs();
         return r;
     } catch (err) {
-        ed.setStatus("Not saved: " + ipcMessage(err));
+        ed.setStatus("Not saved: " + ipcMessage(err), ipcKind(err));
         return null;
     }
 }
@@ -2950,7 +2956,7 @@ async function openDocumentFromUi(file) {
         return r;
     } catch (err) {
         const name = String(file).split(/[\\/]/).pop();
-        if (host.editor) host.editor.setStatus(`Could not open ${name}: ${ipcMessage(err)}`);
+        if (host.editor) host.editor.setStatus(`Could not open ${name}: ${ipcMessage(err)}`, ipcKind(err));
         return null;
     }
 }
@@ -2971,7 +2977,7 @@ window.addEventListener("drop", (e) => {
         for (const f of files) {
             const p = window.scumble.documents.pathOf(f);
             if (p) await openDocumentFromUi(p);
-            else if (host.editor) host.editor.setStatus(`${f.name} has no path on disk; open it with File › Open.`);
+            else if (host.editor) host.editor.setStatus(`${f.name} has no path on disk; open it with File › Open.`, "info");
         }
     })();
 }, true);
@@ -3089,8 +3095,8 @@ async function frequencySeparation() {
     const v = await ed.ask({ title: "Frequency separation", message: `The blur radius in pixels: detail finer than it goes to the high layer, colour and tone to the low one. ${ed.getBounds() ? "The selection's box is split." : "The whole picture is split (select an area for a large one)."}`, value: String(def), ok: "Split" });
     if (v == null || v === false) return;
     const r = Math.round(+v);
-    if (!(r > 0)) { ed.setStatus("The radius has to be a number of pixels."); return; }
-    try { await ed.frequencySeparation({ radius: r }); } catch (err) { ed.setStatus(`Frequency separation failed: ${err.message || err}`); }
+    if (!(r > 0)) { ed.setStatus("The radius has to be a number of pixels.", "warn"); return; }
+    try { await ed.frequencySeparation({ radius: r }); } catch (err) { ed.setStatus(`Frequency separation failed: ${err.message || err}`, failKind(err)); }
 }
 
 /** The canvas-only view on (`true`), off (`false`) or toggled (left out); resolves with the state after. */
@@ -3239,7 +3245,7 @@ try {
 }
 if (!host.editors().length) newDocument();
 activate(host.editor);
-if (startMode === "safe") host.editor.setStatus("The window crashed twice while it restored your documents: they are kept, Settings › Local files › Earlier states opens them.");
+if (startMode === "safe") host.editor.setStatus("The window crashed twice while it restored your documents: they are kept, Settings › Local files › Earlier states opens them.", "warn");
 await loadProviders();
 await loadRecipes();
 host.presets = settings.recipePresets || {};
@@ -3288,11 +3294,11 @@ function cloudGraphOf(r) {
  */
 function openRecipeInComfy(id) {
     const r = recipes.find((x) => x.id === id);
-    const say = (text) => { if (host.editor) host.editor.setStatus(text); };
+    const say = (text, kind) => { if (host.editor) host.editor.setStatus(text, kind); };
     if (!r) return say("No recipe is selected.");
     const cloud = r.kind === "provider" && cloudGraphOf(r);
     if (r.kind === "provider" && !cloud) return say(`"${r.name || r.id}" runs through a provider, not through ComfyUI: it has no graph to edit.`);
-    window.scumble.comfyView.open(cloud ? { recipe: r.id, target: "cloud" } : { recipe: r.id }).catch((err) => say(String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, "")));
+    window.scumble.comfyView.open(cloud ? { recipe: r.id, target: "cloud" } : { recipe: r.id }).catch((err) => say(String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, ""), failKind(err)));
 }
 
 // ---- the console dialog: the log's ring buffer, filtered, growing live ----------------------

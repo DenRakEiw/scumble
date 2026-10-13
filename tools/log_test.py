@@ -15,6 +15,7 @@ Start the app first: ./node_modules/.bin/electron . --remote-debugging-port=9555
 import asyncio
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -144,6 +145,45 @@ if (level(/^Depth estimation/) !== "warn" || level(/^Error: the same/) !== "erro
 if (logged.some((e) => /a hint the caller calls plain/.test(e.message))) throw new Error("a line marked info was logged as an error");
 return { red, plain, iterations: 5, logged: logged.map((e) => e.level) };
 """),
+    ("status_funnels", """
+// S2: the generate() catch shows a refusal the host throws plain, a failure red, a cancel plain; the plugin API passes
+// a kind on. The gate runs --offline, so a local Generate is refused as not connected.
+const ed = host.editors().find((e) => e.node.id === window.__logDoc);
+const has = (cls) => ed.statusEl.classList.contains(cls);
+const red = () => has("ipc-status-error");
+if (host.connected) return { skipped: "connected to a ComfyUI: the refusal is not reached" };
+ed.genSettings.mode = "local";
+const last = (await window.scumble.log.list({})).slice(-1)[0].id;
+await ed.generate();
+const refused = ed.status;
+if (refused !== "Not connected to ComfyUI." || red() || ed.statusKind !== "") throw new Error("the not-connected refusal: " + refused + " / " + ed.statusKind);
+const orig = host.queueGenerate;
+const run = async (err) => { host.queueGenerate = async () => { throw err; }; try { await ed.generate(); } finally { host.queueGenerate = orig; } return [ed.status, ed.statusKind]; };
+const failure = await run(new Error("fal.ai flux: 401 Unauthorized " + window.__logMark));
+if (failure[1] !== "error" || !red()) throw new Error("a provider failure through generate(): " + JSON.stringify(failure));
+const cancel = await run(new Error("Cancelled after 3 s"));
+if (cancel[1] !== "" || red()) throw new Error("a cancel through generate(): " + JSON.stringify(cancel));
+// the Realism Pass on the whole picture, offline: its refusal (not connected) is plain, and the thrown Error is the
+// sentence with that kind (its say helper once threw "refusal is not a function")
+const check = host.realismWholeCheck(ed, { factor: 1 });
+if (!check || check.kind !== "info") throw new Error("the pass refusal offline: " + JSON.stringify(check));
+let passErr = null;
+try { await host.realismWhole(ed, { factor: 1 }); } catch (e) { passErr = e; }
+if (!passErr || passErr.message !== check.text || passErr.statusKind !== "info" || ed.status !== check.text || red()) throw new Error("the pass refusal: " + (passErr && passErr.message) + " / " + ed.status + " / " + ed.statusKind);
+const P = await import('./plugins.js');
+const doc = new P.Document(ed);
+doc.status("A plugin's failure " + window.__logMark, "error");
+if (ed.statusKind !== "error" || !red()) throw new Error("Document.status with kind error");
+doc.status("Error-looking but fine", "info");
+if (ed.statusKind !== "" || red()) throw new Error("Document.status with kind info");
+doc.status("Done.", "loud");
+if (ed.statusKind !== "" || red()) throw new Error("Document.status with an unknown kind");
+await wait(300);
+const logged = (await window.scumble.log.list({ after: last })).filter((e) => e.source === "status");
+if (logged.some((e) => /Not connected to ComfyUI/.test(e.message))) throw new Error("the refusal was logged as an error");
+if (!logged.some((e) => e.level === "error" && /401 Unauthorized/.test(e.message))) throw new Error("the failure was not logged");
+return { refused, failure: failure[1], cancel: cancel[1] || "plain", plugin: "ok" };
+"""),
     ("console_dialog", """
 await shell.openConsole();
 await wait(200);
@@ -197,6 +237,14 @@ return { file: await window.scumble.log.file() };
 
 async def main():
     sys.stdout.reconfigure(encoding="utf-8")
+    # the kinds' rules in plain Node first (renderer/editor/inpaint_status.js)
+    node = subprocess.run(["node", os.path.join(os.path.dirname(os.path.abspath(__file__)), "status_kind_test.js")], capture_output=True, text=True, encoding="utf-8")
+    if node.returncode != 0 or not node.stdout.strip().endswith("PASS"):
+        print(node.stdout[-2000:], node.stderr[-1000:])
+        print("FAIL status_kind_test.js")
+        print("RESULT FAIL")
+        return False
+    print("PASS status_kind_test.js: %d checks" % node.stdout.count("[ok]"))
 
     async def run(cdp):
         ev = cdp.eval

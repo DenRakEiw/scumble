@@ -23,6 +23,7 @@ import { fontList } from "./editor/inpaint_text.js";
 import { parse, remap } from "./editor/reftokens.js";
 import { LABEL as REALISM_LABEL } from "./editor/realism.js";
 import * as genpresets from "./editor/genpresets.js";
+import { refusal } from "./editor/inpaint_status.js";
 
 const VERSION = 2;   // 1 = the node's bridge
 
@@ -1327,7 +1328,7 @@ const COMMANDS = {
         async run(ed, a) {
             const r = host.recipe;
             if (!r || r.task !== "upscale") throw new Error(`the selected recipe is no upscaler: select_recipe one with task "upscale" (${host.shell.recipes().filter((x) => x.task === "upscale").map((x) => x.id).join(", ") || "none installed"})`);
-            if (ed.providerPending) throw new Error("a run is still going on this document");
+            if (ed.providerPending) throw refusal("a run is still going on this document");
             const scope = a.scope === "document" ? "document" : "selection";
             if (r.kind !== "provider") {
                 // an upscaler on the user's ComfyUI. The whole picture: the base goes out alone through the recipe's graph
@@ -1345,7 +1346,7 @@ const COMMANDS = {
                 }
                 // the selection: the node's stitch fits the answer back into the box, a Generate with the crop at its
                 // native size
-                if (!(ed.getBounds && ed.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
+                if (!(ed.getBounds && ed.getBounds())) throw refusal("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
                 // a factor (RTX Video Super Resolution) checked here, so a bad one is refused before the run starts
                 const factor = host.upscaleFactorFor(r, a.factor);
                 // generate() takes no arguments: the factor rides on the editor for host.queueGenerate, read once there
@@ -1508,7 +1509,7 @@ const COMMANDS = {
             const failed = () => /^Error|failed/i.test(ed.status || "") || (!!ed.lastPassError && ed.status === ed.lastPassError);
             // a refusal of this run (a token that cannot go, a missing key, ...) is said at once, not after the wait below;
             // a provider run is over when ed.generate() returns, so `seconds` counts from here
-            if (ed.providerPending) throw new Error("a run is still going on this document");
+            if (ed.providerPending) throw refusal("a run is still going on this document");
             const started = Date.now(), limit = clampInt(a.timeout, 5, 3600, 600) * 1000;
             const run = await ed.generate();
             if (run && run.error) throw run.error;

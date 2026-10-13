@@ -89,7 +89,7 @@ export function makeTool(scumble, api) {
         try {
             const n = api.set(d, b.id, { [e.field]: value });
             d.status(n.id !== b.id ? `Box ${b.id} described; it is called ${n.id} now.` : `Box ${b.id} described.`);
-        } catch (err) { d.status(String((err && err.message) || err)); }
+        } catch (err) { d.status(String((err && err.message) || err), "warn"); }
         d.draw();
     }
     function openEditor(doc, b, ev) {
@@ -180,7 +180,7 @@ export function makeTool(scumble, api) {
     const shifted = (r, dx, dy) => [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy];
     function change(doc, b, patch, what) {
         try { api.set(doc, b.id, patch); return true; }
-        catch (err) { doc.status(String((err && err.message) || err)); return false; }
+        catch (err) { doc.status(String((err && err.message) || err), "error"); return false; }
         finally { if (what) doc.draw(); }
     }
 
@@ -263,7 +263,7 @@ export function makeTool(scumble, api) {
                     const b = api.add(doc, { kind: "new", rect: d.rect, id: api.nextId(api.boxesOf(doc), "box") });
                     select(doc, b.id);
                     doc.status(`Box ${b.id} added: double-click it to describe it (or use the Boxes panel of the Generate pane).${api.switchNote(doc)}`);
-                } catch (err) { doc.status(String((err && err.message) || err)); doc.draw(); }
+                } catch (err) { doc.status(String((err && err.message) || err), "error"); doc.draw(); }
                 return;
             }
             const b = api.boxesOf(doc).find((x) => x.id === d.id);
@@ -274,7 +274,7 @@ export function makeTool(scumble, api) {
             if (!b) return false;
             if (ev.key === "Delete" || ev.key === "Backspace") {
                 try { api.remove(doc, b.id); doc.status(`Box ${b.id} removed (Ctrl+Z brings it back).`); }
-                catch (err) { doc.status(String((err && err.message) || err)); }
+                catch (err) { doc.status(String((err && err.message) || err), "error"); }
                 select(doc, null);
                 return true;
             }
@@ -297,7 +297,7 @@ export function makeTool(scumble, api) {
                     const n = api.add(doc, { ...copy, id: api.nextId(api.boxesOf(doc), base) });
                     select(doc, n.id);
                     doc.status(`Box ${n.id} added as a copy of ${b.id}.`);
-                } catch (err) { doc.status(String((err && err.message) || err)); }
+                } catch (err) { doc.status(String((err && err.message) || err), "error"); }
                 return true;
             }
             return false;

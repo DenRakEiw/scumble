@@ -382,7 +382,7 @@ export function activate(scumble) {
                 warn.innerHTML = "";
                 for (const [text, paste] of lines) {
                     const row = ui.el("div", "boxes-warn-row", text);
-                    if (paste) row.appendChild(ui.button("Paste the whole crop", "Crop > Paste on whole crop for this document: the result of the whole crop is pasted back, so a box outside the selection keeps its change", () => pasteWholeCrop(doc).catch((err) => doc.status(String((err && err.message) || err)))));
+                    if (paste) row.appendChild(ui.button("Paste the whole crop", "Crop > Paste on whole crop for this document: the result of the whole crop is pasted back, so a box outside the selection keeps its change", () => pasteWholeCrop(doc).catch((err) => doc.status(String((err && err.message) || err), "error"))));
                     warn.appendChild(row);
                 }
             };

@@ -4,7 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
-- **Errors stand out in the status line.** An error, or a model that still has to be downloaded, shows red and blinks five times, then stays red until the next line; with the system's animation effects off it is red without blinking. Agents can mark their own lines through `set_status`'s new `kind`.
+- **Errors stand out in the status line.** An error, a model that still has to be downloaded, a size or limit a run would pass, or a result that came out only in part (a fallback used, parts of a file left out) shows red and blinks five times, then stays red until the next line; with the system's animation effects off it is red without blinking. Hints such as "Select a layer first" and "a run is still going" stay as they were. Agents mark their own lines through `set_status`'s new `kind`, plugins through `status(text, kind)`.
 - **A greeting in the developer tools.** Open *View > Toggle Developer Tools* and the console shows the Scumble mascot and its name in ASCII, printed at every start by a small Brainfuck program (`renderer/easteregg/logo.bf`).
 
 ## 0.1.47 - 2026-10-13

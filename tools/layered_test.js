@@ -462,6 +462,7 @@ async function writerChecks(readPsd) {
     check("read back: no mask on the plain layers", rb && rp && !("mask" in rb) && !("mask" in rp));
     check("read back: hidden, blend and opacity", ro.visible === false && rm.visible === true && rm.blend === "multiply" && Math.abs(rm.opacity - 128 / 255) < 1e-9);
     check("read back: the note", back.notes.includes("2 layer masks kept as masks (1 switched off)"), short(back.notes));
+    check("read back: masks kept are no loss (the status line stays plain)", back.lossy === false, short(back.notes));
     check("read back: the merged picture", equalBytes(back.composite, composite));
 
     // without masks: the bytes of before, from both writers
@@ -556,6 +557,7 @@ async function writerChecks(readPsd) {
         const d16 = await readPsd(psd({ width: W, height: H, depth: 16, layers: [{ name: "deep", top: 0, left: 0, w: W, h: H, comp: 3, ch: { 0: s16, 1: s16, 2: s16, "-1": fill(W * H, () => 65535) } }] }), { inflate });
         check("16 bit (ZIP with prediction on words) rounds to 8", s16.every((v, i) => d16.layers[0].rgba[i * 4] === Math.round(v / 257)) && d16.layers[0].rgba[3] === 255, short(px(d16, 0, 5, 3)));
         check("16 bit is named in the notes", d16.notes.some((n) => /16 bits/.test(n)), short(d16.notes));
+        check("16 bit rounded is a loss (the status line goes red)", d16.lossy === true, short(d16.notes));
         const d16r = await readPsd(psd({ width: W, height: H, depth: 16, layers: [{ name: "deep", top: 0, left: 0, w: W, h: H, comp: 1, ch: { 0: s16, 1: s16, 2: s16 } }] }), { inflate });
         check("16 bit RLE, and no alpha channel is opaque", s16.every((v, i) => d16r.layers[0].rgba[i * 4 + 2] === Math.round(v / 257)) && d16r.layers[0].rgba[7] === 255);
         // grayscale
@@ -591,6 +593,7 @@ async function writerChecks(readPsd) {
         check("a clipped layer stays clipped", doc.layers[4].clip === true && doc.layers.filter((l) => l.clip).length === 1 && doc.notes.some((n) => /1 clipped layer kept clipped/.test(n)), short(doc.notes));
         check("a clip onto a left-out layer is dropped and named", !doc.layers[5].clip && doc.notes.some((n) => /not kept.*"clipped to curves"/.test(n)), short(doc.notes));
         check("adjustment layers are named, with and without pixels", doc.notes.some((n) => /2 adjustment or fill layers left out \("Levels 1", "Curves over pixels"\)/.test(n)), short(doc.notes));
+        check("left-out layers are a loss", doc.lossy === true, short(doc.notes));
         check("the merged picture is read", doc.composite && doc.composite.length === W * H * 4 && doc.composite[3] === 255);
         const every = BLENDS.map((b) => b.id);
         const keys = BLENDS.map((b) => b.psd);
@@ -626,6 +629,7 @@ async function writerChecks(readPsd) {
         check("the mask comes back at the layer's size: its rectangle placed, its default (0) outside", M && same(M.data, placed(masked, mask)), at(M));
         check("the mask's default colour and switch", M && M.defaultColor === 0 && M.disabled === false, short(M && { def: M.defaultColor, off: M.disabled }));
         check("a kept mask is named, nothing says applied", d.notes.includes("1 layer mask kept as a mask") && !d.notes.some((n) => /applied/.test(n)), short(d.notes));
+        check("a kept mask is no loss", d.lossy === false, short(d.notes));
         const white = { ...masked, mask: { ...mask, def: 255 } };
         const dw = await readPsd(psd({ width: W, height: H, layers: [white] }));
         check("a mask with default white is white outside its rectangle", same(dw.layers[0].mask?.data, placed(white, white.mask)) && dw.layers[0].mask?.defaultColor === 255 && dw.layers[0].mask?.data[4] === 255, at(dw.layers[0].mask));
@@ -781,6 +785,7 @@ async function writerChecks(readPsd) {
         check("a nested stack adds its offset, opacity and visibility", inG.x === 6 && inG.y === 9 && inG.opacity === 0.5 && inG.visible === false, short(inG));
         check("stored and deflated pictures come back as written", Buffer.from(doc.layers[0].png).toString("latin1").endsWith("bg") && Buffer.from(inG.png).toString("latin1").endsWith("in") && Buffer.from(top.png).toString("latin1").endsWith("top"));
         check("an unknown composite-op, a missing picture and the group are named", doc.notes.some((n) => /Odd \(svg:odd-blend\)/.test(n)) && doc.notes.some((n) => /1 layer without a picture left out \("Lost"\)/.test(n)) && doc.notes.some((n) => /1 group flattened/.test(n)), short(doc.notes));
+        check("an ORA with a part left out is a loss", doc.lossy === true, short(doc.notes));
         const noXml = await throwsWith(() => readOra(zip([{ name: "mimetype", data: "image/openraster" }]), { inflateRaw }), /no stack.xml/);
         check("an ORA without stack.xml is refused", noXml.ok, noXml.msg);
         const noInflater = await throwsWith(() => readOra(file), /needs an inflater/);

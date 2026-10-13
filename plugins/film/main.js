@@ -112,7 +112,7 @@ export function activate(scumble) {
                     cell.addEventListener("click", (e) => {
                         e.stopPropagation();
                         clearTimeout(cellHoverTimer);
-                        Promise.resolve(applyLook(doc, s.id)).catch((err) => doc.status(String(err.message || err)));
+                        Promise.resolve(applyLook(doc, s.id)).catch((err) => doc.status(String(err.message || err), doc.loaded ? "error" : "info"));
                     });
                     grid.appendChild(cell);
                     cells.set(s.id, cv);

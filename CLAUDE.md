@@ -79,7 +79,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-13: 0.1.47 released and in the Store; 0.1.48 being built, S1 done)
+## Where things stand (2026-10-13: 0.1.47 released and in the Store; 0.1.48 being built, S1 and S2 done)
 
 - **The open items, collected 2026-10-13** (a workflow of 11 agents over BUGS.md, the plans, the list, the outward
   threads and GitHub, each doubtful status checked in the code): `docs/OPEN_2026-10-13.md`, a dated snapshot (not
@@ -98,8 +98,13 @@ code.
   corrects the open-items list: the app's title row already has a progress bar from `progress` events and the API
   seconds, the editor and the node have none). **S1 done 2026-10-13** ("S1 as built": `setStatus(text, kind)`,
   `statusKind`, the classes `ipc-status-error` / `ipc-status-blink`, reduced motion, `set_status` `kind`; the `log`
-  gate's two new steps; reviewed by a workflow, its three findings fixed). **Next: S2** (marking the ~110 error sites);
-  ask the user first its two questions (does "a run is still going" go red; do degraded-but-landed lines go red).
+  gate's two new steps; reviewed by a workflow, its three findings fixed). **S2 done 2026-10-13** (the user, the
+  same day: "context ist noch nicht so voll, baue weiter"; the answers: state refusals and "a run is still going"
+  plain, degraded-but-landed and limit refusals red; "S2 as built": `renderer/editor/inpaint_status.js` with
+  `failKind` / `refusal`, 155 sites marked by a script from a classification of all 620 status writes, the
+  helpers and the plugin API by hand, the PSD / ORA `lossy`; a review workflow's two musts (a local `refusal`
+  hiding the import in `host.js`) and the rest fixed; 14 gates green on tiles). **Next: S3** (the progress bar in
+  the status row); ask the user first whether the title row's bar stays beside it.
 - **Done 2026-10-13 on the user's word:** the awesome-alternative-uis-for-comfyui entry (PR #120) moved to the bottom
   of Category 4 as the reviewer asked (the fork's `add-scumble` rebuilt on upstream `babe4fd` and force-pushed; no
   reply comment posted). Video 4 is on YouTube (the user). CLAUDE.md brought up to date with the code.
@@ -403,7 +408,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   download" count as errors.** The core of 0.1.48 (above). **The mechanism built 2026-10-13 (S1 of
   `docs/PLAN_0_1_48.md`):** `setStatus(text, kind)` (`"error"`, `"warn"`, `"info"` or `{ kind }`; without one the text
   decides: the log's old failure regex and the "download it in Settings" lines), red from `--sc-error`, five 0.6 s
-  pulses; the error sites marked one by one in S2.
+  pulses. **The error sites marked the same day (S2)**: failures, missing models, limit refusals and partial
+  results red; refusals of the user's state, a run going, cancels plain (the user's answers).
 - 46: **the ASCII logo in Brainfuck** (the user, 2026-10-13: GitHub's language bar showed no Brainfuck although the
   easter egg of 4cc2f76 is in the code, "baue das mit dem asci logo im nächsten update"). Linguist counts by file
   extension and leaves out languages below about 0.1 % of the repository (the Dockerfile, 0.01 %, is not shown), so

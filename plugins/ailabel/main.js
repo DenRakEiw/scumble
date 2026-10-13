@@ -90,7 +90,8 @@ export function activate(scumble) {
     }
 
     async function add(doc, opts = {}) {
-        if (!doc.loaded) throw new Error("Load an image first.");
+        // a refusal, not a failure: the status line shows it plain (statusKind, item 45)
+        if (!doc.loaded) throw Object.assign(new Error("Load an image first."), { statusKind: "info" });
         const o = normalise({ ...settings(), ...opts });
         const stem = `${LABELS[o.label].file}_${STYLES[o.style].file}${GROUNDS[o.ground].file}`;
         const pct = o.label === "mark" ? (opts.size != null ? o.size : o.sizeMark) : o.size;
@@ -154,8 +155,8 @@ export function activate(scumble) {
             const opacityRow = ui.slider("Opacity", { min: 0, max: 100, step: 1, value: s.opacity, unit: " %" }, (v, done) => { if (done) settings({ opacity: v }); });
             box.appendChild(opacityRow);
             const buttons = ui.el("div", "scumble-plugin-row");
-            buttons.appendChild(ui.button("Add label", "Place the label with these settings; an existing label is replaced", () => add(doc).catch((err) => doc.status(String(err.message || err)))));
-            buttons.appendChild(ui.button("Remove label", "Remove the label layer", () => remove(doc).catch((err) => doc.status(String(err.message || err)))));
+            buttons.appendChild(ui.button("Add label", "Place the label with these settings; an existing label is replaced", () => add(doc).catch((err) => doc.status(String(err.message || err), (err && err.statusKind) || "error"))));
+            buttons.appendChild(ui.button("Remove label", "Remove the label layer", () => remove(doc).catch((err) => doc.status(String(err.message || err), "error"))));
             box.appendChild(buttons);
         },
     });

@@ -204,7 +204,7 @@ export async function applySkin(id) {
     if (r === false) {
         try { state = await appearance().set(prev); } catch (err) { console.warn("skins: back to the previous choice", err); }
         note = `The skin "${nameOf(want)}" did not load; the look stays as it was.`;
-        status(note);
+        status(note, "error");
     }
     render();   // with --no-skin, the list says the choice waits for the next start
     return state;
@@ -245,7 +245,7 @@ async function refuse(id, reason, hidAsk) {
         }
         await reapply(my, true);
         note = hidAsk ? `The skin "${name}" hid the assistant's question and was switched off: ${reason}` : `The skin "${name}" was switched off: ${reason}`;
-        status(note);
+        status(note, "error");
         render();
     } finally {
         refusing = null;
@@ -257,8 +257,8 @@ function nameOf(id) {
     return (s && s.name) || id || "Default";
 }
 
-function status(text) {
-    try { if (host.editor) host.editor.setStatus(text); } catch (_) { /* no editor yet */ }
+function status(text, kind) {
+    try { if (host.editor) host.editor.setStatus(text, kind); } catch (_) { /* no editor yet */ }
 }
 
 // ---- the assistant's question --------------------------------------------------------------

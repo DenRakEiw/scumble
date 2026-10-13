@@ -19,6 +19,14 @@ import { glReleasePool, glToCanvas } from "./inpaint_filters_gl.js";
 import { applyFilter } from "./inpaint_filters.js";
 import { lightsToWords, detailRatio, loraPercent } from "./inpaint_relight.js";
 import { withoutSecrets } from "./redact.js";
+import { failKind, refusal } from "./inpaint_status.js";
+
+// a run note that only explains how the run went, not what it left out or changed (item 45: those show red)
+const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None /;
+/** The kind of a line that appends a run's notes to the one before: red when a note says something was left out. */
+function notesKind(editor, notes) {
+    return notes.some((n) => !HINT_NOTE.test(String(n))) ? "warn" : (editor.statusKind || "info");
+}
 import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
 import { comfyRefSpec, comfyLayout, trimSlots, refName, resolveMarkers as resolveComfyMarkers } from "./comfyrefs.js";
 import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from "./boxes.js";
@@ -1060,7 +1068,7 @@ export const host = {
             // The mirror re-uploads what a run needs (ensureOnServer), the reset only makes
             // sure the next run hashes the composite again.
             ed.uploaded = ed.makeUploaded();
-            if (!status.node) ed.setStatus("ComfyUI is connected but the Inpaint Canvas node pack is missing: in that server's custom_nodes run git clone https://github.com/DenRakEiw/ComfyUI-InpaintCanvas, then restart ComfyUI.");
+            if (!status.node) ed.setStatus("ComfyUI is connected but the Inpaint Canvas node pack is missing: in that server's custom_nodes run git clone https://github.com/DenRakEiw/ComfyUI-InpaintCanvas, then restart ComfyUI.", "warn");
             else if (!ed.base) ed.setStatus(`Connected to ${status.message}. Load an image (Ctrl+O, drop a file, or paste).`);
             ed.refreshSegmentBackends();
             ed.settingsChanged();
@@ -1111,7 +1119,7 @@ export const host = {
                 try { await ed.setValue(doc.state); this.keepRecipeMode(ed); } catch (err) { console.warn("restore from the mirror failed", err); }
                 if (ed.base && ed.docFile) settle.push(ed);
                 if (ed.base) { ed.setStatus("Last session restored."); any = true; }
-                else if (!this.connected) { this._pendingStates.push({ editor: ed, state: doc.state }); this._rawStates.set(ed, doc.state); ed.setStatus("This document will be restored once ComfyUI is connected (its files are not in the local store)."); }
+                else if (!this.connected) { this._pendingStates.push({ editor: ed, state: doc.state }); this._rawStates.set(ed, doc.state); ed.setStatus("This document will be restored once ComfyUI is connected (its files are not in the local store).", "warn"); }
             }
         } finally {
             this._restoring--;
@@ -1337,7 +1345,7 @@ export const host = {
         editor.renderSettings();
         editor.notifyChanged();
         editor.setStatus(!rows ? `Preset "${preset.name}" names no Settings row of this recipe: nothing changed.`
-            : missing.length ? `Preset "${preset.name}": ${missing.join(", ")} not on the server, kept the current choice there.` : `Preset "${preset.name}" applied.`);
+            : missing.length ? `Preset "${preset.name}": ${missing.join(", ")} not on the server, kept the current choice there.` : `Preset "${preset.name}" applied.`, !rows ? "info" : missing.length ? "warn" : "info");
         return { rows, missing };
     },
 
@@ -1486,7 +1494,7 @@ export const host = {
         const out = { prompt: texts.prompt, negative: texts.negative, note: "", pairs: [] };
         if (!this.refTokens) return out;
         const where = (k) => (k === "negative" ? "The negative prompt" : "The prompt");
-        for (const k of ["prompt", "negative"]) if (/\{@ref:/i.test(texts[k])) throw new Error(`${where(k)} holds "{@ref:", which Scumble keeps for itself: reword it.`);
+        for (const k of ["prompt", "negative"]) if (/\{@ref:/i.test(texts[k])) throw refusal(`${where(k)} holds "{@ref:", which Scumble keeps for itself: reword it.`);
         const idOf = new Map([...s.labels].map(([id, n]) => [n, id]));
         if (route === "none") {
             const replaced = [];
@@ -1496,7 +1504,7 @@ export const host = {
                     const l = id && editor.layers.find((x) => x.id === id);
                     return l ? l.name || "" : null;
                 });
-                if (res.missing.length) throw new Error(this.refError(editor, s, parse(res.missing[0])[0], k));
+                if (res.missing.length) throw refusal(this.refError(editor, s, parse(res.missing[0])[0], k));
                 out[k] = res.text;
                 for (const x of res.replaced) if (!replaced.some((y) => y.token === x.token)) replaced.push(x);
             }
@@ -1518,7 +1526,7 @@ export const host = {
             if (res.errors.length) {
                 const e = res.errors[0];
                 if (lay && e.kind === "unsent") throw new Error(this.slotsError(recipe || this.recipe || {}, comfy.spec, lay, s, e.token));
-                throw new Error(this.refError(editor, s, { type: "token", text: e.token, n: e.n, id: e.kind === "parked" ? e.id : undefined, kind: e.kind }, k));
+                throw refusal(this.refError(editor, s, { type: "token", text: e.token, n: e.n, id: e.kind === "parked" ? e.id : undefined, kind: e.kind }, k));
             }
             out[k] = res.text;
             for (const seg of parse(texts[k])) {
@@ -1732,12 +1740,12 @@ export const host = {
      */
     async runProvider(editor, opts = {}) {
         const r = this.recipe;
-        if (!editor.base) throw new Error("Load an image first.");
+        if (!editor.base) throw refusal("Load an image first.");
         // one run per document: a second token would take the slot, and its end would clear it under the first (a Realism
         // Pass, an upscale), which then reads as idle (busy(), Close without asking, turnBlocked)
-        if (editor.providerPending) throw new Error(RUN_GOING);
+        if (editor.providerPending) throw refusal(RUN_GOING);
         const label = r.providerLabel || r.provider;
-        if (r.edit === false) throw new Error(`${r.name || r.id} on ${label} makes images from the prompt alone: use "Generate new", not Generate.`);
+        if (r.edit === false) throw refusal(`${r.name || r.id} on ${label} makes images from the prompt alone: use "Generate new", not Generate.`);
         // the prompt and the references of the click; a token that cannot go refuses before anything is made
         const snap = opts.refs || editor.refSnapshot();
         this.refPrompt(editor, snap, "edit");
@@ -1825,16 +1833,16 @@ export const host = {
             await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res) }]);
             // addResults writes its own line, so the cut-out note, the names the references went as and what the route
             // left out go on afterwards
-            if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`);
+            if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`, editor.statusKind || (cutout ? "info" : "warn"));
             const sentAs = named.pairs.map((p) => {
                 const got = (res.refs || []).find((x) => x.ref === p.ref);
                 return got ? `${p.label} → ${got.name}` : null;
             }).filter(Boolean);
-            if (sentAs.length) editor.setStatus(`${editor.status} Named in the prompt: ${sentAs.join(", ")}.`);
+            if (sentAs.length) editor.setStatus(`${editor.status} Named in the prompt: ${sentAs.join(", ")}.`, editor.statusKind || "info");
             const sentBoxes = res.boxes > 0 ? Math.floor(res.boxes) : 0;
             editor.lastSentBoxes = sentBoxes;
-            if (sentBoxes) editor.setStatus(`${editor.status} Sent with ${sentBoxes} box${sentBoxes === 1 ? "" : "es"}.`);
-            if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`);
+            if (sentBoxes) editor.setStatus(`${editor.status} Sent with ${sentBoxes} box${sentBoxes === 1 ? "" : "es"}.`, editor.statusKind || "info");
+            if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`, notesKind(editor, editor.lastRunNotes));
             return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout, prompt: editor.lastSentPrompt, refs: res.refs || [], pairs: named.pairs, notes: editor.lastRunNotes, info: res.info || null, boxes: sentBoxes };
         } finally {
             this.endRun(editor, token);
@@ -1909,17 +1917,17 @@ export const host = {
     async runUpscale(editor, opts = {}) {
         const r = this.recipe;
         if (!r || r.kind !== "provider" || r.task !== "upscale") throw new Error("Pick an upscale recipe first (Upscale shows them).");
-        if (!editor.base) throw new Error("Load an image first.");
-        if (editor.providerPending) throw new Error(RUN_GOING);   // as runProvider
+        if (!editor.base) throw refusal("Load an image first.");
+        if (editor.providerPending) throw refusal(RUN_GOING);   // as runProvider
         const scope = opts.scope === "document" ? "document" : "selection";
         const label = r.providerLabel || r.provider;
         const factor = this.upscaleFactorFor(r, opts.factor);
         const max = (r.limits && r.limits.max) || 2048;
-        if (scope === "selection" && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first, or upscale the whole picture.");
+        if (scope === "selection" && !(editor.getBounds && editor.getBounds())) throw refusal("Select an area first, or upscale the whole picture.");
         // the whole picture's answer replaces the base: not while a job would land in the old geometry (its resize lets
         // the upscale's own landing through, so the check is here, before anything is paid for)
         const blocked = scope === "document" && editor.turnBlocked ? editor.turnBlocked() : "";
-        if (blocked) throw new Error(blocked);
+        if (blocked) throw refusal(blocked);
         if (scope === "document" && Math.max(editor.width, editor.height) > max) {
             throw new Error(`The picture is ${editor.width} × ${editor.height}; ${r.name || r.id} on ${label} takes at most ${max} px on the long side. Upscale a selection instead.`);
         }
@@ -2069,19 +2077,19 @@ export const host = {
     async runComfyUpscale(editor, { factor: want = undefined, deadline = 0 } = {}) {
         const r = this.recipe;
         if (!r || r.kind === "provider" || r.task !== "upscale" || !r.prompt) throw new Error("Pick an upscale recipe on ComfyUI first (Upscale shows them).");
-        if (!editor.base) throw new Error("Load an image first.");
-        if (editor.providerPending) throw new Error(RUN_GOING);
+        if (!editor.base) throw refusal("Load an image first.");
+        if (editor.providerPending) throw refusal(RUN_GOING);
         const label = r.name || r.id;
         const shape = comfyprompt.wholePictureRefusal(r);
         if (shape) throw new Error(shape);
-        if (!this.connected) throw new Error("Not connected to ComfyUI.");
+        if (!this.connected) throw refusal("Not connected to ComfyUI.");
         const factor = this.upscaleFactorFor(r, want);
         // the classes this route queues: the recipe's own with the loader for the canvas node, and PreviewImage
         const missing = comfyprompt.wholePictureClasses(r).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
         // the answer replaces the base: not while a job would land in the old geometry
         const blocked = editor.turnBlocked ? editor.turnBlocked() : "";
-        if (blocked) throw new Error(blocked);
+        if (blocked) throw refusal(blocked);
         const W = editor.width, H = editor.height;
         const size = this.upscaleSizeRefusal(r, W, H, factor, "picture");
         if (size) throw new Error(size);
@@ -2098,8 +2106,8 @@ export const host = {
         const fail = (err) => {
             const msg = String((err && err.message) || err);
             const text = err && err.kind === "error" && !msg.startsWith(label) ? `${label} failed on your ComfyUI: ${msg}` : msg;
-            if (!gone()) editor.setStatus(text);
-            return Object.assign(new Error(text), { kind: err && err.kind });
+            if (!gone()) editor.setStatus(text, failKind(err));
+            return Object.assign(new Error(text), { kind: err && err.kind, statusKind: failKind(err) });
         };
         try {
             let res;
@@ -2126,8 +2134,8 @@ export const host = {
                     upload.then((v) => done(resolve, v), (err) => done(reject, err));
                 });
                 {
-                    const refusal = this.missingFilesRefusal(editor, r);   // a file the server lacks (issue #4): refused before the queue
-                    if (refusal) throw new Error(refusal);
+                    const lacks = this.missingFilesRefusal(editor, r);   // a file the server lacks (issue #4): refused before the queue
+                    if (lacks) throw new Error(lacks);
                 }
                 const prompt = comfyprompt.wholePicturePrompt(r, ref, factor, editor.settings);
                 res = await this.comfyPictureRun(editor, prompt, comfyprompt.WHOLE_OUTPUT, { label, token, front: false, deadline, timeoutMs: 1800000 });
@@ -2183,7 +2191,7 @@ export const host = {
         const label = r.providerLabel || r.provider;
         // the answer replaces the base: not while a job would land in the picture it replaces
         const blocked = this.generateNewBlocked(editor);
-        if (blocked) throw new Error(blocked);
+        if (blocked) throw refusal(blocked);
         const width = Math.max(64, Math.round(opts.width || editor.width || 1024));
         const height = Math.max(64, Math.round(opts.height || editor.height || 1024));
         // the frame the plugins' image coordinates (the boxes) are measured in: the answer may come back at another size
@@ -2284,7 +2292,7 @@ export const host = {
         const kept = swap && swap.kept ? swap.kept : 0, dropped = swap && swap.dropped ? swap.dropped : 0;
         const stay = kept ? ` The reference layer${kept > 1 ? "s stay" : " stays"}${dropped ? `, ${dropped} other layer${dropped > 1 ? "s were" : " was"} replaced` : ""}.` : "";
         const sentBoxes = res.boxes > 0 ? Math.floor(res.boxes) : 0;
-        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image${cutout ? (gotAlpha ? " with a transparent background" : " (the model returned no transparency)") : ""}.${sentAs.length ? ` Named in the prompt: ${sentAs.join(", ")}.` : ""}${sentBoxes ? ` Sent with ${sentBoxes} box${sentBoxes === 1 ? "" : "es"}.` : ""}${stay}${notes.length ? " " + notes.join(" ") : ""}`);
+        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image${cutout ? (gotAlpha ? " with a transparent background" : " (the model returned no transparency)") : ""}.${sentAs.length ? ` Named in the prompt: ${sentAs.join(", ")}.` : ""}${sentBoxes ? ` Sent with ${sentBoxes} box${sentBoxes === 1 ? "" : "es"}.` : ""}${stay}${notes.length ? " " + notes.join(" ") : ""}`, (cutout && !gotAlpha) || notes.some((n) => !HINT_NOTE.test(String(n))) ? "warn" : "info");
         const labels = snap.labels;
         return {
             provider: r.provider, model: request.model, seconds: res.seconds, width: c.width, height: c.height, transparent: !!gotAlpha,
@@ -2820,7 +2828,7 @@ export const host = {
                     fellBack = realism.presetFallbackNote(values.preset);
                     values = await this.setRealismValues({ preset: "Default" });
                     notes.push(fellBack);
-                    if (editor && editor.setStatus) editor.setStatus(fellBack);
+                    if (editor && editor.setStatus) editor.setStatus(fellBack, "warn");
                     continue;
                 }
                 // a failure after the fallback still says that settings.realism changed
@@ -2851,7 +2859,7 @@ export const host = {
         }
         return {
             bytes: out, mime: out === res.bytes ? res.mime : "image/png", width: kw, height: kh, seconds: res.seconds, note: notes.join(" "),
-            factor: mode.factor, sent: [w2, h2], scaled: plan.scaled ? [fw, fh] : null,
+            factor: mode.factor, sent: [w2, h2], scaled: plan.scaled ? [fw, fh] : null, fellBack: !!fellBack,
         };
     },
 
@@ -2866,18 +2874,29 @@ export const host = {
      * would not get larger, which is every picture already past the cap, is refused). `status` asks at 1×.
      */
     realismWholeRefusal(editor, { factor = 1 } = {}) {
+        const c = this.realismWholeCheck(editor, { factor });
+        return c ? c.text : null;
+    },
+
+    /**
+     * realismWholeRefusal's sentence with its status kind (item 45): plain for the user's state (not connected, a run
+     * going, still loading, no picture, the document busy), "warn" for a limit or what the server cannot do. Null: none.
+     */
+    realismWholeCheck(editor, { factor = 1 } = {}) {
         const L = realism.LABEL;
+        const say = (text, kind) => (text ? { text, kind } : null);
         const mode = realism.modeFor(factor);
-        if (!mode) return realism.factorRefusal(factor);
+        if (!mode) return say(realism.factorRefusal(factor), "warn");
         const support = this.realismSupport();
-        if (!support.ok) return support.reason;
-        if (editor.providerPending || (editor._localRuns && editor._localRuns.size)) return `${L}: a run is still going on this document.`;
-        if (editor._loading) return `${L}: the document is still loading.`;
-        if (!editor.base || !editor.width || !editor.height) return `${L}: load an image first.`;
-        if (mode.factor === 1) return realism.wholeRefusal(editor.width, editor.height);
+        const state = (this.server && this.server.state) || "disconnected";
+        if (!support.ok) return say(support.reason, state === "connected" || state === "missing-node" ? "warn" : "info");
+        if (editor.providerPending || (editor._localRuns && editor._localRuns.size)) return say(`${L}: a run is still going on this document.`, "info");
+        if (editor._loading) return say(`${L}: the document is still loading.`, "info");
+        if (!editor.base || !editor.width || !editor.height) return say(`${L}: load an image first.`, "info");
+        if (mode.factor === 1) return say(realism.wholeRefusal(editor.width, editor.height), "warn");
         const blocked = editor.turnBlocked ? editor.turnBlocked() : "";
-        if (blocked) return `${L}: ${blocked}`;
-        return realism.fitPlan(editor.width, editor.height, mode.factor).refusal;
+        if (blocked) return say(`${L}: ${blocked}`, "info");
+        return say(realism.fitPlan(editor.width, editor.height, mode.factor).refusal, "warn");
     },
 
     /**
@@ -2902,9 +2921,9 @@ export const host = {
      */
     async realismWhole(editor, { deadline = 0, factor = 1 } = {}) {
         const L = realism.LABEL;
-        const say = (text) => { editor.setStatus(text); return new Error(text); };
-        const refusal = this.realismWholeRefusal(editor, { factor });
-        if (refusal) throw say(refusal);
+        const say = (text, kind) => { editor.setStatus(text, kind); return refusal(text, editor.statusKind || "info"); };
+        const refused = this.realismWholeCheck(editor, { factor });
+        if (refused) throw say(refused.text, refused.kind);
         const W = editor.width, H = editor.height;
         const mode = realism.modeFor(factor);
         const up = mode.factor > 1;
@@ -2936,7 +2955,7 @@ export const host = {
             }
             return parts.join("|");
         };
-        const cancelled = () => Object.assign(new Error(`${L} cancelled.`), { hint: `${L} cancelled.` });
+        const cancelled = () => Object.assign(new Error(`${L} cancelled.`), { hint: `${L} cancelled.`, kind: "cancelled" });
         try {
             const upTo = realism.topFilterRun(editor.layers, isFill, skip);
             editor.setStatus(`${L}: reading the picture (${W} × ${H}) ...`);
@@ -3040,12 +3059,13 @@ export const host = {
                 : `${L} ran on your ComfyUI in ${secs} s: ${where}.`];
             if (changed) parts.push("The picture changed while the pass ran: the layer shows it as it was when the pass started.");
             if (out.note) parts.push(out.note);
-            editor.setStatus(parts.join(" "));
+            // a preset the runtime refused and replaced is a fallback: red (item 45)
+            editor.setStatus(parts.join(" "), out.fellBack ? "warn" : "info");
             return { layer, seconds: out.seconds || 0, note: out.note || "", changed, factor: mode.factor, from: [W, H], width: nw, height: nh };
         } catch (err) {
             if (gone()) return { layer: null, seconds: 0, note: "", changed: false, factor: mode.factor, from: [W, H], width: null, height: null };
             const msg = String((err && err.message) || err);
-            throw say(err && err.hint ? String(err.hint) : msg.startsWith(L) ? msg : `${L}: ${msg}`);
+            throw say(err && err.hint ? String(err.hint) : msg.startsWith(L) ? msg : `${L}: ${msg}`, failKind(err));
         } finally {
             offRemoved();
             this.endRun(editor, token);
@@ -3063,16 +3083,16 @@ export const host = {
      * the top run of filter layers, and hides the relight filter layer in one undo step.
      */
     async relightWhole(editor, layer, { route = "magnific", deadline = 0, prompt = "" } = {}) {
-        if (!editor.base) throw new Error("Load an image first.");
+        if (!editor.base) throw refusal("Load an image first.");
         if (!layer || layer.kind !== "filter" || layer.filter !== "relight") throw new Error("A relight layer is required.");
         const hasDepth = !!(editor.maps && editor.maps.depth && (editor.maps.depth.data || editor.maps.depth.u16));
         if (!hasDepth && editor.ensureDepthMap) {
             await editor.ensureDepthMap();
         }
-        if (editor.providerPending) throw new Error(RUN_GOING);
+        if (editor.providerPending) throw refusal(RUN_GOING);
 
         const L = `Relight (${route})`;
-        const say = (text) => { editor.setStatus(text); return new Error(text); };
+        const say = (text, kind) => { editor.setStatus(text, kind); return refusal(text, editor.statusKind || "info"); };
         const token = { provider: route, label: L, started: Date.now(), editor, runId: runIdOf() };
         editor.providerPending = token;
         this._providerRuns.add(token);
@@ -3094,7 +3114,7 @@ export const host = {
             }
             return parts.join("|");
         };
-        const cancelled = () => Object.assign(new Error(`${L} cancelled.`), { hint: `${L} cancelled.` });
+        const cancelled = () => Object.assign(new Error(`${L} cancelled.`), { hint: `${L} cancelled.`, kind: "cancelled" });
 
         try {
             if (editor.relightSettled) await editor.relightSettled(layer);   // its own maps too when it is hidden: the light map reads them
@@ -3172,7 +3192,7 @@ export const host = {
             let out;
             if (route === "comfyui") {
                 if (!this.connected) {
-                    throw new Error("ComfyUI is not connected: connect under Settings > ComfyUI.");
+                    throw refusal("ComfyUI is not connected: connect under Settings > ComfyUI.");
                 }
                 const list = this.shell && this.shell.recipes ? this.shell.recipes() : [];
                 const localRecipe = list.find((r) => r.id === "relight_qwen_local");
@@ -3406,7 +3426,7 @@ export const host = {
         } catch (err) {
             if (gone()) return { layer: null, seconds: 0, note: "", changed: false, route, seed: null };
             const msg = String((err && err.message) || err);
-            throw say(err && err.hint ? String(err.hint) : msg.startsWith(L) ? msg : `${L}: ${msg}`);
+            throw say(err && err.hint ? String(err.hint) : msg.startsWith(L) ? msg : `${L}: ${msg}`, failKind(err));
         } finally {
             offRemoved();
             this.endRun(editor, token);
@@ -3419,13 +3439,13 @@ export const host = {
      */
     async queueGenerate(editor, opts = {}) {
         const r = this.recipe;
-        if (!r) throw new Error("No recipe selected.");
+        if (!r) throw refusal("No recipe selected.");
         // a run whose landing resizes the document (an upscale of the whole picture, the Realism Pass above 1×) holds it:
         // a render queued now would land in the old geometry (editor.generate refuses first; this is the net)
-        if (editor.providerPending && editor.providerPending.resizes) throw new Error(RUN_GOING);
+        if (editor.providerPending && editor.providerPending.resizes) throw refusal(RUN_GOING);
         if (r.kind === "provider" && r.task === "upscale") return this.runUpscale(editor, { scope: "selection", refs: opts.refs });
         if (r.kind === "provider") return this.runProvider(editor, { refs: opts.refs });
-        if (!r.prompt) throw new Error("No recipe selected.");
+        if (!r.prompt) throw refusal("No recipe selected.");
         // the Realism Pass (task "pass") goes out like an upscale: the box as it is, no fill, no references, no refine
         const pass = r.task === "pass";
         const upscale = r.task === "upscale" || pass;
@@ -3440,12 +3460,12 @@ export const host = {
         if (pass) {
             if (!support.ok) throw new Error(support.reason);
             const b = editor.getBounds && editor.getBounds();
-            if (!b) throw new Error(`Select an area first: ${realism.LABEL} works on the selection's box (Select All for the whole picture).`);
+            if (!b) throw refusal(`Select an area first: ${realism.LABEL} works on the selection's box (Select All for the whole picture).`);
             // the crop the node makes: the box with its context (cropRect mirrors the node's manual or auto padding, the
             // auto minimum span and the clamp to the picture), then each side to the pass's multiple the node's way
             const [, , cw, ch] = editor.cropRect();
-            const refusal = realism.fits(realism.fitSpan(cw, editor.width), realism.fitSpan(ch, editor.height));
-            if (refusal) throw new Error(refusal);
+            const tooBig = realism.fits(realism.fitSpan(cw, editor.width), realism.fitSpan(ch, editor.height));
+            if (tooBig) throw refusal(tooBig, "warn");
         }
         if (upscale) {
             const p = this.refNames(editor, snap.prompt), n = this.refNames(editor, snap.negative);
@@ -3455,10 +3475,10 @@ export const host = {
             early = this.comfyPlan(editor, r, snap.refIds.length);
             texts = this.refPrompt(editor, snap, "comfy", { recipe: r, comfy: early });
         }
-        if (!this.connected) throw new Error("Not connected to ComfyUI.");
+        if (!this.connected) throw refusal("Not connected to ComfyUI.");
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
-        if (upscale && !pass && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
+        if (upscale && !pass && !(editor.getBounds && editor.getBounds())) throw refusal("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
         // a ComfyUI upscaler that takes a factor (RTX Video Super Resolution): the one the dialog or the command asked
         // (editor.generate() takes no arguments and is shared with the node, so the factor travels on the editor, read
         // once), and the size limits on the crop the node makes, before anything is uploaded
@@ -3469,8 +3489,8 @@ export const host = {
             factor = this.upscaleFactorFor(r, want);
             const [, , cw, ch] = editor.cropRect();
             const m = Math.max(1, +(this.nodeParams && this.nodeParams.multiple_of) || 8);
-            const refusal = this.upscaleSizeRefusal(r, realism.fitSpan(cw, editor.width, m), realism.fitSpan(ch, editor.height, m), factor, "box");
-            if (refusal) throw new Error(refusal);
+            const tooBig = this.upscaleSizeRefusal(r, realism.fitSpan(cw, editor.width, m), realism.fitSpan(ch, editor.height, m), factor, "box");
+            if (tooBig) throw refusal(tooBig, "warn");
         }
         editor.lastUpscaleFactor = factor;
         editor.lastSentPrompt = null;
@@ -3498,7 +3518,7 @@ export const host = {
             }
             if (plan.spec.guess && texts.pairs.length) editor.lastRunNotes.push("(wording guessed from the graph)");
         }
-        if (texts.note) editor.setStatus(`${editor.status} ${texts.note}`);
+        if (texts.note) editor.setStatus(`${editor.status} ${texts.note}`, editor.statusKind || "info");
         await this.ensureOnServer(state, editor);
         const prompt = JSON.parse(JSON.stringify(r.prompt));
         const canvas = prompt[r.canvas];
@@ -3516,8 +3536,8 @@ export const host = {
         canvas.inputs[r.mode === "api" ? "result_source" : "result_source_local"] = r.result;
         {
             // a row naming a file the server lacks refuses here, before anything is queued (issue #4)
-            const refusal = this.missingFilesRefusal(editor, r);
-            if (refusal) throw new Error(refusal);
+            const lacks = this.missingFilesRefusal(editor, r);
+            if (lacks) throw new Error(lacks);
         }
         for (const s of r.settings || []) {
             const entry = editor.settings[String(s.index)];
@@ -3539,11 +3559,11 @@ export const host = {
         }
         const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo() });
         editor.lastPromptId = res && res.prompt_id;
-        if (pass && support.note) editor.setStatus(`${editor.status} ${support.note}`);
+        if (pass && support.note) editor.setStatus(`${editor.status} ${support.note}`, editor.statusKind || "info");
         if (plan) {
             const named = texts.pairs.filter((p) => p.name).map((p) => `${p.label} → ${p.name}`);
-            if (named.length) editor.setStatus(`${editor.status} Named in the prompt: ${named.join(", ")}.`);
-            if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`);
+            if (named.length) editor.setStatus(`${editor.status} Named in the prompt: ${named.join(", ")}.`, editor.statusKind || "info");
+            if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`, notesKind(editor, editor.lastRunNotes));
             if (named.length && window.scumble && window.scumble.log) {
                 Promise.resolve(window.scumble.log.add({ level: "info", source: "comfy", message: `local run ${(res && res.prompt_id) || ""}: prompt as sent`, detail: editor.lastSentPrompt })).catch(() => { /* the log is optional */ });
             }
@@ -3871,8 +3891,8 @@ export const host = {
      * entries, ms, notes }), or null when a dialog was cancelled. Throws with the reason.
      */
     async saveDocument(ed, { as = false, copy = false, path = null, history = null, ask = true } = {}) {
-        if (!ed || !ed.base) throw new Error("There is nothing to save yet: the document holds no picture.");
-        if (ed._docSaving) throw new Error(`${this.documentName(ed)} is already being saved.`);
+        if (!ed || !ed.base) throw refusal("There is nothing to save yet: the document holds no picture.");
+        if (ed._docSaving) throw refusal(`${this.documentName(ed)} is already being saved.`);
         let target = path || (!as && !copy && ed.docFile && ed.docFile.path) || null;
         ed._docSaving = true;      // from here: a second Ctrl+S during a dialog is "already being saved"
         ed._docCancel = false;
@@ -3912,11 +3932,11 @@ export const host = {
             try {
                 ed.setStatus(`Saving ${name}...`);
                 await this.flushEditor(ed, (t) => ed.setStatus(t), "saving the document");
-                if (ed._docCancel) throw new Error("the save was cancelled");
+                if (ed._docCancel) throw Object.assign(new Error("the save was cancelled"), { kind: "cancelled" });
                 const state = ed.getValue();       // a stroke after this is not in the file and leaves the tab changed
                 let thumbnail = null;
                 try { thumbnail = await this.documentThumbnail(ed); } catch (err) { console.warn("document thumbnail", err); }
-                if (ed._docCancel) throw new Error("the save was cancelled");
+                if (ed._docCancel) throw Object.assign(new Error("the save was cancelled"), { kind: "cancelled" });
                 const r = this.recipe;
                 ed._docProgress.reqId = reqId;
                 const res = await window.scumble.documents.write({
@@ -3928,7 +3948,7 @@ export const host = {
                     ed.docFile = { path: res.path, name: res.name, key: hashString(state), mtime: res.mtime, size: res.size, ...(keep ? {} : { history: false }) };
                     this.saveAll();                // the session keeps the tab's file (and bundle() the state's key)
                 }
-                ed.setStatus(`${copy ? "Saved a copy as" : "Saved"} ${res.name} (${fmtMB(res.bytes)}, ${(res.ms / 1000).toFixed(1)} s)${keep ? "" : ", without the result history"}.${res.notes && res.notes.length ? " " + res.notes.join("; ") + "." : ""}`);
+                ed.setStatus(`${copy ? "Saved a copy as" : "Saved"} ${res.name} (${fmtMB(res.bytes)}, ${(res.ms / 1000).toFixed(1)} s)${keep ? "" : ", without the result history"}.${res.notes && res.notes.length ? " " + res.notes.join("; ") + "." : ""}`, "info");
                 return res;
             } finally {
                 this._docJobs.delete(reqId);
@@ -3983,7 +4003,7 @@ export const host = {
             const named = (id) => { const x = list.find((q) => q.id === id); return x ? x.name || id : id; };
             notes.push(`saved with the recipe ${named(r.recipe.id)}; the current one is ${now ? named(now.id) : "none"}`);
         }
-        if (ed.base) ed.setStatus(`Opened ${r.name}.${notes.length ? " " + notes.join("; ") + "." : ""}`);
+        if (ed.base) ed.setStatus(`Opened ${r.name}.${notes.length ? " " + notes.join("; ") + "." : ""}`, "info");
         this.saveAll();
         return { editor: ed, already: false, notes };
     },
@@ -4115,7 +4135,7 @@ export const host = {
         const pics = res.pictures ? `, ${res.pictures} reference picture${res.pictures === 1 ? "" : "s"}` : "";
         // "crop only": the model took no reference picture; "text only": it refused every picture and answered on the words alone
         const note = res.note ? `, ${res.note}` : "";
-        editor.setStatus(editor.status.replace(/\.$/, "") + ` (${backend.label.replace(/ \(.*\)$/, "")}, ${res.seconds.toFixed(1)} s${pics}${note}).`);
+        editor.setStatus(editor.status.replace(/\.$/, "") + ` (${backend.label.replace(/ \(.*\)$/, "")}, ${res.seconds.toFixed(1)} s${pics}${note}).`, res.note ? "warn" : (editor.statusKind || "info"));
     },
 
     /**
@@ -4351,7 +4371,7 @@ export const host = {
      */
     async findObjects(editor, pending) {
         const model = this.sam2Model();
-        if (!model) { editor.objectsPending = null; editor.setStatus("No SAM2 model is downloaded (Settings › Helpers)."); return; }
+        if (!model) { editor.objectsPending = null; editor.setStatus("No SAM2 model is downloaded (Settings › Helpers).", "warn"); return; }
         try {
             // slice 6: the key is a hash of the model input, not of an uploaded full-resolution PNG (nothing is uploaded
             // on this path any more). Equal inputs share the map and the embedding; an undo back to the same picture too.
@@ -4387,7 +4407,7 @@ export const host = {
         } catch (err) {
             console.error(err);
             editor.objectsPending = null;
-            editor.setStatus("Object detection failed: " + (err.message || err));
+            editor.setStatus("Object detection failed: " + (err.message || err), failKind(err));
         }
     },
 
@@ -4412,7 +4432,7 @@ export const host = {
         ctx.putImageData(out, 0, 0);
         editor.setStatus(`${layer.name}: background removed with ${model.label} in ${res.seconds.toFixed(1)} s (${res.provider}).`);
         const hint = this.slowHelperHint(res);
-        if (hint) setTimeout(() => editor.setStatus(editor.status + hint), 50);   // after applyCutoutImage's own status line
+        if (hint) setTimeout(() => editor.setStatus(editor.status + hint, editor.statusKind || "info"), 50);   // after applyCutoutImage's own status line
         return c;
     },
 
@@ -4483,7 +4503,7 @@ export const host = {
             await editor.selectLogits(res, { mode, label: "Object selection", layer, box });
         } catch (err) {
             console.error(err);
-            editor.setStatus("Box segmentation failed: " + (err.message || err));
+            editor.setStatus("Box segmentation failed: " + (err.message || err), failKind(err));
         } finally {
             editor._pointPending = false;
         }
@@ -4515,7 +4535,7 @@ export const host = {
             await editor.selectLogits(res, { mode, label: "Object selection", layer, point: [ix, iy] });
         } catch (err) {
             console.error(err);
-            editor.setStatus("Point segmentation failed: " + (err.message || err));
+            editor.setStatus("Point segmentation failed: " + (err.message || err), failKind(err));
         } finally {
             editor._pointPending = false;
         }
@@ -4745,23 +4765,23 @@ api.addEventListener("execution_error", ({ detail }) => {
     const msg = detail.exception_message || "execution failed";
     if (ed.segmentPromptId && detail.prompt_id === ed.segmentPromptId) {
         ed.segmentPending = null; if (ed.segBtn) ed.segBtn.disabled = false;
-        ed.setStatus("Segmentation failed: " + msg);
+        ed.setStatus("Segmentation failed: " + msg, "error");
     } else if (ed.objectsPromptId && detail.prompt_id === ed.objectsPromptId) {
         ed.objectsPending = null;
-        ed.setStatus("Object detection failed: " + msg);
+        ed.setStatus("Object detection failed: " + msg, "error");
     } else if (ed.upsamplePromptId && detail.prompt_id === ed.upsamplePromptId) {
         ed.upsamplePending = null; if (ed.upBtn) ed.upBtn.disabled = false;
-        ed.setStatus("Upsampling failed: " + msg);
+        ed.setStatus("Upsampling failed: " + msg, "error");
     } else if (ed.cutoutPromptId && detail.prompt_id === ed.cutoutPromptId) {
         ed.cutoutPending = null; ed.renderLayers();
-        ed.setStatus("Background removal failed: " + msg);
+        ed.setStatus("Background removal failed: " + msg, "error");
     } else if (realism.isPassNode(detail.node_type)) {
         // the DLSS pack's failures as sentences (docs/PLAN_0_1_42.md §3.4), not "Error in DLSS5EnhanceImages: ...";
         // marked, since a sentence need not read "failed" (the generate command stops its wait on it)
         const text = realism.hint(msg);
         ed.lastPassError = text;
-        ed.setStatus(text);
+        ed.setStatus(text, "error");
     } else {
-        ed.setStatus("Error in " + (detail.node_type || detail.node_id || "the graph") + ": " + msg);
+        ed.setStatus("Error in " + (detail.node_type || detail.node_id || "the graph") + ": " + msg, "error");
     }
 });

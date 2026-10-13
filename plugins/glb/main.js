@@ -215,7 +215,7 @@ export function activate(scumble) {
         build(box, doc) {
             box.appendChild(ui.el("div", "shell-help", HELP));
             const row = ui.el("div", "scumble-plugin-row");
-            row.appendChild(ui.button("Place 3D object...", "Pick a .glb / .gltf file and place it in the picture", () => placeInteractive(doc).catch((err) => doc.status(String(err.message || err)))));
+            row.appendChild(ui.button("Place 3D object...", "Pick a .glb / .gltf file and place it in the picture", () => placeInteractive(doc).catch((err) => doc.status(String(err.message || err), "error"))));
             box.appendChild(row);
             const list = ui.el("div", "glb-list");
             box.appendChild(list);
@@ -225,7 +225,7 @@ export function activate(scumble) {
                 for (const { layer } of objectsOf(doc)) {
                     const r = ui.el("div", "scumble-plugin-row");
                     r.appendChild(ui.el("span", "scumble-plugin-label", layer.name));
-                    r.appendChild(ui.button("Edit", "Reopen the 3D dialog for this layer and replace its pixels", () => placeInteractive(doc, layer.id).catch((err) => doc.status(String(err.message || err)))));
+                    r.appendChild(ui.button("Edit", "Reopen the 3D dialog for this layer and replace its pixels", () => placeInteractive(doc, layer.id).catch((err) => doc.status(String(err.message || err), "error"))));
                     list.appendChild(r);
                 }
             };
