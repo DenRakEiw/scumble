@@ -90,8 +90,8 @@ code.
   elapsed seconds on API runs); (3) copy / reuse a prompt from the result history (#1, ask 4, like the seed's click);
   (4) a whole-picture upscale refused against the document ceiling *before* it is paid for, and Resize / Extend
   checking the target size (both in `docs/BUGS.md` "Size limits"); (5) riding along: item 46 (`7d735b2`) and the
-  Help fix on the branch `claude/vigorous-nobel-c9571c` (`bddbf74`, `*em*` in the manual as italics; never merged,
-  conflicts only in `CHANGELOG.md` and `tools/manual_test.js`). About five sessions, normal test tier. **The user's
+  Help fix of the branch `claude/vigorous-nobel-c9571c` (`bddbf74`, `*em*` in the manual as italics; cherry-picked
+  into main 2026-10-13, the branch deleted). About five sessions, normal test tier. **The user's
   answers (2026-10-13):** the progress as a thin bar in the status row; no node 0.3.5 yet (the node stays 64 commits
   past 0.3.4 on the registry). Open: the replies to node issues #1 and #2 (drafts on request).
   **The plan is `docs/PLAN_0_1_48.md`** (2026-10-13, six sessions S1-S6, anchors from a workflow of six readers; it
@@ -111,9 +111,11 @@ code.
   seed; a click on the prompt in the history puts it back, Ctrl+click copies; a review workflow's 8 findings fixed).
   **S5 done 2026-10-13** (the user's answers: an answer too large after it was paid lands scaled down to fit, red;
   Resize and Extend refuse; "S5 as built": `renderer/editor/inpaint_sizelimit.js`, the refusal before a paid
-  whole-picture upscale names the largest factor that fits; a review workflow's 9 findings fixed). **Next: S6** (the
-  Help fix's cherry-pick, then the release preparation: CHANGELOG section, `npm run dist`, exe gates; the release only
-  on the user's word). Not run in 0.1.48: the `huge` gate (30k), the node side of the bar.
+  whole-picture upscale names the largest factor that fits; a review workflow's 9 findings fixed). **S6's cherry-pick
+  done the same day** (the Help fix of `bddbf74` in main, its branch deleted). **Next:** the user tests 0.1.48 in a dev
+  instance; then the release preparation (CHANGELOG section, `npm run dist`, exe gates; the website's
+  `scumble-inline.tsx` needs an `em` branch with the manual sync); the release only on the user's word. Not run in
+  0.1.48: the `huge` gate (30k), the node side of the bar.
 - **Done 2026-10-13 on the user's word:** the awesome-alternative-uis-for-comfyui entry (PR #120) moved to the bottom
   of Category 4 as the reviewer asked (the fork's `add-scumble` rebuilt on upstream `babe4fd` and force-pushed; no
   reply comment posted). Video 4 is on YouTube (the user). CLAUDE.md brought up to date with the code.
@@ -136,7 +138,7 @@ code.
   `bisect`'s gate logs copied to the holding folder first; the merged `mcpb` worktree took its ignored `dist/` of
   2026-10-09 with it). Branches: `phase-e`, `phase-r`, `hotfix/0.1.33`, `mcpb` (merged) and `hotfix/0.1.40` (kept by
   its tag) deleted here and on origin, `claude/hopeful-yonath-8deb4d` and `worktree-agent-acb03e9b1db8eee85` (its
-  commit is in main) here; `claude/vigorous-nobel-c9571c` kept (its Help fix rides with 0.1.48).
+  commit is in main) here; `claude/vigorous-nobel-c9571c` kept then, its Help fix cherry-picked and the branch deleted the same evening (S6).
 
 - **0.1.47 is out** (tag v0.1.47 on `debf8a9`, published 2026-10-13T08:30:10Z, title "relight with virtual lights"; the
   user's "ja, veröffentliche den release"): the tag build green, the eight assets checked (the zip's layout, the

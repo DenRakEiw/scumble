@@ -15,7 +15,7 @@
 //   ### Keys       #### Group, then | key | what | rows
 //   ### Notes      - text
 //
-// Text keeps its inline Markdown (**bold**, `code`, backslash escapes); inline() splits it into spans
+// Text keeps its inline Markdown (**bold**, *em*, `code`, backslash escapes); inline() splits it into spans
 // for a renderer and plain() flattens it for search and for the chat's context.
 
 const SUBSECTIONS = ["Steps", "Keys", "Notes"];
@@ -26,15 +26,39 @@ function unescape(s) {
 }
 
 /**
- * Inline Markdown as spans: [{ type: "text" | "code" | "strong", text }]. Only what the manual uses:
- * backslash escapes, `code` and **strong**. Nothing here is HTML; a renderer builds nodes from it.
+ * Where the *emphasis* opened by the single "*" at `i` closes, or -1 when it does not: the next single
+ * "*" with no space before it, past escapes, code spans and "**". The opener has no space after it, so
+ * "5 * 3" stays text.
+ */
+function emEnd(src, i) {
+    if (!src[i + 1] || /\s/.test(src[i + 1])) return -1;
+    for (let j = i + 1; j < src.length; j++) {
+        const ch = src[j];
+        if (ch === "\\") { j++; continue; }
+        if (ch === "`") { const end = src.indexOf("`", j + 1); if (end > j) j = end; continue; }
+        if (ch !== "*") continue;
+        if (src[j + 1] === "*") { j++; continue; }
+        if (!/\s/.test(src[j - 1])) return j;
+    }
+    return -1;
+}
+
+/**
+ * Inline Markdown as spans: [{ type: "text" | "code" | "strong" | "em", text }], and { type: "strong",
+ * em: true } for emphasis inside bold. Only what the manual uses: backslash escapes, `code`, **strong**
+ * and *em*; a "*" without a partner is text. Nothing here is HTML; a renderer builds nodes from it.
  */
 export function inline(s) {
     const out = [];
     let buf = "";
     let strong = false;
+    let em = -1;                                       // the index of the open emphasis' closing "*"
     const push = (type, text) => { if (text) out.push({ type, text }); };
-    const flush = () => { push(strong ? "strong" : "text", buf); buf = ""; };
+    const flush = () => {
+        if (buf && strong && em >= 0) out.push({ type: "strong", text: buf, em: true });
+        else push(strong ? "strong" : em >= 0 ? "em" : "text", buf);
+        buf = "";
+    };
     const src = String(s);
     for (let i = 0; i < src.length; i++) {
         const ch = src[i];
@@ -44,6 +68,11 @@ export function inline(s) {
             if (end > i) { flush(); push("code", src.slice(i + 1, end)); i = end; continue; }
         }
         if (ch === "*" && src[i + 1] === "*") { flush(); strong = !strong; i++; continue; }
+        if (ch === "*" && i === em) { flush(); em = -1; continue; }
+        if (ch === "*" && em < 0) {
+            const end = emEnd(src, i);
+            if (end > i) { flush(); em = end; continue; }
+        }
         buf += ch;
     }
     flush();

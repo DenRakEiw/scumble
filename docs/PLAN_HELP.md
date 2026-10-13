@@ -130,7 +130,7 @@ title (they render on GitHub, and the app shows none: they live on the website).
 the website's `lib/scumble-manual.ts` by a one-off script, and the page built from the Markdown was
 **character for character the live page** (34,857 characters) before anything was added.
 `renderer/help/manual.js` is its **one reader** (no DOM, no imports): `parseManual`, `inline` (spans, never
-HTML: backslash escapes, `code`, **bold**), `plain`, `chapterText`; it throws with a line number on
+HTML: backslash escapes, `code`, **bold**, *em* since 0.1.48), `plain`, `chapterText`; it throws with a line number on
 anything outside the shape. **The website holds copies of both files**, made by `node tools/manual_sync.js`
 (`--check` compares, line endings aside): `content/scumble/MANUAL.md` and `lib/scumble-manual-reader.js`,
 read at build time by `lib/scumble-manual.ts`, and the page renders the inline Markdown through

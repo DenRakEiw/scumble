@@ -48,6 +48,24 @@ async function main() {
         eq(inline("a `b"), [{ type: "text", text: "a `b" }], "an unclosed code span is text");
     });
 
+    check("single_asterisks_are_emphasis_when_they_pair", () => {
+        const T = (text) => ({ type: "text", text }), E = (text) => ({ type: "em", text }), S = (text) => ({ type: "strong", text });
+        eq(inline("Open *Upscale*, or *Image › Realism Pass*."), [T("Open "), E("Upscale"), T(", or "), E("Image › Realism Pass"), T(".")], "two spans");
+        eq(inline("a **b** *c* d"), [T("a "), S("b"), T(" "), E("c"), T(" d")], "strong beside em");
+        eq(inline("5 * 3 = 15"), [T("5 * 3 = 15")], "a lone star with spaces");
+        eq(inline("5 * 3 * 2"), [T("5 * 3 * 2")], "two stars with spaces round them");
+        eq(inline("marked with *, and *"), [T("marked with *, and *")], "an opener whose only partner has a space before it");
+        eq(inline("a *b"), [T("a *b")], "an opener without a partner");
+        eq(inline("*a * b*"), [E("a * b")], "a spaced star inside emphasis");
+        eq(inline("\\*not\\* *yes*"), [T("*not* "), E("yes")], "escaped stars");
+        eq(inline("*a \\* b*"), [E("a * b")], "an escaped star inside emphasis");
+        eq(inline("`*x*` and `a*b`*c*"), [{ type: "code", text: "*x*" }, T(" and "), { type: "code", text: "a*b" }, E("c")], "no emphasis inside code");
+        eq(inline("*a `*` b*"), [E("a "), { type: "code", text: "*" }, E(" b")], "code inside emphasis, its star no partner");
+        eq(inline("**bold *both* bold**"), [S("bold "), { type: "strong", text: "both", em: true }, S(" bold")], "em inside strong");
+        eq(inline("*em **both** em*"), [E("em "), { type: "strong", text: "both", em: true }, E(" em")], "strong inside em");
+        eq(plain("Open *Upscale*, 5 * 3, \\*"), "Open Upscale, 5 * 3, *", "plain drops the markers only");
+    });
+
     check("the_reader_refuses_what_is_outside_the_shape", () => {
         const head = "# M\n\n## One\n\n<!-- slug: one -->\n_Sum._\n\nText.\n";
         eq(parseManual(head).chapters.map((c) => [c.slug, c.title, c.summary, c.body]), [["one", "One", "Sum.", ["Text."]]], "a minimal chapter");
@@ -128,6 +146,11 @@ async function main() {
         const c = manual.chapters.find((x) => x.slug === "install");
         const t = chapterText(c);
         for (const bit of [c.title, c.summary, "winget install scumble", "Scumble-Setup-", "Windows 10 and 11"]) if (!t.includes(bit)) throw new Error("missing " + bit);
+        const rp = chapterText(manual.chapters.find((x) => x.slug === "realism-pass"));
+        if (!rp.includes("Open Upscale, or Image › Realism Pass")) throw new Error("the Realism Pass chapter keeps its emphasis markers");
+        // what is left is a star the manual means as text ("A * after the name")
+        const stars = manual.chapters.map((x) => chapterText(x).split("\n").filter((l) => /\*/.test(l) && !/ \* after the name|marked with \*,/.test(l)).map((l) => x.slug + ": " + l.slice(0, 60))).flat();
+        if (stars.length) throw new Error("markers left in the search text: " + stars.join(" | "));
     });
 
     console.log(failed ? "FAIL" : "PASS");

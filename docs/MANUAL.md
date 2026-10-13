@@ -461,7 +461,7 @@ The first Ctrl+S asks where; after that it writes to the same file, and Ctrl+Shi
 
 The result history is work you paid for, in money or in GPU time, so it goes into the file. A Save As of a document that holds results asks once — Save with History, Save without History, or Cancel — and leaving it out is for sharing a picture without how it was made. The tab's file remembers the answer, so the next Ctrl+S does the same.
 
-Closing a tab with changes, or with a picture that was never saved, asks: Save, Don't Save or Cancel. A tab whose file holds everything closes without a question. Either way Ctrl+Shift+T brings back the last ten tabs closed in this session, also after Don't Save. Quitting Scumble asks nothing: the session keeps every open document, the unsaved ones still marked with *, and they come back at the next start.
+Closing a tab with changes, or with a picture that was never saved, asks: Save, Don't Save or Cancel. A tab whose file holds everything closes without a question. Either way Ctrl+Shift+T brings back the last ten tabs closed in this session, also after Don't Save. Quitting Scumble asks nothing: the session keeps every open document, the unsaved ones still marked with \*, and they come back at the next start.
 
 A save cannot leave half a file behind. It is written beside the target under a temporary name and only then renamed over it, so a crash, a full disk or a killed process leaves the old file as it was. A long save or open shows a chip on the tab, "Saving 43 %", with a cross that cancels it; a cancelled or failed save leaves the old file alone too. Closing the app or installing an update waits for a save in progress.
 

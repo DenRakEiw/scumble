@@ -95,16 +95,20 @@ export function renderText(text) {
     return out;
 }
 
-/** `code` and `**bold**` inside one paragraph or list item. */
+/**
+ * `code`, `**bold**` and `*em*` inside one paragraph or list item; a `*` with a space after it
+ * ("5 * 3") opens nothing.
+ */
 function inline(text) {
     const out = document.createDocumentFragment();
-    const re = /`([^`]+)`|\*\*([^*]+)\*\*/g;
+    const re = /`([^`]+)`|\*\*([^*]+)\*\*|(?<!\*)\*(?![\s*])([^*]*[^\s*])\*(?!\*)/g;
     let at = 0;
     let m;
     while ((m = re.exec(text))) {
         if (m.index > at) out.appendChild(document.createTextNode(text.slice(at, m.index)));
         if (m[1] !== undefined) out.appendChild(el("code", null, m[1]));
-        else out.appendChild(el("strong", null, m[2]));
+        else if (m[2] !== undefined) out.appendChild(el("strong", null, m[2]));
+        else out.appendChild(el("em", null, m[3]));
         at = m.index + m[0].length;
     }
     if (at < text.length) out.appendChild(document.createTextNode(text.slice(at)));

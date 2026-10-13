@@ -61,12 +61,16 @@ function marked(text, terms) {
     return frag;
 }
 
-/** A manual text (inline Markdown) as nodes: **bold**, `code`, the search's hits marked. */
+/** A manual text (inline Markdown) as nodes: **bold**, *em*, `code`, the search's hits marked. */
 function richText(text, terms = []) {
     const frag = document.createDocumentFragment();
     for (const span of inline(text)) {
-        const node = span.type === "code" ? el("code") : span.type === "strong" ? el("strong") : null;
-        if (node) { node.append(marked(span.text, terms)); frag.append(node); } else frag.append(marked(span.text, terms));
+        const node = span.type === "code" ? el("code") : span.type === "strong" ? el("strong") : span.type === "em" ? el("em") : null;
+        if (!node) { frag.append(marked(span.text, terms)); continue; }
+        const inner = span.em ? el("em") : node;
+        inner.append(marked(span.text, terms));
+        if (inner !== node) node.append(inner);
+        frag.append(node);
     }
     return frag;
 }
