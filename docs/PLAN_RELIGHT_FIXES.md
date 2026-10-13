@@ -335,4 +335,7 @@ record carries the key; kept); assistant_test now prints the plugins' load lines
 ## Open questions for the user
 
 - The Brainfuck easter egg (4cc2f76): keep it?
-- Highlights clip hard at 255 since the identity fix: a soft shoulder instead?
+- Highlights clip hard at 255 since the identity fix: a soft shoulder instead? **Answered 2026-10-13: yes, now** (built
+  the same day: `PLAN_RELIGHT_BUILD.md` 4.1 "As built"; relight_test.js suite 26, gate cases sh and sh2; red on 8213449
+  with 113,988 of 240,000 pixels at 255, none with the shoulder). The Brainfuck easter egg: **kept** (the user, the same
+  day).

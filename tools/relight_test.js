@@ -1176,7 +1176,68 @@ async function main() {
     console.log("  PASS 25: a sun on the centre with dist 0 is frontal on the CPU and in the march, as the shader takes it");
 }
 
-    console.log("\nALL 25 RELIGHT TESTS PASSED CLEANLY!");
+// ------------------------------------------------------------------------------------------------
+// 26. The highlight shoulder (the user, 2026-10-13: a soft shoulder instead of the hard clip at 255): a channel the
+//     lights push above max(0.8, its value without them) rolls off towards white. At 8213449 only the added light
+//     rolled off, so the picture plus the light clipped hard at 255 (a plateau); a pixel the lights leave alone, or
+//     leave under the knee, keeps its value exactly.
+// ------------------------------------------------------------------------------------------------
+{
+    const { relightShoulder } = relight;
+    const fails = [];
+    const want = (ok, msg) => { if (!ok) fails.push(msg); };
+    const show = (v) => JSON.stringify(v);
+
+    // the curve: identity up to the knee, slope 1 at it, monotone, at most 1
+    want(typeof relightShoulder === "function", "relightShoulder is exported");
+    if (typeof relightShoulder === "function") {
+        for (const [b, x] of [[0.2, 0.5], [0.2, 0.8], [0.9, 0.9], [0.9, 0.85], [0.5, 0.3]]) {
+            want(relightShoulder(b, x) === x, `under the knee max(0.8, ${b}) the value stays: shoulder(${b}, ${x}) = ${relightShoulder(b, x)}`);
+        }
+        for (const b of [0.1, 0.8, 0.95]) {
+            const k = Math.max(0.8, b), e = 1e-6;
+            const slope = (relightShoulder(b, k + e) - k) / e;
+            want(Math.abs(slope - 1) < 1e-3, `base ${b}: slope 1 at the knee, got ${slope}`);
+            let prev = -1, mono = true, below = true;
+            for (let x = k; x < k + 6; x += 0.01) {
+                const y = relightShoulder(b, x);
+                if (y < prev) mono = false;
+                if (!(y <= 1)) below = false;
+                prev = y;
+            }
+            want(mono && below, `base ${b}: monotone and at most 1 above the knee (mono ${mono}, below ${below})`);
+        }
+        want(relightShoulder(1, 1.7) === 1, `a channel already at 1 stays 1, got ${relightShoulder(1, 1.7)}`);
+    }
+
+    // the pixel: bright greys under a strong light keep a gradient below 255 where 8213449 clipped ([210, 234, 255, 255])
+    const light = { id: "light_1", type: "point", mx: 50, my: 50, lz: 60, color: 5500, intensity: 60, diffusion: 0, range: 500, on: true };
+    const params = { original: 100, ambient: 15, shadows: 0 };
+    const out = [];
+    for (const v of [170, 190, 210, 230]) out.push(shadePixel([v, v, v, 255], [0, 0, 1], [50, 50, 0], [light], params)[0]);
+    want(out.every((y) => y < 255), `a strong light on 170..230 grey stays under 255, got ${show(out)}`);
+    want(out.every((y, i) => i === 0 || y > out[i - 1]), `brighter greys stay brighter under the same light, got ${show(out)}`);
+    want(out.every((y, i) => y > [170, 190, 210, 230][i]), `the light still brightens each, got ${show(out)}`);
+    // a weak light brightens a dark grey; a light at intensity 0 leaves it alone
+    const dark = shadePixel([40, 40, 40, 255], [0, 0, 1], [50, 50, 0], [{ ...light, intensity: 20 }], params);
+    const darkOff = shadePixel([40, 40, 40, 255], [0, 0, 1], [50, 50, 0], [{ ...light, intensity: 0 }], params);
+    want(dark[0] > 40, `a weak light brightens a dark grey, got ${show(dark)}`);
+    want(darkOff[0] === 40, `a light at intensity 0 leaves the pixel alone, got ${show(darkOff)}`);
+    // Original light under 100 with no light on: the Ambient fill belongs to the picture without the lights, so the
+    // shoulder leaves it alone; at Ambient 100 with a flat fit the filter is the identity, as at 8213449 (with the fill
+    // counted as light, white came out 247)
+    for (const o of [50, 80, 90]) {
+        const row = [200, 230, 255].map((v) => shadePixel([v, v, v, 255], [0, 0, 1], [50, 50, 0], [{ ...light, intensity: 0 }], { original: o, ambient: 100, shadows: 0 })[0]);
+        want(show(row) === show([200, 230, 255]), `Original ${o}, Ambient 100, no light: the picture as it is, got ${show(row)}`);
+    }
+    // a white pixel stays white
+    want(shadePixel([255, 255, 255, 255], [0, 0, 1], [50, 50, 0], [light], params)[0] === 255, "white stays 255");
+
+    assert.deepEqual(fails, [], `suite 26:\n    ${fails.join("\n    ")}`);
+    console.log("  PASS 26: the highlight shoulder rolls the lights off towards white and leaves the rest alone");
+}
+
+    console.log("\nALL 26 RELIGHT TESTS PASSED CLEANLY!");
     console.log("PASS");
 }
 

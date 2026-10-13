@@ -135,8 +135,13 @@ approximation, `kelvinToRgb`, normalised so 5500 K is white). With no lights and
 exactly (`F * S_fit = P`): the filter at its defaults is the identity, which is what the tests pin first. The division
 by `S_fit` lifts the picture's own shadows (so a new light into an old shadow shows the texture); it is clamped by the
 *Recover shadows* slider (the largest gain, default 3×) and `S_fit >= 0.1`, and the gain fades to 1 in the darkest
-tones (noise). Highlights roll off through a soft shoulder (`x < 0.8 ? x : 0.8 + 0.2 * (1 - exp(-(x - 0.8) / 0.2))`)
-before the transfer back to sRGB, so a strong light does not clip flat. Specular (a gloss term) is phase 2.
+tones (noise). Highlights roll off through a soft shoulder before the transfer back to sRGB, so a strong light does not
+clip flat. **As built** (2026-10-13, the user: a soft shoulder instead of the hard clip at 255): per channel on the
+total, `k = max(0.8, base)` with `base = min(1, o * P + F * (1 - o) * ambient)` (the channel without the lights:
+Original light and the Ambient fill), `x <= k ? x : k + (1 - k) * (1 -
+exp(-(x - k) / (1 - k)))` (`relightShoulder`, `rl_shoulder`); until then only the added light rolled off, so the
+picture plus a strong light still clipped at 255. The knee never lies under `base`, so a pixel the lights leave
+alone keeps its value exactly (the identity). Specular (a gloss term) is phase 2.
 
 **The fitted original light** (the *Original light* slider needs it): a least-squares fit of the picture's luminance
 against the normals on the `wholeStats` sample (`belowStats`, `inpaint_canvas.js:14783-14805`, size 256: the composite

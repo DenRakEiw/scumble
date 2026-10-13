@@ -39,6 +39,8 @@ Tests relight filter layer across CPU and WebGL2 paths via CDP:
             (a low-res read with the wrong row width breaks it), a second render sends the picture under the first
             one's relit layer (F4).
   * Case w2: a sun on the map's centre with dist 0, GL against CPU (both frontal, F4).
+  * Case sh: the highlight shoulder: a strong light on a bright gradient rolls off towards white in both twins (no
+            plateau at 255), also at Original light under 100 (sh2).
 
 Rule 1: Strict gate test. If CDP session is unreachable, exits with 1 and prints FAIL.
 """
@@ -1650,6 +1652,35 @@ JS = r"""
         g.fillRect(0, 0, W, H);
     }
     glVsCpu("w2: sun at the centre with dist 0, GL vs CPU", "relight", w2Base, { lights: [centreSun], original: 100, ambient: 10, shadows: 0 }, infoV, { max: 2, over2Pct: 0.2, mean: 1.0 });
+
+    // Case sh (the user, 2026-10-13): the highlight shoulder. A strong light on a bright gradient rolls off towards white
+    // in both twins instead of a plateau at 255 (at 8213449 the picture plus the light clipped hard: 113,988 of the
+    // 240,000 pixels at 255; with the shoulder none, the brightest 254).
+    const shBase = mk(W, H);
+    {
+        const g = shBase.getContext("2d"), grad = g.createLinearGradient(0, 0, W, 0);
+        grad.addColorStop(0, "#b4b4b4");
+        grad.addColorStop(1, "#f0f0f0");
+        g.fillStyle = grad;
+        g.fillRect(0, 0, W, H);
+    }
+    const shLight = { id: "light_1", type: "point", x: W / 2, y: H / 2, dist: -30, intensity: 120, color: 5500, diffusion: 30, on: true };
+    const shParams = { lights: [shLight], original: 100, ambient: 15, shadows: 0 };
+    glVsCpu("sh: the highlight shoulder, GL vs CPU", "relight", shBase, shParams, infoV, { max: 2, over2Pct: 0.2, mean: 1.0 });
+    {
+        const shOut = F.applyFilter("relight", shBase, shParams, { ...infoV, cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
+        const shIn = shBase.getContext("2d").getImageData(0, 0, W, H).data;
+        let at255 = 0, brighter = 0;
+        for (let i = 0; i < W * H * 4; i += 4) {
+            if (shOut[i] === 255) at255++;
+            if (shOut[i] > shIn[i] + 8) brighter++;
+        }
+        notes.sh = { at255, brighter };
+        check("sh: the light brightens a good part of the picture", brighter > W * H * 0.05, notes.sh);
+        check("sh: and leaves almost none of it at 255 (under 0.5 % of the lit part)", at255 < brighter * 0.005, notes.sh);
+    }
+    // the same with Original light under 100: the Ambient fill is part of the picture without the lights in both twins
+    glVsCpu("sh2: the shoulder at Original 60, Ambient 60, GL vs CPU", "relight", shBase, { ...shParams, original: 60, ambient: 60 }, infoV, { max: 2, over2Pct: 0.2, mean: 1.0 });
 
     // -------------------------------------------------------------------------
     // Case x: Light presets: applyLightPreset and undo restore

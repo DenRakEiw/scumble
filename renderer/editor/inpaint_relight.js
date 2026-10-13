@@ -713,8 +713,21 @@ export function fitOriginalLight(small, normalsSmall, w = 256, h = 256) {
     return { l0, ka, kd };
 }
 
-function rolloff(x) {
-    return x > 0.8 ? 0.8 + 0.2 * (1.0 - Math.exp(-(x - 0.8) / 0.2)) : x;
+/**
+ * The highlight shoulder (linear light): a channel the lights push above the knee rolls off towards white instead of
+ * clipping at 1. The knee is 0.8 or the channel's value without the lights (`base`), whichever is higher, so a pixel
+ * the lights leave alone, or leave under the knee, keeps its value exactly (the identity at defaults); above the knee
+ * the curve leaves with slope 1 and nears 1. The shader's `rl_shoulder` is the same formula.
+ * @param {number} base - the channel without the lights: Original light times the picture plus the Ambient fill, 0..1
+ * @param {number} x - the channel with them
+ * @returns {number}
+ */
+export function relightShoulder(base, x) {
+    const k = Math.max(0.8, base);
+    if (!(x > k)) return x;
+    const h = 1.0 - k;
+    if (h < 1e-6) return k;
+    return k + h * (1.0 - Math.exp(-(x - k) / h));
 }
 
 /**
@@ -957,9 +970,11 @@ export function shadePixel(srcRgba, normal, mapCoord, lights, params = null, fit
     const addedG = fg * ((1.0 - o) * ambient + lsumG);
     const addedB = fb * ((1.0 - o) * ambient + lsumB);
 
-    const outLinR = o * pr + rolloff(addedR);
-    const outLinG = o * pg + rolloff(addedG);
-    const outLinB = o * pb + rolloff(addedB);
+    // the knee's base: the picture without the lights (Original light and the Ambient fill that replaces the rest)
+    const fill = (1.0 - o) * ambient;
+    const outLinR = relightShoulder(Math.min(1.0, o * pr + fr * fill), o * pr + addedR);
+    const outLinG = relightShoulder(Math.min(1.0, o * pg + fg * fill), o * pg + addedG);
+    const outLinB = relightShoulder(Math.min(1.0, o * pb + fb * fill), o * pb + addedB);
 
     const outSrgbR = Math.max(0, Math.min(255, Math.round(linearToSrgb(outLinR) * 255)));
     const outSrgbG = Math.max(0, Math.min(255, Math.round(linearToSrgb(outLinG) * 255)));
@@ -1516,8 +1531,12 @@ float rl_linearToSrgb(float c) {
 vec3 rl_linearToSrgb(vec3 c) {
     return vec3(rl_linearToSrgb(c.r), rl_linearToSrgb(c.g), rl_linearToSrgb(c.b));
 }
-float rl_rolloff(float x) {
-    return x > 0.8 ? 0.8 + 0.2 * (1.0 - exp(-(x - 0.8) / 0.2)) : x;
+float rl_shoulder(float base, float x) {
+    float k = max(0.8, base);
+    if (!(x > k)) return x;
+    float h = 1.0 - k;
+    if (h < 1e-6) return k;
+    return k + h * (1.0 - exp(-(x - k) / h));
 }
 
 vec3 rl_evalLight(
@@ -1706,10 +1725,9 @@ vec4 shade(vec4 c, vec2 uv) {
     }
 
     vec3 added = fLin * (vec3((1.0 - u_original) * u_ambient) + lsum);
-    added.r = rl_rolloff(added.r);
-    added.g = rl_rolloff(added.g);
-    added.b = rl_rolloff(added.b);
     vec3 outLin = u_original * pLin + added;
+    vec3 baseLin = min(vec3(1.0), u_original * pLin + fLin * ((1.0 - u_original) * u_ambient));
+    outLin = vec3(rl_shoulder(baseLin.r, outLin.r), rl_shoulder(baseLin.g, outLin.g), rl_shoulder(baseLin.b, outLin.b));
 
     return vec4(rl_linearToSrgb(outLin), c.a);
 }

@@ -427,6 +427,8 @@ A Relight layer illuminates your picture with up to four interactive light sourc
 - **Depth**: Adjusts the extrusion scale of the 3D surface normals generated from the depth map (5% to 200%).
 - **Shadows**: Enables screen-space raymarched cast shadows with contact hardening and soft penumbra. Setting the slider to 0 turns off shadow raymarching for instant rendering.
 
+Where a strong light pushes a bright area past white, it rolls off softly towards white instead of clipping flat; parts of the picture the lights leave alone keep their exact values.
+
 **Routes and generative relighting.** Relighting can run directly inside the app or route to generative models:
 - **App (default)**: Runs entirely on your local GPU via WebGL2 shaders and compiled Rust kernels (`height_normals`, `shadow_march`). It is completely non-destructive, instant, and runs with 0 network and 0 AI tokens.
 - **Generative routes**: The Relight layer offers alternative render passes that feed your lighting geometry and prompt words into external diffusion models:
