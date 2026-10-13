@@ -78,7 +78,23 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-12: relight fixed by this account, F1-F4 done; waiting for the user's test)
+## Where things stand (2026-10-13: 0.1.47 prepared, waiting for the user's word to release)
+
+- **0.1.47 is prepared, not released** (2026-10-13; the user tested relight in the dev test instance, "ist super", then
+  "bereite den release vor"): relight (item 43) with the fixes F1-F4 and the highlight shoulder (the user's answer the
+  same day: a soft shoulder now, `6abb828`; the Brainfuck easter egg kept). Commits up to `4a7c20b` are local, not
+  pushed; `package.json` 0.1.47, the CHANGELOG section `## 0.1.47 - 2026-10-13`. Built: `dist/Scumble Setup
+  0.1.47.exe`, `dist/Scumble-0.1.47-portable-win-x64.zip` and the exe gates' `win-unpacked` from `f192ee0` (a comment
+  apart from `4a7c20b`: build_node.py read `host.relightWhole` in a comment as a host member), `dist/scumble-0.1.47.mcpb`,
+  `dist/Scumble-0.1.47.msix` (187,675,774 bytes, from `4a7c20b`; `win-unpacked` is the Store layout since, without
+  `app-update.yml`) and `dist/store-listing/whats-new-0.1.47.txt`. Exe gates: `rel47-exe` (tiles, 49: 0.1.46's list plus
+  relight selection limit maps; 48 PASS, comfyview's control step the known flake) and `rel47-exe-canvas` (28, all
+  PASS). The node built (`build_node.py --check` ok, node_test PASS) and committed locally (`dec4806`; the node repo is
+  9 ahead of origin with the other agent's syncs, not pushed); `/system_stats` 200 after every write there. README and
+  MCP.md say 114 tools (95 core, 19 from the plugins). **Waiting for the user's word:** push, tag `v0.1.47`, the tag
+  build, the draft's assets, publish; then `node tools/manual_sync.js`, the blog post `v0-1-47`, server.json and the
+  MCP Registry (the user's device code), the node push, the Store update (the user's drag and drop of the MSIX). The
+  dev test instance (port 9556, `dist/test-profile-0.1.46`) may still be open.
 
 - **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`): the fix plan `docs/PLAN_RELIGHT_FIXES.md` is done (F1-F4); next the
   user's test, then a release on the user's word.**
@@ -104,11 +120,8 @@ code.
   light"; a sun on the centre at dist 0 is frontal on the CPU and in the march; the magnific gate (all 11 steps) and
   ideogram45_test.js green again; the manual's Kelvin list, the CHANGELOG's Unreleased section rewritten; the full gate
   list green on both backends, comfyview's control step the known flake). Relight gate: 270 in-app checks on tiles,
-  269 on canvas; `RELIGHT_GATE_SKIP_NODE=1` runs the in-app checks alone for a mutation round. **Before the release:**
-  the user's test of relight; the plan's two open questions (the Brainfuck easter egg of 4cc2f76: keep it?; highlights
-  clip hard at 255 since the identity fix: a soft shoulder?); then the release chain (`docs/RELEASING.md`: the node
-  build, `build_node.py --check` differs in inpaint_canvas, inpaint_filters and inpaint_relight; the version in the
-  CHANGELOG's "Documents" line).
+  269 on canvas (278 / 277 with the shoulder's cases sh and sh2); `RELIGHT_GATE_SKIP_NODE=1` runs the in-app checks
+  alone for a mutation round. Both open questions answered 2026-10-13 (above).
   The other agent's `docs/REVIEW_RELIGHT_2026-10-12.md` is its own self-review.
 
 
