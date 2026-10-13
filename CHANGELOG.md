@@ -4,6 +4,8 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **A progress bar in the status row.** While a run goes, a thin bar beside the status line follows it: on your own ComfyUI the node it is at, a sampler's steps and the seconds, for a Generate, the Realism Pass, relight and an upscale of the whole picture; through a provider the seconds it has been waiting. It belongs to its tab, and a second Generate queued behind the first is counted ("1 more queued").
+- With two Generates queued on your ComfyUI in one tab, the first one's result could land in whichever tab was in front; it lands in its own tab now.
 - **Errors stand out in the status line.** An error, a model that still has to be downloaded, a size or limit a run would pass, or a result that came out only in part (a fallback used, parts of a file left out) shows red and blinks five times, then stays red until the next line; with the system's animation effects off it is red without blinking. Hints such as "Select a layer first" and "a run is still going" stay as they were. Agents mark their own lines through `set_status`'s new `kind`, plugins through `status(text, kind)`.
 - **A greeting in the developer tools.** Open *View > Toggle Developer Tools* and the console shows the Scumble mascot and its name in ASCII, printed at every start by a small Brainfuck program (`renderer/easteregg/logo.bf`).
 

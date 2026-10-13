@@ -2166,6 +2166,62 @@ try {
     *STEPS_R2A,
     *STEPS_R3A,
     *STEPS_RU,
+    # docs/PLAN_0_1_48.md S3: the status row's bar follows ComfyUI's events for the prompts this document queued (the
+    # node k of n, a sampler's step), events that came before the queue's answer are replayed, an API run shows its
+    # seconds, the end hides it; a queued run of a document is found by its prompt id after a second Generate
+    ("the_status_rows_bar_follows_the_run", """
+const api = (await import('./editor/host.js')).api;
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 256, height: 256, doc: d.id });
+const bar = ed.runEl, fill = ed.runFill, label = () => ed.runLabel.textContent;
+const shown = () => !bar.hidden && getComputedStyle(bar).display !== "none";
+if (!bar || shown()) throw new Error("the bar is missing or shown without a run");
+if (bar.parentNode !== ed.statusEl.parentNode || ed.statusEl.contains(bar)) throw new Error("the bar is not a sibling of the status line");
+const id = "s3_" + Date.now();
+// a fast prompt: its first events before the POST answered
+api.dispatch("execution_start", { prompt_id: id });
+api.dispatch("executing", { prompt_id: id, node: "4" });
+host.trackRun(ed, id, 6);
+if (!shown() || !label().includes("node 1/6") || !bar.classList.contains("ipc-run-busy")) throw new Error("after the replay: " + label() + " / " + bar.className);
+api.dispatch("progress", { prompt_id: id, node: "4", value: 10, max: 20 });
+if (fill.style.width !== "50%" || bar.classList.contains("ipc-run-busy") || !label().includes("step 10/20")) throw new Error("a step: " + fill.style.width + " / " + label());
+// another document's prompt leaves this bar alone
+api.dispatch("progress", { prompt_id: "someone_else", node: "4", value: 19, max: 20 });
+if (fill.style.width !== "50%") throw new Error("another prompt moved the bar");
+// setStatus does not wipe it
+ed.setStatus("A line while it runs.");
+if (!shown() || !bar.isConnected) throw new Error("setStatus wiped the bar");
+api.dispatch("execution_success", { prompt_id: id });
+if (shown()) throw new Error("the bar stays after the prompt ended");
+// a run the app waits for: its label and seconds
+const token = { provider: "loopback", label: "Loopback test", started: Date.now() - 2500, editor: ed, runId: "s3" };
+host._providerRuns.add(token);
+host.notifyProviderRuns();
+const timed = label();
+if (!shown() || !/^Loopback test · [23] s$/.test(timed)) throw new Error("the timed run: " + timed);
+host._providerRuns.delete(token);
+host.notifyProviderRuns();
+if (shown()) throw new Error("the bar stays after the timed run");
+// two local runs queued: the first is still found by its prompt id (the result lands in this document)
+ed._localRuns = new Set(["s3_first", "s3_second"]);
+ed.lastPromptId = "s3_second";
+const found = host.editorByPrompt("s3_first");
+ed._localRuns.clear();
+if (found !== ed) throw new Error("the first of two queued runs has no document");
+// and its error lands in its own tab, not in the one in front
+const other = await run("new_document");
+host.shell.activate(ednow(other.id));
+ed._localRuns = new Set(["s3_err"]);
+ed.lastPromptId = "s3_later";
+api.dispatch("execution_error", { prompt_id: "s3_err", node_id: "9", node_type: "KSampler", exception_message: "boom s3" });
+const errLine = ed.status, otherLine = ednow(other.id).status;
+await run("close_document", { doc: other.id, force: true });
+if (!errLine.startsWith("Error in KSampler: boom s3") || ed.statusKind !== "error" || /boom s3/.test(otherLine)) throw new Error("the error of the first run: " + errLine + " / the tab in front: " + otherLine);
+await run("close_document", { doc: d.id, force: true });
+return { replay: "ok", step: "50%", timed };
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";

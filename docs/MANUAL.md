@@ -95,7 +95,7 @@ Happy with it? Ctrl+Shift+E exports the visible picture, and Ctrl+S keeps the wh
 1. **Open.** Ctrl+O, or drop a file on the window, or Ctrl+V a picture from the clipboard.
 2. **Select.** Paint over the area with the selection brush. \[ and \] change the size, Alt subtracts.
 3. **Prompt.** Generate tab on the right: describe what should be there. Leave it empty for a pure cleanup with an inpainting model.
-4. **Generate.** Ctrl+Enter. The status line says where it runs and how long it has been running.
+4. **Generate.** Ctrl+Enter. The status line says where it runs, and a thin bar beside it follows the run: on your ComfyUI the node it is at (node 4/9) and the sampler's steps (step 12/20), with the seconds; through a provider the seconds it has been waiting.
 5. **Blend.** In the new layer's row, pull Match up until the patch sits in the picture.
 6. **Save.** Ctrl+S saves the document as a .scumble file you can come back to. Ctrl+Shift+E exports the picture in the format the Export panel is set to: PNG, JPEG, WebP or TIFF, or PSD and ORA with all layers.
 

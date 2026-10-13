@@ -237,14 +237,15 @@ return { file: await window.scumble.log.file() };
 
 async def main():
     sys.stdout.reconfigure(encoding="utf-8")
-    # the kinds' rules in plain Node first (renderer/editor/inpaint_status.js)
-    node = subprocess.run(["node", os.path.join(os.path.dirname(os.path.abspath(__file__)), "status_kind_test.js")], capture_output=True, text=True, encoding="utf-8")
-    if node.returncode != 0 or not node.stdout.strip().endswith("PASS"):
-        print(node.stdout[-2000:], node.stderr[-1000:])
-        print("FAIL status_kind_test.js")
-        print("RESULT FAIL")
-        return False
-    print("PASS status_kind_test.js: %d checks" % node.stdout.count("[ok]"))
+    # the status row's rules in plain Node first: the kinds (inpaint_status.js) and the run's bar (inpaint_progress.js)
+    for test in ("status_kind_test.js", "progress_test.js"):
+        node = subprocess.run(["node", os.path.join(os.path.dirname(os.path.abspath(__file__)), test)], capture_output=True, text=True, encoding="utf-8")
+        if node.returncode != 0 or not node.stdout.strip().endswith("PASS"):
+            print(node.stdout[-2000:], node.stderr[-1000:])
+            print("FAIL " + test)
+            print("RESULT FAIL")
+            return False
+        print("PASS %s: %d checks" % (test, node.stdout.count("[ok]")))
 
     async def run(cdp):
         ev = cdp.eval

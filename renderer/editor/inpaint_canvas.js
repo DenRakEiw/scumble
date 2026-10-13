@@ -50,6 +50,7 @@ import { buildRangeBar } from "./inpaint_rangebar.js";
 import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend, seedOfLayer, hash32, mul255 } from "./blend_modes.js";
 import { heightNormals, shadowMarch } from "./px/kernels.js";
 import { statusKindFor, failKind, refusal } from "./inpaint_status.js";
+import { RunProgress } from "./inpaint_progress.js";
 import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex, LIGHT_PRESETS, SPOT_GOBOS, applyLightPreset, loraPercent, relightMapKey, relightDepthScale, relightVisKey, relightVisCurrent } from "./inpaint_relight.js";
 
 /**
@@ -1737,11 +1738,17 @@ const STYLE = `
 .ipc-cropset label { display:contents; }
 .ipc-info b { color:var(--sc-fg, #ddd); font-weight:500; }
 .ipc-bottom { padding:5px 10px; background:var(--sc-chrome, #242424); border-top:1px solid var(--sc-chrome-edge, #0d0d0d); color:var(--sc-muted, #999); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; }
-.ipc-kbd { color:var(--sc-faint, #777); margin-left:auto; }
+.ipc-kbd { color:var(--sc-faint, #777); margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; flex-shrink:1000; }
 .ipc-statusline.ipc-status-error, .ipc-node .ipc-status.ipc-status-error { color:var(--sc-error, #e0533d); }
 .ipc-status-blink { animation:ipc-status-blink .6s ease-in-out 5; }
+.ipc-statusline { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.ipc-run { display:flex; align-items:center; gap:6px; flex:none; margin-left:12px; color:var(--sc-muted, #999); }
+.ipc-run-track { position:relative; width:96px; height:4px; border-radius:2px; overflow:hidden; background:var(--sc-line, #333); }
+.ipc-run-fill { position:absolute; left:0; top:0; bottom:0; width:0; border-radius:2px; background:var(--sc-active, #4a90d9); transition:width .25s linear; }
+.ipc-run-busy .ipc-run-fill { width:30%; animation:ipc-run-busy 1.4s ease-in-out infinite; }
+@keyframes ipc-run-busy { 0% { left:-30%; } 100% { left:100%; } }
 @keyframes ipc-status-blink { 50% { opacity:.2; } }
-@media (prefers-reduced-motion: reduce) { .ipc-status-blink { animation:none; } }
+@media (prefers-reduced-motion: reduce) { .ipc-status-blink { animation:none; } .ipc-run-fill { transition:none; } .ipc-run-busy .ipc-run-fill { animation:none; left:0; width:100%; opacity:.45; } }
 .ipc-view.ipc-scale-x { cursor:ew-resize; }
 .ipc-view.ipc-scale-y { cursor:ns-resize; }
 .ipc-view.ipc-rotate { cursor:alias; }
@@ -2188,6 +2195,8 @@ class InpaintEditor {
         this.selectionDisplay = selDisplay === "tint" ? "tint" : "ants";   // marching ants (default) or red tint
         this.status = "No image loaded.";
         this.statusKind = "";
+        // the status row's bar: the hosts feed it the runs of this document (docs/PLAN_0_1_48.md S3)
+        this.runProgress = new RunProgress((s) => this.renderRunProgress(s));
         this.isOpen = false;
 
         injectStyle();
@@ -3393,6 +3402,22 @@ class InpaintEditor {
             void node.offsetWidth;
             node.classList.add("ipc-status-blink");
         }
+    }
+
+    /**
+     * The status row's bar from a RunProgress state (null: hidden): the fill at the fraction, or a busy sweep without
+     * one (still under reduced motion), and the label beside it (the node k of n, a sampler's step, the seconds).
+     */
+    renderRunProgress(s) {
+        const box = this.runEl;
+        if (!box) return;
+        box.hidden = !s;
+        if (!s) return;
+        const busy = s.fraction == null;
+        box.classList.toggle("ipc-run-busy", busy);
+        this.runFill.style.width = busy ? "" : `${Math.round(Math.max(0, Math.min(1, s.fraction)) * 1000) / 10}%`;
+        if (this.runLabel.textContent !== s.label) this.runLabel.textContent = s.label;
+        box.title = s.label;
     }
 
     /** Hardness of the tool in use: the eraser has its own, softer default. */
@@ -24579,6 +24604,7 @@ class InpaintEditor {
 
     destroy() {
         this._destroyed = true;
+        if (this.runProgress) this.runProgress.clear();   // its one-second ticker
         this._mapUndoPending = null;
         clearTimeout(this._refLayTimer);
         if (this._compositor) { try { this._compositor.dispose(); } catch (_) { /* context gone */ } this._compositor = null; }

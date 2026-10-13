@@ -484,6 +484,8 @@ export const host = {
             url: typeof st.url === "string" ? st.url : (this.server && this.server.url) || "",
             version: typeof st.version === "string" ? st.version : (this.server && this.server.version) || "",
         };
+        // only when the server is gone: "connecting" (a re-Connect to the same server) is a pause, the jobs go on
+        if (this.server.state === "disconnected" || this.server.state === "error") for (const ed of this._editors) if (ed.runProgress) ed.runProgress.idle();
         this.emit("realism");
     },
 
@@ -1031,7 +1033,7 @@ export const host = {
     editorByPrompt(promptId) {
         if (!promptId) return null;
         return this._editors.find((e) => e.lastPromptId === promptId || e.segmentPromptId === promptId || e.objectsPromptId === promptId
-            || e.upsamplePromptId === promptId || e.cutoutPromptId === promptId)
+            || e.upsamplePromptId === promptId || e.cutoutPromptId === promptId || (e._localRuns && e._localRuns.has(promptId)))
             || (this._pictureRuns.has(promptId) ? this._pictureRuns.get(promptId).editor : null) || null;
     },
 
@@ -2498,6 +2500,88 @@ export const host = {
 
     notifyProviderRuns() {
         if (this.onProviderRuns) { try { this.onProviderRuns(Array.from(this._providerRuns)); } catch (err) { console.warn(err); } }
+        // the status row's bar of each document: the seconds of the run it waits for (docs/PLAN_0_1_48.md S3)
+        const runs = Array.from(this._providerRuns);
+        for (const ed of this._editors) {
+            if (!ed.runProgress) continue;
+            const t = runs.find((r) => r.editor === ed);
+            ed.runProgress.timer(t ? { label: t.label, started: t.started } : null);
+        }
+    },
+
+    // ---- the status row's bar: ComfyUI's events for the prompts a document queued (docs/PLAN_0_1_48.md S3) ----
+
+    /** A prompt the document queued: its bar follows it; events that came before the queue answered are replayed. */
+    trackRun(editor, promptId, nodes) {
+        if (!editor || !editor.runProgress || !promptId || !this._editors.includes(editor)) return;
+        editor.runProgress.track(promptId, nodes);
+        const early = this._earlyProgress && this._earlyProgress.get(String(promptId));
+        if (early) {
+            this._earlyProgress.delete(String(promptId));
+            for (const [type, detail] of early.events) editor.runProgress.event(type, detail);
+        }
+    },
+
+    /**
+     * How many nodes ComfyUI runs of an API-format prompt: the output nodes (the server's object_info says which) and
+     * what they read, so a node left without a reader (a reference slot this run does not fill) is not counted. All of
+     * them when the server's node list is not known.
+     */
+    runNodeCount(prompt) {
+        const ids = Object.keys(prompt || {});
+        const info = this.objectInfo;
+        if (!info) return ids.length;
+        const roots = ids.filter((id) => { const n = prompt[id]; const d = n && info[n.class_type]; return !!(d && d.output_node); });
+        if (!roots.length) return ids.length;
+        const seen = new Set(), stack = roots.slice();
+        while (stack.length) {
+            const id = stack.pop();
+            if (seen.has(id) || !prompt[id]) continue;
+            seen.add(id);
+            for (const v of Object.values(prompt[id].inputs || {})) if (Array.isArray(v) && v.length === 2 && prompt[String(v[0])]) stack.push(String(v[0]));
+        }
+        return seen.size || ids.length;
+    },
+
+    /**
+     * A tracked prompt that waits while others run can leave the queue without an event (deleted in ComfyUI's queue,
+     * a lost end event): on a status with jobs left, /queue is read (at most every 2 s) and what it no longer holds
+     * goes from the bars.
+     */
+    async checkTrackedRuns() {
+        const tracked = this._editors.filter((e) => e.runProgress && e.runProgress.runs.size);
+        if (!tracked.length || this._checkingRuns || Date.now() - (this._runsChecked || 0) < 2000) return;
+        this._checkingRuns = true;
+        this._runsChecked = Date.now();
+        try {
+            const r = await api.fetchApi("/queue", { signal: AbortSignal.timeout(15000) });
+            if (r.status !== 200) return;
+            const q = await r.json();
+            const held = new Set([...(q.queue_running || []), ...(q.queue_pending || [])].filter(Array.isArray).map((it) => String(it[1])));
+            for (const ed of tracked) {
+                for (const id of Array.from(ed.runProgress.runs.keys())) {
+                    // a prompt queued a moment ago may not be listed yet
+                    if (!held.has(id) && Date.now() - ed.runProgress.runs.get(id).tracked > 3000) ed.runProgress.done(id);
+                }
+            }
+        } catch (_) { /* the server did not answer: the next status asks again */ } finally {
+            this._checkingRuns = false;
+        }
+    },
+
+    /** One of ComfyUI's progress events: to the document that waits for its prompt, or held a few seconds for one. */
+    progressEvent(type, detail) {
+        const id = detail && detail.prompt_id != null ? String(detail.prompt_id) : null;
+        if (!id) return;
+        const ed = this._editors.find((e) => e.runProgress && e.runProgress.has(id));
+        if (ed) { ed.runProgress.event(type, detail); return; }
+        // the POST's answer (the prompt id) can come after the first events of a fast prompt
+        if (!this._earlyProgress) this._earlyProgress = new Map();
+        const now = Date.now();
+        for (const [k, v] of this._earlyProgress) if (now - v.at > 10000) this._earlyProgress.delete(k);
+        let e = this._earlyProgress.get(id);
+        if (!e) { if (this._earlyProgress.size >= 32) return; e = { at: now, events: [] }; this._earlyProgress.set(id, e); }
+        if (e.events.length < 256) e.events.push([type, detail]);
     },
 
     // ---- a picture in, a picture out on the user's ComfyUI (docs/PLAN_0_1_42.md R2a; the pass, U2's upscale) ----
@@ -2562,6 +2646,7 @@ export const host = {
         if (!id) throw stop("error", `${label}: your ComfyUI gave the job no id.`);
         const runs = editor ? (editor._localRuns || (editor._localRuns = new Set())) : null;
         if (runs) runs.add(id);
+        if (editor) this.trackRun(editor, id, this.runNodeCount(prompt));
         let entry = null;
         const interrupted = `${label} was interrupted on your ComfyUI.`;
         // what /history says about a job that ended without an `executed` for `output`
@@ -2652,6 +2737,8 @@ export const host = {
             this._endedPictureRuns.add(id);
             for (const old of this._endedPictureRuns) { if (this._endedPictureRuns.size <= 64) break; this._endedPictureRuns.delete(old); }
             if (runs) runs.delete(id);
+            // the bar waits no more either: a cancelled or dropped job gets no end event from ComfyUI
+            if (editor && editor.runProgress) editor.runProgress.done(id);
             if (cleanup) await Promise.race([cleanup, new Promise((r) => setTimeout(r, 5000))]);
         }
     },
@@ -3571,6 +3658,7 @@ export const host = {
         // open until ComfyUI says the prompt ended (success, error, interrupt) or its queue is empty: a turn of the whole
         // picture waits for it, since the result lands in the geometry it was made for (PLAN_0_1_31 §7)
         if (res && res.prompt_id) (editor._localRuns || (editor._localRuns = new Set())).add(res.prompt_id);
+        if (res && res.prompt_id) this.trackRun(editor, res.prompt_id, this.runNodeCount(prompt));
         return res;
     },
 
@@ -4752,15 +4840,22 @@ api.addEventListener("execution_success", ({ detail }) => { localRunEnded(detail
 api.addEventListener("execution_interrupted", ({ detail }) => { localRunEnded(detail); host.pictureRunEvent("interrupted", detail); });
 api.addEventListener("status", ({ detail }) => {
     const info = detail && detail.status && detail.status.exec_info;
-    if (info && info.queue_remaining === 0) for (const ed of host.editors()) if (ed._localRuns) ed._localRuns.clear();
+    if (info && info.queue_remaining === 0) for (const ed of host.editors()) { if (ed._localRuns) ed._localRuns.clear(); if (ed.runProgress) ed.runProgress.idle(); }
+    else if (info && info.queue_remaining > 0) host.checkTrackedRuns();
 });
+// the status row's bar (docs/PLAN_0_1_48.md S3)
+for (const type of ["execution_start", "execution_cached", "executing", "progress", "execution_success", "execution_error", "execution_interrupted"]) {
+    api.addEventListener(type, ({ detail }) => host.progressEvent(type, detail));
+}
 
 api.addEventListener("execution_error", ({ detail }) => {
+    // the owner first: localRunEnded drops the id from the document's open renders, which editorByPrompt reads
+    const owner = detail ? host.editorByPrompt(detail.prompt_id) : null;
     localRunEnded(detail);
     if (!detail) return;
     // a picture run's failure goes to its caller (passPicture's sentence), not into the tab's status
     if (host.pictureRunEvent("error", detail)) return;
-    const ed = host.editorByPrompt(detail.prompt_id) || host.editor;
+    const ed = owner || host.editor;
     if (!ed) return;
     const msg = detail.exception_message || "execution failed";
     if (ed.segmentPromptId && detail.prompt_id === ed.segmentPromptId) {
