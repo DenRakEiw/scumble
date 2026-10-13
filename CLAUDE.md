@@ -78,10 +78,16 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-13: 0.1.47 prepared, waiting for the user's word to release)
+## Where things stand (2026-10-13: 0.1.47 released, relight; the Store update open)
 
-- **0.1.47 is prepared, not released** (2026-10-13; the user tested relight in the dev test instance, "ist super", then
-  "bereite den release vor"): relight (item 43) with the fixes F1-F4 and the highlight shoulder (the user's answer the
+- **0.1.47 is out** (tag v0.1.47 on `debf8a9`, published 2026-10-13T08:30:10Z, title "relight with virtual lights"; the
+  user's "ja, veröffentliche den release"): the tag build green, the eight assets checked (the zip's layout, the
+  `.mcpb` 0.1.47, `latest.yml`; the zip's start test skipped, the user's Scumble was open); the post `v0-1-47` live
+  (`Portfolio_vercel` `1da99c3`, Vercel success), the manual synced, hub 0.1.47; the node repo pushed (no new node
+  version); `server.json` 0.1.47 committed and published to the MCP Registry (the user's device code; 0.1.47 latest).
+  **Waiting for the user: the Store update** (`dist/Scumble-0.1.47.msix` and `dist/store-listing/whats-new-0.1.47.txt`;
+  the MSIX by the user's drag and drop, `docs/RELEASING.md`). The preparation, as it was: the user tested relight in
+  the dev test instance ("ist super"), then "bereite den release vor": relight (item 43) with the fixes F1-F4 and the highlight shoulder (the user's answer the
   same day: a soft shoulder now, `6abb828`; the Brainfuck easter egg kept). Commits up to `4a7c20b` are local, not
   pushed; `package.json` 0.1.47, the CHANGELOG section `## 0.1.47 - 2026-10-13`. Built: `dist/Scumble Setup
   0.1.47.exe`, `dist/Scumble-0.1.47-portable-win-x64.zip` and the exe gates' `win-unpacked` from `f192ee0` (a comment
@@ -91,10 +97,9 @@ code.
   relight selection limit maps; 48 PASS, comfyview's control step the known flake) and `rel47-exe-canvas` (28, all
   PASS). The node built (`build_node.py --check` ok, node_test PASS) and committed locally (`dec4806`; the node repo is
   9 ahead of origin with the other agent's syncs, not pushed); `/system_stats` 200 after every write there. README and
-  MCP.md say 114 tools (95 core, 19 from the plugins). **Waiting for the user's word:** push, tag `v0.1.47`, the tag
-  build, the draft's assets, publish; then `node tools/manual_sync.js`, the blog post `v0-1-47`, server.json and the
-  MCP Registry (the user's device code), the node push, the Store update (the user's drag and drop of the MSIX). The
-  dev test instance (port 9556, `dist/test-profile-0.1.46`) may still be open.
+  MCP.md say 114 tools (95 core, 19 from the plugins). The dev test instance (port 9556, `dist/test-profile-0.1.46`)
+  may still be open; the profile can go after the user's test. Discussion github/github-mcp-server#1257 (the
+  github.com/mcp onboarding request of 2026-10-10): no answer yet on 2026-10-13, only other vendors' requests.
 
 - **Relight (item 43, `docs/PLAN_RELIGHT_BUILD.md`): the fix plan `docs/PLAN_RELIGHT_FIXES.md` is done (F1-F4); next the
   user's test, then a release on the user's word.**
