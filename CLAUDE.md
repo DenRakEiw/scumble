@@ -79,7 +79,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-13: 0.1.47 released and in the Store; 0.1.48 being built, S1 to S5 done)
+## Where things stand (2026-10-14: 0.1.47 released and in the Store; 0.1.48 prepared locally, not released)
 
 - **The open items, collected 2026-10-13** (a workflow of 11 agents over BUGS.md, the plans, the list, the outward
   threads and GitHub, each doubtful status checked in the code): `docs/OPEN_2026-10-13.md`, a dated snapshot (not
@@ -112,10 +112,21 @@ code.
   **S5 done 2026-10-13** (the user's answers: an answer too large after it was paid lands scaled down to fit, red;
   Resize and Extend refuse; "S5 as built": `renderer/editor/inpaint_sizelimit.js`, the refusal before a paid
   whole-picture upscale names the largest factor that fits; a review workflow's 9 findings fixed). **S6's cherry-pick
-  done the same day** (the Help fix of `bddbf74` in main, its branch deleted). **Next:** the user tests 0.1.48 in a dev
-  instance; then the release preparation (CHANGELOG section, `npm run dist`, exe gates; the website's
-  `scumble-inline.tsx` needs an `em` branch with the manual sync); the release only on the user's word. Not run in
-  0.1.48: the `huge` gate (30k), the node side of the bar.
+  done the same day** (the Help fix of `bddbf74` in main, its branch deleted). **Prepared 2026-10-14** (the user:
+  "release vorbereiten"): a release review (two workflows, 10 agents; `docs/PLAN_0_1_48.md` "The release review")
+  found 7 + 8 "should" defects in the new features, all fixed (`38897a4`, `dc7d697`: the bar's routing, a lost socket,
+  closed tabs' prompts and Reopen Closed Tab, extend_canvas, Magnific Precision whole factors, Magnific Creative's
+  25.3 MP cap); the CHANGELOG section `## 0.1.48 - 2026-10-14`, `package.json` 0.1.48. Built from `dc7d697`: `dist/Scumble
+  Setup 0.1.48.exe`, `dist/Scumble-0.1.48-portable-win-x64.zip` (layout checked; the start test skipped, the user's
+  Scumble was open), `dist/scumble-0.1.48.mcpb` (114 tools), `dist/Scumble-0.1.48.msix` (0.1.48.0; `win-unpacked` is the
+  Store layout since) and `dist/store-listing/whats-new-0.1.48.txt`. Exe gates: `rel48-exe-canvas` 28 of 28 PASS;
+  `rel48-exe` (tiles, 49) PASS up to `boxes`, the instance went away in `comfyview` (TESTING.md flakes), and
+  `rel48-exe-b` (comfyview and the 14 after it, a fresh instance) PASS but comfyview's known control step. The node
+  built (`--check` ok, node_test PASS) and committed locally (`beef9dd`, not pushed; `/system_stats` 200). The
+  website's `components/scumble-inline.tsx` has its `em` branch in the working tree of `F:\portfolio_web` (uncommitted,
+  `tsc` green), to go in with the manual sync and the post. Not pushed, no tag. **Next:** the user's test of 0.1.48, then
+  the release on the user's word (RELEASING.md's chain). Not run in 0.1.48: the `huge` gate (30k), the node side of the
+  bar.
 - **Done 2026-10-13 on the user's word:** the awesome-alternative-uis-for-comfyui entry (PR #120) moved to the bottom
   of Category 4 as the reviewer asked (the fork's `add-scumble` rebuilt on upstream `babe4fd` and force-pushed; no
   reply comment posted). Video 4 is on YouTube (the user). CLAUDE.md brought up to date with the code.

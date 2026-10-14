@@ -499,6 +499,12 @@ Known flakes; **re-run before believing any of these**:
   The same evening the exe's `comfyview` gate failed "Ctrl+S reaches the page" twice on its control ("Ctrl+Shift+L in
   the editor's window reached no menu"), the occluded-window key trap of CLAUDE.md; it passed at once on a fresh instance
   both times.
+  On 2026-10-14 (`rel48-exe`, the 0.1.48 exe on tiles, the 35th gate of one instance) the instance went away in
+  `comfyview`'s "V2: a load that throws, a page without window.app, no target" (the DevTools socket closed, then 9555
+  refused), and every gate after it failed in seconds on the refused port; nothing in `app.log`. `comfyview` and the 14
+  gates after it on a fresh instance (`rel48-exe-b`): all PASS but the control step above (24 of 25). The release had
+  touched `comfy.js` only in the websocket's close handler (a replaced socket's late close says nothing); not looked
+  into further.
 - The 0.1.34 exe gates on tiles (2026-09-29, one full run of 31 gates) failed two steps once, and both passed at once
   when `export film` ran again on a fresh instance: `export_test.py` `a_run_reads_its_box_and_a_window_of_the_selection`
   ("the run's patch differs between the window and the whole selection", one byte, one level; `stitch.js`'s
