@@ -425,3 +425,13 @@ layout. Not in the vectors on purpose: an astral character cut in half at 400 UT
 the node drops the half: a Python-only case in B1), `{@ref:i}` markers (the node's descs carry none), `idWords` (the
 editor sends `selectionBoxId`). The rounding: `Math.round` emulated exactly (`r = floor(x); r + 1 if x - r >= 0.5`),
 not `floor(x + 0.5)` (which gives 1 for 0.49999999999999994; a vector holds it).
+
+**B1 (clone `47d4a5b`).** `boxes_rows.py` (pure Python): `js_round`, `len16` / `cut16` (UTF-16 units; a character
+the cut would split is left out whole), `one_line` / `fold` (the ECMAScript whitespace set by code point, lone
+surrogates dropped), `dumps` (compact, `ensure_ascii=False`), `check_boxes` (the app's texts, `BoxError`), `grid`,
+`rows_flux3(boxes, frame, names, text)` (`names` maps a From box's `ref` to its picture name, int or str keys),
+`rows_text`, `clause_of`, `where_words`, `way_words`, `caption_flux3`, `apply_boxes` (`{prompt, rows, notes}`),
+`elements_core`. Regexes with `\Z` for JS `$`, `re.I | re.A` for the verbs. nodes.py: `from . import boxes_rows`, else
+loaded by file as `inpaint_canvas_boxes_rows` and registered in `sys.modules` (one module object for nodes.py and the
+tests; the package path checked by importing the clone as a package over the test stubs). `tests/test_boxes.py`: all
+vectors (to the character, lists compared as JSON so 250 and 250.0 differ) and nine Python-only cases; unittest 50 OK.
