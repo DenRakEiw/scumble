@@ -76,7 +76,7 @@ Boxes* (a preview) and *Build JSON Prompt (Ideogram)*.
 |---|---|---|---|
 | D1 | Who writes the rows | **nodes.py (Python)**, in `run()`, next to the crop and the batch | Only run() knows the exact frame (padding, auto context, `_fit_span_to_multiple`), the batch as built (Original or not, a skipped reference) and the reference fit (pad / crop / stretch). The editor's `cropRect()` differs at target_size 0. |
 | D2 | Outputs | Two **tail outputs** after `setting_8`: `box_prompt` (STRING) and `elements` (ARRAY); `prompt` unchanged | Links are by index: only appending keeps saved workflows. The plain `prompt` keeps feeding non-FLUX chains without JSON in it. |
-| D3 | `box_prompt` without boxes | The plain prompt (boxes off, none, or none left) | Wiring `box_prompt` is then always safe. |
+| D3 | `box_prompt` without boxes | The plain prompt (boxes off, none, or none left) | Wiring `box_prompt` is then always safe. **As built (B6 review):** only while the switch is off; with it on and no box the selection goes as one box (D8), so the docs say "switch it off before box_prompt feeds a model that reads no boxes". |
 | D4 | `elements` content | New and Text boxes of the frame in core's shape (`{type, bbox, text?, desc}`, no id); `[]` when boxes are off | Core renames ids and knows no edit kinds; Keep / Move / Remove / From live only in `box_prompt`. |
 | D5 | Box UI in the node | A **core module** `renderer/editor/inpaint_boxes.js`, active only when the host member `boxesInEditor` is true (node true, app false), reusing the plugin's tool and model code moved under `renderer/editor/` | One tool and one model for both hosts; the app keeps its plugin; no node-owned UI module. |
 | D6 | Persistence | `editor.pluginData.boxes` (the app's shape `{version: 1, boxes: [...]}`), put into `getValue()` / read in `setValue()` **only when `host.boxesInEditor`** | The app's `.scumble` and autosave stay as they are; the node's workflow keeps the boxes. |
@@ -145,6 +145,7 @@ Boxes* (a preview) and *Build JSON Prompt (Ideogram)*.
 ```
 "selectionBoxId": "red_door_1",          // idWords(foldDesc(prompt)) || "edit", then "_1"
 "referenceIds": ["L..", "L.."],          // the layer ids of `references`, same order
+"referenceLabels": ["img1", "img2"],     // (B6) each reference's @img label: nodes.py writes @imgN as "image n"
 "boxes": [{ "id": "red_scarf_1", "kind": "new|keep|move|remove|from",
             "rect": [l,t,r,b], "src": [l,t,r,b] | [fl,ft,fr,fb], "ref": 0,
             "desc": "...", "text": "..." }]   // only when the document holds boxes

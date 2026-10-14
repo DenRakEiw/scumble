@@ -162,6 +162,48 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  */
 
 const FIXED_OUTPUTS = 13;   // InpaintCanvas outputs before setting_1 (nodes.py RETURN_NAMES)
+const SETTING_SLOTS = 8;    // setting_1 .. setting_8
+/**
+ * The node's tail outputs after the settings (docs/PLAN_NODE_BOXES.md D2): backend slots 21 and 22; the node's frontend
+ * shows them right after the connected settings, so a UI graph (and the page's graphToPrompt) holds them at a visible
+ * slot that may be a setting's number. A recipe reads them by name: a run of a local recipe sends no boxes, so a
+ * consumer of box_prompt gets the plain prompt, and one of elements loses its link (tailOutputs).
+ */
+const TAIL_OUTPUTS = ["box_prompt", "elements"];
+const PROMPT_SLOT = 7;
+
+/** A canvas output's name by its slot in the backend's order (no names known: an API prompt). */
+function backendOutputName(slot) {
+    if (slot < FIXED_OUTPUTS) return null;
+    if (slot < FIXED_OUTPUTS + SETTING_SLOTS) return `setting_${slot - FIXED_OUTPUTS + 1}`;
+    return TAIL_OUTPUTS[slot - FIXED_OUTPUTS - SETTING_SLOTS] || null;
+}
+
+/**
+ * Every link from the canvas node (`canvasId`) in `prompt` read by its output's name (`nameOf(slot)`): a setting moves
+ * to its backend slot, box_prompt's consumer is wired to the plain prompt, elements' consumer loses its link. Returns
+ * the notes (in place).
+ */
+function tailOutputs(prompt, canvasId, nameOf) {
+    const notes = [];
+    for (const [id, node] of Object.entries(prompt)) {
+        if (!node || !node.inputs || String(id) === String(canvasId)) continue;
+        for (const [input, v] of Object.entries(node.inputs)) {
+            if (!Array.isArray(v) || String(v[0]) !== String(canvasId) || +v[1] < FIXED_OUTPUTS) continue;
+            const name = nameOf(+v[1]);
+            const m = /^setting_([1-8])$/.exec(name || "");
+            if (m) node.inputs[input] = [v[0], FIXED_OUTPUTS + +m[1] - 1];
+            else if (name === "box_prompt") {
+                node.inputs[input] = [v[0], PROMPT_SLOT];
+                notes.push(`${node.class_type} ${id}.${input} took the canvas's box_prompt; Scumble sends no boxes to a local recipe, so it takes the plain prompt`);
+            } else if (name === "elements") {
+                delete node.inputs[input];
+                notes.push(`${node.class_type} ${id}.${input} took the canvas's elements (boxes); Scumble sends none to a local recipe, so the link was dropped`);
+            }
+        }
+    }
+    return notes;
+}
 const WIDGET_TYPES = new Set(["INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"]);
 const SKIP_TYPES = new Set(["Note", "MarkdownNote", "PrimitiveNode", "Reroute"]);
 /** Widgets of the frontend alone, which a named widget list carries and a run does not take. */
@@ -765,10 +807,14 @@ function fromWorkflow(wf, objectInfo, meta, opts) {
     const resultLocal = wired("result_local"), resultApi = wired("result");
     if (!resultLocal && !resultApi) throw new Error("Nothing is wired into the Inpaint Canvas node's result or result_local input, so no result could come back.");
 
+    // the outputs by name: a setting at its backend slot, the tail outputs (box_prompt, elements) as tailOutputs says
+    const tailNotes = tailOutputs(prompt, canvasId, (slot) => { const o = (canvasNode.outputs || [])[slot]; return o && o.name ? o.name : backendOutputName(slot); });
     // setting outputs: the first real (non-instance) consumer of setting_n, found on the flattened links
     const settings = [];
     (canvasNode.outputs || []).forEach((o, i) => {
         if (i < FIXED_OUTPUTS || !o || !o.links || !o.links.length) return;
+        const named = /^setting_([1-8])$/.exec(o.name || "");
+        if (o.name && !named) return;   // a tail output: tailOutputs took its consumers
         const l = Array.from(links.values()).find((x) => x.origin === canvasId && x.originSlot === i && !instances.has(x.target) && !x.target.endsWith("-20") && prompt[x.target]);
         if (!l) return;
         const target = nodes.get(l.target);
@@ -784,12 +830,12 @@ function fromWorkflow(wf, objectInfo, meta, opts) {
             node.inputs[tin.name] = ov !== undefined ? ov : (wv[tin.name] !== undefined ? wv[tin.name] : specDefault(spec));
         }
         const stored = storedSpec(spec, node.inputs[tin.name]);
-        settings.push({ index: i - FIXED_OUTPUTS + 1, node: l.target, input: tin.name, label: `${target.title || target.type} · ${tin.name}`, ...(stored ? { spec: stored } : {}) });
+        settings.push({ index: named ? +named[1] : i - FIXED_OUTPUTS + 1, node: l.target, input: tin.name, label: `${target.title || target.type} · ${tin.name}`, ...(stored ? { spec: stored } : {}) });
     });
 
     const mode = resultLocal ? "local" : "api";
     const needs = Array.from(new Set(Object.values(prompt).map((n) => n.class_type)));
-    const notes = [];
+    const notes = [...tailNotes];
     if (resultLocal && resultApi) notes.push("both result inputs were wired; the recipe uses result_local (mode local)");
     if (missingTypes.size) notes.push("node types unknown to this server: " + Array.from(missingTypes).join(", "));
     if (instances.size) notes.push(`${instances.size} subgraph${instances.size > 1 ? "s" : ""} flattened`);
@@ -829,9 +875,11 @@ function toPrompt(recipe) {
 /**
  * An API-format prompt (Export (API), the node's own saved prompt, or the graph of ComfyUI's page) -> recipe fields.
  * `base`, the recipe the graph was opened from (item 35), gives back what an API prompt cannot hold: each Settings
- * row's value, label and spec where the same node input is still wired to the same slot's output.
+ * row's value, label and spec where the same node input is still wired to the same slot's output. `opts.outputNames`:
+ * the canvas node's output names in the slot order the prompt uses (the page's graph shows the tail outputs right
+ * after the connected settings); without them a slot is read in the backend's order (tailOutputs).
  */
-function fromPrompt(src, objectInfo, meta, base) {
+function fromPrompt(src, objectInfo, meta, base, opts = {}) {
     const prompt = JSON.parse(JSON.stringify(src));
     const canvasIds = Object.keys(prompt).filter((id) => prompt[id] && prompt[id].class_type === "InpaintCanvas");
     if (!canvasIds.length) throw new Error("This prompt has no Inpaint Canvas node.");
@@ -851,6 +899,8 @@ function fromPrompt(src, objectInfo, meta, base) {
         const v = n && n.inputs ? n.inputs[name] : undefined;
         return Array.isArray(v) ? undefined : v;
     };
+    const names = opts && Array.isArray(opts.outputNames) ? opts.outputNames : null;
+    const tailNotes = tailOutputs(prompt, canvasId, (slot) => (names && typeof names[slot] === "string" && names[slot] ? names[slot] : backendOutputName(slot)));
     const settings = [];
     for (const [id, node] of Object.entries(prompt)) {
         if (!node || !node.inputs) continue;
@@ -869,7 +919,7 @@ function fromPrompt(src, objectInfo, meta, base) {
     settings.sort((a, b) => a.index - b.index);
     const mode = resultLocal ? "local" : "api";
     const needs = Array.from(new Set(Object.values(prompt).map((n) => n.class_type)));
-    const notes = [];
+    const notes = [...tailNotes];
     if (resultLocal && resultApi) notes.push("both result inputs were wired; the recipe uses result_local (mode local)");
     return { kind: "comfy", mode, canvas: canvasId, result: resultLocal || resultApi, needs, settings, prompt, description: `Imported from ${meta.file} on ${meta.date}.` + (notes.length ? " " + notes.join("; ") + "." : ""), notes };
 }
@@ -888,7 +938,10 @@ const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets
 function fromGraph({ output, workflow, objectInfo, base, name, ids, date }) {
     if (!looksLikePrompt(output)) throw new Error("ComfyUI's page answered no graph Scumble can read.");
     const wf = workflow && typeof workflow === "object" && Array.isArray(workflow.nodes) && Array.isArray(workflow.links) ? workflow : null;
-    const fields = fromPrompt(output, objectInfo || {}, { file: "ComfyUI", date }, base || undefined);
+    // the canvas node's output names in the page's slot order: the tail outputs sit right after the connected settings
+    const canvasUi = wf ? wf.nodes.find((n) => n && n.type === "InpaintCanvas" && Array.isArray(n.outputs)) : null;
+    const outputNames = canvasUi ? canvasUi.outputs.map((o) => (o && typeof o.name === "string" ? o.name : null)) : null;
+    const fields = fromPrompt(output, objectInfo || {}, { file: "ComfyUI", date }, base || undefined, { outputNames });
     const graph = { kind: "comfy", mode: fields.mode, canvas: fields.canvas, result: fields.result, needs: fields.needs, settings: fields.settings, prompt: fields.prompt, ...(wf ? { workflow: wf } : {}) };
     /** @type {Record<string, any>} */
     const kept = {};

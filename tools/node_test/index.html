@@ -269,8 +269,9 @@ try {
     // the prompt: the boxes in document pixels, the references' ids, the selection box's id
     const sent = JSON.parse(await ed.serializeForPrompt());
     step("Boxes: serializeForPrompt carries boxes, referenceIds and selectionBoxId",
-        Array.isArray(sent.boxes) && sent.boxes.length === 2 && near(sent.boxes[0].rect, [300, 300, 500, 450]) && sent.boxes[0].desc === "a brass lamp" && Array.isArray(sent.referenceIds) && /^[a-z][a-z0-9_]*_1$/.test(sent.selectionBoxId || ""),
-        JSON.stringify({ boxes: sent.boxes, referenceIds: sent.referenceIds, selectionBoxId: sent.selectionBoxId }).slice(0, 400));
+        Array.isArray(sent.boxes) && sent.boxes.length === 2 && near(sent.boxes[0].rect, [300, 300, 500, 450]) && sent.boxes[0].desc === "a brass lamp" && Array.isArray(sent.referenceIds)
+        && Array.isArray(sent.referenceLabels) && sent.referenceLabels.length === sent.referenceIds.length && /^[a-z][a-z0-9_]*_1$/.test(sent.selectionBoxId || ""),
+        JSON.stringify({ boxes: sent.boxes, referenceIds: sent.referenceIds, referenceLabels: sent.referenceLabels, selectionBoxId: sent.selectionBoxId }).slice(0, 400));
     // the boxes follow the picture's geometry (a resize to half), and its undo puts them back as they were
     const rectBefore = listBoxes()[0].rect.slice();
     await ed.resizeImage(Math.round(ed.width / 2), Math.round(ed.height / 2));
@@ -283,7 +284,7 @@ try {
         `${rectBefore} -> ${rectHalf} -> ${listBoxes()[0] && listBoxes()[0].rect}`);
     ed.genSettings.boxes = false;
     const off = JSON.parse(await ed.serializeForPrompt());
-    step("Boxes: with the switch off the prompt carries none of it", !("boxes" in off) && !("referenceIds" in off) && !("selectionBoxId" in off), Object.keys(off).join());
+    step("Boxes: with the switch off the prompt carries none of it", !("boxes" in off) && !("referenceIds" in off) && !("referenceLabels" in off) && !("selectionBoxId" in off), Object.keys(off).join());
     // the tail outputs: box_prompt and elements after the free setting slot; the queuePrompt wrapper maps them to the
     // backend's slots after all eight settings (13 + 8 + i)
     const names = node.outputs.map((o) => o && o.name);
@@ -322,6 +323,13 @@ try {
         fromSel && fromSel.ok && fromSel.result.id === "brass_lamp_1" && JSON.stringify(fromSel.result.rect) === "[200,300,700,650]"
         && removed && removed.ok && removed.result.count === 1 && missing && missing.ok === false && /no box nope/.test(missing.error || ""),
         JSON.stringify([fromSel && fromSel.result, removed && removed.result, missing && missing.error]).slice(0, 500));
+    const sale = await send("boxes_add", { kind: "new", rect: [50, 50, 150, 100], text: "SALE", desc: "red letters" });
+    const plainAgain = sale && sale.ok ? await send("boxes_set", { id: sale.result.id, text: "" }) : null;
+    const keptNow = sale && sale.ok ? await send("boxes_set", { id: sale.result.id, kind: "keep" }) : null;
+    step("bridge boxes_set: text \"\" makes a Text box a plain New box, whose kind can then change",
+        sale && sale.ok && sale.result.text === "SALE" && plainAgain && plainAgain.ok && plainAgain.result.text === null && keptNow && keptNow.ok && keptNow.result.kind === "keep",
+        JSON.stringify([sale && sale.result, plainAgain && (plainAgain.result || plainAgain.error), keptNow && (keptNow.result || keptNow.error)]).slice(0, 400));
+    if (sale && sale.ok) await send("boxes_remove", { id: (keptNow && keptNow.ok ? keptNow.result.id : sale.result.id) });
     const genOff = await send("set_generation", { boxes: false });
     const st = await send("status");
     step("bridge set_generation boxes and status carry the switch and the boxes",

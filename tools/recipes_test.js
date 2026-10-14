@@ -920,6 +920,49 @@ async function main() {
         check("realism_pass: normalize twice gives the same recipe (a saved copy reads back the same)", eq(once, twice), short({ once: once.presets, twice: twice.presets }));
     });
 
+    // ---- 12. the node's tail outputs (docs/PLAN_NODE_BOXES.md D2): box_prompt and elements are no setting slots ----
+    await section("12. the canvas node's tail outputs box_prompt and elements", async () => {
+        const META12 = { file: "graph", date: "2026-10-15" };
+        const apiPrompt = (slots) => ({
+            "1": { class_type: "InpaintCanvas", inputs: { padding: 64, target_size: 1024, feather: 16, multiple_of: 16, result_source: "2:0" } },
+            "2": { class_type: "Flux3ImageNode", inputs: { prompt: ["1", slots.prompt], "images.image_1": ["1", 0], ...(slots.boxes != null ? { bounding_boxes: ["1", slots.boxes] } : {}), seed: ["1", slots.seed] } },
+            "3": { class_type: "LoraLoader", inputs: { lora_name: ["1", slots.setting] } },
+        });
+        // an API prompt as the node's queuePrompt wrapper sends it: backend slots (setting_1 13, box_prompt 21, elements 22)
+        let r = recipes.fromPrompt(apiPrompt({ prompt: 21, boxes: 22, seed: 10, setting: 13 }), {}, META12);
+        check("fromPrompt, backend slots: box_prompt's consumer takes the plain prompt (7), elements' link goes, setting_1 stays a Settings row",
+            eq(r.prompt["2"].inputs.prompt, ["1", 7]) && !("bounding_boxes" in r.prompt["2"].inputs) && r.settings.length === 1 && r.settings[0].index === 1 && r.settings[0].node === "3"
+            && r.notes.some((n) => /box_prompt/.test(n)) && r.notes.some((n) => /elements/.test(n)), short({ inputs: r.prompt["2"].inputs, settings: r.settings, notes: r.notes }));
+        // the page's graph: the tail outputs right after the connected settings (setting_1, the free setting_2, then the tail)
+        const names = ["crop_image", "crop_mask", "image", "mask", "stitch_info", "crop_width", "crop_height", "prompt", "control_image", "denoise", "seed", "mode", "negative", "setting_1", "setting_2", "box_prompt", "elements"];
+        r = recipes.fromPrompt(apiPrompt({ prompt: 15, boxes: 16, seed: 10, setting: 13 }), {}, META12, undefined, { outputNames: names });
+        check("fromPrompt with the page's output names: visible slots 15 / 16 are box_prompt / elements, not settings 3 / 4",
+            eq(r.prompt["2"].inputs.prompt, ["1", 7]) && !("bounding_boxes" in r.prompt["2"].inputs) && r.settings.length === 1 && r.settings[0].index === 1, short({ inputs: r.prompt["2"].inputs, settings: r.settings }));
+        r = recipes.fromPrompt(apiPrompt({ prompt: 7, seed: 10, setting: 14 }), {}, META12, undefined, { outputNames: names });
+        check("fromPrompt: a graph without the tail outputs reads as before (setting_2 at 14 is Settings row 2)", eq(r.prompt["2"].inputs.prompt, ["1", 7]) && r.settings.length === 1 && r.settings[0].index === 2 && !r.notes.length, short({ settings: r.settings, notes: r.notes }));
+        // a UI workflow (the node's FLUX 3 example's shape): outputs by name
+        const out = (name, type, links) => ({ name, type, links });
+        const wf = {
+            nodes: [
+                { id: 1, type: "InpaintCanvas", mode: 0, inputs: [{ name: "result", type: "IMAGE", link: 5 }, { name: "result_local", type: "IMAGE", link: null }],
+                    outputs: names.map((n, i) => out(n, i === 16 ? "ARRAY" : "*", i === 0 ? [1] : i === 15 ? [2] : i === 16 ? [3] : i === 13 ? [4] : [])), widgets_values: [64, 1024, 16, 16, "{}"] },
+                { id: 2, type: "Flux3ImageNode", mode: 0, inputs: [{ name: "prompt", type: "STRING", widget: { name: "prompt" }, link: 2 }, { name: "images.image_1", type: "IMAGE", link: 1 }, { name: "bounding_boxes", type: "ARRAY", link: 3 }],
+                    outputs: [{ name: "IMAGE", type: "IMAGE", links: [5] }], widgets_values: ["", "auto", "1K", true, 4, 42, "randomize"] },
+                { id: 3, type: "LoraLoader", mode: 0, inputs: [{ name: "lora_name", type: "COMBO", widget: { name: "lora_name" }, link: 4 }], outputs: [], widgets_values: ["a.safetensors"] },
+            ],
+            links: [[1, 1, 0, 2, 1, "IMAGE"], [2, 1, 15, 2, 0, "STRING"], [3, 1, 16, 2, 2, "ARRAY"], [4, 1, 13, 3, 0, "*"], [5, 2, 0, 1, 0, "IMAGE"]],
+        };
+        const info = {
+            InpaintCanvas: { input: { required: { padding: ["INT", {}], target_size: ["INT", {}], feather: ["INT", {}], multiple_of: ["INT", {}] } } },
+            Flux3ImageNode: { input: { required: { prompt: ["STRING", {}], aspect_ratio: [["auto"], {}], resolution: [["1K"], {}], grounding: ["BOOLEAN", {}], seed: ["INT", {}] }, optional: { bounding_boxes: ["ARRAY", {}] } } },
+            LoraLoader: { input: { required: { lora_name: [["a.safetensors"], {}] } } },
+        };
+        r = recipes.fromWorkflow(wf, info, META12);
+        check("fromWorkflow: box_prompt's consumer takes the plain prompt, elements' link goes, setting_1 is Settings row 1",
+            eq(r.prompt["2"].inputs.prompt, ["1", 7]) && !("bounding_boxes" in r.prompt["2"].inputs) && r.settings.length === 1 && r.settings[0].index === 1 && r.settings[0].node === "3"
+            && r.notes.some((n) => /box_prompt/.test(n)), short({ inputs: r.prompt["2"].inputs, settings: r.settings, notes: r.notes }));
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);
