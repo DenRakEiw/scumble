@@ -79,7 +79,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-14: 0.1.48 released; the Store and the MCP Registry follow)
+## Where things stand (2026-10-14: 0.1.48 released and in the MCP Registry; the Store update open)
 
 - **The open items, collected 2026-10-13** (a workflow of 11 agents over BUGS.md, the plans, the list, the outward
   threads and GitHub, each doubtful status checked in the code): `docs/OPEN_2026-10-13.md`, a dated snapshot (not
@@ -127,7 +127,7 @@ code.
   feedback"; the tag build green, the eight assets checked (the zip's layout, the `.mcpb` 0.1.48 with 114 tools,
   `latest.yml`; the zip's start test skipped, the user's Scumble was open); the post `v0-1-48` live with the manual sync
   and the `em` branch of `scumble-inline.tsx` (`Portfolio_vercel` `fd4f6f3`, Vercel success), hub 0.1.48; the node repo
-  pushed (`beef9dd`, no new node version); `server.json` 0.1.48 committed (`0530a69`, validated). Not run in 0.1.48:
+  pushed (`beef9dd`, no new node version); `server.json` 0.1.48 committed (`0530a69`) and published to the MCP Registry (the user's device code; 0.1.48 latest). **Open:** the Store update (Claude in Chrome's site permissions block partner.microsoft.com: the user allows it, or uploads `dist/Scumble-0.1.48.msix` with `dist/store-listing/whats-new-0.1.48.txt` by hand). Not run in 0.1.48:
   the `huge` gate (30k), the node side of the bar.
 - **Done 2026-10-13 on the user's word:** the awesome-alternative-uis-for-comfyui entry (PR #120) moved to the bottom
   of Category 4 as the reviewer asked (the fork's `add-scumble` rebuilt on upstream `babe4fd` and force-pushed; no
