@@ -297,6 +297,37 @@ try {
     ed.setTool("select");
     ed.close();
 
+    // ---- B5: a canvas inside a subgraph (prompt id "92:7"), and the bridge's box commands -------------------------
+    const parent = { id: 92, subgraph: { getNodeById: (k) => (String(k) === "7" ? node : null) } };
+    app.graph._nodes.push(parent);
+    window.__prompts = [];
+    await api.queuePrompt(0, { output: { "92:7": { class_type: "InpaintCanvas", inputs: {} }, "9": { class_type: "X", inputs: { p: ["92:7", 14], e: ["92:7", 15] } } } });
+    const sq = (window.__prompts || [])[0];
+    const si = sq && sq.output && sq.output["9"] && sq.output["9"].inputs;
+    step("Boxes: the tail remap finds a canvas inside a subgraph (92:7)", si && si.p[0] === "92:7" && si.p[1] === 21 && si.e[1] === 22, JSON.stringify(si));
+    app.graph._nodes.splice(app.graph._nodes.indexOf(parent), 1);
+    const cleared = await send("boxes_clear");
+    const added = await send("boxes_add", { kind: "new", rect: [100, 100, 300, 200], desc: "a red scarf" });
+    const moved = await send("boxes_set", { id: "red_scarf_1", kind: "move" });
+    const listed = await send("boxes_list");
+    step("bridge boxes_clear / boxes_add / boxes_set / boxes_list",
+        cleared && cleared.ok && added && added.ok && added.result.id === "red_scarf_1" && moved && moved.ok && moved.result.kind === "move"
+        && JSON.stringify(moved.result.src) === "[100,100,300,200]" && moved.result.rect[0] !== 100
+        && listed && listed.ok && listed.result.count === 1 && listed.result.switch === true,
+        JSON.stringify([cleared, added && added.result, moved && moved.result, listed && listed.result]).slice(0, 500));
+    const fromSel = await send("boxes_from_selection", { desc: "a brass lamp" });
+    const removed = await send("boxes_remove", { id: "red_scarf_1" });
+    const missing = await send("boxes_set", { id: "nope", desc: "x" });
+    step("bridge boxes_from_selection / boxes_remove and an error for an unknown box",
+        fromSel && fromSel.ok && fromSel.result.id === "brass_lamp_1" && JSON.stringify(fromSel.result.rect) === "[200,300,700,650]"
+        && removed && removed.ok && removed.result.count === 1 && missing && missing.ok === false && /no box nope/.test(missing.error || ""),
+        JSON.stringify([fromSel && fromSel.result, removed && removed.result, missing && missing.error]).slice(0, 500));
+    const genOff = await send("set_generation", { boxes: false });
+    const st = await send("status");
+    step("bridge set_generation boxes and status carry the switch and the boxes",
+        genOff && genOff.ok && genOff.result.boxes === false && st && st.ok && st.result.boxes && st.result.boxes.switch === false && st.result.boxes.count === 1 && st.result.generation.boxes === false,
+        JSON.stringify([genOff && genOff.result, st && st.result && st.result.boxes]));
+    await send("boxes_clear");
 } catch (err) {
     step("exception", false, err && err.stack || err);
 }

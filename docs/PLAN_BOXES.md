@@ -1,5 +1,10 @@
 # Boxes in the prompt: FLUX 3 Image and Ideogram 4 (item 28; researched 2026-10-01 night, planned S1-S4, S1-S3e built 2026-10-02)
 
+**The node (2026-10-14):** the Inpaint Canvas node gets the same boxes: `docs/PLAN_NODE_BOXES.md` (the plugin's tool,
+model and clipboard formatter moved to `renderer/editor/boxes_tool.js`, `boxes_model.js`, `boxes_format.js`; the
+node's editor owns its boxes in `renderer/editor/inpaint_boxes.js`; the node's `boxes_rows.py` is a Python port of
+`electron/main/providers/boxes.js`, held to `tools/boxes_vectors.json`).
+
 The user's idea (2026-10-01): a selection sent to FLUX 3 as a bounding box, and, after looking at Kijai's
 Ideogram 4 prompt builder, a **plugin** for box prompts made for FLUX 3 and Ideogram 4. §1-§3 are the research, §4
 the design decision, §5 the steps, §8-§11 the implementation plan for S1-S4 (the user's ask the same night). The user

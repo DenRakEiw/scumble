@@ -489,4 +489,21 @@ node_test: the api stand-in records the prompts; 11 Boxes steps (the row and the
 / redo, Delete keeps pixels / selection / layers, D duplicates, getValue / setValue, a resize and its undo,
 serializeForPrompt with and without the switch, the tail outputs at 13 / 14 / 15, the remap to 21 / 22); PASS.
 `tools/boxes_test.js` 157 (promptPayload, selectionBoxIdOf). Gates `nb4` (tiles: boxes, editor, commands, generate,
-document, lint, types) and `nb4c` (canvas: boxes): see below.
+document, lint, types) and `nb4c` (canvas: boxes): all rc 0 / ALL PASS (lint 21 warnings, none in the box files).
+Scumble `ec19c19`, clone `06314fe` (the build, `js/host.js`, the D8 change, DEVELOPMENT.md §25).
+
+**B5.** Clone, node-owned: `js/inpaint_node.js` `graphNodeOf(id)` (each part of "92:7" looked up in the subgraph of
+the node before it) for the tail remap; `onExecuted` shows `inpaint_boxes` notes as a warn line "Boxes: .." and logs
+them. `js/inpaint_bridge.js`: `boxes_list`, `boxes_add`, `boxes_set` (`new_id` renames), `boxes_remove`,
+`boxes_from_selection`, `boxes_clear` through `ed.boxes`, `set_generation(boxes)`, `status.boxes` and
+`generation.boxes`. `mcp/inpaint_canvas_mcp.py`: the six tools and `set_generation(boxes)` (52 tools; checked with the
+ast line, never started), `mcp/README.md` a Boxes row. Docs: README (the Manager line, the example, a section *Boxes
+for FLUX 3*, X in the keyboard table, the outputs table and the tail note), GUIDE.md (a section, X), DEVELOPMENT.md §25
+(went with B4's commit). `examples/inpaint_canvas_flux3_boxes.json`: made by a script from the Flux.2 API example
+(the canvas outputs in visible order, `box_prompt` at 14 into the prompt, `crop_image` into `images.image_1`, the
+canvas `seed` into the seed, `aspect_ratio` auto, resolution 1K, target_size 1024 / multiple_of 16, a Note: not both
+outputs on an edit, not yet loaded live); every link checked against its slots by the script.
+`F:/canvas/dist/node_boxes_CLAUDE_update.md`: the proposed sections for the node's untracked CLAUDE.md. Scumble:
+`docs/PLAN_BOXES.md` a pointer, BUILD_NODE.md a row for `inpaint_boxes.js`, node_test 4 more steps (the subgraph
+remap "92:7" -> 21 / 22; the bridge's six box commands, an unknown box's error, `set_generation` boxes and `status`):
+PASS. No CHANGELOG line (the app's behaviour did not change).
