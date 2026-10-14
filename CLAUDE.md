@@ -79,7 +79,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-14: 0.1.47 released and in the Store; 0.1.48 prepared locally, not released)
+## Where things stand (2026-10-14: 0.1.48 released; the Store and the MCP Registry follow)
 
 - **The open items, collected 2026-10-13** (a workflow of 11 agents over BUGS.md, the plans, the list, the outward
   threads and GitHub, each doubtful status checked in the code): `docs/OPEN_2026-10-13.md`, a dated snapshot (not
@@ -122,11 +122,13 @@ code.
   Store layout since) and `dist/store-listing/whats-new-0.1.48.txt`. Exe gates: `rel48-exe-canvas` 28 of 28 PASS;
   `rel48-exe` (tiles, 49) PASS up to `boxes`, the instance went away in `comfyview` (TESTING.md flakes), and
   `rel48-exe-b` (comfyview and the 14 after it, a fresh instance) PASS but comfyview's known control step. The node
-  built (`--check` ok, node_test PASS) and committed locally (`beef9dd`, not pushed; `/system_stats` 200). The
-  website's `components/scumble-inline.tsx` has its `em` branch in the working tree of `F:\portfolio_web` (uncommitted,
-  `tsc` green), to go in with the manual sync and the post. Not pushed, no tag. **Next:** the user's test of 0.1.48, then
-  the release on the user's word (RELEASING.md's chain). Not run in 0.1.48: the `huge` gate (30k), the node side of the
-  bar.
+  built (`--check` ok, node_test PASS) and committed (`beef9dd`; `/system_stats` 200). **0.1.48 is out** (the user,
+  2026-10-14: "ja, mache den rest"): tag v0.1.48 on `476b15b`, published 2026-10-14T09:14:21Z, title "status and
+  feedback"; the tag build green, the eight assets checked (the zip's layout, the `.mcpb` 0.1.48 with 114 tools,
+  `latest.yml`; the zip's start test skipped, the user's Scumble was open); the post `v0-1-48` live with the manual sync
+  and the `em` branch of `scumble-inline.tsx` (`Portfolio_vercel` `fd4f6f3`, Vercel success), hub 0.1.48; the node repo
+  pushed (`beef9dd`, no new node version); `server.json` 0.1.48 committed (`0530a69`, validated). Not run in 0.1.48:
+  the `huge` gate (30k), the node side of the bar.
 - **Done 2026-10-13 on the user's word:** the awesome-alternative-uis-for-comfyui entry (PR #120) moved to the bottom
   of Category 4 as the reviewer asked (the fork's `add-scumble` rebuilt on upstream `babe4fd` and force-pushed; no
   reply comment posted). Video 4 is on YouTube (the user). CLAUDE.md brought up to date with the code.
@@ -660,6 +662,9 @@ there; add a new flake there, with the date and what was ruled out.
   round.
 - A background `grep` loop meant to stop a workflow after a phase does not fire in time; read its journal by hand or give it
   a phase switch in `args`.
+- TaskStop on a background `run_gates.sh` chain stops the outer shell only: the runner's `bash.exe`, its `timeout.exe`
+  and the gate's `python.exe` go on and keep 9555 busy, and a second run then fails at random (2026-10-14). Stop them by
+  command line (`Get-CimInstance Win32_Process` matching `run_gates|_test\.py`), then close the instance.
 
 **Testing and benchmarking**
 - References taken with `--update` go stale with every later fix to the same path: run the gate on both backends again
