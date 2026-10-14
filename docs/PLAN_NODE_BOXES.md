@@ -412,3 +412,16 @@ failing step listed in docs/TESTING.md "Known flakes" before believing it; if a 
 ## 9. As built
 
 (One paragraph per step, written when the step is committed.)
+
+**B0 (2026-10-14 evening).** The clone `F:/canvas/dist/node_boxes` from the live folder (master `beef9dd`), push URL
+`no-push-tonight`, branch `boxes`. Baseline: the build into the clone (build `ed14c1f345a46825`, the same as the live
+node's; only DEVELOPMENT.md's mark moved), `--check` ok (55 modules, 63 host members), node_test PASS, unittest 32 OK.
+The clone's working files show as modified in `git status` (the global `core.autocrlf true` checked them out CRLF, the
+build writes LF; `git diff` is empty but for the mark): noise, not a change. `tools/boxes_vectors.js` writes
+`tools/boxes_vectors.json` (round 14, grid 31, where 74, way 383, check 25, rows 27, caption 113, apply 14,
+elements 5; one vector per line); `--check` compares; `tools/boxes_test.js` §12 checks the file equals a fresh run
+(145 of 145). The rows' `names` map a box's `ref` to main's `pictureName`, so the Python writer takes names, not a
+layout. Not in the vectors on purpose: an astral character cut in half at 400 UTF-16 units (JS keeps a lone surrogate,
+the node drops the half: a Python-only case in B1), `{@ref:i}` markers (the node's descs carry none), `idWords` (the
+editor sends `selectionBoxId`). The rounding: `Math.round` emulated exactly (`r = floor(x); r + 1 if x - r >= 0.5`),
+not `floor(x + 0.5)` (which gives 1 for 0.49999999999999994; a vector holds it).

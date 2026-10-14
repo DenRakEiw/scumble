@@ -422,6 +422,12 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
         check("planFrame scans once per selection change", once && scans === 2, String(scans));
     }
 
+    // ---- 12. the node's vectors (docs/PLAN_NODE_BOXES.md §4): tools/boxes_vectors.json is a fresh run of this writer --
+    console.log("\n--- 12. tools/boxes_vectors.json (the node's Python writer is held to it) ---");
+    const VEC = require(path.join(__dirname, "boxes_vectors.js"));
+    const vecHave = fs.existsSync(VEC.OUT) ? fs.readFileSync(VEC.OUT, "utf8") : "";
+    check("tools/boxes_vectors.json equals a fresh run of tools/boxes_vectors.js (run it after a change to the writer, then copy it to the node's tests/)", vecHave === VEC.text(VEC.build()), vecHave ? "" : "missing");
+
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);
     console.log(failed ? "FAIL" : "PASS");
