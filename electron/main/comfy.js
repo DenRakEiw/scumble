@@ -220,7 +220,9 @@ class ComfyClient {
             if (msg && msg.type) this.onEvent({ type: msg.type, data: msg.data });
         });
         const gone = () => {
-            if (this.ws === ws) this.ws = null;
+            // a replaced socket's late close says nothing: the current one may be open (the renderer idles its bars on it)
+            if (this.ws !== ws) return;
+            this.ws = null;
             this.setStatus({ socket: false });
             if (this.wsWanted) {
                 const delay = Math.min(15000, 500 * 2 ** Math.min(this.retry++, 5));

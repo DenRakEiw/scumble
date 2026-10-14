@@ -1898,6 +1898,26 @@ try {
     await c("activate_document", { doc: window.__testDoc });
 }
 """),
+    # the 0.1.48 release review: extend_canvas stops after a crop the editor refused (it only says so in the status),
+    # and a crop with an extend that go through give the size asked for
+    ("extend_canvas_stops_after_a_refused_crop", """
+const { host } = await import("./editor/host.js");
+const d = await c("new_document");
+await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });
+const ed = host.editorById(d.id);
+try {
+    const W = ed.width, H = ed.height;
+    let m = "";
+    try { await c("extend_canvas", { doc: d.id, left: -(W - 4), right: 100 }); } catch (e) { m = String(e.message || e); }
+    if (!/smaller than 8 px/.test(m) || ed.width !== W || ed.height !== H) throw new Error("a refused crop: " + (m || "not refused") + " / " + ed.width + " x " + ed.height);
+    const r = await c("extend_canvas", { doc: d.id, left: -10, right: 20 });
+    if (r.width !== W + 10 || r.height !== H || ed.width !== W + 10) throw new Error("crop and extend: " + JSON.stringify(r));
+    return { refused: m, size: [r.width, r.height] };
+} finally {
+    await c("close_document", { doc: d.id, force: true });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
     # set_filter / add_filter apply a preset's values as the layer row does, refuse before anything changes, and set_filter
     # pushes one undo step of its own; filter_types gives the options' labels and groups
     ("filter_presets", """

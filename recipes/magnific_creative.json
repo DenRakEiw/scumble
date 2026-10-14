@@ -24,9 +24,6 @@
       "options": {
         "factor": "x"
       },
-      "limits": {
-        "outPixels": 25300000
-      },
       "settings": [
         {
           "index": 1,
@@ -222,6 +219,7 @@
   "limits": {
     "min": 32,
     "max": 4096,
-    "step": 1
+    "step": 1,
+    "outPixels": 25300000
   }
 }

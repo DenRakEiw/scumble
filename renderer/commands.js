@@ -2120,7 +2120,10 @@ const COMMANDS = {
                 if (ed.width !== cw || ed.height !== ch) throw refusal(ed.status || "The crop was refused.", ed.statusKind || "warn");
                 v.left = Math.max(0, v.left); v.top = Math.max(0, v.top); v.right = Math.max(0, v.right); v.bottom = Math.max(0, v.bottom);
             }
-            if (Object.values(v).some((x) => x > 0)) await ed.extendCanvas(v);
+            if (Object.values(v).some((x) => x > 0)) {
+                await ed.extendCanvas(v);
+                if (ed.width !== fw || ed.height !== fh) throw refusal(`${ed.status || "The extend was refused."}${[a.left, a.top, a.right, a.bottom].some((x) => +x < 0) ? " The crop before it was made (one undo step)." : ""}`, ed.statusKind || "warn");
+            }
             return { width: ed.width, height: ed.height, status: ed.status };
         },
     },

@@ -500,6 +500,9 @@ export const host = {
         // socket (a crashed server, the network) ends the bars too: no event would end them, and a run that still goes
         // takes its bar back with its next event after the reconnect (RunProgress.wants)
         if (this.server.state === "disconnected" || this.server.state === "error" || st.socket === false) for (const ed of this._editors) if (ed.runProgress) ed.runProgress.idle();
+        // the socket back: what the queue still holds of the dropped prompts shows again (checkTrackedRuns)
+        if (st.socket === true && this._socketWas === false) this.checkTrackedRuns();
+        if (typeof st.socket === "boolean") this._socketWas = st.socket;
         this.emit("realism");
     },
 
@@ -614,6 +617,19 @@ export const host = {
             const ids = [...(editor._localRuns || []), editor.lastPromptId, editor.segmentPromptId, editor.objectsPromptId, editor.upsamplePromptId, editor.cutoutPromptId];
             for (const id of ids) if (id) this._closedPrompts.add(String(id));
             for (const id of this._closedPrompts) { if (this._closedPrompts.size <= 64) break; this._closedPrompts.delete(id); }
+            // a helper's output names its tab (canvas_node): one queued while the tab closed has no id here yet
+            this._closedNodes.add(String(editor.node.id));
+            for (const id of this._closedNodes) { if (this._closedNodes.size <= 64) break; this._closedNodes.delete(id); }
+            // the renders Reopen Closed Tab takes back (reopenClosed): their node counts and the click's texts
+            const p = editor.runProgress;
+            const runs = [...(editor._localRuns || [])].map((id) => {
+                const r = p && (p.runs.get(String(id)) || (p.dropped.get(String(id)) || {}).run);
+                return { id: String(id), nodes: r ? r.nodes : 1, sent: editor._sentTexts ? editor._sentTexts.get(id) : undefined };
+            });
+            if (runs.length) {
+                this._closedRuns.set(String(editor.node.id), runs);
+                for (const k of this._closedRuns.keys()) { if (this._closedRuns.size <= CLOSED_MAX) break; this._closedRuns.delete(k); }
+            }
         }
         if (this.editor === editor) this.editor = this._editors[Math.min(i, this._editors.length - 1)] || null;
         if (this.editor) this.activate(this.editor);
@@ -1049,8 +1065,11 @@ export const host = {
         return this._editors.find((e) => String(e.node.id) === String(id)) || null;
     },
 
-    // the prompts of closed tabs (removeEditor): their results and errors are dropped (the newest 64)
+    // the prompts of closed tabs (removeEditor): their results and errors are dropped (the newest 64); the tabs' node
+    // ids, for a helper's output queued while its tab closed; per closed tab, the renders a reopen takes back
     _closedPrompts: new Set(),
+    _closedNodes: new Set(),
+    _closedRuns: new Map(),
 
     /** The editor whose generate / helper prompt has this id, if any. */
     editorByPrompt(promptId) {
@@ -1934,8 +1953,10 @@ export const host = {
             const { the, smaller } = upscaleWords(w, h, what);
             const best = largestFactor(w, h, r && r.factor, area);
             const fit = best != null && best < factor && !(what === "picture" && best <= 1) ? ` The largest factor that fits is ${best}×.` : "";
-            const mp = (n) => `${Math.round(n / 1e5) / 10} MP`;
-            return `${the}; at ${factor}× the answer would be ${mp(Math.round(w * factor) * Math.round(h * factor))}, more than ${(r && (r.name || r.id)) || "the model"} returns (${mp(area)}). Pick a smaller factor or ${smaller}.${fit}`;
+            // the answer rounded up and the cap down, so the answer never reads as the cap itself
+            const got = Math.ceil(Math.round(w * factor) * Math.round(h * factor) / 1e5) / 10;
+            const pick = fit ? `Pick a smaller factor or ${smaller}.` : `Pick ${smaller}.`;
+            return `${the}; at ${factor}× the answer would be ${got} MP, more than ${(r && (r.name || r.id)) || "the model"} returns (${Math.floor(area / 1e5) / 10} MP). ${pick}${fit}`;
         }
         const out = r && r.limits && r.limits.out;
         if (!out || factor == null || Math.round(Math.max(w, h) * factor) <= out) return "";
@@ -2550,7 +2571,11 @@ export const host = {
 
     notifyProviderRuns() {
         if (this.onProviderRuns) { try { this.onProviderRuns(Array.from(this._providerRuns)); } catch (err) { console.warn(err); } }
-        // the status row's bar of each document: the seconds of the run it waits for (docs/PLAN_0_1_48.md S3)
+        this.syncRunBars();
+    },
+
+    /** The status row's bar of each document: the seconds of the run it waits for (docs/PLAN_0_1_48.md S3). */
+    syncRunBars() {
         const runs = Array.from(this._providerRuns);
         for (const ed of this._editors) {
             if (!ed.runProgress) continue;
@@ -2599,7 +2624,7 @@ export const host = {
      * goes from the bars.
      */
     async checkTrackedRuns() {
-        const tracked = this._editors.filter((e) => e.runProgress && e.runProgress.runs.size);
+        const tracked = this._editors.filter((e) => e.runProgress && (e.runProgress.runs.size || e.runProgress.dropped.size));
         if (!tracked.length || this._checkingRuns || Date.now() - (this._runsChecked || 0) < 2000) return;
         this._checkingRuns = true;
         this._runsChecked = Date.now();
@@ -2612,6 +2637,12 @@ export const host = {
                 for (const id of Array.from(ed.runProgress.runs.keys())) {
                     // a prompt queued a moment ago may not be listed yet
                     if (!held.has(id) && Date.now() - ed.runProgress.runs.get(id).tracked > 3000) ed.runProgress.done(id);
+                }
+                // a prompt a lost socket or a stale "queue empty" dropped shows again while the queue holds it, however
+                // long the socket was away; one the queue no longer holds is forgotten
+                for (const id of Array.from(ed.runProgress.dropped.keys())) {
+                    if (held.has(id)) ed.runProgress.revive(id);
+                    else ed.runProgress.dropped.delete(id);
                 }
             }
         } catch (_) { /* the server did not answer: the next status asks again */ } finally {
@@ -2698,7 +2729,7 @@ export const host = {
         const runs = editor ? (editor._localRuns || (editor._localRuns = new Set())) : null;
         if (runs) runs.add(id);
         // the token's own prompt: the bar shows its steps under the token's label (RunProgress.state)
-        if (token) { token.promptId = String(id); this.notifyProviderRuns(); }
+        if (token) { token.promptId = String(id); this.syncRunBars(); }
         if (editor) this.trackRun(editor, id, this.runNodeCount(prompt));
         let entry = null;
         const interrupted = `${label} was interrupted on your ComfyUI.`;
@@ -3701,6 +3732,8 @@ export const host = {
         }
         const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo() });
         editor.lastPromptId = res && res.prompt_id;
+        // the tab closed while its prompt was being queued (the uploads take a while): its result lands nowhere
+        if (res && res.prompt_id && !this._editors.includes(editor)) this._closedPrompts.add(String(res.prompt_id));
         if (pass && support.note) editor.setStatus(`${editor.status} ${support.note}`, editor.statusKind || "info");
         if (plan) {
             const named = texts.pairs.filter((p) => p.name).map((p) => `${p.label} → ${p.name}`);
@@ -4210,6 +4243,16 @@ export const host = {
         const file = e.file && !this._editors.some((x) => x.docFile && normPath(x.docFile.path) === normPath(e.file.path)) ? e.file : null;
         await this.restore(JSON.stringify({ version: 2, active: id, nextId: this.nextId, docs: [{ id, state: e.state, file, plugins: e.plugins, extra: e.extra }] }));
         const ed = this.editorById(id);
+        // its renders still on ComfyUI land in it again (removeEditor kept them; a picture run ended with the tab)
+        const runs = this._closedRuns.get(String(e.id)) || [];
+        this._closedRuns.delete(String(e.id));
+        if (ed) for (const run of runs) {
+            if (!this._closedPrompts.has(run.id) || this._pictureRuns.has(run.id) || this._endedPictureRuns.has(run.id)) continue;
+            this._closedPrompts.delete(run.id);
+            (ed._localRuns || (ed._localRuns = new Set())).add(run.id);
+            if (run.sent) (ed._sentTexts || (ed._sentTexts = new Map())).set(run.id, run.sent);
+            this.trackRun(ed, run.id, run.nodes);
+        }
         if (ed && this.shell) this.shell.activate(ed);
         if (ed && ed.base) ed.setStatus(`Reopened ${e.name}.`);
         this.saveAll();
@@ -4889,7 +4932,9 @@ api.addEventListener("executed", ({ detail }) => {
         if (sent) ed._sentTexts.delete(detail.prompt_id);
         if (ed) ed.addResults(sent ? out.inpaint_result.map((r) => ({ ...r, ...sent })) : out.inpaint_result);
     }
-    const forNode = (info) => host.editorById(info && info.canvas_node) || host.editorByPrompt(detail.prompt_id) || host.editor;
+    // a closed tab's helper output (queued while it closed: no prompt id was known) lands nowhere either
+    const forNode = (info) => (info && info.canvas_node != null && host._closedNodes.has(String(info.canvas_node)) ? null
+        : host.editorById(info && info.canvas_node) || host.editorByPrompt(detail.prompt_id) || host.editor);
     if (out.inpaint_text) for (const info of out.inpaint_text) { const ed = forNode(info); if (ed) ed.applyTextResult(info); }
     for (const info of out.inpaint_mask || []) {
         const ed = forNode(info);

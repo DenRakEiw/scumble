@@ -89,6 +89,17 @@ export class RunProgress {
         return true;
     }
 
+    /** A dropped prompt the server's queue still holds (a lost socket, a stale "queue empty"): it shows again. */
+    revive(promptId) {
+        const id = String(promptId);
+        const was = this.dropped.get(id);
+        if (!was) return false;
+        this.dropped.delete(id);
+        if (!this.runs.has(id)) this.runs.set(id, was.run);
+        this.changed();
+        return true;
+    }
+
     /** The prompt ended (or left the queue): it shows no more. */
     done(promptId) {
         const id = String(promptId);

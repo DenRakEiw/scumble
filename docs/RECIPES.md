@@ -1111,6 +1111,8 @@ while the recipe is selected (then on the selection). The recipe select lists th
   pass it, checked before anything is sent by `host.upscaleOutRefusal` (the last rule of `upscaleSizeRefusal`) on the
   whole picture and on the selection's box as it goes out (held to `limits.max` first, so a 4400 px box goes out at
   4096 and is checked at that size), and by the Upscale dialog, which greys *Upscale* with the same words.
+  `limits.outPixels` is the same rule by area (`magnific_creative`: 25,300,000 on every host, its model's cap), and
+  the refusal's "largest factor that fits" honours it as well as the canvas ceiling.
 
 The two modes (`host.runUpscale(editor, { scope, factor })` in `renderer/editor/host.js`):
 
