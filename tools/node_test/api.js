@@ -35,5 +35,6 @@ export const api = {
     addEventListener(t, fn) { (listeners[t] = listeners[t] || []).push(fn); },
     removeEventListener(t, fn) { listeners[t] = (listeners[t] || []).filter((f) => f !== fn); },
     __emit(t, detail) { for (const fn of listeners[t] || []) fn({ detail }); },
-    async queuePrompt() { return { prompt_id: "stub" }; },
+    // the prompts as the node's queuePrompt wrapper hands them on (its tail-output remap), kept in `window.__prompts`
+    async queuePrompt(number, prompt) { (window.__prompts = window.__prompts || []).push(JSON.parse(JSON.stringify(prompt || null))); return { prompt_id: "stub" }; },
 };

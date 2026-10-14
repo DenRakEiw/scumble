@@ -463,3 +463,30 @@ event through `mapBoxes`). No `host.` text and no page-level side effects in the
 `boxes.js`, `boxes_format.js`, `boxes_tool.js`, `boxes_model.js`; BUILD_NODE.md a row. `tools/boxes_test.js` §10 imports
 the moved formatter, §13 new (11 checks of the model): 155 of 155. Gates: `nb3` (tiles: boxes, commands, lint, types,
 all rc 0; lint 21 warnings, none in these files) and `nb3c` (canvas: boxes) ALL PASS.
+
+**B4.** `renderer/editor/inpaint_boxes.js` (in `FILES`): `EditorBoxes(ed)` with a doc adapter for the shared tool
+(`makeTool({ docById }, api)`), the data in `ed.pluginData.boxes` (one `pushUndo({ kind: "data" })` per change, then
+`notifyChanged`), the first box turning `gen.boxes` on, `fromSelection`, `copyRows` (a warn line when the page has no
+clipboard), `cropFrame()` (the editor's `cropRect()`, the span fitted to `multiple_of` at target_size 0 as nodes.py
+does, the emitted size; for the overlay and the warnings only), `pointer` / `key` / `deselect` / `selected` / `draw` /
+`mapGeometry`, the Boxes section in the Generate pane (`ed.addSection(.., "gen")`: help, note, the shared warning
+lines, rows with id, kind, description, Text's words, From's reference select, delete; Selection to box, Clear, Copy
+rows; CSS `.ipc-bx-*` in the editor's STYLE). The modal builds it before `host.editorBuilt` when `host.boxesInEditor`
+(the modal is built in the constructor, so `ed.boxes` exists while the editor is closed); `addTool("boxes")` beside
+the lights tool, `ICONS.boxes`. Hooks in `inpaint_canvas.js`, each `if (this.boxes)`: pointer down / move / up
+(`pointer.kind "boxes"`), the window's Escape and `onKey`'s Escape before `pluginKey`, single keys before `pluginKey`
+(X picks the tool; D, Delete, the arrows and Escape go to the tool while it is active), `setTool` (deselect / the
+hint), the overlay in both tilt branches, `mapExtras` (not for "undo"), `notifyChanged` -> `refresh()`, `setValue`'s
+end -> `refresh(true)`. `getValue()` adds `boxes` and `setValue()` reads it only when `host.boxesInEditor`.
+`serializeForPrompt()` adds `selectionBoxId`, `referenceIds` and (when the document holds boxes) `boxes` through the
+shared `promptPayload` / `selectionBoxIdOf` (boxes_model.js), **only when the switch is on and `host.boxSwitch(this)
+.takes`**: a deviation from D7 ("both hosts"), so the app's local recipes (which take no boxes) see no change and no
+warn line; its notes (a From box whose layer is not sent) go on the "Queued crop" line as warn. **A deviation from
+D8:** the editor sends `boxes: []` when the document holds boxes it had to leave out, and nodes.py makes the
+selection's box only when `boxes` is absent (clone `boxes_rows.py`, its test changed). Host members: `boxesInEditor`
+(app false, node true; the typedef), the node's `boxSwitch(editor)` `{ takes: true, count, schema: "flux3" }`.
+node_test: the api stand-in records the prompts; 11 Boxes steps (the row and the tool, a drawn box and the switch, undo
+/ redo, Delete keeps pixels / selection / layers, D duplicates, getValue / setValue, a resize and its undo,
+serializeForPrompt with and without the switch, the tail outputs at 13 / 14 / 15, the remap to 21 / 22); PASS.
+`tools/boxes_test.js` 157 (promptPayload, selectionBoxIdOf). Gates `nb4` (tiles: boxes, editor, commands, generate,
+document, lint, types) and `nb4c` (canvas: boxes): see below.

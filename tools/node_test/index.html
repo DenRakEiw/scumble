@@ -208,6 +208,95 @@ try {
         JSON.stringify(gs).slice(0, 400));
     const bad = await send("screenshot", { what: "layer", layer: "nope" });
     step("bridge error reply", bad && bad.ok === false && bad.node === 7 && /no layer "nope"/.test(bad.error || ""), JSON.stringify(bad));
+
+    // ---- Boxes (docs/PLAN_NODE_BOXES.md B4): the editor's own tool X, its undo, its keys, the workflow, the prompt ----
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    ed.open();
+    await wait(400);
+    step("Boxes: the switch's row shows, the tool column has the Boxes tool, the editor owns the boxes",
+        ed.boxesRow && !ed.boxesRow.hidden && !!ed.toolButtons.boxes && !!ed.boxes && !!ed.boxes.panel,
+        `row ${ed.boxesRow && !ed.boxesRow.hidden} tool ${!!ed.toolButtons.boxes} owner ${!!ed.boxes}`);
+    const listBoxes = () => (ed.pluginData && ed.pluginData.boxes && ed.pluginData.boxes.boxes) || [];
+    const crect = ed.canvas.getBoundingClientRect();
+    const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: crect.left + sx * crect.width / ed.canvas.width, clientY: crect.top + sy * crect.height / ed.canvas.height }; };
+    const pev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 9, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+    const key = (k) => { const e = new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }); ed.root.dispatchEvent(e); };
+    ed.genSettings.boxes = false;
+    ed.setTool("boxes");
+    key("x");   // X on the Boxes tool keeps it
+    const layersBefore = ed.layers.length;
+    ed.canvas.dispatchEvent(pev("pointerdown", 300, 300));
+    for (let i = 1; i <= 6; i++) { ed.canvas.dispatchEvent(pev("pointermove", 300 + 34 * i, 300 + 25 * i)); await wait(16); }
+    ed.canvas.dispatchEvent(pev("pointerup", 504, 450));
+    await wait(100);
+    let bx = listBoxes();
+    const near = (a, b) => Array.isArray(a) && a.length === 4 && a.every((v, i) => Math.abs(v - b[i]) <= 3);
+    step("Boxes: tool X draws a New box with the pointer, the first box turns the switch on",
+        bx.length === 1 && bx[0].kind === "new" && near(bx[0].rect, [300, 300, 504, 450]) && ed.genSettings.boxes === true && ed.boxesLabel.textContent.includes("1"),
+        `${JSON.stringify(bx)} switch ${ed.genSettings.boxes} label ${ed.boxesLabel.textContent} :: ${ed.status}`);
+    await ed.undoStep();
+    await wait(100);
+    const afterUndo = listBoxes().length;
+    await ed.redoStep();
+    await wait(100);
+    step("Boxes: one undo takes the drawn box back, a redo brings it", afterUndo === 0 && listBoxes().length === 1, `after undo ${afterUndo}, after redo ${listBoxes().length}`);
+    // Delete with the box selected removes the box: the layers and the pixels stay
+    const firstId = listBoxes()[0].id;
+    ed.boxes.tool.select(ed.boxes.doc, firstId);
+    const pxAt = () => Array.from(ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(400, 375, 1, 1).data).join(",");
+    const pixelBefore = pxAt();
+    const selBefore = ed.getBounds() && ed.getBounds().join();
+    key("Delete");
+    await wait(100);
+    step("Boxes: Delete removes the selected box, never pixels, the selection or a layer",
+        listBoxes().length === 0 && ed.layers.length === layersBefore && pxAt() === pixelBefore && (ed.getBounds() && ed.getBounds().join()) === selBefore,
+        `boxes ${listBoxes().length} layers ${ed.layers.length}/${layersBefore} pixel ${pxAt()} / ${pixelBefore}`);
+    // D with a box selected duplicates it and stays on the tool (D is the deselect tool otherwise)
+    const lamp = ed.boxes.add({ kind: "new", rect: [300, 300, 500, 450], desc: "a brass lamp" });
+    ed.boxes.tool.select(ed.boxes.doc, lamp.id);
+    key("d");
+    await wait(50);
+    step("Boxes: D duplicates the selected box and the tool stays", lamp.id === "brass_lamp_1" && listBoxes().length === 2 && ed.tool === "boxes",
+        `${listBoxes().map((b) => b.id).join()} tool ${ed.tool}`);
+    // the workflow keeps them: getValue carries them, setValue brings them back
+    const kept = ed.getValue();
+    ed.pluginData.boxes = { version: 1, boxes: [] };
+    await ed.setValue(kept);
+    for (let t0 = Date.now(); Date.now() - t0 < 15000 && ed._loading; ) await wait(100);
+    step("Boxes: getValue keeps them in the workflow and setValue brings them back",
+        JSON.parse(kept).boxes && listBoxes().length === 2 && listBoxes()[0].id === "brass_lamp_1" && ed.boxes.panel.list.querySelectorAll(".ipc-bx-row").length === 2,
+        `${listBoxes().map((b) => b.id).join()} rows ${ed.boxes.panel.list.querySelectorAll(".ipc-bx-row").length}`);
+    // the prompt: the boxes in document pixels, the references' ids, the selection box's id
+    const sent = JSON.parse(await ed.serializeForPrompt());
+    step("Boxes: serializeForPrompt carries boxes, referenceIds and selectionBoxId",
+        Array.isArray(sent.boxes) && sent.boxes.length === 2 && near(sent.boxes[0].rect, [300, 300, 500, 450]) && sent.boxes[0].desc === "a brass lamp" && Array.isArray(sent.referenceIds) && /^[a-z][a-z0-9_]*_1$/.test(sent.selectionBoxId || ""),
+        JSON.stringify({ boxes: sent.boxes, referenceIds: sent.referenceIds, selectionBoxId: sent.selectionBoxId }).slice(0, 400));
+    // the boxes follow the picture's geometry (a resize to half), and its undo puts them back as they were
+    const rectBefore = listBoxes()[0].rect.slice();
+    await ed.resizeImage(Math.round(ed.width / 2), Math.round(ed.height / 2));
+    await wait(200);
+    const rectHalf = listBoxes()[0].rect.slice();
+    await ed.undoStep();
+    await wait(200);
+    step("Boxes: a resize to half maps the boxes, its undo brings them back",
+        near(rectHalf, rectBefore.map((v) => v / 2)) && near(listBoxes()[0].rect, rectBefore) && listBoxes().length === 2,
+        `${rectBefore} -> ${rectHalf} -> ${listBoxes()[0] && listBoxes()[0].rect}`);
+    ed.genSettings.boxes = false;
+    const off = JSON.parse(await ed.serializeForPrompt());
+    step("Boxes: with the switch off the prompt carries none of it", !("boxes" in off) && !("referenceIds" in off) && !("selectionBoxId" in off), Object.keys(off).join());
+    // the tail outputs: box_prompt and elements after the free setting slot; the queuePrompt wrapper maps them to the
+    // backend's slots after all eight settings (13 + 8 + i)
+    const names = node.outputs.map((o) => o && o.name);
+    step("Boxes: the node shows box_prompt and elements after the settings", names[13] === "setting_1" && names[14] === "box_prompt" && names[15] === "elements" && node.outputs[15].type === "ARRAY", names.slice(13).join());
+    window.__prompts = [];
+    await api.queuePrompt(0, { output: { "7": { class_type: "InpaintCanvas", inputs: {} }, "9": { class_type: "X", inputs: { p: ["7", 14], e: ["7", 15], s: ["7", 13] } } } });
+    const qp = (window.__prompts || [])[0];
+    const qi = qp && qp.output && qp.output["9"] && qp.output["9"].inputs;
+    step("Boxes: the queuePrompt wrapper maps box_prompt to slot 21 and elements to 22 (a setting stays)",
+        qi && qi.p[1] === 21 && qi.e[1] === 22 && qi.s[1] === 13, JSON.stringify(qi));
+    ed.setTool("select");
+    ed.close();
+
 } catch (err) {
     step("exception", false, err && err.stack || err);
 }

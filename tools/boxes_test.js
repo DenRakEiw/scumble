@@ -442,6 +442,19 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
         && M.selectionInput({ x: 5, y: 6, w: 10, h: 20 }, "put @img2 here", (label) => (label === "img2" ? { id: "L7" } : null)).layer === "L7", "");
     const mchk = M.cropCheck([{ id: "a_1", kind: "new", rect: [0, 0, 10, 10] }, { id: "b_1", kind: "new", rect: [150, 150, 400, 400] }], { x: 100, y: 100, w: 400, h: 400, emitted: [1024, 1024], paste: "selection" }, [200, 200, 300, 300]);
     check("cropCheck: out, spill and the warning lines in the panel's words", eq(mchk.out, ["a_1"]) && eq(mchk.spill, ["b_1"]) && M.warningLines(mchk, [], [], "")[0][0] === "Box a_1 lies outside the crop Generate sends and is left out." && M.warningLines(mchk, [], [], "")[1][1] === true, short(M.warningLines(mchk, [], [], "")));
+    const pp = M.promptPayload([
+        { id: "lamp_1", kind: "new", rect: [10, 20, 110, 220], src: null, layer: null, desc: "  a\nlamp ", text: null },
+        { id: "sign_1", kind: "new", rect: [0, 0, 50, 50], src: null, layer: null, desc: "neon", text: "OPEN" },
+        { id: "vase_1", kind: "keep", rect: [5, 5, 25, 25], src: [5, 5, 25, 25], layer: null, desc: "", text: null },
+        { id: "dog_1", kind: "from", rect: [0, 0, 100, 100], src: [550, 375, 600, 400], layer: "L3", desc: "", text: null },
+        { id: "cat_1", kind: "from", rect: [0, 0, 100, 100], src: null, layer: "L9", desc: "", text: null },
+        { id: "far_1", kind: "from", rect: [0, 0, 100, 100], src: [0, 0, 10, 10], layer: "L3", desc: "", text: null },
+    ], [{ id: "L1", x: 0, y: 0, w: 10, h: 10 }, { id: "L3", x: 500, y: 350, w: 200, h: 100 }]);
+    check("promptPayload: document pixels for rect and Keep's src, a From box's src as fractions of its layer's frame with ref its index, desc folded, text on New only; a layer not sent and a part outside it left out with notes",
+        eq(pp.boxes, [{ id: "lamp_1", kind: "new", rect: [10, 20, 110, 220], desc: "a lamp" }, { id: "sign_1", kind: "new", rect: [0, 0, 50, 50], desc: "neon", text: "OPEN" },
+            { id: "vase_1", kind: "keep", rect: [5, 5, 25, 25], src: [5, 5, 25, 25], desc: "" }, { id: "dog_1", kind: "from", rect: [0, 0, 100, 100], src: [0.25, 0.25, 0.5, 0.5], ref: 1, desc: "" }])
+        && pp.notes.length === 2 && /^Box cat_1: its reference layer is not among/.test(pp.notes[0]) && /^Box far_1: its source lies outside the reference layer/.test(pp.notes[1]), short(pp));
+    check("selectionBoxIdOf: the prompt's telling words, else edit, then _1", M.selectionBoxIdOf("a red door") === "red_door_1" && M.selectionBoxIdOf("") === "edit_1" && M.selectionBoxIdOf(null) === "edit_1", "");
     check("runDesc and clipDesc: an @img token as a {@layer:} marker and as <ref_image_k>", M.runDesc({ desc: "put @img1 here" }, new Map([["img1", "L3"]])) === "put {@layer:L3} here" && M.clipDesc({ desc: "red", text: "SALE" }) === 'text reading "SALE", red', "");
 
     // ---- 12. the node's vectors (docs/PLAN_NODE_BOXES.md §4): tools/boxes_vectors.json is a fresh run of this writer --

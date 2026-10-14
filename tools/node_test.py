@@ -16,7 +16,12 @@ loads (what ComfyUI's graph serialize does): layer count, px / maskPx sizes, pix
 composite, getValue's layers JSON and its selection PNG decoded are checked; and the MCP bridge
 answers list_layers, screenshot what=layer, a screenshot of the picture with the selection overlay,
 get_state and an error, delivered as the websocket's inpaint_canvas.command event and answered to
-/inpaint_canvas/reply (both stand-ins).
+/inpaint_canvas/reply (both stand-ins). Then the editor's own Boxes (docs/PLAN_NODE_BOXES.md B4): the
+switch's row and tool X show, a box drawn with pointer events, its undo and redo, Delete and D on a
+selected box (no pixel, selection or layer touched), the boxes through getValue / setValue, a resize
+and its undo, serializeForPrompt's boxes / referenceIds / selectionBoxId, the tail outputs box_prompt
+and elements and the queuePrompt wrapper mapping them to the backend's slots 21 and 22 (the api
+stand-in records the prompts it is handed).
 
 This is not the browser gate against a real ComfyUI page; it catches what the build can break
 in the node before anyone opens ComfyUI.

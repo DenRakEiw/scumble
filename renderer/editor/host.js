@@ -370,7 +370,8 @@ export const api = {
  * @property {boolean} removeSupported
  * @property {boolean} refTokens                                     @img1 in the prompt names a reference layer (docs/PLAN_REFS.md); the node has none yet
  * @property {(editor: any, over?: any, opts?: { keep?: boolean }) => Promise<any>} refLayout   the chosen route's name for each shown reference ({ names, over, none, local, cap, refuse, guess? }); the node answers null
- * @property {(editor: any) => { takes: boolean, count: number, schema: string | null } | null} boxSwitch   the Boxes switch under the prompt (docs/PLAN_BOXES.md S3d): does the recipe send boxes, how many the document holds, in which format (flux3, ideogram4); the node answers null
+ * @property {(editor: any) => { takes: boolean, count: number, schema: string | null } | null} boxSwitch   the Boxes switch under the prompt (docs/PLAN_BOXES.md S3d): does the recipe send boxes, how many the document holds, in which format (flux3, ideogram4); the node answers takes true, schema flux3 (its box_prompt output) and accepts a null editor
+ * @property {boolean} boxesInEditor                                 the editor owns the boxes itself (inpaint_boxes.js: tool X, the Boxes section, the boxes in getValue): the node true, the app false (its Boxes plugin owns them; docs/PLAN_NODE_BOXES.md D5)
  * @property {() => any} removeModel
  * @property {(editor: any, req: { image: Uint8Array, mask: Uint8Array }) => Promise<any>} removeInApp
  * @property {boolean} [depthSupported]
@@ -4398,6 +4399,9 @@ export const host = {
      * change (docs/PLAN_REFS.md); the node keeps its positional "ref N" until a node release.
      */
     refTokens: true,
+
+    /** The app's Boxes plugin owns the boxes (plugins/boxes); the node's editor owns them itself (docs/PLAN_NODE_BOXES.md D5). */
+    boxesInEditor: false,
 
     /** The inpaint model the Remove tool runs (LaMa): the chosen one when present, else the first present, else null. */
     removeModel() {
