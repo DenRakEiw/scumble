@@ -2113,7 +2113,13 @@ const COMMANDS = {
             const grows = Object.values(v).some((x) => x > 0);
             const tooBig = grows && fw >= 1 && fh >= 1 ? canvasSizeRefusal(fw, fh, "The extended picture") : "";
             if (tooBig) throw refusal(tooBig, "warn");
-            if (Object.values(v).some((x) => x < 0)) { await ed.cropCanvas(v); v.left = Math.max(0, v.left); v.top = Math.max(0, v.top); v.right = Math.max(0, v.right); v.bottom = Math.max(0, v.bottom); }
+            if (Object.values(v).some((x) => x < 0)) {
+                const cw = ed.width + Math.min(0, v.left) + Math.min(0, v.right), ch = ed.height + Math.min(0, v.top) + Math.min(0, v.bottom);
+                await ed.cropCanvas(v);
+                // a refused crop (smaller than 8 px, a job running) only says so in the status: no extend after it
+                if (ed.width !== cw || ed.height !== ch) throw refusal(ed.status || "The crop was refused.", ed.statusKind || "warn");
+                v.left = Math.max(0, v.left); v.top = Math.max(0, v.top); v.right = Math.max(0, v.right); v.bottom = Math.max(0, v.bottom);
+            }
             if (Object.values(v).some((x) => x > 0)) await ed.extendCanvas(v);
             return { width: ed.width, height: ed.height, status: ed.status };
         },

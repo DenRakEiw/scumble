@@ -256,7 +256,9 @@ function renderTabs() {
  */
 async function closeDocument(editor, { force = false } = {}) {
     if (!editor || !host.editors().includes(editor)) return false;
-    if (!force && editor.base && busy(editor) && !(await dialogs.confirm(`${docName(editor)} is still working${editor._docSaving ? " (saving)" : ""}. Close it anyway?`, { ok: "Close", danger: true }))) return false;
+    // a render on the user's ComfyUI counts (busy() leaves it out): its result lands nowhere once the tab is closed
+    const rendering = !!(editor._localRuns && editor._localRuns.size > 0);
+    if (!force && editor.base && (busy(editor) || rendering) && !(await dialogs.confirm(`${docName(editor)} is still working${editor._docSaving ? " (saving)" : rendering && !busy(editor) ? " (a render on your ComfyUI; its result would be lost)" : ""}. Close it anyway?`, { ok: "Close", danger: true }))) return false;
     if (!force && editor.base && !editor._docSaving && host.documentDirty(editor)) {
         const choice = await host.askDocument({ kind: "close", name: editor.docFile ? editor.docFile.name : docName(editor), hasFile: !!editor.docFile });
         if (choice === "cancel" || !host.editors().includes(editor)) return false;
@@ -1822,7 +1824,7 @@ function upSyncNote() {
             else text = f ? `${ed.width} × ${ed.height} goes out, about ${Math.round(ed.width * f)} × ${Math.round(ed.height * f)} comes back and becomes the picture.` : `${ed.width} × ${ed.height} goes out; the model picks the size that comes back.`;
         } else {
             // the box as runUpscale will send it (held to the limits), only where the answer has a cap
-            const fr = v.limits && v.limits.out && f != null ? host.upscaleFrame(ed, v.limits) : null;
+            const fr = v.limits && (v.limits.out || v.limits.outPixels) && f != null ? host.upscaleFrame(ed, v.limits) : null;
             const over = fr ? host.upscaleOutRefusal(capped, fr.emitted[0], fr.emitted[1], f, "sent") : "";
             if (over) { ok = false; text = over; }
             else text = `The selection's box (with its context) goes out at its own size, up to ${max} px on the long side, and the sharper answer is fitted back into it.`;

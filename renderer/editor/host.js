@@ -496,8 +496,10 @@ export const host = {
             url: typeof st.url === "string" ? st.url : (this.server && this.server.url) || "",
             version: typeof st.version === "string" ? st.version : (this.server && this.server.version) || "",
         };
-        // only when the server is gone: "connecting" (a re-Connect to the same server) is a pause, the jobs go on
-        if (this.server.state === "disconnected" || this.server.state === "error") for (const ed of this._editors) if (ed.runProgress) ed.runProgress.idle();
+        // only when the server is gone: "connecting" (a re-Connect to the same server) is a pause, the jobs go on. A lost
+        // socket (a crashed server, the network) ends the bars too: no event would end them, and a run that still goes
+        // takes its bar back with its next event after the reconnect (RunProgress.wants)
+        if (this.server.state === "disconnected" || this.server.state === "error" || st.socket === false) for (const ed of this._editors) if (ed.runProgress) ed.runProgress.idle();
         this.emit("realism");
     },
 
@@ -607,6 +609,12 @@ export const host = {
     removeEditor(editor) {
         const i = this._editors.indexOf(editor);
         if (i >= 0) this._editors.splice(i, 1);
+        // its prompts on ComfyUI (a Generate, a helper) land nowhere now, not in the tab in front (the event listeners)
+        if (i >= 0) {
+            const ids = [...(editor._localRuns || []), editor.lastPromptId, editor.segmentPromptId, editor.objectsPromptId, editor.upsamplePromptId, editor.cutoutPromptId];
+            for (const id of ids) if (id) this._closedPrompts.add(String(id));
+            for (const id of this._closedPrompts) { if (this._closedPrompts.size <= 64) break; this._closedPrompts.delete(id); }
+        }
         if (this.editor === editor) this.editor = this._editors[Math.min(i, this._editors.length - 1)] || null;
         if (this.editor) this.activate(this.editor);
         this.emit("removed", { editor });
@@ -1040,6 +1048,9 @@ export const host = {
     editorById(id) {
         return this._editors.find((e) => String(e.node.id) === String(id)) || null;
     },
+
+    // the prompts of closed tabs (removeEditor): their results and errors are dropped (the newest 64)
+    _closedPrompts: new Set(),
 
     /** The editor whose generate / helper prompt has this id, if any. */
     editorByPrompt(promptId) {
@@ -1877,6 +1888,8 @@ export const host = {
             return n;
         }
         if (n < f.min || n > f.max) throw new Error(`${r.name || r.id} upscales by ${f.min} to ${f.max}, not ${n}.`);
+        // the adapter would round it, and the size checks and the bill would then be for another factor than asked
+        if (f.whole && !Number.isInteger(n)) throw new Error(`${r.name || r.id} upscales by whole factors (${f.min} to ${f.max}), not ${n}.`);
         return n;
     },
 
@@ -1909,11 +1922,20 @@ export const host = {
             return `At 1× the whole picture would come back at its own size: upscale a selection at 1× (Select All for the whole picture), or pick a larger factor.`;
         }
         // the whole picture lands as one canvas: past it the answer would be paid for and could not land (S5)
+        const area = (r && r.limits && r.limits.outPixels) || 0;
         if (what === "picture" && factor != null && !canvasFits(Math.round(w * factor), Math.round(h * factor))) {
-            const best = largestFactor(w, h, r && r.factor);
+            const best = largestFactor(w, h, r && r.factor, area);
             // 1× is refused for the whole picture by the rule above, so it is never the advice
             const fit = best != null && best > 1 && best < factor ? ` The largest factor that fits is ${best}×.` : " Upscale a selection instead, or scale the picture down first.";
             return `The picture is ${w} × ${h}; at ${factor}× it would become ${Math.round(w * factor)} × ${Math.round(h * factor)} px, ${CANVAS_LIMIT_WORDS}.${fit}`;
+        }
+        // the model's own area cap (limits.outPixels: Magnific Creative's 25.3 MP), which its adapter refuses too
+        if (area && factor != null && Math.round(w * factor) * Math.round(h * factor) > area) {
+            const { the, smaller } = upscaleWords(w, h, what);
+            const best = largestFactor(w, h, r && r.factor, area);
+            const fit = best != null && best < factor && !(what === "picture" && best <= 1) ? ` The largest factor that fits is ${best}×.` : "";
+            const mp = (n) => `${Math.round(n / 1e5) / 10} MP`;
+            return `${the}; at ${factor}× the answer would be ${mp(Math.round(w * factor) * Math.round(h * factor))}, more than ${(r && (r.name || r.id)) || "the model"} returns (${mp(area)}). Pick a smaller factor or ${smaller}.${fit}`;
         }
         const out = r && r.limits && r.limits.out;
         if (!out || factor == null || Math.round(Math.max(w, h) * factor) <= out) return "";
@@ -2533,7 +2555,7 @@ export const host = {
         for (const ed of this._editors) {
             if (!ed.runProgress) continue;
             const t = runs.find((r) => r.editor === ed);
-            ed.runProgress.timer(t ? { label: t.label, started: t.started } : null);
+            ed.runProgress.timer(t ? { label: t.label, started: t.started, promptId: t.promptId || null } : null);
         }
     },
 
@@ -2601,7 +2623,8 @@ export const host = {
     progressEvent(type, detail) {
         const id = detail && detail.prompt_id != null ? String(detail.prompt_id) : null;
         if (!id) return;
-        const ed = this._editors.find((e) => e.runProgress && e.runProgress.has(id));
+        // wants(): a prompt a stale "queue empty" or a lost socket dropped from the bar takes it back with its own events
+        const ed = this._editors.find((e) => e.runProgress && e.runProgress.wants(id));
         if (ed) { ed.runProgress.event(type, detail); return; }
         // the POST's answer (the prompt id) can come after the first events of a fast prompt
         if (!this._earlyProgress) this._earlyProgress = new Map();
@@ -2674,6 +2697,8 @@ export const host = {
         if (!id) throw stop("error", `${label}: your ComfyUI gave the job no id.`);
         const runs = editor ? (editor._localRuns || (editor._localRuns = new Set())) : null;
         if (runs) runs.add(id);
+        // the token's own prompt: the bar shows its steps under the token's label (RunProgress.state)
+        if (token) { token.promptId = String(id); this.notifyProviderRuns(); }
         if (editor) this.trackRun(editor, id, this.runNodeCount(prompt));
         let entry = null;
         const interrupted = `${label} was interrupted on your ComfyUI.`;
@@ -4854,6 +4879,8 @@ api.addEventListener("executed", ({ detail }) => {
     if (host.pictureRunEvent("executed", detail)) return;
     const out = detail && detail.output;
     if (!out) return;
+    // a prompt of a closed tab lands nowhere (the fallbacks below would hand it to the tab in front)
+    if (detail.prompt_id != null && host._closedPrompts.has(String(detail.prompt_id))) return;
     // Results: the recipe's canvas node id is the same for every tab, so the prompt id
     // decides; helper outputs carry the editor id the helper prompt was queued with.
     if (out.inpaint_result) {
@@ -4878,8 +4905,14 @@ function localRunEnded(detail) {
     const id = detail && detail.prompt_id;
     for (const ed of host.editors()) if (ed._localRuns) { if (id) ed._localRuns.delete(id); else ed._localRuns.clear(); }
 }
-api.addEventListener("execution_success", ({ detail }) => { localRunEnded(detail); host.pictureRunEvent("success", detail); });
-api.addEventListener("execution_interrupted", ({ detail }) => { localRunEnded(detail); host.pictureRunEvent("interrupted", detail); });
+
+/** Whether the prompt was a closed tab's (removeEditor); its end forgets it. */
+function closedPromptEnded(detail) {
+    const id = detail && detail.prompt_id != null ? String(detail.prompt_id) : null;
+    return !!id && host._closedPrompts.delete(id);
+}
+api.addEventListener("execution_success", ({ detail }) => { localRunEnded(detail); closedPromptEnded(detail); host.pictureRunEvent("success", detail); });
+api.addEventListener("execution_interrupted", ({ detail }) => { localRunEnded(detail); closedPromptEnded(detail); host.pictureRunEvent("interrupted", detail); });
 api.addEventListener("status", ({ detail }) => {
     const info = detail && detail.status && detail.status.exec_info;
     if (info && info.queue_remaining === 0) for (const ed of host.editors()) { if (ed._localRuns) ed._localRuns.clear(); if (ed.runProgress) ed.runProgress.idle(); }
@@ -4896,7 +4929,9 @@ api.addEventListener("execution_error", ({ detail }) => {
     localRunEnded(detail);
     if (!detail) return;
     // a picture run's failure goes to its caller (passPicture's sentence), not into the tab's status
-    if (host.pictureRunEvent("error", detail)) return;
+    if (host.pictureRunEvent("error", detail)) { closedPromptEnded(detail); return; }
+    // a closed tab's prompt: its failure goes into no tab's status
+    if (!owner && closedPromptEnded(detail)) return;
     const ed = owner || host.editor;
     if (!ed) return;
     const msg = detail.exception_message || "execution failed";

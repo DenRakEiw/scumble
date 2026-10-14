@@ -60,6 +60,7 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {string[]} aspects   aspect presets the model renders ("W:H"); the crop's context is widened to the nearest one, [] = any
  * @property {number} [out]       an upscaler's answer: the long side it may pass at most (the sent long side times the
  *                                factor; RTX Video Super Resolution on Comfy Cloud: 8192), absent = no cap
+ * @property {number} [outPixels] an upscaler's answer: the area it may pass at most (Magnific Creative: 25,300,000), absent = no cap
  */
 
 /**
@@ -71,6 +72,7 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {number} max
  * @property {number[] | null} steps   the only values the model takes, null = a free range
  * @property {boolean} fixed           the model picks its own factor
+ * @property {boolean} [whole]         only whole factors in min..max (the adapter rounds any other, Magnific Precision)
  */
 
 /**
@@ -240,6 +242,8 @@ function editLimits(r, v) {
     l.aspects = Array.isArray(l.aspects) ? [...new Set(l.aspects.filter((x) => /^\d+(\.\d+)?:\d+(\.\d+)?$/.test(String(x))).map(String))] : [];
     // `out`: an upscaler's answer cap on the long side (host.upscaleOutRefusal); kept only as a whole positive number
     if (l.out !== undefined) { const o = Math.round(+l.out); if (Number.isFinite(o) && o > 0) l.out = o; else delete l.out; }
+    // `outPixels`: an upscaler's answer cap by area (Magnific Creative, 25.3 MP); the same rule
+    if (l.outPixels !== undefined) { const o = Math.round(+l.outPixels); if (Number.isFinite(o) && o > 0) l.outPixels = o; else delete l.outPixels; }
     return l;
 }
 
@@ -264,6 +268,7 @@ function upscaleFactor(r, v) {
     f.default = Math.min(f.max, Math.max(f.min, n(f.default, FACTOR_DEFAULT.default)));
     if (f.steps && !f.steps.includes(f.default)) f.default = f.steps[0];
     f.fixed = f.fixed === true;
+    f.whole = f.whole === true;
     return f;
 }
 

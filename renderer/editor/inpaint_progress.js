@@ -4,8 +4,8 @@
 // draws the state it is handed, so the node's build and a plain-Node test use the same code.
 //
 // One state at a time: a local prompt that runs (the latest execution_start), else one that waits ("Queued"), else
-// the timed run. A tracked prompt that runs and a timed run together (a pass on ComfyUI) show its steps under the
-// timed run's label. Every change calls onChange(state) with null (nothing to show) or
+// the timed run. A timed run whose own prompt runs (a pass on ComfyUI: `promptId`) shows that prompt's steps under its
+// label; a local Generate beside an API run of the same tab shows as "Generating", the API run's seconds after it. Every change calls onChange(state) with null (nothing to show) or
 //   { fraction: 0..1 | null (busy, no measure), label, queued: n prompts waiting besides the one shown }.
 
 export class RunProgress {
@@ -18,7 +18,7 @@ export class RunProgress {
         this.runs = new Map();      // prompt id -> { nodes, cached, seen: Set of top-level node ids, steps: Map node -> {value, max}, stepped: [], started, node, tracked }
         this.dropped = new Map();   // what idle() let go: { at, run } per prompt id, taken back by a later event of it
         this.active = null;         // the prompt id that started last
-        this.timed = null;          // { label, started } of a run the app waits for
+        this.timed = null;          // { label, started, promptId } of a run the app waits for (promptId: its own prompt on ComfyUI)
         this.ticker = null;
     }
 
@@ -34,6 +34,15 @@ export class RunProgress {
     /** Whether this document waits for the prompt. */
     has(promptId) {
         return !!promptId && this.runs.has(String(promptId));
+    }
+
+    /** Whether the prompt's events belong here: it is waited for, or idle() let it go less than a minute ago. */
+    wants(promptId) {
+        if (!promptId) return false;
+        const id = String(promptId);
+        if (this.runs.has(id)) return true;
+        const was = this.dropped.get(id);
+        return !!was && this.now() - was.at < 60000;
     }
 
     /** One of ComfyUI's events; false when it is not about a prompt this document tracks. */
@@ -100,11 +109,11 @@ export class RunProgress {
         this.changed();
     }
 
-    /** A run the app waits for ({ label, started } in ms) or null when none is going. */
+    /** A run the app waits for ({ label, started } in ms, `promptId` its own prompt on ComfyUI) or null when none is going. */
     timer(t) {
-        const next = t && t.started ? { label: String(t.label || "Run"), started: +t.started } : null;
+        const next = t && t.started ? { label: String(t.label || "Run"), started: +t.started, promptId: t.promptId != null ? String(t.promptId) : null } : null;
         if (!next && !this.timed) return;
-        if (next && this.timed && next.label === this.timed.label && next.started === this.timed.started) return;
+        if (next && this.timed && next.label === this.timed.label && next.started === this.timed.started && next.promptId === this.timed.promptId) return;
         this.timed = next;
         this.changed();
     }
@@ -137,9 +146,12 @@ export class RunProgress {
                 parts.push(`step ${step.value}/${step.max}${run.stepped.length > 1 ? ` (pass ${run.stepped.length})` : ""}`);
             }
             if (run.seen.size) parts.push(`node ${Math.min(run.seen.size, total)}/${total}`);
-            const label = this.timed ? this.timed.label : "Generating";
-            const t0 = this.timed ? this.timed.started : run.started;
-            return { fraction, label: `${label} · ${parts.length ? parts.join(" · ") + " · " : ""}${secs(t0)} s${more}`, queued };
+            // the timed run's label only over its own prompt; another timed run (an API run beside a local Generate) after it
+            const own = !!this.timed && this.timed.promptId === id;
+            const label = own ? this.timed.label : "Generating";
+            const t0 = own ? this.timed.started : run.started;
+            const beside = this.timed && !own ? ` · ${this.timed.label} · ${secs(this.timed.started)} s` : "";
+            return { fraction, label: `${label} · ${parts.length ? parts.join(" · ") + " · " : ""}${secs(t0)} s${more}${beside}`, queued };
         }
         if (this.timed) return { fraction: null, label: `${this.timed.label} · ${secs(this.timed.started)} s${more}`, queued };
         if (run) return { fraction: null, label: `Queued${queued ? ` (${queued + 1} prompts)` : ""}`, queued };

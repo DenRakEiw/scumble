@@ -59,12 +59,16 @@ const { pathToFileURL } = require("node:url");
     p.event("execution_success", { prompt_id: "B" });
     check("B ended: hidden", last() === null, last());
 
-    // a timed run (an API run) and a pass on ComfyUI under its label
+    // a timed run (an API run) beside a local Generate, and a pass on ComfyUI under its label
     p.timer({ label: "FLUX.2 [pro] on fal", started: t - 3000 });
     check("a timed run: its label and seconds, busy", last().label === "FLUX.2 [pro] on fal · 3 s" && last().fraction === null, last());
     p.track("C", 4);
     p.event("progress", { prompt_id: "C", node: "2", value: 1, max: 4 });
-    check("steps of a tracked prompt under the timed run's label", /^FLUX\.2 \[pro\] on fal · step 1\/4/.test(last().label) && last().fraction === 0.25, last());
+    check("a local Generate beside an API run: its own label and seconds, the API run's after them",
+        /^Generating · step 1\/4 · 0 s · FLUX\.2 \[pro\] on fal · 3 s$/.test(last().label) && last().fraction === 0.25, last());
+    p.timer({ label: "Realism Pass", started: t - 5000, promptId: "C" });
+    check("the timed run's own prompt: its steps under the timed run's label and seconds",
+        /^Realism Pass · step 1\/4 · 5 s$/.test(last().label) && last().fraction === 0.25, last());
     p.event("execution_interrupted", { prompt_id: "C" });
     p.timer(null);
     check("the timed run ended: hidden", last() === null && ticks.filter(Boolean).length === 0, [last(), ticks.filter(Boolean).length]);
@@ -74,6 +78,7 @@ const { pathToFileURL } = require("node:url");
     p.track("E", 3);
     p.idle();
     check("the queue went empty: hidden", last() === null && p.runs.size === 0);
+    check("a dropped prompt's events are still wanted (the host routes them here)", p.wants("D") && !p.has("D") && !p.wants("nope"));
     p.event("execution_start", { prompt_id: "D" });
     check("a stale \"queue empty\": the prompt's own event takes it back", p.runs.has("D") && last() && /^Generating/.test(last().label), last());
     p.event("execution_success", { prompt_id: "D" });
@@ -81,6 +86,7 @@ const { pathToFileURL } = require("node:url");
     p.track("F", 2);
     p.idle();
     t += 61000;
+    check("a minute later it is not wanted", !p.wants("F"));
     check("a minute later it stays gone", p.event("execution_start", { prompt_id: "F" }) === false && !p.runs.has("F"));
     p.timer({ label: "Upscale", started: t });
     p.clear();

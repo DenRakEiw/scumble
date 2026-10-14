@@ -33,10 +33,12 @@ export function fitInCanvas(w, h) {
 
 /**
  * The largest factor of an upscaler's `spec` ({ steps } or { min, max }) whose answer of a w × h picture fits one
- * canvas (each side rounded as the answer is), or null when none does.
+ * canvas (each side rounded as the answer is) and, when given, the model's own area cap `maxPixels`, or null when
+ * none does.
  */
-export function largestFactor(w, h, spec) {
-    const fits = (f) => canvasFits(Math.round(w * f), Math.round(h * f));
+export function largestFactor(w, h, spec, maxPixels = 0) {
+    const area = maxPixels > 0 ? Math.min(CANVAS_MAX_PIXELS, maxPixels) : CANVAS_MAX_PIXELS;
+    const fits = (f) => { const W = Math.round(w * f), H = Math.round(h * f); return canvasFits(W, H) && W * H <= area; };
     if (!spec) return null;
     if (Array.isArray(spec.steps) && spec.steps.length) {
         const ok = spec.steps.filter((f) => fits(f));
@@ -45,7 +47,7 @@ export function largestFactor(w, h, spec) {
     const min = +spec.min || 1, max = +spec.max || min;
     if (!fits(min)) return null;
     // whole factors from the bound down, never below the spec's own minimum (which may be fractional)
-    let best = Math.max(min, Math.min(max, Math.floor(Math.min(CANVAS_MAX_SIDE / w, CANVAS_MAX_SIDE / h, Math.sqrt(CANVAS_MAX_PIXELS / (w * h))))));
+    let best = Math.max(min, Math.min(max, Math.floor(Math.min(CANVAS_MAX_SIDE / w, CANVAS_MAX_SIDE / h, Math.sqrt(area / (w * h))))));
     while (best > min && !fits(best)) best = Math.max(min, best - 1);
     return fits(best) ? best : min;
 }

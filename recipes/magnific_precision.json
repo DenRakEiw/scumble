@@ -9,7 +9,8 @@
   "factor": {
     "default": 2,
     "min": 2,
-    "max": 16
+    "max": 16,
+    "whole": true
   },
   "providers": {
     "magnific": {

@@ -1093,9 +1093,10 @@ factor), the `upscale` command (`docs/COMMANDS.md`; the assistant asks before it
 while the recipe is selected (then on the selection). The recipe select lists these recipes in the family
 *Upscale*. `normalize()` gives every variant of such a recipe:
 
-- `factor: { default, min, max, steps, fixed }` from the recipe's or the variant's `factor` block (without one:
+- `factor: { default, min, max, steps, fixed, whole }` from the recipe's or the variant's `factor` block (without one:
   2, 1 to 4). `steps` lists the only factors a model takes (Magnific Creative and both Magnific nodes on Comfy
-  Cloud: 2, 4, 8, 16); `fixed: true` marks a model that picks its own (Recraft's upscalers), and no factor is sent.
+  Cloud: 2, 4, 8, 16); `fixed: true` marks a model that picks its own (Recraft's upscalers), and no factor is sent;
+  `whole: true` takes only whole factors in min..max (Magnific Precision, whose adapters round any other).
   The host refuses a factor outside what the variant offers before anything is sent.
 - `usesPrompt`: only then does a prompt go along, as guidance (Clarity, Magnific Creative): the Upscale dialog shows a
   Prompt field for such a recipe, filled with the tab's prompt and sent as the `upscale` command's `prompt` (the

@@ -31,6 +31,11 @@ const { pathToFileURL } = require("node:url");
     check("4096 x 16, 2..16: 15 (the side, not the area)", S.largestFactor(4096, 16, { min: 2, max: 16 }) === 15, S.largestFactor(4096, 16, { min: 2, max: 16 }));
     check("a small picture: the largest factor offered", S.largestFactor(512, 512, { min: 1, max: 8 }) === 8);
     check("no spec: none", S.largestFactor(512, 512, null) === null);
+    // a model's own area cap (Magnific Creative, 25.3 MP)
+    check("2560 x 1920, steps 2 4 8 16, a 25.3 MP cap: 2", S.largestFactor(2560, 1920, { steps: [2, 4, 8, 16] }, 25300000) === 2, S.largestFactor(2560, 1920, { steps: [2, 4, 8, 16] }, 25300000));
+    check("1024 x 1024, 2..16, a 25.3 MP cap: 4", S.largestFactor(1024, 1024, { min: 2, max: 16 }, 25300000) === 4, S.largestFactor(1024, 1024, { min: 2, max: 16 }, 25300000));
+    check("4096 x 4096, steps 2 4 8 16, a 25.3 MP cap: none", S.largestFactor(4096, 4096, { steps: [2, 4, 8, 16] }, 25300000) === null);
+    check("no cap (0): the canvas alone", S.largestFactor(4096, 4096, { min: 2, max: 16 }, 0) === 4);
 
     // fitting an answer
     const [fw, fh] = S.fitInCanvas(2000, 1000000);

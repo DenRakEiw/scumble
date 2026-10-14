@@ -2,14 +2,14 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
-## Unreleased
+## 0.1.48 - 2026-10-14
 
-- The Help panel shows the manual's italics as italics instead of the asterisks around them, and the assistant's and Help's answers show them as italics too.
-- **No paid upscale lost to the size ceiling.** An upscale of the whole picture whose answer would pass what one canvas holds (65,535 px a side, 268 megapixels) is refused before it is sent, and the refusal names the largest factor that fits (Magnific Precision at 16×, SeedVR2 at 8× on a large picture). A model that picks its own factor and answers larger lands scaled down to fit. Resize and Extend refuse such a size instead of making an empty picture.
-- **A result's prompt, again.** Click the prompt under a result in the history to put it back in the prompt field (Revert brings back the one you had), Ctrl+click to copy it. A result keeps the prompt of the click that made it, even when you typed on while it ran, and its @img tokens follow the references.
-- **A progress bar in the status row.** While a run goes, a thin bar beside the status line follows it: on your own ComfyUI the node it is at, a sampler's steps and the seconds, for a Generate, the Realism Pass, relight and an upscale of the whole picture; through a provider the seconds it has been waiting. It belongs to its tab, and a second Generate queued behind the first is counted ("1 more queued").
-- With two Generates queued on your ComfyUI in one tab, the first one's result could land in whichever tab was in front; it lands in its own tab now.
 - **Errors stand out in the status line.** An error, a model that still has to be downloaded, a size or limit a run would pass, or a result that came out only in part (a fallback used, parts of a file left out) shows red and blinks five times, then stays red until the next line; with the system's animation effects off it is red without blinking. Hints such as "Select a layer first" and "a run is still going" stay as they were. Agents mark their own lines through `set_status`'s new `kind`, plugins through `status(text, kind)`.
+- **A progress bar in the status row.** While a run goes, a thin bar beside the status line follows it: on your own ComfyUI the node it is at, a sampler's steps and the seconds, for a Generate, the Realism Pass, relight and an upscale of the whole picture; through a provider the seconds it has been waiting. It belongs to its tab, and a second Generate queued behind the first is counted ("1 more queued").
+- With two Generates queued on your ComfyUI in one tab, the first one's result could land in whichever tab was in front; it lands in its own tab now. Closing a tab while its render on your ComfyUI runs asks first, and its result no longer lands in another tab.
+- **A result's prompt, again.** Click the prompt under a result in the history to put it back in the prompt field (Revert brings back the one you had), Ctrl+click to copy it. A result keeps the prompt of the click that made it, even when you typed on while it ran, and its @img tokens follow the references.
+- **No paid upscale lost to the size ceiling.** An upscale of the whole picture whose answer would pass what one canvas holds (65,535 px a side, 268 megapixels) is refused before it is sent, and the refusal names the largest factor that fits (Magnific Precision at 16×, SeedVR2 at 8× on a large picture). A model that picks its own factor and answers larger lands scaled down to fit. Resize and Extend refuse such a size instead of making an empty picture.
+- The Help panel shows the manual's italics as italics instead of the asterisks around them, and the assistant's and Help's answers show them as italics too.
 - **A greeting in the developer tools.** Open *View > Toggle Developer Tools* and the console shows the Scumble mascot and its name in ASCII, printed at every start by a small Brainfuck program (`renderer/easteregg/logo.bf`).
 
 ## 0.1.47 - 2026-10-13
