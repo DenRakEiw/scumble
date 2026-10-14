@@ -81,6 +81,15 @@ code.
 
 ## Where things stand (2026-10-14: 0.1.48 released and in the MCP Registry; the Store update open)
 
+- **Tonight (2026-10-14/15): edit-box prompting in the Inpaint Canvas node, built unattended.** The user: "lass uns ein
+  update der inpaint canvas node machen mit Edit-Box-Prompting", then "mache einen umsetzungsplan, dann machen wir einen
+  clear und du kannst es heute nacht bauen, ohne pausen nur compress falls der kontext voll wird". **The plan is
+  `docs/PLAN_NODE_BOXES.md`: build B0 to B6 in one go, no pause between steps, let the context compact instead of
+  stopping** (this overrides "one section per session" for tonight; stop only near 99 % of the weekly limit, after a
+  commit). Its §1 rules hold: all node work in the clone `dist/node_boxes` (branch `boxes`), never a write or a git
+  command in the live node folder, no push, no pyproject bump, no paid run, no ComfyUI restart; Scumble's own behaviour
+  unchanged (the app's Boxes plugin stays the owner in the app). The readers' maps: `dist/plans/node_boxes_maps.md`.
+  The morning list for the user is the plan's §8.
 - **The open items, collected 2026-10-13** (a workflow of 11 agents over BUGS.md, the plans, the list, the outward
   threads and GitHub, each doubtful status checked in the code): `docs/OPEN_2026-10-13.md`, a dated snapshot (not
   kept up to date; BUGS.md and this file are the living lists).
