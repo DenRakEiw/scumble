@@ -153,8 +153,8 @@ function rowsFlux3(req, lay) {
 }
 
 // ---- the caption (S3e): the docs ask the caption to name each element as <id> and to say where it goes ---------------
-// plugins/boxes/format.js keeps a copy of everything from here to captionFlux3 for the clipboard; tools/boxes_test.js
-// holds the two to the same vectors.
+// renderer/editor/boxes_format.js keeps a copy of everything from here to captionFlux3 for the clipboard, the node's
+// boxes_rows.py a Python port; tools/boxes_test.js holds them to the same vectors (tools/boxes_vectors.json).
 
 /** Words that open an instruction: a description that starts with one goes into the caption as it is ("make the tiger pink"). */
 const VERB = /^(?:add|bring|brighten|change|darken|draw|fill|give|insert|lighten|make|paint|place|put|recolou?r|render|replace|show|swap|turn|use|write)\b/i;

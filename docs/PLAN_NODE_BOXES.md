@@ -435,3 +435,31 @@ surrogates dropped), `dumps` (compact, `ensure_ascii=False`), `check_boxes` (the
 loaded by file as `inpaint_canvas_boxes_rows` and registered in `sys.modules` (one module object for nodes.py and the
 tests; the package path checked by importing the clone as a package over the test stubs). `tests/test_boxes.py`: all
 vectors (to the character, lists compared as JSON so 250 and 250.0 differ) and nine Python-only cases; unittest 50 OK.
+
+**B2 (Scumble `8441000`, clone `95c1003`).** The measuring is a pure function too: `boxes_rows.node_outputs(state,
+prompt, frame, crop_size, original, loaded, fit, selection, fill)` -> `(box_prompt, elements, notes)`, with
+`to_frame` (the app's toFrame), `fit_point` / `fit_src` (§4's pad / crop / stretch, Python's `round` as `_fit_image`
+and `common_upscale` use it), `check_payload_box` (pluginBoxes' texts in image pixels; a From box's src in fractions
+of its layer), `_free_id` (a duplicate id gets the next number, as pluginBoxes), the notes (left out, a fill under a
+Keep / Move / Remove source, a reference not loaded, the crop fit cutting a source off, the bare New box, small boxes
+under 48 px at the crop size, the 15000 characters, more than 10 pictures). `run()` keeps `loaded` (index, width,
+height as loaded) in the reference loop, calls it inside a second guard, appends `(box_prompt, elements)` after the
+settings and returns `ui: {"inpaint_boxes": notes}` **only when there are notes** (so a run without boxes sends no
+`executed` event it did not send before; ComfyUI merges a `ui` beside `expand`, `execution.py:360-423`). The plain
+`prompt` output is unchanged. `TAIL_OUTPUTS` in the editor: `box_prompt` STRING, `elements` ARRAY. Tests: 18 run()
+cases and 2 fit cases (pad and stretch measured on `_fit_image`'s pixels; crop by the formula, the stub ignores it);
+unittest 68 OK; the build into the clone (`b402b1b91a4fa333`), `--check` ok, node_test PASS (it does not look at the
+outputs yet: B4's remap step).
+
+**B3.** `git mv` of `plugins/boxes/format.js` -> `renderer/editor/boxes_format.js` and `tool.js` ->
+`renderer/editor/boxes_tool.js` (`makeTool(env, api)`, `env.docById(id)` its only outside use); the new
+`renderer/editor/boxes_model.js` holds the plugin's pure model: `HELP`, `KIND_LABELS`, `TOKEN`, `DEFAULT_ID`, `rectOf`,
+`nextId`, `wordsOf`, `aside(size, r)`, `normaliseBox(input, { base, boxes, idBase, size, referenceId(key),
+promptNames(id) })`, `addBox` / `setBox` / `removeBox` over a list (`{ boxes, box }`), `tokenOf`, `selectionInput`,
+`placed`, `changes`, `cropCheck(boxes, crop, sel)`, `bareOf`, `unplacedOf`, `warningLines`, `mapBox(r, m)`, `mapBoxes`,
+`runDesc(b, labels)`, `clipDesc(b)`, `FIELDS`. `plugins/boxes/main.js` imports the three from `/editor/` and keeps the
+app's pieces (the plugin data, the Boxes switch, the recipe, the panel, the commands, the generate hook, the geometry
+event through `mapBoxes`). No `host.` text and no page-level side effects in the four shared files. `FILES` +=
+`boxes.js`, `boxes_format.js`, `boxes_tool.js`, `boxes_model.js`; BUILD_NODE.md a row. `tools/boxes_test.js` §10 imports
+the moved formatter, §13 new (11 checks of the model): 155 of 155. Gates: `nb3` (tiles: boxes, commands, lint, types,
+all rc 0; lint 21 warnings, none in these files) and `nb3c` (canvas: boxes) ALL PASS.

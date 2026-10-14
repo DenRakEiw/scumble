@@ -322,11 +322,11 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     try { R.pluginBoxes([{ id: "log_1", kind: "keep", rect: [300, 200, 500, 350], src: [300, 200, 500, 350], desc: "", text: "OPEN" }], pctx); } catch (e) { code = e.code; msg = e.message; }
     check("pluginBoxes: text on a box that is not new is the plugin's bug (code shape)", code === "shape" && /^Box log_1: only a new box renders text$/.test(msg), msg);
 
-    // ---- 10. the Boxes plugin's clipboard formatter (plugins/boxes/format.js) against main's rows -------------------
+    // ---- 10. the Boxes clipboard formatter (renderer/editor/boxes_format.js, shared with the node) against main's rows
     // the same boxes in image pixels, main's rows through the renderer's mapping (as a run does it) and the plugin's rows
     // straight from pixels: the grid, the kinds and the instruction agree
-    console.log("\n--- 10. plugins/boxes/format.js (Copy rows) ---");
-    const F = await import(pathToFileURL(path.join(ROOT, "plugins", "boxes", "format.js")).href);
+    console.log("\n--- 10. renderer/editor/boxes_format.js (Copy rows) ---");
+    const F = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "boxes_format.js")).href);
     const docFrame = { x: 0, y: 0, w: 1920, h: 1080 };
     check("format.grid: BFL's example from pixels", eq(F.grid([384, 108, 1536, 972], docFrame), [100, 200, 900, 800]), short(F.grid([384, 108, 1536, 972], docFrame)));
     check("format.grid equals main's grid of the renderer's fractions on a crop", eq(F.grid([300, 200, 500, 350], frame), boxes.grid(R.toFrame([300, 200, 500, 350], frame))) && eq(F.grid([0, 0, 500, 350], frame), boxes.grid(R.toFrame([0, 0, 500, 350], frame))), "");
@@ -421,6 +421,28 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
         S.planFrame(ed2, params, limits);
         check("planFrame scans once per selection change", once && scans === 2, String(scans));
     }
+
+    // ---- 13. the shared model (renderer/editor/boxes_model.js: the app's plugin and the node's editor) -------------
+    console.log("\n--- 13. renderer/editor/boxes_model.js ---");
+    const M = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "boxes_model.js")).href);
+    const mctx = { size: { width: 1000, height: 600 }, referenceId: (key) => { if (key !== "L3") throw new Error(`${key} is not a reference layer`); return "L3"; }, promptNames: () => false };
+    let mb = M.addBox([], { kind: "new", rect: [10, 20, 110, 220], desc: "a red scarf" }, mctx);
+    check("addBox: a New box named after its words, the first colour, rect in whole pixels", eq(mb.box, { id: "red_scarf_1", kind: "new", rect: [10, 20, 110, 220], src: null, layer: null, desc: "a red scarf", text: null, colour: 0 }) && mb.boxes.length === 1, short(mb.box));
+    let ms = M.setBox(mb.boxes, "red_scarf_1", { kind: "move" }, mctx);
+    check("setBox: a New box turned into Move keeps its place as the source and its target steps aside by a fifth", eq(ms.box.src, [10, 20, 110, 220]) && eq(ms.box.rect, [210, 20, 310, 220]) && ms.box.id === "red_scarf_1", short(ms.box));
+    const mt = M.addBox([], { kind: "new", rect: [0, 0, 5, 5] }, mctx).boxes;
+    ms = M.setBox(mt, "box_1", { desc: "a brass lamp" }, mctx);
+    check("setBox: a default id takes the new description's words; the prompt naming it keeps it", ms.box.id === "brass_lamp_1" && M.setBox(mt, "box_1", { desc: "a brass lamp" }, { ...mctx, promptNames: (id) => id === "box_1" }).box.id === "box_1", short(ms.box));
+    check("normaliseBox: a From box needs a reference layer; a key that is none refuses", /needs layer/.test(throws(() => M.addBox([], { kind: "from", rect: [0, 0, 5, 5] }, mctx))) && /not a reference layer/.test(throws(() => M.addBox([], { kind: "from", rect: [0, 0, 5, 5], layer: "L9" }, mctx))) && M.addBox([], { kind: "from", rect: [0, 0, 5, 5], layer: "L3" }, mctx).box.layer === "L3", "");
+    check("removeBox: an unknown id refuses; the list comes back without the box", /no box nope/.test(throws(() => M.removeBox(mb.boxes, "nope"))) && M.removeBox(mb.boxes, "red_scarf_1").length === 0, "");
+    check("mapBox: a quarter turn of a 1000 x 600 picture (x' = 600 - y, y' = x) maps the corners' bounding box", eq(M.mapBox([10, 20, 110, 220], [0, 1, -1, 0, 600, 0]), [380, 10, 580, 110]) && M.mapBox(null, [1, 0, 0, 1, 0, 0]) === null, short(M.mapBox([10, 20, 110, 220], [0, 1, -1, 0, 600, 0])));
+    const mm = M.mapBoxes(mb.boxes, [2, 0, 0, 2, 0, 0]);
+    check("mapBoxes: new objects, the old list untouched", mm[0] !== mb.boxes[0] && eq(mm[0].rect, [20, 40, 220, 440]) && eq(mb.boxes[0].rect, [10, 20, 110, 220]), "");
+    check("selectionInput: a New box with the prompt; a From box of the layer the prompt's first @img names", eq(M.selectionInput({ x: 5, y: 6, w: 10, h: 20 }, "a red door", () => null), { id: undefined, kind: "new", rect: [5, 6, 15, 26], layer: undefined, desc: "a red door" })
+        && M.selectionInput({ x: 5, y: 6, w: 10, h: 20 }, "put @img2 here", (label) => (label === "img2" ? { id: "L7" } : null)).layer === "L7", "");
+    const mchk = M.cropCheck([{ id: "a_1", kind: "new", rect: [0, 0, 10, 10] }, { id: "b_1", kind: "new", rect: [150, 150, 400, 400] }], { x: 100, y: 100, w: 400, h: 400, emitted: [1024, 1024], paste: "selection" }, [200, 200, 300, 300]);
+    check("cropCheck: out, spill and the warning lines in the panel's words", eq(mchk.out, ["a_1"]) && eq(mchk.spill, ["b_1"]) && M.warningLines(mchk, [], [], "")[0][0] === "Box a_1 lies outside the crop Generate sends and is left out." && M.warningLines(mchk, [], [], "")[1][1] === true, short(M.warningLines(mchk, [], [], "")));
+    check("runDesc and clipDesc: an @img token as a {@layer:} marker and as <ref_image_k>", M.runDesc({ desc: "put @img1 here" }, new Map([["img1", "L3"]])) === "put {@layer:L3} here" && M.clipDesc({ desc: "red", text: "SALE" }) === 'text reading "SALE", red', "");
 
     // ---- 12. the node's vectors (docs/PLAN_NODE_BOXES.md §4): tools/boxes_vectors.json is a fresh run of this writer --
     console.log("\n--- 12. tools/boxes_vectors.json (the node's Python writer is held to it) ---");

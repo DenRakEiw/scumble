@@ -16,6 +16,7 @@ python tools/node_test.py             # the node's flavour in a hidden Electron 
 | File | Owner | In the node |
 |---|---|---|
 | `renderer/editor/inpaint_canvas.js`, `inpaint_jobs.js`, `inpaint_encode.js`, `inpaint_upload.js`, `inpaint_modal.js`, `inpaint_layered.js`, `inpaint_theme.js`, `inpaint_filters.js`, `inpaint_filters_gl.js`, `inpaint_curves.js`, `inpaint_text.js`, `inpaint_raster.js`, `inpaint_export.js`, `inpaint_worker.js`, `inpaint_compositor.js`, `inpaint_brushes.js`, `inpaint_pixels.js`, `inpaint_liquify.js`, `inpaint_tiles.js`, `inpaint_arena.js`, `inpaint_pool.js`, `inpaint_png.js`, `inpaint_bands.js`, `px/kernels_js.js`, `px/kernels.js`, `px/px.js`, `px/px.wasm`, `fonts/` | this repo | generated into `js/` with a first line naming the source (`px/` as a subfolder: the tile store imports the kernels, C2) |
+| `renderer/editor/boxes.js`, `boxes_format.js`, `boxes_tool.js`, `boxes_model.js` | this repo | generated into `js/` (2026-10-14, docs/PLAN_NODE_BOXES.md B3): the box model, the Boxes tool and the clipboard formatter, shared by the app's Boxes plugin (`plugins/boxes/main.js` imports them from `/editor/`) and the node's editor; none of them may contain the text `host.`, comments included (`--check` counts it as a host member) |
 | `renderer/editor/host.js` | this repo | not copied: the node has its own `js/host.js` |
 | `renderer/editor/stitch.js` | this repo | not copied (app-only) |
 | `js/host.js` | node repo | what the editor asks ComfyUI: `app`, `api`, the litegraph node |

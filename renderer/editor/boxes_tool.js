@@ -8,6 +8,10 @@
 // description when the box is wide enough; the kind shows in the shape (Remove hatched, Move's source dashed with an
 // arrow, From's part dashed). While the tool is active it also shows the crop Generate sends (S3c): the picture outside
 // it dimmed, its size on its edge.
+//
+// Shared by both hosts (docs/PLAN_NODE_BOXES.md B3, moved here from plugins/boxes/tool.js): the app's Boxes plugin
+// registers it as a plugin tool, the node's editor (inpaint_boxes.js) routes its own tool X to it. No page-level side
+// effects: ComfyUI imports every module of the node.
 
 /** Every box its own colour (the user, 2026-10-02: six New boxes in one green could not be told apart). */
 export const PALETTE = ["#3ddc84", "#ff9f1c", "#2ec4f0", "#ff4fd8", "#ffd60a", "#a78bfa", "#ff6b6b", "#b8f53b", "#4d7cff", "#ff8fa3"];
@@ -58,13 +62,14 @@ function resized(r, h, dx, dy) {
 }
 
 /**
- * The tool's definition for scumble.tools.register. `api` is the plugin's data side: boxesOf(doc), add(doc, input),
+ * The tool's definition (the app's plugin passes it to scumble.tools.register). `env.docById(id)` finds a document by
+ * its id again (it throws or answers null once the tab is closed). `api` is the data side: boxesOf(doc), add(doc, input),
  * set(doc, id, patch), remove(doc, id), nextId(boxes, base), frame(doc) (the crop Generate sends, { x, y, w, h,
  * emitted } in image pixels, or null), panelShown(doc) (the Boxes panel is open and on screen), selChanged(doc) (the
  * panel shows the selection), referenceName(doc, id), sent(doc) (the document's Boxes switch is on: off, the boxes are
  * drawn dashed and paler), switchNote(doc) (" " + a note when the last add turned that switch on, else "").
  */
-export function makeTool(scumble, api) {
+export function makeTool(env, api) {
     const selected = new Map();   // doc id -> box id
     let drag = null;              // { docId, mode: "new" | "move" | "resize", part: "main" | "src", id, handle, start, orig, rect, moved, square }
     const viewOf = (doc) => ({ scale: doc.editor.view.scale, dpr: window.devicePixelRatio || 1 });
@@ -83,7 +88,7 @@ export function makeTool(scumble, api) {
         e.dlg.remove();
         if (!commit) return;
         let d = e.doc;
-        try { d = scumble.documents.byId(e.docId) || e.doc; } catch (_) { /* the tab was closed: nothing to write */ return; }
+        try { d = env.docById(e.docId) || e.doc; } catch (_) { /* the tab was closed: nothing to write */ return; }
         const b = api.boxesOf(d).find((x) => x.id === e.id);
         if (!b || value === (e.field === "text" ? b.text || "" : b.desc || "")) return;
         try {

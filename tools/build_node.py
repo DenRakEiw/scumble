@@ -42,6 +42,7 @@ FILES = [
     "inpaint_compositor.js", "inpaint_brushes.js", "inpaint_pixels.js", "inpaint_resample.js", "inpaint_tiles.js", "inpaint_arena.js", "inpaint_pool.js", "inpaint_png.js", "inpaint_bands.js", "inpaint_boxstack.js", "inpaint_stroke.js", "inpaint_tippicker.js", "inpaint_remove.js", "inpaint_liquify.js",
     "inpaint_jobs.js", "inpaint_encode.js", "inpaint_upload.js", "inpaint_modal.js", "inpaint_layered.js", "inpaint_tiff.js", "inpaint_theme.js", "inpaint_depth.js", "inpaint_edges.js", "inpaint_depthfx.js", "inpaint_haze.js", "inpaint_grade.js", "inpaint_wheels.js", "inpaint_adjustments.js", "inpaint_lensblur.js", "inpaint_relight.js", "edgefit.js",
     "reftokens.js", "prompt_field.js", "blend_modes.js", "inpaint_status.js", "inpaint_progress.js", "inpaint_sizelimit.js",
+    "boxes.js", "boxes_format.js", "boxes_tool.js", "boxes_model.js",
     "px/kernels_js.js", "px/kernels.js", "px/px.js",
 ]
 BINARIES = ["px/px.wasm"]

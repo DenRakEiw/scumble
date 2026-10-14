@@ -1,7 +1,9 @@
-// The FLUX 3 rows of the document's boxes for the clipboard ("Copy rows" in the Boxes panel), measured against the
-// whole picture. A run does not use this: the app's main process writes the rows it sends after it knows the crop and
-// the final order of the pictures (electron/main/providers/boxes.js). This is a small copy of that formatter for the
-// text a user pastes into another tool, kept to the same vectors by tools/boxes_test.js. Pure functions, no DOM.
+// The FLUX 3 rows of the document's boxes for the clipboard ("Copy rows" in the Boxes panel of the app's plugin and of
+// the node's editor), measured against the whole picture. A run does not use this: the app's main process writes the
+// rows it sends after it knows the crop and the final order of the pictures (electron/main/providers/boxes.js), the
+// node's nodes.py through boxes_rows.py. This is a small copy of that formatter for the text a user pastes into another
+// tool, kept to the same vectors by tools/boxes_test.js. Pure functions, no DOM; shared by both hosts
+// (docs/PLAN_NODE_BOXES.md B3, moved here from plugins/boxes/format.js).
 //
 // docs.bfl.ai/flux_3: a box is [top, left, bottom, right] on a 0 to 1000 grid of the picture; an edit's row is
 // { id, from, src_bbox, tgt_bbox, desc } (the picture itself is <ref_image_0>, the other pictures <ref_image_k>), a new
