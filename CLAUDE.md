@@ -81,15 +81,22 @@ code.
 
 ## Where things stand (2026-10-14: 0.1.48 released and in the MCP Registry; the Store update open)
 
-- **Tonight (2026-10-14/15): edit-box prompting in the Inpaint Canvas node, built unattended.** The user: "lass uns ein
-  update der inpaint canvas node machen mit Edit-Box-Prompting", then "mache einen umsetzungsplan, dann machen wir einen
-  clear und du kannst es heute nacht bauen, ohne pausen nur compress falls der kontext voll wird". **The plan is
-  `docs/PLAN_NODE_BOXES.md`: build B0 to B6 in one go, no pause between steps, let the context compact instead of
-  stopping** (this overrides "one section per session" for tonight; stop only near 99 % of the weekly limit, after a
-  commit). Its §1 rules hold: all node work in the clone `dist/node_boxes` (branch `boxes`), never a write or a git
-  command in the live node folder, no push, no pyproject bump, no paid run, no ComfyUI restart; Scumble's own behaviour
-  unchanged (the app's Boxes plugin stays the owner in the app). The readers' maps: `dist/plans/node_boxes_maps.md`.
-  The morning list for the user is the plan's §8.
+- **Edit-box prompting in the Inpaint Canvas node: built in the night 2026-10-14/15 (B0-B6 of
+  `docs/PLAN_NODE_BOXES.md`), waiting for the user's morning list (the plan's §8).** The user: "lass uns ein update der
+  inpaint canvas node machen mit Edit-Box-Prompting", then the night build without pauses. **Nothing is pushed and
+  nothing is in the live node folder.** Scumble main `ae97224` .. `b717107` (+ the hand-over commit), local; the node in
+  the clone `F:/canvas/dist/node_boxes`, branch `boxes`, `15c192a` .. `6a0ad1e` (push URL disabled). What it does: tool X
+  and a Boxes section in the node's editor (`renderer/editor/inpaint_boxes.js`, active where the host member
+  `boxesInEditor` is true: the node), the boxes in the workflow, and two tail outputs `box_prompt` (FLUX 3's caption
+  and edit rows, written by the node's `boxes_rows.py`, a port of `electron/main/providers/boxes.js` held to
+  `tools/boxes_vectors.json`) and `elements` (core's bounding-box shape). The app's Boxes plugin now imports the shared
+  `renderer/editor/boxes_tool.js`, `boxes_model.js`, `boxes_format.js`; its behaviour is unchanged (gates). The B6
+  review (a workflow of 8 agents) found 11 points, all fixed, among them one in the app: a recipe import read the
+  node's new tail outputs as setting slots (`electron/main/recipes.js` `tailOutputs`). **Until `boxes` is in the live
+  node, Scumble main's `node` / `nodecopy` gates and `build_node.py --check` against the live folder are red, and no
+  node build from main may go into the live folder** (§8 step 2). Unverified live: the edit rows through the Comfy proxy
+  of *Flux 3 Image*, `aspect_ratio` auto on a non-preset crop, the tail remap for a canvas inside a subgraph, the
+  example workflow. The proposed sections for the node's untracked CLAUDE.md: `dist/node_boxes_CLAUDE_update.md`.
 - **The open items, collected 2026-10-13** (a workflow of 11 agents over BUGS.md, the plans, the list, the outward
   threads and GitHub, each doubtful status checked in the code): `docs/OPEN_2026-10-13.md`, a dated snapshot (not
   kept up to date; BUGS.md and this file are the living lists).
@@ -661,6 +668,9 @@ there; add a new flake there, with the date and what was ruled out.
 - The tools' Python has tifffile without `imagecodecs`: it writes no LZW, PackBits or zstd and cannot pack 1 / 2 / 4
   bits; Pillow writes LZW (`tiff_lzw`) and PackBits, `tools/tiff_fixtures.py` builds the rest by hand.
 - Reusing one commit message file gives the next commit the old message.
+- `git add a b c` stages nothing when one path matches no file (the source of a `git mv`, already staged as the
+  rename): the commit then holds only what was staged before (B3's renames without their edits, 2026-10-14). Never
+  hide `git add`'s errors (`2>/dev/null`); check `git diff --cached --name-status` before every commit.
 - A comment edit in `crates/px/src/*.rs` changes the wasm bytes (panic locations carry line numbers): rebuild with
   `python tools/build_px.py` after any `.rs` edit, then `--check`.
 - `editor_test.py`'s steps are Python strings that are not raw: `\\n` in their JS, or `String.fromCharCode(10)`; a

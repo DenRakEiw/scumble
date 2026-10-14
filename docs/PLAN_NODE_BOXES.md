@@ -508,3 +508,25 @@ outputs on an edit, not yet loaded live); every link checked against its slots b
 `docs/PLAN_BOXES.md` a pointer, BUILD_NODE.md a row for `inpaint_boxes.js`, node_test 4 more steps (the subgraph
 remap "92:7" -> 21 / 22; the bridge's six box commands, an unknown box's error, `set_generation` boxes and `status`):
 PASS. No CHANGELOG line (the app's behaviour did not change).
+
+**B6 (2026-10-15 night).** The review workflow (run `wf_d5d51fce-baa`: 4 finders by area, each list checked by a
+skeptic; 15 findings, 11 confirmed, all fixed). Scumble `b717107`: `electron/main/recipes.js` read every canvas
+output from slot 13 as a setting, so importing a node workflow that wires `box_prompt` / `elements` (the example)
+made a Settings row of the prompt; now `tailOutputs` reads them by name (fromWorkflow by the UI node's output names,
+fromGraph passes the page's names to fromPrompt, a plain API prompt by the backend order): a setting at its backend
+slot, a consumer of `box_prompt` wired to the plain prompt with a note (a local recipe gets no boxes), one of
+`elements` dropped with a note; `tools/recipes_test.js` §12 (199 of 199). `@img` tokens: the shared describe field
+invites them and the node sent them raw; now `serializeForPrompt` adds `referenceLabels` and nodes.py writes an
+`@imgN` in a description and in the prompt of `box_prompt` as FLUX 3's "image n" of the batch as built (`image 2` =
+the first reference without the Original); one that did not load stays, noted (the plain `prompt` output untouched).
+The node's switch tooltip and help no longer speak of Generate new / Ideogram 4; the no-clipboard line and the
+TAIL_OUTPUTS comment corrected. Clone `6a0ad1e`: `_is_num` answers False for a JSON integer past the float range
+(one box left out, not all); the bridge's `boxes_set` takes `text: ""` (a Text box back to New) and `src: []` (a From
+box back to its whole layer); D3's wording everywhere ("the plain prompt while the Boxes switch is off"); the
+example's guide note is the current GUIDE.md, Flux 3 Image's core version 0.39.0. Not taken: the 15000 note for the
+`elements` wiring, a list box's error text, `String()` of odd numbers, the example note's "auto" wording.
+The full set: `boxes_test.js` 157 of 157, the vectors `cmp` same, unittest 70 OK, `--check` ok (60 modules, 64 host
+members), node_test PASS (47 steps), the MCP file parses (52 tools). Gates `nb6` (tiles: boxes, editor, commands,
+generate, document, recipes, comfyview, lint, types): all rc 0 but `comfyview` 24 of 25, its control step "Ctrl+Shift+L
+in the editor's window reached no menu" (docs/TESTING.md known flake), the same on a re-run (`nb6r`); `nb6c` (canvas:
+boxes) ALL PASS. Nothing pushed, nothing in the live node folder; the morning list is §8.
