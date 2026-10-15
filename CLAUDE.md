@@ -82,19 +82,24 @@ code.
 ## Where things stand (2026-10-14: 0.1.48 released and in the MCP Registry; the Store update open)
 
 - **Edit-box prompting in the Inpaint Canvas node: built in the night 2026-10-14/15 (B0-B6 of
-  `docs/PLAN_NODE_BOXES.md`), waiting for the user's morning list (the plan's §8).** The user: "lass uns ein update der
-  inpaint canvas node machen mit Edit-Box-Prompting", then the night build without pauses. **Nothing is pushed and
-  nothing is in the live node folder.** Scumble main `ae97224` .. `b717107` (+ the hand-over commit), local; the node in
-  the clone `F:/canvas/dist/node_boxes`, branch `boxes`, `15c192a` .. `6a0ad1e` (push URL disabled). What it does: tool X
+  `docs/PLAN_NODE_BOXES.md`), pushed and live on 2026-10-15** (the user: "kannst das update pushen und in meinem
+  comfyui aktualisieren"): Scumble main pushed (`779e357..99c2cfd`); the live node folder fast-forwarded to `6a0ad1e`
+  (the night's branch, deleted after the merge) and pushed (`beef9dd..6a0ad1e`), **no pyproject bump, so no registry
+  publish** (the registry stays 0.3.4; 0.3.5 or 0.4.0 is still the user's pick, D12). ComfyUI hot-reloaded it:
+  `/object_info/InpaintCanvas` lists 23 outputs ending `box_prompt`, `elements` (`/system_stats` 200); the browser tab
+  needs a reload for the new JS. `build_node.py --check` and node_test against the live folder: ok / PASS again. Open:
+  the paid live run with *Flux 3 Image* (the plan's §8 step 4), the node's untracked CLAUDE.md
+  (`dist/node_boxes_CLAUDE_update.md`), the clone `dist/node_boxes` can go. Before: the user: "lass uns ein update der
+  inpaint canvas node machen mit Edit-Box-Prompting", then the night build without pauses. Scumble main `ae97224` ..
+  `b717107`; the node's commits `15c192a` .. `6a0ad1e`. What it does: tool X
   and a Boxes section in the node's editor (`renderer/editor/inpaint_boxes.js`, active where the host member
   `boxesInEditor` is true: the node), the boxes in the workflow, and two tail outputs `box_prompt` (FLUX 3's caption
   and edit rows, written by the node's `boxes_rows.py`, a port of `electron/main/providers/boxes.js` held to
   `tools/boxes_vectors.json`) and `elements` (core's bounding-box shape). The app's Boxes plugin now imports the shared
   `renderer/editor/boxes_tool.js`, `boxes_model.js`, `boxes_format.js`; its behaviour is unchanged (gates). The B6
   review (a workflow of 8 agents) found 11 points, all fixed, among them one in the app: a recipe import read the
-  node's new tail outputs as setting slots (`electron/main/recipes.js` `tailOutputs`). **Until `boxes` is in the live
-  node, Scumble main's `node` / `nodecopy` gates and `build_node.py --check` against the live folder are red, and no
-  node build from main may go into the live folder** (§8 step 2). Unverified live: the edit rows through the Comfy proxy
+  node's new tail outputs as setting slots (`electron/main/recipes.js` `tailOutputs`). The live node now holds the
+  boxes, so builds from main go into the live folder again as before. Unverified live: the edit rows through the Comfy proxy
   of *Flux 3 Image*, `aspect_ratio` auto on a non-preset crop, the tail remap for a canvas inside a subgraph, the
   example workflow. The proposed sections for the node's untracked CLAUDE.md: `dist/node_boxes_CLAUDE_update.md`.
 - **The open items, collected 2026-10-13** (a workflow of 11 agents over BUGS.md, the plans, the list, the outward
