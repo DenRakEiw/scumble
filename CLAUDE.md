@@ -327,7 +327,9 @@ The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27
   says it is free; gates run `--offline`). Tune for 15k, not 30k. One-channel masks on ice; `inpaint_canvas.js` is
   split only where a subject is reworked anyway; the object tool's change A parked; tiles are the default, the canvas
   backend the escape hatch. A parked idea, not a plan: a mobile companion.
-- **Unverified:** ToAPIs and ModelArk live; OpenRouter beyond GPT Image 2.5 Flare / Sunburst and FLUX 3 Image (live 2026-10-03); Magnific beyond the two
+- **Unverified:** ToAPIs beyond GPT Image 2's `standard` / `vip` channels (those ran live through this adapter in
+  ToAPIs' own run of 2026-10-13, issue #5: a new image and whole-picture reference edits; channel `official` with the
+  mask and the canvas round trip not; `docs/RECIPES.md`) and ModelArk live; OpenRouter beyond GPT Image 2.5 Flare / Sunburst and FLUX 3 Image (live 2026-10-03); Magnific beyond the two
   upscalers and Oxen (docs only); the five generative relight routes (built from docs, tested against mocks only); a real SAM2 / RMBG model
   on the slice 6 code; the user's own 15k file. Deferred from 3f: the source's EXIF / XMP in exports, an ICC profile in
   PSD and TIFF. Not checked: a double click in Explorer on an installed build, TIFFs written by other image editors.

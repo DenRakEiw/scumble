@@ -1241,9 +1241,15 @@ cloud's own node versions.
 [ToAPIs](https://toapis.com) is a reseller on a New API gateway: one key for GPT Image 2 and 2.5,
 Nano Banana 2 / 2 Lite / Pro, FLUX.2 pro and flex, Seedream 5 lite and pro, and Qwen Image 3.0.
 The adapter `electron/main/providers/toapis.js` is written from the English docs
-(`docs.toapis.com/docs/en/...`, read 2026-09-15) and **has not run against the live API**; every
-ToAPIs variant's note says so, and says that crop, mask and references are uploaded to public
+(`docs.toapis.com/docs/en/...`, read 2026-09-15) and **has not run against the live API** from Scumble;
+every ToAPIs variant's note says so, and says that crop, mask and references are uploaded to public
 `files.toapis.com` URLs. The key link (Settings › API providers) carries the author's referral code.
+**One outside live run (2026-10-13, DenRakEiw/scumble#5):** ToAPIs called this adapter's own `generate()` / `edit()`
+at `0d0be6b` from a wrapper (`ToAPIs-2025/cheaper-scumble-toapis`): GPT Image 2 on channels `standard` and `vip`, one
+new image each and two whole-picture reference edits on `vip`, 1K, four PNGs for $0.0207. That shows the upload,
+generations, task query and download path for those two channels; channel `official` with the selection as
+`mask_url`, the other models and the canvas round trip (crop, stitch, layers) are still unrun. GPT Image 2's note
+says so.
 
 **Where it shows up.** First in every provider list: the key rows (first in `PROVIDERS`), each served
 recipe's provider select, the Generate-new select and `list_recipes` (`toapis` is the first key of
