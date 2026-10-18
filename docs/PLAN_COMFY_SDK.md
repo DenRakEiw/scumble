@@ -260,6 +260,38 @@ lost-answer words (never a third submit); the own SaveImage wins; `JobFailed` wo
 :305-339) pass `cloudApi: "legacy"`; `nanobanana21_test.js` unchanged. Gates: those, `refs_layout_test.js`,
 `relight_request_test.js`, `recipes_test.js`, `lint`, `types`; one look (`--no-comfy`, no key: the no-key line).
 
+**S1 as built (2026-10-18).** `comfycloud.js`: `runOn` sends a context with `cloudApi: "v2"` to `runV2`, anything else
+(the plain-Node tests, `settings.comfycloud.api` "legacy") to the untouched `run`; `put(ctx, bytes, name)` is
+`ctx.upload` (v2: an asset handle) or the legacy upload, used by `buildGraph` and `buildDetached`. `runV2`: the
+layout's refusals, then `cloudClient` (a real key for a test base is refused before any request), then for a recipe
+graph the v1 node list (`cloudInfo(ctx, base)`: the test base for a test key), advisory (a failed or empty read goes on,
+noted in `info.nodeList`; a node a list that was read lacks still stops the run; model-file fixes and `missingNote` as
+on legacy). Each picture is an asset handle from a client whose request limit fits its size (at least 300 s, 32 KB/s
+floor); all are committed before the submit, so a failure is named as an upload's; an unanswered upload goes once more
+under a **fresh** handle (Comfy may hold the first upload key with no bytes behind it), then the run's handle finds the
+bytes by hash. One submit under one UUID with `apiKey` (`extra_data`), no metadata; an unanswered submit (no HTTP
+status, or a 5xx) is sent once more under the same key; `idempotency_key_reuse` then stops with the lost-answer words;
+two without an answer stop too, never a third. Wait: `job.wait()` **does throw on a failed status read** (section 10 was
+wrong there: it throws on its own deadline and on every `refresh` error); a 429 is waited out (Retry-After, at least
+2 s, at most 60 s, within the run's time), an unanswered read is retried up to 5 times while the status stays the same;
+past the time, or when the status cannot be read, `job.cancel()` best effort and the words say whether Comfy was asked
+to stop or the job may still be charged; a cancel that answers `succeeded` falls through to the result. Statuses:
+`canceled` / `expired` in own words, `failed` as "<class> (node <id>): <message>" (the class left out when it is the
+partner node), key scrubbed, plus `missingNote`. Output: `saveOf` (the recipe's SaveImage, or the one `buildGraph`
+writes for a partner node), else the first image; up to 3 reads of a finished job without outputs; the download read
+up to 3 times on a drop or a 429, the words name the job. `info { node, model, job_id, nodeList? }`. `comfysdk.js`:
+`cloudClient(ctx, { timeoutMs })`, `CLIENT_TIMEOUT_MS` exported, `errorText` adds the error's details (node_errors as
+"<class> <node>: <message>"), scrubbed before it is shortened. Tests: `tools/comfycloud_v2_test.js` (50 checks) on
+`tools/fake_comfy_v2.js` (a fetch: assets by hash / from-hash / multipart, jobs with scripted statuses, reads, contents,
+cancel answers, upload keys, the 302 follow); a mutation round of six (no 429 back-off, no download retry, the upload
+retry on the same handle, the cancel's answer ignored, no cancel on an unread status, the miss count never reset): all
+red. `comfysdk_test.js` 20. Green: `cloudgraph`, `upscale`, `refs_layout`, `recipes`, `nanobanana21`, `comfyrouter`,
+`ideogram45`, `relight_request`, `lint`, `types`. In the app (a dev instance, `--no-comfy`): the no-key line; then a
+real v2 run through the main process against the fake behind a loopback HTTP server (test key, `settings.comfycloud.base`):
+blake3 in Electron, two multipart uploads, submit with `extra_data`, two polls, the download, 0.7 s. Undici (Node 24,
+Electron's 7.29) drops `Authorization` on the cross-origin redirect of the download (measured). Reviewed by a workflow
+(4 lenses, a skeptic per finding; 11 confirmed, 3 refuted), all 11 fixed. Section 4's live check has not run.
+
 **S2: Cancel and the bar (normal).** 3.4, 3.5: `index.js` hooks and the `cancelAsked` message, `main.js:1086`,
 preload `onProgress`, the host mapping, `RunProgress` only if section 4 says so. Test: `comfycloud_v2_test.js` adds
 progress calls and Cancel -> `POST .../cancel`; a `generate` gate step `a_cloud_runs_bar_follows_sdk_events` (feeds
@@ -411,7 +443,8 @@ findings in the session scratchpad `critics.json`). Three musts, the rest should
   (asar-aware), without loading the SDK (no `SDK_VERSION` export; `./package.json` is not in the exports map);
   `comfysdk_test.js` asserts `"0.5.0"` with the SDK not loaded.
 - `new Comfy({ apiKey, fetch, clientInfo, timeoutMs: 300_000 })`: an explicit timeout (large uploads).
-- `job.wait()` returns on every terminal status and throws only on its own timeout: after it, `status !== "succeeded"`
+- `job.wait()` returns on every terminal status and throws on its own timeout **and on any failed status read** (S1
+  found it; `refresh` has no retry): after it, `status !== "succeeded"`
   builds the error from `job.error` (`{ code, message, node_id?, class_type? }`, may be null), with own words for
   `canceled` and `expired`; a timeout is a non-terminal status after the throw.
 - `Output.type` is the kind (`image`, `video`, ...), not the ComfyUI output/temp split: pick `getOutputs(saveId)`, else

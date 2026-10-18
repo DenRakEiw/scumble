@@ -148,6 +148,8 @@ async function main() {
 
     // ---- error words ----
     check("errorText words an SDK error by its type and scrubs the key", /no credits left/.test(sdkMod.errorText({ errorType: "insufficient_credits", message: `out of credits for ${KEY}` }, KEY)) && !sdkMod.errorText({ code: "x", message: KEY }, KEY).includes(KEY));
+    const cut = sdkMod.errorText({ code: "x", message: "m", details: { pad: "a".repeat(262), echo: KEY } }, KEY);
+    check("errorText scrubs the key in the details before it shortens them (no part of the key left)", !cut.includes(KEY.slice(0, 12)), cut.slice(-60));
 
     const failed = results.filter((x) => !x).length;
     console.log(failed ? `${failed} of ${results.length} checks FAILED` : `all ${results.length} checks passed`);

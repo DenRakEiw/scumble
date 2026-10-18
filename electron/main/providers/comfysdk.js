@@ -102,8 +102,11 @@ function guarded(ctx, { bound = true, timeoutMs = 0 } = {}) {
     };
 }
 
-/** A Comfy Cloud client for this run (ctx.key, ctx.base, ctx.fetch); `bound: false` for a cancel after the abort. */
-function cloudClient(ctx, { bound = true } = {}) {
+/**
+ * A Comfy Cloud client for this run (ctx.key, ctx.base, ctx.fetch); `bound: false` for a cancel after the abort;
+ * `timeoutMs` one request's limit (an upload of a large picture needs more than the default).
+ */
+function cloudClient(ctx, { bound = true, timeoutMs = 0 } = {}) {
     const key = String(ctx.key || "").trim();
     if (!key) throw new Error("Comfy Cloud: no API key.");
     checkKey("Comfy Cloud", "settings.comfycloud.base", !!testBase(ctx.base), key);
@@ -112,7 +115,7 @@ function cloudClient(ctx, { bound = true } = {}) {
         apiKey: key,
         fetch: guarded(ctx, bound ? {} : { bound: false, timeoutMs: CANCEL_TIMEOUT_MS }),
         clientInfo: `scumble/${scumbleVersion() || "dev"}`,
-        timeoutMs: CLIENT_TIMEOUT_MS,
+        timeoutMs: +timeoutMs > 0 ? +timeoutMs : CLIENT_TIMEOUT_MS,
     });
 }
 
@@ -142,7 +145,7 @@ const WORDS = {
     queue_full: "Comfy's queue is full; try again in a minute",
     invalid_workflow: "Comfy refused the workflow",
     missing_asset: "a picture did not arrive at Comfy",
-    idempotency_key_reuse: "Comfy already took this job",
+    idempotency_key_reuse: "Comfy already took a request under this key",
     rate_limited: "too many requests; try again in a minute",
     concurrency_limit_exceeded: "too many runs at once on this account",
     not_found: "Comfy does not know this job or model",
@@ -155,13 +158,26 @@ function scrub(text, key) {
     return s;
 }
 
+/** An error's details in a line: ComfyUI's node_errors as "<class> <node>: <message>", else the JSON, short (scrubbed first). */
+function detailText(d, key) {
+    if (!d || typeof d !== "object") return "";
+    const ne = d.node_errors && typeof d.node_errors === "object" ? Object.entries(d.node_errors) : [];
+    const rows = ne.slice(0, 3).map(([id, e]) => {
+        const first = (e && Array.isArray(e.errors) && e.errors[0]) || {};
+        return [`${(e && e.class_type) || "node"} ${id}`, first.message, first.details].filter(Boolean).join(": ");
+    });
+    if (rows.length) return scrub(rows.join("; "), key) + (ne.length > 3 ? `; and ${ne.length - 3} more` : "");
+    try { return scrub(JSON.stringify(d), key).slice(0, 300); } catch (_) { return ""; }
+}
+
 /** An SDK or Router error in Scumble's words, the key scrubbed; keyed by errorType / code, never instanceof. */
 function errorText(err, key) {
     if (!err) return "unknown error";
     const code = String(err.errorType || err.code || "").toLowerCase();
-    const said = scrub(err.message || String(err), key);
+    const detail = detailText(err.details, key);
+    const said = scrub((err.message || String(err)) + (detail ? ` [${detail}]` : ""), key);
     const words = WORDS[code];
     return words ? `${words} (${said})` : said;
 }
 
-module.exports = { load, loaded, version, clearEnv, testBase, checkKey, guarded, cloudClient, cancelJob, routerSetup, errorText, scrub, CLOUD, ROUTER, ENV };
+module.exports = { load, loaded, version, clearEnv, testBase, checkKey, guarded, cloudClient, cancelJob, routerSetup, errorText, scrub, CLOUD, ROUTER, ENV, CLIENT_TIMEOUT_MS };

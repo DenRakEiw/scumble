@@ -30,8 +30,16 @@
 //
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3) and how many pictures the node takes
 // (NODE_PICTURES); buildGraph uploads only the pictures the layout wires and refuses a run past that count.
+//
+// Two APIs carry the same graphs (docs/PLAN_COMFY_SDK.md 3.3, 3.9). The Comfy API v2 through Comfy's official SDK
+// (comfysdk.js, runV2 below) is the default (ctx.cloudApi "v2", set by providers/index.js contextFor): each picture
+// is an asset handle in its LoadImage, uploaded by its content hash (one Comfy holds already is not sent again), the
+// job submitted once under an idempotency key with the key again in extra_data for the partner nodes, waited for by
+// its id, its output read by node. The legacy API above (run) stays for one release behind settings.comfycloud.api
+// "legacy"; a caller that names no API (the plain-Node tests) gets it too.
 "use strict";
 
+const { randomUUID } = require("node:crypto");
 const { readError, sleep, num, closestAspect } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
@@ -211,6 +219,9 @@ async function upload(ctx, bytes, name) {
     return d.subfolder ? `${d.subfolder}/${d.name}` : d.name;
 }
 
+/** What a LoadImage takes for a picture: on v2 an asset handle (ctx.upload, sent at submit), else the legacy upload's name. */
+const put = (ctx, bytes, name) => (typeof ctx.upload === "function" ? ctx.upload(bytes, name) : upload(ctx, bytes, name));
+
 // ---- the cloud form of a ComfyUI recipe (recipes.detach, docs/PLAN_COMFY_VIEW.md §2.4, item 35 V5) ----------------
 //
 // `options.graph` is the recipe's own graph without the Inpaint Canvas node: its pictures come in through LoadImage
@@ -223,11 +234,11 @@ async function upload(ctx, bytes, name) {
 const INFO_TTL_MS = 10 * 60 * 1000;
 const infoCache = new Map();   // key -> { at, classes }
 
-/** Comfy Cloud's node list for this key (its /api/object_info), kept ten minutes. */
-async function cloudInfo(ctx) {
+/** Comfy Cloud's node list for this key (its /api/object_info), kept ten minutes; `base` the loopback mock of a test key. */
+async function cloudInfo(ctx, base = BASE) {
     const hit = infoCache.get(ctx.key);
     if (hit && Date.now() - hit.at < INFO_TTL_MS) return hit;
-    const r = await ctx.fetch(BASE + "/api/object_info", { headers: { "X-API-Key": ctx.key } });
+    const r = await ctx.fetch(base + "/api/object_info", { headers: { "X-API-Key": ctx.key } });
     if (!r.ok) throw new Error(`Comfy Cloud node list: ${await readError(r)}`);
     const j = await r.json();
     const info = j && typeof j === "object" && !Array.isArray(j) ? j : {};
@@ -369,11 +380,11 @@ async function buildDetached(req, ctx) {
     if (!text) {
         const lay = detachedFits(req);
         const stamp = Date.now().toString(36);
-        const files = [await upload(ctx, req.image, `scumble-${stamp}-crop.png`)];
+        const files = [await put(ctx, req.image, `scumble-${stamp}-crop.png`)];
         for (const p of lay.pictures.filter((x) => x.ref != null && x.n != null).sort((a, b) => a.n - b.n)) {
-            files.push(await upload(ctx, req.references[p.ref], `scumble-${stamp}-ref${p.ref + 1}.png`));
+            files.push(await put(ctx, req.references[p.ref], `scumble-${stamp}-ref${p.ref + 1}.png`));
         }
-        const maskFile = o.mask ? await upload(ctx, req.mask, `scumble-${stamp}-mask.png`) : null;
+        const maskFile = o.mask ? await put(ctx, req.mask, `scumble-${stamp}-mask.png`) : null;
         for (const node of Object.values(graph)) {
             const title = String((node && node._meta && node._meta.title) || "");
             const m = /^scumble:picture:(\d+)$/.exec(title);
@@ -414,14 +425,14 @@ async function buildGraph(req, ctx, node) {
     const graph = {};
     let n = 0;
     const load = (file) => { const id = String(++n); graph[id] = { class_type: "LoadImage", inputs: { image: file } }; return [id, 0]; };
-    const crop = load(await upload(ctx, req.image, `scumble-${stamp}-crop.png`));
+    const crop = load(await put(ctx, req.image, `scumble-${stamp}-crop.png`));
     // the references the node wires, in the order its image list takes them; one it does not wire is never uploaded
     const refs = [];
     for (const p of lay.pictures.filter((x) => x.ref != null && x.n != null).sort((a, b) => a.n - b.n)) {
-        refs.push(load(await upload(ctx, req.references[p.ref], `scumble-${stamp}-ref${p.ref + 1}.png`)));
+        refs.push(load(await put(ctx, req.references[p.ref], `scumble-${stamp}-ref${p.ref + 1}.png`)));
     }
     // the mask only where the layout wires one (g.mask()'s rule), never for a node that takes none
-    const uploadedMask = req.mask && lay.pictures.some((p) => p.role === "mask") ? await upload(ctx, req.mask, `scumble-${stamp}-mask.png`) : null;
+    const uploadedMask = req.mask && lay.pictures.some((p) => p.role === "mask") ? await put(ctx, req.mask, `scumble-${stamp}-mask.png`) : null;
     let maskLink = null;
     const partner = { class_type: node, inputs: {} };
     const g = {
@@ -521,24 +532,30 @@ module.exports = {
     baseUrl,
     keyUrl: "https://platform.comfy.org/profile/api-keys",
     keyHint: "API key from platform.comfy.org (Comfy Cloud needs a paid plan; Comfy Router and the Partner API run on the same key with credits only)",
-    edit(req, ctx) { return run(req, ctx, EDIT_WAIT_MS); },
-    relight(req, ctx) { return run(req, ctx, EDIT_WAIT_MS); },
+    edit(req, ctx) { return runOn(req, ctx, EDIT_WAIT_MS); },
+    relight(req, ctx) { return runOn(req, ctx, EDIT_WAIT_MS); },
     // Generate new: only a Comfy Cloud recipe's own text-to-image graph (V6 step 5); the partner nodes take no text run
     generate(req, ctx) {
         if (!(req.options && req.options.graph)) return Promise.reject(new Error("Comfy Cloud makes a new image only through a Comfy Cloud recipe's own graph; pick another provider for this model."));
-        return run({ ...req, image: null, mask: null, references: [] }, ctx, EDIT_WAIT_MS);
+        return runOn({ ...req, image: null, mask: null, references: [] }, ctx, EDIT_WAIT_MS);
     },
     layout,
     upscale(req, ctx) {
         if (!req.image) return Promise.reject(new Error("Comfy Cloud: no picture to upscale."));
-        return run({ ...req, references: [], mask: null }, ctx, UPSCALE_WAIT_MS);
+        return runOn({ ...req, references: [], mask: null }, ctx, UPSCALE_WAIT_MS);
     },
     failureDetail,   // for tests
     _buildGraph: buildGraph,
+    _runV2: runV2,   // for tests: a run on v2 with its own wait
     _clearNodeList: () => infoCache.clear(),
     // the node definitions for reading a UI workflow exported from Comfy Cloud (recipes.importFile, item 35 V5c)
     async objectInfo(ctx) { return (await cloudInfo(ctx)).info; },
 };
+
+/** The Comfy API v2 when the context names it (contextFor's default), else the legacy API. */
+function runOn(req, ctx, waitMs) {
+    return ctx && ctx.cloudApi === "v2" ? runV2(req, ctx, waitMs) : run(req, ctx, waitMs);
+}
 
 async function run(req, ctx, waitMs) {
         const pause = ctx.sleep || sleep;
@@ -606,4 +623,200 @@ async function run(req, ctx, waitMs) {
         }
         const got = await download(ctx, file);
         return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id } };
+}
+
+// ---- the Comfy API v2 through the SDK (docs/PLAN_COMFY_SDK.md 3.3, 3.6, 10) ------------------------------------------
+
+const TERMINAL = new Set(["succeeded", "canceled", "failed", "expired"]);
+const STATUS_MISSES = 5;          // status reads Comfy did not answer (or answered 5xx) while the status stays the same
+const DOWNLOAD_TRIES = 3;         // the result is paid for by then: a dropped download is read again by the output's id
+const CANCEL_TIMEOUT_MS = 10000;
+const THROTTLE_MAX_MS = 60000;    // the longest pause a 429's Retry-After may ask for
+const UPLOAD_RATE = 32768;        // bytes per second an upload may not fall below before its request gives up
+const LOST_ANSWER = "Comfy Cloud: the answer to the submit was lost, and Comfy already holds a job under this run's key; Scumble does not send it again (that job may still run and be charged).";
+
+/**
+ * Whether a request may have reached Comfy without an answer coming back: no HTTP status at all (a dropped connection,
+ * a request's own timeout) or a gateway's 5xx. The run's own Cancel is checked before this is asked.
+ */
+function unanswered(err) {
+    if (!err || typeof err !== "object") return false;
+    const st = +err.httpStatus || 0;
+    if (st) return st >= 500;
+    if (err.name === "TimeoutError" || err.name === "AbortError") return true;
+    if (err.name === "TypeError" && /fetch failed|network|terminated|socket/i.test(String(err.message || ""))) return true;
+    return /^(ECONNRESET|ECONNREFUSED|ECONNABORTED|ETIMEDOUT|EPIPE|EAI_AGAIN|ENOTFOUND|UND_ERR)/.test(String(err.code || (err.cause && err.cause.code) || ""));
+}
+
+/** A 429 (rate_limited, queue_full): the v2 contract says back off and try again; the pause it asks for, bounded. */
+function throttled(err, left) {
+    if (!err || +err.httpStatus !== 429) return -1;
+    const ask = err.retryAfter == null ? POLL_MS : +err.retryAfter * 1000;
+    return Math.max(0, Math.min(Math.max(ask, POLL_MS), THROTTLE_MAX_MS, left));
+}
+
+/** Asks Comfy to stop a job (best effort); true when it answered that the job stops. The job adopts the answer's state. */
+async function askStop(job) {
+    try { await job.cancel(AbortSignal.timeout(CANCEL_TIMEOUT_MS)); } catch (_) { return false; }
+    return job.status === "canceling" || job.status === "canceled";
+}
+
+/** The node whose image answers: the recipe's own SaveImage for a recipe graph, the one buildGraph wrote for a partner node. */
+function saveOf(req, graph, detached) {
+    if (!detached) return Object.keys(graph).find((id) => graph[id] && graph[id].class_type === "SaveImage") || null;
+    if (req.options.save && graph[req.options.save]) return String(req.options.save);
+    return Object.keys(graph).find((id) => graph[id] && graph[id].class_type === "SaveImage" && /^scumble_save/.test(id)) || null;
+}
+
+/** The output to download: an image of the answering node, else the job's first image (a preview may come first). */
+function pickOutput(job, saveId) {
+    const image = (o) => o && (o.type === "image" || /^image\//.test(String(o.contentType || "")));
+    return (saveId != null && job.getOutputs(String(saveId)).find(image)) || job.outputs.find(image) || null;
+}
+
+/** A failed job in words: the failing node's class and id (unless it is the partner node already named), then Comfy's message. */
+function jobFailure(job, key, node) {
+    const scrub = require("./comfysdk").scrub;
+    const e = job.error || {};
+    const where = e.class_type && e.class_type !== node ? `${e.class_type}${e.node_id ? ` (node ${e.node_id})` : ""}` : e.node_id && !e.class_type ? `node ${e.node_id}` : "";
+    const what = scrub(e.message || e.code || "", key);
+    return [where, what].filter(Boolean).join(": ") || "the job failed without a reason from Comfy";
+}
+
+async function runV2(req, ctx, waitMs) {
+    const sdk = require("./comfysdk");
+    const pause = ctx.sleep || sleep;
+    const signal = ctx.signal || undefined;
+    const stopped = () => !!(signal && signal.aborted);
+    const say = (err) => sdk.errorText(err, ctx.key);
+    const detached = !!(req.options && req.options.graph);
+    const node = detached ? "recipe graph" : String(req.options && req.options.node || "");
+    if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
+    if (detached && req.kind !== "text") detachedFits(req);
+    // the client first: a key that may not go where the settings point is refused before any request
+    const client = sdk.cloudClient(ctx);
+    const info = { node, model: req.model };
+    let files = { fixes: new Map(), missing: [] };
+    if (detached) {
+        // v2 has no node list: the v1 read stays, advisory. One that fails or names nothing skips the check (v2's own
+        // invalid_workflow then names a missing node); one that names nodes still stops a run whose node it lacks.
+        let entry = null;
+        try { entry = await cloudInfo(ctx, sdk.testBase(ctx.base) || BASE); } catch (err) {
+            if (stopped()) throw err;
+            info.nodeList = `unread: ${say(err)}`.slice(0, 200);
+            if (typeof ctx.log === "function") ctx.log(`the node list could not be read (${say(err)}); the run goes without its check`);
+        }
+        if (entry && entry.classes.size) {
+            const needs = Array.isArray(req.options.needs) ? req.options.needs : Object.values(req.options.graph).map((n) => n && n.class_type);
+            const missing = [...new Set(needs.filter((c) => c && !entry.classes.has(c)))];
+            if (missing.length) throw new Error(`Comfy Cloud has no ${missing.join(", ")} node${missing.length === 1 ? "" : "s"}, so this recipe cannot run there.`);
+            files = checkModelFiles(req, entry.info);
+        } else if (entry) info.nodeList = "empty";
+    }
+    const failed = (msg) => {
+        if (files.missing.length) infoCache.delete(ctx.key);
+        return new Error(msg + missingNote(files.missing));
+    };
+    // every picture an asset handle in its LoadImage; nothing leaves before the graph is built and checked. Each goes up
+    // through a client whose request limit fits its size (a large picture on a slow line outlasts the default).
+    const pictures = [];
+    const upload = (bytes, name) => {
+        const via = sdk.cloudClient(ctx, { timeoutMs: Math.max(sdk.CLIENT_TIMEOUT_MS, Math.ceil(bytes.length / UPLOAD_RATE) * 1000) });
+        const opts = { filename: name, contentType: "image/png" };
+        const a = via.assets.fromBytes(bytes, opts);
+        pictures.push({ a, name, bytes, opts, via });
+        return a;
+    };
+    const graph = await buildGraph(req, { ...ctx, upload }, node);
+    for (const [k, v] of files.fixes) {
+        const i = k.indexOf("|"), n = graph[k.slice(0, i)];
+        if (n && n.inputs) n.inputs[k.slice(i + 1)] = v;
+    }
+    const saveId = saveOf(req, graph, detached);
+    // the pictures go up before the submit (by content hash: bytes Comfy holds already are not sent again), so a failure
+    // is named as an upload's. One that got no answer is sent once more under a fresh handle (a new upload key: Comfy may
+    // hold the first one's key with no bytes behind it); the run's own handle then finds the bytes by their hash.
+    for (const p of pictures) {
+        for (let tries = 0; ; tries++) {
+            try {
+                if (tries > 0) await p.via.assets.fromBytes(p.bytes, p.opts).commit(signal);
+                await p.a.commit(signal);
+                break;
+            } catch (err) {
+                if (stopped()) throw err;
+                if (tries === 0 && unanswered(err)) continue;
+                throw new Error(`Comfy Cloud upload (${p.name}): ${say(err)}`);
+            }
+        }
+    }
+    // one submit under one key; a submit that got no answer goes once more under the same key, which Comfy refuses
+    // (idempotency_key_reuse) when the first one landed: then the job exists, its id is lost, and nothing is resent
+    const workflow = client.workflows.fromJson(graph);
+    const idempotencyKey = (typeof ctx.uuid === "function" ? ctx.uuid : randomUUID)();
+    let job = null;
+    for (let tries = 0; !job; tries++) {
+        try {
+            job = await client.submit(workflow, { idempotencyKey, apiKey: ctx.key, signal });
+        } catch (err) {
+            if (stopped()) throw err;
+            const code = String((err && (err.errorType || err.code)) || "");
+            if (tries > 0 && code === "idempotency_key_reuse") throw new Error(LOST_ANSWER);
+            if (tries === 0 && unanswered(err)) {
+                if (typeof ctx.log === "function") ctx.log(`the submit got no answer (${say(err)}); sent once more under the same key`);
+                continue;
+            }
+            if (tries > 0 && unanswered(err)) throw new Error(`Comfy Cloud did not answer the submit twice (${say(err)}); Scumble does not send it again, and if Comfy took it, it may run and be charged.`);
+            throw failed(`Comfy Cloud prompt: ${say(err)}`);
+        }
+    }
+    info.job_id = job.id;
+    // the job's status decides (wait() polls it, and throws on a read that fails). A read Comfy throttles (429) waits
+    // as long as it asks; a read with no answer is tried again a few times while the status stays the same. Past the
+    // run's time, or when the status cannot be read, Comfy is asked to stop the job, so it is not run on and charged unseen.
+    const end = Date.now() + waitMs;
+    let seen = job.status, misses = 0, unread = null;
+    while (!TERMINAL.has(job.status)) {
+        const left = end - Date.now();
+        if (left <= 0) break;
+        try { await job.wait(left, signal); } catch (err) {
+            if (stopped()) throw err;
+            if (job.status !== seen) { seen = job.status; misses = 0; }
+            if (Date.now() >= end) break;   // wait()'s own deadline
+            const ms = throttled(err, end - Date.now());
+            if (ms >= 0) { await pause(ms); continue; }
+            if (unanswered(err) && ++misses <= STATUS_MISSES) { await pause(POLL_MS); continue; }
+            unread = err;
+            break;
+        }
+    }
+    if (!TERMINAL.has(job.status)) {
+        const asked = await askStop(job);
+        // the cancel's answer may say the job ended meanwhile: then its own status decides below
+        if (!TERMINAL.has(job.status) || job.status === "canceled") {
+            const why = unread ? `Comfy Cloud status: ${say(unread)}` : `Comfy Cloud: timed out after ${Math.round(waitMs / 60000)} minutes`;
+            throw new Error(`${why}; ${asked ? "Scumble asked Comfy Cloud to stop the job" : `the job (${job.id}) may still finish and be charged`}.`);
+        }
+    }
+    if (job.status === "canceled") throw new Error(`Comfy Cloud ${node}: the job was canceled on Comfy's side.`);
+    if (job.status === "expired") throw new Error(`Comfy Cloud ${node}: the job expired on Comfy's side before it finished; run it again.`);
+    if (job.status !== "succeeded") throw failed(`Comfy Cloud ${node}: ${jobFailure(job, ctx.key, node)}`);
+    // a job just finished may not list its outputs yet
+    let out = pickOutput(job, saveId);
+    for (let tries = 0; !out && tries < 3; tries++) {
+        await pause(POLL_MS);
+        try { await job.refresh(signal); } catch (err) { if (stopped()) throw err; }
+        out = pickOutput(job, saveId);
+    }
+    if (!out) throw new Error(`Comfy Cloud: the job finished without an image (${JSON.stringify(job.outputs.map((o) => ({ node: o.nodeId, type: o.type, name: o.name }))).slice(0, 300)})`);
+    // the job is paid for: a download that dropped (or was throttled) is read again by the output's id
+    let bytes;
+    for (let tries = 1; ; tries++) {
+        try { bytes = await out.toBytes({ signal }); break; } catch (err) {
+            if (stopped()) throw err;
+            const ms = throttled(err, THROTTLE_MAX_MS);
+            if (tries < DOWNLOAD_TRIES && (ms >= 0 || unanswered(err))) { await pause(ms >= 0 ? ms : POLL_MS); continue; }
+            throw new Error(`Comfy Cloud download (job ${job.id}): ${say(err)}`);
+        }
+    }
+    return { bytes: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.contentType || "image/png", seed: num(req.seed, null), info };
 }
