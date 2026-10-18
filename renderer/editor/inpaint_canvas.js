@@ -18626,7 +18626,8 @@ class InpaintEditor {
             top.addEventListener("dragstart", (e) => {
                 this.dragLayerId = layer.id; this.dragGroupId = null;
                 e.dataTransfer.effectAllowed = "move";
-                try { e.dataTransfer.setData("text/plain", layer.id); } catch (_) { /* ignore */ }
+                // its own type: the prompt field takes plain text, and a row dropped there would write its id
+                try { e.dataTransfer.setData("application/x-scumble-layer", layer.id); } catch (_) { /* ignore */ }
                 row.classList.add("ipc-dragging");
             });
             top.addEventListener("dragend", () => {
@@ -18802,7 +18803,7 @@ class InpaintEditor {
         top.addEventListener("dragstart", (e) => {
             this.dragGroupId = g.id; this.dragLayerId = null;
             e.dataTransfer.effectAllowed = "move";
-            try { e.dataTransfer.setData("text/plain", g.id); } catch (_) { /* ignore */ }
+            try { e.dataTransfer.setData("application/x-scumble-group", g.id); } catch (_) { /* ignore */ }
             row.classList.add("ipc-dragging");
         });
         top.addEventListener("dragend", () => {
@@ -18968,6 +18969,43 @@ class InpaintEditor {
             const row = el("div", "ipc-layer ipc-refrow" + (layer.id === this.activeLayerId ? " ipc-selected" : ""));
             row.dataset.layer = layer.id;
             row.addEventListener("click", () => { if (this.pending) this.cancelPending(); this.activeLayerId = layer.id; this.renderLayers(); this.updateSubbar(); this.draw(); });
+            // a row dragged onto another takes its place in the batch (QW7, node issue #1 ask 3): above it on its upper
+            // half, below it on the lower; the same move as the arrows (reorderLayer: one undo step, the @img tokens follow)
+            row.draggable = true;
+            row.addEventListener("dragstart", (e) => {
+                this.dragRefId = layer.id;
+                row.classList.add("ipc-dragging");
+                // a type of its own, not text/plain: the prompt field takes plain text dropped on it, and a row dragged
+                // there by mistake would write its layer id into the prompt
+                if (e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("application/x-scumble-reference", layer.id); }
+            });
+            row.addEventListener("dragend", () => {
+                this.dragRefId = null;
+                row.classList.remove("ipc-dragging");
+                for (const r of list.querySelectorAll(".ipc-drop-above, .ipc-drop-below")) r.classList.remove("ipc-drop-above", "ipc-drop-below");
+            });
+            const upperHalf = (e) => { const b = row.getBoundingClientRect(); return e.clientY < b.top + b.height / 2; };
+            row.addEventListener("dragover", (e) => {
+                if (!this.dragRefId || this.dragRefId === layer.id) return;
+                e.preventDefault();
+                e.stopPropagation();   // not a picture dropped on the list (the list's own drop adds references)
+                if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+                const above = upperHalf(e);
+                row.classList.toggle("ipc-drop-above", above);
+                row.classList.toggle("ipc-drop-below", !above);
+            });
+            row.addEventListener("dragleave", () => row.classList.remove("ipc-drop-above", "ipc-drop-below"));
+            row.addEventListener("drop", (e) => {
+                const src = this.dragRefId;
+                this.dragRefId = null;
+                row.classList.remove("ipc-drop-above", "ipc-drop-below");
+                if (!src || src === layer.id) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const moved = this.layers.find((l) => l.id === src);
+                if (!moved || !this.isReference(moved)) return;
+                this.reorderLayer(src, layer.id, upperHalf(e));
+            });
             const top = el("div", "ipc-row");
             const hideTip = host.refTokens ? " Hiding renumbers the others; its @img tokens in the prompt wait as @img? until it is shown again." : "";
             top.appendChild(miniButton(layer.visible ? "eye" : "eyeOff", layer.visible ? "Shown and sent with crop_image. Click to hide: a hidden reference is not sent." + hideTip : "Hidden: not sent. Click to show", () => {

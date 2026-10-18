@@ -11482,6 +11482,80 @@ return { reuse: "a hat like @img1", parked: true, copy: got, saved: !!saved };
     # docs/PLAN_0_1_48.md S5: what one canvas holds (65,535 px a side, 268 MP): a whole-picture upscale past it is
     # refused before anything is sent and names the largest factor that fits; an answer that comes back larger lands
     # scaled to fit (the user's answer), red; Resize, Extend, the frame and extend_canvas refuse such a size
+    ("reference_rows_reorder_by_drag", """
+// QW7 (docs/PLAN_COMFY_SDK.md S9, node issue #1 ask 3): a reference row dragged onto another's upper half takes its
+// place above it; the @img labels renumber, the prompt's tokens follow their layers, and one undo step restores it
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 200, height: 120, doc: d.id });
+const mk = async (name, color) => {
+    const l = ed.addLayer({ name, kind: "paint", ref: null, px: ed.pixels.Layer.empty(40, 40), x: 0, y: 0, w: 40, h: 40, dirty: true });
+    l.px.fill([0, 0, 40, 40], color); ed.markLayerChanged(l);
+    await run("set_layer", { layer: l.id, role: "reference", doc: d.id });
+    return l;
+};
+await mk("Ref A", "#ff0000"); await mk("Ref B", "#00ff00"); await mk("Ref C", "#0000ff");
+const lab0 = ed.refLabels();
+// the list's order, whichever way new references stack: C the top row (@img1), B the middle, A the bottom (@img3)
+const byLabel = (n) => ed.layers.find((l) => lab0.get(l.id) === n);
+const C = byLabel(1), B = byLabel(2), A = byLabel(3);
+if (lab0.size !== 3 || !A || !B || !C) throw new Error("labels before: " + JSON.stringify(Array.from(lab0)));
+await run("set_prompt", { text: "@img3 in front of @img1", doc: d.id });
+ed.renderReferences();
+await wait(50);
+const rowOf = (l) => ed.refList.querySelector('.ipc-refrow[data-layer="' + l.id + '"]');
+const fire = (el, type, y) => { const b = el.getBoundingClientRect(); const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: new DataTransfer(), clientX: b.left + 5, clientY: y }); el.dispatchEvent(ev); return ev; };
+const ra = rowOf(A), rc = rowOf(C);
+if (!ra || !rc || !ra.draggable) throw new Error("the reference rows are not draggable");
+const rcB = rc.getBoundingClientRect();
+if (!(rcB.height > 4)) throw new Error("the reference list is not laid out: " + rcB.height);
+fire(ra, "dragstart", ra.getBoundingClientRect().top + 2);
+const over = fire(rc, "dragover", rcB.top + 2);
+if (!over.defaultPrevented || !rc.classList.contains("ipc-drop-above")) throw new Error("dragover on the upper half: no drop marker above");
+fire(rc, "drop", rcB.top + 2);
+fire(ra, "dragend", 0);
+const lab1 = ed.refLabels();
+if (lab1.get(A.id) !== 1 || lab1.get(C.id) !== 2 || lab1.get(B.id) !== 3) throw new Error("labels after the drag: " + JSON.stringify(Array.from(lab1)));
+if (ed.promptText !== "@img1 in front of @img2") throw new Error("the prompt's tokens did not follow their layers: " + ed.promptText);
+await run("undo", { doc: d.id });
+const lab2 = ed.refLabels();
+if (lab2.get(C.id) !== 1 || lab2.get(B.id) !== 2 || lab2.get(A.id) !== 3) throw new Error("one undo step did not restore the order: " + JSON.stringify(Array.from(lab2)));
+// a row dropped on itself does nothing
+ed.renderReferences();
+const rb = rowOf(B);
+fire(rb, "dragstart", rb.getBoundingClientRect().top + 2);
+const self = fire(rb, "dragover", rb.getBoundingClientRect().top + 2);
+fire(rb, "dragend", 0);
+if (self.defaultPrevented) throw new Error("a row took a drop on itself");
+// a row dragged onto the prompt field writes nothing there (its data is no plain text)
+const pf = ed.promptField && ed.promptField.el;
+if (pf) {
+    const before = ed.promptText;
+    const dt = new DataTransfer();
+    const st = new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dt });
+    rb.dispatchEvent(st);
+    const pb = pf.getBoundingClientRect();
+    const ov = new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: pb.left + 5, clientY: pb.top + 5 });
+    pf.dispatchEvent(ov);
+    pf.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: pb.left + 5, clientY: pb.top + 5 }));
+    rb.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dt }));
+    if (ed.promptText !== before) throw new Error("a reference row dropped on the prompt wrote into it: " + ed.promptText);
+    // nor does a row of the layer list (its header row is the drag handle)
+    await run("add_paint_layer", { doc: d.id });
+    ed.renderLayers();
+    const lt = ed.layerList.querySelector(".ipc-layer .ipc-row[draggable=true]");
+    if (!lt) throw new Error("no draggable layer row");
+    const dl = new DataTransfer();
+    lt.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dl }));
+    pf.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dl, clientX: pb.left + 5, clientY: pb.top + 5 }));
+    pf.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dl, clientX: pb.left + 5, clientY: pb.top + 5 }));
+    lt.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dl }));
+    if (ed.promptText !== before) throw new Error("a layer row dropped on the prompt wrote into it: " + ed.promptText);
+}
+await run("close_document", { doc: d.id, force: true });
+return { before: Array.from(lab0), after: Array.from(lab1) };
+"""),
     ("the_size_ceiling_refuses_before_it_costs", """
 const d = await run("new_document");
 const ed = ednow(d.id);

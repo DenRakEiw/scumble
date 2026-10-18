@@ -418,6 +418,19 @@ a local run notes "<recipe> via your ComfyUI" at the queue and counts its second
 refusals), `assistant_test.js` (auto without a route, the card's preset row), the `generate` step
 `generate_is_never_passed` (the via line in the status and the history, none in the document's state).
 
+**S9 as built (2026-10-18 night).** QW7: `renderReferences` makes each reference row draggable (`ed.dragRefId`, the
+class `ipc-dragging`); a row dragged over another marks its upper or lower half (`ipc-drop-above` / `-below`, the
+layer list's classes) and a drop calls `reorderLayer(src, target, above)`, the arrows' move: one undo step, the
+prompt's @img tokens follow their layers. The list's own file-drop handler (`inpaint_modal.js`) stands aside while a
+row is dragged: no file highlight, and a row dropped on itself or between rows is refused. Found on the way: a layer,
+group or reference row dragged onto the prompt field wrote its layer id there (the rows carried `text/plain`, which the
+field takes); the rows now carry types of their own (`application/x-scumble-reference`, `-layer`, `-group`), and
+nothing else read them. Test: the `editor` step `reference_rows_reorder_by_drag` (three references, the bottom row
+dropped on the top row's upper half: labels 1-3 renumber, "@img3 in front of @img1" becomes "@img1 in front of
+@img2", one undo restores, a self-drop is refused, a reference row and a layer row dropped on the prompt write nothing;
+both `text/plain` mutations turn it red). Gates: `editor` (tiles), `groups`, `selection`, `nodecopy`, `lint`, `types`.
+The node gets it with its next build.
+
 **S4: docs and review (light).** `docs/RECIPES.md` "Comfy Cloud recipes" (:194) and "Comfy Router" (:2203): v2, the
 SDK, the fallback setting, the test base; the manual (Cloud runs show steps, Cancel stops the job on Comfy's side);
 README one line ("Comfy Cloud and Comfy Router run through Comfy's official TypeScript SDK"); CHANGELOG Unreleased;
