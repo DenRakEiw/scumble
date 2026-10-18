@@ -114,7 +114,7 @@ code.
   the user:** the RTX node pack on their ComfyUI needs nvidia-vfx 0.2 or newer (python_embeded has 0.1.0.1, so the pack
   fails at import: `python_embeded\python.exe -m pip install -U "nvidia-vfx>=0.2"`, their call). **S5's local prep
   done** (2026-10-19 night, `354f0fc`: `## 0.1.49 - 2026-10-19` in the CHANGELOG, a later release day moves the date;
-  `package.json` 0.1.49): built from `2371baa` + the version commit `dist/Scumble Setup 0.1.49.exe`,
+  `package.json` 0.1.49): built from `354f0fc`: `dist/Scumble Setup 0.1.49.exe`,
   `dist/Scumble-0.1.49-portable-win-x64.zip` (174 MB; the SDK in the asar checked), `dist/scumble-0.1.49.mcpb`,
   `dist/Scumble-0.1.49.msix` (`win-unpacked` is the Store layout since, without `app-update.yml`) and
   `dist/store-listing/whats-new-0.1.49.txt`. Exe gates `--offline`: `rel49-exe` (tiles, 50: 0.1.48's list plus
