@@ -187,6 +187,18 @@ returns `layer`, `seconds`, `notes`, `changed` (the picture changed while the pa
 `from` / `width` / `height` (the document's size before and after). The pass
 recipe itself runs through `generate` on a selection's box; `generate_new` refuses it.
 
+**`relight`** (0.1.47; `preset` since 0.1.49, docs/PLAN_COMFY_SDK.md S8). Adds a Relight filter layer, or edits
+the one named by `layer`, and makes the depth map first when the document has none. Route `app` (a new layer's
+route) is the in-app light: up to four lights (`lights`: point, sun or spot, with position, distance, intensity,
+Kelvin or a colour, diffusion), live and non-destructive, nothing sent anywhere; the generative routes
+(`magnific`, `fal-iclight`, `fal-bria`, `comfycloud`, `comfyui`) render now, are paid where the provider charges,
+and land a pixel layer under the Relight layer (the in-app assistant asks before one). An edit without `route`
+keeps the layer's route and renders nothing. `preset` takes one of the panel's eight setups by id
+(`studio_portrait`, `warm_sunset`, `cyberpunk_neon`, `rembrandt`, `soft_window`, `dramatic_rim`, `golden_hour`,
+`film_noir`), its lights placed for this picture's size; it is refused beside `lights` and for an unknown id (the
+message lists the eight). It returns `layer`, `lights`, `fit` (the picture's own light direction as the fit read
+it), `route`, `seconds` and `notes`.
+
 **Before a run, during it, and the picture** (docs/PLAN_0_1_42.md F2a). `list_recipes` says per recipe
 whether it can run now: `ready`, and `reason` when not (an API recipe: a key stored for its chosen
 provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected, and every node

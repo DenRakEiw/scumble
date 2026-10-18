@@ -105,9 +105,12 @@ through a prompt of its own, `realism.passPrompt`, which takes the recipe's `DLS
   whole picture (4x-UltraSharp, 1920 × 1080 to 7680 × 4320, 6.5 s on the server, `docs/PLAN_0_1_42.md` U2).
 - `rtx_vsr_local`, **RTX Video Super Resolution (ComfyUI)** (0.1.42, `docs/PLAN_0_1_42.md` U1): `InpaintCanvas` ->
   `ImageFromBatch` (the crop only) -> `RTXVideoSuperResolution` (`resize_type` "scale by multiplier", its
-  `resize_type.scale` the factor, `quality` LOW / MEDIUM / HIGH / ULTRA as the *Quality* row, ULTRA by default) ->
-  `result_local`, task `upscale`. NVIDIA's RTX Video Super Resolution from the node pack Nvidia_RTX_Nodes_ComfyUI
-  (Comfy-Org, with its `nvidia-vfx` package), which the user installs on an RTX machine. 1 to 4 times (`factor.input`
+  `resize_type.scale` the factor, `quality` LOW / MEDIUM / HIGH / ULTRA as the *Quality* row, ULTRA by default,
+  `strength` 1 and `image_encoding` "8-bit RGB", the node's defaults, required since the pack's October 2026 update,
+  `71e851f`) -> `result_local`, task `upscale`. NVIDIA's RTX Video Super Resolution from the node pack
+  Nvidia_RTX_Nodes_ComfyUI (Comfy-Org, with its `nvidia-vfx` package, 0.2 or newer since that update: with 0.1 the pack
+  fails at import and the node is missing from `/object_info`, read on the user's ComfyUI on 2026-10-18), which the user
+  installs on an RTX machine. 1 to 4 times (`factor.input`
   `rtx|resize_type.scale`), `limits` 64 / 4096 / 8192 (the node's target mode takes 64 to 8192 a side; its output sides
   are `int(w × scale)` rounded to a multiple of 8, which the stitch fits back anyway; on the whole picture, U2, the
   answer is stretched to the document's aspect). The selection or the whole picture (the whole picture not at 1×: its
@@ -1279,8 +1282,10 @@ Magnific factor as `"4x"` and `auto_downscale: false` (Scumble refuses an oversi
 input key; their inputs were read from a ComfyUI's `/object_info` on 2026-09-22. `RTXVideoSuperResolution`
 (`rtx_vsr_cloud`, 0.1.42 U3; no Partner Node but a node Comfy Cloud runs on its own GPUs, its inputs read with Comfy
 Cloud's `get_node` on 2026-10-04) takes the picture as `images`, `resize_type: "scale by multiplier"` with the factor as
-`"resize_type.scale"` (the dotted key of the dynamic combo, 1 to 4, a float) and `quality` (LOW / MEDIUM / HIGH /
-ULTRA, the Quality row by its key); its answer may be at most 8192 px on the long side, which `buildGraph` checks before
+`"resize_type.scale"` (the dotted key of the dynamic combo, 1 to 4, a float), `quality` (LOW / MEDIUM / HIGH /
+ULTRA, the Quality row by its key), and since the node's update read with `get_node` on 2026-10-18 the required
+`strength` (FLOAT 0 to 1) and `image_encoding` ("8-bit RGB" / "10-bit RGB (RGB10A2)"), sent as their defaults 1 and
+"8-bit RGB" (`c6f7fb0`; every run before it failed with `required_input_missing`); its answer may be at most 8192 px on the long side, which `buildGraph` checks before
 any upload (`BEFORE_UPLOAD`, the size from the request or the PNG's header) and the SHAPE again, with the renderer's
 words, so a direct call is refused before the prompt is sent too. The hidden **loopback** answers the
 picture resampled by the factor (2 when the model picks) with a 4 px magenta frame, which is what

@@ -2,7 +2,7 @@
   "id": "rtx_vsr_local",
   "name": "RTX Video Super Resolution (ComfyUI)",
   "task": "upscale",
-  "description": "NVIDIA's RTX Video Super Resolution on your own ComfyUI: compression artefacts out, edges cleaner, no invented detail; fast. Needs an NVIDIA RTX card on the ComfyUI machine and the node pack Nvidia_RTX_Nodes_ComfyUI (with its nvidia-vfx package), which you install there. 1 to 4 times; the answer may be at most 8192 px on the long side.",
+  "description": "NVIDIA's RTX Video Super Resolution on your own ComfyUI: compression artefacts out, edges cleaner, no invented detail; fast. Needs an NVIDIA RTX card on the ComfyUI machine and the node pack Nvidia_RTX_Nodes_ComfyUI (with its nvidia-vfx package, 0.2 or newer since the pack's October update; with an older one the pack fails to load and the node is missing), which you install there. 1 to 4 times; the answer may be at most 8192 px on the long side.",
   "mode": "local",
   "canvas": "canvas",
   "result": "rtx:0",
