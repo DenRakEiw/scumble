@@ -39,8 +39,11 @@ code.
   bundles Python/Torch. The node pack must be installed there; the app checks
   `/object_info/InpaintCanvas` and, when the pack is missing, only tells the user to install it (the status line,
   *Settings › ComfyUI* Test); it installs nothing itself, there is no Manager install in the code. Node 0.3.4 is
-  Active on the Comfy Registry since 2026-10-07 (0.3.3 and older stay flagged; checked 2026-10-13), so the Manager can
-  install it; public texts still give the `git clone` line (README, manual), which also works.
+  Active on the Comfy Registry since 2026-10-07 (0.3.3 and older stay flagged; checked 2026-10-13), but
+  ComfyUI-Manager's search does not list it: the Manager builds its list from `custom-node-list.json` and only enriches
+  those entries with Registry data, so a Registry-only pack is not shown (read 2026-10-18 for QW3, `docs/BUGS.md`; an
+  install by id would work). Public texts give the `git clone` line and say the Manager does not list the pack (README,
+  manual) until the Manager PR (`dist/node_release/MANAGER_PR.md`, on the user's word) lands.
 - API rendering: **fal.ai** as the aggregator, plus direct adapters (Black Forest Labs
   Flux.2, OpenAI gpt-image, Google Gemini image) and the ComfyUI API nodes as fallback.
   Keys in the OS credential store via Electron `safeStorage`, never in config files.
@@ -602,7 +605,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb blendmodes relight`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb blendmodes relight cloudjobs`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
@@ -682,6 +685,23 @@ there; add a new flake there, with the date and what was ruled out.
 - `mcp_test.py --user-data-dir` must come before `--cmd`, which otherwise takes it for its JSON.
 - A test that starts the exe from Python needs its absolute path: `subprocess` with the runner's relative
   `dist/win-unpacked/Scumble.exe` fails with WinError 2 (`docux`, 2026-09-27).
+
+**Comfy SDK (`@comfyorg/sdk`, `docs/PLAN_COMFY_SDK.md` section 6)**
+- It is ESM-only and main loads it through `require(esm)`: a release with top-level await breaks that. Pin it exactly
+  and check after every upgrade that the packaged exe requires it from inside `app.asar` (S0's check).
+- The class client takes its base URL only from `COMFY_BASE_URL`, and its key falls back to `COMFY_API_KEY` (read
+  2026-10-18): a shell's value would send the user's key elsewhere. `main.js` clears them at start (`clearEnv`);
+  never put a key into `process.env`.
+- `comfy.config` (the Router's key and host) is process-global, read per request, and the Router code calls the bare
+  global `fetch`: `routerSetup` before every run; tests swap `globalThis.fetch` (restored in `finally`).
+- Cloud v2 refuses a reused idempotency key (422 `idempotency_key_reuse`), it never replays: after a lost submit answer
+  that 422 means the job exists and its id is lost (stop, never a fresh key). The Router replays the key instead.
+- undici drops `Authorization` on a cross-origin redirect (the v2 download's 302 to signed storage, measured S1,
+  2026-10-18) and the SDK's bearer goes to its own origin only: a test mock links relative or to
+  `https://cloud.comfy.org`.
+- After a Cancel `ctx.fetch` refuses every request: the stop needs its own transport (`comfysdk.cancelJob`).
+  `job.wait()` throws on any failed status read; asset handles live only in `LoadImage.image`, and a JSON round trip of
+  the graph loses them.
 
 **Tooling, shell, git**
 - The Bash tool's heredoc breaks on an apostrophe in its text even with a quoted delimiter (`unexpected EOF while looking
@@ -817,6 +837,16 @@ there; add a new flake there, with the date and what was ruled out.
   `stitch.js` (composite mask, colour match) → mirror upload → `addResults`. Recipe
   formats in `docs/RECIPES.md`. The prompt's `@img1` tokens follow the reference layers by id
   (`renderer/editor/reftokens.js`, `refsMutated` at every change of the shown references; `docs/PLAN_REFS.md` C2).
+  Comfy Cloud and Comfy Router go through Comfy's SDK `@comfyorg/sdk` (0.5.0, pinned exactly), loaded only by
+  `electron/main/providers/comfysdk.js` (`cloudClient` with `guarded`, `cancelJob`, `routerSetup`, `errorText`,
+  `testBase` / `checkKey`, `clearEnv` at start in `main.js`; `docs/PLAN_COMFY_SDK.md`): `comfycloud.js` `runV2` /
+  `finishV2` (the Comfy API v2 by default, `contextFor` sets `ctx.cloudApi`; the legacy `run` behind
+  `settings.comfycloud.api` "legacy") and `recoverJobs`, `cloudjobs.js` (`<userData>/cloudjobs.json`, a job's note from
+  submit to end), `comfyrouter.js` `send` / `collect` / `sync` on `comfy.models`. A run's live frames go back as IPC
+  `provider:progress` (`index.js` `progressSender`, preload `providers.onProgress`, `host.js` `providerProgress` ->
+  `RunProgress` `fraction`); a Cancel's words follow `ctx.jobSent` / `cancelAsked` / `jobDone`. At start the window
+  asks `provider:recoverCloudJobs` once (never headless or agent), then `{ recheck: true }` every 90 s while a job of
+  the start still runs (`shell.js` `recheckCloudResults`), and acks each picture it opened (`provider:ackCloudJob`).
 
 ## Working rules
 

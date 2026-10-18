@@ -184,12 +184,13 @@ every version.
 Scumble is at 0.1.x and not every feature has been tested end to end. Run against the real thing so far: local
 rendering through ComfyUI, the in-app helper models, the film pack, the command core, the MCP server, the tile engine
 on large documents and auto-update; among the API providers FLUX 3 Image on Black Forest Labs (with boxes),
-OpenRouter and Comfy Router, GPT Image 2.5 through OpenRouter, GPT Image 2 and Nano Banana 2 on Comfy Router,
-Ideogram 4 on fal (with boxes), Qwen Image 2.1 Edit on Comfy Cloud, and the upscalers Topaz Precision on fal and
-Magnific Precision and Creative on Magnific; on a local ComfyUI the Realism Pass (Windows only, RTX only) and RTX
-Video Super Resolution, the latter once on Comfy Cloud too. The other API routes were built from the providers'
-documentation and have not run against the live services yet, nor have the assistant's model calls, the portable zip
-on a second PC, or the Linux builds.
+OpenRouter and Comfy Router, GPT Image 2.5 through OpenRouter, GPT Image 2 and Nano Banana 2 on Comfy Router (the
+Comfy Router runs were before 0.1.49 moved it onto Comfy's SDK), Ideogram 4 on fal (with boxes), Qwen Image 2.1 Edit
+on Comfy Cloud, Z-Image Turbo and Flux.2 Klein 9B on Comfy Cloud through Comfy's SDK and its API v2, and the
+upscalers Topaz Precision on fal and Magnific Precision and Creative on Magnific; on a local ComfyUI the Realism Pass
+(Windows only, RTX only) and RTX Video Super Resolution, the latter once on Comfy Cloud too. The other API routes
+were built from the providers' documentation and have not run against the live services yet, nor have the
+assistant's model calls, the portable zip on a second PC, or the Linux builds.
 
 ## Features in detail
 
@@ -210,7 +211,8 @@ on a second PC, or the Linux builds.
   new recipe* brings it back.
 - Comfy Cloud has a mode of its own beside *local* and *api*. Thirteen recipes from Comfy's templates come with
   Scumble (image edits, and new images for Generate new); *Cloud copy* turns one of your ComfyUI recipes into one that
-  runs there, and a workflow made on Comfy Cloud imports as it is.
+  runs there, and a workflow made on Comfy Cloud imports as it is. Comfy Cloud and Comfy Router run through Comfy's
+  official TypeScript SDK ([`@comfyorg/sdk`](https://www.npmjs.com/package/@comfyorg/sdk)).
 - *Generate new* makes the base picture from the prompt alone, locally or through a provider, and you edit it from
   there.
 - Boxes in the prompt for FLUX 3 Image and Ideogram 4 (on fal): the Boxes tool (X) draws them, a double-click

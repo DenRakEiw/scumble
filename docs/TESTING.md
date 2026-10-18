@@ -431,6 +431,73 @@ the page and answers with a mirror file (nothing reaches a server); the `documen
 the run's profile, so it runs alone on a fresh instance per backend. The run: `bash tools/run_gates.sh <label>
 --offline --tiles on upscale document`, the same with `--tiles off`.
 
+0.1.49, Comfy Cloud and Comfy Router on Comfy's SDK (`docs/PLAN_COMFY_SDK.md`, `docs/RECIPES.md` "How a Comfy Cloud run
+goes" and "Comfy Router"). None of these tests reaches Comfy: the keys are made up, and a fake answers every request.
+Plain Node, from the repository's root:
+- **The network guard.** `tools/nonet.js` is a preload: `node -r ./tools/nonet.js tools/<name>_test.js`. It replaces
+  the global `fetch` with one that refuses every request and prints `NONET-FIRED <url>` on stderr, and refuses a socket
+  to anything but loopback with `NONET-SOCKET <host>` (a loopback socket, a test's own mock, passes with
+  `NONET-LOOPBACK <host>:<port>`). A test that passes with no `NONET-FIRED` or `NONET-SOCKET` line made no connection
+  outside this machine; a test that swaps `globalThis.fetch` for its own fake replaces the guard's for that run, so the
+  socket check is what still catches a stray connection there. Run every provider test under it after a change to
+  `comfysdk.js`, `comfycloud.js` or `comfyrouter.js`. `comfysdk_test.js`, `comfycloud_v2_test.js`,
+  `cloudjobs_test.js`, `progress_test.js` and `comfyrouter_test.js` passed under it on 2026-10-18 with no such line.
+- `node tools/comfysdk_test.js` (20 checks) pins `electron/main/providers/comfysdk.js`, the one import point of
+  `@comfyorg/sdk`, on a scripted fetch: `version()` reads 0.5.0 without loading the SDK; `clearEnv()` drops
+  `COMFY_BASE_URL`, `COMFY_API_KEY`, `COMFY_ROUTER_BASE_URL`; a Cloud request goes to
+  `https://cloud.comfy.org/api/v2/...` with the key as a bearer and `scumble/` in the User-Agent; a test base takes
+  only a `test-` key and gets every request, a real key never; a `COMFY_BASE_URL` left in the environment cannot send
+  the key elsewhere; the Router goes to `https://api.comfy.org` (or the mock) whatever `COMFY_ROUTER_BASE_URL` says; a
+  cancel still leaves after the run's own signal fired.
+- `node tools/comfycloud_v2_test.js` (62 checks) runs `comfycloud.js` `runV2` against `tools/fake_comfy_v2.js`, a fake
+  Comfy API v2 as a fetch function (assets by hash, `from-hash` and multipart; jobs with scripted statuses and submit
+  answers, a reused idempotency key refused 422; outputs, contents behind a 302 it follows itself, dropping
+  `Authorization` across origins as fetch does; cancel answers; the v1 node list; every call recorded with its auth).
+  It checks the pictures as `core/ASSET` references (partner nodes and a recipe graph's titled LoadImage nodes), no
+  second upload for bytes Comfy holds, one submit with `Idempotency-Key` and the key in `extra_data`, no metadata, the
+  lost-answer rule (a submit with no answer once more under the same key, a 422 reuse then stops, never a third), the
+  own SaveImage before a preview, the failure words, the status re-reads and the 429 back-off, the stop on a timeout or
+  an unread status, the download retries, the advisory node list, the test base, and that a context without `cloudApi`
+  stays legacy. Since S2: live frames to `ctx.progress` and `info.events`; Cancel during the wait asks Comfy to stop the
+  job (a refused stop and a stop answered `succeeded` worded right); a dropped event stream joined again; through
+  `index.edit` the v2 default, frames with the run id and the three Cancel wordings. A mutation round of six (S1: no
+  429 back-off, no download retry, the upload retry on the same handle, the cancel's answer ignored, no cancel on an
+  unread status, the miss count never reset) turned it red each time.
+- `node tools/cloudjobs_test.js` (21 checks), also on the fake v2: the notes file (`cloudjobs.js`: add, replace, remove,
+  empty, written whole), a run's note while it waits and after each end, the recovery's verdicts (succeeded brings its
+  picture, its own SaveImage first; running and unanswered stay; failed, expired and 404 go; older than a day goes
+  unread; no key asks nothing; nothing is submitted again), a run that starts during a recovery, `only`, and the path
+  through `providers/index.js` with the ack.
+- `node tools/progress_test.js` (41 checks, run by the `log` gate) gained the `fraction` cases of Comfy Cloud's measured
+  frames (`value`, `nodes_done`, `nodes_total` only): "node 1/1" busy, 11 of 12 whole filled to the running node's part
+  and not 92 %, all whole busy, `idle(keep)` keeping a provider's run while a local queue goes empty, and a local
+  Generate beside a provider's run in one tab in both orders.
+- The Router tests no longer drive `comfyrouter.js` through `ctx.fetch` (the SDK's Router code calls the global fetch):
+  `tools/comfyrouter_test.js` (151 checks), `ideogram45_test.js`, `nanobanana21_test.js` and `refs_layout_test.js` swap
+  `globalThis.fetch` for each run's fake and put it back in `finally`. `comfyrouter_test.js` installs a global fetch at
+  load that refuses and records anything no fake answers and checks at the end that it recorded nothing; it asserts the
+  bearer, resends under one key, the re-reads, the timeout's cancel, the five Cancel wordings, a slow submit and QW6's
+  notes. `tools/comfyrouter_mock.py` (the `comfyrouter` gate's mock) takes the bearer on the Router's routes and
+  `X-API-Key` on the Partner API's, and `tools/comfyrouter_test.py` checks each header where it belongs.
+- The legacy Comfy Cloud path keeps its tests: `cloudgraph_test.js`, `upscale_test.js` and `nanobanana21_test.js` call
+  the adapter without `cloudApi`, which is the legacy path.
+
+In the app: the gate `cloudjobs` (`tools/cloudjobs_test.py`; its own instances on port 9576 with profiles of their own
+and `--no-comfy`, against a loopback mock of the v2 job routes, nothing but loopback reached): a test key and the mock as
+`settings.comfycloud.base`, notes written into `cloudjobs.json` as a crash leaves them; at the start the finished job's
+picture opens as a document of its own in the background and the document in front names it and the job still
+running, the old note goes unread, the ack, a second ask answers the first one's summary, the recheck brings a job that
+finished later, a headless start and a profile without a key ask nothing. The `generate` gate's step
+`a_cloud_runs_bar_follows_its_live_frames` runs a loopback provider run through IPC whose frames have Comfy Cloud's
+shape: the label, node 1/12 busy, node 12/12 at 25 %, the bar kept through a local queue going empty, a status with jobs
+left and a lost socket, gone with the run; its step `generate_is_never_passed` checks QW5's line ("<model> via
+<route>, N s") in the status and the history and never in the document's state. The `editor` gate's step
+`reference_rows_reorder_by_drag` (QW7): three references, the bottom row dropped on the top row's upper half, the
+labels renumbered and "@img3 in front of @img1" become "@img1 in front of @img2", one undo, a self-drop refused, and
+a reference row and a layer row dropped on the prompt field writing nothing. The relight gate's case p and
+`tools/assistant_test.js` cover QW4's `preset`. Run: `bash tools/run_gates.sh <label> --offline --tiles on cloudjobs
+generate editor log lint types`.
+
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:

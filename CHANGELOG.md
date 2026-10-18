@@ -2,6 +2,23 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
+## Unreleased
+
+- **Comfy Cloud and Comfy Router on Comfy's official SDK.** Both now run through Comfy's own TypeScript SDK (`@comfyorg/sdk`), and Comfy Cloud moved to Comfy's newer API (v2): a picture Comfy already holds is not uploaded again, a job is sent once under a key of its own, so a dropped connection never starts it twice, and a job tells Scumble how far it has got while it runs. If a Comfy Cloud run fails where 0.1.48 worked, `"comfycloud": { "api": "legacy" }` in `settings.json` (with Scumble closed) goes back to the older way for this release; please report it.
+- **Cancel stops the job on Comfy's side.** *Cancel* during a Comfy Cloud or Comfy Router run asks Comfy to stop the job, and the status line says how it ended: Comfy took the stop, the job had already finished and is charged (its picture is not kept), or the job had not gone out yet, so nothing runs or is charged; when Comfy does not answer the stop, it says the job may still finish and be charged.
+- **The bar follows Comfy Cloud runs.** The status row's bar shows the node a Comfy Cloud run is at ("node 3/12") and fills as that node works, instead of only the seconds.
+- **A Comfy Cloud job comes back after a crash.** If Scumble crashes or is closed while a Comfy Cloud job runs, the next start asks Comfy for it: a job that finished meanwhile opens as a new document in the background, one still running is asked for again every 90 seconds until it ends, and one that failed, or is more than a day old, is let go. Scumble only asks Comfy about the job; it never submits it a second time.
+- **A result says where it ran.** A Generate's result names the model, the route and the seconds in the status line and in its row of the history: "FLUX 3 Image via Comfy Router, 23 s", or "via your ComfyUI" for a local run. An upscale of the selection names them in its history row. The line is not saved with the document.
+- **Reorder references by dragging.** Drag a row of the reference list onto another to put it above or below that one, in one undo step; the @img tokens in the prompt follow their pictures.
+- Comfy Router says when a fallback provider served a run ("Served by ...") and which parameters it had to leave out ("Comfy Router left out: ...").
+- When Comfy Cloud's node list cannot be read, a run now goes anyway instead of stopping, and Comfy's own answer decides. Comfy Router's error lines no longer quote the model provider's own detail ("the provider said: ...").
+- No red dot when no ComfyUI runs: when nothing listens at the address (the connection is refused, as on a machine where ComfyUI is not started), the top bar shows a grey dot and "No ComfyUI running", and its tooltip says that only ComfyUI recipes need one.
+- Agents and the assistant can relight with one of the eight light presets by name: `relight` takes `preset` (`golden_hour`, `film_noir` and the others), and the assistant's card names it.
+- The mascot sits beside the name in the title row and in *Settings › About* (the Duck and 90s skins hide it).
+- *Settings › About* says that Comfy Cloud and Comfy Router run through Comfy's official TypeScript SDK, and names its version.
+- A layer, group or reference row dragged onto the prompt field by mistake no longer writes its layer id there.
+- RTX Video Super Resolution runs again on Comfy Cloud and with a current RTX node pack on your ComfyUI: the node now requires a strength and an image encoding, and every run had failed without them. Scumble sends the node's defaults (1 and 8-bit RGB); an older node pack ignores them.
+
 ## 0.1.48 - 2026-10-14
 
 - **Errors stand out in the status line.** An error, a model that still has to be downloaded, a size or limit a run would pass, or a result that came out only in part (a fallback used, parts of a file left out) shows red and blinks five times, then stays red until the next line; with the system's animation effects off it is red without blinking. Hints such as "Select a layer first" and "a run is still going" stay as they were. Agents mark their own lines through `set_status`'s new `kind`, plugins through `status(text, kind)`.

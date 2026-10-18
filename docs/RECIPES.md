@@ -263,12 +263,19 @@ subgraph live), `cloud_flux2_dev` (Comfy's Flux.2 dev image-edit template, filed
 `cloud_anima_preview`, `cloud_ideogram_4`, `cloud_krea_2_turbo`, `cloud_mage_flow`, `cloud_z_image_turbo`.
 `node tools/cloud_recipes.js` writes them from the exports (the widget values by name, the node list of
 `tools/refs/comfy_templates/object_info.json` for the rest), `--check` says whether a file still matches; each keeps
-the template's layout for the ComfyUI window. They have not run on Comfy Cloud from Scumble yet. Every model file they
-name is in Comfy Cloud's model catalog (looked up through Comfy Cloud's own MCP server on 2026-10-03).
+the template's layout for the ComfyUI window. `cloud_qwen_image_2_1_edit` ran from Scumble on the legacy API on
+2026-10-03 (an edit in about 90-100 s; a Generate new on Comfy Cloud passed the same night, `docs/HISTORY.md`). Two
+ran through the Comfy API v2 (below) on 2026-10-18: `cloud_z_image_turbo` (a new image at 768 × 768, 11.0 s) and
+`cloud_flux2_klein_9b` (an edit, 34.2 s; `docs/PLAN_COMFY_SDK.md` section 4). No other has run on v2. Every model
+file they name is in Comfy Cloud's model catalog (looked up through Comfy Cloud's own MCP server on 2026-10-03).
 
 Before a run Scumble checks every node of the graph against Comfy Cloud's node list (kept ten minutes per key) and
 names a missing one instead of uploading anything; a run with more pictures than the graph takes is refused before
-that. The model files are read against the same list, but a file the list lacks does **not** stop the run: Comfy
+that. The Comfy API v2 has no node list, so the list is still the v1 read (`GET /api/object_info` with `X-API-Key`),
+and since 0.1.49 the check is advisory: a list that cannot be read, or that names no node at all, lets the run go (the
+answer's `info.nodeList` says so, the log too), and Comfy's own refusal of the workflow then ends the run (its
+message is passed on; what v2 says for a missing node class has not been seen live).
+The model files are read against the same list, but a file the list lacks does **not** stop the run: Comfy
 Cloud also resolves a loader's value through the account's own models (imported LoRAs and checkpoints), which its node
 list does not name. A run that fails names each file the list lacked, with the nearest one it has when one is close
 (the same file in another folder, else a name a few letters off), and the next run reads the list again. Counted are
@@ -277,6 +284,86 @@ values ending in a model file's extension (`.safetensors`, `.sft`, `.ckpt`, `.pt
 the like are combos too but no files, and an input the list gives no names for is not read. A value that differs from
 a listed file only in its path separators (a recipe saved on Windows) goes out in the cloud's spelling. The crop goes out at most 2048 px on a side in steps of 16 (a cloud
 copy keeps the node's target size and multiple).
+
+**How a Comfy Cloud run goes: the Comfy API v2 through Comfy's SDK (since 0.1.49).** Every Comfy Cloud run, a recipe
+graph or a partner-node graph alike (edit, Generate new, upscale, relight), goes to Comfy's API v2 through Comfy's
+official TypeScript SDK, `@comfyorg/sdk` 0.5.0 (MIT, pinned exactly). Comfy's Cloud overview calls the older API
+"deprecated in favor of Comfy API v2". `electron/main/providers/comfysdk.js` is the one file that loads the SDK (an ES
+module, required lazily on the first Comfy Cloud or Comfy Router run, so a broken package fails a run and not the
+app); `comfycloud.js` `runV2` builds and sends the run, `finishV2` waits for it and reads its picture.
+
+- **The client.** `cloudClient(ctx)`: the key as the client's `apiKey` (a bearer), `scumble/<version>` in the
+  User-Agent, one request at most 300 s (an upload longer, at 32 KB/s), and every request through `guarded()`: the run's
+  abort signal reaches it, the key goes only to `https://cloud.comfy.org`, and a request to another origin is let
+  through only without the key (with a test base, nothing but the mock is reached).
+- **The pictures.** Each picture the layout wires is an asset handle in its LoadImage's `image` (where the legacy API
+  put an uploaded file name; a partner node's LoadImage nodes and a recipe graph's `scumble:picture:N` / `scumble:mask`
+  alike); at the submit the SDK turns it into a `core/ASSET` reference. The SDK hashes the bytes (BLAKE3) and asks
+  `HEAD /api/v2/assets/by-hash/<hash>`: a picture Comfy holds already is bound by its hash (`from-hash`) and not sent
+  again, anything else goes up as multipart. All of them go up before the submit, so a failure names the upload; an
+  upload that got no answer is sent once more under a fresh handle.
+- **The submit.** One `POST /api/v2/jobs` per run under one `Idempotency-Key` (a UUID), the key again in `extra_data`
+  (partner nodes take it there), no `metadata` (Comfy Cloud refuses it). A submit that got no answer (no HTTP status, or
+  a 5xx) is sent once more under the same key. Comfy v2 refuses a reused key (422 `idempotency_key_reuse`) instead of
+  answering with the first job, so that refusal means the first submit landed and its id is lost: the run stops with
+  "the answer to the submit was lost, and Comfy already holds a job under this run's key; Scumble does not send it
+  again (that job may still run and be charged)". Two submits without an answer stop the run too; there is never a
+  third. (Comfy Router replays a reused key instead, below: two rules in two adapters.)
+- **The wait.** The job's polled status decides (`job.wait`: 20 minutes for an edit or a new image, 30 for an
+  upscale). A read Comfy throttles (429) is waited out (its `Retry-After`, 2 to 60 s), a read with no answer is tried
+  again up to five times while the status stays the same. Past the time, or when the status cannot be read, Comfy is
+  asked to stop the job, and the words say whether it took the stop or the job may still be charged. A failed job reads
+  "Comfy Cloud <node>: <class> (node <id>): <message>" (the class left out when it is the partner node already named),
+  plus the model files the node list lacked; canceled and expired in words of their own.
+- **The bar.** Beside the wait the job's live events (SSE, `/api/v2/jobs/<id>/events`) go to the status row's bar:
+  `comfycloud.js` `followEvents` turns each into a frame, `providers/index.js` `progressSender` sends it to the window
+  that asked (`provider:progress` with the run's id, at most four a second, a status change at once), and the host maps
+  it onto the run's bar (`host.js` `providerProgress`, `RunProgress` `fraction`). Comfy's progress frames carry only
+  `value`, `nodes_done` and `nodes_total` (measured 2026-10-18, section 4 of `docs/PLAN_COMFY_SDK.md`), so the bar shows
+  "Comfy Cloud · node k/n · N s" and fills with the running node's part (a sampler's steps move it); until the first
+  frame it shows the seconds. The events never decide anything: a stream that drops is joined again (five failures in a
+  row end the following, not the run), and the answer's `info.events` sums up what came.
+- **The picture.** The recipe's own SaveImage (or the one `buildGraph` writes after a partner node), else the job's
+  first image (a preview may come first); a job just finished is read again up to three times for its outputs. The
+  download follows Comfy's redirect to signed storage (fetch drops `Authorization` on the cross-origin redirect, so no
+  key goes there) and is tried up to three times when it drops or is throttled. `info` holds `node`, `model`,
+  `job_id`.
+- **Cancel.** Cancel in the title row after the submit asks Comfy to stop the job, on a short request of its own
+  (`comfysdk.cancelJob`, 10 s: the run's own fetch refuses every request once the run is cancelled). The status line
+  says what Comfy answered (`providers/index.js` words it by the flags the adapter sets): "Scumble asked Comfy Cloud to
+  stop the job" (canceling or canceled), "the job had already finished on Comfy Cloud and is charged; its picture was
+  not kept" (succeeded), "before the job went to Comfy Cloud: nothing runs or is charged" (a Cancel before the submit),
+  else the words of every other provider ("may still finish the job and charge it").
+- **A run cut off.** Right after the submit `runV2` notes the job in `<userData>/cloudjobs.json` (`cloudjobs.js`: the
+  job's id, model, node, SaveImage and start time; at most 50 notes, written whole through a temp file) and takes the
+  note out at the run's end, except when the job succeeded but its picture did not come down, or may still run (its
+  status unread, a timeout whose stop Comfy did not take): then it stays. At the next start of the window, once its
+  documents are back (`provider:recoverCloudJobs`; never on a headless or agent start), `comfycloud.recoverJobs` reads
+  each note by its job id (20 s a read): a job that succeeded comes back as its picture, which the window opens as a new
+  document in the background (`comfy-cloud-<id>.png`, the document in front names it) and acknowledges
+  (`provider:ackCloudJob`), and only then does its note go; a picture that does not open keeps its note. A job still
+  queued or running, one Comfy did not answer and one whose picture did not come down stay noted and are read again
+  every 90 s while the window is open; a failed, canceled or expired job, one Comfy no longer knows (404) and one
+  that finished without an image are dropped, and so is a note older than 24 hours, unread. Without a key nothing is
+  asked and the notes wait. Nothing is ever submitted again.
+- **The legacy API, for this release.** `"comfycloud": { "api": "legacy" }` in `settings.json` (written with Scumble
+  closed: the app keeps its own copy and writes it back whole) brings back the path of 0.1.48: `POST
+  /api/upload/image`, `POST /api/prompt`, the status poll every 2 s, `/api/jobs/<id>` and `/api/view`, with `X-API-Key`;
+  no live progress, no Cancel on Comfy's side and no crash notes there. `contextFor` (`providers/index.js`) sets
+  `ctx.cloudApi` "v2" unless the setting says "legacy"; a caller that names no API (the older plain-Node tests
+  `cloudgraph_test.js`, `upscale_test.js`, `nanobanana21_test.js`) gets the legacy path too. It is kept for this
+  release (`docs/PLAN_COMFY_SDK.md` section 8, question 1).
+- **Tests reach a fake, never Comfy.** `settings.comfycloud.base` may name a loopback mock, exactly
+  `http://127.0.0.1:<port>` (`comfysdk.testBase`, the Router's rule); then `guarded` sends every request of the client
+  there, and only a key starting `test-` may go (a real key is refused before any request, and a test key never goes to
+  Comfy). The SDK's class client takes its base URL from the environment variable `COMFY_BASE_URL` alone, so main
+  removes `COMFY_BASE_URL`, `COMFY_API_KEY` and `COMFY_ROUTER_BASE_URL` from its environment at start
+  (`comfysdk.clearEnv`, the log names any it removed): a shell profile cannot send the key elsewhere. The plain-Node
+  tests inject a fake fetch (`tools/fake_comfy_v2.js`, `docs/TESTING.md`).
+
+Not run on v2 against Comfy Cloud: a partner-node graph (GPT Image 2, Nano Banana 2 and the others) and its key in
+`extra_data`; an upscale (RTX Video Super Resolution, Magnific, Recraft); a relight graph; a graph with a mask; and the
+asset dedup by hash (one picture went up on 2026-10-18, none twice).
 
 ## Provider recipes (`kind: "provider"`)
 
@@ -812,13 +899,16 @@ closest to the crop (never on a fill), `options.size = "star"` sends `W*H` for t
 the pictures home, seed and `output_format` included (a variant without the list sends what it always sent);
 Ideogram 4.5's inverted mask, unnumbered references and text tiers from `options`, "Ideogram 4.5" below; FLUX 3's
 shape, picture rules and blank-prompt refusal from `options.sizing: "flux3"`, "FLUX 3 Image" below; the key link
-carries the WaveSpeed referral code), **comfycloud** (Comfy Cloud API with `X-API-Key`:
+carries the WaveSpeed referral code), **comfycloud** (Comfy Cloud on the Comfy API v2 through Comfy's
+official TypeScript SDK since 0.1.49, the key as a bearer:
 the adapter builds a workflow from LoadImage, one Partner Node named in `options.node`
 (`OpenAIGPTImageNodeV2`, `GeminiNanoBanana2V2`, `GeminiImage2Node`, `GeminiImageNode`,
 `ByteDanceSeedreamNodeV3`, `Flux2ImageNode`, `FluxProFillNode`, `QwenImageEditApi`) and
-SaveImage (only the pictures the node wires are uploaded; how many each node takes is in "Reference pictures"
-above), submits it to `/api/prompt`, polls `/api/job/<id>/status`, reads the image from
-`/api/jobs/<id>` (its `outputs`; Comfy Cloud stopped serving `/api/history` by 2026-10-03) and `/api/view`; settings keys are the node's full input keys, dotted
+SaveImage (only the pictures the node wires are uploaded, each as an asset by its content hash; how many each node
+takes is in "Reference pictures" above), submits it once under an idempotency key with the key again in `extra_data`,
+waits for the job by its id with its live progress in the status row's bar, and reads the SaveImage's output ("How a
+Comfy Cloud run goes" under "Comfy Cloud recipes" above; the legacy API of 0.1.48, `/api/prompt` with `X-API-Key`, stays
+behind `settings.comfycloud.api` "legacy" for this release); settings keys are the node's full input keys, dotted
 for the model combos such as `model.quality`, and override what the node's wiring sets (Nano Banana 2.1:
 `model` "Gemini Nano Banana 2.1" on `GeminiNanoBanana2V2`, `model.thinking_level` MINIMAL / MEDIUM / HIGH over the
 wiring's MINIMAL); needs a paid plan), **openrouter** (`POST
@@ -2210,14 +2300,18 @@ platform.comfy.org and bill the same Comfy credits, but **the Router needs no pa
 quickstart, queue, providers and API reference pages (as Markdown, `<page>.md`), the live OpenAPI document at
 `api.comfy.org/openapi` for the field names of the queue and error bodies, and **the published input schema of
 every model it sends to** (`docs.comfy.org/router-schemas/<provider>/<model>.json`, copied into
-`tools/refs/comfyrouter/`). **Run against the live API on 2026-09-23** with the user's key, on a scratch profile:
+`tools/refs/comfyrouter/`). **Since 0.1.49 the calls go through Comfy's official TypeScript SDK** (`@comfyorg/sdk`
+0.5.0, its `comfy.models` namespace, loaded through `electron/main/providers/comfysdk.js` as Comfy Cloud's client is);
+the dialects that build each model's body and read its answer are unchanged. **Run against the live API on
+2026-09-23** (before the SDK) with the user's key, on a scratch profile:
 GPT Image 2 (an inpaint with the mask at Quality low, 23.6 s) and Nano Banana 2 (at Size 1K, 15.8 s), each a result
-layer in the selection; the queue, the shared key and the OpenAI and Gemini bodies held. The other variants have
-not run; their notes say so. **The balance's unit:** `GET /customers/balance` answers `amount_micros`, and it fell by
-exactly 3.432 for an HY Image run whose price ComfyUI's node states as $0.03432, so the field counts **cents**,
-whatever its name says (GPT Image 2 low at 2048 x 2048 cost 2.9, Nano Banana 2 at 1K 8.2). **The queue's result read
-carries no `X-Comfy-Credits-Used`** (the reference lists it on the synchronous route only), so `info.credits` is null
-on a queued run.
+layer in the selection; the queue, the shared key and the OpenAI and Gemini bodies held. FLUX 3 Image ran too, on
+2026-10-03 (two edits at 2K, its note). The other variants have not run, as their notes say. All of these runs were
+before the SDK: no Router run has gone through the SDK against the live API yet. **The balance's
+unit:** `GET /customers/balance` answers `amount_micros`, and it fell by exactly 3.432 for an HY Image run whose
+price ComfyUI's node states as $0.03432, so the field counts **cents**, whatever its name says (GPT Image 2 low at
+2048 x 2048 cost 2.9, Nano Banana 2 at 1K 8.2). **The queue's result read carries no `X-Comfy-Credits-Used`** (the
+reference lists it on the synchronous route only), so `info.credits` is null on a queued run.
 
 **Where it shows up.**
 
@@ -2255,44 +2349,74 @@ fifth argument (Ideogram 4.5 decodes the mask with it). A model's own byte limit
 [klein] (the Router lists `bfl/flux-2-pro` and `-max` only), the Topaz and Recraft upscalers (not served), and every
 video, 3D and audio model.
 
-**The protocol: the queue.**
+**The protocol: the queue, through the SDK (since 0.1.49).** `comfysdk.routerSetup(ctx)` checks the key against the
+host (below) and sets `comfy.config({ credentials, baseUrl })` right before each run: the key, and
+`https://api.comfy.org` (or the test mock). The SDK sends the key as `Authorization: Bearer` (until 0.1.48 the adapter
+sent `X-API-Key`; the Partner API's routes below still take that) and builds every route of a run from its own
+templates, the host, the model id and the request id, never from a URL in an answer. `comfyrouter.js` `send`,
+`collect` and `sync`:
 
-1. `POST https://api.comfy.org/v2/models/{provider}/{model}/requests` with `X-API-Key`, `Content-Type:
-   application/json` and an `Idempotency-Key` (one UUID per run). The answer is `201 { request_id, status:
-   "IN_QUEUE", queue_position, status_url, response_url, cancel_url }`. The adapter **composes the three URLs
-   itself** from the host, the model id and the request id (a UUID, checked), never from the answer.
-2. `GET .../requests/{id}/status` until `status` is `COMPLETED`, waiting the `Retry-After` each answer names
-   (2 s without one, at least 1 s, at most 15 s: the docs call it a hint). Up to four failed reads in a row (a 5xx,
-   a 429, a dropped connection) are outlasted; the fifth ends the run.
-3. `GET .../requests/{id}`: `200` is the model's native output; `202` means not collectable yet and goes back to
-   polling; an error is the run's failure (a run that `COMPLETED` with an `error_type` answers its error here).
-4. After 15 minutes (30 for an upscale) the run is given up and `PUT .../cancel` is sent. The docs: a partner run
-   that completes anyway is billed.
+1. `comfy.models.submit(model, body, { idempotencyKey, signal, retry, timeoutMs })`: `POST
+   /v2/models/{provider}/{model}/requests` with one `Idempotency-Key` (a UUID) per run. The submit's deadline is at
+   least 120 s, longer for a large body (32 KB/s); the SDK itself sends it again after a dropped connection or a 5xx,
+   under the same key, for 30 s (`SUBMIT_RETRY_MS`; past that an offline machine fails instead of uploading for
+   minutes).
+2. `handle.events()` polls `.../requests/{id}/status` until `COMPLETED` (the SDK's queue has no event stream), paced
+   by each answer's `Retry-After` (the SDK caps one at 60 s) or by its own backoff. Each status goes to the status
+   row's bar as a frame; it carries no share, so the bar keeps showing the seconds. The run's wait starts once it is
+   queued (a long upload does not count against it).
+3. `handle.get()` reads `.../requests/{id}`: the model's native output as JSON (a body that is not JSON is the SDK's
+   `invalid_response`). A run that `COMPLETED` with an `error_type` is its failure, reported at once.
+4. A status read answered 429, 409 or 503, a result route that still answers 202 after `COMPLETED`, and a read that
+   got no answer are waited out (the `Retry-After`, 4 s without one, at least 1 s, at most 15 s) and the run read
+   again by its id; the fifth such failure in a row ends the run.
+5. After 15 minutes (30 for an upscale) the run is given up and `PUT .../cancel` is sent ("no answer after 15 minutes;
+   the run was asked to stop"). The docs: a partner run that completes anyway is billed.
 
-**Resends.** A submit answered `409 concurrency_limit_exceeded`, `429` or `503`, or lost on the way, is sent again
-**under the same Idempotency-Key** after its `Retry-After`, three submits in all; the docs say the same key returns
-the first run instead of queueing and billing a second. A `Retry-After` over 60 s is not waited out ("try again in
-N s"). `402 insufficient_credits` and `409 invalid_input` are never sent again.
+**Resends.** A submit the Router throttles or holds back (`rate_limited`, `concurrency_limit_exceeded`,
+`queue_backlog_full`) is sent again by the adapter **under the same Idempotency-Key** after its `Retry-After` (2 s
+without one), and a submit past its own deadline (`request_timeout`) once more; three submits in all. The Router
+replays a key it has seen: the same key returns the first run instead of queueing and billing a second (Comfy Cloud's
+v2 refuses a reused key instead, above). A `Retry-After` over 60 s is not waited out ("try again in N s").
+`402 insufficient_credits` and `invalid_input` are never sent again.
+
+**Cancel.** The title row's Cancel during a Router run asks the Router to stop it: `handle.cancel()` (the `PUT
+.../cancel`) on a short request of its own (10 s, no retry, without the run's signal, which has fired). The status
+line says "Scumble asked Comfy Router to stop the job", or, when the Router answers that the run had completed, that
+it had finished and is charged (so does a Cancel while the answer's picture is being fetched); a Cancel before the
+submit sends nothing ("nothing runs or is charged"); a stop that gets no answer leaves the words of every other
+provider ("may still finish the job and charge it"). `providers/index.js` words it by the flags `send` sets on its
+context (`jobSent`, `cancelAsked`, `jobDone`).
 
 **The synchronous route as fallback.** The queue answers `403 not_enabled` for "a key with no workspace behind it
-(legacy keys that predate workspaces)". The adapter then sends the same body once to `POST
-/v2/models/{provider}/{model}` under a new Idempotency-Key (the docs: a key reused on another path is
-`invalid_input`). That route holds the connection up to 660 s; Node's fetch gives up on headers after 300 s, so a
-very slow model can fail there.
+(legacy keys that predate workspaces)". The adapter then sends the same body once through `comfy.models.run` (`POST
+/v2/models/{provider}/{model}`) under a new Idempotency-Key (the docs: a key reused on another path is
+`invalid_input`), with the run's whole time as its deadline. That route holds the connection up to 660 s; the SDK
+lifts undici's own 300 s wait for the headers to the call's deadline (`low/dispatcher.ts`), which the hand-written
+adapter could not. Only this route may answer bytes instead of JSON; a body that is no picture (an error page answered
+200) is refused.
 
 **The answers.** OpenAI and Seedream come back as `b64_json`; Gemini as `inlineData` (the last part that is not a
 `thought`: a thinking model sends drafts); FLUX as a `result.sample` link on Comfy's storage (24 hours); Qwen,
 Freepik, Grok, Ideogram and Krea as links on the partner's storage. **A link is fetched without the key** and only
 when it is `https://` (or the test mock's own host). A native answer without a picture says why where it can: the
 Seedream error code, Gemini's finish or block reason, Grok's `block_reason`, the text Qwen sent instead. The log's
-`info` carries the Router's request id, `X-Comfy-Credits-Used` and `X-Comfy-Router-Dropped-Params`.
+`info` carries what the SDK reads from the headers: the Router's request id, `X-Comfy-Credits-Used` (`credits`),
+`X-Comfy-Router-Dropped-Params` (`dropped`) and `X-Comfy-Router-Fallback-Provider` (`served_by`). **The Router's
+notes (since 0.1.49):** a run that another provider served adds "Served by <provider> (Comfy Router's fallback
+provider)." (a hint, the status line stays plain), and one whose parameters the Router left out adds "Comfy Router left
+out: <params>." (a warning: the status line goes red); both go to the status line after Generate and Upscale and to
+`generate`'s `notes`. The headers come mostly on the synchronous route, so an ordinary queued run has neither.
 
-**Errors.** The body is `{ detail, error_type, upstream_detail }` (a 422: `{ detail: [{ loc, msg, type, ctx, input
-}] }`), the bucket also in `X-Comfy-Error-Type`. Each of the eighteen documented buckets reads as words
+**Errors.** Since 0.1.49 the SDK's typed errors, keyed by their bucket (`errorType`, the Router's `error_type`) or
+their code (the SDK's own: `request_timeout` "no answer in time", `invalid_response` / `unexpected_response`,
+`response_too_large`, `missing_credentials`), never by class. Each of the eighteen documented buckets reads as words
 (`insufficient_credits`: "the Comfy account has no credits left: add credits at platform.comfy.org";
-`not_enabled`: "make a key in a workspace"), then the server's detail, a 422's fields by name, and
-`upstream_detail` as "the provider said". An unknown bucket reads as `internal_error` with its name (the reference
-says the set will grow). The key is taken out of every message.
+`not_enabled`: "make a key in a workspace"), then the server's message, a 422's fields by name (from the error's
+`detail`: `{ loc, msg }`), and "try again in N s" when a 429, 409 or 503 names a wait. A call that got no answer at all
+reads "no answer from the Router (...)". An unknown bucket reads as `internal_error` with its name (the reference says
+the set will grow). **No longer shown:** the partner's `upstream_detail` ("the provider said: ..."), since the SDK keeps
+no raw body. The key is taken out of every message.
 
 **Pictures before any call.** Every picture at most 25 MB and all of them 64 MB (the Router's media caps), the
 whole body at most 100 MB; per variant `options.max_images`, `max_bytes` (Seedream lite 10 MB, pro 25 MB) and
@@ -2303,14 +2427,22 @@ body checks it before any call): Nano Banana with the crop, the mask and 13 refe
 
 **Hosts and keys.** The host is `api.comfy.org`, never a URL from a recipe. `settings.comfyrouter.base` may name a
 loopback mock (`http://127.0.0.1:<port>`), and then only a key starting `test-` goes there, while such a key never
-goes to Comfy.
+goes to Comfy (`comfysdk.checkKey`, before any request). `comfy.config` is process-wide and read on every request,
+so `routerSetup` sets it at the start of each run; a key or a test base changed while a Router run goes reaches that
+run's next read (accepted: one user, one key). An explicit base means the SDK never reads `COMFY_ROUTER_BASE_URL`,
+and main removes it from the environment at start anyway (with `COMFY_BASE_URL` and `COMFY_API_KEY`, "Tests reach a
+fake" under "Comfy Cloud recipes"). The SDK's Router code calls the global `fetch` (it takes no fetch of its own), so
+the plain-Node tests swap `globalThis.fetch` for a fake and put it back after (`tools/comfyrouter_test.js`,
+`ideogram45_test.js`, `nanobanana21_test.js`, `refs_layout_test.js`); the app's gate runs against
+`tools/comfyrouter_mock.py`, which takes the bearer on the Router's routes and `X-API-Key` on the Partner API's.
 
 **Where the pictures go.** To Comfy, which passes them to the model's own provider: OpenAI, Google's Vertex AI,
 Black Forest Labs, ByteDance's BytePlus ModelArk, Alibaba Cloud (Qwen; the docs name no region), Magnific / Freepik,
 xAI, Ideogram, Krea. FLUX and Grok answers are copied onto Comfy's storage for 24 hours; Comfy keeps a finished
 queued request 24 hours. Comfy's own retention and training terms were not read.
 
-**Only a real key can verify:** that the queue takes the user's key (or answers `not_enabled`), every body against
+**Only a real key can verify:** that the queue takes the user's key as the SDK sends it (a bearer since 0.1.49; or
+answers `not_enabled`), every body against
 the live validation (the schemas are what the server enforces, the docs say, but only for fields it knows), whether
 the OpenAI mask and the Gemini mask-as-picture reach the model as an edit, the output sizes, `Retry-After` in
 practice, what a content-policy refusal costs per model (`GET /v2/models/{id}` has `billing.charges_on_policy_rejection`),
