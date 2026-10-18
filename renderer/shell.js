@@ -3260,6 +3260,8 @@ selectRecipe(settings.recipe);
 // chosen (an open compares the document's recipe with it)
 takesPending = true;
 await openPendingDocuments();
+// Comfy Cloud results that came in after Scumble closed (docs/PLAN_COMFY_SDK.md S6): each opens as a document of its own
+recoverCloudResults().catch((err) => console.warn("cloud jobs:", err && err.message));
 showStatus(await window.scumble.comfy.status());
 window.scumble.commands.ready();
 // the assistant's column (docs/PLAN_ASSISTANT.md A5): built last, so its window key listener is
@@ -3285,6 +3287,57 @@ window.scumble.comfyView.onSaved(async ({ id, message }) => {
 });
 const comfyEditButton = $("shell-comfy-edit");
 if (comfyEditButton) comfyEditButton.addEventListener("click", () => openRecipeInComfy(ui.recipe.value));
+
+const CLOUD_RECHECK_MS = 90000;   // how often the jobs still running at the start are read again
+
+/**
+ * The Comfy Cloud jobs a crash or a quit left (main reads them once, never on a headless or agent start): each picture
+ * of one that finished opens as a new document in the background (the document in front stays in front, which names
+ * them), and its note goes once the picture is in; the ones still running are read again every 90 s.
+ */
+async function recoverCloudResults() {
+    if (!window.scumble.providers || typeof window.scumble.providers.recoverCloudJobs !== "function") return;
+    const r = await window.scumble.providers.recoverCloudJobs();
+    const opened = await openCloudResults((r && r.pictures) || []);
+    const running = r && r.kept > 0 && !r.skipped ? r.kept : 0;
+    const say = [opened, running ? `${running} Comfy Cloud job${running === 1 ? "" : "s"} of an earlier run ${running === 1 ? "is" : "are"} still running: Scumble opens the picture${running === 1 ? "" : "s"} when ${running === 1 ? "it is" : "they are"} done.` : ""].filter(Boolean).join(" ");
+    if (say && host.editor) host.editor.setStatus(say);
+    if (running) recheckCloudResults();
+}
+
+function recheckCloudResults() {
+    setTimeout(async () => {
+        try {
+            const r = await window.scumble.providers.recoverCloudJobs({ recheck: true });
+            const opened = await openCloudResults((r && r.pictures) || []);
+            if (opened && host.editor) host.editor.setStatus(opened);
+            if (r && r.kept > 0) recheckCloudResults();
+        } catch (err) { console.warn("cloud jobs:", err && err.message); }
+    }, CLOUD_RECHECK_MS);
+}
+
+/**
+ * Opens brought-back pictures as background documents; a picture that does not open keeps its note (the next start
+ * asks). The line for the document in front naming the new tabs, or "".
+ */
+async function openCloudResults(pictures) {
+    const opened = [];
+    for (const p of pictures) {
+        const ed = newDocument();
+        const name = `comfy-cloud-${String(p.jobId).slice(0, 8)}.${/jpe?g/i.test(p.mime || "") ? "jpg" : /webp/i.test(p.mime || "") ? "webp" : "png"}`;
+        await ed.loadFile(new File([p.bytes], name, { type: p.mime || "image/png" }), { ask: false });
+        if (!ed.base) {
+            ed.setStatus(`${ed.status} This Comfy Cloud result of an earlier run could not be opened; Scumble asks Comfy for it again at the next start.`, "error");
+            continue;
+        }
+        const when = p.started ? new Date(p.started).toLocaleString() : "earlier";
+        ed.setStatus(`A Comfy Cloud result that came in after Scumble closed (${p.model || "Comfy Cloud"}, started ${when}): opened as a document of its own.`);
+        try { await window.scumble.providers.ackCloudJob(p.jobId); } catch (_) { /* the next start brings it again */ }
+        opened.push(ed);
+    }
+    if (!opened.length || !host.editor || opened.includes(host.editor)) return "";
+    return `${opened.length === 1 ? "A Comfy Cloud result" : `${opened.length} Comfy Cloud results`} of an earlier run opened in ${opened.length === 1 ? "a tab" : "tabs"} of ${opened.length === 1 ? "its" : "their"} own: ${opened.map((e) => docName(e)).join(", ")}.`;
+}
 
 /** Whether a provider recipe is a Comfy Cloud recipe with a graph of its own (item 35 V5). */
 function cloudGraphOf(r) {

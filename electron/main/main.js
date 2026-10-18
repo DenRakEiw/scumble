@@ -1091,6 +1091,25 @@ function installIpc() {
     // a run's live progress (Comfy Cloud's events) goes back to the window that asked, for its status row's bar
     ipcMain.handle("provider:edit", (e, request) => providers.edit(request, { progress: (p) => { if (!e.sender.isDestroyed()) e.sender.send("provider:progress", p); } }));
     ipcMain.handle("provider:cancel", (_e, runId) => providers.cancel(runId));
+    // Comfy Cloud results a crash or a quit left (docs/PLAN_COMFY_SDK.md S6): the window asks once, after its documents
+    // are back; a headless or agent start asks nothing (the pictures would open documents nobody looks at). A second
+    // ask waits for the first and answers its summary; { recheck: true } reads again only the jobs that still ran at the
+    // start (the window asks every few minutes while there are any). The window acks each picture it opened.
+    let cloudJobs = null;
+    let startKept = [];
+    ipcMain.handle("provider:recoverCloudJobs", async (_e, opts) => {
+        if (headless || agentMode) return { pictures: [], kept: 0, keptIds: [], dropped: 0, skipped: "agent start" };
+        if (opts && opts.recheck) {
+            if (!startKept.length) return { pictures: [], kept: 0, keptIds: [], dropped: 0, skipped: null };
+            const r = await providers.recoverCloudJobs({ only: startKept });
+            startKept = r.keptIds || [];
+            return r;
+        }
+        if (cloudJobs) { const r = await cloudJobs; return { kept: r.kept, keptIds: r.keptIds, dropped: r.dropped, skipped: r.skipped, brought: r.pictures.length, pictures: [], again: true }; }
+        cloudJobs = providers.recoverCloudJobs().then((r) => { startKept = r.keptIds || []; return r; });
+        return cloudJobs;
+    });
+    ipcMain.handle("provider:ackCloudJob", (_e, jobId) => providers.ackCloudJob(jobId));
     // where each picture of a request of this shape goes and what the model calls it (docs/PLAN_REFS.md C3)
     ipcMain.handle("provider:layout", (_e, shape) => providers.layout(shape));
     ipcMain.handle("provider:balance", (_e, id) => providers.balance(id));

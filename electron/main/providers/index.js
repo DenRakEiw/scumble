@@ -29,9 +29,16 @@
 // adapters only speak HTTP. Keys come from keys.js by the provider's name.
 "use strict";
 
-const { nativeImage } = require("electron");
+const electron = require("electron");
+const { nativeImage } = electron;
 
 const log = require("../log");
+const cloudjobs = require("./cloudjobs");   // the Comfy Cloud jobs a crash may leave (docs/PLAN_COMFY_SDK.md S6)
+
+/** The app's data folder, or null (a plain-Node test's stand-in for Electron has none). */
+function userData() {
+    try { return electron.app && typeof electron.app.getPath === "function" ? electron.app.getPath("userData") : null; } catch (_) { return null; }
+}
 
 const keys = require("../keys");
 const settings = require("../settings");
@@ -407,6 +414,8 @@ function contextFor(id, p, key, signal) {
     };
     // Comfy Cloud: the Comfy API v2 through the SDK, or the legacy API for one release (docs/PLAN_COMFY_SDK.md 3.9)
     if (id === "comfycloud") ctx.cloudApi = ((settings.get().comfycloud || {}).api === "legacy") ? "legacy" : "v2";
+    // a v2 job is noted while it runs, so a crash leaves it for the next start (S6)
+    if (id === "comfycloud" && userData()) ctx.jobs = cloudjobs.store(userData());
     if (signal) {
         // a run's every request and every wait between its polls end when the run is cancelled; the fetch is read at
         // call time (the tests put their fake in globalThis.fetch)
@@ -438,4 +447,35 @@ async function balance(id) {
     }
 }
 
-module.exports = { edit, cancel, layout, balance, describeAll, textProviders, upscaleProviders, relightProviders, PROVIDERS };
+/**
+ * The Comfy Cloud jobs a crash or a quit left (docs/PLAN_COMFY_SDK.md S6), read once when the window has its documents
+ * back (main.js never asks on a headless or agent start): the pictures of the jobs that finished meanwhile, for the
+ * window to open as documents of their own. Nothing is sent again; without a key nothing is asked.
+ */
+async function recoverCloudJobs({ only = null } = {}) {
+    const none = { pictures: [], kept: 0, keptIds: [], dropped: 0, skipped: null };
+    const dir = userData();
+    if (!dir) return { ...none, skipped: "no data folder" };
+    const jobs = cloudjobs.store(dir);
+    if (!jobs.list().length) return none;
+    const p = PROVIDERS.comfycloud;
+    const key = keys.get(keyNameOf("comfycloud", p));
+    try {
+        const r = await p.recoverJobs(jobs, contextFor("comfycloud", p, key, null), Date.now(), Array.isArray(only) ? only.map(String) : null);
+        if (r.pictures.length || r.dropped || r.kept) log.record({ source: "comfycloud", message: `Comfy Cloud: ${r.pictures.length} result${r.pictures.length === 1 ? "" : "s"} of an earlier run brought back, ${r.kept} still noted, ${r.dropped} dropped${r.skipped ? ` (${r.skipped})` : ""}` });
+        return { ...r, pictures: r.pictures.map((x) => ({ ...x, bytes: new Uint8Array(x.bytes.buffer, x.bytes.byteOffset, x.bytes.byteLength) })) };
+    } catch (err) {
+        log.record({ level: "error", source: "comfycloud", message: `Comfy Cloud: the jobs of an earlier run could not be read: ${(err && err.message) || err}` });
+        const left = jobs.list().map((e) => e.jobId).filter((id) => !only || only.includes(id));
+        return { ...none, kept: left.length, keptIds: left, skipped: "error" };
+    }
+}
+
+/** The window has opened a brought-back picture: its job's note goes (until then a start brings it again). */
+function ackCloudJob(jobId) {
+    const dir = userData();
+    if (dir && jobId) cloudjobs.store(dir).remove(String(jobId));
+    return true;
+}
+
+module.exports = { edit, cancel, layout, balance, describeAll, textProviders, upscaleProviders, relightProviders, recoverCloudJobs, ackCloudJob, PROVIDERS };

@@ -40,6 +40,8 @@ const fail = (status, code, message, details, retryAfter) => json(status, { erro
  *   connection's number answers { frames, drop } per connection, `drop` ending the stream with an error, after which
  *   the next job read fails once (the SDK reads the status right after a drop)
  * @param {(call: object) => Promise|undefined} [o.hold] awaited before a call is answered (a test cancels meanwhile)
+ * @param {Object<string, object|string|number>} [o.jobsById] jobs of an earlier run, read by id (S6): { status, outputs },
+ *   "lost" (the connection drops) or 404
  * @param {number} [o.outputsAfter] how many reads of the finished job list no outputs yet
  */
 function fakeComfyV2(o = {}) {
@@ -167,6 +169,26 @@ function fakeComfyV2(o = {}) {
             if (o.cancelSays === "succeeded") job.status = "succeeded";
             else if (!["succeeded", "failed", "canceled", "expired"].includes(job.status)) job.status = "canceling";
             return json(200, bodyOf());
+        }
+        if ((m = /^\/api\/v2\/jobs\/([^/]+)$/.exec(p)) && method === "GET" && o.jobsById && Object.prototype.hasOwnProperty.call(o.jobsById, decodeURIComponent(m[1]))) {
+            // jobs of an earlier run, read by their id (S6): "lost" drops the connection, 404 is unknown, else { status, outputs }
+            const id = decodeURIComponent(m[1]);
+            const spec = o.jobsById[id];
+            if (spec === "lost") throw new TypeError("fetch failed");
+            if (spec === 404) return fail(404, "job_not_found", "no such job");
+            s.idReads = s.idReads || {};
+            s.idReads[id] = (s.idReads[id] || 0) + 1;
+            const listed = s.idReads[id] > (spec.outputsAfter || 0);
+            const outs = (spec.outputs || []).map((x, i) => {
+                const aid = `rec-${id}-${i}`;
+                s.assets.set(aid, { hash: null, bytes: png("RESULT " + x.name), contentType: x.content_type || "image/png", filePath: x.name });
+                return { node_id: String(x.node_id), name: x.name, type: x.type || "image", content_type: x.content_type || "image/png", size_bytes: 9, id: aid, hash: null, url: `${STORAGE}/${aid}`, url_expires_at: "2026-10-18T11:00:00Z", job_id: id };
+            });
+            return json(200, {
+                id, status: spec.status, created_at: "2026-10-18T10:00:00Z", started_at: null, completed_at: null, expires_at: "2026-10-25T10:00:00Z",
+                queue_position: null, progress: null, outputs: spec.status === "succeeded" && listed ? outs : [], error: spec.status === "failed" ? { code: "execution_error", message: "boom" } : null,
+                urls: { self: `/api/v2/jobs/${id}`, events: `/api/v2/jobs/${id}/events`, cancel: `/api/v2/jobs/${id}/cancel` },
+            });
         }
         if ((m = /^\/api\/v2\/jobs\/([^/]+)$/.exec(p)) && method === "GET") {
             if (m[1] !== job.id) return fail(404, "job_not_found", "no such job");

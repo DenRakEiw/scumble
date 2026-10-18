@@ -370,6 +370,30 @@ api.comfy.org with fake keys and were refused there); all plain-Node provider te
 refuses every real connection (none). Reviewed by a workflow (3 lenses, a skeptic per finding; 13 confirmed, none
 refuted): 12 fixed, the process-global config accepted (above).
 
+**S6 as built (2026-10-18 night).** `electron/main/providers/cloudjobs.js`: the notes in `<userData>/cloudjobs.json`
+(`add`, `remove`, `drop(ids)`, `list`, `keep`; every change one synchronous read-modify-write; written whole through a
+temp file and a rename, the rename / unlink tried again on EPERM / EBUSY / EACCES; 50 notes at most). `runV2` notes the
+job right after the submit (`ctx.jobs`, given by `contextFor` for comfycloud) and takes the note out in its `finally`,
+except when the job succeeded but its picture did not come or it may still run (its status unread, a timeout whose stop
+was not taken): then it stays for the next start. `comfycloud.recoverJobs(jobs, ctx, now, only)`: notes older than 24 h
+dropped unread; no key: nothing asked, the notes wait; otherwise each note read by id (20 s per request): succeeded ->
+its picture (its own SaveImage first, two re-reads when the outputs are not listed yet, a download limit by size), the
+note staying until the window acks it; queued / running / canceling or no answer -> kept; failed / canceled / expired /
+404 / succeeded without an image -> dropped; only what the read settled is dropped (`drop`), so a run's note added
+meanwhile stays. `providers/index.js` `recoverCloudJobs({ only })` and `ackCloudJob(id)`; `main.js`
+`provider:recoverCloudJobs` (nothing on a headless or agent start; the first ask's promise kept, a second ask answers
+its summary; `{ recheck: true }` reads only the jobs still running at the start) and `provider:ackCloudJob`; preload
+`providers.recoverCloudJobs(opts)`, `ackCloudJob(id)`. `renderer/shell.js` after the start's documents and pending
+opens, not awaited: each picture opens as a new document in the background (`loadFile`; one that does not open stays
+red and keeps its note), the window acks it, the document in front says which tabs opened and how many jobs still run;
+those are asked again every 90 s until they end. Tests: `tools/cloudjobs_test.js` 21 (the notes file, a run's note
+while it runs and after each end, the recovery's verdicts, the race with a run that starts meanwhile, `only`, through
+`index.js` with the ack), the gate `cloudjobs` (`tools/cloudjobs_test.py`, its own instances on port 9576 against a
+loopback v2 mock: the picture opens in the background, the front document names it and the running job, the ack, the
+second ask, the recheck brings the job that finished later, a headless start and a profile without a key ask nothing);
+`quit`, `document`, `generate` green. Reviewed by a workflow (2 lenses, a skeptic per finding; 10 confirmed, 1
+refuted), all 10 fixed.
+
 **S4: docs and review (light).** `docs/RECIPES.md` "Comfy Cloud recipes" (:194) and "Comfy Router" (:2203): v2, the
 SDK, the fallback setting, the test base; the manual (Cloud runs show steps, Cancel stops the job on Comfy's side);
 README one line ("Comfy Cloud and Comfy Router run through Comfy's official TypeScript SDK"); CHANGELOG Unreleased;

@@ -137,6 +137,9 @@ contextBridge.exposeInMainWorld("scumble", {
         // a run's live progress ({ runId, status, queuePosition, value, step, steps, nodesDone, nodesTotal, node,
         // nodeClass }); returns the unsubscribe
         onProgress: (cb) => on("provider:progress", cb),
+        // the Comfy Cloud results a crash left (S6): { pictures: [{ jobId, model, started, bytes, mime }], kept, dropped, skipped }
+        recoverCloudJobs: (opts) => ipcRenderer.invoke("provider:recoverCloudJobs", opts || null),
+        ackCloudJob: (jobId) => ipcRenderer.invoke("provider:ackCloudJob", jobId),
         layout: (shape) => ipcRenderer.invoke("provider:layout", shape),
         balance: (id) => ipcRenderer.invoke("provider:balance", id),
     },

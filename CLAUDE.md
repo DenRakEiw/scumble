@@ -96,7 +96,10 @@ code.
   on `comfy.models`; QW6 notes; the Router tests on a swapped global fetch; a review workflow's 13 findings, 12 fixed, 1
   accepted; "S3 as built" in the plan). **The user (2026-10-18 night): "kannst du bis release weitermachen alleine?"**:
   S6, S7, S8, S9, S4 and S5's local prep go on unattended, a commit per section; no push, tag, release, post, Store
-  update or MCP Registry publish without the user's word; S5's paid Router live run needs the user's key. **Next: S6.**
+  update or MCP Registry publish without the user's word; S5's paid Router live run needs the user's key. **S6 done**
+  (a Comfy Cloud job back after a crash: `cloudjobs.js`, `recoverJobs`, the window's ack and recheck; the gate
+  `cloudjobs`; a review workflow's 10 findings fixed; "S6 as built" in the plan). **Next: S7** (QW2, QW3, QW8; the
+  parts outside `shell.js` already in the working tree).
   Open questions 1, 6, 7, 9 of the plan's section 8 go with the recommendations until the user answers (3 and 4 are
   built as recommended). The live check of section 4 (scratchpad `sdk-test/cloud_v2_test.mjs`, the user's key typed in a terminal)
   has not run. The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own

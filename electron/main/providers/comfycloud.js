@@ -547,6 +547,7 @@ module.exports = {
     failureDetail,   // for tests
     _buildGraph: buildGraph,
     _runV2: runV2,   // for tests: a run on v2 with its own wait
+    recoverJobs,     // the jobs a crash left (S6): providers/index.js recoverCloudJobs
     _clearNodeList: () => infoCache.clear(),
     // the node definitions for reading a UI workflow exported from Comfy Cloud (recipes.importFile, item 35 V5c)
     async objectInfo(ctx) { return (await cloudInfo(ctx)).info; },
@@ -773,14 +774,20 @@ async function runV2(req, ctx, waitMs) {
         }
     }
     info.job_id = job.id;
+    // noted until the run ends, so a crash or a quit now leaves the job for the next start (cloudjobs.js, S6)
+    if (ctx.jobs) ctx.jobs.add({ jobId: job.id, model: req.model, node, saveId, started: Date.now() });
     if (typeof ctx.progress === "function") ctx.progress({ status: job.status, queuePosition: job.queuePosition, urgent: true });
     // the live events feed the status row's bar and a summary in the answer's info; the polled status decides
     const live = followEvents(job, ctx, signal);
+    let keepNote = false;
     try {
         const got = await finishV2(job, { req, ctx, waitMs, node, saveId, failed });
         got.info = info;   // the events' summary joins it below
         return got;
     } catch (err) {
+        // a job whose picture is paid but did not come (a download that failed), or that may still run (its status
+        // unread, a timeout whose stop request was not taken): its note stays for the next start (S6)
+        if (!stopped() && (job.status === "succeeded" || !TERMINAL.has(job.status))) keepNote = true;
         // the user's Cancel: Comfy is asked to stop the job on a transport of its own (the run's refuses every request
         // now), so it is not run on and charged; providers/index.js words the cancel by ctx.cancelAsked
         if (stopped() && !TERMINAL.has(job.status)) {
@@ -793,7 +800,60 @@ async function runV2(req, ctx, waitMs) {
     } finally {
         const seen = await live.stop();
         if (seen) info.events = seen;
+        if (ctx.jobs && !keepNote) ctx.jobs.remove(job.id);
     }
+}
+
+const RECOVER_TIMEOUT_MS = 20000;   // one read of a noted job (a start must not wait minutes on a slow Comfy)
+
+/**
+ * The jobs a crash or a quit left noted (cloudjobs.js, S6), read at a start (and the ones still running then, again
+ * later: `only`): a job that finished meanwhile answers its picture, and its note stays until the window has opened it
+ * (providers/index.js ackCloudJob); one that still runs, or that Comfy did not answer, stays noted; a failed, canceled or
+ * expired one, one Comfy no longer knows, one that finished without a picture and one noted more than a day ago go.
+ * Only what this read settled is taken out, so a note added meanwhile stays. Nothing is sent again. Without a key
+ * nothing is asked (the notes wait).
+ * @returns {Promise<{ pictures: Array<{ jobId, model, node, started, bytes, mime }>, kept: number, keptIds: string[], dropped: number, skipped: string|null }>}
+ */
+async function recoverJobs(jobs, ctx, now = Date.now(), only = null) {
+    const all = jobs.list().filter((e) => !only || only.includes(e.jobId));
+    if (!all.length) return { pictures: [], kept: 0, keptIds: [], dropped: 0, skipped: null };
+    const maxAge = require("./cloudjobs").MAX_AGE_MS;
+    const fresh = all.filter((e) => now - (+e.started || 0) < maxAge);
+    const settled = all.filter((e) => !fresh.includes(e)).map((e) => e.jobId);   // too old: unread
+    if (!String(ctx.key || "").trim()) {
+        jobs.drop(settled);
+        return { pictures: [], kept: fresh.length, keptIds: fresh.map((e) => e.jobId), dropped: settled.length, skipped: "no key" };
+    }
+    const client = require("./comfysdk").cloudClient(ctx, { timeoutMs: RECOVER_TIMEOUT_MS });
+    const pause = ctx.sleep || sleep;
+    const pictures = [], keptIds = [];
+    for (const e of fresh) {
+        let job;
+        try { job = await client.jobs.get(e.jobId); } catch (err) {
+            // Comfy no longer knows it: gone; anything else (offline, a 5xx): asked again later
+            if (+err.httpStatus === 404) settled.push(e.jobId); else keptIds.push(e.jobId);
+            continue;
+        }
+        if (job.status === "succeeded") {
+            // a job just finished may not list its outputs yet
+            let out = pickOutput(job, e.saveId);
+            for (let tries = 0; !out && tries < 2; tries++) {
+                await pause(POLL_MS);
+                try { await job.refresh(AbortSignal.timeout(RECOVER_TIMEOUT_MS)); } catch (_) { break; }
+                out = pickOutput(job, e.saveId);
+            }
+            if (!out) { settled.push(e.jobId); continue; }   // a finished job without an image never gets one
+            try {
+                const limit = Math.max(120000, Math.ceil((+out.sizeBytes || 0) / UPLOAD_RATE) * 1000);
+                const b = await out.toBytes({ signal: AbortSignal.timeout(limit) });
+                pictures.push({ jobId: e.jobId, model: e.model, node: e.node, started: e.started, bytes: Buffer.from(b.buffer, b.byteOffset, b.byteLength), mime: out.contentType || "image/png" });
+            } catch (_) { keptIds.push(e.jobId); }
+        } else if (!TERMINAL.has(job.status)) keptIds.push(e.jobId);   // queued, running, canceling: its turn comes later
+        else settled.push(e.jobId);
+    }
+    jobs.drop(settled);
+    return { pictures, kept: keptIds.length, keptIds, dropped: settled.length, skipped: null };
 }
 
 /** A submitted job to its picture: the wait, the status's words, the output, the download. */
