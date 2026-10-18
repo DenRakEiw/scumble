@@ -1770,6 +1770,24 @@ JS = r"""
     check("z: comfycloud reached the send", !!zCloud && zCloud.provider === "comfycloud" && (zErrCloud || "").includes(zStop), { zErrCloud });
     check("z: comfycloud sends 10:118 strength_model 1.0", !!zCloud && zCloud.params["10:118|strength_model"] === 1, zCloud);
 
+    // Case p (QW4, docs/PLAN_COMFY_SDK.md S8): an agent picks one of the panel's light presets by name; its lights land
+    // placed on this picture as the panel would place them; refused beside lights, and by an unknown name with the names
+    {
+        const pRes = await commands.run("relight", { doc: docZ.node.id, preset: "golden_hour" });
+        const pl = docZ.layers.find((l) => l.id === (pRes && pRes.layer && pRes.layer.id));
+        const want = applyLightPreset("golden_hour", { width: docZ.width, height: docZ.height });
+        const got = (pl && pl.params && pl.params.lights) || [];
+        check("p: preset golden_hour gives that preset's lights at this picture's size (count, places, colours)",
+            !!pl && got.length === want.length && got.every((l, i) => l.x === want[i].x && l.y === want[i].y && l.color === want[i].color && l.type === want[i].type),
+            { got: got.map((l) => [l.type, l.x, l.y, l.color]), want: want.map((l) => [l.type, l.x, l.y, l.color]) });
+        let both = null, unknown = null;
+        try { await commands.run("relight", { doc: docZ.node.id, preset: "film_noir", lights: [] }); } catch (e) { both = String(e.message || e); }
+        try { await commands.run("relight", { doc: docZ.node.id, preset: "moonlight" }); } catch (e) { unknown = String(e.message || e); }
+        check("p: preset beside lights is refused; an unknown preset is refused with the names", /either preset or lights/.test(both || "")
+            && /Unknown light preset "moonlight"/.test(unknown || "") && LIGHT_PRESETS.every((x) => (unknown || "").includes(x.id)), { both, unknown });
+        if (pl) docZ.removeLayer(pl.id);
+    }
+
     // Case z, F3.5: the Bria light type is "From the lights" until the user picks one. At 4192a6a every new layer took
     // "soft overcast daylight lighting" from host's defaults, so Bria never got the type the lights give (a spot here;
     // the default point light gives that same string, so it would prove nothing).

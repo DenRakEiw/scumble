@@ -1450,6 +1450,12 @@ async function main() {
             const rPaid = policy.decide({ name: "relight", args: { route: "magnific", prompt: "warm sun" } }, fr());
             const rBusy = policy.decide({ name: "relight", args: { route: "app" } }, fr({ busy: true }));
             const rClamped = policy.clamp({ name: "relight", args: {} });
+            // QW4: a preset with no route renders nothing (auto); on a paid route the card names the preset
+            const rPreset = policy.decide({ name: "relight", args: { preset: "golden_hour" } }, fr());
+            const rPresetPaid = policy.decide({ name: "relight", args: { route: "magnific", preset: "film_noir" } }, fr());
+            check("relight_preset_policy_auto_without_route_and_named_on_the_paid_card",
+                rPreset.action === "auto" && rPresetPaid.action === "ask" && eq(rPresetPaid.card && rPresetPaid.card.changes, [{ field: "route", to: "magnific" }, { field: "preset", to: "film_noir" }]),
+                JSON.stringify({ a: rPreset.action, card: rPresetPaid.card }));
             check("relight_policy_auto_for_app_ask_for_paid_and_refuses_when_busy",
                 policy.RUNS.has("relight")
                 && rApp.action === "auto"

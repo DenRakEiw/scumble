@@ -18,7 +18,7 @@ import { api, host } from "./editor/host.js";
 import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { normalizeLimit } from "./editor/inpaint_weights.js";
-import { defaultLight, normalizeLights, RELIGHT_ROUTES } from "./editor/inpaint_relight.js";
+import { defaultLight, normalizeLights, RELIGHT_ROUTES, LIGHT_PRESETS, applyLightPreset } from "./editor/inpaint_relight.js";
 import { fontList } from "./editor/inpaint_text.js";
 import { parse, remap } from "./editor/reftokens.js";
 import { LABEL as REALISM_LABEL } from "./editor/realism.js";
@@ -1402,6 +1402,7 @@ const COMMANDS = {
         params: {
             layer: P.layer("relight filter layer to edit (default adds a new one)", { default: null }),
             lights: P.arr("array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}]", { items: { type: "object" } }),
+            preset: P.str(`one of the Relight panel's light presets, its lights placed on this picture (not together with lights): ${LIGHT_PRESETS.map((p) => `${p.id} (${p.label})`).join(", ")}`, { enum: LIGHT_PRESETS.map((p) => p.id) }),
             original: P.num("original light strength 0..100 % (default 100)"),
             ambient: P.num("ambient light 0..100 % (default 15)"),
             depth_scale: P.num("depth scale 5..200 % (default 50)"),
@@ -1411,6 +1412,13 @@ const COMMANDS = {
             timeout: P.timeout(600),
         },
         async run(ed, a) {
+            // a preset (QW4): the panel's lights for this picture's size, as `lights` would give them
+            if (a.preset != null && a.preset !== "") {
+                if (a.lights !== undefined) throw new Error("relight takes either preset or lights, not both.");
+                const ids = LIGHT_PRESETS.map((p) => String(p.id));
+                if (!ids.includes(String(a.preset))) throw new Error(`Unknown light preset "${a.preset}" (one of: ${ids.join(", ")})`);
+                a = { ...a, lights: applyLightPreset(/** @type {any} */ (String(a.preset)), { width: ed.width, height: ed.height }) };
+            }
             // the route this call names; a generative one renders below. Omitted, an edit keeps the layer's route and
             // renders nothing (the assistant's policy runs a relight without route unasked: it must never render)
             const given = a.route != null && a.route !== "" ? String(a.route) : null;

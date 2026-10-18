@@ -294,6 +294,7 @@ function relightCard(call, facts) {
     // no `layer`: the command adds a new relight layer, so the card names none (not the active layer)
     const target = call.args && call.args.layer ? layerOf(call, facts) : null;
     const changes = [{ field: "route", to: route }];
+    if (call.args && call.args.preset) changes.push({ field: "preset", to: call.args.preset });
     if (call.args && call.args.prompt) changes.push({ field: "prompt", to: call.args.prompt });
     return {
         layer: target ? { id: target.id, name: target.name } : null,

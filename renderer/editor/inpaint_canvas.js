@@ -18572,10 +18572,12 @@ class InpaintEditor {
                     negative: r.negative !== undefined ? String(r.negative || "") : this.negativeText || "",
                     refs: r.refs !== undefined ? r.refs : refsNow(),
                     seed: r.seed !== undefined ? r.seed : this.genSettings.seed, mode: r.mode !== undefined ? r.mode : this.genSettings.mode,
-                    denoise: r.denoise !== undefined ? r.denoise : this.genSettings.denoise });
+                    denoise: r.denoise !== undefined ? r.denoise : this.genSettings.denoise,
+                    // what the host says of the run (the app: model, route, seconds); shown, never stored (getValue lists its fields)
+                    via: r.via ? String(r.via) : null });
                 this.renderHistory();
                 const al = r.align && r.align.aligned ? ` · aligned (shift ${r.align.shift[0]}, ${r.align.shift[1]} px, scale ${r.align.scale[0]}, ${r.align.scale[1]})` : "";
-                this.setStatus(`Result ${n} added (${r.width} × ${r.height} at ${r.x}, ${r.y})${al}`);
+                this.setStatus(`Result ${n} added (${r.width} × ${r.height} at ${r.x}, ${r.y})${r.via ? " · " + r.via : ""}${al}`);
             } catch (err) {
                 console.error(err);
                 this.setStatus(String(err.message || err), failKind(err));
@@ -20546,6 +20548,7 @@ class InpaintEditor {
             const title = el("b", null, h.name + (layer ? "" : " (discarded)"));
             text.appendChild(title);
             text.appendChild(el("span", null, `${h.w} × ${h.h} at ${h.x}, ${h.y}`));
+            if (h.via) text.appendChild(el("span", "ipc-hvia", h.via));
             if (h.seed != null) {
                 const meta = el("span", null, `${h.mode || "api"} · seed ${h.seed}` + (h.mode === "local" && h.denoise != null ? ` · denoise ${h.denoise}` : ""));
                 meta.title = "Click to use this seed again";

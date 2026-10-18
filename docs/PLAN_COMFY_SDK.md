@@ -407,6 +407,17 @@ Manager PR (`dist/node_release/MANAGER_PR.md`) waits for the user's word. QW8: `
 `#set-about-mascot` (72 px, About); the Duck and 90s skins hide both. Gates: `skins`, `help`, `lint`, `types`; one look
 (the title row, About).
 
+**S8 as built (2026-10-18 night).** QW4: `relight` takes `preset` (one of the panel's 8 `LIGHT_PRESETS`, an enum in
+the schema with each label), turned into `lights` by `applyLightPreset` at the picture's size before the usual checks;
+refused beside `lights` and for an unknown name (the message lists the 8); the assistant's card names the preset
+(`policy.js` `relightCard`); without a route it stays auto (it renders nothing). `docs/COMMANDS.md` regenerated. QW5:
+`host.js` `viaLine(recipe, route, seconds)`: provider edits and upscales pass `via` ("<model> via <route>, N s"),
+a local run notes "<recipe> via your ComfyUI" at the queue and counts its seconds when it lands; `addResults` keeps
+`via` in the history entry (never in `getValue`, whose history fields are listed), the status line ends with
+" · <via>", the history row shows it. Tests: relight gate case p (the preset's lights at the picture's size; the two
+refusals), `assistant_test.js` (auto without a route, the card's preset row), the `generate` step
+`generate_is_never_passed` (the via line in the status and the history, none in the document's state).
+
 **S4: docs and review (light).** `docs/RECIPES.md` "Comfy Cloud recipes" (:194) and "Comfy Router" (:2203): v2, the
 SDK, the fallback setting, the test base; the manual (Cloud runs show steps, Cancel stops the job on Comfy's side);
 README one line ("Comfy Cloud and Comfy Router run through Comfy's official TypeScript SDK"); CHANGELOG Unreleased;

@@ -571,6 +571,7 @@ Relight the picture: edits an existing relight layer or adds a new one. Computes
 | `doc` | integer | document id (default the active tab) |
 | `layer` | string | relight filter layer to edit (default adds a new one) |
 | `lights` | array | array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}] |
+| `preset` | string | one of the Relight panel's light presets, its lights placed on this picture (not together with lights): studio_portrait (Studio portrait), warm_sunset (Warm sunset), cyberpunk_neon (Cyberpunk neon), rembrandt (Rembrandt), soft_window (Soft window), dramatic_rim (Dramatic rim), golden_hour (Golden hour), film_noir (Film noir) (one of `studio_portrait`, `warm_sunset`, `cyberpunk_neon`, `rembrandt`, `soft_window`, `dramatic_rim`, `golden_hour`, `film_noir`) |
 | `original` | number | original light strength 0..100 % (default 100) |
 | `ambient` | number | ambient light 0..100 % (default 15) |
 | `depth_scale` | number | depth scale 5..200 % (default 50) |

@@ -1084,6 +1084,13 @@ try {
     if (!l || ed.layers.length !== n0 + 1 || !near(centreOf(l), [255, 255, 255], 3)) throw new Error("Generate: the plain answer did not land: " + ed.status);
     const said = (out) => (out.notes || []).some((n) => n.includes(LABEL)) || ed.status.includes(LABEL) || seen.includes(LABEL);
     if (T.queued.length || said(g)) throw new Error("Generate was passed: " + JSON.stringify({ queued: T.queued.length, notes: g.notes, seen }));
+    // QW5 (docs/PLAN_COMFY_SDK.md S8): the result names its model, route and seconds in the status line and the
+    // history, and the document's state keeps none of it
+    const hLast = ed.history[ed.history.length - 1] || {};
+    const stored = JSON.parse(ed.getValue()).history || [];
+    if (!/ via [^,]+, \d+ s/.test(hLast.via || "") || !ed.status.includes(" · " + hLast.via) || stored.some((x) => "via" in x)) {
+        throw new Error("QW5: " + JSON.stringify({ via: hLast.via, status: ed.status, storedVia: stored.some((x) => "via" in x) }));
+    }
     const gn = await run("generate_new", { doc, prompt: "a lighthouse", width: 256, height: 192, seed: 5 });
     const corner = at(ed.basePx, 1, 1);
     if (ed.width !== 256 || ed.height !== 192 || !near(corner, [20, 20, 20], 1)) throw new Error("Generate new: the plain answer is not the base: " + JSON.stringify({ w: ed.width, h: ed.height, corner }));

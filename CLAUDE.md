@@ -100,7 +100,9 @@ code.
   (a Comfy Cloud job back after a crash: `cloudjobs.js`, `recoverJobs`, the window's ack and recheck; the gate
   `cloudjobs`; a review workflow's 10 findings fixed; "S6 as built" in the plan). **S7 done** (QW2 the grey dot and
   "No ComfyUI running", QW8 the mascot; **QW3 dropped**: ComfyUI-Manager's search does not show a Registry-only pack,
-  `docs/BUGS.md`). **Next: S8** (QW4 relight presets for agents, QW5 model / route / seconds of every result).
+  `docs/BUGS.md`). **S8 done** (QW4 `relight {preset}`, QW5 "<model> via <route>, N s" on every result; "S8 as
+  built" in the plan). **Next: S9** (QW7 reference rows reordered by drag), then S4 (docs and a review over S0-S9),
+  then S5's local release prep.
   Open questions 1, 6, 7, 9 of the plan's section 8 go with the recommendations until the user answers (3 and 4 are
   built as recommended). The live check of section 4 (scratchpad `sdk-test/cloud_v2_test.mjs`, the user's key typed in a terminal)
   has not run. The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own

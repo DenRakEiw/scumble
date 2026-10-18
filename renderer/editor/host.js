@@ -201,6 +201,16 @@ const RELIGHT_DEFAULTS = Object.freeze({
     steps: 4,
 });
 
+/**
+ * What a result names about its run (QW5, docs/PLAN_COMFY_SDK.md S8): the recipe's model, where it ran and its seconds,
+ * "FLUX 3 Image via Comfy Router, 23 s"; shown in the status line and the history, never stored in the document.
+ */
+function viaLine(r, route, seconds) {
+    const model = (r && (r.name || r.id)) || "";
+    const secs = Number.isFinite(+seconds) && seconds !== null ? `, ${Math.round(+seconds)} s` : "";
+    return model || route ? `${model}${model && route ? " via " : ""}${route || ""}${secs}` : "";
+}
+
 /** A run's id, for main's Cancel (providers/index.js `cancel`). */
 const runIdOf = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
@@ -1875,7 +1885,7 @@ export const host = {
             const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
             editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
             const cutout = info.keepAlpha ? fin.cutout : false;
-            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), ...sentTexts(snap) }]);
+            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), via: viaLine(r, label, res.seconds), ...sentTexts(snap) }]);
             // addResults writes its own line, so the cut-out note, the names the references went as and what the route
             // left out go on afterwards
             if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`, editor.statusKind || (cutout ? "info" : "warn"));
@@ -2061,7 +2071,7 @@ export const host = {
                 const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
                 const ref = await this.uploadResult(fin.blob, `n${editor.node.id}_upscale_${stamp}.png`);
                 // the prompt the upscale sent, its tokens already written as layer names
-                await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), prompt: r.usesPrompt ? texts.prompt : "", negative: r.usesPrompt ? texts.negative : "", refs: null }]);
+                await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), via: viaLine(r, label, res.seconds), prompt: r.usesPrompt ? texts.prompt : "", negative: r.usesPrompt ? texts.negative : "", refs: null }]);
                 const got = res.info && res.info.width ? ` (${res.info.width} × ${res.info.height} came back)` : "";
                 editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.${texts.note ? " " + texts.note : ""}`);
                 sayNotes();
@@ -3799,7 +3809,8 @@ export const host = {
             // an upscale or the pass reads no prompt unless its recipe says so (as runUpscale records it); the seed, mode
             // and denoise of the click too, which a later click changes before this result lands
             const texts0 = upscale ? (r.usesPrompt ? { prompt: texts.prompt, negative: texts.negative, refs: null } : { prompt: "", negative: "", refs: null }) : sentTexts(snap);
-            sent.set(res.prompt_id, { ...texts0, ...clickGen });
+            // QW5: the result names the recipe and where it ran; the seconds are counted when it lands
+            sent.set(res.prompt_id, { ...texts0, ...clickGen, via: viaLine(r, "your ComfyUI", null), viaStarted: Date.now() });
             // taken out when the result lands; the bound is only for prompts that never answer
             while (sent.size > 500) sent.delete(sent.keys().next().value);
         }
@@ -4979,7 +4990,7 @@ api.addEventListener("executed", ({ detail }) => {
         const ed = host.editorByPrompt(detail.prompt_id) || host.editor;
         const sent = ed && ed._sentTexts && ed._sentTexts.get(detail.prompt_id);
         if (sent) ed._sentTexts.delete(detail.prompt_id);
-        if (ed) ed.addResults(sent ? out.inpaint_result.map((r) => ({ ...r, ...sent })) : out.inpaint_result);
+        if (ed) ed.addResults(sent ? out.inpaint_result.map((r) => ({ ...r, ...sent, via: sent.via ? `${sent.via}, ${Math.round((Date.now() - sent.viaStarted) / 1000)} s` : undefined })) : out.inpaint_result);
     }
     // a closed tab's helper output (queued while it closed: no prompt id was known) lands nowhere either
     const forNode = (info) => (info && info.canvas_node != null && host._closedNodes.has(String(info.canvas_node)) ? null
