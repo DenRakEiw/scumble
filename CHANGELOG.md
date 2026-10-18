@@ -2,7 +2,7 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
-## Unreleased
+## 0.1.49 - 2026-10-19
 
 - **Comfy Cloud and Comfy Router on Comfy's official SDK.** Both now run through Comfy's own TypeScript SDK (`@comfyorg/sdk`), and Comfy Cloud moved to Comfy's newer API (v2): a picture Comfy already holds is not uploaded again, a job is sent once under a key of its own, so a dropped connection never starts it twice, and a job tells Scumble how far it has got while it runs. If a Comfy Cloud run fails where 0.1.48 worked, `"comfycloud": { "api": "legacy" }` in `settings.json` (with Scumble closed) goes back to the older way for this release; please report it.
 - **Cancel stops the job on Comfy's side.** *Cancel* during a Comfy Cloud or Comfy Router run asks Comfy to stop the job, and the status line says how it ended: Comfy took the stop, the job had already finished and is charged (its picture is not kept), it had already ended without a picture, or the job had not gone out yet, so nothing runs or is charged; when Comfy does not answer the stop, it says the job may still finish and be charged, and a Comfy Cloud job is then kept: its picture opens as a document of its own if Comfy finishes it. Agents get the same words from `cancel_run`. Closing a tab stops the runs going in it, and its question says so.
