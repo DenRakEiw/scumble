@@ -202,3 +202,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   outline: 1px dotted #e2e2e2;
   outline-offset: -3px;
 }
+
+/* the default skin's mascot (QW8): this skin decorates the name its own way */
+#shell-mascot, #set-about-mascot { display: none; }

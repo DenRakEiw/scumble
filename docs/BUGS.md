@@ -74,8 +74,14 @@ client-given path; published 2026-10-07) is `NodeVersionStatusActive`, "Passed a
 `https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions`), so the registry has a version to install. **Still open
 (read 2026-10-13):** ComfyUI-InpaintCanvas is in neither `custom-node-list.json` nor `extension-node-map.json` of
 Comfy-Org/ComfyUI-Manager, and no PR for it was opened there (the draft is `dist/node_release/MANAGER_PR.md`, on the
-user's word). `README.md` (near 153) and `docs/MANUAL.md` (near 56) still say the Manager does not list the pack; not
-checked in a Manager whether its registry search finds 0.3.4. The node's `/inpaint_canvas/upload` and `/cleanup` routes
+user's word). `README.md` (near 153) and `docs/MANUAL.md` (near 56) still say the Manager does not list the pack, and
+**that holds (read 2026-10-18 for QW3 of `docs/PLAN_COMFY_SDK.md`):** ComfyUI-Manager builds the list it shows from
+`custom-node-list.json` and only enriches those entries with Registry data (`glob/manager_core.py`
+`UnifiedManager.get_custom_nodes` -> `load_nightly`; `get_cnr_by_repo` annotates, nothing adds a Registry-only pack),
+so its search does not find the pack; install by id would work. The Registry's own search finds it only as
+`inpaintcanvas` (one word; "inpaint canvas" finds nothing, "inpaint" lists 74 others first). QW3 (the Manager first in
+the hints) is therefore dropped until the Manager PR lands; not seen in a running Manager (the user's ComfyUI was down).
+The node's `/inpaint_canvas/upload` and `/cleanup` routes
 still take no authentication (`/command` answers loopback only); nothing decided.
 
 ### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07; the cutout part fixed for 0.1.43, B5)

@@ -323,9 +323,10 @@ ui.tabAdd.addEventListener("click", () => activate(newDocument()));
 
 function showStatus(st) {
     lastStatus = st;
-    ui.dot.className = "dot " + (st.state || "");
+    // no ComfyUI at the URL (main's `absent`): a calm grey dot, not the red one of a real error
+    ui.dot.className = "dot " + (st.state || "") + (st.absent ? " absent" : "");
     ui.statusText.textContent = st.message || st.state || "";
-    ui.statusText.title = [st.url, st.devices, st.auth ? "with auth headers" : ""].filter(Boolean).join("\n");
+    ui.statusText.title = [st.hint || st.url, st.devices, st.auth ? "with auth headers" : ""].filter(Boolean).join("\n");
     ui.setConn.textContent = st.message || st.state || "";
     const comfyButton = document.getElementById("shell-comfy");
     if (comfyButton) comfyButton.title = `ComfyUI's own page${st.url ? " at " + st.url : ""} in a window of its own (Ctrl+Shift+K)`;

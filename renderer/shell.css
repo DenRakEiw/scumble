@@ -3,6 +3,9 @@ html, body { margin: 0; height: 100%; background: var(--sc-bg, #181818); color: 
 #shell { display: flex; flex-direction: column; height: 100%; }
 #shell-bar { display: flex; align-items: center; gap: 10px; padding: 4px 10px; height: 32px; background: var(--sc-chrome, #1f1f1f); border-bottom: 1px solid var(--sc-chrome-edge, #000); flex: 0 0 auto; -webkit-app-region: no-drag; }
 #shell-logo { font-weight: 700; letter-spacing: 0.04em; color: var(--sc-accent, #f0c674); margin-right: 6px; }
+/* the mascot (renderer/mascot.svg, QW8): beside the name in the title row, larger in About; the Duck and 90s skins hide it */
+#shell-mascot { width: 20px; height: 20px; margin-right: 5px; flex: none; user-select: none; }
+#set-about-mascot { float: right; width: 72px; height: 72px; margin: 0 0 8px 12px; user-select: none; }
 .shell-field { display: flex; align-items: center; gap: 6px; color: var(--sc-fg-2, #aaa); }
 .shell-field select, .shell-field input { background: var(--sc-field, #111); color: var(--sc-fg, #ddd); border: 1px solid var(--sc-line, #333); border-radius: var(--sc-radius, 3px); padding: 3px 6px; font: inherit; }
 .shell-field input { width: 220px; }
@@ -17,6 +20,7 @@ html, body { margin: 0; height: 100%; background: var(--sc-bg, #181818); color: 
 .dot.connected { background: var(--sc-ok, #4caf50); }
 .dot.connecting { background: var(--sc-accent, #f0c674); }
 .dot.error, .dot.missing-node { background: var(--sc-error, #e0533d); }
+.dot.error.absent { background: var(--sc-faint, #666); }   /* no ComfyUI at the URL: calm, only ComfyUI recipes need one */
 #shell-progress { display: inline-flex; align-items: center; gap: 6px; width: 200px; height: 14px; background: var(--sc-field, #111); border: 1px solid var(--sc-line, #333); border-radius: var(--sc-radius-sm, 3px); position: relative; overflow: hidden; }
 #shell-progress-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--sc-active, #3f6fb5); transition: width 0.15s; }
 #shell-progress-text { position: relative; font-size: 11px; padding-left: 6px; color: var(--sc-fg-strong, #eee); }

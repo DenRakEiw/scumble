@@ -66,6 +66,8 @@ class ComfyClient {
 
     setStatus(patch) {
         this.status = { ...this.status, url: this.url, ...patch };
+        // `absent` (nothing listens at the URL) belongs to the error that said so: a new state clears it
+        if ("state" in patch && !("absent" in patch)) { this.status.absent = false; this.status.hint = ""; }
         this.onStatus(this.status);
     }
 
@@ -196,7 +198,10 @@ class ComfyClient {
             this.setStatus({ state: node ? "connected" : "missing-node", version, devices, gpus, os, node, remote, auth: !!Object.keys(this.headers).length,
                 message: node ? `ComfyUI ${version}` : `ComfyUI ${version}, Inpaint Canvas node pack not installed` });
         } catch (err) {
-            this.setStatus({ state: "error", message: "cannot reach " + this.url + ": " + (err.message || err) });
+            // nothing listens there (a machine without ComfyUI): a calm line, not a red error; only ComfyUI recipes need it
+            const code = String((err && ((err.cause && err.cause.code) || err.code)) || "");
+            if (code === "ECONNREFUSED") this.setStatus({ state: "error", absent: true, message: "No ComfyUI running", hint: `Nothing answers at ${this.url}. Only ComfyUI recipes need a ComfyUI; the API recipes and everything else work without one.` });
+            else this.setStatus({ state: "error", message: "cannot reach " + this.url + ": " + (err.message || err) });
         }
         return this.status;
     }

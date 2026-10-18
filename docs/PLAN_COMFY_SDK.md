@@ -394,6 +394,19 @@ second ask, the recheck brings the job that finished later, a headless start and
 `quit`, `document`, `generate` green. Reviewed by a workflow (2 lenses, a skeptic per finding; 10 confirmed, 1
 refuted), all 10 fixed.
 
+**S7 as built (2026-10-18 night).** QW2: `comfy.js` words a connection refused (`ECONNREFUSED`: nothing listens at
+the URL) as `{ state: "error", absent: true, message: "No ComfyUI running", hint }` (the hint names the URL and that
+only ComfyUI recipes need one; a new state clears both); `shell.js` gives the dot the class `absent` (grey,
+`shell.css`) and the status text the hint as its tooltip; the manual says so. Seen in a dev instance against a dead
+port: the grey dot, the short line. **QW3 dropped:** the check the plan asked for failed. ComfyUI-Manager's list comes
+from `custom-node-list.json`, Registry data only enriches it (`glob/manager_core.py`, read 2026-10-18), so its search
+does not show the Registry-only pack; the Registry's own search finds it only as `inpaintcanvas`. The texts stay
+git-first ("The ComfyUI Manager does not list it at the moment", still true); `docs/BUGS.md` holds the finding; the
+Manager PR (`dist/node_release/MANAGER_PR.md`) waits for the user's word. QW8: `renderer/mascot.svg` (a copy of
+`build/icon-small.svg`, a comment ties them) as `#shell-mascot` (20 px, before the name in the title row) and
+`#set-about-mascot` (72 px, About); the Duck and 90s skins hide both. Gates: `skins`, `help`, `lint`, `types`; one look
+(the title row, About).
+
 **S4: docs and review (light).** `docs/RECIPES.md` "Comfy Cloud recipes" (:194) and "Comfy Router" (:2203): v2, the
 SDK, the fallback setting, the test base; the manual (Cloud runs show steps, Cancel stops the job on Comfy's side);
 README one line ("Comfy Cloud and Comfy Router run through Comfy's official TypeScript SDK"); CHANGELOG Unreleased;
