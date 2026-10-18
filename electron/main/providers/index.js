@@ -298,6 +298,8 @@ async function edit(request, hooks = {}) {
         if (ctx.progress && ctx.progress.stop) ctx.progress.stop();
     }
     if (!out || !out.bytes) { log.record({ level: "error", source: id, message: p.label + " returned no image.", detail: shape() }); throw new Error(p.label + " returned no image."); }
+    // an adapter's own notes on the run (Comfy Router: who served it, what it left out) join the request's
+    if (Array.isArray(out.notes)) for (const n of out.notes) if (n) notes.push(String(n));
     log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), boxes: sentBoxes, notes } });
     const bytes = toBuffer(out.bytes);
     return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, negative: req.negative == null ? null : req.negative, refs: named.refs, notes, boxes: sentBoxes };

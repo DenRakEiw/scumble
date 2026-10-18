@@ -299,10 +299,14 @@ async function bodyOf(body) {
  * Runs the adapter's real `edit` (or `generate`) against a fake fetch. The uploads are answered, each file's URL (or
  * Comfy Cloud name) mapped to its bytes; a GET that is no upload answers what the adapter asks first (OpenRouter's host
  * list, Comfy Cloud's node list for a graph recipe); the first other POST is the request with the pictures: its body is kept and the call throws. In-app LaMa sends
- * nothing: its ONNX call is that request. Returns { calls, uploads, request, error }.
+ * nothing: its ONNX call is that request. Comfy Router's calls go through Comfy's SDK (0.1.49), which calls the bare
+ * global fetch and sends a request that throws again by itself: for a comfyrouter request the fake takes the global
+ * fetch's place for the run (restored after), and the request is answered with a terminal 400 invalid_input instead of
+ * the throw. Returns { calls, uploads, request, error }.
  */
 async function capture(p, req, verb = "edit") {
     const shot = { calls: [], uploads: new Map(), pending: new Map(), request: null, error: null, result: null };
+    const viaSdk = req.provider === "comfyrouter";
     let k = 0;
     const upload = (url, bytes) => { shot.uploads.set(url, bytes); return url; };
     if (typeof p._clearNodeList === "function") p._clearNodeList();   // Comfy Cloud keeps the node list per key
@@ -339,11 +343,13 @@ async function capture(p, req, verb = "edit") {
             return json(200, { upload_url: put, download_url: dl });
         }
         if (!shot.request) { shot.request = await bodyOf(init.body); shot.url = String(url); }   // a resend of it (Comfy Router) is not kept again
+        if (viaSdk) return new Response(JSON.stringify({ detail: SENTINEL }), { status: 400, headers: { "content-type": "application/json", "x-comfy-error-type": "invalid_input" } });
         throw new Error(SENTINEL);
     }
     const ctx = {
         key: KEY, base: LOOP, fetch, log: () => {}, sleep: async () => {}, random: () => 0, now: () => 0, uuid: () => "0b0e7a52-5c4f-4a8e-9d1b-3f6a2c7d8e90",
         toJpeg: () => null, opaque: () => true, bitmap: codec.bitmap, fromBitmap: codec.fromBitmap, cropPng: codec.cropPng,
+        routerRetry: { baseDelayMs: 1, maxDelayMs: 5, budgetMs: 200 },
     };
     const orig = Module._load;
     if (req.provider === "inapp") {
@@ -354,7 +360,9 @@ async function capture(p, req, verb = "edit") {
             return orig.call(this, request, parent, ...rest);
         };
     }
-    try { shot.result = await p[verb]({ ...req }, ctx); } catch (err) { shot.error = String(err && err.message || err); } finally { Module._load = orig; }
+    const realFetch = globalThis.fetch;
+    if (viaSdk) globalThis.fetch = fetch;
+    try { shot.result = await p[verb]({ ...req }, ctx); } catch (err) { shot.error = String(err && err.message || err); } finally { Module._load = orig; globalThis.fetch = realFetch; }
     if (shot.request && req.provider === "comfycloud" && shot.request.prompt) {
         // the field of a Comfy Cloud picture is an input key of the model node; its links lead to the uploads
         shot.graph = shot.request.prompt;

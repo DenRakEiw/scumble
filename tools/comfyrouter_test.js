@@ -3,12 +3,17 @@
 // (comfycloud.js), in plain Node, no Electron and no key:
 //   node tools/comfyrouter_test.js
 // A scripted fetch plays api.comfy.org and the loopback mock: the queue (submit, status, result, cancel), the
-// synchronous route and the asset links the answers name; ctx.sleep records its waits instead of waiting and ctx.uuid
-// hands out known Idempotency-Keys. Every body the adapter builds is checked against the model's own published input
-// schema (tools/refs/comfyrouter/, the documents under docs.comfy.org/router-schemas/ as downloaded on 2026-09-23):
-// every field is one the schema names, every required field is there, every enum and bound holds. The last checks say
-// that no call carried a header beyond the three the queue takes, that no asset download carried the key, and that
-// the key is in no error of the run. Nothing here talks to the live API.
+// synchronous route and the asset links the answers name. The Router's own calls go through Comfy's SDK (comfysdk.js,
+// since 0.1.49), which calls the global fetch: every run puts its fake in globalThis.fetch for the run (R below,
+// viaIndex in section 8; ctx.fetch stays the fake too, for the asset downloads and the Partner API) and passes
+// ctx.routerRetry, so the SDK's own retries of a dropped connection or a 5xx take milliseconds; anything that reaches
+// the global fetch without a fake in place is recorded and refused. ctx.sleep records the adapter's own waits instead
+// of waiting and ctx.uuid hands out known Idempotency-Keys. Every body the adapter builds is checked against the model's
+// own published input schema (tools/refs/comfyrouter/, the documents under docs.comfy.org/router-schemas/ as downloaded
+// on 2026-09-23): every field is one the schema names, every required field is there, every enum and bound holds. The
+// last checks say that every Router call carried the SDK's headers alone (the key as a bearer, never as X-API-Key) and
+// the Partner API's calls their own, that no asset download carried the key, and that the key is in no error of the
+// run. Nothing here talks to the live API.
 "use strict";
 
 const fs = require("node:fs");
@@ -29,6 +34,24 @@ const RID = "6f1a1a6e-6a53-4a5f-9d3a-2b3b0a1f9c21";
 const REFS = path.join(ROOT, "tools", "refs", "comfyrouter");
 const ALL_CALLS = [];
 const ERRORS = [];
+// the SDK's retry policy for the tests (ctx.routerRetry): its own resends of a thrown fetch or a 5xx in milliseconds
+const RETRY = { baseDelayMs: 1, maxDelayMs: 5, budgetMs: 200 };
+// the global fetch outside a run's fake: nothing may reach the network, so a call there is recorded and refused
+const STRAY = [];
+globalThis.fetch = async (url) => { STRAY.push(String(url)); throw new TypeError("fetch failed (comfyrouter_test.js: no fake in place)"); };
+
+/** Runs fn with `fake` as the global fetch (the SDK's transport), the refusing one put back after. */
+async function withFetch(fake, fn) {
+    const saved = globalThis.fetch;
+    globalThis.fetch = fake;
+    try { return await fn(); } finally { globalThis.fetch = saved; }
+}
+// every adapter-direct Router run: its ctx.fetch (the run's fake) is the SDK's fetch for the run
+const R = {
+    edit: (req, ctx) => withFetch(ctx.fetch, () => router.edit(req, ctx)),
+    generate: (req, ctx) => withFetch(ctx.fetch, () => router.generate(req, ctx)),
+    upscale: (req, ctx) => withFetch(ctx.fetch, () => router.upscale(req, ctx)),
+};
 
 const results = [];
 function check(what, ok, detail) {
@@ -142,23 +165,25 @@ function nativeAnswer(prov, body, host) {
 
 /**
  * `submit` / `status` / `result` / `sync` answer their route in order (functions of (body, call) returning a Response,
- * or throwing for a network error); when a list runs out the route answers normally: 201 on submit, IN_PROGRESS then
- * COMPLETED on status (Retry-After 1), the native answer on the result read. Any host answers.
+ * or throwing for a network error); when a list runs out `submitRest` / `statusRest` answer every later call if given,
+ * else the route answers normally: 201 on submit, COMPLETED at once on status (no Retry-After: the SDK's poll pace is
+ * real time), the native answer on the result read. Any host answers. A request whose signal has already fired is
+ * never sent (as a real fetch): it rejects with an AbortError before it is recorded.
  */
 function fakeServer(opts = {}) {
     const calls = [], submits = [], syncs = [], statuses = [], reads = [], cancels = [], assets = [];
     const storage = [], uploads = [], hy = [];   // the Partner API: storage requests, signed uploads, HY Image runs
     const q = { submit: [...(opts.submit || [])], status: [...(opts.status || [])], result: [...(opts.result || [])], sync: [...(opts.sync || [])], storage: [...(opts.storage || [])], hy: [...(opts.hy || [])] };
-    let polled = 0;
     const bodies = new Map();
     async function fetch(url, init = {}) {
+        if (init.signal && init.signal.aborted) throw new DOMException("This operation was aborted", "AbortError");
         const method = String(init.method || "GET").toUpperCase();
         const call = { url: String(url), method, headers: recordHeaders(init) };
         calls.push(call);
         ALL_CALLS.push(call);
         const u = new URL(String(url));
         const host = `${u.protocol}//${u.host}`;
-        if (u.pathname.startsWith("/asset/")) { assets.push(call); return opts.asset ? opts.asset(call) : new Response(ASSET, { status: 200, headers: { "content-type": "image/png" } }); }
+        if (u.pathname.startsWith("/asset/")) { assets.push(call); return opts.asset ? opts.asset(call, init) : new Response(ASSET, { status: 200, headers: { "content-type": "image/png" } }); }
         if (method === "POST" && u.pathname === "/customers/storage") {
             const body = JSON.parse(init.body);
             storage.push({ ...call, body });
@@ -190,16 +215,15 @@ function fakeServer(opts = {}) {
             const body = JSON.parse(init.body);
             submits.push({ ...call, body });
             bodies.set(RID, { prov, body, host });
-            const a = q.submit.shift();
-            if (a) return a(body, call);
+            const a = q.submit.shift() || opts.submitRest;
+            if (a) return a(body, call, init);
             return json(201, { request_id: RID, status: "IN_QUEUE", queue_position: 2, status_url: `https://evil.example/status`, response_url: `https://evil.example/result`, cancel_url: `https://evil.example/cancel` }, { "x-comfy-request-id": RID });
         }
         if (method === "GET" && tail === "/status") {
             statuses.push(call);
-            const a = q.status.shift();
+            const a = q.status.shift() || opts.statusRest;
             if (a) return a(null, call);
-            polled++;
-            return json(200, { request_id: id, status: polled % 2 ? "IN_PROGRESS" : "COMPLETED", queue_position: 0 }, { "retry-after": "1" });
+            return json(200, { request_id: id, status: "COMPLETED", queue_position: 0 });
         }
         if (method === "GET" && id && !tail) {
             reads.push(call);
@@ -208,7 +232,7 @@ function fakeServer(opts = {}) {
             const b = bodies.get(id) || { prov, body: {}, host };
             return json(200, nativeAnswer(b.prov, b.body, b.host), { "x-comfy-request-id": id, "x-comfy-credits-used": "12.25", ...(opts.resultHeaders || {}) });
         }
-        if (method === "PUT" && tail === "/cancel") { cancels.push(call); return json(202, { request_id: id, status: "CANCELLATION_REQUESTED" }); }
+        if (method === "PUT" && tail === "/cancel") { cancels.push(call); return opts.cancel ? opts.cancel(call) : json(202, { request_id: id, status: "CANCELLATION_REQUESTED" }); }
         return routerError(404, "request_not_found", "no such request");
     }
     return { fetch, calls, submits, syncs, statuses, reads, cancels, assets, storage, uploads, hy };
@@ -232,7 +256,7 @@ function ctxFor(server, extra = {}) {
     const sleeps = [], logs = [], uuids = [];
     let n = 0;
     return {
-        key: KEY, base: BASE, fetch: server.fetch, log: (m) => logs.push(String(m)), sleep: async (ms) => { sleeps.push(ms); },
+        key: KEY, base: BASE, fetch: server.fetch, routerRetry: RETRY, log: (m) => logs.push(String(m)), sleep: async (ms) => { sleeps.push(ms); },
         uuid: () => { const u = `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`; uuids.push(u); return u; },
         sleeps, logs, uuids, opaque: () => true, toJpeg: (b) => jpegOf(Math.min(b.length - 1, 2_000_000), "JPEG"),
         bitmap: (png) => fakeBitmap(Buffer.from(png)), fromBitmap: (bm) => pngOf(bm.width, bm.height, 96, "BLACK-EDIT"), ...extra,
@@ -287,49 +311,88 @@ async function main() {
         const v = variant("gpt_image_2");
         const s = fakeServer();
         const ctx = ctxFor(s);
-        const out = await router.edit(editReq(v), ctx);
+        const out = await R.edit(editReq(v), ctx);
         const root = `${BASE}/v2/models/openai/gpt-image-2`;
-        check("one submit to /v2/models/openai/gpt-image-2/requests, then status reads and one result read", s.submits.length === 1 && s.submits[0].url === root + "/requests" && s.statuses.length === 2 && s.reads.length === 1 && s.syncs.length === 0, short(s.calls.map((c) => c.method + " " + c.url)));
+        const bearer = `Bearer ${KEY}`;
+        check("one submit to /v2/models/openai/gpt-image-2/requests, then two status reads (the SDK's wait and its collect) and one result read", s.submits.length === 1 && s.submits[0].url === root + "/requests" && s.statuses.length === 2 && s.reads.length === 1 && s.syncs.length === 0, short(s.calls.map((c) => c.method + " " + c.url)));
         check("the status and result URLs are composed from the host and the request id, never the answer's (evil.example)", s.statuses.every((c) => c.url === `${root}/requests/${RID}/status`) && s.reads[0].url === `${root}/requests/${RID}` && !s.calls.some((c) => /evil/.test(c.url)));
         const h = s.submits[0].headers;
-        check("the submit carries X-API-Key, Content-Type and a UUID Idempotency-Key, and nothing else", eq(Object.keys(h).sort(), ["content-type", "idempotency-key", "x-api-key"]) && h["x-api-key"] === KEY && h["idempotency-key"] === ctx.uuids[0] && /^[0-9a-f-]{36}$/.test(h["idempotency-key"]), short(h));
-        check("the reads carry the key alone", [...s.statuses, ...s.reads].every((c) => eq(Object.keys(c.headers), ["x-api-key"]) && c.headers["x-api-key"] === KEY));
-        check("the first poll waits 2 s (the submit names no Retry-After), the next the status read's Retry-After (1 s)", eq(ctx.sleeps, [2000, 1000]), short(ctx.sleeps));
-        check("the answer: the b64 picture, the Router's request id and credits in info", tagOf(out.bytes) === "RESULT" && out.mime === "image/png" && out.info.request_id === RID && out.info.credits === 12.25 && out.info.model === "openai/gpt-image-2", short(out.info));
+        check("the submit carries the key as a bearer, JSON, the run's Idempotency-Key and the SDK's Accept and User-Agent, and nothing else (no X-API-Key)", eq(Object.keys(h).sort(), ["accept", "authorization", "content-type", "idempotency-key", "user-agent"]) && h.authorization === bearer && h["content-type"] === "application/json" && h["idempotency-key"] === ctx.uuids[0] && /^comfy-sdk-typescript\//.test(h["user-agent"]), short(h));
+        check("the reads carry the bearer, Accept and User-Agent alone (no Idempotency-Key, no X-API-Key)", [...s.statuses, ...s.reads].every((c) => eq(Object.keys(c.headers).sort(), ["accept", "authorization", "user-agent"]) && c.headers.authorization === bearer), short([...s.statuses, ...s.reads].map((c) => Object.keys(c.headers))));
+        check("an ordinary run waits nowhere in the adapter (the SDK paces its polls) and takes one Idempotency-Key", ctx.sleeps.length === 0 && ctx.uuids.length === 1, short({ sleeps: ctx.sleeps, uuids: ctx.uuids }));
+        check("the answer: the b64 picture, the Router's request id and credits in info; no fallback, nothing dropped, no notes (QW6: an ordinary queued run); the Cancel's flags say the job went and finished", tagOf(out.bytes) === "RESULT" && out.mime === "image/png" && out.info.request_id === RID && out.info.credits === 12.25 && out.info.model === "openai/gpt-image-2" && out.info.served_by === null && out.info.dropped === null && eq(out.notes, []) && ctx.jobSent === true && !ctx.cancelAsked && ctx.jobDone === true, short({ info: out.info, notes: out.notes }));
 
         const s2 = fakeServer({ result: [() => json(202, { request_id: RID, status: "IN_PROGRESS" }, { "retry-after": "3" })] });
         const c2 = ctxFor(s2);
-        const o2 = await router.edit(editReq(v), c2);
-        check("a result read that answers 202 goes back to polling (Retry-After 3 s) and collects later", tagOf(o2.bytes) === "RESULT" && s2.reads.length === 2 && c2.sleeps.includes(3000), short({ reads: s2.reads.length, sleeps: c2.sleeps }));
+        const o2 = await R.edit(editReq(v), c2);
+        check("a result route that answers 202 after the status said COMPLETED: the adapter waits once (1 to 15 s), reads the run again by its id and collects", tagOf(o2.bytes) === "RESULT" && s2.submits.length === 1 && s2.reads.length === 2 && c2.sleeps.length === 1 && c2.sleeps[0] >= 1000 && c2.sleeps[0] <= 15000, short({ reads: s2.reads.length, sleeps: c2.sleeps }));
 
-        const s3 = fakeServer({ status: [() => json(200, { request_id: RID, status: "IN_QUEUE", queue_position: 40 }, { "retry-after": "120" })] });
+        const slow = (after) => () => routerError(429, "rate_limited", "slow down", {}, { "retry-after": after });
+        const s3 = fakeServer({ status: [slow("120"), slow("3")] });
         const c3 = ctxFor(s3);
-        await router.edit(editReq(v), c3);
-        check("a long Retry-After while queued is capped at 15 s so a finished run is seen soon", c3.sleeps[0] === 1000 || c3.sleeps.includes(15000), short(c3.sleeps));
+        const o3 = await R.edit(editReq(v), c3);
+        check("a throttled status read (429) is waited out by the adapter after its Retry-After, a long one capped at 15 s so a finished run is seen soon, then the run read again", tagOf(o3.bytes) === "RESULT" && eq(c3.sleeps, [15000, 3000]) && s3.submits.length === 1 && s3.reads.length === 1, short(c3.sleeps));
 
+        // the clock jumps 16 minutes during the first status read: the SDK's wait runs out, the adapter gives the run up
         let t = 0;
         const realNow = Date.now;
-        const s4 = fakeServer({ status: Array.from({ length: 50 }, () => () => { t += 60000; return json(200, { request_id: RID, status: "IN_PROGRESS" }, { "retry-after": "5" }); }) });
+        const s4 = fakeServer({ status: [() => { t += 16 * 60000; return json(200, { request_id: RID, status: "IN_PROGRESS", queue_position: 0 }); }] });
         Date.now = () => realNow() + t;
         let e4;
-        try { e4 = await throws(() => router.edit(editReq(v), ctxFor(s4))); } finally { Date.now = realNow; }
-        check("after 15 minutes the run is given up and asked to stop (PUT .../cancel)", /no answer after 15 minutes/.test(e4 || "") && s4.cancels.length === 1 && s4.cancels[0].url === `${root}/requests/${RID}/cancel` && s4.cancels[0].method === "PUT", short({ e4, cancels: s4.cancels.length }));
+        try { e4 = await throws(() => R.edit(editReq(v), ctxFor(s4))); } finally { Date.now = realNow; }
+        check("after 15 minutes the run is given up and asked to stop: one PUT .../cancel with the bearer, no result read", /no answer after 15 minutes; the run was asked to stop/.test(e4 || "") && s4.cancels.length === 1 && s4.cancels[0].url === `${root}/requests/${RID}/cancel` && s4.cancels[0].method === "PUT" && s4.cancels[0].headers.authorization === bearer && s4.reads.length === 0, short({ e4, cancels: s4.cancels.length }));
 
-        const flaky = Array.from({ length: 4 }, () => () => json(503, { detail: "busy", error_type: "service_unavailable" }));
-        const s5 = fakeServer({ status: flaky });
-        const o5 = await router.edit(editReq(v), ctxFor(s5));
-        check("four failed status reads in a row are outlasted", tagOf(o5.bytes) === "RESULT", "");
-        const s6 = fakeServer({ status: Array.from({ length: 5 }, () => () => json(503, { detail: "busy", error_type: "service_unavailable" })) });
-        const e6 = await throws(() => router.edit(editReq(v), ctxFor(s6)));
-        check("five are not", /temporarily unavailable/.test(e6 || "") && s6.reads.length === 0, e6);
+        const busy = () => routerError(503, "service_unavailable", "busy");
+        const s5 = fakeServer({ status: [busy, busy, busy, busy] });
+        const c5 = ctxFor(s5);
+        const o5 = await R.edit(editReq(v), c5);
+        check("a status read answered 503 four times is outlasted inside the SDK's retry budget (the same read sent again); the adapter waits nowhere", tagOf(o5.bytes) === "RESULT" && s5.statuses.length === 6 && c5.sleeps.length === 0, short({ statuses: s5.statuses.length, sleeps: c5.sleeps }));
+        const s6 = fakeServer({ statusRest: busy });
+        const c6 = ctxFor(s6);
+        const e6 = await throws(() => R.edit(editReq(v), c6));
+        check("503s past the SDK's retry budget on five reads in a row (four waits in the adapter): the run ends in words, before any result read", /status: Comfy Router is temporarily unavailable - busy/.test(e6 || "") && s6.reads.length === 0 && c6.sleeps.length === 4 && s6.statuses.length > 5, short({ e6, statuses: s6.statuses.length, sleeps: c6.sleeps }));
 
-        const s7 = fakeServer({ status: [() => json(200, { request_id: RID, status: "COMPLETED", error_type: "content_policy_violation" })], result: [() => routerError(400, "content_policy_violation", "The provider refused the request.")] });
-        const e7 = await throws(() => router.edit(editReq(v), ctxFor(s7)));
-        check("a run that completed with an error_type: the result read's error, in words", /content filter/.test(e7 || "") && /provider refused/.test(e7 || "") && s7.reads.length === 1, e7);
+        const s7 = fakeServer({ statusRest: () => json(200, { request_id: RID, status: "COMPLETED", error_type: "content_policy_violation", detail: "The provider refused the request." }) });
+        const e7 = await throws(() => R.edit(editReq(v), ctxFor(s7)));
+        check("a run that completed with an error_type: the typed error from the status, in words with the status's detail, and no result read", /content filter/.test(e7 || "") && /The provider refused the request\./.test(e7 || "") && s7.reads.length === 0, e7);
 
         const s8 = fakeServer({ submit: [() => json(201, { status: "IN_QUEUE" })] });
-        const e8 = await throws(() => router.edit(editReq(v), ctxFor(s8)));
-        check("a submit answer without a request id is an error, not a poll of nothing", /without a request id/.test(e8 || "") && s8.statuses.length === 0, e8);
+        const e8 = await throws(() => R.edit(editReq(v), ctxFor(s8)));
+        check("a submit answer without a request id is an error, not a poll of nothing", /named no request_id/.test(e8 || "") && s8.submits.length === 1 && s8.statuses.length === 0, e8);
+
+        // a run that COMPLETED with a held-back bucket as its error_type (no HTTP status): it has ended, so it is reported
+        // at once, not read again until the deadline
+        const s9 = fakeServer({ statusRest: () => json(200, { request_id: RID, status: "COMPLETED", error_type: "service_unavailable", detail: "the provider is down" }) });
+        const c9 = ctxFor(s9);
+        const e9 = await throws(() => R.edit(editReq(v), c9));
+        check("a run that completed with a held-back error_type (service_unavailable, no HTTP status): reported at once in the bucket's words, no adapter wait, no stop request, no result read, not worded as a status read",
+            /temporarily unavailable - the provider is down/.test(e9 || "") && !/ status: /.test(e9 || "") && c9.sleeps.length === 0 && s9.cancels.length === 0 && s9.reads.length === 0, short({ e9, sleeps: c9.sleeps, statuses: s9.statuses.length }));
+
+        // the status reads reach the status row's bar as urgent status frames (a Router run has no steps)
+        const frames = [];
+        await R.edit(editReq(v), ctxFor(fakeServer(), { progress: (f) => frames.push(f) }));
+        check("the status reads reach ctx.progress as urgent status frames, the last one COMPLETED", frames.length >= 1 && frames.every((f) => f.urgent === true && typeof f.status === "string") && frames[frames.length - 1].status === "COMPLETED", short(frames));
+
+        // QW6 on the queue: the result route's notes headers, and the request id stays the queued one
+        const s10 = fakeServer({ resultHeaders: { "x-comfy-request-id": "poll-x", "x-comfy-router-fallback-provider": "alt", "x-comfy-router-dropped-params": JSON.stringify(["quality"]) } });
+        const o10 = await R.edit(editReq(v), ctxFor(s10));
+        check("a queued answer that names a fallback provider and a dropped parameter: both notes, served_by, and the queued request id (not the result call's)",
+            eq(o10.notes, ["Served by alt (Comfy Router's fallback provider).", "Comfy Router left out: quality."]) && o10.info.served_by === "alt" && o10.info.request_id === RID, short({ notes: o10.notes, info: o10.info }));
+
+        // a submit past its own deadline is sent once more under the same key (the Router replays it if it landed)
+        const s11 = fakeServer({ submit: [() => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); }] });
+        const c11 = ctxFor(s11);
+        const o11 = await throws(() => R.edit(editReq(v), c11)).then((e) => e) || "ok";
+        check("a submit that timed out: sent again under the run's one key, the picture lands", o11 === "ok" && s11.submits.length === 2 && new Set(s11.submits.map((c) => c.headers["idempotency-key"])).size === 1 && c11.uuids.length === 1, short({ o11, submits: s11.submits.length, sleeps: c11.sleeps }));
+
+        // a submit that took 16 minutes (a large body on a slow line): the run's wait starts once it is queued
+        let t12 = 0;
+        const now12 = Date.now;
+        const s12 = fakeServer({ submit: [() => { t12 += 16 * 60000; return json(201, { request_id: RID, status: "IN_QUEUE" }); }] });
+        Date.now = () => now12() + t12;
+        let e12;
+        try { e12 = await throws(() => R.edit(editReq(v), ctxFor(s12))); } finally { Date.now = now12; }
+        check("a submit that took 16 minutes: not counted against the run's 15-minute wait, the picture lands, no stop request", !e12 && s12.reads.length === 1 && s12.cancels.length === 0, short({ e12, cancels: s12.cancels.length }));
     });
 
     // ---- 2. resends under one key, and the synchronous fallback ----
@@ -340,32 +403,38 @@ async function main() {
             () => routerError(429, "rate_limited", "slow down", {}, { "retry-after": "2" }),
         ] });
         const ctx = ctxFor(s);
-        const out = await router.edit(editReq(v), ctx);
+        const out = await R.edit(editReq(v), ctx);
         const keys = s.submits.map((c) => c.headers["idempotency-key"]);
-        check("a 409 concurrency_limit_exceeded and a 429 are sent again after their Retry-After, under the same Idempotency-Key", tagOf(out.bytes) === "RESULT" && s.submits.length === 3 && new Set(keys).size === 1 && ctx.sleeps[0] === 4000 && ctx.sleeps[1] === 2000, short({ keys, sleeps: ctx.sleeps }));
+        check("a 409 concurrency_limit_exceeded and a 429 are sent again by the adapter after their Retry-After (ctx.sleep), under the run's one Idempotency-Key", tagOf(out.bytes) === "RESULT" && s.submits.length === 3 && new Set(keys).size === 1 && keys[0] === ctx.uuids[0] && ctx.uuids.length === 1 && eq(ctx.sleeps, [4000, 2000]), short({ keys, sleeps: ctx.sleeps }));
         const s2 = fakeServer({ submit: [() => { throw new TypeError("fetch failed"); }] });
         const c2 = ctxFor(s2);
-        await router.edit(editReq(v), c2);
-        check("a submit whose answer was lost is sent again under the same key (the Router returns the first run)", s2.submits.length === 2 && s2.submits[0].headers["idempotency-key"] === s2.submits[1].headers["idempotency-key"], short(s2.submits.map((c) => c.headers["idempotency-key"])));
+        await R.edit(editReq(v), c2);
+        check("a submit whose answer was lost is sent again inside the SDK under the same key (the Router returns the first run); the adapter waits nowhere", s2.submits.length === 2 && s2.submits[0].headers["idempotency-key"] === s2.submits[1].headers["idempotency-key"] && c2.sleeps.length === 0, short({ keys: s2.submits.map((c) => c.headers["idempotency-key"]), sleeps: c2.sleeps }));
+        const s2b = fakeServer({ submitRest: () => { throw new TypeError("fetch failed"); } });
+        const c2b = ctxFor(s2b);
+        const e2b = await throws(() => R.edit(editReq(v), c2b));
+        check("a submit that is never answered, past the SDK's retry budget: no resend of the adapter's own on top (the SDK sent it again under the one key), then says so", /no answer from the Router \(fetch failed\)/.test(e2b || "") && c2b.sleeps.length === 0 && c2b.uuids.length === 1 && new Set(s2b.submits.map((c) => c.headers["idempotency-key"])).size === 1 && s2b.statuses.length === 0, short({ e2b, sleeps: c2b.sleeps, submits: s2b.submits.length }));
         const s3 = fakeServer({ submit: Array.from({ length: 3 }, () => () => routerError(429, "rate_limited", "slow down", {}, { "retry-after": "2" })) });
-        const e3 = await throws(() => router.edit(editReq(v), ctxFor(s3)));
-        check("three refusals end the run with the words and the wait", s3.submits.length === 3 && /rate limited/.test(e3 || "") && /try again in 2 s/.test(e3 || ""), e3);
+        const c3 = ctxFor(s3);
+        const e3 = await throws(() => R.edit(editReq(v), c3));
+        check("three refusals end the run with the words and the wait", s3.submits.length === 3 && eq(c3.sleeps, [2000, 2000]) && /rate limited - slow down/.test(e3 || "") && /try again in 2 s/.test(e3 || ""), e3);
         const s4 = fakeServer({ submit: [() => routerError(429, "rate_limited", "slow down", {}, { "retry-after": "90" })] });
-        const e4 = await throws(() => router.edit(editReq(v), ctxFor(s4)));
+        const e4 = await throws(() => R.edit(editReq(v), ctxFor(s4)));
         check("a Retry-After over 60 s is not waited out: the user is told when to try again", s4.submits.length === 1 && /try again in 90 s/.test(e4 || ""), e4);
         const s5 = fakeServer({ submit: [() => routerError(402, "insufficient_credits", "The workspace cannot fund the run.")] });
-        const e5 = await throws(() => router.edit(editReq(v), ctxFor(s5)));
+        const e5 = await throws(() => R.edit(editReq(v), ctxFor(s5)));
         check("402 insufficient_credits: said in words, not sent again", s5.submits.length === 1 && /no credits left/.test(e5 || "") && /cannot fund/.test(e5 || ""), e5);
         const s6 = fakeServer({ submit: [() => routerError(409, "invalid_input", "Idempotency-Key held for another request")] });
-        const e6 = await throws(() => router.edit(editReq(v), ctxFor(s6)));
+        const e6 = await throws(() => R.edit(editReq(v), ctxFor(s6)));
         check("409 invalid_input (a key held for another request) is not sent again", s6.submits.length === 1 && /request refused/.test(e6 || ""), e6);
 
         const s7 = fakeServer({ submit: [() => routerError(403, "not_enabled", "This caller cannot use the queue.")] });
         const c7 = ctxFor(s7);
-        const o7 = await router.edit(editReq(v), c7);
-        check("403 not_enabled on the queue: the same body once to the synchronous route, under a new key", tagOf(o7.bytes) === "RESULT" && s7.syncs.length === 1 && s7.syncs[0].url === `${BASE}/v2/models/vertexai/gemini-3.1-flash-image` && eq(s7.syncs[0].body, s7.submits[0].body) && s7.syncs[0].headers["idempotency-key"] !== s7.submits[0].headers["idempotency-key"] && o7.info.credits === 3.5, short({ syncs: s7.syncs.length, info: o7.info }));
+        const o7 = await R.edit(editReq(v), c7);
+        const sh = s7.syncs[0] ? s7.syncs[0].headers : {};
+        check("403 not_enabled on the queue: the same body once to the synchronous route, under a new key with the bearer; the call's request id and credits in info", tagOf(o7.bytes) === "RESULT" && s7.submits.length === 1 && s7.syncs.length === 1 && s7.syncs[0].url === `${BASE}/v2/models/vertexai/gemini-3.1-flash-image` && eq(s7.syncs[0].body, s7.submits[0].body) && sh["idempotency-key"] === c7.uuids[1] && sh["idempotency-key"] !== s7.submits[0].headers["idempotency-key"] && sh.authorization === `Bearer ${KEY}` && !sh["x-api-key"] && o7.info.credits === 3.5 && o7.info.request_id === "sync-1", short({ syncs: s7.syncs.length, info: o7.info }));
         const s8 = fakeServer({ submit: [() => routerError(403, "not_enabled", "no queue")], sync: [() => routerError(403, "not_enabled", "Router is not switched on")] });
-        const e8 = await throws(() => router.edit(editReq(v), ctxFor(s8)));
+        const e8 = await throws(() => R.edit(editReq(v), ctxFor(s8)));
         check("not_enabled on both routes: the words say to make a key in a workspace", /not switched on for this key/.test(e8 || "") && /workspace/.test(e8 || "") && s8.syncs.length === 1, e8);
     });
 
@@ -376,30 +445,31 @@ async function main() {
             [401, "unauthorized", "no key", /key refused/],
             [403, "forbidden", "not entitled", /may not run this model/],
             [404, "model_not_found", "no such model", /does not serve this model/],
-            [413, "", "too big", /too large/],
+            [413, "", "too big", /too large/],   // no bucket: read by its status
             [503, "service_unavailable", "down", /temporarily unavailable/],
             [400, "something_new", "a new bucket", /Comfy Router failed \(something_new\)/],
         ];
         const bad = [];
         for (const [status, type, detail, want] of cases) {
-            // three of each: a 503 is sent again (the same key) before it is believed
+            // every submit answers the same: a 503 is sent again (the SDK, then the adapter, the same key) before it is believed
             const answer = () => (type ? routerError(status, type, detail) : json(status, { detail }));
-            const s = fakeServer({ submit: [answer, answer, answer] });
-            const e = await throws(() => router.edit(editReq(v), ctxFor(s)));
-            if (!want.test(e || "") || !(e || "").includes(detail)) bad.push(`${status} ${type}: ${e}`);
+            const s = fakeServer({ submitRest: answer });
+            const e = await throws(() => R.edit(editReq(v), ctxFor(s)));
+            if (!want.test(e || "") || !(e || "").includes(" - " + detail)) bad.push(`${status} ${type}: ${e}`);
         }
-        check("every bucket reads as words with the server's own detail after them; an unknown bucket as internal_error with its name", !bad.length, bad.join("; "));
+        check("every bucket reads as words with the server's own detail after them; an unknown bucket as internal_error with its name, a 413 without one by its status", !bad.length, bad.join("; "));
         const s = fakeServer({ submit: [() => json(422, { detail: [{ loc: ["body", "size"], msg: "total pixels out of range", type: "value_error" }, { loc: ["body", "image", 0], msg: "image too small", type: "image_too_small", ctx: { min_width: 14 } }] }, { "x-comfy-error-type": "invalid_input" })] });
-        const e = await throws(() => router.edit(editReq(v), ctxFor(s)));
+        const e = await throws(() => R.edit(editReq(v), ctxFor(s)));
         check("a 422 names each field (size, image.0) and its reason", /request refused - size: total pixels out of range; image\.0: image too small/.test(e || ""), e);
+        // the SDK keeps no raw body, so the provider's upstream_detail cannot reach the words since 0.1.49
         const s2 = fakeServer({ submit: [() => routerError(400, "invalid_input", "The provider refused the request.", { upstream_detail: "prompt too long" })] });
-        const e2 = await throws(() => router.edit(editReq(v), ctxFor(s2)));
-        check("upstream_detail is added as the provider's own reason", /the provider said: prompt too long/.test(e2 || ""), e2);
+        const e2 = await throws(() => R.edit(editReq(v), ctxFor(s2)));
+        check("an error with upstream_detail: the bucket's words and the server's detail", /request refused - The provider refused the request\./.test(e2 || ""), e2);
         const s3 = fakeServer({ submit: [() => routerError(400, "invalid_input", `bad key ${KEY} echoed`)] });
-        const e3 = await throws(() => router.edit(editReq(v), ctxFor(s3)));
+        const e3 = await throws(() => R.edit(editReq(v), ctxFor(s3)));
         check("a key the server echoes is taken out of the error", !!e3 && !e3.includes(KEY) && e3.includes("[key]"), e3);
         const s4 = fakeServer({ result: [() => json(200, { error: { code: "OutputImageSensitiveContentDetected", message: "flagged" } })] });
-        const e4 = await throws(() => router.edit(editReq(v), ctxFor(s4)));
+        const e4 = await throws(() => R.edit(editReq(v), ctxFor(s4)));
         check("a native answer without a picture: its own reason (Seedream's error code)", /no picture in the answer: OutputImageSensitiveContentDetected: flagged/.test(e4 || ""), e4);
     });
 
@@ -408,22 +478,22 @@ async function main() {
         const v = variant("gpt_image_2");
         check("baseUrl takes settings.comfyrouter.base only as http://127.0.0.1:<port>", router.baseUrl({ comfyrouter: { base: BASE } }) === BASE && router.baseUrl({ comfyrouter: { base: "https://api.comfy.org" } }) === null && router.baseUrl({ comfyrouter: { base: "http://localhost:5557" } }) === null && router.baseUrl({ comfyrouter: { base: BASE + "/v2" } }) === null && router.baseUrl({ comfyrouter: { base: "http://u:p@127.0.0.1:5557" } }) === null && router.baseUrl({}) === null);
         const s = fakeServer();
-        const e = await throws(() => router.edit(editReq(v), ctxFor(s, { key: REAL_KEY })));
+        const e = await throws(() => R.edit(editReq(v), ctxFor(s, { key: REAL_KEY })));
         check("a real key is never sent to the test address", /only a test key goes there/.test(e || "") && s.calls.length === 0 && !(e || "").includes(REAL_KEY), e);
         const s2 = fakeServer();
-        const e2 = await throws(() => router.edit(editReq(v), ctxFor(s2, { base: undefined })));
+        const e2 = await throws(() => R.edit(editReq(v), ctxFor(s2, { base: undefined })));
         check("a test key is never sent to api.comfy.org", /test key is never sent/.test(e2 || "") && s2.calls.length === 0, e2);
         const s3 = fakeServer();
-        const o3 = await router.generate(textReq(variant("flux2_pro")), ctxFor(s3, { key: REAL_KEY, base: undefined }));
-        check("a real key goes to https://api.comfy.org, and the asset link on Comfy's storage is fetched without it", s3.submits[0].url === `${LIVE}/v2/models/bfl/flux-2-pro/requests` && s3.submits[0].headers["x-api-key"] === REAL_KEY && s3.assets.length === 1 && eq(Object.keys(s3.assets[0].headers), []) && tagOf(o3.bytes) === "ASSET", short(s3.calls.map((c) => c.url)));
+        const o3 = await R.generate(textReq(variant("flux2_pro")), ctxFor(s3, { key: REAL_KEY, base: undefined }));
+        check("a real key goes to https://api.comfy.org as a bearer on every Router call, and the asset link on Comfy's storage is fetched without it", s3.submits[0].url === `${LIVE}/v2/models/bfl/flux-2-pro/requests` && s3.calls.filter((c) => c.model).every((c) => c.url.startsWith(LIVE + "/") && c.headers.authorization === `Bearer ${REAL_KEY}` && !c.headers["x-api-key"]) && s3.assets.length === 1 && eq(Object.keys(s3.assets[0].headers), []) && tagOf(o3.bytes) === "ASSET", short(s3.calls.map((c) => c.url)));
         const s4 = fakeServer({ result: [() => json(200, { id: "x", status: "Ready", result: { sample: "http://evil.example/a.png" } })] });
-        const e4 = await throws(() => router.generate(textReq(variant("flux2_pro")), ctxFor(s4)));
+        const e4 = await throws(() => R.generate(textReq(variant("flux2_pro")), ctxFor(s4)));
         check("an asset link that is not https (and not the test host) is not fetched", /does not fetch/.test(e4 || "") && s4.assets.length === 0, e4);
-        const e5 = await throws(() => router.edit(editReq(v, { model: "openai/../../x" }), ctxFor(fakeServer())));
-        const e6 = await throws(() => router.edit(editReq(v, { model: "anthropic/claude-sonnet-5" }), ctxFor(fakeServer())));
-        const e7 = await throws(() => router.edit(editReq(v, { model: "__proto__/x" }), ctxFor(fakeServer())));
+        const e5 = await throws(() => R.edit(editReq(v, { model: "openai/../../x" }), ctxFor(fakeServer())));
+        const e6 = await throws(() => R.edit(editReq(v, { model: "anthropic/claude-sonnet-5" }), ctxFor(fakeServer())));
+        const e7 = await throws(() => R.edit(editReq(v, { model: "__proto__/x" }), ctxFor(fakeServer())));
         const s8 = fakeServer();
-        const e8 = await throws(() => router.edit(editReq(v, { model: "constructor/x" }), ctxFor(s8)));
+        const e8 = await throws(() => R.edit(editReq(v, { model: "constructor/x" }), ctxFor(s8)));
         check("a model id that is not provider/model, a family Scumble does not speak and a prototype name (__proto__, constructor) are refused before any call", /not a model id/.test(e5 || "") && /does not speak the input of anthropic/.test(e6 || "") && /does not speak|not a model id/.test(e7 || "") && /does not speak the input of constructor/.test(e8 || "") && s8.calls.length === 0, short([e5, e6, e7, e8]));
     });
 
@@ -432,33 +502,33 @@ async function main() {
         const v = variant("qwen_image_edit");
         const s = fakeServer();
         const refs = [pngOf(512, 512, 64, "R1"), pngOf(512, 512, 64, "R2"), pngOf(512, 512, 64, "R3")];
-        const e = await throws(() => router.edit(editReq(v, { references: refs }), ctxFor(s)));
+        const e = await throws(() => R.edit(editReq(v, { references: refs }), ctxFor(s)));
         check("more pictures than the model takes: refused before any call, with the count and the way out", /at most 3 pictures; this run has 4/.test(e || "") && /Original off/.test(e || "") && s.calls.length === 0, e);
-        const e2 = await throws(() => router.edit(editReq(v, { image: pngOf(9000, 1000, 96, "CROP") }), ctxFor(s)));
+        const e2 = await throws(() => R.edit(editReq(v, { image: pngOf(9000, 1000, 96, "CROP") }), ctxFor(s)));
         check("a picture steeper than the model's ratio (Qwen 8:1): refused before any call", /no steeper than 8:1/.test(e2 || "") && s.calls.length === 0, e2);
         const lite = variant("seedream_5_lite");
         const big = pngOf(3000, 2000, 10_000_001, "BIG", 2);
         const s3 = fakeServer();
-        const o3 = await router.edit(editReq(lite, { image: big, width: 3000, height: 2000 }), ctxFor(s3));
+        const o3 = await R.edit(editReq(lite, { image: big, width: 3000, height: 2000 }), ctxFor(s3));
         const p3 = fromDataUrl(s3.submits[0].body.image[0]);
         check("an opaque crop over Seedream Lite's 10 MB goes as JPEG", o3 && p3.mime === "image/jpeg" && tagOf(p3.bytes) === "JPEG", short(p3 && p3.mime));
         const s4 = fakeServer();
-        const e4 = await throws(() => router.edit(editReq(lite, { image: big, width: 3000, height: 2000 }), ctxFor(s4, { opaque: () => false })));
+        const e4 = await throws(() => R.edit(editReq(lite, { image: big, width: 3000, height: 2000 }), ctxFor(s4, { opaque: () => false })));
         check("one with transparency stays PNG and is refused", /more than the 10 MB/.test(e4 || "") && /transparency/.test(e4 || "") && s4.calls.length === 0, e4);
         const gv = variant("gpt_image_2");
         const s5 = fakeServer();
-        const e5 = await throws(() => router.edit(editReq(gv, { maskAlpha: pngOf(1024, 768, 4 * 1024 * 1024 + 1, "MASK") }), ctxFor(s5)));
+        const e5 = await throws(() => R.edit(editReq(gv, { maskAlpha: pngOf(1024, 768, 4 * 1024 * 1024 + 1, "MASK") }), ctxFor(s5)));
         check("an OpenAI mask over 4 MB: refused before any call", /mask is 4\.0 MB, more than the 4 MB/.test(e5 || "") && s5.calls.length === 0, e5);
         const s6 = fakeServer();
-        const e6 = await throws(() => router.edit(editReq(gv, { image: pngOf(4000, 3000, 26 * 1024 * 1024, "HUGE") }), ctxFor(s6, { opaque: () => false })));
+        const e6 = await throws(() => R.edit(editReq(gv, { image: pngOf(4000, 3000, 26 * 1024 * 1024, "HUGE") }), ctxFor(s6, { opaque: () => false })));
         check("any picture over the Router's 25 MB: refused before any call", /more than the 25 MB/.test(e6 || "") && s6.calls.length === 0, e6);
         const s7 = fakeServer();
-        const e7 = await throws(() => router.upscale(upReq(variant("magnific_precision"), { image: pngOf(8000, 8000, 26 * 1024 * 1024, "HUGE") }), ctxFor(s7)));
+        const e7 = await throws(() => R.upscale(upReq(variant("magnific_precision"), { image: pngOf(8000, 8000, 26 * 1024 * 1024, "HUGE") }), ctxFor(s7)));
         check("an upscale picture over 25 MB: refused before any call", /more than the 25 MB/.test(e7 || "") && s7.calls.length === 0, e7);
-        const e8 = await throws(() => router.edit(editReq(variant("krea_2")), ctxFor(fakeServer())));
-        const e9 = await throws(() => router.generate(textReq(variant("magnific_precision")), ctxFor(fakeServer())));
-        const e10 = await throws(() => router.upscale(upReq(variant("gpt_image_2")), ctxFor(fakeServer())));
-        const e11 = await throws(() => router.generate(textReq(variant("gpt_image_2"), { prompt: "  " }), ctxFor(fakeServer())));
+        const e8 = await throws(() => R.edit(editReq(variant("krea_2")), ctxFor(fakeServer())));
+        const e9 = await throws(() => R.generate(textReq(variant("magnific_precision")), ctxFor(fakeServer())));
+        const e10 = await throws(() => R.upscale(upReq(variant("gpt_image_2")), ctxFor(fakeServer())));
+        const e11 = await throws(() => R.generate(textReq(variant("gpt_image_2"), { prompt: "  " }), ctxFor(fakeServer())));
         check("a text-only model refuses an edit, an upscaler a prompt, an image model an upscale, a text run an empty prompt", /Generate new/.test(e8 || "") && /upscaler/.test(e9 || "") && /not an upscaler/.test(e10 || "") && /needs a prompt/.test(e11 || ""), short([e8, e9, e10, e11]));
     });
 
@@ -507,7 +577,7 @@ async function main() {
             }
             for (const [kind, req] of runs) {
                 const s = fakeServer();
-                const out = await (kind === "upscale" ? router.upscale(req, ctxFor(s)) : kind === "text" ? router.generate(req, ctxFor(s)) : router.edit(req, ctxFor(s)));
+                const out = await (kind === "upscale" ? R.upscale(req, ctxFor(s)) : kind === "text" ? R.generate(req, ctxFor(s)) : R.edit(req, ctxFor(s)));
                 const body = s.submits[0] && s.submits[0].body;
                 const problems = body ? schemaProblems(v.model, body) : ["no submit"];
                 if (problems.length) bad.push(`${r.id} ${kind}: ${problems.slice(0, 4).join("; ")}`);
@@ -532,7 +602,7 @@ async function main() {
             const v = variant(id);
             const s = fakeServer(sopts);
             const req = kind === "text" ? textReq(v, extra) : kind === "upscale" ? upReq(v, extra) : editReq(v, extra);
-            const out = await (kind === "text" ? router.generate(req, ctxFor(s)) : kind === "upscale" ? router.upscale(req, ctxFor(s)) : router.edit(req, ctxFor(s)));
+            const out = await (kind === "text" ? R.generate(req, ctxFor(s)) : kind === "upscale" ? R.upscale(req, ctxFor(s)) : R.edit(req, ctxFor(s)));
             return { out, body: s.submits[0].body, s };
         };
         // OpenAI
@@ -555,7 +625,7 @@ async function main() {
         check("Gemini with one picture: no label part, the instruction and the crop", x.body.contents[0].parts.length === 2 && x.body.contents[0].parts[0].text === "Edit image 1 and keep its size and framing. a red door" && tagOf(Buffer.from(x.body.contents[0].parts[1].inlineData.data, "base64")) === "CROP", short(x.body.contents[0].parts.map((p) => p.text || "picture")));
         const sCap = fakeServer();
         const thirteen = Array.from({ length: 13 }, (_, i) => pngOf(64, 64, 64, "R" + i));
-        const eCap = await throws(() => router.edit(editReq(variant("nano_banana_2"), { references: thirteen }), ctxFor(sCap)));
+        const eCap = await throws(() => R.edit(editReq(variant("nano_banana_2"), { references: thirteen }), ctxFor(sCap)));
         const layCap = router.layout(editReq(variant("nano_banana_2"), { references: thirteen }));
         check("Gemini fill with the crop, the mask and 13 references (15 pictures, max_images 14): the mask picture counts, refused before any call", layCap.max === 14 && /vertexai\/gemini-3\.1-flash-image takes at most 14 pictures; this run has 15 \(the crop, the mask, 13 references\)/.test(eCap || "") && sCap.calls.length === 0, `max ${layCap.max}: ${eCap}`);
         x = await run("nano_banana_2", "text", { params: { aspect_ratio: "auto", image_size: "auto" }, width: 1536, height: 1024, aspect: "3:2" });
@@ -579,7 +649,7 @@ async function main() {
         x = await run("flux3", "edit", { references: [big("BIG1"), big("BIG2"), big("BIG3")] });
         check("FLUX 3: three 23 MB reference layers go as flux3.js sends them (JPEG), four pictures counted", x.body.images.length === 4 && [1, 2, 3].every((i) => b64tag(x.body.images[i]) === "JPEG") && x.out.info.pictures === 4, short({ n: x.body.images.length, info: x.out.info.pictures }));
         const sBlank = fakeServer();
-        const eBlank = await throws(() => router.edit(editReq(variant("flux3"), { prompt: "  " }), ctxFor(sBlank)));
+        const eBlank = await throws(() => R.edit(editReq(variant("flux3"), { prompt: "  " }), ctxFor(sBlank)));
         check("FLUX 3 with a blank prompt: refused before any call", /FLUX 3 Image needs a prompt/.test(eBlank || "") && sBlank.calls.length === 0, eBlank);
         // FLUX.2 and Fill
         x = await run("flux2_max", "edit", { references: [pngOf(512, 512, 64, "REF1")], width: 3000, height: 100, params: { safety_tolerance: 3, prompt_upsampling: false } });
@@ -617,13 +687,13 @@ async function main() {
         x = await run("krea_2", "text", { width: 2350, height: 1000 });
         check("Krea text: the 2.35:1 preset, 1K, creativity and the seed", x.body.aspect_ratio === "2.35:1" && x.body.resolution === "1K" && x.body.creativity === "medium" && x.body.seed === 7, short(x.body));
         const sQ = fakeServer({ result: [() => json(200, { output: { choices: [{ message: { content: [{ text: "I cannot draw that." }] } }] } })] });
-        const eQ = await throws(() => router.edit(editReq(variant("qwen_image_edit")), ctxFor(sQ)));
+        const eQ = await throws(() => R.edit(editReq(variant("qwen_image_edit")), ctxFor(sQ)));
         check("an answer with text in place of a picture says so", /no picture in the answer: I cannot draw that/.test(eQ || ""), eQ);
         const sG = fakeServer({ result: [() => json(200, { candidates: [{ finishReason: "IMAGE_SAFETY", content: { parts: [] } }] })] });
-        const eG = await throws(() => router.edit(editReq(variant("nano_banana_2")), ctxFor(sG)));
+        const eG = await throws(() => R.edit(editReq(variant("nano_banana_2")), ctxFor(sG)));
         check("Gemini without a picture: its finish reason", /no picture in the answer: IMAGE_SAFETY/.test(eG || ""), eG);
         const sX = fakeServer({ result: [() => json(200, { block_reason: "moderation" })] });
-        const eX = await throws(() => router.generate(textReq(variant("grok_imagine")), ctxFor(sX)));
+        const eX = await throws(() => R.generate(textReq(variant("grok_imagine")), ctxFor(sX)));
         check("xAI blocked by input moderation: the block reason", /no picture in the answer: moderation/.test(eX || ""), eX);
     });
 
@@ -652,18 +722,20 @@ async function main() {
         check("Comfy Router is a text and an upscale provider, the Partner API a text provider and no upscaler", index.textProviders().includes("comfyrouter") && index.upscaleProviders().includes("comfyrouter") && index.textProviders().includes("comfypartner") && !index.upscaleProviders().includes("comfypartner"));
         const realFetch = globalThis.fetch;
         const v = variant("gpt_image_2");
-        async function viaIndex(request) {
-            const s = fakeServer();
+        async function viaIndex(request, opts = {}) {
+            const s = fakeServer(opts);
             globalThis.fetch = s.fetch;
             try { return { s, out: await index.edit(request), err: null }; } catch (e) { const m = String(e && e.message || e); ERRORS.push(m); return { s, out: null, err: m }; } finally { globalThis.fetch = realFetch; }
         }
         const base = { provider: "comfyrouter", model: v.model, kind: "fill", options: v.options, prompt: "a red door", seed: 3, image: new Uint8Array(pngOf(1024, 768, 96, "CROP")), maskAlpha: new Uint8Array(pngOf(1024, 768, 96, "MA")), width: 1024, height: 768, references: [], params: {} };
         asked.length = 0;
         const x1 = await viaIndex(base);
-        check("index.edit: the key stored under comfycloud, settings.comfyrouter.base as the mock, the picture back", !x1.err && eq(asked, ["comfycloud"]) && x1.s.submits.length === 1 && x1.s.submits[0].url.startsWith(BASE + "/v2/models/openai/gpt-image-2/requests") && x1.s.submits[0].headers["x-api-key"] === KEY && tagOf(Buffer.from(x1.out.bytes)) === "RESULT", short({ err: x1.err, asked }));
-        // the title row's Cancel: a job that never finishes, stopped by its run id; the wait between polls ends at once
+        const h1 = x1.s.submits[0] ? x1.s.submits[0].headers : {};
+        check("index.edit: the key stored under comfycloud, settings.comfyrouter.base as the mock, the key as a bearer (no X-API-Key), the picture back, no notes (QW6: an ordinary queued run)", !x1.err && eq(asked, ["comfycloud"]) && x1.s.submits.length === 1 && x1.s.submits[0].url.startsWith(BASE + "/v2/models/openai/gpt-image-2/requests") && h1.authorization === `Bearer ${KEY}` && !h1["x-api-key"] && tagOf(Buffer.from(x1.out.bytes)) === "RESULT" && eq(x1.out.notes, []), short({ err: x1.err, asked, notes: x1.out && x1.out.notes }));
+        // the title row's Cancel: a job that never finishes, stopped by its run id; the SDK's wait between polls (the
+        // status's Retry-After, 5 s) ends at once, and the Router is asked to stop the job
         {
-            const never = fakeServer({ status: Array.from({ length: 500 }, () => () => json(200, { request_id: RID, status: "IN_PROGRESS", queue_position: 0 }, { "retry-after": "5" })) });
+            const never = fakeServer({ statusRest: () => json(200, { request_id: RID, status: "IN_PROGRESS", queue_position: 0 }, { "retry-after": "5" }) });
             globalThis.fetch = never.fetch;
             const t0 = Date.now();
             let cErr = null;
@@ -672,11 +744,59 @@ async function main() {
                 await new Promise((r) => setTimeout(r, 300));
                 const first = index.cancel("run-cancel-1");
                 cErr = await run;
-                check("index.cancel stops a run that waits on its provider: the run ends at once with a message, an unknown run id answers false",
-                    first === true && /^Cancelled after \d+\.\d s: Scumble stopped waiting for Comfy Router, which may still finish the job and charge it\.$/.test(cErr || "") && Date.now() - t0 < 3000 && index.cancel("run-cancel-1") === false && logged.some((l) => /cancelled after/.test(l.message || "")),
-                    short({ cErr, ms: Date.now() - t0 }));
+                if (cErr) ERRORS.push(cErr);
+                check("index.cancel stops a run that waits on its provider: the run ends at once, the Router asked to stop the job (one PUT .../cancel with the bearer) and the words say so; an unknown run id answers false",
+                    first === true && /^Cancelled after \d+\.\d s: Scumble asked Comfy Router to stop the job\.$/.test(cErr || "") && never.cancels.length === 1 && never.cancels[0].url === `${BASE}/v2/models/openai/gpt-image-2/requests/${RID}/cancel` && never.cancels[0].headers.authorization === `Bearer ${KEY}` && never.reads.length === 0 && Date.now() - t0 < 3000 && index.cancel("run-cancel-1") === false && logged.some((l) => /cancelled after/.test(l.message || "")),
+                    short({ cErr, cancels: never.cancels.length, ms: Date.now() - t0 }));
             } finally { globalThis.fetch = realFetch; }
         }
+        // a Cancel that comes before the run reaches edit(): nothing goes to the Router (the fake, like a real fetch,
+        // sends nothing on a fired signal)
+        {
+            index.cancel("run-cancel-early");
+            const early = await viaIndex({ ...base, runId: "run-cancel-early" });
+            check("a Cancel before the run started: no call reaches the Router, the words say nothing runs or is charged", early.s.calls.length === 0 && /^Cancelled after \d+\.\d s, before the job went to Comfy Router: nothing runs or is charged\.$/.test(early.err || ""), short({ err: early.err, calls: early.s.calls.length }));
+        }
+        // the Cancel's words follow what the Router answered to the stop request, and where the run stood
+        const MAY = /^Cancelled after \d+\.\d s: Scumble stopped waiting for Comfy Router, which may still finish the job and charge it\.$/;
+        const cancelCase = async (runId, opts, request = base) => {
+            const sv = fakeServer({ statusRest: () => json(200, { request_id: RID, status: "IN_PROGRESS", queue_position: 0 }, { "retry-after": "5" }), ...opts });
+            globalThis.fetch = sv.fetch;
+            try {
+                const run = index.edit({ ...request, runId }).then(() => null, (e) => String(e && e.message || e));
+                await new Promise((r) => setTimeout(r, 300));
+                index.cancel(runId);
+                const err = await run;
+                if (err) ERRORS.push(err);
+                return { sv, err };
+            } finally { globalThis.fetch = realFetch; }
+        };
+        const k500 = await cancelCase("run-cancel-500", { cancel: () => routerError(500, "internal_error", "x") });
+        check("a Cancel whose stop request is refused (500): one PUT, and the words say the run may still finish and be charged", MAY.test(k500.err || "") && k500.sv.cancels.length === 1, short({ err: k500.err, cancels: k500.sv.cancels.length }));
+        const kNet = await cancelCase("run-cancel-net", { cancel: () => { throw new TypeError("fetch failed"); } });
+        check("a Cancel whose stop request gets no answer: the same words", MAY.test(kNet.err || "") && kNet.sv.cancels.length === 1, short({ err: kNet.err, cancels: kNet.sv.cancels.length }));
+        const kDone = await cancelCase("run-cancel-done", { cancel: () => json(200, { request_id: RID, status: "COMPLETED" }) });
+        check("a Cancel answered with COMPLETED (the run finished meanwhile): finished and charged, its picture not kept", /^Cancelled after \d+\.\d s: the job had already finished on Comfy Router and is charged; its picture was not kept\.$/.test(kDone.err || ""), kDone.err);
+        const kSub = await cancelCase("run-cancel-submit", { submitRest: (b, c, init) => new Promise((_, rej) => init.signal.addEventListener("abort", () => rej(new DOMException("This operation was aborted", "AbortError")), { once: true })) });
+        check("a Cancel while the submit is on its way (it may have landed): may still finish and be charged; no status read, no stop request", MAY.test(kSub.err || "") && kSub.sv.submits.length === 1 && kSub.sv.statuses.length === 0 && kSub.sv.cancels.length === 0, short({ err: kSub.err, submits: kSub.sv.submits.length }));
+        const vf = variant("flux2_pro");
+        const kDl = await cancelCase("run-cancel-download", { statusRest: () => json(200, { request_id: RID, status: "COMPLETED", queue_position: 0 }), asset: (c, init) => new Promise((_, rej) => init.signal.addEventListener("abort", () => rej(new DOMException("This operation was aborted", "AbortError")), { once: true })) }, { ...editReq(vf), image: new Uint8Array(pngOf(1024, 768, 96, "CROP")) });
+        check("a Cancel while the answer's picture comes down: finished and charged, its picture not kept, no stop request", /the job had already finished on Comfy Router and is charged; its picture was not kept\./.test(kDl.err || "") && kDl.sv.assets.length === 1 && kDl.sv.cancels.length === 0, short({ err: kDl.err, assets: kDl.sv.assets.length }));
+        // the synchronous route answering a page that is no picture (a proxy's error page with 200)
+        const np = await viaIndex(base, { submit: [() => routerError(403, "not_enabled", "no workspace")], sync: [() => new Response("<html><body>proxy error</body></html>", { status: 200, headers: { "content-type": "text/html" } })] });
+        check("a synchronous answer that is no picture (text/html): refused in words, nothing landed", /not a picture/.test(np.err || ""), np.err);
+        // QW6: the Router's own notes on a run, through index.edit: a key the queue refuses (not_enabled) goes to the
+        // synchronous route, whose answer says another provider served it and a parameter was left out
+        const fbHeaders = { "content-type": "image/png", "x-comfy-request-id": "sync-7", "x-comfy-credits-used": "4", "x-comfy-router-fallback-provider": "fal", "x-comfy-router-dropped-params": JSON.stringify(["seed (not supported)"]) };
+        const fb = await viaIndex(base, { submit: [() => routerError(403, "not_enabled", "no workspace")], sync: [() => new Response(RESULT, { status: 200, headers: fbHeaders })] });
+        const SERVED = "Served by fal (Comfy Router's fallback provider).", LEFT = "Comfy Router left out: seed (not supported).";
+        check("QW6: a synchronous answer served by a fallback provider with a parameter left out: both notes in the run's notes through index.edit, the picture as bytes, served_by, dropped, the request id and credits in info", !fb.err && eq(fb.out.notes, [SERVED, LEFT]) && tagOf(Buffer.from(fb.out.bytes)) === "RESULT" && fb.out.mime === "image/png" && fb.out.info.served_by === "fal" && fb.out.info.dropped === "seed (not supported)" && fb.out.info.request_id === "sync-7" && fb.out.info.credits === 4 && fb.s.syncs.length === 1, fb.err || short({ notes: fb.out.notes, info: fb.out.info }));
+        // host.js is an ES module for the browser: its HINT_NOTE is read from the text and tested here
+        const hostText = fs.readFileSync(path.join(ROOT, "renderer", "editor", "host.js"), "utf8");
+        const hm = /^const HINT_NOTE = \/(.+)\/([a-z]*);\s*$/m.exec(hostText);
+        let HINT = null;
+        try { HINT = hm ? new RegExp(hm[1], hm[2]) : null; } catch (_) { HINT = null; }
+        check("QW6: host.js's HINT_NOTE takes the Served by note as a hint (not red) and the left-out note not (a warning)", !!HINT && HINT.test(SERVED) && !HINT.test(LEFT) && !HINT.test("Served by fal"), hm ? hm[1] : "no HINT_NOTE in host.js");
         stored = {};
         const x2 = await viaIndex(base);
         check("without the Comfy Cloud key: refused before any call, naming Comfy Router", !!x2.err && /No API key for Comfy Router/.test(x2.err) && x2.s.calls.length === 0, x2.err);
@@ -857,7 +977,7 @@ async function main() {
             const v = variant(id);
             const s = fakeServer();
             const req = textReq(v, extra);
-            const out = await router.generate(req, ctxFor(s, ctxExtra));
+            const out = await R.generate(req, ctxFor(s, ctxExtra));
             return { v, req, out, s, body: s.submits[0].body };
         };
         const without = (o, ...keys) => { const c = { ...o }; for (const k of keys) delete c[k]; return c; };
@@ -940,11 +1060,11 @@ async function main() {
         let eChk = null;
         try { refsLib.checkPictures(qLay, qReq, "Comfy Router " + qReq.model); } catch (e) { eChk = e.message; }
         const sCap = fakeServer();
-        const eCap = await throws(() => router.generate(qReq, ctxFor(sCap)));
+        const eCap = await throws(() => R.generate(qReq, ctxFor(sCap)));
         const want = "Comfy Router qwen/qwen-image-3.0 takes at most 3 reference pictures for a new image; this run has 4: hide reference layers.";
         check("Qwen text with 4 references (it takes 3): the text layout's cap is the edit's 3; index.js's check and the adapter both refuse in the same words before any call", qLay.max === 3 && eChk === want && eCap === want && sCap.calls.length === 0, short([eChk, eCap]));
         const sBig = fakeServer();
-        const eBig = await throws(() => router.generate(textReq(variant("seedream_5_lite"), { references: [pngOf(3000, 2000, 10_000_001, "BIGREF", 2)] }), ctxFor(sBig, { opaque: () => false })));
+        const eBig = await throws(() => R.generate(textReq(variant("seedream_5_lite"), { references: [pngOf(3000, 2000, 10_000_001, "BIGREF", 2)] }), ctxFor(sBig, { opaque: () => false })));
         check("a reference over the model's bytes with transparency: refused before any call, without the edit's Highres fix advice", /the reference 1 is 10\.0 MB, more than the 10 MB a picture may have \(it has transparency, so it stays PNG\)\. Use a smaller reference layer\.$/.test(eBig || "") && sBig.calls.length === 0, eBig);
         const x2 = await run("seedream_5_lite", { references: [pngOf(3000, 2000, 10_000_001, "BIGREF", 2)] });
         check("... an opaque one goes as JPEG", fromDataUrl(x2.body.image[0]).mime === "image/jpeg" && tagOf(fromDataUrl(x2.body.image[0]).bytes) === "JPEG", short(fromDataUrl(x2.body.image[0]).mime));
@@ -954,16 +1074,25 @@ async function main() {
     const okHeaders = (c) => {
         const k = Object.keys(c.headers).sort();
         if (/\/asset\//.test(c.url)) return k.length === 0;
+        // the Router's calls go through the SDK: the bearer, Accept, User-Agent; a POST also JSON and its Idempotency-Key
+        if (c.model) {
+            const key = c.url.startsWith(LIVE + "/") ? REAL_KEY : KEY;
+            const ok = c.headers.authorization === `Bearer ${key}` && /^comfy-sdk-typescript\//.test(c.headers["user-agent"] || "");
+            return ok && eq(k, c.method === "POST" ? ["accept", "authorization", "content-type", "idempotency-key", "user-agent"] : ["accept", "authorization", "user-agent"]);
+        }
+        // the Partner API (comfypartner.js, unchanged): X-API-Key, Content-Type and Idempotency-Key
         if (/\/customers\/storage$/.test(c.url)) return eq(k, ["content-type", "x-api-key"]);
         if (c.method === "PUT" && /\/upload\//.test(c.url)) return eq(k, ["content-type"]);
         if (c.method === "POST") return eq(k, ["content-type", "idempotency-key", "x-api-key"]);
         return eq(k, ["x-api-key"]);
     };
     const extra = ALL_CALLS.filter((c) => !okHeaders(c));
-    check("no call of the whole run carried a header beyond X-API-Key, Content-Type and Idempotency-Key (the reads the key alone, a storage request no Idempotency-Key, a signed upload only its Content-Type, the asset downloads nothing)", ALL_CALLS.length > 150 && !extra.length, extra.length ? short(extra.map((c) => c.method + " " + c.url + " " + Object.keys(c.headers).join(","))) : `${ALL_CALLS.length} calls`);
-    const keyed = ALL_CALLS.filter((c) => c.headers["x-api-key"] && !(c.headers["x-api-key"] === KEY && c.url.startsWith(BASE + "/")) && !(c.headers["x-api-key"] === REAL_KEY && c.url.startsWith(LIVE + "/")));
-    check("the test key went to the mock only, the real key to api.comfy.org only", !keyed.length, short(keyed.map((c) => c.url)));
+    check("no call of the whole run carried a header beyond its own: a Router call the SDK's bearer, Accept and User-Agent (a POST also Content-Type and Idempotency-Key, never X-API-Key); a Partner API call X-API-Key, Content-Type and Idempotency-Key (a storage request no Idempotency-Key, a signed upload only its Content-Type); the asset downloads nothing", ALL_CALLS.length > 150 && ALL_CALLS.filter((c) => c.model).length > 100 && !extra.length, extra.length ? short(extra.map((c) => c.method + " " + c.url + " " + Object.keys(c.headers).join(","))) : `${ALL_CALLS.length} calls`);
+    const keyOf = (c) => c.headers["x-api-key"] || String(c.headers.authorization || "").replace(/^Bearer /, "");
+    const keyed = ALL_CALLS.filter((c) => keyOf(c) && !(keyOf(c) === KEY && c.url.startsWith(BASE + "/")) && !(keyOf(c) === REAL_KEY && c.url.startsWith(LIVE + "/")));
+    check("the test key went to the mock only, the real key to api.comfy.org only (as a bearer or as X-API-Key)", !keyed.length, short(keyed.map((c) => c.url)));
     check("neither key appears in any error of the run", ERRORS.length > 30 && !ERRORS.some((x) => x.includes(KEY) || x.includes(REAL_KEY)), `${ERRORS.length} errors`);
+    check("no call reached the global fetch without a run's fake in place (nothing went to the network)", !STRAY.length, short(STRAY));
 
     const failed = results.filter((x) => !x).length;
     console.log(`${results.length - failed} of ${results.length} checks passed`);

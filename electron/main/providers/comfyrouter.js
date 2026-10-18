@@ -14,10 +14,11 @@
 //   POST /v2/models/{provider}/{model}                   the same body, answered when done (the fallback for a key
 //                                                        the queue refuses with not_enabled: a key without a workspace)
 //
-// Headers: X-API-Key, Content-Type and an Idempotency-Key (one UUID per run, the same on every resend of that run,
-// so a submit that is sent again after a lost answer or a 409 / 429 / 503 returns the first request instead of
-// queueing and billing a second one). The body is the partner's own schema, so the adapter speaks one dialect per
-// model family, chosen by the provider part of the model id (DIALECTS below):
+// The calls go through Comfy's official SDK (comfy.models, "the queue" below; since 0.1.49): the key as a bearer, one
+// Idempotency-Key per run, the same on every resend of that run, so a submit that is sent again after a lost answer
+// or a 409 / 429 / 503 returns the first request instead of queueing and billing a second one. The body is the
+// partner's own schema, so the adapter speaks one dialect per model family, chosen by the provider part of the model
+// id (DIALECTS below):
 //
 //   openai/*     OpenAI images: prompt, image [data URLs], mask (RGBA PNG, transparent = repaint), size, quality ...
 //                -> data[0].b64_json
@@ -74,7 +75,6 @@ const PICTURES_BYTES_MAX = 64 * 1024 * 1024;   // one request's images together 
 const PICTURE_BYTES_MAX = 25 * 1024 * 1024;    // one image (the media resolver's cap)
 const MASK_BYTES_MAX = 4 * 1024 * 1024;        // OpenAI's mask ("under 4 MiB", enforced by the Router)
 const JPEG_QUALITY = 92;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MODEL_ID = /^([a-z0-9][a-z0-9_-]{0,63})\/([a-z0-9][a-z0-9._-]{0,127})$/;
 // Gemini's aspectRatio values (as gemini.js): a text run with references and a free size gets the closest, since
 // without one the answer takes the shape of a reference picture
@@ -143,33 +143,10 @@ const WORDS = {
     request_not_found: "Comfy Router no longer knows this run",
 };
 
-/** { type, detail, upstream, fields } of a failed answer; the key taken out before any cut. */
-async function readFailure(r, key) {
-    let text = "";
-    try { text = await r.text(); } catch (_) { text = ""; }
-    text = scrub(text, key);
-    const header = (r.headers && r.headers.get && r.headers.get("x-comfy-error-type")) || "";
-    const out = { type: header, detail: "", upstream: "", fields: [] };
-    try {
-        const j = JSON.parse(text);
-        if (j && typeof j === "object") {
-            if (!out.type && typeof j.error_type === "string") out.type = j.error_type;
-            if (Array.isArray(j.detail)) {
-                // a 422: one entry per field ({ loc, msg, type, ctx, input })
-                out.fields = j.detail.filter((d) => d && typeof d === "object").map((d) => {
-                    const loc = Array.isArray(d.loc) ? d.loc.filter((x) => x !== "body").join(".") : "";
-                    return `${loc ? loc + ": " : ""}${String(d.msg || d.type || "invalid")}`;
-                });
-            } else if (typeof j.detail === "string") out.detail = j.detail;
-            else if (typeof j.message === "string") out.detail = j.message;
-            if (typeof j.upstream_detail === "string") out.upstream = j.upstream_detail;
-        }
-    } catch (_) { out.detail = text.slice(0, 300); }
-    if (!out.detail && !out.fields.length) out.detail = r.statusText || String(r.status);
-    return out;
-}
-
-/** What a failed answer means: the bucket's words, then the server's own, the fields of a 422, the partner's reason. */
+/**
+ * What a failed answer means: the bucket's words, then the server's own, the fields of a 422, the partner's reason
+ * (`upstream`: the SDK keeps none of it since 0.1.49, so it is empty for the Router's own calls).
+ */
 function explain(status, f) {
     const type = String(f.type || "");
     let why = Object.prototype.hasOwnProperty.call(WORDS, type) ? WORDS[type] : null;
@@ -627,116 +604,184 @@ const DIALECTS = {
     },
 };
 
-// ---- the queue -----------------------------------------------------------------------------------------------
+// ---- the queue: Comfy's SDK (docs/PLAN_COMFY_SDK.md 3.7 and 10) -----------------------------------------------
+//
+// comfy.models (comfysdk.routerSetup: this run's key and host, set right before it) submits to the queue under one
+// Idempotency-Key, polls the status and collects the result, and itself sends a submit or a read again after a dropped
+// connection or a 5xx, under the same key (the Router replays). What it leaves to the caller stays here: a submit the
+// Router throttles (429) or holds back (409 concurrency, 503) is sent again under the same key after its Retry-After; a
+// status read it throttles, or a result route that says "not finished" after the status said done, is waited out and
+// the run read again by its id; a key the queue refuses with not_enabled goes to the synchronous route; the user's
+// Cancel and a timeout ask the Router to stop the run. Pictures come back as JSON on the queue and may come as bytes on
+// the synchronous route.
+
+const SUBMIT_MIN_MS = 120000;    // a submit's deadline: at least this, longer for a large body (32 KB/s)
+const SUBMIT_RATE = 32768;
+const SUBMIT_RETRY_MS = 30000;   // how long the SDK sends a submit again after a dropped connection or a 5xx
+const RESULT_MIN_MS = 300000;    // the result read once the status said done
+const CANCEL_MS = 10000;
+
+/** The error's bucket: a RouterError's errorType, a ComfyError's code (never instanceof: the two families differ). */
+function typeOf(err) {
+    const t = String((err && (err.errorType || err.code)) || "");
+    return /^http_\d+$/.test(t) ? "" : t;
+}
+
+/** A failure the Router never answered (a dropped connection, a request's own deadline): the same key may go again. */
+function unanswered(err) {
+    if (!err || typeof err !== "object" || +err.httpStatus) return false;
+    if (err.name === "TimeoutError") return true;
+    if (err.name === "TypeError" && /fetch failed|network|terminated|socket/i.test(String(err.message || ""))) return true;
+    return /^(ECONNRESET|ECONNREFUSED|ECONNABORTED|ETIMEDOUT|EPIPE|EAI_AGAIN|ENOTFOUND|UND_ERR)/.test(String(err.code || (err.cause && err.cause.code) || ""));
+}
+
+/** A submit or a read the Router throttled or held back for now: worth sending again after its Retry-After. */
+function heldBack(type) {
+    return type === "rate_limited" || type === "concurrency_limit_exceeded" || type === "queue_backlog_full" || type === "service_unavailable";
+}
+
+// the SDK's own failures, which no Router bucket names
+const SDK_WORDS = {
+    request_timeout: "no answer in time",
+    invalid_response: "the Router's answer was not what the API says it sends",
+    unexpected_response: "the Router's answer was not what the API says it sends",
+    response_too_large: "the answer was larger than Scumble reads",
+    missing_credentials: "no key",
+};
+
+/** An SDK error of a Router call in Scumble's words: the bucket's, the server's own, a 422's fields; the key scrubbed. */
+function routerFail(err, modelId, key, what) {
+    const head = `Comfy Router ${modelId}${what ? " " + what : ""}`;
+    if (!err || typeof err !== "object") return new Error(scrub(`${head}: ${err}`, key));
+    if (unanswered(err)) return new Error(scrub(`${head}: no answer from the Router (${err.message || err})`, key));
+    const type = typeOf(err);
+    const status = +err.httpStatus || 0;
+    // a 422's fields ({ loc, msg }); the SDK's message names the first alone
+    const fields = Array.isArray(err.detail) ? err.detail.filter((d) => d && typeof d === "object").map((d) => {
+        const loc = Array.isArray(d.loc) ? d.loc.filter((x) => x !== "body").join(".") : "";
+        return `${loc ? loc + ": " : ""}${String(d.msg || d.type || "invalid")}`;
+    }) : [];
+    let detail = String(err.message || "");
+    if (/^HTTP \d+$/.test(detail)) detail = "";   // the SDK's stand-in when the body said nothing
+    const body = Object.prototype.hasOwnProperty.call(SDK_WORDS, type) ? `${SDK_WORDS[type]}${detail ? " - " + detail : ""}`
+        : explain(status, { type, detail: fields.length ? "" : detail, fields, upstream: "" });
+    const wait = (status === 429 || status === 409 || status === 503) && +err.retryAfter > 0 ? `; try again in ${Math.ceil(+err.retryAfter)} s` : "";
+    return new Error(scrub(`${head}: ${body}${wait}`, key));
+}
+
+/** { json } of a JSON answer or { bytes, mime } of one answered as bytes (the synchronous route), with its metadata. */
+function answerOf(r, requestId) {
+    const dropped = Array.isArray(r.droppedParams) && r.droppedParams.length ? r.droppedParams.map(String).join(", ") : null;
+    const meta = { request_id: requestId || r.requestId || null, credits: r.creditsUsed != null && r.creditsUsed !== "" ? r.creditsUsed : null, dropped, fallback: r.servingProvider || null };
+    if (r.kind === "binary") return { bytes: Buffer.from(r.data), mime: String(r.contentType || "").split(";")[0].trim() || null, meta };
+    return { json: r.data && typeof r.data === "object" ? r.data : {}, meta };
+}
 
 /**
- * Sends one run and waits for its answer: submit to the queue (resent under the same Idempotency-Key when the Router
- * says to wait), poll the status as long as the server's Retry-After says, collect the result. A key the queue refuses
- * with not_enabled is sent once to the synchronous route instead. Returns the parsed native output and the headers
- * worth keeping.
+ * Sends one run and waits for its answer (see above). `flags` is providers/index.js's own context, which words a
+ * Cancel by what it says: jobSent (a run may exist), cancelAsked (the Router took the stop), jobDone (it had finished).
  */
-async function send(ctx, host, modelId, body, waitMs) {
-    const [prov, model] = splitModel(modelId);
-    const root = `${host}/v2/models/${prov}/${model}`;
+async function send(ctx, flags, modelId, body, waitMs) {
+    splitModel(modelId);
     const json = JSON.stringify(body);
     if (json.length > REQUEST_BYTES_MAX) throw new Error(`Comfy Router ${modelId}: the request is ${(json.length / 1024 / 1024).toFixed(0)} MB, more than the 100 MB the Router takes. Set Highres fix lower or hide reference layers.`);
+    const comfy = require("./comfysdk").routerSetup(ctx);
+    const signal = ctx.signal || undefined;
+    const stopped = () => !!(signal && signal.aborted);
+    // the SDK sends a submit again itself after a dropped connection or a 5xx, under the same key, for this long; past
+    // it (an offline machine, an outage) the run fails instead of uploading the body for minutes
+    const submitRetry = ctx.routerRetry || { budgetMs: SUBMIT_RETRY_MS };
     const key = ctx.uuid();
-    const headers = { "X-API-Key": ctx.key, "Content-Type": "application/json", "Idempotency-Key": key };
-    const fail = async (r, what) => {
-        const f = await readFailure(r, ctx.key);
-        const wait = r.status === 429 || r.status === 503 || r.status === 409 ? retryAfterMs(r, 0) : 0;
-        return new Error(scrub(`Comfy Router ${modelId}${what ? " " + what : ""}: ${explain(r.status, f)}${wait > 0 ? `; try again in ${Math.ceil(wait / 1000)} s` : ""}`, ctx.key));
-    };
-
-    let r = null;
-    for (let n = 1; ; n++) {
+    // a Cancel that came before anything went: nothing runs (index.js words it by jobSent)
+    if (stopped()) throw Object.assign(new Error("cancelled"), { name: "AbortError" });
+    flags.jobSent = true;
+    let handle = null;
+    for (let n = 1; !handle; n++) {
         try {
-            r = await ctx.fetch(root + "/requests", { method: "POST", headers, body: json });
+            handle = await comfy.models.submit(modelId, body, { idempotencyKey: key, signal, retry: submitRetry, timeoutMs: Math.max(SUBMIT_MIN_MS, Math.ceil(json.length / SUBMIT_RATE) * 1000) });
         } catch (err) {
-            // the answer may be lost with the run admitted: the same key returns that run, so a resend is safe
-            if (n < RESEND_MAX) { ctx.log(`submit failed (${err && err.message}), sending once more`); await ctx.sleep(POLL_MS); continue; }
-            throw new Error(scrub(`Comfy Router ${modelId}: no answer from the Router (${err && err.message || err})`, ctx.key));
+            if (stopped()) throw err;
+            const type = typeOf(err);
+            if (type === "not_enabled") {
+                // a key without a workspace behind it cannot use the queue; the synchronous route may still take it
+                ctx.log("the queue refused this key (not_enabled), sending to the synchronous route");
+                return sync(ctx, comfy, modelId, body, waitMs);
+            }
+            // what the SDK does not send again: a 429 / 409 that names a wait, and a submit past its own deadline (once
+            // more; the Router replays it under the same key if the first one landed)
+            const again = (type === "rate_limited" || type === "concurrency_limit_exceeded" || type === "queue_backlog_full") || (type === "request_timeout" && n === 1);
+            const ms = +err.retryAfter > 0 ? +err.retryAfter * 1000 : POLL_MS;
+            if (again && n < RESEND_MAX && ms <= RESEND_WAIT_MAX_MS) {
+                ctx.log(`submit answered ${type || err.message}, sending the same request again after ${ms} ms`);
+                await ctx.sleep(ms);
+                continue;
+            }
+            throw routerFail(err, modelId, ctx.key);
         }
-        if (r.status === 201 || r.ok) break;
-        const type = (r.headers && r.headers.get && r.headers.get("x-comfy-error-type")) || "";
-        if (r.status === 403 && type === "not_enabled") {
-            // a key without a workspace behind it cannot use the queue; the synchronous route may still take it
-            ctx.log("the queue refused this key (not_enabled), sending to the synchronous route");
-            return sync(ctx, root, modelId, json);
-        }
-        const again = (r.status === 409 && type === "concurrency_limit_exceeded") || r.status === 429 || r.status === 503;
-        const ms = retryAfterMs(r, POLL_MS);
-        if (again && n < RESEND_MAX && ms <= RESEND_WAIT_MAX_MS) {
-            ctx.log(`submit answered ${r.status} ${type}, sending the same request again after ${ms} ms`);
-            await ctx.sleep(ms);
-            continue;
-        }
-        throw await fail(r);
     }
-    const sub = (await r.json().catch(() => null)) || {};
-    const id = String(sub.request_id || "");
-    if (!UUID.test(id)) throw new Error(scrub(`Comfy Router ${modelId}: the queue answered without a request id (${JSON.stringify(sub).slice(0, 200)})`, ctx.key));
-    // the three URLs are composed here from the host and the id, never taken from the answer
-    const at = `${root}/requests/${id}`;
-    const read = { headers: { "X-API-Key": ctx.key } };
-    const t0 = Date.now();
-    let wait = retryAfterMs(r, POLL_MS), failures = 0, status = String(sub.status || "IN_QUEUE");
-    const cancel = async () => {
-        try { await ctx.fetch(at + "/cancel", { method: "PUT", headers: { "X-API-Key": ctx.key } }); } catch (_) { /* a request, not a guarantee */ }
-    };
-    for (;;) {
-        while (status !== "COMPLETED") {
-            if (Date.now() - t0 > waitMs) {
-                await cancel();
+    try {
+        // the run's wait starts once it is queued (a long upload does not count against it)
+        return await collect(handle, ctx, modelId, waitMs, Date.now());
+    } catch (err) {
+        if (stopped()) {
+            // the user's Cancel: the Router is asked to stop the run, on a short request of its own (the run's signal fired)
+            try {
+                const u = await handle.cancel({ timeoutMs: CANCEL_MS, retry: false });
+                if (u && u.completed) flags.jobDone = true;
+                else flags.cancelAsked = true;
+            } catch (_) { /* index.js says the run may still finish */ }
+        }
+        throw err;
+    }
+}
+
+/** A queued run to its answer: the status (frames for the bar), then the result; held-back reads waited out. */
+async function collect(handle, ctx, modelId, waitMs, t0) {
+    const signal = ctx.signal || undefined;
+    const stopped = () => !!(signal && signal.aborted);
+    const retry = ctx.routerRetry;
+    const end = t0 + waitMs;
+    for (let failures = 0; ;) {
+        try {
+            const left = end - Date.now();
+            if (left <= 0) throw Object.assign(new Error("out of time"), { code: "request_timeout" });
+            for await (const u of handle.events({ signal, timeoutMs: left, retry })) {
+                failures = 0;
+                if (typeof ctx.progress === "function") ctx.progress({ status: u.status, queuePosition: u.queuePosition, urgent: true });
+                if (u.completed && u.errorType) ctx.log(`completed with error_type ${u.errorType}`);
+            }
+            const r = await handle.get({ signal, timeoutMs: Math.max(RESULT_MIN_MS, end - Date.now()), retry });
+            return answerOf(r, handle.requestId);
+        } catch (err) {
+            if (stopped()) throw err;
+            const type = typeOf(err);
+            if (type === "request_timeout" || Date.now() >= end) {
+                try { await handle.cancel({ timeoutMs: CANCEL_MS, retry: false }); } catch (_) { /* a request, not a guarantee */ }
                 throw new Error(`Comfy Router ${modelId}: no answer after ${Math.round(waitMs / 60000)} minutes; the run was asked to stop (a run the provider finishes anyway is billed).`);
             }
-            await ctx.sleep(Math.max(POLL_MIN_MS, Math.min(POLL_MAX_MS, wait)));
-            let s;
-            try { s = await ctx.fetch(at + "/status", read); } catch (err) {
-                if (++failures >= POLL_FAILURES_MAX) throw new Error(scrub(`Comfy Router ${modelId}: the status read failed ${failures} times (${err && err.message || err})`, ctx.key));
+            // a throttled read, a result route not ready although the status said done: read the run again by its id
+            // a held-back bucket counts only on a read that was answered so (an HTTP status): a run that COMPLETED with
+            // such an error_type (no status) has ended and is reported at once
+            const throttledRead = heldBack(type) && +err.httpStatus > 0;
+            const again = throttledRead || (type === "invalid_response" && +err.httpStatus === 202) || unanswered(err);
+            if (again && ++failures < POLL_FAILURES_MAX) {
+                await ctx.sleep(Math.max(POLL_MIN_MS, Math.min(POLL_MAX_MS, +err.retryAfter > 0 ? +err.retryAfter * 1000 : POLL_MS * 2)));
                 continue;
             }
-            if (s.status === 429 || s.status >= 500) {
-                if (++failures >= POLL_FAILURES_MAX) throw await fail(s, "status");
-                wait = retryAfterMs(s, POLL_MS * 2);
-                continue;
-            }
-            if (!s.ok) throw await fail(s, "status");
-            failures = 0;
-            wait = retryAfterMs(s, POLL_MS);
-            const j = (await s.json().catch(() => null)) || {};
-            status = String(j.status || "");
-            if (status === "COMPLETED" && j.error_type) ctx.log(`completed with error_type ${j.error_type}`);
+            throw routerFail(err, modelId, ctx.key, throttledRead ? "status" : "");
         }
-        const out = await ctx.fetch(at, read);
-        if (out.status === 202) { status = "IN_PROGRESS"; wait = retryAfterMs(out, POLL_MS); continue; }   // not collectable yet
-        if (!out.ok) throw await fail(out);
-        return answerOf(out, id);
     }
 }
 
 /** The synchronous route, for a key the queue does not take; a new Idempotency-Key, since the path differs. */
-async function sync(ctx, root, modelId, json) {
-    const headers = { "X-API-Key": ctx.key, "Content-Type": "application/json", "Idempotency-Key": ctx.uuid() };
-    let r;
-    try { r = await ctx.fetch(root, { method: "POST", headers, body: json }); } catch (err) {
-        throw new Error(scrub(`Comfy Router ${modelId}: no answer from the Router (${err && err.message || err})`, ctx.key));
+async function sync(ctx, comfy, modelId, body, waitMs) {
+    try {
+        const r = await comfy.models.run(modelId, body, { idempotencyKey: ctx.uuid(), signal: ctx.signal || undefined, retry: ctx.routerRetry, timeoutMs: waitMs });
+        return answerOf(r, null);
+    } catch (err) {
+        if (ctx.signal && ctx.signal.aborted) throw err;
+        throw routerFail(err, modelId, ctx.key);
     }
-    if (!r.ok) {
-        const f = await readFailure(r, ctx.key);
-        throw new Error(scrub(`Comfy Router ${modelId}: ${explain(r.status, f)}`, ctx.key));
-    }
-    return answerOf(r, null);
-}
-
-/** { json } of a JSON answer or { bytes, mime } of a picture answered as such, with the Router's headers. */
-async function answerOf(r, id) {
-    const h = (n) => (r.headers && r.headers.get && r.headers.get(n)) || null;
-    const meta = { request_id: id || h("x-comfy-request-id"), credits: h("x-comfy-credits-used"), dropped: h("x-comfy-router-dropped-params"), fallback: h("x-comfy-router-fallback-provider") };
-    const type = String(h("content-type") || "");
-    if (/^image\//i.test(type)) return { bytes: Buffer.from(await r.arrayBuffer()), mime: type.split(";")[0], meta };
-    const json = await r.json().catch(() => null);
-    return { json: json || {}, meta };
 }
 
 // ---- runs ----------------------------------------------------------------------------------------------------
@@ -749,6 +794,12 @@ async function download(url, ctx, test, modelId) {
     return fetchImage(s, ctx.fetch);
 }
 
+/** Whether bytes open like a PNG, a JPEG, a WebP or a GIF. */
+function pictureBytes(b) {
+    if (!b || b.length < 12) return false;
+    return (b[0] === 0x89 && b[1] === 0x50) || (b[0] === 0xff && b[1] === 0xd8) || b.toString("latin1", 8, 12) === "WEBP" || b.toString("latin1", 0, 4) === "GIF8";
+}
+
 function sniff(bytes, fallback) {
     if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
     if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
@@ -757,6 +808,10 @@ function sniff(bytes, fallback) {
 }
 
 async function run(req, ctx, kind) {
+    // the Cancel's words are read from providers/index.js's own context (send sets them there): nothing that runs has
+    // gone out yet
+    const flags = ctx;
+    flags.jobSent = false;
     // ctx.sleep and ctx.uuid are injectable so tools/comfyrouter_test.js waits in milliseconds and knows the keys
     ctx = { ...ctx, sleep: ctx.sleep || realSleep, uuid: ctx.uuid || randomUUID, log: ctx.log || (() => {}) };
     const modelId = String(req.model || "");
@@ -789,8 +844,13 @@ async function run(req, ctx, kind) {
         const total = sentPictures.reduce((n, b) => n + Math.floor((String(b).length * 3) / 4), 0);
         if (total > PICTURES_BYTES_MAX) throw new Error(`${ctx.who || "Comfy Router " + modelId}: the pictures are ${(total / 1024 / 1024).toFixed(1)} MB together as sent, more than the 64 MB one request may carry. Hide reference layers or use smaller ones.`);
     }
-    const got = await send(ctx, test || BASE, modelId, body, kind === "upscale" ? UPSCALE_WAIT_MS : EDIT_WAIT_MS);
+    const got = await send(ctx, flags, modelId, body, kind === "upscale" ? UPSCALE_WAIT_MS : EDIT_WAIT_MS);
+    flags.jobDone = true;   // the answer is in: the run has finished and is charged (a Cancel during the download says so)
     if (got.meta.dropped) ctx.log(`the Router dropped parameters: ${got.meta.dropped}`);
+    // bytes come only from the synchronous route; a page that is no picture (an error page answered 200) is no answer
+    if (got.bytes && !/^image\//i.test(got.mime || "") && !pictureBytes(got.bytes)) {
+        throw new Error(scrub(`Comfy Router ${modelId}: the answer is ${got.mime || "no picture"}, not a picture`, ctx.key));
+    }
     let out = got.bytes ? { bytes: got.bytes, mime: got.mime } : d.read(got.json, req, o, ctx, body);
     if (!out || (!out.bytes && !out.url)) {
         const why = out && out.refused ? `no picture in the answer: ${out.refused}` : `no picture in the answer (${scrub(JSON.stringify(got.json || {}), ctx.key).slice(0, 200)})`;
@@ -801,11 +861,17 @@ async function run(req, ctx, kind) {
         out = { ...out, bytes: file.bytes, mime: file.mime };
     }
     const bytes = Buffer.from(out.bytes);
+    // the Router's own notes on the run (QW6): another provider served it (a hint), parameters it left out (a warning);
+    // their headers come mostly on the synchronous route, so an ordinary queued run has none
+    const notes = [];
+    if (got.meta.fallback) notes.push(`Served by ${got.meta.fallback} (Comfy Router's fallback provider).`);
+    if (got.meta.dropped) notes.push(`Comfy Router left out: ${got.meta.dropped}.`);
     return {
         // the seed the answer names, else the one the body sent (bfl, ideogram, byteplus put it in `seed`), else none:
         // a read that says null sent none (FLUX 3 Image)
         bytes, mime: sniff(bytes, out.mime), seed: out.seed === null ? null : out.seed != null && Number.isFinite(out.seed) ? out.seed : body && body.seed != null && Number.isFinite(Number(body.seed)) ? Number(body.seed) : null,
-        info: { model: modelId, request_id: got.meta.request_id, credits: got.meta.credits != null ? Number(got.meta.credits) : null, dropped: got.meta.dropped || null, pictures: sentPictures.length, ...(out.info || {}) },
+        info: { model: modelId, request_id: got.meta.request_id, credits: got.meta.credits != null ? Number(got.meta.credits) : null, dropped: got.meta.dropped || null, served_by: got.meta.fallback || null, pictures: sentPictures.length, ...(out.info || {}) },
+        notes,
     };
 }
 

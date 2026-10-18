@@ -460,6 +460,19 @@ async function main() {
         check("a Cancel during the uploads: nothing submitted, said so", /^Cancelled after \d+\.\d s, before the job went to Comfy Cloud: nothing runs or is charged\.$/.test(u.r.err || "") && posts(u.f).length === 0 && u.f.cancels.length === 0, u.r.err);
         const dl = await cancelOn(/\/content$/, "GET");
         check("a Cancel during the download of a finished job: done and charged, its picture not kept", /^Cancelled after \d+\.\d s: the job had already finished on Comfy Cloud and is charged; its picture was not kept\.$/.test(dl.r.err || "") && dl.f.cancels.length === 0, dl.r.err);
+        // a Cancel that comes after the last upload, before the submit: the guard before the submit stops the run
+        {
+            let ups = 0;
+            const runId = "idx-pre-submit";
+            const f = fakeComfyV2({ origin: MOCK, outputs: saveOutput });
+            const wrap = { fetch: async (u, i = {}) => {
+                const r = await f.fetch(u, i);
+                if (String(i.method || "GET").toUpperCase() === "POST" && new URL(String(u)).pathname === "/api/v2/assets" && ++ups === 4) index.cancel(runId);
+                return r;
+            } };
+            const r = await viaIndex(wrap, { ...partnerReq(), runId });
+            check("a Cancel after the last upload, before the submit: nothing submitted, the words say nothing runs", /^Cancelled after \d+\.\d s, before the job went to Comfy Cloud: nothing runs or is charged\.$/.test(r.err || "") && ups === 4 && posts(f).length === 0 && f.cancels.length === 0, short({ err: r.err, ups }));
+        }
     }
 
     // 14. a context that names no API (a direct call, the plain-Node tests of the legacy path) stays on the legacy API

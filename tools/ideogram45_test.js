@@ -361,7 +361,12 @@ function fakeRouter(opt = {}) {
     return { fetch, calls, submits, statuses, reads, gets, strays };
 }
 
-/** A run against the fake Router with an injected sleep (recorded, never waited) and uuid. */
+/**
+ * A run against the fake Router with an injected sleep (recorded, never waited) and uuid. Since 0.1.49 the Router's
+ * own calls go through Comfy's SDK, which calls the bare global fetch: the fake takes its place for the run (restored
+ * after), and ctx.fetch stays the fake for the answer's picture download. ctx.routerRetry keeps the SDK's own retries
+ * in milliseconds.
+ */
 async function runCr(req, more = {}, opt = {}) {
     const s = fakeRouter(opt);
     const sleeps = [], uuids = [];
@@ -370,10 +375,13 @@ async function runCr(req, more = {}, opt = {}) {
         key: CR_KEY, fetch: s.fetch, bitmap: codec.bitmap, fromBitmap: codec.fromBitmap, log: () => {},
         sleep: async (ms) => { sleeps.push(ms); },
         uuid: () => { const u = `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`; uuids.push(u); return u; },
+        routerRetry: { baseDelayMs: 1, maxDelayMs: 5, budgetMs: 200 },
         ...more,
     };
     let out = null, err = null;
-    try { out = await (req.kind === "text" ? router.generate(req, ctx) : router.edit(req, ctx)); } catch (e) { err = String((e && e.message) || e); CR_ERRORS.push(err); }
+    const saved = globalThis.fetch;
+    globalThis.fetch = s.fetch;
+    try { out = await (req.kind === "text" ? router.generate(req, ctx) : router.edit(req, ctx)); } catch (e) { err = String((e && e.message) || e); CR_ERRORS.push(err); } finally { globalThis.fetch = saved; }
     const sub = s.submits[0] || null;
     return { s, out, err, sub, body: (sub && sub.body) || {}, sleeps, uuids };
 }
@@ -784,7 +792,9 @@ async function main() {
     const NEVER_ON_EDIT = ["size", "magic_prompt", "images", "aspect_ratio", "negative_prompt", "output_format", "text_prompt", "resolution"];
     const TEXT_KEYS_CR = ["magic_prompt", "num_images", "prompt", "quality", "seed", "size"];
     const PICTURE_KEYS = ["image", "images", "mask", "reference_images"];
-    const queueSeq = (root) => [`POST ${root}/requests`, `GET ${root}/requests/${CR_RID}/status`, `GET ${root}/requests/${CR_RID}`, `GET ${CR_OUT}`];
+    // the SDK's queue (0.1.49): the submit, its status poll (COMPLETED at once), the result read's own status check, the
+    // result, then the picture's download through ctx.fetch
+    const queueSeq = (root) => [`POST ${root}/requests`, `GET ${root}/requests/${CR_RID}/status`, `GET ${root}/requests/${CR_RID}/status`, `GET ${root}/requests/${CR_RID}`, `GET ${CR_OUT}`];
     const SIZES = [[1024, 683, "3:2", "1248x832"], [2048, 1152, "16:9", "2560x1440"], [1024, 1024, null, "1024x1024"], [2048, 2048, "1:1", "2048x2048"], [1536, 1024, "3:2", "2496x1664"], [1024, 576, "16:9", "1344x768"], [3000, 1000, null, "3072x1024"]];
 
     // ---- 15. Comfy Router: the recipe ----
@@ -804,8 +814,9 @@ async function main() {
     await section("16. Comfy Router: a fill", async () => {
         const x = await runCr(crFill({ negative: "blurry, low quality", seed: 7 }));
         const seq = x.s.calls.map((c) => `${c.method} ${c.url}`);
-        check("the queue: one POST to /v2/models/ideogram/ideogram-4-5/requests, the status, the result, the picture's download; nothing else", !x.err && eq(seq, queueSeq(CR_ROOT)) && x.s.submits.length === 1 && !x.s.strays.length, x.err || short(seq));
-        check("the waits went through the injected sleep (recorded, none waited)", x.sleeps.length >= 1, short(x.sleeps));
+        check("the queue: one POST to /v2/models/ideogram/ideogram-4-5/requests, the status (polled, then checked by the result read), the result, the picture's download; nothing else", !x.err && eq(seq, queueSeq(CR_ROOT)) && x.s.submits.length === 1 && !x.s.strays.length, x.err || short(seq));
+        // since 0.1.49 the SDK paces the status polls itself; the adapter's own sleep is only for a throttled submit or read
+        check("a plain run takes no adapter wait: the SDK polls the status itself (COMPLETED at once, no Retry-After)", !x.err && x.sleeps.length === 0 && x.s.statuses.length === 2, x.err || short({ sleeps: x.sleeps, statuses: x.s.statuses.length }));
         check("the body holds image, mask, num_images, prompt, quality and seed, nothing else", !x.err && eq(keysOf(x.body), EDIT_KEYS), short(keysOf(x.body)));
         check("no size, magic_prompt, images, aspect_ratio, negative_prompt, output_format, text_prompt or resolution (a negative was given)", !x.err && NEVER_ON_EDIT.every((k) => !(k in x.body)), short(keysOf(x.body)));
         check("the prompt as typed, quality medium (the default), num_images 1, seed 7", x.body.prompt === "a red door" && x.body.quality === "medium" && x.body.num_images === 1 && x.body.seed === 7, short({ ...x.body, image: undefined, mask: undefined }));
@@ -820,9 +831,11 @@ async function main() {
         const badRamp = notInverted(y.body.mask, W, H, RAMP);
         check("a soft ramp: 128 and above black, below white (x = 31 at 124 stays white, x = 32 at 128 turns black)", !y.err && badRamp === null && eq(pixel(y.body.mask, 31, 0), [255, 255, 255, 255]) && eq(pixel(y.body.mask, 32, 0), [0, 0, 0, 255]), y.err || badRamp);
         check("the answer: the downloaded picture as image/png, no info.mask for a partial selection", !x.err && sameAs(x.out.bytes, RESULT) && x.out.mime === "image/png" && !("mask" in x.out.info), x.err || short(x.out && x.out.info));
-        const [post, st, rd, dl] = x.s.calls;
-        check("the POST carries X-API-Key, Content-Type JSON and the run's Idempotency-Key (the injected uuid)", !!post && post.headers["x-api-key"] === CR_KEY && post.headers["content-type"] === "application/json" && post.headers["idempotency-key"] === x.uuids[0] && x.uuids.length === 1, short(post && post.headers));
-        check("the status and result reads carry the key; the picture's download carries no X-API-Key", !!dl && st.headers["x-api-key"] === CR_KEY && rd.headers["x-api-key"] === CR_KEY && !("x-api-key" in dl.headers) && !("authorization" in dl.headers), short([st && st.headers, dl && dl.headers]));
+        const [post, st, st2, rd, dl] = x.s.calls;
+        // the SDK's headers (0.1.49): the key as a bearer, never X-API-Key
+        const bearer = `Bearer ${CR_KEY}`;
+        check("the POST carries the key as a bearer (no X-API-Key), Content-Type JSON and the run's Idempotency-Key (the injected uuid)", !!post && post.headers.authorization === bearer && !("x-api-key" in post.headers) && post.headers["content-type"] === "application/json" && post.headers["idempotency-key"] === x.uuids[0] && x.uuids.length === 1, short(post && post.headers));
+        check("the status and result reads carry the bearer (no X-API-Key); the picture's download carries neither", !!dl && dl.url === CR_OUT && [st, st2, rd].every((c) => c.headers.authorization === bearer && !("x-api-key" in c.headers)) && !("x-api-key" in dl.headers) && !("authorization" in dl.headers), short([st && st.headers, dl && dl.headers]));
     });
 
     // ---- 17. Comfy Router: whole and empty selections, a mask that cannot be used ----
@@ -931,7 +944,7 @@ async function main() {
     await section("22. Comfy Router: text runs", async () => {
         let x = await runCr(crText({ negative: "blurry" }));
         const seq = x.s.calls.map((c) => `${c.method} ${c.url}`);
-        check("the queue: one POST to /v2/models/ideogram/ideogram-4-5/requests, the status, the result, the download", !x.err && eq(seq, queueSeq(CR_ROOT)), x.err || short(seq));
+        check("the queue: one POST to /v2/models/ideogram/ideogram-4-5/requests, the status twice, the result, the download", !x.err && eq(seq, queueSeq(CR_ROOT)), x.err || short(seq));
         check("the body holds magic_prompt, num_images, prompt, quality, seed and size, nothing else", !x.err && eq(keysOf(x.body), TEXT_KEYS_CR), short(keysOf(x.body)));
         check("no picture field", PICTURE_KEYS.every((k) => !(k in x.body)), short(keysOf(x.body)));
         check("magic_prompt off (text.fixed), quality medium, num_images 1, the prompt as written, seed 7", x.body.magic_prompt === "off" && x.body.quality === "medium" && x.body.num_images === 1 && x.body.prompt === "a lighthouse at dusk" && x.body.seed === 7, short(x.body));
@@ -991,7 +1004,7 @@ async function main() {
         const dls = CR_CALLS.filter((c) => new URL(c.url).origin === CR_DL_ORIGIN);
         const posts = api.filter((c) => c.method === "POST");
         check("no call left the two hosts (api.comfy.org and the answer's picture host)", CR_CALLS.length > 100 && api.length + dls.length === CR_CALLS.length, `${CR_CALLS.length} calls, ${api.length} to the API, ${dls.length} downloads`);
-        check("the key went on every api.comfy.org call; every POST with Content-Type JSON and a UUID Idempotency-Key", api.every((c) => c.headers["x-api-key"] === CR_KEY) && posts.length > 30 && posts.every((c) => c.headers["content-type"] === "application/json" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(c.headers["idempotency-key"] || "")), short(api.find((c) => c.headers["x-api-key"] !== CR_KEY)));
+        check("the key went as a bearer on every api.comfy.org call (never as X-API-Key); every POST with Content-Type JSON and a UUID Idempotency-Key", api.every((c) => c.headers.authorization === `Bearer ${CR_KEY}` && !("x-api-key" in c.headers)) && posts.length > 30 && posts.every((c) => c.headers["content-type"] === "application/json" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(c.headers["idempotency-key"] || "")), short(api.find((c) => c.headers.authorization !== `Bearer ${CR_KEY}` || "x-api-key" in c.headers)));
         check("no download carried the key", dls.length > 30 && dls.every((c) => c.method === "GET" && !("x-api-key" in c.headers) && !("authorization" in c.headers)), `${dls.length} downloads`);
         check("every call was one the fake Router plays (no 404 stray)", CR_STRAYS.length === 0, short(CR_STRAYS.map((c) => `${c.method} ${c.url}`)));
         check("the Comfy key appears in no error of the run", CR_ERRORS.length >= 10 && !CR_ERRORS.some((m) => m.includes(CR_KEY)), `${CR_ERRORS.length} errors`);

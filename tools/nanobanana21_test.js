@@ -160,6 +160,28 @@ const fillReq = (over = {}) => ({
             if (!got) throw new Error("no request: " + err);
             return got;
         }
+        // Comfy Router's calls go through Comfy's SDK (0.1.49), which calls the bare global fetch, and sends a submit
+        // that throws again by itself: a test key on a loopback base (never api.comfy.org), the fake in the global
+        // fetch's place for the run (restored after), and the captured submit answered with a terminal 400 invalid_input.
+        const ROUTER_KEY = "test-nb21-0123456789", ROUTER_BASE = "http://127.0.0.1:5599";
+        const routerCalls = [];
+        async function firstRouterRequest(req) {
+            let got = null;
+            const fetch = async (url, init = {}) => {
+                const method = String(init.method || "GET").toUpperCase();
+                routerCalls.push(`${method} ${url}`);
+                if (!got) got = { url: String(url), body: typeof init.body === "string" ? JSON.parse(init.body) : init.body };
+                return new Response(JSON.stringify({ detail: STOP }), { status: 400, headers: { "content-type": "application/json", "x-comfy-error-type": "invalid_input" } });
+            };
+            const saved = globalThis.fetch;
+            globalThis.fetch = fetch;
+            let err;
+            try {
+                err = await thrown(() => router[req.kind === "text" ? "generate" : "edit"](req, { fetch, key: ROUTER_KEY, base: ROUTER_BASE, sleep: async () => {}, routerRetry: { baseDelayMs: 1, maxDelayMs: 5, budgetMs: 200 } }));
+            } finally { globalThis.fetch = saved; }
+            if (!got) throw new Error("no request: " + err);
+            return got;
+        }
         const hostReq = (pid, over = {}) => {
             const v = recipe.providers[pid];
             return { provider: pid, kind: v.input === "edit" ? "edit" : "fill", model: v.model, options: v.options || {}, fields: v.fields || {}, fixed: v.fixed || null, params: paramsOf(v, over.params || {}), prompt: "a red door", negative: "", seed: 7, image: pic("crop"), mask: pic("mask"), references: [], width: 1024, height: 768, ...over, ...(over.params ? { params: paramsOf(v, over.params) } : {}) };
@@ -172,15 +194,17 @@ const fillReq = (over = {}) => ({
         check("fal: Thinking high goes as fal's lower-case enum", fh.body.thinking_level === "high");
 
         const router = require(path.join(PROV, "comfyrouter.js"));
-        const r = await firstRequest(router, hostReq("comfyrouter"));
+        const r = await firstRouterRequest(hostReq("comfyrouter"));
         const rg = r.body && r.body.generationConfig;
         check("Comfy Router: vertexai/gemini-nano-banana-2.1", /vertexai\/gemini-nano-banana-2\.1/.test(r.url), r.url);
         check("Comfy Router: thinkingConfig in the schema's upper case (MEDIUM), Size 2K", rg && eq(rg.thinkingConfig, { thinkingLevel: "MEDIUM" }) && rg.imageConfig && rg.imageConfig.imageSize === "2K", short(rg));
         const nb2r = nb2.providers.comfyrouter;
-        const r2 = await firstRequest(router, { ...hostReq("comfyrouter"), model: nb2r.model, options: nb2r.options, params: paramsOf(nb2r) });
+        const r2 = await firstRouterRequest({ ...hostReq("comfyrouter"), model: nb2r.model, options: nb2r.options, params: paramsOf(nb2r) });
         check("Comfy Router: Nano Banana 2 sends no thinkingConfig, as before", r2.body && r2.body.generationConfig && !("thinkingConfig" in r2.body.generationConfig), short(r2.body && r2.body.generationConfig));
-        const rw = await firstRequest(router, { ...hostReq("comfyrouter"), kind: "text", image: null, mask: null, references: [pic("r0")], width: 4096, height: 520, params: paramsOf(recipe.providers.comfyrouter, { image_size: "auto" }) });
+        const rw = await firstRouterRequest({ ...hostReq("comfyrouter"), kind: "text", image: null, mask: null, references: [pic("r0")], width: 4096, height: 520, params: paramsOf(recipe.providers.comfyrouter, { image_size: "auto" }) });
         check("Comfy Router: a free-size text run with a reference takes the closest of the variant's ratios (8:1)", rw.body.generationConfig.imageConfig.aspectRatio === "8:1", short(rw.body.generationConfig.imageConfig));
+        const submit = `POST ${ROUTER_BASE}/v2/models/`;
+        check("Comfy Router: the three runs sent one submit each, to the loopback mock alone (the 400 is not sent again)", routerCalls.length === 3 && routerCalls.every((c) => c.startsWith(submit) && c.endsWith("/requests")), short(routerCalls));
 
         const cloud = require(path.join(PROV, "comfycloud.js"));
         const uploads = [];

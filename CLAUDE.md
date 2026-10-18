@@ -92,9 +92,13 @@ code.
   plan). **Section 4's live check ran 2026-10-18** with the user's key typed into a test instance (Z-Image Turbo text,
   Klein 9B edit, a Cancel answered by Comfy; the frames carry only value / nodes_done / nodes_total). **S2 done** (Cancel
   stops the job on Comfy's side, the status row's bar follows Cloud runs: `provider:progress`, `RunProgress` `fraction`,
-  `host.providerProgress`; a review workflow's 7 findings fixed; "S2 as built" in the plan). **Next: S3** (Comfy
-  Router on the SDK). Open questions 1, 6, 7, 9 of the plan's section 8 go with the recommendations until the user
-  answers (3 and 4 are built as recommended). The live check of section 4 (scratchpad `sdk-test/cloud_v2_test.mjs`, the user's key typed in a terminal)
+  `host.providerProgress`; a review workflow's 7 findings fixed; "S2 as built" in the plan). **S3 done** (Comfy Router
+  on `comfy.models`; QW6 notes; the Router tests on a swapped global fetch; a review workflow's 13 findings, 12 fixed, 1
+  accepted; "S3 as built" in the plan). **The user (2026-10-18 night): "kannst du bis release weitermachen alleine?"**:
+  S6, S7, S8, S9, S4 and S5's local prep go on unattended, a commit per section; no push, tag, release, post, Store
+  update or MCP Registry publish without the user's word; S5's paid Router live run needs the user's key. **Next: S6.**
+  Open questions 1, 6, 7, 9 of the plan's section 8 go with the recommendations until the user answers (3 and 4 are
+  built as recommended). The live check of section 4 (scratchpad `sdk-test/cloud_v2_test.mjs`, the user's key typed in a terminal)
   has not run. The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own
   melody; the other two fit released songs and must not be used as audio).
 

@@ -753,6 +753,7 @@ async function runV2(req, ctx, waitMs) {
     // one submit under one key; a submit that got no answer goes once more under the same key, which Comfy refuses
     // (idempotency_key_reuse) when the first one landed: then the job exists, its id is lost, and nothing is resent
     const workflow = client.workflows.fromJson(graph);
+    if (stopped()) throw Object.assign(new Error("cancelled"), { name: "AbortError" });   // a Cancel before the submit: nothing runs
     ctx.jobSent = true;   // from here a job may exist on Comfy
     const idempotencyKey = (typeof ctx.uuid === "function" ? ctx.uuid : randomUUID)();
     let job = null;

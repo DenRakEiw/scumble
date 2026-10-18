@@ -1,19 +1,22 @@
 """A mock of Comfy Router (api.comfy.org) for tools/comfyrouter_test.py (the pattern of tools/ark_mock.py).
 
-Answers the routes electron/main/providers/comfyrouter.js talks to, on 127.0.0.1 (the only base besides api.comfy.org
-that the adapter accepts, through settings.comfyrouter.base, and the only one a "test-" key goes to):
+Answers the routes electron/main/providers/comfyrouter.js talks to through Comfy's SDK (comfy.models, since 0.1.49), on
+127.0.0.1 (the only base besides api.comfy.org that the adapter accepts, through settings.comfyrouter.base, and the only
+one a "test-" key goes to). Every Router route answers 401 unauthorized without "Authorization: Bearer <key>" (the
+SDK's header; an X-API-Key alone is refused there):
 
-    POST /v2/models/{provider}/{model}/requests       401 unauthorized without X-API-Key; else 201 { request_id,
-                                                      status: IN_QUEUE, queue_position, status_url, response_url,
-                                                      cancel_url } with Retry-After: 1 (the URLs deliberately name
-                                                      another host: the adapter composes its own)
-    GET  .../requests/{id}/status                     IN_PROGRESS on the first read, COMPLETED after (Retry-After: 1)
+    POST /v2/models/{provider}/{model}/requests       201 { request_id, status: IN_QUEUE, queue_position, status_url,
+                                                      response_url, cancel_url } with Retry-After: 1 (the URLs
+                                                      deliberately name another host: the SDK composes its own)
+    GET  .../requests/{id}/status                     IN_PROGRESS on the first read, COMPLETED after (Retry-After: 1,
+                                                      the smallest pace the SDK reads; it waits it for real)
     GET  .../requests/{id}                            the model's native answer (below), X-Comfy-Credits-Used
     PUT  .../requests/{id}/cancel                     202 CANCELLATION_REQUESTED
     POST /v2/models/{provider}/{model}                the synchronous route: the native answer at once
-    GET  /asset/{n}.png                               a picture an answer links to
+    GET  /asset/{n}.png                               a picture an answer links to (no key expected)
 
-and the Partner API routes electron/main/providers/comfypartner.js uses for HY Image 3.5:
+and the Partner API routes electron/main/providers/comfypartner.js uses for HY Image 3.5 (still X-API-Key, its own
+transport):
 
     POST /customers/storage                           { upload_url: <mock>/upload/<id>, download_url: <mock>/stored/<id> }
     PUT  /upload/{id}                                 keeps the bytes (a signed URL: no key expected)
@@ -32,7 +35,7 @@ Gemini 1024 on the long side of its aspect); an upscale the picture's size times
 Synthetic models (any provider segment): `mock-credits` answers the submit with 402 insufficient_credits, `mock-busy`
 answers its first submit with 429 rate_limited and Retry-After: 1 and the next one normally, `mock-noqueue` answers
 every submit with 403 not_enabled (so the adapter goes to the synchronous route), `mock-refused` completes with
-error_type content_policy_violation. Every request is recorded with its method, path, all its headers (names
+error_type content_policy_violation and a detail (the SDK raises the typed error from the status read). Every request is recorded with its method, path, all its headers (names
 lowercased) and its JSON body, the pictures summarised. Every answer closes its connection (see llm_mock.py).
 
     python tools/comfyrouter_mock.py [port]     runs it standalone for poking at by hand
@@ -203,7 +206,9 @@ class Handler(BaseHTTPRequestHandler):
             self.server.every_call.append(c)
 
     def _authorised(self):
-        if not (self.headers.get("X-API-Key") or "").strip():
+        """A Router route: the SDK's bearer (any non-empty token; the test checks which). X-API-Key is the Partner API's."""
+        m = re.match(r"^Bearer\s+(\S.*)$", (self.headers.get("Authorization") or "").strip())
+        if not m:
             self._error(401, "unauthorized", "Missing or invalid credentials.")
             return False
         return True
@@ -244,6 +249,7 @@ class Handler(BaseHTTPRequestHandler):
             body = {"request_id": rid, "status": "COMPLETED" if done else "IN_PROGRESS", "queue_position": 0}
             if done and refused:
                 body["error_type"] = "content_policy_violation"
+                body["detail"] = "The provider refused the request on content-policy grounds."
             self._send(200, body, headers={"Retry-After": "1"})
             return
         if refused:
@@ -264,6 +270,8 @@ class Handler(BaseHTTPRequestHandler):
         m = ROUTE.match(path)
         if not m or m.group(5) != "/cancel":
             self._error(404, "request_not_found", "no route PUT " + path)
+            return
+        if not self._authorised():
             return
         self._send(202, {"request_id": m.group(4), "status": "CANCELLATION_REQUESTED"})
 

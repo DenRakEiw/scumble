@@ -34,7 +34,7 @@ function sentTexts(snap) {
 }
 
 // a run note that only explains how the run went, not what it left out or changed (item 45: those show red)
-const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None /;
+const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None |^Served by .+ \(Comfy Router's fallback provider\)\.$/;
 /** The kind of a line that appends a run's notes to the one before: red when a note says something was left out. */
 function notesKind(editor, notes) {
     return notes.some((n) => !HINT_NOTE.test(String(n))) ? "warn" : (editor.statusKind || "info");
@@ -2050,6 +2050,9 @@ export const host = {
         }
         // the document stays held until the answer has landed (endRun); the whole picture's resize lets its own landing
         // through (resizeImageNow's `base`)
+        // the run's notes (Comfy Router: who served it, what it left out) after the landing's own line, as Generate does
+        const runNotes = Array.isArray(res.notes) ? res.notes.map(String) : [];
+        const sayNotes = () => { if (runNotes.length) editor.setStatus(`${editor.status} ${runNotes.join(" ")}`, notesKind(editor, runNotes)); };
         try {
             if (scope === "selection") {
                 const info = prep.info;
@@ -2061,10 +2064,12 @@ export const host = {
                 await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), prompt: r.usesPrompt ? texts.prompt : "", negative: r.usesPrompt ? texts.negative : "", refs: null }]);
                 const got = res.info && res.info.width ? ` (${res.info.width} × ${res.info.height} came back)` : "";
                 editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.${texts.note ? " " + texts.note : ""}`);
-                return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null, note: texts.note };
+                sayNotes();
+                return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null, note: texts.note, notes: runNotes };
             }
             const land = await this.landWholePicture(editor, res.bytes, res.mime, { label, seconds: res.seconds, W, H, note: texts.note });
-            return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: land.width, height: land.height, answered: land.answered, info: res.info || null, note: texts.note };
+            sayNotes();
+            return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: land.width, height: land.height, answered: land.answered, info: res.info || null, note: texts.note, notes: runNotes };
         } finally {
             this.endRun(editor, token);
         }

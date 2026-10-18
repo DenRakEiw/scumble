@@ -345,6 +345,31 @@ asserts Bearer, replay under one key, `not_enabled` -> the sync route, 402 not r
 timeout. Gates: `comfyrouter_test.js`, `python tools/comfyrouter_test.py` against a dev instance (`--no-comfy`),
 `lint`, `types`.
 
+**S3 as built (2026-10-18).** `comfyrouter.js`'s queue section is the SDK: `send` (100 MB check; `routerSetup`;
+one key; a Cancel before anything went throws with `jobSent` false; `comfy.models.submit` with the SDK's own resend of a
+dropped connection or a 5xx under the same key for 30 s (`SUBMIT_RETRY_MS`; tests pass `ctx.routerRetry`) and a deadline
+of at least 120 s, longer for a large body; the adapter's own resend under the same key only for rate_limited /
+concurrency_limit_exceeded / queue_backlog_full after their Retry-After and a request_timeout once more, 3 submits at
+most; not_enabled -> `sync` (`comfy.models.run`, a new key, bytes possible); the run's wait starts once it is queued),
+`collect` (`handle.events` -> urgent status frames to `ctx.progress`, then `handle.get`; a read answered 429 / 409 /
+503, a result route's 202 after COMPLETED, or no answer: waited out 1..15 s and read again, 5 at most; a COMPLETED with
+an error_type is reported at once; the timeout PUTs cancel), the user's Cancel (`handle.cancel` without the run's
+signal, 10 s, no retry: `cancelAsked`, or `jobDone` when it answers COMPLETED; flags on index.js's own ctx, which
+`run()` no longer loses to its copy), `routerFail` (WORDS by `errorType || code`, the SDK's own codes in words, a 422's
+fields from `err.detail`, "try again in N s"), `answerOf` (json, or bytes on the sync route; a body that is no picture is
+refused). `run()` sets `jobDone` once the answer is in. **Lost:** the partner's `upstream_detail` ("the provider
+said: ...": the SDK keeps no raw body). **Accepted:** `comfy.config` is process-global; a key or host changed while a
+Router run is going reaches that run's next read (one user, one key). QW6: `out.notes` "Served by <x> (Comfy Router's
+fallback provider)." (a hint: `HINT_NOTE`) and "Comfy Router left out: <params>." (a warning), merged by
+`providers/index.js`; Generate and Upscale show them. Tests: `comfyrouter_test.js` 151 (a guard refuses any fetch
+that is no fake, `STRAY` empty at the end; Bearer headers; resends under one key; the re-reads; the timeout; the
+Cancel's five wordings; a slow submit; QW6), `comfyrouter_mock.py` (Bearer on the Router's routes, X-API-Key on the
+Partner API's) and `comfyrouter_test.py` (the gate), `ideogram45_test.js` 242, `nanobanana21_test.js` 43,
+`refs_layout_test.js` 722 (each Router run on a swapped global fetch; before that rework two of them reached
+api.comfy.org with fake keys and were refused there); all plain-Node provider tests also ran with a preload that
+refuses every real connection (none). Reviewed by a workflow (3 lenses, a skeptic per finding; 13 confirmed, none
+refuted): 12 fixed, the process-global config accepted (above).
+
 **S4: docs and review (light).** `docs/RECIPES.md` "Comfy Cloud recipes" (:194) and "Comfy Router" (:2203): v2, the
 SDK, the fallback setting, the test base; the manual (Cloud runs show steps, Cancel stops the job on Comfy's side);
 README one line ("Comfy Cloud and Comfy Router run through Comfy's official TypeScript SDK"); CHANGELOG Unreleased;

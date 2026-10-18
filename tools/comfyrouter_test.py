@@ -9,10 +9,11 @@ loopback base, and any other key never to one.
 - Settings › API providers has no Comfy Router row (it shares the Comfy Cloud key), the sixteen recipes list
   "comfyrouter" last and keep their defaults, and the provider select says "Comfy Router (no key)" until the Comfy
   Cloud key is stored, "Comfy Router" after;
-- GPT Image 2 inpaints: one submit to /v2/models/openai/gpt-image-2/requests with X-API-Key, a UUID Idempotency-Key
-  and Content-Type, the crop as image[0] at the emitted size and the alpha mask at the same size, then status reads
-  and one result read on URLs the adapter composed (the mock's answer names another host), a result layer, and the
-  log line with the request id and the credits;
+- GPT Image 2 inpaints: one submit to /v2/models/openai/gpt-image-2/requests through Comfy's SDK (since 0.1.49) with
+  Authorization: Bearer <key> and no X-API-Key, the SDK's User-Agent, a UUID Idempotency-Key and Content-Type, the
+  crop as image[0] at the emitted size and the alpha mask at the same size, then status reads and one result read
+  with the bearer on URLs the SDK composed (the mock's answer names another host), a result layer, and the log line
+  with the request id and the credits;
 - Nano Banana 2 inpaints through Gemini's shape (the crop and the mask as inlineData), FLUX.2 [pro] edits and its
   answer is fetched from the linked asset without the key;
 - Magnific Precision upscales the selection through freepik/ai-image-upscaler-precision-v2 at factor 2;
@@ -20,7 +21,9 @@ loopback base, and any other key never to one.
 - 402 insufficient_credits reaches the status line in words and is not sent again; a 429 is sent once more after
   Retry-After under the same Idempotency-Key; a key the queue refuses (not_enabled) goes to the synchronous route; a
   run that completes with content_policy_violation says so;
-- a real-looking key is never sent to the test address.
+- HY Image 3.5 runs through the Partner API (comfypartner.js, its own transport: X-API-Key, not the bearer);
+- a real-looking key is never sent to the test address, and across the whole run every X-API-Key and every bearer the
+  mock saw is the test key.
 
 A profile that already holds a Comfy Cloud key is refused, never overwritten; the test key, settings.comfyrouter, the
 remembered providers and the selected recipe are put back at the end whatever happens.
@@ -340,17 +343,24 @@ def queue_calls(snap, model_id):
     return out
 
 
+BEARER = "Bearer " + KEY
+SDK_AGENT = re.compile(r"^comfy-sdk-typescript/")
+
+
 def check_run(mock, res, model_id, verb):
-    """One queued run: a submit with the three headers, status reads and one result read with the key alone."""
+    """One queued run through the SDK: a submit with the bearer, the SDK's agent, an Idempotency-Key and Content-Type,
+    then status reads and one result read with the bearer alone (no X-API-Key anywhere on the Router's routes)."""
     q = queue_calls(mock.snapshot(), model_id)
     if len(q["submit"]) != 1 or not q["status"] or len(q["result"]) != 1 or q["other"] or q["sync"]:
         raise Exception("the mock saw %s" % {k: [(c["method"], c["path"]) for c in v] for k, v in q.items() if v})
     h = q["submit"][0]["headers"]
-    if h.get("x-api-key") != KEY or not UUID.match(h.get("idempotency-key") or "") or not str(h.get("content-type") or "").startswith("application/json") or "authorization" in h:
-        raise Exception("the submit's headers: %s" % {k: v for k, v in h.items() if k in ("x-api-key", "idempotency-key", "content-type", "authorization")})
+    shown = ("x-api-key", "idempotency-key", "content-type", "authorization", "user-agent")
+    if (h.get("authorization") != BEARER or "x-api-key" in h or not UUID.match(h.get("idempotency-key") or "")
+            or not str(h.get("content-type") or "").startswith("application/json") or not SDK_AGENT.match(h.get("user-agent") or "")):
+        raise Exception("the submit's headers: %s" % {k: ("Bearer [test key]" if v == BEARER else v) for k, v in h.items() if k in shown})
     for cl in q["status"] + q["result"]:
-        if cl["headers"].get("x-api-key") != KEY:
-            raise Exception("a read without the key: %s" % cl["path"])
+        if cl["headers"].get("authorization") != BEARER or "x-api-key" in cl["headers"]:
+            raise Exception("a read without the bearer, or with an X-API-Key: %s %s" % (cl["path"], sorted(cl["headers"])))
     for cl in q["asset"]:
         if "x-api-key" in cl["headers"] or "authorization" in cl["headers"]:
             raise Exception("the asset download carried a key")
@@ -498,6 +508,9 @@ async def run_all(c):
                 raise Exception("not_enabled: %s, %s" % (json.dumps({k: res[k] for k in ("error", "status", "layers")})[:400], {k: len(v) for k, v in q.items()}))
             if q["sync"][0]["headers"].get("idempotency-key") == q["submit"][0]["headers"].get("idempotency-key"):
                 raise Exception("the synchronous route reused the queue's Idempotency-Key")
+            for cl in q["submit"] + q["sync"]:
+                if cl["headers"].get("authorization") != BEARER or "x-api-key" in cl["headers"]:
+                    raise Exception("%s without the bearer, or with an X-API-Key: %s" % (cl["path"], sorted(cl["headers"])))
             done("a_key_the_queue_refuses_goes_to_the_synchronous_route", {"sync": 1})
         await step("a_key_the_queue_refuses_goes_to_the_synchronous_route", noqueue)
 
@@ -593,12 +606,19 @@ async def run_all(c):
             done("a_real_key_never_goes_to_the_test_base", {"generate": res["generate"][:200], "requests": 0})
         await step("a_real_key_never_goes_to_the_test_base", real_key)
 
-        # every call of the run: the test key only, and to the mock only (it is the only host the app could reach here)
+        # every call of the run: the test key only, and to the mock only (it is the only host the app could reach here);
+        # the Router's routes carry it as the SDK's bearer, the Partner API's as X-API-Key, never both on one call
         seen = mock.all_calls()
         wrong = [cl["path"] for cl in seen if cl["headers"].get("x-api-key") not in (None, KEY)]
-        if wrong:
+        wrong += [cl["path"] for cl in seen if cl["headers"].get("authorization") not in (None, BEARER)]
+        both = [cl["path"] for cl in seen if "x-api-key" in cl["headers"] and "authorization" in cl["headers"]]
+        router_keyed = [cl["path"] for cl in seen if cl["path"].startswith("/v2/models/") and "x-api-key" in cl["headers"]]
+        if wrong or both or router_keyed:
             ok = False
-            print("[FAIL] a call with another key: %s" % wrong[:5])
+            print("[FAIL] a call with another key: %s; with both headers: %s; a Router call with X-API-Key: %s" % (wrong[:5], both[:5], router_keyed[:5]))
+        else:
+            print("[ok] every_call_carries_the_test_key_only: %d calls, %d with the bearer, %d with X-API-Key" % (
+                len(seen), sum(1 for cl in seen if "authorization" in cl["headers"]), sum(1 for cl in seen if "x-api-key" in cl["headers"])))
     except Stop:
         pass
     except Exception as err:  # noqa: BLE001
