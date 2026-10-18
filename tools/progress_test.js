@@ -91,6 +91,49 @@ const { pathToFileURL } = require("node:url");
     p.done("F");
     check("revive of a prompt never dropped does nothing", p.revive("G") === false);
     check("a minute later it stays gone", p.event("execution_start", { prompt_id: "F" }) === false && !p.runs.has("F"));
+    // a provider's run without sampler steps (Comfy Cloud's frames, measured live 2026-10-18): the share done of all
+    // nodes, nodes_done of them whole; under the timed run's own id
+    p.timer({ label: "Comfy Cloud", started: t - 4000, promptId: "K" });
+    p.track("K", 1);
+    p.event("fraction", { prompt_id: "K", value: 0, nodes_done: 0, nodes_total: 1 });
+    check("a share of nothing yet: node 1/1, busy, under the run's label and seconds", last().label === "Comfy Cloud · node 1/1 · 4 s" && last().fraction === null, last());
+    p.event("fraction", { prompt_id: "K", value: 0.9208333333333334, nodes_done: 11, nodes_total: 12 });
+    check("11 of 12 nodes whole, the sampler at 1/20: node 12/12, filled to the running node's part (0.05), not 92 %", /· node 12\/12 · /.test(last().label) && Math.abs(last().fraction - 0.05) < 1e-6, last());
+    p.event("fraction", { prompt_id: "K", value: 0.9958333333333332, nodes_done: 11, nodes_total: 12 });
+    check("the sampler at 19/20: 0.95", Math.abs(last().fraction - 0.95) < 1e-6, last());
+    p.event("fraction", { prompt_id: "K", value: 1, nodes_done: 14, nodes_total: 14 });
+    check("all nodes whole (the total grew): node 14/14, busy", /· node 14\/14 · /.test(last().label) && last().fraction === null, last());
+    p.track("L", 3);
+    p.idle(new Set(["K"]));
+    check("the local queue went empty: a local prompt goes, the provider's run in `keep` stays", p.runs.has("K") && !p.runs.has("L") && p.dropped.has("L") && /^Comfy Cloud · node 14\/14/.test(last().label), last());
+    p.idle(new Set(["K"]));
+    check("idle with only kept runs changes nothing", p.runs.has("K") && p.runs.size === 1);
+    p.done("K");
+    p.timer(null);
+    check("the provider's run ended: hidden", last() === null, last());
+
+    // a local Generate and a provider's run in one tab, in both orders: the local prompt keeps the bar, the provider's
+    // run shows beside it as the timed run, and it is not counted as queued
+    p.timer({ label: "Comfy Cloud", started: t - 6000, promptId: "P" });
+    p.track("M", 5);
+    p.event("execution_start", { prompt_id: "M" });
+    p.event("progress", { prompt_id: "M", node: "3", value: 4, max: 20 });
+    p.track("P", 12);
+    p.event("fraction", { prompt_id: "P", value: 0.9375, nodes_done: 11, nodes_total: 12 });
+    check("local first, then the provider's frame: the local prompt keeps the bar, the provider's run beside it, nothing queued",
+        /^Generating · step 4\/20 · \d+ s · Comfy Cloud · 6 s$/.test(last().label) && last().fraction === 0.2 && last().queued === 0, last());
+    p.done("M");
+    check("the local prompt ended: the provider's run takes the bar under its own label", /^Comfy Cloud · node 12\/12 · 6 s$/.test(last().label) && Math.abs(last().fraction - 0.25) < 1e-9, last());
+    p.track("N", 5);
+    p.event("execution_start", { prompt_id: "N" });
+    p.event("progress", { prompt_id: "N", node: "3", value: 10, max: 20 });
+    check("provider first, then a local Generate: the local prompt takes the bar, the provider's run beside it, nothing queued",
+        /^Generating · step 10\/20 · \d+ s · Comfy Cloud · 6 s$/.test(last().label) && last().queued === 0, last());
+    p.done("N");
+    p.done("P");
+    p.timer(null);
+    check("both ended: hidden", last() === null, last());
+
     p.timer({ label: "Upscale", started: t });
     p.clear();
     check("clear ends the timed run too", last() === null && p.timed === null && ticks.filter(Boolean).length === 0);

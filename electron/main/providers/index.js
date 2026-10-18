@@ -181,7 +181,36 @@ function cancel(runId) {
 
 const aborted = () => Object.assign(new Error("cancelled"), { name: "AbortError" });
 
-async function edit(request) {
+const PROGRESS_MS = 250;   // at most four progress frames a second per run reach the renderer
+
+/**
+ * A run's progress frames to `send` with the run's id, at most one per PROGRESS_MS: a frame that comes sooner waits and
+ * is replaced by a later one (a share is a whole snapshot of the run); an urgent one (a status change) goes at once,
+ * after the share that was waiting (a status carries no share).
+ */
+function progressSender(runId, send) {
+    let last = 0, pending = null, timer = null;
+    const emit = (p) => { last = Date.now(); try { send({ ...p, runId }); } catch (_) { /* the window may be gone */ } };
+    const flush = () => { timer = null; if (pending) { const p = pending; pending = null; emit(p); } };
+    const fn = (frame) => {
+        const { urgent, ...p } = frame || {};
+        const now = Date.now();
+        if (urgent || now - last >= PROGRESS_MS) {
+            if (timer) { clearTimeout(timer); timer = null; }
+            if (urgent && pending) emit(pending);
+            pending = null;
+            emit(p);
+            return;
+        }
+        pending = p;
+        if (!timer) timer = setTimeout(flush, PROGRESS_MS - (now - last));
+    };
+    fn.stop = () => { if (timer) clearTimeout(timer); timer = null; pending = null; };
+    return fn;
+}
+
+/** A provider run. `hooks.progress(frame)` takes the run's live progress (an adapter that has some calls ctx.progress). */
+async function edit(request, hooks = {}) {
     const id = String(request.provider || "");
     const p = Object.prototype.hasOwnProperty.call(PROVIDERS, id) ? PROVIDERS[id] : null;
     if (!p) throw new Error("Unknown provider: " + id);
@@ -216,6 +245,7 @@ async function edit(request) {
     if (runId) running.set(runId, ac);
     if (runId && cancelledEarly.delete(runId)) ac.abort();
     const ctx = contextFor(id, p, key, ac.signal);
+    if (runId && hooks && typeof hooks.progress === "function") ctx.progress = progressSender(runId, hooks.progress);
     // the request's shape for the log: never the key, never the pixels
     const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : relight ? "relight" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, boxes: req.boxes.length, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
     let out, named, lay, notes = [], sentBoxes = 0;
@@ -251,13 +281,21 @@ async function edit(request) {
     } catch (err) {
         const secs = ((Date.now() - t0) / 1000).toFixed(1);
         if (ac.signal.aborted) {
-            log.record({ source: id, message: `${p.label} ${verb} cancelled after ${secs} s`, detail: { request: shape() } });
-            throw new Error(`Cancelled after ${secs} s: Scumble stopped waiting for ${p.label}, which may still finish the job and charge it.`);
+            // an adapter that knows where its job stood says so (Comfy Cloud on v2): ctx.cancelAsked (the provider
+            // answered that the job stops), ctx.jobDone (it had finished: charged, its picture dropped), ctx.jobSent
+            // false (nothing went out that runs); without them the provider may still finish the job
+            const words = ctx.cancelAsked === true ? `Cancelled after ${secs} s: Scumble asked ${p.label} to stop the job.`
+                : ctx.jobDone === true ? `Cancelled after ${secs} s: the job had already finished on ${p.label} and is charged; its picture was not kept.`
+                    : ctx.jobSent === false ? `Cancelled after ${secs} s, before the job went to ${p.label}: nothing runs or is charged.`
+                        : `Cancelled after ${secs} s: Scumble stopped waiting for ${p.label}, which may still finish the job and charge it.`;
+            log.record({ source: id, message: `${p.label} ${verb} cancelled after ${secs} s`, detail: { request: shape(), words } });
+            throw new Error(words);
         }
         log.record({ level: "error", source: id, message: `${p.label} ${verb} failed after ${secs} s: ${err && err.message || err}`, detail: { request: shape(), stack: err && err.stack } });
         throw err;
     } finally {
         if (runId) running.delete(runId);
+        if (ctx.progress && ctx.progress.stop) ctx.progress.stop();
     }
     if (!out || !out.bytes) { log.record({ level: "error", source: id, message: p.label + " returned no image.", detail: shape() }); throw new Error(p.label + " returned no image."); }
     log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), boxes: sentBoxes, notes } });

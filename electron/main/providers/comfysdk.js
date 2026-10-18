@@ -119,13 +119,16 @@ function cloudClient(ctx, { bound = true, timeoutMs = 0 } = {}) {
     });
 }
 
-/** Asks Comfy Cloud to stop a job, on a transport not tied to the run (its signal may have fired); true when answered. */
+/**
+ * Asks Comfy Cloud to stop a job, on a transport not tied to the run (its signal may have fired); the job's status in
+ * Comfy's answer ("canceling" / "canceled": it stops; "succeeded", "failed" ...: it had ended), null without a job id.
+ */
 async function cancelJob(ctx, jobId) {
-    if (!jobId) return false;
+    if (!jobId) return null;
     const client = cloudClient(ctx, { bound: false });
     const job = await client.jobs.get(String(jobId));
     await job.cancel(AbortSignal.timeout(CANCEL_TIMEOUT_MS));
-    return true;
+    return job.status;
 }
 
 /** comfy.models configured for this run: the key and the host (api.comfy.org, or the loopback mock for a test key). */

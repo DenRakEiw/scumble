@@ -89,8 +89,12 @@ code.
   the one import point, env cleared at start, About names the SDK; "S0 as built" in the plan). **S1 done** (Comfy
   Cloud on v2: `comfycloud.js` `runV2`, the default through `contextFor`; legacy behind `settings.comfycloud.api`;
   `tools/comfycloud_v2_test.js` on `tools/fake_comfy_v2.js`; a review workflow's 11 findings fixed; "S1 as built" in the
-  plan). **Next: S2** (Cancel and the bar). Open questions 1, 3, 4, 6, 7, 9, 10 of the plan's section 8 go with the
-  recommendations until the user answers. The live check of section 4 (scratchpad `sdk-test/cloud_v2_test.mjs`, the user's key typed in a terminal)
+  plan). **Section 4's live check ran 2026-10-18** with the user's key typed into a test instance (Z-Image Turbo text,
+  Klein 9B edit, a Cancel answered by Comfy; the frames carry only value / nodes_done / nodes_total). **S2 done** (Cancel
+  stops the job on Comfy's side, the status row's bar follows Cloud runs: `provider:progress`, `RunProgress` `fraction`,
+  `host.providerProgress`; a review workflow's 7 findings fixed; "S2 as built" in the plan). **Next: S3** (Comfy
+  Router on the SDK). Open questions 1, 6, 7, 9 of the plan's section 8 go with the recommendations until the user
+  answers (3 and 4 are built as recommended). The live check of section 4 (scratchpad `sdk-test/cloud_v2_test.mjs`, the user's key typed in a terminal)
   has not run. The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own
   melody; the other two fit released songs and must not be used as audio).
 

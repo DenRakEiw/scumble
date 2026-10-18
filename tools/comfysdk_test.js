@@ -139,7 +139,7 @@ async function main() {
             const runFetch = (url, init = {}) => (ac.signal.aborted ? Promise.reject(new Error("cancelled")) : r.fetch(url, init));
             const ok = await sdkMod.cancelJob({ key: KEY, fetch: runFetch }, JOB);
             const post = r.calls.find((c) => c.method === "POST" && /\/cancel$/.test(c.url));
-            check("a cancel leaves after the run's own signal fired", ok === true && !!post && post.url === `https://cloud.comfy.org/api/v2/jobs/${JOB}/cancel`, post && post.url);
+            check("a cancel leaves after the run's own signal fired, answering the job's status", ok === "canceling" && !!post && post.url === `https://cloud.comfy.org/api/v2/jobs/${JOB}/cancel`, post && post.url);
             check("the cancel carries the key", post && post.auth === `Bearer ${KEY}`);
         } finally {
             globalThis.fetch = saved;

@@ -134,6 +134,9 @@ contextBridge.exposeInMainWorld("scumble", {
         edit: (request) => ipcRenderer.invoke("provider:edit", request),
         // stop waiting for a run (request.runId): the title row's Cancel
         cancel: (runId) => ipcRenderer.invoke("provider:cancel", runId),
+        // a run's live progress ({ runId, status, queuePosition, value, step, steps, nodesDone, nodesTotal, node,
+        // nodeClass }); returns the unsubscribe
+        onProgress: (cb) => on("provider:progress", cb),
         layout: (shape) => ipcRenderer.invoke("provider:layout", shape),
         balance: (id) => ipcRenderer.invoke("provider:balance", id),
     },

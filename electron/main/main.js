@@ -1088,7 +1088,8 @@ function installIpc() {
     ipcMain.handle("keys:set", (_e, { name, value }) => keys.set(name, value));
     ipcMain.handle("keys:clear", (_e, name) => keys.clear(name));
     ipcMain.handle("providers:list", () => providers.describeAll());
-    ipcMain.handle("provider:edit", (_e, request) => providers.edit(request));
+    // a run's live progress (Comfy Cloud's events) goes back to the window that asked, for its status row's bar
+    ipcMain.handle("provider:edit", (e, request) => providers.edit(request, { progress: (p) => { if (!e.sender.isDestroyed()) e.sender.send("provider:progress", p); } }));
     ipcMain.handle("provider:cancel", (_e, runId) => providers.cancel(runId));
     // where each picture of a request of this shape goes and what the model calls it (docs/PLAN_REFS.md C3)
     ipcMain.handle("provider:layout", (_e, shape) => providers.layout(shape));

@@ -2251,6 +2251,64 @@ if (!errLine.startsWith("Error in KSampler: boom s3") || ed.statusKind !== "erro
 await run("close_document", { doc: d.id, force: true });
 return { replay: "ok", step: "50%", timed };
 """),
+    ("a_cloud_runs_bar_follows_its_live_frames", """
+// docs/PLAN_COMFY_SDK.md S2: a provider run's live frames (main's ctx.progress -> provider:progress -> the host) fill
+// the bar of its document; the loopback provider reports Comfy Cloud's measured shape (shares, no sampler steps)
+const api = (await import('./editor/host.js')).api;
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 64, height: 64, doc: d.id });
+const bar = ed.runEl, fill = ed.runFill, label = () => ed.runLabel.textContent;
+const shown = () => !bar.hidden && getComputedStyle(bar).display !== "none";
+const c = document.createElement("canvas"); c.width = 64; c.height = 64; c.getContext("2d").fillRect(0, 0, 64, 64);
+const png = await new Promise((r) => c.toBlob(async (b) => r(new Uint8Array(await b.arrayBuffer())), "image/png"));
+const token = { provider: "loopback", label: "Cloud test", started: Date.now(), editor: ed, runId: "s2_" + Date.now() };
+host._providerRuns.add(token);
+host.notifyProviderRuns();
+const frames = [{ status: "queued", urgent: true }, { value: 0, nodesDone: 0, nodesTotal: 12 }, { value: 0.9375, nodesDone: 11, nodesTotal: 12 }, { value: 1, nodesDone: 12, nodesTotal: 12 }];
+const seen = [];
+const sample = () => { const s = [label().replace(/ · \\d+ s$/, ""), fill.style.width, bar.classList.contains("ipc-run-busy"), shown()].join("|"); if (seen[seen.length - 1] !== s) seen.push(s); };
+const poll = setInterval(sample, 40);
+// the local ComfyUI's lifecycle leaves a live cloud run's steps in place: its queue going empty (idle with keep), a
+// status with jobs left (checkTrackedRuns, its /queue not holding the run, read over 3 s after it was tracked), the
+// socket lost (idle with keep)
+let afterIdle = null, afterCheck = null, afterSocket = null;
+const savedFetch = api.fetchApi, savedServer = { ...(host.server || {}) };
+api.fetchApi = (path, init) => String(path).startsWith("/queue")
+    ? Promise.resolve(new Response(JSON.stringify({ queue_running: [], queue_pending: [] }), { status: 200, headers: { "Content-Type": "application/json" } }))
+    : savedFetch(path, init);
+const idleAt = setTimeout(() => { api.dispatch("status", { status: { exec_info: { queue_remaining: 0 } } }); afterIdle = label(); }, 5350);
+const checkAt = setTimeout(async () => {
+    host._runsChecked = 0;
+    api.dispatch("status", { status: { exec_info: { queue_remaining: 1 } } });
+    host._runsChecked = 0;
+    await host.checkTrackedRuns();
+    afterCheck = ed.runProgress.has(token.runId) ? label() : "dropped";
+    host.setServerStatus({ ...savedServer, socket: false });
+    afterSocket = ed.runProgress.has(token.runId) ? label() : "dropped";
+}, 6000);
+let res = null, err = null;
+try { res = await window.scumble.providers.edit({ provider: "loopback", model: "loopback", kind: "edit", image: png, width: 64, height: 64, prompt: "x", params: { delay_ms: 6500, progress: frames }, runId: token.runId }); } catch (e) { err = String(e.message || e); }
+clearInterval(poll); clearTimeout(idleAt); clearTimeout(checkAt);
+api.fetchApi = savedFetch;
+host.setServerStatus(savedServer);
+sample();
+const during = seen.slice();
+host.endRunRow(token);
+const ended = shown();
+await run("close_document", { doc: d.id, force: true });
+if (err || !res) throw new Error("the loopback run: " + err);
+const has = (re) => during.some((s) => re.test(s));
+if (!has(/^Cloud test\\|/)) throw new Error("the queued frame: the timer label first " + JSON.stringify(during));
+if (!has(/^Cloud test · node 1\\/12\\|[^|]*\\|true\\|true$/)) throw new Error("a share of nothing yet: node 1/12, busy " + JSON.stringify(during));
+if (!has(/^Cloud test · node 12\\/12\\|25%\\|false\\|true$/)) throw new Error("11 of 12 whole, the running node at a quarter: node 12/12, 25 % " + JSON.stringify(during));
+if (!afterIdle || !/node 12\\/12/.test(afterIdle)) throw new Error("the local queue went empty: the cloud run's steps went too: " + afterIdle);
+if (!afterCheck || !/node 12\\/12/.test(afterCheck)) throw new Error("a status with jobs left (checkTrackedRuns): the cloud run's steps went: " + afterCheck);
+if (!afterSocket || !/node 12\\/12/.test(afterSocket)) throw new Error("the socket lost: the cloud run's steps went: " + afterSocket);
+if (ended) throw new Error("the bar stays after the run's row left");
+return { frames: during.length, afterIdle, afterCheck, afterSocket };
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";

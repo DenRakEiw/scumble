@@ -685,7 +685,6 @@ function jobFailure(job, key, node) {
 
 async function runV2(req, ctx, waitMs) {
     const sdk = require("./comfysdk");
-    const pause = ctx.sleep || sleep;
     const signal = ctx.signal || undefined;
     const stopped = () => !!(signal && signal.aborted);
     const say = (err) => sdk.errorText(err, ctx.key);
@@ -693,6 +692,8 @@ async function runV2(req, ctx, waitMs) {
     const node = detached ? "recipe graph" : String(req.options && req.options.node || "");
     if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
     if (detached && req.kind !== "text") detachedFits(req);
+    // where the job stands for a Cancel's words (providers/index.js): nothing that runs has gone out yet
+    ctx.jobSent = false;
     // the client first: a key that may not go where the settings point is refused before any request
     const client = sdk.cloudClient(ctx);
     const info = { node, model: req.model };
@@ -752,6 +753,7 @@ async function runV2(req, ctx, waitMs) {
     // one submit under one key; a submit that got no answer goes once more under the same key, which Comfy refuses
     // (idempotency_key_reuse) when the first one landed: then the job exists, its id is lost, and nothing is resent
     const workflow = client.workflows.fromJson(graph);
+    ctx.jobSent = true;   // from here a job may exist on Comfy
     const idempotencyKey = (typeof ctx.uuid === "function" ? ctx.uuid : randomUUID)();
     let job = null;
     for (let tries = 0; !job; tries++) {
@@ -770,6 +772,36 @@ async function runV2(req, ctx, waitMs) {
         }
     }
     info.job_id = job.id;
+    if (typeof ctx.progress === "function") ctx.progress({ status: job.status, queuePosition: job.queuePosition, urgent: true });
+    // the live events feed the status row's bar and a summary in the answer's info; the polled status decides
+    const live = followEvents(job, ctx, signal);
+    try {
+        const got = await finishV2(job, { req, ctx, waitMs, node, saveId, failed });
+        got.info = info;   // the events' summary joins it below
+        return got;
+    } catch (err) {
+        // the user's Cancel: Comfy is asked to stop the job on a transport of its own (the run's refuses every request
+        // now), so it is not run on and charged; providers/index.js words the cancel by ctx.cancelAsked
+        if (stopped() && !TERMINAL.has(job.status)) {
+            let answer = null;
+            try { answer = await sdk.cancelJob(ctx, job.id); } catch (_) { /* the words say the job may still be charged */ }
+            ctx.cancelAsked = answer === "canceling" || answer === "canceled";
+            if (answer === "succeeded") ctx.jobDone = true;
+        } else if (stopped() && job.status === "succeeded") ctx.jobDone = true;   // a Cancel while its picture came down
+        throw err;
+    } finally {
+        const seen = await live.stop();
+        if (seen) info.events = seen;
+    }
+}
+
+/** A submitted job to its picture: the wait, the status's words, the output, the download. */
+async function finishV2(job, { req, ctx, waitMs, node, saveId, failed }) {
+    const sdk = require("./comfysdk");
+    const pause = ctx.sleep || sleep;
+    const signal = ctx.signal || undefined;
+    const stopped = () => !!(signal && signal.aborted);
+    const say = (err) => sdk.errorText(err, ctx.key);
     // the job's status decides (wait() polls it, and throws on a read that fails). A read Comfy throttles (429) waits
     // as long as it asks; a read with no answer is tried again a few times while the status stays the same. Past the
     // run's time, or when the status cannot be read, Comfy is asked to stop the job, so it is not run on and charged unseen.
@@ -818,5 +850,75 @@ async function runV2(req, ctx, waitMs) {
             throw new Error(`Comfy Cloud download (job ${job.id}): ${say(err)}`);
         }
     }
-    return { bytes: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.contentType || "image/png", seed: num(req.seed, null), info };
+    return { bytes: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.contentType || "image/png", seed: num(req.seed, null), info: null };
+}
+
+/** A live event as the status row's bar takes it (providers/index.js passes it on with the run's id), or null. */
+function frameOf(ev) {
+    if (ev.kind === "progress") return { value: ev.value, step: ev.step, steps: ev.steps, nodesDone: ev.nodesDone, nodesTotal: ev.nodesTotal, node: ev.currentNode, nodeClass: ev.currentNodeClass };
+    if (ev.kind === "statusChange") return { status: ev.status, queuePosition: ev.queuePosition, urgent: true };
+    return null;
+}
+
+const PROGRESS_FIELDS = ["value", "message", "nodesDone", "nodesTotal", "currentNode", "currentNodeClass", "step", "steps"];
+
+const EVENT_FAILS = 5;         // live-event streams in a row that fail before the following gives up (the run goes on)
+const EVENT_PAUSE_MS = 500;    // the pause before a failed stream is joined again, times the failures in a row
+
+/**
+ * Follows a job's live events (SSE) beside the wait: each goes to ctx.progress as a frame, and a summary of what came
+ * (kinds, the progress fields that carried a value, the value's range, the statuses) answers stop(). The events are a
+ * live enhancement, never the source of truth: a stream that fails is joined again after a pause (the SDK's own
+ * reconnect ends when the status read after a drop fails), a share lower than one sent is not passed on (a stream
+ * joined again may replay it), and a stream that ends with the job, or a refusal that will not change, ends it.
+ */
+function followEvents(job, ctx, signal) {
+    const ac = new AbortController();
+    const stop = () => ac.abort();
+    if (signal) signal.addEventListener("abort", stop, { once: true });
+    const seen = { count: 0, kinds: {}, fields: new Set(), min: null, max: null, statuses: [] };
+    let top = -Infinity;
+    const take = (ev) => {
+        seen.count++;
+        seen.kinds[ev.kind] = (seen.kinds[ev.kind] || 0) + 1;
+        if (ev.kind === "progress") {
+            for (const k of PROGRESS_FIELDS) if (ev[k] != null && ev[k] !== "") seen.fields.add(k);
+            seen.min = seen.min == null ? ev.value : Math.min(seen.min, ev.value);
+            seen.max = seen.max == null ? ev.value : Math.max(seen.max, ev.value);
+            if (ev.value < top) return;
+            top = ev.value;
+        } else if (ev.kind === "statusChange" && seen.statuses.length < 8) seen.statuses.push(ev.status);
+        const frame = typeof ctx.progress === "function" ? frameOf(ev) : null;
+        if (frame) { try { ctx.progress(frame); } catch (_) { /* the bar is optional */ } }
+    };
+    // a pause that stop() ends at once
+    const rest = (ms) => new Promise((resolve) => {
+        if (ac.signal.aborted) { resolve(); return; }
+        const done = () => { clearTimeout(t); ac.signal.removeEventListener("abort", done); resolve(); };
+        const t = setTimeout(done, ms);
+        ac.signal.addEventListener("abort", done, { once: true });
+    });
+    const following = (async () => {
+        for (let fails = 0; !ac.signal.aborted && fails < EVENT_FAILS;) {
+            try {
+                for await (const ev of job.events(ac.signal)) { fails = 0; take(ev); }
+                return;   // the job's end, or a surface without live events (501)
+            } catch (err) {
+                if (ac.signal.aborted) return;
+                const st = +(err && err.httpStatus) || 0;
+                if (st >= 400 && st < 500 && st !== 429) return;   // a refusal that will not change
+                fails++;
+                await rest(Math.min(THROTTLE_MAX_MS, err && +err.retryAfter > 0 ? +err.retryAfter * 1000 : EVENT_PAUSE_MS * fails));
+            }
+        }
+    })();
+    return {
+        async stop() {
+            ac.abort();
+            if (signal) signal.removeEventListener("abort", stop);
+            await following;
+            if (!seen.count) return null;
+            return { count: seen.count, kinds: seen.kinds, fields: [...seen.fields], value: seen.min == null ? null : [seen.min, seen.max], statuses: seen.statuses };
+        },
+    };
 }

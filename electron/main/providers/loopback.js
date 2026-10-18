@@ -111,7 +111,13 @@ module.exports = {
     },
     async edit(req, ctx) {
         const delay = Math.max(0, +req.params.delay_ms || 0);
-        if (delay) await (ctx && ctx.sleep ? ctx.sleep(delay) : new Promise((r) => setTimeout(r, delay)));   // ctx.sleep: Cancel ends it
+        const wait = (ms) => (ctx && ctx.sleep ? ctx.sleep(ms) : new Promise((r) => setTimeout(r, ms)));   // ctx.sleep: Cancel ends it
+        // params.progress: frames the run reports through ctx.progress, spread over its delay, as Comfy Cloud's live
+        // events come (the status row's bar, tools/generate_test.py)
+        const frames = Array.isArray(req.params.progress) && ctx && typeof ctx.progress === "function" ? req.params.progress : [];
+        const gap = frames.length ? Math.floor(delay / (frames.length + 1)) : 0;
+        for (const f of frames) { await wait(gap); ctx.progress(f); }
+        if (delay - gap * frames.length > 0) await wait(delay - gap * frames.length);
         if (req.params.fail) throw new Error("loopback failure requested");
         // what arrived, so a gate can read the prompt after main resolved its reference names
         const info = { width: req.width, height: req.height, references: req.references.length, mask: !!req.mask, background: transparent(req) ? "transparent" : "auto", prompt: req.prompt || "", negative: req.negative == null ? null : req.negative, original: req.original ? 1 : 0 };

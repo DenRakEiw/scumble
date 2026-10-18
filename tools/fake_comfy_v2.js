@@ -35,6 +35,11 @@ const fail = (status, code, message, details, retryAfter) => json(status, { erro
  *   connection, { status, code, message, retryAfter } to refuse it
  * @param {Array<string|object|null>} [o.contents] per GET /assets/<id>/content in turn, the same forms as `reads`
  * @param {string} [o.cancelSays] "succeeded" (the job ended meanwhile), "fail" (the cancel answers 500)
+ * @param {Array<{event: string, data: object}>|function} [o.events] the job's live events (SSE), served on GET
+ *   .../events (without them that route answers 404, as a surface with no live events does); a function of the
+ *   connection's number answers { frames, drop } per connection, `drop` ending the stream with an error, after which
+ *   the next job read fails once (the SDK reads the status right after a drop)
+ * @param {(call: object) => Promise|undefined} [o.hold] awaited before a call is answered (a test cancels meanwhile)
  * @param {number} [o.outputsAfter] how many reads of the finished job list no outputs yet
  */
 function fakeComfyV2(o = {}) {
@@ -43,7 +48,7 @@ function fakeComfyV2(o = {}) {
         origin, calls: [], jobs: [], keys: [], uploads: [], uploadKeys: [], fromHash: [], heads: [], cancels: [], storage: [], contents: [], infoReads: 0,
         known: o.known || new Set(), assets: new Map(),
     };
-    let n = 0, submitN = 0, readN = 0, uploadN = 0, contentN = 0, doneReads = 0;
+    let n = 0, submitN = 0, readN = 0, uploadN = 0, contentN = 0, doneReads = 0, failRead = false;
     const job = { id: null, status: "queued", outputs: [], error: null, reads: 0 };
     const statuses = o.statuses && o.statuses.length ? o.statuses : ["succeeded"];
     /** A scripted answer: null goes on, "lost" drops the connection, an object refuses (with Retry-After when given). */
@@ -74,6 +79,7 @@ function fakeComfyV2(o = {}) {
         const h = new Headers(init.headers);
         const call = { method, url, path: u.pathname, origin: u.origin, auth: h.get("authorization"), apiKey: h.get("x-api-key"), idem: h.get("idempotency-key"), ua: h.get("user-agent"), redirect: init.redirect || "follow" };
         s.calls.push(call);
+        if (o.hold) await o.hold(call);
         if (init.signal && init.signal.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
         if (u.origin === STORAGE) {
             s.storage.push(call);
@@ -141,6 +147,20 @@ function fakeComfyV2(o = {}) {
             if (behave === "lostAfter") throw new TypeError("fetch failed");
             return json(201, bodyOf());
         }
+        if ((m = /^\/api\/v2\/jobs\/([^/]+)\/events$/.exec(p)) && method === "GET" && o.events) {
+            s.eventReads = (s.eventReads || 0) + 1;
+            const said = typeof o.events === "function" ? o.events(s.eventReads) : { frames: o.events };
+            const text = (said.frames || []).map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`).join("");
+            if (!said.drop) return new Response(text, { status: 200, headers: { "content-type": "text/event-stream" } });
+            // the frames, then the connection drops
+            const body = new ReadableStream({
+                start(c) {
+                    c.enqueue(new TextEncoder().encode(text));
+                    setTimeout(() => { failRead = true; c.error(new TypeError("terminated")); }, 20);
+                },
+            });
+            return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+        }
         if ((m = /^\/api\/v2\/jobs\/([^/]+)\/cancel$/.exec(p)) && method === "POST") {
             s.cancels.push(call);
             if (o.cancelSays === "fail") return fail(500, "upstream_error", "cancel broke");
@@ -150,6 +170,7 @@ function fakeComfyV2(o = {}) {
         }
         if ((m = /^\/api\/v2\/jobs\/([^/]+)$/.exec(p)) && method === "GET") {
             if (m[1] !== job.id) return fail(404, "job_not_found", "no such job");
+            if (failRead) { failRead = false; throw new TypeError("fetch failed"); }
             const refused = scripted((o.reads || [])[readN++]);
             if (refused) return refused;
             if (job.status !== "canceling" && !(o.cancelSays === "succeeded" && s.cancels.length)) job.status = statuses[Math.min(job.reads, statuses.length - 1)];

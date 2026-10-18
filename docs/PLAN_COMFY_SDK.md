@@ -209,13 +209,22 @@ resubmission is the user's).
 Scumble's own detached Cloud graphs through the SDK (scratchpad `sdk-test/cloud_v2_test.mjs`: `_buildGraph` with
 captured uploads, assets bound by `setInput`, `client.submit`, SSE followed, outputs downloaded).
 
+**Run 2026-10-18** through the app itself (not the scratchpad script): a dev instance at S1 plus S2's main side
+(`runV2` with `followEvents`), its own profile, the user's key typed into *Settings › API providers* by the user,
+`window.scumble.providers.edit` over CDP, the frames read with `providers.onProgress`.
+
 | case | graph accepted unchanged | assets / dedup | events seen (kinds, fields, `value` range) | output (node, type, mime) | time | notes |
 |---|---|---|---|---|---|---|
-| `cloud_z_image_turbo` text, 768² | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| `cloud_flux2_klein_9b` edit, one LoadImage | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+| `cloud_z_image_turbo` text, 768² | yes | none (a text graph) | 7: statusChange 2 (`queued`, `succeeded`: **no `running`**), progress 3, preview 2; progress fields `value`, `nodesDone`, `nodesTotal` only; value 0 .. 1; nodesTotal grew 1, 4, 6 | SaveImage `9`, image/png, 768 × 768, 681 KB | 11.0 s | first progress 5.9 s after the submit |
+| `cloud_flux2_klein_9b` edit, one LoadImage | yes | one asset (a 59 KB PNG, uploaded; dedup not seen live) | 44: statusChange 2 (`queued`, `succeeded`), progress 22, preview 20; the same three fields; value 0, then 0.9208 (11/12 nodes done), then +1/240 per sampler step (20 steps) to 1; nodesTotal 12, then 14 | SaveImage `9`, image/png, **1024 × 1024** (the graph scales the crop to 1 MP; the stitch fits it), 923 KB | 34.2 s | a third run (another prompt and seed) failed on Comfy's side, "VAELoader (node 75:72): cannot unpack non-iterable MTPHead object" (a worker's fault: the same graph ran a minute before and after); runV2's words named the node |
+| Cancel during the Klein edit | | | the frames up to step 3/20 (value 0.9333) | | Cancel at 9.3 s, the answer at 10.5 s | "Cancelled after 10.5 s: Scumble asked Comfy Cloud to stop the job." (`cancelJob` on its own transport answered canceling / canceled) |
 
-What it changes in this plan: _tbd_ (the `fraction` event of 3.5, the output choice of 3.3, anything refused).
-Not covered by it: a partner-node graph (`SHAPES`) on v2, `extra_data`, cancel, the Router (S5's live run).
+What it changes in this plan: the progress frames carry **only** `value`, `nodes_done` and `nodes_total` (no
+`step` / `steps`, no current node) and no `running` status comes, so S2 builds the value path: a run starts on its first
+progress frame; `value = (nodes_done + the running node's part) / nodes_total`, so the bar shows "node
+`nodes_done + 1` / `nodes_total`" and fills with the running node's part (`value × nodes_total − nodes_done`; the
+sampler's steps move it) instead of jumping to 92 % at once. The output choice of 3.3 held (the SaveImage by id). Not
+covered: a partner-node graph (`SHAPES`) on v2 and its `extra_data` key, the Router (S5's live run).
 
 ## 5. Sessions
 
@@ -298,6 +307,37 @@ progress calls and Cancel -> `POST .../cancel`; a `generate` gate step `a_cloud_
 synthetic `provider:progress` payloads for a token through the host's handler: label, fill, done; no network). Gates:
 `generate` (tiles), `log` (runs `progress_test.js`), `lint`, `types`; `build_node.py --check` if
 `inpaint_progress.js` changed (no node publish).
+
+**S2 as built (2026-10-18).** Main: `providers/index.js` `edit(request, hooks)`; with a run id and `hooks.progress`
+the adapter gets `ctx.progress` from `progressSender` (at most one frame per 250 ms; a later share replaces one that
+waits; an urgent frame, a status, goes at once after the share that waited; `runId` on every frame; stopped in
+`finally`). `main.js` `provider:edit` sends `provider:progress` to the window that asked (unless destroyed); preload
+`providers.onProgress(cb)`. The Cancel's words follow what the adapter knows: `ctx.cancelAsked` ("Scumble asked
+Comfy Cloud to stop the job."), `ctx.jobDone` (the job had finished: charged, its picture not kept), `ctx.jobSent`
+false (cancelled before the job went: nothing runs or is charged), else the old "may still finish ... charge it".
+`comfycloud.js`: `runV2` up to the submit, `finishV2` the rest; after the submit the job's status as an urgent frame,
+then `followEvents` beside the wait (each event through `frameOf` to `ctx.progress`, a summary `info.events`: count,
+kinds, the progress fields that carried a value, the value's range, the statuses); a stream that fails is joined again
+after 500 ms × the failures in a row (5 at most; the SDK's own reconnect ends when the status read right after a drop
+fails), a 4xx but 429 ends the following, a share lower than one sent is not passed on; `stop()` aborts it and is
+awaited in `finally`. On the user's abort after the submit with the job not terminal: `comfysdk.cancelJob` (its own
+transport) now answers the job's status; canceling / canceled sets `cancelAsked`, succeeded `jobDone`. Renderer:
+`RunProgress` (shared with the node build) has a `fraction` event (`value`, `nodes_done`, `nodes_total`: "node
+`whole + 1`/`total`", the fill the running node's part, busy at 0 and when all are whole; a local prompt that runs keeps
+the bar, the provider's run beside it; a provider's run never counts as queued) and `idle(keep)`. `host.js`:
+`providerProgress` (the token by run id; status-only frames leave the bar to the timer, a "running" status is not taken
+as a start; the first share tracks the run under the token's label; steps, should a provider send them, as ComfyUI's
+events), `liveRunIds()` kept by both `idle()` callers and skipped by `checkTrackedRuns`, `endRunRow` ends the run's bar.
+Loopback test hook `params.progress` (frames spread over `delay_ms`). Tests: `comfycloud_v2_test.js` 61 (live frames and
+the summary; Cancel during the wait asks Comfy to stop it, a refused stop and a stop answered succeeded word it right;
+a dropped stream joined again; an endless stream stops with a timed-out run; through `index.edit`: the v2 default and
+the test base from the settings, frames with the run id, the waiting share before the end, the three Cancel wordings);
+`progress_test.js` (the live numbers of section 4, `idle(keep)`, a local Generate and a provider's run in one tab in
+both orders); `comfysdk_test.js` 20; gate step `a_cloud_runs_bar_follows_its_live_frames` (a loopback run through IPC:
+the label, node 1/12 busy, node 12/12 at 25 %, kept through a local queue going empty, a status with jobs left and a
+lost socket, gone with the run). Gates green: `generate` (tiles), `log`, `nodecopy`, `lint`, `types`; the provider
+tests of S1. Live (section 4): the frames' shape, a Cancel answered by Comfy. Reviewed by a workflow (3 lenses, a skeptic
+per finding; 7 confirmed, 1 refuted), all 7 fixed.
 
 **S3: Comfy Router on the SDK (light).** 3.7. `comfyrouter_mock.py` accepts `Authorization: Bearer` as well as
 `X-API-Key` (comfypartner keeps the latter); `comfyrouter_test.js` moves its adapter fakes to `globalThis.fetch` and

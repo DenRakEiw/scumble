@@ -210,7 +210,7 @@ async function main() {
         check("five reads without an answer, a new status, five more: the count starts again, the run lands", tagOf(out4.bytes) === "RESULT out.png" && r.cancels.length === 0, tagOf(out4.bytes));
         const q = fakeComfyV2({ statuses: ["queued", "running", "succeeded"], outputs: saveOutput });
         const out3 = await cloud.edit(partnerReq(), ctxOf(q));
-        check("queued, running, succeeded: the run lands", tagOf(out3.bytes) === "RESULT out.png" && q.calls.filter((c) => c.method === "GET" && /\/api\/v2\/jobs\//.test(c.path)).length === 3, tagOf(out3.bytes));
+        check("queued, running, succeeded: the run lands", tagOf(out3.bytes) === "RESULT out.png" && q.calls.filter((c) => c.method === "GET" && /^\/api\/v2\/jobs\/[^/]+$/.test(c.path)).length === 3, tagOf(out3.bytes));
     }
 
     // 8b. the paid result: a download that dropped or was throttled is read again; one Comfy says is gone is not
@@ -249,6 +249,81 @@ async function main() {
         const h = fakeComfyV2({ statuses: ["running"], cancelSays: "succeeded", outputs: saveOutput });
         const out = await cloud._runV2(partnerReq(), ctxOf(h), 60);
         check("a timeout whose cancel answers that the job just succeeded: the result is read, not thrown away", tagOf(out.bytes) === "RESULT out.png" && h.cancels.length === 1, tagOf(out.bytes));
+    }
+
+    // 9b. the live events (S2): each reaches ctx.progress as a frame (the job's status first), and a summary of what
+    // came joins the answer's info; a surface without them (404) changes nothing (every case above)
+    {
+        const live = [
+            { event: "status", data: { status: "running", queue_position: null } },
+            { event: "progress", data: { value: 0, nodes_done: 0, nodes_total: 12 } },
+            { event: "preview", data: { node_id: "75:64", content_type: "image/jpeg", data_base64: "" } },
+            { event: "progress", data: { value: 0.9375, nodes_done: 11, nodes_total: 12 } },
+            { event: "status", data: { status: "succeeded", queue_position: null } },
+        ];
+        const f = fakeComfyV2({ statuses: ["running", "running", "succeeded"], events: live, outputs: saveOutput });
+        const frames = [];
+        const out = await cloud.edit(partnerReq(), ctxOf(f, { progress: (p) => frames.push(p) }));
+        const pf = frames.filter((x) => x.value != null);
+        check("live events reach ctx.progress: the job's status first (urgent), the shares with their node counts, the statuses",
+            frames[0] && frames[0].status === "queued" && frames[0].urgent === true && pf.length === 2 && pf[1].value === 0.9375 && pf[1].nodesDone === 11 && pf[1].nodesTotal === 12
+            && frames.some((x) => x.status === "running") && frames.some((x) => x.status === "succeeded") && !frames.some((x) => x.kind === "preview"),
+            short(frames));
+        const ev = out.info.events || {};
+        check("a summary of the events joins the answer's info", ev.count === 5 && ev.kinds.progress === 2 && ev.kinds.preview === 1 && ev.fields.join(",") === "value,nodesDone,nodesTotal" && ev.value[0] === 0 && ev.value[1] === 0.9375 && ev.statuses.join(",") === "running,succeeded", short(ev));
+    }
+
+    // 9c. the user's Cancel (S2, section 10 must 1): the run's signal fires during the wait; Comfy is asked to stop the
+    // job on a transport of its own (the run's refuses everything now), and ctx.cancelAsked says it answered
+    {
+        const f = fakeComfyV2({ statuses: ["running"], events: [{ event: "progress", data: { value: 0.5, nodes_done: 1, nodes_total: 2 } }] });
+        const ac = new AbortController();
+        // the run's fetch as providers/index.js contextFor builds it: nothing leaves once the run is cancelled
+        const runFetch = (url, init = {}) => (ac.signal.aborted ? Promise.reject(Object.assign(new Error("cancelled"), { name: "AbortError" })) : f.fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, ac.signal]) : ac.signal }));
+        const ctx = ctxOf(f, { fetch: runFetch, signal: ac.signal, progress: (p) => { if (p.value === 0.5) setTimeout(() => ac.abort(), 20); } });
+        const saved = globalThis.fetch;
+        globalThis.fetch = f.fetch;   // the cancel's own transport (unbound) is the global fetch
+        let e;
+        try { e = await thrown(() => cloud.edit(partnerReq(), ctx)); } finally { globalThis.fetch = saved; }
+        const c = f.cancels[0] || {};
+        check("Cancel during the wait: the run stops, Comfy got POST .../cancel with the bearer, ctx.cancelAsked is set",
+            !!e && f.cancels.length === 1 && c.path === "/api/v2/jobs/job-1/cancel" && c.auth === `Bearer ${KEY}` && ctx.cancelAsked === true,
+            short({ e, cancels: f.cancels.length, asked: ctx.cancelAsked }));
+        const g = fakeComfyV2({ statuses: ["running"], cancelSays: "fail", events: [{ event: "progress", data: { value: 0.5, nodes_done: 1, nodes_total: 2 } }] });
+        const ag = new AbortController();
+        const gctx = ctxOf(g, { fetch: (url, init = {}) => (ag.signal.aborted ? Promise.reject(new Error("cancelled")) : g.fetch(url, init)), signal: ag.signal, progress: (p) => { if (p.value === 0.5) setTimeout(() => ag.abort(), 20); } });
+        globalThis.fetch = g.fetch;
+        try { await thrown(() => cloud.edit(partnerReq(), gctx)); } finally { globalThis.fetch = saved; }
+        check("a Cancel whose stop request fails: ctx.cancelAsked is false (the words say it may still be charged)", gctx.cancelAsked === false && g.cancels.length === 1, short({ asked: gctx.cancelAsked }));
+        const h = fakeComfyV2({ statuses: ["running"], cancelSays: "succeeded", events: [{ event: "progress", data: { value: 0.5, nodes_done: 1, nodes_total: 2 } }] });
+        const ah = new AbortController();
+        const hctx = ctxOf(h, { fetch: (url, init = {}) => (ah.signal.aborted ? Promise.reject(new Error("cancelled")) : h.fetch(url, init)), signal: ah.signal, progress: (p) => { if (p.value === 0.5) setTimeout(() => ah.abort(), 20); } });
+        globalThis.fetch = h.fetch;
+        try { await thrown(() => cloud.edit(partnerReq(), hctx)); } finally { globalThis.fetch = saved; }
+        check("a Cancel answered with succeeded (the job ended meanwhile): not \"asked to stop\", but done and charged", hctx.cancelAsked === false && hctx.jobDone === true && h.cancels.length === 1, short({ asked: hctx.cancelAsked, done: hctx.jobDone }));
+    }
+
+    // 9d. a live stream that drops, and the status read right after it fails (the SDK's own reconnect ends there): the
+    // following joins again after a pause; a share lower than one sent is not passed on
+    {
+        const f = fakeComfyV2({
+            statuses: ["running", "running", "running", "succeeded"], outputs: saveOutput,
+            events: (k) => (k === 1 ? { frames: [{ event: "progress", data: { value: 0.1, nodes_done: 0, nodes_total: 4 } }], drop: true }
+                : { frames: [{ event: "progress", data: { value: 0.05, nodes_done: 0, nodes_total: 4 } }, { event: "progress", data: { value: 0.3, nodes_done: 1, nodes_total: 4 } }, { event: "status", data: { status: "succeeded" } }] }),
+        });
+        const frames = [];
+        const out = await cloud.edit(partnerReq(), ctxOf(f, { progress: (p) => frames.push(p) }));
+        const vals = frames.filter((x) => x.value != null).map((x) => x.value);
+        check("a dropped stream whose next status read fails: joined again, the shares go on (the lower replay left out), the run lands",
+            tagOf(out.bytes) === "RESULT out.png" && f.eventReads >= 2 && vals.join(",") === "0.1,0.3" && out.info.events.value[0] === 0.05, short({ reads: f.eventReads, vals }));
+    }
+
+    // 9e. a run that ends while its live stream would go on forever (no terminal frame, the cancel refused): the
+    // following stops with the run, nothing hangs
+    {
+        const g = fakeComfyV2({ statuses: ["running"], cancelSays: "fail", events: [{ event: "progress", data: { value: 0.5, nodes_done: 1, nodes_total: 2 } }] });
+        const raced = await Promise.race([thrown(() => cloud._runV2(partnerReq(), ctxOf(g), 60)), new Promise((r) => setTimeout(() => r("HUNG"), 3000))]);
+        check("a timed-out run with an endless live stream: the run ends (the following stopped with it)", raced !== "HUNG" && /timed out/.test(raced || ""), raced);
     }
 
     // 10. Generate new on a recipe's text-to-image graph: nothing uploaded, the size in steps of 16
@@ -330,6 +405,61 @@ async function main() {
         const g = fakeComfyV2({ origin: MOCK, classes: all });
         const e = await thrown(() => cloud.edit(graphReq(), ctxOf(g, { base: MOCK })));
         check("a real key with a test base: refused before any request", /only a test key/.test(e || "") && g.calls.length === 0, e);
+    }
+
+    // 15. through providers/index.js, the app's path: the settings give the v2 default and the test base; the live
+    // frames reach hooks.progress with the run's id, a share within 250 ms of the last one waits and is replaced, and a
+    // status sends the share that waited first; a Cancel's words say where the job stood (asked to stop, not sent yet,
+    // already finished)
+    {
+        const idxPath = path.join(ROOT, "electron", "main", "providers", "index.js");
+        const origLoad = Module._load;
+        Module._load = function (request, parent, ...rest) {
+            if (request === "electron") return { nativeImage: { createFromBuffer: () => ({ isEmpty: () => true }) } };
+            if (parent && parent.filename === idxPath) {
+                if (request === "../log") return { record: () => {} };
+                if (request === "../keys") return { get: () => TEST_KEY, describe: (id) => ({ name: id, set: true, hint: "6789" }) };
+                if (request === "../settings") return { get: () => ({ comfycloud: { base: MOCK } }) };
+            }
+            return origLoad.call(this, request, parent, ...rest);
+        };
+        let index;
+        try { index = require(idxPath); } finally { Module._load = origLoad; }
+        const saved = globalThis.fetch;
+        const viaIndex = async (fake, request) => {
+            globalThis.fetch = fake.fetch;
+            const frames = [];
+            try { return { out: await index.edit(request, { progress: (x) => frames.push(x) }), frames, err: null }; } catch (e) { return { out: null, frames, err: String((e && e.message) || e) }; } finally { globalThis.fetch = saved; }
+        };
+        const live = [
+            { event: "status", data: { status: "running" } },
+            { event: "progress", data: { value: 0, nodes_done: 0, nodes_total: 12 } },
+            { event: "progress", data: { value: 0.9375, nodes_done: 11, nodes_total: 12 } },
+            { event: "status", data: { status: "succeeded" } },
+        ];
+        cloud._clearNodeList();
+        const a = fakeComfyV2({ origin: MOCK, statuses: ["running", "running", "running", "succeeded"], events: live, outputs: saveOutput });
+        const ra = await viaIndex(a, { ...partnerReq(), runId: "idx-1" });
+        const shares = ra.frames.filter((x) => x.value != null);
+        const iShare = ra.frames.findIndex((x) => x.value === 0.9375), iDone = ra.frames.findIndex((x) => x.status === "succeeded");
+        check("index.edit: v2 by default against the test base, the frames with the run's id, the share that waited sent before the end",
+            !ra.err && tagOf(Buffer.from(ra.out.bytes)) === "RESULT out.png" && a.calls.every((c) => c.origin === MOCK || c.origin === "https://storage.example")
+            && ra.frames.length > 0 && ra.frames.every((x) => x.runId === "idx-1" && !("urgent" in x)) && shares.length === 1 && iShare >= 0 && iShare < iDone && ra.frames[0].status === "queued",
+            short({ err: ra.err, frames: ra.frames }));
+        let fired = false;
+        const once = (re, method) => (c) => { if (!fired && c.method === method && re.test(c.path)) { fired = true; index.cancel(c.runId); } };
+        const cancelOn = async (re, method, extra = {}) => {
+            fired = false;
+            const runId = `idx-${re.source.length}-${method}`;
+            const f = fakeComfyV2({ origin: MOCK, outputs: saveOutput, ...extra, hold: (c) => once(re, method)({ ...c, runId }) });
+            return { f, r: await viaIndex(f, { ...partnerReq(), runId }) };
+        };
+        const w = await cancelOn(/^\/api\/v2\/jobs\/[^/]+$/, "GET", { statuses: ["running"] });
+        check("a Cancel while the job runs: Comfy asked to stop it, said so", /^Cancelled after \d+\.\d s: Scumble asked Comfy Cloud to stop the job\.$/.test(w.r.err || "") && w.f.cancels.length === 1, w.r.err);
+        const u = await cancelOn(/^\/api\/v2\/assets\/by-hash\//, "HEAD");
+        check("a Cancel during the uploads: nothing submitted, said so", /^Cancelled after \d+\.\d s, before the job went to Comfy Cloud: nothing runs or is charged\.$/.test(u.r.err || "") && posts(u.f).length === 0 && u.f.cancels.length === 0, u.r.err);
+        const dl = await cancelOn(/\/content$/, "GET");
+        check("a Cancel during the download of a finished job: done and charged, its picture not kept", /^Cancelled after \d+\.\d s: the job had already finished on Comfy Cloud and is charged; its picture was not kept\.$/.test(dl.r.err || "") && dl.f.cancels.length === 0, dl.r.err);
     }
 
     // 14. a context that names no API (a direct call, the plain-Node tests of the legacy path) stays on the legacy API

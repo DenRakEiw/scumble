@@ -500,7 +500,7 @@ export const host = {
         // only when the server is gone: "connecting" (a re-Connect to the same server) is a pause, the jobs go on. A lost
         // socket (a crashed server, the network) ends the bars too: no event would end them, and a run that still goes
         // takes its bar back with its next event after the reconnect (RunProgress.wants)
-        if (this.server.state === "disconnected" || this.server.state === "error" || st.socket === false) for (const ed of this._editors) if (ed.runProgress) ed.runProgress.idle();
+        if (this.server.state === "disconnected" || this.server.state === "error" || st.socket === false) for (const ed of this._editors) if (ed.runProgress) ed.runProgress.idle(this.liveRunIds());
         // the socket back: what the queue still holds of the dropped prompts shows again (checkTrackedRuns)
         if (st.socket === true && this._socketWas === false) this.checkTrackedRuns();
         if (typeof st.socket === "boolean") this._socketWas = st.socket;
@@ -2543,9 +2543,46 @@ export const host = {
         return runs;
     },
 
-    /** A run's answer is in (or it failed): its timer and Cancel leave the title row. */
+    /** A run's answer is in (or it failed): its timer and Cancel leave the title row, its live steps the bar. */
     endRunRow(token) {
-        if (this._providerRuns.delete(token)) this.notifyProviderRuns();
+        if (!this._providerRuns.delete(token)) return;
+        if (token.live && token.editor && token.editor.runProgress) token.editor.runProgress.done(String(token.runId));
+        this.notifyProviderRuns();
+    },
+
+    /**
+     * A provider run's live progress (Comfy Cloud's events through main's `provider:progress`, docs/PLAN_COMFY_SDK.md
+     * 3.5 and section 4): its document's bar shows it under the run's label. A frame with a status alone keeps the
+     * timer; the first with a share starts the run; sampler steps (should a provider send them) go in as ComfyUI's
+     * events, a share alone as `fraction` (node k of n, the running node's part). A local prompt that runs in the
+     * same tab keeps the bar, the provider's run beside it (RunProgress).
+     */
+    providerProgress(p) {
+        const id = p && p.runId ? String(p.runId) : "";
+        if (!id) return;
+        const token = Array.from(this._providerRuns).find((t) => t.runId === id);
+        if (!token || token.cancelled) return;
+        const ed = token.editor;
+        if (!ed || !ed.runProgress || !this._editors.includes(ed)) return;
+        if (token.promptId !== id) { token.promptId = id; this.syncRunBars(); }
+        token.live = true;
+        const share = p.value != null || p.nodesTotal != null;
+        const stepped = p.step != null && +p.steps > 0;
+        // a status alone (queued, running, the end) leaves the bar to the run's timer: a "running" taken as a start
+        // would take the bar from a local prompt that runs in the same tab
+        if (!share && !stepped) return;
+        const rp = ed.runProgress;
+        if (!rp.has(id)) this.trackRun(ed, id, +p.nodesTotal || 1);
+        if (p.node != null && String(p.node) !== token.liveNode) { token.liveNode = String(p.node); rp.event("executing", { prompt_id: id, node: token.liveNode }); }
+        if (stepped) rp.event("progress", { prompt_id: id, node: p.node != null ? String(p.node) : token.liveNode, value: +p.step, max: +p.steps });
+        else if (share) rp.event("fraction", { prompt_id: id, value: p.value, nodes_done: p.nodesDone, nodes_total: p.nodesTotal });
+    },
+
+    /** The ids of the provider runs whose live steps a bar shows: the local ComfyUI's queue knows nothing of them. */
+    liveRunIds() {
+        const ids = new Set();
+        for (const t of this._providerRuns) if (t.live && t.runId) ids.add(String(t.runId));
+        return ids;
     },
 
     /**
@@ -2625,7 +2662,9 @@ export const host = {
      * goes from the bars.
      */
     async checkTrackedRuns() {
-        const tracked = this._editors.filter((e) => e.runProgress && (e.runProgress.runs.size || e.runProgress.dropped.size));
+        // a provider's run (Comfy Cloud) is not in this server's queue: it is left to its own end
+        const live = this.liveRunIds();
+        const tracked = this._editors.filter((e) => e.runProgress && (Array.from(e.runProgress.runs.keys()).some((id) => !live.has(id)) || e.runProgress.dropped.size));
         if (!tracked.length || this._checkingRuns || Date.now() - (this._runsChecked || 0) < 2000) return;
         this._checkingRuns = true;
         this._runsChecked = Date.now();
@@ -2636,6 +2675,7 @@ export const host = {
             const held = new Set([...(q.queue_running || []), ...(q.queue_pending || [])].filter(Array.isArray).map((it) => String(it[1])));
             for (const ed of tracked) {
                 for (const id of Array.from(ed.runProgress.runs.keys())) {
+                    if (live.has(id)) continue;
                     // a prompt queued a moment ago may not be listed yet
                     if (!held.has(id) && Date.now() - ed.runProgress.runs.get(id).tracked > 3000) ed.runProgress.done(id);
                 }
@@ -4964,9 +5004,11 @@ api.addEventListener("execution_success", ({ detail }) => { localRunEnded(detail
 api.addEventListener("execution_interrupted", ({ detail }) => { localRunEnded(detail); closedPromptEnded(detail); host.pictureRunEvent("interrupted", detail); });
 api.addEventListener("status", ({ detail }) => {
     const info = detail && detail.status && detail.status.exec_info;
-    if (info && info.queue_remaining === 0) for (const ed of host.editors()) { if (ed._localRuns) ed._localRuns.clear(); if (ed.runProgress) ed.runProgress.idle(); }
+    if (info && info.queue_remaining === 0) for (const ed of host.editors()) { if (ed._localRuns) ed._localRuns.clear(); if (ed.runProgress) ed.runProgress.idle(host.liveRunIds()); }
     else if (info && info.queue_remaining > 0) host.checkTrackedRuns();
 });
+// a provider run's live progress (Comfy Cloud on v2): the bar of the document it runs for
+if (window.scumble.providers && typeof window.scumble.providers.onProgress === "function") window.scumble.providers.onProgress((p) => host.providerProgress(p));
 // the status row's bar (docs/PLAN_0_1_48.md S3)
 for (const type of ["execution_start", "execution_cached", "executing", "progress", "execution_success", "execution_error", "execution_interrupted"]) {
     api.addEventListener(type, ({ detail }) => host.progressEvent(type, detail));
