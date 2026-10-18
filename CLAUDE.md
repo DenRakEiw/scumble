@@ -81,6 +81,17 @@ code.
 
 ## Where things stand (2026-10-14: 0.1.48 released and in the MCP Registry; the Store update open)
 
+- **0.1.49 = Comfy Cloud and Comfy Router on Comfy's official SDK + eight quick wins (the user, 2026-10-18: "alles in
+  einem update", all eight quick wins picked, "mache plan und fange mit der entwicklung an").** The plan is
+  `docs/PLAN_COMFY_SDK.md` (critic-checked by a workflow of three; **section 10 overrides sections 3, 5, 9**). Order:
+  S0, S1, S2, S3, S6, S7, S8, S9, S4 (docs + review), S5 (the paid live run + release prep, done by 2026-10-28; the
+  challenge deadline is 2026-10-30 17:00). **S0 done** (`3477bc3`: the SDK pinned, `electron/main/providers/comfysdk.js`
+  the one import point, env cleared at start, About names the SDK; "S0 as built" in the plan). **Next: S1** (Comfy
+  Cloud on v2). Open questions 1, 3, 4, 6, 7, 9, 10 of the plan's section 8 go with the recommendations until the user
+  answers. The live check of section 4 (scratchpad `sdk-test/cloud_v2_test.mjs`, the user's key typed in a terminal)
+  has not run. The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own
+  melody; the other two fit released songs and must not be used as audio).
+
 - **Edit-box prompting in the Inpaint Canvas node: built in the night 2026-10-14/15 (B0-B6 of
   `docs/PLAN_NODE_BOXES.md`), pushed and live on 2026-10-15** (the user: "kannst das update pushen und in meinem
   comfyui aktualisieren"): Scumble main pushed (`779e357..99c2cfd`); the live node folder fast-forwarded to `6a0ad1e`
