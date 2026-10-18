@@ -104,8 +104,16 @@ code.
   `cloudjobs`; a review workflow's 10 findings fixed; "S6 as built" in the plan). **S7 done** (QW2 the grey dot and
   "No ComfyUI running", QW8 the mascot; **QW3 dropped**: ComfyUI-Manager's search does not show a Registry-only pack,
   `docs/BUGS.md`). **S8 done** (QW4 `relight {preset}`, QW5 "<model> via <route>, N s" on every result; "S8 as
-  built" in the plan). **S9 done** (QW7 reference rows reordered by drag; "S9 as built" in the plan). **Next: S4**
-  (docs and a review over S0-S9), then S5's local release prep.
+  built" in the plan). **S9 done** (QW7 reference rows reordered by drag; "S9 as built" in the plan). **S4 done**
+  (2026-10-18/19 night; "S4 as built" in the plan): the docs (`ac068a0`, written and checked by a workflow), a review
+  workflow of 117 agents over S0-S9 (48 findings confirmed, none refuted), four fixed by hand (`4b66c62`), 44 by a fix
+  workflow in three file-disjoint groups with a checker each (`c9fa7dc`; the cancel by id alone, 120 s of unanswered
+  status reads, the recovery's new ask model and `provider:cloudJobsChanged`, the Router's last read after a sleep,
+  closing a tab stops its runs, `cancel_run`'s `said`); 22 gates green on tiles together. Riding along: RTX VSR's two
+  new required inputs (`c6f7fb0` by the demo-video session for Comfy Cloud, `71e851f` for the local recipe). **For
+  the user:** the RTX node pack on their ComfyUI needs nvidia-vfx 0.2 or newer (python_embeded has 0.1.0.1, so the pack
+  fails at import: `python_embeded\python.exe -m pip install -U "nvidia-vfx>=0.2"`, their call). **Next: S5's local
+  release prep**, then the paid live run with the user's key (the plan's S5 list), then the release on the user's word.
   Open questions 1, 6, 7, 9 of the plan's section 8 go with the recommendations until the user answers (3 and 4 are
   built as recommended). The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own
   melody; the other two fit released songs and must not be used as audio).
