@@ -172,6 +172,10 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         check("that input is a flat dotted key of the RTX node, next to its mode \"scale by multiplier\" (the API form of the dynamic combo)",
             P_.rtx && P_.rtx.inputs["resize_type.scale"] === 2 && P_.rtx.inputs.resize_type === "scale by multiplier" && typeof P_.rtx.inputs.resize_type !== "object", short(P_.rtx));
         check("its limits are kept as given: 64 short side, 4096 long side, an answer of at most 8192", eq(r.limits, { min: 64, max: 4096, out: 8192 }), short(r.limits));
+        // the node pack requires both since its update of 2026-10 (Nvidia_RTX_Nodes_ComfyUI, the same as on Comfy Cloud);
+        // an older pack ignores them
+        check("the RTX node gets strength 1 and image_encoding \"8-bit RGB\" (the node's defaults, required by the current pack)",
+            P_.rtx.inputs.strength === 1 && P_.rtx.inputs.image_encoding === "8-bit RGB", short(P_.rtx.inputs));
         check("the canvas node is an InpaintCanvas with target_size 0 (the crop at its native size)", P_[r.canvas] && P_[r.canvas].class_type === "InpaintCanvas" && P_[r.canvas].inputs.target_size === 0, short(P_[r.canvas]));
         const [rid, rslot] = String(r.result).split(":");
         check("the result is the RTX node's IMAGE, read from the crop's first picture",

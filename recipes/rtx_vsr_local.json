@@ -15,6 +15,6 @@
   "prompt": {
     "canvas": { "class_type": "InpaintCanvas", "inputs": { "padding": 64, "target_size": 0, "feather": 16, "multiple_of": 8 } },
     "img0": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 0, "length": 1 } },
-    "rtx": { "class_type": "RTXVideoSuperResolution", "inputs": { "images": ["img0", 0], "resize_type": "scale by multiplier", "resize_type.scale": 2, "quality": "ULTRA" } }
+    "rtx": { "class_type": "RTXVideoSuperResolution", "inputs": { "images": ["img0", 0], "resize_type": "scale by multiplier", "resize_type.scale": 2, "quality": "ULTRA", "strength": 1, "image_encoding": "8-bit RGB" } }
   }
 }
