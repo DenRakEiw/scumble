@@ -486,8 +486,10 @@ In the app: the gate `cloudjobs` (`tools/cloudjobs_test.py`; its own instances o
 and `--no-comfy`, against a loopback mock of the v2 job routes, nothing but loopback reached): a test key and the mock as
 `settings.comfycloud.base`, notes written into `cloudjobs.json` as a crash leaves them; at the start the finished job's
 picture opens as a document of its own in the background and the document in front names it and the job still
-running, the old note goes unread, the ack, a second ask answers the first one's summary, the recheck brings a job that
-finished later, a headless start and a profile without a key ask nothing. The `generate` gate's step
+running, the old note goes unread, the ack, a later ask reads every note again (the jobs in flight and the pictures
+handed to the page and not acked yet left out) and brings a job that finished later, a reload gets the pictures its
+page never acked, a second start that shows a headless window asks then, the counts' lines (running, not answered,
+not downloaded yet) word for word as `renderer/shell.js` writes them, and a profile without a key asks nothing. The `generate` gate's step
 `a_cloud_runs_bar_follows_its_live_frames` runs a loopback provider run through IPC whose frames have Comfy Cloud's
 shape: the label, node 1/12 busy, node 12/12 at 25 %, the bar kept through a local queue going empty, a status with jobs
 left and a lost socket, gone with the run; its step `generate_is_never_passed` checks QW5's line ("<model> via

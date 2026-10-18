@@ -279,7 +279,48 @@ function tileMode() {
 /** What the window was created with; a change of the setting reaches the next start. */
 let windowTiles = null;
 
+// ---- Comfy Cloud results kept for the window (docs/PLAN_COMFY_SDK.md S6) ----------------------------------------
+// The window asks for the noted jobs (renderer/shell.js recoverCloudResults): after its documents are back, when main
+// says they changed (provider:cloudJobsChanged) and every 90 s while some are kept. Main reads one ask at a time; every
+// ask reads every note but the jobs whose run is in flight here and the pictures it gave the current page that the page
+// has not acked yet. A reload, a crash or a navigation of the page forgets those, so the new page gets them again.
+// Nothing is read while no window is shown (a headless start, an agent start whose window is still hidden): the
+// pictures would open documents nobody looks at; once the window is shown, it hears provider:cloudJobsChanged.
+const cloudAsks = { chain: Promise.resolve(), page: 0, handed: new Set(), skipped: false };
+
+/** The page that asked went away (a reload, a crash, a new window): what it was given and did not ack comes again. */
+function cloudPageGone() {
+    cloudAsks.page++;
+    cloudAsks.handed.clear();
+}
+
+/** The window is shown: an ask that was answered "agent start" while it was hidden is asked again. */
+function cloudWindowShown() {
+    if (!cloudAsks.skipped || !windowVisible()) return;
+    cloudAsks.skipped = false;
+    send("provider:cloudJobsChanged");
+}
+
+/** One ask of the window for the noted Comfy Cloud jobs (providers/index.js recoverCloudJobs), after the one before. */
+function askCloudJobs() {
+    const run = cloudAsks.chain.then(async () => {
+        if (!windowVisible()) {
+            cloudAsks.skipped = true;
+            return { pictures: [], kept: 0, keptIds: [], running: 0, unanswered: 0, unread: 0, dropped: 0, skipped: "agent start" };
+        }
+        const page = cloudAsks.page;
+        const r = await providers.recoverCloudJobs({ skip: [...cloudAsks.handed] });
+        // given to this page until it acks them; a page that went away during the read gets nothing remembered
+        if (page === cloudAsks.page) for (const p of r.pictures) cloudAsks.handed.add(String(p.jobId));
+        return r;
+    });
+    // the next ask waits for this one, but the chain holds nothing of its answer (the pictures' bytes go with the IPC reply)
+    cloudAsks.chain = run.then(() => {}, () => {});
+    return run;
+}
+
 function createWindow() {
+    cloudPageGone();   // a new window's page asks for itself
     const tiles = tileMode();
     windowTiles = tiles;
     const saved = settings.get().window || {};
@@ -315,6 +356,9 @@ function createWindow() {
     });
     if (saved.maximized && !headless) win.maximize();
     win.once("ready-to-show", () => { if (!headless) win.show(); });
+    // a window shown after an agent start: the Comfy Cloud results it was not given while hidden
+    win.on("show", cloudWindowShown);
+    win.on("restore", cloudWindowShown);
     win.on("close", (e) => {
         const b = win.getNormalBounds();
         // a full-screen window is not maximized: the canvas-only view remembers whether it was before
@@ -341,6 +385,9 @@ function createWindow() {
     // a page that goes away (a reload) answers no save any more
     win.webContents.on("did-start-navigation", (details) => {
         if (!details || details.isSameDocument || !details.isMainFrame) return;
+        // a new page of the app (a reload): the Comfy Cloud pictures the old one did not ack go to it (a navigation
+        // out of the app is refused by will-navigate below and keeps the page)
+        if (String(details.url || "").startsWith(ORIGIN + "/")) cloudPageGone();
         for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window reloaded" });
         for (const w of askWaits.values()) w.gone();
         // the canvas-only view does not survive a reload: its full screen goes with it (F11's stays)
@@ -348,6 +395,7 @@ function createWindow() {
     });
     // a window whose renderer ended (a crash, out of memory) comes back and restores the autosave (quit.js CrashGuard)
     win.webContents.on("render-process-gone", (_e, d) => {
+        cloudPageGone();   // the Comfy Cloud pictures the ended page did not ack go to the next one
         for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window's renderer ended" });
         for (const w of askWaits.values()) w.gone();
         documents.abortAll();   // its saves: the temporary files go, the targets stay; the reload restores the session
@@ -494,6 +542,8 @@ function showWindow() {
     }
     if (win.isMinimized()) win.restore();
     win.focus();
+    // the "show" event may come while a never-shown window still reports itself hidden (above): asked here too
+    cloudWindowShown();
 }
 
 function windowVisible() {
@@ -1088,28 +1138,22 @@ function installIpc() {
     ipcMain.handle("keys:set", (_e, { name, value }) => keys.set(name, value));
     ipcMain.handle("keys:clear", (_e, name) => keys.clear(name));
     ipcMain.handle("providers:list", () => providers.describeAll());
-    // a run's live progress (Comfy Cloud's events) goes back to the window that asked, for its status row's bar
-    ipcMain.handle("provider:edit", (e, request) => providers.edit(request, { progress: (p) => { if (!e.sender.isDestroyed()) e.sender.send("provider:progress", p); } }));
-    ipcMain.handle("provider:cancel", (_e, runId) => providers.cancel(runId));
-    // Comfy Cloud results a crash or a quit left (docs/PLAN_COMFY_SDK.md S6): the window asks once, after its documents
-    // are back; a headless or agent start asks nothing (the pictures would open documents nobody looks at). A second
-    // ask waits for the first and answers its summary; { recheck: true } reads again only the jobs that still ran at the
-    // start (the window asks every few minutes while there are any). The window acks each picture it opened.
-    let cloudJobs = null;
-    let startKept = [];
-    ipcMain.handle("provider:recoverCloudJobs", async (_e, opts) => {
-        if (headless || agentMode) return { pictures: [], kept: 0, keptIds: [], dropped: 0, skipped: "agent start" };
-        if (opts && opts.recheck) {
-            if (!startKept.length) return { pictures: [], kept: 0, keptIds: [], dropped: 0, skipped: null };
-            const r = await providers.recoverCloudJobs({ only: startKept });
-            startKept = r.keptIds || [];
-            return r;
-        }
-        if (cloudJobs) { const r = await cloudJobs; return { kept: r.kept, keptIds: r.keptIds, dropped: r.dropped, skipped: r.skipped, brought: r.pictures.length, pictures: [], again: true }; }
-        cloudJobs = providers.recoverCloudJobs().then((r) => { startKept = r.keptIds || []; return r; });
-        return cloudJobs;
+    // a run's live progress (Comfy Cloud's events) goes back to the window that asked, for its status row's bar; a
+    // Comfy Cloud run that keeps its job's note, or whose page went away before its picture came (a reload, a crash:
+    // the note goes back then), tells the window to ask for the noted jobs (S6)
+    ipcMain.handle("provider:edit", (e, request) => {
+        const sender = e.sender, page = cloudAsks.page;
+        return providers.edit(request, {
+            progress: (p) => { if (!sender.isDestroyed()) sender.send("provider:progress", p); },
+            pageGone: () => sender.isDestroyed() || page !== cloudAsks.page,
+            cloudJobsChanged: () => send("provider:cloudJobsChanged"),
+        });
     });
-    ipcMain.handle("provider:ackCloudJob", (_e, jobId) => providers.ackCloudJob(jobId));
+    ipcMain.handle("provider:cancel", (_e, runId) => providers.cancel(runId));
+    // the noted Comfy Cloud jobs (S6, askCloudJobs above); `{ recheck: true }` is taken and means the same as no options.
+    // The window acks each picture it opened: its note goes, and it is no longer the page's.
+    ipcMain.handle("provider:recoverCloudJobs", () => askCloudJobs());
+    ipcMain.handle("provider:ackCloudJob", (_e, jobId) => { cloudAsks.handed.delete(String(jobId)); return providers.ackCloudJob(jobId); });
     // where each picture of a request of this shape goes and what the model calls it (docs/PLAN_REFS.md C3)
     ipcMain.handle("provider:layout", (_e, shape) => providers.layout(shape));
     ipcMain.handle("provider:balance", (_e, id) => providers.balance(id));

@@ -844,9 +844,12 @@ there; add a new flake there, with the date and what was ruled out.
   `settings.comfycloud.api` "legacy") and `recoverJobs`, `cloudjobs.js` (`<userData>/cloudjobs.json`, a job's note from
   submit to end), `comfyrouter.js` `send` / `collect` / `sync` on `comfy.models`. A run's live frames go back as IPC
   `provider:progress` (`index.js` `progressSender`, preload `providers.onProgress`, `host.js` `providerProgress` ->
-  `RunProgress` `fraction`); a Cancel's words follow `ctx.jobSent` / `cancelAsked` / `jobDone`. At start the window
-  asks `provider:recoverCloudJobs` once (never headless or agent), then `{ recheck: true }` every 90 s while a job of
-  the start still runs (`shell.js` `recheckCloudResults`), and acks each picture it opened (`provider:ackCloudJob`).
+  `RunProgress` `fraction`); a Cancel's words follow `ctx.jobSent` / `jobDone` / `jobEnded` / `cancelAsked`. The window
+  asks `provider:recoverCloudJobs` (`shell.js` `recoverCloudResults`) once its documents are back, on
+  `provider:cloudJobsChanged` (a run kept its note, a page went away during a run, the window was shown after a skipped
+  ask) and every 90 s while jobs are kept; main (`main.js` `askCloudJobs`) reads one ask at a time, skips the jobs in
+  flight (`cloudjobs.flying`) and the pictures handed to the page and not acked yet, and nothing while no window is
+  shown; the window acks each picture it opened (`provider:ackCloudJob`).
 
 ## Working rules
 

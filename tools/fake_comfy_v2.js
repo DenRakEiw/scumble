@@ -10,6 +10,7 @@
 "use strict";
 
 const ORIGIN = "https://cloud.comfy.org";
+const TERMINAL_SAYS = new Set(["succeeded", "failed", "expired"]);   // a status a cancel's answer leaves the job in
 const STORAGE = "https://storage.example";
 
 const png = (tag) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(tag)]);
@@ -25,8 +26,8 @@ const fail = (status, code, message, details, retryAfter) => json(status, { erro
  * @param {(workflow: object) => object[]} [o.outputs] a finished job's outputs: { node_id, name, type?, content_type? }
  * @param {object} [o.error] job.error of a failed job
  * @param {Array<string|object>} [o.submits] per POST /jobs in turn: "ok", "lostAfter" (taken, then the connection
- *   drops), "lostBefore" (drops before it is taken), or { status, code, message, details, noted } (a refusal notes the
- *   key unless `noted` is false)
+ *   drops), "lostBefore" (drops before it is taken), or { status, code, message, details, noted, beforeKey } (a refusal
+ *   notes the key unless `noted` is false; `beforeKey` refuses before the key is checked, as a limit the first job holds)
  * @param {object} [o.uploadFails] { status, code, message } for every POST /assets
  * @param {Array<string|object>} [o.uploadsSay] per POST /assets in turn: "ok", or { status, code, message } after
  *   the fake has noted the request's Idempotency-Key (a reused upload key is refused 422 idempotency_key_reuse)
@@ -34,14 +35,19 @@ const fail = (status, code, message, details, retryAfter) => json(status, { erro
  * @param {Array<string|object|null>} [o.reads] per GET /jobs/<id> in turn: null to answer, "lost" to drop the
  *   connection, { status, code, message, retryAfter } to refuse it
  * @param {Array<string|object|null>} [o.contents] per GET /assets/<id>/content in turn, the same forms as `reads`
- * @param {string} [o.cancelSays] "succeeded" (the job ended meanwhile), "fail" (the cancel answers 500)
+ * @param {string} [o.cancelSays] "succeeded" (the job ended meanwhile), "failed" / "expired" (it ended without a
+ *   picture meanwhile), "fail" (the cancel answers 500), "lost" (the connection drops), or an array of those per cancel
  * @param {Array<{event: string, data: object}>|function} [o.events] the job's live events (SSE), served on GET
  *   .../events (without them that route answers 404, as a surface with no live events does); a function of the
  *   connection's number answers { frames, drop } per connection, `drop` ending the stream with an error, after which
  *   the next job read fails once (the SDK reads the status right after a drop)
- * @param {(call: object) => Promise|undefined} [o.hold] awaited before a call is answered (a test cancels meanwhile)
- * @param {Object<string, object|string|number>} [o.jobsById] jobs of an earlier run, read by id (S6): { status, outputs },
- *   "lost" (the connection drops) or 404
+ * @param {(call: object, init: object) => Promise|undefined} [o.hold] awaited before a call is answered (a test cancels
+ *   meanwhile); `init` is the request's own (its signal)
+ * @param {Object<string, object|string|number>} [o.jobsById] jobs of an earlier run, read by id (S6): { status, outputs,
+ *   outputsAfter, readsSay }, "lost" (the connection drops) or an HTTP status that refuses the read (404 unknown, 401,
+ *   403, 429, 503); `readsSay` per read of that job: null to answer, "lost", or an HTTP status
+ * @param {string} [o.infoRedirect] the node list answers a 302 to this URL first (followed as fetch follows one, with its
+ *   headers, unless the request says redirect "manual")
  * @param {number} [o.outputsAfter] how many reads of the finished job list no outputs yet
  */
 function fakeComfyV2(o = {}) {
@@ -81,7 +87,7 @@ function fakeComfyV2(o = {}) {
         const h = new Headers(init.headers);
         const call = { method, url, path: u.pathname, origin: u.origin, auth: h.get("authorization"), apiKey: h.get("x-api-key"), idem: h.get("idempotency-key"), ua: h.get("user-agent"), redirect: init.redirect || "follow" };
         s.calls.push(call);
-        if (o.hold) await o.hold(call);
+        if (o.hold) await o.hold(call, init);
         if (init.signal && init.signal.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
         if (u.origin === STORAGE) {
             s.storage.push(call);
@@ -91,6 +97,10 @@ function fakeComfyV2(o = {}) {
         if (u.origin !== origin) return json(404, { error: { code: "not_found", message: "no such origin in the fake: " + u.origin } });
         const p = u.pathname;
         if (p === "/api/object_info") {
+            if (o.infoRedirect && !u.searchParams.has("hop")) {
+                if (init.redirect === "manual") return new Response(null, { status: 302, headers: { location: o.infoRedirect } });
+                return fetch(new URL(o.infoRedirect, url).href, init);   // fetch follows it with every header but Authorization
+            }
             s.infoReads++;
             if (o.infoFails) return fail(500, "internal", "node list broke");
             return json(200, o.info || Object.fromEntries((o.classes || []).map((c) => [c, {}])));
@@ -129,6 +139,7 @@ function fakeComfyV2(o = {}) {
         if (method === "POST" && p === "/api/v2/jobs") {
             const behave = (o.submits || [])[submitN++] || "ok";
             if (behave === "lostBefore") throw new TypeError("fetch failed");
+            if (behave && typeof behave === "object" && behave.beforeKey) return fail(behave.status, behave.code, behave.message, behave.details);
             const key = call.idem;
             if (key && s.keys.includes(key)) return fail(422, "idempotency_key_reuse", "this Idempotency-Key was already used");
             // a refusal notes the key unless it says it never reached the server (`noted: false`, a gateway's 503)
@@ -165,8 +176,10 @@ function fakeComfyV2(o = {}) {
         }
         if ((m = /^\/api\/v2\/jobs\/([^/]+)\/cancel$/.exec(p)) && method === "POST") {
             s.cancels.push(call);
-            if (o.cancelSays === "fail") return fail(500, "upstream_error", "cancel broke");
-            if (o.cancelSays === "succeeded") job.status = "succeeded";
+            const says = Array.isArray(o.cancelSays) ? o.cancelSays[s.cancels.length - 1] : o.cancelSays;
+            if (says === "lost") throw new TypeError("fetch failed");
+            if (says === "fail") return fail(500, "upstream_error", "cancel broke");
+            if (says === "succeeded" || says === "failed" || says === "expired") job.status = says;
             else if (!["succeeded", "failed", "canceled", "expired"].includes(job.status)) job.status = "canceling";
             return json(200, bodyOf());
         }
@@ -174,8 +187,14 @@ function fakeComfyV2(o = {}) {
             // jobs of an earlier run, read by their id (S6): "lost" drops the connection, 404 is unknown, else { status, outputs }
             const id = decodeURIComponent(m[1]);
             const spec = o.jobsById[id];
+            const refuse = (st) => fail(st, st === 404 ? "job_not_found" : st === 401 ? "unauthorized" : st === 403 ? "forbidden" : st === 429 ? "rate_limited" : "upstream_error", "refused " + st);
             if (spec === "lost") throw new TypeError("fetch failed");
-            if (spec === 404) return fail(404, "job_not_found", "no such job");
+            if (typeof spec === "number") return refuse(spec);
+            s.idCalls = s.idCalls || {};
+            s.idCalls[id] = (s.idCalls[id] || 0) + 1;
+            const say = (spec.readsSay || [])[s.idCalls[id] - 1];
+            if (say === "lost") throw new TypeError("fetch failed");
+            if (typeof say === "number") return refuse(say);
             s.idReads = s.idReads || {};
             s.idReads[id] = (s.idReads[id] || 0) + 1;
             const listed = s.idReads[id] > (spec.outputsAfter || 0);
@@ -195,7 +214,7 @@ function fakeComfyV2(o = {}) {
             if (failRead) { failRead = false; throw new TypeError("fetch failed"); }
             const refused = scripted((o.reads || [])[readN++]);
             if (refused) return refused;
-            if (job.status !== "canceling" && !(o.cancelSays === "succeeded" && s.cancels.length)) job.status = statuses[Math.min(job.reads, statuses.length - 1)];
+            if (job.status !== "canceling" && !(s.cancels.length && TERMINAL_SAYS.has(job.status))) job.status = statuses[Math.min(job.reads, statuses.length - 1)];
             job.reads++;
             return json(200, bodyOf());
         }

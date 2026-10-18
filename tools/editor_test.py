@@ -11433,12 +11433,14 @@ const h = ed.history[ed.history.length - 1];
 if (h.prompt !== "a hat like @img2" || h.negative !== "blurry" || !h.refs || h.refs.img2 !== X.id) throw new Error("the record: " + JSON.stringify({ p: h.prompt, n: h.negative, r: h.refs }));
 // a local run's result: the texts kept for its prompt id merge into the node's answer
 const up2 = await host.uploadInput(await png("#654321"), "s4_local_" + Date.now() + ".png");
-ed._sentTexts = new Map([["s4_pid", { prompt: "the queued prompt", negative: "", refs: null }]]);
+// QW5 (review F35): what the queue noted, "<recipe> via your ComfyUI" and when it went, becomes the result's via line
+ed._sentTexts = new Map([["s4_pid", { prompt: "the queued prompt", negative: "", refs: null, via: "Local test via your ComfyUI", viaStarted: Date.now() - 2400 }]]);
 ed.lastPromptId = "s4_pid";
 api.dispatch("executed", { prompt_id: "s4_pid", node: "x", output: { inpaint_result: [{ filename: up2.filename, subfolder: up2.subfolder, type: up2.type, x: 0, y: 0, width: 40, height: 40 }] } });
 for (let i = 0; i < 40 && ed.history.length < 2; i++) await wait(100);
 const hl = ed.history[ed.history.length - 1];
 if (ed.history.length < 2 || hl.prompt !== "the queued prompt") throw new Error("the local result's prompt: " + JSON.stringify(hl && hl.prompt));
+if (!/^Local test via your ComfyUI, [2-9] s$/.test(hl.via || "") || !String(ed.status).includes(" · " + hl.via)) throw new Error("the local result's via line: " + JSON.stringify({ via: hl.via, status: ed.status }));
 } finally { host.ensureRefs = savedEnsure; ed.lastPromptId = null; ed._sentTexts = null; }
 // hide Y: X is img1 now; the click writes the token for that
 await run("set_layer", { layer: Y.id, visible: false, doc: d.id });
@@ -11521,6 +11523,27 @@ if (ed.promptText !== "@img1 in front of @img2") throw new Error("the prompt's t
 await run("undo", { doc: d.id });
 const lab2 = ed.refLabels();
 if (lab2.get(C.id) !== 1 || lab2.get(B.id) !== 2 || lab2.get(A.id) !== 3) throw new Error("one undo step did not restore the order: " + JSON.stringify(Array.from(lab2)));
+// a row let go next to where it already is (C, the row above B, over B's upper half) moves nothing: no drop marker on
+// that half, no undo step, the redo step kept, the order as it was; B's lower half does move it (review F26)
+ed.renderReferences();
+const rc2 = rowOf(C), rb2 = rowOf(B), rbB = rb2.getBoundingClientRect();
+const undo0 = ed.undo.length, redo0 = ed.redo.length, gen0 = ed.historyGen;
+fire(rc2, "dragstart", rc2.getBoundingClientRect().top + 2);
+fire(rb2, "dragover", rbB.top + 2);
+const marked = rb2.classList.contains("ipc-drop-above") || rb2.classList.contains("ipc-drop-below");
+fire(rb2, "drop", rbB.top + 2);
+fire(rc2, "dragend", 0);
+const lab3 = ed.refLabels();
+if (marked || ed.undo.length !== undo0 || ed.redo.length !== redo0 || ed.historyGen !== gen0 || lab3.get(C.id) !== 1 || lab3.get(B.id) !== 2 || lab3.get(A.id) !== 3) {
+    throw new Error("a drop next to where the row is: " + JSON.stringify({ marked, undo: ed.undo.length - undo0, redo: ed.redo.length - redo0, gen: ed.historyGen - gen0, labels: Array.from(lab3) }));
+}
+ed.renderReferences();
+const rc3 = rowOf(C), rb3 = rowOf(B), rbB3 = rb3.getBoundingClientRect();
+fire(rc3, "dragstart", rc3.getBoundingClientRect().top + 2);
+fire(rb3, "dragover", rbB3.bottom - 2);
+const below = rb3.classList.contains("ipc-drop-below");
+fire(rc3, "dragend", 0);
+if (!below) throw new Error("B's lower half shows no drop marker for C");
 // a row dropped on itself does nothing
 ed.renderReferences();
 const rb = rowOf(B);
@@ -11555,6 +11578,22 @@ if (pf) {
 }
 await run("close_document", { doc: d.id, force: true });
 return { before: Array.from(lab0), after: Array.from(lab1) };
+"""),
+    # review F25: with no ComfyUI connected (the gate runs --offline), selection by text says it runs on a ComfyUI and
+    # that none is connected, not that node packs are missing; its route menu says so too
+    ("select_by_text_needs_a_comfyui", """
+if (host.connected) return { skipped: "a ComfyUI is connected" };
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 120, height: 80, doc: d.id });
+ed.refreshSegmentBackends();
+const opt = ed.segBackendSel && ed.segBackendSel.options[0] ? ed.segBackendSel.options[0].textContent : "";
+let msg = "";
+try { await run("select_by_text", { doc: d.id, text: "the car" }); } catch (e) { msg = String(e.message || e); }
+await run("close_document", { doc: d.id, force: true });
+if (!/^Selection by text runs on your ComfyUI .*none is connected/.test(msg) || opt !== "needs a ComfyUI (none connected)") throw new Error("without a ComfyUI: " + JSON.stringify({ msg, opt }));
+return { msg: msg.slice(0, 80), opt };
 """),
     ("the_size_ceiling_refuses_before_it_costs", """
 const d = await run("new_document");

@@ -157,7 +157,10 @@ const out = await run("generate", { doc: window.__u, timeout: 60 });
 if (ed.layers.length !== n + 1) throw new Error("no layer from Generate");
 const L = out.layer;
 if (!L || L.kind !== "result" || !(L.x <= 40 && L.y <= 40 && L.x + L.w >= 136 && L.y + L.h >= 104)) throw new Error("Generate did not upscale the selection: " + JSON.stringify(L));
-if (!/upscaled the selection/.test(ed.status)) throw new Error("the status is not the upscale's: " + ed.status);
+// QW5 (review F27): the line ends with the model, the route and the seconds, as the history row does
+if (!/^Upscaled the selection .* as a new layer · Loopback upscale via Loopback, \\d+ s$/.test(ed.status)) throw new Error("the status is not the upscale's, or names no model via route: " + ed.status);
+const hv = ed.history[ed.history.length - 1];
+if (!hv || !/^Loopback upscale via Loopback, \\d+ s$/.test(hv.via || "")) throw new Error("the history row's via: " + JSON.stringify(hv && hv.via));
 if (ed.width !== 640) throw new Error("Generate changed the picture's size");
 return { layer: out.layer.id, status: ed.status };
 """ % {"LOOP": LOOP}),

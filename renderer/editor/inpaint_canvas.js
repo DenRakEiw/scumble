@@ -12331,7 +12331,8 @@ class InpaintEditor {
         const cur = this.segBackendSel.value;
         this.segBackendSel.innerHTML = "";
         for (const b of avail) { const o = document.createElement("option"); o.value = b.id; o.textContent = b.label; this.segBackendSel.appendChild(o); }
-        if (!avail.length) { const o = document.createElement("option"); o.value = ""; o.textContent = "no segmentation nodes installed"; this.segBackendSel.appendChild(o); }
+        // no ComfyUI at all (the app on a machine without one): the route needs a server, not a node pack (review F25)
+        if (!avail.length) { const o = document.createElement("option"); o.value = ""; o.textContent = host.connected ? "no segmentation nodes installed" : "needs a ComfyUI (none connected)"; this.segBackendSel.appendChild(o); }
         if (avail.some((b) => b.id === cur)) this.segBackendSel.value = cur;
         this.segBtn.disabled = !avail.length;
         this.updateSegQuality();
@@ -12367,7 +12368,10 @@ class InpaintEditor {
         if (!text && !fromPrompt) { this.setStatus("Type what to select, e.g. \"shirt\", or write a prompt and press Go to select what it is about."); this.segInput.focus(); return; }
         if (fromPrompt && !llm) { this.setStatus("Type what to select: no language model nodes installed to derive it from the prompt.", "warn"); this.segInput.focus(); return; }
         const backend = SEGMENT_BACKENDS.find((b) => b.id === this.segBackendSel.value) || availableSegmentBackends()[0];
-        if (!backend) { this.setStatus("No segmentation nodes installed (comfyui_segment_anything or comfyui-rmbg).", "warn"); return; }
+        if (!backend) {
+            if (!host.connected) { this.setStatus("Selection by text runs on your ComfyUI (SAM3 or segment-anything there), and none is connected: connect one in the top bar, or select with the object tool, which needs no ComfyUI.", "warn"); return; }
+            this.setStatus("No segmentation nodes installed (comfyui_segment_anything or comfyui-rmbg).", "warn"); return;
+        }
         try {
             this.segBtn.disabled = true;
             this.setStatus(fromPrompt ? `Asking ${llm.label} what the prompt is about, then segmenting with ${backend.label} ...` : `Segmenting "${text}" with ${backend.label} ...`);
@@ -18991,8 +18995,10 @@ class InpaintEditor {
                 e.stopPropagation();   // not a picture dropped on the list (the list's own drop adds references)
                 if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
                 const above = upperHalf(e);
-                row.classList.toggle("ipc-drop-above", above);
-                row.classList.toggle("ipc-drop-below", !above);
+                // no marker on the half next to where the dragged row already is: a drop there moves nothing
+                const moves = this.reorderMoves(this.dragRefId, layer.id, above);
+                row.classList.toggle("ipc-drop-above", moves && above);
+                row.classList.toggle("ipc-drop-below", moves && !above);
             });
             row.addEventListener("dragleave", () => row.classList.remove("ipc-drop-above", "ipc-drop-below"));
             row.addEventListener("drop", (e) => {
@@ -19785,8 +19791,10 @@ class InpaintEditor {
             const pObj = LIGHT_PRESETS.find((x) => x.id === pid);
             const pLabel = pObj ? pObj.label : pid;
             this.pushUndo({ kind: "filter", id: layer.id, label: `Light preset: ${pLabel}` });
-            const w = this.doc ? this.doc.width : 1024;
-            const h = this.doc ? this.doc.height : 1024;
+            // the picture's own size, as the relight command and the toolbar place lights (review F28: the editor has no
+            // `doc`, which put every preset into the top-left 1024 px square)
+            const w = this.width || 1024;
+            const h = this.height || 1024;
             const newLights = applyLightPreset(pid, { width: w, height: h });
             if (newLights && newLights.length > 0) {
                 layer.params.lights = newLights;
@@ -19806,8 +19814,8 @@ class InpaintEditor {
         const addBtn = iconButton("plus", count >= LIGHT_MAX ? "Maximum 4 lights reached" : "Add a new light", () => {
             if (layer.params.lights.length >= LIGHT_MAX) return;
             this.pushUndo({ kind: "filter", id: layer.id, label: "Add light" });
-            const w = this.doc ? this.doc.width : 1024;
-            const h = this.doc ? this.doc.height : 1024;
+            const w = this.width || 1024;
+            const h = this.height || 1024;
             let n = 1;
             while (layer.params.lights.some((l) => l && l.id === `light_${n}`)) n++;
             const nl = defaultLight(n - 1, { width: w, height: h });
@@ -19897,8 +19905,8 @@ class InpaintEditor {
             const resetBtn = miniButton("restore", "Reset light to defaults", (e) => {
                 stop(e);
                 this.pushUndo({ kind: "filter", id: layer.id, label: "Reset light" });
-                const w = this.doc ? this.doc.width : 1024;
-                const h = this.doc ? this.doc.height : 1024;
+                const w = this.width || 1024;
+                const h = this.height || 1024;
                 const def = defaultLight(i, { width: w, height: h });
                 Object.assign(l, def, { id: l.id });
                 this.markFilterChanged(layer);
@@ -21838,7 +21846,6 @@ class InpaintEditor {
         if (!tLayer && !tGroup) return false;
         if (tLayer && block.includes(tLayer)) return false;
         if (g && tGroup && (tGroup === g || this.inGroup(tGroup, g.id))) return false;
-        this.pushUndo({ kind: "layers", label: "Layer order" });
         const rest = this.layers.filter((l) => !block.includes(l));
         let at, parent;
         if (tLayer) {
@@ -21850,11 +21857,37 @@ class InpaintEditor {
             at = mem.length ? rest.indexOf(mem[mem.length - 1]) + 1 : rest.length;
             parent = above ? (tGroup.parent || null) : tGroup.id;
         }
+        const next = [...rest.slice(0, at), ...block, ...rest.slice(at)];
+        // a drop next to where it already is changes nothing that shows: no step, no change (review F26)
+        const sameParent = g ? (g.parent || null) === parent : this.isReference(src) || (src.group || null) === parent;
+        if (sameParent && this.sameStackOrder(src, next)) return false;
+        this.pushUndo({ kind: "layers", label: "Layer order" });
         if (g) g.parent = parent;
         else if (!this.isReference(src)) src.group = parent;
-        this.layers = [...rest.slice(0, at), ...block, ...rest.slice(at)];
+        this.layers = next;
         this.layersRestacked();
         return true;
+    }
+
+    /**
+     * Whether the stack `next` shows the layers in the order they have now: the whole stack, or only the references'
+     * order when `moved` is a reference (they are no part of the picture, so their place among the other layers is not).
+     */
+    sameStackOrder(moved, next) {
+        const seen = (arr) => (moved && this.isReference(moved) ? arr.filter((l) => this.isReference(l)) : arr);
+        const a = seen(next), b = seen(this.layers);
+        return a.length === b.length && a.every((l, k) => l === b[k]);
+    }
+
+    /** Whether reorderLayer(srcId, targetId, above) would move anything (a reference row's drop marker). */
+    reorderMoves(srcId, targetId, above) {
+        const src = this.layers.find((l) => l.id === srcId), t = this.layers.find((l) => l.id === targetId);
+        if (!src || !t || src === t) return false;
+        // where dropInLayers puts it: next to the target in the stack without it
+        const rest = this.layers.filter((l) => l !== src);
+        const at = rest.indexOf(t) + (above ? 1 : 0);
+        const next = [...rest.slice(0, at), src, ...rest.slice(at)];
+        return !this.sameStackOrder(src, next) || (!this.isReference(src) && (src.group || null) !== (t.group || null));
     }
 
     /**

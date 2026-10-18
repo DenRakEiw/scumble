@@ -2078,6 +2078,9 @@ try {
     if (sorted(P.rp_one.inputs) !== sorted(r0.prompt.rp_one.inputs) || sorted(P.rp_enhance.inputs) !== sorted(r0.prompt.rp_enhance.inputs)) throw new Error("the pack's nodes changed: " + JSON.stringify([P.rp_one.inputs, P.rp_enhance.inputs]));
     if (r0.prompt.rp_settings.inputs.dlss_model_preset !== "L" || r0.prompt.rp_settings.inputs.nr_style !== "Default") throw new Error("the run wrote into the recipe: " + JSON.stringify(r0.prompt.rp_settings.inputs));
     if (ed.lastPromptId !== "rp-test-1") throw new Error("lastPromptId " + ed.lastPromptId);
+    // QW5 (review F35): the local run notes "<recipe> via your ComfyUI" and when it went, for its result's via line
+    const viaSent = ed._sentTexts && ed._sentTexts.get("rp-test-1");
+    if (!viaSent || viaSent.via !== LABEL + " via your ComfyUI" || !(Date.now() - viaSent.viaStarted < 60000)) throw new Error("the local run's via: " + JSON.stringify(viaSent && { via: viaSent.via, started: viaSent.viaStarted }));
     out.sent = { target_size: cv.target_size, multiple_of: cv.multiple_of, fill: st.crop.fill, withOriginal: st.crop.withOriginal, refine: st.gen.refine, preset: P.rp_settings.inputs.dlss_model_preset, style: P.rp_settings.inputs.nr_style, intensity: P.rp_settings.inputs.nr_intensity };
     // an RTX 30 card runs, with the note about the pack's experimental runtime pair after the queueing
     host.setServerStatus({ ...GOOD, gpus: ["cuda:0 NVIDIA GeForce RTX 3090 : cudaMallocAsync"] });
@@ -2279,18 +2282,27 @@ const sample = () => { const s = [label().replace(/ · \\d+ s$/, ""), fill.style
 const poll = setInterval(sample, 40);
 // the local ComfyUI's lifecycle leaves a live cloud run's steps in place: its queue going empty (idle with keep), a
 // status with jobs left (checkTrackedRuns, its /queue not holding the run, read over 3 s after it was tracked), the
-// socket lost (idle with keep)
-let afterIdle = null, afterCheck = null, afterSocket = null;
+// socket lost (idle with keep). The status's check is waited for and runs its /queue path: a local prompt of this tab
+// that the queue no longer holds goes, the cloud run stays (review F9: read before the check ended, it proved nothing)
+let afterIdle = null, afterCheck = null, afterSocket = null, localGone = null, checked = null;
+const localId = "s2_local_" + Date.now();
 const savedFetch = api.fetchApi, savedServer = { ...(host.server || {}) };
 api.fetchApi = (path, init) => String(path).startsWith("/queue")
     ? Promise.resolve(new Response(JSON.stringify({ queue_running: [], queue_pending: [] }), { status: 200, headers: { "Content-Type": "application/json" } }))
     : savedFetch(path, init);
 const idleAt = setTimeout(() => { api.dispatch("status", { status: { exec_info: { queue_remaining: 0 } } }); afterIdle = label(); }, 5350);
 const checkAt = setTimeout(async () => {
+    ed.runProgress.track(localId, 3);
+    ed.runProgress.runs.get(localId).tracked = Date.now() - 4000;
+    let reads = 0;
+    const counted = api.fetchApi;
+    api.fetchApi = (path, init) => { if (String(path).startsWith("/queue")) reads++; return counted(path, init); };
     host._runsChecked = 0;
     api.dispatch("status", { status: { exec_info: { queue_remaining: 1 } } });
-    host._runsChecked = 0;
-    await host.checkTrackedRuns();
+    for (let i = 0; i < 100 && host._checkingRuns; i++) await wait(10);
+    api.fetchApi = counted;
+    checked = { reads, busy: !!host._checkingRuns };
+    localGone = !ed.runProgress.has(localId);
     afterCheck = ed.runProgress.has(token.runId) ? label() : "dropped";
     host.setServerStatus({ ...savedServer, socket: false });
     afterSocket = ed.runProgress.has(token.runId) ? label() : "dropped";
@@ -2311,10 +2323,107 @@ if (!has(/^Cloud test\\|/)) throw new Error("the queued frame: the timer label f
 if (!has(/^Cloud test · node 1\\/12\\|[^|]*\\|true\\|true$/)) throw new Error("a share of nothing yet: node 1/12, busy " + JSON.stringify(during));
 if (!has(/^Cloud test · node 12\\/12\\|25%\\|false\\|true$/)) throw new Error("11 of 12 whole, the running node at a quarter: node 12/12, 25 % " + JSON.stringify(during));
 if (!afterIdle || !/node 12\\/12/.test(afterIdle)) throw new Error("the local queue went empty: the cloud run's steps went too: " + afterIdle);
+if (!checked || checked.reads !== 1 || checked.busy || localGone !== true) throw new Error("the status with jobs left did not read /queue to its end, or left the local prompt the queue does not hold: " + JSON.stringify({ checked, localGone }));
 if (!afterCheck || !/node 12\\/12/.test(afterCheck)) throw new Error("a status with jobs left (checkTrackedRuns): the cloud run's steps went: " + afterCheck);
 if (!afterSocket || !/node 12\\/12/.test(afterSocket)) throw new Error("the socket lost: the cloud run's steps went: " + afterSocket);
 if (ended) throw new Error("the bar stays after the run's row left");
-return { frames: during.length, afterIdle, afterCheck, afterSocket };
+return { frames: during.length, afterIdle, afterCheck, afterSocket, checked, localGone };
+"""),
+    # the fix contract of 0.1.49, section 2 (reviews F16, G3.1): the window's asks for Comfy Cloud results, against a
+    # stand-in for main's answer (shell.cloudJobs.api): one ask at a time and exactly one more for what came meanwhile,
+    # a sentence per reason main keeps a job, this session's picture named as such, a count said once, the next ask
+    # after recheckMs while jobs are kept, an ask that replaces the pending timer, nothing said on a skipped answer
+    ("the_window_asks_for_comfy_cloud_results", """
+const shell = await import("./shell.js");
+const cj = shell.cloudJobs;
+if (!cj || typeof shell.recoverCloudResults !== "function") throw new Error("shell.js has no cloudJobs / recoverCloudResults");
+const saved = { api: cj.api, ms: cj.recheckMs, said: cj.said };
+for (let i = 0; i < 100 && cj.asking; i++) await wait(50);
+clearTimeout(cj.timer); cj.timer = null;
+const oc = new OffscreenCanvas(48, 32); const og = oc.getContext("2d"); og.fillStyle = "#336699"; og.fillRect(0, 0, 48, 32);
+const png = new Uint8Array(await (await oc.convertToBlob({ type: "image/png" })).arrayBuffer());
+const A = (o) => ({ pictures: [], kept: 0, keptIds: [], running: 0, unanswered: 0, unread: 0, dropped: 0, skipped: null, ...o });
+const answers = [], acks = [], calls = [];
+let release = null;
+cj.api = {
+    recover: async () => { calls.push(Date.now()); const a = answers.shift() || A({}); if (a.hold) await new Promise((r) => { release = r; }); return a; },
+    ack: async (id) => { acks.push(id); },
+};
+cj.recheckMs = 400;
+cj.said = "";
+const d = await run("new_document");
+const front = ednow(d.id);
+host.shell.activate(front);
+await run("new_canvas", { width: 64, height: 64, doc: d.id });
+const known = new Set(host.editors());
+const fresh = () => host.editors().filter((e) => !known.has(e));
+const out = {};
+try {
+    // (1) an ask that holds: two more asked meanwhile make exactly one more after it
+    const t0 = Date.now() - 60000;
+    answers.push(A({ hold: true, kept: 3, keptIds: ["r1", "u1", "d1"], running: 1, unanswered: 1, unread: 1, pictures: [
+        { jobId: "aaaaaaaa-this", bytes: png, mime: "image/png", model: "Z-Image Turbo", recipe: "z", started: t0, earlier: false },
+        { jobId: "bbbbbbbb-past", bytes: png, mime: "image/png", model: "Klein 9B", recipe: "k", started: t0, earlier: true }] }));
+    answers.push(A({ kept: 3, keptIds: ["r1", "u1", "d1"], running: 1, unanswered: 1, unread: 1 }));
+    shell.recoverCloudResults();
+    for (let i = 0; i < 100 && !release; i++) await wait(20);
+    if (!release) throw new Error("the first ask never reached main's stand-in");
+    shell.recoverCloudResults(); shell.recoverCloudResults();
+    if (calls.length !== 1) throw new Error("an ask went while one ran: " + calls.length);
+    release();
+    for (let i = 0; i < 150 && (calls.length < 2 || cj.asking); i++) await wait(20);
+    if (calls.length !== 2) throw new Error("the asks asked for meanwhile went " + (calls.length - 1) + " times, not once");
+    const words1 = "1 Comfy Cloud job is still running: Scumble opens its picture when it is done. Comfy did not answer about 1 Comfy Cloud job: Scumble asks again in 90 s. 1 finished Comfy Cloud job could not be downloaded yet: Scumble tries again in 90 s.";
+    // one of them is this session's: the line in front does not call them results of an earlier run
+    if (!/^2 Comfy Cloud results opened in tabs of their own: /.test(front.status) || !front.status.endsWith(" " + words1) || front.statusKind !== "") throw new Error("the line in front: " + front.status + " / " + front.statusKind);
+    const docs = fresh();
+    const mine = docs.find((e) => /^A Comfy Cloud result its run could not bring at the time \\(Z-Image Turbo, started /.test(e.status || ""));
+    const past = docs.find((e) => /^A Comfy Cloud result that came in after Scumble closed \\(Klein 9B, started /.test(e.status || ""));
+    if (docs.length !== 2 || !mine || !past || mine.width !== 48 || host.editor !== front) throw new Error("the opened documents: " + JSON.stringify(docs.map((e) => [e.width, e.status])) + ", front kept: " + (host.editor === front));
+    if (acks.join() !== "aaaaaaaa-this,bbbbbbbb-past") throw new Error("acked: " + acks.join());
+    out.first = front.status.slice(0, 60);
+    // (2) the second ask said nothing new, and set the next ask: after recheckMs it comes, the counts changed (plural)
+    if (!cj.timer) throw new Error("jobs kept, but no next ask is set");
+    const words2 = "2 Comfy Cloud jobs are still running: Scumble opens their pictures when they are done. Comfy did not answer about 2 Comfy Cloud jobs: Scumble asks again in 90 s. 2 finished Comfy Cloud jobs could not be downloaded yet: Scumble tries again in 90 s.";
+    answers.push(A({ kept: 6, keptIds: ["a", "b", "c", "d", "e", "f"], running: 2, unanswered: 2, unread: 2 }));
+    front.setStatus("A line of the user's own.");
+    for (let i = 0; i < 100 && calls.length < 3; i++) await wait(20);
+    for (let i = 0; i < 50 && cj.asking; i++) await wait(20);
+    const gap = calls[2] - calls[1];
+    if (calls.length !== 3 || !(gap >= 350) || front.status !== words2) throw new Error("the timed ask: " + JSON.stringify({ asks: calls.length, gap, status: front.status }));
+    // (3) the same counts again: not said again over the user's line
+    answers.push(A({ kept: 6, keptIds: ["a", "b", "c", "d", "e", "f"], running: 2, unanswered: 2, unread: 2 }));
+    front.setStatus("Another line of the user's own.");
+    for (let i = 0; i < 100 && calls.length < 4; i++) await wait(20);
+    for (let i = 0; i < 50 && cj.asking; i++) await wait(20);
+    if (calls.length !== 4 || front.status !== "Another line of the user's own.") throw new Error("the same counts said again: " + front.status);
+    // (4) an ask from main's event replaces the pending timer: it clears it at once, and with nothing kept none follows
+    if (!cj.timer) throw new Error("no timer pending before the event's ask");
+    answers.push(A({}));
+    shell.recoverCloudResults();
+    const cleared = cj.timer === null;
+    await wait(cj.recheckMs + 300);
+    if (!cleared || calls.length !== 5 || cj.timer) throw new Error("the event's ask did not replace the timer: " + JSON.stringify({ cleared, asks: calls.length, timer: !!cj.timer }));
+    // (5) a skipped answer (no window visible) says nothing and sets no timer
+    answers.push(A({ skipped: "agent start" }));
+    front.setStatus("Quiet.");
+    shell.recoverCloudResults();
+    for (let i = 0; i < 50 && (calls.length < 6 || cj.asking); i++) await wait(20);
+    if (calls.length !== 6 || front.status !== "Quiet." || cj.timer) throw new Error("a skipped answer: " + JSON.stringify({ asks: calls.length, status: front.status, timer: !!cj.timer }));
+    // (6) a picture that came in after Scumble closed, alone: the line in front names it a result of an earlier run
+    answers.push(A({ pictures: [{ jobId: "cccccccc-past", bytes: png, mime: "image/png", model: "Klein 9B", recipe: "k", started: t0, earlier: true }] }));
+    shell.recoverCloudResults();
+    for (let i = 0; i < 100 && (calls.length < 7 || cj.asking); i++) await wait(20);
+    if (calls.length !== 7 || !/^A Comfy Cloud result of an earlier run opened in a tab of its own: .+\\.$/.test(front.status) || cj.timer) throw new Error("an earlier run's picture alone: " + JSON.stringify({ asks: calls.length, status: front.status, timer: !!cj.timer }));
+    out.asks = calls.length;
+    return out;
+} finally {
+    clearTimeout(cj.timer); cj.timer = null;
+    for (let i = 0; i < 50 && cj.asking; i++) await wait(20);
+    cj.api = saved.api; cj.recheckMs = saved.ms; cj.said = saved.said;
+    for (const e of fresh()) { try { await run("close_document", { doc: e.node.id, force: true }); } catch (_) { /* gone */ } }
+    try { await run("close_document", { doc: d.id, force: true }); } catch (_) { /* gone */ }
+}
 """),
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }

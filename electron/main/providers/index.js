@@ -188,6 +188,11 @@ function cancel(runId) {
 
 const aborted = () => Object.assign(new Error("cancelled"), { name: "AbortError" });
 
+/** Tells the window that the noted Comfy Cloud jobs changed (main.js sends provider:cloudJobsChanged). */
+function jobsChanged(hooks) {
+    if (hooks && typeof hooks.cloudJobsChanged === "function") { try { hooks.cloudJobsChanged(); } catch (_) { /* the window may be gone */ } }
+}
+
 const PROGRESS_MS = 250;   // at most four progress frames a second per run reach the renderer
 
 /**
@@ -196,12 +201,13 @@ const PROGRESS_MS = 250;   // at most four progress frames a second per run reac
  * after the share that was waiting (a status carries no share).
  */
 function progressSender(runId, send) {
-    let last = 0, pending = null, timer = null;
-    const emit = (p) => { last = Date.now(); try { send({ ...p, runId }); } catch (_) { /* the window may be gone */ } };
+    // the monotonic clock: a wall clock set back (a time sync after a wake) would hold every share for as long
+    let last = -Infinity, pending = null, timer = null;
+    const emit = (p) => { last = performance.now(); try { send({ ...p, runId }); } catch (_) { /* the window may be gone */ } };
     const flush = () => { timer = null; if (pending) { const p = pending; pending = null; emit(p); } };
     const fn = (frame) => {
         const { urgent, ...p } = frame || {};
-        const now = Date.now();
+        const now = performance.now();
         if (urgent || now - last >= PROGRESS_MS) {
             if (timer) { clearTimeout(timer); timer = null; }
             if (urgent && pending) emit(pending);
@@ -216,7 +222,12 @@ function progressSender(runId, send) {
     return fn;
 }
 
-/** A provider run. `hooks.progress(frame)` takes the run's live progress (an adapter that has some calls ctx.progress). */
+/**
+ * A provider run. `hooks.progress(frame)` takes the run's live progress (an adapter that has some calls ctx.progress);
+ * `hooks.cloudJobsChanged()` hears that a Comfy Cloud run ended with its job's note kept, or put back (the window asks
+ * for the noted jobs then); `hooks.pageGone()` says whether the page that asked for the run went away meanwhile (a
+ * reload, a crash): a Comfy Cloud picture that came for it puts its job's note back, so the new page's ask brings it.
+ */
 async function edit(request, hooks = {}) {
     const id = String(request.provider || "");
     const p = Object.prototype.hasOwnProperty.call(PROVIDERS, id) ? PROVIDERS[id] : null;
@@ -287,14 +298,18 @@ async function edit(request, hooks = {}) {
         if (ac.signal.aborted) throw aborted();   // an adapter that finished its last call as Cancel came: dropped too
     } catch (err) {
         const secs = ((Date.now() - t0) / 1000).toFixed(1);
+        // a Comfy Cloud run whose job's note stays (comfycloud.runV2): the window asks for the noted jobs again
+        if (ctx.noteKept === true) jobsChanged(hooks);
         if (ac.signal.aborted) {
-            // an adapter that knows where its job stood says so (Comfy Cloud on v2): ctx.cancelAsked (the provider
-            // answered that the job stops), ctx.jobDone (it had finished: charged, its picture dropped), ctx.jobSent
-            // false (nothing went out that runs); without them the provider may still finish the job
-            const words = ctx.cancelAsked === true ? `Cancelled after ${secs} s: Scumble asked ${p.label} to stop the job.`
+            // an adapter that knows where its job stood says so (Comfy Cloud on v2, Comfy Router): ctx.jobSent false
+            // (nothing went out that runs), ctx.jobDone (it had finished: charged, its picture dropped), ctx.jobEnded
+            // (it had ended without a picture: its status), ctx.cancelAsked (the provider answered that the job stops);
+            // without them the provider may still finish the job, and a kept note (ctx.noteKept) brings its picture
+            const words = ctx.jobSent === false ? `Cancelled after ${secs} s, before the job went to ${p.label}: nothing runs or is charged.`
                 : ctx.jobDone === true ? `Cancelled after ${secs} s: the job had already finished on ${p.label} and is charged; its picture was not kept.`
-                    : ctx.jobSent === false ? `Cancelled after ${secs} s, before the job went to ${p.label}: nothing runs or is charged.`
-                        : `Cancelled after ${secs} s: Scumble stopped waiting for ${p.label}, which may still finish the job and charge it.`;
+                    : typeof ctx.jobEnded === "string" && ctx.jobEnded ? `Cancelled after ${secs} s: the job had already ended on ${p.label} (${ctx.jobEnded}) without a picture.`
+                        : ctx.cancelAsked === true ? `Cancelled after ${secs} s: Scumble asked ${p.label} to stop the job.`
+                            : `Cancelled after ${secs} s: Scumble stopped waiting for ${p.label}, which may still finish the job and charge it.${ctx.noteKept === true ? " " + cloudjobs.KEPT : ""}`;
             log.record({ source: id, message: `${p.label} ${verb} cancelled after ${secs} s`, detail: { request: shape(), words } });
             throw new Error(words);
         }
@@ -303,6 +318,13 @@ async function edit(request, hooks = {}) {
     } finally {
         if (runId) running.delete(runId);
         if (ctx.progress && ctx.progress.stop) ctx.progress.stop();
+    }
+    // the picture came, but the page that asked for it is gone (a reload or a crash during the run): the job's note goes
+    // back, so the new page's ask brings the picture as a document of its own (S6)
+    if (out && out.bytes && ctx.jobNote && ctx.jobs && hooks && typeof hooks.pageGone === "function" && hooks.pageGone()) {
+        ctx.jobs.add(ctx.jobNote);
+        log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for job ${ctx.jobNote.jobId} went away before its picture came; the job stays noted, so the window opens it` });
+        jobsChanged(hooks);
     }
     if (!out || !out.bytes) { log.record({ level: "error", source: id, message: p.label + " returned no image.", detail: shape() }); throw new Error(p.label + " returned no image."); }
     // an adapter's own notes on the run (Comfy Router: who served it, what it left out) join the request's
@@ -414,8 +436,9 @@ function contextFor(id, p, key, signal) {
     };
     // Comfy Cloud: the Comfy API v2 through the SDK, or the legacy API for one release (docs/PLAN_COMFY_SDK.md 3.9)
     if (id === "comfycloud") ctx.cloudApi = ((settings.get().comfycloud || {}).api === "legacy") ? "legacy" : "v2";
-    // a v2 job is noted while it runs, so a crash leaves it for the next start (S6)
-    if (id === "comfycloud" && userData()) ctx.jobs = cloudjobs.store(userData());
+    // a v2 job is noted while it runs, so a crash leaves it for the next start (S6); a note a full file pushes out is
+    // named in the log (its picture can only be fetched by hand then)
+    if (id === "comfycloud" && userData()) ctx.jobs = cloudjobs.store(userData(), { pushedOut: notesPushedOut });
     if (signal) {
         // a run's every request and every wait between its polls end when the run is cancelled; the fetch is read at
         // call time (the tests put their fake in globalThis.fetch)
@@ -447,27 +470,38 @@ async function balance(id) {
     }
 }
 
+function notesPushedOut(entries) {
+    for (const e of entries) log.record({ level: "warn", source: "comfycloud", message: `Comfy Cloud: the note of job ${e.jobId} (${e.model || "Comfy Cloud"}) was pushed out by newer ones; its picture is not brought back by itself` });
+}
+
+// when this process started: a note written before it is of an earlier run (`earlier` in recoverCloudJobs' pictures)
+const BOOT = Date.now();
+
 /**
- * The Comfy Cloud jobs a crash or a quit left (docs/PLAN_COMFY_SDK.md S6), read once when the window has its documents
- * back (main.js never asks on a headless or agent start): the pictures of the jobs that finished meanwhile, for the
- * window to open as documents of their own. Nothing is sent again; without a key nothing is asked.
+ * The noted Comfy Cloud jobs (docs/PLAN_COMFY_SDK.md S6), read whenever the window asks (main.js: after its documents
+ * are back, when the notes changed, every 90 s while some are kept; never while no window is shown): the pictures of
+ * the jobs that finished meanwhile, for the window to open as documents of their own (`earlier`: noted before this
+ * process started), and how many stay noted (running, unanswered, unread). The jobs of `skip` (pictures the window
+ * was given and has not acked) and those whose run is in flight here are left alone. Nothing is sent again; without a
+ * key nothing is asked.
  */
-async function recoverCloudJobs({ only = null } = {}) {
-    const none = { pictures: [], kept: 0, keptIds: [], dropped: 0, skipped: null };
+async function recoverCloudJobs({ skip = null, only = null } = {}) {
+    const none = { pictures: [], kept: 0, keptIds: [], running: 0, unanswered: 0, unread: 0, dropped: 0, skipped: null };
     const dir = userData();
     if (!dir) return { ...none, skipped: "no data folder" };
     const jobs = cloudjobs.store(dir);
     if (!jobs.list().length) return none;
     const p = PROVIDERS.comfycloud;
     const key = keys.get(keyNameOf("comfycloud", p));
+    const leave = new Set([...(Array.isArray(skip) ? skip : []), ...cloudjobs.flying].map(String));
     try {
-        const r = await p.recoverJobs(jobs, contextFor("comfycloud", p, key, null), Date.now(), Array.isArray(only) ? only.map(String) : null);
-        if (r.pictures.length || r.dropped || r.kept) log.record({ source: "comfycloud", message: `Comfy Cloud: ${r.pictures.length} result${r.pictures.length === 1 ? "" : "s"} of an earlier run brought back, ${r.kept} still noted, ${r.dropped} dropped${r.skipped ? ` (${r.skipped})` : ""}` });
-        return { ...r, pictures: r.pictures.map((x) => ({ ...x, bytes: new Uint8Array(x.bytes.buffer, x.bytes.byteOffset, x.bytes.byteLength) })) };
+        const r = await p.recoverJobs(jobs, contextFor("comfycloud", p, key, null), Date.now(), { skip: [...leave], only: Array.isArray(only) ? only.map(String) : null });
+        if (r.pictures.length || r.dropped || r.kept) log.record({ source: "comfycloud", message: `Comfy Cloud: ${r.pictures.length} noted result${r.pictures.length === 1 ? "" : "s"} brought back, ${r.kept} still noted (${r.running} running, ${r.unanswered} unanswered, ${r.unread} not downloaded yet), ${r.dropped} dropped${r.skipped ? ` (${r.skipped})` : ""}` });
+        return { ...r, pictures: r.pictures.map((x) => ({ ...x, earlier: !(+x.started >= BOOT), bytes: new Uint8Array(x.bytes.buffer, x.bytes.byteOffset, x.bytes.byteLength) })) };
     } catch (err) {
-        log.record({ level: "error", source: "comfycloud", message: `Comfy Cloud: the jobs of an earlier run could not be read: ${(err && err.message) || err}` });
-        const left = jobs.list().map((e) => e.jobId).filter((id) => !only || only.includes(id));
-        return { ...none, kept: left.length, keptIds: left, skipped: "error" };
+        log.record({ level: "error", source: "comfycloud", message: `Comfy Cloud: the noted jobs could not be read: ${(err && err.message) || err}` });
+        const left = jobs.list().map((e) => e.jobId).filter((id) => !leave.has(id) && !cloudjobs.settled.has(id) && (!Array.isArray(only) || only.includes(id)));
+        return { ...none, kept: left.length, keptIds: left, unanswered: left.length, skipped: "error" };
     }
 }
 
@@ -478,4 +512,4 @@ function ackCloudJob(jobId) {
     return true;
 }
 
-module.exports = { edit, cancel, layout, balance, describeAll, textProviders, upscaleProviders, relightProviders, recoverCloudJobs, ackCloudJob, PROVIDERS };
+module.exports = { edit, cancel, layout, balance, describeAll, textProviders, upscaleProviders, relightProviders, recoverCloudJobs, ackCloudJob, PROVIDERS, _progressSender: progressSender };

@@ -345,7 +345,7 @@ asserts Bearer, replay under one key, `not_enabled` -> the sync route, 402 not r
 timeout. Gates: `comfyrouter_test.js`, `python tools/comfyrouter_test.py` against a dev instance (`--no-comfy`),
 `lint`, `types`.
 
-**S3 as built (2026-10-18).** `comfyrouter.js`'s queue section is the SDK: `send` (100 MB check; `routerSetup`;
+**S3 as built (2026-10-18; changed by S4's review, see "S4 as built").** `comfyrouter.js`'s queue section is the SDK: `send` (100 MB check; `routerSetup`;
 one key; a Cancel before anything went throws with `jobSent` false; `comfy.models.submit` with the SDK's own resend of a
 dropped connection or a 5xx under the same key for 30 s (`SUBMIT_RETRY_MS`; tests pass `ctx.routerRetry`) and a deadline
 of at least 120 s, longer for a large body; the adapter's own resend under the same key only for rate_limited /
@@ -370,7 +370,8 @@ api.comfy.org with fake keys and were refused there); all plain-Node provider te
 refuses every real connection (none). Reviewed by a workflow (3 lenses, a skeptic per finding; 13 confirmed, none
 refuted): 12 fixed, the process-global config accepted (above).
 
-**S6 as built (2026-10-18 night).** `electron/main/providers/cloudjobs.js`: the notes in `<userData>/cloudjobs.json`
+**S6 as built (2026-10-18 night; its main side and the window's lines replaced by S4's review, see "S4 as
+built").** `electron/main/providers/cloudjobs.js`: the notes in `<userData>/cloudjobs.json`
 (`add`, `remove`, `drop(ids)`, `list`, `keep`; every change one synchronous read-modify-write; written whole through a
 temp file and a rename, the rename / unlink tried again on EPERM / EBUSY / EACCES; 50 notes at most). `runV2` notes the
 job right after the submit (`ctx.jobs`, given by `contextFor` for comfycloud) and takes the note out in its `finally`,
@@ -430,6 +431,54 @@ dropped on the top row's upper half: labels 1-3 renumber, "@img3 in front of @im
 @img2", one undo restores, a self-drop is refused, a reference row and a layer row dropped on the prompt write nothing;
 both `text/plain` mutations turn it red). Gates: `editor` (tiles), `groups`, `selection`, `nodecopy`, `lint`, `types`.
 The node gets it with its next build.
+
+**S4 as built (2026-10-18/19 night).** Docs (`ac068a0`): a workflow wrote RECIPES.md, the manual, README, the CHANGELOG's
+"## Unreleased", TESTING.md and CLAUDE.md from the as-built texts and the code; two checkers read every claim against
+the code and the house rules, a fixer applied 20 of their 21 issues. Review (the same workflow, 117 agents): nine
+finders over S0-S9 (the SDK and supply chain, the Cloud run, cancel and progress, recovery, the Router, the renderer's
+quick wins, agents and commands, security, the tests), merged, each finding checked through three lenses (does the
+code do it, can the app reach it, what does it cost), then a completeness critic and a second round on four gaps
+(closing a tab during a run, sleep and wake, MCP-started processes, the local RTX node): 48 confirmed (1 must, 24
+should, 23 nit), none refuted. Four went outside the code (`4b66c62`: MCP.md's relight paragraph, the guard letting
+loopback and file:// through, the local RTX pack needing nvidia-vfx 0.2: with the user's 0.1.0.1 it fails at import,
+the upgrade is the user's). The other 44 were fixed by a second workflow in three file-disjoint groups against a
+written contract (the scratchpad's `fix_contract.md`: the cancel flags, the recovery ask model, the kept-note
+sentence, ports), each group checked by an adversarial checker and repaired once; every new check was seen red against
+the old code. What changed:
+- Comfy Cloud (`comfysdk.js`, `comfycloud.js`): `cancelJob` sends the cancel by the job's id alone over a transport of
+  its own from the public `@comfyorg/sdk/low` export (no read first; once more on no answer, a 429 or a 5xx, 10 s in
+  all); `finishV2` polls with its own `job.refresh` loop: 30 s per status read, unanswered reads tolerated for 120 s in
+  a row (any answer resets it, also past the deadline), and on a network that failed every read no stop is sent and
+  the note stays; `ctx.jobDone` once the picture is in, `ctx.jobEnded` for a job that ended without one; a resent
+  submit refused for anything but the workflow or the key says it may have landed; a job that lists no output yet is
+  kept (`unread`), one whose outputs hold no image dropped; the run's own client 60 s a request, uploads 300 s at
+  least; non-GET requests `redirect: "error"`, the node list through a same-origin `keyedGet`; `errorText` own-property
+  words, `job_not_found` / `asset_not_found`, a network failure's cause.
+- Recovery (`cloudjobs.js`, `index.js`, `main.js`, preload, `shell.js`): no cached first ask; every ask reads every note
+  but `cloudjobs.flying` and the pictures handed to the page and not acked (a reload or crash forgets them);
+  `provider:cloudJobsChanged` when a run keeps its note, when a page went away during a run (its note put back) and
+  when the window is shown after an ask was skipped (the skip only while no window is visible, so an MCP-started
+  process recovers once the user shows it); the counts `running` / `unanswered` / `unread` with a line each; a read
+  error writes nothing; notes older than a day trimmed first, a pushed-out note logged; `progressSender` on
+  `performance.now()`.
+- Comfy Router (`comfyrouter.js`): `lastLook` reads the run once more when the wait is over or the machine slept past
+  it (30 s, resent after a dropped connection) and collects a run that finished, a stop answered COMPLETED collected
+  too; after COMPLETED the result is read five times at most and a finished run never asked to stop; a submit that got
+  no answer sent once more under the same key; a Cancel answered COMPLETED + "cancelled" sets `cancelAsked`, another
+  error_type `jobEnded`; `jobSent` false only on a 429 `queue_backlog_full` (narrower than the contract: a
+  `rate_limited` proves nothing about an earlier attempt the SDK resent unseen); the key scrubbed before the 600
+  character cut; `queue_backlog_full` worded.
+- The renderer: closing a tab stops its provider runs (`removeEditor` -> `cancelRuns`) and its question says so, also
+  for a tab with no picture; `cancel_run` waits up to 25 s and returns each run's own words (`said`); the relight
+  panel's Preset, Add light and Reset light place lights by the picture's size (`this.doc` never existed: 1024 x 1024
+  before); the grey dot in the Duck skin (its `@layer` won); the QW2 hint names selection by text; a drop that does
+  not move a reference adds no undo step; the selection upscale's status line carries the via line; a revived local
+  prompt is the bar's run, not the Cloud one; the policy's close card names the stop.
+Tests: comfysdk 34, comfycloud_v2 81, cloudjobs 36, comfyrouter 175 (an exit guard against a run that hangs), progress
+44, assistant 265; the `cloudjobs` gate rewritten to the new ask model (14); `generate`'s checkTrackedRuns step no
+longer vacuous and a local run's via checked; `commands` (closing stops runs, cancel_run's words), `relight`
+(panel-vs-command presets), `skins`, `editor`. Integrated gate run: see the commit.
+
 
 **S4: docs and review (light).** `docs/RECIPES.md` "Comfy Cloud recipes" (:194) and "Comfy Router" (:2203): v2, the
 SDK, the fallback setting, the test base; the manual (Cloud runs show steps, Cancel stops the job on Comfy's side);

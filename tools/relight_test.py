@@ -1785,6 +1785,31 @@ JS = r"""
         try { await commands.run("relight", { doc: docZ.node.id, preset: "moonlight" }); } catch (e) { unknown = String(e.message || e); }
         check("p: preset beside lights is refused; an unknown preset is refused with the names", /either preset or lights/.test(both || "")
             && /Unknown light preset "moonlight"/.test(unknown || "") && LIGHT_PRESETS.every((x) => (unknown || "").includes(x.id)), { both, unknown });
+        // the panel's Preset menu, Add light and Reset light place lights at this picture's size too, so the command and
+        // the panel agree (review F28: the panel read a `doc` the editor has not, and placed everything in 1024 x 1024)
+        if (pl) {
+            const size = { width: docZ.width, height: docZ.height };
+            const at = (l) => [l.type, l.x, l.y, l.color];
+            pl.params.lights = [];
+            const selP = docZ.buildRelightBlock(pl).querySelector(".ipc-relight-preset-sel");
+            if (selP) { selP.value = "golden_hour"; selP.dispatchEvent(new Event("change")); }
+            const viaPanel = pl.params.lights || [];
+            check("p: the panel's Preset menu puts golden_hour's lights where the command does on this 320 x 200 picture",
+                !!selP && viaPanel.length === want.length && viaPanel.every((l, i) => l.x === want[i].x && l.y === want[i].y && l.color === want[i].color && l.type === want[i].type),
+                { panel: viaPanel.map(at), command: want.map(at) });
+            const addP = docZ.buildRelightBlock(pl).querySelector(".ipc-add-light");
+            if (addP) addP.click();
+            const added = pl.params.lights[pl.params.lights.length - 1] || {};
+            const wantAdd = defaultLight(+String(added.id || "").replace("light_", "") - 1, size);
+            check("p: Add light places the new light at this picture's size", !!addP && pl.params.lights.length === want.length + 1 && added.x === wantAdd.x && added.y === wantAdd.y,
+                { added: at(added), want: at(wantAdd) });
+            pl.params.lights[0].x = 1; pl.params.lights[0].y = 1;
+            const resetP = docZ.buildRelightBlock(pl).querySelector(".ipc-relight-reset");
+            if (resetP) resetP.click();
+            const wantReset = defaultLight(0, size);
+            check("p: Reset light puts the light back at this picture's size", !!resetP && pl.params.lights[0].x === wantReset.x && pl.params.lights[0].y === wantReset.y,
+                { reset: at(pl.params.lights[0]), want: at(wantReset) });
+        }
         if (pl) docZ.removeLayer(pl.id);
     }
 

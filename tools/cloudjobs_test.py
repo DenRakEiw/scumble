@@ -5,10 +5,14 @@
 Starts its own instances (port 9576, profiles of their own, --no-comfy) against a loopback mock of the Comfy API v2 (the
 jobs of an earlier run, read by id, and their outputs). One profile gets a test key and the mock as
 settings.comfycloud.base; then notes are written into its cloudjobs.json as a crash would leave them, and a start shows:
-the job that finished opens as a document of its own (its picture, its status line), the one still running stays noted,
-the one older than a day goes unread, nothing is submitted again, the key goes as a bearer to the mock only; a second
-ask answers what the first found. A headless start of the same profile asks nothing. A profile without a key asks
-nothing and keeps its notes. Nothing reaches the network but the loopback mock.
+the job that finished opens as a document of its own (its picture, its status line), the document in front names the
+new tab and says, in the window's own words, that the other job is still running; the one older than a day goes
+unread, nothing is submitted again, the key goes as a bearer to the mock only. Every later ask reads the notes again:
+the running job is read again, the picture of a job that finished meanwhile comes once to the page (not again while the
+page has not acked it), and a reload of the page brings it to the new page, which opens it. A headless start of a
+profile asks nothing ("agent start"); a second start of Scumble that shows its window makes the window ask, and the
+picture opens. A profile without a key asks nothing and keeps its notes. Nothing reaches the network but the loopback
+mock.
 """
 import asyncio
 import io
@@ -33,6 +37,10 @@ PORT = 9576
 TEST_KEY = "test-cloudjobs-gate-0123456789"
 HOUR = 3600 * 1000
 RESULTS = []
+
+# the window's words (renderer/shell.js recoverCloudResults, the fix contract's section 2)
+EARLIER = "A Comfy Cloud result that came in after Scumble closed ("
+ONE_RUNNING = "1 Comfy Cloud job is still running: Scumble opens its picture when it is done."
 
 
 def check(what, ok, detail=""):
@@ -101,6 +109,9 @@ class Mock:
     def stop(self):
         self.server.shutdown()
 
+    def paths(self, since=0):
+        return [f"{c['method']} {c['path']}" for c in self.calls[since:]]
+
 
 class App:
     def __init__(self, profile, label, extra=()):
@@ -136,6 +147,24 @@ class App:
     async def ev(self, js, timeout=120):
         return await self.c.eval(js, timeout=timeout)
 
+    async def ask(self, opts=""):
+        """The window's own ask, from the test (the page is the one that asked); `opts` "{ recheck: true }" means the same."""
+        return json.loads(await self.ev("(async () => { const r = await window.scumble.providers.recoverCloudJobs(" + opts + "); return JSON.stringify({ ...r, pictures: (r.pictures || []).map((p) => ({ jobId: p.jobId, model: p.model, earlier: p.earlier, bytes: p.bytes ? p.bytes.length : 0 })) }); })()"))
+
+    async def recovered(self, model, tries=60):
+        """The document the window opened for a picture of `model`, or None."""
+        for _ in range(tries):
+            try:
+                got = await self.ev(f"""(async () => {{ const {{ host }} = await import('./editor/host.js');
+                    const ed = host.editors().find((e) => (e.status || '').startsWith({json.dumps(EARLIER + model)}));
+                    return ed ? JSON.stringify({{ w: ed.width, h: ed.height, status: ed.status, docs: host.editors().length }}) : null; }})()""")
+                if got:
+                    return json.loads(got)
+            except Exception:  # noqa: BLE001 (a page that is reloading)
+                pass
+            await asyncio.sleep(0.5)
+        return None
+
     async def close(self):
         try:
             if self.ws is not None and not self.ws.closed:
@@ -170,6 +199,14 @@ def read_notes(profile):
         return []
 
 
+async def notes_become(profile, want, tries=40):
+    for _ in range(tries):
+        if read_notes(profile) == want:
+            return True
+        await asyncio.sleep(0.25)
+    return read_notes(profile) == want
+
+
 async def main():
     work = tempfile.mkdtemp(prefix="scumble-cloudjobs-gate-")
     mock = Mock({"done": "succeeded", "running": "running", "old": "succeeded"})
@@ -185,55 +222,66 @@ async def main():
         os.makedirs(prof)
         a = await App(prof, "setup").start().connect()
         await a.ev(f"(async () => {{ await window.scumble.settings.set({{ comfycloud: {{ base: {json.dumps(mock.base)} }} }}); await window.scumble.keys.set('comfycloud', {json.dumps(TEST_KEY)}); return 1; }})()")
-        first = await a.ev("(async () => JSON.stringify(await window.scumble.providers.recoverCloudJobs()))()")
+        first = await a.ask()
         await a.close()
-        check("a start without notes: nothing asked of the mock", len(mock.calls) == 0 and json.loads(first).get("again") is True, first)
+        check("a start without notes: nothing asked of the mock, an answer with every count at 0",
+              len(mock.calls) == 0 and first.get("pictures") == [] and first.get("kept") == 0 and first.get("skipped") is None
+              and all(first.get(k) == 0 for k in ("running", "unanswered", "unread")), first)
 
         # 2. the notes a crash left, then a start
         write_notes(prof, seeded)
         b = await App(prof, "recover").start().connect()
-        got = None
-        for _ in range(60):
-            got = await b.ev("""(async () => { const { host } = await import('./editor/host.js');
-                const ed = host.editors().find((e) => /A Comfy Cloud result that came in after Scumble closed/.test(e.status || ''));
-                return ed ? JSON.stringify({ w: ed.width, h: ed.height, status: ed.status, docs: host.editors().length }) : null; })()""")
-            if got:
-                break
-            await asyncio.sleep(0.5)
-        g = json.loads(got) if got else {}
-        check("the job that finished opens as a document of its own: its picture (96 x 64) and a status line naming the model", bool(got) and g.get("w") == 96 and g.get("h") == 64 and "Z-Image Turbo" in (g.get("status") or ""), got)
-        paths = [f"{c['method']} {c['path']}" for c in mock.calls]
+        g = await b.recovered("Z-Image Turbo") or {}
+        check("the job that finished opens as a document of its own: its picture (96 x 64) and the window's line naming the model", g.get("w") == 96 and g.get("h") == 64, g)
+        paths = mock.paths()
         check("the noted jobs were read by id, the finished one's picture fetched; nothing submitted again; the old note unread",
               "GET /api/v2/jobs/done" in paths and "GET /api/v2/jobs/running" in paths and any(p.endswith("/content") for p in paths)
               and not any(c["method"] == "POST" for c in mock.calls) and not any("/jobs/old" in p for p in paths), paths)
         check("the key went as a bearer to the mock, never as X-API-Key", all(c["auth"] == "Bearer " + TEST_KEY and not c["xkey"] for c in mock.calls), [c["auth"] and c["auth"][:12] for c in mock.calls])
         front = json.loads(await b.ev("""(async () => { const { host } = await import('./editor/host.js'); const ed = host.editor;
             return JSON.stringify({ recovered: /A Comfy Cloud result that came in after/.test(ed.status || ''), status: ed.status || '', docs: host.editors().length }); })()"""))
-        check("the recovered document opened in the background: the document in front stays in front and names the new tab and the job still running",
-              not front["recovered"] and "opened in a tab of its own" in front["status"] and "still running" in front["status"] and front["docs"] == 2, front)
-        for _ in range(20):
-            if read_notes(prof) == ["running"]:
-                break
-            await asyncio.sleep(0.25)
-        check("the window acked the picture it opened: the note left is the job still running", read_notes(prof) == ["running"], read_notes(prof))
-        again = json.loads(await b.ev("(async () => JSON.stringify(await window.scumble.providers.recoverCloudJobs()))()"))
-        check("a second ask answers what the first found and reads nothing", again.get("again") is True and again.get("brought") == 1 and again.get("kept") == 1 and len(again.get("pictures") or []) == 0, again)
-        # the job that still ran at the start finishes: the window's later ask (recheck) reads that one alone and brings it
+        check("the recovered document opened in the background: the document in front stays in front, names the new tab and says the other job still runs, in the window's words",
+              not front["recovered"] and "opened in a tab of its own" in front["status"] and ONE_RUNNING in front["status"] and front["docs"] == 2, front)
+        check("the window acked the picture it opened: the note left is the job still running", await notes_become(prof, ["running"]), read_notes(prof))
+        n_again = len(mock.calls)
+        again = await b.ask()
+        check("a later ask reads the notes again: the running job is read again and counted as running, nothing handed out twice",
+              mock.paths(n_again) == ["GET /api/v2/jobs/running"] and again.get("running") == 1 and again.get("kept") == 1 and again.get("keptIds") == ["running"]
+              and again.get("pictures") == [] and again.get("unanswered") == 0 and again.get("unread") == 0, {"answer": again, "paths": mock.paths(n_again)})
+        # the job that still ran finishes: the next ask brings its picture to this page
         mock.jobs["running"] = "succeeded"
         n_re = len(mock.calls)
-        re = json.loads(await b.ev("(async () => { const r = await window.scumble.providers.recoverCloudJobs({ recheck: true }); return JSON.stringify({ n: r.pictures.length, id: r.pictures[0] && r.pictures[0].jobId, kept: r.kept }); })()"))
-        re_paths = [c["path"] for c in mock.calls[n_re:]]
-        check("a later ask reads only the job that still ran at the start, and brings its picture once it is done", re.get("n") == 1 and re.get("id") == "running" and re.get("kept") == 0 and "/api/v2/jobs/running" in re_paths and "/api/v2/jobs/done" not in re_paths, {"answer": re, "paths": re_paths})
+        re1 = await b.ask("{ recheck: true }")
+        pics = re1.get("pictures") or []
+        check("the job finished meanwhile: the next ask brings its picture once (earlier: noted before this process), nothing kept",
+              len(pics) == 1 and pics[0].get("jobId") == "running" and pics[0].get("earlier") is True and pics[0].get("bytes", 0) > 0 and re1.get("kept") == 0
+              and "GET /api/v2/jobs/running" in mock.paths(n_re), {"answer": re1, "paths": mock.paths(n_re)})
+        n_held = len(mock.calls)
+        re2 = await b.ask()
+        check("an ask while the page holds that picture unacked: not handed out again, its job not read", (re2.get("pictures") or []) == [] and mock.paths(n_held) == [] and read_notes(prof) == ["running"],
+              {"answer": re2, "paths": mock.paths(n_held)})
+        # the page goes away before it opened the picture (a reload): the new page gets it and opens it
+        await b.c.call("Page.reload")
+        await asyncio.sleep(1.0)
+        k = await b.recovered("Klein") or {}
+        check("after a reload the new page gets the picture the old one never acked, and opens it as a document of its own", k.get("w") == 96 and k.get("h") == 64, k)
+        check("the new page acked it: no note is left", await notes_become(prof, []), read_notes(prof))
         mock.jobs["running"] = "running"
         await b.close()
 
-        # 3. a headless start of the same profile asks nothing
+        # 3. a headless start asks nothing; a second start of Scumble that shows the window makes the window ask
+        write_notes(prof, [{"jobId": "shown", "model": "Klein shown", "node": "recipe graph", "saveId": "9", "started": now - HOUR}])
+        mock.jobs["shown"] = "succeeded"
         n0 = len(mock.calls)
         c = await App(prof, "headless", ["--headless"]).start().connect()
         await asyncio.sleep(3)
-        h = json.loads(await c.ev("(async () => JSON.stringify(await window.scumble.providers.recoverCloudJobs()))()"))
+        h = await c.ask()
+        check("a headless start: nothing asked, the note kept, the answer says agent start", len(mock.calls) == n0 and read_notes(prof) == ["shown"] and h.get("skipped") == "agent start", {"calls": mock.paths(n0), "answer": h})
+        second = subprocess.run([ELECTRON, ".", f"--user-data-dir={prof}", "--no-comfy"], cwd=ROOT, capture_output=True, timeout=60)
+        s = await c.recovered("Klein shown") or {}
+        check("a second start shows the window: the window asks, the finished job's picture opens as a document of its own, its note goes",
+              second.returncode == 0 and s.get("w") == 96 and "GET /api/v2/jobs/shown" in mock.paths(n0) and await notes_become(prof, []), {"exit": second.returncode, "doc": s, "paths": mock.paths(n0)})
         await c.close()
-        check("a headless start: nothing asked, the note kept", len(mock.calls) == n0 and read_notes(prof) == ["running"] and h.get("skipped") == "agent start", {"calls": len(mock.calls) - n0, "answer": h})
 
         # 4. a profile without a key asks nothing and keeps its notes
         bare = os.path.join(work, "bare")
@@ -246,10 +294,10 @@ async def main():
         n1 = len(mock.calls)
         d = await App(bare, "nokey").start().connect()
         await asyncio.sleep(3)
-        k = json.loads(await d.ev("(async () => JSON.stringify(await window.scumble.providers.recoverCloudJobs()))()"))
+        kk = await d.ask()
         docs = await d.ev("(async () => { const { host } = await import('./editor/host.js'); return host.editors().filter((e) => /A Comfy Cloud result/.test(e.status || '')).length; })()")
         await d.close()
-        check("no key: nothing asked, no document opened, the notes kept", len(mock.calls) == n1 and docs == 0 and read_notes(bare) == ["done", "running"] and k.get("skipped") == "no key", {"calls": len(mock.calls) - n1, "answer": k, "docs": docs})
+        check("no key: nothing asked, no document opened, the notes kept", len(mock.calls) == n1 and docs == 0 and read_notes(bare) == ["done", "running"] and kk.get("skipped") == "no key", {"calls": len(mock.calls) - n1, "answer": kk, "docs": docs})
     finally:
         mock.stop()
         shutil.rmtree(work, ignore_errors=True)

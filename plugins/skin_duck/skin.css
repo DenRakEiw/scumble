@@ -54,6 +54,8 @@
 #shell-bar .dot.connected { background: #7fd67f; }
 #shell-bar .dot.connecting { background: #ffb070; }
 #shell-bar .dot.error, #shell-bar .dot.missing-node { background: #ff8a7a; }
+/* no ComfyUI at the URL (comfy.js `absent`): as calm as the plain dot, not a failure */
+#shell-bar .dot.error.absent { background: #b8ab98; }
 
 /* ---- 2. the logo: a small orange bill of our own beside the name ---------------------------------------- */
 #shell-logo { display: inline-flex; align-items: center; color: #ffb070; }

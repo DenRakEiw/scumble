@@ -213,7 +213,23 @@ window.__skinMarker = Math.random();
 const marker = window.__skinMarker;
 const eds = host.editors().slice();
 const v0 = theme.THEME.version;
+// QW2's dot when no ComfyUI answers at the URL ("dot error absent"): the plain dot's calm colour in every look, never
+// the error's (review F24: a skin's unlayered #shell-bar .dot.error beats the app's layered grey rule)
+const dotEl = document.getElementById("shell-dot");
+const dots = {};
+const dotLook = (name) => {
+    const was = dotEl.className;
+    try {
+        const bg = (cls) => { dotEl.className = cls; return getComputedStyle(dotEl).backgroundColor; };
+        const d = { plain: bg("dot"), error: bg("dot error"), absent: bg("dot error absent") };
+        dots[name] = d;
+        if (d.absent === d.error || d.absent !== d.plain) throw new Error("the absent dot under " + name + " is " + d.absent + " (plain " + d.plain + ", error " + d.error + ")");
+    } finally { dotEl.className = was; }
+};
+if (!dotEl || !dotEl.closest("#shell-bar")) throw new Error("no #shell-dot in #shell-bar");
+dotLook("default");
 await skins.applySkin("skin_90s");
+dotLook("skin_90s");
 const s90 = SKIN.skin_90s;
 const got = { skin: root.dataset.skin || null, bg: tok("--sc-bg"), body: getComputedStyle(document.body).backgroundColor, ruler: theme.THEME.rulerBg, version: theme.THEME.version };
 if (window.__skinMarker !== marker) throw new Error("the window reloaded");
@@ -225,6 +241,7 @@ if (String(got.ruler).toLowerCase() !== s90["--sc-chrome"].toLowerCase()) throw 
 if (!(got.version > v0)) throw new Error("refreshTheme() did not run: version " + v0 + " -> " + got.version);
 await skins.applySkin("skin_duck");
 if (root.dataset.skin !== "skin_duck") throw new Error("Duck is not in use: " + JSON.stringify(skins.skinState()));
+dotLook("skin_duck");
 await shell.openSettings();
 await wait(200);
 const backdrop = getComputedStyle(settingsDialog(), "::backdrop").backgroundColor;
@@ -232,7 +249,7 @@ closeSettings();
 const want = norm(SKIN.skin_duck["--sc-backdrop"]);
 if (backdrop !== want) throw new Error("the Settings backdrop under Duck is " + backdrop + ", not " + want);
 if (window.__skinMarker !== marker) throw new Error("the window reloaded");
-return { ...got, duckBackdrop: backdrop };
+return { ...got, duckBackdrop: backdrop, dots };
 """
 
 # after the reload (the Python side reloads the window between the two halves)

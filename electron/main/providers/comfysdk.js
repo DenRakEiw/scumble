@@ -1,5 +1,6 @@
 // The one place that loads Comfy's official TypeScript SDK (@comfyorg/sdk, MIT; docs/PLAN_COMFY_SDK.md 3.1, 3.2).
-// Comfy Cloud runs through its class client (the Comfy API v2), Comfy Router through its comfy.models namespace.
+// Comfy Cloud runs through its class client (the Comfy API v2), Comfy Router through its comfy.models namespace; a
+// cancel goes out on the SDK's own transport, its public `@comfyorg/sdk/low` export (ComfyLow).
 //
 // The SDK is an ES module; main requires it through Node's require(esm), lazily on the first Cloud or Router run, so a
 // broken package fails one run, not the app. version() reads its package.json without loading it.
@@ -8,7 +9,10 @@
 // would send the key to whatever that names, so clearEnv() removes the three variables at start, the key goes in as
 // `apiKey`, and every Cloud request passes guarded(): the run's abort signal reaches it, it goes only to
 // https://cloud.comfy.org (or, in a test profile, to the loopback mock settings.comfycloud.base names, which only a
-// `test-` key may reach), and a request for any other origin that would carry the key is refused.
+// `test-` key may reach), and a request for any other origin that would carry the key is refused. A request that sends
+// a body (the submit carries the key in it, an upload the user's picture) follows no redirect: fetch would send the body
+// again to wherever the redirect points. A read follows one (a download's signed storage URL): the key goes only as
+// Authorization there, which fetch drops across origins.
 "use strict";
 
 const fs = require("node:fs");
@@ -17,10 +21,11 @@ const path = require("node:path");
 const CLOUD = "https://cloud.comfy.org";
 const ROUTER = "https://api.comfy.org";
 const ENV = ["COMFY_BASE_URL", "COMFY_API_KEY", "COMFY_ROUTER_BASE_URL"];
-const CLIENT_TIMEOUT_MS = 300000;   // one request (a large upload included); the SDK's own default is 30 s
-const CANCEL_TIMEOUT_MS = 10000;
+const CLIENT_TIMEOUT_MS = 60000;    // one request of a run's own client (the submit, a status read); the SDK's own default is 30 s
+const UPLOAD_TIMEOUT_MS = 300000;   // the least an upload's own client gets (comfycloud.js runV2 sizes it by the picture)
+const CANCEL_TIMEOUT_MS = 10000;    // a cancel, its one retry included
 
-let sdk = null;
+let sdk = null, low = null;
 
 /** The SDK module, required on first use. */
 function load() {
@@ -28,8 +33,14 @@ function load() {
     return sdk;
 }
 
-/** Whether the SDK module has been required (for tests: version() must not load it). */
-function loaded() { return !!sdk; }
+/** The SDK's transport layer (its public `@comfyorg/sdk/low` export), required on first use. */
+function loadLow() {
+    if (!low) low = require("@comfyorg/sdk/low");
+    return low;
+}
+
+/** Whether the SDK has been required (for tests: version() must not load it). */
+function loaded() { return !!(sdk || low); }
 
 let versionCache = null;
 /** The SDK's version from its own package.json (not in its exports map; read beside its entry, asar-aware fs). */
@@ -96,6 +107,8 @@ function guarded(ctx, { bound = true, timeoutMs = 0 } = {}) {
             if (test || headerOf(init, "authorization")) return Promise.reject(new Error(`Comfy Cloud: refused a request to ${u.origin} (Scumble's Cloud client talks to ${CLOUD} only).`));
         }
         const send = { ...init };
+        const method = String(send.method || "GET").toUpperCase();
+        if (method !== "GET" && method !== "HEAD" && send.redirect !== "manual") send.redirect = "error";
         if (timeoutMs > 0) send.signal = send.signal ? AbortSignal.any([send.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
         const f = bound && typeof ctx.fetch === "function" ? ctx.fetch : globalThis.fetch;
         return f(target, send);
@@ -122,13 +135,39 @@ function cloudClient(ctx, { bound = true, timeoutMs = 0 } = {}) {
 /**
  * Asks Comfy Cloud to stop a job, on a transport not tied to the run (its signal may have fired); the job's status in
  * Comfy's answer ("canceling" / "canceled": it stops; "succeeded", "failed" ...: it had ended), null without a job id.
+ * The cancel goes by the job's id alone (no read of the job before it, which could fail and keep the cancel from
+ * leaving); one that got no answer, a 429 or a 5xx goes once more, both within CANCEL_TIMEOUT_MS (a cancel is
+ * idempotent). Throws when no try was answered. It is sent through the SDK's public transport (ComfyLow, which the
+ * class client is layered over, with the same base, key, guarded fetch and client info), not through the class
+ * client's own `low` member, which the SDK keeps private.
  */
 async function cancelJob(ctx, jobId) {
     if (!jobId) return null;
-    const client = cloudClient(ctx, { bound: false });
-    const job = await client.jobs.get(String(jobId));
-    await job.cancel(AbortSignal.timeout(CANCEL_TIMEOUT_MS));
-    return job.status;
+    const key = String(ctx.key || "").trim();
+    if (!key) throw new Error("Comfy Cloud: no API key.");
+    checkKey("Comfy Cloud", "settings.comfycloud.base", !!testBase(ctx.base), key);
+    const { ComfyLow } = loadLow();
+    const transport = new ComfyLow(CLOUD, key, {
+        fetch: guarded(ctx, { bound: false, timeoutMs: CANCEL_TIMEOUT_MS }),
+        clientInfo: `scumble/${scumbleVersion() || "dev"}`,
+        timeoutMs: CANCEL_TIMEOUT_MS,
+    });
+    const until = Date.now() + CANCEL_TIMEOUT_MS;
+    let last = null;
+    for (let tries = 0; tries < 2; tries++) {
+        if (tries) await new Promise((r) => setTimeout(r, Math.min(500, Math.max(0, until - Date.now()))));
+        const left = until - Date.now();
+        if (left <= 0) break;
+        try {
+            const model = await transport.cancelJob(String(jobId), { signal: AbortSignal.timeout(left) });
+            return model && model.status != null ? String(model.status) : null;
+        } catch (err) {
+            last = err;
+            const st = +(err && err.httpStatus) || 0;
+            if (st && st !== 429 && st < 500) throw err;   // a refusal that a second try would not change
+        }
+    }
+    throw last || new Error(`Comfy Cloud: the cancel of job ${jobId} got no answer within ${CANCEL_TIMEOUT_MS / 1000} s`);
 }
 
 /** comfy.models configured for this run: the key and the host (api.comfy.org, or the loopback mock for a test key). */
@@ -152,6 +191,8 @@ const WORDS = {
     rate_limited: "too many requests; try again in a minute",
     concurrency_limit_exceeded: "too many runs at once on this account",
     not_found: "Comfy does not know this job or model",
+    job_not_found: "Comfy does not know this job",          // Cloud's own 404 codes (the SDK keeps them as the code)
+    asset_not_found: "Comfy no longer has this picture",
     request_timeout: "Comfy did not answer in time",
 };
 
@@ -173,14 +214,26 @@ function detailText(d, key) {
     try { return scrub(JSON.stringify(d), key).slice(0, 300); } catch (_) { return ""; }
 }
 
+/**
+ * Why a request got no answer, from the error's cause (fetch's own "fetch failed" carries it there: a name that did not
+ * resolve, a refused connection, a certificate), or "".
+ */
+function causeText(err) {
+    const c = err && err.cause;
+    if (!c || typeof c !== "object") return "";
+    const said = String(c.message || c.code || "").trim();
+    return said && !String(err.message || "").includes(said) ? said : "";
+}
+
 /** An SDK or Router error in Scumble's words, the key scrubbed; keyed by errorType / code, never instanceof. */
 function errorText(err, key) {
     if (!err) return "unknown error";
     const code = String(err.errorType || err.code || "").toLowerCase();
     const detail = detailText(err.details, key);
-    const said = scrub((err.message || String(err)) + (detail ? ` [${detail}]` : ""), key);
-    const words = WORDS[code];
+    const cause = causeText(err);
+    const said = scrub((err.message || String(err)) + (cause ? `: ${cause}` : "") + (detail ? ` [${detail}]` : ""), key);
+    const words = Object.prototype.hasOwnProperty.call(WORDS, code) ? WORDS[code] : null;
     return words ? `${words} (${said})` : said;
 }
 
-module.exports = { load, loaded, version, clearEnv, testBase, checkKey, guarded, cloudClient, cancelJob, routerSetup, errorText, scrub, CLOUD, ROUTER, ENV, CLIENT_TIMEOUT_MS };
+module.exports = { load, loaded, version, clearEnv, testBase, checkKey, guarded, cloudClient, cancelJob, routerSetup, errorText, scrub, CLOUD, ROUTER, ENV, CLIENT_TIMEOUT_MS, UPLOAD_TIMEOUT_MS };

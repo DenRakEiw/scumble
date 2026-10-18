@@ -1693,6 +1693,9 @@ try {
     if (r.cancelled.length !== 1 || r.cancelled[0].doc !== d.id || r.cancelled[0].provider !== "loopback" || r.cancelled[0].label !== "Loopback" || !(r.cancelled[0].seconds >= 0.5) || r.ended !== true || !/charge/.test(r.note)) throw new Error("the cancel: " + JSON.stringify(r));
     // once the request waits in main, main stops waiting at once; a cancel while the crop is made sends nothing
     if (!/^Cancelled (after [0-9.]+ s: Scumble stopped waiting for Loopback|before anything was sent)/.test(msg) || ms > 8000) throw new Error("the generate ended with: " + msg + " after " + ms + " ms");
+    // main's own words for how the run ended come back per run and in the note, not a sentence for every provider
+    // (review G3.2); the loopback knows nothing of a job, so its words are main's generic ones
+    if (r.cancelled[0].said !== msg || r.note !== "Loopback: " + msg) throw new Error("the cancel's words: " + JSON.stringify({ said: r.cancelled[0].said, note: r.note, msg }));
     if (ed.providerPending || ed.layers.length !== n0) throw new Error("the document is still held, or a layer landed");
     // without doc: every tab's runs
     const run2 = await start();
@@ -1710,6 +1713,19 @@ try {
     if (lr.cancelled.length || !lr.landing || lr.landing.length !== 1 || lr.landing[0].doc !== d.id || lr.landing[0].label !== "Loopback landing" || lr.ended !== true || Date.now() - t1 < 400
         || lr.note !== "A run's answer was already in and is landing: it can no longer be cancelled (Ctrl+Z takes it back once it is in).") throw new Error("a landing run: " + JSON.stringify(lr));
     if (ed.providerPending === landTok) ed.providerPending = null;
+    // an API run whose stop takes past 10 s (Comfy Cloud's stop has 10 s, its one retry included, and the run ends its
+    // event stream after it) is waited for until it ended, and its words come back (review G3.3)
+    const slowTok = { provider: "comfycloud", label: "Comfy Cloud slow stop", started: Date.now(), editor: ed, runId: "g33_" + Date.now() };
+    const slowWords = "Cancelled after 10.6 s: Scumble asked Comfy Cloud to stop the job.";
+    host._providerRuns.add(slowTok);
+    ed.providerPending = slowTok;
+    host.notifyProviderRuns();
+    setTimeout(() => { slowTok.said = slowWords; if (ed.providerPending === slowTok) ed.providerPending = null; host.endRunRow(slowTok); }, 10600);
+    const t2 = Date.now();
+    const slow = await c("cancel_run", { doc: d.id });
+    const slowMs = Date.now() - t2;
+    if (slow.ended !== true || slowMs < 10000 || slow.cancelled.length !== 1 || slow.cancelled[0].said !== slowWords || slow.note !== "Comfy Cloud slow stop: " + slowWords) throw new Error("a slow stop: " + JSON.stringify({ ...slow, ms: slowMs }));
+    out.slowStop = slowMs;
     const none2 = await c("cancel_run", { doc: d.id });
     if (none2.cancelled.length || none2.landing.length || none2.note !== "Nothing was running on this document.") throw new Error("nothing after the landing: " + JSON.stringify(none2));
     out.landing = lr.note;
@@ -1721,6 +1737,74 @@ try {
     host.setRecipe(prev);
     await c("close_document", { doc: d.id });
     await c("close_document", { doc: other.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
+    ("closing_a_tab_stops_its_runs", """
+// review G1.1: closing a tab stops its API run as Cancel does (main aborts it; Comfy Cloud and Comfy Router are asked to
+// stop the job), so nothing is left running for a tab that is gone; the close question says so first, Cancel keeps
+// the tab and its run; close_document asks nothing and stops it too. A tab with no picture asks too while a run holds
+// it (Generate new), and a save going on is named beside the run, not instead of it
+const { host } = await import("./editor/host.js");
+const dialogs = await import("./dialogs.js");
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const prev = host.recipe;
+host.setRecipe({ id: "loopback_slow", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", refs: { name: "image {n}" }, name: "Loopback slow", settings: [], fixed: { delay_ms: 20000 } });
+const docs = [];
+// the close question of `ed`, answered Cancel: [its text, what closeDocument resolved to]
+const askClose = async (ed) => {
+    const closing = host.shell.closeDocument(ed);
+    let box = null;
+    for (let k = 0; k < 60 && !(box = document.querySelector("dialog.sc-dialog[open]")); k++) await wait(50);
+    // the question's text sits in the dialog's shadow root; its aria-label carries the message
+    const question = box ? box.getAttribute("aria-label") || "" : "";
+    dialogs.cancelAll();
+    return [question, await closing];
+};
+try {
+    // a tab with no picture whose run holds it (a stand-in for Generate new's): asked, and Cancel keeps it
+    const e0 = await c("new_document");
+    docs.push(e0.id);
+    const empty = host.editorById(e0.id);
+    const newTok = { provider: "loopback", label: "Loopback new", started: Date.now(), editor: empty };
+    host._providerRuns.add(newTok);
+    empty.providerPending = newTok;
+    let q0, r0, q1, r1;
+    try {
+        if (empty.base) throw new Error("the new tab has a picture");
+        [q0, r0] = await askClose(empty);
+        empty._docSaving = true;
+        [q1, r1] = await askClose(empty);
+    } finally {
+        empty._docSaving = false;
+        host._providerRuns.delete(newTok);
+        if (empty.providerPending === newTok) empty.providerPending = null;
+        host.notifyProviderRuns();
+    }
+    if (!/is still working \\(a run on Loopback new: closing stops it, and the provider may still charge it\\)\\. Close it anyway\\?/.test(q0) || r0 !== false || !host.editors().includes(empty)) throw new Error("a tab with no picture and a run: " + JSON.stringify([q0, r0]));
+    if (!/is still working \\(saving; a run on Loopback new: closing stops it, and the provider may still charge it\\)\\. Close it anyway\\?/.test(q1) || r1 !== false) throw new Error("a save beside the run: " + JSON.stringify([q1, r1]));
+    const d = await c("new_document");
+    docs.push(d.id);
+    await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });
+    await c("select_rect", { doc: d.id, x: 10, y: 10, w: 64, h: 64 });
+    const ed = host.editorById(d.id);
+    const t0 = Date.now();
+    const g = c("generate", { doc: d.id, timeout: 60 }).then(() => "finished", (e) => String(e.message || e));
+    for (let k = 0; k < 100 && !(ed.providerPending && host._providerRuns.size); k++) await wait(50);
+    if (!ed.providerPending) throw new Error("the run did not start: " + ed.status);
+    await wait(1000);   // the request waits in main by now
+    const [question, closed] = await askClose(ed);
+    if (!/is still working \\(a run on Loopback: closing stops it, and the provider may still charge it\\)\\. Close it anyway\\?/.test(question)) throw new Error("the close question: " + JSON.stringify(question));
+    if (closed !== false || !host.editors().includes(ed) || !ed.providerPending || !host._providerRuns.size) throw new Error("Cancel in the question did not keep the tab and its run");
+    await c("close_document", { doc: d.id });
+    const msg = await g, ms = Date.now() - t0;
+    for (let k = 0; k < 60 && host._providerRuns.size; k++) await wait(50);
+    if (!/^Cancelled /.test(msg) || ms > 9000) throw new Error("the closed tab's run ended with: " + msg + " after " + ms + " ms");
+    if (host._providerRuns.size || host.editors().includes(ed)) throw new Error("the closed tab's run is still in the title row, or the tab is open");
+    return { question: question.slice(0, 120), saving: q1.slice(0, 120), msg: msg.slice(0, 80), ms };
+} finally {
+    host.setRecipe(prev);
+    for (const id of docs) { try { await c("close_document", { doc: id }); } catch (_) { /* gone */ } }
     await c("activate_document", { doc: window.__testDoc });
 }
 """),

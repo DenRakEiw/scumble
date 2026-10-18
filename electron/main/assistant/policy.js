@@ -171,7 +171,8 @@ const POLICY = {
     new_canvas: (call) => ASK(call && call.args && call.args.recipe
         ? "replaces the image and clears the undo history, and selects the recipe every tab generates with (saved to your settings)"
         : "replaces the image and clears the undo history"),
-    close_document: () => ASK("closes the tab without saving it to its file; File › Reopen Closed Tab brings it back"),
+    // a run going in the tab stops with it (0.1.49, the S4 review's G1.1): the card says so
+    close_document: () => ASK("closes the tab without saving it to its file; a run going in it stops (an API provider may still charge a job it already had), and File › Reopen Closed Tab brings the tab back without it"),
     new_document: AUTO, activate_document: AUTO,
 
     // ---- shared history, global settings, the brush --------------------------------------

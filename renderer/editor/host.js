@@ -220,11 +220,14 @@ const runIdOf = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUI
  */
 async function providerEdit(request, token) {
     // a Cancel while the crop was being made: nothing goes to the provider
-    if (token && token.cancelled) throw new Error("Cancelled before anything was sent to the provider.");
+    if (token && token.cancelled) throw new Error(token.said = "Cancelled before anything was sent to the provider: nothing runs or is charged.");
     try {
         return await window.scumble.providers.edit(token && token.runId ? { ...request, runId: token.runId } : request);
     } catch (err) {
-        throw new Error(String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
+        const words = String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+        // main's words for how the run ended (a Cancel: what it knew of the job), kept for cancel_run's answer
+        if (token) token.said = words;
+        throw new Error(words);
     }
 }
 
@@ -625,6 +628,10 @@ export const host = {
         if (i >= 0) this._editors.splice(i, 1);
         // its prompts on ComfyUI (a Generate, a helper) land nowhere now, not in the tab in front (the event listeners)
         if (i >= 0) {
+            // its runs in the title row stop as their Cancel stops them (review G1.1): main aborts an API run, so a
+            // provider that can (Comfy Cloud, Comfy Router) is asked to stop the job, and a picture run on the user's
+            // ComfyUI has its job taken off the server; their answers would land in no tab
+            this.cancelRuns(editor);
             const ids = [...(editor._localRuns || []), editor.lastPromptId, editor.segmentPromptId, editor.objectsPromptId, editor.upsamplePromptId, editor.cutoutPromptId];
             for (const id of ids) if (id) this._closedPrompts.add(String(id));
             for (const id of this._closedPrompts) { if (this._closedPrompts.size <= 64) break; this._closedPrompts.delete(id); }
@@ -2071,9 +2078,12 @@ export const host = {
                 const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
                 const ref = await this.uploadResult(fin.blob, `n${editor.node.id}_upscale_${stamp}.png`);
                 // the prompt the upscale sent, its tokens already written as layer names
-                await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), via: viaLine(r, label, res.seconds), prompt: r.usesPrompt ? texts.prompt : "", negative: r.usesPrompt ? texts.negative : "", refs: null }]);
+                const via = viaLine(r, label, res.seconds);
+                await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), via, prompt: r.usesPrompt ? texts.prompt : "", negative: r.usesPrompt ? texts.negative : "", refs: null }]);
                 const got = res.info && res.info.width ? ` (${res.info.width} × ${res.info.height} came back)` : "";
-                editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.${texts.note ? " " + texts.note : ""}`);
+                // the upscale's own line in place of addResults', ending as a result's line does with the model, the
+                // route and the seconds (QW5)
+                editor.setStatus(`Upscaled the selection${got}: fitted back into ${w} × ${h} as a new layer · ${via}${texts.note ? " " + texts.note : ""}`);
                 sayNotes();
                 return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null, note: texts.note, notes: runNotes };
             }
@@ -2556,6 +2566,11 @@ export const host = {
         for (const t of runs) t.cancelled = true;
         for (const t of runs) if (t.runId && window.scumble && window.scumble.providers && window.scumble.providers.cancel) window.scumble.providers.cancel(t.runId).catch(() => {});
         return runs;
+    },
+
+    /** The runs in the title row that hold `editor` (its close stops them, removeEditor). */
+    runsOf(editor) {
+        return Array.from(this._providerRuns).filter((t) => t.editor === editor);
     },
 
     /** A run's answer is in (or it failed): its timer and Cancel leave the title row, its live steps the bar. */

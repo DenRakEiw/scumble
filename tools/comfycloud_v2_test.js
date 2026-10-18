@@ -3,17 +3,23 @@
 //   node tools/comfycloud_v2_test.js
 // Checked: every picture the layout wires is an asset (a core/ASSET reference in its LoadImage) for a partner node and
 // for a recipe graph's titled LoadImage nodes; bytes Comfy holds already go by hash with no second upload; the job is
-// submitted with an Idempotency-Key, the key again in extra_data and no metadata, the bearer on every v2 call and none on
-// the signed download; the recipe's own SaveImage answers before a preview; a submit with no answer goes once more under
-// the same key, and a refusal of that key (the first one landed) stops the run with the lost-answer words, never a third
-// submit; a refused workflow names the node; a failed job names the node's class and Comfy's message, plus the model
-// file the node list lacked; canceled and expired in words; a status read with no answer is read again (the count starts
-// again with a new status) and a throttled one (429) waited out; a timeout, or a status that cannot be read, asks Comfy
-// to stop the job, and a cancel that answers "succeeded" still gives the result; a dropped or throttled download is read
-// again, one Comfy says is gone is not; a 5xx upload goes again under a fresh upload key; a gateway's 503 on the submit
-// is sent again under the same key; the node list is advisory (a failed read does not stop the run, a node it lacks
-// does); a fill recipe's mask; Generate new uploads nothing; an upscaler partner node; a test base takes only a test
-// key; a context without cloudApi stays on the legacy API.
+// submitted with an Idempotency-Key, the key again in extra_data and no metadata, the bearer on every v2 call (that the
+// signed download carries none rests on fetch dropping Authorization across origins, measured in S1, not on this fake);
+// the submit and the uploads follow no redirect; the recipe's own SaveImage answers before a preview; a submit with no
+// answer goes once more under the same key, and a refusal of that key (the first one landed) stops the run with the
+// lost-answer words, never a third submit, and so does any other refusal of the resend but the workflow's own; a refused
+// workflow names the node; a failed job names the node's class and Comfy's message, plus the model file the node list
+// lacked; canceled and expired in words; status reads with no answer are read again for two minutes in a row (any
+// answer starts that again, scattered misses never add up), past the run's time too, and then end the run without a
+// stop request (the job's note stays); a read that hangs gives up on its own limit; a throttled one (429) is waited out;
+// a timeout, or a status Comfy refuses, asks Comfy to stop the job, and a cancel that answers "succeeded" still gives the
+// result; a dropped or throttled download is read again, one Comfy says is gone is not; a finished job that lists no
+// output yet keeps its note, one that lists outputs and no image does not; a 5xx upload goes again under a
+// fresh upload key; a gateway's 503 on the submit is sent again under the same key; the node list is advisory (a failed
+// read does not stop the run, a node it lacks does) and follows a redirect on its own origin only; a fill recipe's mask;
+// Generate new uploads nothing; an upscaler partner node; a test base takes only a test key; the Cancel's flags (asked,
+// done, ended, not confirmed) and their words through providers/index.js; the progress throttle on a clock set back; a
+// context without cloudApi stays on the legacy API.
 "use strict";
 
 const fs = require("node:fs");
@@ -48,6 +54,10 @@ const MOCK = "http://127.0.0.1:5594";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const ctxOf = (fake, extra = {}) => ({ key: KEY, fetch: fake.fetch, sleep: async () => {}, log: () => {}, cloudApi: "v2", ...extra });
+const KEPT = require(path.join(ROOT, "electron", "main", "providers", "cloudjobs.js")).KEPT;
+// a notes store in memory (cloudjobs.store's methods), for a run whose job's note is kept
+const memJobs = () => { const m = new Map(); return { add: (e) => m.set(String(e.jobId), e), remove: (id) => m.delete(String(id)), drop: (ids) => ids.forEach((id) => m.delete(String(id))), list: () => [...m.values()], keep: () => {} }; };
+const jobReads = (fake) => fake.calls.filter((c) => c.method === "GET" && /^\/api\/v2\/jobs\/[^/]+$/.test(c.path)).length;
 const isRef = (v) => !!(v && typeof v === "object" && v.__type === "core/ASSET" && v.info && typeof v.info.id === "string");
 const saveIdOf = (wf) => Object.keys(wf).find((id) => wf[id].class_type === "SaveImage");
 const v2Calls = (fake) => fake.calls.filter((c) => c.path.startsWith("/api/v2/"));
@@ -72,7 +82,11 @@ async function main() {
     // 1. a partner node with the crop, two references and the mask: four assets, each in its LoadImage
     {
         const f = fakeComfyV2({ outputs: saveOutput });
-        const out = await cloud.edit(partnerReq(), ctxOf(f));
+        const c1 = ctxOf(f);
+        const out = await cloud.edit(partnerReq(), c1);
+        check("a run that brought its picture marks the job done (a Cancel that lands after it is worded as a finished, charged job)", c1.jobDone === true, String(c1.jobDone));
+        const bodies = f.calls.filter((c) => c.method === "POST");
+        check("the submit and the uploads follow no redirect (the submit's body carries the key)", bodies.length >= 5 && bodies.every((c) => c.redirect === "error"), short(bodies.map((c) => `${c.path} ${c.redirect}`)));
         const body = f.jobs[0] || {};
         const wf = body.workflow || {};
         const loads = Object.entries(wf).filter(([, n]) => n.class_type === "LoadImage");
@@ -133,6 +147,15 @@ async function main() {
         f = fakeComfyV2({ classes: all.filter((c) => c !== "Flux2Scheduler") });
         const e = await thrown(() => cloud.edit(graphReq(), ctxOf(f)));
         check("a node the list lacks stops the run by name before any upload", /Comfy Cloud has no Flux2Scheduler node/.test(e || "") && f.uploads.length === 0 && f.heads.length === 0 && posts(f).length === 0, e);
+        cloud._clearNodeList();
+        const away = fakeComfyV2({ classes: all, infoRedirect: "https://elsewhere.example/api/object_info", outputs: () => [{ node_id: "scumble_save", name: "own.png" }] });
+        const oa = await cloud.edit(graphReq(), ctxOf(away));
+        check("a node list that redirects to another host: refused there, the key never goes along, the run goes without the check",
+            /refused a redirect to https:\/\/elsewhere\.example/.test(oa.info.nodeList || "") && !away.calls.some((c) => c.origin === "https://elsewhere.example") && tagOf(oa.bytes) === "RESULT own.png", short({ list: oa.info.nodeList, calls: away.calls.map((c) => c.origin + c.path) }));
+        cloud._clearNodeList();
+        const same = fakeComfyV2({ classes: all.filter((c) => c !== "Flux2Scheduler"), infoRedirect: "/api/object_info?hop=1" });
+        const es = await thrown(() => cloud.edit(graphReq(), ctxOf(same)));
+        check("a node list that redirects on its own origin: followed (with the key), and its answer counts", /Comfy Cloud has no Flux2Scheduler node/.test(es || "") && same.infoReads === 1 && same.calls.filter((c) => c.path === "/api/object_info").every((c) => c.apiKey === KEY), es);
     }
 
     // 5. the lost answer: a submit that landed but whose answer dropped is sent once more under the same key; Comfy
@@ -157,6 +180,10 @@ async function main() {
         const sv = fakeComfyV2({ submits: [{ status: 500, code: "upstream_error", message: "backend" }], outputs: saveOutput });
         const es = await thrown(() => cloud.edit(partnerReq(), ctxOf(sv)));
         check("a 500 after Comfy noted the key: the resend is refused, the lost-answer words, two submits", /answer to the submit was lost/.test(es || "") && posts(sv).length === 2, es);
+        const lim = fakeComfyV2({ submits: ["lostAfter", { status: 429, code: "concurrency_limit_exceeded", message: "one job at a time", beforeKey: true }], outputs: saveOutput });
+        const el = await thrown(() => cloud.edit(partnerReq(), ctxOf(lim)));
+        check("a resend refused for a limit the first job may hold: the words say the first submit may have landed and be charged, two submits",
+            /refused the resent submit/.test(el || "") && /may have landed/.test(el || "") && /may run and be charged/.test(el || "") && posts(lim).length === 2, el);
     }
 
     // 6. a refused workflow names the node; nothing is resent
@@ -197,10 +224,20 @@ async function main() {
         const f = fakeComfyV2({ reads: ["lost", "lost"], outputs: saveOutput });
         const out = await cloud.edit(partnerReq(), ctxOf(f));
         check("two status reads without an answer: read again, the run lands", tagOf(out.bytes) === "RESULT out.png", tagOf(out.bytes));
-        const g = fakeComfyV2({ reads: ["lost", "lost", "lost", "lost", "lost", "lost", "lost"], outputs: saveOutput });
-        const e = await thrown(() => cloud.edit(partnerReq(), ctxOf(g)));
-        check("six status reads without an answer: Comfy asked to stop the job, then the status words",
-            /^Comfy Cloud status: fetch failed; Scumble asked Comfy Cloud to stop the job\.$/.test(e || "") && g.cancels.length === 1, e);
+        const lost = (n) => Array.from({ length: n }, () => "lost");
+        const o12 = fakeComfyV2({ reads: lost(12), outputs: saveOutput });
+        const out12 = await cloud.edit(partnerReq(), ctxOf(o12));
+        check("twelve status reads in a row without an answer (an outage of about two minutes, a Wi-Fi back after a wake): read again, the run lands, no stop asked",
+            tagOf(out12.bytes) === "RESULT out.png" && o12.cancels.length === 0, tagOf(out12.bytes));
+        const g = fakeComfyV2({ reads: lost(30), outputs: saveOutput });
+        const gctx = ctxOf(g, { jobs: memJobs() });
+        const e = await thrown(() => cloud.edit(partnerReq(), gctx));
+        check("status reads without an answer for two minutes: the run ends without a stop request, says the job may still finish, and keeps its note",
+            /^Comfy Cloud did not answer about the job \(job-1\) for 1\d\d s \(fetch failed\); it may still finish and be charged\. /.test(e || "") && (e || "").endsWith(KEPT) && g.cancels.length === 0 && gctx.noteKept === true && gctx.jobs.list().length === 1 && jobReads(g) === 13, short({ e, cancels: g.cancels.length, reads: jobReads(g) }));
+        const sc = fakeComfyV2({ statuses: [...Array(9).fill("running"), "succeeded"], reads: [].concat(...Array.from({ length: 8 }, () => ["lost", null])), outputs: saveOutput });
+        const osc = await cloud.edit(partnerReq(), ctxOf(sc));
+        check("eight reads without an answer scattered over one long status, each after an answered one: they never add up, the run lands, no stop asked",
+            tagOf(osc.bytes) === "RESULT out.png" && sc.cancels.length === 0, short({ bytes: tagOf(osc.bytes), cancels: sc.cancels.length }));
         const t = fakeComfyV2({ reads: [{ status: 429, code: "rate_limited", message: "slow down", retryAfter: 1 }, { status: 429, code: "rate_limited" }], outputs: saveOutput });
         const out2 = await cloud.edit(partnerReq(), ctxOf(t));
         check("status reads Comfy throttles (429): waited out, the run lands, no cancel, one job", tagOf(out2.bytes) === "RESULT out.png" && t.cancels.length === 0 && t.jobs.length === 1, tagOf(out2.bytes));
@@ -213,6 +250,37 @@ async function main() {
         check("queued, running, succeeded: the run lands", tagOf(out3.bytes) === "RESULT out.png" && q.calls.filter((c) => c.method === "GET" && /^\/api\/v2\/jobs\/[^/]+$/.test(c.path)).length === 3, tagOf(out3.bytes));
     }
 
+    // 8c. a machine that slept past the run's time wakes before its network: the reads that get no answer are read again
+    // (the job finished meanwhile); a status read that hangs gives up on its own limit and counts as unanswered
+    {
+        const realNow = Date.now;
+        let n = 0;
+        const f = fakeComfyV2({ statuses: ["running", "succeeded"], reads: [null, "lost", "lost"], outputs: saveOutput, hold: (c) => {
+            if (c.method === "GET" && /^\/api\/v2\/jobs\/[^/]+$/.test(c.path) && ++n === 2) Date.now = () => realNow() + 25 * 60 * 1000;
+        } });
+        let out = null, e = null;
+        try { out = await cloud._runV2(partnerReq(), ctxOf(f), 20 * 60 * 1000); } catch (err) { e = String(err.message || err); } finally { Date.now = realNow; }
+        check("woken 25 minutes later, past the run's 20, with the network not back yet: the unanswered reads are read again, the finished job's picture comes, no stop asked",
+            !e && out && tagOf(out.bytes) === "RESULT out.png" && f.cancels.length === 0, short({ e, cancels: f.cancels.length }));
+        const saved = cloud._times.statusReadMs;
+        cloud._times.statusReadMs = 150;
+        let hung = 0;
+        const h = fakeComfyV2({ statuses: ["running", "succeeded"], outputs: saveOutput, hold: (c, init) => {
+            if (!(c.method === "GET" && /^\/api\/v2\/jobs\/[^/]+$/.test(c.path)) || ++hung !== 2) return undefined;
+            // a read on a connection that never answers: it ends only when its signal does (a timer keeps this process
+            // alive meanwhile: AbortSignal.timeout's own does not)
+            return new Promise((resolve, reject) => {
+                const keep = setTimeout(() => reject(new Error("the read's own limit never fired")), 5000);
+                if (init.signal) init.signal.addEventListener("abort", () => { clearTimeout(keep); reject(init.signal.reason || new Error("aborted")); }, { once: true });
+            });
+        } });
+        const t0 = Date.now();
+        let oh = null, eh = null;
+        try { oh = await cloud.edit(partnerReq(), ctxOf(h)); } catch (err) { eh = String(err.message || err); } finally { cloud._times.statusReadMs = saved; }
+        check("a status read that hangs gives up on its own limit, counts as unanswered, and the next read lands the run",
+            !eh && oh && tagOf(oh.bytes) === "RESULT out.png" && hung >= 3 && Date.now() - t0 < 10000, short({ eh, hung, ms: Date.now() - t0 }));
+    }
+
     // 8b. the paid result: a download that dropped or was throttled is read again; one Comfy says is gone is not
     {
         const f = fakeComfyV2({ contents: ["lost", { status: 429, code: "rate_limited" }], outputs: saveOutput });
@@ -222,14 +290,29 @@ async function main() {
         const e = await thrown(() => cloud.edit(partnerReq(), ctxOf(g)));
         check("a result Comfy says is gone: no second read, the words name the job", /^Comfy Cloud download \(job job-1\): /.test(e || "") && g.contents.length === 1, e);
         const h = fakeComfyV2({ contents: ["lost", "lost", "lost", "lost"], outputs: saveOutput });
-        const e2 = await thrown(() => cloud.edit(partnerReq(), ctxOf(h)));
-        check("a download that drops three times: stopped after three reads", /^Comfy Cloud download \(job job-1\): fetch failed/.test(e2 || "") && h.contents.length === 3, e2);
+        const hctx = ctxOf(h, { jobs: memJobs() });
+        const e2 = await thrown(() => cloud.edit(partnerReq(), hctx));
+        check("a download that drops three times: stopped after three reads, the words say Scumble keeps the job and brings its picture",
+            /^Comfy Cloud download \(job job-1\): fetch failed\. /.test(e2 || "") && (e2 || "").endsWith(KEPT) && h.contents.length === 3 && hctx.noteKept === true, e2);
+        const gctx = ctxOf(fakeComfyV2({ contents: [{ status: 404, code: "asset_not_found", message: "gone" }], outputs: saveOutput }), { jobs: memJobs() });
+        const e404 = await thrown(() => cloud.edit(partnerReq(), gctx));
+        check("a result Comfy says is gone: no promise to bring it, the note goes", !(e404 || "").includes(KEPT) && !gctx.noteKept && gctx.jobs.list().length === 0, e404);
         const j = fakeComfyV2({ outputs: (wf) => [{ node_id: saveIdOf(wf), name: "out.jpg", content_type: "image/jpeg" }] });
         const oj = await cloud.edit(partnerReq(), ctxOf(j));
         check("the answer's type comes from the output", oj.mime === "image/jpeg", oj.mime);
         const k = fakeComfyV2({ outputsAfter: 1, outputs: saveOutput });
         const ok = await cloud.edit(partnerReq(), ctxOf(k));
         check("a finished job that lists its outputs only on the next read: read again, the run lands", tagOf(ok.bytes) === "RESULT out.png", tagOf(ok.bytes));
+        // a finished job that still lists no output after the re-reads is paid for: its note stays for a later ask
+        const lctx = ctxOf(fakeComfyV2({ outputsAfter: 8, outputs: saveOutput }), { jobs: memJobs() });
+        const el = await thrown(() => cloud.edit(partnerReq(), lctx));
+        check("a finished job that lists no output after its re-reads: the words say so and end with the keep sentence, the note stays",
+            /^Comfy Cloud: the job \(job-1\) finished, and Comfy lists no output of it yet\. /.test(el || "") && (el || "").endsWith(KEPT) && lctx.noteKept === true && lctx.jobs.list().length === 1, short({ el, notes: lctx.jobs.list().length }));
+        // one that lists outputs and no image never gets one: no promise, the note goes
+        const tctx = ctxOf(fakeComfyV2({ outputs: (wf) => [{ node_id: saveIdOf(wf), name: "out.txt", type: "text", content_type: "text/plain" }] }), { jobs: memJobs() });
+        const et = await thrown(() => cloud.edit(partnerReq(), tctx));
+        check("a finished job that lists outputs and no image: the without-an-image words, no keep sentence, the note goes",
+            /^Comfy Cloud: the job finished without an image \(/.test(et || "") && !(et || "").includes(KEPT) && !tctx.noteKept && tctx.jobs.list().length === 0, short({ et, notes: tctx.jobs.list().length }));
         const p = fakeComfyV2({ outputs: (wf) => [{ node_id: "999", name: "preview.png" }, { node_id: saveIdOf(wf), name: "out.png" }] });
         const op = await cloud.edit(partnerReq(), ctxOf(p));
         check("a partner node: its SaveImage answers before a preview listed first", tagOf(op.bytes) === "RESULT out.png", tagOf(op.bytes));
@@ -267,8 +350,9 @@ async function main() {
         const pf = frames.filter((x) => x.value != null);
         check("live events reach ctx.progress: the job's status first (urgent), the shares with their node counts, the statuses",
             frames[0] && frames[0].status === "queued" && frames[0].urgent === true && pf.length === 2 && pf[1].value === 0.9375 && pf[1].nodesDone === 11 && pf[1].nodesTotal === 12
-            && frames.some((x) => x.status === "running") && frames.some((x) => x.status === "succeeded") && !frames.some((x) => x.kind === "preview"),
+            && frames.some((x) => x.status === "running") && frames.some((x) => x.status === "succeeded"),
             short(frames));
+        check("a preview event is no frame: five frames (the submit's status, two statuses, two shares)", frames.length === 5, short(frames));
         const ev = out.info.events || {};
         check("a summary of the events joins the answer's info", ev.count === 5 && ev.kinds.progress === 2 && ev.kinds.preview === 1 && ev.fields.join(",") === "value,nodesDone,nodesTotal" && ev.value[0] === 0 && ev.value[1] === 0.9375 && ev.statuses.join(",") === "running,succeeded", short(ev));
     }
@@ -294,13 +378,28 @@ async function main() {
         const gctx = ctxOf(g, { fetch: (url, init = {}) => (ag.signal.aborted ? Promise.reject(new Error("cancelled")) : g.fetch(url, init)), signal: ag.signal, progress: (p) => { if (p.value === 0.5) setTimeout(() => ag.abort(), 20); } });
         globalThis.fetch = g.fetch;
         try { await thrown(() => cloud.edit(partnerReq(), gctx)); } finally { globalThis.fetch = saved; }
-        check("a Cancel whose stop request fails: ctx.cancelAsked is false (the words say it may still be charged)", gctx.cancelAsked === false && g.cancels.length === 1, short({ asked: gctx.cancelAsked }));
+        check("a Cancel whose stop request fails twice: no flag says it stopped or ended, the cancel went twice, and no note is claimed without a store",
+            !gctx.cancelAsked && !gctx.jobDone && !gctx.jobEnded && !gctx.noteKept && g.cancels.length === 2, short({ asked: gctx.cancelAsked, cancels: g.cancels.length }));
         const h = fakeComfyV2({ statuses: ["running"], cancelSays: "succeeded", events: [{ event: "progress", data: { value: 0.5, nodes_done: 1, nodes_total: 2 } }] });
         const ah = new AbortController();
         const hctx = ctxOf(h, { fetch: (url, init = {}) => (ah.signal.aborted ? Promise.reject(new Error("cancelled")) : h.fetch(url, init)), signal: ah.signal, progress: (p) => { if (p.value === 0.5) setTimeout(() => ah.abort(), 20); } });
         globalThis.fetch = h.fetch;
         try { await thrown(() => cloud.edit(partnerReq(), hctx)); } finally { globalThis.fetch = saved; }
-        check("a Cancel answered with succeeded (the job ended meanwhile): not \"asked to stop\", but done and charged", hctx.cancelAsked === false && hctx.jobDone === true && h.cancels.length === 1, short({ asked: hctx.cancelAsked, done: hctx.jobDone }));
+        check("a Cancel answered with succeeded (the job ended meanwhile): not \"asked to stop\", but done and charged", !hctx.cancelAsked && hctx.jobDone === true && h.cancels.length === 1, short({ asked: hctx.cancelAsked, done: hctx.jobDone }));
+        for (const st of ["failed", "expired"]) {
+            const x = fakeComfyV2({ statuses: ["running"], cancelSays: st, events: [{ event: "progress", data: { value: 0.5, nodes_done: 1, nodes_total: 2 } }] });
+            const ax = new AbortController();
+            const xctx = ctxOf(x, { fetch: (url, init = {}) => (ax.signal.aborted ? Promise.reject(new Error("cancelled")) : x.fetch(url, init)), signal: ax.signal, progress: (p) => { if (p.value === 0.5) setTimeout(() => ax.abort(), 20); } });
+            globalThis.fetch = x.fetch;
+            try { await thrown(() => cloud.edit(partnerReq(), xctx)); } finally { globalThis.fetch = saved; }
+            check(`a Cancel answered with ${st} (the job ended without a picture meanwhile): ctx.jobEnded says so, not "asked to stop"`, xctx.jobEnded === st && !xctx.cancelAsked && !xctx.jobDone, short({ ended: xctx.jobEnded, asked: xctx.cancelAsked }));
+        }
+        const k = fakeComfyV2({ statuses: ["running"], cancelSays: "fail", events: [{ event: "progress", data: { value: 0.5, nodes_done: 1, nodes_total: 2 } }] });
+        const ak = new AbortController();
+        const kctx = ctxOf(k, { jobs: memJobs(), fetch: (url, init = {}) => (ak.signal.aborted ? Promise.reject(new Error("cancelled")) : k.fetch(url, init)), signal: ak.signal, progress: (p) => { if (p.value === 0.5) setTimeout(() => ak.abort(), 20); } });
+        globalThis.fetch = k.fetch;
+        try { await thrown(() => cloud.edit(partnerReq(), kctx)); } finally { globalThis.fetch = saved; }
+        check("a Cancel whose stop Comfy did not confirm keeps the job's note (the job may still run and be charged)", kctx.noteKept === true && kctx.jobs.list().length === 1 && !kctx.cancelAsked, short({ kept: kctx.noteKept, notes: kctx.jobs.list().length }));
     }
 
     // 9d. a live stream that drops, and the status read right after it fails (the SDK's own reconnect ends there): the
@@ -460,6 +559,11 @@ async function main() {
         check("a Cancel during the uploads: nothing submitted, said so", /^Cancelled after \d+\.\d s, before the job went to Comfy Cloud: nothing runs or is charged\.$/.test(u.r.err || "") && posts(u.f).length === 0 && u.f.cancels.length === 0, u.r.err);
         const dl = await cancelOn(/\/content$/, "GET");
         check("a Cancel during the download of a finished job: done and charged, its picture not kept", /^Cancelled after \d+\.\d s: the job had already finished on Comfy Cloud and is charged; its picture was not kept\.$/.test(dl.r.err || "") && dl.f.cancels.length === 0, dl.r.err);
+        globalThis.fetch = saved;
+        const fl = await cancelOn(/^\/api\/v2\/jobs\/[^/]+$/, "GET", { statuses: ["running"], cancelSays: "failed" });
+        check("a Cancel as the job failed on Comfy: the words say it had already ended without a picture", /^Cancelled after \d+\.\d s: the job had already ended on Comfy Cloud \(failed\) without a picture\.$/.test(fl.r.err || ""), fl.r.err);
+        const nf = await cancelOn(/^\/api\/v2\/jobs\/[^/]+$/, "GET", { statuses: ["running"], cancelSays: "fail" });
+        check("a Cancel whose stop is not confirmed (no data folder here, so no note): the may-still-finish words without the keep sentence", /^Cancelled after \d+\.\d s: Scumble stopped waiting for Comfy Cloud, which may still finish the job and charge it\.$/.test(nf.r.err || "") && nf.f.cancels.length === 2, nf.r.err);
         // a Cancel that comes after the last upload, before the submit: the guard before the submit stops the run
         {
             let ups = 0;
@@ -473,6 +577,22 @@ async function main() {
             const r = await viaIndex(wrap, { ...partnerReq(), runId });
             check("a Cancel after the last upload, before the submit: nothing submitted, the words say nothing runs", /^Cancelled after \d+\.\d s, before the job went to Comfy Cloud: nothing runs or is charged\.$/.test(r.err || "") && ups === 4 && posts(f).length === 0 && f.cancels.length === 0, short({ err: r.err, ups }));
         }
+    }
+
+    // 15b. the progress throttle runs on the monotonic clock: a wall clock set back after a frame holds no share
+    {
+        const idx = require(path.join(ROOT, "electron", "main", "providers", "index.js"));
+        const got = [];
+        const realNow = Date.now;
+        const fn = idx._progressSender("clock", (x) => got.push(x));
+        fn({ status: "running", urgent: true });
+        Date.now = () => realNow() - 60000;   // a time sync after a wake sets the clock back a minute
+        try {
+            await new Promise((r) => setTimeout(r, 300));
+            fn({ value: 0.5 });
+            await new Promise((r) => setTimeout(r, 400));
+        } finally { Date.now = realNow; fn.stop(); }
+        check("a wall clock set back a minute: the next share still reaches the bar at once", got.length === 2 && got[1].value === 0.5 && got[1].runId === "clock", short(got));
     }
 
     // 14. a context that names no API (a direct call, the plain-Node tests of the legacy path) stays on the legacy API

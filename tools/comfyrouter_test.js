@@ -54,6 +54,7 @@ const R = {
 };
 
 const results = [];
+let DONE = false;   // main() reached its summary
 function check(what, ok, detail) {
     results.push(!!ok);
     console.log(`[${ok ? "ok" : "FAIL"}] ${what}${detail ? ": " + detail : ""}`);
@@ -164,11 +165,11 @@ function nativeAnswer(prov, body, host) {
 }
 
 /**
- * `submit` / `status` / `result` / `sync` answer their route in order (functions of (body, call) returning a Response,
- * or throwing for a network error); when a list runs out `submitRest` / `statusRest` answer every later call if given,
- * else the route answers normally: 201 on submit, COMPLETED at once on status (no Retry-After: the SDK's poll pace is
- * real time), the native answer on the result read. Any host answers. A request whose signal has already fired is
- * never sent (as a real fetch): it rejects with an AbortError before it is recorded.
+ * `submit` / `status` / `result` / `sync` answer their route in order (functions of (body, call, init) returning a
+ * Response, or throwing for a network error); when a list runs out `submitRest` / `statusRest` / `resultRest` answer
+ * every later call if given, else the route answers normally: 201 on submit, COMPLETED at once on status (no
+ * Retry-After: the SDK's poll pace is real time), the native answer on the result read. Any host answers. A request
+ * whose signal has already fired is never sent (as a real fetch): it rejects with an AbortError before it is recorded.
  */
 function fakeServer(opts = {}) {
     const calls = [], submits = [], syncs = [], statuses = [], reads = [], cancels = [], assets = [];
@@ -222,17 +223,17 @@ function fakeServer(opts = {}) {
         if (method === "GET" && tail === "/status") {
             statuses.push(call);
             const a = q.status.shift() || opts.statusRest;
-            if (a) return a(null, call);
+            if (a) return a(null, call, init);
             return json(200, { request_id: id, status: "COMPLETED", queue_position: 0 });
         }
         if (method === "GET" && id && !tail) {
             reads.push(call);
-            const a = q.result.shift();
-            if (a) return a(null, call);
+            const a = q.result.shift() || opts.resultRest;
+            if (a) return a(null, call, init);
             const b = bodies.get(id) || { prov, body: {}, host };
             return json(200, nativeAnswer(b.prov, b.body, b.host), { "x-comfy-request-id": id, "x-comfy-credits-used": "12.25", ...(opts.resultHeaders || {}) });
         }
-        if (method === "PUT" && tail === "/cancel") { cancels.push(call); return opts.cancel ? opts.cancel(call) : json(202, { request_id: id, status: "CANCELLATION_REQUESTED" }); }
+        if (method === "PUT" && tail === "/cancel") { cancels.push(call); return opts.cancel ? opts.cancel(call, init) : json(202, { request_id: id, status: "CANCELLATION_REQUESTED" }); }
         return routerError(404, "request_not_found", "no such request");
     }
     return { fetch, calls, submits, syncs, statuses, reads, cancels, assets, storage, uploads, hy };
@@ -314,6 +315,7 @@ async function main() {
         const out = await R.edit(editReq(v), ctx);
         const root = `${BASE}/v2/models/openai/gpt-image-2`;
         const bearer = `Bearer ${KEY}`;
+        const realNow = Date.now;   // the cases below that move the clock put it back
         check("one submit to /v2/models/openai/gpt-image-2/requests, then two status reads (the SDK's wait and its collect) and one result read", s.submits.length === 1 && s.submits[0].url === root + "/requests" && s.statuses.length === 2 && s.reads.length === 1 && s.syncs.length === 0, short(s.calls.map((c) => c.method + " " + c.url)));
         check("the status and result URLs are composed from the host and the request id, never the answer's (evil.example)", s.statuses.every((c) => c.url === `${root}/requests/${RID}/status`) && s.reads[0].url === `${root}/requests/${RID}` && !s.calls.some((c) => /evil/.test(c.url)));
         const h = s.submits[0].headers;
@@ -326,6 +328,25 @@ async function main() {
         const c2 = ctxFor(s2);
         const o2 = await R.edit(editReq(v), c2);
         check("a result route that answers 202 after the status said COMPLETED: the adapter waits once (1 to 15 s), reads the run again by its id and collects", tagOf(o2.bytes) === "RESULT" && s2.submits.length === 1 && s2.reads.length === 2 && c2.sleeps.length === 1 && c2.sleeps[0] >= 1000 && c2.sleeps[0] <= 15000, short({ reads: s2.reads.length, sleeps: c2.sleeps }));
+        // a result route that never gives the result of a COMPLETED run (a minute passes per read): 5 reads in all, not
+        // until the 15-minute wait is over, and the run is not asked to stop
+        for (const [what, answer, want] of [
+            ["202", () => json(202, { request_id: RID, status: "IN_PROGRESS" }), /the Router's answer was not what the API says it sends/],
+            ["429", () => routerError(429, "rate_limited", "slow down", {}, { "retry-after": "1" }), /rate limited - slow down/],
+        ]) {
+            let tr = 0;
+            const sr = fakeServer({ resultRest: () => { tr += 60000; return answer(); } });
+            const cr = ctxFor(sr);
+            Date.now = () => realNow() + tr;
+            let er;
+            try { er = await throws(() => R.edit(editReq(v), cr)); } finally { Date.now = realNow; }
+            check(`a result route that answers ${what} every time after the status said COMPLETED: read 5 times in all (4 waits), the status not followed again, no stop request; the words say the run finished and is charged`,
+                /: the run finished and is charged, but its result could not be read: /.test(er || "") && want.test(er || "") && sr.reads.length === 5 && cr.sleeps.length === 4 && sr.cancels.length === 0 && sr.statuses.length === 6, short({ er, reads: sr.reads.length, sleeps: cr.sleeps.length, statuses: sr.statuses.length, cancels: sr.cancels.length }));
+        }
+        const st = fakeServer({ resultRest: () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); } });
+        const ct = ctxFor(st);
+        const et = await throws(() => R.edit(editReq(v), ct));
+        check("a result read of a COMPLETED run past its own deadline: not sent again, no stop request; the words say the run finished and is charged", /: the run finished and is charged, but its result could not be read: no answer in time/.test(et || "") && st.reads.length === 1 && ct.sleeps.length === 0 && st.cancels.length === 0, short({ et, reads: st.reads.length, cancels: st.cancels.length }));
 
         const slow = (after) => () => routerError(429, "rate_limited", "slow down", {}, { "retry-after": after });
         const s3 = fakeServer({ status: [slow("120"), slow("3")] });
@@ -333,14 +354,62 @@ async function main() {
         const o3 = await R.edit(editReq(v), c3);
         check("a throttled status read (429) is waited out by the adapter after its Retry-After, a long one capped at 15 s so a finished run is seen soon, then the run read again", tagOf(o3.bytes) === "RESULT" && eq(c3.sleeps, [15000, 3000]) && s3.submits.length === 1 && s3.reads.length === 1, short(c3.sleeps));
 
-        // the clock jumps 16 minutes during the first status read: the SDK's wait runs out, the adapter gives the run up
-        let t = 0;
-        const realNow = Date.now;
-        const s4 = fakeServer({ status: [() => { t += 16 * 60000; return json(200, { request_id: RID, status: "IN_PROGRESS", queue_position: 0 }); }] });
-        Date.now = () => realNow() + t;
-        let e4;
-        try { e4 = await throws(() => R.edit(editReq(v), ctxFor(s4))); } finally { Date.now = realNow; }
-        check("after 15 minutes the run is given up and asked to stop: one PUT .../cancel with the bearer, no result read", /no answer after 15 minutes; the run was asked to stop/.test(e4 || "") && s4.cancels.length === 1 && s4.cancels[0].url === `${root}/requests/${RID}/cancel` && s4.cancels[0].method === "PUT" && s4.cancels[0].headers.authorization === bearer && s4.reads.length === 0, short({ e4, cancels: s4.cancels.length }));
+        // the clock jumps 16 minutes during the first status read (a long wait, or a machine that slept): the SDK's wait
+        // runs out without another read; the adapter reads the run once more before it gives it up
+        const running = () => json(200, { request_id: RID, status: "IN_PROGRESS", queue_position: 0 });
+        // the first status read jumps the clock, `then` answer the reads after it
+        const asleep = (extra, then = []) => {
+            let t = 0;
+            return { t: () => t, server: fakeServer({ status: [() => { t += 16 * 60000; return running(); }, ...then], ...extra }) };
+        };
+        const late = async (x, ctxExtra) => {
+            Date.now = () => realNow() + x.t();
+            const c = ctxFor(x.server, ctxExtra);
+            try { return { c, e: await throws(() => R.edit(editReq(v), c)) }; } finally { Date.now = realNow; }
+        };
+        const x4 = asleep({ statusRest: running });
+        const { e: e4 } = await late(x4);
+        const s4 = x4.server;
+        check("after 15 minutes the run is read once more (still running), then given up and asked to stop: one PUT .../cancel with the bearer, no result read", /no answer after 15 minutes; the run was asked to stop/.test(e4 || "") && s4.statuses.length === 2 && s4.cancels.length === 1 && s4.cancels[0].url === `${root}/requests/${RID}/cancel` && s4.cancels[0].method === "PUT" && s4.cancels[0].headers.authorization === bearer && s4.reads.length === 0, short({ e4, statuses: s4.statuses.length, cancels: s4.cancels.length }));
+        // the run finished while the machine slept past the wait: the last read finds it COMPLETED and it is collected
+        const x4b = asleep({});
+        const { e: e4b } = await late(x4b);
+        check("a run that finished while the machine slept past the 15-minute wait: read once more, collected, never asked to stop", !e4b && x4b.server.reads.length === 1 && x4b.server.cancels.length === 0, short({ e4b, statuses: x4b.server.statuses.length, cancels: x4b.server.cancels.length }));
+        // ... and the network is still down for the first attempt of that read (a machine that has just woken): the read
+        // is sent again inside its own retry budget, measured from the read
+        const x4c = asleep({}, [() => { throw new TypeError("fetch failed"); }]);
+        const { e: e4c } = await late(x4c);
+        check("... with no network for the first attempt of that read: sent again inside the read's own retry budget, the picture lands, no stop request", !e4c && x4c.server.reads.length === 1 && x4c.server.cancels.length === 0 && x4c.server.statuses.length >= 3, short({ e4c, statuses: x4c.server.statuses.length, cancels: x4c.server.cancels.length }));
+        // a stop request sent at the timeout whose first attempt gets no answer: sent again inside its retry budget
+        let k4d = 0;
+        const x4d = asleep({ statusRest: running, cancel: () => { if (k4d++ === 0) throw new TypeError("fetch failed"); return json(202, { request_id: RID, status: "CANCELLATION_REQUESTED" }); } });
+        const { e: e4d } = await late(x4d);
+        check("a timeout's stop request whose first attempt got no answer: sent again inside its retry budget", /the run was asked to stop/.test(e4d || "") && x4d.server.cancels.length === 2, short({ e4d, cancels: x4d.server.cancels.length }));
+        // the stop request at the timeout is answered COMPLETED: the run finished meanwhile, so it is collected
+        let done4e = false;
+        const x4e = asleep({ statusRest: () => json(200, { request_id: RID, status: done4e ? "COMPLETED" : "IN_PROGRESS", queue_position: 0 }), cancel: () => { done4e = true; return json(200, { request_id: RID, status: "COMPLETED" }); } });
+        const { e: e4e } = await late(x4e);
+        check("a timeout's stop request answered COMPLETED (the run finished between the last read and the stop): the picture is collected", !e4e && x4e.server.cancels.length === 1 && x4e.server.reads.length === 1, short({ e4e, cancels: x4e.server.cancels.length, reads: x4e.server.reads.length }));
+        // ... answered COMPLETED with error_type cancelled: the stop was taken
+        const x4f = asleep({ statusRest: running, cancel: () => json(200, { request_id: RID, status: "COMPLETED", error_type: "cancelled" }) });
+        const { e: e4f } = await late(x4f);
+        check("a timeout's stop request answered COMPLETED with error_type cancelled: the words say the run was stopped, no result read", /no answer after 15 minutes; the run was stopped\.$/.test(e4f || "") && x4f.server.reads.length === 0, e4f);
+        // a user Cancel while that stop request is on its way (it never answers): it goes on the run's signal, so it ends
+        // at once; the Cancel's own short stop request is sent and its answer sets the flags. Not 30 s (LOOK_MS)
+        const ac4g = new AbortController();
+        let k4g = 0, abort4g = 0;
+        const x4g = asleep({ statusRest: running, cancel: (call, init) => {
+            if (k4g++ > 0) return json(200, { request_id: RID, status: "COMPLETED", error_type: "cancelled" });
+            setTimeout(() => { abort4g = realNow(); ac4g.abort(); }, 100);
+            return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true }));
+        } });
+        // the SDK's request deadlines are unref'd timers: a stop request that waits for its own deadline would let the
+        // process run dry, so a ref'd timer holds it open while this case runs
+        const hold4g = setTimeout(() => {}, 60000);
+        const { c: c4g, e: e4g } = await late(x4g, { signal: ac4g.signal }).finally(() => clearTimeout(hold4g));
+        const ms4g = abort4g ? realNow() - abort4g : -1;
+        check("a user Cancel while the timeout's stop request is on its way: that request ends at once, the Cancel's own stop request goes and its answer (the stop was taken) sets cancelAsked; the run ends within 5 s of the Cancel",
+            !!e4g && ms4g >= 0 && ms4g < 5000 && x4g.server.cancels.length === 2 && c4g.cancelAsked === true && !c4g.jobDone && !c4g.jobEnded && x4g.server.reads.length === 0, short({ e4g, ms4g, cancels: x4g.server.cancels.length, cancelAsked: c4g.cancelAsked }));
 
         const busy = () => routerError(503, "service_unavailable", "busy");
         const s5 = fakeServer({ status: [busy, busy, busy, busy] });
@@ -413,7 +482,60 @@ async function main() {
         const s2b = fakeServer({ submitRest: () => { throw new TypeError("fetch failed"); } });
         const c2b = ctxFor(s2b);
         const e2b = await throws(() => R.edit(editReq(v), c2b));
-        check("a submit that is never answered, past the SDK's retry budget: no resend of the adapter's own on top (the SDK sent it again under the one key), then says so", /no answer from the Router \(fetch failed\)/.test(e2b || "") && c2b.sleeps.length === 0 && c2b.uuids.length === 1 && new Set(s2b.submits.map((c) => c.headers["idempotency-key"])).size === 1 && s2b.statuses.length === 0, short({ e2b, sleeps: c2b.sleeps, submits: s2b.submits.length }));
+        check("a submit that is never answered, past the SDK's retry budget: sent once more by the adapter after a wait, all under the one key, then the words say the Router may have taken it and may charge it", /no answer from the Router \(fetch failed\), also when sent once more under the same key; Scumble does not send it again, and if the Router took it, it may run and be charged\.$/.test(e2b || "") && eq(c2b.sleeps, [2000]) && c2b.uuids.length === 1 && new Set(s2b.submits.map((c) => c.headers["idempotency-key"])).size === 1 && s2b.statuses.length === 0, short({ e2b, sleeps: c2b.sleeps, submits: s2b.submits.length }));
+        // a first submit that alone takes longer than the SDK's whole retry budget (30 s from the call's start: a large
+        // body on a slow line), with the app's own budget (no routerRetry): the SDK sends nothing again, the adapter does
+        const slowFirst = (answer) => {
+            let t = 0;
+            return { t: () => t, server: fakeServer({ submit: [() => { t += 31000; return answer(); }] }) };
+        };
+        const runSlow = async (x) => {
+            const now = Date.now;
+            Date.now = () => now() + x.t();
+            const c = ctxFor(x.server, { routerRetry: undefined });
+            try { return { c, out: await R.edit(editReq(v), c).catch((e) => { ERRORS.push(String(e.message)); return String(e.message); }) }; } finally { Date.now = now; }
+        };
+        const xl = slowFirst(() => { throw new TypeError("fetch failed"); });
+        const rl = await runSlow(xl);
+        check("a 31-second first submit whose answer was lost: sent once more under the same key after a wait (the SDK's budget was spent), the picture lands", rl.out && rl.out.bytes && tagOf(rl.out.bytes) === "RESULT" && xl.server.submits.length === 2 && new Set(xl.server.submits.map((c) => c.headers["idempotency-key"])).size === 1 && eq(rl.c.sleeps, [2000]), short({ out: typeof rl.out === "string" ? rl.out : "picture", submits: xl.server.submits.length, sleeps: rl.c.sleeps }));
+        const x5 = slowFirst(() => routerError(503, "service_unavailable", "busy", {}, { "retry-after": "2" }));
+        const r5 = await runSlow(x5);
+        check("a 31-second first submit answered 503 service_unavailable: sent again under the same key after its Retry-After, the picture lands", r5.out && r5.out.bytes && x5.server.submits.length === 2 && new Set(x5.server.submits.map((c) => c.headers["idempotency-key"])).size === 1 && eq(r5.c.sleeps, [2000]), short({ out: typeof r5.out === "string" ? r5.out : "picture", submits: x5.server.submits.length, sleeps: r5.c.sleeps }));
+
+        // jobSent while a submit waits for its Retry-After: false after a 429 queue_backlog_full (the queue refused to
+        // admit the key; unless an attempt the adapter saw may have landed), true again right before the next submit;
+        // true after a 429 rate_limited (a window's allowance, which a dropped first attempt may itself have spent before
+        // the SDK's own resend was refused); a Cancel in the wait
+        const waitCancel = async (submit, cancelAt) => {
+            const sv = fakeServer({ submit });
+            const ac = new AbortController();
+            const at = [];
+            const c = ctxFor(sv, { signal: ac.signal });
+            c.sleep = async () => {
+                at.push(c.jobSent);
+                if (at.length === cancelAt) { ac.abort(); throw new DOMException("This operation was aborted", "AbortError"); }
+            };
+            const e = await throws(() => R.edit(editReq(v), c));
+            return { sv, c, at, e };
+        };
+        const backlog = () => routerError(429, "queue_backlog_full", "backlog", {}, { "retry-after": "5" });
+        const w1 = await waitCancel([backlog], 1);
+        check("a Cancel while a 429 queue_backlog_full is waited out: jobSent false (nothing was queued), one submit, no stop request", eq(w1.at, [false]) && w1.c.jobSent === false && w1.sv.submits.length === 1 && w1.sv.cancels.length === 0, short({ at: w1.at, jobSent: w1.c.jobSent, e: w1.e }));
+        const w2 = await waitCancel([backlog], 0);
+        check("a 429 queue_backlog_full, then the submit is taken: jobSent false during the wait, true again once the next submit went", eq(w2.at, [false]) && w2.c.jobSent === true && w2.sv.submits.length === 2 && !w2.e, short({ at: w2.at, jobSent: w2.c.jobSent, e: w2.e }));
+        const w2r = await waitCancel([() => routerError(429, "rate_limited", "slow down", {}, { "retry-after": "2" })], 1);
+        check("a Cancel while a 429 rate_limited is waited out: jobSent stays true (a window's allowance says nothing about an earlier attempt)", eq(w2r.at, [true]) && w2r.c.jobSent === true && w2r.sv.submits.length === 1 && w2r.sv.cancels.length === 0, short({ at: w2r.at, jobSent: w2r.c.jobSent }));
+        // the SDK's own resend of a dropped first attempt (inside its budget, the same key), answered 429: the adapter
+        // sees one failure
+        const dropped = () => { throw new TypeError("fetch failed"); };
+        const w2s = await waitCancel([dropped, () => routerError(429, "rate_limited", "slow down", {}, { "retry-after": "2" })], 1);
+        check("a dropped first submit the SDK sent again itself, refused 429 rate_limited, and a Cancel in that wait: jobSent stays true (the first may have landed)", eq(w2s.at, [true]) && w2s.c.jobSent === true && w2s.sv.submits.length === 2 && new Set(w2s.sv.submits.map((c) => c.headers["idempotency-key"])).size === 1, short({ at: w2s.at, jobSent: w2s.c.jobSent, submits: w2s.sv.submits.length }));
+        const w2b = await waitCancel([dropped, backlog], 1);
+        check("... refused 429 queue_backlog_full instead: jobSent false (a same-key resend of a run the queue had admitted gets the run back, not a refusal)", eq(w2b.at, [false]) && w2b.c.jobSent === false && w2b.sv.submits.length === 2, short({ at: w2b.at, jobSent: w2b.c.jobSent, submits: w2b.sv.submits.length }));
+        const w3 = await waitCancel([() => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); }, backlog], 2);
+        check("a first submit without an answer (the adapter sent it once more), then a 429 queue_backlog_full, and a Cancel in that wait: jobSent stays true (the first may have landed)", eq(w3.at, [true, true]) && w3.c.jobSent === true && w3.sv.submits.length === 2, short({ at: w3.at, jobSent: w3.c.jobSent }));
+        const w4 = await waitCancel([() => routerError(409, "concurrency_limit_exceeded", "in flight", {}, { "retry-after": "2" }), backlog], 2);
+        check("a 409 concurrency_limit_exceeded (this key may be in flight), then a 429 queue_backlog_full, and a Cancel in either wait: jobSent stays true", eq(w4.at, [true, true]) && w4.c.jobSent === true && w4.sv.submits.length === 2, short({ at: w4.at, jobSent: w4.c.jobSent }));
         const s3 = fakeServer({ submit: Array.from({ length: 3 }, () => () => routerError(429, "rate_limited", "slow down", {}, { "retry-after": "2" })) });
         const c3 = ctxFor(s3);
         const e3 = await throws(() => R.edit(editReq(v), c3));
@@ -448,6 +570,7 @@ async function main() {
             [413, "", "too big", /too large/],   // no bucket: read by its status
             [503, "service_unavailable", "down", /temporarily unavailable/],
             [400, "something_new", "a new bucket", /Comfy Router failed \(something_new\)/],
+            [429, "queue_backlog_full", "backlog", /too many of this account's runs are waiting in Comfy's queue; it clears as they finish/],
         ];
         const bad = [];
         for (const [status, type, detail, want] of cases) {
@@ -468,6 +591,12 @@ async function main() {
         const s3 = fakeServer({ submit: [() => routerError(400, "invalid_input", `bad key ${KEY} echoed`)] });
         const e3 = await throws(() => R.edit(editReq(v), ctxFor(s3)));
         check("a key the server echoes is taken out of the error", !!e3 && !e3.includes(KEY) && e3.includes("[key]"), e3);
+        // a key echoed where the words are cut (600 characters): taken out before the cut, so not even its start is left
+        const s3b = fakeServer({ submit: [() => routerError(400, "invalid_input", "x".repeat(580) + KEY + " was refused")] });
+        const e3b = await throws(() => R.edit(editReq(v), ctxFor(s3b)));
+        const s3c = fakeServer({ submit: [() => json(422, { detail: [{ loc: ["body", "prompt"], msg: "y".repeat(570) + KEY + " was refused", type: "value_error" }] }, { "x-comfy-error-type": "invalid_input" })] });
+        const e3c = await throws(() => R.edit(editReq(v), ctxFor(s3c)));
+        check("a key the server echoes across the 600-character cut (in a detail, in a 422's field) is taken out before the cut: not even its first 12 characters are left", !!e3b && !!e3c && !e3b.includes(KEY.slice(0, 12)) && !e3c.includes(KEY.slice(0, 12)) && e3b.includes("[key]") && e3c.includes("[key]"), short([e3b && e3b.slice(-60), e3c && e3c.slice(-60)]));
         const s4 = fakeServer({ result: [() => json(200, { error: { code: "OutputImageSensitiveContentDetected", message: "flagged" } })] });
         const e4 = await throws(() => R.edit(editReq(v), ctxFor(s4)));
         check("a native answer without a picture: its own reason (Seedream's error code)", /no picture in the answer: OutputImageSensitiveContentDetected: flagged/.test(e4 || ""), e4);
@@ -777,6 +906,34 @@ async function main() {
         check("a Cancel whose stop request gets no answer: the same words", MAY.test(kNet.err || "") && kNet.sv.cancels.length === 1, short({ err: kNet.err, cancels: kNet.sv.cancels.length }));
         const kDone = await cancelCase("run-cancel-done", { cancel: () => json(200, { request_id: RID, status: "COMPLETED" }) });
         check("a Cancel answered with COMPLETED (the run finished meanwhile): finished and charged, its picture not kept", /^Cancelled after \d+\.\d s: the job had already finished on Comfy Router and is charged; its picture was not kept\.$/.test(kDone.err || ""), kDone.err);
+        // a stop answered COMPLETED with error_type cancelled: the stop was taken (not a finished, charged job)
+        const kCan = await cancelCase("run-cancel-cancelled", { cancel: () => json(200, { request_id: RID, status: "COMPLETED", error_type: "cancelled" }) });
+        check("a Cancel answered COMPLETED with error_type cancelled: Scumble asked Comfy Router to stop the job (not finished and charged)", /^Cancelled after \d+\.\d s: Scumble asked Comfy Router to stop the job\.$/.test(kCan.err || "") && kCan.sv.cancels.length === 1, kCan.err);
+        const kEnd = await cancelCase("run-cancel-ended", { cancel: () => json(200, { request_id: RID, status: "COMPLETED", error_type: "provider_error" }) });
+        check("a Cancel answered COMPLETED with error_type provider_error: the job had already ended without a picture (not finished and charged)", /^Cancelled after \d+\.\d s: the job had already ended on Comfy Router \(provider_error\) without a picture\.$/.test(kEnd.err || "") && kEnd.sv.cancels.length === 1, kEnd.err);
+        // a Cancel while a 429 queue_backlog_full is waited out (index.js's own sleep): nothing was queued
+        const kBack = await cancelCase("run-cancel-backlog", { submit: [() => routerError(429, "queue_backlog_full", "backlog", {}, { "retry-after": "5" })] });
+        check("a Cancel while a 429 queue_backlog_full is waited out: the words say nothing went to Comfy Router; one submit, no stop request", /^Cancelled after \d+\.\d s, before the job went to Comfy Router: nothing runs or is charged\.$/.test(kBack.err || "") && kBack.sv.submits.length === 1 && kBack.sv.cancels.length === 0, short({ err: kBack.err, submits: kBack.sv.submits.length }));
+        // the flags a stop's answer leaves on the run's context (the adapter alone; index.js words them, the contract's
+        // section 1): cancelAsked for a stop taken, jobDone for a finished job, jobEnded for one that ended without a picture
+        const flagCase = async (opts) => {
+            const sv = fakeServer({ statusRest: () => json(200, { request_id: RID, status: "IN_PROGRESS", queue_position: 0 }, { "retry-after": "5" }), ...opts });
+            const ac = new AbortController();
+            const c = ctxFor(sv, { signal: ac.signal });
+            setTimeout(() => ac.abort(), 300);
+            const e = await throws(() => R.edit(editReq(v), c));
+            return { sv, c, e, flags: { cancelAsked: c.cancelAsked, jobDone: c.jobDone, jobEnded: c.jobEnded } };
+        };
+        const fTaken = await flagCase({});
+        const fCan = await flagCase({ cancel: () => json(200, { request_id: RID, status: "COMPLETED", error_type: "cancelled" }) });
+        const fEnd = await flagCase({ cancel: () => json(200, { request_id: RID, status: "COMPLETED", error_type: "provider_error" }) });
+        const fDone = await flagCase({ cancel: () => json(200, { request_id: RID, status: "COMPLETED" }) });
+        check("a stop answered 202: cancelAsked; COMPLETED + cancelled: cancelAsked; COMPLETED + provider_error: jobEnded provider_error; COMPLETED: jobDone (each alone)",
+            eq(fTaken.flags, { cancelAsked: true }) && eq(fCan.flags, { cancelAsked: true }) && eq(fEnd.flags, { jobEnded: "provider_error" }) && eq(fDone.flags, { jobDone: true }) && [fTaken, fCan, fEnd, fDone].every((x) => x.sv.cancels.length === 1),
+            short([fTaken.flags, fCan.flags, fEnd.flags, fDone.flags]));
+        // a Cancel while the result of a run seen COMPLETED comes: it had finished, so no stop request goes
+        const fRead = await flagCase({ statusRest: undefined, resultRest: (b, call, init) => new Promise((_, rej) => init.signal.addEventListener("abort", () => rej(new DOMException("This operation was aborted", "AbortError")), { once: true })) });
+        check("a Cancel while the result of a run the status said COMPLETED is read: jobDone, no stop request", eq(fRead.flags, { jobDone: true }) && fRead.sv.cancels.length === 0 && fRead.sv.reads.length === 1, short({ flags: fRead.flags, cancels: fRead.sv.cancels.length }));
         const kSub = await cancelCase("run-cancel-submit", { submitRest: (b, c, init) => new Promise((_, rej) => init.signal.addEventListener("abort", () => rej(new DOMException("This operation was aborted", "AbortError")), { once: true })) });
         check("a Cancel while the submit is on its way (it may have landed): may still finish and be charged; no status read, no stop request", MAY.test(kSub.err || "") && kSub.sv.submits.length === 1 && kSub.sv.statuses.length === 0 && kSub.sv.cancels.length === 0, short({ err: kSub.err, submits: kSub.sv.submits.length }));
         const vf = variant("flux2_pro");
@@ -1095,6 +1252,7 @@ async function main() {
     check("no call reached the global fetch without a run's fake in place (nothing went to the network)", !STRAY.length, short(STRAY));
 
     const failed = results.filter((x) => !x).length;
+    DONE = true;
     console.log(`${results.length - failed} of ${results.length} checks passed`);
     console.log(failed ? "FAIL" : "PASS");
     process.exit(failed ? 1 : 0);
@@ -1119,4 +1277,7 @@ function loadRecipes() {
     return RECIPE_CACHE;
 }
 
+// a promise that never settles while only unref'd timers are left lets the process run dry with code 0 before the last
+// check: that is a failure, not a pass
+process.on("exit", (code) => { if (code === 0 && !DONE) { console.log("[FAIL] the test ended before its last check (a run that never settled)"); console.log("FAIL"); process.exitCode = 1; } });
 main().catch((err) => { console.log("[FAIL] " + (err && err.stack || err)); console.log("FAIL"); process.exit(1); });

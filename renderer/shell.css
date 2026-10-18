@@ -20,7 +20,9 @@ html, body { margin: 0; height: 100%; background: var(--sc-bg, #181818); color: 
 .dot.connected { background: var(--sc-ok, #4caf50); }
 .dot.connecting { background: var(--sc-accent, #f0c674); }
 .dot.error, .dot.missing-node { background: var(--sc-error, #e0533d); }
-.dot.error.absent { background: var(--sc-faint, #666); }   /* no ComfyUI at the URL: calm, only ComfyUI recipes need one */
+/* no ComfyUI at the URL: calm, only ComfyUI recipes and selection by text need one. A skin's own (unlayered) rule for
+   .dot.error beats this layered one, so a skin that colours the error dot colours this state too (skin_duck) */
+.dot.error.absent { background: var(--sc-faint, #666); }
 #shell-progress { display: inline-flex; align-items: center; gap: 6px; width: 200px; height: 14px; background: var(--sc-field, #111); border: 1px solid var(--sc-line, #333); border-radius: var(--sc-radius-sm, 3px); position: relative; overflow: hidden; }
 #shell-progress-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--sc-active, #3f6fb5); transition: width 0.15s; }
 #shell-progress-text { position: relative; font-size: 11px; padding-left: 6px; color: var(--sc-fg-strong, #eee); }

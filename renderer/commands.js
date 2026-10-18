@@ -751,7 +751,7 @@ const COMMANDS = {
     },
     close_document: {
         destructive: true,
-        description: "Close a tab without asking (unsaved changes are not written to its .scumble file). File › Reopen Closed Tab brings it back in this session; the document's files stay in the local store.",
+        description: "Close a tab without asking (unsaved changes are not written to its .scumble file). A run going in it stops as cancel_run stops it, and nothing lands: an API provider may still charge a job it already had. File › Reopen Closed Tab brings the tab back in this session, without the run; the document's files stay in the local store.",
         params: {},
         async run(ed) { const id = ed.node.id; host.shell.closeDocument(ed, { force: true }); return { closed: id, documents: host.editors().map(docSummary) }; },
     },
@@ -1551,7 +1551,7 @@ const COMMANDS = {
     },
     cancel_run: {
         scope: "app",
-        description: `Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends at once with the cancel, and nothing lands. A provider may still finish a job it already had and charge it. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running); landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 10 s).`,
+        description: `Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends with the cancel once the provider answered the stop (Comfy Cloud, Comfy Router: up to about 10 s), and nothing lands. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running), each with said: how it ended as Scumble knows it (Scumble asked the provider to stop the job; the job had already finished and is charged, its picture not kept; the job had already ended on the provider without a picture, with its status; nothing had gone to the provider; or Scumble stopped waiting and the provider may still finish and charge it, and for a Comfy Cloud job whose stop was not confirmed that Scumble keeps the job and opens its picture as a document of its own when Comfy has it), null while it has not ended; landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 25 s for an API run, 10 s for a run on the user's ComfyUI); note: those words together, and for a run that did not end in time that a provider may still finish a job it already had and charge it.`,
         params: { doc: P.int("only this tab's runs (the id from list_documents); every tab's when left out") },
         async run(_, a) {
             let ed = null;
@@ -1569,13 +1569,22 @@ const COMMANDS = {
             // its slot and its row in the title bar to go
             const over = () => runs.every((t) => !host._providerRuns.has(t) && !(t.editor && t.editor.providerPending === t))
                 && landing.every((x) => x.e.providerPending !== x.t);
-            const ended = runs.length || landing.length ? await until(over, 10000, 100) : true;
+            // an API run ends once main's stop is answered: Comfy Cloud asks the job to stop within 10 s (its one retry
+            // included), then ends its event stream; Comfy Router's stop has 10 s too (review G3.3), so it gets longer
+            // than a run on the user's ComfyUI
+            const api = (t) => !!(t.runId && t.provider && t.provider !== "comfyui");
+            const ended = runs.length || landing.length ? await until(over, runs.some(api) ? 25000 : 10000, 100) : true;
             const notes = [];
-            if (runs.length) notes.push("A provider may still finish a job it already had and charge it.");
+            // each API run's own words from main (what Scumble knew of the job when it stopped, review G3.2); the
+            // generic one only for a run that has not ended, or ended without words
+            const gone = (t) => !host._providerRuns.has(t) && !(t.editor && t.editor.providerPending === t);
+            for (const t of runs) if (api(t) && gone(t) && t.said) notes.push(`${t.label || t.provider}: ${t.said}`);
+            if (runs.some((t) => api(t) && !(gone(t) && t.said))) notes.push("A provider may still finish a job it already had and charge it.");
+            if (runs.some((t) => !api(t))) notes.push("A run on your ComfyUI has its job taken off the server.");
             if (landing.length) notes.push("A run's answer was already in and is landing: it can no longer be cancelled (Ctrl+Z takes it back once it is in).");
             if (!notes.length) notes.push("Nothing was running" + (ed ? " on this document." : "."));
             return {
-                cancelled: runs.map((t) => ({ doc: t.editor && t.editor.node ? t.editor.node.id : null, provider: t.provider || null, label: t.label || t.provider || null, seconds: Math.round((now - (t.started || now)) / 100) / 10 })),
+                cancelled: runs.map((t) => ({ doc: t.editor && t.editor.node ? t.editor.node.id : null, provider: t.provider || null, label: t.label || t.provider || null, seconds: Math.round((now - (t.started || now)) / 100) / 10, said: gone(t) && t.said ? t.said : null })),
                 landing: landing.map((x) => ({ doc: x.e.node ? x.e.node.id : null, label: x.t.label || x.t.provider || null })),
                 ended,
                 note: notes.join(" "),

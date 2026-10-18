@@ -259,7 +259,17 @@ async function closeDocument(editor, { force = false } = {}) {
     // a render on the user's ComfyUI counts (busy() leaves it out): its result lands nowhere once the tab is closed
     // (one the bar no longer follows, deleted from ComfyUI's queue or ended unseen, does not count)
     const rendering = !!(editor._localRuns && [...editor._localRuns].some((id) => !editor.runProgress || editor.runProgress.wants(id)));
-    if (!force && editor.base && (busy(editor) || rendering) && !(await dialogs.confirm(`${docName(editor)} is still working${editor._docSaving ? " (saving)" : rendering && !busy(editor) ? " (a render on your ComfyUI; its result would be lost)" : ""}. Close it anyway?`, { ok: "Close", danger: true }))) return false;
+    // a run in the title row stops with the tab (host.removeEditor cancels it): an API run's provider may still charge
+    // a job it already had, a picture run on the user's ComfyUI lands nothing. A tab with no picture asks too while a
+    // run holds it (Generate new, whose paid job would stop unasked); a save going on is named beside the run
+    const runs = host.runsOf ? host.runsOf(editor) : [];
+    const paid = runs.find((t) => t.provider && t.provider !== "comfyui");
+    const what = [editor._docSaving ? "saving" : "",
+        paid ? `a run on ${paid.label || paid.provider}: closing stops it, and the provider may still charge it`
+            : runs.length ? "a run on your ComfyUI: closing stops it, and its result would be lost"
+                : rendering && !busy(editor) ? "a render on your ComfyUI; its result would be lost" : ""].filter(Boolean);
+    const why = what.length ? ` (${what.join("; ")})` : "";
+    if (!force && (editor.base || runs.length) && (busy(editor) || rendering) && !(await dialogs.confirm(`${docName(editor)} is still working${why}. Close it anyway?`, { ok: "Close", danger: true }))) return false;
     if (!force && editor.base && !editor._docSaving && host.documentDirty(editor)) {
         const choice = await host.askDocument({ kind: "close", name: editor.docFile ? editor.docFile.name : docName(editor), hasFile: !!editor.docFile });
         if (choice === "cancel" || !host.editors().includes(editor)) return false;
@@ -3261,8 +3271,34 @@ selectRecipe(settings.recipe);
 // chosen (an open compares the document's recipe with it)
 takesPending = true;
 await openPendingDocuments();
-// Comfy Cloud results that came in after Scumble closed (docs/PLAN_COMFY_SDK.md S6): each opens as a document of its own
-recoverCloudResults().catch((err) => console.warn("cloud jobs:", err && err.message));
+
+/**
+ * The window's side of the Comfy Cloud notes (S6; the fix contract of 0.1.49, section 2): main reads every note it
+ * has not handed to this page (none while no window is visible), and the window asks one at a time; an event or the
+ * timer that comes while an ask runs makes exactly one more ask after it. While main keeps jobs, the next ask comes
+ * 90 s later (one timer at a time; an ask that starts otherwise replaces it). `api` and `recheckMs` are what the
+ * gates stand in for.
+ */
+export const cloudJobs = {
+    api: {
+        recover: () => (window.scumble.providers && typeof window.scumble.providers.recoverCloudJobs === "function" ? window.scumble.providers.recoverCloudJobs() : null),
+        ack: (jobId) => window.scumble.providers.ackCloudJob(jobId),
+    },
+    recheckMs: 90000,
+    asking: false,
+    again: false,
+    timer: null,
+    said: "",     // the counts the line in front named last: an ask that brings nothing new does not say them again
+    asks: 0,
+};
+
+// Comfy Cloud results that came in after Scumble closed, or that a run of this session could not bring
+// (docs/PLAN_COMFY_SDK.md S6): each opens as a document of its own; main says when its notes changed (a run kept one,
+// a hidden window was shown)
+if (window.scumble.providers && typeof window.scumble.providers.onCloudJobsChanged === "function") {
+    window.scumble.providers.onCloudJobsChanged(() => { recoverCloudResults(); });
+}
+recoverCloudResults();
 showStatus(await window.scumble.comfy.status());
 window.scumble.commands.ready();
 // the assistant's column (docs/PLAN_ASSISTANT.md A5): built last, so its window key listener is
@@ -3289,55 +3325,76 @@ window.scumble.comfyView.onSaved(async ({ id, message }) => {
 const comfyEditButton = $("shell-comfy-edit");
 if (comfyEditButton) comfyEditButton.addEventListener("click", () => openRecipeInComfy(ui.recipe.value));
 
-const CLOUD_RECHECK_MS = 90000;   // how often the jobs still running at the start are read again
-
 /**
- * The Comfy Cloud jobs a crash or a quit left (main reads them once, never on a headless or agent start): each picture
- * of one that finished opens as a new document in the background (the document in front stays in front, which names
- * them), and its note goes once the picture is in; the ones still running are read again every 90 s.
+ * One ask (the start's, main's onCloudJobsChanged, the 90 s timer): each picture of a job that finished opens as a
+ * new document in the background (the document in front stays in front, which names them), and its note goes once
+ * the picture is in; the line in front says what main keeps, by why it keeps it.
  */
 async function recoverCloudResults() {
-    if (!window.scumble.providers || typeof window.scumble.providers.recoverCloudJobs !== "function") return;
-    const r = await window.scumble.providers.recoverCloudJobs();
-    const opened = await openCloudResults((r && r.pictures) || []);
-    const running = r && r.kept > 0 && !r.skipped ? r.kept : 0;
-    const say = [opened, running ? `${running} Comfy Cloud job${running === 1 ? "" : "s"} of an earlier run ${running === 1 ? "is" : "are"} still running: Scumble opens the picture${running === 1 ? "" : "s"} when ${running === 1 ? "it is" : "they are"} done.` : ""].filter(Boolean).join(" ");
-    if (say && host.editor) host.editor.setStatus(say);
-    if (running) recheckCloudResults();
+    const c = cloudJobs;
+    if (c.asking) { c.again = true; return; }
+    c.asking = true;
+    clearTimeout(c.timer);
+    c.timer = null;
+    let r = null;
+    try {
+        c.asks++;
+        r = await c.api.recover();
+        const opened = await openCloudResults((r && r.pictures) || []);
+        const counts = r && !r.skipped ? cloudCountWords(r) : "";
+        const say = [opened, counts && (opened || counts !== c.said) ? counts : ""].filter(Boolean).join(" ");
+        c.said = counts;
+        if (say && host.editor) host.editor.setStatus(say, "info");
+    } catch (err) {
+        console.warn("cloud jobs:", err && err.message);
+    } finally {
+        c.asking = false;
+        if (c.again) { c.again = false; recoverCloudResults(); }
+        else if (r && r.kept > 0) c.timer = setTimeout(() => { c.timer = null; recoverCloudResults(); }, c.recheckMs);
+    }
 }
 
-function recheckCloudResults() {
-    setTimeout(async () => {
-        try {
-            const r = await window.scumble.providers.recoverCloudJobs({ recheck: true });
-            const opened = await openCloudResults((r && r.pictures) || []);
-            if (opened && host.editor) host.editor.setStatus(opened);
-            if (r && r.kept > 0) recheckCloudResults();
-        } catch (err) { console.warn("cloud jobs:", err && err.message); }
-    }, CLOUD_RECHECK_MS);
+/** What main keeps, one sentence per reason (running, not answered, not downloaded yet), or "". */
+function cloudCountWords(r) {
+    const n = (k) => Math.max(0, Math.floor(+r[k] || 0));
+    const running = n("running"), unanswered = n("unanswered"), unread = n("unread");
+    const out = [];
+    if (running) out.push(running === 1 ? "1 Comfy Cloud job is still running: Scumble opens its picture when it is done." : `${running} Comfy Cloud jobs are still running: Scumble opens their pictures when they are done.`);
+    if (unanswered) out.push(unanswered === 1 ? "Comfy did not answer about 1 Comfy Cloud job: Scumble asks again in 90 s." : `Comfy did not answer about ${unanswered} Comfy Cloud jobs: Scumble asks again in 90 s.`);
+    if (unread) out.push(unread === 1 ? "1 finished Comfy Cloud job could not be downloaded yet: Scumble tries again in 90 s." : `${unread} finished Comfy Cloud jobs could not be downloaded yet: Scumble tries again in 90 s.`);
+    return out.join(" ");
 }
 
 /**
- * Opens brought-back pictures as background documents; a picture that does not open keeps its note (the next start
- * asks). The line for the document in front naming the new tabs, or "".
+ * Opens brought-back pictures as background documents; a picture that does not open keeps its note (main hands it
+ * to this page once, so the next start asks). `earlier`: the note was written before this start (else a run of this
+ * session could not bring its picture). The line for the document in front naming the new tabs, or "".
  */
 async function openCloudResults(pictures) {
     const opened = [];
+    let allEarlier = true;
     for (const p of pictures) {
         const ed = newDocument();
         const name = `comfy-cloud-${String(p.jobId).slice(0, 8)}.${/jpe?g/i.test(p.mime || "") ? "jpg" : /webp/i.test(p.mime || "") ? "webp" : "png"}`;
         await ed.loadFile(new File([p.bytes], name, { type: p.mime || "image/png" }), { ask: false });
+        const earlier = p.earlier !== false;
         if (!ed.base) {
-            ed.setStatus(`${ed.status} This Comfy Cloud result of an earlier run could not be opened; Scumble asks Comfy for it again at the next start.`, "error");
+            ed.setStatus(`${ed.status} This Comfy Cloud result${earlier ? " of an earlier run" : ""} could not be opened; Scumble asks Comfy for it again at the next start.`, "error");
             continue;
         }
         const when = p.started ? new Date(p.started).toLocaleString() : "earlier";
-        ed.setStatus(`A Comfy Cloud result that came in after Scumble closed (${p.model || "Comfy Cloud"}, started ${when}): opened as a document of its own.`);
-        try { await window.scumble.providers.ackCloudJob(p.jobId); } catch (_) { /* the next start brings it again */ }
+        const model = p.model || "Comfy Cloud";
+        ed.setStatus(earlier
+            ? `A Comfy Cloud result that came in after Scumble closed (${model}, started ${when}): opened as a document of its own.`
+            : `A Comfy Cloud result its run could not bring at the time (${model}, started ${when}): opened as a document of its own.`);
+        try { await cloudJobs.api.ack(p.jobId); } catch (_) { /* the next start brings it again */ }
         opened.push(ed);
+        if (!earlier) allEarlier = false;
     }
     if (!opened.length || !host.editor || opened.includes(host.editor)) return "";
-    return `${opened.length === 1 ? "A Comfy Cloud result" : `${opened.length} Comfy Cloud results`} of an earlier run opened in ${opened.length === 1 ? "a tab" : "tabs"} of ${opened.length === 1 ? "its" : "their"} own: ${opened.map((e) => docName(e)).join(", ")}.`;
+    // "of an earlier run" only when each came in after Scumble closed, not for a picture a run of this session missed
+    const ofEarlier = allEarlier ? " of an earlier run" : "";
+    return `${opened.length === 1 ? "A Comfy Cloud result" : `${opened.length} Comfy Cloud results`}${ofEarlier} opened in ${opened.length === 1 ? "a tab" : "tabs"} of ${opened.length === 1 ? "its" : "their"} own: ${opened.map((e) => docName(e)).join(", ")}.`;
 }
 
 /** Whether a provider recipe is a Comfy Cloud recipe with a graph of its own (item 35 V5). */
@@ -3439,4 +3496,4 @@ ui.logOpen.addEventListener("click", () => window.scumble.log.open());
 ui.logClear.addEventListener("click", async () => { await window.scumble.log.clear(); logState.entries = []; renderLog(); });
 host.openConsole = () => openConsole();
 
-export { newDocument, activate, closeDocument, canvasOnly, isCanvasOnly, openSettings, openConsole, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory, cardMemory, cardShortfall, saveBeforeRestart };
+export { newDocument, activate, closeDocument, canvasOnly, isCanvasOnly, openSettings, openConsole, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory, cardMemory, cardShortfall, saveBeforeRestart, recoverCloudResults };

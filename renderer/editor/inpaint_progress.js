@@ -159,6 +159,9 @@ export class RunProgress {
     state() {
         const secs = (t0) => Math.max(0, Math.floor((this.now() - t0) / 1000));
         let id = this.active && this.runs.has(this.active) ? this.active : null;
+        // no latest start known (idle() let it go, the prompt came back by its own event or revive()): a local prompt
+        // that runs before a provider's run, which then shows beside it as its timed run
+        if (!id) for (const [k, r] of this.runs) if (r.started && !r.share) { id = k; break; }
         if (!id) for (const [k, r] of this.runs) if (r.started) { id = k; break; }
         if (!id && this.runs.size) id = this.runs.keys().next().value;
         const run = id ? this.runs.get(id) : null;

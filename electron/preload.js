@@ -137,9 +137,13 @@ contextBridge.exposeInMainWorld("scumble", {
         // a run's live progress ({ runId, status, queuePosition, value, step, steps, nodesDone, nodesTotal, node,
         // nodeClass }); returns the unsubscribe
         onProgress: (cb) => on("provider:progress", cb),
-        // the Comfy Cloud results a crash left (S6): { pictures: [{ jobId, model, started, bytes, mime }], kept, dropped, skipped }
+        // the noted Comfy Cloud jobs (S6): { pictures: [{ jobId, bytes, mime, model, recipe, started, earlier }], kept,
+        // keptIds, running, unanswered, unread, dropped, skipped }; `skipped` "agent start" while no window is shown
         recoverCloudJobs: (opts) => ipcRenderer.invoke("provider:recoverCloudJobs", opts || null),
         ackCloudJob: (jobId) => ipcRenderer.invoke("provider:ackCloudJob", jobId),
+        // main says the noted jobs changed (a run kept its job's note or put it back, the window was shown after an
+        // ask it skipped): the window asks again; returns the unsubscribe
+        onCloudJobsChanged: (cb) => on("provider:cloudJobsChanged", () => cb()),
         layout: (shape) => ipcRenderer.invoke("provider:layout", shape),
         balance: (id) => ipcRenderer.invoke("provider:balance", id),
     },

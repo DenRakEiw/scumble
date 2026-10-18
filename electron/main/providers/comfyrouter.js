@@ -69,7 +69,8 @@ const POLL_MIN_MS = 1000;
 const POLL_MAX_MS = 15000;       // a Retry-After is a hint; a longer one is capped so a finished run is seen soon
 const RESEND_MAX = 3;            // submits of one run in all (the same Idempotency-Key each time)
 const RESEND_WAIT_MAX_MS = 60000;
-const POLL_FAILURES_MAX = 5;     // status reads in a row that may fail (a 5xx, a dropped connection) before giving up
+const POLL_FAILURES_MAX = 5;     // status reads in a row that may fail (a 5xx, a dropped connection) before giving up;
+                                 // once the run has finished, its result reads in all
 const REQUEST_BYTES_MAX = 100 * 1024 * 1024;   // the whole JSON body ("capped at 100 MiB")
 const PICTURES_BYTES_MAX = 64 * 1024 * 1024;   // one request's images together (the media resolver's cap)
 const PICTURE_BYTES_MAX = 25 * 1024 * 1024;    // one image (the media resolver's cap)
@@ -140,6 +141,7 @@ const WORDS = {
     rate_limited: "rate limited",
     cancelled: "the run was cancelled",
     queue_timeout: "the run waited too long in Comfy's queue and was never started",
+    queue_backlog_full: "too many of this account's runs are waiting in Comfy's queue; it clears as they finish",
     request_not_found: "Comfy Router no longer knows this run",
 };
 
@@ -608,11 +610,13 @@ const DIALECTS = {
 //
 // comfy.models (comfysdk.routerSetup: this run's key and host, set right before it) submits to the queue under one
 // Idempotency-Key, polls the status and collects the result, and itself sends a submit or a read again after a dropped
-// connection or a 5xx, under the same key (the Router replays). What it leaves to the caller stays here: a submit the
-// Router throttles (429) or holds back (409 concurrency, 503) is sent again under the same key after its Retry-After; a
-// status read it throttles, or a result route that says "not finished" after the status said done, is waited out and
-// the run read again by its id; a key the queue refuses with not_enabled goes to the synchronous route; the user's
-// Cancel and a timeout ask the Router to stop the run. Pictures come back as JSON on the queue and may come as bytes on
+// connection or a 5xx, under the same key (the Router replays), within a budget counted from the call's start. What it
+// leaves to the caller stays here: a submit the Router throttles (429) or holds back (409 concurrency, 503) is sent
+// again under the same key after its Retry-After, and a submit that got no answer once more (a long upload spends the
+// SDK's whole budget on its first attempt); a status read it throttles, or a result route that says "not finished"
+// after the status said done, is waited out and the run read again by its id; a key the queue refuses with not_enabled
+// goes to the synchronous route; when the wait is over the run is read once more, and the user's Cancel and a timeout
+// ask the Router to stop a run that has not finished. Pictures come back as JSON on the queue and may come as bytes on
 // the synchronous route.
 
 const SUBMIT_MIN_MS = 120000;    // a submit's deadline: at least this, longer for a large body (32 KB/s)
@@ -620,6 +624,7 @@ const SUBMIT_RATE = 32768;
 const SUBMIT_RETRY_MS = 30000;   // how long the SDK sends a submit again after a dropped connection or a 5xx
 const RESULT_MIN_MS = 300000;    // the result read once the status said done
 const CANCEL_MS = 10000;
+const LOOK_MS = 30000;           // the last read of a run whose wait is over, and the stop request after it (lastLook)
 
 /** The error's bucket: a RouterError's errorType, a ComfyError's code (never instanceof: the two families differ). */
 function typeOf(err) {
@@ -649,24 +654,32 @@ const SDK_WORDS = {
     missing_credentials: "no key",
 };
 
-/** An SDK error of a Router call in Scumble's words: the bucket's, the server's own, a 422's fields; the key scrubbed. */
-function routerFail(err, modelId, key, what) {
-    const head = `Comfy Router ${modelId}${what ? " " + what : ""}`;
-    if (!err || typeof err !== "object") return new Error(scrub(`${head}: ${err}`, key));
-    if (unanswered(err)) return new Error(scrub(`${head}: no answer from the Router (${err.message || err})`, key));
+/**
+ * An SDK error of a Router call in Scumble's words, without a head: the bucket's, the server's own, a 422's fields; the
+ * key scrubbed. The server's text has no length limit and explain() cuts it, so the key is taken out of it before any
+ * cut (a key cut in two is no longer found).
+ */
+function failWords(err, key) {
+    if (!err || typeof err !== "object") return scrub(String(err), key);
+    if (unanswered(err)) return scrub(`no answer from the Router (${err.message || err})`, key);
     const type = typeOf(err);
     const status = +err.httpStatus || 0;
     // a 422's fields ({ loc, msg }); the SDK's message names the first alone
     const fields = Array.isArray(err.detail) ? err.detail.filter((d) => d && typeof d === "object").map((d) => {
         const loc = Array.isArray(d.loc) ? d.loc.filter((x) => x !== "body").join(".") : "";
-        return `${loc ? loc + ": " : ""}${String(d.msg || d.type || "invalid")}`;
+        return scrub(`${loc ? loc + ": " : ""}${String(d.msg || d.type || "invalid")}`, key);
     }) : [];
-    let detail = String(err.message || "");
+    let detail = scrub(String(err.message || ""), key);
     if (/^HTTP \d+$/.test(detail)) detail = "";   // the SDK's stand-in when the body said nothing
     const body = Object.prototype.hasOwnProperty.call(SDK_WORDS, type) ? `${SDK_WORDS[type]}${detail ? " - " + detail : ""}`
         : explain(status, { type, detail: fields.length ? "" : detail, fields, upstream: "" });
     const wait = (status === 429 || status === 409 || status === 503) && +err.retryAfter > 0 ? `; try again in ${Math.ceil(+err.retryAfter)} s` : "";
-    return new Error(scrub(`${head}: ${body}${wait}`, key));
+    return scrub(`${body}${wait}`, key);
+}
+
+/** An SDK error of a Router call as an Error: "Comfy Router <model>[ <what>]: " and failWords. */
+function routerFail(err, modelId, key, what) {
+    return new Error(scrub(`Comfy Router ${modelId}${what ? " " + what : ""}: ${failWords(err, key)}`, key));
 }
 
 /** { json } of a JSON answer or { bytes, mime } of one answered as bytes (the synchronous route), with its metadata. */
@@ -679,7 +692,9 @@ function answerOf(r, requestId) {
 
 /**
  * Sends one run and waits for its answer (see above). `flags` is providers/index.js's own context, which words a
- * Cancel by what it says: jobSent (a run may exist), cancelAsked (the Router took the stop), jobDone (it had finished).
+ * Cancel by what it says: jobSent (a run may exist; false while a 429 queue_backlog_full keeps the request out of the
+ * queue), cancelAsked (the Router took the stop), jobDone (it had finished with a picture), jobEnded (it had ended
+ * without one: the error_type the Router named).
  */
 async function send(ctx, flags, modelId, body, waitMs) {
     splitModel(modelId);
@@ -688,89 +703,159 @@ async function send(ctx, flags, modelId, body, waitMs) {
     const comfy = require("./comfysdk").routerSetup(ctx);
     const signal = ctx.signal || undefined;
     const stopped = () => !!(signal && signal.aborted);
-    // the SDK sends a submit again itself after a dropped connection or a 5xx, under the same key, for this long; past
-    // it (an offline machine, an outage) the run fails instead of uploading the body for minutes
+    // the SDK sends a submit again itself after a dropped connection or a 5xx, under the same key, for this long from
+    // the submit's start; past it (an offline machine, an outage) the run fails instead of uploading the body for
+    // minutes. A first attempt that alone takes this long (a large body on a slow line) gets no resend from the SDK,
+    // so a submit that got no answer is sent once more below
     const submitRetry = ctx.routerRetry || { budgetMs: SUBMIT_RETRY_MS };
     const key = ctx.uuid();
-    // a Cancel that came before anything went: nothing runs (index.js words it by jobSent)
-    if (stopped()) throw Object.assign(new Error("cancelled"), { name: "AbortError" });
-    flags.jobSent = true;
     let handle = null;
+    let lostOnce = false;      // a submit that got no answer has been sent once more
+    let mayHaveLanded = false; // an attempt may have reached the queue: no answer, a 409 for this key, a 5xx
     for (let n = 1; !handle; n++) {
+        // a Cancel that came before this submit (before the first, or while a refused one waited): nothing more goes
+        // (index.js words it by jobSent, true from here unless a 429 queue_backlog_full below says nothing was queued)
+        if (stopped()) throw Object.assign(new Error("cancelled"), { name: "AbortError" });
+        flags.jobSent = true;
         try {
             handle = await comfy.models.submit(modelId, body, { idempotencyKey: key, signal, retry: submitRetry, timeoutMs: Math.max(SUBMIT_MIN_MS, Math.ceil(json.length / SUBMIT_RATE) * 1000) });
         } catch (err) {
             if (stopped()) throw err;
             const type = typeOf(err);
+            const status = +err.httpStatus || 0;
             if (type === "not_enabled") {
                 // a key without a workspace behind it cannot use the queue; the synchronous route may still take it
                 ctx.log("the queue refused this key (not_enabled), sending to the synchronous route");
                 return sync(ctx, comfy, modelId, body, waitMs);
             }
-            // what the SDK does not send again: a 429 / 409 that names a wait, and a submit past its own deadline (once
-            // more; the Router replays it under the same key if the first one landed)
-            const again = (type === "rate_limited" || type === "concurrency_limit_exceeded" || type === "queue_backlog_full") || (type === "request_timeout" && n === 1);
+            // a 429 queue_backlog_full is the queue's refusal to admit this key: nothing is queued or charged under it.
+            // That holds after the SDK's own resend of a dropped first attempt too, which is not seen here: a same-key
+            // resend of a run the queue had admitted gets that run back (the Router replays), not a refusal. Kept true
+            // after an attempt this loop saw that may have landed (no answer, a 409, a 5xx), to be safe. A 429
+            // rate_limited is a window's allowance, which a dropped first attempt may itself have spent before the
+            // SDK's resend was refused: it says nothing about an earlier attempt, so jobSent stays true for it
+            const refused = status === 429 && (type === "rate_limited" || type === "queue_backlog_full");
+            if (!refused) mayHaveLanded = true;
+            else if (type === "queue_backlog_full" && !mayHaveLanded) flags.jobSent = false;
+            // what the SDK does not send again: a submit the Router throttled or held back (429, 409, 503) after its
+            // Retry-After, and a submit that got no answer (past its own deadline, or a dropped connection after the
+            // SDK's budget) once more; the Router replays it under the same key if the first one landed
+            const lost = type === "request_timeout" || unanswered(err);
+            const again = (heldBack(type) && status > 0) || (lost && !lostOnce);
             const ms = +err.retryAfter > 0 ? +err.retryAfter * 1000 : POLL_MS;
             if (again && n < RESEND_MAX && ms <= RESEND_WAIT_MAX_MS) {
-                ctx.log(`submit answered ${type || err.message}, sending the same request again after ${ms} ms`);
+                if (lost) lostOnce = true;
+                ctx.log(`submit ${lost ? "got no answer" : "answered " + type}, sending the same request again after ${ms} ms`);
                 await ctx.sleep(ms);
                 continue;
             }
-            throw routerFail(err, modelId, ctx.key);
+            const fail = routerFail(err, modelId, ctx.key);
+            if (lost) throw new Error(scrub(`${fail.message}${lostOnce ? ", also when sent once more under the same key" : ""}; Scumble does not send it again, and if the Router took it, it may run and be charged.`, ctx.key));
+            throw fail;
         }
     }
+    // the update that said COMPLETED, once one did (collect sets it; the Cancel below reads it)
+    const seen = { done: null };
     try {
         // the run's wait starts once it is queued (a long upload does not count against it)
-        return await collect(handle, ctx, modelId, waitMs, Date.now());
+        return await collect(handle, ctx, modelId, waitMs, Date.now(), seen);
     } catch (err) {
         if (stopped()) {
-            // the user's Cancel: the Router is asked to stop the run, on a short request of its own (the run's signal fired)
-            try {
-                const u = await handle.cancel({ timeoutMs: CANCEL_MS, retry: false });
-                if (u && u.completed) flags.jobDone = true;
-                else flags.cancelAsked = true;
-            } catch (_) { /* index.js says the run may still finish */ }
+            if (finished(seen.done)) flags.jobDone = true;   // it had finished: charged, nothing to stop
+            else {
+                // the user's Cancel: the Router is asked to stop the run, on a short request of its own (the run's
+                // signal fired); a run that had ended answers COMPLETED, with an error_type when it ended without a
+                // picture ("cancelled": the stop was taken)
+                try {
+                    const u = await handle.cancel({ timeoutMs: CANCEL_MS, retry: false });
+                    if (finished(u)) flags.jobDone = true;
+                    else if (u && u.completed && u.errorType !== "cancelled") flags.jobEnded = String(u.errorType);
+                    else flags.cancelAsked = true;
+                } catch (_) { /* index.js says the run may still finish */ }
+            }
         }
         throw err;
     }
 }
 
-/** A queued run to its answer: the status (frames for the bar), then the result; held-back reads waited out. */
-async function collect(handle, ctx, modelId, waitMs, t0) {
+/** Whether a queue update says the run finished with a picture: COMPLETED without an error_type. */
+const finished = (u) => !!(u && u.completed && !u.errorType);
+
+/**
+ * A queued run to its answer: the status (frames for the bar), then the result; held-back reads waited out. Once the
+ * status says COMPLETED (`seen.done`) it is not followed again: the result is read, POLL_FAILURES_MAX times at most in
+ * all, and a run that finished is never asked to stop. When the wait is over, lastLook reads the run once more first.
+ */
+async function collect(handle, ctx, modelId, waitMs, t0, seen) {
     const signal = ctx.signal || undefined;
     const stopped = () => !!(signal && signal.aborted);
     const retry = ctx.routerRetry;
     const end = t0 + waitMs;
-    for (let failures = 0; ;) {
+    let failures = 0;
+    for (;;) {
         try {
-            const left = end - Date.now();
-            if (left <= 0) throw Object.assign(new Error("out of time"), { code: "request_timeout" });
-            for await (const u of handle.events({ signal, timeoutMs: left, retry })) {
-                failures = 0;
-                if (typeof ctx.progress === "function") ctx.progress({ status: u.status, queuePosition: u.queuePosition, urgent: true });
-                if (u.completed && u.errorType) ctx.log(`completed with error_type ${u.errorType}`);
+            if (!seen.done) {
+                const left = end - Date.now();
+                if (left <= 0) throw Object.assign(new Error("out of time"), { code: "request_timeout" });
+                for await (const u of handle.events({ signal, timeoutMs: left, retry })) {
+                    // a status read was answered (every events() yields its first), so the reads that failed before
+                    // it were not in a row
+                    failures = 0;
+                    if (typeof ctx.progress === "function") ctx.progress({ status: u.status, queuePosition: u.queuePosition, urgent: true });
+                    if (u.completed) seen.done = u;
+                    if (u.completed && u.errorType) ctx.log(`completed with error_type ${u.errorType}`);
+                }
             }
+            // the result (an error_type the status named is raised here as its typed error)
             const r = await handle.get({ signal, timeoutMs: Math.max(RESULT_MIN_MS, end - Date.now()), retry });
             return answerOf(r, handle.requestId);
         } catch (err) {
             if (stopped()) throw err;
             const type = typeOf(err);
-            if (type === "request_timeout" || Date.now() >= end) {
-                try { await handle.cancel({ timeoutMs: CANCEL_MS, retry: false }); } catch (_) { /* a request, not a guarantee */ }
-                throw new Error(`Comfy Router ${modelId}: no answer after ${Math.round(waitMs / 60000)} minutes; the run was asked to stop (a run the provider finishes anyway is billed).`);
+            if (!seen.done && (type === "request_timeout" || Date.now() >= end)) {
+                // the wait is over, or the machine slept past it: the run is read once more before it is given up
+                seen.done = await lastLook(handle, ctx, modelId, waitMs);
+                failures = 0;
+                continue;
             }
-            // a throttled read, a result route not ready although the status said done: read the run again by its id
-            // a held-back bucket counts only on a read that was answered so (an HTTP status): a run that COMPLETED with
-            // such an error_type (no status) has ended and is reported at once
+            // a throttled read, a result route not ready although the status said done, no answer: read the run again
+            // by its id. A held-back bucket counts only on a read that was answered so (an HTTP status): a run that
+            // COMPLETED with such an error_type (no status) has ended and is reported at once
             const throttledRead = heldBack(type) && +err.httpStatus > 0;
             const again = throttledRead || (type === "invalid_response" && +err.httpStatus === 202) || unanswered(err);
             if (again && ++failures < POLL_FAILURES_MAX) {
                 await ctx.sleep(Math.max(POLL_MIN_MS, Math.min(POLL_MAX_MS, +err.retryAfter > 0 ? +err.retryAfter * 1000 : POLL_MS * 2)));
                 continue;
             }
+            // a run that finished is charged whether or not its result can be read (a result read past its own
+            // deadline is not sent again): said so, and not asked to stop
+            if ((again || type === "request_timeout") && finished(seen.done)) throw new Error(scrub(`Comfy Router ${modelId}: the run finished and is charged, but its result could not be read: ${failWords(err, ctx.key)}`, ctx.key));
             throw routerFail(err, modelId, ctx.key, throttledRead ? "status" : "");
         }
     }
+}
+
+/**
+ * The wait is over (the run's deadline passed, or the machine slept past it): one more read of the run before it is
+ * given up, since a run that finished meanwhile is charged. A run that has ended is returned to be collected (or its
+ * error read); else the Router is asked to stop it, and a stop answered COMPLETED (with no error_type, or another than
+ * "cancelled") is returned the same way. Both calls are sent again after a dropped connection for LOOK_MS, measured
+ * from each call (a machine that has just woken has no network for a few seconds). Both go on the run's signal: a user
+ * Cancel ends either at once, and send() then asks the Router to stop on a short request of its own, which sets the
+ * Cancel's flags. Throws the words when it gives up.
+ */
+async function lastLook(handle, ctx, modelId, waitMs) {
+    const signal = ctx.signal || undefined;
+    const retry = ctx.routerRetry || { budgetMs: LOOK_MS };
+    let u = null;
+    try { u = await handle.status({ signal, timeoutMs: LOOK_MS, retry }); } catch (err) { if (signal && signal.aborted) throw err; }
+    if (u && u.completed) return u;
+    let stop = null;
+    try { stop = await handle.cancel({ signal, timeoutMs: LOOK_MS, retry }); } catch (err) { if (signal && signal.aborted) throw err; /* a request, not a guarantee */ }
+    if (stop && stop.completed && stop.errorType !== "cancelled") return stop;
+    const minutes = Math.round(waitMs / 60000);
+    if (stop && stop.completed) throw new Error(`Comfy Router ${modelId}: no answer after ${minutes} minutes; the run was stopped.`);
+    throw new Error(`Comfy Router ${modelId}: no answer after ${minutes} minutes; the run was asked to stop (a run the provider finishes anyway is billed).`);
 }
 
 /** The synchronous route, for a key the queue does not take; a new Idempotency-Key, since the path differs. */

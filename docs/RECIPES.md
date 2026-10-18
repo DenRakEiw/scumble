@@ -338,16 +338,25 @@ app); `comfycloud.js` `runV2` builds and sends the run, `finishV2` waits for it 
   not kept" (succeeded), "before the job went to Comfy Cloud: nothing runs or is charged" (a Cancel before the submit),
   else the words of every other provider ("may still finish the job and charge it").
 - **A run cut off.** Right after the submit `runV2` notes the job in `<userData>/cloudjobs.json` (`cloudjobs.js`: the
-  job's id, model, node, SaveImage and start time; at most 50 notes, written whole through a temp file) and takes the
-  note out at the run's end, except when the job succeeded but its picture did not come down, or may still run (its
-  status unread, a timeout whose stop Comfy did not take): then it stays. At the next start of the window, once its
-  documents are back (`provider:recoverCloudJobs`; never on a headless or agent start), `comfycloud.recoverJobs` reads
-  each note by its job id (20 s a read): a job that succeeded comes back as its picture, which the window opens as a new
-  document in the background (`comfy-cloud-<id>.png`, the document in front names it) and acknowledges
-  (`provider:ackCloudJob`), and only then does its note go; a picture that does not open keeps its note. A job still
-  queued or running, one Comfy did not answer and one whose picture did not come down stay noted and are read again
-  every 90 s while the window is open; a failed, canceled or expired job, one Comfy no longer knows (404) and one
-  that finished without an image are dropped, and so is a note older than 24 hours, unread. Without a key nothing is
+  job's id, model, node, SaveImage and start time; at most 50 notes, the ones older than a day trimmed first and a note
+  pushed out by a full file named in the log; written whole through a temp file, and a change whose read fails for any
+  reason but a missing or broken file writes nothing) and takes the note out at the run's end, except when the job may
+  still bring its picture: it succeeded but its picture did not come down (a 404 on the picture itself is final), it
+  lists no output yet, its status went unanswered, a timeout's stop or a user's Cancel was not confirmed by Comfy. Then
+  the note stays, the run's words end with "Scumble keeps the job and opens its picture as a document of its own when
+  Comfy has it." (`cloudjobs.KEPT`) and main tells the window (`provider:cloudJobsChanged`). So does a run whose page
+  went away before its answer came (a reload or a renderer crash during the run): its note is put back. The window asks
+  (`provider:recoverCloudJobs`) once its documents are back, on that event, and every 90 s while jobs are kept; main
+  reads one ask at a time, each ask every note but the jobs in flight in this process (`cloudjobs.flying`) and the
+  pictures it handed the current page that the page has not acked (a reload, a crash or a navigation forgets those, so
+  the new page gets them again), and nothing while no window is shown (a headless start, an agent start whose window is
+  still hidden; once the window is shown, main sends the event). `comfycloud.recoverJobs` reads each note by its job id
+  (20 s a read): a job that succeeded comes back as its picture, which the window opens as a new document in the
+  background (`comfy-cloud-<id>.png`, the document in front names it) and acknowledges (`provider:ackCloudJob`), and
+  only then does its note go; a picture that does not open keeps its note. The rest is counted: `running` (queued or
+  running), `unanswered` (no answer, a 5xx, a 429, a 401 or 403) and `unread` (succeeded, the picture not down yet, or no
+  output listed yet), each with its own line in the window; a failed, canceled or expired job, one Comfy no longer
+  knows (404), one whose outputs hold no image and a note older than 24 hours are dropped. Without a key nothing is
   asked and the notes wait. Nothing is ever submitted again.
 - **The legacy API, for this release.** `"comfycloud": { "api": "legacy" }` in `settings.json` (written with Scumble
   closed: the app keeps its own copy and writes it back whole) brings back the path of 0.1.48: `POST
@@ -2374,13 +2383,21 @@ templates, the host, the model id and the request id, never from a URL in an ans
    `invalid_response`). A run that `COMPLETED` with an `error_type` is its failure, reported at once.
 4. A status read answered 429, 409 or 503, a result route that still answers 202 after `COMPLETED`, and a read that
    got no answer are waited out (the `Retry-After`, 4 s without one, at least 1 s, at most 15 s) and the run read
-   again by its id; the fifth such failure in a row ends the run.
-5. After 15 minutes (30 for an upscale) the run is given up and `PUT .../cancel` is sent ("no answer after 15 minutes;
-   the run was asked to stop"). The docs: a partner run that completes anyway is billed.
+   again by its id; the fifth such failure in a row ends the run. Once the status said `COMPLETED` it is not followed
+   again: the result is read five times at most in all, and a run that finished is never asked to stop ("the run
+   finished and is charged, but its result could not be read").
+5. When 15 minutes (30 for an upscale) are over, or the machine slept past them, `lastLook` reads the run once more
+   (30 s, sent again after a dropped connection, measured from that read: a machine that has just woken has no network
+   for a few seconds). A run that has ended is collected; else `PUT .../cancel` is sent the same way, and a stop
+   answered `COMPLETED` without an `error_type` is collected too. Otherwise the run ends with "no answer after 15
+   minutes; the run was stopped" or "... asked to stop (a run the provider finishes anyway is billed)". Both requests
+   go on the run's signal, so a user's Cancel ends them at once.
 
 **Resends.** A submit the Router throttles or holds back (`rate_limited`, `concurrency_limit_exceeded`,
-`queue_backlog_full`) is sent again by the adapter **under the same Idempotency-Key** after its `Retry-After` (2 s
-without one), and a submit past its own deadline (`request_timeout`) once more; three submits in all. The Router
+`queue_backlog_full`, a 503) is sent again by the adapter **under the same Idempotency-Key** after its `Retry-After`
+(2 s without one), and a submit that got no answer (past its own deadline, or a dropped connection after the SDK's own
+30 s of resends, which count from the first attempt's start) once more; three submits in all. After the last one a
+submit that got no answer says the Router may have taken it and may charge it, and Scumble does not send it again. The Router
 replays a key it has seen: the same key returns the first run instead of queueing and billing a second (Comfy Cloud's
 v2 refuses a reused key instead, above). A `Retry-After` over 60 s is not waited out ("try again in N s").
 `402 insufficient_credits` and `invalid_input` are never sent again.
@@ -2388,10 +2405,13 @@ v2 refuses a reused key instead, above). A `Retry-After` over 60 s is not waited
 **Cancel.** The title row's Cancel during a Router run asks the Router to stop it: `handle.cancel()` (the `PUT
 .../cancel`) on a short request of its own (10 s, no retry, without the run's signal, which has fired). The status
 line says "Scumble asked Comfy Router to stop the job", or, when the Router answers that the run had completed, that
-it had finished and is charged (so does a Cancel while the answer's picture is being fetched); a Cancel before the
-submit sends nothing ("nothing runs or is charged"); a stop that gets no answer leaves the words of every other
-provider ("may still finish the job and charge it"). `providers/index.js` words it by the flags `send` sets on its
-context (`jobSent`, `cancelAsked`, `jobDone`).
+it had finished and is charged (so does a Cancel while the answer's picture is being fetched), or that it had already
+ended without a picture (`COMPLETED` with an `error_type` other than "cancelled", which is the stop taken); a Cancel
+before the submit, or while a 429 `queue_backlog_full` keeps the request out of the queue, sends nothing ("nothing runs
+or is charged"; a 429 `rate_limited` proves nothing about an earlier attempt and keeps the cautious words); a stop that
+gets no answer leaves the words of every other provider ("may still finish the job and charge it").
+`providers/index.js` words it by the flags `send` sets on its context (`jobSent`, `jobDone`, `jobEnded`,
+`cancelAsked`, in that order).
 
 **The synchronous route as fallback.** The queue answers `403 not_enabled` for "a key with no workspace behind it
 (legacy keys that predate workspaces)". The adapter then sends the same body once through `comfy.models.run` (`POST

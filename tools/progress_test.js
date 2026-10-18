@@ -129,6 +129,15 @@ const { pathToFileURL } = require("node:url");
     p.event("progress", { prompt_id: "N", node: "3", value: 10, max: 20 });
     check("provider first, then a local Generate: the local prompt takes the bar, the provider's run beside it, nothing queued",
         /^Generating · step 10\/20 · \d+ s · Comfy Cloud · 6 s$/.test(last().label) && last().queued === 0, last());
+    // the socket drops (idle keeps the provider's run) and the local prompt comes back, by its own next event or by
+    // revive(): it is the run shown again, not "1 more queued" behind the provider's run (review F10)
+    p.idle(new Set(["P"]));
+    check("the socket lost: the provider's run alone", /^Comfy Cloud · node 12\/12 · 6 s$/.test(last().label) && !p.runs.has("N"), last());
+    p.event("progress", { prompt_id: "N", node: "3", value: 11, max: 20 });
+    check("revived by its own next event: the local prompt has the bar again, the provider's run beside it, nothing queued",
+        /^Generating · step 11\/20 · \d+ s · Comfy Cloud · 6 s$/.test(last().label) && last().queued === 0, last());
+    p.idle(new Set(["P"]));
+    check("revived by the queue's read: the local prompt has the bar again", p.revive("N") && /^Generating · step 11\/20 · \d+ s · Comfy Cloud · 6 s$/.test(last().label) && last().queued === 0, last());
     p.done("N");
     p.done("P");
     p.timer(null);

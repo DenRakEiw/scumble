@@ -208,7 +208,11 @@ null: any), `background` (whether `generate_new`'s `background: "transparent"` r
 upscaler's `document_max`; `provider_keys` lists every API provider with whether a key is stored, as a
 boolean (never the key or its last characters). `cancel_run` cancels the runs in flight as the
 title row's Cancel does (one tab's with `doc`, else every tab's); a `generate`, `upscale` or
-`realism_pass` waiting on one ends at once, and a provider may still charge a job it already had; a run
+`realism_pass` waiting on one ends once the run has ended (on Comfy Cloud and Comfy Router once the provider answered
+the stop, up to about 10 s), and `cancel_run` returns each run's own words in `said` (the stop taken; the job had
+finished and is charged; it had ended without a picture; nothing had gone out; a Comfy Cloud job whose stop was not
+confirmed is kept and its picture opens when Comfy has it); the generic "a provider may still charge a job it already
+had" is for a run that did not end within the wait, or a provider that only stops waiting. A run
 whose answer is already landing can no longer be cancelled and is listed under `landing`. A
 Generate with a recipe on the user's own ComfyUI is not interrupted. `screenshot` takes `box` [x, y,
 w, h] (a region at up to 1:1, to judge an inpainted area of a large picture), `what: "base"` (the

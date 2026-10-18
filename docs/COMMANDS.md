@@ -62,7 +62,7 @@ Bring a tab to the front.
 
 ### `close_document` *(destructive)*
 
-Close a tab without asking (unsaved changes are not written to its .scumble file). File › Reopen Closed Tab brings it back in this session; the document's files stay in the local store.
+Close a tab without asking (unsaved changes are not written to its .scumble file). A run going in it stops as cancel_run stops it, and nothing lands: an API provider may still charge a job it already had. File › Reopen Closed Tab brings the tab back in this session, without the run; the document's files stay in the local store.
 
 | param | type | description |
 |---|---|---|
@@ -582,7 +582,7 @@ Relight the picture: edits an existing relight layer or adds a new one. Computes
 
 ### `cancel_run` *(app)*
 
-Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends at once with the cancel, and nothing lands. A provider may still finish a job it already had and charge it. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running); landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 10 s).
+Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends with the cancel once the provider answered the stop (Comfy Cloud, Comfy Router: up to about 10 s), and nothing lands. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running), each with said: how it ended as Scumble knows it (Scumble asked the provider to stop the job; the job had already finished and is charged, its picture not kept; the job had already ended on the provider without a picture, with its status; nothing had gone to the provider; or Scumble stopped waiting and the provider may still finish and charge it, and for a Comfy Cloud job whose stop was not confirmed that Scumble keeps the job and opens its picture as a document of its own when Comfy has it), null while it has not ended; landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 25 s for an API run, 10 s for a run on the user's ComfyUI); note: those words together, and for a run that did not end in time that a provider may still finish a job it already had and charge it.
 
 | param | type | description |
 |---|---|---|
