@@ -33,6 +33,11 @@ if (DATA_HOME.dir) app.setPath("userData", DATA_HOME.dir);
 const settings = require("./settings");
 const log = require("./log");
 log.install(require("node:path").join(app.getPath("userData"), "logs"));   // first: the console patch has to be in place before anything logs
+{
+    // the Comfy SDK reads its target and key from these; Scumble's come from its settings and the key store only
+    const gone = require("./providers/comfysdk").clearEnv();
+    if (gone.length) console.warn(`Comfy SDK: ignoring ${gone.join(", ")} from the environment`);
+}
 const { ComfyClient, authHeaders } = require("./comfy");
 const { FileMirror } = require("./files");
 const keys = require("./keys");
@@ -1200,7 +1205,7 @@ function installIpc() {
         settings.set({ assistant: a });
         return a.noticed;
     });
-    ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: msix.forExplorer(app.getPath("userData")), pluginDir: msix.forExplorer(plugins.userDir()), store: msix.isStore(), portable: PORTABLE, dataDir: PORTABLE ? DATA_HOME.dir : null }));
+    ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: msix.forExplorer(app.getPath("userData")), pluginDir: msix.forExplorer(plugins.userDir()), store: msix.isStore(), portable: PORTABLE, dataDir: PORTABLE ? DATA_HOME.dir : null, comfySdk: require("./providers/comfysdk").version() }));
     ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
     // item 40: the share targets for Settings › About; "copy" puts the line and the link on the clipboard
     ipcMain.handle("app:shareTargets", () => ({ repo: share.REPO, targets: share.TARGETS }));

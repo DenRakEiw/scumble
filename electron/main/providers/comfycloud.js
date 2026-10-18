@@ -36,6 +36,12 @@ const { readError, sleep, num, closestAspect } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://cloud.comfy.org";
+
+/** settings.comfycloud.base when it is the loopback mock (a test profile), else undefined (cloud.comfy.org). */
+function baseUrl(settings) {
+    const s = (settings && settings.comfycloud) || {};
+    return require("./comfysdk").testBase(s.base) || undefined;
+}
 const POLL_MS = 2000;
 
 /** Fit w x h into [lo, hi] per side, multiples of `step`. */
@@ -512,6 +518,7 @@ const UPSCALE_WAIT_MS = 30 * 60 * 1000;
 
 module.exports = {
     label: "Comfy Cloud",
+    baseUrl,
     keyUrl: "https://platform.comfy.org/profile/api-keys",
     keyHint: "API key from platform.comfy.org (Comfy Cloud needs a paid plan; Comfy Router and the Partner API run on the same key with credits only)",
     edit(req, ctx) { return run(req, ctx, EDIT_WAIT_MS); },

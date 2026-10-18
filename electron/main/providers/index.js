@@ -363,7 +363,10 @@ function contextFor(id, p, key, signal) {
     const ctx = {
         key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a), toJpeg, opaque, bitmap, fromBitmap, cropPng, resizePng,
         base: typeof p.baseUrl === "function" ? p.baseUrl(settings.get()) : undefined,
+        signal: signal || null,
     };
+    // Comfy Cloud: the Comfy API v2 through the SDK, or the legacy API for one release (docs/PLAN_COMFY_SDK.md 3.9)
+    if (id === "comfycloud") ctx.cloudApi = ((settings.get().comfycloud || {}).api === "legacy") ? "legacy" : "v2";
     if (signal) {
         // a run's every request and every wait between its polls end when the run is cancelled; the fetch is read at
         // call time (the tests put their fake in globalThis.fetch)

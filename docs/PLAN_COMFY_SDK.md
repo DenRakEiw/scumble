@@ -232,6 +232,22 @@ and `app/scumble/`; a test base rewrites only for a `test-` key and refuses a re
 `COMFY_ROUTER_BASE_URL`, `COMFY_API_KEY` set before `clearEnv()` change nothing after it; `routerSetup` sends to
 `https://api.comfy.org` even with the env set. Gates: that test, `lint`, `types`. Commit.
 
+**S0 as built (2026-10-18).** `@comfyorg/sdk` 0.5.0 pinned exactly (one zod 4.5.4; `eventsource-parser` 4.1.2 nested
+beside the MCP SDK's 3.1.1; `hash-wasm` 4.12.0); no `build.files` change. `electron/main/providers/comfysdk.js`:
+`load` / `loaded`, `version` (package.json beside `require.resolve`, the SDK not loaded), `clearEnv`, `testBase`,
+`checkKey(who, setting, test, key)`, `guarded(ctx, { bound, timeoutMs })` (cloud.comfy.org only; a test base gets
+every request of a test key and nothing else is reached; another origin only without the key), `cloudClient(ctx,
+{ bound })` (`timeoutMs` 300000, `clientInfo` `scumble/<version>`), `cancelJob(ctx, jobId)` (unbound, 10 s),
+`routerSetup(ctx)`, `errorText`, `scrub`. `main.js` clears the three variables right after the log is installed and
+answers `comfySdk` in `app:info`; `contextFor` adds `ctx.signal` and, for comfycloud, `ctx.cloudApi` ("v2" unless
+`settings.comfycloud.api` is "legacy"; the adapter ignores it until S1); `comfycloud.baseUrl(settings)` gives
+`ctx.base` from `settings.comfycloud.base`. QW1: *Settings › About* says "Comfy Cloud and Comfy Router run through
+Comfy's official TypeScript SDK (@comfyorg/sdk 0.5.0, MIT)" (true once S1 and S3 land). Checks: `tools/comfysdk_test.js`
+19/19; `comfyrouter_test.js`, `cloudgraph_test.js`, `upscale_test.js`, `refs_layout_test.js`, `nanobanana21_test.js`
+pass; gates `lint`, `types`, `platform`, `mcp`, `assistant` (offline); `npm run dist:dir`, then the packaged exe
+requires the SDK from inside `app.asar` and `version()` reads 0.5.0 there without loading it (`dist/win-unpacked` is
+now the `--dir` layout without `app-update.yml`; S5 rebuilds it).
+
 **S1: Comfy Cloud on v2 (light).** 3.3 and 3.6 in `comfycloud.js` (`runV2` beside `run`, `ctx.upload`, outputs,
 failures, lost-answer rule, timeout cancel). Test: new `tools/comfycloud_v2_test.js` on a fake v2 (`fetch` function
 in `tools/fake_comfy_v2.js`: by-hash 404 then upload, a second run with the same crop goes `from-hash` with no upload;
