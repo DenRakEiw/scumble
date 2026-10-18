@@ -112,8 +112,18 @@ code.
   closing a tab stops its runs, `cancel_run`'s `said`); 22 gates green on tiles together. Riding along: RTX VSR's two
   new required inputs (`c6f7fb0` by the demo-video session for Comfy Cloud, `71e851f` for the local recipe). **For
   the user:** the RTX node pack on their ComfyUI needs nvidia-vfx 0.2 or newer (python_embeded has 0.1.0.1, so the pack
-  fails at import: `python_embeded\python.exe -m pip install -U "nvidia-vfx>=0.2"`, their call). **Next: S5's local
-  release prep**, then the paid live run with the user's key (the plan's S5 list), then the release on the user's word.
+  fails at import: `python_embeded\python.exe -m pip install -U "nvidia-vfx>=0.2"`, their call). **S5's local prep
+  done** (2026-10-19 night, `354f0fc`: `## 0.1.49 - 2026-10-19` in the CHANGELOG, a later release day moves the date;
+  `package.json` 0.1.49): built from `2371baa` + the version commit `dist/Scumble Setup 0.1.49.exe`,
+  `dist/Scumble-0.1.49-portable-win-x64.zip` (174 MB; the SDK in the asar checked), `dist/scumble-0.1.49.mcpb`,
+  `dist/Scumble-0.1.49.msix` (`win-unpacked` is the Store layout since, without `app-update.yml`) and
+  `dist/store-listing/whats-new-0.1.49.txt`. Exe gates `--offline`: `rel49-exe` (tiles, 50: 0.1.48's list plus
+  `cloudjobs`) and `rel49-exe-canvas` (28) all PASS, comfyview 25 of 25. **Waiting for the user:** the paid live run
+  of the plan's S5 (a partner-node edit and a detached graph on Comfy Cloud, a Cancel during a Cloud run, the bar's
+  steps, one Comfy Router run with FLUX 3 Image; the key typed into a test instance by the user, about a few cents);
+  a defect it finds means a rebuild. Then the release chain on the user's word (`docs/RELEASING.md`: push, tag
+  v0.1.49, the CI draft, publish, manual sync, the blog post, `server.json` and the MCP Registry, the Store update
+  with the MSIX and its notes). Nothing is pushed.
   Open questions 1, 6, 7, 9 of the plan's section 8 go with the recommendations until the user answers (3 and 4 are
   built as recommended). The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own
   melody; the other two fit released songs and must not be used as audio).
