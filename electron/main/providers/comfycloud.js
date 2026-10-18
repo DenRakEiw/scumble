@@ -124,6 +124,8 @@ const SHAPES = {
     RTXVideoSuperResolution(g, v) {
         const f = rtxFactor(v);
         g.set("images", g.crop); g.set("resize_type", "scale by multiplier"); g.set("resize_type.scale", f); g.set("quality", "ULTRA");
+        // required since the node update read on Comfy Cloud on 2026-10-18 (get_node): the defaults
+        g.set("strength", 1); g.set("image_encoding", "8-bit RGB");
     },
     QwenImageEditApi(g, v) {
         g.set("model", v.model); g.set("model.prompt", v.prompt); g.set("model.negative_prompt", v.negative || "");

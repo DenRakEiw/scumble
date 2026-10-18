@@ -332,8 +332,10 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         // RTX Video Super Resolution (docs/PLAN_0_1_42.md U3): no Partner Node, the factor inside its dynamic combo as the
         // dotted key (get_node RTXVideoSuperResolution on Comfy Cloud, 2026-10-04), Quality copied by its key
         const rtx = await run(reqOf("rtx_vsr_cloud", "comfycloud", { factor: 3, params: { quality: "HIGH" }, width: 100, height: 80 }));
-        check("RTX Video Super Resolution: LoadImage -> the node (images, scale by multiplier, scale 3, quality HIGH) -> SaveImage, the answer the view's bytes",
-            eq(rtx.prompt, { 1: { class_type: "LoadImage", inputs: { image: "scumble-crop.png" } }, 2: { class_type: "RTXVideoSuperResolution", inputs: { images: ["1", 0], resize_type: "scale by multiplier", "resize_type.scale": 3, quality: "HIGH" } }, 3: { class_type: "SaveImage", inputs: { images: ["2", 0], filename_prefix: "scumble" } } })
+        // strength and image_encoding: required inputs since the node update read on Comfy Cloud on 2026-10-18 (get_node);
+        // a run without them fails validation with required_input_missing
+        check("RTX Video Super Resolution: LoadImage -> the node (images, scale by multiplier, scale 3, quality HIGH, strength 1, 8-bit RGB) -> SaveImage, the answer the view's bytes",
+            eq(rtx.prompt, { 1: { class_type: "LoadImage", inputs: { image: "scumble-crop.png" } }, 2: { class_type: "RTXVideoSuperResolution", inputs: { images: ["1", 0], resize_type: "scale by multiplier", "resize_type.scale": 3, quality: "HIGH", strength: 1, image_encoding: "8-bit RGB" } }, 3: { class_type: "SaveImage", inputs: { images: ["2", 0], filename_prefix: "scumble" } } })
             && Buffer.compare(Buffer.from(rtx.out.bytes), OUT) === 0 && rtx.out.info.node === "RTXVideoSuperResolution", short(rtx.prompt));
         check("RTX Video Super Resolution: the key goes with every Comfy Cloud call, one upload, one prompt", rtx.calls.filter((c) => c.url.startsWith("https://cloud.comfy.org/")).every((c) => c.headers["X-API-Key"] === "cc-key-123456")
             && rtx.calls.filter((c) => c.url.endsWith("/api/upload/image")).length === 1 && rtx.calls.filter((c) => c.url.endsWith("/api/prompt")).length === 1);
