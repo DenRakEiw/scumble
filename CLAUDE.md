@@ -82,7 +82,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-14: 0.1.48 released and in the MCP Registry; the Store update open)
+## Where things stand (2026-10-19: 0.1.49 released; its MCP Registry publish and the Store updates of 0.1.48 / 0.1.49 open)
 
 - **0.1.49 = Comfy Cloud and Comfy Router on Comfy's official SDK + eight quick wins (the user, 2026-10-18: "alles in
   einem update", all eight quick wins picked, "mache plan und fange mit der entwicklung an").** The plan is
@@ -130,8 +130,17 @@ code.
   brought up to date (0.1.44-0.1.49). **Rebuilt from `0723fcf`** (the later commits are docs only): the installer,
   the zip, `dist/Scumble-0.1.49.msix` (188,642,178 bytes), `dist/scumble-0.1.49.mcpb`, the Store notes with Klein;
   exe gates `rel49b-exe` (tiles, 50: brush timed out once and comfyview's control step, both green on the rerun
-  `rel49b-exe-rerun`; brush now in TESTING.md's flakes) and `rel49b-exe-canvas` (29, all PASS). **Next: the release
-  chain, on the user's word.** Issue #6 (MOSS-Image) answered: next update (item 47). **Main was rebuilt before the
+  `rel49b-exe-rerun`; brush now in TESTING.md's flakes) and `rel49b-exe-canvas` (29, all PASS). **0.1.49 is out** (the
+  user, 2026-10-19: "ja, mache den release fertig"): main pushed (`4e6c17e..828d9f9`), tag v0.1.49 on `828d9f9`,
+  published 2026-10-19T14:10:38Z, title "Comfy's SDK and FLUX 3 Klein on your ComfyUI"; the tag build green, the eight
+  assets checked (the zip's layout, the `.mcpb` 0.1.49 with 114 tools, `latest.yml`; the zip's start test skipped, the
+  user's Scumble was open); the node built and pushed (`6a0ad1e..b2ca95d`, no version bump; `/system_stats` 200, 23
+  outputs); the post `v0-1-49` live with the manual sync and hub 0.1.49 (`Portfolio_vercel` `9b13013`, Vercel
+  success); `server.json` 0.1.49 committed (`11543a0`, validated). **Open:** `mcp-publisher publish` (the stored
+  token had expired and two device codes timed out with the user away: `mcp-publisher login github`, the user enters
+  the code, then `publish`; the CLI is the one in an earlier session's scratchpad,
+  `2abd08fa-.../scratchpad/mcppub/mcp-publisher.exe`, 1.8.1), and the Store update (0.1.48's is still open too:
+  `dist/Scumble-0.1.49.msix` and `dist/store-listing/whats-new-0.1.49.txt`, the upload is the user's drag and drop). Issue #6 (MOSS-Image) answered: next update (item 47). **Main was rebuilt before the
   push** (the user, 2026-10-19: the demo-video commits stay private): the six `Demo video ...` commits (recording and
   motion scripts under `docs/images/video/`) live only on the local branch `demo-video`, their files untracked on disk
   as the rest of the tutorial material; the 0.1.49 commits after S2 were cherry-picked, so their ids changed (the
