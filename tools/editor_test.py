@@ -11595,6 +11595,37 @@ await run("close_document", { doc: d.id, force: true });
 if (!/^Selection by text runs on your ComfyUI .*none is connected/.test(msg) || opt !== "needs a ComfyUI (none connected)") throw new Error("without a ComfyUI: " + JSON.stringify({ msg, opt }));
 return { msg: msg.slice(0, 80), opt };
 """),
+    ("an_aligned_answer_shows_no_repeated_edge", """
+// The S5 live run (2026-10-19): an answer that the edge fit moved up read its last row over and over past the crop's
+// bottom edge (warpRGBA repeats the edge pixels) and showed it as streaks where the selection touched the picture's
+// bottom; those pixels now take no blend, so the picture below shows there
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("load_image", { path: "F:/canvas/docs/images/social-preview.png", doc: d.id });
+await run("select_rect", { x: 300, y: 380, width: 520, height: 260, doc: d.id });
+const st = await import("./editor/stitch.js");
+const prep = st.prepareCrop(ed, host.nodeParams, { mode: "crop" }, { crop: { fill: "none", withOriginal: false }, references: false });
+const info = prep.info, sel = prep.sel;
+const [, by, , bh] = info.bbox;
+if (by + bh !== 640) throw new Error("the crop does not reach the picture's bottom: " + JSON.stringify(info.bbox));
+// the model's answer: the crop moved down by 12 px of the picture (its bottom rows cut off, black above)
+const c = prep.crop, k = c.height / bh, dy = Math.round(12 * k);
+const ans = document.createElement("canvas");
+ans.width = c.width; ans.height = c.height;
+const g = ans.getContext("2d");
+g.fillStyle = "#000"; g.fillRect(0, 0, ans.width, ans.height);
+g.drawImage(c, 0, dy);
+const fin = st.finishResult(ed, info, sel, ans);
+if (!fin.align || !fin.align.aligned) throw new Error("the fit did not align the moved answer: " + JSON.stringify(fin.align));
+const pd = fin.patch.getContext("2d").getImageData(0, 0, fin.w, fin.h).data;
+const alphaRow = (y) => { let m = 0; for (let x = Math.round(fin.w * 0.3); x < Math.round(fin.w * 0.7); x++) m = Math.max(m, pd[(y * fin.w + x) * 4 + 3]); return m; };
+const last = alphaRow(fin.h - 1), inside = alphaRow(Math.round(fin.h * 0.75));
+if (inside < 250) throw new Error("the selection's middle lost its answer: alpha " + inside);
+if (last > 8) throw new Error("the crop's last row shows the repeated edge: alpha " + last + " (align " + JSON.stringify(fin.align) + ")");
+await run("close_document", { doc: d.id, force: true });
+return { align: fin.align, lastRowAlpha: last, insideAlpha: inside, k };
+"""),
     ("the_size_ceiling_refuses_before_it_costs", """
 const d = await run("new_document");
 const ed = ednow(d.id);

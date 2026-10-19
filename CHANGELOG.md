@@ -18,6 +18,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - The mascot sits beside the name in the title row and in *Settings › About* (the Duck and 90s skins hide it).
 - *Settings › About* says that Comfy Cloud and Comfy Router run through Comfy's official TypeScript SDK, and names its version.
 - A layer, group or reference row dragged onto the prompt field by mistake no longer writes its layer id there.
+- A result that Scumble lines up with the picture's edges (when a model returns its answer slightly shifted or scaled) no longer shows a band of smeared, repeated pixels where the selection meets the picture's border: where the moved answer has nothing, the picture below shows.
 - RTX Video Super Resolution runs again on Comfy Cloud: the node now requires a strength and an image encoding, and every run had failed without them. Scumble sends the node's defaults (1 and 8-bit RGB). The ComfyUI recipe sends them too, for the node pack's October update, which also needs nvidia-vfx 0.2 or newer in your ComfyUI's Python (with an older one the pack does not load and the node is missing); an older node pack ignores them.
 
 ## 0.1.48 - 2026-10-14

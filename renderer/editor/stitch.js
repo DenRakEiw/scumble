@@ -16,7 +16,7 @@
 // fit on the edge ring (edgefit.js).
 
 import { dilateMask, boxBlurs, kernelsMode } from "./px/kernels.js";
-import { fitLayerRGBA, warpRGBA } from "./edgefit.js";
+import { fitLayerRGBA, warpRGBA, warpCoverage } from "./edgefit.js";
 
 const MIN_AUTO_CROP = 512;
 
@@ -625,6 +625,9 @@ export function finishPixels(info, sel, resultImage, region) {
                 const img = patch.getContext("2d").createImageData(w, h);
                 img.data.set(warped);
                 patch.getContext("2d").putImageData(img, 0, 0);
+                // where the warp read past the answer's edge it repeats the edge pixels: there the picture below shows
+                const cov = warpCoverage(w, h, r.matrix);
+                for (let i = 0; i < cov.length; i++) blend.data[i] *= cov[i];
             }
         } catch (err) {
             align = { aligned: false, reason: (err && err.message) || "fit failed" };

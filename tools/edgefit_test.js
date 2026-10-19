@@ -84,6 +84,18 @@ function makeLayer(F, base, W, H, M, { drift = 10, other = null } = {}) {
         let same = true;
         for (let y = 2; y < H && same; y++) for (let x = 0; x < W - 3; x++) { const i = (y * W + x) * 4, j = ((y - 2) * W + x + 3) * 4; if (out[i] !== base[j]) { same = false; break; } }
         check("warpRGBA: a whole-pixel shift is a byte shift", same);
+        // what it read past the source's edge is said by warpCoverage: the 3 right columns and the 2 top rows of this
+        // shift read outside (warpRGBA repeats the edge there), everything else inside
+        const cov = F.warpCoverage(W, H, [1, 0, 3, 0, 1, -2]);
+        let ok = true, outside = 0;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const want = x >= W - 3 || y < 2 ? 0 : 1, got = cov[y * W + x];
+            if (got !== want) ok = false;
+            if (!got) outside++;
+        }
+        check("warpCoverage: 0 where the warp reads outside the source, 1 inside", ok && outside === 3 * H + 2 * W - 6, `outside ${outside}`);
+        const half = F.warpCoverage(4, 4, [1, 0, 0.5, 0, 1, 0]);
+        check("warpCoverage: a ramp past the last pixel centre (0.5 px past it reads half)", Math.abs(half[3] - 0.5) < 1e-6 && half[2] === 1, JSON.stringify(Array.from(half.slice(0, 4))));
     }
 
     const cases = [
