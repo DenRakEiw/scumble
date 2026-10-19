@@ -2,6 +2,10 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
+## Unreleased
+
+- Selection by text works again with the current comfyui-rmbg on your ComfyUI: its SAM3 node now requires a model name, which Scumble did not send, so every selection by text failed (issue #7). Scumble now fills in every input a helper node requires and Scumble does not set itself with that node's own default (for SAM3 the model `sam3.1_multiplex_fp16`), for the selection by text, the cutout and the prompt from the picture; an older node pack without the input keeps working.
+
 ## 0.1.49 - 2026-10-19
 
 - **Comfy Cloud and Comfy Router on Comfy's official SDK.** Both now run through Comfy's own TypeScript SDK (`@comfyorg/sdk`), and Comfy Cloud moved to Comfy's newer API (v2): a picture Comfy already holds is not uploaded again, a job is sent once under a key of its own, so a dropped connection never starts it twice, and a job tells Scumble how far it has got while it runs. If a Comfy Cloud run fails where 0.1.48 worked, `"comfycloud": { "api": "legacy" }` in `settings.json` (with Scumble closed) goes back to the older way for this release; please report it.

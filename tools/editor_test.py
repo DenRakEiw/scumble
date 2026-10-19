@@ -11626,6 +11626,44 @@ if (last > 8) throw new Error("the crop's last row shows the repeated edge: alph
 await run("close_document", { doc: d.id, force: true });
 return { align: fin.align, lastRowAlpha: last, insideAlpha: inside, k };
 """),
+    ("select_by_text_sends_the_inputs_the_node_requires", """
+// issue DenRakEiw/scumble#7 (2026-10-19): comfyui-rmbg's SAM3Segment now requires model_name, and the helper prompt
+// without it failed validation; the prompt gets every required input it left out at the node's own default, and an
+// older pack without the input is sent nothing more
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 200, height: 120, doc: d.id });
+const { api } = await import("./editor/host.js");
+const types0 = host._types, queue0 = api.queuePrompt;
+const sam3 = (withModel) => ({ nodeData: { input: { required: {
+    image: ["IMAGE"],
+    ...(withModel ? { model_name: [["sam3.1_multiplex_fp16", "sam3"], { default: "sam3.1_multiplex_fp16" }] } : {}),
+    prompt: ["STRING", { default: "", multiline: true }],
+    output_mode: [["Merged", "Separate"], { default: "Merged" }],
+    confidence_threshold: ["FLOAT", { default: 0.5, min: 0.05, max: 0.95 }],
+}, optional: { device: [["Auto", "CPU", "GPU"], { default: "Auto" }] } } } });
+const sent = [];
+const go = async (withModel) => {
+    host._types = { ...(types0 || {}), InpaintCanvasLoadRef: { nodeData: { input: { required: {} } } }, InpaintCanvasMaskOut: { nodeData: { input: { required: {} } } }, SAM3Segment: sam3(withModel) };
+    api.queuePrompt = async (n, body) => { sent.push(body.output); return { prompt_id: "t" + sent.length, node_errors: {} }; };
+    ed.segmentPending = null; ed.segBtn.disabled = false;
+    ed.segInput.value = "the sky";
+    await ed.segmentByText();
+    ed.segmentPending = null; ed.segBtn.disabled = false; ed.segInput.value = "";
+};
+try {
+    await go(true);
+    await go(false);
+} finally { host._types = types0; api.queuePrompt = queue0; }
+if (sent.length !== 2) throw new Error("queued " + sent.length + " prompts: " + ed.status);
+const a = sent[0].seg_run && sent[0].seg_run.inputs, b = sent[1].seg_run && sent[1].seg_run.inputs;
+if (!a || sent[0].seg_run.class_type !== "SAM3Segment" || a.model_name !== "sam3.1_multiplex_fp16") throw new Error("with the current pack: " + JSON.stringify(sent[0].seg_run));
+if (a.prompt !== "the sky" || a.output_mode !== "Merged" || !Array.isArray(a.image)) throw new Error("the builder's own inputs changed: " + JSON.stringify(a));
+if (!b || "model_name" in b) throw new Error("an older pack got model_name: " + JSON.stringify(b));
+await run("close_document", { doc: d.id, force: true });
+return { current: a.model_name, older: Object.keys(b) };
+"""),
     ("the_size_ceiling_refuses_before_it_costs", """
 const d = await run("new_document");
 const ed = ednow(d.id);

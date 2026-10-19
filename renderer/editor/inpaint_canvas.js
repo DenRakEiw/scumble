@@ -1001,6 +1001,33 @@ function drawMesh(ctx, img, dst, nx, ny) {
 // text segmentation backends (each builds a small standalone prompt)
 // ---------------------------------------------------------------------------
 
+/**
+ * A helper prompt with every required widget input its builder left out set to the server's own default for it (the
+ * node's spec in /object_info: a combo's default or its first option, a value's default). Node packs add required
+ * inputs: comfyui-rmbg's SAM3Segment got `model_name` (sam3.1_multiplex_fp16 / sam3) in 2026-10, and a prompt without
+ * it fails validation (DenRakEiw/scumble#7); an older pack without the input is sent nothing more. Links (IMAGE, MASK,
+ * ...) have no default and stay as they are. Changes and returns `nodes`.
+ */
+function withSpecDefaults(nodes) {
+    const types = host.nodeTypes() || {};
+    for (const node of Object.values(nodes)) {
+        const t = node && types[node.class_type];
+        const req = t && t.nodeData && t.nodeData.input && t.nodeData.input.required;
+        if (!req || !node.inputs) continue;
+        for (const [name, spec] of Object.entries(req)) {
+            if (name in node.inputs || !Array.isArray(spec)) continue;
+            const opts = spec[1] && typeof spec[1] === "object" ? spec[1] : {};
+            if (Array.isArray(spec[0])) {
+                const v = opts.default !== undefined && spec[0].includes(opts.default) ? opts.default : spec[0][0];
+                if (v !== undefined) node.inputs[name] = v;
+            } else if (opts.default !== undefined && ["INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"].includes(spec[0])) {
+                node.inputs[name] = opts.default;
+            }
+        }
+    }
+    return nodes;
+}
+
 const SEGMENT_BACKENDS = [
     {
         id: "sam3_rmbg",
@@ -12392,7 +12419,7 @@ class InpaintEditor {
                 prompt.term_run = prompt.up_run; delete prompt.up_run;
                 text = ["term_run", llm.textOut[1]];
             }
-            Object.assign(prompt, backend.build("seg_load", text, threshold, { quality: this.segQuality.checked }, backend));
+            Object.assign(prompt, withSpecDefaults(backend.build("seg_load", text, threshold, { quality: this.segQuality.checked }, backend)));
             prompt.seg_out = { class_type: "InpaintCanvasMaskOut", inputs: { mask: backend.maskOut, canvas_node: String(this.node.id), purpose: "segment", ...(fromPrompt ? { label: text } : {}) } };
             this.helperUsed = true;   // a helper model (SAM2 / SAM3 / RMBG / Qwen-VL) may now sit in VRAM outside ComfyUI's model management
             const res = await api.queuePrompt(-1, { output: prompt, workflow: { nodes: [], links: [], version: 0.4, extra: { inpaint_canvas_helper: true } } });
@@ -12547,7 +12574,7 @@ class InpaintEditor {
             const prompt = {
                 up_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(ref) } },
                 // the ComfyUI helper gets the names and the rule, no pictures (26d2: until a node release)
-                ...backend.build("up_load", upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : "", refs)),
+                ...withSpecDefaults(backend.build("up_load", upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : "", refs))),
                 up_out: { class_type: "InpaintCanvasTextOut", inputs: { text: backend.textOut, canvas_node: String(this.node.id), purpose: "upsample" } },
             };
             this.helperUsed = true;   // a helper model (SAM2 / SAM3 / RMBG / Qwen-VL) may now sit in VRAM outside ComfyUI's model management
@@ -16207,7 +16234,7 @@ class InpaintEditor {
             const up = await uploadCanvas(layer.px.toCanvas(), `n${this.node.id}_cutsrc`);
             const prompt = {
                 cut_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(up.ref) } },
-                ...backend.build("cut_load"),
+                ...withSpecDefaults(backend.build("cut_load")),
                 cut_out: { class_type: "InpaintCanvasMaskOut", inputs: { mask: backend.maskOut, canvas_node: String(this.node.id), purpose: "cutout" } },
             };
             this.helperUsed = true;   // a helper model (SAM2 / SAM3 / RMBG / Qwen-VL) may now sit in VRAM outside ComfyUI's model management
