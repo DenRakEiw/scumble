@@ -171,7 +171,10 @@ the plain prompt, `tailOutputs`); the Comfy Cloud copy has no canvas node and se
   `71e851f`) -> `result_local`, task `upscale`. NVIDIA's RTX Video Super Resolution from the node pack
   Nvidia_RTX_Nodes_ComfyUI (Comfy-Org, with its `nvidia-vfx` package, 0.2 or newer since that update: with 0.1 the pack
   fails at import and the node is missing from `/object_info`, read on the user's ComfyUI on 2026-10-18), which the user
-  installs on an RTX machine. 1 to 4 times (`factor.input`
+  installs on an RTX machine. PyPI holds only stub sdists of `nvidia-vfx` (their `wheel_stub` backend fails in ComfyUI's
+  embedded Python); the wheel comes from NVIDIA's index: `python_embeded\python.exe -m pip install -U "nvidia-vfx>=0.2"
+  --extra-index-url https://pypi.nvidia.com --only-binary nvidia-vfx` (done on the user's ComfyUI 2026-10-19; the
+  recipe then ran live, 1280 x 640 to 2560 x 1280 in 16 s). 1 to 4 times (`factor.input`
   `rtx|resize_type.scale`), `limits` 64 / 4096 / 8192 (the node's target mode takes 64 to 8192 a side; its output sides
   are `int(w × scale)` rounded to a multiple of 8, which the stitch fits back anyway; on the whole picture, U2, the
   answer is stretched to the document's aspect). The selection or the whole picture (the whole picture not at 1×: its

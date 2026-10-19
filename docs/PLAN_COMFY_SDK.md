@@ -479,6 +479,31 @@ Tests: comfysdk 34, comfycloud_v2 81, cloudjobs 36, comfyrouter 175 (an exit gua
 longer vacuous and a local run's via checked; `commands` (closing stops runs, cancel_run's words), `relight`
 (panel-vs-command presets), `skins`, `editor`. Integrated gate run: see the commit.
 
+**S5 as built (2026-10-19).** The local prep in the night (`354f0fc`: `## 0.1.49 - 2026-10-19`, `package.json`
+0.1.49; the builds; exe gates 50 + 28 green), then in the morning, the user at the machine, **the paid live run** in a
+dev test instance on its own profile, the user's Comfy key typed in by the user (profile and key deleted afterwards):
+Z-Image Turbo Generate new on Comfy Cloud (13 s; the bar said "node 7/7"), a Nano Banana 2 edit through Comfy Cloud's
+partner node (41 s; the status line "... via Comfy Cloud, 41 s"), a Cancel during a Flux.2 Klein 9B Cloud run at 10 s
+("Scumble asked Comfy Cloud to stop the job"; `cancel_run`'s `said` the same; the account's queue empty after it), a
+FLUX 3 Image edit through Comfy Router on the SDK (80 s, the first Router run since S3), and RTX Video Super Resolution
+on the user's ComfyUI (1280 x 640 to 2560 x 1280 in 16 s, its colours the source's) after the user upgraded the pack's
+nvidia-vfx to 0.2 (PyPI holds only stub sdists; the wheel comes from https://pypi.nvidia.com). Three things found and
+added on the way, each with its tests:
+- **The edge fit's streaks** (`2c35c82`): the Nano Banana answer, shifted 18 px by the edge fit, showed the crop's last
+  row repeated along the picture's bottom; `edgefit.js` `warpCoverage` and the stitch's blend now leave the picture
+  below there (older than 0.1.49, item 42).
+- **FLUX 3 Image Klein on the user's ComfyUI** (`450cfe3`, the user's ask that morning; researched by a workflow of five
+  readers): `recipes/flux3_klein_local.json`, Klein's chain with `BasicScheduler`, steps of 16, `<ref_image_{n0}>`, and
+  the prompt wrapped into "In <ref_image_0>, <prompt> Keep everything else unchanged." (without it the model painted a
+  new scene from the text; A/B on one seed). Live: edits in 5-9 s, a reference layer reached the picture, Generate new
+  in 8 s, a box row typed into the prompt placed its object on two seeds.
+- **Boxes for local recipes** (`000cc00`; the user: "geht bbox local?"): a recipe's `boxes` declaration, the declared
+  input rewired to the node's `box_prompt` only when boxes go and the node has that output (else refused before
+  anything is queued); built by an agent, checked by a second (8 points, 2 musts, all fixed). Live: a box drawn in
+  Scumble placed the cat in it (`say_in.string_b = ["canvas", 21]` in `/history`).
+The user (2026-10-19): FLUX 3 Klein and the local boxes go into 0.1.49. Rebuilt from `000cc00` (see CLAUDE.md for the
+exe gates). For other users the boxes need a node newer than the registry's 0.3.4 (D12, still the user's pick).
+
 
 **S4: docs and review (light).** `docs/RECIPES.md` "Comfy Cloud recipes" (:194) and "Comfy Router" (:2203): v2, the
 SDK, the fallback setting, the test base; the manual (Cloud runs show steps, Cancel stops the job on Comfy's side);
