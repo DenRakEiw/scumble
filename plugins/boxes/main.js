@@ -1,4 +1,5 @@
-// Boxes plugin (item 28 S3, docs/PLAN_BOXES.md §10): boxes in the prompt for a model that takes them (FLUX 3 Image, Ideogram 4).
+// Boxes plugin (item 28 S3, docs/PLAN_BOXES.md §10): boxes in the prompt for a model that takes them (FLUX 3 Image, Ideogram 4;
+// FLUX 3 Image Klein on the user's ComfyUI, through the Inpaint Canvas node's box_prompt).
 // A box says where an element goes in the picture (New), which element stays (Keep), moves (Move) or goes (Remove),
 // and which reference layer, or a part of it, is placed in it (From reference); a Text box renders words. The boxes
 // live in the document's plugin data (scumble.documents.data: saved with the session and the .scumble file) in image
@@ -68,7 +69,7 @@ export function activate(scumble) {
 
     // ---- the Boxes switch under the prompt (S3d): the core's genSettings.boxes, per document ---------------------------
     const SWITCH_NOTE = "The Boxes switch under the prompt is on now: the boxes go with the next run.";
-    const SWITCH_LATER = "The Boxes switch is on for this document: the boxes go with a run of a recipe that takes them (FLUX 3 Image, Ideogram 4).";
+    const SWITCH_LATER = "The Boxes switch is on for this document: the boxes go with a run of a recipe that takes them (FLUX 3 Image, Ideogram 4, FLUX 3 Image Klein on your ComfyUI).";
     const switched = new Map();   // document id -> the note of the switch the last add turned on, until its caller has said it
     const switchOf = (doc) => !!(doc.editor && doc.editor.genSettings && doc.editor.genSettings.boxes);
     /** The first box of a document turns its switch on, so a drawn box is not left out without a word. */
@@ -258,7 +259,7 @@ export function activate(scumble) {
                 const chk = rs.takes && on && doc.loaded ? cropCheck(doc, boxes) : null;
                 const at = chk ? ` Generate measures them in the crop it sends, ${chk.crop.w} × ${chk.crop.h} px at ${chk.crop.x}, ${chk.crop.y} (the frame the Boxes tool shows).` : "";
                 note.textContent = !rs.name ? ""
-                    : !rs.takes ? `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image, Ideogram 4) is selected.`
+                    : !rs.takes ? `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image, Ideogram 4, FLUX 3 Image Klein on your ComfyUI) is selected.`
                     : !on ? `Not sent: the Boxes switch under the prompt is off. The boxes stay with the document; switch it on to send them with ${rs.name}.`
                     : boxes.length ? `${rs.name} sends these boxes with every Generate and Generate new run.${at}`
                     : `${rs.name} sends the selection as one box while the document has none (the Boxes switch is on).`;

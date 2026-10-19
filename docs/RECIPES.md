@@ -27,6 +27,7 @@ layer, exactly like in the ComfyUI node.
   "refs": { "name": "image {n}", "slots": 4 },   // optional: what the model calls picture n, and how many
                                                   // pictures the graph reads, the crop included (1-16); see
                                                   // "Reference images named in the prompt (local)"
+  "boxes": { "schema": "flux3", "input": "say_in|string_b" },   // optional: boxes in the prompt, below
   "settings": [ { "index": 1, "node": "unet", "input": "unet_name", "label": "Model",
                   "spec": [["file.safetensors"], {}] } ],   // spec optional: /object_info wins when connected
   "presets": [ { "name": "L", "values": { "rp_settings:dlss_model_preset": "L" } } ],   // optional, see "Presets"
@@ -52,6 +53,39 @@ R3b): that entry does not run the recipe's graph and selects no recipe, it runs 
 (`host.realismWhole`: the whole visible picture at 1x, or at 1.5x to 3x with the document resized by the factor,
 through a prompt of its own, `realism.passPrompt`, which takes the recipe's `DLSS5Settings` inputs with the mode's
 `upscaling_mode`, and a new layer above the picture). `relight` is a relighting recipe (`relight_qwen_local`, `recipes/relight.json`). Any other task is read as `edit`.
+
+`boxes` (optional; boxes in the prompt on the user's ComfyUI): `schema` the rows the Inpaint Canvas node writes into its
+`box_prompt` output (`"flux3"`, the only one), `input` the `"node|input"` of the graph that takes the canvas node's plain
+prompt (a link to its output 7). The recipe file keeps that input on the plain prompt, so it runs on any node version.
+The Boxes switch under the prompt shows for such a recipe (`host.boxSwitch`), and the canvas state carries the boxes as
+the node's own editor sends them (`serializeForPrompt`: `boxes`, `referenceIds`, `referenceLabels`, `selectionBoxId`),
+measured once per run by `host.localBoxPlan` (`boxes_model.promptPayload` over the Boxes plugin's boxes and the
+references the run sends; with the plugin off, or no box held, none go and the selection goes as one box, as on an API
+run); an @img token in a box's description goes as the name the recipe gives that picture (`refs.name`,
+`<ref_image_1>`), as in the prompt, not the node's "image n" (`comfyprompt.nameBoxTokens`; a token whose picture does
+not go stays, and the node notes it). A run that sends boxes (the switch on and the document's boxes, or the selection
+as one box when it holds none) takes that one input from `box_prompt` instead, its slot found by name in the server's
+`/object_info` (`comfyprompt.boxPromptSlot`, `wireBoxPrompt`); the node writes the caption and FLUX 3's rows from the
+canvas state (`boxes_rows.py`, `docs/PLAN_NODE_BOXES.md`). Generate new (the `generate_new` command's local path, an
+edit of a fresh white canvas) measures the boxes before the fresh canvas replaces the picture (`host.newBoxPlan`) and
+sends its New, Text and From boxes, scaled from the picture they were drawn on to the fresh canvas (the stretch note when
+the shape differs); a Keep, Move or Remove box stays out with the note an API model's new image gives
+(`comfyprompt.newImageBoxes`), a From box goes along (its reference goes in the node's batch; an API model's new image
+leaves it out), and the selection never goes as a box. A node without that output (the Comfy Registry's 0.3.4) is read
+again for its own entry first, then the run refuses before anything is uploaded or queued (Generate new before its
+canvas replaces the picture): "... update the Inpaint Canvas node to its current GitHub version (a git clone: git pull
+in its folder under custom_nodes; installed through the Comfy Registry or the Manager: replace that folder with a git
+clone of https://github.com/DenRakEiw/ComfyUI-InpaintCanvas), then restart ComfyUI, or turn the Boxes switch under the
+prompt off." The status line says "Sent with N boxes." (the count the state carries, 1 for the selection's box;
+`generate` and `generate_new` answer it as `boxes`), the switch off with boxes held adds the note "The document's N
+boxes did not go", and the notes the node returns for boxes it left out (`ui.inpaint_boxes`) go into the run's notes,
+the log and, after the result has landed, the status line, only for a run that took `box_prompt` (the node also writes
+rows nobody reads while the switch is on under another recipe). `prompt_sent` stays the plain prompt: the node adds the
+rows. `normalize()` drops a declaration
+that does not hold (no object, another schema, an input that is not a link to the canvas node's prompt, one a Settings
+row writes, a recipe of another task) with a warning; Save to recipe and Save as new recipe keep it (`GRAPH_KEEPS`)
+while the saved graph still feeds that input the plain prompt (a page graph that wired `box_prompt` there is stored on
+the plain prompt, `tailOutputs`); the Comfy Cloud copy has no canvas node and sends no boxes.
 
 ### The shipped ComfyUI recipes
 
@@ -83,7 +117,16 @@ through a prompt of its own, `realism.passPrompt`, which takes the recipe's `DLS
   nodes. Live, on an RTX 5090 with the distilled int8 file: an edit 5-9 s, a reference layer reached the picture
   (`<ref_image_1>`), Generate new 1024 x 1024 in 8 s. Boxes typed into the prompt as BFL's rows (a caption citing
   `<apple_1>`, then `[{"id", "bbox": [ymin, xmin, ymax, xmax] on 0-1000, "desc"}]`) placed the object in its box on
-  both seeds tried: the model takes boxes as text, locally too.
+  both seeds tried: the model takes boxes as text, locally too. So the recipe declares `boxes: { "schema": "flux3",
+  "input": "say_in|string_b" }` (above): with the Boxes switch on, a run takes `say_in.string_b` from the node's
+  `box_prompt` (the caption and the edit rows inside the "In <ref_image_0>, ... Keep everything else unchanged."
+  wrapper); it needs an Inpaint Canvas node with that output (2026-10-15 or newer, not the Comfy Registry's 0.3.4).
+  Generate new sends the New, Text and From boxes. **Run live 2026-10-19** (the user's ComfyUI 0.41.2, the node at
+  `6a0ad1e`, the distilled int8 file, seed 31): one New box drawn in Scumble on an edit, the switch on; `/history`
+  showed `say_in.string_b = ["canvas", 21]`, and the cat landed in its box in 5 s. The node's edit rows (`{id, from,
+  src_bbox, tgt_bbox, desc}`, a New box `"from": null`) work as well as the new-image form of the hand test; the text
+  says "In <ref_image_0>," twice (the recipe's wrapper and the node's caption) and closes with both "Leave the rest of
+  the picture as it is." and "Keep everything else unchanged.", which did not get in the way.
 - `qwen_image_edit_2_1_local`, **Qwen Image Edit 2.1** (added for 0.1.23): ComfyUI's own template
   `image_qwen_image_2_1_image_edit.json` with its subgraph flattened and its save and compare nodes left out (they
   would write every run into the server's output folder). `TextEncodeQwenImage21` takes **one picture per input**
@@ -1064,7 +1107,7 @@ BFL's API. Price $0.05 / $0.12 / $0.65 at 1k / 2k / 4k (2026-10-03). Not run aga
   of S3a, `plugins/boxes`, keeps a document's boxes and sends them through the plugin hook, `docs/PLUGINS.md`
   "Generate" and "Built-in plugins"). **The Boxes switch** (S3d) is a checkbox in a row of its own under the prompt
   field, shown while the selected recipe takes boxes (`host.boxSwitch(editor).takes`: the variant's `options.boxes`,
-  or a text route's `text.refs.options.boxes`); its label counts the document's boxes ("Boxes · 3", the sum of the
+  or a text route's `text.refs.options.boxes`; a ComfyUI recipe's `boxes`, "ComfyUI recipes" above); its label counts the document's boxes ("Boxes · 3", the sum of the
   generate sources' `count(doc)`). Its state is the document's `genSettings.boxes` (default off, saved with the `gen`
   key; `set_generation` `boxes`), and `host.runProvider` and `host.runGenerate` read it before they ask any source. Off,
   no source is asked and no box goes; a run of a document that holds boxes adds the note "The document's N boxes did

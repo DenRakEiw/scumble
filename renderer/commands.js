@@ -1124,7 +1124,7 @@ const COMMANDS = {
     },
     set_generation: {
         description: "Generation settings: mode api / local / cloud (the recipe decides what is available; select_recipe switches between the modes' recipes), seed, random seed, denoise, refine, and the document's Boxes switch (boxes).",
-        params: { mode: P.str("api, local or cloud (Comfy Cloud recipes)", { enum: ["api", "local", "cloud"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay") },
+        params: { mode: P.str("api, local or cloud (Comfy Cloud recipes)", { enum: ["api", "local", "cloud"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4, FLUX 3 Image Klein on your ComfyUI) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay") },
         async run(ed, a) {
             const g = ed.genSettings;
             if (a.mode != null) { if (!["api", "local", "cloud"].includes(a.mode)) throw new Error("mode must be api, local or cloud"); g.mode = a.mode; }
@@ -1300,22 +1300,31 @@ const COMMANDS = {
             // the run's token check, made before the canvas replaces the picture: the references stay, so this snapshot
             // is the run's, and the run selects the whole canvas (a token past the recipe's slots, a parked one, or one
             // that names nothing refuses here, not after the wipe); an unreachable server too
-            if (host.refTokens && r.task !== "upscale") {
-                const snap = ed.refSnapshot();
-                host.refPrompt(ed, snap, "comfy", { recipe: r, comfy: host.comfyPlan(ed, r, snap.refIds.length, { hasSelection: true, crop: ed.cropSettings, gen: ed.genSettings }) });
-            }
+            const snap = ed.refSnapshot();
+            const plan = r.task !== "upscale" ? host.comfyPlan(ed, r, snap.refIds.length, { hasSelection: true, crop: ed.cropSettings, gen: ed.genSettings }) : null;
+            if (host.refTokens && plan) host.refPrompt(ed, snap, "comfy", { recipe: r, comfy: plan });
             if (!host.connected) throw new Error("Not connected to ComfyUI.");
+            // the node types the recipe needs (queueGenerate's own check), and its boxes: a recipe that declares them (its
+            // `boxes`) sends the document's New, Text and From boxes, measured here on the picture and the reference
+            // layers they were drawn on (host.newBoxPlan); a node without box_prompt refuses them here, not after the wipe
+            const missing = (r.needs || []).filter((n) => host.objectInfo && !host.objectInfo[n]);
+            if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
+            const boxPlan = plan ? await host.newBoxPlan(ed, r, snap.refIds.slice(0, plan.lay.kept)) : null;
             // local: a flat canvas of the wanted size (the reference layers stay and go along in the crop_image batch, after
             // the white crop: 26e names them), everything selected, the recipe run, then the result flattened into the
-            // base; flatten keeps the reference layers
+            // base; flatten keeps the reference layers. The boxes go as fractions of the picture they were drawn on, scaled
+            // to the fresh canvas (host.queueGenerate reads `_newBoxes` once)
+            const drawnOn = [ed.width, ed.height];
             await ed.newCanvas(`${w}x${h}`, { keepRefs: true });
             if (ed.width !== w || ed.height !== h) throw new Error(ed.status);
             ed.applyMaskToSelection(rectMask(ed, 0, 0, ed.width, ed.height), "replace");
-            const res = await COMMANDS.generate.run(ed, { timeout: a.timeout });
+            ed._newBoxes = { from: drawnOn, aspect, plan: boxPlan };
+            let res;
+            try { res = await COMMANDS.generate.run(ed, { timeout: a.timeout }); } finally { ed._newBoxes = undefined; }
             await ed.flatten();
             writeTarget(ed, r, aspect, asked);
             ed.notifyChanged();
-            return { mode: "local", recipe: r.id, width: ed.width, height: ed.height, seconds: Math.round((Date.now() - t0) / 1000), result: res && res.layer ? res.layer : null, prompt_sent: res ? res.prompt_sent : null, notes: res ? res.notes || [] : [], status: ed.status };
+            return { mode: "local", recipe: r.id, width: ed.width, height: ed.height, seconds: Math.round((Date.now() - t0) / 1000), result: res && res.layer ? res.layer : null, prompt_sent: res ? res.prompt_sent : null, notes: res ? res.notes || [] : [], boxes: res ? res.boxes || 0 : 0, status: ed.status };
         },
     },
     upscale: {

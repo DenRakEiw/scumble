@@ -159,6 +159,17 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {string} [input]
  * @property {string} [note]
  * @property {{ name?: string, slots?: number | null } | null} [refs]   the variants' default name pattern; ComfyUI recipes: slots (26e)
+ * @property {LocalBoxes} [boxes]             ComfyUI recipes: where the Inpaint Canvas node's box rows go (localBoxes)
+ */
+
+/**
+ * Boxes in the prompt on the user's ComfyUI (a ComfyUI recipe's `boxes`, checked by localBoxes): `schema` the rows the
+ * Inpaint Canvas node's box_prompt output writes ("flux3"), `input` the "node|input" of the recipe's graph that takes
+ * the canvas node's plain prompt and that a run sending boxes takes from box_prompt instead (host.queueGenerate).
+ *
+ * @typedef {Object} LocalBoxes
+ * @property {string} schema
+ * @property {string} input
  */
 
 const FIXED_OUTPUTS = 13;   // InpaintCanvas outputs before setting_1 (nodes.py RETURN_NAMES)
@@ -166,11 +177,14 @@ const SETTING_SLOTS = 8;    // setting_1 .. setting_8
 /**
  * The node's tail outputs after the settings (docs/PLAN_NODE_BOXES.md D2): backend slots 21 and 22; the node's frontend
  * shows them right after the connected settings, so a UI graph (and the page's graphToPrompt) holds them at a visible
- * slot that may be a setting's number. A recipe reads them by name: a run of a local recipe sends no boxes, so a
- * consumer of box_prompt gets the plain prompt, and one of elements loses its link (tailOutputs).
+ * slot that may be a setting's number. A recipe reads them by name: a recipe file keeps every prompt input on the plain
+ * prompt, so a consumer of box_prompt gets the plain prompt (the one input a recipe's `boxes` names is wired to
+ * box_prompt by the run that sends boxes, host.queueGenerate), and one of elements loses its link (tailOutputs).
  */
 const TAIL_OUTPUTS = ["box_prompt", "elements"];
 const PROMPT_SLOT = 7;
+// The box formats the Inpaint Canvas node writes into its box_prompt output (boxes_rows.py: FLUX 3's rows)
+const LOCAL_BOX_SCHEMAS = ["flux3"];
 
 /** A canvas output's name by its slot in the backend's order (no names known: an API prompt). */
 function backendOutputName(slot) {
@@ -195,7 +209,7 @@ function tailOutputs(prompt, canvasId, nameOf) {
             if (m) node.inputs[input] = [v[0], FIXED_OUTPUTS + +m[1] - 1];
             else if (name === "box_prompt") {
                 node.inputs[input] = [v[0], PROMPT_SLOT];
-                notes.push(`${node.class_type} ${id}.${input} took the canvas's box_prompt; Scumble sends no boxes to a local recipe, so it takes the plain prompt`);
+                notes.push(`${node.class_type} ${id}.${input} took the canvas's box_prompt; a recipe keeps the plain prompt there (a run sends boxes only through the input its "boxes" field names), so it takes the plain prompt`);
             } else if (name === "elements") {
                 delete node.inputs[input];
                 notes.push(`${node.class_type} ${id}.${input} took the canvas's elements (boxes); Scumble sends none to a local recipe, so the link was dropped`);
@@ -465,6 +479,29 @@ function comfyRefs(r) {
 }
 
 /**
+ * A ComfyUI recipe's `boxes` checked against its graph (LocalBoxes): an object with a `schema` the node writes
+ * ("flux3") and an `input` "node|input" of a node other than the canvas whose value is a link to the canvas node's
+ * plain prompt (output 7) and that no Settings row writes, on an edit recipe. Answers `{ boxes }` (only those two keys)
+ * or `{ why }`.
+ * @param {Recipe} r
+ * @returns {{ boxes?: LocalBoxes, why?: string }}
+ */
+function localBoxes(r) {
+    const b = /** @type {any} */ (r.boxes);
+    if (!b || typeof b !== "object" || Array.isArray(b)) return { why: "is no object { schema, input }" };
+    if (!LOCAL_BOX_SCHEMAS.includes(b.schema)) return { why: `names the schema ${JSON.stringify(b.schema)}; the Inpaint Canvas node writes ${LOCAL_BOX_SCHEMAS.join(", ")}` };
+    if (r.task !== undefined && r.task !== "edit") return { why: `is on a recipe of task "${r.task}"; only an edit recipe sends boxes` };
+    const m = typeof b.input === "string" ? /^([^|]+)\|(.+)$/.exec(b.input) : null;
+    if (!m) return { why: `names the input ${JSON.stringify(b.input)}, not "node|input"` };
+    const node = r.prompt && r.prompt[m[1]];
+    if (!node || !node.inputs || String(m[1]) === String(r.canvas)) return { why: `names the input ${b.input}, whose node is not in the graph (or is the canvas node)` };
+    const v = node.inputs[m[2]];
+    if (!Array.isArray(v) || String(v[0]) !== String(r.canvas) || +v[1] !== PROMPT_SLOT) return { why: `names the input ${b.input}, which does not take the canvas node's prompt (output ${PROMPT_SLOT})` };
+    if ((r.settings || []).some((s) => s && String(s.node) === String(m[1]) && s.input === m[2])) return { why: `names the input ${b.input}, which a Settings row writes` };
+    return { boxes: { schema: b.schema, input: b.input } };
+}
+
+/**
  * Fill in everything the rest of the app is allowed to rely on. Runs on every recipe that
  * is read from disk or imported; the shape it answers is the typedef above.
  * @param {Recipe} r
@@ -481,6 +518,15 @@ function normalize(r) {
         if (r.task === "upscale") { r.factor = comfyFactor(r); comfyLimits(r); }
         else if (r.task !== undefined && r.task !== "pass" && r.task !== "relight") r.task = "edit";
         comfyRefs(r);
+        // boxes in the prompt (the node's box_prompt): a declaration that does not hold is dropped, so no run sends any
+        if (r.boxes !== undefined) {
+            const got = localBoxes(r);
+            if (got.boxes) r.boxes = got.boxes;
+            else {
+                console.warn(`${r.id}: boxes ${JSON.stringify(r.boxes)} ${got.why}; the recipe sends no boxes`);
+                delete r.boxes;
+            }
+        }
         return r;
     }
     if (!r.providers || typeof r.providers !== "object" || !Object.keys(r.providers).length) {
@@ -925,7 +971,7 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
 }
 
 // What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
-const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits"];
+const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes"];
 
 /**
  * The graph of ComfyUI's page -> a recipe to save (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3). `output` is the API
@@ -955,6 +1001,9 @@ function fromGraph({ output, workflow, objectInfo, base, name, ids, date }) {
         if (presets.length) kept.presets = presets; else delete kept.presets;
     }
     if (kept.task === "pass" && !Object.values(fields.prompt || {}).some((n) => n && n.class_type === "DLSS5Settings")) delete kept.task;
+    // the boxes' input only while the saved graph still feeds it the canvas node's plain prompt (a node renamed, a link
+    // moved or a Settings row on it: no box rows go there)
+    if (kept.boxes !== undefined && !localBoxes(/** @type {Recipe} */ ({ id: "", ...graph, task: kept.task, boxes: kept.boxes })).boxes) delete kept.boxes;
     if (!name) {
         if (!base || !base.id) throw new Error("This window holds no recipe to save into: use Save as new recipe.");
         return /** @type {Recipe} */ ({ id: base.id, name: base.name || base.id, ...kept, ...graph });

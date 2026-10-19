@@ -42,6 +42,7 @@ function notesKind(editor, notes) {
 import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
 import { comfyRefSpec, comfyLayout, trimSlots, refName, resolveMarkers as resolveComfyMarkers } from "./comfyrefs.js";
 import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from "./boxes.js";
+import { promptPayload } from "./boxes_model.js";
 import * as realism from "./realism.js";
 import * as comfyprompt from "./comfyprompt.js";
 import * as genpresets from "./genpresets.js";
@@ -56,10 +57,12 @@ const PROXY = "/comfy";
 /**
  * The format a run of the recipe sends boxes in (item 28), or null when it sends none: the variant's `options.boxes`
  * ("flux3", "ideogram4"), for Generate and Generate new; Generate new with references may take its text route's own
- * options.
+ * options. A ComfyUI recipe: its `boxes.schema` when it declares the input FLUX 3's rows go to (the Inpaint Canvas
+ * node's box_prompt writes them, comfyprompt.localBoxSchema).
  */
 const boxesSchema = (r) => {
-    if (!r || r.kind !== "provider") return null;
+    if (!r) return null;
+    if (r.kind !== "provider") return comfyprompt.localBoxSchema(r);
     const own = (r.options || {}).boxes, text = ((r.text && r.text.refs && r.text.refs.options) || {}).boxes;
     return typeof own === "string" ? own : typeof text === "string" ? text : null;
 };
@@ -563,9 +566,9 @@ export const host = {
     /**
      * The Boxes switch under the prompt field (item 28 S3d, docs/PLAN_BOXES.md §10): `takes` says a run of the selected
      * recipe sends boxes (the row shows only then), `count` how many boxes the plugins hold for the document (its
-     * label), `schema` the format they go in (the variant's `options.boxes`: "flux3", "ideogram4"; null when it takes
-     * none). The switch itself is the document's `genSettings.boxes`: on, a run sends the boxes, or the selection as one
-     * box when there are none; off, none.
+     * label), `schema` the format they go in (the variant's `options.boxes`: "flux3", "ideogram4"; a ComfyUI recipe's
+     * `boxes.schema`; null when it takes none). The switch itself is the document's `genSettings.boxes`: on, a run sends
+     * the boxes, or the selection as one box when there are none; off, none.
      */
     boxSwitch(editor) {
         const schema = boxesSchema(this.recipe);
@@ -576,14 +579,16 @@ export const host = {
      * Whether Generate new with `recipe` (a resolved recipe; the selected one by default) sends the document's boxes
      * (item 34): `schema` the format its text route takes them in (null: none), `on` the Boxes switch, `count` how many
      * the document holds, `goes` all three. The rule runGenerate follows (textOptions; the references go where the text
-     * route takes them), so the Generate new dialog says what the run will do.
+     * route takes them), so the Generate new dialog says what the run will do. A ComfyUI recipe that declares where its
+     * box rows go (its `boxes`): Generate new is an edit of a fresh white canvas (generate_new's local path), and the
+     * document's boxes go with it, scaled to the new canvas (queueGenerate).
      */
     newBoxes(editor, recipe = this.recipe) {
         const r = recipe;
-        if (!editor || !r || r.kind !== "provider" || !r.text) return { schema: null, on: false, count: 0, goes: false };
-        const withRefs = !!(this.refTokens && r.text.refs && editor.refSnapshot().refIds.length);
-        const options = textOptions(r, withRefs);
-        const schema = options && typeof options.boxes === "string" ? options.boxes : null;
+        const local = editor && r && r.kind !== "provider" ? comfyprompt.localBoxSchema(r) : null;
+        if (!local && (!editor || !r || r.kind !== "provider" || !r.text)) return { schema: null, on: false, count: 0, goes: false };
+        const options = local ? null : textOptions(r, !!(this.refTokens && r.text.refs && editor.refSnapshot().refIds.length));
+        const schema = local || (options && typeof options.boxes === "string" ? options.boxes : null);
         const on = !!(editor.genSettings && editor.genSettings.boxes);
         const count = schema && this.plugins ? this.plugins.countBoxes(editor) : 0;
         return { schema, on, count, goes: !!schema && on && count > 0 };
@@ -1118,6 +1123,67 @@ export const host = {
         for (const [name, info] of Object.entries(this.objectInfo)) types[name] = { nodeData: info };
         this._types = types;
         return this.objectInfo;
+    },
+
+    /**
+     * The slot of the connected server's Inpaint Canvas box_prompt output (comfyprompt.boxPromptSlot), or -1. A node list
+     * without it is read again for that node alone first: the node may have been updated since the connect (the
+     * sentence a run refuses with asks for that).
+     */
+    async boxPromptSlot() {
+        let slot = comfyprompt.boxPromptSlot(this.objectInfo);
+        if (slot >= 0) return slot;
+        try {
+            const res = await api.fetchApi("/object_info/InpaintCanvas");
+            const one = res && res.status === 200 ? await res.json() : null;
+            if (one && one.InpaintCanvas) {
+                // kept only in a node list that is known (a partial one would read every other node as missing)
+                if (this.objectInfo) {
+                    this.objectInfo = { ...this.objectInfo, InpaintCanvas: one.InpaintCanvas };
+                    if (this._types) this._types.InpaintCanvas = { nodeData: one.InpaintCanvas };
+                }
+                slot = comfyprompt.boxPromptSlot(one);
+            }
+        } catch (_) { /* the node list as it was */ }
+        return slot;
+    },
+
+    /**
+     * The boxes a run of a ComfyUI recipe that declares them (its `boxes`, comfyprompt.localBoxSchema) sends with the Boxes
+     * switch on, as canvas_state carries them (boxes_model.promptPayload over the document's boxes and the reference
+     * layers `refIds` the run sends; serializeForPrompt takes them as they are, `opts.boxes`):
+     * - `boxes`: the list; null when the Boxes plugin holds none for the document (or is off, so its stored boxes stay home
+     *   as on an API run): the selection then goes as one box, the node's own, and `goes` says whether there is one;
+     * - `notes`: the boxes promptPayload left out (a From box whose layer does not go), said in the status line;
+     * - `fresh` (Generate new on a fresh canvas): no selection's box, and Keep, Move and Remove boxes are left out
+     *   (comfyprompt.newImageBoxes), each with a note in `dropped`;
+     * - `goes`: whether a box goes, so the node's box_prompt is needed.
+     * @returns {{ boxes: any[] | null, notes: string[], dropped: string[], goes: boolean }}
+     */
+    localBoxPlan(editor, refIds, { fresh = false } = {}) {
+        const held = this.plugins ? this.plugins.countBoxes(editor) : 0;
+        const d = editor.pluginData && editor.pluginData.boxes;
+        const list = held > 0 && d && Array.isArray(d.boxes) ? d.boxes : [];
+        if (!list.length) return { boxes: fresh ? [] : null, notes: [], dropped: [], goes: !fresh && !!(editor.getBounds && editor.getBounds()) };
+        const p = promptPayload(list, editor.refLayersFor(refIds));
+        const f = fresh ? comfyprompt.newImageBoxes(p.boxes) : { boxes: p.boxes, dropped: [] };
+        return { boxes: f.boxes, notes: p.notes, dropped: f.dropped, goes: f.boxes.length > 0 };
+    },
+
+    /**
+     * Generate new with a ComfyUI recipe that declares its boxes (the generate_new command's local path, before its
+     * newCanvas replaces the picture): the boxes the run sends (localBoxPlan, `fresh`), measured on the picture and the
+     * reference layers they were drawn on, or null when the recipe takes none or the Boxes switch is off. A run that sends
+     * a box to a node without box_prompt is refused here as queueGenerate refuses it, so the picture is not wiped first.
+     * @param {any} editor
+     * @param {any} r the recipe
+     * @param {string[]} refIds the reference layers the run sends
+     */
+    async newBoxPlan(editor, r, refIds) {
+        if (!comfyprompt.localBoxSchema(r) || !(editor.genSettings && editor.genSettings.boxes)) return null;
+        const plan = this.localBoxPlan(editor, refIds, { fresh: true });
+        if (plan.goes && (await this.boxPromptSlot()) < 0) throw refusal(comfyprompt.oldNodeBoxes(r), "warn");
+        return plan;
     },
 
     async onConnected(status) {
@@ -3680,6 +3746,10 @@ export const host = {
      * reference snapshot (docs/PLAN_REFS.md C3; a caller without one gets the references of now).
      */
     async queueGenerate(editor, opts = {}) {
+        // Generate new on a ComfyUI recipe (generate_new's local path, a fresh canvas): the size its boxes were drawn on,
+        // read once whatever the run does
+        const fresh = editor._newBoxes || null;
+        editor._newBoxes = undefined;
         const r = this.recipe;
         if (!r) throw refusal("No recipe selected.");
         // a run whose landing resizes the document (an upscale of the whole picture, the Realism Pass above 1×) holds it:
@@ -3736,13 +3806,42 @@ export const host = {
             const tooBig = this.upscaleSizeRefusal(r, realism.fitSpan(cw, editor.width, m), realism.fitSpan(ch, editor.height, m), factor, "box");
             if (tooBig) throw refusal(tooBig, "warn");
         }
+        // boxes in the prompt (a recipe that declares the input FLUX 3's rows go to, `boxes`): with the Boxes switch on, the
+        // boxes the run sends (localBoxPlan: the document's, or the selection as one box when it holds none; on Generate
+        // new the plan generate_new made before the fresh canvas replaced the picture). The Inpaint Canvas node writes the
+        // rows from the canvas state into its box_prompt output, which an older node does not have: refused here, before
+        // anything is uploaded, and again below on the state
+        const boxSchema = upscale ? null : boxesSchema(r);
+        const runRefs = upscale ? [] : snap.refIds.slice(0, early.lay.kept);
+        let boxPlan = null, boxSlot = -1;
+        if (boxSchema && editor.genSettings.boxes) {
+            boxPlan = fresh && fresh.plan ? fresh.plan : this.localBoxPlan(editor, runRefs, { fresh: !!fresh });
+            if (boxPlan.goes) {
+                boxSlot = await this.boxPromptSlot();
+                if (boxSlot < 0) throw refusal(comfyprompt.oldNodeBoxes(r), "warn");
+            }
+        }
         editor.lastUpscaleFactor = factor;
         editor.lastSentPrompt = null;
         editor.lastRunNotes = [];
-        editor.lastSentBoxes = 0;   // a local recipe takes no boxes (docs/PLAN_BOXES.md: FLUX 3 Image and Ideogram 4 only)
+        editor.lastSentBoxes = 0;
+        if (boxSchema && !editor.genSettings.boxes) {
+            const held = this.plugins ? this.plugins.countBoxes(editor) : 0;
+            if (held) editor.lastRunNotes.push(`The document's ${held} box${held === 1 ? "" : "es"} did not go: the Boxes switch under the prompt is off.`);
+        }
+        // the plan's boxes as serializeForPrompt sends them; Generate new's scaled from the picture they were drawn on to
+        // the fresh canvas, as fractions of the picture as an API model's Generate new places them (another shape
+        // stretches them, and the notes say so)
+        let boxGiven = null, stretched = "";
+        if (boxPlan) {
+            boxGiven = { boxes: boxPlan.boxes ? JSON.parse(JSON.stringify(boxPlan.boxes)) : null, notes: boxPlan.notes };
+            if (fresh && comfyprompt.scaleStateBoxes(boxGiven, fresh.from, [editor.width, editor.height])) {
+                stretched = genpresets.stretchNote(fresh.from, [editor.width, editor.height], genpresets.aspectsOf(r), fresh.aspect || null) || "";
+            }
+        }
         // an upscale's canvas state carries no references (upscaleState), so none is read or uploaded for it; a reference
         // past the recipe's slots is not uploaded either
-        const sopts = upscale ? { refIds: [], prompt: texts.prompt, negative: texts.negative } : { refIds: snap.refIds.slice(0, early.lay.kept), prompt: snap.prompt, negative: snap.negative };
+        const sopts = upscale ? { refIds: [], prompt: texts.prompt, negative: texts.negative } : { refIds: runRefs, prompt: snap.prompt, negative: snap.negative, ...(boxGiven ? { boxes: boxGiven } : {}) };
         let state, plan = null;
         if (upscale) state = this.upscaleState(await editor.serializeForPrompt(sopts));
         else {
@@ -3754,6 +3853,29 @@ export const host = {
             st.prompt = texts.prompt;
             st.negative = texts.negative;
             if (texts.pairs.length) st.named_refs = true;
+            // the boxes as the state carries them (the plan's: `boxes` whenever the document holds some, so a list it
+            // emptied never turns into the selection's box; none but the plan's on Generate new): their count, the node's
+            // box_prompt for a run that sends any. The switch is the state's (turned off while the pictures went up: none go)
+            const listed = Array.isArray(st.boxes), stBoxes = listed ? st.boxes.length : 0;
+            if (boxPlan) editor.lastRunNotes.push(...boxPlan.dropped);
+            if (boxPlan && st.gen && st.gen.boxes && (stBoxes > 0 || (!fresh && !listed && !!st.hasSelection))) {
+                if (boxSlot < 0) boxSlot = await this.boxPromptSlot();
+                if (boxSlot < 0) throw refusal(comfyprompt.oldNodeBoxes(r), "warn");
+                editor.lastSentBoxes = stBoxes || 1;
+                if (stretched && stBoxes) editor.lastRunNotes.push(stretched);
+                // an @img token in a description: the name this recipe gives its picture, as the prompt names it
+                // (<ref_image_1>), not the node's "image n"; a token whose picture does not go stays, and the node says so
+                if (stBoxes) {
+                    const ids = [...Array(plan.lay.original).fill(null), ...snap.refIds.slice(0, plan.lay.kept)];
+                    const idOf = new Map([...snap.labels].map(([id, n]) => [n, id]));
+                    const spec = plan.spec, pictures = plan.lay.pictures;
+                    st.boxes = comfyprompt.nameBoxTokens(st.boxes, (n) => {
+                        const at = idOf.has(n) ? ids.indexOf(idOf.get(n)) : -1;
+                        const pic = at >= 0 ? pictures.find((x) => x.ref === at) : null;
+                        return pic && pic.n ? refName(spec.name, pic.n) : null;
+                    });
+                }
+            } else boxSlot = -1;
             state = JSON.stringify(st);
             editor.lastSentPrompt = st.prompt;
             if (snap.refIds.length > plan.lay.kept) {
@@ -3792,6 +3914,9 @@ export const host = {
             const at = r.factor.input.indexOf("|"), node = prompt[r.factor.input.slice(0, at)];
             if (node && node.inputs) node.inputs[r.factor.input.slice(at + 1)] = factor;
         }
+        // the run sends boxes: the recipe's declared input takes the node's box_prompt (the prompt with FLUX 3's rows,
+        // written by the node from the state's boxes) instead of the plain prompt the recipe file keeps there
+        if (boxSlot >= 0 && !comfyprompt.wireBoxPrompt(prompt, r, boxSlot)) throw new Error(`${r.name || r.id}: its boxes input ${r.boxes && r.boxes.input} does not read the Inpaint Canvas node's prompt, so no box could go.`);
         if (pass) {
             // Style and Strength are app-wide (settings.realism, the Upscale dialog's row); the DLSS model preset is the
             // recipe's own Settings row (its shipped presets L and M), so it is not taken from settings.realism here. A
@@ -3809,6 +3934,8 @@ export const host = {
         if (plan) {
             const named = texts.pairs.filter((p) => p.name).map((p) => `${p.label} → ${p.name}`);
             if (named.length) editor.setStatus(`${editor.status} Named in the prompt: ${named.join(", ")}.`, editor.statusKind || "info");
+            const nb = editor.lastSentBoxes;
+            if (nb) editor.setStatus(`${editor.status} Sent with ${nb} box${nb === 1 ? "" : "es"}.`, editor.statusKind || "info");
             if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`, notesKind(editor, editor.lastRunNotes));
             if (named.length && window.scumble && window.scumble.log) {
                 Promise.resolve(window.scumble.log.add({ level: "info", source: "comfy", message: `local run ${(res && res.prompt_id) || ""}: prompt as sent`, detail: editor.lastSentPrompt })).catch(() => { /* the log is optional */ });
@@ -3818,6 +3945,14 @@ export const host = {
         // picture waits for it, since the result lands in the geometry it was made for (PLAN_0_1_31 §7)
         if (res && res.prompt_id) (editor._localRuns || (editor._localRuns = new Set())).add(res.prompt_id);
         if (res && res.prompt_id) this.trackRun(editor, res.prompt_id, this.runNodeCount(prompt));
+        // a run that took box_prompt: the node's notes on its boxes are this run's (the `executed` listener shows them);
+        // any other run's are not, whatever the node wrote for a switch left on (taken out when the result lands; the
+        // bound is only for prompts that never answer)
+        if (boxSlot >= 0 && res && res.prompt_id != null) {
+            const boxed = editor._boxPrompts || (editor._boxPrompts = new Set());
+            boxed.add(String(res.prompt_id));
+            while (boxed.size > 50) boxed.delete(boxed.values().next().value);
+        }
         // the result's history entry keeps the prompt of the click, not the field's text when it lands (S4)
         if (res && res.prompt_id) {
             const sent = editor._sentTexts || (editor._sentTexts = new Map());
@@ -4999,13 +5134,30 @@ api.addEventListener("executed", ({ detail }) => {
     if (!out) return;
     // a prompt of a closed tab lands nowhere (the fallbacks below would hand it to the tab in front)
     if (detail.prompt_id != null && host._closedPrompts.has(String(detail.prompt_id))) return;
+    // the canvas node's notes on boxes it left out or could not write into box_prompt (docs/PLAN_NODE_BOXES.md D9; it runs
+    // before the result): the run's notes, and the status line once the result has landed. Only for a run that took
+    // box_prompt (queueGenerate's `_boxPrompts`): the node also writes rows nobody reads, for a switch left on under a
+    // recipe that takes no boxes or a Generate new without any, and their notes say nothing about the run
+    const boxNotes = Array.isArray(out.inpaint_boxes) ? out.inpaint_boxes.filter((n) => typeof n === "string" && n) : [];
+    const boxEd = boxNotes.length && detail.prompt_id != null ? host.editorByPrompt(detail.prompt_id) : null;
+    if (boxEd && boxEd._boxPrompts && boxEd._boxPrompts.has(String(detail.prompt_id))) {
+        const held = boxEd._boxNotes || (boxEd._boxNotes = new Map());
+        held.set(String(detail.prompt_id), boxNotes);
+        while (held.size > 50) held.delete(held.keys().next().value);
+        if (String(boxEd.lastPromptId) === String(detail.prompt_id) && Array.isArray(boxEd.lastRunNotes)) boxEd.lastRunNotes.push(...boxNotes);
+        if (window.scumble && window.scumble.log) Promise.resolve(window.scumble.log.add({ level: "warn", source: "comfy", message: `local run ${detail.prompt_id}: boxes`, detail: boxNotes.join(" ") })).catch(() => { /* the log is optional */ });
+    }
     // Results: the recipe's canvas node id is the same for every tab, so the prompt id
     // decides; helper outputs carry the editor id the helper prompt was queued with.
     if (out.inpaint_result) {
         const ed = host.editorByPrompt(detail.prompt_id) || host.editor;
         const sent = ed && ed._sentTexts && ed._sentTexts.get(detail.prompt_id);
         if (sent) ed._sentTexts.delete(detail.prompt_id);
-        if (ed) ed.addResults(sent ? out.inpaint_result.map((r) => ({ ...r, ...sent, via: sent.via ? `${sent.via}, ${Math.round((Date.now() - sent.viaStarted) / 1000)} s` : undefined })) : out.inpaint_result);
+        const notes = ed && ed._boxNotes && detail.prompt_id != null ? ed._boxNotes.get(String(detail.prompt_id)) : null;
+        if (notes) ed._boxNotes.delete(String(detail.prompt_id));
+        if (ed && ed._boxPrompts && detail.prompt_id != null) ed._boxPrompts.delete(String(detail.prompt_id));
+        const landed = ed ? ed.addResults(sent ? out.inpaint_result.map((r) => ({ ...r, ...sent, via: sent.via ? `${sent.via}, ${Math.round((Date.now() - sent.viaStarted) / 1000)} s` : undefined })) : out.inpaint_result) : null;
+        if (notes) Promise.resolve(landed).then(() => ed.setStatus(`${ed.status} Boxes: ${notes.join(" ")}`, "warn")).catch(() => { /* the result's own line stands */ });
     }
     // a closed tab's helper output (queued while it closed: no prompt id was known) lands nowhere either
     const forNode = (info) => (info && info.canvas_node != null && host._closedNodes.has(String(info.canvas_node)) ? null

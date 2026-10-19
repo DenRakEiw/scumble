@@ -458,7 +458,7 @@ Generation settings: mode api / local / cloud (the recipe decides what is availa
 | `seed_random` | boolean | a new seed per run |
 | `denoise` | number | 0.05..1 |
 | `refine` | boolean | refine pass |
-| `boxes` | boolean | the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay |
+| `boxes` | boolean | the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4, FLUX 3 Image Klein on your ComfyUI) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay |
 
 ### `set_crop`
 

@@ -16,6 +16,9 @@
 // ships (shippedPresets; a node id may hold colons, "57:12:unet_name").
 // RTX Video Super Resolution (docs/PLAN_0_1_42.md U1): §5 fromGraph keeps its factor (with its input) and limits, §7 its
 // Comfy Cloud copy runs at the factor its graph holds (fixed, with a note).
+// Boxes in the prompt on the user's ComfyUI (§13): a ComfyUI recipe's `boxes` kept by normalize, a bad one warned and
+// dropped, carried through Save to recipe / Save as new recipe while the graph still feeds its input the plain prompt, none
+// on the Comfy Cloud copy.
 "use strict";
 
 const fs = require("node:fs");
@@ -961,6 +964,81 @@ async function main() {
         check("fromWorkflow: box_prompt's consumer takes the plain prompt, elements' link goes, setting_1 is Settings row 1",
             eq(r.prompt["2"].inputs.prompt, ["1", 7]) && !("bounding_boxes" in r.prompt["2"].inputs) && r.settings.length === 1 && r.settings[0].index === 1 && r.settings[0].node === "3"
             && r.notes.some((n) => /box_prompt/.test(n)), short({ inputs: r.prompt["2"].inputs, settings: r.settings, notes: r.notes }));
+    });
+
+    // ---- 13. boxes in the prompt on the user's ComfyUI: a recipe's `boxes` (the input the node's box_prompt goes to) ----
+    await section("13. a ComfyUI recipe's boxes", async () => {
+        const BOXES = { schema: "flux3", input: "say_in|string_b" };
+        const warn = console.warn;
+        const warned = [];
+        console.warn = (...a) => warned.push(a.join(" "));
+        try {
+            freshUserData();
+            const all = await recipes.list(RECIPES);
+            const k = all.find((r) => r.id === "flux3_klein_local");
+            check("flux3_klein_local keeps its boxes through list() (normalize), without a warning",
+                !!k && eq(k.boxes, BOXES) && !warned.some((w) => /boxes/.test(w)), short({ boxes: k && k.boxes, warned }));
+            const others = all.filter((r) => r.boxes !== undefined && r.id !== "flux3_klein_local").map((r) => r.id);
+            check("no other shipped recipe declares boxes", !others.length, others.join(", "));
+            const raw = rawFile("flux3_klein_local.json");
+            const withBoxes = (boxes, more = {}) => ({ ...JSON.parse(JSON.stringify(raw)), kind: "comfy", boxes, ...more });
+            const extra = recipes._normalize(withBoxes({ ...BOXES, note: "x" }));
+            check("only schema and input are kept", eq(extra.boxes, BOXES), short(extra.boxes));
+            const bad = [
+                ["an array", []],
+                ["a bare schema string", "flux3"],
+                ["a schema the node does not write", { schema: "ideogram4", input: BOXES.input }],
+                ["an input without node|", { schema: "flux3", input: "say_in" }],
+                ["a node the graph lacks", { schema: "flux3", input: "nope|string_b" }],
+                ["the canvas node itself", { schema: "flux3", input: "canvas|padding" }],
+                ["an input that holds text, not the canvas's prompt", { schema: "flux3", input: "say_keep|string_b" }],
+                ["an input linked to another canvas output (the seed)", { schema: "flux3", input: "noise|noise_seed" }],
+                ["an input linked to another node", { schema: "flux3", input: "say_keep|string_a" }],
+            ];
+            for (const [what, boxes] of bad) {
+                const before = warned.length;
+                const r = recipes._normalize(withBoxes(boxes));
+                const said = warned.slice(before);
+                check(`a bad boxes (${what}) is dropped with a warning`, r.boxes === undefined && said.length === 1 && /^flux3_klein_local: boxes .*the recipe sends no boxes$/.test(said[0]), short({ boxes: r.boxes, said }));
+            }
+            const before = warned.length;
+            const row = recipes._normalize(withBoxes(BOXES, { settings: [...raw.settings, { index: 7, node: "say_in", input: "string_b", label: "Prompt" }] }));
+            const up = recipes._normalize(withBoxes(BOXES, { task: "upscale" }));
+            check("boxes on an input a Settings row writes, or on an upscale recipe, are dropped with a warning each",
+                row.boxes === undefined && up.boxes === undefined && warned.length - before === 2 && /Settings row/.test(warned[before]) && /task "upscale"/.test(warned[before + 1]), short(warned.slice(before)));
+            // Save to recipe and Save as new recipe keep it (GRAPH_KEEPS), also when the page wired box_prompt there by hand
+            const workflow = { nodes: [{ id: 1, type: "InpaintCanvas" }], links: [], extra: {} };
+            const date = "2026-10-19";
+            const p = recipes.toPrompt(k);
+            check("toPrompt keeps say_in.string_b on the plain prompt", eq(p.say_in.inputs.string_b, ["canvas", 7]), short(p.say_in.inputs));
+            const over = recipes.fromGraph({ output: p, workflow, objectInfo: {}, base: k, date });
+            const fresh = recipes.fromGraph({ output: p, workflow, objectInfo: {}, base: k, name: "My Klein boxes", ids: [k.id], date });
+            check("fromGraph (Save to recipe, Save as new recipe) keeps the boxes", eq(over.boxes, BOXES) && eq(fresh.boxes, BOXES) && fresh.id !== k.id, short({ over: over.boxes, fresh: fresh.boxes }));
+            const byHand = JSON.parse(JSON.stringify(p));
+            byHand.say_in.inputs.string_b = ["canvas", 21];
+            const hand = recipes.fromGraph({ output: byHand, workflow, objectInfo: {}, base: k, date });
+            check("a graph that took box_prompt into say_in.string_b is stored on the plain prompt, the boxes kept",
+                eq(hand.prompt.say_in.inputs.string_b, ["canvas", 7]) && eq(hand.boxes, BOXES), short({ input: hand.prompt.say_in.inputs.string_b, boxes: hand.boxes }));
+            const typed = JSON.parse(JSON.stringify(p));
+            typed.say_in.inputs.string_b = "a fixed prompt";
+            const gone = recipes.fromGraph({ output: typed, workflow, objectInfo: {}, base: k, date });
+            const renamed = JSON.parse(JSON.stringify(p));
+            renamed.say_first = renamed.say_in;
+            delete renamed.say_in;
+            renamed.say_keep.inputs.string_a = ["say_first", 0];
+            const gone2 = recipes.fromGraph({ output: renamed, workflow, objectInfo: {}, base: k, date });
+            check("a graph whose boxes input no longer takes the canvas's prompt (a typed text, the node renamed) is saved without the boxes",
+                gone.boxes === undefined && gone2.boxes === undefined, short({ gone: gone.boxes, gone2: gone2.boxes }));
+            await recipes.save(over);
+            const listed = (await recipes.list(RECIPES)).find((r) => r.id === k.id);
+            check("the saved copy, read back through list(), keeps the boxes", !!listed && listed.source === "user" && eq(listed.boxes, BOXES), short(listed && listed.boxes));
+            await recipes.remove(k.id);
+            // the Comfy Cloud copy has no canvas node: the prompt goes into say_in.string_b as a value and no boxes go
+            const { recipe: d } = recipes.detach(k);
+            const v = d.providers.comfycloud;
+            check("the Comfy Cloud copy takes the prompt into say_in.string_b and declares no boxes",
+                d.boxes === undefined && (v.options || {}).boxes === undefined && (v.options.values.prompt || []).some((x) => eq(x, ["say_in", "string_b"])), short({ values: v.options.values, boxes: d.boxes }));
+        } finally { console.warn = warn; }
     });
 
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });

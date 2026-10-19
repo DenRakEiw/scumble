@@ -16,7 +16,13 @@ with it on and off, the panel's note and the overlay's dashed outline while off,
 selection from going as a box, the selection as one box with none, the switch carried by a .scumble file). S3e: ids
 from the description (a default id only, not one the prompt names), the warnings for a New box without a description
 and for a small box, a run's caption with the places in words and its notes, the smallest box under a click, a box
-turned into Move stepping aside.
+turned into Move stepping aside. A local recipe (flux3_klein_local, its `boxes`): the row shows, the canvas state carries
+the boxes, a run takes the declared input from the Inpaint Canvas node's box_prompt (found by name), the switch off keeps
+the plain prompt, an older node refuses before anything is uploaded (generate_new before its fresh canvas wipes the
+picture), a recipe without the declaration is unchanged (the node's box notes of its runs ignored), an @img token in a
+description goes as the recipe's name for its picture, a From box whose layer does not go and boxes stored while the
+Boxes plugin is off do not count, and Generate new scales the boxes to the fresh canvas, leaves out Keep, Move and Remove
+boxes and measures From boxes before the wipe (the queue and the node list stubbed in the page).
 
     python tools/boxes_test.py
 
@@ -708,6 +714,231 @@ if (document.querySelector("dialog.boxes-inline")) throw new Error("the tool cha
 if (!(await boxes()).some((b) => b.desc === "a bronze bell")) throw new Error("the tool change dropped the text");
 await c("close_document", { doc: window.__bDoc, force: true });
 return { colours: list.map((b) => b.id + ":" + b.colour).join(" ") };
+"""),
+    # a local ComfyUI recipe that declares its boxes input (flux3_klein_local): the row, the canvas state, the input taken
+    # from the node's box_prompt by name, the switch off, an older node refused, a recipe without it unchanged, Generate new
+    ("local_recipe_box_prompt", """
+// boxes in the prompt on the user's ComfyUI: flux3_klein_local declares the input FLUX 3's rows go to (boxes { schema,
+// input }); the Boxes row shows for it, the canvas state carries the boxes, and a run that sends boxes takes that input
+// from the Inpaint Canvas node's box_prompt (found by name in the node list); the switch off keeps the plain prompt, an
+// older node refuses before anything is uploaded or queued (generate_new before its fresh canvas wipes the picture), a
+// recipe without the declaration is as before (the node's box notes of its runs are not shown), Generate new scales the
+// boxes to the fresh canvas and sends New, Text and From boxes only. Nothing reaches a server: the queue, the ensure and
+// /object_info/InpaintCanvas are caught in the page.
+const { api } = await import("./editor/host.js");
+const main = window.__bDoc;
+const prev = host.recipe;
+const klein = host.shell.recipes().find((r) => r.id === "flux3_klein_local");
+const klein2 = host.shell.recipes().find((r) => r.id === "flux2_klein_local");
+if (!klein || !klein2) throw new Error("flux3_klein_local / flux2_klein_local are not among the recipes");
+if (!eq(klein.boxes, { schema: "flux3", input: "say_in|string_b" })) throw new Error("the recipe's boxes as served: " + JSON.stringify(klein.boxes));
+const OUTS = ["crop_image", "crop_mask", "image", "mask", "stitch_info", "crop_width", "crop_height", "prompt", "control_image", "denoise", "seed", "mode", "negative",
+    "setting_1", "setting_2", "setting_3", "setting_4", "setting_5", "setting_6", "setting_7", "setting_8"];
+const node = (outs) => ({ input: { required: {} }, output: outs.map(() => "*"), output_name: outs });
+const NEW = node([...OUTS, "box_prompt", "elements"]), OLD = node(OUTS);
+// a node whose box_prompt is not at 21: the slot is found by name
+const LATER = node([...OUTS, "extra", "box_prompt", "elements"]);
+const OI = Object.fromEntries([...klein.needs, ...klein2.needs].map((n) => [n, { input: { required: {} } }]));
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, fetchApi: api.fetchApi, missing: host.missingFilesRefusal, count: host.plugins.countBoxes, queueGenerate: host.queueGenerate };
+const T = { queued: [], ensured: 0, fetched: 0, answer: OLD };
+const out = {};
+try {
+    host.connected = true;
+    host.objectInfo = { ...OI, InpaintCanvas: NEW };
+    host.missingFilesRefusal = () => null;
+    host.ensureOnServer = async () => { T.ensured++; return null; };
+    api.queuePrompt = async (n, body) => { const id = "f3k-boxes-" + (T.queued.length + 1); T.queued.push({ id, body }); return { prompt_id: id }; };
+    api.fetchApi = (path, init) => {
+        if (String(path) === "/object_info/InpaintCanvas") { T.fetched++; return Promise.resolve(new Response(JSON.stringify({ InpaintCanvas: T.answer }), { status: 200, headers: { "Content-Type": "application/json" } })); }
+        return saved.fetchApi.call(api, path, init);
+    };
+    const d = await c("new_document");
+    window.__bDoc = d.id;
+    const ed = ednow();
+    host.shell.activate(ed);
+    await c("new_canvas", { width: 1200, height: 800, doc: d.id });
+    // the row: hidden under the recipe without the declaration, shown under the one with it
+    host.setRecipe(klein2);
+    if (!ed.boxesRow || !ed.boxesRow.hidden) throw new Error("the Boxes row shows under flux2_klein_local");
+    host.setRecipe(klein);
+    if (ed.boxesRow.hidden) throw new Error("the Boxes row is hidden under flux3_klein_local");
+    if (!eq(host.boxSwitch(ed), { takes: true, count: 0, schema: "flux3" })) throw new Error("boxSwitch: " + JSON.stringify(host.boxSwitch(ed)));
+    const a = await c("boxes.add", { id: "apple_1", rect: [700, 120, 900, 320], desc: "a red apple", doc: d.id });
+    if (!a.switched_on || !ed.genSettings.boxes || !/under the prompt is on now/.test(ed.status)) throw new Error("the first box under the local recipe: " + JSON.stringify(a) + " " + ed.status);
+    await c("set_prompt", { text: "a bowl of fruit", doc: d.id });
+    await c("select_rect", { x: 600, y: 60, w: 400, h: 340, doc: d.id });
+    const end = (id) => api.dispatch("execution_success", { prompt_id: id });
+    const queue = async () => { const n = T.queued.length; await host.queueGenerate(ed); if (T.queued.length !== n + 1) throw new Error("nothing was queued"); const q = T.queued[n]; end(q.id); return { p: q.body.output, st: JSON.parse(q.body.output.canvas.inputs.canvas_state), id: q.id }; };
+    // the log's last id, and its entries for a prompt's box notes after it (the log is written over IPC: a moment later)
+    const lastLog = async () => { const g = await c("read_log", { limit: 1 }); return g.entries.length ? g.entries[g.entries.length - 1].id : 0; };
+    const boxLog = async (after, id) => { await wait(400); return (await c("read_log", { after })).entries.filter((e) => e.message === `local run ${id}: boxes`); };
+    // the node's notes for a prompt that took no box_prompt: not the run's, not held for its result, not logged
+    const notesIgnored = async (id, what) => {
+        const l0 = await lastLog();
+        api.dispatch("executed", { prompt_id: id, node: "canvas", output: { inpaint_boxes: ["Box edit_1 went without a description: the model guesses what goes there."] } });
+        const logged = await boxLog(l0, id);
+        if (ed.lastRunNotes.some((n) => /edit_1/.test(n)) || (ed._boxNotes && ed._boxNotes.has(String(id))) || logged.length) throw new Error(what + ": the node's box notes of a run without box_prompt were taken: " + JSON.stringify({ notes: ed.lastRunNotes, logged: logged.length }));
+    };
+    // on, with a box: say_in.string_b from box_prompt (21), the rest of the graph as the recipe has it; the state carries the box
+    let q = await queue();
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 21]) || !eq(q.p.say_keep.inputs.string_a, ["say_in", 0]) || !eq(q.p.pos.inputs.text, ["say_keep", 0])) throw new Error("on, a box: " + JSON.stringify([q.p.say_in.inputs, q.p.say_keep.inputs, q.p.pos.inputs.text]));
+    if (!eq(klein.prompt.say_in.inputs.string_b, ["canvas", 7])) throw new Error("the run changed the recipe's own graph");
+    if (!q.st.gen.boxes || !Array.isArray(q.st.boxes) || q.st.boxes.length !== 1 || q.st.boxes[0].id !== "apple_1" || !eq(q.st.boxes[0].rect, [700, 120, 900, 320]) || q.st.boxes[0].desc !== "a red apple" || q.st.prompt !== "a bowl of fruit") throw new Error("the canvas state: " + JSON.stringify({ gen: q.st.gen.boxes, boxes: q.st.boxes, prompt: q.st.prompt }));
+    if (ed.lastSentBoxes !== 1 || !/Sent with 1 box[.]/.test(ed.status)) throw new Error("the count / the status: " + ed.lastSentBoxes + " / " + ed.status);
+    out.on = { input: q.p.say_in.inputs.string_b, status: ed.status };
+    // the node's notes on a box it left out (its executed ui): in the run's notes and kept for the result's line
+    api.dispatch("executed", { prompt_id: q.id, node: "canvas", output: { inpaint_boxes: ["Box apple_1 lies outside the crop and was not sent."] } });
+    if (!ed.lastRunNotes.includes("Box apple_1 lies outside the crop and was not sent.") || !(ed._boxNotes && ed._boxNotes.get(q.id))) throw new Error("the node's box notes: " + JSON.stringify(ed.lastRunNotes));
+    if ((await boxLog(0, q.id)).length !== 1) throw new Error("the node's box notes are not in the log");
+    ed._boxNotes.delete(q.id);
+    // the slot by name: a node whose box_prompt sits later
+    host.objectInfo = { ...OI, InpaintCanvas: LATER };
+    q = await queue();
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 22])) throw new Error("box_prompt at 22: " + JSON.stringify(q.p.say_in.inputs.string_b));
+    host.objectInfo = { ...OI, InpaintCanvas: NEW };
+    // off: the plain prompt, no boxes in the state, a note that the box stayed home
+    await c("set_generation", { boxes: false, doc: d.id });
+    q = await queue();
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 7]) || "boxes" in q.st || ed.lastSentBoxes !== 0) throw new Error("off: " + JSON.stringify([q.p.say_in.inputs.string_b, q.st.boxes, ed.lastSentBoxes]));
+    if (!ed.lastRunNotes.some((n) => /1 box did not go: the Boxes switch under the prompt is off/.test(n))) throw new Error("no note for the box left home: " + JSON.stringify(ed.lastRunNotes));
+    // an older node (no box_prompt; its own entry read again says the same): refused before the upload and the queue
+    host.objectInfo = { ...OI, InpaintCanvas: OLD };
+    T.answer = OLD;
+    q = await queue();
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 7])) throw new Error("off with an older node: " + JSON.stringify(q.p.say_in.inputs.string_b));
+    await c("set_generation", { boxes: true, doc: d.id });
+    const n0 = T.queued.length, e0 = T.ensured, f0 = T.fetched;
+    let refused = "";
+    try { await host.queueGenerate(ed); } catch (err) { refused = String(err.message || err); }
+    const OLD_NODE = /does not have: update the Inpaint Canvas node to its current GitHub version [(]a git clone: git pull in its folder under custom_nodes; installed through the Comfy Registry or the Manager: replace that folder with a git clone of https:..github[.]com.DenRakEiw.ComfyUI-InpaintCanvas[)], then restart ComfyUI, or turn the Boxes switch under the prompt off[.]$/;
+    if (!OLD_NODE.test(refused) || T.queued.length !== n0 || T.ensured !== e0 || T.fetched !== f0 + 1) throw new Error("an older node: " + JSON.stringify({ refused, queued: T.queued.length - n0, ensured: T.ensured - e0, fetched: T.fetched - f0 }));
+    out.refused = refused;
+    // the node updated since the connect: its entry read again has box_prompt, and the run goes
+    T.answer = NEW;
+    q = await queue();
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 21]) || !(host.objectInfo.InpaintCanvas.output_name || []).includes("box_prompt")) throw new Error("the node read again: " + JSON.stringify(q.p.say_in.inputs.string_b));
+    // an @img token in a box's description goes as the name the recipe gives its picture, the one the prompt has
+    // (<ref_image_N>), not the node's "image n"; the document's box keeps its token
+    const shelfRef = await c("add_paint_layer", { name: "Shelf", doc: d.id });
+    await c("set_layer", { layer: shelfRef.id, role: "reference", x: 100, y: 500, w: 200, h: 200, doc: d.id });
+    await c("boxes.add", { id: "shelf_1", rect: [620, 80, 760, 200], desc: "@img1 on the shelf", doc: d.id });
+    await c("set_prompt", { text: "a bowl of fruit, @img1 beside it", doc: d.id });
+    q = await queue();
+    const pname = (/(<ref_image_[0-9]+>) beside it$/.exec(q.st.prompt) || [])[1];
+    const shelf = (q.st.boxes || []).find((b) => b.id === "shelf_1");
+    if (!pname || !shelf || shelf.desc !== `${pname} on the shelf` || !eq(q.st.referenceLabels, ["img1"]) || !eq(q.p.say_in.inputs.string_b, ["canvas", 21])) throw new Error("@img1 in a description: " + JSON.stringify({ prompt: q.st.prompt, shelf, labels: q.st.referenceLabels }));
+    if ((await c("boxes.list", D())).boxes.find((b) => b.id === "shelf_1").desc !== "@img1 on the shelf") throw new Error("the run changed the document's box");
+    out.named = shelf.desc;
+    await c("boxes.remove", { id: "shelf_1", doc: d.id });
+    await c("set_prompt", { text: "a bowl of fruit", doc: d.id });
+    // a From box whose reference layer does not go (hidden) is all the document holds: no box goes, so an older node is
+    // no reason to refuse, and the state's empty list keeps the node from sending the selection as a box
+    await c("boxes.clear", D());
+    await c("boxes.add", { id: "shelf_from_1", kind: "from", layer: shelfRef.id, rect: [620, 80, 760, 200], doc: d.id });
+    await c("set_layer", { layer: shelfRef.id, visible: false, doc: d.id });
+    host.objectInfo = { ...OI, InpaintCanvas: OLD };
+    T.answer = OLD;
+    q = await queue();
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 7]) || !eq(q.st.boxes, []) || ed.lastSentBoxes !== 0) throw new Error("a From box that does not go, with an older node: " + JSON.stringify([q.p.say_in.inputs.string_b, q.st.boxes, ed.lastSentBoxes]));
+    await c("boxes.clear", D());
+    await c("remove_layer", { layer: shelfRef.id, doc: d.id });
+    host.objectInfo = { ...OI, InpaintCanvas: NEW };
+    T.answer = NEW;
+    // the Boxes plugin off (no source counts the boxes): its stored boxes stay home and the selection goes as one box,
+    // as on an API run
+    await c("boxes.add", { id: "apple_1", rect: [700, 120, 900, 320], desc: "a red apple", doc: d.id });
+    host.plugins.countBoxes = () => 0;
+    q = await queue();
+    host.plugins.countBoxes = saved.count;
+    if ("boxes" in q.st || q.st.selectionBoxId !== "bowl_1" || !eq(q.p.say_in.inputs.string_b, ["canvas", 21]) || ed.lastSentBoxes !== 1) throw new Error("the Boxes plugin off: " + JSON.stringify([q.st.boxes, q.st.selectionBoxId, q.p.say_in.inputs.string_b, ed.lastSentBoxes]));
+    await c("boxes.clear", D());
+    // no box, the switch on: the selection goes as one box (the node's own), so box_prompt takes the prompt
+    await c("boxes.clear", D());
+    q = await queue();
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 21]) || "boxes" in q.st || q.st.selectionBoxId !== "bowl_1" || ed.lastSentBoxes !== 1) throw new Error("the selection as one box: " + JSON.stringify([q.p.say_in.inputs.string_b, q.st.boxes, q.st.selectionBoxId, ed.lastSentBoxes]));
+    // a recipe without the declaration: no row, no boxes in the state, no rewiring and no refusal with an older node
+    await c("boxes.add", { id: "apple_1", rect: [700, 120, 900, 320], desc: "a red apple", doc: d.id });
+    host.objectInfo = { ...OI, InpaintCanvas: OLD };
+    T.answer = OLD;
+    host.setRecipe(klein2);
+    q = await queue();
+    if ("boxes" in q.st || "selectionBoxId" in q.st || JSON.stringify(q.p).includes('"canvas",21') || ed.lastSentBoxes !== 0 || ed.lastRunNotes.some((n) => /box/.test(n))) throw new Error("flux2_klein_local: " + JSON.stringify({ st: Object.keys(q.st), sent: ed.lastSentBoxes, notes: ed.lastRunNotes }));
+    await notesIgnored(q.id, "flux2_klein_local");
+    host.setRecipe(klein);
+    host.objectInfo = { ...OI, InpaintCanvas: NEW };
+    // Generate new (generate_new's local path marks the run): the boxes scaled from the picture they were drawn on to the
+    // fresh canvas, stretched with a note when the shape differs; no selection's box without boxes
+    await c("select_all", D());
+    ed._newBoxes = { from: [2400, 1600], aspect: null };
+    q = await queue();
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 21]) || !eq(q.st.boxes[0].rect, [350, 60, 450, 160]) || ed._newBoxes !== undefined || ed.lastRunNotes.some((n) => /stretched/.test(n))) throw new Error("Generate new, the same shape: " + JSON.stringify([q.st.boxes, ed.lastRunNotes]));
+    // a Move box has no source in a new picture: left out with an API new image's note, the New box goes
+    await c("boxes.add", { id: "lamp_1", kind: "move", rect: [100, 100, 200, 200], src: [300, 300, 400, 400], desc: "the lamp", doc: d.id });
+    ed._newBoxes = { from: [1200, 800], aspect: null };
+    q = await queue();
+    if (!eq((q.st.boxes || []).map((b) => b.id), ["apple_1"]) || ed.lastSentBoxes !== 1 || !ed.lastRunNotes.includes("lamp_1: a new image has no source to keep, move or remove (move).") || !eq(q.p.say_in.inputs.string_b, ["canvas", 21])) throw new Error("Generate new with a Move box: " + JSON.stringify([q.st.boxes, ed.lastSentBoxes, ed.lastRunNotes]));
+    // the Move box alone: none goes, so an older node does not refuse, and the selection is no box either
+    await c("boxes.remove", { id: "apple_1", doc: d.id });
+    host.objectInfo = { ...OI, InpaintCanvas: OLD };
+    T.answer = OLD;
+    ed._newBoxes = { from: [1200, 800], aspect: null };
+    q = await queue();
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 7]) || !eq(q.st.boxes, []) || ed.lastSentBoxes !== 0 || !ed.lastRunNotes.some((n) => /^lamp_1: a new image/.test(n))) throw new Error("Generate new with a Move box alone: " + JSON.stringify([q.p.say_in.inputs.string_b, q.st.boxes, ed.lastRunNotes]));
+    host.objectInfo = { ...OI, InpaintCanvas: NEW };
+    T.answer = NEW;
+    await c("boxes.remove", { id: "lamp_1", doc: d.id });
+    await c("boxes.add", { id: "apple_1", rect: [700, 120, 900, 320], desc: "a red apple", doc: d.id });
+    ed._newBoxes = { from: [1200, 1200], aspect: "3:2" };
+    q = await queue();
+    const near = (u, v) => u.length === v.length && u.every((x, i) => Math.abs(x - v[i]) < 1e-6);
+    if (!near(q.st.boxes[0].rect, [700, 80, 900, 320 * 800 / 1200]) || !ed.lastRunNotes.some((n) => /drawn on .*; at 3:2 they go stretched/.test(n))) throw new Error("Generate new, another shape: " + JSON.stringify([q.st.boxes, ed.lastRunNotes]));
+    await c("boxes.clear", D());
+    ed._newBoxes = { from: [1200, 800], aspect: null };
+    q = await queue();
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 7]) || ed.lastSentBoxes !== 0) throw new Error("Generate new without boxes sent the selection as one: " + JSON.stringify(q.p.say_in.inputs.string_b));
+    await notesIgnored(q.id, "Generate new without boxes");
+    // generate_new with an older node and a box: refused before its fresh canvas replaces the picture, the layers and the
+    // history (nothing wiped, uploaded or queued)
+    await c("boxes.add", { id: "apple_1", rect: [700, 120, 900, 320], desc: "a red apple", doc: d.id });
+    const lamp = await c("add_paint_layer", { name: "Lamp", doc: d.id });
+    await c("set_layer", { layer: lamp.id, role: "reference", x: 500, y: 350, w: 200, h: 100, doc: d.id });
+    await c("add_paint_layer", { name: "Kept", doc: d.id });
+    host.objectInfo = { ...OI, InpaintCanvas: OLD };
+    T.answer = OLD;
+    const was = { w: ed.width, h: ed.height, layers: ed.layers.map((l) => l.id).join(","), hist: ed.history.length, queued: T.queued.length, ensured: T.ensured };
+    let gnErr = "";
+    try { await c("generate_new", { prompt: "a bowl of fruit", width: 1024, height: 1024, doc: d.id, timeout: 5 }); } catch (err) { gnErr = String(err.message || err); }
+    const now = { w: ed.width, h: ed.height, layers: ed.layers.map((l) => l.id).join(","), hist: ed.history.length, queued: T.queued.length, ensured: T.ensured };
+    if (!OLD_NODE.test(gnErr) || !eq(now, was)) throw new Error("generate_new with an older node: " + JSON.stringify({ gnErr, was, now }));
+    out.generateNew = gnErr.slice(0, 60);
+    // generate_new's own plan, made before the wipe: a From box measured on its reference layer as it was drawn on (the
+    // fresh canvas places the layer again), a Move box left out with its note, the boxes' size the picture they were
+    // drawn on; the run then sends that plan (queueGenerate stubbed for the call, the plan queued after it)
+    host.objectInfo = { ...OI, InpaintCanvas: NEW };
+    T.answer = NEW;
+    await c("boxes.add", { id: "lamp_from_1", kind: "from", layer: lamp.id, src: [550, 375, 650, 425], rect: [100, 100, 300, 300], doc: d.id });
+    await c("boxes.add", { id: "old_lamp_1", kind: "move", rect: [100, 500, 200, 600], src: [300, 500, 400, 600], desc: "the old lamp", doc: d.id });
+    let mark = null;
+    host.queueGenerate = async (e) => { mark = e._newBoxes; e._newBoxes = undefined; throw new Error("stub: not queued"); };
+    try { await c("generate_new", { prompt: "a bowl of fruit", width: 1024, height: 1024, doc: d.id, timeout: 5 }); } catch (_) { /* the stub's */ }
+    host.queueGenerate = saved.queueGenerate;
+    const fromBox = mark && mark.plan && (mark.plan.boxes || []).find((b) => b.id === "lamp_from_1");
+    if (!mark || !eq(mark.from, [1200, 800]) || !fromBox || !eq(fromBox.src, [0.25, 0.25, 0.75, 0.75]) || fromBox.ref !== 0 || !eq(mark.plan.boxes.map((b) => b.id), ["apple_1", "lamp_from_1"]) || !eq(mark.plan.dropped, ["old_lamp_1: a new image has no source to keep, move or remove (move)."]) || !mark.plan.goes || ed.width !== 1024) throw new Error("generate_new's plan: " + JSON.stringify({ mark, w: ed.width }));
+    ed._newBoxes = mark;
+    q = await queue();
+    const sentFrom = (q.st.boxes || []).find((b) => b.id === "lamp_from_1");
+    if (!eq(q.p.say_in.inputs.string_b, ["canvas", 21]) || !sentFrom || !eq(sentFrom.src, [0.25, 0.25, 0.75, 0.75]) || !near(sentFrom.rect, [100 * 1024 / 1200, 100 * 1024 / 800, 300 * 1024 / 1200, 300 * 1024 / 800]) || ed.lastSentBoxes !== 2 || !ed.lastRunNotes.some((n) => /^old_lamp_1: a new image/.test(n))) throw new Error("generate_new's plan as sent: " + JSON.stringify({ boxes: q.st.boxes, sent: ed.lastSentBoxes, notes: ed.lastRunNotes }));
+    out.queued = T.queued.length;
+    return out;
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure;
+    api.queuePrompt = saved.queue; api.fetchApi = saved.fetchApi; host.missingFilesRefusal = saved.missing;
+    host.plugins.countBoxes = saved.count; host.queueGenerate = saved.queueGenerate;
+    for (const q of T.queued) api.dispatch("execution_success", { prompt_id: q.id });
+    if (window.__bDoc !== main) { try { await c("close_document", { doc: window.__bDoc, force: true }); } catch (_) { /* gone */ } }
+    window.__bDoc = main;
+    host.setRecipe(prev);
+}
 """),
 ]
 

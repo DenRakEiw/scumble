@@ -8,6 +8,9 @@
 // PreviewImage on the result, the Settings rows and the factor written, the recipe's own graph untouched; the refusal of
 // a graph that reads more than the picture from the canvas node (and of the other shapes it cannot run); resultOf,
 // canvasReads, wholePictureClasses; CANVAS_OUTPUTS against recipes.js's own list.
+// Boxes in the prompt on the user's ComfyUI: localBoxSchema, boxPromptSlot by name, wireBoxPrompt on flux3_klein_local
+// (only the declared input changes, the recipe's own graph untouched), oldNodeBoxes (a clone for a Registry install),
+// scaleStateBoxes and newImageBoxes (Generate new), nameBoxTokens (an @img token in a description as the recipe's name).
 "use strict";
 
 const fs = require("node:fs");
@@ -164,6 +167,59 @@ async function main() {
         const fixed = norm("upscale_model_local");
         const pf = C.wholePicturePrompt(fixed, REF, 3, null);
         check("a recipe without a factor target ignores a factor", eq(pf.up.inputs, fixed.prompt.up.inputs) && eq(pf.loader.inputs, fixed.prompt.loader.inputs));
+    });
+
+    // boxes in the prompt on the user's ComfyUI: a recipe's `boxes` (flux3_klein_local), the node's box_prompt by name,
+    // the declared input rewired on a copy of the graph, the sentence of an older node, the boxes of Generate new scaled
+    await section("boxes: the node's box_prompt", async () => {
+        const OUTS = ["crop_image", "crop_mask", "image", "mask", "stitch_info", "crop_width", "crop_height", "prompt", "control_image", "denoise", "seed", "mode", "negative",
+            "setting_1", "setting_2", "setting_3", "setting_4", "setting_5", "setting_6", "setting_7", "setting_8"];
+        check("boxPromptSlot finds box_prompt by name (21 on the node of 2026-10-15, wherever it sits), -1 on an older node or no list",
+            C.BOX_PROMPT === "box_prompt" && C.boxPromptSlot({ InpaintCanvas: { output_name: [...OUTS, "box_prompt", "elements"] } }) === 21
+            && C.boxPromptSlot({ InpaintCanvas: { output_name: [...OUTS, "x", "box_prompt"] } }) === 22
+            && C.boxPromptSlot({ InpaintCanvas: { output_name: OUTS } }) === -1 && C.boxPromptSlot({}) === -1 && C.boxPromptSlot(null) === -1);
+        const k = norm("flux3_klein_local");
+        const before = clone(k);
+        check("flux3_klein_local declares its boxes (normalized and raw); flux2_klein_local and a provider recipe do not",
+            C.localBoxSchema(k) === "flux3" && C.localBoxSchema(rawFile("flux3_klein_local")) === "flux3" && C.localBoxSchema(norm("flux2_klein_local")) === null
+            && C.localBoxSchema({ kind: "provider", prompt: {}, boxes: { schema: "flux3", input: "a|b" } }) === null && C.localBoxSchema(null) === null
+            && C.localBoxSchema({ ...k, boxes: { schema: "flux3", input: "nobar" } }) === null, short(k.boxes));
+        const p = clone(k.prompt);
+        const wired = C.wireBoxPrompt(p, k, 21);
+        const diff = linksOf(p).filter((l) => !linksOf(k.prompt).includes(l));
+        check("wireBoxPrompt takes say_in.string_b from box_prompt (21), every other link and the recipe's own graph as they were",
+            wired && eq(p.say_in.inputs.string_b, ["canvas", 21]) && eq(diff, ["say_in.string_b -> canvas:21"]) && eq(k, before), short({ diff }));
+        const p2 = clone(k.prompt);
+        check("no slot, a recipe without the declaration, or an input that no longer reads the canvas node: nothing is wired",
+            !C.wireBoxPrompt(p2, k, -1) && !C.wireBoxPrompt(p2, norm("flux2_klein_local"), 21) && eq(p2, k.prompt)
+            && !C.wireBoxPrompt({ ...p2, say_in: { ...p2.say_in, inputs: { ...p2.say_in.inputs, string_b: "typed" } } }, k, 21));
+        check("an older node's sentence names the recipe, the update (a pull for a clone, a clone for a Registry or Manager install) and the switch",
+            /^FLUX 3 Image Klein \(ComfyUI\) sends the boxes through the Inpaint Canvas node's box_prompt output, .*update the Inpaint Canvas node to its current GitHub version \(a git clone: git pull in its folder under custom_nodes; installed through the Comfy Registry or the Manager: replace that folder with a git clone of https:\/\/github\.com\/DenRakEiw\/ComfyUI-InpaintCanvas\), then restart ComfyUI, or turn the Boxes switch under the prompt off\.$/.test(C.oldNodeBoxes(k)), C.oldNodeBoxes(k));
+        const st = { boxes: [
+            { id: "a_1", kind: "new", rect: [100, 50, 300, 250], desc: "a" },
+            { id: "b_1", kind: "move", rect: [0, 0, 100, 100], src: [200, 200, 400, 300], desc: "b" },
+            { id: "c_1", kind: "from", rect: [400, 400, 600, 500], src: [0.1, 0.1, 0.9, 0.9], ref: 0, desc: "c" },
+        ] };
+        const same = clone(st);
+        check("scaleStateBoxes: the same size or no boxes leaves the state as it is",
+            !C.scaleStateBoxes(same, [800, 600], [800, 600]) && eq(same, st) && !C.scaleStateBoxes({}, [800, 600], [400, 300]) && !C.scaleStateBoxes(clone(st), [0, 0], [400, 300]));
+        const half = clone(st);
+        const did = C.scaleStateBoxes(half, [800, 600], [400, 300]);
+        check("scaleStateBoxes: rects and a move's source as fractions of the picture, a from box's source (fractions of its layer) kept",
+            did && eq(half.boxes[0].rect, [50, 25, 150, 125]) && eq(half.boxes[1].src, [100, 100, 200, 150]) && eq(half.boxes[2].rect, [200, 200, 300, 250])
+            && eq(half.boxes[2].src, [0.1, 0.1, 0.9, 0.9]) && half.boxes[0].src === undefined, short(half.boxes));
+        // Generate new: a new picture has no source to keep, move or remove; New, Text and From boxes go
+        const fresh = C.newImageBoxes([...clone(st.boxes), { id: "k_1", kind: "keep", rect: [0, 0, 10, 10], src: [0, 0, 10, 10] }, { id: "r_1", kind: "remove", rect: [0, 0, 10, 10], src: [0, 0, 10, 10] }, { id: "t_1", kind: "new", rect: [1, 1, 9, 9], text: "SALE" }]);
+        check("newImageBoxes: Keep, Move and Remove left out with an API new image's note each, New, Text and From kept in order",
+            eq(fresh.boxes.map((b) => b.id), ["a_1", "c_1", "t_1"]) && eq(fresh.dropped, ["b_1: a new image has no source to keep, move or remove (move).", "k_1: a new image has no source to keep, move or remove (keep).", "r_1: a new image has no source to keep, move or remove (remove)."])
+            && eq(C.newImageBoxes([]), { boxes: [], dropped: [] }) && eq(C.newImageBoxes(null), { boxes: [], dropped: [] }), short(fresh));
+        // an @img token in a description: the name the recipe gives that picture, as the prompt has it
+        const named = [{ id: "a_1", kind: "new", rect: [0, 0, 1, 1], desc: "@img1 on the shelf, beside @img3" }, { id: "b_1", kind: "new", rect: [0, 0, 1, 1], desc: "no token" }, { id: "c_1", kind: "new", rect: [0, 0, 1, 1] }];
+        const keep = clone(named);
+        const out = C.nameBoxTokens(named, (n) => (n === 1 ? "<ref_image_1>" : null));
+        check("nameBoxTokens: a token whose picture goes as its name, one that does not as it was, the boxes given unchanged",
+            out[0].desc === "<ref_image_1> on the shelf, beside @img3" && out[1] === named[1] && out[2] === named[2] && eq(named, keep)
+            && eq(C.nameBoxTokens(null, () => "x"), []) && C.nameBoxTokens([{ desc: "@img12 x" }], (n) => `<p${n}>`)[0].desc === "<p12> x", short(out));
     });
 
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });

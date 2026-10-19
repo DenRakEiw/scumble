@@ -24550,7 +24550,10 @@ class InpaintEditor {
 
     /**
      * Called when the prompt is built: upload flattened image, mask and control, return the prompt JSON. `opts` (the
-     * app): `refIds` the click's references (refLayersFor), `prompt` / `negative` the texts to send instead of the fields'.
+     * app): `refIds` the click's references (refLayersFor), `prompt` / `negative` the texts to send instead of the fields';
+     * `boxes` ({ boxes, notes }, promptPayload's shape; `boxes` null: none, the selection goes as one) the boxes a run
+     * sends while the Boxes switch is on, measured by the caller, instead of the document's (Generate new measures them
+     * on the picture they were drawn on, before its fresh canvas replaces it).
      */
     async serializeForPrompt(opts = {}) {
         if (!this.base) return "{}";
@@ -24602,17 +24605,19 @@ class InpaintEditor {
         }
         // the Boxes switch on and a run that takes boxes (docs/PLAN_NODE_BOXES.md §4): the document's boxes, the
         // references' layer ids and the id of the selection's box, for the node's nodes.py to write FLUX 3's rows (an older
-        // node ignores them). The app's local recipes take none (its boxes go with provider runs), so nothing changes there.
+        // node ignores them). In the app a local recipe takes them only when it declares the input its rows go to (its
+        // `boxes`): the app's host wires that input to the node's box_prompt for the run.
         const promptSent = opts.prompt != null ? opts.prompt : this.promptText;
         let boxPart = {}, boxNote = "";
         const boxSwitch = this.genSettings.boxes ? host.boxSwitch(this) : null;
         if (boxSwitch && boxSwitch.takes) {
-            const list = this.pluginData && this.pluginData.boxes && Array.isArray(this.pluginData.boxes.boxes) ? this.pluginData.boxes.boxes : [];
-            const p = promptPayload(list, refLayers);
+            const given = opts.boxes && typeof opts.boxes === "object" ? opts.boxes : null;
+            const list = given ? (given.boxes || []) : this.pluginData && this.pluginData.boxes && Array.isArray(this.pluginData.boxes.boxes) ? this.pluginData.boxes.boxes : [];
+            const p = given ? { boxes: list, notes: Array.isArray(given.notes) ? given.notes : [] } : promptPayload(list, refLayers);
             // each reference's @img label (img1 ..), so nodes.py can name a token in a description or the prompt as the
             // picture the batch holds ("image 3")
             const labels = this.refLabels();
-            boxPart = { selectionBoxId: selectionBoxIdOf(promptSent), referenceIds: refLayers.map((l) => l.id), referenceLabels: refLayers.map((l) => (labels.has(l.id) ? `img${labels.get(l.id)}` : null)), ...(list.length ? { boxes: p.boxes } : {}) };
+            boxPart = { selectionBoxId: selectionBoxIdOf(promptSent), referenceIds: refLayers.map((l) => l.id), referenceLabels: refLayers.map((l) => (labels.has(l.id) ? `img${labels.get(l.id)}` : null)), ...((given ? Array.isArray(given.boxes) : list.length) ? { boxes: p.boxes } : {}) };
             boxNote = p.notes.join(" ");
         }
         const [x, y, w, h] = this.cropRect();

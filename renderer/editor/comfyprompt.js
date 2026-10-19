@@ -3,9 +3,12 @@
 // with its Inpaint Canvas node turned into a loader of one picture (InpaintCanvasLoadRef, the same pack) and a
 // PreviewImage on the recipe's result, so the answer comes back at its own size instead of being fitted into a box by
 // the node's stitch. host.runComfyUpscale queues it through comfyPictureRun.
+// And boxes in the prompt on the user's ComfyUI: a recipe that declares where FLUX 3's box rows go (`boxes: { schema,
+// input }`, electron/main/recipes.js localBoxes) has that input taken from the Inpaint Canvas node's box_prompt output
+// for a run that sends boxes (host.queueGenerate; the node writes the rows from the canvas state, docs/PLAN_NODE_BOXES.md).
 //
-// App-only: host.js imports it; it is not in tools/build_node.py FILES (the node has no whole-picture route). Pure, no
-// DOM, no editor: tools/comfyprompt_test.js imports this file.
+// App-only: host.js imports it; it is not in tools/build_node.py FILES (the node has no whole-picture route, and its
+// own graphs wire box_prompt by hand). Pure, no DOM, no editor: tools/comfyprompt_test.js imports this file.
 
 /** The node of wholePicturePrompt whose picture is the answer. */
 export const WHOLE_OUTPUT = "scumble_out";
@@ -113,4 +116,121 @@ export function wholePicturePrompt(r, ref, factor, settings) {
 export function wholePictureClasses(r) {
     const p = wholePicturePrompt(r, { filename: "-" }, null, null);
     return Array.from(new Set(Object.values(p).map((n) => n.class_type))).sort();
+}
+
+// ---- boxes in the prompt on the user's ComfyUI -----------------------------------------------------------------------
+
+/** The canvas node's output that carries the prompt with FLUX 3's box rows (nodes.py, after the settings slots). */
+export const BOX_PROMPT = "box_prompt";
+
+/**
+ * The format a run of a ComfyUI recipe sends boxes in: its `boxes.schema` ("flux3") when it declares the input the rows
+ * go to, else null. A provider recipe answers null here (its format is its variant's `options.boxes`).
+ * @param {any} r
+ * @returns {string | null}
+ */
+export function localBoxSchema(r) {
+    const b = r && r.kind !== "provider" && r.prompt ? r.boxes : null;
+    return b && typeof b.schema === "string" && typeof b.input === "string" && b.input.indexOf("|") > 0 ? b.schema : null;
+}
+
+/**
+ * The slot of the Inpaint Canvas node's box_prompt output on the server whose node list is `objectInfo`, found by its
+ * name (it follows the settings slots), or -1: a node from before the boxes, or no node list.
+ * @param {any} objectInfo
+ */
+export function boxPromptSlot(objectInfo) {
+    const info = objectInfo && objectInfo.InpaintCanvas;
+    const names = info && Array.isArray(info.output_name) ? info.output_name : [];
+    return names.indexOf(BOX_PROMPT);
+}
+
+/**
+ * `prompt` (a copy of the recipe's graph as it is queued) with the input the recipe's `boxes.input` names taken from the
+ * canvas node's output `slot` (box_prompt) instead of its plain prompt, in place. Answers whether it was wired: false
+ * when the recipe declares no boxes, the slot is none, or that input does not read the canvas node.
+ * @param {Record<string, any>} prompt
+ * @param {any} r
+ * @param {number} slot
+ */
+export function wireBoxPrompt(prompt, r, slot) {
+    if (!localBoxSchema(r) || !Number.isInteger(slot) || slot < 0) return false;
+    const at = r.boxes.input.indexOf("|");
+    const node = prompt && prompt[r.boxes.input.slice(0, at)];
+    const name = r.boxes.input.slice(at + 1);
+    const v = node && node.inputs ? node.inputs[name] : undefined;
+    if (!isLink(v) || String(v[0]) !== String(r.canvas)) return false;
+    node.inputs[name] = [v[0], slot];
+    return true;
+}
+
+/** Where the Inpaint Canvas node's current version is (the boxes are newer than the Comfy Registry's 0.3.4). */
+export const NODE_REPO = "https://github.com/DenRakEiw/ComfyUI-InpaintCanvas";
+
+/**
+ * The sentence a run that sends boxes refuses with when the Inpaint Canvas node on the server has no box_prompt output
+ * (the Comfy Registry's 0.3.4 has none: the boxes came to the node on 2026-10-15). A Registry or Manager install has no
+ * .git folder, so a git pull is no way out for it: it is replaced by a clone.
+ * @param {any} r
+ */
+export function oldNodeBoxes(r) {
+    const name = (r && (r.name || r.id)) || "This recipe";
+    return `${name} sends the boxes through the Inpaint Canvas node's box_prompt output, which the node on this ComfyUI does not have: update the Inpaint Canvas node to its current GitHub version (a git clone: git pull in its folder under custom_nodes; installed through the Comfy Registry or the Manager: replace that folder with a git clone of ${NODE_REPO}), then restart ComfyUI, or turn the Boxes switch under the prompt off.`;
+}
+
+/**
+ * The boxes of a new picture (Generate new on a fresh canvas): a Keep, Move or Remove box has no source in a picture that
+ * does not exist yet and is left out, with the note an API model's Generate new gives (boxes_format.js rowsText); New,
+ * Text and From boxes stay (a From box's reference goes in the node's batch). `boxes` as canvas_state carries them.
+ * @param {any[]} boxes
+ * @returns {{ boxes: any[], dropped: string[] }}
+ */
+export function newImageBoxes(boxes) {
+    const out = [], dropped = [];
+    for (const b of boxes || []) {
+        if (b && (b.kind === "keep" || b.kind === "move" || b.kind === "remove")) dropped.push(`${b.id}: a new image has no source to keep, move or remove (${b.kind}).`);
+        else if (b) out.push(b);
+    }
+    return { boxes: out, dropped };
+}
+
+/** An @img token in a box's description (boxes_model.js TOKEN). */
+const BOX_TOKEN = /@img([1-9][0-9]*)\b/g;
+
+/**
+ * The boxes with each @img token of a description written as the name the recipe gives its picture (`nameOf(n)`: the
+ * name of @img<n>'s picture in this run, "<ref_image_1>", or null), as the prompt names it; a token whose picture does
+ * not go stays as it is, and the node's note says so. New objects; the boxes given are not changed.
+ * @param {any[]} boxes
+ * @param {(n: number) => string | null} nameOf
+ */
+export function nameBoxTokens(boxes, nameOf) {
+    return (boxes || []).map((b) => {
+        if (!b || typeof b.desc !== "string" || !b.desc.includes("@img")) return b;
+        return { ...b, desc: b.desc.replace(BOX_TOKEN, (m, n) => nameOf(+n) || m) };
+    });
+}
+
+/**
+ * A canvas state's boxes (`state.boxes`, document pixels) drawn on a picture of `from` [w, h], sent with a new picture of
+ * `to` [w, h] (Generate new on a fresh canvas): each rect (and a keep / move / remove source, which newImageBoxes leaves
+ * out of a new picture) scaled as fractions of the picture, as an API model's Generate new places its boxes (another
+ * shape stretches them); a from box's source is fractions of its layer and stays. In place; answers whether anything
+ * was scaled.
+ * @param {any} state
+ * @param {[number, number]} from
+ * @param {[number, number]} to
+ */
+export function scaleStateBoxes(state, from, to) {
+    const list = state && Array.isArray(state.boxes) ? state.boxes : null;
+    const [fw, fh] = from || [0, 0], [tw, th] = to || [0, 0];
+    if (!list || !list.length || !(fw > 0 && fh > 0 && tw > 0 && th > 0) || (fw === tw && fh === th)) return false;
+    const sx = tw / fw, sy = th / fh;
+    const scale = (/** @type {any} */ q) => (Array.isArray(q) && q.length === 4 ? [q[0] * sx, q[1] * sy, q[2] * sx, q[3] * sy] : q);
+    for (const b of list) {
+        if (!b || typeof b !== "object") continue;
+        b.rect = scale(b.rect);
+        if (b.kind !== "from" && b.src != null) b.src = scale(b.src);
+    }
+    return true;
 }
