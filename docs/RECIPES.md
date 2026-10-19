@@ -66,6 +66,24 @@ through a prompt of its own, `realism.passPrompt`, which takes the recipe's `DLS
   and 1 only: with Original on no reference layer reached the model, with Original off only the first one did, and
   with the crop alone `ImageFromBatch`'s clamp repeated it into the second slot. **The widened graph has not run**
   (three more 1 MP reference latents cost memory and time).
+- `flux3_klein_local`, **FLUX 3 Image Klein** (0.1.49, run live 2026-10-19 on the user's ComfyUI 0.41.2): Klein's
+  chain with four changes. `BasicScheduler` (simple) instead of `Flux2Scheduler`, which computes FLUX.2's own shift
+  and ignores the model's (FLUX 3 carries `shift 1.93586` in its config, `comfy/supported_models.py`); sizes in steps of
+  16 (`resolution_steps: 16`: the VAE centre-crops every input to multiples of 16, which shifts a crop otherwise);
+  `refs: { "name": "<ref_image_{n0}>", "slots": 4 }` (FLUX 3 names its pictures from 0, the crop is `<ref_image_0>`,
+  so `@img1` beside the crop is `<ref_image_1>`); and the prompt wrapped by two core `StringConcatenate` nodes into
+  an edit instruction, "In <ref_image_0>, <prompt> Keep everything else unchanged.": the model takes the reference
+  only as an edit when the prompt names it as one; with the user's prompt alone it painted a new scene from the text
+  (a black cat on a forest path instead of on the crop's pavement), with the prefix and a description it kept the
+  palette but rebuilt the layout, with the closing sentence it kept the scene. A Generate new (a white
+  `<ref_image_0>`) still makes a whole picture through the wrapper. The model files are picked under Settings; the
+  shipped names are the official `flux3_image_klein_sd_int8_convrot` (step-distilled, 16 steps, CFG 1, the default)
+  and `flux3_image_klein_base_int8_convrot` (base: 50 steps, CFG 4; the Preset row has both), `qwen3vl_4b_int8_convrot`
+  (CLIPLoader type `flux3`; the bf16 file works too) and `flux2-vae`. ComfyUI 0.41 or newer runs FLUX 3 on its own
+  nodes. Live, on an RTX 5090 with the distilled int8 file: an edit 5-9 s, a reference layer reached the picture
+  (`<ref_image_1>`), Generate new 1024 x 1024 in 8 s. Boxes typed into the prompt as BFL's rows (a caption citing
+  `<apple_1>`, then `[{"id", "bbox": [ymin, xmin, ymax, xmax] on 0-1000, "desc"}]`) placed the object in its box on
+  both seeds tried: the model takes boxes as text, locally too.
 - `qwen_image_edit_2_1_local`, **Qwen Image Edit 2.1** (added for 0.1.23): ComfyUI's own template
   `image_qwen_image_2_1_image_edit.json` with its subgraph flattened and its save and compare nodes left out (they
   would write every run into the server's output folder). `TextEncodeQwenImage21` takes **one picture per input**

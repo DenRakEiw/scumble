@@ -131,6 +131,18 @@ async function main() {
         const kDerived = C.comfyRefSpec(kBare);
         check("Klein without refs: the identity trace derives the same spec", eq(kDerived, kSpec), short({ ...kDerived, trim: kDerived.trim && kDerived.trim.length }));
 
+        // FLUX 3 Image Klein (ComfyUI): Klein's chain, its pictures named from 0 (the crop is <ref_image_0>)
+        const [F3K, f3Warn] = shipped("flux3_klein_local.json");
+        const fSpec = C.comfyRefSpec(F3K);
+        check("FLUX 3 Klein: <ref_image_{n0}>, 4 slots, not a guess, Klein's trim, read without a warning", fSpec.name === "<ref_image_{n0}>" && fSpec.slots === 4 && fSpec.guess === false && eq(fSpec.trim, kTrim) && !f3Warn.length, short({ ...fSpec, trim: fSpec.trim && fSpec.trim.length, warned: f3Warn }));
+        const fOne = C.comfyLayout(fSpec, { hasSelection: true, fill: "none", withOriginal: false, refine: false, count: 1 });
+        const fOrig = C.comfyLayout(fSpec, { hasSelection: true, fill: "green", withOriginal: true, refine: false, count: 1 });
+        // (with the Original in the batch it is reference 0 and the first reference layer is 1)
+        check("FLUX 3 Klein: a reference layer is <ref_image_1> beside the crop, <ref_image_2> after the Original (<ref_image_1>)",
+            C.resolveMarkers("put {@ref:0} here", fOne.pictures, fSpec.name).text === "put <ref_image_1> here"
+            && C.resolveMarkers("put {@ref:1} here, keep {@ref:0}", fOrig.pictures, fSpec.name).text === "put <ref_image_2> here, keep <ref_image_1>",
+            short([C.resolveMarkers("{@ref:0}", fOne.pictures, fSpec.name).text, C.resolveMarkers("{@ref:1} {@ref:0}", fOrig.pictures, fSpec.name).text]));
+
         const before = JSON.stringify(QWEN) + JSON.stringify(KLEIN);
         C.comfyRefSpec(QWEN); C.comfyRefSpec(KLEIN);
         check("comfyRefSpec leaves the recipe as it was", JSON.stringify(QWEN) + JSON.stringify(KLEIN) === before);
