@@ -105,16 +105,16 @@ code.
   "No ComfyUI running", QW8 the mascot; **QW3 dropped**: ComfyUI-Manager's search does not show a Registry-only pack,
   `docs/BUGS.md`). **S8 done** (QW4 `relight {preset}`, QW5 "<model> via <route>, N s" on every result; "S8 as
   built" in the plan). **S9 done** (QW7 reference rows reordered by drag; "S9 as built" in the plan). **S4 done**
-  (2026-10-18/19 night; "S4 as built" in the plan): the docs (`ac068a0`, written and checked by a workflow), a review
-  workflow of 117 agents over S0-S9 (48 findings confirmed, none refuted), four fixed by hand (`4b66c62`), 44 by a fix
-  workflow in three file-disjoint groups with a checker each (`c9fa7dc`; the cancel by id alone, 120 s of unanswered
+  (2026-10-18/19 night; "S4 as built" in the plan): the docs (`80e4979`, written and checked by a workflow), a review
+  workflow of 117 agents over S0-S9 (48 findings confirmed, none refuted), four fixed by hand (`6f78b8b`), 44 by a fix
+  workflow in three file-disjoint groups with a checker each (`4546a03`; the cancel by id alone, 120 s of unanswered
   status reads, the recovery's new ask model and `provider:cloudJobsChanged`, the Router's last read after a sleep,
   closing a tab stops its runs, `cancel_run`'s `said`); 22 gates green on tiles together. Riding along: RTX VSR's two
-  new required inputs (`c6f7fb0` by the demo-video session for Comfy Cloud, `71e851f` for the local recipe). **For
+  new required inputs (`a9975e4` by the demo-video session for Comfy Cloud, `f3f9b84` for the local recipe). **For
   the user:** the RTX node pack on their ComfyUI needs nvidia-vfx 0.2 or newer (python_embeded has 0.1.0.1, so the pack
   fails at import: `python_embeded\python.exe -m pip install -U "nvidia-vfx>=0.2"`, their call). **S5's local prep
-  done** (2026-10-19 night, `354f0fc`: `## 0.1.49 - 2026-10-19` in the CHANGELOG, a later release day moves the date;
-  `package.json` 0.1.49): built from `354f0fc`: `dist/Scumble Setup 0.1.49.exe`,
+  done** (2026-10-19 night, `7639bc6`: `## 0.1.49 - 2026-10-19` in the CHANGELOG, a later release day moves the date;
+  `package.json` 0.1.49): built from `7639bc6`: `dist/Scumble Setup 0.1.49.exe`,
   `dist/Scumble-0.1.49-portable-win-x64.zip` (174 MB; the SDK in the asar checked), `dist/scumble-0.1.49.mcpb`,
   `dist/Scumble-0.1.49.msix` (`win-unpacked` is the Store layout since, without `app-update.yml`) and
   `dist/store-listing/whats-new-0.1.49.txt`. Exe gates `--offline`: `rel49-exe` (tiles, 50: 0.1.48's list plus
@@ -125,13 +125,17 @@ code.
   v0.1.49, the CI draft, publish, manual sync, the blog post, `server.json` and the MCP Registry, the Store update
   with the MSIX and its notes). Nothing is pushed.
   **2026-10-19 (the user at the machine): the paid live run is done** (all four runs and RTX VSR locally; "S5 as built"
-  in the plan) and found the edge fit's streaks (`2c35c82`). **Added on the user's word:** FLUX 3 Image Klein on the
-  user's ComfyUI (`450cfe3`) and boxes for local recipes (`000cc00`), "in 0.1.49" (the user's answer); the README
-  brought up to date (0.1.44-0.1.49). **Rebuilt from `000cc00`** (the later commits are docs only): the installer,
+  in the plan) and found the edge fit's streaks (`4c26813`). **Added on the user's word:** FLUX 3 Image Klein on the
+  user's ComfyUI (`3d976ec`) and boxes for local recipes (`0723fcf`), "in 0.1.49" (the user's answer); the README
+  brought up to date (0.1.44-0.1.49). **Rebuilt from `0723fcf`** (the later commits are docs only): the installer,
   the zip, `dist/Scumble-0.1.49.msix` (188,642,178 bytes), `dist/scumble-0.1.49.mcpb`, the Store notes with Klein;
   exe gates `rel49b-exe` (tiles, 50: brush timed out once and comfyview's control step, both green on the rerun
   `rel49b-exe-rerun`; brush now in TESTING.md's flakes) and `rel49b-exe-canvas` (29, all PASS). **Next: the release
-  chain, on the user's word.** Issue #6 (MOSS-Image) answered: next update (item 47).
+  chain, on the user's word.** Issue #6 (MOSS-Image) answered: next update (item 47). **Main was rebuilt before the
+  push** (the user, 2026-10-19: the demo-video commits stay private): the six `Demo video ...` commits (recording and
+  motion scripts under `docs/images/video/`) live only on the local branch `demo-video`, their files untracked on disk
+  as the rest of the tutorial material; the 0.1.49 commits after S2 were cherry-picked, so their ids changed (the
+  docs carry the new ones; commit messages may still cite an old id, `demo-video` holds the old ones).
   Open questions 1, 6, 7, 9 of the plan's section 8 go with the recommendations until the user answers (3 and 4 are
   built as recommended). The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own
   melody; the other two fit released songs and must not be used as audio).

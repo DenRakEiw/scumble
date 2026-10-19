@@ -432,14 +432,14 @@ dropped on the top row's upper half: labels 1-3 renumber, "@img3 in front of @im
 both `text/plain` mutations turn it red). Gates: `editor` (tiles), `groups`, `selection`, `nodecopy`, `lint`, `types`.
 The node gets it with its next build.
 
-**S4 as built (2026-10-18/19 night).** Docs (`ac068a0`): a workflow wrote RECIPES.md, the manual, README, the CHANGELOG's
+**S4 as built (2026-10-18/19 night).** Docs (`80e4979`): a workflow wrote RECIPES.md, the manual, README, the CHANGELOG's
 "## Unreleased", TESTING.md and CLAUDE.md from the as-built texts and the code; two checkers read every claim against
 the code and the house rules, a fixer applied 20 of their 21 issues. Review (the same workflow, 117 agents): nine
 finders over S0-S9 (the SDK and supply chain, the Cloud run, cancel and progress, recovery, the Router, the renderer's
 quick wins, agents and commands, security, the tests), merged, each finding checked through three lenses (does the
 code do it, can the app reach it, what does it cost), then a completeness critic and a second round on four gaps
 (closing a tab during a run, sleep and wake, MCP-started processes, the local RTX node): 48 confirmed (1 must, 24
-should, 23 nit), none refuted. Four went outside the code (`4b66c62`: MCP.md's relight paragraph, the guard letting
+should, 23 nit), none refuted. Four went outside the code (`6f78b8b`: MCP.md's relight paragraph, the guard letting
 loopback and file:// through, the local RTX pack needing nvidia-vfx 0.2: with the user's 0.1.0.1 it fails at import,
 the upgrade is the user's). The other 44 were fixed by a second workflow in three file-disjoint groups against a
 written contract (the scratchpad's `fix_contract.md`: the cancel flags, the recovery ask model, the kept-note
@@ -479,7 +479,7 @@ Tests: comfysdk 34, comfycloud_v2 81, cloudjobs 36, comfyrouter 175 (an exit gua
 longer vacuous and a local run's via checked; `commands` (closing stops runs, cancel_run's words), `relight`
 (panel-vs-command presets), `skins`, `editor`. Integrated gate run: see the commit.
 
-**S5 as built (2026-10-19).** The local prep in the night (`354f0fc`: `## 0.1.49 - 2026-10-19`, `package.json`
+**S5 as built (2026-10-19).** The local prep in the night (`7639bc6`: `## 0.1.49 - 2026-10-19`, `package.json`
 0.1.49; the builds; exe gates 50 + 28 green), then in the morning, the user at the machine, **the paid live run** in a
 dev test instance on its own profile, the user's Comfy key typed in by the user (profile and key deleted afterwards):
 Z-Image Turbo Generate new on Comfy Cloud (13 s; the bar said "node 7/7"), a Nano Banana 2 edit through Comfy Cloud's
@@ -489,19 +489,19 @@ FLUX 3 Image edit through Comfy Router on the SDK (80 s, the first Router run si
 on the user's ComfyUI (1280 x 640 to 2560 x 1280 in 16 s, its colours the source's) after the user upgraded the pack's
 nvidia-vfx to 0.2 (PyPI holds only stub sdists; the wheel comes from https://pypi.nvidia.com). Three things found and
 added on the way, each with its tests:
-- **The edge fit's streaks** (`2c35c82`): the Nano Banana answer, shifted 18 px by the edge fit, showed the crop's last
+- **The edge fit's streaks** (`4c26813`): the Nano Banana answer, shifted 18 px by the edge fit, showed the crop's last
   row repeated along the picture's bottom; `edgefit.js` `warpCoverage` and the stitch's blend now leave the picture
   below there (older than 0.1.49, item 42).
-- **FLUX 3 Image Klein on the user's ComfyUI** (`450cfe3`, the user's ask that morning; researched by a workflow of five
+- **FLUX 3 Image Klein on the user's ComfyUI** (`3d976ec`, the user's ask that morning; researched by a workflow of five
   readers): `recipes/flux3_klein_local.json`, Klein's chain with `BasicScheduler`, steps of 16, `<ref_image_{n0}>`, and
   the prompt wrapped into "In <ref_image_0>, <prompt> Keep everything else unchanged." (without it the model painted a
   new scene from the text; A/B on one seed). Live: edits in 5-9 s, a reference layer reached the picture, Generate new
   in 8 s, a box row typed into the prompt placed its object on two seeds.
-- **Boxes for local recipes** (`000cc00`; the user: "geht bbox local?"): a recipe's `boxes` declaration, the declared
+- **Boxes for local recipes** (`0723fcf`; the user: "geht bbox local?"): a recipe's `boxes` declaration, the declared
   input rewired to the node's `box_prompt` only when boxes go and the node has that output (else refused before
   anything is queued); built by an agent, checked by a second (8 points, 2 musts, all fixed). Live: a box drawn in
   Scumble placed the cat in it (`say_in.string_b = ["canvas", 21]` in `/history`).
-The user (2026-10-19): FLUX 3 Klein and the local boxes go into 0.1.49. Rebuilt from `000cc00` (see CLAUDE.md for the
+The user (2026-10-19): FLUX 3 Klein and the local boxes go into 0.1.49. Rebuilt from `0723fcf` (see CLAUDE.md for the
 exe gates). For other users the boxes need a node newer than the registry's 0.3.4 (D12, still the user's pick).
 
 

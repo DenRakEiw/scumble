@@ -168,7 +168,7 @@ the plain prompt, `tailOutputs`); the Comfy Cloud copy has no canvas node and se
   `ImageFromBatch` (the crop only) -> `RTXVideoSuperResolution` (`resize_type` "scale by multiplier", its
   `resize_type.scale` the factor, `quality` LOW / MEDIUM / HIGH / ULTRA as the *Quality* row, ULTRA by default,
   `strength` 1 and `image_encoding` "8-bit RGB", the node's defaults, required since the pack's October 2026 update,
-  `71e851f`) -> `result_local`, task `upscale`. NVIDIA's RTX Video Super Resolution from the node pack
+  `f3f9b84`) -> `result_local`, task `upscale`. NVIDIA's RTX Video Super Resolution from the node pack
   Nvidia_RTX_Nodes_ComfyUI (Comfy-Org, with its `nvidia-vfx` package, 0.2 or newer since that update: with 0.1 the pack
   fails at import and the node is missing from `/object_info`, read on the user's ComfyUI on 2026-10-18), which the user
   installs on an RTX machine. PyPI holds only stub sdists of `nvidia-vfx` (their `wheel_stub` backend fails in ComfyUI's
@@ -1358,7 +1358,7 @@ Cloud's `get_node` on 2026-10-04) takes the picture as `images`, `resize_type: "
 `"resize_type.scale"` (the dotted key of the dynamic combo, 1 to 4, a float), `quality` (LOW / MEDIUM / HIGH /
 ULTRA, the Quality row by its key), and since the node's update read with `get_node` on 2026-10-18 the required
 `strength` (FLOAT 0 to 1) and `image_encoding` ("8-bit RGB" / "10-bit RGB (RGB10A2)"), sent as their defaults 1 and
-"8-bit RGB" (`c6f7fb0`; every run before it failed with `required_input_missing`); its answer may be at most 8192 px on the long side, which `buildGraph` checks before
+"8-bit RGB" (`a9975e4`; every run before it failed with `required_input_missing`); its answer may be at most 8192 px on the long side, which `buildGraph` checks before
 any upload (`BEFORE_UPLOAD`, the size from the request or the PNG's header) and the SHAPE again, with the renderer's
 words, so a direct call is refused before the prompt is sent too. The hidden **loopback** answers the
 picture resampled by the factor (2 when the model picks) with a 4 px magenta frame, which is what
