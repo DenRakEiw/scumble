@@ -82,7 +82,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-19: 0.1.49 released; its MCP Registry publish and the Store updates of 0.1.48 / 0.1.49 open)
+## Where things stand (2026-10-19: 0.1.49 released and in the MCP Registry; the Store updates of 0.1.48 / 0.1.49 open)
 
 - **0.1.49 = Comfy Cloud and Comfy Router on Comfy's official SDK + eight quick wins (the user, 2026-10-18: "alles in
   einem update", all eight quick wins picked, "mache plan und fange mit der entwicklung an").** The plan is
@@ -136,10 +136,10 @@ code.
   assets checked (the zip's layout, the `.mcpb` 0.1.49 with 114 tools, `latest.yml`; the zip's start test skipped, the
   user's Scumble was open); the node built and pushed (`6a0ad1e..b2ca95d`, no version bump; `/system_stats` 200, 23
   outputs); the post `v0-1-49` live with the manual sync and hub 0.1.49 (`Portfolio_vercel` `9b13013`, Vercel
-  success); `server.json` 0.1.49 committed (`11543a0`, validated). **Open:** `mcp-publisher publish` (the stored
-  token had expired and two device codes timed out with the user away: `mcp-publisher login github`, the user enters
-  the code, then `publish`; the CLI is the one in an earlier session's scratchpad,
-  `2abd08fa-.../scratchpad/mcppub/mcp-publisher.exe`, 1.8.1), and the Store update (0.1.48's is still open too:
+  success); `server.json` 0.1.49 committed (`11543a0`) and published to the MCP Registry (the user's device code;
+  0.1.49 latest; the CLI is the one in an earlier session's scratchpad, `2abd08fa-.../scratchpad/mcppub/
+  mcp-publisher.exe`, 1.8.1). The release bodies of 0.1.49 and 0.1.48 regenerated with the `@img` tokens in backticks
+  (`75f7fbb`): GitHub had listed the users `img` and `img1` as the release's contributors. **Open:** the Store update (0.1.48's is still open too:
   `dist/Scumble-0.1.49.msix` and `dist/store-listing/whats-new-0.1.49.txt`, the upload is the user's drag and drop). Issue #6 (MOSS-Image) answered: next update (item 47). **Main was rebuilt before the
   push** (the user, 2026-10-19: the demo-video commits stay private): the six `Demo video ...` commits (recording and
   motion scripts under `docs/images/video/`) live only on the local branch `demo-video`, their files untracked on disk
