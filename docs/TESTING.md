@@ -504,6 +504,9 @@ generate editor log lint types`.
 
 Known flakes; **re-run before believing any of these**:
 
+- 2026-10-19 (0.1.49's exe gates, tiles): the `brush` gate ran out of its 420 s after its reader part had printed
+  `RESULT PASS` (the in-app part never answered); the rerun on a fresh instance passed in 16 s, and the canvas list's
+  `brush` passed in the same build. The machine was loaded (a video render of another session ran beside the gates).
 - 2026-10-13 (0.1.48 S5): with the machine loaded (the `commands` gate took 44 s instead of 15, `upscale` 20 instead
   of 12) the editor gate timed out after 421 s at its 55th step and the `log` gate's `status_kinds` found the blink
   still running after 3.4 s; the rerun minutes later passed both (169 s). `status_kinds` now waits up to 8 s for the

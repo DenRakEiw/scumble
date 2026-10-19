@@ -124,6 +124,14 @@ code.
   a defect it finds means a rebuild. Then the release chain on the user's word (`docs/RELEASING.md`: push, tag
   v0.1.49, the CI draft, publish, manual sync, the blog post, `server.json` and the MCP Registry, the Store update
   with the MSIX and its notes). Nothing is pushed.
+  **2026-10-19 (the user at the machine): the paid live run is done** (all four runs and RTX VSR locally; "S5 as built"
+  in the plan) and found the edge fit's streaks (`2c35c82`). **Added on the user's word:** FLUX 3 Image Klein on the
+  user's ComfyUI (`450cfe3`) and boxes for local recipes (`000cc00`), "in 0.1.49" (the user's answer); the README
+  brought up to date (0.1.44-0.1.49). **Rebuilt from `000cc00`** (the later commits are docs only): the installer,
+  the zip, `dist/Scumble-0.1.49.msix` (188,642,178 bytes), `dist/scumble-0.1.49.mcpb`, the Store notes with Klein;
+  exe gates `rel49b-exe` (tiles, 50: brush timed out once and comfyview's control step, both green on the rerun
+  `rel49b-exe-rerun`; brush now in TESTING.md's flakes) and `rel49b-exe-canvas` (29, all PASS). **Next: the release
+  chain, on the user's word.** Issue #6 (MOSS-Image) answered: next update (item 47).
   Open questions 1, 6, 7, 9 of the plan's section 8 go with the recommendations until the user answers (3 and 4 are
   built as recommended). The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own
   melody; the other two fit released songs and must not be used as audio).
@@ -513,6 +521,18 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   (`--check`, `--show`); `.gitattributes` `*.bf linguist-language=Brainfuck` (`.bf` is shared with other languages);
   the window prints it to the DevTools console at start (`getScumbleLogo`, `window.scumbleLogo()`); `easteregg_test.js`
   checks it. Whether GitHub shows it is seen only after a push (Linguist runs on the default branch).
+- 47: **MOSS-Image with JSON prompts** (issue DenRakEiw/scumble#6, hwatik, 2026-10-18: "recipe/support for MOSS-Image
+  json? Same as you do with Ideogram/Flux3"; the user, 2026-10-19: for the update after 0.1.49). Known from one look
+  (the vLLM recipe page, 2026-10-19; not run): OpenMOSS-Team's open 5B DiT with a Qwen3.5 text encoder and the FLUX.2
+  VAE, checkpoints MOSS-Image-Base and -SFT (huggingface.co/OpenMOSS-Team/MOSS-Image-Base, github.com/OpenMOSS/MOSS-Image);
+  text to image (no editing mentioned), Chinese and English lettering, an experimental JSON layout (`summary.caption`,
+  `items` with label, caption, optional text and `bbox` `[y_min, x_min, y_max, x_max]` in pixels from the canvas centre,
+  -512 to +512 at 1024 x 1024, `bbox_coord_space` / `bbox_format` at the top), served officially by vLLM-Omni; no
+  ComfyUI nodes on the user's server, no provider found. Open: the licence, how users run it (a ComfyUI pack, a host),
+  whether it edits; then a box writer of its own in `renderer/editor/boxes_format.js` beside FLUX 3's and Ideogram 4's,
+  and a recipe (Generate new with boxes at least). **Promised on the issue for the next update** (the user's word,
+  2026-10-19: a comment that it is on the list and ships with the next update, and that 0.1.49 brings FLUX 3 Image
+  Klein and Comfy's SDK).
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
