@@ -544,6 +544,9 @@ Known flakes; **re-run before believing any of these**:
 - `node tools/brush_test.js` hung once at exit under load after printing every PASS.
 - `editor_test.py` `closed_tabs_are_collected` failed twice in five runs of the editor gate alone on the canvas backend
   (`--tiles off`, 2026-09-17, B item 2) and passed on the rerun each time; the code under it had not changed.
+- The `relight` gate on the 0.1.50 exe (tiles, 2026-10-22) passed all its checks (39 node, 293 in-app) and then waited
+  out its 900 s in the closing screenshots: a hidden or occluded window gives CDP no frame to capture. The shots now get
+  30 s each and are only a warning (`relight_test.py`); the rerun took 30 s. The canvas run of the same exe passed.
 - `editor_test.py` `selection_keeps_its_bounds_through_a_restore_above_1mp` failed once with no message on the canvas
   backend (2026-09-23, after `help` and `assistant` in the same instance) and passed on the rerun in the same order.
 - `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed once with `requested: 0` in some twenty

@@ -2268,11 +2268,13 @@ async def run_cdp(cdp, doc_path, mock, scratch_dir=None):
     shot_path = os.path.join(out_dir, "shot_l1b.png")
     shot_l2 = os.path.join(out_dir, "shot_l2.png")
     try:
-        await cdp.screenshot(shot_path)
-        await cdp.screenshot(shot_l2)
+        # a hidden or occluded window gives no frame to capture: the shots never answer (the 0.1.50 exe gate waited out
+        # its 900 s after every check had passed), so they get 30 s each and are only a warning
+        await asyncio.wait_for(cdp.screenshot(shot_path), 30)
+        await asyncio.wait_for(cdp.screenshot(shot_l2), 30)
         print(f"[ok] screenshots captured: {shot_path} and {shot_l2}")
     except Exception as e:
-        print(f"[warn] screenshot: {e}")
+        print(f"[warn] screenshot: {type(e).__name__} {e}")
 
     return len(fails) == 0
 
