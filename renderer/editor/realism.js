@@ -64,10 +64,20 @@ export function fillValues(stored) {
     };
 }
 
-/** The GPU generation the pack reads from a name (diagnostics.py: "RTX" in it, then /RTX\s+(\d{2})/), or 0. */
+/**
+ * The RTX generation (30, 40, 50) of a GPU from its name, or 0. The pack read only "RTX" plus two digits
+ * (diagnostics.py), which refused workstation cards (issue #8: "NVIDIA RTX PRO 6000 Blackwell Workstation Edition")
+ * and let Turing's Quadro RTX 8000 through as "80"; its fix (Blueforcer/ComfyUI-DLSS5-Enhancer, branch
+ * gpu-generation-from-compute-capability) decides by the compute capability, which ComfyUI's /system_stats does not
+ * show, so here the names: RTX PRO ... Blackwell is 50, RTX ... Ada 40, RTX A... (Ampere) 30, Quadro RTX (Turing) 0.
+ */
 export function gpuGeneration(name) {
     const up = String(name || "").toUpperCase();
     if (!up.includes("RTX")) return 0;
+    if (/\bQUADRO\s+RTX\b/.test(up)) return 0;
+    if (/\bRTX\s+PRO\s+\d{3,4}\b.*\bBLACKWELL\b/.test(up)) return 50;
+    if (/\bRTX\s+\d{3,4}\b.*\bADA\b/.test(up)) return 40;
+    if (/\bRTX\s+A\d{3,4}\b/.test(up)) return 30;
     const m = /RTX\s+(\d{2})/.exec(up);
     return m ? +m[1] : 0;
 }
@@ -217,6 +227,11 @@ export function hint(message) {
         return `${LABEL}: on an RTX 30 card the pack needs its experimental Ampere runtime pair, and the installed runtime is not that pair (the pack's README).`;
     }
     let g = /^(.*?) is outside the supported RTX 30\/40\/50 scope/m.exec(m);
+    // a card Scumble knows as RTX 30 or later that the pack refused: the pack reads the generation from the name and
+    // does not know this one yet (workstation cards, issue #8)
+    if (g && gpuGeneration(g[1]) >= 30) {
+        return `${LABEL}: the ComfyUI-DLSS5-Enhancer pack on your ComfyUI does not recognise ${g[1].trim()} yet: it reads the card's generation from its name, and this card does not carry it there. Update the pack once it decides by the card's compute capability (its GitHub page).`;
+    }
     if (g || /No supported NVIDIA RTX GPU/.test(m)) {
         return `${LABEL}: ${g ? `${g[1].trim()} is not supported` : "your ComfyUI's machine shows no supported card"}; it needs an RTX 30, 40 or 50 card.`;
     }

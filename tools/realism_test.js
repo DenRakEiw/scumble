@@ -86,7 +86,7 @@ function nodeFitSpan(a0, a1, limit, m) {
     check("realismDefaults are frozen", Object.isFrozen(R.realismDefaults), "");
 
     // ---- 1. gpuGeneration --------------------------------------------------------------------------------------------
-    console.log("\n--- 1. gpuGeneration (the pack's rule: 'RTX' in the name, then /RTX\\s+(\\d{2})/) ---");
+    console.log("\n--- 1. gpuGeneration (RTX plus two digits, the workstation names by their architecture) ---");
     const gens = [
         ["cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync", 50],
         ["NVIDIA GeForce RTX 5090", 50],
@@ -97,9 +97,14 @@ function nodeFitSpan(a0, a1, limit, m) {
         ["NVIDIA GeForce RTX 2080", 20],
         ["NVIDIA GeForce RTX 2080 SUPER", 20],
         ["NVIDIA GeForce GTX 1080", 0],
-        ["Quadro RTX 8000", 80],
-        ["NVIDIA RTX A6000", 0],
-        ["NVIDIA RTX PRO 6000 Blackwell", 0],
+        // workstation cards (issue #8): by their architecture, as the pack's compute-capability fix reads them
+        ["Quadro RTX 8000", 0],
+        ["NVIDIA RTX A6000", 30],
+        ["NVIDIA RTX A5500 Laptop GPU", 30],
+        ["NVIDIA RTX PRO 6000 Blackwell", 50],
+        ["cuda:0 NVIDIA RTX PRO 6000 Blackwell Workstation Edition : cudaMallocAsync", 50],
+        ["NVIDIA RTX 6000 Ada Generation", 40],
+        ["NVIDIA RTX 2000 Ada Generation", 40],
         ["cpu", 0],
         ["cuda:0 AMD Radeon RX 7900 XTX", 0],
         ["", 0],
@@ -208,11 +213,24 @@ function nodeFitSpan(a0, a1, limit, m) {
     }
     {
         const s = sup(ok({ gpus: ["cuda:0 NVIDIA RTX A6000 : cudaMallocAsync"] }));
-        check("RTX A6000: hidden, as the pack refuses it", s.ok === false && s.show === "hidden" && s.reason === cardRefusal("NVIDIA RTX A6000"), short(s));
+        // issue #8: an Ampere workstation card goes the RTX 30 way (the experimental pair), as the pack's
+        // compute-capability fix reads it
+        check("RTX A6000: ready as an RTX 30 card, with the Ampere note", s.ok === true && s.show === "ready" && s.generation === 30 && s.experimental === true && !!s.note, short(s));
     }
     {
         const s = sup(ok({ gpus: ["cuda:0 Quadro RTX 8000 : cudaMallocAsync"] }));
-        check("Quadro RTX 8000: generation 80, accepted as the pack does", s.ok === true && s.generation === 80, short(s));
+        // Turing: no DLSS 5 NR, refused (the old name rule read it as "80")
+        check("Quadro RTX 8000: hidden, a Turing card", s.ok === false && s.show === "hidden" && s.reason === cardRefusal("Quadro RTX 8000"), short(s));
+    }
+    {
+        const s = sup(ok({ gpus: ["cuda:0 NVIDIA RTX PRO 6000 Blackwell Workstation Edition : cudaMallocAsync"] }));
+        check("RTX PRO 6000 Blackwell (issue #8): ready as an RTX 50 card", s.ok === true && s.show === "ready" && s.generation === 50 && !s.experimental, short(s));
+    }
+    {
+        // the pack before its fix refuses the card by name: the sentence says so instead of "not supported"
+        const said = R.hint("NVIDIA RTX PRO 6000 Blackwell Workstation Edition is outside the supported RTX 30/40/50 scope.");
+        check("an older pack refusing an RTX PRO Blackwell card: the sentence names the pack's name rule", said.includes("does not recognise NVIDIA RTX PRO 6000 Blackwell Workstation Edition yet") && said.includes("compute capability"), said);
+        check("a GeForce RTX 2080 the pack refuses keeps the old sentence", R.hint("NVIDIA GeForce RTX 2080 is outside the supported RTX 30/40/50 scope.").includes("is not supported; it needs an RTX 30, 40 or 50 card"), "");
     }
     {
         const s = sup(ok({ gpus: [G2080] }));

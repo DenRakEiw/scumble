@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- The Realism Pass recognises workstation cards: an RTX PRO 6000 Blackwell counts as the RTX 50 generation, an RTX A6000 as RTX 30 and an RTX 6000 Ada as RTX 40, instead of being refused because their names carry no two-digit generation after "RTX" (issue #8); a Quadro RTX 8000, a card too old for it, is no longer let through. The ComfyUI-DLSS5-Enhancer node pack checks the card the same way by name: until it decides by the card's compute capability, it refuses those cards itself, and the status line says so.
 - Selection by text works again with the current comfyui-rmbg on your ComfyUI: its SAM3 node now requires a model name, which Scumble did not send, so every selection by text failed (issue #7). Scumble now fills in every input a helper node requires and Scumble does not set itself with that node's own default (for SAM3 the model `sam3.1_multiplex_fp16`), for the selection by text, the cutout and the prompt from the picture; an older node pack without the input keeps working.
 
 ## 0.1.49 - 2026-10-19
