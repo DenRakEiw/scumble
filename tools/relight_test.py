@@ -1364,6 +1364,48 @@ JS = r"""
             try { await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, route: "bogus" }); } catch (e) { rErr = String(e && e.message); }
             check("route: an unknown route is refused", /relight route/i.test(rErr || ""), rErr);
             check("route: no command call sent anything", rSends.length === 1, rSends);
+
+            // Case model (docs/PLAN_0_1_50.md Q7): the routes' model values, written as the panel's controls write them
+            // (both keys of a twin pair, lora_strength in the slider's steps of 5, steps held to 1..20), in one undo step
+            // with the other values, nothing rendered; from_lights forgets the light type; a wrong one changes nothing
+            n0 = ed2.undo.length;
+            const rM = await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, original: 70, strength: 42, style: "clean", preserve_details: false, interpolate: true,
+                enable_hr_fix: false, light_type: "midday", lora_strength: 37, steps: 50, detail: false });
+            const mp = rLayer().params;
+            check("model: the values land as the panel writes them", mp.strength === 42 && mp.light_transfer_strength === 42 && mp.style === "clean" && mp.preserve_details === false
+                && mp.interpolate === true && mp.interpolate_from_original === true && mp.enable_hr_fix === false && mp.light_type === "midday"
+                && mp.lora_strength === 35 && mp.strength_model === 35 && mp.steps === 20 && mp.detail === false && mp.original === 70, mp);
+            check("model: one undo step with the other values, the route kept, nothing rendered", ed2.undo.length === n0 + 1 && ed2.undo[ed2.undo.length - 1].label === "Relight"
+                && rM.route === "magnific" && rM.layer.params.style === "clean" && rSends.length === 1,
+                { undo: ed2.undo.length, n0, label: (ed2.undo[ed2.undo.length - 1] || {}).label, route: rM.route, sends: rSends.length });
+            const rowStyle = () => { const r = rRow(); const s = r && r.querySelector(".ipc-relight-mag-controls select"); return s ? s.value : null; };
+            check("model: the layer's row shows the values", rowStyle() === "clean", rowStyle());
+            await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, light_type: "from_lights" });
+            check("model: from_lights forgets the light type, in a step named as the panel's", !("light_type" in rLayer().params) && ed2.undo[ed2.undo.length - 1].label === "Relight: Light type",
+                { lt: rLayer().params.light_type, label: (ed2.undo[ed2.undo.length - 1] || {}).label });
+            // a fraction in (0, 1] is read as one, as the panel reads a stored LoRA strength (0.8 is 80 %, not a LoRA
+            // rounded off to 0; 1 is 100 %), strength alike; values the layer already holds push no step
+            await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, lora_strength: 0.8, strength: 1 });
+            const fp = rLayer().params;
+            check("model: a fraction is read as a fraction", fp.lora_strength === 80 && fp.strength_model === 80 && fp.strength === 100 && fp.light_transfer_strength === 100,
+                { lora: fp.lora_strength, sm: fp.strength_model, strength: fp.strength, lts: fp.light_transfer_strength });
+            const fUndo = ed2.undo.length;
+            await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, lora_strength: 80, strength: 100, steps: 20, style: "clean", light_type: "from_lights" });
+            check("model: values the layer already holds push no step", ed2.undo.length === fUndo, { undo: ed2.undo.length, fUndo, label: (ed2.undo[ed2.undo.length - 1] || {}).label });
+            const mBefore = JSON.stringify(rLayer().params);
+            const mUndo = ed2.undo.length;
+            let mErr = null;
+            try { await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, original: 50, style: "glossy" }); } catch (e) { mErr = String(e && e.message); }
+            check("model: a style that is no option is refused, nothing changes", /not an option of style/.test(mErr || "") && JSON.stringify(rLayer().params) === mBefore && ed2.undo.length === mUndo, mErr);
+            mErr = null;
+            try { await commands.run("relight", { doc: doc2.id, layer: sRes.layer.id, steps: "many" }); } catch (e) { mErr = String(e && e.message); }
+            check("model: a number that is none is refused", /steps takes a number/.test(mErr || "") && JSON.stringify(rLayer().params) === mBefore, mErr);
+            await ed2.undoStep();
+            await ed2.undoStep();
+            await ed2.undoStep();
+            const mBack = rLayer().params;
+            check("model: undo puts the values back", mBack.style !== "clean" && mBack.strength !== 42 && mBack.detail !== false && mBack.original === 100 && mBack.route === "magnific", mBack);
+            check("model: no model call sent anything", rSends.length === 1, rSends);
         } finally {
             host.relightSend = rSaved;
         }

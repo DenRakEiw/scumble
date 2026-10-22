@@ -160,16 +160,21 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {string} [note]
  * @property {{ name?: string, slots?: number | null } | null} [refs]   the variants' default name pattern; ComfyUI recipes: slots (26e)
  * @property {LocalBoxes} [boxes]             ComfyUI recipes: where the Inpaint Canvas node's box rows go (localBoxes)
+ * @property {boolean} [edit]                 ComfyUI recipes: false = a text-to-image graph, Generate new only (normalize)
  */
 
 /**
- * Boxes in the prompt on the user's ComfyUI (a ComfyUI recipe's `boxes`, checked by localBoxes): `schema` the rows the
- * Inpaint Canvas node's box_prompt output writes ("flux3"), `input` the "node|input" of the recipe's graph that takes
- * the canvas node's plain prompt and that a run sending boxes takes from box_prompt instead (host.queueGenerate).
+ * Boxes in the prompt on the user's ComfyUI (a ComfyUI recipe's `boxes`, checked by localBoxes): `schema` the format
+ * they go in, `input` the "node|input" of the recipe's graph that takes the canvas node's plain prompt. "flux3": the
+ * Inpaint Canvas node's box_prompt output writes FLUX 3's rows, and a run sending boxes takes `input` from box_prompt
+ * instead (host.queueGenerate). "moss": `layout` names the graph's MOSSImageLayoutPrompt node (ComfyUI 0.42's own, which
+ * writes MOSS-Image's JSON layout from core bounding-box elements in the picture's pixels); a run sending boxes wires
+ * its element input to the canvas node's elements output and takes `input` from it (comfyprompt.wireBoxPrompt).
  *
  * @typedef {Object} LocalBoxes
  * @property {string} schema
  * @property {string} input
+ * @property {string} [layout]
  */
 
 const FIXED_OUTPUTS = 13;   // InpaintCanvas outputs before setting_1 (nodes.py RETURN_NAMES)
@@ -183,8 +188,10 @@ const SETTING_SLOTS = 8;    // setting_1 .. setting_8
  */
 const TAIL_OUTPUTS = ["box_prompt", "elements"];
 const PROMPT_SLOT = 7;
-// The box formats the Inpaint Canvas node writes into its box_prompt output (boxes_rows.py: FLUX 3's rows)
-const LOCAL_BOX_SCHEMAS = ["flux3"];
+// The box formats a ComfyUI recipe takes: FLUX 3's rows, which the Inpaint Canvas node writes into its box_prompt output
+// (boxes_rows.py), and MOSS-Image's JSON layout, which ComfyUI's MOSSImageLayoutPrompt writes from the node's elements
+const LOCAL_BOX_SCHEMAS = ["flux3", "moss"];
+const MOSS_LAYOUT = "MOSSImageLayoutPrompt";
 
 /** A canvas output's name by its slot in the backend's order (no names known: an API prompt). */
 function backendOutputName(slot) {
@@ -479,17 +486,18 @@ function comfyRefs(r) {
 }
 
 /**
- * A ComfyUI recipe's `boxes` checked against its graph (LocalBoxes): an object with a `schema` the node writes
- * ("flux3") and an `input` "node|input" of a node other than the canvas whose value is a link to the canvas node's
- * plain prompt (output 7) and that no Settings row writes, on an edit recipe. Answers `{ boxes }` (only those two keys)
- * or `{ why }`.
+ * A ComfyUI recipe's `boxes` checked against its graph (LocalBoxes): an object with a `schema` the app sends ("flux3",
+ * "moss") and an `input` "node|input" of a node other than the canvas whose value is a link to the canvas node's
+ * plain prompt (output 7) and that no Settings row writes, on an edit recipe; "moss" also a `layout`, the id of the
+ * graph's MOSSImageLayoutPrompt node, whose element input no link fills (the run wires it). Answers `{ boxes }` (only
+ * those keys) or `{ why }`.
  * @param {Recipe} r
  * @returns {{ boxes?: LocalBoxes, why?: string }}
  */
 function localBoxes(r) {
     const b = /** @type {any} */ (r.boxes);
     if (!b || typeof b !== "object" || Array.isArray(b)) return { why: "is no object { schema, input }" };
-    if (!LOCAL_BOX_SCHEMAS.includes(b.schema)) return { why: `names the schema ${JSON.stringify(b.schema)}; the Inpaint Canvas node writes ${LOCAL_BOX_SCHEMAS.join(", ")}` };
+    if (!LOCAL_BOX_SCHEMAS.includes(b.schema)) return { why: `names the schema ${JSON.stringify(b.schema)}; a ComfyUI recipe takes ${LOCAL_BOX_SCHEMAS.join(", ")}` };
     if (r.task !== undefined && r.task !== "edit") return { why: `is on a recipe of task "${r.task}"; only an edit recipe sends boxes` };
     const m = typeof b.input === "string" ? /^([^|]+)\|(.+)$/.exec(b.input) : null;
     if (!m) return { why: `names the input ${JSON.stringify(b.input)}, not "node|input"` };
@@ -498,7 +506,12 @@ function localBoxes(r) {
     const v = node.inputs[m[2]];
     if (!Array.isArray(v) || String(v[0]) !== String(r.canvas) || +v[1] !== PROMPT_SLOT) return { why: `names the input ${b.input}, which does not take the canvas node's prompt (output ${PROMPT_SLOT})` };
     if ((r.settings || []).some((s) => s && String(s.node) === String(m[1]) && s.input === m[2])) return { why: `names the input ${b.input}, which a Settings row writes` };
-    return { boxes: { schema: b.schema, input: b.input } };
+    if (b.schema !== "moss") return { boxes: { schema: b.schema, input: b.input } };
+    const lay = typeof b.layout === "string" && String(b.layout) !== String(r.canvas) ? r.prompt[b.layout] : null;
+    if (!lay || lay.class_type !== MOSS_LAYOUT || !lay.inputs) return { why: `names the layout ${JSON.stringify(b.layout)}, which is no ${MOSS_LAYOUT} node of the graph` };
+    if (String(b.layout) === String(m[1])) return { why: `names the input ${b.input} on the layout node itself` };
+    if (lay.inputs.element !== undefined) return { why: `names the layout ${b.layout}, whose element input is filled already (a run that sends boxes wires it)` };
+    return { boxes: { schema: b.schema, input: b.input, layout: String(b.layout) } };
 }
 
 /**
@@ -517,6 +530,8 @@ function normalize(r) {
         // RTX Video Super Resolution (recipes/rtx_vsr_local.json) names the input its factor goes into
         if (r.task === "upscale") { r.factor = comfyFactor(r); comfyLimits(r); }
         else if (r.task !== undefined && r.task !== "pass" && r.task !== "relight") r.task = "edit";
+        // false: a text-to-image graph (recipes/moss_image_local.json), Generate new only; a run on a selection refuses
+        r.edit = r.edit !== false || r.task === "upscale" || r.task === "pass" || r.task === "relight";
         comfyRefs(r);
         // boxes in the prompt (the node's box_prompt): a declaration that does not hold is dropped, so no run sends any
         if (r.boxes !== undefined) {
@@ -971,7 +986,7 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
 }
 
 // What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
-const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes"];
+const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit"];
 
 /**
  * The graph of ComfyUI's page -> a recipe to save (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3). `output` is the API

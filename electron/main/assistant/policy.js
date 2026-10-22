@@ -14,7 +14,7 @@ const EXCLUDED = new Set(["list_commands", "run_action", "set_status", "ailabel_
 const READS = new Set([
     "ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips",
     "filter_types", "status", "get_state", "read_log", "film_looks", "film_copy_points", "glb_info", "sample_mean_color",
-    "screenshot", "compare", "list_history", "boxes_list", "list_settings", "sample_depth",
+    "screenshot", "compare", "list_history", "boxes_list", "boxes_check", "list_settings", "sample_depth",
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
@@ -26,6 +26,8 @@ const REALISM_LABEL = "Realism Pass (Windows only, RTX only)";
 const REALISM_FACTORS = [1, 1.5, 1.7, 1.724, 2, 3];
 /** renderer/editor/realism.js MAX_AREA (27.9 MP): the most a generative relight's detail restoration takes (host.relightWhole). */
 const REALISM_MAX_AREA = 27878400;
+/** relight's model values (renderer/commands.js RELIGHT_MODEL), shown on its ask card when a call sets them. */
+const RELIGHT_MODEL_KEYS = ["strength", "style", "preserve_details", "interpolate", "enable_hr_fix", "light_type", "lora_strength", "steps", "detail"];
 
 /** The fields of `set_layer` that the editor records no undo step for (§5). */
 const SET_LAYER_SOFT = ["name", "visible", "opacity", "blend", "role", "match", "match_source", "alpha_lock"];
@@ -67,6 +69,8 @@ const POLICY = {
 
     // the Boxes plugin (docs/PLAN_BOXES.md §10): every change is one undo step of the document's plugin data
     boxes_list: AUTO, boxes_add: AUTO, boxes_set: AUTO, boxes_from_selection: AUTO,
+    // what the panel warns of before a run (a box outside the crop, without a description, ...): it only reads
+    boxes_check: AUTO,
     boxes_remove: () => ASK("removes a box from the document (Ctrl+Z takes it back)"),
     boxes_clear: () => ASK("removes every box of the document, yours included (Ctrl+Z takes it back)"),
     // the sample plugin's switch is stored with the plugin, for every document
@@ -174,6 +178,8 @@ const POLICY = {
     // a run going in the tab stops with it (0.1.49, the S4 review's G1.1): the card says so
     close_document: () => ASK("closes the tab without saving it to its file; a run going in it stops (an API provider may still charge a job it already had), and File › Reopen Closed Tab brings the tab back without it"),
     new_document: AUTO, activate_document: AUTO,
+    // the tab closed last comes back as a new tab; nothing open changes
+    reopen_closed_tab: AUTO,
 
     // ---- shared history, global settings, the brush --------------------------------------
     undo: () => ASK("the undo stack is shared with your own steps"),
@@ -267,7 +273,7 @@ function renderCard(call, facts) {
  * layer is "app", an edit keeps the layer's route and renders nothing: renderer/commands.js). A generative route asks, and is
  * refused above realism.js MAX_AREA when the layer it runs on restores detail, as host.relightWhole would refuse it after
  * the ask: an existing layer's own `detail`, a new layer's from the remembered relight settings (`facts.relightDetail`,
- * which addFilterLayer copies onto it). The command takes no `detail`.
+ * which addFilterLayer copies onto it), unless the call sets `detail` itself.
  */
 function relightRow(call, facts) {
     const route = (call && call.args && call.args.route) || "app";
@@ -282,6 +288,9 @@ function relightRow(call, facts) {
 
 /** Whether the relight layer a call runs on restores detail: its params when it names one, else the remembered setting. */
 function relightDetailOn(call, facts) {
+    const given = call.args ? call.args.detail : undefined;
+    if (given === true || given === "true") return true;
+    if (given === false || given === "false") return false;
     const id = call.args && call.args.layer;
     if (id) {
         const target = ((facts && facts.layers) || []).find((l) => l.id === id);
@@ -297,6 +306,8 @@ function relightCard(call, facts) {
     const changes = [{ field: "route", to: route }];
     if (call.args && call.args.preset) changes.push({ field: "preset", to: call.args.preset });
     if (call.args && call.args.prompt) changes.push({ field: "prompt", to: call.args.prompt });
+    // the model values the call sets (renderer/commands.js RELIGHT_MODEL): what the run sends besides the lights
+    for (const k of RELIGHT_MODEL_KEYS) if (call.args && call.args[k] !== undefined) changes.push({ field: k, to: call.args[k] });
     return {
         layer: target ? { id: target.id, name: target.name } : null,
         changes,

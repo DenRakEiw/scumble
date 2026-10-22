@@ -28,6 +28,7 @@ layer, exactly like in the ComfyUI node.
                                                   // pictures the graph reads, the crop included (1-16); see
                                                   // "Reference images named in the prompt (local)"
   "boxes": { "schema": "flux3", "input": "say_in|string_b" },   // optional: boxes in the prompt, below
+  "edit": false,                    // optional: a text-to-image graph, Generate new only (below)
   "settings": [ { "index": 1, "node": "unet", "input": "unet_name", "label": "Model",
                   "spec": [["file.safetensors"], {}] } ],   // spec optional: /object_info wins when connected
   "presets": [ { "name": "L", "values": { "rp_settings:dlss_model_preset": "L" } } ],   // optional, see "Presets"
@@ -87,6 +88,24 @@ row writes, a recipe of another task) with a warning; Save to recipe and Save as
 while the saved graph still feeds that input the plain prompt (a page graph that wired `box_prompt` there is stored on
 the plain prompt, `tailOutputs`); the Comfy Cloud copy has no canvas node and sends no boxes.
 
+The second schema is `"moss"` (MOSS-Image's JSON layout, `moss_image_local` below): `boxes: { "schema": "moss",
+"input": "pos|text", "layout": "layout" }`, where `layout` is the id of the graph's `MOSSImageLayoutPrompt` node
+(ComfyUI 0.42's own: it takes the prompt as the layout's `summary.caption` and core bounding-box elements, `{type, bbox
+on 0-1000, text?, desc}`, and writes `{"summary", "items": [{label, caption, text?, bbox}], "bbox_coord_space":
+"abs_centralized", "bbox_format": "yxyx"}` with each box in pixels from the centre of the `width` x `height` it is
+given). Its `element` input stays empty in the file and nothing reads the layout node, so a run without boxes sends the
+plain prompt on any node version. A run that sends boxes wires `element` to the Inpaint Canvas node's `elements` output
+(the one after `box_prompt`: the node only appends outputs) and takes `input` from the layout node
+(`comfyprompt.wireBoxPrompt`); the node's elements are its New and Text boxes in the crop's frame, so the layout lands in
+the picture's pixels whatever the crop. Keep, Move, Remove and From boxes have no place in that format (the Boxes
+panel's warning names them). A node without `elements` refuses the run as above. `normalize()` also drops a `"moss"`
+declaration without a `layout`, with one that is no `MOSSImageLayoutPrompt` node, or whose `element` a link fills.
+
+`edit` (optional, `false`): the graph makes a picture from the prompt alone (`moss_image_local`), so only Generate new
+runs it; Generate on a selection refuses ("... makes new pictures from the prompt alone: use Generate new"), and
+`list_recipes` reports `edit: false`. `normalize()` sets it `true` on every other ComfyUI recipe, and Save to recipe
+keeps it (`GRAPH_KEEPS`).
+
 ### The shipped ComfyUI recipes
 
 - `flux2_klein_local`, **Flux.2 Klein 4B / 9B**: reads up to **4 pictures** of the crop batch, `refs: { "name":
@@ -111,9 +130,12 @@ the plain prompt, `tailOutputs`); the Comfy Cloud copy has no canvas node and se
   (a black cat on a forest path instead of on the crop's pavement), with the prefix and a description it kept the
   palette but rebuilt the layout, with the closing sentence it kept the scene. A Generate new (a white
   `<ref_image_0>`) still makes a whole picture through the wrapper. The model files are picked under Settings; the
-  shipped names are the official `flux3_image_klein_sd_int8_convrot` (step-distilled, 16 steps, CFG 1, the default)
-  and `flux3_image_klein_base_int8_convrot` (base: 50 steps, CFG 4; the Preset row has both), `qwen3vl_4b_int8_convrot`
-  (CLIPLoader type `flux3`; the bf16 file works too) and `flux2-vae`. ComfyUI 0.41 or newer runs FLUX 3 on its own
+  shipped names are the official `flux3-image-klein-int8-convrot` (step-distilled, 16 steps, CFG 1, the default)
+  and `flux3-image-klein-base-int8-convrot` (base: 50 steps, CFG 4; the Preset row has both), `qwen3vl_4b_int8_convrot`
+  (CLIPLoader type `flux3`; the bf16 file works too) and `flux2-vae`, all from `black-forest-labs/flux-3-image-klein-comfy`
+  on Hugging Face, which asks for a login and the licence's acceptance before a download (0.1.50: BFL renamed the files
+  at the public release, `flux3_image_klein_sd_int8_convrot` and `flux3_image_klein_base_int8_convrot` before, so the
+  links of 0.1.49 found nothing; the public files are byte for byte the ones the live runs used). ComfyUI 0.41 or newer runs FLUX 3 on its own
   nodes. Live, on an RTX 5090 with the distilled int8 file: an edit 5-9 s, a reference layer reached the picture
   (`<ref_image_1>`), Generate new 1024 x 1024 in 8 s. Boxes typed into the prompt as BFL's rows (a caption citing
   `<apple_1>`, then `[{"id", "bbox": [ymin, xmin, ymax, xmax] on 0-1000, "desc"}]`) placed the object in its box on
@@ -127,6 +149,16 @@ the plain prompt, `tailOutputs`); the Comfy Cloud copy has no canvas node and se
   src_bbox, tgt_bbox, desc}`, a New box `"from": null`) work as well as the new-image form of the hand test; the text
   says "In <ref_image_0>," twice (the recipe's wrapper and the node's caption) and closes with both "Leave the rest of
   the picture as it is." and "Keep everything else unchanged.", which did not get in the way.
+- `moss_image_local`, **MOSS-Image** (0.1.50, item 47, issue DenRakEiw/scumble#6): OpenMOSS's 5B text-to-image model
+  (Apache-2.0), on ComfyUI 0.42 or newer, which runs it on its own nodes (PR Comfy-Org/ComfyUI#17095; 0.41 does not).
+  A text-to-image graph after Comfy's template `image_moss_image_t2i_bboxes`, without its prompt upsampler (it rewrites
+  a layout): `UNETLoader` (`moss_image_sft_bf16`), `CLIPLoader` type `moss_image` (`qwen3.5_9b_int8_convrot`),
+  `VAELoader` (`flux2-vae_small`), `SkipLayerGuidanceDiTSimple` (single layer 22, 0 to 0.5), `EmptyFlux2LatentImage`
+  at the crop's size scaled to the Megapixels row (1 MP, steps of 16; the model suits 1 to 2 MP), `KSampler` (25 steps,
+  CFG 2.5, `er_sde` / `simple` as Comfy's template; the Preset row also has the model's own 50 steps, CFG 3, `euler`),
+  the negative from the canvas node. The crop's pixels give only the size, so the recipe is `edit: false`: Generate new
+  only. Boxes go as its JSON layout (`"moss"` above). Files from `Comfy-Org/MOSS-Image` (SFT or Base, bf16 or int8;
+  the text encoder in bf16, int8 or w4a8).
 - `qwen_image_edit_2_1_local`, **Qwen Image Edit 2.1** (added for 0.1.23): ComfyUI's own template
   `image_qwen_image_2_1_image_edit.json` with its subgraph flattened and its save and compare nodes left out (they
   would write every run into the server's output folder). `TextEncodeQwenImage21` takes **one picture per input**
@@ -775,10 +807,12 @@ the node resolves no token. Upscale recipes are left out: there a token goes as 
   pass. The prompt field's bar shows "2 of 8 for this recipe" (the pictures the graph reads minus the crop and the
   Original; a guessed graph without `slots` shows "2 in crop_image"), and a chip's card "img1 · sent as <image3>". A
   graph that reads the crop alone (`slots` 1) sends no reference, and every chip is struck through.
-- **Known limit.** The node skips a reference file it cannot read and moves the later ones up (`nodes.py`, "reference
-  skipped", a print only); the names would then point one picture off. `ensureOnServer` only makes sure each file is
-  on the server, not that it can be read. Since 26e the app sends `named_refs: true`, so that the next node release
-  can raise instead when it is set (`docs/BUGS.md` "Reference layers dropped without a word").
+- **A reference that does not load.** When the prompt names a reference, the app sends `named_refs: true` in
+  `canvas_state`, and the node (since commit `9a6c9dc`, built and pushed with 0.1.50) stops the run with "Inpaint
+  Canvas: reference N (@imgN) could not be loaded (<why>) ..." instead of moving the later references up, which made
+  the names point one picture off; the app shows it as "Inpaint Canvas failed: ...". Without `named_refs` (the node's
+  own editor) it still leaves that reference out with a print. `ensureOnServer` only makes sure each file is on the
+  server, not that it can be read.
 
 ### Transparent results (`background`)
 

@@ -306,8 +306,11 @@ the document does not carry were refused or left the history before, §6.1).
   (the editor's own fields win) and into `extra`.
 - **Unknown filter ids** are kept with their params: the filter passes the picture through (`applyFilter` returns its
   source), the layer panel shows "missing: <id>", and the next save writes the id and the params back unchanged.
-- **Unknown layer kinds** with a `ref` load as pixel layers and keep their `kind`; a layer without a `ref` is dropped
-  without a note (a `text` layer without one is rendered again from its description; a filter layer needs none).
+- **Unknown layer kinds** with a `ref` load as pixel layers and keep their `kind`; a layer without a `ref` is left out
+  with a note (a `text` layer without one is rendered again from its description; a filter layer needs none). Since
+  0.1.50 the load counts such layers and filter layers that throw (`leftOut`, `leftOutText`): the status line after the
+  open says in red "N layers saved by a newer version were left out ...", on the next two plain lines after the load,
+  and `open_document` / `reopen_closed_tab` carry it in their notes; the next save drops them.
 - **Plugin data** of unknown plugins rides along (§5).
 - **Not kept on the next save:** unknown fields at the top of `document.json` beside `document`, entries that `files[]`
   does not list, and unknown fields inside a layer, a history entry, a `selections` item, `match` or `guides` (the

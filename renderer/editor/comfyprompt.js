@@ -124,14 +124,16 @@ export function wholePictureClasses(r) {
 export const BOX_PROMPT = "box_prompt";
 
 /**
- * The format a run of a ComfyUI recipe sends boxes in: its `boxes.schema` ("flux3") when it declares the input the rows
- * go to, else null. A provider recipe answers null here (its format is its variant's `options.boxes`).
+ * The format a run of a ComfyUI recipe sends boxes in: its `boxes.schema` ("flux3", "moss") when it declares the input
+ * the rows go to (and "moss" its layout node), else null. A provider recipe answers null here (its format is its
+ * variant's `options.boxes`).
  * @param {any} r
  * @returns {string | null}
  */
 export function localBoxSchema(r) {
     const b = r && r.kind !== "provider" && r.prompt ? r.boxes : null;
-    return b && typeof b.schema === "string" && typeof b.input === "string" && b.input.indexOf("|") > 0 ? b.schema : null;
+    if (!b || typeof b.schema !== "string" || typeof b.input !== "string" || b.input.indexOf("|") <= 0) return null;
+    return b.schema !== "moss" || (typeof b.layout === "string" && !!b.layout) ? b.schema : null;
 }
 
 /**
@@ -147,19 +149,30 @@ export function boxPromptSlot(objectInfo) {
 
 /**
  * `prompt` (a copy of the recipe's graph as it is queued) with the input the recipe's `boxes.input` names taken from the
- * canvas node's output `slot` (box_prompt) instead of its plain prompt, in place. Answers whether it was wired: false
- * when the recipe declares no boxes, the slot is none, or that input does not read the canvas node.
+ * canvas node's output `slot` (box_prompt) instead of its plain prompt, in place. A "moss" recipe instead wires its
+ * layout node's element input to the canvas node's elements output (the one after box_prompt: the node only ever
+ * appends outputs, nodes.py RETURN_NAMES) and takes `input` from the layout node, which writes the prompt as the
+ * caption and the boxes in the picture's pixels. Answers whether it was wired: false when the recipe declares no boxes,
+ * the slot is none, or that input does not read the canvas node.
  * @param {Record<string, any>} prompt
  * @param {any} r
  * @param {number} slot
  */
 export function wireBoxPrompt(prompt, r, slot) {
-    if (!localBoxSchema(r) || !Number.isInteger(slot) || slot < 0) return false;
+    const schema = localBoxSchema(r);
+    if (!schema || !Number.isInteger(slot) || slot < 0) return false;
     const at = r.boxes.input.indexOf("|");
     const node = prompt && prompt[r.boxes.input.slice(0, at)];
     const name = r.boxes.input.slice(at + 1);
     const v = node && node.inputs ? node.inputs[name] : undefined;
     if (!isLink(v) || String(v[0]) !== String(r.canvas)) return false;
+    if (schema === "moss") {
+        const lay = prompt[r.boxes.layout];
+        if (!lay || !lay.inputs) return false;
+        lay.inputs.element = [v[0], slot + 1];
+        node.inputs[name] = [String(r.boxes.layout), 0];
+        return true;
+    }
     node.inputs[name] = [v[0], slot];
     return true;
 }
@@ -175,7 +188,8 @@ export const NODE_REPO = "https://github.com/DenRakEiw/ComfyUI-InpaintCanvas";
  */
 export function oldNodeBoxes(r) {
     const name = (r && (r.name || r.id)) || "This recipe";
-    return `${name} sends the boxes through the Inpaint Canvas node's box_prompt output, which the node on this ComfyUI does not have: update the Inpaint Canvas node to its current GitHub version (a git clone: git pull in its folder under custom_nodes; installed through the Comfy Registry or the Manager: replace that folder with a git clone of ${NODE_REPO}), then restart ComfyUI, or turn the Boxes switch under the prompt off.`;
+    const out = localBoxSchema(r) === "moss" ? "elements" : "box_prompt";
+    return `${name} sends the boxes through the Inpaint Canvas node's ${out} output, which the node on this ComfyUI does not have: update the Inpaint Canvas node to its current GitHub version (a git clone: git pull in its folder under custom_nodes; installed through the Comfy Registry or the Manager: replace that folder with a git clone of ${NODE_REPO}), then restart ComfyUI, or turn the Boxes switch under the prompt off.`;
 }
 
 /**

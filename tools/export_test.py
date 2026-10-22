@@ -3,6 +3,7 @@
 No ComfyUI, no API key. A 6000 x 4000 document on the tile engine with paint layers (one with a blend mode and an
 opacity, one masked), a pointwise filter layer and a blur, exported the new way and the old way and compared pixel by
 pixel through the stream reader (inpaint_png.js `readPng`), which is itself held against the browser's decoder.
+Before them, on both backends: the refusals of an export past one canvas or past WebP's side (0.1.50 Q3).
 
     python tools/export_test.py
 
@@ -1104,6 +1105,73 @@ return { closed: id };
 """),
 ]
 
+# 0.1.50 Q3 (docs/BUGS.md "Size limits"), on both backends: an export whose Size or Canvas row passes one canvas, or a
+# WebP past 16,383 px a side, is refused in red before anything is flattened or saved (a canvas past the limit draws
+# nothing, and Chromium writes such a WebP cut to 16,383 px); a typed side past 32,768 px is capped with the aspect
+# kept and the status line says so; an export that fits still saves
+STEPS_BOTH = [
+    ("an_export_past_one_canvas_is_refused", """
+const out = {};
+let doc = null;
+const was = host.saveExport;
+let saves = 0, flattens = 0;
+const spy = (ed) => { ed.flattenToCanvas = function (...a) { flattens++; return Object.getPrototypeOf(this).flattenToCanvas.apply(this, a); }; };
+try {
+    host.saveExport = async (blob, name) => { saves++; return { path: "memory:" + name, size: blob ? blob.size : -1 }; };
+    doc = (await run("new_document")).id;
+    let ed = ednow(doc);
+    host.shell.activate(ed);
+    await run("new_canvas", { doc, width: 400, height: 300 });
+    spy(ed);
+    const save = async (fmt) => { ed.saveFormatSel.value = fmt; saves = 0; flattens = 0; const r = await ed.exportImage({ download: false }); return { saved: !!r, saves, flattens, status: ed.status, kind: ed.statusKind }; };
+    const refused = async (fmt, start, what) => {
+        const a = await save(fmt);
+        if (a.saved || a.saves || a.flattens || a.kind !== "warn" || !a.status.startsWith("Save failed: " + start)) throw new Error(what + " (" + fmt + "): " + JSON.stringify(a));
+        return a.status;
+    };
+    // (1) a Size of 30,000 px wide makes 30,000 x 22,500 px: past one canvas
+    host.setExportSize(ed, { width: 30000 });
+    for (const fmt of ["png", "jpg", "webp", "tiff"]) out.size = await refused(fmt, "The export would be 30,000 × 22,500 px, more than one canvas holds (65,535 px a side, 268 megapixels). Make the Size or the Canvas row in the Export section smaller (the export command's scale, width or canvas_width).", "a Size past one canvas");
+    // (2) the Canvas row past one canvas, the Size back at 100 %
+    host.setExportSize(ed, { percent: 100 });
+    host.setExportSize(ed, { canvasWidth: 30000, canvasHeight: 20000 });
+    out.frame = await refused("png", "The export's canvas would be 30,000 × 20,000 px, more than one canvas holds", "a Canvas row past one canvas");
+    host.setExportSize(ed, { canvasWidth: 0, canvasHeight: 0 });
+    // (3) a typed side past 32,768 px: capped with the aspect kept, and said in red
+    host.setExportSize(ed, { width: 40000 });
+    const capped = host.exportPixels(ed), capLine = ed.status, capKind = ed.statusKind;
+    if (JSON.stringify(capped) !== "[32768,24576]" || capKind !== "warn" || capLine !== "An export goes up to 32,768 px a side: the size 40,000 × 30,000 became 32,768 × 24,576 (the aspect kept).") throw new Error("a typed side past the cap: " + JSON.stringify({ capped, capLine, capKind }));
+    host.setExportSize(ed, { canvasWidth: 40000, canvasHeight: 1000 });
+    if (host.exportState(ed).canvasW !== 32768 || host.exportState(ed).canvasH !== 819 || !ed.status.includes("the canvas 40,000 × 1,000 became 32,768 × 819")) throw new Error("a typed canvas past the cap: " + JSON.stringify(host.exportState(ed)) + " " + ed.status);
+    host.setExportSize(ed, { canvasWidth: 0, canvasHeight: 0 });
+    // (4) a Size that fits still saves
+    host.setExportSize(ed, { width: 800 });
+    const ok = await save("png");
+    if (!ok.saved || ok.saves !== 1 || !ok.status.includes("(800 × 600")) throw new Error("an export that fits: " + JSON.stringify(ok));
+    host.setExportSize(ed, { percent: 100 });
+    await run("close_document", { doc, force: true });
+    // (5) a WebP of a picture wider than 16,383 px is refused even at 100 % (JPEG takes it); a percentage past the cap
+    // keeps the picture's aspect
+    doc = (await run("new_document")).id;
+    ed = ednow(doc);
+    host.shell.activate(ed);
+    await run("new_canvas", { doc, width: 16384, height: 100 });   // new_canvas's widest
+    spy(ed);
+    out.webp = await refused("webp", "The export would be 16,384 × 100 px, and a WebP holds at most 16,383 px a side: save it as PNG, JPEG or TIFF, or make the Size or the Canvas row smaller.", "a wide WebP");
+    const jpg = await save("jpg");
+    if (!jpg.saved || !jpg.status.includes("(16384 × 100")) throw new Error("the wide JPEG: " + JSON.stringify(jpg));
+    host.setExportSize(ed, { percent: 400 });
+    const pct = host.exportPixels(ed);
+    if (JSON.stringify(pct) !== "[32768,200]") throw new Error("400 % of 16,384 x 100 past the cap (65,536 x 400, halved): " + JSON.stringify(pct));
+    out.percent = pct;
+    return out;
+} finally {
+    host.saveExport = was;
+    if (doc) { try { const e = ednow(doc); if (e) { delete e.flattenToCanvas; host.setExportSize(e, { percent: 100, canvasWidth: 0, canvasHeight: 0 }); } await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""),
+]
+
 # python tools/export_test.py --perf 15000x10000: the timings of a large document (printed, not gated)
 PERF = """
 const [W, H] = [__W__, __H__];
@@ -1261,12 +1329,22 @@ async def run_all(c):
         print(json.dumps(res, indent=1))
         return True
     ok = True
+    only = [a for a in sys.argv[1:] if not a.startswith("-")]
+    # the steps of both backends first (the size refusals of exportCanvas)
+    for name, body in STEPS_BOTH:
+        if only and name not in only:
+            continue
+        try:
+            res = await c.eval(PRE % (HELPERS, body), timeout=600)
+            print("[ok] %s: %s" % (name, json.dumps(res)[:1500]))
+        except Exception as err:  # noqa: BLE001
+            ok = False
+            print("[FAIL] %s: %s" % (name, str(err)[:900]))
     tiles = await c.eval("(async () => { const h = (await import('./editor/host.js')).host; const e = h.editors()[0]; return e ? !!e.tileMode : null; })()")
     if tiles is False:
         print("[ok] skipped: the canvas backend keeps its canvas paths (bands are for the tile engine)")
-        print("PASS")
-        return True
-    only = [a for a in sys.argv[1:] if not a.startswith("-")]
+        print("PASS" if ok else "FAIL")
+        return ok
     for name, body in STEPS:
         if only and name not in only and name not in ("setup_document", "close"):
             continue

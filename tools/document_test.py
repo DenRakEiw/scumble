@@ -35,7 +35,10 @@ default), and this gate starts and ends each of them itself (WM_CLOSE, or a kill
 11. newer_documents - files crafted from a saved one (document.json rewritten, `mimetype` first, every entry stored):
     `minReader: 99` is refused with nothing imported; `version: 99, minReader: 1` with a layer of an unknown kind (with a
     ref), an unknown filter id, an unknown top-level field and an unknown plugin's data (with a ref) opens with a note,
-    and all four come back unchanged in the next save.
+    and all four come back unchanged in the next save; a layer of an unknown kind without a file is left out, and the
+    status line after "Opened ..." says so, the line after that (the save's) no more (docs/PLAN_0_1_50.md Q4); the
+    open_document command's notes hold the note once, a filter layer that throws while it loads is counted, and the
+    note rides on the next two plain lines after a load, never on an error line.
 U2. a_comfy_whole_picture_upscale_round_trips - (docs/PLAN_0_1_42.md U2) the whole picture upscaled 2x on the ComfyUI
     route (RTX Video Super Resolution, against stubs in the page: no server), saved, closed and opened: the size, the
     state, every layer's place and pixels, the base and the selection as before the save; the file read by zipfile.
@@ -584,11 +587,43 @@ const ed = o.editor;
 await settle(ed);
 const L = ed.layers.find((l) => l.id === "Lfuture1"), F = ed.layers.find((l) => l.id === "Lfuture2");
 const newer = !!(ed.docFile && ed.docFile.newer);
+const status = ed.status, statusKind = ed.statusKind;
 const r = await host.saveDocument(ed, { path: G.resavedPath });
 return {
     notes: o.notes, newer, kind: L && L.kind, px: L && L.px ? [L.px.width, L.px.height] : null,
-    filter: F && F.filter, extra: Object.keys(ed.docExtra || {}), plugins: Object.keys(ed.pluginData || {}), bytes: r.bytes, status: ed.status,
+    filter: F && F.filter, extra: Object.keys(ed.docExtra || {}), plugins: Object.keys(ed.pluginData || {}), bytes: r.bytes, status, statusKind,
+    gone: ed.layers.some((l) => l.id === "Lfuture3"), leftOut: ed.leftOut || null, savedStatus: ed.status,
 };
+"""
+
+# the open_document command: what the load left out is in its notes, once; a filter layer that throws while it loads is
+# counted (Layer.empty made to throw once when setValue's filter branch calls it); then the carry's rules on the same
+# tab: an error line stays as it is, the next two plain lines carry the note, the third does not
+OPEN_NEWER_CMD = """
+const Lc = host.editor.pixels.Layer, orig = Lc.empty;
+let thrown = 0;
+Lc.empty = function (...args) {
+    const caller = String(new Error().stack || "").split(String.fromCharCode(10))[2] || "";
+    if (!thrown && args[0] > 1 && /setValue/.test(caller)) { thrown = 1; throw new Error("test: a filter layer that will not load"); }
+    return orig.apply(this, args);
+};
+let r;
+try { r = await must("open_document", { path: G.newerPath }); } finally { Lc.empty = orig; }
+const ed = host.editors().find((e) => e.docFile && same(e.docFile.path, G.newerPath));
+await settle(ed);
+const lo = ed.leftOut ? { ...ed.leftOut } : null;
+const hits = (r.notes || []).filter((n) => lo && String(n).includes(lo.note)).length;
+const st = JSON.parse(ed.getValue());
+st.layers = (st.layers || []).concat([{ id: "Lprobe", name: "probe", kind: "volume", ref: null }]);
+await ed.setValue(JSON.stringify(st));
+const note = ed.leftOut && ed.leftOut.note;
+const probe = [];
+ed.setStatus("Probe failed.", "error"); probe.push(ed.status);
+ed.setStatus("Probe one."); probe.push(ed.status);
+ed.setStatus("Probe two.", "info"); probe.push(ed.status);
+ed.setStatus("Probe three."); probe.push(ed.status);
+shell.closeDocument(ed, { force: true });
+return { thrown, notes: r.notes || [], hits, leftOut: lo, note, probe };
 """
 
 
@@ -1342,13 +1377,17 @@ class Gate:
         ffilter = {"id": "Lfuture2", "name": "future filter", "kind": "filter", "role": "none", "blend": "normal", "ref": None,
                    "x": 0, "y": 0, "w": 1200, "h": 800, "opacity": 1, "visible": True, "mask": None,
                    "filter": "future.glow", "params": {"radius": 7, "custom": "kept", "nested": {"a": [1, 2]}}, "lut": None, "plate": None}
+        # docs/PLAN_0_1_50.md Q4: a layer of a kind this version does not know and without a file cannot be shown: it is
+        # left out with a word (the status line after "Opened ...", and the editor's leftOut), not silently
+        gone = {"id": "Lfuture3", "name": "future volume", "kind": "volume", "role": "none", "blend": "normal", "ref": None,
+                "x": 0, "y": 0, "w": 1200, "h": 800, "opacity": 1, "visible": True, "mask": None, "volume": {"density": 0.4}}
         field = {"a": 1, "list": [1, 2, 3], "text": "from the future"}
         pdata = {"note": "kept", "n": [1, 2], "ref": {"filename": "future_plugin.bin", "subfolder": "inpaint_canvas", "type": "input"}}
         blob = bytes(range(256)) * 16
 
         def newer(h):
             h["version"], h["minReader"], h["app"] = 99, 1, "9.9.9"
-            h["document"]["layers"] += [future, ffilter]
+            h["document"]["layers"] += [future, ffilter, gone]
             h["document"]["futureField"] = field
             h["plugins"]["future-plugin"] = pdata
         craft(every, v2, newer, {pl + "future_layer.png": open(os.path.join(inp, "future_layer.png"), "rb").read(), pl + "future_plugin.bin": blob})
@@ -1363,6 +1402,13 @@ class Gate:
             problems.append(f"the unknown kind loaded as {o['kind']} {o['px']}")
         if o["filter"] != "future.glow":
             problems.append(f"the unknown filter became {o['filter']}")
+        note = "1 layer saved by a newer version was left out: this version cannot show it, and the next save drops it."
+        if o["gone"] or (o["leftOut"] or {}).get("newer") != 1 or (o["leftOut"] or {}).get("note") != note:
+            problems.append(f"the layer without a file: loaded {o['gone']}, leftOut {o['leftOut']}")
+        if not (o["status"] or "").startswith("Opened newer_v2.scumble.") or note not in (o["status"] or "") or o["statusKind"] != "warn":
+            problems.append(f"the status line does not say what was left out: {o['status']!r} ({o['statusKind']})")
+        if note in (o["savedStatus"] or ""):
+            problems.append(f"the note rode on past the load's own lines: {o['savedStatus']!r}")
         zp, h2, entries = zip_check(resaved, prof)
         problems += ["zip: " + p for p in zp]
         d = h2.get("document", {})
@@ -1371,6 +1417,8 @@ class Gate:
             problems.append(f"the unknown kind came back as {got.get('Lfuture1')}")
         if got.get("Lfuture2") != ffilter:
             problems.append(f"the unknown filter came back as {got.get('Lfuture2')}")
+        if "Lfuture3" in got:
+            problems.append("the layer the note says the next save drops came back")
         if d.get("futureField") != field:
             problems.append(f"the unknown field came back as {d.get('futureField')!r}")
         if h2.get("plugins", {}).get("future-plugin") != pdata:
@@ -1378,8 +1426,19 @@ class Gate:
         if entries.get(pl + "future_plugin.bin") != sha_bytes(blob) or pl + "future_layer.png" not in entries:
             problems.append("the files of the unknown layer and plugin data did not travel: " + ", ".join(e for e in entries if "future" in e))
         await A.ev("for (const e of host.editors().slice()) if (e.docFile && /newer_v2/.test(e.docFile.path)) shell.closeDocument(e, { force: true }); return 1;")
+        c = await A.ev(OPEN_NEWER_CMD)
+        both = note + " 1 filter layer could not be read and was left out."
+        lo = c["leftOut"] or {}
+        if not c["thrown"] or lo.get("newer") != 1 or lo.get("failed") != 1 or lo.get("note") != both:
+            problems.append(f"open_document with a filter layer that throws: thrown {c['thrown']}, leftOut {lo}")
+        if c["hits"] != 1:
+            problems.append(f"open_document's notes do not hold the note once: {c['notes']}")
+        n2 = c["note"] or "?"
+        want = ["Probe failed.", "Probe one. " + n2, "Probe two. " + n2, "Probe three."]
+        if c["probe"] != want:
+            problems.append(f"the note's carry: {c['probe']} (wanted {want})")
         self.step("newer_documents", not problems, "; ".join(problems[:6]) if problems else
-                  f"minReader 99 refused ({r['err'][:90]}...), nothing imported; version 99 opened with the note, and the unknown kind, filter id, top-level field and plugin data (with their files) came back unchanged in the next save", t)
+                  f"minReader 99 refused ({r['err'][:90]}...), nothing imported; version 99 opened with the note, and the unknown kind, filter id, top-level field and plugin data (with their files) came back unchanged in the next save; the layer without a file left out with a word, also in open_document's notes (with a filter layer that would not load), on two plain lines after the load", t)
 
     def finish(self):
         ok = bool(self.results) and all(self.results)

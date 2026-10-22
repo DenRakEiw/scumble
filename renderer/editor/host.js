@@ -20,7 +20,7 @@ import { applyFilter } from "./inpaint_filters.js";
 import { lightsToWords, detailRatio, loraPercent } from "./inpaint_relight.js";
 import { withoutSecrets } from "./redact.js";
 import { failKind, refusal } from "./inpaint_status.js";
-import { canvasFits, fitInCanvas, largestFactor, CANVAS_LIMIT_WORDS } from "./inpaint_sizelimit.js";
+import { canvasFits, fitInCanvas, largestFactor, canvasSizeRefusal, CANVAS_LIMIT_WORDS } from "./inpaint_sizelimit.js";
 
 /**
  * What a result's history entry keeps of the click (S4): the prompt and the negative as typed, and which layer each
@@ -87,6 +87,26 @@ const SUBFOLDER = "inpaint_canvas";
 // `limits`, which is what keeps a model from being handed a size it answers with an error.
 const MAX_EXPORT_SIDE = 32768;
 const EXPORT_PERCENTS = [200, 150, 100, 75, 50, 33, 25, 10];
+/**
+ * The widest picture an encoder of Chromium writes, where an export can reach past it: a wider canvas comes out cut to
+ * that side (measured 2026-10-22, 0.1.50 Q3: a WebP to 16,383 px). A JPEG is cut to 65,500 px a side and PNG takes
+ * 65,535 (measured the same day), but no export comes near: exportPixels holds every export to MAX_EXPORT_SIDE, a
+ * document's own size at 100 % included; lifting that needs a JPEG entry here.
+ */
+const ENCODER_MAX_SIDE = Object.freeze({ webp: { side: 16383, name: "a WebP" } });
+
+/**
+ * w × h with its longer side held to MAX_EXPORT_SIDE, the aspect kept (the Size and Canvas rows; each side clamped on
+ * its own stretched the picture): [w, h, capped].
+ * @param {number} w
+ * @param {number} h
+ * @returns {[number, number, boolean]}
+ */
+function capExportSide(w, h) {
+    if (w <= MAX_EXPORT_SIDE && h <= MAX_EXPORT_SIDE) return [w, h, false];
+    const s = MAX_EXPORT_SIDE / Math.max(w, h);
+    return [Math.max(1, Math.min(MAX_EXPORT_SIDE, Math.round(w * s))), Math.max(1, Math.min(MAX_EXPORT_SIDE, Math.round(h * s))), true];
+}
 
 // The five answers to "how far up?", labelled so they read without the tooltip: the row is
 // called Highres fix, so every label finishes that sentence.
@@ -212,6 +232,87 @@ function viaLine(r, route, seconds) {
     const model = (r && (r.name || r.id)) || "";
     const secs = Number.isFinite(+seconds) && seconds !== null ? `, ${Math.round(+seconds)} s` : "";
     return model || route ? `${model}${model && route ? " via " : ""}${route || ""}${secs}` : "";
+}
+
+/** The shipped local Klein recipes and their model family (0.1.50 Q1). */
+const KLEIN_RECIPES = Object.freeze({ flux2_klein_local: "flux2", flux3_klein_local: "flux3" });
+/** The torch error a Klein sampler raises when the text encoder's features do not fit the model's text input. */
+const SHAPE_ERROR = /mat1 and mat2 shapes cannot be multiplied/i;
+
+/**
+ * A local run of a Klein model (0.1.50 Q1, docs/BUGS.md "mat1 and mat2"): its family ("flux2" / "flux3") and the model
+ * and text encoder files the queued prompt `prompt` loads, or null for any other run. A shipped Klein recipe, or a
+ * user's graph whose CLIPLoader has Flux.2's or FLUX 3's type and whose UNETLoader names a Klein file.
+ * @returns {{ family: string, unet: string, clip: string } | null}
+ */
+function kleinRun(r, prompt) {
+    const nodes = Object.values(prompt || {}).filter((n) => n && n.inputs);
+    const clip = nodes.find((n) => n.class_type === "CLIPLoader" && (n.inputs.type === "flux2" || n.inputs.type === "flux3"));
+    const unet = nodes.find((n) => n.class_type === "UNETLoader");
+    const file = (n, key) => (n && typeof n.inputs[key] === "string" ? n.inputs[key] : "");
+    const family = (r && KLEIN_RECIPES[r.id]) || (clip && /klein/i.test(file(unet, "unet_name")) ? clip.inputs.type : null);
+    return family ? { family, unet: file(unet, "unet_name"), clip: file(clip, "clip_name") } : null;
+}
+
+/**
+ * The features a token of a Flux.2 Klein text encoder carries (three stacked hidden states: Qwen3 8B's 4096, Qwen3 4B's
+ * 2560), which the model's text input takes: torch's "(AxB and CxD)" gives what arrived (B) and what the model takes (C).
+ */
+const KLEIN_FEATURES = Object.freeze({ 12288: { size: "9B", encoder: "Qwen3 8B" }, 7680: { size: "4B", encoder: "Qwen3 4B" } });
+/** A Klein text encoder file's name for each model (the shipped recipes' files and Comfy-Org's: qwen_3_8b, qwen3_8b, ...). */
+const KLEIN_ENCODER_NAME = Object.freeze({ "9B": /qwen_?3_?8b/i, "4B": /qwen_?3_?4b/i, flux3: /qwen_?3_?vl_?4b/i });
+
+/**
+ * The status line for a Klein run's sampler error "mat1 and mat2 shapes cannot be multiplied" (0.1.50 Q1): the text
+ * encoder does not fit the model (Klein 9B reads Qwen3 8B's features, 4B Qwen3 4B's, FLUX 3 Image Klein Qwen3-VL
+ * 4B's), so the sampler cannot take its output; the run's files and the row to change, the torch text at the end. When
+ * the files' names already fit each other, the other causes instead: a ComfyUI too old for the encoder, or a file that
+ * holds another model than its name says. The line reads "failed", which the generate command's wait stops on.
+ */
+function kleinEncoderHint(k, msg) {
+    const raw = String(msg || "").trim().split(/\r?\n/)[0];
+    const torch = ` (ComfyUI: ${raw})`;
+    const enc = k.clip ? ` with the text encoder ${k.clip}` : "";
+    const shapes = /\((\d+)x(\d+) and (\d+)x(\d+)\)/.exec(raw);
+    const got = shapes ? KLEIN_FEATURES[shapes[2]] : null, want = shapes ? KLEIN_FEATURES[shapes[3]] : null;
+    const right = " although the files' names fit each other";
+    const arrived = got ? `; what arrived reads as ${got.encoder}'s output` : "";
+    if (k.family === "flux3") {
+        if (k.clip && KLEIN_ENCODER_NAME.flux3.test(k.clip)) {
+            return `FLUX 3 Image Klein failed in the sampler: the text encoder's output does not fit the model,${right}: this run sent ${k.unet || "the model"}${enc}${arrived}. Either your ComfyUI is too old for FLUX 3 Image Klein (it needs 0.41 or newer: update it), or one of these files holds another model than its name says.${torch}`;
+        }
+        return `FLUX 3 Image Klein failed in the sampler: the text encoder does not fit the model. It takes the Qwen3-VL 4B encoder (qwen3vl_4b); this run sent ${k.unet || "the model"}${enc}. Pick that file in the Text encoder row of the Settings panel.${torch}`;
+    }
+    // the model's size from its file's name, else from what its text input takes
+    const size = /9b/i.test(k.unet) ? "9B" : /4b/i.test(k.unet) ? "4B" : want ? want.size : "";
+    const wants = size === "9B" ? " (Klein 9B, which takes qwen_3_8b)" : size === "4B" ? " (Klein 4B, which takes qwen_3_4b)" : "";
+    if (size && k.clip && KLEIN_ENCODER_NAME[size].test(k.clip)) {
+        // what the model's text input takes, when it is not what the model file's name says
+        const model = want && want.size !== size ? `; the model takes ${want.encoder}'s output, as Klein ${want.size} does` : "";
+        return `Flux.2 Klein failed in the sampler: the text encoder's output does not fit the model,${right}: this run sent ${k.unet || "the model"}${wants}${enc}${arrived}${model}. Either your ComfyUI is too old to build Klein's Qwen3 encoder (Klein needs one from January 2026 or newer: update it), or one of these files holds another model than its name says.${torch}`;
+    }
+    return `Flux.2 Klein failed in the sampler: the text encoder does not fit the model. Klein 9B takes the Qwen3 8B encoder (qwen_3_8b), Klein 4B the Qwen3 4B one (qwen_3_4b); this run sent ${k.unet || "the model"}${wants}${enc}. Pick the matching file in the Text encoder row of the Settings panel.${torch}`;
+}
+
+/**
+ * The pieces of `src` (a canvas or a picture) that realism.compareTiles names, put together into a canvas the CPU keeps:
+ * its RGBA bytes, one readback (the Realism Pass's answer against what went, 0.1.50 Q2). `kx`, `ky`: how much larger
+ * `src` is than the picture the tiles were laid out on (an answer above 1×), drawn down with the browser's high-quality
+ * filter; at 1 each piece is copied pixel for pixel.
+ * @param {CanvasImageSource} src
+ * @param {{ width: number, height: number, tiles: { sx: number, sy: number, sw: number, sh: number, dx: number, dy: number }[] }} m
+ */
+function mosaicPixels(src, m, kx = 1, ky = 1) {
+    const k = document.createElement("canvas");
+    k.width = m.width; k.height = m.height;
+    const x = /** @type {CanvasRenderingContext2D} */ (k.getContext("2d", { willReadFrequently: true }));
+    const one = kx === 1 && ky === 1;
+    x.imageSmoothingEnabled = !one;
+    if (!one) x.imageSmoothingQuality = "high";
+    for (const t of m.tiles) x.drawImage(src, t.sx * kx, t.sy * ky, t.sw * kx, t.sh * ky, t.dx, t.dy, t.sw, t.sh);
+    const d = x.getImageData(0, 0, m.width, m.height).data;
+    k.width = k.height = 0;
+    return d;
 }
 
 /** A run's id, for main's Cancel (providers/index.js `cancel`). */
@@ -754,8 +855,8 @@ export const host = {
         let w, h;
         if (e.width > 0 && e.height > 0) { w = e.width; h = e.height; }
         else { w = Math.round(dw * e.percent / 100); h = Math.round(dh * e.percent / 100); }
-        w = Math.max(1, Math.min(MAX_EXPORT_SIDE, w));
-        h = Math.max(1, Math.min(MAX_EXPORT_SIDE, h));
+        // a percentage past the cap keeps the picture's aspect (0.1.50 Q3); a typed size was capped when it was set
+        [w, h] = capExportSide(Math.max(1, w), Math.max(1, h));
         return w === dw && h === dh ? null : [w, h];
     },
 
@@ -811,8 +912,31 @@ export const host = {
         return !this.exportPixels(editor) && !this.exportFrame(editor);
     },
 
+    /**
+     * "" when the export canvas of `fmt` can be made and written, else the refusal (0.1.50 Q3, docs/BUGS.md "Size
+     * limits"): a Size or Canvas row past one canvas (Chromium makes such a canvas without complaint, draws nothing into
+     * it and writes no file, or an empty one), and a WebP past 16,383 px a side (written cut to that side,
+     * ENCODER_MAX_SIDE). PSD and ORA keep the document's own size.
+     */
+    exportSizeRefusal(editor, fmt) {
+        if (fmt === "psd" || fmt === "ora") return "";
+        const size = this.exportPixels(editor), frame = this.exportFrame(editor);
+        const smaller = " Make the Size or the Canvas row in the Export section smaller (the export command's scale, width or canvas_width).";
+        const over = (size && canvasSizeRefusal(size[0], size[1], "The export")) || (frame && canvasSizeRefusal(frame[0], frame[1], "The export's canvas"));
+        if (over) return over + smaller;
+        const [w, h] = frame || size || [editor.width | 0, editor.height | 0];
+        const cap = ENCODER_MAX_SIDE[fmt];
+        if (cap && Math.max(w, h) > cap.side) {
+            return `The export would be ${w.toLocaleString("en-US")} × ${h.toLocaleString("en-US")} px, and ${cap.name} holds at most ${cap.side.toLocaleString("en-US")} px a side: save it as PNG, JPEG or TIFF, or make the Size or the Canvas row smaller.`;
+        }
+        return "";
+    },
+
     /** What exportImage() encodes: the flattened image, scaled when the Size row asks for it, framed when the Canvas row does. */
     async exportCanvas(editor, fmt) {
+        // refused before anything is flattened or drawn (0.1.50 Q3): red, a limit
+        const refused = this.exportSizeRefusal(editor, fmt);
+        if (refused) throw refusal(refused, "warn");
         if (editor.relightSettled) await editor.relightSettled();
         let canvas = editor.flattenToCanvas({ forRun: true });
         if (fmt === "psd" || fmt === "ora") return canvas;
@@ -839,6 +963,10 @@ export const host = {
      */
     setExportSize(editor, { percent, width, height, quality, canvasWidth, canvasHeight, anchor, fill } = {}) {
         const e = this.exportState(editor);
+        // a typed side past MAX_EXPORT_SIDE: what it became, for the status line (it was clamped without a word)
+        /** @type {string[]} */
+        const capNotes = [];
+        const fmtSize = (w, h) => `${Math.round(w).toLocaleString("en-US")} × ${Math.round(h).toLocaleString("en-US")}`;
         if (quality != null) e.quality = Math.min(1, Math.max(0.1, +quality || 0.92));
         if (canvasWidth != null || canvasHeight != null) {
             // one of them alone keeps the frame's aspect from the picture; 0 / empty clears the frame
@@ -848,6 +976,12 @@ export const host = {
             if (ch > 0 && !cw && canvasWidth == null && px[1]) cw = Math.max(1, Math.round(ch * px[0] / px[1]));
             if (cw > 0 && !ch) ch = e.canvasH || px[1];
             if (ch > 0 && !cw) cw = e.canvasW || px[0];
+            // past the cap: both sides down, the aspect kept, and the status line says so (0.1.50 Q3)
+            if (cw > 0 && ch > 0) {
+                const [fw, fh, capped] = capExportSide(cw, ch);
+                if (capped) capNotes.push(`the canvas ${fmtSize(cw, ch)} became ${fmtSize(fw, fh)}`);
+                cw = fw; ch = fh;
+            }
             e.canvasW = Math.max(0, Math.min(MAX_EXPORT_SIDE, cw));
             e.canvasH = Math.max(0, Math.min(MAX_EXPORT_SIDE, ch));
             if (!e.canvasW || !e.canvasH) { e.canvasW = 0; e.canvasH = 0; }
@@ -859,6 +993,11 @@ export const host = {
             let w = Math.round(+width || 0), h = Math.round(+height || 0);
             if (w > 0 && !h && dw) h = Math.max(1, Math.round(w * dh / dw));
             if (h > 0 && !w && dh) w = Math.max(1, Math.round(h * dw / dh));
+            if (w > 0 && h > 0) {
+                const [sw, sh, capped] = capExportSide(w, h);
+                if (capped) capNotes.push(`the size ${fmtSize(w, h)} became ${fmtSize(sw, sh)}`);
+                w = sw; h = sh;
+            }
             e.width = Math.max(0, Math.min(MAX_EXPORT_SIDE, w));
             e.height = Math.max(0, Math.min(MAX_EXPORT_SIDE, h));
             if (e.width && dw) e.percent = Math.round(e.width / dw * 1000) / 10;
@@ -867,6 +1006,7 @@ export const host = {
             e.width = 0; e.height = 0;
         }
         this.syncExportRow(editor);
+        if (capNotes.length && editor.setStatus) editor.setStatus(`An export goes up to ${MAX_EXPORT_SIDE.toLocaleString("en-US")} px a side: ${capNotes.join(", ")} (the aspect kept).`, "warn");
         return e;
     },
 
@@ -1091,6 +1231,9 @@ export const host = {
     // the prompts of closed tabs (removeEditor): their results and errors are dropped (the newest 64); the tabs' node
     // ids, for a helper's output queued while its tab closed; per closed tab, the renders a reopen takes back
     _closedPrompts: new Set(),
+    // prompt id -> a local Klein run's family and files (kleinRun), read by the execution_error listener (0.1.50 Q1)
+    /** @type {Map<string, { family: string, unet: string, clip: string }>} */
+    _kleinRuns: new Map(),
     _closedNodes: new Set(),
     _closedRuns: new Map(),
 
@@ -3069,7 +3212,11 @@ export const host = {
      * not cropped back but kept larger (only the padding's share comes off), the alpha scaled with it; a picture whose
      * output would pass 7680 × 4320 or 27.9 MP is scaled down first (realism.fitPlan, the browser's high-quality resampling, as the
      * editor's Resize scales), and the note says so. 1 keeps the refusal past the cap.
-     * -> { bytes, mime: "image/png", width, height, seconds, note, factor, sent: [w, h], scaled: [w, h] | null }
+     * The answer is held against what went (0.1.50 Q2), pixel for pixel on pieces spread over the picture
+     * (realism.compareTiles): nearly the same picture at a Strength of realism.UNCHANGED_MIN_STRENGTH or more adds a note
+     * that the pass changed nothing, and `unchanged` holds the difference (realism.pictureDiff), else null; every pass's
+     * difference goes to the log.
+     * -> { bytes, mime: "image/png", width, height, seconds, note, factor, sent: [w, h], scaled: [w, h] | null, unchanged }
      */
     async passPicture(editor, bytes, mime, { token = null, deadline = 0, factor = 1 } = {}) {
         const L = realism.LABEL;
@@ -3105,6 +3252,10 @@ export const host = {
         const prep = realism.prepPixels(source, fw, fh, keepAlpha);
         c.width = w2; c.height = h2;
         cx.putImageData(new ImageData(prep.data, w2, h2), 0, 0);
+        // what went, read where its answer is held against it (0.1.50 Q2: an answer equal to it means the pass did
+        // nothing): pieces of the picture without its padding, pixel for pixel
+        const tiles = up ? realism.compareTiles(fw, fh) : realism.compareTiles(w, h);
+        const sentTiles = mosaicPixels(c, tiles);
         const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
         let values = this.realismValues();
         // the upload and the server's copy of it end at a Cancel and at the timeout too: a stalled forward to the server
@@ -3151,6 +3302,18 @@ export const host = {
         const aw = img.naturalWidth || img.width, ah = img.naturalHeight || img.height;
         if (!up && (aw < w || ah < h)) throw fail(`${L}: your ComfyUI answered ${aw} × ${ah} for a picture of ${w} × ${h}.`);
         if (up && (aw <= w2 || ah <= h2)) throw fail(`${L}: your ComfyUI answered ${aw} × ${ah} for a picture of ${w2} × ${h2} at ${mode.text}.`);
+        // the answer held against what went (0.1.50 Q2), the same pieces (above 1× drawn down by the answer's scale): the
+        // same picture back means the pass changed nothing on this card (it still lands, said in red); below a small
+        // Strength nothing is said (an unchanged picture is what Strength 0 asks for). Every pass's numbers go to the log,
+        // so the first passes on a card show how far the bounds are
+        const diff = realism.pictureDiff(sentTiles, mosaicPixels(img, tiles, up ? aw / w2 : 1, up ? ah / h2 : 1));
+        const unchanged = realism.unchangedAt(diff, values.intensity);
+        if (unchanged) notes.push(realism.unchangedNote(support.gpu, diff, mode.factor));
+        try {
+            const pieces = tiles.tiles.length > 1 ? `${tiles.tiles.length} pieces of ${tiles.tiles[0].sw} × ${tiles.tiles[0].sh} px` : `${tiles.width} × ${tiles.height} px`;
+            const line = `${L}: the answer against what went (${pieces}${up ? `, the answer drawn down from ${mode.text}` : ", pixel for pixel"}): ${realism.diffText(diff)}; Strength ${values.intensity}${unchanged ? ": said to have changed nothing" : ""}`;
+            if (window.scumble && window.scumble.log) Promise.resolve(window.scumble.log.add({ level: "info", source: "realism", message: line })).catch(() => { /* the log is optional */ });
+        } catch (_) { /* the log is optional */ }
         const kw = up ? Math.round(fw * aw / w2) : w, kh = up ? Math.round(fh * ah / h2) : h;
         if (!keepAlpha && aw === kw && ah === kh) out = res.bytes;
         else {
@@ -3168,6 +3331,7 @@ export const host = {
         return {
             bytes: out, mime: out === res.bytes ? res.mime : "image/png", width: kw, height: kh, seconds: res.seconds, note: notes.join(" "),
             factor: mode.factor, sent: [w2, h2], scaled: plan.scaled ? [fw, fh] : null, fellBack: !!fellBack,
+            unchanged: unchanged ? diff : null,
         };
     },
 
@@ -3224,8 +3388,10 @@ export const host = {
      * and the document, come back as large as the pass allows. The landing goes through resizeImage's `base` path while the run slot is held
      * (a token that `resizes`: Generate and the helper jobs are refused meanwhile), after wholeLandingRefusal's net; from
      * the resize on the Cancel is gone from the title row (it could no longer stop the landing).
-     * -> { layer, seconds, note, changed, factor, from: [W, H], width, height } (layer null when the tab was closed
-     *    meanwhile)
+     * An answer that is the picture that went (passPicture's `unchanged`, 0.1.50 Q2) still lands, and the status line
+     * says in red that the pass changed nothing on this card; the note carries the sentence.
+     * -> { layer, seconds, note, changed, factor, from: [W, H], width, height, unchanged } (layer null when the tab was
+     *    closed meanwhile)
      */
     async realismWhole(editor, { deadline = 0, factor = 1 } = {}) {
         const L = realism.LABEL;
@@ -3282,7 +3448,7 @@ export const host = {
             editor.setStatus(`${L}: sending the picture (${goes}) to your ComfyUI ...`);
             const out = await this.passPicture(editor, bytes, "image/png", { token, deadline, factor: mode.factor });
             bytes = null;
-            const none = { layer: null, seconds: out.seconds || 0, note: "", changed: false, factor: mode.factor, from: [W, H], width: null, height: null };
+            const none = { layer: null, seconds: out.seconds || 0, note: "", changed: false, factor: mode.factor, from: [W, H], width: null, height: null, unchanged: false };
             if (gone()) return none;
             // the title row's Cancel stays until the layer is in: pressed after the answer, nothing lands either
             if (token.cancelled) throw cancelled();
@@ -3367,11 +3533,12 @@ export const host = {
                 : `${L} ran on your ComfyUI in ${secs} s: ${where}.`];
             if (changed) parts.push("The picture changed while the pass ran: the layer shows it as it was when the pass started.");
             if (out.note) parts.push(out.note);
-            // a preset the runtime refused and replaced is a fallback: red (item 45)
-            editor.setStatus(parts.join(" "), out.fellBack ? "warn" : "info");
-            return { layer, seconds: out.seconds || 0, note: out.note || "", changed, factor: mode.factor, from: [W, H], width: nw, height: nh };
+            // a preset the runtime refused and replaced is a fallback, an answer that is the picture unchanged a pass that
+            // did nothing (0.1.50 Q2): red (item 45)
+            editor.setStatus(parts.join(" "), out.fellBack || out.unchanged ? "warn" : "info");
+            return { layer, seconds: out.seconds || 0, note: out.note || "", changed, factor: mode.factor, from: [W, H], width: nw, height: nh, unchanged: !!out.unchanged };
         } catch (err) {
-            if (gone()) return { layer: null, seconds: 0, note: "", changed: false, factor: mode.factor, from: [W, H], width: null, height: null };
+            if (gone()) return { layer: null, seconds: 0, note: "", changed: false, factor: mode.factor, from: [W, H], width: null, height: null, unchanged: false };
             const msg = String((err && err.message) || err);
             throw say(err && err.hint ? String(err.hint) : msg.startsWith(L) ? msg : `${L}: ${msg}`, failKind(err));
         } finally {
@@ -3758,6 +3925,9 @@ export const host = {
         if (r.kind === "provider" && r.task === "upscale") return this.runUpscale(editor, { scope: "selection", refs: opts.refs });
         if (r.kind === "provider") return this.runProvider(editor, { refs: opts.refs });
         if (!r.prompt) throw refusal("No recipe selected.");
+        // a text-to-image graph (recipes/moss_image_local.json, `edit: false`): only Generate new's fresh canvas runs it;
+        // on a selection it would paint a picture made from the prompt alone into the crop
+        if (r.edit === false && !fresh) throw refusal(`${r.name || r.id} makes new pictures from the prompt alone: use "Generate new", not Generate.`);
         // the generation values of the click, before anything is awaited: the result's history entry keeps them (S4)
         const clickGen = { seed: editor.genSettings.seed, mode: editor.genSettings.mode, denoise: editor.genSettings.denoise };
         // the Realism Pass (task "pass") goes out like an upscale: the box as it is, no fill, no references, no refine
@@ -3930,6 +4100,12 @@ export const host = {
         editor.lastPromptId = res && res.prompt_id;
         // the tab closed while its prompt was being queued (the uploads take a while): its result lands nowhere
         if (res && res.prompt_id && !this._editors.includes(editor)) this._closedPrompts.add(String(res.prompt_id));
+        // a Klein run's files: its sampler's shape error is said as the text encoder that does not fit (0.1.50 Q1)
+        const klein = res && res.prompt_id != null ? kleinRun(r, prompt) : null;
+        if (klein) {
+            this._kleinRuns.set(String(res.prompt_id), klein);
+            for (const id of this._kleinRuns.keys()) { if (this._kleinRuns.size <= 64) break; this._kleinRuns.delete(id); }
+        }
         if (pass && support.note) editor.setStatus(`${editor.status} ${support.note}`, editor.statusKind || "info");
         if (plan) {
             const named = texts.pairs.filter((p) => p.name).map((p) => `${p.label} → ${p.name}`);
@@ -5175,6 +5351,7 @@ api.addEventListener("executed", ({ detail }) => {
 /** A prompt ended on ComfyUI: no document counts it as an open render any more (see queueGenerate). */
 function localRunEnded(detail) {
     const id = detail && detail.prompt_id;
+    if (id != null) host._kleinRuns.delete(String(id));
     for (const ed of host.editors()) if (ed._localRuns) { if (id) ed._localRuns.delete(id); else ed._localRuns.clear(); }
 }
 
@@ -5198,8 +5375,10 @@ for (const type of ["execution_start", "execution_cached", "executing", "progres
 }
 
 api.addEventListener("execution_error", ({ detail }) => {
-    // the owner first: localRunEnded drops the id from the document's open renders, which editorByPrompt reads
+    // the owner first: localRunEnded drops the id from the document's open renders, which editorByPrompt reads (and a
+    // Klein run's files, read here first)
     const owner = detail ? host.editorByPrompt(detail.prompt_id) : null;
+    const klein = detail && detail.prompt_id != null ? host._kleinRuns.get(String(detail.prompt_id)) : null;
     localRunEnded(detail);
     if (!detail) return;
     // a picture run's failure goes to its caller (passPicture's sentence), not into the tab's status
@@ -5227,6 +5406,14 @@ api.addEventListener("execution_error", ({ detail }) => {
         const text = realism.hint(msg);
         ed.lastPassError = text;
         ed.setStatus(text, "error");
+    } else if (klein && SHAPE_ERROR.test(msg)) {
+        // a Klein run whose text encoder does not fit the model: said as that, not as torch's matrix shapes (0.1.50 Q1);
+        // the sentence reads "failed", so the generate command stops its wait on it at once
+        ed.setStatus(kleinEncoderHint(klein, msg), "error");
+    } else if (detail.node_type === "InpaintCanvas" && /^Inpaint Canvas: /.test(msg)) {
+        // the node's own errors already name it ("Inpaint Canvas: reference 2 (@img2) could not be loaded ..."): said
+        // once, with "failed" so the generate command stops its wait on it at once
+        ed.setStatus("Inpaint Canvas failed: " + msg.replace(/^Inpaint Canvas: /, ""), "error");
     } else {
         ed.setStatus("Error in " + (detail.node_type || detail.node_id || "the graph") + ": " + msg, "error");
     }

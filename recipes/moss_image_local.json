@@ -1,0 +1,52 @@
+{
+  "id": "moss_image_local",
+  "name": "MOSS-Image (ComfyUI)",
+  "description": "MOSS-Image on your own ComfyUI (0.42 or newer, which runs it on its own nodes): a text-to-image model, so it makes new pictures with Generate new and takes no picture to edit (Generate on a selection is refused). The picture is about 1 MP by default (the Megapixels row; 1 to 2 MP suit it best, sizes in steps of 16). With the Boxes switch on, the New and Text boxes go as its JSON layout: ComfyUI's MOSS-Image Layout Prompt node writes your prompt as the caption and each box as an item in the picture's pixels, a Text box with its words to render; Keep, Move, Remove and From boxes have nothing to act on in a new picture and are left out. The boxes need the Inpaint Canvas node's elements output (a node from GitHub of 2026-10-15 or newer; an older one refuses the run). Comfy's template settings by default (25 steps, CFG 2.5, er_sde); the model's own are 50 steps, CFG 3 and euler (the Preset row has both); skip-layer guidance on layer 22 until half the steps (the SLG end row; 0 turns it off, which looks more photographic but can lose details). A negative prompt such as \"nsfw, worst quality, bad anatomy, watermark, jpeg artifact\" helps. Which model file (SFT or Base, bf16 or int8), Qwen3.5 9B text encoder and VAE it loads is picked under Settings. Weights and code are Apache-2.0.",
+  "mode": "local",
+  "canvas": "canvas",
+  "result": "decode:0",
+  "edit": false,
+  "boxes": { "schema": "moss", "input": "pos|text", "layout": "layout" },
+  "needs": ["InpaintCanvas", "ImageFromBatch", "UNETLoader", "CLIPLoader", "VAELoader", "ImageScaleToTotalPixels", "GetImageSize", "EmptyFlux2LatentImage", "SkipLayerGuidanceDiTSimple", "MOSSImageLayoutPrompt", "CLIPTextEncode", "KSampler", "VAEDecode"],
+  "settings": [
+    { "index": 1, "node": "unet", "input": "unet_name", "label": "Model" },
+    { "index": 2, "node": "clip", "input": "clip_name", "label": "Text encoder" },
+    { "index": 3, "node": "vae", "input": "vae_name", "label": "VAE" },
+    { "index": 4, "node": "ks", "input": "steps", "label": "Steps" },
+    { "index": 5, "node": "ks", "input": "cfg", "label": "CFG" },
+    { "index": 6, "node": "ks", "input": "sampler_name", "label": "Sampler" },
+    { "index": 7, "node": "scale0", "input": "megapixels", "label": "Megapixels" },
+    { "index": 8, "node": "slg", "input": "end_percent", "label": "SLG end" }
+  ],
+  "presets": [
+    { "name": "Comfy's template: 25 steps, CFG 2.5, er_sde", "values": { "ks:steps": 25, "ks:cfg": 2.5, "ks:sampler_name": "er_sde", "ks:scheduler": "simple" } },
+    { "name": "The model's own: 50 steps, CFG 3, euler", "values": { "ks:steps": 50, "ks:cfg": 3, "ks:sampler_name": "euler", "ks:scheduler": "simple" } }
+  ],
+  "models": {
+    "diffusion_models": [
+      "moss_image_sft_bf16.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_bf16.safetensors)",
+      "moss_image_sft_int8_convrot.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_int8_convrot.safetensors)"
+    ],
+    "text_encoders": [
+      "qwen3.5_9b_int8_convrot.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_int8_convrot.safetensors)",
+      "qwen3.5_9b_w4a8_gptq.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors)"
+    ],
+    "vae": ["flux2-vae_small.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae_small.safetensors)"]
+  },
+  "prompt": {
+    "canvas": { "class_type": "InpaintCanvas", "inputs": { "padding": 64, "target_size": 1024, "feather": 16, "multiple_of": 64 } },
+    "img0": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 0, "length": 1 } },
+    "unet": { "class_type": "UNETLoader", "inputs": { "unet_name": "moss_image_sft_bf16.safetensors", "weight_dtype": "default" } },
+    "clip": { "class_type": "CLIPLoader", "inputs": { "clip_name": "qwen3.5_9b_int8_convrot.safetensors", "type": "moss_image", "device": "default" } },
+    "vae": { "class_type": "VAELoader", "inputs": { "vae_name": "flux2-vae_small.safetensors" } },
+    "scale0": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["img0", 0], "upscale_method": "lanczos", "megapixels": 1, "resolution_steps": 16 } },
+    "size": { "class_type": "GetImageSize", "inputs": { "image": ["scale0", 0] } },
+    "latent": { "class_type": "EmptyFlux2LatentImage", "inputs": { "width": ["size", 0], "height": ["size", 1], "batch_size": 1 } },
+    "slg": { "class_type": "SkipLayerGuidanceDiTSimple", "inputs": { "model": ["unet", 0], "double_layers": "", "single_layers": "22", "start_percent": 0, "end_percent": 0.5 } },
+    "layout": { "class_type": "MOSSImageLayoutPrompt", "inputs": { "prompt": ["canvas", 7], "width": ["size", 0], "height": ["size", 1], "character_boxes": "" } },
+    "pos": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["clip", 0], "text": ["canvas", 7] } },
+    "neg": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["clip", 0], "text": ["canvas", 12] } },
+    "ks": { "class_type": "KSampler", "inputs": { "model": ["slg", 0], "seed": ["canvas", 10], "steps": 25, "cfg": 2.5, "sampler_name": "er_sde", "scheduler": "simple", "positive": ["pos", 0], "negative": ["neg", 0], "latent_image": ["latent", 0], "denoise": 1 } },
+    "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["ks", 0], "vae": ["vae", 0] } }
+  }
+}

@@ -442,6 +442,13 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
         && M.selectionInput({ x: 5, y: 6, w: 10, h: 20 }, "put @img2 here", (label) => (label === "img2" ? { id: "L7" } : null)).layer === "L7", "");
     const mchk = M.cropCheck([{ id: "a_1", kind: "new", rect: [0, 0, 10, 10] }, { id: "b_1", kind: "new", rect: [150, 150, 400, 400] }], { x: 100, y: 100, w: 400, h: 400, emitted: [1024, 1024], paste: "selection" }, [200, 200, 300, 300]);
     check("cropCheck: out, spill and the warning lines in the panel's words", eq(mchk.out, ["a_1"]) && eq(mchk.spill, ["b_1"]) && M.warningLines(mchk, [], [], "")[0][0] === "Box a_1 lies outside the crop Generate sends and is left out." && M.warningLines(mchk, [], [], "")[1][1] === true, short(M.warningLines(mchk, [], [], "")));
+    // the formats that leave boxes out by kind: Ideogram 4 (Move, Remove, From) and MOSS-Image's layout (all but New)
+    const kinds = [{ id: "n_1", kind: "new" }, { id: "t_1", kind: "new", text: "SALE" }, { id: "k_1", kind: "keep" }, { id: "m_1", kind: "move" }, { id: "r_1", kind: "remove" }, { id: "f_1", kind: "from" }];
+    check("unplacedOf: Ideogram 4 leaves Move, Remove and From out, MOSS-Image all but New and Text, FLUX 3 none",
+        eq(M.unplacedOf(kinds, "ideogram4"), ["m_1", "r_1", "f_1"]) && eq(M.unplacedOf(kinds, "moss"), ["k_1", "m_1", "r_1", "f_1"]) && eq(M.unplacedOf(kinds, "flux3"), []), "");
+    check("warningLines names the format's own reason (MOSS-Image, Ideogram 4 by default)",
+        M.warningLines(null, [], ["k_1"], "MOSS-Image (ComfyUI)", "moss")[0][0] === "Box k_1 does not go with MOSS-Image (ComfyUI): MOSS-Image makes a new picture and places New and Text boxes only."
+        && M.warningLines(null, [], ["m_1", "r_1"], "Ideogram 4")[0][0] === "Boxes m_1, r_1 do not go with Ideogram 4: Ideogram 4 places New, Text and Keep boxes only (Keep on an edit).", short(M.warningLines(null, [], ["k_1"], "x", "moss")));
     const pp = M.promptPayload([
         { id: "lamp_1", kind: "new", rect: [10, 20, 110, 220], src: null, layer: null, desc: "  a\nlamp ", text: null },
         { id: "sign_1", kind: "new", rect: [0, 0, 50, 50], src: null, layer: null, desc: "neon", text: "OPEN" },

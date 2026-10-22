@@ -68,9 +68,15 @@ Close a tab without asking (unsaved changes are not written to its .scumble file
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 
+### `reopen_closed_tab` *(app)*
+
+File › Reopen Closed Tab: the tab closed last in this session comes back as a new active tab (its layers, prompt and file as it was closed; its renders still on ComfyUI land in it again, a run it had on an API provider does not). An error when no closed tab is left. Returns the document (a new id), notes, and how many closed tabs are left.
+
+(no parameters)
+
 ### `open_document` *(app)*
 
-Open a .scumble file as a tab (the tab that already holds it is activated instead). Returns the document and notes (a newer format, a renamed file, another recipe).
+Open a .scumble file as a tab (the tab that already holds it is activated instead). Returns the document and notes (a newer format, a renamed file, another recipe, layers of a newer version left out).
 
 | param | type | description |
 |---|---|---|
@@ -554,7 +560,7 @@ Upscale with the selected upscale recipe (list_recipes: task "upscale"; select_r
 
 ### `realism_pass` *(image)*
 
-Realism Pass (Windows only, RTX only): the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once through DLSS 5 Neural Rendering on the user's own ComfyUI and comes back as a new layer named "Realism Pass (Windows only, RTX only)": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. factor 1 (the default) refines at the picture's own size. factor 1.5, 1.7 (DLSS's 1.724x Balanced), 2 or 3 also makes the document that many times larger first (the base and every layer, mask and the selection scaled along, as Resize does) and the pass layer comes at the new size, both in the same undo step; a picture whose output would pass 7680 × 4320 or 27.9 megapixels (answers near 30 megapixels sometimes came back with broken colours) is scaled down before it goes (the notes say so), so the answer and the document come back as large as DLSS allows. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › Realism Pass (Windows only, RTX only)). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, at factor 1 the picture is past 7680 × 4320 or 27.9 megapixels, above 1 a job would land in the old geometry, the scaled-down picture would be under 64 px a side or not get larger (status's realism says beforehand whether factor 1 can run). Waits for the answer; `timeout` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was). from / width / height: the document's size before and after.
+Realism Pass (Windows only, RTX only): the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once through DLSS 5 Neural Rendering on the user's own ComfyUI and comes back as a new layer named "Realism Pass (Windows only, RTX only)": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. factor 1 (the default) refines at the picture's own size. factor 1.5, 1.7 (DLSS's 1.724x Balanced), 2 or 3 also makes the document that many times larger first (the base and every layer, mask and the selection scaled along, as Resize does) and the pass layer comes at the new size, both in the same undo step; a picture whose output would pass 7680 × 4320 or 27.9 megapixels (answers near 30 megapixels sometimes came back with broken colours) is scaled down before it goes (the notes say so), so the answer and the document come back as large as DLSS allows. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › Realism Pass (Windows only, RTX only)). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, at factor 1 the picture is past 7680 × 4320 or 27.9 megapixels, above 1 a job would land in the old geometry, the scaled-down picture would be under 64 px a side or not get larger (status's realism says beforehand whether factor 1 can run). Waits for the answer; `timeout` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was). unchanged: the answer is the picture that went (the pass changed nothing on this card, compared on pieces spread over the picture; from Strength 0.25): the layer still lands and a note says so. from / width / height: the document's size before and after.
 
 | param | type | description |
 |---|---|---|
@@ -564,7 +570,7 @@ Realism Pass (Windows only, RTX only): the whole visible picture (every visible 
 
 ### `relight` *(image)*
 
-Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (a new layer's route; an edit without route keeps the layer's and renders nothing) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer.
+Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (a new layer's route; an edit without route keeps the layer's and renders nothing) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer. Their model values (strength, style, preserve_details, interpolate on magnific; enable_hr_fix on fal-iclight; light_type on fal-bria; lora_strength, steps on comfycloud and comfyui; detail on all) are the Relight panel's for that route: stored on the layer, in the same undo step as the other values, a route that does not read one ignores it; the panel's remembered picks for new layers stay as they are.
 
 | param | type | description |
 |---|---|---|
@@ -578,6 +584,15 @@ Relight the picture: edits an existing relight layer or adds a new one. Computes
 | `shadows` | number | shadow strength 0..100 % (default 60) |
 | `route` | string | relight route: 'app' (the in-app filter), 'magnific', 'fal-iclight', 'fal-bria', 'comfycloud' or 'comfyui' (a generative route renders now). Omitted: a new layer is 'app', an edited layer keeps its route and nothing renders |
 | `prompt` | string | additional prompt text for generative routes |
+| `strength` | number | magnific: light transfer strength 0..100 % (default 100); a value in (0, 1] is a fraction (0.8 = 80 %) |
+| `style` | string | magnific: the style (one of `standard`, `darker_but_realistic`, `clean`, `smooth`, `brighter`, `contrasted_n_hdr`, `just_composition`) |
+| `preserve_details` | boolean | magnific: preserve details (default true) |
+| `interpolate` | boolean | magnific: interpolate from the original (default false) |
+| `enable_hr_fix` | boolean | fal-iclight: the high-res fix (default true) |
+| `light_type` | string | fal-bria: the light type; from_lights (the default) takes it from the first light that is on (one of `from_lights`, `soft overcast daylight lighting`, `midday`, `blue hour light`, `low-angle sunlight`, `sunrise light`, `spotlight on subject`, `overcast light`, `cloud-filtered lighting`, `fog-diffused lighting`, `moonlight lighting`, `starlight nighttime`, `soft bokeh lighting`, `harsh studio lighting`) |
+| `lora_strength` | number | comfycloud, comfyui: the relight LoRA's strength 0..100 % in steps of 5, as the slider (default 100); a value in (0, 1] is a fraction (0.8 = 80 %), as ComfyUI writes it |
+| `steps` | integer | comfycloud, comfyui: sampling steps 1..20 (default 4) |
+| `detail` | boolean | every generative route: detail from the original, the model's light laid on the original's pixels (default true; above 27.9 MP it has to be off) |
 | `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
 
 ### `cancel_run` *(app)*
@@ -867,6 +882,8 @@ Add a text layer at x,y (top left of the text; with an angle the corner the text
 | `bold` | boolean |  |
 | `italic` | boolean |  |
 | `align` | string | left, center or right |
+| `line_height` | number | line height as a multiple of the size, 0.5..4 (default 1.2) |
+| `letter_spacing` | number | letter spacing in image pixels, -50..200 (default 0) |
 | `outline` | number | outline width |
 | `outline_color` | string |  |
 | `angle` | number | degrees clockwise; the text stays editable |
@@ -887,6 +904,8 @@ Change a text layer's content, style or angle (degrees clockwise in all, about t
 | `bold` | boolean |  |
 | `italic` | boolean |  |
 | `align` | string |  |
+| `line_height` | number | line height as a multiple of the size, 0.5..4 (default 1.2) |
+| `letter_spacing` | number | letter spacing in image pixels, -50..200 (default 0) |
 | `outline` | number |  |
 | `outline_color` | string |  |
 | `angle` | number |  |
@@ -1105,6 +1124,14 @@ The label variants, positions and the current defaults, plus where the icons com
 ### `boxes.list` *(plugin boxes)* *(read-only)*
 
 The boxes of this document (image pixels), whether the selected recipe takes boxes and whether the document's Boxes switch is on (set_generation boxes): a run sends them only when both are.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `boxes.check` *(plugin boxes)* *(read-only)*
+
+What the Boxes panel warns of before a run, without running: whether a run would send the boxes (sent: the selected recipe takes boxes and the Boxes switch is on), the panel's note, and its warnings (warnings: the lines as the panel shows them; out: boxes outside the crop Generate sends, left out; cut: boxes its edge cuts; spill: boxes that change pixels outside the selection while Paste keeps the selection only (set_crop paste crop sends the whole crop's result); small: boxes too small to place anything in; bare: New boxes without a description; unplaced: boxes the recipe's format has no place for). crop: the crop Generate would send now (image pixels; null without a selection). Generate new measures the boxes on the whole picture: its run has no crop.
 
 | param | type | description |
 |---|---|---|

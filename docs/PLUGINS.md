@@ -507,7 +507,8 @@ both paths, the commands, the control point tool with undo, the overlay, the pan
   §10): the boxes of a document in `documents.data` (image pixels, saved with the document, moved by the `geometry`
   event), a panel "Boxes" in the Generate pane (one row per box: id, kind, description, the geometry; Selection → box,
   Clear, Copy rows), the action Selection → box, the commands `boxes.list` / `add` / `set` / `remove` /
-  `from_selection` / `clear` (one undo step each through `set(patch, { undo })`), and a `generate` source that answers
+  `from_selection` / `clear` (one undo step each through `set(patch, { undo })`) and the read-only `boxes.check` (the
+  panel's note and warnings before a run, 0.1.50), and a `generate` source that answers
   the document's boxes and counts them (`count(doc)`). The first box a document gets (the tool, Selection → box, the
   action, `boxes.add`, `boxes.from_selection`) turns the document's Boxes switch on (`editor.genSettings.boxes`) with
   a status note, and those two commands answer `switched_on: true`; undo, redo and opening a document never do.

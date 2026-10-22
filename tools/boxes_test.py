@@ -58,7 +58,7 @@ const p = (await P.pluginHost.list()).find((x) => x.id === "boxes");
 if (!p) throw new Error("boxes plugin not listed");
 if (p.error) throw new Error("boxes plugin error: " + p.error);
 const cmds = (await c("list_commands")).commands.map((x) => x.name);
-for (const n of ["boxes.list", "boxes.add", "boxes.set", "boxes.remove", "boxes.from_selection", "boxes.clear"]) if (!cmds.includes(n)) throw new Error("command missing: " + n);
+for (const n of ["boxes.list", "boxes.check", "boxes.add", "boxes.set", "boxes.remove", "boxes.from_selection", "boxes.clear"]) if (!cmds.includes(n)) throw new Error("command missing: " + n);
 if (!p.registered.generate.includes("boxes.document")) throw new Error("the generate source is not registered: " + JSON.stringify(p.registered));
 const d = await c("new_document");
 window.__bDoc = d.id;
@@ -336,6 +336,11 @@ try {
     if (!/spill_1/.test(spill) || !/edge_1/.test(spill) || /far_1|red_door_1/.test(spill)) throw new Error("the boxes outside the selection: " + JSON.stringify(w1));
     const note = details.querySelector(".boxes-note").textContent;
     if (!note.includes(`${f.w} × ${f.h} px at ${f.x}, ${f.y}`)) throw new Error("the note does not name the crop: " + note);
+    // docs/PLAN_0_1_50.md Q7: boxes.check says what the panel warns of, without a run: the same lines, the ids, the crop
+    const k1 = await c("boxes.check", D());
+    if (!k1.sent || k1.note !== note || k1.warnings.length !== w1.length || !w1.every((t, i) => t.startsWith(k1.warnings[i]))
+        || !k1.out.includes("far_1") || k1.out.includes("edge_1") || !k1.cut.includes("edge_1") || k1.cut.includes("spill_1") || !k1.spill.includes("spill_1") || !k1.spill.includes("edge_1") || k1.spill.includes("far_1")
+        || !eq([k1.crop.x, k1.crop.y, k1.crop.w, k1.crop.h], [f.x, f.y, f.w, f.h]) || k1.crop.paste !== "selection") throw new Error("boxes.check against the panel: " + JSON.stringify({ k1, w1, note }));
     // the overlay: the picture outside the crop dimmed while the tool is active, not with another tool
     const g = ed.canvas.getContext("2d");
     const lum = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); const d = g.getImageData(Math.round(sx), Math.round(sy), 1, 1).data; return d[0] + d[1] + d[2]; };
@@ -359,11 +364,15 @@ try {
     if (ed.cropSettings.paste !== "crop" || ed.cropPasteSel.value !== "whole crop") throw new Error("paste was not set: " + JSON.stringify(ed.cropSettings) + " / " + ed.cropPasteSel.value);
     const w2 = rows();
     if (w2.some((t) => /outside the selection/.test(t)) || !w2.some((t) => /far_1/.test(t))) throw new Error("the warnings after the paste: " + JSON.stringify(w2));
+    const k2 = await c("boxes.check", D());
+    if (k2.spill.length || !k2.out.includes("far_1") || k2.warnings.length !== w2.length || k2.crop.paste !== "crop") throw new Error("boxes.check after the paste: " + JSON.stringify(k2));
     // a recipe without boxes shows no warnings
     if (was && was.id !== "flux3") {
         await c("select_recipe", was);
         await wait(50);
         if (rows().length) throw new Error("warnings under a recipe that takes no boxes: " + JSON.stringify(rows()));
+        const k3 = await c("boxes.check", D());
+        if (k3.sent || k3.warnings.length || k3.out.length || k3.note !== details.querySelector(".boxes-note").textContent) throw new Error("boxes.check under a recipe that takes no boxes: " + JSON.stringify(k3));
     }
     return { frame: [f.x, f.y, f.w, f.h], emitted: f.emitted, warnings: w1, dim: [plain, dim] };
 } finally {

@@ -17,7 +17,7 @@ from cdp import session  # noqa: E402
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "COMMANDS.md")
 
 GROUPS = [
-    ("App", ["ping", "list_commands", "list_documents", "new_document", "activate_document", "close_document", "open_document", "list_recipes", "select_recipe", "set_node_params", "list_plugins", "run_action", "filter_types", "read_log", "list_brush_tips", "set_brush"]),
+    ("App", ["ping", "list_commands", "list_documents", "new_document", "activate_document", "close_document", "reopen_closed_tab", "open_document", "list_recipes", "select_recipe", "set_node_params", "list_plugins", "run_action", "filter_types", "read_log", "list_brush_tips", "set_brush"]),
     ("Document and files", ["status", "new_canvas", "load_image", "add_image_layer", "save_document", "get_state", "set_status", "depth_map", "sample_depth", "depth_edit", "depth_from_layer"]),
     ("Selection", ["select_rect", "select_all", "select_none", "select_invert", "select_feather", "select_grow", "select_from_layer", "select_mask", "select_by_text", "select_point", "select_color", "select_shape", "select_range"]),
     ("Prompt and generation", ["set_prompt", "set_generation", "set_crop", "set_settings", "list_settings", "apply_preset", "upsample_prompt", "generate", "generate_new", "upscale", "realism_pass", "relight", "cancel_run"]),

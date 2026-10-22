@@ -114,7 +114,7 @@ the server sends `tools/list_changed`. `ping` adds `mcp: {mode, pid}` with mode 
 flags on the command's own definition (`readOnly` / `destructive` in `renderer/commands.js`, and
 in a plugin's `scumble.commands.register`; `list_commands` and `docs/COMMANDS.md` show them).
 Read-only: `ping`, the `list_*` commands, `status`, `get_state`, `filter_types`, `screenshot`,
-`read_log`, `film_looks`, `glb_info`, `ailabel_info`, `boxes_list`, `sample_mean_color`.
+`read_log`, `film_looks`, `glb_info`, `ailabel_info`, `boxes_list`, `boxes_check`, `sample_mean_color`.
 Destructive (the call can lose something: a document, a layer, layers merged or flattened, a crop,
 a file written over without asking, the recipe or its settings, an undo or redo step):
 `close_document`, `new_canvas`, `load_image`, `generate_new`, `remove_layer`, `merge_down`,
@@ -303,8 +303,8 @@ agent sees the user's last documents.
 ## Testing
 
 `python tools/mcp_test.py [--exe dist/win-unpacked/Scumble.exe]` talks to the server with
-the Python `mcp` client: instructions, the tools with valid names and schemas (114 on
-2026-10-13: 95 core commands and 19 from the built-in plugins), `ping`
+the Python `mcp` client: instructions, the tools with valid names and schemas (116 on
+2026-10-22: 96 core commands and 20 from the built-in plugins), `ping`
 (reports the mode), `new_document`, `load_image` by path, `select_rect`, `add_filter`
 (`sample.posterize`, WebGL2 in the hidden window), `sample_mean_color`, `screenshot` as
 image content (`dist/smoke/mcp_screenshot.jpg`), `export` to a path, an error case, an

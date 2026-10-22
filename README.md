@@ -64,7 +64,7 @@ edges to the layer below* in a layer's menu does the same afterwards.
 Draw boxes on the picture and describe each one: something new, something kept, moved or removed, a reference picture
 placed, words rendered. FLUX 3 Image from Black Forest Labs (on every provider Scumble runs it on, and its open Klein
 model on your own ComfyUI) gets the boxes with the prompt and is told where each thing goes; Ideogram 4 on fal takes
-the new, kept and text boxes. Reference layers are named in the prompt as `@img1`, `@img2`, and each one goes out
+the new, kept and text boxes, and MOSS-Image on your own ComfyUI lays out a new picture from the new and text boxes. Reference layers are named in the prompt as `@img1`, `@img2`, and each one goes out
 under the name the chosen model knows that picture by.
 
 ### Your ComfyUI, Comfy Cloud, or just your keys
@@ -80,7 +80,7 @@ OpenRouter and more. Keys go into the system's credential store, never into a se
 
 Every feature is a command, and the commands are an MCP server: *Help › Copy MCP registration* (or, for Claude
 Desktop, the `.mcpb` file of every release, installed with one click), and Claude Code, Claude Desktop or any other
-MCP client gets 114 tools to open, select, generate, match and export, in the same window and with the same undo. (A built-in chat assistant on your own key is there too; see [The assistant](#the-assistant).)
+MCP client gets 116 tools to open, select, generate, match and export, in the same window and with the same undo. (A built-in chat assistant on your own key is there too; see [The assistant](#the-assistant).)
 
 ### Made for real files
 
@@ -219,8 +219,9 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   Magnific. API runs go out at the size the provider really takes, with your reference layers.
 - On your own ComfyUI: FLUX 3 Image Klein, Black Forest Labs' open model (ComfyUI 0.41 or newer; it edits the selection
   with up to three more pictures, makes new ones with *Generate new* and takes boxes; its weights come under Black
-  Forest Labs' own licence), Flux.2 Klein 4B / 9B, and Qwen Image Edit 2.1 and its Turbo; the upscale, Realism Pass
-  and relight recipes are below.
+  Forest Labs' own licence), Flux.2 Klein 4B / 9B, Qwen Image Edit 2.1 and its Turbo, and MOSS-Image (ComfyUI 0.42 or
+  newer; new pictures with *Generate new*, its JSON layout from your boxes; Apache-2.0); the upscale, Realism Pass and
+  relight recipes are below.
 - Your own workflow becomes a recipe when it holds an Inpaint Canvas node. The *ComfyUI* window (Ctrl+Shift+K) shows
   your ComfyUI's page or Comfy Cloud; *Edit in ComfyUI* opens a recipe's graph there, and *Save to recipe* or *Save as
   new recipe* brings it back.
@@ -234,7 +235,7 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
 - *Generate new* makes the base picture from the prompt alone, locally or through a provider, and you edit it from
   there. *New* in the top bar can make the empty canvas for a model, in one of its own aspects and size classes (1k,
   2k, 4k), so boxes are drawn in the shape the picture will have; Generate new then opens on that choice.
-- Boxes in the prompt for FLUX 3 Image, for FLUX 3 Image Klein on your own ComfyUI (with the Inpaint Canvas node's
+- Boxes in the prompt for FLUX 3 Image, for FLUX 3 Image Klein and MOSS-Image on your own ComfyUI (with the Inpaint Canvas node's
   current version, see [What you need to render](#what-you-need-to-render)) and for Ideogram 4 (on fal): the Boxes
   tool (X) draws them, a double-click describes one right on the picture, one switch under the prompt turns them on
   and off, and they are saved with the document. With the switch on and no boxes drawn, the selection goes as one box.
@@ -298,7 +299,7 @@ and what it costs: [docs/ASSISTANT.md](docs/ASSISTANT.md).
   in workers. PNGs beyond the browser's canvas limit (up to 65,535 px a side, about a gigapixel) open and save in
   strips.
 - JavaScript plugins (filters with GPU and processor paths, panels, menu actions, tools, commands) and a command core
-  with 114 documented commands, 95 core and 19 from the built-in plugins ([docs/COMMANDS.md](docs/COMMANDS.md),
+  with 116 documented commands, 96 core and 20 from the built-in plugins ([docs/COMMANDS.md](docs/COMMANDS.md),
   [docs/PLUGINS.md](docs/PLUGINS.md)).
 - MCP server for any MCP client (an `.mcpb` bundle for Claude Desktop with every release), plus `--headless` and
   `--cmd` for scripts ([docs/MCP.md](docs/MCP.md)).

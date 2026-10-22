@@ -15,7 +15,7 @@
 // active tab is used. App commands (`scope: "app"`) take no document.
 
 import { api, host } from "./editor/host.js";
-import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES } from "./editor/inpaint_canvas.js";
+import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES, RELIGHT_STYLES, RELIGHT_LIGHT_TYPES } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { normalizeLimit } from "./editor/inpaint_weights.js";
 import { defaultLight, normalizeLights, RELIGHT_ROUTES, LIGHT_PRESETS, applyLightPreset } from "./editor/inpaint_relight.js";
@@ -58,6 +58,11 @@ function docName(ed) {
     return host.documentName(ed);
 }
 
+/** What the tab's last load left out (inpaint_canvas.js setValue: layers of a newer version, filter layers that did not load), as a note. */
+function loadNotes(ed) {
+    return ed && ed.leftOut && ed.leftOut.note ? [ed.leftOut.note] : [];
+}
+
 function busy(ed) {
     return !!(ed.pending || ed.segmentPending || ed.cutoutPending || ed.upsamplePending || ed.objectsPending || ed.depthPending || ed.rangePending || ed._loading || ed.providerPending || ed._docSaving || (ed.pointer && ed.pointer.healing));
 }
@@ -89,7 +94,8 @@ export function layerSummary(ed, l) {
         }
     }
     if (l.kind === "text" && l.text) {
-        out.text = { content: l.text.content, font: l.text.font, size: l.text.size, color: l.text.color, bold: !!l.text.bold, italic: !!l.text.italic, align: l.text.align };
+        out.text = { content: l.text.content, font: l.text.font, size: l.text.size, color: l.text.color, bold: !!l.text.bold, italic: !!l.text.italic, align: l.text.align,
+            line_height: +l.text.lineHeight || 1.2, letter_spacing: +l.text.letterSpacing || 0 };
         // how the text is turned on the screen in all (its quarter turns and its free angle), and mirrored
         const angle = ((((+l.text.angle || 0) + 90 * ((l.text.turn | 0) & 3)) % 360) + 360) % 360;
         if (angle) out.text.angle = Math.round((angle > 180 ? angle - 360 : angle) * 1000) / 1000;
@@ -472,6 +478,80 @@ function selMode(v) {
     return m;
 }
 
+/** add_text / set_text: the text panel's Line and Spacing fields (inpaint_canvas.js, the text layer's row), their ranges. */
+const TEXT_LINE_HEIGHT = [0.5, 4];
+const TEXT_SPACING = [-50, 200];
+const TEXT_LINE_HEIGHT_TEXT = `line height as a multiple of the size, ${TEXT_LINE_HEIGHT[0]}..${TEXT_LINE_HEIGHT[1]} (default 1.2)`;
+const TEXT_SPACING_TEXT = `letter spacing in image pixels, ${TEXT_SPACING[0]}..${TEXT_SPACING[1]} (default 0)`;
+/** `{ lineHeight, letterSpacing }` of a call's line_height / letter_spacing (those given), in the panel's ranges; a value that is no number is refused. */
+function textSpacing(a) {
+    const out = {};
+    for (const { k, tk, range } of [{ k: "line_height", tk: "lineHeight", range: TEXT_LINE_HEIGHT }, { k: "letter_spacing", tk: "letterSpacing", range: TEXT_SPACING }]) {
+        const [lo, hi] = range;
+        const v = a[k];
+        if (v == null) continue;
+        if (v === "" || typeof v === "boolean" || !Number.isFinite(+v)) throw new Error(`${k} takes a number (${lo}..${hi}), not ${JSON.stringify(v)}`);
+        out[tk] = Math.min(hi, Math.max(lo, +v));
+    }
+    return out;
+}
+
+/** relight's light_type that leaves the pick to the lights (the panel's "From the lights": the layer stores none). */
+const RELIGHT_FROM_LIGHTS = "from_lights";
+/**
+ * relight's model values: the controls the Relight panel shows for a generative route (inpaint_canvas.js, the relight
+ * layer's route box), each with its label there and the layer keys it writes. `num` [lo, hi, step]: clamped and rounded
+ * to the control's step, as the slider gives them.
+ */
+const RELIGHT_MODEL = {
+    strength: { label: "Strength", num: [0, 100, 1], keys: ["strength", "light_transfer_strength"] },
+    style: { label: "Style", options: RELIGHT_STYLES, keys: ["style"] },
+    preserve_details: { label: "Preserve details", bool: true, keys: ["preserve_details"] },
+    interpolate: { label: "Interpolate", bool: true, keys: ["interpolate", "interpolate_from_original"] },
+    enable_hr_fix: { label: "High-res fix", bool: true, keys: ["enable_hr_fix"] },
+    light_type: { label: "Light type", options: [RELIGHT_FROM_LIGHTS, ...RELIGHT_LIGHT_TYPES], keys: ["light_type"] },
+    // in the slider's steps of 5
+    lora_strength: { label: "LoRA strength", num: [0, 100, 5], keys: ["lora_strength", "strength_model"] },
+    steps: { label: "Steps", num: [1, 20, 1], keys: ["steps"] },
+    detail: { label: "Detail from original", bool: true, keys: ["detail"] },
+};
+/** The percent values that read a value in (0, 1] as a fraction, as the panel reads a stored LoRA strength (loraPercent). */
+const RELIGHT_PERCENT = new Set(["strength", "lora_strength"]);
+/** A relight call's model values `{ key: value }` (those given; light_type from_lights as undefined); a wrong one is refused. */
+function relightModel(a) {
+    const out = {};
+    for (const [k, m] of Object.entries(RELIGHT_MODEL)) {
+        const v = a[k];
+        if (v == null) continue;
+        if (m.bool) {
+            if (v === true || v === "true") out[k] = true;
+            else if (v === false || v === "false") out[k] = false;
+            else throw new Error(`${k} takes true or false, not ${JSON.stringify(v)}`);
+        } else if (m.options) {
+            if (!m.options.includes(v)) throw new Error(`"${v}" is not an option of ${k} (${m.options.join(", ")})`);
+            out[k] = k === "light_type" && v === RELIGHT_FROM_LIGHTS ? undefined : v;
+        } else {
+            const [lo, hi, step] = m.num;
+            if (v === "" || typeof v === "boolean" || !Number.isFinite(+v)) throw new Error(`${k} takes a number (${lo}..${hi}), not ${JSON.stringify(v)}`);
+            // 0.8 is 80 %, not 1 % or a LoRA turned off by the rounding
+            const n = RELIGHT_PERCENT.has(k) && +v > 0 && +v <= 1 ? +v * 100 : +v;
+            out[k] = Math.min(hi, Math.max(lo, Math.round(n / step) * step));
+        }
+    }
+    return out;
+}
+/** Checked model values into a relight layer, as the panel's controls write them (an undefined light_type: From the lights). No undo step. */
+function writeRelightModel(ed, l, model) {
+    if (!l.params) l.params = {};
+    for (const [k, v] of Object.entries(model)) {
+        for (const key of RELIGHT_MODEL[k].keys) {
+            if (v === undefined) delete l.params[key];
+            else l.params[key] = v;
+        }
+    }
+    ed.markFilterChanged(l);
+}
+
 /** set_crop's keys and the Crop section's choices (inpaint_modal.js buildCrop, the Canvas section's Fill). */
 const CROP_KEYS = ["context", "feather", "fill", "colorMatch", "extendFill", "withOriginal", "align", "paste"];
 const CROP_FILLS = ["none", "neutral", "blur", "border", "green"];
@@ -738,7 +818,7 @@ const COMMANDS = {
     },
     open_document: {
         scope: "app",
-        description: "Open a .scumble file as a tab (the tab that already holds it is activated instead). Returns the document and notes (a newer format, a renamed file, another recipe).",
+        description: "Open a .scumble file as a tab (the tab that already holds it is activated instead). Returns the document and notes (a newer format, a renamed file, another recipe, layers of a newer version left out).",
         params: { path: P.str("absolute path of a .scumble file", { required: true }), activate: P.bool("make it the active tab (default true)", { default: true }) },
         async run(_, a) {
             const path = String(a.path || "").trim();
@@ -746,7 +826,10 @@ const COMMANDS = {
             const before = host.editor;
             const r = await host.openDocument(path);
             if (a.activate === false && before && before !== r.editor && host.editors().includes(before)) host.shell.activate(before);
-            return { ...docSummary(r.editor), already: !!r.already, notes: r.notes || [] };
+            const notes = [...(r.notes || [])];
+            // what the load left out, once (a host that says it in its own notes is not repeated)
+            if (!r.already) for (const n of loadNotes(r.editor)) if (!notes.some((x) => String(x).includes(n))) notes.push(n);
+            return { ...docSummary(r.editor), already: !!r.already, notes };
         },
     },
     close_document: {
@@ -754,6 +837,18 @@ const COMMANDS = {
         description: "Close a tab without asking (unsaved changes are not written to its .scumble file). A run going in it stops as cancel_run stops it, and nothing lands: an API provider may still charge a job it already had. File › Reopen Closed Tab brings the tab back in this session, without the run; the document's files stay in the local store.",
         params: {},
         async run(ed) { const id = ed.node.id; host.shell.closeDocument(ed, { force: true }); return { closed: id, documents: host.editors().map(docSummary) }; },
+    },
+    reopen_closed_tab: {
+        scope: "app",
+        description: "File › Reopen Closed Tab: the tab closed last in this session comes back as a new active tab (its layers, prompt and file as it was closed; its renders still on ComfyUI land in it again, a run it had on an API provider does not). An error when no closed tab is left. Returns the document (a new id), notes, and how many closed tabs are left.",
+        params: {},
+        async run() {
+            if (!host.closed || !host.closed.length) throw new Error("No closed tab to reopen.");
+            const ed = await host.reopenClosed();
+            if (!ed) throw new Error("No closed tab to reopen.");
+            // a tab whose files are not in the local store waits for ComfyUI: its status line says so
+            return { ...docSummary(ed), notes: ed.base ? loadNotes(ed) : [String(ed.status || "")].filter(Boolean), closed_left: host.closed.length };
+        },
     },
     list_recipes: {
         readOnly: true,
@@ -776,7 +871,7 @@ const COMMANDS = {
                         id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit",
                         ...recipeReadiness(r, v),
                         keys: api ? Object.fromEntries((r.providerIds || []).map((pid) => { const ks = host.shell.keyState(host.shell.resolveRecipe(r, pid)); return [pid, !ks || !!ks.ok]; })) : undefined,
-                        new_image: makes, edit: up || pass || relight ? undefined : !api || v.edit !== false,
+                        new_image: makes, edit: up || pass || relight ? undefined : api ? v.edit !== false : r.edit !== false,
                         sizes: makes ? (text && Array.isArray(text.sizes) && text.sizes.length ? text.sizes.slice().sort((x, y) => x - y) : null) : undefined,
                         aspects: makes ? (preset ? preset.aspects : null) : undefined,
                         classes: makes ? (preset ? preset.classes.map((x) => ({ size: x.px, name: x.name, label: x.label })) : null) : undefined,
@@ -1383,7 +1478,7 @@ const COMMANDS = {
     },
     realism_pass: {
         needsImage: true,
-        description: `${REALISM_LABEL}: the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once through DLSS 5 Neural Rendering on the user's own ComfyUI and comes back as a new layer named "${REALISM_LABEL}": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. factor 1 (the default) refines at the picture's own size. factor 1.5, 1.7 (DLSS's 1.724x Balanced), 2 or 3 also makes the document that many times larger first (the base and every layer, mask and the selection scaled along, as Resize does) and the pass layer comes at the new size, both in the same undo step; a picture whose output would pass 7680 × 4320 or 27.9 megapixels (answers near 30 megapixels sometimes came back with broken colours) is scaled down before it goes (the notes say so), so the answer and the document come back as large as DLSS allows. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › ${REALISM_LABEL}). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, at factor 1 the picture is past 7680 × 4320 or 27.9 megapixels, above 1 a job would land in the old geometry, the scaled-down picture would be under 64 px a side or not get larger (status's realism says beforehand whether factor 1 can run). Waits for the answer; \`timeout\` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was). from / width / height: the document's size before and after.`,
+        description: `${REALISM_LABEL}: the whole visible picture (every visible layer with its filters and blend modes, without reference and control layers) goes once through DLSS 5 Neural Rendering on the user's own ComfyUI and comes back as a new layer named "${REALISM_LABEL}": full size, under the top run of filter layers (a film look or grain stays live above it and is not sent), no colour match, one undo step. factor 1 (the default) refines at the picture's own size. factor 1.5, 1.7 (DLSS's 1.724x Balanced), 2 or 3 also makes the document that many times larger first (the base and every layer, mask and the selection scaled along, as Resize does) and the pass layer comes at the new size, both in the same undo step; a picture whose output would pass 7680 × 4320 or 27.9 megapixels (answers near 30 megapixels sometimes came back with broken colours) is scaled down before it goes (the notes say so), so the answer and the document come back as large as DLSS allows. A second run reads the earlier pass layer with the rest and stacks its layer above it. Style, Strength and the DLSS model preset are the app's (Upscale › ${REALISM_LABEL}). Needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and the ComfyUI-DLSS5-Enhancer node pack with its runtime; refused with the reason before anything is sent when the server cannot run it, a run is going on the document, at factor 1 the picture is past 7680 × 4320 or 27.9 megapixels, above 1 a job would land in the old geometry, the scaled-down picture would be under 64 px a side or not get larger (status's realism says beforehand whether factor 1 can run). Waits for the answer; \`timeout\` ends the job on the server too. changed: the picture changed while the pass ran (the layer shows it as it was). unchanged: the answer is the picture that went (the pass changed nothing on this card, compared on pieces spread over the picture; from Strength 0.25): the layer still lands and a note says so. from / width / height: the document's size before and after.`,
         params: {
             factor: P.num("1 (the default: refine at the picture's own size), 1.5, 1.7, 2 or 3: above 1 the document becomes that many times larger and the pass layer comes at the new size"),
             timeout: P.timeout(570),
@@ -1398,7 +1493,7 @@ const COMMANDS = {
             if (out.layer) ed.notifyChanged();
             return {
                 layer: out.layer ? layerSummary(ed, out.layer) : null, seconds: Math.round((out.seconds || 0) * 10) / 10,
-                notes: out.note ? [out.note] : [], changed: !!out.changed,
+                notes: out.note ? [out.note] : [], changed: !!out.changed, unchanged: !!out.unchanged,
                 factor: out.factor, from: out.from || null, width: out.width == null ? null : out.width, height: out.height == null ? null : out.height,
                 // the tab was closed while the pass ran: the job was taken off the server, nothing was added
                 status: out.layer ? ed.status : "The document was closed while the pass ran; nothing was added.",
@@ -1407,7 +1502,7 @@ const COMMANDS = {
     },
     relight: {
         needsImage: true,
-        description: "Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (a new layer's route; an edit without route keeps the layer's and renders nothing) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer.",
+        description: "Relight the picture: edits an existing relight layer or adds a new one. Computes the 16-bit depth map first if missing. With route 'app' (a new layer's route; an edit without route keeps the layer's and renders nothing) acts as a live non-destructive filter layer with up to 4 lights (point, sun, spot) with customizable position, distance, intensity, Kelvin temperature, and diffusion. Generative routes ('magnific', 'fal-iclight', 'fal-bria', 'comfycloud', 'comfyui') re-render lighting through cloud or local diffusion models and land as a pixel layer with detail ratio transfer. Their model values (strength, style, preserve_details, interpolate on magnific; enable_hr_fix on fal-iclight; light_type on fal-bria; lora_strength, steps on comfycloud and comfyui; detail on all) are the Relight panel's for that route: stored on the layer, in the same undo step as the other values, a route that does not read one ignores it; the panel's remembered picks for new layers stay as they are.",
         params: {
             layer: P.layer("relight filter layer to edit (default adds a new one)", { default: null }),
             lights: P.arr("array of up to 4 lights [{id, type, x, y, dist, intensity, color, diffusion, on, ...}]", { items: { type: "object" } }),
@@ -1418,6 +1513,16 @@ const COMMANDS = {
             shadows: P.num("shadow strength 0..100 % (default 60)"),
             route: P.str("relight route: 'app' (the in-app filter), 'magnific', 'fal-iclight', 'fal-bria', 'comfycloud' or 'comfyui' (a generative route renders now). Omitted: a new layer is 'app', an edited layer keeps its route and nothing renders"),
             prompt: P.str("additional prompt text for generative routes"),
+            // the generative routes' model values, as the Relight panel offers them for each route (stored on the layer)
+            strength: P.num("magnific: light transfer strength 0..100 % (default 100); a value in (0, 1] is a fraction (0.8 = 80 %)"),
+            style: P.enum("magnific: the style", RELIGHT_STYLES),
+            preserve_details: P.bool("magnific: preserve details (default true)"),
+            interpolate: P.bool("magnific: interpolate from the original (default false)"),
+            enable_hr_fix: P.bool("fal-iclight: the high-res fix (default true)"),
+            light_type: P.enum(`fal-bria: the light type; ${RELIGHT_FROM_LIGHTS} (the default) takes it from the first light that is on`, [RELIGHT_FROM_LIGHTS, ...RELIGHT_LIGHT_TYPES]),
+            lora_strength: P.num("comfycloud, comfyui: the relight LoRA's strength 0..100 % in steps of 5, as the slider (default 100); a value in (0, 1] is a fraction (0.8 = 80 %), as ComfyUI writes it"),
+            steps: P.int("comfycloud, comfyui: sampling steps 1..20 (default 4)"),
+            detail: P.bool("every generative route: detail from the original, the model's light laid on the original's pixels (default true; above 27.9 MP it has to be off)"),
             timeout: P.timeout(600),
         },
         async run(ed, a) {
@@ -1435,6 +1540,8 @@ const COMMANDS = {
                 throw new Error(`Unknown relight route "${given}" (must be one of: ${RELIGHT_ROUTES.join(", ")})`);
             }
             const route = given || "app";
+            // the model values, checked before anything changes
+            const model = relightModel(a);
             let l;
             if (a.layer != null && a.layer !== "") {
                 l = findLayer(ed, a.layer);
@@ -1453,9 +1560,16 @@ const COMMANDS = {
                 const vals = Object.keys(raw).length ? checkParams("relight", raw, { width: ed.width, height: ed.height }) : {};
                 if (vals.lights) vals.lights = normalizeLights(raw.lights, { width: ed.width, height: ed.height });
                 const keys = Object.keys(vals);
-                if (keys.length) {
-                    ed.pushUndo({ kind: "filter", id: l.id, label: keys.length === 1 && keys[0] === "route" ? "Relight route" : filterStepLabel("relight", keys) });
-                    writeParams(ed, l, vals);
+                // a model value the layer already holds is no change (an agent that sends the same ones with every render)
+                const held = l.params || {};
+                const modelKeys = Object.keys(model).filter((k) => RELIGHT_MODEL[k].keys.some((key) => (model[k] === undefined ? held[key] != null : held[key] !== model[k])));
+                if (keys.length || modelKeys.length) {
+                    const label = keys.length === 1 && !modelKeys.length && keys[0] === "route" ? "Relight route"
+                        : !keys.length && modelKeys.length === 1 ? `Relight: ${RELIGHT_MODEL[modelKeys[0]].label}`
+                            : modelKeys.length ? "Relight" : filterStepLabel("relight", keys);
+                    ed.pushUndo({ kind: "filter", id: l.id, label });
+                    if (keys.length) writeParams(ed, l, vals);
+                    if (modelKeys.length) writeRelightModel(ed, l, Object.fromEntries(modelKeys.map((k) => [k, model[k]])));
                     touch(ed);
                 }
             } else {
@@ -1480,6 +1594,7 @@ const COMMANDS = {
                 if (Object.keys(vals).length) {
                     writeParams(ed, l, vals);
                 }
+                if (Object.keys(model).length) writeRelightModel(ed, l, model);
                 if (l.params) l.params.route = route;
                 if (ed.setTool) ed.setTool("lights");
                 touch(ed);
@@ -1524,7 +1639,7 @@ const COMMANDS = {
             ed.lastRunNotes = [];
             ed.lastPassError = null;
             // a failure of the run: the status reads Error / failed, or is the Realism Pass's sentence for the pack's error
-            const failed = () => /^Error|failed/i.test(ed.status || "") || (!!ed.lastPassError && ed.status === ed.lastPassError);
+            const failed = () => /^Error|failed/i.test(ed.status || "") || (!!ed.lastPassError && String(ed.status || "").startsWith(ed.lastPassError));
             // a refusal of this run (a token that cannot go, a missing key, ...) is said at once, not after the wait below;
             // a provider run is over when ed.generate() returns, so `seconds` counts from here
             if (ed.providerPending) throw refusal("a run is still going on this document");
@@ -2025,11 +2140,14 @@ const COMMANDS = {
     // -- text --
     add_text: {
         needsImage: true, description: "Add a text layer at x,y (top left of the text; with an angle the corner the text starts at). Bundled fonts: Roboto, Open Sans, Montserrat, Playfair Display, Lobster, Oswald, Pacifico, Bebas Neue and more (see the editor's font list).",
-        params: { text: P.str("the text", { required: true }), x: P.num("left (default 10 % of the width)"), y: P.num("top"), size: P.int("font size in pixels"), font: P.str("font family"), color: P.str("CSS colour"), bold: P.bool(""), italic: P.bool(""), align: P.str("left, center or right"), outline: P.num("outline width"), outline_color: P.str(""), angle: P.num("degrees clockwise; the text stays editable"), name: P.str("layer name") },
+        params: { text: P.str("the text", { required: true }), x: P.num("left (default 10 % of the width)"), y: P.num("top"), size: P.int("font size in pixels"), font: P.str("font family"), color: P.str("CSS colour"), bold: P.bool(""), italic: P.bool(""), align: P.str("left, center or right"), line_height: P.num(TEXT_LINE_HEIGHT_TEXT), letter_spacing: P.num(TEXT_SPACING_TEXT), outline: P.num("outline width"), outline_color: P.str(""), angle: P.num("degrees clockwise; the text stays editable"), name: P.str("layer name") },
         async run(ed, a) {
+            // refused before the layer is added: a call that fails adds nothing
+            const spacing = textSpacing(a);
             const l = await ed.addTextLayer(a.x != null ? +a.x : ed.width * 0.1, a.y != null ? +a.y : ed.height * 0.1);
             if (!l) throw new Error(ed.status);
             const t = l.text;
+            Object.assign(t, spacing);
             if (a.text != null) t.content = String(a.text);
             if (a.font != null && String(a.font) !== t.font) setFont(t, String(a.font));
             if (a.size != null) t.size = Math.max(4, Math.round(+a.size));
@@ -2051,11 +2169,13 @@ const COMMANDS = {
     },
     set_text: {
         description: "Change a text layer's content, style or angle (degrees clockwise in all, about the layer's middle; the text stays editable).",
-        params: { layer: P.layer("", { required: true }), text: P.str(""), font: P.str(""), size: P.int(""), color: P.str(""), bold: P.bool(""), italic: P.bool(""), align: P.str(""), outline: P.num(""), outline_color: P.str(""), angle: P.num("") },
+        params: { layer: P.layer("", { required: true }), text: P.str(""), font: P.str(""), size: P.int(""), color: P.str(""), bold: P.bool(""), italic: P.bool(""), align: P.str(""), line_height: P.num(TEXT_LINE_HEIGHT_TEXT), letter_spacing: P.num(TEXT_SPACING_TEXT), outline: P.num(""), outline_color: P.str(""), angle: P.num("") },
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
             if (l.kind !== "text") throw new Error(`${l.name} is not a text layer`);
+            const spacing = textSpacing(a);
             const t = l.text;
+            Object.assign(t, spacing);
             for (const [k, tk] of [["text", "content"], ["color", "color"], ["align", "align"], ["outline_color", "outlineColor"]]) if (a[k] != null) t[tk] = String(a[k]);
             if (a.font != null && String(a.font) !== t.font) setFont(t, String(a.font));
             if (a.size != null) t.size = Math.max(4, Math.round(+a.size));

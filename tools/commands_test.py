@@ -2428,6 +2428,83 @@ try {
 }
 return out;
 """),
+    # docs/PLAN_0_1_50.md Q7: add_text / set_text take the text panel's Line and Spacing fields (line_height, letter_spacing),
+    # held to the panel's ranges; a value that is no number is refused before anything changes
+    ("text_spacing", """
+await c("activate_document", { doc: window.__testDoc });
+const ed = window.editor;
+const t = await c("add_text", { text: "Spacing", x: 30, y: 30, size: 40, line_height: 1.5, letter_spacing: 4, name: "Spaced" });
+const L = ed.layers.find((l) => l.id === t.id);
+if (t.text.line_height !== 1.5 || t.text.letter_spacing !== 4 || L.text.lineHeight !== 1.5 || L.text.letterSpacing !== 4) throw new Error("add_text spacing: " + JSON.stringify([t.text, L.text]));
+const w0 = t.w;
+const wide = await c("set_text", { layer: t.id, letter_spacing: 300 });
+if (wide.text.letter_spacing !== 200 || L.text.letterSpacing !== 200) throw new Error("letter_spacing is not held to the panel's 200: " + JSON.stringify(wide.text));
+if (!(wide.w > w0 + 600)) throw new Error("200 px of spacing between 7 letters did not widen the layer: " + w0 + " -> " + wide.w);
+// two lines: the line height sets how far apart they are
+const two = await c("set_text", { layer: t.id, text: "A\\nB", letter_spacing: 0, line_height: 1 });
+const tall = await c("set_text", { layer: t.id, line_height: 3 });
+if (tall.text.line_height !== 3 || !(tall.h > two.h + 60)) throw new Error("line_height 3 did not set two lines apart: " + two.h + " -> " + tall.h);
+const low = await c("set_text", { layer: t.id, line_height: 0.1 });
+if (low.text.line_height !== 0.5) throw new Error("line_height is not held to the panel's 0.5: " + low.text.line_height);
+let refused = "";
+const before = JSON.stringify(L.text);
+try { await c("set_text", { layer: t.id, text: "changed", line_height: "tall" }); } catch (err) { refused = String(err.message || err); }
+if (!/line_height takes a number/.test(refused) || JSON.stringify(L.text) !== before) throw new Error("a line_height that is no number: " + refused + " " + JSON.stringify(L.text));
+const n0 = ed.layers.length;
+refused = "";
+try { await c("add_text", { text: "x", letter_spacing: "wide" }); } catch (err) { refused = String(err.message || err); }
+if (!/letter_spacing takes a number/.test(refused) || ed.layers.length !== n0) throw new Error("a refused add_text added a layer: " + refused);
+await c("remove_layer", { layer: t.id });
+return { w: [w0, wide.w], h: [two.h, tall.h] };
+"""),
+    # docs/PLAN_0_1_50.md Q4 and Q7: reopen_closed_tab brings the tab closed last back as a new active tab; a closed tab
+    # whose state holds a layer of a kind this version does not know (a newer Scumble's, without a file) comes back
+    # without it, and says so in its notes and its status line (after "Reopened ..."); nothing left: an error
+    ("reopen_closed_tab", """
+const { host } = await import("./editor/host.js");
+const d = await c("new_document");
+await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });
+await c("add_paint_layer", { doc: d.id, name: "Kept paint" });
+await c("set_prompt", { doc: d.id, text: "the reopened prompt" });
+await c("close_document", { doc: d.id });
+// the list holds the newest few: the closed tab is its last entry, taken again once its layers are uploaded
+const last = () => host.closed[host.closed.length - 1];
+for (let i = 0; i < 200 && !(last() && last().id === d.id && JSON.parse(last().state).layers.some((l) => l.name === "Kept paint" && l.ref)); i++) await new Promise((res) => setTimeout(res, 50));
+const top = last();
+if (!top || top.id !== d.id) throw new Error("the closed tab is not on the list: " + JSON.stringify(host.closed.map((x) => x.id)));
+const r = await c("reopen_closed_tab");
+const ed = window.editor;
+if (r.id === d.id || !r.active || !r.loaded || r.closed_left !== host.closed.length || host.closed.includes(top) || ed.node.id !== r.id) throw new Error("reopen_closed_tab: " + JSON.stringify(r));
+if (ed.promptText !== "the reopened prompt" || !ed.layers.some((l) => l.name === "Kept paint") || r.notes.length) throw new Error("the reopened tab: " + JSON.stringify([ed.promptText, ed.layers.map((l) => l.name), r.notes]));
+const state = JSON.parse(ed.getValue());
+await c("close_document", { doc: r.id });
+// a closed tab of a newer version's state: one layer of a kind without a file, beside the ones this version reads
+const kinds = state.layers.length;
+state.layers.push({ id: "Lfuture", name: "future", kind: "hologram", role: "none", blend: "normal", ref: null, x: 0, y: 0, w: 10, h: 10, opacity: 1, visible: true, mask: null });
+host.closed.push({ id: 9999, name: "From the future", time: Date.now(), state: JSON.stringify(state) });
+const r2 = await c("reopen_closed_tab");
+const ed2 = window.editor;
+const NOTE = /^1 layer saved by a newer version was left out: this version cannot show it, and the next save drops it\\.$/;
+if (!r2.notes.some((n) => NOTE.test(n)) || r2.layers !== kinds || !ed2.leftOut || ed2.leftOut.newer !== 1) throw new Error("the left-out layer's note: " + JSON.stringify([r2, ed2.leftOut]));
+if (!/^Reopened From the future\\. 1 layer saved by a newer version was left out/.test(ed2.status) || ed2.statusKind !== "warn") throw new Error("the status line after the reopen: " + JSON.stringify([ed2.status, ed2.statusKind]));
+// the user acts: the note no longer rides on the next line (a load again, so the carry is armed)
+const st2 = JSON.parse(ed2.getValue());
+st2.layers.push({ id: "Lfuture", name: "future", kind: "hologram", role: "none", blend: "normal", ref: null, x: 0, y: 0, w: 10, h: 10, opacity: 1, visible: true, mask: null });
+await ed2.setValue(JSON.stringify(st2));
+if (!ed2.leftOut || ed2.leftOut.newer !== 1) throw new Error("the second load left nothing out: " + JSON.stringify(ed2.leftOut));
+ed2.root.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+ed2.setStatus("a later line");
+if (ed2.status !== "a later line") throw new Error("the note stayed on a line after the user acted: " + ed2.status);
+await c("close_document", { doc: r2.id });
+const saved = host.closed;
+const tabs = host.editors().length;
+let err = "";
+host.closed = [];
+try { await c("reopen_closed_tab"); } catch (e) { err = String(e.message || e); } finally { host.closed = saved; }
+if (!/No closed tab to reopen/.test(err) || host.editors().length !== tabs) throw new Error("reopen with nothing closed: " + err);
+await c("activate_document", { doc: window.__testDoc });
+return { reopened: r.name, notes: r2.notes, status: ed2.status };
+"""),
     ("close", """
 const before = (await c("list_documents")).documents.length;
 const r = await c("close_document", { doc: window.__testDoc });

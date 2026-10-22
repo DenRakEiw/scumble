@@ -593,6 +593,94 @@ export function presetFallbackNote(asked) {
     return `${LABEL}: the runtime on your ComfyUI refused DLSS model preset ${asked}, so the pass uses Default from now on (the Realism Pass recipe keeps its own DLSS model preset row).`;
 }
 
+// ---- an answer that is the picture that went (0.1.50 Q2, docs/BUGS.md "not proven to change pixels") -------------
+
+/**
+ * The longest side of the copy an answer is held against the picture that went on, and the pieces per side it is made
+ * of past that: the comparison reads pixels one to one (a pass's texture and skin changes average out in a picture
+ * scaled down), from COMPARE_GRID × COMPARE_GRID pieces spread over the picture, its centre among them.
+ */
+export const COMPARE_SIDE = 1024;
+export const COMPARE_GRID = 5;
+/**
+ * The most a channel may move, on the compared copies, for the answer to count as the picture unchanged: the largest
+ * difference of any pixel, and the mean over all of them. A runtime that hands its input back may still send it
+ * through floats (a level or two off, the mean at most about one); a pass that does anything moves some pixels further
+ * (an edge, a texture) or the whole picture's tone. Not measured against a card on which the pass runs or one on which
+ * it does not (docs/BUGS.md "Realism Pass on RTX 40 and 30"): every pass logs its numbers.
+ */
+export const UNCHANGED_MAX = 4;
+export const UNCHANGED_MEAN = 1;
+/** Below this Strength a pass may change too little to tell from a pass that did not run: nothing is said. */
+export const UNCHANGED_MIN_STRENGTH = 0.25;
+
+/**
+ * Where the comparison reads a picture of w × h (the size that went, in its pixels): the whole picture when it fits in
+ * COMPARE_SIDE, else along each longer axis COMPARE_GRID spans of COMPARE_SIDE / COMPARE_GRID px, evenly from the start
+ * to the end (the middle one on the centre). -> { width, height, tiles: [{ sx, sy, sw, sh, dx, dy }] }: each tile read
+ * at sx, sy (sw × sh) and put at dx, dy of a copy of width × height.
+ */
+export function compareTiles(w, h) {
+    const spans = (n) => {
+        n = Math.max(1, Math.round(+n || 0));
+        if (n <= COMPARE_SIDE) return [{ s: 0, d: 0, n }];
+        const t = Math.floor(COMPARE_SIDE / COMPARE_GRID);
+        return Array.from({ length: COMPARE_GRID }, (_, i) => ({ s: Math.round(((n - t) * i) / (COMPARE_GRID - 1)), d: i * t, n: t }));
+    };
+    const xs = spans(w), ys = spans(h);
+    const tiles = [];
+    for (const y of ys) for (const x of xs) tiles.push({ sx: x.s, sy: y.s, sw: x.n, sh: y.n, dx: x.d, dy: y.d });
+    const end = (a) => a[a.length - 1].d + a[a.length - 1].n;
+    return { width: end(xs), height: end(ys), tiles };
+}
+
+/**
+ * How far two RGBA pictures of one size are apart in each colour channel (alpha left out): `mean` and `max` as
+ * [r, g, b], or null when their sizes differ.
+ */
+export function pictureDiff(a, b) {
+    if (!a || !b || a.length !== b.length || a.length < 4) return null;
+    const sum = [0, 0, 0], max = [0, 0, 0];
+    for (let i = 0; i < a.length; i += 4) {
+        for (let c = 0; c < 3; c++) {
+            const d = Math.abs(a[i + c] - b[i + c]);
+            sum[c] += d;
+            if (d > max[c]) max[c] = d;
+        }
+    }
+    const n = a.length / 4;
+    return { mean: sum.map((v) => Math.round((v / n) * 1000) / 1000), max };
+}
+
+/** Whether pictureDiff's answer is within a round trip of the same picture (the pass changed nothing). */
+export function isUnchanged(diff) {
+    return !!diff && diff.max.every((v) => v <= UNCHANGED_MAX) && diff.mean.every((v) => v <= UNCHANGED_MEAN);
+}
+
+/** Whether a pass at Strength `strength` (0..1) whose answer is `diff` away from what went is said to have changed nothing. */
+export function unchangedAt(diff, strength) {
+    return +strength >= UNCHANGED_MIN_STRENGTH && isUnchanged(diff);
+}
+
+/** pictureDiff's answer as the log's line: "largest r/g/b, mean r/g/b". */
+export function diffText(diff) {
+    return diff ? `largest ${diff.max.join("/")}, mean ${diff.mean.join("/")} (of 255 levels, r/g/b)` : "not compared (the sizes differ)";
+}
+
+/**
+ * The sentence when the pass came back unchanged (red in the status line, the layer still lands): `gpu` the card's
+ * name from the server check ("" when not known), `diff` pictureDiff's answer, `factor` the pass's (above 1 the answer
+ * is the picture enlarged, the document resized with it).
+ */
+export function unchangedNote(gpu, diff, factor = 1) {
+    const card = gpu ? `on ${gpu}` : "on this card";
+    const most = diff ? Math.max(...diff.max) : 0;
+    if (+factor > 1) {
+        return `${LABEL} changed nothing ${card}: the answer is the picture that went, only enlarged (the largest difference ${most} of 255 levels at the size it went), so DLSS 5 Neural Rendering seems not to run there. The layer is the picture enlarged without the pass's look (Ctrl+Z takes back the layer and the resize).`;
+    }
+    return `${LABEL} changed nothing ${card}: the answer is the picture that went (the largest difference ${most} of 255 levels), so DLSS 5 Neural Rendering seems not to run there. The layer shows the picture as it was (Ctrl+Z takes it back).`;
+}
+
 /** Whether a ComfyUI version ("0.38.0", "v0.3.57") is at least `min`; an unknown one is not. */
 export function versionAtLeast(version, min) {
     const parts = (v) => (/^v?(\d+)\.(\d+)(?:\.(\d+))?/.exec(String(v || "").trim()) || []).slice(1).map((n) => +(n || 0));

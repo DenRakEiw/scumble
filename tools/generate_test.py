@@ -873,6 +873,68 @@ try {
     if (dh.size || dh.max > 1 || dh.frac > 0.02 || JSON.stringify(orderH) !== JSON.stringify(["picture", LABEL, "look", "ref", "rejected"])) throw new Error("a hidden layer on top: " + JSON.stringify({ sent: dh, stack: orderH }));
     return { sent: d, layer: centreOf(l), status: status.slice(0, 140), stack: order, hidden: orderH, backend: ed.tileMode ? "tiles" : "canvas" };
 """ + R3A_END),
+    # 0.1.50 Q2 (docs/BUGS.md "not proven to change pixels"): an answer that is the picture that went (a runtime that
+    # handed its input back) still lands, and the status line says in red that the pass changed nothing on this card;
+    # a changed answer stays plain, and at Strength 0 an unchanged picture is what was asked for
+    ("an_unchanged_answer_says_so_in_red", R2A_STUBS + R3A_PRE + r"""
+try {
+    stubR3a();
+    const ed = await scene();
+    // the runtime hands back what it got: the answer is the uploaded picture itself
+    const echo = (id, body) => api.dispatch("executed", { prompt_id: id, node: "rp_out", output: { images: [JSON.parse(body.output.rp_in.inputs.ref)] } });
+    T.onQueued = echo;
+    const a = await host.realismWhole(ed);
+    if (T.err) throw T.err;
+    const sa = ed.status, ka = ed.statusKind;
+    const said = LABEL + " changed nothing on NVIDIA GeForce RTX 5090: the answer is the picture that went (the largest difference 0 of 255 levels), so DLSS 5 Neural Rendering seems not to run there. The layer shows the picture as it was (Ctrl+Z takes it back).";
+    if (!a.layer || !a.unchanged || !sa.startsWith(LABEL + " ran on your ComfyUI in ") || !sa.endsWith(" " + said) || ka !== "warn" || !a.note.includes(said)) throw new Error("an unchanged answer: " + JSON.stringify({ layer: !!a.layer, unchanged: a.unchanged, status: sa, kind: ka, note: a.note }));
+    if (ed.layers.filter((l) => l.name === LABEL).length !== 1) throw new Error("the unchanged pass did not land its layer");
+    // a changed answer: a plain line
+    T.onQueued = answerWith([30, 200, 60]);
+    const b = await host.realismWhole(ed);
+    if (T.err) throw T.err;
+    if (b.unchanged || ed.statusKind === "warn" || ed.status.includes("changed nothing") || b.note.includes("changed nothing")) throw new Error("a changed answer: " + JSON.stringify({ unchanged: b.unchanged, status: ed.status, kind: ed.statusKind }));
+    // Strength 0: nothing to change, so nothing is said; nor below 0.25 (a pass that changed too little to tell)
+    for (const intensity of [0, 0.2]) {
+        host.realismStored = { timeout: 30, intensity };
+        T.onQueued = echo;
+        const c = await host.realismWhole(ed);
+        if (T.err) throw T.err;
+        if (c.unchanged || ed.statusKind === "warn" || ed.status.includes("changed nothing")) throw new Error("Strength " + intensity + ": " + JSON.stringify({ unchanged: c.unchanged, status: ed.status, kind: ed.statusKind }));
+    }
+    host.realismStored = { timeout: 30 };
+    // every pass's numbers in the log: the echo said to have changed nothing, the changed answer not
+    const logged = (await window.scumble.log.list({})).filter((e) => e.source === "realism").map((e) => e.message);
+    if (!logged.some((m) => m.startsWith(LABEL + ": the answer against what went (320 × 240 px, pixel for pixel): largest 0/0/0, mean 0/0/0") && m.endsWith("Strength 1: said to have changed nothing")) || !logged.some((m) => !m.includes("said to have changed nothing"))) throw new Error("the log's lines: " + JSON.stringify(logged.slice(-4)));
+    // a large picture whose answer carries a fine texture (every pixel 6 levels up or down, alternating): the pass did
+    // something, read pixel for pixel; a picture scaled down to 1024 px averaged it away and said "changed nothing"
+    const big = (await run("new_document")).id;
+    try {
+        const eb = ednow(big);
+        host.shell.activate(eb);
+        await run("new_canvas", { doc: big, width: 2048, height: 1536 });
+        const grad = await pngOf(2048, 1536, (x, y) => [40 + ((x * 175 / 2047) | 0), 40 + ((y * 175 / 1535) | 0), 128, 255]);
+        const gr = await host.uploadInput(new Blob([grad], { type: "image/png" }), "rp_texture_base.png");
+        await run("add_image_layer", { doc: big, filename: gr.filename, subfolder: gr.subfolder, type: gr.type, name: "gradient", x: 0, y: 0 });
+        T.onQueued = (id, body) => (async () => {
+            const p = await pixelsOf(await bytesOf(JSON.parse(body.output.rp_in.inputs.ref)));
+            const s = (x, y) => (((x + y) & 1) ? 6 : -6);
+            const png = await pngOf(p.w, p.h, (x, y) => { const i = (y * p.w + x) * 4; return [p.d[i] + s(x, y), p.d[i + 1] + s(x, y), p.d[i + 2] + s(x, y), 255]; });
+            const ans = await host.uploadInput(new Blob([png], { type: "image/png" }), "rp_answer_" + id + ".png");
+            api.dispatch("executed", { prompt_id: id, node: "rp_out", output: { images: [ans] } });
+        })().catch((e) => { T.err = e; fails(id, "the test's answer failed: " + String((e && e.message) || e)); });
+        const t = await host.realismWhole(eb);
+        if (T.err) throw T.err;
+        if (!t.layer || t.unchanged || eb.statusKind === "warn" || eb.status.includes("changed nothing")) throw new Error("a fine texture on a large picture: " + JSON.stringify({ unchanged: t.unchanged, status: eb.status, kind: eb.statusKind }));
+        const last = (await window.scumble.log.list({})).filter((e) => e.source === "realism").pop();
+        if (!last || !last.message.startsWith(LABEL + ": the answer against what went (25 pieces of 204 × 204 px, pixel for pixel): largest 6/6/6")) throw new Error("the large picture's log line: " + JSON.stringify(last));
+    } finally {
+        T.onQueued = null;
+        try { await run("close_document", { doc: big, force: true }); } catch (_) { /* gone */ }
+        host.shell.activate(ed);
+    }
+    return { unchanged: sa.slice(-160), kind: ka, changed: ed.status.slice(0, 80), logged: logged.length };
+""" + R3A_END),
     # no filter at the top: the whole stack is read, a reference layer inside the range included, and the read leaves it
     # out as a run does (forRun); the pass layer lands at the top
     ("a_reference_in_the_read_is_left_out", R2A_STUBS + R3A_PRE + r"""
@@ -2423,6 +2485,99 @@ try {
     cj.api = saved.api; cj.recheckMs = saved.ms; cj.said = saved.said;
     for (const e of fresh()) { try { await run("close_document", { doc: e.node.id, force: true }); } catch (_) { /* gone */ } }
     try { await run("close_document", { doc: d.id, force: true }); } catch (_) { /* gone */ }
+}
+"""),
+    # 0.1.50 Q1 (docs/BUGS.md "mat1 and mat2"): a local Klein run whose sampler fails on the matrix shapes is said as the
+    # text encoder that does not fit the model, with the files the run sent and the row to change; another failure of a
+    # Klein run, and the same torch text on any other run, stay as ComfyUI said them. Queued against stubs (nothing
+    # reaches a server), the errors are dispatched server events
+    ("a_klein_shape_error_names_the_text_encoder", """
+const api = (await import('./editor/host.js')).api;
+const klein2 = host.shell.recipes().find((r) => r.id === "flux2_klein_local"), klein3 = host.shell.recipes().find((r) => r.id === "flux3_klein_local");
+if (!klein2 || !klein3) throw new Error("the shipped Klein recipes are not listed");
+const SHAPES = "mat1 and mat2 shapes cannot be multiplied (1024x7680 and 12288x4096)";
+const OI = Object.fromEntries([...klein2.needs, ...klein3.needs].map((n) => [n, { input: { required: {} } }]));
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, missing: host.missingFilesRefusal, recipe: host.recipe };
+const sent = [];
+let doc = null;
+try {
+    host.connected = true;
+    host.objectInfo = OI;
+    host.missingFilesRefusal = () => null;
+    host.ensureOnServer = async () => null;
+    api.queuePrompt = async (n, body) => { const id = "q1-klein-" + (sent.length + 1); sent.push({ id, body }); return { prompt_id: id }; };
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    host.shell.activate(ed);
+    await run("new_canvas", { doc, width: 320, height: 240 });
+    await run("select_rect", { doc, x: 80, y: 60, w: 160, h: 120 });
+    const queue = async () => { const n = sent.length; await host.queueGenerate(ed); if (sent.length !== n + 1) throw new Error("nothing was queued: " + ed.status); return sent[n]; };
+    const fail = (id, message, node_type = "SamplerCustomAdvanced") => api.dispatch("execution_error", { prompt_id: id, node_id: "sample", node_type, exception_message: message });
+    const out = {};
+    // (1) Flux.2 Klein 9B with Klein 4B's encoder, picked in the Settings rows
+    host.setRecipe(klein2);
+    ed.settings["1"].value = "flux-2-klein-base-9b.safetensors";
+    ed.settings["2"].value = "qwen_3_4b.safetensors";
+    let q = await queue();
+    if (q.body.output.clip.inputs.clip_name !== "qwen_3_4b.safetensors") throw new Error("the run did not send the row's encoder: " + JSON.stringify(q.body.output.clip.inputs));
+    fail(q.id, SHAPES + "\\n  File x.py, line 1");
+    const w2 = "Flux.2 Klein failed in the sampler: the text encoder does not fit the model. Klein 9B takes the Qwen3 8B encoder (qwen_3_8b), Klein 4B the Qwen3 4B one (qwen_3_4b); this run sent flux-2-klein-base-9b.safetensors (Klein 9B, which takes qwen_3_8b) with the text encoder qwen_3_4b.safetensors. Pick the matching file in the Text encoder row of the Settings panel. (ComfyUI: " + SHAPES + ")";
+    if (ed.status !== w2 || ed.statusKind !== "error") throw new Error("Klein 9B with the 4B encoder: " + ed.status + " / " + ed.statusKind);
+    // the generate command's wait stops on a line that reads Error or failed (commands.js generate `failed`)
+    if (!/^Error|failed/i.test(ed.status)) throw new Error("the generate command would not see the Klein line as a failure: " + ed.status);
+    out.klein2 = ed.status.slice(0, 100);
+    // (1b) the files' names fit each other (Klein 9B with qwen_3_8b) and the sampler still fails: the other causes
+    ed.settings["2"].value = "qwen_3_8b_fp8mixed.safetensors";
+    q = await queue();
+    fail(q.id, SHAPES);
+    const wr = "Flux.2 Klein failed in the sampler: the text encoder's output does not fit the model, although the files' names fit each other: this run sent flux-2-klein-base-9b.safetensors (Klein 9B, which takes qwen_3_8b) with the text encoder qwen_3_8b_fp8mixed.safetensors; what arrived reads as Qwen3 4B's output. Either your ComfyUI is too old to build Klein's Qwen3 encoder (Klein needs one from January 2026 or newer: update it), or one of these files holds another model than its name says. (ComfyUI: " + SHAPES + ")";
+    if (ed.status !== wr || ed.statusKind !== "error") throw new Error("Klein 9B with qwen_3_8b: " + ed.status);
+    // (1c) a model file named 9B whose text input takes Qwen3 4B's output, the encoder Qwen3 8B's: the model is named
+    q = await queue();
+    fail(q.id, "mat1 and mat2 shapes cannot be multiplied (512x12288 and 7680x3072)");
+    if (!ed.status.includes("; what arrived reads as Qwen3 8B's output; the model takes Qwen3 4B's output, as Klein 4B does. Either")) throw new Error("a model that is not what its name says: " + ed.status);
+    ed.settings["2"].value = "qwen_3_4b.safetensors";
+    // (2) another failure of a Klein run stays as ComfyUI said it
+    q = await queue();
+    fail(q.id, "CUDA out of memory");
+    if (ed.status !== "Error in SamplerCustomAdvanced: CUDA out of memory" || ed.statusKind !== "error") throw new Error("another failure of a Klein run: " + ed.status);
+    // (3) FLUX 3 Image Klein with Flux.2 Klein's encoder
+    host.setRecipe(klein3);
+    ed.settings["2"].value = "qwen_3_8b.safetensors";
+    q = await queue();
+    const unet3 = q.body.output.unet.inputs.unet_name;
+    fail(q.id, SHAPES);
+    const w3 = "FLUX 3 Image Klein failed in the sampler: the text encoder does not fit the model. It takes the Qwen3-VL 4B encoder (qwen3vl_4b); this run sent " + unet3 + " with the text encoder qwen_3_8b.safetensors. Pick that file in the Text encoder row of the Settings panel. (ComfyUI: " + SHAPES + ")";
+    if (ed.status !== w3 || ed.statusKind !== "error") throw new Error("FLUX 3 Klein with Qwen3 8B: " + ed.status);
+    out.klein3 = ed.status.slice(0, 100);
+    // (3b) FLUX 3 Image Klein with its own encoder: the files fit, the other causes
+    ed.settings["2"].value = "qwen3vl_4b_int8_convrot.safetensors";
+    q = await queue();
+    fail(q.id, SHAPES);
+    if (!ed.status.startsWith("FLUX 3 Image Klein failed in the sampler: the text encoder's output does not fit the model, although the files' names fit each other: this run sent " + unet3 + " with the text encoder qwen3vl_4b_int8_convrot.safetensors; what arrived reads as Qwen3 4B's output. Either your ComfyUI is too old for FLUX 3 Image Klein (it needs 0.41 or newer: update it)")) throw new Error("FLUX 3 Klein with its own encoder: " + ed.status);
+    // (3c) through the generate command (as an agent and the assistant run it): it ends with the Klein line within a
+    // few seconds, not after the wait for a result (the queue stays busy here, so only the line can end it)
+    ed.settings["2"].value = "qwen_3_8b.safetensors";
+    const queue0 = api.queuePrompt, fetch0 = api.fetchApi;
+    api.queuePrompt = async (n, body) => { const r = await queue0(n, body); setTimeout(() => fail(r.prompt_id, SHAPES), 150); return r; };
+    api.fetchApi = (path, init) => (String(path) === "/queue" ? Promise.resolve(new Response(JSON.stringify({ queue_running: [[0, "busy", {}, {}, []]], queue_pending: [] }), { status: 200, headers: { "Content-Type": "application/json" } })) : fetch0.call(api, path, init));
+    let said = null;
+    const t0 = Date.now();
+    try { await run("generate", { doc, timeout: 60 }); } catch (e) { said = String((e && e.message) || e); } finally { api.queuePrompt = queue0; api.fetchApi = fetch0; }
+    const secs = (Date.now() - t0) / 1000;
+    if (!said || !said.startsWith("FLUX 3 Image Klein failed in the sampler: the text encoder does not fit the model.") || secs > 5) throw new Error("the generate command on a Klein shape error: " + JSON.stringify({ said, secs }));
+    out.command = { secs };
+    // (4) the same torch text on a run that is no Klein one (a render of this document the app did not queue as Klein)
+    (ed._localRuns || (ed._localRuns = new Set())).add("q1-other");
+    fail("q1-other", SHAPES, "KSampler");
+    if (ed.status !== "Error in KSampler: " + SHAPES) throw new Error("another run's shape error: " + ed.status);
+    // (5) the Klein runs' files are forgotten when they end
+    if (host._kleinRuns.size && sent.some((s) => host._kleinRuns.has(s.id))) throw new Error("ended Klein runs are still held: " + JSON.stringify([...host._kleinRuns.keys()]));
+    return out;
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; host.missingFilesRefusal = saved.missing;
+    host.setRecipe(saved.recipe);
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
 }
 """),
     ("cleanup", """

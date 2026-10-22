@@ -1,7 +1,7 @@
 {
   "id": "flux2_klein_local",
   "name": "Flux.2 Klein 4B / 9B (ComfyUI)",
-  "description": "Flux.2 Klein edit chain: the crop plus up to three more pictures of the crop batch (the Original copy with a fill mode, then the reference layers) as reference latents at 1 MP each; inputs the batch does not fill are left out, and an @img token is written as the \"image N\" its picture has. 20 steps, CFG 5. The chain is the recipe; which Klein model (4B or 9B, any quantization), Qwen3 text encoder and Flux.2 VAE it loads is picked under Settings, and a preset there keeps a combination.",
+  "description": "Flux.2 Klein edit chain: the crop plus up to three more pictures of the crop batch (the Original copy with a fill mode, then the reference layers) as reference latents at 1 MP each; inputs the batch does not fill are left out, and an @img token is written as the \"image N\" its picture has. 20 steps, CFG 5. The chain is the recipe; which Klein model (4B or 9B, any quantization), Qwen3 text encoder and Flux.2 VAE it loads is picked under Settings, and a preset there keeps a combination. The text encoder must fit the model's size: Klein 9B takes Qwen3 8B (qwen_3_8b), Klein 4B takes Qwen3 4B (qwen_3_4b); a mismatch fails only in the sampler (\"mat1 and mat2 shapes cannot be multiplied\"), and Scumble then names the files the run sent.",
   "mode": "local",
   "canvas": "canvas",
   "result": "decode:0",

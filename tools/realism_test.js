@@ -6,7 +6,8 @@
 // and its 7680 x 4320 cap, plus the measured 27.9 MP area cap (MAX_AREA, R-U's live look), the crop span the canvas node makes at the pass's multiple of 2 (fitSpan against the node's
 // _fit_span_to_multiple written out here), the DLSS5Settings inputs of a run, the hint for every message of the pack
 // (tools/refs/dlss5/messages.json, verbatim to the pack's f-strings at HEAD 796ed59), the per-key fill of
-// settings.realism, and the label every text carries. The defaults are checked against recipes/realism_pass.json and
+// settings.realism, the comparison of an answer with the picture that went (0.1.50 Q2: an unchanged pass), and the
+// label every text carries. The defaults are checked against recipes/realism_pass.json and
 // electron/main/settings.js DEFAULTS.realism (loaded with electron stood in for, as tools/settings_migration_test.js does).
 "use strict";
 
@@ -1178,6 +1179,73 @@ function nodeFitSpan(a0, a1, limit, m) {
         let worst = 0;
         for (let i = 0; i < ow * oh; i++) worst = Math.max(worst, Math.abs(back[i * 4] - 200), Math.abs(back[i * 4 + 1] - 40), Math.abs(back[i * 4 + 2] - 90), Math.abs(back[i * 4 + 3] - 128));
         check("putAlphaBack with scaleAlpha at 2x: the colour and the alpha come back within 2 levels", worst <= 2, `worst ${worst}`);
+    }
+
+    // ---- 9f. an answer that is the picture that went (0.1.50 Q2) --------------------------------------------------
+    console.log("\n--- 9f. an answer that is the picture that went ---");
+    {
+        const fill = (w, h, f) => { const d = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < w * h; i++) d.set(f(i % w, Math.floor(i / w)), i * 4); return d; };
+        // the comparison reads pixels one to one: a picture that fits whole, a larger one in pieces spread over it
+        const small = R.compareTiles(640, 480), big = R.compareTiles(4096, 2048), tall = R.compareTiles(900, 7680);
+        const t = Math.floor(R.COMPARE_SIDE / R.COMPARE_GRID);
+        check("compareTiles: a picture within 1024 px whole and unscaled",
+            eq(small, { width: 640, height: 480, tiles: [{ sx: 0, sy: 0, sw: 640, sh: 480, dx: 0, dy: 0 }] }) && eq(R.compareTiles(0, 0).tiles, [{ sx: 0, sy: 0, sw: 1, sh: 1, dx: 0, dy: 0 }]),
+            short(small));
+        const starts = (m, k) => [...new Set(m.tiles.map((x) => x[k]))];
+        const inside = (m, w, h) => m.tiles.every((x) => x.sx >= 0 && x.sy >= 0 && x.sx + x.sw <= w && x.sy + x.sh <= h && x.dx + x.sw <= m.width && x.dy + x.sh <= m.height);
+        // no piece scaled: every piece read at the size it is put in, so the copy is pixels of the picture
+        check("compareTiles: a 4096 × 2048 picture in 5 × 5 pieces of 204 px, unscaled, from edge to edge, the centre among them",
+            big.tiles.length === 25 && big.width === 5 * t && big.height === 5 * t && big.tiles.every((x) => x.sw === t && x.sh === t) && inside(big, 4096, 2048)
+                && eq(starts(big, "sx"), [0, 973, 1946, 2919, 3892]) && eq(starts(big, "sy"), [0, 461, 922, 1383, 1844])
+                && big.tiles.some((x) => x.sx <= 2048 && x.sx + x.sw > 2048 && x.sy <= 1024 && x.sy + x.sh > 1024),
+            short({ w: big.width, h: big.height, sx: starts(big, "sx"), sy: starts(big, "sy") }));
+        check("compareTiles: a 900 × 7680 picture whole across, in 5 pieces down",
+            tall.tiles.length === 5 && tall.width === 900 && tall.height === 5 * t && tall.tiles.every((x) => x.sx === 0 && x.sw === 900 && x.sh === t) && inside(tall, 900, 7680) && tall.tiles[4].sy === 7680 - t,
+            short({ w: tall.width, h: tall.height, sy: starts(tall, "sy") }));
+        const pic = fill(64, 48, (x, y) => [(x * 4) & 255, (y * 5) & 255, (x + y) & 255, 255]);
+        const same = R.pictureDiff(pic, pic.slice());
+        check("pictureDiff of a picture and its copy: nothing apart, and that is unchanged", eq(same, { mean: [0, 0, 0], max: [0, 0, 0] }) && R.isUnchanged(same), short(same));
+        // a round trip through floats: every byte a level or two off (and the alpha far off, which does not count)
+        const trip = pic.map((v, i) => (i % 4 === 3 ? 0 : Math.min(255, v + ((i >> 2) % 3 === 0 ? 2 : (i >> 2) % 3 === 1 ? 1 : 0))));
+        const near = R.pictureDiff(pic, trip);
+        check("pictureDiff of a round trip a level or two off, the alpha left out: still unchanged", R.isUnchanged(near) && near.max.every((v) => v === 2), short(near));
+        // what a pass does: a tone change over the picture (8 levels brighter) is no round trip
+        const toned = pic.map((v, i) => (i % 4 === 3 ? v : Math.min(255, v + 8)));
+        const td = R.pictureDiff(pic, toned);
+        check("pictureDiff of a picture 8 levels brighter: changed", !R.isUnchanged(td) && td.max[0] === 8, short(td));
+        // a few pixels changed a lot (a detail the pass added), the mean low: changed by the largest difference
+        const spot = pic.slice(); spot[0] = 255 - spot[0]; spot[4 * 100 + 1] = 255 - spot[4 * 100 + 1];
+        const sd = R.pictureDiff(pic, spot);
+        check("pictureDiff with two pixels changed: the mean stays low, the largest difference counts", !R.isUnchanged(sd) && sd.mean.every((v) => v < R.UNCHANGED_MEAN), short(sd));
+        // a slight tone shift over the whole picture (3 levels: no pixel past the largest difference allowed, the mean
+        // past its bound): changed by the mean
+        const slight = pic.map((v, i) => (i % 4 === 3 ? v : Math.min(255, v + 3)));
+        const sl = R.pictureDiff(pic, slight);
+        check("pictureDiff of a picture 3 levels brighter: within the largest difference, changed by the mean", !R.isUnchanged(sl) && sl.max.every((v) => v <= R.UNCHANGED_MAX), short(sl));
+        // the bounds: just within and just past them
+        const atMax = { mean: [R.UNCHANGED_MEAN, 0.5, 0.5], max: [R.UNCHANGED_MAX, 0, 0] }, pastMax = { mean: [0.1, 0.1, 0.1], max: [0, R.UNCHANGED_MAX + 1, 0] }, pastMean = { mean: [0, 0, R.UNCHANGED_MEAN + 0.01], max: [1, 1, 1] };
+        check("isUnchanged: at the bounds unchanged, past either bound changed, no diff (sizes apart) never unchanged",
+            R.isUnchanged(atMax) && !R.isUnchanged(pastMax) && !R.isUnchanged(pastMean) && !R.isUnchanged(null) && R.pictureDiff(pic, pic.slice(4)) === null,
+            short([R.isUnchanged(atMax), R.isUnchanged(pastMax), R.isUnchanged(pastMean)]));
+        const note = R.unchangedNote("NVIDIA GeForce RTX 3090", near), bare = R.unchangedNote("", same);
+        keep(note); keep(bare);
+        check("unchangedNote names the card, the largest difference and that the layer still lands; without a card, this card",
+            note.startsWith(EXACT_LABEL + " changed nothing on NVIDIA GeForce RTX 3090: ") && note.includes("(the largest difference 2 of 255 levels)") && note.includes("Ctrl+Z takes it back") && bare.includes(" changed nothing on this card: ") && bare.includes("difference 0 of 255"),
+            short([note, bare]));
+        // above 1× the layer is the picture enlarged and the document was resized with it: one Ctrl+Z takes back both
+        const upNote = R.unchangedNote("NVIDIA GeForce RTX 3090", near, 2);
+        keep(upNote);
+        check("unchangedNote above 1×: the picture only enlarged, the layer without the pass's look, Ctrl+Z takes back the layer and the resize",
+            upNote.startsWith(EXACT_LABEL + " changed nothing on NVIDIA GeForce RTX 3090: the answer is the picture that went, only enlarged (the largest difference 2 of 255 levels at the size it went)")
+                && upNote.endsWith("The layer is the picture enlarged without the pass's look (Ctrl+Z takes back the layer and the resize).") && !upNote.includes("as it was") && R.unchangedNote("", near, 1) === R.unchangedNote("", near),
+            short(upNote));
+        // a small Strength may change too little to tell: said only from UNCHANGED_MIN_STRENGTH on, never for a changed answer
+        check("unchangedAt: an unchanged answer is said from Strength 0.25 on, not below it (0 included), a changed one never",
+            R.UNCHANGED_MIN_STRENGTH === 0.25 && R.unchangedAt(same, 1) && R.unchangedAt(near, 0.25) && !R.unchangedAt(near, 0.2) && !R.unchangedAt(same, 0) && !R.unchangedAt(td, 1) && !R.unchangedAt(null, 1),
+            short([R.unchangedAt(near, 0.25), R.unchangedAt(near, 0.2)]));
+        check("diffText: the log's line of a difference, and of none",
+            R.diffText(near) === "largest 2/2/2, mean " + near.mean.join("/") + " (of 255 levels, r/g/b)" && R.diffText(null) === "not compared (the sizes differ)",
+            short([R.diffText(near), R.diffText(null)]));
     }
 
     // ---- 10. the label in every text ------------------------------------------------------------------------------

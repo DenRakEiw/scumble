@@ -676,6 +676,12 @@ async function main() {
             check("every_plugin_command_is_registered_under_its_plugin_id", owners.size >= 5 && !misnamed.length && !silent.length,
                 `owners ${[...owners].join(", ")}${misnamed.length ? `; misnamed ${misnamed.join(", ")}` : ""}${silent.length ? `; no command from ${silent.join(", ")}` : ""}`);
 
+            // a command without a row asks "not in the assistant's table" on every call: each one the app serves has its row
+            // (docs/PLAN_0_1_50.md Q7: reopen_closed_tab, boxes_check), or is one the assistant must not have
+            const rowless = descs.map((d) => toolName(d.name)).filter((n) => !Object.prototype.hasOwnProperty.call(policy.POLICY, n) && !policy.EXCLUDED.has(n));
+            check("every_command_has_its_policy_row", descs.length >= 116 && !rowless.length && descs.some((d) => d.name === "reopen_closed_tab") && descs.some((d) => d.name === "boxes.check"),
+                rowless.join(", ") || `${descs.length} commands, each with a row or excluded`);
+
             const badArrays = [];
             function walkSchema(schema, at) {
                 if (!schema || typeof schema !== "object") return;
@@ -1492,6 +1498,26 @@ async function main() {
                 && capNewOffOnLayer.action === "refuse"
                 && atCap.action === "ask",
                 JSON.stringify({ AREA, capApp, capAppEdit, capMagNew, capMagOn, capMagOff, capNewOff, capNewOffOnLayer, atCap }));
+
+            // docs/PLAN_0_1_50.md Q7: the routes' model values go on the paid card; a `detail` in the call decides the cap
+            // over the layer's and the remembered one; a value alone renders nothing (auto) and the command steps itself
+            const capCallOff = policy.decide({ name: "relight", args: { route: "magnific", layer: "Lrel", detail: false } }, fr({ ...big, layers: relLayer(true) }));
+            const capCallOn = policy.decide({ name: "relight", args: { route: "comfyui", detail: true } }, fr({ ...big, relightDetail: false }));
+            const mPaid = policy.decide({ name: "relight", args: { route: "comfyui", lora_strength: 60, steps: 8 } }, fr());
+            const mAlone = policy.decide({ name: "relight", args: { layer: "Lrel", style: "clean" } }, fr({ layers: relLayer(true) }));
+            check("relight_model_values_go_on_the_card_and_the_calls_detail_decides_the_cap",
+                capCallOff.action === "ask" && capCallOn.action === "refuse"
+                && mPaid.action === "ask" && eq(mPaid.card && mPaid.card.changes, [{ field: "route", to: "comfyui" }, { field: "lora_strength", to: 60 }, { field: "steps", to: 8 }])
+                && mAlone.action === "auto" && policy.undoStep({ name: "relight", args: { layer: "Lrel", style: "clean" } }) === null,
+                JSON.stringify({ capCallOff, capCallOn, mPaid, mAlone }));
+            // the two new commands: boxes_check only reads; reopen_closed_tab opens a tab and changes nothing open
+            const fq = () => { const x = facts(); x.tools.add("boxes_check"); x.tools.add("reopen_closed_tab"); return x; };
+            const bCheck = policy.decide({ name: "boxes_check", args: {} }, fq());
+            const reopen = policy.decide({ name: "reopen_closed_tab", args: {} }, fq());
+            check("boxes_check_and_reopen_closed_tab_run_unasked",
+                bCheck.action === "auto" && policy.READS.has("boxes_check") && policy.undoStep({ name: "boxes_check", args: {} }) === null
+                && reopen.action === "auto" && !policy.READS.has("reopen_closed_tab") && policy.undoStep({ name: "reopen_closed_tab", args: {} }) === null,
+                JSON.stringify({ bCheck, reopen }));
 
             // factsFor reads a new layer's `detail` from the stored relight settings (host.setRelightSettings writes the picks
             // flat; a profile from before F3 may hold the nested keys, which have no detail: on, as host's default)

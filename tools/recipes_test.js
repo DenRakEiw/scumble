@@ -583,6 +583,7 @@ async function main() {
         // `notes`: what detach says about the copy, in order (RTX Video Super Resolution's copy has no factor row: its
         // graph's own 2× runs, docs/PLAN_0_1_42.md U1)
         const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, flux3_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, qwen_image_edit_2_1_turbo_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, relight_qwen_local: { pictures: 1, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] },
+            moss_image_local: { pictures: 1, values: ["negative", "prompt", "seed"] },
             rtx_vsr_local: { pictures: 1, values: [], notes: [/^the Comfy Cloud copy runs at the factor its graph holds \(2×\); change it in its graph$/] }, realism_pass: { refused: /Cloud copy/ } };
         const unlisted = comfy.map((r) => r.id).filter((id) => !want[id]);
         check("every shipped ComfyUI recipe has its row in the table", !unlisted.length, unlisted.join(", "));
@@ -978,8 +979,37 @@ async function main() {
             const k = all.find((r) => r.id === "flux3_klein_local");
             check("flux3_klein_local keeps its boxes through list() (normalize), without a warning",
                 !!k && eq(k.boxes, BOXES) && !warned.some((w) => /boxes/.test(w)), short({ boxes: k && k.boxes, warned }));
-            const others = all.filter((r) => r.boxes !== undefined && r.id !== "flux3_klein_local").map((r) => r.id);
+            const others = all.filter((r) => r.boxes !== undefined && r.id !== "flux3_klein_local" && r.id !== "moss_image_local").map((r) => r.id);
             check("no other shipped recipe declares boxes", !others.length, others.join(", "));
+            // MOSS-Image: the layout node ComfyUI's MOSSImageLayoutPrompt is, wired to the node's elements by a run that sends boxes
+            const MOSS = { schema: "moss", input: "pos|text", layout: "layout" };
+            const mo = all.find((r) => r.id === "moss_image_local");
+            check("moss_image_local keeps its boxes with the layout node and edit false through list(); every other ComfyUI recipe edits",
+                !!mo && eq(mo.boxes, MOSS) && mo.edit === false && all.filter((r) => r.kind !== "provider" && r.id !== "moss_image_local").every((r) => r.edit === true),
+                short({ boxes: mo && mo.boxes, edit: mo && mo.edit }));
+            const rawM = rawFile("moss_image_local.json");
+            const withMoss = (boxes, prompt) => ({ ...JSON.parse(JSON.stringify(rawM)), kind: "comfy", boxes, ...(prompt ? { prompt } : {}) });
+            const filled = JSON.parse(JSON.stringify(rawM.prompt));
+            filled.layout.inputs.element = ["canvas", 22];
+            const badMoss = [
+                ["no layout", { schema: "moss", input: "pos|text" }],
+                ["a layout the graph lacks", { ...MOSS, layout: "nope" }],
+                ["a layout that is no MOSSImageLayoutPrompt", { ...MOSS, layout: "pos" }],
+                ["the canvas node as the layout", { ...MOSS, layout: "canvas" }],
+                ["the input on the layout node itself", { ...MOSS, input: "layout|prompt" }],
+            ];
+            for (const [what, boxes] of badMoss) {
+                const before = warned.length;
+                const r = recipes._normalize(withMoss(boxes));
+                const said = warned.slice(before);
+                check(`a bad MOSS boxes (${what}) is dropped with a warning`, r.boxes === undefined && said.length === 1 && /^moss_image_local: boxes .*the recipe sends no boxes$/.test(said[0]), short({ boxes: r.boxes, said }));
+            }
+            const beforeF = warned.length;
+            const fm = recipes._normalize(withMoss(MOSS, filled));
+            check("a layout whose element input a link fills already is dropped with a warning", fm.boxes === undefined && warned.length - beforeF === 1 && /element input is filled/.test(warned[beforeF]), short(warned.slice(beforeF)));
+            const pm = recipes.toPrompt(mo);
+            const overM = recipes.fromGraph({ output: pm, workflow: { nodes: [{ id: 1, type: "InpaintCanvas" }], links: [], extra: {} }, objectInfo: {}, base: mo, date: "2026-10-22" });
+            check("fromGraph (Save to recipe) keeps MOSS's boxes and edit false", eq(overM.boxes, MOSS) && overM.edit === false, short({ boxes: overM.boxes, edit: overM.edit }));
             const raw = rawFile("flux3_klein_local.json");
             const withBoxes = (boxes, more = {}) => ({ ...JSON.parse(JSON.stringify(raw)), kind: "comfy", boxes, ...more });
             const extra = recipes._normalize(withBoxes({ ...BOXES, note: "x" }));

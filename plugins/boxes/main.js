@@ -17,7 +17,7 @@
 //            shows, the crop's frame while the tool is active
 //   panel    "Boxes" in the Generate pane: one row per box, Selection → box, Clear, Copy rows; the crop warnings
 //   action   Selection → box (Plugins menu)
-//   commands boxes.list, boxes.add, boxes.set, boxes.remove, boxes.from_selection, boxes.clear
+//   commands boxes.list, boxes.check, boxes.add, boxes.set, boxes.remove, boxes.from_selection, boxes.clear
 //   generate the document's boxes for a run that takes them
 
 // The tool, the clipboard formatter and the model are shared with the node's editor (docs/PLAN_NODE_BOXES.md B3):
@@ -59,7 +59,7 @@ export function activate(scumble) {
     }
     /**
      * The recipe's stand on boxes: { takes, name, schema } (takes: the core's own test, the one the Boxes switch shows by;
-     * schema: the format they go in, "flux3" or "ideogram4").
+     * schema: the format they go in, "flux3", "ideogram4" or "moss").
      */
     function recipeState() {
         const r = scumble.host.recipe;
@@ -97,6 +97,27 @@ export function activate(scumble) {
         const crop = cropOf(doc);
         const sel = typeof doc.editor.getBounds === "function" ? doc.editor.getBounds() : null;
         return cropCheckOf(boxes, crop, sel);
+    }
+    /**
+     * What the panel says before a run (its note and warning lines), for the panel and boxes.check alike: `rs` the
+     * recipe's stand, `on` the Boxes switch, `chk` cropCheck's findings while a run would send the boxes, `bare` and
+     * `unplaced` the boxes the model gets no place or no words for, `lines` warningLines' [text, offersPaste] rows.
+     */
+    function checkOf(doc) {
+        const boxes = boxesOf(doc);
+        const rs = recipeState();
+        const on = switchOf(doc);
+        const sent = rs.takes && on;
+        const chk = sent && doc.loaded ? cropCheck(doc, boxes) : null;
+        const bare = sent ? bareOf(boxes) : [];
+        const unplaced = sent ? unplacedOf(boxes, rs.schema) : [];
+        const at = chk ? ` Generate measures them in the crop it sends, ${chk.crop.w} × ${chk.crop.h} px at ${chk.crop.x}, ${chk.crop.y} (the frame the Boxes tool shows).` : "";
+        const note = !rs.name ? ""
+            : !rs.takes ? `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image, Ideogram 4, FLUX 3 Image Klein or MOSS-Image on your ComfyUI) is selected.`
+            : !on ? `Not sent: the Boxes switch under the prompt is off. The boxes stay with the document; switch it on to send them with ${rs.name}.`
+            : boxes.length ? `${rs.name} sends these boxes with every Generate and Generate new run.${at}`
+            : `${rs.name} sends the selection as one box while the document has none (the Boxes switch is on).`;
+        return { boxes, rs, on, sent, chk, bare, unplaced, note, lines: warningLines(chk, bare, unplaced, rs.name || "", rs.schema || undefined) };
     }
     /** Crop > Paste on "whole crop" for this document (the set_crop command: the Crop section follows). */
     async function pasteWholeCrop(doc) {
@@ -238,8 +259,7 @@ export function activate(scumble) {
             // what Generate would do with the boxes now (S3c): rebuilt only when it says something else, so the button
             // under the pointer is not replaced by a change elsewhere
             let warnKey = null;
-            const renderWarnings = (chk, bare, unplaced = [], name = "") => {
-                const lines = warningLines(chk, bare, unplaced, name);
+            const renderWarnings = (lines) => {
                 const k = JSON.stringify(lines);
                 if (k === warnKey) return;
                 warnKey = k;
@@ -252,18 +272,11 @@ export function activate(scumble) {
             };
             let key = null, pending = false;
             const render = (force = false) => {
-                const boxes = boxesOf(doc);
+                const now = checkOf(doc);
+                const boxes = now.boxes;
                 const refs = shownReferences(doc);
-                const rs = recipeState();
-                const on = switchOf(doc);
-                const chk = rs.takes && on && doc.loaded ? cropCheck(doc, boxes) : null;
-                const at = chk ? ` Generate measures them in the crop it sends, ${chk.crop.w} × ${chk.crop.h} px at ${chk.crop.x}, ${chk.crop.y} (the frame the Boxes tool shows).` : "";
-                note.textContent = !rs.name ? ""
-                    : !rs.takes ? `${rs.name} takes no boxes: they stay with the document until a recipe that does (FLUX 3 Image, Ideogram 4, FLUX 3 Image Klein on your ComfyUI) is selected.`
-                    : !on ? `Not sent: the Boxes switch under the prompt is off. The boxes stay with the document; switch it on to send them with ${rs.name}.`
-                    : boxes.length ? `${rs.name} sends these boxes with every Generate and Generate new run.${at}`
-                    : `${rs.name} sends the selection as one box while the document has none (the Boxes switch is on).`;
-                renderWarnings(chk, rs.takes && on ? bareOf(boxes) : [], rs.takes && on ? unplacedOf(boxes, rs.schema) : [], rs.name || "");
+                note.textContent = now.note;
+                renderWarnings(now.lines);
                 const k = JSON.stringify([boxes, refs.map((l) => [l.id, l.name])]);
                 if (!force && k === key) return;
                 // a field being edited is not rebuilt under the user's cursor: the next change after it blurs does it
@@ -346,6 +359,21 @@ export function activate(scumble) {
         description: "The boxes of this document (image pixels), whether the selected recipe takes boxes and whether the document's Boxes switch is on (set_generation boxes): a run sends them only when both are.",
         params: {}, needsImage: true, scope: "doc", readOnly: true,
         run(doc) { const rs = recipeState(); return { boxes: boxesOf(doc).map(summary), count: boxesOf(doc).length, recipe: { name: rs.name, takes: rs.takes, schema: rs.schema }, switch: switchOf(doc) }; },
+    });
+    scumble.commands.register("check", {
+        description: "What the Boxes panel warns of before a run, without running: whether a run would send the boxes (sent: the selected recipe takes boxes and the Boxes switch is on), the panel's note, and its warnings (warnings: the lines as the panel shows them; out: boxes outside the crop Generate sends, left out; cut: boxes its edge cuts; spill: boxes that change pixels outside the selection while Paste keeps the selection only (set_crop paste crop sends the whole crop's result); small: boxes too small to place anything in; bare: New boxes without a description; unplaced: boxes the recipe's format has no place for). crop: the crop Generate would send now (image pixels; null without a selection). Generate new measures the boxes on the whole picture: its run has no crop.",
+        params: {}, needsImage: true, scope: "doc", readOnly: true,
+        run(doc) {
+            const now = checkOf(doc);
+            const chk = now.chk;
+            const crop = doc.loaded ? cropOf(doc) : null;
+            return {
+                sent: now.sent, count: now.boxes.length, recipe: { name: now.rs.name, takes: now.rs.takes, schema: now.rs.schema }, switch: now.on, note: now.note,
+                warnings: now.lines.map(([text]) => text),
+                out: chk ? chk.out : [], cut: chk ? chk.cut : [], spill: chk ? chk.spill : [], small: chk ? chk.small : [], bare: now.bare, unplaced: now.unplaced,
+                crop: crop ? { x: crop.x, y: crop.y, w: crop.w, h: crop.h, paste: crop.paste || null } : null,
+            };
+        },
     });
     scumble.commands.register("add", {
         description: "Add a box for the prompt: where an element goes (new), stays (keep), moves to (move) or is taken out (remove), or where a reference layer is placed (from). One undo step. Sent with a run of a recipe that takes boxes (FLUX 3 Image; Ideogram 4 takes new, text and keep) while the Boxes switch is on; the document's first box turns it on (switched_on in the answer).",

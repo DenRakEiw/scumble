@@ -222,6 +222,31 @@ async function main() {
             && eq(C.nameBoxTokens(null, () => "x"), []) && C.nameBoxTokens([{ desc: "@img12 x" }], (n) => `<p${n}>`)[0].desc === "<p12> x", short(out));
     });
 
+    // MOSS-Image (item 47): the boxes go as its JSON layout through ComfyUI's MOSSImageLayoutPrompt, fed by the node's
+    // elements output (the one after box_prompt); the positive prompt then reads the layout node
+    await section("boxes: MOSS-Image's layout", async () => {
+        const m = norm("moss_image_local");
+        const before = clone(m);
+        check("moss_image_local declares its boxes (normalized and raw) with its layout node, and is Generate new only",
+            C.localBoxSchema(m) === "moss" && C.localBoxSchema(rawFile("moss_image_local")) === "moss" && m.boxes.layout === "layout" && m.edit === false
+            && C.localBoxSchema({ ...m, boxes: { schema: "moss", input: "pos|text" } }) === null, short({ boxes: m.boxes, edit: m.edit }));
+        check("its layout node has no element link and nothing reads it until a run sends boxes (pos.text reads the plain prompt)",
+            m.prompt.layout.class_type === "MOSSImageLayoutPrompt" && m.prompt.layout.inputs.element === undefined && eq(m.prompt.pos.inputs.text, ["canvas", 7])
+            && !linksOf(m.prompt).some((l) => / -> layout:/.test(l)), short(linksOf(m.prompt)));
+        const p = clone(m.prompt);
+        const wired = C.wireBoxPrompt(p, m, 21);
+        const diff = linksOf(p).filter((l) => !linksOf(m.prompt).includes(l)).sort();
+        check("wireBoxPrompt wires layout.element to elements (22, after box_prompt 21) and pos.text to the layout, nothing else",
+            wired && eq(p.layout.inputs.element, ["canvas", 22]) && eq(p.pos.inputs.text, ["layout", 0]) && eq(diff, ["layout.element -> canvas:22", "pos.text -> layout:0"]) && eq(m, before), short({ diff }));
+        check("the layout's caption is the plain prompt and its pixels the latent's size",
+            eq(p.layout.inputs.prompt, ["canvas", 7]) && eq(p.layout.inputs.width, ["size", 0]) && eq(p.layout.inputs.height, ["size", 1]) && eq(p.latent.inputs.width, ["size", 0]));
+        const p2 = clone(m.prompt);
+        check("no slot, a layout node gone, or an input that no longer reads the canvas node: nothing is wired",
+            !C.wireBoxPrompt(p2, m, -1) && eq(p2, m.prompt) && !C.wireBoxPrompt({ ...clone(m.prompt), layout: undefined }, m, 21)
+            && !C.wireBoxPrompt({ ...clone(m.prompt), pos: { ...p2.pos, inputs: { ...p2.pos.inputs, text: "typed" } } }, m, 21));
+        check("an older node's sentence names the elements output", /^MOSS-Image \(ComfyUI\) sends the boxes through the Inpaint Canvas node's elements output, /.test(C.oldNodeBoxes(m)), C.oldNodeBoxes(m));
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

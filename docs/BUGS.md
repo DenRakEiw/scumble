@@ -11,14 +11,35 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
-- Size limits, the first two items below (found 2026-10-07, read): a whole-picture upscale is refused before it is
-  paid for when its answer would pass one canvas (65,535 px a side, 268 MP), naming the largest factor that fits; an
-  answer of a model that picks its own factor that comes back larger lands scaled to fit (the user's answer,
-  2026-10-13); Resize, Extend, the frame and `extend_canvas` refuse such a size (0.1.48 S5,
-  `renderer/editor/inpaint_sizelimit.js`; the `editor` gate's step `the_size_ceiling_refuses_before_it_costs`).
-- Two local runs queued in one tab: the first one's result fell back to the active tab (found 2026-10-13, read):
-  `editorByPrompt` matches a document's `_localRuns` since 0.1.48 S3 (`renderer/editor/host.js`); the `generate`
-  gate's step `the_status_rows_bar_follows_the_run` checks the lookup. Not run with a real ComfyUI.
+For 0.1.50 (`docs/PLAN_0_1_50.md`):
+- **The local Flux.2 Klein example fails in the sampler: "mat1 and mat2 shapes cannot be multiplied"** (reported
+  2026-10-02, Reddit): a local Klein run (the shipped Klein recipes, or a graph whose CLIPLoader has type flux2 / flux3
+  and whose model file names Klein) that fails with that torch error now says, in red, which model and text encoder
+  files it sent and which encoder fits (Klein 9B qwen_3_8b, 4B qwen_3_4b, FLUX 3 Image Klein qwen3vl_4b), or, when
+  the names fit, the other causes (a ComfyUI too old, a file holding another model); both Klein recipes' descriptions
+  name the fitting encoder (Q1, `host.js` `kleinRun` / `kleinEncoderHint`; the `generate` gate's step
+  `a_klein_shape_error_names_the_text_encoder`). The reporter's own files are still not known; 7680 features read as
+  Qwen3 4B's output is inferred (3 x 2560), not measured.
+- **PNG / TIFF export with a size or a frame** (Size limits below): a Size or Canvas row past one canvas (65,535 px a
+  side, 268 MP) is refused before anything is drawn; a WebP past 16,383 px a side is refused (Chromium wrote it cut
+  to that width, measured); a typed size past 32,768 px a side is scaled down with the aspect kept and the status line
+  says so (Q3, `host.js` `exportSizeRefusal`, `capExportSide`; the `export` gate's step
+  `an_export_past_one_canvas_is_refused`, both backends). Still open: a 100 % export of a document past 32,768 px a
+  side comes out scaled down to 32,768 px with only the "Saved ... (w x h)" line saying so (`exportPixels` holds every
+  export to that side; the PNG band writer could write it at full size, which would also need JPEG's 65,500 px limit,
+  measured).
+- **A layer of an unknown kind without a `ref` is dropped on open without a note** (the .scumble review below): the
+  load counts it and a filter layer that throws, and the status line after the open says in red how many were left
+  out and that the next save drops them; `open_document` and `reopen_closed_tab` carry the note (Q4,
+  `inpaint_canvas.js` `leftOut`, `leftOutText`; the `document` gate's step 11).
+- **The node skips a reference it cannot load** (Reference layers dropped without a word, below): with `named_refs`
+  set the node raises "Inpaint Canvas: reference N (@imgN) could not be loaded ..." (node commit `9a6c9dc`, branch
+  `named-refs-raise`, live once the node is built and pushed with 0.1.50); the app shows it as "Inpaint Canvas
+  failed: ..." (Q5).
+- The Realism Pass on RTX 40 and 30 (below) is half covered: a whole-picture pass whose answer is the picture that went
+  (compared pixel for pixel on 5 x 5 pieces, from Strength 0.25) still lands, with a red line that the pass changed
+  nothing on that card, and every pass logs its difference (Q2, `realism.js` `compareTiles` / `unchangedNote`). The
+  bounds (largest 4, mean 1 level) were never measured on a card, and a pass on a selection does not compare.
 
 ---
 
@@ -49,8 +70,8 @@ the tile backend (`inpaint_canvas.js` `checkBaseSize`, refusals tested in `edito
   268 MP Chromium's canvas draws and reads nothing, so an empty base is possible. Not measured.
 - **JPEG / WebP above 268 MP are not refused** although a comment in `inpaint_canvas.js` (near 548) and
   `docs/PLAN_BCE.md` promise a refusal that names PNG; the file goes to `createImageBitmap` in a worker. Not measured.
-- **PNG / TIFF export with a size or a frame** caps each side at 32,768 px silently and goes through one canvas: an
-  output above 268 MP from a smaller document is not checked (`host.js` near 582-632).
+- **(Fixed for 0.1.50, above.) PNG / TIFF export with a size or a frame** caps each side at 32,768 px silently and goes
+  through one canvas: an output above 268 MP from a smaller document is not checked (`host.js` near 582-632).
 - **The PSD fallback writer** (canvas backend, or no worker pool) checks neither the 30,000 px side nor the 4 GiB
   section limit that the banded writer checks (`inpaint_bands.js` near 289).
 - **Files above 2 GiB fail to open from the dialog or a path** (`fsp.readFile` in `electron/main/main.js` near 760);
@@ -154,10 +175,13 @@ Realism Pass ran live on the user's RTX 5090 only.
 against input: the mean and largest difference per channel. A result that differs by noise only is a silent no-op.
 
 **Possible fix, after the measurement:** if it is a no-op on a series, the server check refuses that series with the
-reason (as it refuses RTX 20 today) and the manual says so; or Scumble compares the result with its input and warns
-when they are nearly equal.
+reason (as it refuses RTX 20 today) and the manual says so. **The warning is built for 0.1.50** (above): the
+whole-picture pass compares its answer with its input and says so in red; its log line gives the measurement once a
+user runs it on such a card.
 
 ### The local Flux.2 Klein example fails in the sampler: "mat1 and mat2 shapes cannot be multiplied" (reported 2026-10-02)
+
+**Fixed for 0.1.50** as far as the message goes (above): the run now names the files and the fitting encoder.
 
 **Reported** 2026-10-02 by a Reddit user, passed on by the user: "Yep, an error for me as well running the example
 local workflow: RuntimeError: mat1 and mat2 shapes cannot be multiplied (1024x5120 and 12288x4096)". "As well" reads as
@@ -211,8 +235,9 @@ review are fixed (reserved Windows names, refs the document does not carry, `ext
 the temp registry after the rename, `summary.name`); these touch the shared editor code and wait (the user font renamed
 on open is fixed in 0.1.32):
 
-- **A layer of an unknown kind without a `ref` is dropped on open without a note** (`inpaint_canvas.js` `setValue`,
-  `if (!l.ref) continue;`); the plan wanted a note. Only a document from a newer Scumble can hold one.
+- **(Fixed for 0.1.50, above.) A layer of an unknown kind without a `ref` is dropped on open without a note**
+  (`inpaint_canvas.js` `setValue`, `if (!l.ref) continue;`); the plan wanted a note. Only a document from a newer
+  Scumble can hold one.
 - **Canvas backend only: an undo back to the saved state leaves the tab's "*"** (measured by `docux`, 2026-09-26). The
   layer's upload name is a hash of its PNG, encoded through `createImageBitmap` of a GPU canvas; fully transparent
   pixels can come back with other colour bytes, so the same visible pixels (0 differ) get another name and the state
@@ -273,8 +298,8 @@ items (`docs/RECIPES.md` "Reference images named in the prompt (local)"); the no
   **Fixed in 26e (2026-09-29):** the count leaves the Original out on a refine pass in local mode (the node's copy
   with its next build), and on a local recipe of the app counts only the references the graph reads; the References
   row names each one (`img1 → <image3>`) and what is not sent.
-- **The node skips a reference it cannot load** (`nodes.py` about 682, "reference skipped"), with only a print, and
-  every later reference moves up one place. Still open after 26e, where it would make a local run's names point one
+- **(Fixed for 0.1.50 in the node, above.) The node skips a reference it cannot load** (`nodes.py` about 682,
+  "reference skipped"), with only a print, and every later reference moves up one place. Still open after 26e, where it would make a local run's names point one
   picture off. Since 26e the app sends `named_refs: true` in `canvas_state` when the prompt named a reference; the
   next node release should raise instead of print at `nodes.py:684-685` when it is set.
 - (The reference list's up / down: fixed by step 26b1, released in 0.1.34.)
