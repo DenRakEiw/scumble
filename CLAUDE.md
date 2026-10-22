@@ -141,6 +141,10 @@ code.
   mcp-publisher.exe`, 1.8.1). The release bodies of 0.1.49 and 0.1.48 regenerated with the `@img` tokens in backticks
   (`75f7fbb`): GitHub had listed the users `img` and `img1` as the release's contributors. **Open:** the Store update (0.1.48's is still open too:
   `dist/Scumble-0.1.49.msix` and `dist/store-listing/whats-new-0.1.49.txt`, the upload is the user's drag and drop).
+  **0.1.50 (the user, 2026-10-22: the seven quick wins of `docs/PLAN_0_1_50.md`, then the release; MOSS and Rust not in
+  it):** the build runs as workflow `wf_2ca4a6d2-77b` (groups A host.js Q1-Q3, B editor/commands/plugins Q4 Q7, C node
+  clone + manual Q5 Q6; its journal under this session's subagents/workflows/); next: read its result, the integrated
+  gates, CHANGELOG, then the release chain.
   **For the next update (the user, 2026-10-19):** item 47 (MOSS-Image, promised on issue #6) and the fix of issue #7
   (`31c8bf6`, local, not pushed: comfyui-rmbg's SAM3Segment now requires `model_name`, so every selection by text
   failed; `withSpecDefaults` fills a helper node's left-out required inputs from its spec; replied on the issue). The
