@@ -155,7 +155,18 @@ code.
   `f3_qwen3vl_4b` equals `qwen3vl_4b_bf16` but kept its name: `clip/` holds another file of that name). **Next:** the
   live runs once the user has started ComfyUI (MOSS with and without boxes, Klein with the upsampler on an edit and on
   Generate new), then the release chain; the node clone `scratchpad/node050` (Q5, `9a6c9dc`) goes live with the
-  release's node build.
+  release's node build. **The live runs passed 2026-10-22** (MOSS Generate new 26 s, with boxes 20 s, each box in place,
+  a selection refused; Klein with the upsampler: an edit 15 s, Generate new 16:9 11 s; `docs/RECIPES.md`). **0.1.50 is
+  out** (the user's word of 2026-10-22: "then * 0.1.50 release"): exe gates `rel50-exe` (tiles, 50: relight waited out
+  its closing screenshot, green on the rerun, the screenshots now time out after 30 s; comfyview's control step the
+  known flake) and `rel50-exe-canvas` (29, all PASS); main pushed, tag v0.1.50 on `f9c9374`, published
+  2026-10-22T12:46:53Z, title "Scumble 0.1.50: MOSS-Image with boxes and the FLUX 3 Klein upsampler", the eight assets
+  checked (the zip's layout, the `.mcpb` 0.1.50 with 116 tools, `latest.yml`), the body regenerated after `@img2` was put
+  in backticks; the node built and pushed (`b2ca95d..376aa11`, no version bump; `/system_stats` 200); the post
+  `v0-1-50` live with the manual sync and hub 0.1.50 (`Portfolio_vercel` `e866024`, Vercel success); `server.json` 0.1.50
+  committed (`f936324`) and published to the MCP Registry (the user's device code; 0.1.50 latest). **Open:** the Store update (0.1.48, 0.1.49
+  and now `dist/Scumble-0.1.50.msix` with `dist/store-listing/whats-new-0.1.50.txt`, the user's upload), a reply on
+  issue #6 (MOSS-Image shipped; on the user's word).
   **For the next update (the user, 2026-10-19):** item 47 (MOSS-Image, promised on issue #6) and the fix of issue #7
   (`31c8bf6`, local, not pushed: comfyui-rmbg's SAM3Segment now requires `model_name`, so every selection by text
   failed; `withSpecDefaults` fills a helper node's left-out required inputs from its spec; replied on the issue). The
