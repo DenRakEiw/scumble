@@ -141,10 +141,21 @@ code.
   mcp-publisher.exe`, 1.8.1). The release bodies of 0.1.49 and 0.1.48 regenerated with the `@img` tokens in backticks
   (`75f7fbb`): GitHub had listed the users `img` and `img1` as the release's contributors. **Open:** the Store update (0.1.48's is still open too:
   `dist/Scumble-0.1.49.msix` and `dist/store-listing/whats-new-0.1.49.txt`, the upload is the user's drag and drop).
-  **0.1.50 (the user, 2026-10-22: the seven quick wins of `docs/PLAN_0_1_50.md`, then the release; MOSS and Rust not in
-  it):** the build runs as workflow `wf_2ca4a6d2-77b` (groups A host.js Q1-Q3, B editor/commands/plugins Q4 Q7, C node
-  clone + manual Q5 Q6; its journal under this session's subagents/workflows/); next: read its result, the integrated
-  gates, CHANGELOG, then the release chain.
+  **0.1.50 (the user, 2026-10-22: the seven quick wins of `docs/PLAN_0_1_50.md`, then the release; MOSS-Image went in
+  the same day, then BFL's FLUX 3 Klein prompt upsampler: "wieso nicht da rein?"; Rust not in it):** built and
+  committed locally, not pushed: `e2d4d8b` (Q1-Q7 by workflow `wf_2ca4a6d2-77b`, MOSS-Image `recipes/moss_image_local.json`
+  with boxes as its JSON layout through ComfyUI's MOSSImageLayoutPrompt, Klein's recipe on BFL's public file names) and
+  `b8663a4` (Q9, the upsampler in `flux3_klein_local`'s graph, `comfyprompt.wireUpsampler`); "As built" in the plan.
+  Gates: `int050-tiles` (15) PASS but editor's known flake (green on the rerun), `int050-canvas` export, `up050` PASS.
+  **On the user's machine (the user's yes):** ComfyUI updated to **v0.42.4** (backup branch
+  `backup_branch_2026-10-22_12_07_23`, the pip freeze in this session's scratchpad `comfy_backup/`); MOSS weights
+  (`moss_image_sft_bf16`, `qwen3.5_9b_int8_convrot`, `flux2-vae_small`, 20.2 GB) and the upsampler
+  (`qwen3.5_9b_flux3_prompt_upsampler_w4a8`, 6.7 GB, through the stored HF login) downloaded and sha256-checked; four
+  pre-release Klein files renamed to BFL's public names after a sha256 match (`flux3_klein_speed75` differs, kept;
+  `f3_qwen3vl_4b` equals `qwen3vl_4b_bf16` but kept its name: `clip/` holds another file of that name). **Next:** the
+  live runs once the user has started ComfyUI (MOSS with and without boxes, Klein with the upsampler on an edit and on
+  Generate new), then the release chain; the node clone `scratchpad/node050` (Q5, `9a6c9dc`) goes live with the
+  release's node build.
   **For the next update (the user, 2026-10-19):** item 47 (MOSS-Image, promised on issue #6) and the fix of issue #7
   (`31c8bf6`, local, not pushed: comfyui-rmbg's SAM3Segment now requires `model_name`, so every selection by text
   failed; `withSpecDefaults` fills a helper node's left-out required inputs from its spec; replied on the issue). The
