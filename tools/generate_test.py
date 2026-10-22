@@ -2580,6 +2580,62 @@ try {
     if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
 }
 """),
+    ("the_klein_upsampler_goes_only_when_it_can_run", """
+const api = (await import('./editor/host.js')).api;
+const klein3 = host.shell.recipes().find((r) => r.id === "flux3_klein_local");
+if (!klein3 || !klein3.upsampler) throw new Error("flux3_klein_local declares no upsampler");
+const UP = "qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors";
+const base = Object.fromEntries(klein3.needs.map((n) => [n, { input: { required: {} } }]));
+const withUp = (files) => ({ ...base, TextGenerate: { input: { required: {} } }, PreviewAny: { input: { required: {} } }, CLIPLoader: { input: { required: { clip_name: [files, {}] } } } });
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, missing: host.missingFilesRefusal, recipe: host.recipe };
+const sent = [];
+let doc = null;
+try {
+    host.connected = true;
+    host.missingFilesRefusal = () => null;
+    host.ensureOnServer = async () => null;
+    api.queuePrompt = async (n, body) => { const id = "q9-up-" + (sent.length + 1); sent.push({ id, body }); return { prompt_id: id }; };
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    host.shell.activate(ed);
+    await run("new_canvas", { doc, width: 320, height: 240 });
+    await run("select_rect", { doc, x: 80, y: 60, w: 160, h: 120 });
+    await run("set_prompt", { doc, text: "a red mug on the table" });
+    host.setRecipe(klein3);
+    const queue = async () => { const n = sent.length; await host.queueGenerate(ed); if (sent.length !== n + 1) throw new Error("nothing was queued: " + ed.status); return sent[n]; };
+    const out = {};
+    // (1) the file on the server and the row on: the run goes through the upsampler, the switch never
+    host.objectInfo = withUp(["qwen3vl_4b_int8_convrot.safetensors", UP]);
+    let q = await queue(), g = q.body.output;
+    if (g.up_switch || !g.up_run || !g.up_show || JSON.stringify(g.pos.inputs.text) !== JSON.stringify(["up_run", 0])) throw new Error("on: " + JSON.stringify({ keys: Object.keys(g), pos: g.pos.inputs.text }));
+    if (!/^Reference images follow in order \\(the first image, the second image, \\.\\.\\.\\)\\.\\nUser request: a red mug on the table\\nOutput the caption\\.$/.test(g.up_run.inputs.prompt)) throw new Error("the request: " + JSON.stringify(g.up_run.inputs.prompt));
+    if (host._upsampledRuns.get(q.id) !== "up_show") throw new Error("the run's show node is not held");
+    // its caption: into the run's notes and the log
+    api.dispatch("executed", { prompt_id: q.id, node: "up_show", output: { text: ["Place a red ceramic mug on the wooden table. Keep everything else unchanged."] } });
+    if (!ed.lastRunNotes.some((n) => n.startsWith('Prompt upsampled: "Place a red ceramic mug'))) throw new Error("the caption's note: " + JSON.stringify(ed.lastRunNotes));
+    if (host._upsampledRuns.has(q.id)) throw new Error("the caption's run is still held");
+    out.on = ed.lastRunNotes.slice(-1)[0].slice(0, 60);
+    // (2) the file not on the server: the prompt goes as typed through the wrapper, with a note, not refused
+    host.objectInfo = withUp(["qwen3vl_4b_int8_convrot.safetensors"]);
+    q = await queue(); g = q.body.output;
+    if (g.up_run || g.up_switch || g.up_clip || JSON.stringify(g.pos.inputs.text) !== JSON.stringify(["say_keep", 0])) throw new Error("no file: " + JSON.stringify({ keys: Object.keys(g), pos: g.pos.inputs.text }));
+    if (!ed.lastRunNotes.some((n) => n.includes(UP) && /Prompt upsampler row off/.test(n))) throw new Error("no file's note: " + JSON.stringify(ed.lastRunNotes));
+    // (3) the row off: no upsampler node, no note about it
+    host.objectInfo = withUp(["qwen3vl_4b_int8_convrot.safetensors", UP]);
+    const row = Object.keys(ed.settings).find((k) => ed.settings[k].target === "flux3_klein_local/up_switch:switch");
+    if (!row) throw new Error("no Prompt upsampler row: " + JSON.stringify(Object.values(ed.settings).map((e) => e.target)));
+    ed.settings[row].value = false;
+    q = await queue(); g = q.body.output;
+    if (g.up_run || g.up_switch || JSON.stringify(g.pos.inputs.text) !== JSON.stringify(["say_keep", 0]) || ed.lastRunNotes.some((n) => /upsampler/i.test(n))) throw new Error("row off: " + JSON.stringify({ keys: Object.keys(g), notes: ed.lastRunNotes }));
+    ed.settings[row].value = true;
+    out.off = "ok";
+    return out;
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; host.missingFilesRefusal = saved.missing;
+    host.setRecipe(saved.recipe);
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";

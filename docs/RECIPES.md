@@ -101,6 +101,26 @@ the picture's pixels whatever the crop. Keep, Move, Remove and From boxes have n
 panel's warning names them). A node without `elements` refuses the run as above. `normalize()` also drops a `"moss"`
 declaration without a `layout`, with one that is no `MOSSImageLayoutPrompt` node, or whose `element` a link fills.
 
+`upsampler` (optional; a prompt upsampler in the graph, `flux3_klein_local`): `{ "switch", "run", "show", "nodes", "t2i",
+"source" }`. The file keeps the upsampler as Comfy's own Klein templates do: `switch` a `ComfySwitchNode` (its `switch`
+a Settings row, its `on_false` the prompt as typed, its `on_true` `run`, a `TextGenerate`), `show` a `PreviewAny` on the
+caption, `nodes` what only the upsampler needs. The queued prompt never holds the switch (`comfyprompt.wireUpsampler`):
+its consumers take the chosen side directly, and the upsampler's nodes go only when it runs, since ComfyUI validates
+every node an output reads, a lazy side too, so a missing upsampler file would otherwise refuse every run. It runs when
+the row is on, no box goes, the server lists its CLIPLoader file and has `TextGenerate` and `PreviewAny`; else the
+prompt goes as typed with a note in the run's notes (the row off says nothing), and the Settings check
+(`missingSettingFiles`) skips the upsampler's rows. An edit (and Generate new with pictures after the white crop) sends
+BFL's three-line request ("Reference images follow in order (the first image, the second image, ...).\nUser request:
+...\nOutput the caption.") with the crop batch scaled to 1 MP each (`up_pics`, whole batch: `comfyRefSpec` does not
+count the upsampler's nodes against the identity trace) and the `i2i` guide the graph holds; Generate new without
+pictures takes `t2i` with "TARGET CANVAS: W:H" (the dialog's aspect, else the canvas's in lowest terms), no picture and
+a presence penalty of 1.5. The prompt's picture names (`refs.name`) are written as ordinals ("<ref_image_1>" as "the
+second image", `ordinalNames`): BFL's guides name pictures so and forbid angle-bracket tokens. The caption comes back
+through `show`'s `executed` (`host._upsampledRuns`): into the log, the run's notes (`generate`'s `notes`) and the
+status line after the result's own line. `normalize()` drops a declaration that does not hold (the graph then goes as
+it is, the switch deciding on the server); Save to recipe keeps it (`GRAPH_KEEPS`); the Comfy Cloud copy runs the
+prompt as typed (`withoutUpsampler`). The guides' licence: `recipes/licenses/`.
+
 `edit` (optional, `false`): the graph makes a picture from the prompt alone (`moss_image_local`), so only Generate new
 runs it; Generate on a selection refuses ("... makes new pictures from the prompt alone: use Generate new"), and
 `list_recipes` reports `edit: false`. `normalize()` sets it `true` on every other ComfyUI recipe, and Save to recipe
@@ -149,6 +169,14 @@ keeps it (`GRAPH_KEEPS`).
   src_bbox, tgt_bbox, desc}`, a New box `"from": null`) work as well as the new-image form of the hand test; the text
   says "In <ref_image_0>," twice (the recipe's wrapper and the node's caption) and closes with both "Leave the rest of
   the picture as it is." and "Keep everything else unchanged.", which did not get in the way.
+  **The prompt upsampler (0.1.50, Q9 of `docs/PLAN_0_1_50.md`):** BFL says Klein "is not meant to run without a prompt
+  upsampler"; the hosted FLUX 3 routes expand by themselves. The recipe now holds BFL's upsampler as Comfy's Klein
+  templates do (`upsampler` above): `up_clip` (`qwen3.5_9b_flux3_prompt_upsampler_w4a8`, Qwen3.5-9B fine-tuned by BFL,
+  `flux-3-image-klein-pup`, Apache-2.0; also int8_convrot 9.7 GB and bf16 18.8 GB), `up_pics`, `up_run` (`TextGenerate`
+  as the templates set it: sampling on, temperature 1, top_k 1, top_p 0.95, min_p 0, repetition penalty 1, seed 0,
+  max_length 3584, thinking off, mtp off; BFL's `i2i` guide), `up_show`, `up_switch`; Settings rows 7 *Prompt
+  upsampler* and 8 *Upsampler model*. With the upsampler the wrapper "In <ref_image_0>, ... Keep everything else
+  unchanged." stays out (the switch's off side): the `i2i` guide writes the edit instruction with its own closing clause.
 - `moss_image_local`, **MOSS-Image** (0.1.50, item 47, issue DenRakEiw/scumble#6): OpenMOSS's 5B text-to-image model
   (Apache-2.0), on ComfyUI 0.42 or newer, which runs it on its own nodes (PR Comfy-Org/ComfyUI#17095; 0.41 does not).
   A text-to-image graph after Comfy's template `image_moss_image_t2i_bboxes`, without its prompt upsampler (it rewrites

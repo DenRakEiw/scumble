@@ -135,6 +135,10 @@ async function main() {
         const [F3K, f3Warn] = shipped("flux3_klein_local.json");
         const fSpec = C.comfyRefSpec(F3K);
         check("FLUX 3 Klein: <ref_image_{n0}>, 4 slots, not a guess, Klein's trim, read without a warning", fSpec.name === "<ref_image_{n0}>" && fSpec.slots === 4 && fSpec.guess === false && eq(fSpec.trim, kTrim) && !f3Warn.length, short({ ...fSpec, trim: fSpec.trim && fSpec.trim.length, warned: f3Warn }));
+        // its prompt upsampler reads the whole crop batch (the pictures a run sends) and names none: it does not count
+        const f3NoUp = clone(F3K);
+        delete f3NoUp.upsampler;
+        check("FLUX 3 Klein: the upsampler's whole-batch read does not count (undeclared, it ends the identity and the trim)", C.comfyRefSpec(f3NoUp).trim === null, short(C.comfyRefSpec(f3NoUp)));
         const fOne = C.comfyLayout(fSpec, { hasSelection: true, fill: "none", withOriginal: false, refine: false, count: 1 });
         const fOrig = C.comfyLayout(fSpec, { hasSelection: true, fill: "green", withOriginal: true, refine: false, count: 1 });
         // (with the Original in the batch it is reference 0 and the first reference layer is 1)

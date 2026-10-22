@@ -246,12 +246,29 @@ const SHAPE_ERROR = /mat1 and mat2 shapes cannot be multiplied/i;
  * @returns {{ family: string, unet: string, clip: string } | null}
  */
 function kleinRun(r, prompt) {
-    const nodes = Object.values(prompt || {}).filter((n) => n && n.inputs);
+    // the prompt upsampler's loader (a Qwen3.5 file) is not the text encoder the sampler reads
+    const up = new Set(((r && r.upsampler && r.upsampler.nodes) || []).map(String));
+    const nodes = Object.entries(prompt || {}).filter(([id, n]) => n && n.inputs && !up.has(String(id))).map(([, n]) => n);
     const clip = nodes.find((n) => n.class_type === "CLIPLoader" && (n.inputs.type === "flux2" || n.inputs.type === "flux3"));
     const unet = nodes.find((n) => n.class_type === "UNETLoader");
     const file = (n, key) => (n && typeof n.inputs[key] === "string" ? n.inputs[key] : "");
     const family = (r && KLEIN_RECIPES[r.id]) || (clip && /klein/i.test(file(unet, "unet_name")) ? clip.inputs.type : null);
     return family ? { family, unet: file(unet, "unet_name"), clip: file(clip, "clip_name") } : null;
+}
+
+/** "W:H" in lowest terms for the upsampler's TARGET CANVAS line, or the ratio to two places for an odd one ("1.78:1"). */
+function aspectOf(w, h) {
+    if (!(w > 0 && h > 0)) return null;
+    const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+    const g = gcd(Math.round(w), Math.round(h));
+    const a = Math.round(w) / g, b = Math.round(h) / g;
+    return a <= 32 && b <= 32 ? `${a}:${b}` : `${(w / h).toFixed(2)}:1`;
+}
+
+/** The note a run's upsampled prompt leaves: its start, the whole caption in the log. */
+function upsampledNote(caption) {
+    const t = String(caption || "").replace(/\s+/g, " ").trim();
+    return `Prompt upsampled: "${t.length > 160 ? t.slice(0, 157) + "..." : t}" (the whole caption is in the log).`;
 }
 
 /**
@@ -1234,6 +1251,9 @@ export const host = {
     // prompt id -> a local Klein run's family and files (kleinRun), read by the execution_error listener (0.1.50 Q1)
     /** @type {Map<string, { family: string, unet: string, clip: string }>} */
     _kleinRuns: new Map(),
+    // prompt id -> the PreviewAny node that shows a run's upsampled prompt (comfyprompt.wireUpsampler, 0.1.50 Q9)
+    /** @type {Map<string, string>} */
+    _upsampledRuns: new Map(),
     _closedNodes: new Set(),
     _closedRuns: new Map(),
 
@@ -1540,9 +1560,12 @@ export const host = {
     missingSettingFiles(editor, r = this.recipe) {
         if (!r || r !== this.recipe || !r.prompt || !editor || !editor.settings) return [];
         const out = [];
+        // the prompt upsampler's rows (0.1.50 Q9): without its file the run goes as typed, with a note, not refused
+        const up = new Set(((r.upsampler && r.upsampler.nodes) || []).map(String));
         for (const t of this.settingTargets()) {
             const entry = editor.settings[String(t.index)];
             if (!entry || entry.value == null || entry.value === "") continue;
+            if (up.has(String(t.node.id))) continue;
             const k = editor.settingKind(t);
             if (k.kind !== "combo" || !k.options.length) continue;
             const value = String(entry.value);
@@ -4087,6 +4110,20 @@ export const host = {
         // the run sends boxes: the recipe's declared input takes the node's box_prompt (the prompt with FLUX 3's rows,
         // written by the node from the state's boxes) instead of the plain prompt the recipe file keeps there
         if (boxSlot >= 0 && !comfyprompt.wireBoxPrompt(prompt, r, boxSlot)) throw new Error(`${r.name || r.id}: its boxes input ${r.boxes && r.boxes.input} does not read the Inpaint Canvas node's prompt, so no box could go.`);
+        // a prompt upsampler in the graph (FLUX 3 Image Klein, 0.1.50 Q9): runs when its row is on, no box goes and the
+        // server has its file and nodes; Generate new without pictures after the white crop takes the text-to-image
+        // guide with the canvas's aspect
+        const upClips = this.objectInfo && this.objectInfo.CLIPLoader && this.objectInfo.CLIPLoader.input && this.objectInfo.CLIPLoader.input.required
+            && Array.isArray(this.objectInfo.CLIPLoader.input.required.clip_name) ? this.objectInfo.CLIPLoader.input.required.clip_name[0] : null;
+        const upsampled = comfyprompt.wireUpsampler(prompt, r, {
+            text: texts.prompt, fresh: !!fresh, refsGo: !!(plan && plan.lay.original + plan.lay.kept > 0),
+            aspect: fresh ? (fresh.aspect || aspectOf(editor.width, editor.height)) : null, boxes: boxSlot >= 0,
+            files: Array.isArray(upClips) ? upClips.map(String) : null, classes: this.objectInfo || null,
+        });
+        if (upsampled.note) {
+            if (plan) editor.lastRunNotes.push(upsampled.note);
+            else editor.setStatus(`${editor.status} ${upsampled.note}`, editor.statusKind || "info");
+        }
         if (pass) {
             // Style and Strength are app-wide (settings.realism, the Upscale dialog's row); the DLSS model preset is the
             // recipe's own Settings row (its shipped presets L and M), so it is not taken from settings.realism here. A
@@ -4102,6 +4139,10 @@ export const host = {
         if (res && res.prompt_id && !this._editors.includes(editor)) this._closedPrompts.add(String(res.prompt_id));
         // a Klein run's files: its sampler's shape error is said as the text encoder that does not fit (0.1.50 Q1)
         const klein = res && res.prompt_id != null ? kleinRun(r, prompt) : null;
+        if (upsampled.show && res && res.prompt_id != null) {
+            this._upsampledRuns.set(String(res.prompt_id), upsampled.show);
+            for (const id of this._upsampledRuns.keys()) { if (this._upsampledRuns.size <= 64) break; this._upsampledRuns.delete(id); }
+        }
         if (klein) {
             this._kleinRuns.set(String(res.prompt_id), klein);
             for (const id of this._kleinRuns.keys()) { if (this._kleinRuns.size <= 64) break; this._kleinRuns.delete(id); }
@@ -5323,6 +5364,23 @@ api.addEventListener("executed", ({ detail }) => {
         if (String(boxEd.lastPromptId) === String(detail.prompt_id) && Array.isArray(boxEd.lastRunNotes)) boxEd.lastRunNotes.push(...boxNotes);
         if (window.scumble && window.scumble.log) Promise.resolve(window.scumble.log.add({ level: "warn", source: "comfy", message: `local run ${detail.prompt_id}: boxes`, detail: boxNotes.join(" ") })).catch(() => { /* the log is optional */ });
     }
+    // a run's prompt upsampler (0.1.50 Q9): its caption, which the image model got instead of the prompt as typed, into
+    // the log, and a note on the run once the result has landed
+    const upNode = detail.prompt_id != null ? host._upsampledRuns.get(String(detail.prompt_id)) : null;
+    if (upNode && String(detail.node) === upNode && Array.isArray(out.text) && typeof out.text[0] === "string") {
+        host._upsampledRuns.delete(String(detail.prompt_id));
+        const caption = out.text[0];
+        const upEd = host.editorByPrompt(detail.prompt_id);
+        const note = upsampledNote(caption);
+        if (upEd && String(upEd.lastPromptId) === String(detail.prompt_id) && Array.isArray(upEd.lastRunNotes)) upEd.lastRunNotes.push(note);
+        // the status line once the result has landed (the result's own line comes first); a result already in takes it now
+        if (upEd) {
+            const pid = String(detail.prompt_id);
+            if (upEd._upLanded && upEd._upLanded.has(pid)) { upEd._upLanded.delete(pid); upEd.setStatus(`${upEd.status} ${note}`, upEd.statusKind || "info"); }
+            else (upEd._upNotes || (upEd._upNotes = new Map())).set(pid, note);
+        }
+        if (window.scumble && window.scumble.log) Promise.resolve(window.scumble.log.add({ level: "info", source: "comfy", message: `local run ${detail.prompt_id}: the prompt upsampler's caption`, detail: caption })).catch(() => { /* the log is optional */ });
+    }
     // Results: the recipe's canvas node id is the same for every tab, so the prompt id
     // decides; helper outputs carry the editor id the helper prompt was queued with.
     if (out.inpaint_result) {
@@ -5334,6 +5392,11 @@ api.addEventListener("executed", ({ detail }) => {
         if (ed && ed._boxPrompts && detail.prompt_id != null) ed._boxPrompts.delete(String(detail.prompt_id));
         const landed = ed ? ed.addResults(sent ? out.inpaint_result.map((r) => ({ ...r, ...sent, via: sent.via ? `${sent.via}, ${Math.round((Date.now() - sent.viaStarted) / 1000)} s` : undefined })) : out.inpaint_result) : null;
         if (notes) Promise.resolve(landed).then(() => ed.setStatus(`${ed.status} Boxes: ${notes.join(" ")}`, "warn")).catch(() => { /* the result's own line stands */ });
+        // the run's upsampled prompt (0.1.50 Q9): its note after the result's line; a caption still to come finds the mark
+        const pid = detail.prompt_id != null ? String(detail.prompt_id) : null;
+        const upNote = ed && pid && ed._upNotes ? ed._upNotes.get(pid) : null;
+        if (upNote) { ed._upNotes.delete(pid); Promise.resolve(landed).then(() => ed.setStatus(`${ed.status} ${upNote}`, ed.statusKind || "info")).catch(() => { /* the result's own line stands */ }); }
+        else if (ed && pid && host._upsampledRuns.has(pid)) Promise.resolve(landed).then(() => { const l = ed._upLanded || (ed._upLanded = new Set()); l.add(pid); while (l.size > 64) l.delete(l.values().next().value); }).catch(() => { /* nothing to mark */ });
     }
     // a closed tab's helper output (queued while it closed: no prompt id was known) lands nowhere either
     const forNode = (info) => (info && info.canvas_node != null && host._closedNodes.has(String(info.canvas_node)) ? null

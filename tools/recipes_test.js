@@ -72,8 +72,9 @@ function slotFaults(rows, where) {
     const keys = new Map();
     for (const s of rows || []) {
         const i = s && s.index;
-        // a comfy recipe's row names the node input it drives, a provider variant's the request key
-        const k = String((s && (s.key !== undefined ? s.key : s.input)) || "");
+        // a comfy recipe's row names the node and input it drives (host.settingTargets keys it "<recipe>/<node>:<input>",
+        // so two rows may share an input name on different nodes), a provider variant's the request key
+        const k = String((s && (s.key !== undefined ? s.key : s.node ? `${s.node}:${s.input}` : s.input)) || "");
         if (!Number.isInteger(i) || i < 1 || i > SETTING_SLOTS) { bad.push(`${where}: index ${JSON.stringify(i)} of ${JSON.stringify(k)} is no slot 1..${SETTING_SLOTS}`); continue; }
         if (seen.has(i)) bad.push(`${where}: slot ${i} carries both ${seen.get(i)} and ${k} - one stored value would drive both`);
         else seen.set(i, k);
@@ -630,7 +631,10 @@ async function main() {
                     check(`${r.id}: detach leaves the recipe's own factor and limits as they were`, r.factor.fixed === false && r.factor.input === "rtx|resize_type.scale" && eq(r.limits, { min: 64, max: 4096, out: 8192 }), short({ factor: r.factor, limits: r.limits }));
                 }
             }
-            const rowsOk = v.settings.length === r.settings.length && v.settings.every((s, i) => s.key === `${r.settings[i].node}|${r.settings[i].input}` && s.label === r.settings[i].label && s.index === r.settings[i].index);
+            // the copy runs without a prompt upsampler (its model is the user's file), so its rows go too
+            const upNodes = r.upsampler ? [...r.upsampler.nodes, r.upsampler.switch] : [];
+            const own = r.settings.filter((s) => !upNodes.includes(s.node));
+            const rowsOk = v.settings.length === own.length && v.settings.every((s, i) => s.key === `${own[i].node}|${own[i].input}` && s.label === own[i].label && s.index === own[i].index);
             const cin = r.prompt[r.canvas].inputs;
             check(`${r.id}: a provider recipe on Comfy Cloud, its Settings rows keyed by node and input, the crop limits from the node`,
                 n.kind === "provider" && eq(n.providerIds, ["comfycloud"]) && n.id === r.id + "_cloud" && rowsOk && n.providers.comfycloud.limits.max === (cin.target_size || 2048) && n.providers.comfycloud.limits.step === cin.multiple_of,
@@ -1010,6 +1014,36 @@ async function main() {
             const pm = recipes.toPrompt(mo);
             const overM = recipes.fromGraph({ output: pm, workflow: { nodes: [{ id: 1, type: "InpaintCanvas" }], links: [], extra: {} }, objectInfo: {}, base: mo, date: "2026-10-22" });
             check("fromGraph (Save to recipe) keeps MOSS's boxes and edit false", eq(overM.boxes, MOSS) && overM.edit === false, short({ boxes: overM.boxes, edit: overM.edit }));
+            // FLUX 3 Image Klein's prompt upsampler (0.1.50 Q9): kept by normalize, a bad one dropped, kept by Save to recipe,
+            // left out of the Cloud copy
+            const kk = all.find((r) => r.id === "flux3_klein_local");
+            check("flux3_klein_local keeps its upsampler through list() (switch, run, show, nodes, t2i, source), and no other shipped recipe declares one",
+                !!kk && kk.upsampler && kk.upsampler.switch === "up_switch" && kk.upsampler.run === "up_run" && kk.upsampler.show === "up_show" && typeof kk.upsampler.t2i === "string" && /Apache-2\.0/.test(kk.upsampler.source)
+                && all.filter((r) => r.upsampler !== undefined).map((r) => r.id).join(",") === "flux3_klein_local", short(kk && kk.upsampler && { ...kk.upsampler, t2i: "..." }));
+            const rawK = rawFile("flux3_klein_local.json");
+            const withUp = (up, prompt) => ({ ...JSON.parse(JSON.stringify(rawK)), kind: "comfy", upsampler: up, ...(prompt ? { prompt } : {}) });
+            const UPD = rawK.upsampler;
+            const badUp = [
+                ["an array", []],
+                ["a switch that is no ComfySwitchNode", { ...UPD, switch: "pos" }],
+                ["a run that is no TextGenerate", { ...UPD, run: "up_show" }],
+                ["nodes without the run", { ...UPD, nodes: ["up_clip", "up_pics", "up_show"] }],
+                ["nodes holding the prompt as typed", { ...UPD, nodes: [...UPD.nodes, "say_keep"] }],
+                ["nodes holding the canvas", { ...UPD, nodes: [...UPD.nodes, "canvas"] }],
+                ["a show node outside its nodes", { ...UPD, show: "decode" }],
+            ];
+            for (const [what, up] of badUp) {
+                const before = warned.length;
+                const r = recipes._normalize(withUp(up));
+                const said = warned.slice(before);
+                check(`a bad upsampler (${what}) is dropped with a warning`, r.upsampler === undefined && said.length === 1 && /^flux3_klein_local: upsampler .*the graph goes as it is$/.test(said[0]), short({ said }));
+            }
+            const overK = recipes.fromGraph({ output: recipes.toPrompt(kk), workflow: { nodes: [{ id: 1, type: "InpaintCanvas" }], links: [], extra: {} }, objectInfo: {}, base: kk, date: "2026-10-22" });
+            check("fromGraph (Save to recipe) keeps the upsampler", !!overK.upsampler && overK.upsampler.run === "up_run" && overK.upsampler.t2i === kk.upsampler.t2i, short(overK.upsampler && overK.upsampler.nodes));
+            const { recipe: dk } = recipes.detach(kk);
+            const gk = dk.providers.comfycloud.options.graph;
+            check("the Cloud copy runs the prompt as typed: no upsampler node, no switch, pos reads the wrapper",
+                !["up_clip", "up_pics", "up_run", "up_show", "up_switch"].some((id) => gk[id]) && eq(gk.pos.inputs.text, ["say_keep", 0]) && dk.upsampler === undefined, short(Object.keys(gk)));
             const raw = rawFile("flux3_klein_local.json");
             const withBoxes = (boxes, more = {}) => ({ ...JSON.parse(JSON.stringify(raw)), kind: "comfy", boxes, ...more });
             const extra = recipes._normalize(withBoxes({ ...BOXES, note: "x" }));

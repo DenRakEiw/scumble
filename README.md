@@ -218,8 +218,9 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   has one, or through ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud, Comfy Router, OpenRouter, Oxen.ai and
   Magnific. API runs go out at the size the provider really takes, with your reference layers.
 - On your own ComfyUI: FLUX 3 Image Klein, Black Forest Labs' open model (ComfyUI 0.41 or newer; it edits the selection
-  with up to three more pictures, makes new ones with *Generate new* and takes boxes; its weights come under Black
-  Forest Labs' own licence), Flux.2 Klein 4B / 9B, Qwen Image Edit 2.1 and its Turbo, and MOSS-Image (ComfyUI 0.42 or
+  with up to three more pictures, makes new ones with *Generate new* and takes boxes; Black Forest Labs' prompt
+  upsampler writes your prompt out first when its file is on your ComfyUI; its weights come under Black Forest Labs'
+  own licence), Flux.2 Klein 4B / 9B, Qwen Image Edit 2.1 and its Turbo, and MOSS-Image (ComfyUI 0.42 or
   newer; new pictures with *Generate new*, its JSON layout from your boxes; Apache-2.0); the upscale, Realism Pass and
   relight recipes are below.
 - Your own workflow becomes a recipe when it holds an Inpaint Canvas node. The *ComfyUI* window (Ctrl+Shift+K) shows
@@ -386,6 +387,7 @@ if you work inside ComfyUI, you get the same canvas there.
 
 GPL-3.0, the same licence as the Inpaint Canvas node and ComfyUI. See `LICENSE`. Free to use, modify and
 redistribute; modified versions must be published under the same licence. Bundled fonts are OFL / Apache licensed,
-see `renderer/editor/fonts/licenses`. Film names in the grain presets and the film pack are trademarks of their
+see `renderer/editor/fonts/licenses`; the FLUX 3 Image Klein recipe carries Black Forest Labs' prompt upsampler guides
+(Apache-2.0), see `recipes/licenses`. Film names in the grain presets and the film pack are trademarks of their
 owners; the looks are Scumble's own approximations, not licensed products. The *get a key* links of ToAPIs and
 WaveSpeedAI carry the author's referral code.

@@ -248,3 +248,84 @@ export function scaleStateBoxes(state, from, to) {
     }
     return true;
 }
+
+// ---- a prompt upsampler in the recipe's graph (FLUX 3 Image Klein, 0.1.50 Q9) ----------------------------------------
+
+/** The ordinal BFL's upsampler names a picture by ("the first image" is the crop). */
+const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
+const ordinalImage = (n) => (n >= 1 && n <= ORDINALS.length ? `the ${ORDINALS[n - 1]} image` : `image ${n}`);
+/** The edit request around the user's words, as BFL's upsampler was trained on it (flux-3-image-klein `pup.py`). */
+export const UPSAMPLE_EDIT_REQUEST = (text) => `Reference images follow in order (the first image, the second image, ...).\nUser request: ${text}\nOutput the caption.`;
+
+/**
+ * The prompt with each picture name the recipe gives (`refs.name`, "<ref_image_{n0}>") written as the ordinal the
+ * upsampler reads ("the second image" for <ref_image_1>): its guides name pictures by ordinal and forbid angle-bracket
+ * tokens, and the image model then gets the upsampler's caption with the pictures in the same order.
+ * @param {string} text
+ * @param {any} r
+ */
+export function ordinalNames(text, r) {
+    const pat = r && r.refs && typeof r.refs.name === "string" ? r.refs.name : "";
+    const m = /\{(n0|n)\}/.exec(pat);
+    if (!m || typeof text !== "string") return text;
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(esc(pat.slice(0, m.index)) + "(\\d+)" + esc(pat.slice(m.index + m[0].length)), "g");
+    return text.replace(re, (_, d) => ordinalImage(+d + (m[1] === "n0" ? 1 : 0)));
+}
+
+/**
+ * `prompt` (a copy of the recipe's graph as it is queued, its Settings rows written) with the recipe's `upsampler`
+ * resolved, in place. The recipe file keeps the upsampler as Comfy's templates do: a switch node (`upsampler.switch`,
+ * a ComfySwitchNode whose `switch` a Settings row writes) choosing between the plain wrapper (on_false) and the
+ * TextGenerate node (`upsampler.run`, on_true), and a PreviewAny (`upsampler.show`) on its caption. The queued prompt
+ * never holds the switch: its consumers take the chosen side directly, and the upsampler's nodes (`upsampler.nodes`)
+ * go only when it runs, since ComfyUI checks every node an output reads, a lazy side too (a missing upsampler file
+ * would refuse every run). It runs when the switch is on, no box goes (its plain guides know no boxes), the server has
+ * the upsampler's file and its node types; else the prompt goes as typed and `note` says why (null when the switch is
+ * off). Running, the TextGenerate node gets the request: Generate new without pictures after the crop takes the `t2i`
+ * guide (`upsampler.t2i`) with "TARGET CANVAS: W:H" and no picture, everything else the `i2i` guide the graph holds,
+ * with the crop batch's pictures in the image model's order and BFL's three-line request; the pictures' names as
+ * ordinals (`ordinalNames`).
+ * @param {Record<string, any>} prompt
+ * @param {any} r
+ * @param {{ text: string, fresh?: boolean, refsGo?: boolean, aspect?: string | null, boxes?: boolean, files?: string[] | null, classes?: Record<string, any> | null }} o
+ * @returns {{ on: boolean, note: string | null, show: string | null }}
+ */
+export function wireUpsampler(prompt, r, o) {
+    const u = r && r.upsampler;
+    const none = { on: false, note: null, show: null };
+    if (!u || !prompt) return none;
+    const sw = prompt[u.switch], run = prompt[u.run];
+    if (!sw || !sw.inputs || !run || !run.inputs) return none;
+    const wanted = sw.inputs.switch !== false;
+    const clip = run.inputs.clip && prompt[run.inputs.clip[0]];
+    const file = clip && clip.inputs ? String(clip.inputs.clip_name || "") : "";
+    const lacks = ["TextGenerate", "PreviewAny"].filter((c) => o.classes && !o.classes[c]);
+    let why = null;
+    if (!wanted) why = "";
+    else if (o.boxes) why = "The prompt upsampler stays off while boxes go (its guides take no boxes); the prompt went with the boxes as typed.";
+    else if (lacks.length) why = `The prompt went as typed: the prompt upsampler needs ComfyUI's ${lacks.join(" and ")} node${lacks.length === 1 ? "" : "s"} (ComfyUI 0.42 or newer).`;
+    else if (o.files && file && !o.files.includes(file)) why = `The prompt went as typed: the prompt upsampler's file ${file} is not on your ComfyUI (models/text_encoders; the recipe's description says where to get it), or switch the Prompt upsampler row off.`;
+    const on = why === null;
+    const side = on ? [String(u.run), 0] : sw.inputs.on_false;
+    // the switch's consumers take the chosen side; the switch itself never goes
+    for (const node of Object.values(prompt)) {
+        if (!node || !node.inputs) continue;
+        for (const [k, v] of Object.entries(node.inputs)) if (Array.isArray(v) && String(v[0]) === String(u.switch)) node.inputs[k] = side;
+    }
+    delete prompt[u.switch];
+    if (!on) {
+        for (const id of u.nodes || []) delete prompt[id];
+        return { on: false, note: why || null, show: null };
+    }
+    const text = ordinalNames(String(o.text || ""), r);
+    if (o.fresh && !o.refsGo && typeof u.t2i === "string") {
+        delete run.inputs.image;
+        run.inputs.system_prompt = u.t2i;
+        run.inputs["sampling_mode.presence_penalty"] = 1.5;
+        run.inputs.prompt = (o.aspect ? `TARGET CANVAS: ${o.aspect}\n` : "") + text;
+    } else {
+        run.inputs.prompt = UPSAMPLE_EDIT_REQUEST(text);
+    }
+    return { on: true, note: null, show: u.show && prompt[u.show] ? String(u.show) : null };
+}

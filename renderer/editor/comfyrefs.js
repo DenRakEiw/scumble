@@ -101,9 +101,14 @@ export function comfySlots(prompt, canvasId) {
     return out;
 }
 
-/** Whether a node other than a one-picture ImageFromBatch reads the whole crop_image batch (an API node, a preview). */
-function readsWholeBatch(prompt, canvasId) {
-    for (const node of Object.values(prompt || {})) {
+/**
+ * Whether a node other than a one-picture ImageFromBatch reads the whole crop_image batch (an API node, a preview). The
+ * nodes in `skip` do not count: a prompt upsampler's (recipe `upsampler.nodes`) reads the pictures a run sends, all of
+ * them, and names none.
+ */
+function readsWholeBatch(prompt, canvasId, skip = new Set()) {
+    for (const [id, node] of Object.entries(prompt || {})) {
+        if (skip.has(String(id))) continue;
         const inputs = (node && node.inputs) || {};
         for (const v of Object.values(inputs)) {
             if (!isLink(v) || String(v[0]) !== String(canvasId) || v[1] !== 0) continue;
@@ -131,7 +136,8 @@ function pickedBatches(prompt, canvasId) {
 /**
  * What a ComfyUI recipe calls its pictures and how many it reads: `{ name, slots, guess, trim }`.
  * - The trace is an *identity* when the batch indices its encoder inputs read are exactly 0 .. k-1, one encoder class
- *   reads them all, each input's number is its batch index + 1, no other node takes the whole batch, and no picker
+ *   reads them all, each input's number is its batch index + 1, no other node takes the whole batch (a prompt
+ *   upsampler's nodes aside), and no picker
  *   outside the encoders reads an index past k - 1 (else a reference that node reads would be cut off).
  * - `name`: the recipe's `refs.name` when valid, else the class's wording when an identity, else "image {n}".
  * - `slots` (pictures, the crop included): an identity's k (a declared value only lowers it), else the declared
@@ -147,7 +153,8 @@ export function comfyRefSpec(recipe) {
     const classes = new Set(slots.map((s) => s.cls));
     const batches = new Set(slots.map((s) => s.batch));
     const k = batches.size;
-    const identity = slots.length > 0 && classes.size === 1 && !readsWholeBatch(prompt, canvasId)
+    const upsampler = new Set(((recipe && recipe.upsampler && recipe.upsampler.nodes) || []).map(String));
+    const identity = slots.length > 0 && classes.size === 1 && !readsWholeBatch(prompt, canvasId, upsampler)
         && slots.every((s) => s.batch != null && s.batch === s.num - 1)
         && [...batches].every((b) => b != null && b < k)
         && pickedBatches(prompt, canvasId).every((b) => b != null && b < k);

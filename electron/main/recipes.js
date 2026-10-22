@@ -161,6 +161,23 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {{ name?: string, slots?: number | null } | null} [refs]   the variants' default name pattern; ComfyUI recipes: slots (26e)
  * @property {LocalBoxes} [boxes]             ComfyUI recipes: where the Inpaint Canvas node's box rows go (localBoxes)
  * @property {boolean} [edit]                 ComfyUI recipes: false = a text-to-image graph, Generate new only (normalize)
+ * @property {LocalUpsampler} [upsampler]     ComfyUI recipes: a prompt upsampler in the graph (localUpsampler)
+ */
+
+/**
+ * A prompt upsampler in a ComfyUI recipe's graph (`upsampler`, checked by localUpsampler; recipes/flux3_klein_local.json,
+ * 0.1.50 Q9): `switch` a ComfySwitchNode whose on_true is `run` (a TextGenerate) and whose on_false is the prompt as
+ * typed, `nodes` the nodes only the upsampler needs (they go only when it runs, comfyprompt.wireUpsampler), `show` a
+ * PreviewAny among them on its caption, `t2i` the guide for Generate new without pictures, `source` where the guides
+ * come from.
+ *
+ * @typedef {Object} LocalUpsampler
+ * @property {string} switch
+ * @property {string} run
+ * @property {string[]} nodes
+ * @property {string} [show]
+ * @property {string} [t2i]
+ * @property {string} [source]
  */
 
 /**
@@ -515,6 +532,57 @@ function localBoxes(r) {
 }
 
 /**
+ * A ComfyUI recipe's `upsampler` checked against its graph (LocalUpsampler): `switch` a ComfySwitchNode of the graph
+ * whose on_true links `run`, a TextGenerate, and whose on_false is a link; `nodes` ids of the graph other than the
+ * canvas, the switch and the nodes on_false reads, `run` among them; `show` (optional) among them too. Answers
+ * `{ upsampler }` (only those keys and the strings `t2i`, `source`) or `{ why }`.
+ * @param {Recipe} r
+ * @returns {{ upsampler?: LocalUpsampler, why?: string }}
+ */
+function localUpsampler(r) {
+    const u = /** @type {any} */ (r.upsampler);
+    if (!u || typeof u !== "object" || Array.isArray(u)) return { why: "is no object { switch, run, nodes }" };
+    const g = r.prompt || {};
+    const sw = g[u.switch], run = g[u.run];
+    if (!sw || sw.class_type !== "ComfySwitchNode" || !sw.inputs) return { why: `names the switch ${JSON.stringify(u.switch)}, which is no ComfySwitchNode of the graph` };
+    if (!run || run.class_type !== "TextGenerate") return { why: `names the run ${JSON.stringify(u.run)}, which is no TextGenerate node of the graph` };
+    const on = sw.inputs.on_true, off = sw.inputs.on_false;
+    if (!Array.isArray(on) || String(on[0]) !== String(u.run)) return { why: `names the switch ${u.switch}, whose on_true does not take ${u.run}` };
+    if (!Array.isArray(off)) return { why: `names the switch ${u.switch}, whose on_false is no link (the prompt as typed)` };
+    const nodes = Array.isArray(u.nodes) ? u.nodes.map(String) : [];
+    if (!nodes.includes(String(u.run))) return { why: "lists nodes without its run" };
+    const bad = nodes.find((id) => !g[id] || id === String(r.canvas) || id === String(u.switch) || id === String(off[0]));
+    if (bad !== undefined) return { why: `lists the node ${JSON.stringify(bad)}, which is not in the graph or is the canvas, the switch or the prompt as typed` };
+    if (u.show !== undefined && !nodes.includes(String(u.show))) return { why: `names the show node ${JSON.stringify(u.show)}, which its nodes do not list` };
+    /** @type {LocalUpsampler} */
+    const out = { switch: String(u.switch), run: String(u.run), nodes };
+    if (u.show !== undefined) out.show = String(u.show);
+    if (typeof u.t2i === "string" && u.t2i) out.t2i = u.t2i;
+    if (typeof u.source === "string" && u.source) out.source = u.source;
+    return { upsampler: out };
+}
+
+/**
+ * The graph with its upsampler left out (`up`, a checked LocalUpsampler): the switch's consumers take its on_false
+ * (the prompt as typed), the switch and the upsampler's nodes go. A copy; the graph given as it was without `up`.
+ * @param {Record<string, any>} prompt
+ * @param {LocalUpsampler | undefined} up
+ */
+function withoutUpsampler(prompt, up) {
+    const g = JSON.parse(JSON.stringify(prompt || {}));
+    const sw = up && g[up.switch];
+    if (!sw || !sw.inputs || !Array.isArray(sw.inputs.on_false)) return g;
+    const off = sw.inputs.on_false;
+    for (const node of Object.values(g)) {
+        if (!node || !node.inputs) continue;
+        for (const [k, v] of Object.entries(node.inputs)) if (Array.isArray(v) && String(v[0]) === String(up.switch)) node.inputs[k] = off;
+    }
+    delete g[up.switch];
+    for (const id of up.nodes || []) delete g[id];
+    return g;
+}
+
+/**
  * Fill in everything the rest of the app is allowed to rely on. Runs on every recipe that
  * is read from disk or imported; the shape it answers is the typedef above.
  * @param {Recipe} r
@@ -540,6 +608,16 @@ function normalize(r) {
             else {
                 console.warn(`${r.id}: boxes ${JSON.stringify(r.boxes)} ${got.why}; the recipe sends no boxes`);
                 delete r.boxes;
+            }
+        }
+        // a prompt upsampler in the graph: a declaration that does not hold is dropped (the graph then goes as it is, its
+        // switch deciding on the server)
+        if (r.upsampler !== undefined) {
+            const up = localUpsampler(r);
+            if (up.upsampler) r.upsampler = up.upsampler;
+            else {
+                console.warn(`${r.id}: upsampler ${up.why}; the graph goes as it is`);
+                delete r.upsampler;
             }
         }
         return r;
@@ -986,7 +1064,7 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
 }
 
 // What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
-const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit"];
+const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit", "upsampler"];
 
 /**
  * The graph of ComfyUI's page -> a recipe to save (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3). `output` is the API
@@ -1478,12 +1556,14 @@ function detach(recipe) {
     // the user: "nein, kein anderes comfy cloud rezept" (docs/PLAN_0_1_42.md §1)
     if (recipe.task === "pass") throw new Error(`${PASS_LABEL} runs on your own ComfyUI only: it has no Cloud copy.`);
     const canvasId = String(recipe.canvas);
+    // the Cloud copy runs the prompt as typed: the upsampler's model is a file on the user's ComfyUI
+    const graph = withoutUpsampler(recipe.prompt, recipe.upsampler);
     /** @type {Record<string, any>} */
-    const prompt = JSON.parse(JSON.stringify(recipe.prompt));
+    const prompt = JSON.parse(JSON.stringify(graph));
     delete prompt[canvasId];
     const m = /^(.+):(\d+)$/.exec(String(recipe.result || ""));
     if (!m || !prompt[m[1]]) throw new Error(`The recipe's result "${recipe.result || ""}" names no node of its graph.`);
-    const taken = new Set(Object.keys(recipe.prompt));
+    const taken = new Set(Object.keys(graph));
     const newId = (/** @type {string} */ stem) => { let id = `scumble_${stem}`, n = 2; while (taken.has(id)) id = `scumble_${stem}_${n++}`; taken.add(id); return id; };
     /** @type {Record<string, [string, string][]>} */
     const values = {};
@@ -1491,7 +1571,7 @@ function detach(recipe) {
     let maxPicture = 0, maskLink = null;
     const loadPicture = (k) => ({ class_type: "LoadImage", inputs: { image: "" }, _meta: { title: `scumble:picture:${k}` } });
     let whole = null;
-    for (const [id, node] of Object.entries(recipe.prompt)) {
+    for (const [id, node] of Object.entries(graph)) {
         if (id === canvasId || !node || !node.inputs) continue;
         for (const [name, v] of Object.entries(node.inputs)) {
             if (!Array.isArray(v) || String(v[0]) !== canvasId) continue;

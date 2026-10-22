@@ -247,6 +247,65 @@ async function main() {
         check("an older node's sentence names the elements output", /^MOSS-Image \(ComfyUI\) sends the boxes through the Inpaint Canvas node's elements output, /.test(C.oldNodeBoxes(m)), C.oldNodeBoxes(m));
     });
 
+    // FLUX 3 Image Klein's prompt upsampler (0.1.50 Q9): the switch never goes; the upsampler's nodes only when it runs
+    await section("the prompt upsampler in flux3_klein_local", async () => {
+        const k = norm("flux3_klein_local");
+        const before = clone(k);
+        const UP = "qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors";
+        const classes = { TextGenerate: {}, PreviewAny: {} };
+        const files = ["qwen3vl_4b_int8_convrot.safetensors", UP];
+        const upIds = ["up_clip", "up_pics", "up_run", "up_show", "up_switch"];
+        check("the recipe declares its upsampler (switch, run, show, nodes, t2i) and the graph's switch takes the wrapper off and the run on",
+            k.upsampler && k.upsampler.switch === "up_switch" && k.upsampler.run === "up_run" && k.upsampler.show === "up_show" && eq(k.upsampler.nodes, ["up_clip", "up_pics", "up_run", "up_show"])
+            && /^You are the prompt upsampler of a text-to-image model/.test(k.upsampler.t2i) && eq(k.prompt.pos.inputs.text, ["up_switch", 0])
+            && eq(k.prompt.up_switch.inputs.on_false, ["say_keep", 0]) && eq(k.prompt.up_switch.inputs.on_true, ["up_run", 0])
+            && /^You are the prompt upsampler of an image-editing model/.test(k.prompt.up_run.inputs.system_prompt), short(k.upsampler && { ...k.upsampler, t2i: "..." }));
+        check("ordinalNames writes <ref_image_N> as the ordinal (the crop is the first image), other text as it was",
+            C.ordinalNames("put <ref_image_1> on the shelf of <ref_image_0>, like <ref_image_11>", k) === "put the second image on the shelf of the first image, like image 12"
+            && C.ordinalNames("no names here", k) === "no names here" && C.ordinalNames("<ref_image_1>", { refs: { name: "image {n}" } }) === "<ref_image_1>"
+            && C.ordinalNames("image 2 and image 3", { refs: { name: "image {n}" } }) === "the second image and the third image");
+        // an edit: the run goes, its request is BFL's three lines with the pictures as ordinals
+        const p = clone(k.prompt);
+        const on = C.wireUpsampler(p, k, { text: "put <ref_image_1> on the table", files, classes });
+        check("on (an edit): pos takes the run, the switch is gone, the run reads the crop batch and gets the three-line request",
+            on.on && on.note === null && on.show === "up_show" && !p.up_switch && eq(p.pos.inputs.text, ["up_run", 0]) && eq(p.up_run.inputs.image, ["up_pics", 0])
+            && p.up_run.inputs.prompt === "Reference images follow in order (the first image, the second image, ...).\nUser request: put the second image on the table\nOutput the caption."
+            && p.up_run.inputs["sampling_mode.presence_penalty"] === 0 && !!p.up_clip && !!p.up_show && eq(k, before), short({ on, prompt: p.up_run.inputs.prompt }));
+        // Generate new without pictures after the white crop: the t2i guide, the canvas line, no picture
+        const pn = clone(k.prompt);
+        const fresh = C.wireUpsampler(pn, k, { text: "a red fox in snow", fresh: true, refsGo: false, aspect: "16:9", files, classes });
+        check("on (Generate new, no pictures): the t2i guide, TARGET CANVAS first, no image, presence penalty 1.5",
+            fresh.on && pn.up_run.inputs.system_prompt === k.upsampler.t2i && pn.up_run.inputs.prompt === "TARGET CANVAS: 16:9\na red fox in snow"
+            && !("image" in pn.up_run.inputs) && pn.up_run.inputs["sampling_mode.presence_penalty"] === 1.5, short(pn.up_run.inputs.prompt));
+        const pr = clone(k.prompt);
+        C.wireUpsampler(pr, k, { text: "<ref_image_1> in a park", fresh: true, refsGo: true, aspect: "1:1", files, classes });
+        check("Generate new with pictures after the crop keeps the edit guide and the pictures",
+            /image-editing model/.test(pr.up_run.inputs.system_prompt) && eq(pr.up_run.inputs.image, ["up_pics", 0]) && /User request: the second image in a park/.test(pr.up_run.inputs.prompt));
+        // off: the switch row, boxes, a missing file, missing nodes
+        const offCase = (o, label) => {
+            const q = clone(k.prompt);
+            const res = C.wireUpsampler(q, k, { text: "x", files, classes, ...o });
+            const gone = upIds.every((id) => !q[id]);
+            return { res, gone, wrapper: eq(q.pos.inputs.text, ["say_keep", 0]), label };
+        };
+        const sw = clone(k);
+        sw.prompt.up_switch.inputs.switch = false;
+        const qs = clone(sw.prompt);
+        const rs = C.wireUpsampler(qs, sw, { text: "x", files, classes });
+        check("the row off: the prompt goes through the wrapper, the upsampler's nodes and the switch are gone, no note",
+            !rs.on && rs.note === null && upIds.every((id) => !qs[id]) && eq(qs.pos.inputs.text, ["say_keep", 0]) && !!qs.say_keep, short(rs));
+        const b = offCase({ boxes: true });
+        check("boxes going: off, with the note", !b.res.on && b.gone && b.wrapper && /stays off while boxes go/.test(b.res.note), short(b.res));
+        const f = offCase({ files: ["qwen3vl_4b_int8_convrot.safetensors"] });
+        check("its file not on the server: off, the note names the file and the row", !f.res.on && f.gone && f.wrapper && f.res.note.includes(UP) && /Prompt upsampler row off/.test(f.res.note), short(f.res));
+        const c = offCase({ classes: { PreviewAny: {} } });
+        check("TextGenerate not on the server: off, the note names it", !c.res.on && c.gone && c.wrapper && /TextGenerate node \(ComfyUI 0\.42 or newer\)/.test(c.res.note), short(c.res));
+        const n = offCase({ files: null, classes: null });
+        check("no node list known: it runs (the server decides)", n.res.on && !n.gone, short(n.res));
+        const plain = clone(norm("flux2_klein_local").prompt);
+        check("a recipe without an upsampler: nothing changes", eq(C.wireUpsampler(plain, norm("flux2_klein_local"), { text: "x" }), { on: false, note: null, show: null }) && eq(plain, norm("flux2_klein_local").prompt));
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);
