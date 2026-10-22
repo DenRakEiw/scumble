@@ -165,8 +165,8 @@ code.
   in backticks; the node built and pushed (`b2ca95d..376aa11`, no version bump; `/system_stats` 200); the post
   `v0-1-50` live with the manual sync and hub 0.1.50 (`Portfolio_vercel` `e866024`, Vercel success); `server.json` 0.1.50
   committed (`f936324`) and published to the MCP Registry (the user's device code; 0.1.50 latest). **Open:** the Store update (0.1.48, 0.1.49
-  and now `dist/Scumble-0.1.50.msix` with `dist/store-listing/whats-new-0.1.50.txt`, the user's upload), a reply on
-  issue #6 (MOSS-Image shipped; on the user's word).
+  and now `dist/Scumble-0.1.50.msix` with `dist/store-listing/whats-new-0.1.50.txt`, the user's upload). Issues #6 and #7 answered and closed (the user's "ja",
+  2026-10-22); #8 answered and kept open until Blueforcer/ComfyUI-DLSS5-Enhancer#17 is merged.
   **For the next update (the user, 2026-10-19):** item 47 (MOSS-Image, promised on issue #6) and the fix of issue #7
   (`31c8bf6`, local, not pushed: comfyui-rmbg's SAM3Segment now requires `model_name`, so every selection by text
   failed; `withSpecDefaults` fills a helper node's left-out required inputs from its spec; replied on the issue). The
