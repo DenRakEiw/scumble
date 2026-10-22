@@ -147,8 +147,8 @@ code.
   node has the same bug in its editor build: build it with that release. Also for it: issue #8 (`8b5dd22`, local: the Realism
   Pass refused an RTX PRO 6000 Blackwell; `realism.js` `gpuGeneration` reads workstation names by architecture). The
   DLSS5 pack has the same name rule: the fix is the branch `gpu-generation-from-compute-capability` of the user's fork
-  DenRakEiw/ComfyUI-DLSS5-Enhancer (`e4f8f84`, the generation from nvidia-smi's compute_cap), a PR to Blueforcer
-  waiting for the user's go, then a reply on issue #8 with its link. Issue #6 (MOSS-Image) answered: next update (item 47). **Main was rebuilt before the
+  DenRakEiw/ComfyUI-DLSS5-Enhancer (`e4f8f84`, the generation from nvidia-smi's compute_cap), opened on the user's go
+  2026-10-22 as Blueforcer/ComfyUI-DLSS5-Enhancer#17 (its merge is Blueforcer's); issue #8 answered with its link. Issue #6 (MOSS-Image) answered: next update (item 47). **Main was rebuilt before the
   push** (the user, 2026-10-19: the demo-video commits stay private): the six `Demo video ...` commits (recording and
   motion scripts under `docs/images/video/`) live only on the local branch `demo-video`, their files untracked on disk
   as the rest of the tutorial material; the 0.1.49 commits after S2 were cherry-picked, so their ids changed (the
