@@ -177,6 +177,13 @@ keeps it (`GRAPH_KEEPS`).
   max_length 3584, thinking off, mtp off; BFL's `i2i` guide), `up_show`, `up_switch`; Settings rows 7 *Prompt
   upsampler* and 8 *Upsampler model*. With the upsampler the wrapper "In <ref_image_0>, ... Keep everything else
   unchanged." stays out (the switch's off side): the `i2i` guide writes the edit instruction with its own closing clause.
+  **Run live 2026-10-22** (ComfyUI 0.42.4, the w4a8 upsampler, the distilled int8 model, the user's `f3_qwen3vl_4b` as
+  the text encoder): an edit "a red paper lantern instead of the plant" in 15 s (the upsampler cold); its caption ("Create
+  a stylized illustration preserving the first image as the canvas, replacing only the large potted monstera with a red
+  paper lantern ...", about 200 words) replaced the plant with a lantern and kept the rest; Generate new 16:9 "a fox in a
+  snowy birch forest at dawn" in 11 s, the request "TARGET CANVAS: 16:9
+..." with no picture, a detailed photograph.
+  The queued prompts held no switch, `pos.text = ["up_run", 0]`, and the caption came back through `up_show`.
 - `moss_image_local`, **MOSS-Image** (0.1.50, item 47, issue DenRakEiw/scumble#6): OpenMOSS's 5B text-to-image model
   (Apache-2.0), on ComfyUI 0.42 or newer, which runs it on its own nodes (PR Comfy-Org/ComfyUI#17095; 0.41 does not).
   A text-to-image graph after Comfy's template `image_moss_image_t2i_bboxes`, without its prompt upsampler (it rewrites
@@ -186,7 +193,12 @@ keeps it (`GRAPH_KEEPS`).
   CFG 2.5, `er_sde` / `simple` as Comfy's template; the Preset row also has the model's own 50 steps, CFG 3, `euler`),
   the negative from the canvas node. The crop's pixels give only the size, so the recipe is `edit: false`: Generate new
   only. Boxes go as its JSON layout (`"moss"` above). Files from `Comfy-Org/MOSS-Image` (SFT or Base, bf16 or int8;
-  the text encoder in bf16, int8 or w4a8).
+  the text encoder in bf16, int8 or w4a8). **Run live 2026-10-22** (the user's ComfyUI 0.42.4, RTX 5090, the SFT bf16
+  file, `qwen3.5_9b_int8_convrot`, `flux2-vae_small`, the default 25 steps / CFG 2.5 / er_sde): Generate new 1024 x 1024
+  in 26 s (the first run, the models cold); with three New boxes (a Text box "MOSS" across the top, a bicycle lower
+  left, a plant lower right) and a Keep box in 20 s: the word, the bicycle and the plant each landed in its box, the
+  Keep box stayed out with the panel's warning and the run's note; `/history` showed `layout.element = ["canvas", 22]`
+  and `pos.text = ["layout", 0]`. Generate on a selection refused before anything was queued.
 - `qwen_image_edit_2_1_local`, **Qwen Image Edit 2.1** (added for 0.1.23): ComfyUI's own template
   `image_qwen_image_2_1_image_edit.json` with its subgraph flattened and its save and compare nodes left out (they
   would write every run into the server's output folder). `TextEncodeQwenImage21` takes **one picture per input**
