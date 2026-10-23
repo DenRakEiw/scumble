@@ -1,0 +1,20 @@
+lint rc=0 30s 
+types rc=0 5s 
+pixels rc=0 12s PASS
+composite rc=0 7s PASS
+selection rc=0 14s PASS
+editor rc=0 172s PASS
+generate rc=0 78s PASS
+size rc=0 3s PASS
+transparent rc=0 1s PASS
+relight rc=0 29s PASS
+pxjobs rc=0 135s PASS
+edges rc=0 18s PASS
+limit rc=0 10s PASS
+maps rc=0 5s PASS
+brush rc=0 14s RESULT PASS
+export rc=0 255s PASS
+layered rc=0 3s PASS
+tiff rc=0 14s PASS
+document rc=0 41s PASS
+ALL PASS

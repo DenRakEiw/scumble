@@ -3,7 +3,7 @@
  * growing, colour parsing, mask-to-canvas. Pure functions on typed arrays, no
  * DOM state, kept out of inpaint_canvas.js so the tools stay small.
  */
-import { distTransform, rustPx, releaseIfLarge } from "./px/kernels.js";
+import { distTransform, rustPx, releaseIfLarge, floodScan, recovered } from "./px/kernels.js";
 
 /** A 2D canvas in the window or in a worker. */
 export function makeRasterCanvas(w, h) {
@@ -136,13 +136,16 @@ export function growMask(d, W, H, n, { dist = distTransform, ms = null } = {}) {
 
 /**
  * `growMask` and the bounds of its result, in one pass through the Rust kernel when it has loaded (the scans around
- * the distance transform run there too); `ms.kernel` collects its time.
+ * the distance transform run there too); `ms.kernel` collects its time. After a trap or an out-of-memory the instance
+ * is replaced and the JS path below makes it: the kernel writes `d` only after its call, so it starts from the same bytes.
  */
 export function growMaskBounds(d, W, H, n, { ms = null } = {}) {
     const p = rustPx();
     if (p) {
         const t = ms ? performance.now() : 0;
-        try { return p.growMask(d, W, H, n); } finally { if (ms) ms.kernel = (ms.kernel || 0) + performance.now() - t; releaseIfLarge(); }
+        try { return p.growMask(d, W, H, n); }
+        catch (err) { if (!recovered(p, err, "grow_mask")) throw err; }
+        finally { if (ms) ms.kernel = (ms.kernel || 0) + performance.now() - t; releaseIfLarge(); }
     }
     growMask(d, W, H, n, { ms });
     const t = ms ? performance.now() : 0;
@@ -179,53 +182,18 @@ export function rgbToHex(r, g, b) {
  * counts (Photoshop's "contiguous" checkbox).
  *
  * The Rust flood (px/kernels.js) runs when it has loaded: the same mask, 1.3 to 1.4× faster on a
- * whole 15k picture (docs/PERFORMANCE.md §12). The JS below is the fallback, and faster than
- * the flood twin in px/kernels_js.js.
+ * whole 15k picture (docs/PERFORMANCE.md §12). The fallback is `floodScan` (px/kernels_js.js: the
+ * loop that stood here, moved so the flood job's twin runs it too), faster than the flood twin
+ * beside it; it also runs below the `flood` route's size and after a trap.
  */
 export function floodMask(data, W, H, sx, sy, tolerance = 32, contiguous = true) {
-    const p = rustPx();
+    const p = rustPx("flood", W * H);
     if (p) {
-        try { return p.flood(data, W, H, sx | 0, sy | 0, Math.max(0, tolerance | 0), contiguous); } finally { releaseIfLarge(); }
+        try { return p.flood(data, W, H, sx | 0, sy | 0, Math.max(0, tolerance | 0), contiguous); }
+        catch (err) { if (!recovered(p, err, "flood")) throw err; }
+        finally { releaseIfLarge(); }
     }
-    const out = new Uint8Array(W * H);
-    sx = Math.max(0, Math.min(W - 1, sx | 0));
-    sy = Math.max(0, Math.min(H - 1, sy | 0));
-    const i0 = (sy * W + sx) * 4;
-    const r0 = data[i0], g0 = data[i0 + 1], b0 = data[i0 + 2], a0 = data[i0 + 3];
-    const tol = Math.max(0, tolerance | 0);
-    const similar = (i) => {
-        const d = Math.abs(data[i] - r0), e = Math.abs(data[i + 1] - g0), f = Math.abs(data[i + 2] - b0), g = Math.abs(data[i + 3] - a0);
-        return d <= tol && e <= tol && f <= tol && g <= tol;
-    };
-    if (!contiguous) {
-        for (let p = 0, i = 0; p < W * H; p++, i += 4) if (similar(i)) out[p] = 1;
-        return out;
-    }
-    // scanline flood fill with an explicit stack of spans
-    const stack = [sx, sy];
-    while (stack.length) {
-        const y = stack.pop(), x = stack.pop();
-        let p = y * W + x;
-        if (out[p] || !similar(p * 4)) continue;
-        let xl = x, xr = x;
-        while (xl > 0 && !out[p - 1] && similar((p - 1) * 4)) { xl--; p--; }
-        p = y * W + x;
-        while (xr < W - 1 && !out[p + 1] && similar((p + 1) * 4)) { xr++; p++; }
-        const row = y * W;
-        for (let i = xl; i <= xr; i++) out[row + i] = 1;
-        for (const ny of [y - 1, y + 1]) {
-            if (ny < 0 || ny >= H) continue;
-            const nrow = ny * W;
-            let inSpan = false;
-            for (let i = xl; i <= xr; i++) {
-                const q = nrow + i;
-                const ok = !out[q] && similar(q * 4);
-                if (ok && !inSpan) { stack.push(i, ny); inSpan = true; }
-                else if (!ok) inSpan = false;
-            }
-        }
-    }
-    return out;
+    return floodScan(data, W, H, sx, sy, tolerance, contiguous);
 }
 
 /** Draw a W×H mask (1 = set) as `color` (hex) into a new canvas; alpha from the mask. */

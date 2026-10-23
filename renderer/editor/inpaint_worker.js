@@ -34,6 +34,10 @@
  *                   the editor yet; phase R measures the kernel phase E's band export will run.
  *   poisson         the healing brush's blend over a stroke's box (`poissonBlend`, PLAN_0_1_31 §5): the picture,
  *                   the source patch and the mask as plain buffers in, the healed box back.
+ *   px_probe        one kernel's calls timed one by one on this thread's instance, a posted Module's or one compiled
+ *                   from bytes (a new worker's cold and warm calls, tools/px_probe.py): a diagnostic only, like
+ *                   inflate_bench.
+ *   px_stats        this thread's px instances and memory (kernels.js `pxInstances`), answered at once like `arena`.
  *
  * Pixels arrive as ImageBitmaps (transferred, never copied through structured cloning) and
  * are closed as soon as they are drawn. Every reply carries the request's id; a failure
@@ -41,7 +45,8 @@
  *
  * The pixel kernels come from px/kernels.js: the Rust build once this worker has loaded it, the
  * JS twins before and without it. `kernels: "js"` on a job forces the twins (the benchmark,
- * tools/px_jobs.py). The mips, selection, flood and band jobs reply with `timing`: the
+ * tools/px_jobs.py), and `routes` carries the window's route overrides (kernels.js `adoptRoutes`: the `flood` and
+ * `mips` jobs take the twins where a route says so). The mips, selection, flood and band jobs reply with `timing`: the
  * milliseconds of their parts.
  */
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
@@ -53,7 +58,8 @@ import { liquifyStore } from "./inpaint_liquify.js";
 import { guidedFar } from "./inpaint_depth.js";
 import { u16Bilinear, rangeWeight, LUMA, opp, colourSimilarity, hexToRgb as hexToRgb01 } from "./inpaint_weights.js";
 import { snapField, fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory } from "./px/kernels.js";
+import { Px } from "./px/px.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
 
@@ -85,9 +91,16 @@ function tileBytes(t) {
  * ones it would build. The chains and the tile buffers go back transferred (the buffers for the next batch).
  */
 async function mips(msg) {
-    const p = rustPx();
+    // the `mips` route (kernels.js) sends the batch to the twins, and with it the wrappers mipsJs calls
+    let p = rustPx("mips");
     const t0 = now();
-    const out = p ? mipsRust(p, msg) : mipsJs(msg);
+    let out = null;
+    if (p) {
+        // a trap or an out-of-memory replaces the instance and the twins make the batch: mipsRust only reads the job's
+        // tiles, so they start from the same bytes
+        try { out = mipsRust(p, msg); } catch (err) { if (!recovered(p, err, "mip_chain")) throw err; p = null; }
+    }
+    if (!out) out = mipsJs(msg);
     out.timing = { op: "mips", kernels: p ? "rust" : "js", tiles: msg.tiles.length, kernel: now() - t0 };
     return out;
 }
@@ -116,22 +129,32 @@ function mipsJs(msg) {
     return { chains, exts, datas, transfer };
 }
 
-/** The same chains from the Rust kernels: each tile copied into wasm memory, its chain copied out. */
+/**
+ * The same chains from the Rust kernels: each tile copied into wasm memory, its chain copied out. The copies go past
+ * Px `_in` / `_out`, so a timed job books them here (`pxLapAdd`); the reset after a trap keeps the chains (Px `_reset`).
+ */
 function mipsRust(p, msg) {
-    const n = p.exports.mip_chain_bytes(TILE, LEVELS), a = p.job;
+    const n = p.exports.mip_chain_bytes(TILE, LEVELS), a = p.job, timed = pxTimed();
     const chains = [], exts = [], datas = [], transfer = [];
     try {
         const pin = a.take(TILE * TILE * 4), pout = a.take(n);
         for (const t of msg.tiles) {
-            p.u8().set(tileBytes(t).bytes, pin);
+            const { bytes, shared } = tileBytes(t);
+            let c = timed ? now() : 0;
+            p.u8().set(bytes, pin);
+            if (timed) pxLapAdd("copyIn", now() - c, TILE_BYTES, shared);
             p.exports.mip_chain(pin, TILE, LEVELS, pout);
+            if (timed) c = now();
             const chain = p.u8().slice(pout, pout + n);
+            if (timed) pxLapAdd("copyOut", now() - c, n);
             chains.push(chain.buffer);
             transfer.push(chain.buffer);
             if (t.vw < TILE || t.vh < TILE) {
                 p.exports.clamp_extend(pin, TILE, t.vw, t.vh);
                 p.exports.mip_chain(pin, TILE, LEVELS, pout);
+                if (timed) c = now();
                 const ext = p.u8().slice(pout, pout + n);
+                if (timed) pxLapAdd("copyOut", now() - c, n);
                 exts.push(ext.buffer);
                 transfer.push(ext.buffer);
             } else {
@@ -140,7 +163,7 @@ function mipsRust(p, msg) {
             datas.push(t.data || null);
             if (t.data) transfer.push(t.data);
         }
-    } finally { a.reset(); }
+    } finally { p._reset(a); }
     return { chains, exts, datas, transfer };
 }
 
@@ -559,6 +582,56 @@ async function inflateBench(msg) {
 }
 
 /**
+ * A probe of a kernel's cold and warm calls (docs/PLAN_WASM_K1.md S4, M5 and M7a), no caller in the editor: `calls`
+ * calls of `kernel` ("flood_shape" over a flat `size` x `size` picture, the region all of it, or "mip_chain" over a
+ * random tile), each timed alone (`ms`). `source` names the instance: "thread" this thread's own (with `renew` a fresh
+ * one of the same compiled module first), "posted" a new instance of the `module` the window posted, "bytes" one
+ * compiled here from `bytes` (the cold reference; `compile` and `instantiate` timed). The inputs are made before the
+ * clock; `pregrow` first grows the instance by what a call takes, so call 0 differs from call 1 only by the code's tier.
+ */
+async function pxProbe(msg) {
+    const kernel = msg.kernel, source = msg.source || "thread";
+    if (kernel !== "flood_shape" && kernel !== "mip_chain") throw new Error("px_probe: kernel " + kernel);
+    const size = kernel === "mip_chain" ? TILE : Math.max(1, (msg.size | 0) || 2048);
+    const calls = Math.max(1, msg.calls | 0);
+    let p = null, compile = null, instantiate = null;
+    if (source === "thread") {
+        if (msg.renew) { dropPx("idle"); await pxSettled(); }
+        p = rustPx();
+    } else if (source === "posted" || source === "bytes") {
+        let module = msg.module, t = now();
+        if (source === "bytes") { module = await WebAssembly.compile(msg.bytes); compile = now() - t; t = now(); }
+        if (!(module instanceof WebAssembly.Module)) throw new Error("px_probe: no module posted");
+        const instance = await WebAssembly.instantiate(module, {});
+        instantiate = now() - t;
+        p = new Px(instance, module);
+    } else throw new Error("px_probe: source " + source);
+    if (!p) throw new Error("px_probe: no Rust kernels in this thread");
+    let rgba = null, tile = null, chain = null;
+    if (kernel === "flood_shape") rgba = new Uint8Array(size * size * 4).fill(128);
+    else {
+        tile = new Uint8Array(TILE_BYTES);
+        for (let i = 0; i < TILE_BYTES; i++) tile[i] = (Math.random() * 256) | 0;
+        chain = new Uint8Array(mipChainBytes(TILE, LEVELS));
+    }
+    if (msg.pregrow) {
+        // what the job arena takes on the first call (the picture, its 1 MB chunk, the span stack), touched page by page
+        const need = (kernel === "flood_shape" ? size * size * 4 + Math.max(4096, (size * size) >> 4) * 8 : 0) + (2 << 20);
+        const ptr = p.alloc(need);
+        p.u8().fill(1, ptr, ptr + need);
+        p.free(ptr, need);
+    }
+    const ms = [];
+    for (let i = 0; i < calls; i++) {
+        const t = now();
+        if (rgba) p.floodShape(rgba, size, size, size >> 1, size >> 1, 32, true, null, 0xff0000, (view, count) => count);
+        else p.mipChain(tile, TILE, LEVELS, chain);
+        ms.push(now() - t);
+    }
+    return { ms, compile, instantiate, bytes: p.byteLength, timing: { op: "px_probe", kernel, size, source } };
+}
+
+/**
  * A PNG file read as a stream (inpaint_png.js `readPng`, docs/PLAN_BCE.md §E2): every band of rows goes back as a
  * `progress` message (`{ rgba, y0, rows }`, transferred) as soon as it is decoded, the reply carries the header. For a
  * picture no canvas can hold (above 268 MP), which the browser's own decoder cannot hand over.
@@ -742,23 +815,24 @@ async function flood(msg) {
     const src = canvasOf(msg.bitmap);
     const W = src.width, H = src.height;
     const data = src.getContext("2d").getImageData(0, 0, W, H).data;
-    const ms = { op: "flood", kernels: kernelsInUse(), pixels: W * H, read: now() - t0 };
+    // the `flood` route (kernels.js) picks the branch by the picture's size: Rust, or the users' JS loop below
+    const p = rustPx("flood", W * H);
+    const ms = { op: "flood", kernels: p ? "rust" : "js", pixels: W * H, read: now() - t0 };
     let t = now();
     const lap = (key) => { const n = now(); ms[key] = n - t; t = n; };
-    const p = rustPx();
     if (p) {
         // one call for the flood, the clip, the count, the bounds and the shape, drawn from wasm memory without a copy
+        // (kernels.js `floodShape`: its twin after a trap, and the release of a grown instance)
         const sel = msg.selBitmap ? canvasOf(msg.selBitmap).getContext("2d").getImageData(0, 0, W, H).data : null;
         lap("clip");
         const [r, g, b] = hexToRgb(msg.color || "#ff0000");
-        const res = p.floodShape(data, W, H, msg.x, msg.y, msg.tolerance === undefined ? 32 : msg.tolerance, msg.contiguous !== false, sel, (r << 16) | (g << 8) | b, (view, count, bounds) => {
+        const res = floodShape(data, W, H, msg.x, msg.y, msg.tolerance === undefined ? 32 : msg.tolerance, msg.contiguous !== false, sel, (r << 16) | (g << 8) | b, (view, count, bounds) => {
             lap("flood");
             const shape = new OffscreenCanvas(W, H);
             shape.getContext("2d").putImageData(new ImageData(view, W, H), 0, 0);
             lap("shape");
             return { count, bounds, bitmap: shape.transferToImageBitmap() };
         });
-        releaseIfLarge();
         const bb = res.bounds;
         const touches = bb ? { l: bb[0] === 0, t: bb[1] === 0, r: bb[2] === W, b: bb[3] === H } : null;
         ms.total = now() - t0;
@@ -795,21 +869,23 @@ async function flood(msg) {
  * shape goes back as a bitmap (the bucket draws it into a layer), or with `out: "tiles"` as the tiles of the box that
  * hold any of it, `[{ tx, ty, data }]` of 256 x 256 RGBA8 each (the box starts on the tile grid, so they are the
  * selection's own tiles): the wand writes them into the mask without a canvas on the way out either.
+ *
+ * The kernel is kernels.js `floodShape`, so the `flood` route chooses Rust or the twin on the users' JS loop over the
+ * same read (docs/PLAN_WASM_K1.md §0.1); only a thread without the Rust kernels refuses the stacks, as before.
  */
 async function floodOverTiles(msg) {
-    const p = rustPx();
-    if (!p) throw new Error(NO_PARTS);
+    if (!rustPx()) throw new Error(NO_PARTS);
     const t0 = now();
     const W = msg.w, H = msg.h;
     const data = new Uint8Array(msg.sab, 0, W * H * 4);
-    const ms = { op: "flood", kernels: "rust", pixels: W * H, tiles: true, read: 0 };
+    const ms = { op: "flood", kernels: rustPx("flood", W * H) ? "rust" : "js", pixels: W * H, tiles: true, read: 0 };
     let t = now();
     const lap = (key) => { const n = now(); ms[key] = n - t; t = n; };
     let sel = null;
     if (msg.sel) { sel = new Uint8Array(W * H * 4); storeRows(msg.sel, msg.x0 | 0, W, msg.y0 | 0, H, sel); }
     lap("clip");
     const [r, g, b] = hexToRgb(msg.color || "#ff0000");
-    const res = p.floodShape(data, W, H, msg.x, msg.y, msg.tolerance === undefined ? 32 : msg.tolerance, msg.contiguous !== false, sel, (r << 16) | (g << 8) | b, (view, count, bounds) => {
+    const res = floodShape(data, W, H, msg.x, msg.y, msg.tolerance === undefined ? 32 : msg.tolerance, msg.contiguous !== false, sel, (r << 16) | (g << 8) | b, (view, count, bounds) => {
         lap("flood");
         if (msg.out !== "tiles") {
             const shape = new OffscreenCanvas(W, H);
@@ -832,7 +908,6 @@ async function floodOverTiles(msg) {
         lap("shape");
         return { count, bounds, tiles };
     });
-    releaseIfLarge();
     const bb = res.bounds;
     const touches = bb ? { l: bb[0] === 0, t: bb[1] === 0, r: bb[2] === W, b: bb[3] === H } : null;
     ms.total = now() - t0;
@@ -1305,7 +1380,13 @@ function relightRatioJob(msg) {
 
 async function run(msg) {
     setKernels(msg.kernels);
+    adoptRoutes(msg.routes);
+    pxTimed(!!msg.split);
     await kernelsReady();
+    // never on an instance still loading: a renewal that went to the background (kernels.js `renew`) settles first, so
+    // a job that needs Rust (png_part, the flood over tiles) gets it, and every job its kernels as routed
+    await pxSettled();
+    if (msg.op === "px_probe") return pxProbe(msg);
     if (msg.op === "relight_normals") return relightNormalsJob(msg);
     if (msg.op === "relight_shadow") return relightShadowJob(msg);
     if (msg.op === "relight_ratio") return relightRatioJob(msg);
@@ -1364,17 +1445,28 @@ async function run(msg) {
 // with an error posted to the page, which it receives again, forever. Only a worker listens.
 const inWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
 // A reply's `timing` also carries `pxCalls`: the Rust kernel calls of this thread during the job, by export name
-// (docs/PLAN_WASM_BUILD.md §3.4), {} when only the twins ran. The counters start from zero when a job starts in an idle
-// worker; a pool worker runs one job at a time, the single worker can overlap jobs that wait (png, export) and then
-// counts the other's calls too, never fewer than the job's own.
+// (docs/PLAN_WASM_BUILD.md §3.4), {} when only the twins ran, and `gen`, the job's measurement generation (a harness
+// keeps only its own row's timings). A job posted with `split` also carries `pxSplit`: the job's milliseconds, the
+// kernels' own, the copies, the allocations and the instance's renewals (kernels.js `pxSplit`). The counters and laps
+// start from zero when a job starts in an idle worker; a pool worker runs one job at a time, the single worker can
+// overlap jobs that wait (png, export) and then counts the other's calls and laps too, never fewer than the job's own.
+// A job holds this thread's instance (`pxJobStart` / `pxJobEnd`): the idle trim never fires inside one.
 let jobsInFlight = 0;
 if (inWorker) self.onmessage = async (e) => {
     const msg = e.data || {};
     if (msg.op === "arena") { arenaMessage(msg); return; }
+    // not a job: the memory this thread keeps between jobs (tools/px_probe.py --retention), before the counters
+    if (msg.op === "px_stats") { self.postMessage({ id: msg.id, ok: true, op: "px_stats", ...pxInstances() }); return; }
     if (!jobsInFlight++) pxCalls(true);
+    pxJobStart();
+    const split = !!msg.split, s0 = split ? pxSplit() : null, tj = split ? now() : 0;
     try {
         const result = await run(msg);
-        if (result && result.timing && typeof result.timing === "object") result.timing.pxCalls = pxCalls();
+        if (result && result.timing && typeof result.timing === "object") {
+            result.timing.pxCalls = pxCalls();
+            result.timing.gen = msg.gen;
+            if (split) result.timing.pxSplit = { job: now() - tj, ...pxSplit(s0) };
+        }
         // an ImageBitmap in the reply is transferred, never copied, and so are the buffers a job names in `transfer`
         const transfer = result && result.transfer ? result.transfer : result && result.bitmap ? [result.bitmap] : [];
         if (result) delete result.transfer;
@@ -1382,8 +1474,13 @@ if (inWorker) self.onmessage = async (e) => {
     } catch (err) {
         // a bitmap that was transferred but never drawn would leak until the worker dies
         for (const k of ["bitmap", "selBitmap"]) { try { if (msg[k] && msg[k].close) msg[k].close(); } catch (_) { /* ignore */ } }
-        self.postMessage({ id: msg.id, ok: false, error: String((err && err.message) || err) });
+        const reply = { id: msg.id, ok: false, error: String((err && err.message) || err) };
+        // a trap or an out-of-memory the job could not recover from (a direct user's, docs/PLAN_WASM_K1.md §6 question 6):
+        // the window's fallback makes this one, and a trapped instance is replaced at this thread's next call
+        if (err instanceof WebAssembly.RuntimeError || err instanceof PxOutOfMemory) reply.trap = err.name;
+        self.postMessage(reply);
     } finally {
         jobsInFlight--;
+        pxJobEnd();
     }
 };

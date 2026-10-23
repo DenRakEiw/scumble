@@ -10,8 +10,10 @@
 // Rust kernel of both builds against its JS twin, byte for byte (the EDT as f32 bits), and the
 // module's memory: alloc / free, a view that goes stale when memory grows and the fresh one that
 // replaces it, pointers above 2 GB, the arena's take / reset. Also the twin harness (`twinCheck`, with
-// a self-test), px.js' call counters (`pxCalls`), and with `PX_BENCH=1` (or `large`) the timed rows:
-// medians over rotating rounds and a cold first call on a fresh compile (docs/PLAN_WASM_BUILD.md §3.4).
+// a self-test), px.js' call counters (`pxCalls`) and the split's clocks and laps, kernels.js' routes, its
+// recovery from a trap or an out-of-memory and its instance's lifecycle (docs/PLAN_WASM_K1.md), and with
+// `PX_BENCH=1` (or `large`) the timed rows: medians over rotating rounds and a cold first call on a fresh
+// compile (docs/PLAN_WASM_BUILD.md §3.4).
 "use strict";
 
 const fs = require("node:fs");
@@ -777,6 +779,490 @@ async function counterCases(simd) {
             `${JSON.stringify(c)}, ${now === before ? "the same instance" : "a new instance"} of ${now ? now.byteLength : 0} bytes`);
     }
     K.setKernels("js");   // as relightBench left it: the later cases compare against the editor's JS
+}
+
+// ---- K1: the split, the routes, a poisoned instance, the instance's lifecycle (docs/PLAN_WASM_K1.md S6) ---------------
+// Each case function leaves kernels.js as it found it (`kernelsBack`): the twins in force, as relightBench left them for
+// the later cases, no route overridden and the clocks off.
+
+const LAP_KEYS = ["copyIn", "copyInMB", "copyInSharedMB", "copyOut", "copyOutMB", "alloc", "grewMB"];
+const lapsZero = (l) => LAP_KEYS.every((k) => l[k] === 0);
+/** What a flood job's `use` makes of the shape: a copy (the view is valid only inside the call), the count, the bounds. */
+const shapeOf = (view, n, bounds) => ({ bytes: new Uint8Array(view), n, bounds });
+const sameShape = (a, b) => !!a && !!b && eqBytes(a.bytes, b.bytes) && a.n === b.n && JSON.stringify(a.bounds) === JSON.stringify(b.bounds);
+/** A source pointer below 0 sends mip_half out of bounds: a trap, as a corrupted instance would give. */
+const trapIn = (px) => px.exports.mip_half(-16, 256, 256, 0);
+
+function kernelsBack(K) {
+    K.setKernels("js");
+    for (const name of Object.keys(K.routeOverrides())) K.setRoute(name, null);
+    K.pxTimed(false);
+}
+
+/**
+ * The split's clocks and laps (px.js, docs/PLAN_WASM_K1.md §1.1), on a px.js of its own (imported under a query, so its
+ * counters start empty whatever ran before): `ms` only while `pxTimed()` is on; `first` lists an export whose every
+ * call on the thread fell since the reset, with that first call's milliseconds (null when it was not timed); `ever` and
+ * `firstMs` go on across later calls, a new instance and a reset; a 64 x 64 dilateMask copies 16 KB in and 16 KB out;
+ * `pxCalls(true)` clears the milliseconds and the laps; an alloc memory cannot grow for throws `PxOutOfMemory`. With
+ * `PX_BENCH`, what the counted wrapper costs per call with the clocks off and on.
+ */
+async function splitCases(simd, js) {
+    const MB = 1048576, kb16 = 16384 / MB;
+    const main = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+    check("kernels.js re-exports px.js' pxTimed, pxLaps, pxLapAdd and PxOutOfMemory and kernels_js.js' floodScan (one split per thread)",
+        K.pxTimed === main.pxTimed && K.pxLaps === main.pxLaps && K.pxLapAdd === main.pxLapAdd && K.PxOutOfMemory === main.PxOutOfMemory
+        && K.floodScan === js.floodScan);
+    const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href + "?split");
+    const fresh = () => new P.Px(new WebAssembly.Instance(simd.module, {}), simd.module);
+    const show = (l) => JSON.stringify(l);
+    const m = new Float32Array(64 * 64).fill(0.5);
+    const big = Float32Array.from({ length: 256 * 256 }, (_, i) => ((i * 37) % 101) / 100);
+    const a = fresh();
+    let l = P.pxLaps();
+    check("a px.js of its own starts with the clocks off and an empty split",
+        P.pxTimed() === false && !Object.keys(l.ms).length && !Object.keys(l.first).length && lapsZero(l), show(l));
+    a.dilateMask(m, 64, 64, 2);
+    l = P.pxLaps();
+    check("untimed, the thread's first call of an export is listed in first with null, and books no ms and no laps",
+        l.first.dilate_mask === null && Object.keys(l.first).length === 1 && !Object.keys(l.ms).length && lapsZero(l), show(l));
+    P.pxCalls(true);
+    a.dilateMask(m, 64, 64, 2);
+    l = P.pxLaps();
+    check("after the next reset that export is no longer first (ever goes on) and its count starts again",
+        !("dilate_mask" in l.first) && P.pxCalls().dilate_mask === 1, show(l));
+
+    // a timed first call: its milliseconds stay first's across later calls and a new instance, until a reset
+    P.pxTimed(true);
+    P.pxCalls(true);
+    a.boxBlurs(big, 256, 256, [3, 0, 0]);
+    const l1 = P.pxLaps();
+    a.boxBlurs(big, 256, 256, [3, 0, 0]);
+    const l2 = P.pxLaps();
+    const b = fresh();
+    b.boxBlurs(big, 256, 256, [3, 0, 0]);
+    const l3 = P.pxLaps();
+    P.pxCalls(true);
+    b.boxBlurs(big, 256, 256, [3, 0, 0]);
+    const l4 = P.pxLaps(), f1 = l1.first.box_blurs;
+    check("timed, the first call's milliseconds are first's and stay so across a later call and a new instance (firstMs, ever); ms sums the calls; after a reset the export is no longer first",
+        typeof f1 === "number" && f1 > 0 && l1.ms.box_blurs === f1 && l2.first.box_blurs === f1 && l2.ms.box_blurs > f1
+        && l3.first.box_blurs === f1 && l3.ms.box_blurs > l2.ms.box_blurs && !("box_blurs" in l4.first) && l4.ms.box_blurs > 0,
+        `first ${f1}, ms ${l1.ms.box_blurs} / ${l2.ms.box_blurs} / ${l3.ms.box_blurs}, then first ${show(l4.first)}`);
+
+    // the copies of a Px method, plain and from a SharedArrayBuffer
+    P.pxCalls(true);
+    const plain = a.dilateMask(m, 64, 64, 2);
+    l = P.pxLaps();
+    const sm = new Float32Array(new SharedArrayBuffer(m.byteLength));
+    sm.set(m);
+    P.pxCalls(true);
+    const viaShared = a.dilateMask(sm, 64, 64, 2);
+    const ls = P.pxLaps();
+    check("timed, a 64 x 64 dilateMask books 16 KB copied in and 16 KB out with their milliseconds and the kernel's; from a SharedArrayBuffer the copy in counts as shared too",
+        l.copyInMB === kb16 && l.copyOutMB === kb16 && l.copyInSharedMB === 0 && l.copyIn > 0 && l.copyOut > 0 && l.ms.dilate_mask > 0
+        && ls.copyInMB === kb16 && ls.copyInSharedMB === kb16 && ls.copyOutMB === kb16 && eqBytes(viaShared, plain), `${show(l)}; shared ${show(ls)}`);
+    P.pxCalls(true);
+    const b0 = a.byteLength, ptr = a.alloc(16 * MB);
+    l = P.pxLaps();
+    check("timed, an alloc that grows memory books its milliseconds and the MB memory grew in it",
+        l.alloc > 0 && l.grewMB > 0 && l.grewMB * MB === a.byteLength - b0, `${show(l)}, ${b0} -> ${a.byteLength} bytes`);
+    a.free(ptr, 16 * MB);
+    P.pxCalls(true);
+    P.pxLapAdd("copyIn", 1.5, 2 * MB, true);
+    P.pxLapAdd("copyOut", 0.25, MB);
+    l = P.pxLaps();
+    let refused = false;
+    try { P.pxLapAdd("copy", 1); } catch { refused = true; }
+    check("pxLapAdd books a direct user's copies (one read from shared memory as shared too) and refuses any other key",
+        l.copyIn === 1.5 && l.copyInMB === 2 && l.copyInSharedMB === 2 && l.copyOut === 0.25 && l.copyOutMB === 1 && refused, show(l));
+    a.dilateMask(m, 64, 64, 2);
+    P.pxCalls(true);
+    l = P.pxLaps();
+    check("pxCalls(true) clears the milliseconds and every lap", !Object.keys(l.ms).length && lapsZero(l), show(l));
+    P.pxTimed(false);
+    a.dilateMask(m, 64, 64, 2);
+    l = P.pxLaps();
+    check("with the clocks off again a call books its count and nothing else",
+        P.pxTimed() === false && P.pxCalls().dilate_mask === 1 && !Object.keys(l.ms).length && lapsZero(l), show(l));
+    let oom = null;
+    try { a.alloc(4000 * MB); } catch (e) { oom = e; }   // px_alloc takes an i32: 4 GiB and more would wrap
+    check("an alloc memory cannot grow for throws PxOutOfMemory (an Error, its size on it, the old message) and marks nothing",
+        oom instanceof P.PxOutOfMemory && oom instanceof Error && oom.name === "PxOutOfMemory" && oom.bytes === 4000 * MB
+        && oom.message === `px: out of memory allocating ${4000 * MB} bytes` && a.trapped === null, String(oom));
+
+    if (process.env.PX_BENCH) {
+        // the counted wrapper against the instance's own export, on a call that does next to nothing (adler32 of 0 bytes)
+        const N = 200000, ps = a.alloc(8);
+        const loop = (f) => () => { for (let i = 0; i < N; i++) f(ps, 0, 1); };
+        const t = benchMedians([
+            ["raw", loop(a.raw.adler32)],
+            ["untimed", loop(a.exports.adler32)],
+            ["timed", () => { P.pxTimed(true); try { loop(a.exports.adler32)(); } finally { P.pxTimed(false); } }],
+        ]);
+        const ns = (k) => (t[k] * 1e6) / N;
+        console.log(`       the counted wrapper per kernel call (adler32 of 0 bytes, ${N} calls a round): clocks off +${(ns("untimed") - ns("raw")).toFixed(1)} ns, on +${(ns("timed") - ns("raw")).toFixed(1)} ns over the raw export's ${ns("raw").toFixed(1)} ns (K0b: 6-16 ns, clocks off)`);
+        a.free(ps, 8);
+    }
+    P.pxTimed(false);
+    P.pxCalls(true);
+}
+
+/**
+ * The routes of kernels.js (docs/PLAN_WASM_K1.md §1.3): names and values are checked, `rustPx(name, size)` follows a
+ * route, the global mode beats every route, a worker's `adoptRoutes` replaces the overrides wholesale. Then the flood
+ * route's two sides, which must give the same bytes: the twin `floodShape` (on `floodScan`, the loop floodMask ran)
+ * against both Rust builds, `floodScan` against `flood`, and the routed callers (kernels.js `floodShape`,
+ * inpaint_raster.js `floodMask`) on each side of a route, `use` called once.
+ */
+async function routeCases(js, simd, scalar, raster) {
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+    K.setKernels("rust");
+    const p = K.rustPx(), base = K.kernelRoutes();   // the defaults: a measured flood or mips default may be among them
+    try {
+        const throws = (fn, re) => { try { fn(); return false; } catch (e) { return re.test(String(e && e.message)); } };
+        check("setRoute refuses an unknown name (a prototype member too) and a value of the wrong kind",
+            throws(() => K.setRoute("nope", "js"), /^px: unknown route nope$/) && throws(() => K.setRoute("toString", "js"), /unknown route toString/)
+            && throws(() => K.setRoute("mips", 5), /^px: route mips takes/) && throws(() => K.setRoute("flood", -1), /route flood takes/)
+            && throws(() => K.setRoute("flood", NaN), /route flood takes/) && throws(() => K.setRoute("keepMB", "js"), /route keepMB takes/)
+            && Object.keys(K.routeOverrides()).length === 0, JSON.stringify(K.routeOverrides()));
+        K.setRoute("flood", 1000);
+        const at = [K.rustPx("flood", 999), K.rustPx("flood", 1000), K.rustPx("flood", 5000), K.rustPx()];
+        K.setRoute("flood", "js");
+        const toJs = [K.rustPx("flood", 1e9), K.rustPx()];
+        K.setRoute("flood", Infinity);
+        const inf = K.rustPx("flood", 1e9);
+        K.setRoute("flood", "rust");
+        const toRust = K.rustPx("flood", 0);
+        K.setRoute("flood", null);
+        check("rustPx(\"flood\", n): null below a number of pixels, Rust at it and above, null for \"js\" and Infinity, Rust for \"rust\" and when there is no flood route; null removes the override; a call without a name ignores the routes",
+            !!p && at[0] === null && at[1] === p && at[2] === p && at[3] === p && toJs[0] === null && toJs[1] === p && inf === null && toRust === p
+            && ("flood" in base || K.rustPx("flood", 0) === p) && K.route("flood") === base.flood && !("flood" in K.routeOverrides()));
+        K.setRoute("mips", "rust");
+        K.setRoute("flood", "rust");
+        K.setKernels("js");
+        const off = [K.rustPx("mips"), K.rustPx("flood", 1e9), K.rustPx()];
+        K.setKernels("rust");
+        check("setKernels(\"js\") beats a \"rust\" route (the global mode stays the override)", off.every((v) => v === null) && K.rustPx("mips") === p);
+        K.adoptRoutes({ flood: 5, keepMB: Infinity, bogus: 1, releaseMB: "js", toString: "js", mips: 3 });
+        const adopted = K.routeOverrides();
+        K.adoptRoutes(null);
+        const none = K.routeOverrides();
+        let quiet = true;
+        try { K.adoptRoutes({ get flood() { throw new Error("a getter"); } }); K.adoptRoutes("flood=js"); } catch { quiet = false; }
+        check("adoptRoutes replaces the overrides wholesale with the valid entries (unknown names and bad values dropped) and never throws",
+            Object.keys(adopted).sort().join(" ") === "flood keepMB" && adopted.flood === 5 && adopted.keepMB === Infinity
+            && !Object.keys(none).length && quiet && !Object.keys(K.routeOverrides()).length, Object.keys(adopted).join(" "));
+        K.setRoute("flood", 77);
+        K.setRoute("keepMB", 64);
+        const kr = K.kernelRoutes(), ov = K.routeOverrides();
+        K.setRoute("flood", null);
+        K.setRoute("keepMB", null);
+        check("kernelRoutes() is the defaults with the overrides over them (releaseMB and keepMB always among them), routeOverrides() the overrides alone",
+            JSON.stringify(kr) === JSON.stringify({ ...base, flood: 77, keepMB: 64 }) && typeof base.releaseMB === "number" && typeof base.keepMB === "number"
+            && Object.keys(ov).length === 2 && ov.flood === 77 && ov.keepMB === 64 && K.route("releaseMB") === base.releaseMB && K.route("keepMB") === base.keepMB
+            && K.route("mips") === base.mips, JSON.stringify(kr));
+
+        // the flood's two sides: jobCases' sizes and seeds, corner seeds, each selection kind at each tolerance either way
+        const selOf = (w, h, seed, kind) => {
+            if (kind === "none") return null;
+            const d = new Uint8Array(w * h * 4);
+            if (kind === "empty") return d;   // all transparent: the region is empty
+            const f = blobs(w, h, seed, 4);
+            for (let i = 0; i < w * h; i++) d[i * 4 + 3] = f[i] ? [128, 200, 255][i % 3] : [0, 90, 127][i % 3];
+            return d;
+        };
+        const cases = [];
+        for (const [w, h, seed] of [[1, 1, 1], [97, 61, 2], [256, 256, 3], [640, 480, 5]]) {
+            const data = regions(w, h, seed), r = rng(seed + 9);
+            [[0, 0], [w - 1, h - 1], [r() * w | 0, r() * h | 0]].forEach(([sx, sy], s) => {
+                for (let k = 0; k < 6; k++) {
+                    const tol = [0, 32, 255][k % 3], contiguous = k < 3, kind = ["none", "partial", "empty"][(k + s) % 3];
+                    cases.push({ tag: `${w}x${h} seed ${sx},${sy} tol ${tol} ${contiguous ? "contiguous" : "anywhere"} sel ${kind}`,
+                        args: [data, w, h, sx, sy, tol, contiguous, selOf(w, h, seed + k, kind)] });
+                }
+            });
+        }
+        twinCheck({
+            name: "flood_shape", builds: [["rust simd", simd], ["rust scalar", scalar]], twin: js, cases,
+            title: "flood_shape equals its twin floodShape byte for byte, with the count and the bounds (no selection, partial alpha, all transparent; tol 0 / 32 / 255; contiguous or not; corner seeds)",
+            call: (k, [d, w, h, sx, sy, tol, contiguous, sel]) => k.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, shapeOf),
+        });
+        let ok = true, detail = "", n = 0;
+        for (const c of cases) {
+            const [d, w, h, sx, sy, tol, contiguous, sel] = c.args;
+            if (sel) continue;
+            for (const t of [tol, 400, -5]) {
+                n++;
+                const x = js.floodScan(d, w, h, sx, sy, t, contiguous), y = js.flood(d, w, h, sx, sy, t, contiguous);
+                if (!eqBytes(x, y)) { ok = false; detail = `${c.tag} at tol ${t}: ${firstDiff(x, y)}`; }
+            }
+        }
+        check(`js floodScan (floodMask's loop) equals js flood (${n} cases, also at tol 400 and -5: unclamped against clamped)`, ok, detail);
+
+        // the routed callers on each side of a route: the same result, and the side the route names ran
+        const some = cases.filter((_, i) => i % 5 === 0);
+        ok = true; detail = ""; n = 0;
+        for (const c of some) {
+            const [d, w, h, sx, sy, tol, contiguous, sel] = c.args;
+            const want = js.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, shapeOf);
+            for (const [rt, rust] of [["rust", 1], ["js", 0], [w * h, 1], [w * h + 1, 0]]) {
+                K.setRoute("flood", rt);
+                K.pxCalls(true);
+                let uses = 0;
+                const got = K.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, (v, cnt, bounds) => { uses++; return shapeOf(v, cnt, bounds); });
+                const ran = K.pxCalls().flood_shape || 0;
+                n++;
+                if (!sameShape(got, want) || uses !== 1 || ran !== rust) {
+                    ok = false; detail = `${c.tag} route ${rt}: ${ran ? "rust" : "the twin"} ran, use called ${uses}x${sameShape(got, want) ? "" : ", another shape"}`;
+                }
+            }
+        }
+        K.setRoute("flood", null);
+        check(`kernels.js floodShape under the flood route: "rust" and a size at or below the picture's run Rust, "js" and a size above it the twin; the same shape, use called once (${n} runs)`, ok, detail);
+        ok = true; detail = ""; n = 0;
+        for (const c of some) {
+            const [d, w, h, sx, sy, tol, contiguous] = c.args;
+            const want = js.floodScan(d, w, h, sx, sy, tol, contiguous);
+            for (const [rt, rust] of [["rust", 1], ["js", 0], [w * h, 1], [w * h + 1, 0]]) {
+                K.setRoute("flood", rt);
+                K.pxCalls(true);
+                const got = raster.floodMask(d, w, h, sx, sy, tol, contiguous);
+                const ran = K.pxCalls().flood || 0;
+                n++;
+                if (!eqBytes(got, want) || ran !== rust) { ok = false; detail = `${c.tag} route ${rt}: ${ran ? "rust" : "floodScan"} ran ${firstDiff(got, want)}`; }
+            }
+        }
+        K.setRoute("flood", null);
+        check(`inpaint_raster.js floodMask under the flood route: the Rust flood at or above the route's size and for "rust", floodScan below it and for "js"; the same mask (${n} runs)`, ok, detail);
+    } finally { kernelsBack(K); }
+}
+
+/**
+ * A poisoned instance (docs/PLAN_WASM_K1.md §0.3): a trap in an export marks its instance, a wasm stack overflow
+ * (RangeError) too and no other error; the callers (kernels.js' wrappers, inpaint_raster.js floodMask and
+ * growMaskBounds) answer a trap or an out-of-memory with the twin from the inputs as they were, the instance is
+ * replaced (synchronously, or in the background where that throws) and the next call runs Rust again; a plain error is
+ * the caller's; `_reset` keeps a result already written, in place too; floodShape's `use` runs once whatever fails; a
+ * recovery warns once per cause and kernel.
+ */
+async function trapCases(js, simd, raster) {
+    const MB = 1048576;
+    const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+    const m = Float32Array.from({ length: 64 * 64 }, (_, i) => (i % 7) / 7), want = js.dilateMask(m, 64, 64, 2);
+    const warned = [], realWarn = console.warn;
+    console.warn = (...a) => { warned.push(a.map(String).join(" ")); };   // recovered() warns; kept to be counted below
+    const RealInstance = WebAssembly.Instance;
+    K.setKernels("rust");
+    K.setRoute("flood", "rust");   // the floods below run Rust whatever a measured flood default says
+    try {
+        // a trap through an export
+        let p = K.rustPx(), i0 = K.pxInstances(), err = null;
+        try { trapIn(p); } catch (e) { err = e; }
+        const next = K.rustPx();
+        let i1 = K.pxInstances();
+        check("a trap in an export (mip_half below address 0) throws a RuntimeError and marks its instance; the next rustPx() is a new one (trap +1, made sync)",
+            err instanceof WebAssembly.RuntimeError && p.trapped === err && !!next && next !== p && next.trapped === null
+            && i1.trap === i0.trap + 1 && i1.sync === i0.sync + 1 && i1.serial === i0.serial + 1, `${err}; ${JSON.stringify(i1)}`);
+        const inst = new WebAssembly.Instance(simd.module, {});
+        const failing = (e) => new P.Px({ exports: { ...inst.exports, dilate_mask: () => { throw e; } } }, simd.module);
+        const overflow = new RangeError("Maximum call stack size exceeded"), other = new TypeError("not from wasm");
+        const pr = failing(overflow), pt = failing(other);
+        let er = null, et = null;
+        try { pr.dilateMask(m, 64, 64, 2); } catch (e) { er = e; }
+        try { pt.dilateMask(m, 64, 64, 2); } catch (e) { et = e; }
+        check("a RangeError from an export (a wasm stack overflow) marks its instance as a trap does; another error marks nothing",
+            er === overflow && pr.trapped === overflow && et === other && pt.trapped === null);
+
+        // a wrapper whose Rust call traps, twice over (the second warns no more)
+        let ok = true, detail = "";
+        for (let round = 0; round < 2; round++) {
+            p = K.rustPx(); i0 = K.pxInstances();
+            K.pxCalls(true);
+            p.dilateMask = function () { return trapIn(this); };   // the method traps in its export, as a real one would
+            const got = K.dilateMask(m, 64, 64, 2), after = K.rustPx();
+            i1 = K.pxInstances();
+            const again = K.dilateMask(m, 64, 64, 2), c = K.pxCalls();
+            if (!(eqBytes(got, want) && p.trapped instanceof WebAssembly.RuntimeError && after !== p && i1.trap === i0.trap + 1
+                && eqBytes(again, want) && c.dilate_mask === 1 && c.mip_half === 1)) { ok = false; detail = `round ${round}: ${JSON.stringify(c)}, ${JSON.stringify(i1)}`; }
+        }
+        check("a wrapper whose Rust call traps answers with the twin's bytes, the instance is replaced (trap +1) and the next call runs Rust", ok, detail);
+        const fw = 97, fh = 61, fdata = regions(fw, fh, 2);
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.flood = function () { return trapIn(this); };
+        const mask = raster.floodMask(fdata, fw, fh, 10, 10, 32, true);
+        const floodOk = eqBytes(mask, js.floodScan(fdata, fw, fh, 10, 10, 32, true)) && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1;
+        const sel = new Uint8Array(fw * fh * 4), blob = blobs(fw, fh, 4, 4);
+        for (let i = 0; i < fw * fh; i++) { sel[i * 4] = 255; sel[i * 4 + 3] = blob[i] ? 255 : 0; }
+        const ref = sel.slice();
+        raster.growMask(ref, fw, fh, 3);
+        const refBounds = raster.maskBounds(ref, fw, fh);
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.growMask = function () { return trapIn(this); };   // traps before it writes the selection, as Px.growMask would
+        const grown = sel.slice(), gb = raster.growMaskBounds(grown, fw, fh, 3);
+        check("inpaint_raster.js after a trap: floodMask gives floodScan's mask, growMaskBounds the JS growMask's selection and bounds (the selection grown once); each replaces the instance",
+            floodOk && eqBytes(grown, ref) && JSON.stringify(gb) === JSON.stringify(refBounds) && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1,
+            `flood ${floodOk}, bounds ${gb} vs ${refBounds} ${firstDiff(grown, ref)}`);
+
+        // a plain error, and out of memory
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.dilateMask = function () { throw new Error("plain"); };
+        let plain = null;
+        try { K.dilateMask(m, 64, 64, 2); } catch (e) { plain = e; }
+        delete p.dilateMask;
+        i1 = K.pxInstances();
+        check("a plain Error from the Rust method is rethrown and the instance kept",
+            !!plain && plain.message === "plain" && K.rustPx() === p && p.trapped === null && i1.serial === i0.serial, String(plain));
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.dilateMask = function () { this.alloc(4000 * MB); };   // memory cannot grow that far: PxOutOfMemory
+        const viaOom = K.dilateMask(m, 64, 64, 2);
+        i1 = K.pxInstances();
+        check("out of memory in the Rust method: the twin's bytes, the instance replaced (oom +1), nothing marked trapped",
+            eqBytes(viaOom, want) && K.rustPx() !== p && i1.oom === i0.oom + 1 && i1.trap === i0.trap && p.trapped === null, JSON.stringify(i1));
+
+        // _reset after the last export call
+        const fresh = () => new P.Px(new WebAssembly.Instance(simd.module, {}), simd.module);
+        const q1 = fresh(), q2 = fresh();
+        q1.trapped = new WebAssembly.RuntimeError("marked by hand");
+        q1.job.reset = () => { throw new WebAssembly.RuntimeError("the reset"); };
+        q2.job.reset = () => { throw new Error("the reset"); };
+        let r1 = null, e1 = null, e2 = null;
+        try { r1 = q1.dilateMask(m, 64, 64, 2); } catch (e) { e1 = e; }
+        try { q2.dilateMask(m, 64, 64, 2); } catch (e) { e2 = e; }
+        check("_reset: once the instance is trapped a failing reset is swallowed and the result returned; on a sound instance a plain error from it is rethrown",
+            !e1 && !!r1 && eqBytes(r1, want) && !!e2 && e2.message === "the reset" && q2.trapped === null, `${e1}; ${e2}`);
+        const params = matchParams(1), src = pixelRow(4096, 11);   // k = 1: matching twice is not matching once
+        const once = js.matchPixels(src.slice(), params), twice = js.matchPixels(once.slice(), params);
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.job.reset = function () { trapIn(p); };   // a trap in the reset (its px_free) marks the instance after the result is written
+        const inPlace = src.slice(), matched = K.matchPixels(inPlace, params);
+        const marked = p.trapped instanceof WebAssembly.RuntimeError, nextM = K.rustPx();
+        i1 = K.pxInstances();
+        check("a trap in the reset after an in-place kernel wrote its result: the result stands, applied once (no twin over it), and the next rustPx() replaces the instance",
+            !eqBytes(once, twice) && eqBytes(inPlace, once) && eqBytes(matched, once) && marked && nextM !== p && i1.trap === i0.trap + 1,
+            `${firstDiff(inPlace, once)}; ${JSON.stringify(i1)}`);
+        p = K.rustPx(); i0 = K.pxInstances();
+        K.pxCalls(true);
+        p.job.reset = () => { throw new P.PxOutOfMemory(1); };
+        const viaReset = K.dilateMask(m, 64, 64, 2), calls = K.pxCalls().dilate_mask, oomMarked = p.trapped instanceof P.PxOutOfMemory;
+        const nextO = K.rustPx();
+        i1 = K.pxInstances();
+        check("out of memory in the reset of a sound instance: the result stands (Rust ran), the instance is marked with it and the next rustPx() replaces it, counted oom",
+            eqBytes(viaReset, want) && calls === 1 && oomMarked && nextO !== p && i1.oom === i0.oom + 1 && i1.trap === i0.trap, JSON.stringify(i1));
+
+        // no synchronous instance: the successor loads in the background
+        p = K.rustPx(); i0 = K.pxInstances();
+        let grownOut = null, gone = false, pending = false, mid = null, midRust = -1;
+        try {
+            WebAssembly.Instance = function () { throw new Error("no synchronous instance here"); };
+            p.alloc(300 * MB);
+            grownOut = K.dilateMask(m, 64, 64, 2);   // Rust; releaseIfLarge then drops the grown instance
+            gone = K.rustPx() === null;
+            pending = K.pxInstances().pending;
+            K.pxCalls(true);
+            mid = K.dilateMask(m, 64, 64, 2);        // the twin meanwhile
+            midRust = K.pxCalls().dilate_mask || 0;
+        } finally { WebAssembly.Instance = RealInstance; }
+        await K.pxSettled();
+        i1 = K.pxInstances();
+        K.pxCalls(true);
+        const settled = K.dilateMask(m, 64, 64, 2);
+        check("where a synchronous instance throws, the successor loads in the background: the twin runs meanwhile (rustPx() null), and after pxSettled() a new instance (async +1) runs Rust",
+            eqBytes(grownOut, want) && gone && pending && eqBytes(mid, want) && midRust === 0 && !i1.pending && i1.async === i0.async + 1
+            && i1.release === i0.release + 1 && i1.sync === i0.sync && !!K.rustPx() && K.rustPx() !== p && eqBytes(settled, want) && K.pxCalls().dilate_mask === 1,
+            JSON.stringify(i1));
+
+        // floodShape's use runs once
+        const fargs = [fdata, fw, fh, 10, 10, 32, true, null, 0x123456];
+        const wantShape = js.floodShape(...fargs, shapeOf);
+        let uses = 0;
+        const counted = (v, cnt, bounds) => { uses++; return shapeOf(v, cnt, bounds); };
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.floodShape = function () { return trapIn(this); };
+        const viaTwin = K.floodShape(...fargs, counted);
+        const before = sameShape(viaTwin, wantShape) && uses === 1 && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1;
+        p = K.rustPx(); i0 = K.pxInstances(); uses = 0;
+        p.floodShape = function (...a) { const r = P.Px.prototype.floodShape.apply(this, a); trapIn(this); return r; };
+        let ea = null;
+        try { K.floodShape(...fargs, counted); } catch (e) { ea = e; }
+        const after = ea instanceof WebAssembly.RuntimeError && uses === 1 && !!p.trapped && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1;
+        const thrown = [];
+        for (const rt of ["rust", "js"]) {
+            K.setRoute("flood", rt);
+            p = K.rustPx(); uses = 0;
+            let eu = null;
+            try { K.floodShape(...fargs, () => { uses++; throw new WebAssembly.RuntimeError("thrown by use"); }); } catch (e) { eu = e; }
+            thrown.push(!!eu && eu.message === "thrown by use" && uses === 1 && K.rustPx() === p && p.trapped === null);
+        }
+        check("floodShape runs use once: a trap before it gives the twin's shape; a trap after it, and a RuntimeError thrown by use (Rust and twin side), are rethrown",
+            before && after && thrown.every(Boolean), `trap before ${before}, trap after ${after}, use throws ${thrown}`);
+
+        const causes = warned.map((w) => (/kernel (\S+) failed \((\w+)/.exec(w) || []).slice(1).join(" ")).sort();
+        check("a recovery warns once per cause and kernel", causes.join(", ") === "dilate_mask oom, dilate_mask trap, flood trap, flood_shape trap, grow_mask trap",
+            causes.join(", ") || "no warning");
+    } finally {
+        WebAssembly.Instance = RealInstance;
+        console.warn = realWarn;
+        kernelsBack(K);
+    }
+}
+
+/**
+ * The instance's lifecycle in kernels.js (docs/PLAN_WASM_K1.md S3): `pxInstances`, the `releaseMB` route, `dropPx`
+ * and what `pxSplit` reports was renewed, and the idle trim above `keepMB` (IDLE_MS is 2 s, so about 6 s of waits):
+ * it fires once the thread has been idle that long, never while a job holds the instance, and after the job ends.
+ */
+async function lifecycleCases(js) {
+    const MB = 1048576;
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+    const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+    const m = Float32Array.from({ length: 64 * 64 }, (_, i) => (i % 7) / 7), want = js.dilateMask(m, 64, 64, 2);
+    K.setKernels("rust");
+    try {
+        const keys = Object.keys(K.pxInstances()).sort().join(" ");
+        check("pxInstances() says the instance's serial, bytes, pending load and holds, its replacements by cause and how they were made",
+            keys === "async bytes holds idle oom pending release serial sync trap", keys);
+        K.setRoute("releaseMB", 4);
+        let p = K.rustPx(), i0 = K.pxInstances();
+        p.alloc(8 * MB);
+        const out = K.dilateMask(m, 64, 64, 2);
+        let i1 = K.pxInstances();
+        K.setRoute("releaseMB", null);
+        check("the releaseMB route: a releasing call on an instance grown past it replaces the instance (release +1, made sync), its result kept",
+            eqBytes(out, want) && K.rustPx() !== p && i1.release === i0.release + 1 && i1.sync === i0.sync + 1 && i1.bytes < 8 * MB, JSON.stringify(i1));
+        const s0 = K.pxSplit(), back = JSON.parse(JSON.stringify(s0));   // as px_jobs.py hands the window's snapshot back
+        p = K.dropPx("idle");
+        const s1 = K.pxSplit(s0), s2 = K.pxSplit(back);
+        check("dropPx renews now; pxSplit(snapshot) reports bytes0 and the renewals since by cause, from a snapshot that went through JSON too",
+            !!p && p === K.rustPx() && s1.inst === s0.inst + 1 && s1.bytes0 === s0.bytes && s1.renewed.idle === 1 && s1.renewed.release === 0
+            && s1.renewed.trap === 0 && s1.renewed.oom === 0 && "renews" in s0 && !("renews" in s1) && JSON.stringify(s2.renewed) === JSON.stringify(s1.renewed),
+            JSON.stringify(s1.renewed));
+
+        K.setRoute("keepMB", 1);   // a fresh instance is about 1.06 MB: "small" below means below 8 MB
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.alloc(8 * MB);
+        K.dilateMask(m, 64, 64, 2);   // a releasing call arms the trim
+        const early = K.pxInstances().idle;
+        await sleep(2100);
+        i1 = K.pxInstances();
+        check("the idle trim: an instance above keepMB is replaced 2 s after a releasing call (idle +1), not at once",
+            early === i0.idle && i1.idle === i0.idle + 1 && K.rustPx() !== p && i1.bytes < 8 * MB, JSON.stringify(i1));
+        p = K.rustPx();
+        p.alloc(8 * MB);
+        K.dilateMask(m, 64, 64, 2);   // armed again
+        K.pxJobStart();               // a job holds the instance: the countdown is cancelled
+        i0 = K.pxInstances();
+        await sleep(2100);
+        const held = K.pxInstances(), kept = K.rustPx() === p;
+        K.pxJobEnd();                 // nothing holds it now: the countdown starts again
+        await sleep(2100);
+        i1 = K.pxInstances();
+        check("a job holds the instance: no trim while it runs (holds 1), the trim 2 s after it ends",
+            i0.holds === 1 && held.idle === i0.idle && kept && i1.holds === 0 && i1.idle === i0.idle + 1 && K.rustPx() !== p,
+            `held ${JSON.stringify(held)}, then ${JSON.stringify(i1)}`);
+    } finally { kernelsBack(K); }
 }
 
 /** The whole-job kernels (grow_mask, flood_shape) against the editor's JS for the same jobs. */
@@ -2546,6 +3032,10 @@ async function main() {
     await tierCCases(js, simdPx, scalarPx, ref);
     await relightBench(js, simdPx);   // before memoryCases grows simdPx past 2 GB
     await counterCases(simdPx);
+    await splitCases(simdPx, js);
+    await routeCases(js, simdPx, scalarPx, raster);
+    await trapCases(js, simdPx, raster);
+    await lifecycleCases(js);
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));

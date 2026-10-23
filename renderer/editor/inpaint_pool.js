@@ -31,7 +31,9 @@ export class CancelledError extends Error {
 export class WorkerPool {
     /**
      * `create()` makes one worker (a module worker of inpaint_worker.js). `size`: the most workers at once. `defaults()`
-     * gives the fields every job carries (the kernels mode). `onTiming(msg)` sees every reply.
+     * gives the fields every job carries (the kernels mode and routes, inpaint_jobs.js `jobFields`), taken when the job
+     * is queued: a mode or route flipped while it waits does not reach it. `onTiming(msg)` sees every reply; a reply's
+     * `timing` gets `pool` = { worker (its number, from 1), queueMs (queued to sent), tripMs (sent to answered) }.
      */
     constructor({ create, size = poolSize(), defaults = null, onTiming = null, timeout = JOB_TIMEOUT } = {}) {
         this.create = create;
@@ -39,7 +41,7 @@ export class WorkerPool {
         this.defaults = defaults;
         this.onTiming = onTiming;
         this.timeout = timeout;
-        this.workers = [];             // { w, job } (job: the one it runs, or null)
+        this.workers = [];             // { w, job, n } (job: the one it runs, or null; n: the worker's number, from 1)
         this.queues = Array.from({ length: PRIORITIES }, () => []);
         this.seq = 0;
         this.off = false;
@@ -56,6 +58,8 @@ export class WorkerPool {
         if (this.off) return Promise.reject(new Error("no worker pool"));
         return new Promise((resolve, reject) => {
             const job = { id: ++this.seq, op, args, transfer, group, resolve, reject, timer: null, cancelled: false, onProgress, timeout };
+            job.fields = this.defaults ? this.defaults() : null;
+            job.queuedAt = performance.now();
             this.queues[Math.max(0, Math.min(PRIORITIES - 1, priority | 0))].push(job);
             this.stats_.run++;
             this._pump();
@@ -134,6 +138,7 @@ export class WorkerPool {
         }
         this.workers.push(s);
         this.stats_.started++;
+        s.n = this.stats_.started;
         return s;
     }
 
@@ -145,8 +150,9 @@ export class WorkerPool {
     _send(s, job) {
         s.job = job;
         job.timer = setTimeout(() => this._lost(s, new Error(`pool job ${job.op} timed out`)), job.timeout || this.timeout);
+        job.sentAt = performance.now();
         try {
-            s.w.postMessage({ id: job.id, op: job.op, ...(this.defaults ? this.defaults() : null), ...job.args }, job.transfer);
+            s.w.postMessage({ id: job.id, op: job.op, ...job.fields, ...job.args }, job.transfer);
         } catch (err) {
             clearTimeout(job.timer);
             s.job = null;
@@ -169,6 +175,7 @@ export class WorkerPool {
         }
         clearTimeout(job.timer);
         s.job = null;
+        if (msg.timing && typeof msg.timing === "object") msg.timing.pool = { worker: s.n, queueMs: job.sentAt - job.queuedAt, tripMs: performance.now() - job.sentAt };
         if (this.onTiming) { try { this.onTiming(msg); } catch (_) { /* ignore */ } }
         if (!job.cancelled) {
             if (msg.ok) { this.stats_.done++; job.resolve(msg); } else { this.stats_.failed++; job.reject(new Error(msg.error || "pool job failed")); }

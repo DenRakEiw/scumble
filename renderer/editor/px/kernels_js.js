@@ -327,6 +327,91 @@ function similarAt(d, i, r0, g0, b0, a0, tol) {
     return e <= tol;
 }
 
+/**
+ * The JS flood users run: `floodMask`'s own loop in inpaint_raster.js, moved here verbatim (K1, docs/PLAN_WASM_K1.md)
+ * so the flood route's twin is the code users run, not `flood` above, which it beats. The same set as `flood`; a
+ * new Uint8Array, no `count`.
+ */
+export function floodScan(data, W, H, sx, sy, tolerance = 32, contiguous = true) {
+    const out = new Uint8Array(W * H);
+    sx = Math.max(0, Math.min(W - 1, sx | 0));
+    sy = Math.max(0, Math.min(H - 1, sy | 0));
+    const i0 = (sy * W + sx) * 4;
+    const r0 = data[i0], g0 = data[i0 + 1], b0 = data[i0 + 2], a0 = data[i0 + 3];
+    const tol = Math.max(0, tolerance | 0);
+    const similar = (i) => {
+        const d = Math.abs(data[i] - r0), e = Math.abs(data[i + 1] - g0), f = Math.abs(data[i + 2] - b0), g = Math.abs(data[i + 3] - a0);
+        return d <= tol && e <= tol && f <= tol && g <= tol;
+    };
+    if (!contiguous) {
+        for (let p = 0, i = 0; p < W * H; p++, i += 4) if (similar(i)) out[p] = 1;
+        return out;
+    }
+    // scanline flood fill with an explicit stack of spans
+    const stack = [sx, sy];
+    while (stack.length) {
+        const y = stack.pop(), x = stack.pop();
+        let p = y * W + x;
+        if (out[p] || !similar(p * 4)) continue;
+        let xl = x, xr = x;
+        while (xl > 0 && !out[p - 1] && similar((p - 1) * 4)) { xl--; p--; }
+        p = y * W + x;
+        while (xr < W - 1 && !out[p + 1] && similar((p + 1) * 4)) { xr++; p++; }
+        const row = y * W;
+        for (let i = xl; i <= xr; i++) out[row + i] = 1;
+        for (const ny of [y - 1, y + 1]) {
+            if (ny < 0 || ny >= H) continue;
+            const nrow = ny * W;
+            let inSpan = false;
+            for (let i = xl; i <= xr; i++) {
+                const q = nrow + i;
+                const ok = !out[q] && similar(q * 4);
+                if (ok && !inSpan) { stack.push(i, ny); inSpan = true; }
+                else if (!ok) inSpan = false;
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * `Px.floodShape`'s twin (px.js; jobs.rs `flood_shape`) on `floodScan`: the region around (sx, sy) clipped to `sel`
+ * (RGBA8 of the same size, selected where alpha >= 128, or null), drawn as `rgb` (0xRRGGBB), opaque where the region
+ * is and transparent black elsewhere. `use(view, count, bounds)` gets the shape, its pixels and its bounds
+ * [x0, y0, x1, y1] (right and bottom exclusive, null when empty), and its result is returned. The shape is a new
+ * array: Rust draws over its own copy in wasm memory, while the caller's `rgba` may be a view over the job's
+ * SharedArrayBuffer, which an ImageData refuses.
+ */
+export function floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use) {
+    const mask = floodScan(rgba, w, h, sx | 0, sy | 0, Math.max(0, tolerance | 0), contiguous);
+    const out = new Uint8ClampedArray(w * h * 4);
+    const s = sel ? bytesOf(sel) : null;
+    rgb >>>= 0;
+    const r = (rgb >>> 16) & 255, g = (rgb >>> 8) & 255, b = rgb & 255;
+    // a word per pixel where the byte order allows it (the array is new, so it starts on a word)
+    const words = LITTLE ? new Uint32Array(out.buffer, 0, w * h) : null;
+    const word = ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
+    let count = 0, x0 = w, y0 = h, x1 = 0, y1 = 0;
+    for (let y = 0, p = 0; y < h; y++) {
+        let first = -1, last = 0;
+        for (let x = 0; x < w; x++, p++) {
+            if (!mask[p] || (s !== null && s[p * 4 + 3] < 128)) continue;
+            if (words !== null) words[p] = word;
+            else { const o = p * 4; out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255; }
+            count++;
+            if (first < 0) first = x;
+            last = x;
+        }
+        if (first >= 0) {
+            if (first < x0) x0 = first;
+            if (last + 1 > x1) x1 = last + 1;
+            if (y < y0) y0 = y;
+            y1 = y + 1;
+        }
+    }
+    return use(out, count, count > 0 ? [x0, y0, x1, y1] : null);
+}
+
 // ---- composite ---------------------------------------------------------------------------------
 
 /**

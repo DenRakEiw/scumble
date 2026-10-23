@@ -82,6 +82,11 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   first call). Each reads the window's step marks (`InpaintEditor.stepMarks`) and the px.js call counters
   (`InpaintEditor.pxCalls`, a worker job's `timing.pxCalls`; the single editor worker's overlapping jobs count each
   other's calls, so a gate step that asserts a Rust path ran uses a pool job, the stitch worker or the window).
+  K1 adds the route A/B: `px_jobs.py --ab NAME=A:B` (`kernels`, `stacks` or a route of `px/kernels.js`), `--set`,
+  `--split`, `--fresh-pool` (a timing run with the window behind prints NOT COUNTED and exits 2),
+  `python tools/ab_median.py` over three runs' `PX_JOBS_JSON` (medians, the spread, the tie rule), and
+  `tools/px_probe.py` (`--cold`, `--regrow`, `--retention`; gate `pxprobe:<args>` with commas). `node tools/px_test.js`
+  takes about 8 s longer since K1 (its lifecycle cases wait out the 2 s idle trim).
   `python tools/mem_test.py [12000x8000] [--rounds 4] [--keep]` is the memory walk: a
   document per round, benchmarked, closed and collected, with the private bytes of the
   renderer and of the GPU process, a census of every live canvas and the line that made it.

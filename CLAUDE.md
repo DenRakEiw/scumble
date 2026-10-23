@@ -199,9 +199,13 @@ code.
   2.4 s, relight's full march is 4.2 s per light. **K0c done 2026-10-23** (the W0b baseline: every row three times on
   fresh instances, `docperf` / `mem` / `huge` once; medians, spreads and "The shares for Stop 1" in
   `docs/measurements/w0b_2026-10-23/summary.txt`, "K0c" in the plan's §7; px_jobs' mips rows are contaminated, K1 fixes
-  the harness; `mem` prints a FAIL line, the GPU process +354 MB). **Next: K1** (the user, 2026-10-23: "mach so lange mit
-  loop weiter bis der kontext ... ca 60%"), built from its design `docs/PLAN_WASM_K1.md` (a read-only workflow of four
-  wrote it during K0c's chain; its §6 questions go with the suggested answers), then Stop 1. **The user's rules for it:** Rust wherever the
+  the harness; `mem` prints a FAIL line, the GPU process +354 MB). **K1a done 2026-10-23** (the user: "mach so lange mit
+  loop weiter bis der kontext ... ca 60%"; K1's build from its design `docs/PLAN_WASM_K1.md`, whose §6 questions went with
+  the suggested answers: the route map, `pxTimed` / `pxLaps` / `pxSplit`, trap recovery, the idle trim, jobs' fields taken
+  at queue time, `px_jobs.py --ab`, `ab_median.py`, `px_probe.py`; no bytes change, ABI 20; 19 gates PASS on tiles;
+  "K1a" in the plan's §7). **Next: K1b**: the measurements of `docs/PLAN_WASM_K1.md` §3 (M0-M9, three fresh runs each,
+  the window in front) and the defaults they set (S9 steps 4-8: `flood`, maybe `mips`, `keepMB`), then **Stop 1** (re-rank
+  §5 by K0c's shares and K1's result). **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
   time only finds where the time goes; the tie rule in the plan §1.1); **every session commits and pushes the branch,
   its measurement results committed too** under `docs/measurements/<step>_<date>/` ("dann gehen diese nicht verloren");

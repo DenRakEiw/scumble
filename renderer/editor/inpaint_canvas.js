@@ -30,7 +30,7 @@ import { TipPicker, noteRecentTip } from "./inpaint_tippicker.js";
 import { isTiff, TIFF_EXT, tiffInfo, readTiff, tiffPart } from "./inpaint_tiff.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
-import { JOB_TIMINGS, STEP_MARKS, markStep, editorWorker, workerCall, editorPool, buildLayered } from "./inpaint_jobs.js";
+import { JOB_TIMINGS, STEP_MARKS, markStep, editorWorker, workerCall, editorPool, buildLayered, measureGen, pendingJobs, resetPool } from "./inpaint_jobs.js";
 import { buildEditorModal } from "./inpaint_modal.js";
 import { encodeCanvas, canvasToBlob, partsUsable, partsRun, partsFlights, bandPause, partsFailed, nextPartsSeq, encodeTilePixels, encodeBands, encodeRows } from "./inpaint_encode.js";
 import { SUBFOLDER, uploadBlob, uploadCanvas, uploadPixels } from "./inpaint_upload.js";
@@ -49,7 +49,7 @@ import { normalizeLimit, u16Bilinear, rangeWeight, opp, colourSimilarity, hexToR
 import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
 import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend, seedOfLayer, hash32, mul255 } from "./blend_modes.js";
-import { heightNormals, shadowMarch, pxCalls } from "./px/kernels.js";
+import { heightNormals, shadowMarch, pxCalls, kernelRoutes, setRoute as setKernelRoute, pxTimed, pxSplit, pxInstances } from "./px/kernels.js";
 import { statusKindFor, failKind, refusal } from "./inpaint_status.js";
 import { RunProgress } from "./inpaint_progress.js";
 import { canvasSizeRefusal, CANVAS_MAX_SIDE } from "./inpaint_sizelimit.js";
@@ -17597,6 +17597,12 @@ class InpaintEditor {
     static get kernels() { return kernelsMode(); }
     static set kernels(mode) { setKernels(mode); }
 
+    /** The window's kernel routes, defaults and overrides merged (px/kernels.js `kernelRoutes`; docs/PLAN_WASM_K1.md §1.3). */
+    static get routes() { return kernelRoutes(); }
+
+    /** Override one route on the window and in every job sent after it (`null` removes the override; a bad name or value throws). */
+    static setRoute(name, value) { return setKernelRoute(name, value); }
+
     static workerJob(op, args = {}, transfer = []) {
         return workerCall(op, args, transfer);
     }
@@ -17658,6 +17664,36 @@ class InpaintEditor {
     /** The window thread's px kernel calls by export name (px/kernels.js `pxCalls`, the K0b harness): a copy; `reset` clears them. */
     static pxCalls(reset = false) {
         return pxCalls(reset);
+    }
+
+    /** The window's px clocks on or off (no argument: the current state); while on, every job asks its worker for a split (K1). */
+    static pxTimed(on) {
+        return on === undefined ? pxTimed() : pxTimed(on);
+    }
+
+    /** The window thread's split since the last `pxCalls(true)` (px/kernels.js `pxSplit`); `since` a split taken before. */
+    static pxSplit(since = null) {
+        return pxSplit(since);
+    }
+
+    /** The window thread's px instance: its serial, bytes, holds and renewals by cause (px/kernels.js `pxInstances`). */
+    static pxInstances() {
+        return pxInstances();
+    }
+
+    /** The measurement generation the jobs carry (inpaint_jobs.js `measureGen`); `next` starts a new one. */
+    static measureGen(next = false) {
+        return measureGen(next);
+    }
+
+    /** The worker jobs sent and not answered yet, the pool's queue included (a harness's settle waits for 0). */
+    static pendingJobs() {
+        return pendingJobs();
+    }
+
+    /** Stop the pool's workers so the next job starts new ones (a harness's fresh pool). */
+    static resetPool() {
+        resetPool();
     }
 
     static referencedFiles() {

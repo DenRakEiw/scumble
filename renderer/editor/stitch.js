@@ -15,7 +15,7 @@
 // Navier-Stokes inpainting (it behaves like "blur"). Alignment uses an affine Lucas-Kanade
 // fit on the edge ring (edgefit.js).
 
-import { dilateMask, boxBlurs, kernelsMode } from "./px/kernels.js";
+import { dilateMask, boxBlurs, kernelsMode, routeOverrides } from "./px/kernels.js";
 import { fitLayerRGBA, warpRGBA, warpCoverage } from "./edgefit.js";
 
 const MIN_AUTO_CROP = 512;
@@ -843,7 +843,7 @@ function stitchCall(op, args, transfer = []) {
     const id = NEXT++;
     return new Promise((resolve, reject) => {
         CALLS.set(id, { resolve, reject });
-        w.postMessage({ id, op, kernels: kernelsMode(), ...args }, transfer);
+        w.postMessage({ id, op, kernels: kernelsMode(), routes: routeOverrides(), ...args }, transfer);
     });
 }
 

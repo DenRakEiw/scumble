@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7), next K1 (design `docs/PLAN_WASM_K1.md`).** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a (K1's build) done the same day, next K1b (its measurements and defaults, design `docs/PLAN_WASM_K1.md` §3 and S9), then Stop 1.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -754,3 +754,38 @@ every row's median, spread and earlier single run, "The shares for Stop 1" and t
 - **Rows to pin before they decide anything:** relight's chain rows did different work per run (62 / 60 / 483), so K12's
   "must not get worse" cannot be checked on them yet; the Rust wand's read and shape are bimodal; single long brush blocks
   (one 6,140 ms move of a 1000 px blur in r1).
+
+### K1a (2026-10-23): K1's build, no measurement yet
+
+K1 was designed by a read-only workflow of four during K0c's chain (`docs/PLAN_WASM_K1.md`: two designs, a critic, a
+writer; its §6 questions go with the suggested answers, question 1 says one session or K1a / K1b) and built by a workflow
+of eight builders on disjoint files (S1-S8) with a smoke run and two checkers; their musts and shoulds were fixed by two
+agents on disjoint files. Bytes never change: every route picks between byte-identical implementations, and with no
+route set the behaviour is today's (no kernel route means Rust; `releaseMB` = `keepMB` = 256). No `.rs` edit, ABI 20.
+- **`px.js` (S1):** `PxOutOfMemory`; `pxTimed(on)` switches per-export ms and the copy laps (`pxLaps()`: ms, first calls,
+  copyIn / copyOut ms and MB, shared MB, alloc, grewMB; only while timed); `pxLapAdd`; `Px.trapped` set by any
+  RuntimeError / RangeError from a raw export; `Px._reset(a)` keeps a result already written when the reset throws on a
+  trapped instance (all 22 `finally` sites).
+- **`kernels_js.js` (S2):** `floodScan` (`floodMask`'s loop moved verbatim) and `floodShape`, the twin of
+  `Px.floodShape` (10,080 comparisons byte-equal on both builds).
+- **`kernels.js` (S3):** the route map (`ROUTE_KINDS` flood / mips / releaseMB / keepMB, `setRoute`, `route`,
+  `kernelRoutes`, `routeOverrides`, `adoptRoutes`; `rustPx(name, size)`), the instance lifecycle (`renew(why)`: sync, else
+  in the background; on a failed background load after a release or idle the old, sound instance comes back; trap and oom
+  never), `recovered(p, err, name)` (the call falls back to the twin once, an in-place kernel never runs twice,
+  `floodShape`'s `use` at most once), `pxSettled`, `pxSplit`, `pxInstances`, the idle trim (`IDLE_MS` 2 s above `keepMB`,
+  armed by every Rust call through the wrappers on the window and by a job's end in a worker).
+- **Workers (S4):** `adoptRoutes(msg.routes)` and `pxTimed(msg.split)` per job, `await pxSettled()` before a job, ops
+  `px_probe` and `px_stats`, `timing.gen` and `timing.pxSplit`; `inpaint_raster.js` `floodMask` on `floodScan`; the
+  stitch worker adopts the routes.
+- **Window (S5):** the pool takes a job's fields (kernels, routes, gen, split) when it is queued, not when it is sent
+  (the contamination K0b / K0c saw); `measureGen`, `pendingJobs`, `resetPool`; `InpaintEditor.routes`, `setRoute`,
+  `pxTimed`, `pxSplit`, `pxInstances`.
+- **Harnesses (S6-S8):** `px_test.js` splitCases, routeCases, trapCases, lifecycleCases (it takes about 8 s longer: the
+  trim waits); `px_jobs.py` `--ab NAME=A:B`, `--set`, `--split`, `--fresh-pool`, the settle before every row, route-ran
+  assertions, `window_release`, the `flood_ladder_<s>` rows keyed on the box job (the 15k wand's coarse 2.8 MP pass kept
+  apart), traps read from every thread, NOT COUNTED (exit 2) with the window behind, failed runs never appended;
+  `run_gates.sh` `pxjobs` and `pxprobe:`; new `tools/px_probe.py` (`--cold`, `--regrow`, `--retention`) and
+  `tools/ab_median.py` (medians of three runs, the spread, the tie rule on the same KERNEL parts for both arms).
+- **For K1b** (the smoke runs at 2048, not a verdict): M5's one-instance figures point at V8 sharing code across
+  workers; M6 must read the split's `first` figures, not the wall (new workers load inside the row); the flood ladder means
+  something only at 15k.

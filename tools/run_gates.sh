@@ -3,8 +3,10 @@
 # preview) or the real node repo.
 # Gates on a fresh dev instance with its own profile (docs/PLAN_BCE.md §0).
 #
-#   bash tools/run_gates.sh <label> [--copy] [--strict] [--tiles on|off] [--offline] [--exe PATH] gate [gate ...]
+#   bash tools/run_gates.sh <label> [--copy] [--strict] [--tiles on|off] [--offline] [--exe PATH] [--js-flags FLAGS] gate [gate ...]
 # --offline: the instance does not connect to ComfyUI (--no-comfy), so no upload is forwarded to the server.
+# --js-flags FLAGS: V8 flags for the instance (--js-flags=FLAGS on both launch lines; several in one quoted word), for
+# docs/PLAN_WASM_K1.md M6 only: a gate's numbers under flags are not the app's.
 #
 # --tiles on|off: the pixel backend (C2). Dev: SCUMBLE_TILES=1 / 0. Exe: --tiles / --no-tiles.
 # Gate "nodecopy": build_node.py + node_test.py against a scratch copy of the node repo
@@ -12,7 +14,7 @@
 #
 # A gate is a tools/ script name without .py (editor, composite, pixels, shape, brush, commands,
 # film, relight, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, oxen, magnific, recipes, assistant, mcp, smoke,
-# node, blendmodes, perf:<args>; mcpb is tools/mcpb_test.js in plain Node).
+# node, blendmodes, perf:<args>, pxjobs:<args>, pxprobe:<args>; mcpb is tools/mcpb_test.js in plain Node).
 # Gate "toapis" (tools/toapis_test.py) runs tools/toapis_test.js in plain Node first, then the app against
 # tools/toapis_mock.py; it needs no ToAPIs key and refuses a profile that holds one. Gate "openrouter"
 # (tools/openrouter_test.py) does the same with tools/openrouter_test.js and tools/openrouter_mock.py, and gate
@@ -42,7 +44,7 @@ SP="${SCUMBLE_GATES:-/f/canvas/dist/gates}"
 PORT="${SCUMBLE_CDP_PORT:-9555}"
 export SCUMBLE_CDP_PORT="$PORT"
 LABEL="$1"; shift
-COPY=""; STRICT="0"; EXE=""; TILES=""; OFFLINE=""
+COPY=""; STRICT="0"; EXE=""; TILES=""; OFFLINE=""; JSFLAGS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --copy) COPY="--pixels-copy"; shift ;;
@@ -50,6 +52,7 @@ while [ $# -gt 0 ]; do
     --exe) EXE="$2"; shift 2 ;;
     --tiles) TILES="$2"; shift 2 ;;
     --offline) OFFLINE="--no-comfy"; shift ;;
+    --js-flags) JSFLAGS="$2"; shift 2 ;;
     *) break ;;
   esac
 done
@@ -79,10 +82,10 @@ esac
 
 if [ "$needs_app" = 1 ]; then
   if [ -n "$EXE" ]; then
-    "$EXE" --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE > "$OUT/app.log" 2>&1 &
+    "$EXE" --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE ${JSFLAGS:+"--js-flags=$JSFLAGS"} > "$OUT/app.log" 2>&1 &
   else
     if [ "$STRICT" = 1 ]; then export SCUMBLE_STRICT=1; else export SCUMBLE_STRICT=0; fi
-    ./node_modules/electron/dist/electron.exe . --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE > "$OUT/app.log" 2>&1 &
+    ./node_modules/electron/dist/electron.exe . --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE ${JSFLAGS:+"--js-flags=$JSFLAGS"} > "$OUT/app.log" 2>&1 &
   fi
   for i in $(seq 1 90); do
     curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null && break
@@ -110,7 +113,15 @@ for g in "$@"; do
     lint) timeout 600 npx eslint . > "$OUT/lint.log" 2>&1; rc=$? ;;
     # no app and no Python either: the three contracts, checked by tsc (docs/PLAN_TYPES.md)
     types) timeout 600 npx tsc --noEmit -p tsconfig.check.json > "$OUT/types.log" 2>&1; rc=$? ;;
-    pxjobs) timeout 1200 python tools/px_jobs.py --check > "$OUT/pxjobs.log" 2>&1; rc=$? ;;
+    # the bytes of every row, then each K1 route's two arms on the rows it routes (docs/PLAN_WASM_K1.md S7), each run
+    # under its own timeout
+    pxjobs) { timeout 1200 python tools/px_jobs.py --check \
+      && timeout 600 python tools/px_jobs.py --check --ab flood=js:rust --only wand_band,wand_object,wand_add,flood_ladder 2048x1152 \
+      && timeout 600 python tools/px_jobs.py --check --ab mips=js:rust --only mips_direct,mips_whole 2048x1152; } > "$OUT/pxjobs.log" 2>&1; rc=$? ;;
+    # pxjobs:15000x10000,--ab,flood=js:rust,--split (commas for spaces): a measurement run (K1 §3); PX_JOBS_JSON from the caller
+    pxjobs:*) timeout 3000 python tools/px_jobs.py $(echo "${g#pxjobs:}" | tr ',' ' ') > "$OUT/pxjobs.log" 2>&1; rc=$? ;;
+    # pxprobe:--cold, pxprobe:--retention,15000x10000 (commas for spaces): the px instances' probes (K1 S8, M5 and M7)
+    pxprobe:*) timeout 1800 python tools/px_probe.py $(echo "${g#pxprobe:}" | tr ',' ' ') > "$OUT/pxprobe.log" 2>&1; rc=$? ;;
     huge:*) timeout 3000 python tools/huge_test.py ${g#huge:} > "$OUT/huge.log" 2>&1; rc=$? ;;
     # quit safety: it starts and ends its own instances (port +17, a profile under $OUT/quit), so no app of the runner's;
     # quit:15000x10000 is the 15k measurement of the close alone
