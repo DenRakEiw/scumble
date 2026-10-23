@@ -1,0 +1,11 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+sharpen (cold) | Sharpen | layer | 200 | fit | 156.5 | 42.5 | 50.5 | 42.4 | 46.3 | 1.4 | 95.8 | 384 | 5.9 | 15.6 | 0 | 0 | 12164 | mip_chain 32, smudge_dab 86
+sharpen | Sharpen | layer | 50 | fit | 156.5 | 4.9 | 13.5 | 14.8 | 24 | 1.3 | 42.7 | 746 | 7.2 | 18.9 | 0 | 0 | 9285 | mip_chain 56, smudge_dab 1562
+sharpen | Sharpen | layer | 200 | fit | 156.5 | 11.1 | 59.7 | 42 | 71.7 | 1.5 | 76.5 | 1643 | 5 | 15.6 | 0 | 0 | 12201 | mip_chain 144, smudge_dab 422
+sharpen | Sharpen | layer | 400 | fit | 156.5 | 28.6 | 104.8 | 82 | 86.5 | 1.6 | 136.3 | 2832 | 4.9 | 15.5 | 0 | 0 | 12170 | mip_chain 186, smudge_dab 242
+sharpen | Sharpen | layer | 1000 | fit | 156.5 | 148.3 | 286.7 | 250 | 269.9 | 2.8 | 438.7 | 8062 | 9.8 | 17.8 | 0 | 0 | 12182 | mip_chain 480, smudge_dab 122
+sharpen | Sharpen | layer | 50 | 1:1 | 18 | 31.1 | 6 | 3.6 | 6.1 | 1.5 | 40.2 | 408 | 4.8 | 18 | 0 | 0 | 9291 | smudge_dab 182
+sharpen | Sharpen | layer | 200 | 1:1 | 18 | 43.4 | 8.2 | 8 | 10.2 | 1.5 | 58.5 | 507 | 12.3 | 18.2 | 0 | 0 | 12192 | smudge_dab 62
+sharpen | Sharpen | layer | 400 | 1:1 | 18 | 51.7 | 21.8 | 24.3 | 33.7 | 1.8 | 79.8 | 1066 | 12.5 | 15.5 | 0 | 0 | 12195 | smudge_dab 62
+sharpen | Sharpen | layer | 1000 | 1:1 | 18 | 164.1 | 129.7 | 139 | 194.6 | 9.4 | 298.8 | 4601 | 27.2 | 27.4 | 0 | 0 | 12189 | mip_chain 41, smudge_dab 62
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": true, "params": {"W": 15000, "H": 10000, "TOOLS": ["sharpen"], "SIZES": [50, 200, 400, 1000], "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 6314}}

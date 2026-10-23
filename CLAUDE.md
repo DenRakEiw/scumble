@@ -196,8 +196,12 @@ code.
   rows; "K0b" in the plan's §7, `docs/measurements/k0b_2026-10-23/`; 15 gates PASS on tiles). It found for Stop 1: the
   window's JS combine is 76 % of select by depth and 0.4 s of the wand's block (K5), **a fill layer with a depth limit
   costs about 11.5 s of a 15k layered export** (`limitAlphaRows`, K25), the bucket over a 15k band blocks 2.0 s, freqsep
-  2.4 s, relight's full march is 4.2 s per light. **Next: K0c** (the W0b baseline, three fresh runs per row, every §2
-  row and K0a's and K0b's rows, `k0a_chain.sh` / `k0b_chain.sh` as the start). **The user's rules for it:** Rust wherever the
+  2.4 s, relight's full march is 4.2 s per light. **K0c done 2026-10-23** (the W0b baseline: every row three times on
+  fresh instances, `docperf` / `mem` / `huge` once; medians, spreads and "The shares for Stop 1" in
+  `docs/measurements/w0b_2026-10-23/summary.txt`, "K0c" in the plan's §7; px_jobs' mips rows are contaminated, K1 fixes
+  the harness; `mem` prints a FAIL line, the GPU process +354 MB). **Next: K1** (the user, 2026-10-23: "mach so lange mit
+  loop weiter bis der kontext ... ca 60%"), built from its design `docs/PLAN_WASM_K1.md` (a read-only workflow of four
+  wrote it during K0c's chain; its §6 questions go with the suggested answers), then Stop 1. **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
   time only finds where the time goes; the tie rule in the plan §1.1); **every session commits and pushes the branch,
   its measurement results committed too** under `docs/measurements/<step>_<date>/` ("dann gehen diese nicht verloren");

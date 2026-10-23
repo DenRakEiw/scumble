@@ -1,0 +1,53 @@
+-- 15000x10000 (150.0 MP), 3 rounds ...
+
+== 15000x10000  (window focused False, visible, 24 logical cores)
+  mips_direct      kernel js    348.0  rust    239.0  (1.46x) | worker job js    348.0  rust    239.0  (1.46x) | wall js    531.3  rust    432.6  (1.23x)  tiles 2360 in 19 jobs
+                   parts js/rust: kernel 348.0/239.0
+                   px calls js: window none; jobs clamp_extend 35, mip_chain 1059 | rust: window none; jobs clamp_extend 98, mip_chain 2458
+  mips_whole       kernel js   1560.8  rust    482.6  (3.23x) | worker job js   1560.8  rust    482.6  (3.23x) | wall js    687.0  rust    494.6  (1.39x)  tiles 2301 in 18 jobs, built on the main thread js 0 / rust 0
+                   parts js/rust: kernel 1560.8/482.6
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs clamp_extend 39, mip_chain 2340
+  band             kernel js    162.6  rust     29.5  (5.52x) | worker job js    162.6  rust     29.5  (5.52x) | wall js    163.8  rust     31.2  (5.26x)  tiles 59 in 1 jobs
+                   parts js/rust: kernel 162.6/29.5
+                   px calls js: window none; jobs none | rust: window none; jobs composite_tile 59
+  grow             kernel js    582.8  rust    223.6  (2.61x) | worker job js    753.8  rust    354.4  (2.13x) | wall js    782.1  rust    386.3  (2.02x)  27.9 MP in 1 jobs
+                   parts js/rust: kernel 0.0/223.6  edt 367.6/0.0  bounds 53.9/0.0  feature 37.3/0.0  write 64.6/0.0  read 49.5/54.6  resultBounds 59.4/0.0
+                   px calls js: window none; jobs none | rust: window mip_chain 32; jobs grow_mask 1
+  shrink           kernel js    568.5  rust    208.0  (2.73x) | worker job js    761.0  rust    342.6  (2.22x) | wall js    836.3  rust    398.8  (2.10x)  27.9 MP in 1 jobs
+                   parts js/rust: kernel 0.0/208.0  edt 345.9/0.0  bounds 51.6/0.0  feature 42.6/0.0  write 74.4/0.0  read 47.1/56.3  resultBounds 54.0/0.0
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs grow_mask 1
+  wand_band        kernel js   1834.1  rust    895.9  (2.05x) | worker job js   2547.8  rust   1078.8  (2.36x) | wall js   4093.7  rust   2382.4  (1.72x)  152.8 MP in 2 jobs
+                   parts js/rust: flood 815.6/715.5  read 599.2/25.9  clip 0.0/0.0  bounds 272.0/0.0  shape 746.5/180.3
+                   px calls js: window none; jobs none | rust: window mip_chain 32; jobs flood_shape 2
+  wand_object      kernel js     22.1  rust      7.0  (3.15x) | worker job js     62.2  rust     37.8  (1.65x) | wall js    152.3  rust    127.0  (1.20x)  3.1 MP in 2 jobs
+                   parts js/rust: flood 5.1/5.1  read 38.2/27.4  clip 0.0/0.0  bounds 9.9/0.0  shape 7.2/1.9
+                   px calls js: window none; jobs none | rust: window mip_chain 9; jobs flood_shape 2
+  wand_add         kernel js   2084.9  rust    749.3  (2.78x) | worker job js   2385.2  rust   1072.3  (2.22x) | wall js   3524.8  rust   2130.4  (1.65x)  152.8 MP in 2 jobs
+                   parts js/rust: flood 814.3/699.9  read 321.1/292.4  clip 0.0/0.0  bounds 316.8/0.0  shape 953.8/49.4
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs flood_shape 2
+  invert           wall js    246.1  rust    233.2  (1.06x)
+                   px calls js: window none; jobs - | rust: window mip_chain 16; jobs -
+  range_depth      worker job js   7402.3  rust   7738.4  (0.96x) | wall js   1360.5  rust   1259.1  (1.08x)  1719 partial tiles in 40 jobs, selectRange's ms js 1360.4 / rust 1258.7
+                   parts js/rust: ms 7402.3/7738.4
+                   marks js/rust: edges 0.7/0.6  posted 0.2/0.2  combined 1347.6/1247.2  done 11.8/10.8  total 1360.4/1258.7; read 0.0/0.0  combine 965.8/941.4  (rust: source "depth", mode "replace", snap false, pictureTiles 0, jobs 40, tiles 1719, pct 57)
+                   px calls js: window none; jobs none | rust: window mip_chain 32; jobs none
+  range_depth_snap worker job js  12887.0  rust  12190.0  (1.06x) | wall js   2982.9  rust   2957.7  (1.01x)  1718 partial tiles in 40 jobs, selectRange's ms js 2982.4 / rust 2957.3, 513 edge tiles
+                   parts js/rust: ms 12887.0/12190.0  rmax 177.8/52.6  edges 13.0/13.4
+                   marks js/rust: edges 26.3/26.9  posted 1288.2/1317.3  combined 1671.2/1622.0  done 11.8/11.3  total 2982.5/2957.3; read 1286.8/1316.0  combine 1020.9/970.1  (rust: source "depth", mode "replace", snap true, pictureTiles 881, jobs 40, tiles 1718, pct 57)
+                   px calls js: window none; jobs none | rust: window mip_chain 32; jobs none
+  range_luma       worker job js   2571.4  rust   2769.2  (0.93x) | wall js   4812.4  rust   4168.8  (1.15x)  2333 partial tiles in 10 jobs, selectRange's ms js 4812.1 / rust 4168.3
+                   parts js/rust: ms 2571.4/2769.2
+                   marks js/rust: held 16.1/12.6  combined 4775.9/4144.0  done 13.0/11.9  total 4812.2/4168.3; read 3474.8/3276.4  combine 1174.7/1077.7  (rust: source "luma", mode "replace", snap false, program false, bands 10, tiles 2333, pct 94)
+                   px calls js: window none; jobs none | rust: window mip_chain 64; jobs composite_tile 39
+  range_color      worker job js   7040.7  rust   6822.2  (1.03x) | wall js   5912.9  rust   5680.7  (1.04x)  15 partial tiles in 10 jobs, selectRange's ms js 5912.8 / rust 5680.6
+                   parts js/rust: ms 7040.7/6822.2
+                   marks js/rust: held 29.5/24.5  combined 5884.0/5654.7  done 1.2/1.4  total 5912.8/5680.6; read 3721.8/3368.2  combine 65.7/72.0  (rust: source "color", mode "replace", snap false, program false, bands 10, tiles 15, pct 0)
+                   px calls js: window none; jobs none | rust: window mip_chain 15; jobs composite_tile 39
+  depth_guide      worker job js    655.2  rust    644.9  (1.02x) | wall js   1378.8  rust   1396.5  (0.99x)  1 jobs
+                   parts js/rust: total 655.2/644.9
+                   px calls js: window none; jobs none | rust: window none; jobs box_blurs 6
+  fill_limit       wall js  12748.8  rust  12992.1  (0.98x)  40 bands of 256 rows
+                   parts js/rust: fill 130.9/112.8  limit 12617.9/12880.7
+                   px calls js: window none; jobs - | rust: window none; jobs -
+
+PASS

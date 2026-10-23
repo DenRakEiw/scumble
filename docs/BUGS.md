@@ -45,6 +45,14 @@ For 0.1.50 (`docs/PLAN_0_1_50.md`):
 
 ## Open
 
+### The `depth` gate runs a test that does not exist (found 2026-10-23, read, K0c)
+
+`tools/run_gates.sh` has no rule of its own for `depth`, so its default branch runs `python tools/depth_test.py`,
+which does not exist: only `tools/depth_test.js` does (`docs/TESTING.md` lists the `.py` as the gate). The gate can
+only fail (Python's "can't open file"), and whatever `depth_test.js` checks is not in any gate run. Fix: a rule
+`depth) node tools/depth_test.js` in `run_gates.sh` if the Node test is the gate (it needs no app), or the Python
+test written; then TESTING.md's line. Outside the kernel plan (`docs/PLAN_WASM_BUILD.md` §4.12).
+
 ### Saving an export of about 0.7 GB or more ends the window's renderer (found 2026-10-23, run, K0a)
 
 Seen: the K0a harness (`docs/PLAN_WASM_BUILD.md`) saved its exports for real for the first time; every earlier 15k

@@ -1,0 +1,11 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+sponge (cold) | Saturate | layer | 200 | fit | 156.5 | 48 | 27.5 | 20.2 | 22.7 | 1.4 | 78.7 | 241 | 6.1 | 15.7 | 0 | 0 | 11571 | mip_chain 32, smudge_dab 86
+sponge | Saturate | layer | 50 | fit | 156.5 | 7.1 | 6.7 | 5.9 | 10.7 | 1.2 | 26.1 | 467 | 5.3 | 15.5 | 0 | 0 | 8404 | mip_chain 56, smudge_dab 1562
+sponge | Saturate | layer | 200 | fit | 156.5 | 7.7 | 16.3 | 18.2 | 24.6 | 1.6 | 37.7 | 932 | 3.2 | 15.7 | 0 | 0 | 11655 | mip_chain 144, smudge_dab 422
+sponge | Saturate | layer | 400 | fit | 156.5 | 21.9 | 54.4 | 36.9 | 44.5 | 1.6 | 80.1 | 1477 | 4.5 | 15.5 | 0 | 0 | 11679 | mip_chain 186, smudge_dab 242
+sponge | Saturate | layer | 1000 | fit | 156.5 | 81.1 | 135.2 | 100.1 | 118.3 | 2.9 | 218.4 | 3472 | 8.9 | 15.5 | 0 | 0 | 11549 | mip_chain 480, smudge_dab 122
+sponge | Saturate | layer | 50 | 1:1 | 18 | 38.1 | 6 | 1.7 | 2.8 | 1 | 47.4 | 379 | 17.1 | 17.2 | 0 | 0 | 8431 | mip_chain 4, smudge_dab 182
+sponge | Saturate | layer | 200 | 1:1 | 18 | 38.3 | 5.1 | 3.8 | 5.4 | 1.2 | 46.7 | 468 | 12.4 | 18.6 | 0 | 0 | 11701 | mip_chain 10, smudge_dab 62
+sponge | Saturate | layer | 400 | 1:1 | 18 | 44.4 | 9.6 | 9.5 | 13.2 | 1.3 | 56 | 570 | 12.4 | 18.6 | 0 | 0 | 11649 | smudge_dab 62
+sponge | Saturate | layer | 1000 | 1:1 | 18 | 74.6 | 68.1 | 57.1 | 68.2 | 9.5 | 146 | 2044 | 33.3 | 33.4 | 0 | 0 | 11530 | mip_chain 41, smudge_dab 62
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": false, "params": {"W": 15000, "H": 10000, "TOOLS": ["sponge"], "SIZES": [50, 200, 400, 1000], "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 6385}}

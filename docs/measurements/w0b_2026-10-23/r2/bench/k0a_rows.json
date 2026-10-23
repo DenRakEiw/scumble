@@ -1,0 +1,446 @@
+{
+ "files_15k": {
+  "visibility": "visible",
+  "focus": true,
+  "load_jpg": 1607.7,
+  "size": [
+   15000,
+   10000
+  ],
+  "png": {
+   "wall": 2720.1,
+   "marks": [
+    {
+     "op": "export",
+     "total": 2719.4,
+     "steps": [
+      {
+       "step": "start",
+       "ms": 0,
+       "fmt": "png"
+      },
+      {
+       "step": "ready",
+       "ms": 0.1
+      },
+      {
+       "step": "encoded",
+       "ms": 2060.1,
+       "MB": 175.96039581298828
+      },
+      {
+       "step": "saved",
+       "ms": 659.2
+      }
+     ]
+    },
+    {
+     "op": "save",
+     "total": 659.2,
+     "steps": [
+      {
+       "step": "start",
+       "ms": 0
+      },
+      {
+       "step": "bytes",
+       "ms": 70.3,
+       "MB": 175.96039581298828
+      },
+      {
+       "step": "written",
+       "ms": 588.9
+      }
+     ]
+    }
+   ],
+   "ops": {
+    "png_part": {
+     "jobs": 79,
+     "pixels": 150000000,
+     "kernel": 15799.9,
+     "compose": 374.1,
+     "rows": 374.1,
+     "prev": 6.6,
+     "copyIn": 62,
+     "filter": 9509.1,
+     "adler": 169,
+     "deflate": 5015.2,
+     "copyOut": 33.4,
+     "chunk": 625.9
+    }
+   },
+   "MB": 176.0
+  },
+  "tiff": {
+   "wall": 1603.6,
+   "marks": [
+    {
+     "op": "export",
+     "total": 1603.4,
+     "steps": [
+      {
+       "step": "start",
+       "ms": 0,
+       "fmt": "tiff"
+      },
+      {
+       "step": "ready",
+       "ms": 0
+      },
+      {
+       "step": "encoded",
+       "ms": 928.1,
+       "MB": 177.92721939086914
+      },
+      {
+       "step": "saved",
+       "ms": 675.3
+      }
+     ]
+    },
+    {
+     "op": "save",
+     "total": 675.3,
+     "steps": [
+      {
+       "step": "start",
+       "ms": 0
+      },
+      {
+       "step": "bytes",
+       "ms": 85.3,
+       "MB": 177.92721939086914
+      },
+      {
+       "step": "written",
+       "ms": 590
+      }
+     ]
+    }
+   ],
+   "ops": {
+    "tiff_part": {
+     "jobs": 79,
+     "pixels": 150000000,
+     "kernel": 6954.6,
+     "rows": 430.5,
+     "predict": 1048.5,
+     "deflate": 5472.4
+    }
+   },
+   "MB": 177.9
+  }
+ },
+ "jpeg_open_15k": {
+  "visibility": "visible",
+  "focus": true,
+  "wall": 1155.8,
+  "size": [
+   15000,
+   10000
+  ],
+  "image_read": [
+   {
+    "decode": 335,
+    "draw": 3,
+    "read": 616.2,
+    "kernel": 1004.2,
+    "pixels": 150000000
+   }
+  ],
+  "ops": {
+   "image_read": {
+    "jobs": 1,
+    "pixels": 150000000,
+    "kernel": 1004.2,
+    "decode": 335,
+    "draw": 3,
+    "read": 616.2
+   }
+  },
+  "marks": [],
+  "ops_after_3s": {
+   "mips": {
+    "jobs": 19,
+    "tiles": 2344,
+    "kernel": 359.5
+   }
+  },
+  "marks_after_3s": []
+ },
+ "png_inflate_15k": {
+  "visibility": "visible",
+  "focus": true,
+  "layout": {
+   "width": 15000,
+   "height": 10000,
+   "depth": 8,
+   "colour": 6,
+   "interlace": 0,
+   "chunks": 84,
+   "types": [
+    "IHDR",
+    "sRGB",
+    "IDAT",
+    "IEND"
+   ],
+   "idat": 81,
+   "together": true,
+   "first": 2,
+   "last": 4,
+   "head": "78 9c",
+   "scumble": true,
+   "parts": 79,
+   "MB_idat": 176,
+   "part_KB": {
+    "min": 279,
+    "max": 2551
+   }
+  },
+  "pool_size": 8,
+  "warm": true,
+  "expected_out": 600010000,
+  "whole": {
+   "jobs": 1,
+   "streams": 1,
+   "n": 3,
+   "wall": 1030.72,
+   "walls": [
+    1020.6,
+    1052.2,
+    1030.7
+   ],
+   "bytes": 184506818,
+   "out_bytes": 600010000,
+   "same_out": true,
+   "MB_in": 176,
+   "MB_out": 572.2,
+   "read": 153.61,
+   "inflate": 865.64,
+   "inflate_max": 865.64,
+   "in_MBps": 170.7,
+   "out_MBps": 555.2,
+   "inflate_in_MBps": 203.3,
+   "inflate_out_MBps": 661
+  },
+  "parts_1_worker": {
+   "jobs": 1,
+   "streams": 79,
+   "n": 3,
+   "wall": 977.91,
+   "walls": [
+    1101.2,
+    964.8,
+    977.9
+   ],
+   "bytes": 184506812,
+   "out_bytes": 600010000,
+   "same_out": true,
+   "MB_in": 176,
+   "MB_out": 572.2,
+   "read": 186.44,
+   "inflate": 791.28,
+   "inflate_max": 791.28,
+   "in_MBps": 179.9,
+   "out_MBps": 585.1,
+   "inflate_in_MBps": 222.4,
+   "inflate_out_MBps": 723.1
+  },
+  "parts_pool": {
+   "jobs": 8,
+   "streams": 79,
+   "n": 3,
+   "wall": 322.56,
+   "walls": [
+    373.5,
+    303.4,
+    322.6
+   ],
+   "bytes": 184506812,
+   "out_bytes": 600010000,
+   "same_out": true,
+   "MB_in": 176,
+   "MB_out": 572.2,
+   "read": 1020.95,
+   "inflate": 1383.81,
+   "inflate_max": 198.09,
+   "in_MBps": 545.5,
+   "out_MBps": 1774,
+   "inflate_in_MBps": 888.3,
+   "inflate_out_MBps": 2888.7
+  },
+  "same_out": true
+ },
+ "png_filter_types": {
+  "visibility": "visible",
+  "focus": true,
+  "layout": {
+   "width": 15000,
+   "height": 10000,
+   "depth": 8,
+   "colour": 6,
+   "interlace": 0,
+   "chunks": 84,
+   "types": [
+    "IHDR",
+    "sRGB",
+    "IDAT",
+    "IEND"
+   ],
+   "idat": 81,
+   "together": true,
+   "first": 2,
+   "last": 4,
+   "head": "78 9c",
+   "scumble": true,
+   "parts": 79,
+   "MB_idat": 176,
+   "part_KB": {
+    "min": 279,
+    "max": 2551
+   }
+  },
+  "wall": 989.7,
+  "rows": 10000,
+  "height": 10000,
+  "counts": {
+   "None": 0,
+   "Sub": 95,
+   "Up": 0,
+   "Average": 2348,
+   "Paeth": 7557,
+   "other": 0
+  },
+  "shares_pct": {
+   "None": 0,
+   "Sub": 0.95,
+   "Up": 0,
+   "Average": 23.48,
+   "Paeth": 75.57,
+   "other": 0
+  },
+  "timing": {
+   "op": "inflate_bench",
+   "format": "deflate",
+   "streams": 1,
+   "bytes": 184506818,
+   "out": 600010000,
+   "read": 182.82499998807907,
+   "inflate": 806.5600000023842,
+   "kernel": 989.3849999904633,
+   "pxCalls": {}
+  }
+ },
+ "tiff_inflate_15k": {
+  "visibility": "visible",
+  "focus": true,
+  "pool_size": 8,
+  "warm": true,
+  "one_worker": {
+   "jobs": 1,
+   "streams": 79,
+   "n": 3,
+   "wall": 1042.97,
+   "walls": [
+    1043,
+    1038.4,
+    1081.3
+   ],
+   "bytes": 186569298,
+   "out_bytes": 600000000,
+   "same_out": true,
+   "MB_in": 177.9,
+   "MB_out": 572.2,
+   "read": 176.85,
+   "inflate": 875.22,
+   "inflate_max": 875.22,
+   "in_MBps": 170.6,
+   "out_MBps": 548.6,
+   "inflate_in_MBps": 203.3,
+   "inflate_out_MBps": 653.8
+  },
+  "pool": {
+   "jobs": 8,
+   "streams": 79,
+   "n": 3,
+   "wall": 332.59,
+   "walls": [
+    343.8,
+    259.9,
+    332.6
+   ],
+   "bytes": 186569298,
+   "out_bytes": 600000000,
+   "same_out": true,
+   "MB_in": 177.9,
+   "MB_out": 572.2,
+   "read": 1039.27,
+   "inflate": 1267.81,
+   "inflate_max": 199.03,
+   "in_MBps": 535,
+   "out_MBps": 1720.5,
+   "inflate_in_MBps": 894,
+   "inflate_out_MBps": 2875
+  },
+  "layout": {
+   "shape": [
+    10000,
+    15000,
+    4
+   ],
+   "compression": 8,
+   "predictor": 2,
+   "tiled": false,
+   "rowsperstrip": 128,
+   "strips": 79,
+   "MB_strips": 177.9,
+   "MB_file": 177.9
+  }
+ },
+ "tiff_rows_256": {
+  "visibility": "visible",
+  "focus": true,
+  "warm": true,
+  "wall": 2107.9,
+  "walls": [
+   2352.8,
+   2091.3,
+   2107.9
+  ],
+  "bands": 40,
+  "pieces": 9335,
+  "codec": "deflate",
+  "split": {
+   "parse": 1.77,
+   "wait": 876.71,
+   "decode": 0,
+   "copy": 102.73,
+   "unpredict": 484.47,
+   "convert": 553.44,
+   "deliver": 2.43,
+   "kernel": 2107.75
+  },
+  "per_band": {
+   "parse": 0.044,
+   "wait": 21.918,
+   "decode": 0,
+   "copy": 2.568,
+   "unpredict": 12.112,
+   "convert": 13.836,
+   "deliver": 0.061,
+   "kernel": 52.694
+  },
+  "missing": [],
+  "info": {
+   "width": 15000,
+   "height": 10000,
+   "bits": 8,
+   "samples": 4,
+   "compression": 8,
+   "predictor": 2,
+   "planar": 1,
+   "tiled": false
+  }
+ }
+}

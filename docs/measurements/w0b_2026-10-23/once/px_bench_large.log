@@ -1,0 +1,350 @@
+(node:30716) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ok   twin harness: identical builds pass, the run sees floats
+ok   twin harness: -0 against 0 is a difference (bits, not ===)  37 floats: out[0] is 0 (0x80000000), the twin has 0 (0x0)
+ok   twin harness: two NaNs with other payloads differ  37 floats: out[3] is NaN (0x7fc00001), the twin has NaN (0x7fc00000)
+ok   twin harness: one byte off is a failure without a rule  41 bytes: out[7] is 88, the twin has 89
+ok   twin harness: an allowed difference passes and is counted per run (2 values x 2 offsets)  {"one level":4}
+ok   twin harness: a kernel blind to byteOffset fails at the odd offset only  41 bytes at an odd offset: out[1] is 90, the twin has 127
+ok   twin harness: shift false runs the inputs as given only
+ok   twin harness: a twin blind to byteOffset is reported as the twin's  41 bytes: out[1] is 90, the twin has 127
+ok   twin harness: inputs are copied for every run (a kernel that writes its input in place)
+ok   twin harness: numbers and arrays inside an object are compared too  41 bytes: out.first[1] is 74, the twin has 37
+ok   twin harness: a build that throws fails with its message  37 floats: threw no room
+ok   js mip keeps the colour of the one opaque sample  255,0,0,64
+ok   js mipHalf equals the reference (distanceTransform / floodMask for the EDT and the flood)
+ok   js mip byte path equals the word path; Uint8ClampedArray input gives the same chain
+ok   js mipChain equals the reference (distanceTransform / floodMask for the EDT and the flood) and repeated halving
+ok   js distTransform equals the reference (distanceTransform / floodMask for the EDT and the flood) bit for bit
+ok   js twin is the exact squared distance (brute force 41x29)
+ok   js flood equals the reference (distanceTransform / floodMask for the EDT and the flood), with the count
+ok   js compositeTile equals the reference (distanceTransform / floodMask for the EDT and the flood) (5 ops and 25 blend modes, partial alpha, opacity, masks, tails)
+ok   js blend modes equal the reference (distanceTransform / floodMask for the EDT and the flood), each alone (opaque and translucent backdrops, opacity, mask)
+ok   js composite gives the same bytes for Uint8ClampedArray inputs
+ok   js source-over over an opaque tile within 1.5 levels of float maths  worst 1.32
+ok   js blend modes over an opaque tile within one level of the specification's floats (half a level at full opacity)  worst 0.95 (color-burn), at full opacity 0.501; linear light 0.881, at full opacity 0.498
+ok   js blend modes over translucent pixels within 2.5*255/alpha + 2.5*255/backdrop alpha + 0.6 levels  worst at 29 % of the bound over 95380 pixels; linear light 27 %; tier B raw dev 2.56, ratio 32 %
+ok   js linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   js linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   js linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   js subtract over every opaque (b, s) pair matches closed form exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) subtract over every opaque (b, s) pair matches closed form exactly
+ok   js pin-light over every opaque (b, s) pair matches closed form exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) pin-light over every opaque (b, s) pair matches closed form exactly
+ok   js hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   js exclusion over every opaque (b, s) pair matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) exclusion over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge over every opaque (b, s) pair matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) color-dodge over every opaque (b, s) pair matches reference exactly
+ok   js color-burn over every opaque (b, s) pair matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) color-burn over every opaque (b, s) pair matches reference exactly
+ok   js vivid-light over every opaque (b, s) pair matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) vivid-light over every opaque (b, s) pair matches reference exactly
+ok   js divide over every opaque (b, s) pair matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) divide over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge edge set matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) color-dodge edge set matches reference exactly
+ok   js color-burn edge set matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) color-burn edge set matches reference exactly
+ok   js vivid-light edge set matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) vivid-light edge set matches reference exactly
+ok   js divide edge set matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) divide edge set matches reference exactly
+ok   js source-over over translucent pixels within 2.5*255/alpha + 0.6 levels, alpha within 1  worst at 61 % of the bound over 7221 translucent pixels, alpha off by 0.91
+ok   js matchPixels within a level of matchCanvas' doubles  worst 1, over 0 of 225789
+ok   js matchPixels leaves alpha and fully transparent pixels alone  alpha moved 0, transparent moved 0
+ok   js matchPixels at k = 0 is the identity
+ok   js matchPixels with meanS = meanT and scale 1 is the identity
+ok   js matchPixels clamps at 255
+ok   js matchPixels gives the same bytes for Uint8ClampedArray input
+ok   js smudgeDab within a level of its doubles (what is laid down; alpha at least 4)  worst 1.000 of 38100 pixels
+ok   js smudgeDab's carry within two 16-bit units of its doubles  worst 1.115
+ok   js smudgeDab leaves what the dab does not cover, and the alpha under alpha lock  uncovered moved 0, alpha moved 0
+ok   js smudgeDab with keep 1 leaves the carry as it was
+ok   js smudgeDab at strength 0 lays nothing down, and at keep 0 the carry is what lies there
+ok   js smudgeDab's pickup fills the carry and lays nothing down; the carry stays premultiplied
+ok   js smudgeDab at full strength lays the carry down byte for byte (the 16-bit round trip is exact)
+ok   poisson reference: u is the plane in a hole enclosed by fixed pixels  worst 9.32e-11, 343 CG steps
+ok   poisson reference: a band across the box keeps a plane in x at the box edge (Neumann)  worst 6.17e-12
+ok   poisson reference: a strip is the straight line between fixed ends and constant to an open end (1 x N and N x 1)  worst 1.14e-13
+ok   poisson reference: a region cut off by transparency keeps the start (the mean of 52 fixed pixels next to an unknown)  worst 0, solved values off the start 723
+ok   poisson reference: residual from the definition on 20 scenes, u within the boundary's range  residual 9.91e-11, outside the range 0
+ok   js poissonBlend within a level of the doubles (20 scenes: discs, blobs, strokes, a ring, the box edge, transparency, soft masks, strips, clipping)  worst 1; 0.06 % of 101748 bytes differ; the twin's u off by at least 0.003
+ok   js poissonBlend differs from the doubles' rounding on at most 1 % of the bytes, its u within 0.1  0.06 %, u off by at least 0.003
+ok   js poissonBlend keeps the source's alpha in the mask ([0,0,0,0] where the source is clear) and the destination outside it  alpha wrong 0, outside moved 0
+ok   js poissonBlend's info: the unknowns, the cycles (4 to 8), the levels
+ok   js poissonBlend converges before the cap of 30 cycles on every scene  most 8
+ok   js poissonBlend takes at most 10 cycles on every scene  most 8 (a 1 x 150 strip, fixed at both ends)
+ok   js poissonBlend with dst == src gives dst
+ok   js poissonBlend with dst = src + k gives dst (k 12,-30,45; a region cut off by transparency takes the start, k too)
+ok   js poissonBlend with an empty mask gives dst, info[0] 0  info [0,0,0,0]
+ok   js poissonBlend with no fixed pixel gives the source (a full mask, and a partial one over a clear destination)  full true, partial true
+ok   js poissonBlend fills a hole enclosed by a plane with the plane  worst 0, 0 bytes off
+ok   js poissonBlend on strands the source splits: within a level where it settled, info[3] where it did not  strands 4 / 3: 30 cycles, settled false, worst 12; strands 6 / 5: 30 cycles, settled false, worst 18; strands 10 / 6: 30 cycles, settled false, worst 1
+ok   js poissonBlend leaves out boundary pixels below alpha 8
+ok   js poissonBlend: mask values 1 to 255 act alike (the bytes of a binary mask)
+ok   js poissonBlend gives the same bytes for Uint8ClampedArray input
+ok   js poissonBlend with w or h 0 does nothing
+ok   js pngFilterRows equals the reference (distanceTransform / floodMask for the EDT and the flood)
+ok   js filtered rows unfilter back to the input
+ok   CompressionStream("deflate") inflates back to the input  131072 -> 85395
+ok   compositeTile SHA-256 identical across twin, px.wasm, and px_scalar.wasm for ops 0-29  sha 5264ad13756d016c
+ok   compositeTile op 30 equals op 0 on twin, px.wasm, and px_scalar.wasm
+ok   the fixture's normal cell (twin) is within a level of Photoshop's merged picture (the patch's origin)  max 1
+ok   twin hard mix equals Photoshop 27.11's merged fixture cell exactly (the tie b + s = 255 included)  max 0
+ok   px.wasm hard mix equals Photoshop 27.11's merged fixture cell exactly (the tie b + s = 255 included)  max 0
+ok   px_scalar.wasm hard mix equals Photoshop 27.11's merged fixture cell exactly (the tie b + s = 255 included)  max 0
+ok   GLSL blend1 hard mix gives the kernel's rule on every byte pair (Photoshop's tie)  65,536 pairs
+ok   GLSL bm_clip keeps an exactly grey colour grey, no 0 / 0, in every float32 order of the luminosity sum  13824 cases
+ok   Tier C hue over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C saturation over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C color over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C luminosity over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C darker-color over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C lighter-color over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C hue edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C saturation edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C color edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C luminosity edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C darker-color edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C lighter-color edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C 2^18 random triplet pairs: twin == px.wasm == px_scalar.wasm == BigInt reference (0 differ)
+ok   kernels.js loads px.wasm (SIMD) as in a worker
+       1024 x 1024: height_normals routed (rust) 33.7 ms, twin 67.4 ms; simd cold first call 49.0 ms (compile 0.7 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march point routed (twin) 294.3 ms, twin 291.4 ms, simd 360.4 ms (twin / simd 0.81); simd cold first call 655.4 ms (compile 0.8 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march spot routed (twin) 309.0 ms, twin 336.3 ms, simd 390.5 ms (twin / simd 0.86); simd cold first call 697.0 ms (compile 0.9 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march sun routed (rust) 163.7 ms, twin 266.0 ms, simd 164.7 ms (twin / simd 1.62); simd cold first call 265.4 ms (compile 0.8 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march point routed (twin) 32.5 ms, twin 32.8 ms, simd 35.2 ms (twin / simd 0.93); simd cold first call 61.0 ms (compile 1.3 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march spot routed (twin) 32.7 ms, twin 33.3 ms, simd 35.7 ms (twin / simd 0.93); simd cold first call 79.7 ms (compile 1.8 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march sun routed (rust) 18.4 ms, twin 39.9 ms, simd 18.3 ms (twin / simd 2.18); simd cold first call 34.0 ms (compile 1.1 ms)
+       2048 x 1365: height_normals routed (rust) 89.4 ms, twin 162.4 ms; simd cold first call 156.1 ms (compile 1.4 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march point routed (twin) 822.7 ms, twin 812.8 ms, simd 986.2 ms (twin / simd 0.82); simd cold first call 1680.1 ms (compile 1.0 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march spot routed (twin) 947.0 ms, twin 938.4 ms, simd 1086.6 ms (twin / simd 0.86); simd cold first call 1990.2 ms (compile 1.6 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march sun routed (rust) 381.9 ms, twin 669.6 ms, simd 366.5 ms (twin / simd 1.83); simd cold first call 648.4 ms (compile 1.8 ms)
+       4096 x 2731: height_normals routed (rust) 382.0 ms, twin 633.3 ms; simd cold first call 681.8 ms (compile 3.3 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march point routed (twin) 3343.7 ms, twin 3348.5 ms, simd 3984.5 ms (twin / simd 0.84); simd cold first call 6600.7 ms (compile 3.6 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march spot routed (twin) 3552.3 ms, twin 3657.2 ms, simd 4318.8 ms (twin / simd 0.85); simd cold first call 7824.4 ms (compile 1.2 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march sun routed (rust) 1527.1 ms, twin 2684.2 ms, simd 1505.3 ms (twin / simd 1.78); simd cold first call 2312.7 ms (compile 0.7 ms)
+ok   shadow_march as routed: kind 0 (a point; ensureRelightMaps sends a spot as kind 0) runs the twin, kind 1 (a sun) the Rust build (byte for byte)
+ok   kernels.js back on the JS kernels for the later cases
+ok   kernels.js re-exports px.js' pxCalls (one set of counters per thread)
+ok   pxCalls counts each kernel call by its export name, and not the allocator, version or size helpers  {"dilate_mask":2,"range_max":1}
+ok   the counts go on across a new instance of the same module; px.raw calls are not counted  {"dilate_mask":3,"range_max":1}
+ok   pxCalls(true) returns the counts and clears them  {"dilate_mask":3,"range_max":1} then {}
+ok   kernels.js releaseIfLarge replaces a grown instance and the count goes on (3 calls over two instances)  {"dilate_mask":3}, a new instance of 2228224 bytes
+ok   rust simd module reports its SIMD flag
+ok   js mip keeps the colour of the one opaque sample  255,0,0,64
+ok   js mipHalf equals the rust simd
+ok   js mip byte path equals the word path; Uint8ClampedArray input gives the same chain
+ok   js mipChain equals the rust simd and repeated halving
+ok   js clampExtend equals the rust simd and repeats the valid edge
+ok   js distTransform equals the rust simd bit for bit
+ok   js twin is the exact squared distance (brute force 41x29)
+ok   js flood equals the rust simd, with the count
+ok   rust simd grow_mask equals growMask + maskBounds (grow, shrink, empty, partial alpha)
+ok   rust simd flood_shape equals floodMask, the selection clip, the count, the bounds and the shape
+ok   rust simd dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   js dilate_mask gives the same at an odd offset
+ok   rust simd box_blurs equals its twin bit for bit (36 cases, each also at an odd offset)
+ok   js box_blurs gives the same at an odd offset
+       1492 x 1492: dilate rust simd 21.1 ms, twin 52.1; three box blurs rust simd 22.9 ms, twin 34.8
+ok   rust simd range_max equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   js range_max gives the same at an odd offset
+ok   rust simd range_max of a flat map is 0 everywhere
+       2048 x 2048: range_max rust simd 19.3 ms, twin 112.5 ms
+ok   rust simd height_normals equals its twin within 1 level
+ok   rust simd shadow_march equals its twin within 1 level
+ok   rust simd png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)
+       256 rows of 15,000 RGB pixels, Paeth: rust simd 34.1 ms, twin 85.8 ms
+ok   js compositeTile equals the rust simd (5 ops and 25 blend modes, partial alpha, opacity, masks, tails)
+ok   js blend modes equal the rust simd, each alone (opaque and translucent backdrops, opacity, mask)
+ok   js composite gives the same bytes for Uint8ClampedArray inputs
+ok   js source-over over an opaque tile within 1.5 levels of float maths  worst 1.32
+ok   js blend modes over an opaque tile within one level of the specification's floats (half a level at full opacity)  worst 0.95 (color-burn), at full opacity 0.501; linear light 0.881, at full opacity 0.498
+ok   js blend modes over translucent pixels within 2.5*255/alpha + 2.5*255/backdrop alpha + 0.6 levels  worst at 29 % of the bound over 95380 pixels; linear light 27 %; tier B raw dev 2.56, ratio 32 %
+ok   js linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   rust simd linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   js linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   rust simd linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   js linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   rust simd linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   js subtract over every opaque (b, s) pair matches closed form exactly
+ok   rust simd subtract over every opaque (b, s) pair matches closed form exactly
+ok   js pin-light over every opaque (b, s) pair matches closed form exactly
+ok   rust simd pin-light over every opaque (b, s) pair matches closed form exactly
+ok   js hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   rust simd hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   js exclusion over every opaque (b, s) pair matches reference exactly
+ok   rust simd exclusion over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge over every opaque (b, s) pair matches reference exactly
+ok   rust simd color-dodge over every opaque (b, s) pair matches reference exactly
+ok   js color-burn over every opaque (b, s) pair matches reference exactly
+ok   rust simd color-burn over every opaque (b, s) pair matches reference exactly
+ok   js vivid-light over every opaque (b, s) pair matches reference exactly
+ok   rust simd vivid-light over every opaque (b, s) pair matches reference exactly
+ok   js divide over every opaque (b, s) pair matches reference exactly
+ok   rust simd divide over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge edge set matches reference exactly
+ok   rust simd color-dodge edge set matches reference exactly
+ok   js color-burn edge set matches reference exactly
+ok   rust simd color-burn edge set matches reference exactly
+ok   js vivid-light edge set matches reference exactly
+ok   rust simd vivid-light edge set matches reference exactly
+ok   js divide edge set matches reference exactly
+ok   rust simd divide edge set matches reference exactly
+       a megapixel over an opaque tile at 78 %: multiply rust simd 5.7 ms, twin 30.6; overlay rust simd 7.2 ms, twin 40.9; soft-light rust simd 12.9 ms, twin 40.3; linear-light rust simd 6.3 ms, twin 38.1; exclusion rust simd 6.7 ms, twin 32.7; pin-light rust simd 6.7 ms, twin 48.9; color-dodge rust simd 8.2 ms, twin 53.0; hue rust simd 13.7 ms, twin 49.6; darker-color rust simd 7.0 ms, twin 24.7
+ok   js source-over over translucent pixels within 2.5*255/alpha + 0.6 levels, alpha within 1  worst at 61 % of the bound over 7221 translucent pixels, alpha off by 0.91
+ok   js matchPixels equals the rust simd (random pixels and statistics, tails, k 0 to 1)
+ok   js matchPixels equals the rust simd at the extremes of the statistics
+       a megapixel matched: rust simd 4.9 ms, twin 31.5
+ok   js smudgeDab equals the rust simd (random pixels, carries, masks; strength, keep, alpha lock, pickup)
+ok   js smudgeDab equals the rust simd over a stroke of 40 dabs whose carry goes on
+ok   rust simd smudgeDab takes a Uint8ClampedArray view and gives the twin's bytes
+       a 400 px dab smudged: rust simd 2.16 ms, twin 18.27
+ok   js poissonBlend equals the rust simd on strands, the not-settled flag included
+ok   js poissonBlend equals the rust simd on the 20 scenes (out and info)
+ok   js poissonBlend equals the rust simd on random boxes (1 x 1 to 257 x 129; sparse, dense, full and empty masks)
+ok   rust simd poissonBlend takes Uint8ClampedArray views at an offset, gives the twin's bytes and leaves its inputs
+ok   rust simd poissonBlend writes a given out and returns it; without one it returns a new array of the same bytes
+ok   rust simd poissonBlend with w or h 0 does nothing
+ok   js poissonBlend equals the rust simd on a disc in a 512 x 512 box   info [183461,7,8,0] vs [183461,7,8,0]
+       a disc healed in a 512 x 512 box (183461 px): rust simd 87.9 ms, 7 cycles, 8 levels; twin 191.0 ms, 7 cycles
+ok   js poissonBlend equals the rust simd on a diagonal 60 px stroke in a 512 x 512 box   info [40549,5,6,0] vs [40549,5,6,0]
+       a diagonal 60 px stroke healed in a 512 x 512 box (40549 px): rust simd 17.3 ms, 5 cycles, 6 levels; twin 36.5 ms, 5 cycles
+ok   js poissonBlend equals the rust simd on a disc in a 2048 x 2048 box   info [2916809,7,10,0] vs [2916809,7,10,0]
+       a disc healed in a 2048 x 2048 box (2916809 px): rust simd 1511.7 ms, 7 cycles, 10 levels; twin 2996.0 ms, 7 cycles
+ok   js poissonBlend equals the rust simd on a diagonal 60 px stroke in a 2048 x 2048 box   info [174181,5,6,0] vs [174181,5,6,0]
+       a diagonal 60 px stroke healed in a 2048 x 2048 box (174181 px): rust simd 143.5 ms, 5 cycles, 6 levels; twin 301.8 ms, 5 cycles
+ok   js pngFilterRows equals the rust simd
+ok   js filtered rows unfilter back to the input
+ok   CompressionStream("deflate") inflates back to the input  131072 -> 85395
+ok   rust simd pngPart level 1: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189656
+ok   rust simd pngPart level 1: the joined rows unfilter back to the input
+ok   rust simd pngPart level 2: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189375
+ok   rust simd pngPart level 2: the joined rows unfilter back to the input
+ok   rust simd pngPart level 6: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189370
+ok   rust simd pngPart level 6: the joined rows unfilter back to the input
+ok   rust simd pngPart of an empty band is small  1033 bytes
+ok   rust simd pngPart of noise inflates back
+ok   js psdPackRows gives the bytes of the PSD writer's packBits
+ok   js psdPackRows equals the rust simd
+ok   rust simd resample_block equals its twin (96 maps: turns, scales, a mirror, bicubic / bilinear, masks, clamped edges, round trip)
+       2048 x 2048 turned 3 degrees, bicubic: rust simd 139 ms (33.2 ns/px), twin 298 ms (71.1 ns/px)
+ok   rust simd alloc returns an 8-aligned pointer  ptr 55738368
+ok   rust simd a large alloc grows memory  220135424 -> 488636416
+ok   rust simd the old view is detached after growth
+ok   rust simd the fresh view sees the bytes written before growth
+ok   rust simd put / get of a Float32Array
+ok   rust simd arena blocks do not overlap
+ok   rust simd after a reset the job fits one kept chunk  chunks 1
+ok   rust simd a pointer above 2 GB is usable  ptr 2203238400
+ok   rust scalar module reports its SIMD flag
+ok   js mip keeps the colour of the one opaque sample  255,0,0,64
+ok   js mipHalf equals the rust scalar
+ok   js mip byte path equals the word path; Uint8ClampedArray input gives the same chain
+ok   js mipChain equals the rust scalar and repeated halving
+ok   js clampExtend equals the rust scalar and repeats the valid edge
+ok   js distTransform equals the rust scalar bit for bit
+ok   js twin is the exact squared distance (brute force 41x29)
+ok   js flood equals the rust scalar, with the count
+ok   rust scalar grow_mask equals growMask + maskBounds (grow, shrink, empty, partial alpha)
+ok   rust scalar flood_shape equals floodMask, the selection clip, the count, the bounds and the shape
+ok   rust scalar dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   rust scalar box_blurs equals its twin bit for bit (36 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 25.3 ms, twin 54.7; three box blurs rust scalar 29.6 ms, twin 55.6
+ok   rust scalar range_max equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   rust scalar range_max of a flat map is 0 everywhere
+       2048 x 2048: range_max rust scalar 31.0 ms, twin 127.2 ms
+ok   rust scalar height_normals equals its twin within 1 level
+ok   rust scalar shadow_march equals its twin within 1 level
+ok   rust scalar png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)
+       256 rows of 15,000 RGB pixels, Paeth: rust scalar 50.9 ms, twin 52.9 ms
+ok   js compositeTile equals the rust scalar (5 ops and 25 blend modes, partial alpha, opacity, masks, tails)
+ok   js blend modes equal the rust scalar, each alone (opaque and translucent backdrops, opacity, mask)
+ok   js composite gives the same bytes for Uint8ClampedArray inputs
+ok   js source-over over an opaque tile within 1.5 levels of float maths  worst 1.32
+ok   js blend modes over an opaque tile within one level of the specification's floats (half a level at full opacity)  worst 0.95 (color-burn), at full opacity 0.501; linear light 0.881, at full opacity 0.498
+ok   js blend modes over translucent pixels within 2.5*255/alpha + 2.5*255/backdrop alpha + 0.6 levels  worst at 29 % of the bound over 95380 pixels; linear light 27 %; tier B raw dev 2.56, ratio 32 %
+ok   js linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   rust scalar linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   js linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   rust scalar linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   js linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   rust scalar linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   js subtract over every opaque (b, s) pair matches closed form exactly
+ok   rust scalar subtract over every opaque (b, s) pair matches closed form exactly
+ok   js pin-light over every opaque (b, s) pair matches closed form exactly
+ok   rust scalar pin-light over every opaque (b, s) pair matches closed form exactly
+ok   js hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   rust scalar hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   js exclusion over every opaque (b, s) pair matches reference exactly
+ok   rust scalar exclusion over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge over every opaque (b, s) pair matches reference exactly
+ok   rust scalar color-dodge over every opaque (b, s) pair matches reference exactly
+ok   js color-burn over every opaque (b, s) pair matches reference exactly
+ok   rust scalar color-burn over every opaque (b, s) pair matches reference exactly
+ok   js vivid-light over every opaque (b, s) pair matches reference exactly
+ok   rust scalar vivid-light over every opaque (b, s) pair matches reference exactly
+ok   js divide over every opaque (b, s) pair matches reference exactly
+ok   rust scalar divide over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge edge set matches reference exactly
+ok   rust scalar color-dodge edge set matches reference exactly
+ok   js color-burn edge set matches reference exactly
+ok   rust scalar color-burn edge set matches reference exactly
+ok   js vivid-light edge set matches reference exactly
+ok   rust scalar vivid-light edge set matches reference exactly
+ok   js divide edge set matches reference exactly
+ok   rust scalar divide edge set matches reference exactly
+       a megapixel over an opaque tile at 78 %: multiply rust scalar 6.8 ms, twin 30.1; overlay rust scalar 12.2 ms, twin 39.5; soft-light rust scalar 13.6 ms, twin 36.8; linear-light rust scalar 8.0 ms, twin 35.4; exclusion rust scalar 8.0 ms, twin 32.8; pin-light rust scalar 12.3 ms, twin 42.1; color-dodge rust scalar 7.5 ms, twin 46.4; hue rust scalar 14.1 ms, twin 48.6; darker-color rust scalar 7.8 ms, twin 22.6
+ok   js source-over over translucent pixels within 2.5*255/alpha + 0.6 levels, alpha within 1  worst at 61 % of the bound over 7221 translucent pixels, alpha off by 0.91
+ok   js matchPixels equals the rust scalar (random pixels and statistics, tails, k 0 to 1)
+ok   js matchPixels equals the rust scalar at the extremes of the statistics
+       a megapixel matched: rust scalar 21.7 ms, twin 27.0
+ok   js smudgeDab equals the rust scalar (random pixels, carries, masks; strength, keep, alpha lock, pickup)
+ok   js smudgeDab equals the rust scalar over a stroke of 40 dabs whose carry goes on
+ok   rust scalar smudgeDab takes a Uint8ClampedArray view and gives the twin's bytes
+       a 400 px dab smudged: rust scalar 2.13 ms, twin 17.85
+ok   js poissonBlend equals the rust scalar on strands, the not-settled flag included
+ok   js poissonBlend equals the rust scalar on the 20 scenes (out and info)
+ok   js poissonBlend equals the rust scalar on random boxes (1 x 1 to 257 x 129; sparse, dense, full and empty masks)
+ok   rust scalar poissonBlend takes Uint8ClampedArray views at an offset, gives the twin's bytes and leaves its inputs
+ok   rust scalar poissonBlend writes a given out and returns it; without one it returns a new array of the same bytes
+ok   rust scalar poissonBlend with w or h 0 does nothing
+ok   js poissonBlend equals the rust scalar on a disc in a 512 x 512 box   info [183461,7,8,0] vs [183461,7,8,0]
+       a disc healed in a 512 x 512 box (183461 px): rust scalar 84.8 ms, 7 cycles, 8 levels; twin 191.0 ms, 7 cycles
+ok   js poissonBlend equals the rust scalar on a diagonal 60 px stroke in a 512 x 512 box   info [40549,5,6,0] vs [40549,5,6,0]
+       a diagonal 60 px stroke healed in a 512 x 512 box (40549 px): rust scalar 16.8 ms, 5 cycles, 6 levels; twin 36.5 ms, 5 cycles
+ok   js poissonBlend equals the rust scalar on a disc in a 2048 x 2048 box   info [2916809,7,10,0] vs [2916809,7,10,0]
+       a disc healed in a 2048 x 2048 box (2916809 px): rust scalar 1422.3 ms, 7 cycles, 10 levels; twin 2996.0 ms, 7 cycles
+ok   js poissonBlend equals the rust scalar on a diagonal 60 px stroke in a 2048 x 2048 box   info [174181,5,6,0] vs [174181,5,6,0]
+       a diagonal 60 px stroke healed in a 2048 x 2048 box (174181 px): rust scalar 138.8 ms, 5 cycles, 6 levels; twin 301.8 ms, 5 cycles
+ok   js pngFilterRows equals the rust scalar
+ok   js filtered rows unfilter back to the input
+ok   CompressionStream("deflate") inflates back to the input  131072 -> 85395
+ok   rust scalar pngPart level 1: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189656
+ok   rust scalar pngPart level 1: the joined rows unfilter back to the input
+ok   rust scalar pngPart level 2: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189375
+ok   rust scalar pngPart level 2: the joined rows unfilter back to the input
+ok   rust scalar pngPart level 6: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189370
+ok   rust scalar pngPart level 6: the joined rows unfilter back to the input
+ok   rust scalar pngPart of an empty band is small  1033 bytes
+ok   rust scalar pngPart of noise inflates back
+ok   js psdPackRows gives the bytes of the PSD writer's packBits
+ok   js psdPackRows equals the rust scalar
+ok   rust scalar resample_block equals its twin (96 maps: turns, scales, a mirror, bicubic / bilinear, masks, clamped edges, round trip)
+       2048 x 2048 turned 3 degrees, bicubic: rust scalar 129 ms (30.7 ns/px), twin 267 ms (63.6 ns/px)
+ok   rust scalar alloc returns an 8-aligned pointer  ptr 55738368
+ok   rust scalar a large alloc grows memory  226033664 -> 494534656
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2203238400
+PASS

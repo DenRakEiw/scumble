@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a and K0b built 2026-10-23 (§7), next K0c.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7), next K1 (design `docs/PLAN_WASM_K1.md`).** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -730,3 +730,27 @@ the gates and every new row once at 15k (`docs/measurements/k0b_2026-10-23/`, `d
   K39 is no memory risk there); the first call of a freshly compiled px.wasm runs 1.8-2.2x the warm median (Node), and
   every worker compiles its own module: a measured candidate for K1's losing Rust jobs; wand_object still loses
   (Rust 0.89x).
+
+### K0c (2026-10-23)
+
+The W0b baseline on one build (`8b4324f`..`249d882`, K0b's harness): every §2 row and every K0a / K0b row three times,
+each group on a fresh instance (offline, tiles, the window in front; `w0b_chain.sh`, 2 h 22 min), then `docperf`, `mem`,
+`huge` (30000 x 20000) and the Node bench once; the medians by a workflow of six readers, a writer and a checker (70
+numbers recomputed from the raw logs, all right; 15 prose claims corrected). Every run rc=0; `mem` prints a FAIL line
+(the GPU process +354 MB over its baseline) under its "ALL PASS". `docs/measurements/w0b_2026-10-23/summary.txt` holds
+every row's median, spread and earlier single run, "The shares for Stop 1" and the tie rule's candidates.
+- **The corrections of §4.12:** `PLAN_WASM.md` row 2 (the histograms need no kernel; the cost is the window's combine and
+  `limitAlphaRows`) and row 6 (no `tools/png_test.js`); the paint-layer row was relabelled in K0b; the `depth` gate's
+  missing test is in `docs/BUGS.md`.
+- **The shares (medians; the ranking by felt cost x frequency is inferred):** B the retouch dabs (blur / sharpen 79 / 82
+  ms per move at 400 px at fit, 244 / 256 at 1000 px, on the window; freqsep 2,213 with the window blocked 2,179); S the
+  wand across the picture 1,733, blocking 492 (combineRows 322), invert 212 all blocking; M select by depth 1,701 (the
+  combine 1,264), luma 2,445, snap 2,856, and `limitAlphaRows` 9.7-11.0 s of a layered export with a depth-limited fill;
+  P every 15k PNG open 3,076 (`png_read` 2,146 off the window; the open's 497 ms block is the shader link); L the shadows
+  land 3,813 after one light moves, 5,106 for the first march; E the stitch finish 938 / 2,895 at 2048^2 / 4096^2; C
+  the exports and the PNG store after a non-PNG open (about 2 s); T TIFF opens 4.5-13.7 s; D the 15k PSD open 12,987 with
+  the window blocked 9,796; F the bucket over a 15k band 2,885, blocking 1,466. X: no A/B row loses outside its spread
+  now (wand_object Rust 127 / JS 152), and px_jobs' mips rows are contaminated (queued jobs run in the new mode).
+- **Rows to pin before they decide anything:** relight's chain rows did different work per run (62 / 60 / 483), so K12's
+  "must not get worse" cannot be checked on them yet; the Rust wand's read and shape are bimodal; single long brush blocks
+  (one 6,140 ms move of a 1000 px blur in r1).

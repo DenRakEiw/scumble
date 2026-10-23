@@ -1,0 +1,244 @@
+{
+ "built": 5156,
+ "s": 4,
+ "tiles": true,
+ "kernels": "js",
+ "kernelsInUse": "js",
+ "undoMB": 133.1,
+ "rows": [
+  {
+   "row": "push fit size 200",
+   "travel": 3130,
+   "press": 59.8,
+   "window": 10.9,
+   "dab": {
+    "p50": 2.5,
+    "p95": 8.1,
+    "worst": 8.1
+   },
+   "frame": {
+    "p50": 0.3,
+    "p95": 13.5,
+    "worst": 13.5
+   },
+   "preview": {
+    "p50": 0.1,
+    "p95": 12.7,
+    "worst": 12.7
+   },
+   "land": 49.4,
+   "blockedMax": 13.4,
+   "tiles": 48,
+   "where": "pool",
+   "stats": {
+    "blocks": 28,
+    "splits": 0,
+    "maxBlock": 119497,
+    "pool": 5,
+    "local": 0
+   },
+   "fieldMB": 0.9,
+   "stepMB": 0,
+   "pxCalls": {},
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "tiles": 28,
+     "total": 133.5,
+     "pxCalls": {}
+    }
+   }
+  },
+  {
+   "row": "push fit size 1000",
+   "travel": 3130,
+   "press": 1.1,
+   "window": 8.9,
+   "dab": {
+    "p50": 14.8,
+    "p95": 17.1,
+    "worst": 17.1
+   },
+   "frame": {
+    "p50": 1.5,
+    "p95": 10.3,
+    "worst": 10.3
+   },
+   "preview": {
+    "p50": 1.2,
+    "p95": 10,
+    "worst": 10
+   },
+   "land": 154.8,
+   "blockedMax": 123.6,
+   "tiles": 113,
+   "where": "pool",
+   "stats": {
+    "blocks": 86,
+    "splits": 0,
+    "maxBlock": 396489,
+    "pool": 9,
+    "local": 0
+   },
+   "fieldMB": 3.6,
+   "stepMB": 28.3,
+   "pxCalls": {},
+   "jobs": {
+    "liquify": {
+     "n": 9,
+     "tiles": 86,
+     "total": 701.1,
+     "pxCalls": {}
+    }
+   }
+  },
+  {
+   "row": "push 1:1 size 200",
+   "travel": 1080,
+   "press": 38.9,
+   "window": 23.6,
+   "dab": {
+    "p50": 0.3,
+    "p95": 0.6,
+    "worst": 9.6
+   },
+   "frame": {
+    "p50": 3.3,
+    "p95": 5.9,
+    "worst": 26.9
+   },
+   "preview": {
+    "p50": 3.2,
+    "p95": 5.7,
+    "worst": 26.6
+   },
+   "land": 30.5,
+   "blockedMax": 14.7,
+   "tiles": 23,
+   "where": "pool",
+   "stats": {
+    "blocks": 13,
+    "splits": 0,
+    "maxBlock": 119497,
+    "pool": 3,
+    "local": 0
+   },
+   "fieldMB": 4,
+   "stepMB": 5.8,
+   "pxCalls": {},
+   "jobs": {
+    "liquify": {
+     "n": 3,
+     "tiles": 13,
+     "total": 26.8,
+     "pxCalls": {}
+    }
+   }
+  },
+  {
+   "row": "push 1:1 size 1000",
+   "travel": 1080,
+   "press": 35.4,
+   "window": 57.6,
+   "dab": {
+    "p50": 3.5,
+    "p95": 4.4,
+    "worst": 5.4
+   },
+   "frame": {
+    "p50": 16.5,
+    "p95": 20.6,
+    "worst": 75
+   },
+   "preview": {
+    "p50": 16.1,
+    "p95": 20.3,
+    "worst": 74.5
+   },
+   "land": 67.6,
+   "blockedMax": 22.1,
+   "tiles": 61,
+   "where": "pool",
+   "stats": {
+    "blocks": 45,
+    "splits": 0,
+    "maxBlock": 321264,
+    "pool": 6,
+    "local": 0
+   },
+   "fieldMB": 5.4,
+   "stepMB": 15.3,
+   "pxCalls": {},
+   "jobs": {
+    "liquify": {
+     "n": 6,
+     "tiles": 45,
+     "total": 178.5,
+     "pxCalls": {}
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "js",
+     "tiles": 13,
+     "kernel": 6.5,
+     "pxCalls": {}
+    }
+   }
+  },
+  {
+   "row": "shrink held 150 ticks size 1000",
+   "tick": {
+    "p50": 3.1,
+    "p95": 3.8,
+    "worst": 4.8
+   },
+   "land": 36.2,
+   "blockedMax": 13.2,
+   "tiles": 33,
+   "where": "pool",
+   "stats": {
+    "blocks": 25,
+    "splits": 1,
+    "maxBlock": 908208,
+    "pool": 5,
+    "local": 0
+   },
+   "maxReachPx": 691.6,
+   "fieldMB": 6.1,
+   "pxCalls": {},
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "tiles": 22,
+     "total": 80.7,
+     "pxCalls": {}
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "js",
+     "tiles": 42,
+     "kernel": 10.1,
+     "pxCalls": {}
+    }
+   }
+  },
+  {
+   "row": "restore all",
+   "ms": 5.6,
+   "blockedMax": 5.6,
+   "tiles": 278,
+   "where": "pool",
+   "fieldMB": 0,
+   "pxCalls": {},
+   "jobs": {}
+  }
+ ],
+ "table": [
+  "{\"row\":\"push fit size 200\",\"travel\":3130,\"press\":59.8,\"window\":10.9,\"dab\":{\"p50\":2.5,\"p95\":8.1,\"worst\":8.1},\"frame\":{\"p50\":0.3,\"p95\":13.5,\"worst\":13.5},\"preview\":{\"p50\":0.1,\"p95\":12.7,\"worst\":12.7},\"land\":49.4,\"blockedMax\":13.4,\"tiles\":48,\"where\":\"pool\",\"stats\":{\"blocks\":28,\"splits\":0,\"maxBlock\":119497,\"pool\":5,\"local\":0},\"fieldMB\":0.9,\"stepMB\":0,\"pxCalls\":{},\"jobs\":{\"liquify\":{\"n\":5,\"tiles\":28,\"total\":133.5,\"pxCalls\":{}}}}",
+  "{\"row\":\"push fit size 1000\",\"travel\":3130,\"press\":1.1,\"window\":8.9,\"dab\":{\"p50\":14.8,\"p95\":17.1,\"worst\":17.1},\"frame\":{\"p50\":1.5,\"p95\":10.3,\"worst\":10.3},\"preview\":{\"p50\":1.2,\"p95\":10,\"worst\":10},\"land\":154.8,\"blockedMax\":123.6,\"tiles\":113,\"where\":\"pool\",\"stats\":{\"blocks\":86,\"splits\":0,\"maxBlock\":396489,\"pool\":9,\"local\":0},\"fieldMB\":3.6,\"stepMB\":28.3,\"pxCalls\":{},\"jobs\":{\"liquify\":{\"n\":9,\"tiles\":86,\"total\":701.1,\"pxCalls\":{}}}}",
+  "{\"row\":\"push 1:1 size 200\",\"travel\":1080,\"press\":38.9,\"window\":23.6,\"dab\":{\"p50\":0.3,\"p95\":0.6,\"worst\":9.6},\"frame\":{\"p50\":3.3,\"p95\":5.9,\"worst\":26.9},\"preview\":{\"p50\":3.2,\"p95\":5.7,\"worst\":26.6},\"land\":30.5,\"blockedMax\":14.7,\"tiles\":23,\"where\":\"pool\",\"stats\":{\"blocks\":13,\"splits\":0,\"maxBlock\":119497,\"pool\":3,\"local\":0},\"fieldMB\":4,\"stepMB\":5.8,\"pxCalls\":{},\"jobs\":{\"liquify\":{\"n\":3,\"tiles\":13,\"total\":26.8,\"pxCalls\":{}}}}",
+  "{\"row\":\"push 1:1 size 1000\",\"travel\":1080,\"press\":35.4,\"window\":57.6,\"dab\":{\"p50\":3.5,\"p95\":4.4,\"worst\":5.4},\"frame\":{\"p50\":16.5,\"p95\":20.6,\"worst\":75},\"preview\":{\"p50\":16.1,\"p95\":20.3,\"worst\":74.5},\"land\":67.6,\"blockedMax\":22.1,\"tiles\":61,\"where\":\"pool\",\"stats\":{\"blocks\":45,\"splits\":0,\"maxBlock\":321264,\"pool\":6,\"local\":0},\"fieldMB\":5.4,\"stepMB\":15.3,\"pxCalls\":{},\"jobs\":{\"liquify\":{\"n\":6,\"tiles\":45,\"total\":178.5,\"pxCalls\":{}},\"mips\":{\"n\":1,\"kernels\":\"js\",\"tiles\":13,\"kernel\":6.5,\"pxCalls\":{}}}}",
+  "{\"row\":\"shrink held 150 ticks size 1000\",\"tick\":{\"p50\":3.1,\"p95\":3.8,\"worst\":4.8},\"land\":36.2,\"blockedMax\":13.2,\"tiles\":33,\"where\":\"pool\",\"stats\":{\"blocks\":25,\"splits\":1,\"maxBlock\":908208,\"pool\":5,\"local\":0},\"maxReachPx\":691.6,\"fieldMB\":6.1,\"pxCalls\":{},\"jobs\":{\"liquify\":{\"n\":5,\"tiles\":22,\"total\":80.7,\"pxCalls\":{}},\"mips\":{\"n\":1,\"kernels\":\"js\",\"tiles\":42,\"kernel\":10.1,\"pxCalls\":{}}}}",
+  "{\"row\":\"restore all\",\"ms\":5.6,\"blockedMax\":5.6,\"tiles\":278,\"where\":\"pool\",\"fieldMB\":0,\"pxCalls\":{},\"jobs\":{}}"
+ ]
+}

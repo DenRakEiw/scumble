@@ -1,0 +1,60 @@
+{
+ "size": [
+  15000,
+  10000
+ ],
+ "filter": "levels",
+ "limit": {
+  "source": "depth",
+  "lo": 0.2,
+  "hi": 0.6,
+  "fLo": 0.05,
+  "fHi": 0.05,
+  "invert": false
+ },
+ "composite_bands": {
+  "ms": 1586,
+  "blocked": 145,
+  "bands": 0,
+  "readMs": 0,
+  "MB": 11.3
+ },
+ "layer_from_tiles": {
+  "ms": 830,
+  "blocked": 18,
+  "MB": 0.6
+ },
+ "composite_canvas": {
+  "ms": 3078,
+  "blocked": 1947,
+  "MB": 36.8
+ },
+ "layer_canvas": {
+  "ms": 1323,
+  "blocked": 166,
+  "MB": 2.7
+ },
+ "psd": {
+  "ms": 2166,
+  "blocked": 187,
+  "MB": 225.7
+ },
+ "psd_masked": {
+  "ms": 2526,
+  "blocked": 119,
+  "MB": 243.2
+ },
+ "pool": {
+  "run": 1232,
+  "done": 1232,
+  "failed": 0,
+  "cancelled": 0,
+  "started": 8,
+  "lost": 0,
+  "workers": 8,
+  "size": 8,
+  "pending": 0,
+  "off": false,
+  "arena": true
+ }
+}

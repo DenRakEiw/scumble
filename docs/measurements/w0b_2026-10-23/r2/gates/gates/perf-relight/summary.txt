@@ -1,0 +1,2 @@
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 64s 
+ALL PASS

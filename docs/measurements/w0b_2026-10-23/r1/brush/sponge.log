@@ -1,0 +1,11 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+sponge (cold) | Saturate | layer | 200 | fit | 156.5 | 33.4 | 20.7 | 14.4 | 14.8 | 1.4 | 56.7 | 204 | 5.3 | 5.6 | 0 | 0 | 11571 | mip_chain 32, smudge_dab 86
+sponge | Saturate | layer | 50 | fit | 156.5 | 4 | 4.3 | 4.2 | 5.5 | 1 | 10.5 | 261 | 4 | 5.4 | 0 | 0 | 8404 | mip_chain 56, smudge_dab 1562
+sponge | Saturate | layer | 200 | fit | 156.5 | 7.2 | 14.4 | 14.2 | 17.1 | 1.3 | 23.6 | 582 | 5.6 | 5.9 | 0 | 0 | 11655 | mip_chain 144, smudge_dab 422
+sponge | Saturate | layer | 400 | fit | 156.5 | 17.8 | 51.5 | 29.3 | 32 | 1.6 | 73 | 1065 | 3.5 | 5 | 0 | 0 | 11679 | mip_chain 186, smudge_dab 242
+sponge | Saturate | layer | 1000 | fit | 156.5 | 82.6 | 110.7 | 88.1 | 103.3 | 2.8 | 196.4 | 2966 | 7.3 | 7.5 | 0 | 0 | 11549 | mip_chain 480, smudge_dab 122
+sponge | Saturate | layer | 50 | 1:1 | 18 | 38.5 | 1.9 | 1.9 | 3.7 | 1.4 | 44.4 | 97 | 8.4 | 9.3 | 0 | 0 | 8431 | smudge_dab 182
+sponge | Saturate | layer | 200 | 1:1 | 18 | 38.8 | 6.3 | 3.8 | 5 | 1.5 | 47.4 | 209 | 12.9 | 13.6 | 0 | 0 | 11701 | smudge_dab 62
+sponge | Saturate | layer | 400 | 1:1 | 18 | 46.3 | 9 | 8.6 | 11.8 | 1.5 | 58 | 461 | 10.2 | 10.5 | 0 | 0 | 11649 | smudge_dab 62
+sponge | Saturate | layer | 1000 | 1:1 | 18 | 78.2 | 55.9 | 54.2 | 112.8 | 10.2 | 137.4 | 2098 | 23.7 | 24 | 0 | 0 | 11530 | mip_chain 41, smudge_dab 62
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": true, "params": {"W": 15000, "H": 10000, "TOOLS": ["sponge"], "SIZES": [50, 200, 400, 1000], "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 5935}}

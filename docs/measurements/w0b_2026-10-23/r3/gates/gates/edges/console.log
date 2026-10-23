@@ -1,0 +1,13 @@
+LOG [debug] colErrs50: {"592":0,"593":0,"594":0,"595":0,"596":0,"597":0,"598":0,"599":0,"600":0,"601":0,"602":0,"603":0,"604":0,"605":0,"606":0,"607":0,"608":0}
+LOG [debug] colErrs0: {"592":0,"593":0,"594":0,"595":0,"596":0,"597":0,"598":0,"599":0,"600":600,"601":0,"602":0,"603":0,"604":0,"605":0,"606":0,"607":0,"608":0}
+LOG [debug] a50 at y=400: 592:255 593:255 594:255 595:255 596:255 597:255 598:255 599:255 600:0 601:0 602:0 603:0 604:0 605:0 606:0 607:0 608:0
+LOG [debug] a0  at y=400: 592:255 593:255 594:255 595:255 596:255 597:255 598:255 599:255 600:215 601:40 602:0 603:0 604:0 605:0 606:0 607:0 608:0
+LOG [ok] selection SHA-1 hash (tiles): ab46130a9a542201cd4ec8cb0855ce240658090b
+LOG [ok] 15k select_range: 1390 ms, edge tiles: 40/2360 (1.7%), sample calls: 40, scratch canvases: 1
+ERROR Depth detail failed: Error: simulated helper failure on call 3
+    at host.helperCall (<anonymous>:519:23)
+    at Object.depthInApp (scumble://app/editor/host.js:5198:32)
+    at Object.computeDepth (scumble://app/editor/host.js:5188:21)
+    at Object.depthDetail (scumble://app/editor/host.js:5278:36)
+    at async run (scumble://app/editor/inpaint_canvas.js:13047:37)
+    at async <anonymous>:615:9

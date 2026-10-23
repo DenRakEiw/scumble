@@ -1,0 +1,146 @@
+{
+ "stitch_align_4096": {
+  "visibility": "visible",
+  "focus": true,
+  "picture": [
+   4608,
+   4608
+  ],
+  "prepare": {
+   "wall": 1418.5,
+   "blocked": 22.5,
+   "how": "stack",
+   "laps": {
+    "selection": 21.15,
+    "maskFromAlpha": 17.03,
+    "selectionBbox": 58.92,
+    "region": 78.19,
+    "dilate": 222.4,
+    "blur": 293.72,
+    "maskMax": 39,
+    "maskClamp": 23.89,
+    "maskToCanvas": 96.81,
+    "alphaMask": 74.44,
+    "encode": 429.9
+   },
+   "workerPx": {
+    "box_blurs": 1,
+    "dilate_mask": 1
+   },
+   "windowPx": {}
+  },
+  "bbox": [
+   256,
+   256,
+   4096,
+   4096
+  ],
+  "emitted": [
+   4096,
+   4096
+  ],
+  "info": {
+   "align": true,
+   "color_match": true,
+   "auto_feather": true,
+   "feather": 434,
+   "grow": 221,
+   "blend": 25,
+   "paste": "selection"
+  },
+  "answer_MB": 18.6,
+  "worker": {
+   "wall": 2741.53,
+   "walls": [
+    2741.5,
+    3310.6,
+    2580.6
+   ],
+   "blocked": 19.55,
+   "laps": {
+    "region": 10.09,
+    "decode": 167.17,
+    "resize": 0.97,
+    "dilate": 308.63,
+    "blur": 299.33,
+    "maskMax": 75.04,
+    "maskClamp": 61.7,
+    "erode": 47.8,
+    "alignCopy": 45.56,
+    "shrink": 229.55,
+    "ring": 9.69,
+    "fit": 52.75,
+    "warp": 303.84,
+    "coverage": 61.65,
+    "colorMatch": 423.67,
+    "finalAlpha": 60.72,
+    "encode": 281.35
+   },
+   "laps_sum": 2561.76,
+   "rest": 158.84,
+   "how": "stack",
+   "align": {
+    "aligned": true,
+    "scale": [
+     1.01,
+     1.01
+    ],
+    "shift": [
+     -17.5,
+     -18.5
+    ]
+   },
+   "workerPx": {
+    "box_blurs": 2,
+    "dilate_mask": 2
+   },
+   "windowPx": {}
+  },
+  "window": {
+   "wall": 3102.53,
+   "walls": [
+    3102.5,
+    3287.9,
+    2823.8
+   ],
+   "blocked": 2705.34,
+   "laps": {
+    "decode": 25.64,
+    "region": 0.57,
+    "resize": 0.09,
+    "dilate": 343.06,
+    "blur": 326.37,
+    "maskMax": 87.07,
+    "maskClamp": 57.15,
+    "erode": 53.98,
+    "alignCopy": 47.53,
+    "shrink": 256.64,
+    "ring": 11.16,
+    "fit": 44.23,
+    "warp": 304.07,
+    "coverage": 64.84,
+    "colorMatch": 459.89,
+    "finalAlpha": 63.63,
+    "encode": 363.81
+   },
+   "laps_sum": 2753.53,
+   "rest": 290.19,
+   "how": "window",
+   "align": {
+    "aligned": true,
+    "scale": [
+     1.01,
+     1.01
+    ],
+    "shift": [
+     -17.5,
+     -18.5
+    ]
+   },
+   "windowPx": {
+    "box_blurs": 2,
+    "dilate_mask": 2
+   }
+  }
+ }
+}
