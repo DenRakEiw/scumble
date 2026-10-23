@@ -116,6 +116,13 @@ BENCH = """
         fx.params = { ...fx.params, limit: %(limit_obj)s };
         ed.markFilterChanged(fx);
     }
+    // relight without lights renders nothing (the filter skips it; N3's 15k rows were taken so): two point lights and a
+    // spot, the "Cyberpunk neon" preset placed on this picture, so the shadow march and the shading run (W0, 2026-10-23)
+    if (chosenFilter === "relight" && fx && fx.filter === "relight") {
+        const { applyLightPreset } = await import("./editor/inpaint_relight.js");
+        fx.params = { ...fx.params, lights: applyLightPreset("cyberpunk_neon", { width: W, height: H }) };
+        ed.markFilterChanged(fx);
+    }
     const fxId = fx && fx.filter;
     ed.markMatchChanged(resLayer);
     ed.uploaded.baseHash = null;
