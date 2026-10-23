@@ -49,7 +49,7 @@ import { normalizeLimit, u16Bilinear, rangeWeight, opp, colourSimilarity, hexToR
 import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
 import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend, seedOfLayer, hash32, mul255 } from "./blend_modes.js";
-import { heightNormals, shadowMarch } from "./px/kernels.js";
+import { heightNormals, shadowMarch, pxCalls } from "./px/kernels.js";
 import { statusKindFor, failKind, refusal } from "./inpaint_status.js";
 import { RunProgress } from "./inpaint_progress.js";
 import { canvasSizeRefusal, CANVAS_MAX_SIDE } from "./inpaint_sizelimit.js";
@@ -2143,6 +2143,7 @@ class InpaintEditor {
         this._solo = null;           // { ids, visible }: the layers shown alone, and what was visible before the first solo
         this.sel = null;             // MaskPixels WxH (red, alpha = selected); null before an image is loaded
         this._relightPending = new Set();
+        this._relightMarches = 0;    // relight_shadow marches in flight over all layers (`relightMarching`, the K0b harness)
         this.history = [];           // { key, ref, x, y, w, h, prompt, layerId, thumb }
         this.view = { scale: 1, x: 0, y: 0, angle: 0 };
         this.guides = { x: [], y: [] };
@@ -7291,7 +7292,15 @@ class InpaintEditor {
 
         const t0 = performance.now();
         const W = this.width, H = this.height;
-        if (W <= 0 || H <= 0) return { bounds: null, seconds: 0, tiles: 0 };
+        if (W <= 0 || H <= 0) return { bounds: null, seconds: 0, ms: 0, tiles: 0 };
+        // the K0b harness (docs/PLAN_WASM_BUILD.md §4.8): the steps of the run as marks; `snap` once the depth branch has read it
+        const start = markStep("range", "start", { source: limit.source, mode, snap: false });
+        // a run cancelled on the way (an undo, a new picture, the panel's Cancel) gets its end mark too
+        const cancelled = () => {
+            markStep("range", "done", { cancelled: true, ms: Math.round((performance.now() - t0) * 10) / 10 });
+            return { bounds: null, seconds: 0, ms: 0, tiles: 0 };
+        };
+        let readMs = 0, loopMs = 0, combineMs = 0, t1 = 0;
 
         const seq = nextPartsSeq();
         const group = "range" + seq;
@@ -7327,6 +7336,7 @@ class InpaintEditor {
                     const snap = (map.guide && strength > 0) ? snapParams(strength) : null;
                     const sigmaR = snap ? snap[0] : 0;
                     const tau = snap ? snap[1] : SNAP_TAU;
+                    start.snap = !!snap;
 
                     let edgeFlags = null;
                     if (sigmaR > 0 && map.guide) {
@@ -7337,9 +7347,11 @@ class InpaintEditor {
                         }
                         edgeFlags = edgeTiles(map, rmax, m, W, H, tau, 256);
                     }
+                    markStep("range", "edges");
 
                     const tileCols = Math.ceil(W / 256);
                     const tileRows = Math.ceil(H / 256);
+                    let pictureTiles = 0;
 
                     const guideMsg = (map.guide && sigmaR > 0) ? {
                         sab: (typeof SharedArrayBuffer !== "undefined" && map.guide.buffer instanceof SharedArrayBuffer) ? map.guide.buffer : null,
@@ -7379,6 +7391,8 @@ class InpaintEditor {
 
                             let picture = null;
                             if (minTx !== -1) {
+                                t1 = performance.now();
+                                pictureTiles += maxTx - minTx + 1;
                                 const minX = minTx * 256;
                                 const maxX = Math.min(W, (maxTx + 1) * 256);
                                 const bw = maxX - minX;
@@ -7416,6 +7430,7 @@ class InpaintEditor {
                                     w: bw,
                                     h: bh,
                                 };
+                                readMs += performance.now() - t1;
                             }
 
                             const msg = {
@@ -7443,16 +7458,19 @@ class InpaintEditor {
                             scratchCtx = null;
                         }
                     }
+                    markStep("range", "posted", { readMs, pictureTiles, jobs: bandPromises.length });
 
                     for (const p of bandPromises) {
                         const { y0, y1, res } = await p;
-                        if (this.rangePending !== pendingRecord) return { bounds: null, seconds: 0, tiles: 0 };
+                        if (this.rangePending !== pendingRecord) return cancelled();
 
                         totalAlpha += res.alphaSum || 0;
                         if (res.tiles && res.tiles.length > 0) {
                             totalTiles += res.tiles.length;
+                            t1 = performance.now();
                             const src = tilesSource(res.tiles, [0, 0], [0, y0, W, y1]);
                             this.sel.combine(src, bandMode);
+                            combineMs += performance.now() - t1;
                         }
                         if (res.bounds) {
                             if (!unionBounds) {
@@ -7465,6 +7483,7 @@ class InpaintEditor {
                             }
                         }
                     }
+                    markStep("range", "combined", { combineMs });
                 } else {
                     // Luma or color source on tiles: hold stack and at most 2 bands in flight
                     try {
@@ -7472,13 +7491,17 @@ class InpaintEditor {
                     } catch (_) {
                         held = null;
                     }
+                    markStep("range", "held", { program: !!(held && held.steps) });
+                    let bands = 0;
 
                     const consumeBand = (by0, by1, res) => {
                         totalAlpha += res.alphaSum || 0;
                         if (res.tiles && res.tiles.length > 0) {
                             totalTiles += res.tiles.length;
+                            const tc = performance.now();
                             const src = tilesSource(res.tiles, [0, 0], [0, by0, W, by1]);
                             this.sel.combine(src, bandMode);
+                            combineMs += performance.now() - tc;
                         }
                         if (res.bounds) {
                             if (!unionBounds) {
@@ -7495,6 +7518,8 @@ class InpaintEditor {
                     const runBand = async (y0, y1) => {
                         const bh = y1 - y0;
                         const bandBox = [0, y0, W, y1];
+                        const tr = performance.now();   // the band's read, summed over the bands (two run side by side)
+                        bands++;
                         let sab = null;
                         let filled = false;
                         if (typeof SharedArrayBuffer !== "undefined") {
@@ -7514,6 +7539,7 @@ class InpaintEditor {
                                 }
                             }
                         }
+                        readMs += performance.now() - tr;
                         const msg = {
                             op: "range_select",
                             W, H, y0, y1,
@@ -7542,6 +7568,7 @@ class InpaintEditor {
                         if (this.rangePending !== pendingRecord) break;
                         consumeBand(item.y0, item.y1, item.res);
                     }
+                    markStep("range", "combined", { readMs, combineMs, bands });
                 }
             } else {
                 // Canvas backend (or pool worker off): main-thread loop over bands
@@ -7556,6 +7583,7 @@ class InpaintEditor {
                     const snap = (map.guide && strength > 0) ? snapParams(strength) : null;
                     const sigmaR = snap ? snap[0] : 0;
                     const tau = snap ? snap[1] : SNAP_TAU;
+                    start.snap = !!snap;
 
                     let edgeFlags = null;
                     if (sigmaR > 0 && map.guide) {
@@ -7566,6 +7594,7 @@ class InpaintEditor {
                         }
                         edgeFlags = edgeTiles(map, rmax, m, W, H, tau, 256);
                     }
+                    markStep("range", "edges");
 
                     const tileCols = Math.ceil(W / 256);
                     const tileRows = Math.ceil(H / 256);
@@ -7575,7 +7604,7 @@ class InpaintEditor {
 
                     try {
                         for (let ty = 0; ty < tileRows; ty++) {
-                            if (this.rangePending !== pendingRecord) return { bounds: null, seconds: 0, tiles: 0 };
+                            if (this.rangePending !== pendingRecord) return cancelled();
                             const y0 = ty * 256;
                             const y1 = Math.min(y0 + 256, H);
                             const bh = y1 - y0;
@@ -7593,13 +7622,14 @@ class InpaintEditor {
                             }
 
                             let picData = null, picX0 = 0, picX1 = 0, picW = 0;
+                            t1 = performance.now();
                             if (minTx !== -1) {
                                 picX0 = minTx * 256;
                                 picX1 = Math.min(W, (maxTx + 1) * 256);
                                 picW = picX1 - picX0;
                                 const box = [picX0, y0, picX1, y1];
                                 const regCanvas = await this.sampleRegionSettled("image", box, 1, { forRun: true, skipFilters: true });
-                                if (this.rangePending !== pendingRecord) return { bounds: null, seconds: 0, tiles: 0 };
+                                if (this.rangePending !== pendingRecord) return cancelled();
 
                                 if (!scratchCanvas) {
                                     scratchCanvas = document.createElement("canvas");
@@ -7613,6 +7643,8 @@ class InpaintEditor {
                                 scratchCtx.drawImage(regCanvas, 0, 0);
                                 picData = scratchCtx.getImageData(0, 0, picW, bh).data;
                             }
+                            readMs += performance.now() - t1;
+                            t1 = performance.now();
 
                             let bX0 = Infinity, bY0 = Infinity, bX1 = -Infinity, bY1 = -Infinity;
                             for (let py = 0; py < bh; py++) {
@@ -7657,9 +7689,12 @@ class InpaintEditor {
                                     unionBounds[3] = Math.max(unionBounds[3], bandBounds[3]);
                                 }
                             }
+                            loopMs += performance.now() - t1;
 
+                            t1 = performance.now();
                             const src = bytesSource(alpha, 0, y0, W, bh);
                             this.sel.combine(src, bandMode);
+                            combineMs += performance.now() - t1;
                             totalTiles += Math.ceil(W / 256) * Math.ceil(bh / 256);
                         }
                     } finally {
@@ -7670,9 +7705,11 @@ class InpaintEditor {
                             scratchCtx = null;
                         }
                     }
+                    markStep("range", "combined", { readMs, loopMs, combineMs });
                 } else {
                     const flat = this.flattenToCanvas({ forRun: true });
                     const flatCtx = flat.getContext("2d");
+                    markStep("range", "flattened");
                     let colorRef = null, colorTol = 30;
                     if (limit.source === "color") {
                         const rgbRef = hexToRgb01(limit.color || "#ffffff");
@@ -7681,13 +7718,16 @@ class InpaintEditor {
                     }
 
                     for (let y0 = 0; y0 < H; y0 += RANGE_BAND_ROWS) {
-                        if (this.rangePending !== pendingRecord) return { bounds: null, seconds: 0, tiles: 0 };
+                        if (this.rangePending !== pendingRecord) return cancelled();
                         const y1 = Math.min(y0 + RANGE_BAND_ROWS, H);
                         const bh = y1 - y0;
                         const alpha = new Uint8Array(W * bh);
 
                         let bX0 = Infinity, bY0 = Infinity, bX1 = -Infinity, bY1 = -Infinity;
+                        t1 = performance.now();
                         const imgData = flatCtx.getImageData(0, y0, W, bh);
+                        readMs += performance.now() - t1;
+                        t1 = performance.now();
                         const d = imgData.data;
                         const isLuma = limit.source === "luma";
                         for (let py = 0; py < bh; py++) {
@@ -7725,15 +7765,19 @@ class InpaintEditor {
                                 unionBounds[3] = Math.max(unionBounds[3], bandBounds[3]);
                             }
                         }
+                        loopMs += performance.now() - t1;
 
+                        t1 = performance.now();
                         const src = bytesSource(alpha, 0, y0, W, bh);
                         this.sel.combine(src, bandMode);
+                        combineMs += performance.now() - t1;
                         totalTiles += Math.ceil(W / 256) * Math.ceil(bh / 256);
                     }
+                    markStep("range", "combined", { readMs, loopMs, combineMs });
                 }
             }
 
-            if (this.rangePending !== pendingRecord) return { bounds: null, seconds: 0, tiles: 0 };
+            if (this.rangePending !== pendingRecord) return cancelled();
 
             let hint;
             if (mode === "replace") {
@@ -7753,15 +7797,19 @@ class InpaintEditor {
             this.draw();
 
             const pct = Math.round(100 * totalAlpha / (Math.max(1, W * H) * 255));
-            const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+            const wall = performance.now() - t0;
+            const elapsed = (wall / 1000).toFixed(1);
             const rangeStr = limit.source === "depth"
                 ? `near ${limit.lo.toFixed(2)} – far ${limit.hi.toFixed(2)}`
                 : `${limit.lo.toFixed(2)} – ${limit.hi.toFixed(2)}`;
             this.setStatus(`Selected ${pct} % of the picture by ${limit.source} (${rangeStr}) in ${elapsed} s`);
+            const ms = Math.round(wall * 10) / 10;
+            markStep("range", "done", { ms, tiles: totalTiles, pct });
 
             return {
                 bounds: this.getBounds(),
                 seconds: +elapsed,
+                ms,
                 tiles: totalTiles,
             };
         } catch (err) {
@@ -8680,7 +8728,7 @@ class InpaintEditor {
         return { box, sab, bytes, w, h, kl, kt, px0, py0, pw, ph, lead, first, composite };
     }
 
-    async programFinish(prog, s, into = null) {
+    async programFinish(prog, s, into = null, { timing = null } = {}) {
         const W = this.width, H = this.height;
         const { sab, bytes, w, h, kl, kt, px0, py0, pw, ph } = s;
         const A = new Uint8Array(sab, 0, bytes);
@@ -8693,8 +8741,9 @@ class InpaintEditor {
             try { cx.globalCompositeOperation = "copy"; cx.drawImage(v, -x, -y); out.set(cx.getImageData(0, 0, rw, rh).data); } finally { c.width = 1; c.height = 1; }
         };
         let gpu = null;   // the picture so far while it is with the filters (a surface, or a filter's canvas); else it is in A
-        // where a band's time goes, summed over the bands (ms): waiting for the pool, the upload and the filters' calls, the reads
-        const T = prog.timing, now = () => performance.now();
+        // where a band's time goes, summed over the bands (ms): waiting for the pool, the upload and the filters' calls, the
+        // reads; into the reader's own `timing` when it has one (fillBoxFromStack's, the K0b harness), else the program's
+        const T = timing || prog.timing, now = () => performance.now();
         const timed = (key, fn) => { const t0 = now(); try { return fn(); } finally { T[key] += now() - t0; } };
         const readT = (...a) => timed("read", () => read(...a));
         T.bands++;
@@ -8953,14 +9002,25 @@ class InpaintEditor {
     async fillBoxFromStack(held, box, sab, { priority = INTERACTIVE, group = null } = {}) {
         const [bx, by, bx1, by1] = box, w = bx1 - bx;
         if (held.steps) {
-            // B item 7 part 2: filter layers in the stack: band by band through the GPU, each band's rows into the buffer
+            // B item 7 part 2: filter layers in the stack: band by band through the GPU, each band's rows into the buffer.
+            // The K0b harness (docs/PLAN_WASM_BUILD.md §4.12): this box's split as marks, from the reader's own timing
+            markStep("program", "start");
+            const timing = { bands: 0, pool: 0, upload: 0, filter: 0, read: 0 };
             const rows = this.programRows(held, w);
-            if (!rows) return false;
-            const reader = this.programReader(held, { priority, group });
-            for (let yy = by; yy < by1; yy += rows) {
-                const y1 = Math.min(by1, yy + rows);
-                await reader.read([bx, yy, bx1, y1], new Uint8Array(sab, (yy - by) * w * 4, (y1 - yy) * w * 4), y1 < by1 ? [bx, y1, bx1, Math.min(by1, y1 + rows)] : null);
+            if (!rows) { markStep("program", "done", { ...timing, rows }); return false; }
+            const reader = this.programReader(held, { priority, group, timing });
+            const done = (extra) => markStep("program", "done", { ...Object.fromEntries(Object.entries(timing).map(([k, v]) => [k, Math.round(v)])), rows, ...extra });
+            try {
+                for (let yy = by; yy < by1; yy += rows) {
+                    const y1 = Math.min(by1, yy + rows);
+                    await reader.read([bx, yy, bx1, y1], new Uint8Array(sab, (yy - by) * w * 4, (y1 - yy) * w * 4), y1 < by1 ? [bx, y1, bx1, Math.min(by1, y1 + rows)] : null);
+                }
+            } catch (err) {
+                // the callers fall back to the canvases and return normally: the run still gets its end
+                done({ failed: true });
+                throw err;
             }
+            done(null);
             return true;
         }
         const pool = editorPool(), args = stackArgs(held.stores);
@@ -15076,11 +15136,14 @@ class InpaintEditor {
         if (!(w > 0 && h > 0)) { this.setStatus("The selection is empty."); return null; }
         if (w * h > FREQ_MAX_PX) { this.setStatus(`Frequency separation works on up to ${Math.round(FREQ_MAX_PX / 1e6)} MP (this is ${Math.round(w * h / 1e5) / 10} MP): select the area first, a face or a patch of skin.`, "warn"); return null; }
         const r = radius > 0 ? Math.max(1, Math.min(200, Math.round(radius))) : Math.max(2, Math.round(Math.min(this.width, this.height) * 0.004));
+        markStep("freqsep", "start", { w, h, radius: r });   // the K0b harness (docs/PLAN_WASM_BUILD.md §4.9): read, blur, split, written
         this.setStatus(`Frequency separation (${r} px) ...`);
         const src = await this.readBoxBytes(box, { forRun: true });
         const I = new Uint8ClampedArray(w * h * 4);
         I.set(src.data.subarray ? src.data.subarray(0, w * h * 4) : src.data);
+        markStep("freqsep", "read");
         const L = blurRGBA(I, w, h, r), Hi = new Uint8ClampedArray(w * h * 4);
+        markStep("freqsep", "blur");
         for (let i = 0; i < I.length; i += 4) {
             for (let c = 0; c < 3; c++) {
                 const v = I[i + c], l = L[i + c], t = v - l + 255;
@@ -15090,6 +15153,7 @@ class InpaintEditor {
             }
             L[i + 3] = I[i + 3]; Hi[i + 3] = I[i + 3];
         }
+        markStep("freqsep", "split");
         this.pushUndo({ kind: "layers", label: "Frequency separation" });
         const make = (bytes, name, blend) => {
             const px = this.pixels.Layer.empty(w, h);
@@ -15101,10 +15165,12 @@ class InpaintEditor {
         };
         const low = make(L, `Low frequency (${r} px)`, "normal");
         const high = make(Hi, "High frequency", "linear-light");
+        markStep("freqsep", "written");
         this.activeLayerId = high.id;
         this.renderLayers();
         this.draw();
         this.setStatus(`Frequency separation: ${low.name} and ${high.name} (linear light) on top, ${w} \u00d7 ${h}. Soften colour on the low layer, retouch texture on the high one.`);
+        markStep("freqsep", "done");
         return { low: low.id, high: high.id, radius: r, box };
     }
 
@@ -17587,6 +17653,11 @@ class InpaintEditor {
         const out = STEP_MARKS.slice();
         if (reset) STEP_MARKS.length = 0;
         return out;
+    }
+
+    /** The window thread's px kernel calls by export name (px/kernels.js `pxCalls`, the K0b harness): a copy; `reset` clears them. */
+    static pxCalls(reset = false) {
+        return pxCalls(reset);
     }
 
     static referencedFiles() {
@@ -22986,6 +23057,11 @@ class InpaintEditor {
         }
     }
 
+    /** The relight_shadow marches in flight over all layers, quick and full (the K0b harness waits on it). */
+    relightMarching() {
+        return this._relightMarches || 0;
+    }
+
     isRelightActive() {
         const l = this.activeLayer();
         return !!(l && l.kind === "filter" && l.filter === "relight");
@@ -23340,6 +23416,9 @@ class InpaintEditor {
         }
         const scaleFactor = targetW / depthMap.w;
         const marchScale = scaleZ * scaleFactor;
+        // the K0b harness (docs/PLAN_WASM_BUILD.md §4.5): a "start" mark for a call that posts marches, made at its first;
+        // "landed" for each answer, "idle" when the layer's last march in flight has answered
+        let run = null;
 
         for (let i = 0; i < 4; i++) {
             const l = lights[i];
@@ -23361,6 +23440,10 @@ class InpaintEditor {
             cache.pending.add(pendingKey);
             const chan = i;
             const ticket = stamp();
+            if (!run) run = markStep("relight_maps", "start", { quick, lights: 0, w: targetW, h: targetH });
+            run.lights++;
+            cache.marching = (cache.marching || 0) + 1;
+            this._relightMarches++;
             const p = (async () => {
                 try {
                     const lm = lightToMap(l, depthMap, { depth_scale: depthScale });
@@ -23378,6 +23461,7 @@ class InpaintEditor {
 
                     let vChan;
                     const pool = editorPool();
+                    const posted = performance.now();
                     if (pool && !pool.off) {
                         const res = await pool.run("relight_shadow", {
                             depth: marchDepth,
@@ -23403,6 +23487,7 @@ class InpaintEditor {
                     // waiting for it to stop. pickVis tells current from trailing by the keys.
                     const tv = quick ? cache.visQuick : cache.vis;
                     const current = vKey === this.relightChannelKey(layer, chan, quick);
+                    markStep("relight_maps", "landed", { chan, quick, current, ms: Math.round((performance.now() - posted) * 10) / 10 });
                     if (tv && tv.w === targetW && tv.h === targetH && tv.keys[chan] !== vKey) {
                         const tickets = tv.tickets || (tv.tickets = [0, 0, 0, 0]);
                         if (current || (quick && ticket > (tickets[chan] || 0))) {
@@ -23419,6 +23504,9 @@ class InpaintEditor {
                 } catch (err) {
                     console.warn(`relight_shadow channel ${chan} failed:`, err);
                 } finally {
+                    cache.marching--;
+                    this._relightMarches--;
+                    if (!cache.marching) markStep("relight_maps", "idle", { quick });
                     cache.pending.delete(pendingKey);
                     // the channel still lacks the key it wants now and no march for that key is on its way (a light turned
                     // off and on while its march ran, a march for a key left behind): ask for one

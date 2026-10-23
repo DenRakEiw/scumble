@@ -9,7 +9,9 @@
 // distances, repeated halving, float source-over, PNG unfiltering, zlib inflate). Then every
 // Rust kernel of both builds against its JS twin, byte for byte (the EDT as f32 bits), and the
 // module's memory: alloc / free, a view that goes stale when memory grows and the fresh one that
-// replaces it, pointers above 2 GB, the arena's take / reset.
+// replaces it, pointers above 2 GB, the arena's take / reset. Also the twin harness (`twinCheck`, with
+// a self-test), px.js' call counters (`pxCalls`), and with `PX_BENCH=1` (or `large`) the timed rows:
+// medians over rotating rounds and a cold first call on a fresh compile (docs/PLAN_WASM_BUILD.md §3.4).
 "use strict";
 
 const fs = require("node:fs");
@@ -157,6 +159,172 @@ function firstDiff(a, b) {
     return a.length !== b.length ? `length ${a.length} vs ${b.length}` : "";
 }
 
+// ---- the twin harness (docs/PLAN_WASM_BUILD.md §3.4) --------------------------------------------
+//
+// `twinCheck` runs one kernel's cases on the Rust builds and on its JS twin and compares every output: integers byte
+// for byte, floats bit for bit through u32 / u64 views (so -0 against 0 and one NaN against another count). Each case
+// runs twice per build, with its inputs as given and with each typed-array input copied to an odd offset (an odd
+// byteOffset for bytes; a wider array cannot start inside an element, so one element in, an odd element offset).
+// A difference the caller allows is a named rule, counted and printed; any other is a failure.
+
+const f64Scratch = new Float64Array(1), u64Scratch = new BigUint64Array(f64Scratch.buffer);
+const numBits = (x) => { f64Scratch[0] = x; return u64Scratch[0]; };
+const isFloatArray = (v) => v instanceof Float32Array || v instanceof Float64Array;
+/** The words a float array is made of (u32 / u64 over the same bytes); an integer array as it is. */
+const bitsOf = (v) => (v instanceof Float32Array ? new Uint32Array(v.buffer, v.byteOffset, v.length)
+    : v instanceof Float64Array ? new BigUint64Array(v.buffer, v.byteOffset, v.length) : v);
+
+/** A copy of the typed array `v`, at offset 0 or (`odd`) one element in, which for bytes is an odd byteOffset. */
+function copyView(v, odd) {
+    if (!odd) return v.slice();
+    const E = v.BYTES_PER_ELEMENT, out = new v.constructor(new ArrayBuffer(v.byteLength + 2 * E), E, v.length);
+    out.set(v);
+    return out;
+}
+
+/**
+ * The first difference between a build's output `got` and the twin's `want` that no rule allows ("" for none), the
+ * allowed ones added to `counts` by rule name. Outputs: typed arrays, numbers, plain arrays and objects of them, null.
+ */
+function twinDiff(got, want, rules, counts, at = "out") {
+    if (ArrayBuffer.isView(want) || ArrayBuffer.isView(got)) {
+        if (!ArrayBuffer.isView(want) || !ArrayBuffer.isView(got)) return `${at}: a typed array against ${ArrayBuffer.isView(got) ? String(want) : String(got)}`;
+        if (isFloatArray(got) !== isFloatArray(want) || got.BYTES_PER_ELEMENT !== want.BYTES_PER_ELEMENT) return `${at}: ${got.constructor.name} against the twin's ${want.constructor.name}`;
+        if (got.length !== want.length) return `${at}: length ${got.length}, the twin's ${want.length}`;
+        const gb = bitsOf(got), wb = bitsOf(want);
+        for (let i = 0; i < gb.length; i++) {
+            if (gb[i] === wb[i]) continue;
+            const rule = rules.find((r) => r.allow(got[i], want[i]));
+            if (!rule) return `${at}[${i}] is ${got[i]}${isFloatArray(got) ? ` (0x${gb[i].toString(16)})` : ""}, the twin has ${want[i]}${isFloatArray(want) ? ` (0x${wb[i].toString(16)})` : ""}`;
+            counts[rule.name]++;
+        }
+        return "";
+    }
+    if (typeof want === "number" && typeof got === "number") {
+        if (numBits(got) === numBits(want)) return "";
+        const rule = rules.find((r) => r.allow(got, want));
+        if (!rule) return `${at} is ${got}, the twin has ${want}`;
+        counts[rule.name]++;
+        return "";
+    }
+    if (Array.isArray(want) && Array.isArray(got)) {
+        if (got.length !== want.length) return `${at}: length ${got.length}, the twin's ${want.length}`;
+        for (let i = 0; i < want.length; i++) { const d = twinDiff(got[i], want[i], rules, counts, `${at}[${i}]`); if (d) return d; }
+        return "";
+    }
+    if (want && got && typeof want === "object" && typeof got === "object") {
+        const keys = Object.keys(want);
+        if (keys.length !== Object.keys(got).length || !keys.every((k) => k in got)) return `${at}: keys ${Object.keys(got)}, the twin's ${keys}`;
+        for (const k of keys) { const d = twinDiff(got[k], want[k], rules, counts, `${at}.${k}`); if (d) return d; }
+        return "";
+    }
+    return Object.is(got, want) ? "" : `${at} is ${String(got)}, the twin has ${String(want)}`;
+}
+
+/** Whether the output holds a float array anywhere (the check line then says "bit for bit"). */
+const holdsFloats = (v) => isFloatArray(v) || (v && typeof v === "object" && !ArrayBuffer.isView(v) && Object.values(v).some(holdsFloats));
+
+/**
+ * One kernel on every build of `builds` against its twin, without reporting: `{ builds: [{ label, ok, detail, counts }],
+ * twinOffset, floats }`. `cases`: `[{ tag, args }]`, random, edge and fuzz inputs alike; every typed array in `args` is
+ * copied before each run (a kernel may write its input in place), and the ones `shift` names (true: all; false: none; or
+ * a list of argument indexes) also go at an odd offset. `call(k, args)` runs the kernel on `k` (a `Px` or the twin
+ * module). `rules`: `[{ name, allow(got, want) }]` per differing value. `twinOffset`: "" or how the twin itself differed
+ * at the odd offset (its word paths are tested here too).
+ */
+function twinRun({ builds, twin, call, cases, rules = [], shift = true }) {
+    const shifts = (i) => (shift === true || (Array.isArray(shift) && shift.includes(i)));
+    const argsFor = (args, odd) => args.map((v, i) => (ArrayBuffer.isView(v) && !(v instanceof DataView) ? copyView(v, odd && shifts(i)) : v));
+    const tryCall = (k, args) => { try { return { out: call(k, args) }; } catch (e) { return { threw: String((e && e.message) || e) }; } };
+    const anyShift = shift === true || (Array.isArray(shift) && shift.length > 0);
+    const res = builds.map(([label]) => ({ label, ok: true, detail: "", counts: Object.fromEntries(rules.map((r) => [r.name, 0])) }));
+    let twinOffset = "", floats = false;
+    for (const c of cases) {
+        const want = tryCall(twin, argsFor(c.args, false));
+        if (want.threw) { for (const r of res) if (r.ok) { r.ok = false; r.detail = `${c.tag}: the twin threw ${want.threw}`; } continue; }
+        floats = floats || holdsFloats(want.out);
+        if (anyShift && !twinOffset) {
+            const w2 = tryCall(twin, argsFor(c.args, true));
+            const d = w2.threw ? `threw ${w2.threw}` : twinDiff(w2.out, want.out, [], {});
+            if (d) twinOffset = `${c.tag}: ${d}`;
+        }
+        builds.forEach(([, px], b) => {
+            const r = res[b];
+            if (!r.ok) return;
+            for (const odd of anyShift ? [false, true] : [false]) {
+                const got = tryCall(px, argsFor(c.args, odd));
+                const d = got.threw ? `threw ${got.threw}` : twinDiff(got.out, want.out, rules, r.counts);
+                if (d) { r.ok = false; r.detail = `${c.tag}${odd ? " at an odd offset" : ""}: ${d}`; return; }
+            }
+        });
+    }
+    return { builds: res, twinOffset, floats };
+}
+
+const twinOffsetChecked = new Set();   // kernel names whose twin was checked at an odd offset (once per run of this file)
+
+/**
+ * `twinRun` reported: one check line per build ("<label> <title> (N cases ...)"), the allowed differences per rule
+ * printed under it, and once per kernel a line that the twin gives the same at an odd offset. `name` is the kernel's
+ * export; `title` defaults to "<name> equals its twin bit for bit" (floats) or "byte for byte". `builds` is usually
+ * `[["rust simd", simdPx], ["rust scalar", scalarPx]]`; a case list called per build passes its one.
+ */
+function twinCheck({ name, title = null, builds, twin, call, cases, rules = [], shift = true }) {
+    const run = twinRun({ builds, twin, call, cases, rules, shift });
+    const anyShift = shift === true || (Array.isArray(shift) && shift.length > 0);
+    const what = title || `${name} equals its twin ${run.floats ? "bit for bit" : "byte for byte"}`;
+    for (const r of run.builds) {
+        check(`${r.label} ${what} (${cases.length} cases${anyShift ? ", each also at an odd offset" : ""})`, r.ok, r.detail);
+        if (rules.length) console.log(`       ${r.label} ${name} allowed differences: ${rules.map((x) => `${x.name} ${r.counts[x.name]}`).join(", ")}`);
+    }
+    if (anyShift && !twinOffsetChecked.has(name)) {
+        twinOffsetChecked.add(name);
+        check(`js ${name} gives the same at an odd offset`, !run.twinOffset, run.twinOffset);
+    }
+    return run;
+}
+
+/** The harness on kernels made to differ: each kind of difference is found, an allowed one counted, nothing else. */
+function twinSelfTest() {
+    const half = (a) => { const o = new Float32Array(a.length); for (let i = 0; i < a.length; i++) o[i] = a[i] * 0.5; return o; };
+    const twin = {
+        half,
+        bytes: (a) => Uint8Array.from(a, (v) => v ^ 0x5a),
+        bump: (a) => { for (let i = 0; i < a.length; i++) a[i]++; return a; },   // writes its input in place
+        pair: (a) => ({ sum: a.reduce((s, v) => s + v, 0), first: [a[0], a[1]] }),
+    };
+    const twinsOf = (over) => ({ ...twin, ...over });
+    const f = Float32Array.from({ length: 37 }, (_, i) => (i % 5 ? i * 0.37 - 4 : 0));
+    const b = Uint8Array.from({ length: 41 }, (_, i) => (i * 37) & 255);
+    const floatCases = [{ tag: "37 floats", args: [f] }], byteCases = [{ tag: "41 bytes", args: [b] }];
+    const run = (builds, kernel, cases, rules = [], shift = true) => twinRun({ builds, twin, call: (k, [a]) => k[kernel](a), cases, rules, shift });
+    const same = run([["a", twin], ["b", twinsOf({})]], "half", floatCases);
+    check("twin harness: identical builds pass, the run sees floats", same.builds.every((r) => r.ok) && same.floats && !same.twinOffset);
+    const negZero = run([["neg", twinsOf({ half: (a) => { const o = half(a); o[o.indexOf(0)] = -0; return o; } })]], "half", floatCases);
+    check("twin harness: -0 against 0 is a difference (bits, not ===)", !negZero.builds[0].ok && /0x80000000/.test(negZero.builds[0].detail), negZero.builds[0].detail);
+    const withNaN = (bits) => twinsOf({ half: (a) => { const o = half(a); new Uint32Array(o.buffer)[3] = bits; return o; } });
+    const nan = twinRun({ builds: [["nan", withNaN(0x7fc00001)]], twin: withNaN(0x7fc00000), call: (k, [a]) => k.half(a), cases: floatCases });
+    check("twin harness: two NaNs with other payloads differ", !nan.builds[0].ok && /7fc00001/.test(nan.builds[0].detail), nan.builds[0].detail);
+    const off1 = run([["off1", twinsOf({ bytes: (a) => { const o = twin.bytes(a); o[7] ^= 1; return o; } })]], "bytes", byteCases);
+    check("twin harness: one byte off is a failure without a rule", !off1.builds[0].ok && /out\[7\]/.test(off1.builds[0].detail), off1.builds[0].detail);
+    const level = { name: "one level", allow: (got, want) => Math.abs(got - want) <= 1 };
+    const allowed = run([["lvl", twinsOf({ bytes: (a) => { const o = twin.bytes(a); o[7] ^= 1; o[9] ^= 1; return o; } })]], "bytes", byteCases, [level]);
+    check("twin harness: an allowed difference passes and is counted per run (2 values x 2 offsets)", allowed.builds[0].ok && allowed.builds[0].counts["one level"] === 4, JSON.stringify(allowed.builds[0].counts));
+    // a kernel that reads its input from the start of the buffer, ignoring byteOffset: right as given, wrong when shifted
+    const blind = run([["blind", twinsOf({ bytes: (a) => twin.bytes(new Uint8Array(a.buffer, 0, a.length)) })]], "bytes", byteCases);
+    check("twin harness: a kernel blind to byteOffset fails at the odd offset only", !blind.builds[0].ok && /at an odd offset/.test(blind.builds[0].detail), blind.builds[0].detail);
+    const noShift = run([["blind", twinsOf({ bytes: (a) => twin.bytes(new Uint8Array(a.buffer, 0, a.length)) })]], "bytes", byteCases, [], false);
+    check("twin harness: shift false runs the inputs as given only", noShift.builds[0].ok);
+    const blindTwin = twinRun({ builds: [["b", twin]], twin: twinsOf({ bytes: (a) => twin.bytes(new Uint8Array(a.buffer, 0, a.length)) }), call: (k, [a]) => k.bytes(a), cases: byteCases });
+    check("twin harness: a twin blind to byteOffset is reported as the twin's", !!blindTwin.twinOffset, blindTwin.twinOffset);
+    const inPlace = run([["b", twinsOf({})]], "bump", byteCases);
+    check("twin harness: inputs are copied for every run (a kernel that writes its input in place)", inPlace.builds[0].ok && b[0] === 0 && b[1] === 37, inPlace.builds[0].detail);
+    const pair = run([["p", twinsOf({ pair: (a) => ({ sum: a.reduce((s, v) => s + v, 0), first: [a[0], a[2]] }) })]], "pair", byteCases);
+    check("twin harness: numbers and arrays inside an object are compared too", !pair.builds[0].ok && /out\.first\[1\]/.test(pair.builds[0].detail), pair.builds[0].detail);
+    const threw = run([["t", twinsOf({ half: () => { throw new Error("no room"); } })]], "half", floatCases);
+    check("twin harness: a build that throws fails with its message", !threw.builds[0].ok && /no room/.test(threw.builds[0].detail), threw.builds[0].detail);
+}
+
 // ---- kernels -----------------------------------------------------------------------------------
 
 async function mipCases(ref, label, js) {
@@ -281,14 +449,17 @@ async function maskCases(px, label, js) {
         for (let i = 0; i < w * h; i += 5) if (rnd() < 0.15) data[i] = Math.round(rnd() * 255) / 255;
         return data;
     };
-    const same = (a, b) => { for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return `value ${i} is ${a[i]}, the twin has ${b[i]}`; return a.length === b.length ? "" : "lengths differ"; };
-    let ok = true, detail = "";
-    for (const [w, h] of [[1, 1], [7, 3], [3, 97], [64, 64], [131, 77], [300, 211]]) {
-        const m = mask(w, h, w * 131 + h);
-        for (const r of [1, 2, 5, 40, 500]) { const d = same(px.dilateMask(m, w, h, r), js.dilateMask(m, w, h, r)); if (d) { ok = false; detail = `dilate ${w}x${h} by ${r}: ${d}`; } }
-        for (const radii of [[1, 1, 1], [0, 1, 2], [3, 3, 4], [17, 18, 18], [200, 200, 201], [0, 0, 0]]) { const d = same(px.boxBlurs(m, w, h, radii), js.boxBlurs(m, w, h, radii)); if (d) { ok = false; detail = `box blurs ${w}x${h} ${radii}: ${d}`; } }
-    }
-    check(`${label} dilate_mask and box_blurs equal their twins bit for bit`, ok, detail);
+    const masks = [[1, 1], [7, 3], [3, 97], [64, 64], [131, 77], [300, 211]].map(([w, h]) => [mask(w, h, w * 131 + h), w, h]);
+    twinCheck({
+        name: "dilate_mask", title: "dilate_mask equals its twin bit for bit", builds: [[label, px]], twin: js,
+        call: (k, [m, w, h, r]) => k.dilateMask(m, w, h, r),
+        cases: masks.flatMap(([m, w, h]) => [1, 2, 5, 40, 500].map((r) => ({ tag: `dilate ${w}x${h} by ${r}`, args: [m, w, h, r] }))),
+    });
+    twinCheck({
+        name: "box_blurs", title: "box_blurs equals its twin bit for bit", builds: [[label, px]], twin: js,
+        call: (k, [m, w, h, radii]) => k.boxBlurs(m, w, h, radii),
+        cases: masks.flatMap(([m, w, h]) => [[1, 1, 1], [0, 1, 2], [3, 3, 4], [17, 18, 18], [200, 200, 201], [0, 0, 0]].map((radii) => ({ tag: `box blurs ${w}x${h} ${radii}`, args: [m, w, h, radii] }))),
+    });
     const big = mask(1492, 1492, 9);
     const t0 = performance.now(); px.dilateMask(big, 1492, 1492, 47);
     const t1 = performance.now(); js.dilateMask(big, 1492, 1492, 47);
@@ -311,37 +482,20 @@ async function edgeCases(px, label, js) {
         }
         return data;
     };
-    const same = (a, b) => {
-        if (a.length !== b.length) return `lengths differ: ${a.length} vs ${b.length}`;
-        for (let i = 0; i < a.length; i++) {
-            if (a[i] !== b[i]) return `value ${i} is ${a[i]}, the twin has ${b[i]}`;
-        }
-        return "";
-    };
-    let ok = true, detail = "";
-    // Test various geometries: tiny, 1D strips, primes, non-multiples of 8, power of 2
-    for (const [w, h] of [[1, 1], [2, 2], [3, 1], [1, 3], [7, 3], [3, 97], [64, 64], [131, 77], [256, 256], [300, 211]]) {
-        const m = genMap(w, h, w * 131 + h);
-        const d = same(px.rangeMax(m, w, h), js.rangeMax(m, w, h));
-        if (d) { ok = false; detail = `range_max ${w}x${h}: ${d}`; break; }
-    }
-    // Test constant / flat map
-    if (ok) {
-        const flat = new Uint16Array(64 * 64);
-        flat.fill(32768);
-        const res = px.rangeMax(flat, 64, 64);
-        let nonZero = 0;
-        for (let i = 0; i < res.length; i++) if (res[i] !== 0) nonZero++;
-        if (nonZero > 0) { ok = false; detail = `flat map has non-zero range values (${nonZero})`; }
-    }
-    // Test sharp step edge
-    if (ok) {
-        const step = new Uint16Array(64 * 64);
-        for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) step[y * 64 + x] = x < 32 ? 10000 : 50000;
-        const d = same(px.rangeMax(step, 64, 64), js.rangeMax(step, 64, 64));
-        if (d) { ok = false; detail = `step edge: ${d}`; }
-    }
-    check(`${label} range_max equals its twin bit for bit`, ok, detail);
+    // various geometries (tiny, 1D strips, primes, non-multiples of 8, a power of 2) and a sharp step edge
+    const cases = [[1, 1], [2, 2], [3, 1], [1, 3], [7, 3], [3, 97], [64, 64], [131, 77], [256, 256], [300, 211]]
+        .map(([w, h]) => ({ tag: `range_max ${w}x${h}`, args: [genMap(w, h, w * 131 + h), w, h] }));
+    const step = new Uint16Array(64 * 64);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) step[y * 64 + x] = x < 32 ? 10000 : 50000;
+    cases.push({ tag: "step edge", args: [step, 64, 64] });
+    twinCheck({ name: "range_max", title: "range_max equals its twin bit for bit", builds: [[label, px]], twin: js, call: (k, [m, w, h]) => k.rangeMax(m, w, h), cases });
+    // a constant map has no range anywhere
+    const flat = new Uint16Array(64 * 64);
+    flat.fill(32768);
+    const res = px.rangeMax(flat, 64, 64);
+    let nonZero = 0;
+    for (let i = 0; i < res.length; i++) if (res[i] !== 0) nonZero++;
+    check(`${label} range_max of a flat map is 0 everywhere`, nonZero === 0, nonZero ? `${nonZero} non-zero range values` : "");
 
     // Benchmark on a 2048 x 2048 map (4 MP)
     const big = genMap(2048, 2048, 42);
@@ -468,14 +622,59 @@ function smoothDepth(w, h) {
     return d;
 }
 
+// ---- PX_BENCH rows (docs/PLAN_WASM_BUILD.md §3.4) -----------------------------------------------
+// Rows explain, they never decide (the plan's §1.1: Node runs slower than Electron's V8). Every row: each variant
+// warmed up, then rounds in an order that rotates by one each round, the median per variant; and a cold first call on
+// a fresh compile of px.wasm, because V8 has no on-stack replacement for wasm: a long first call stays in whatever code
+// it started in (the baseline tier), which is what the app's first call after a worker starts gets.
+
+const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
+
+/** `fns`: `[[name, fn], ...]`; `warm` calls of each, then `rounds` rounds in a rotating order. The median ms per name. */
+function benchMedians(fns, { warm = 2, rounds = 5 } = {}) {
+    for (let k = 0; k < warm; k++) for (const [, fn] of fns) fn();
+    const t = Object.fromEntries(fns.map(([n]) => [n, []]));
+    for (let r = 0; r < rounds; r++) {
+        for (let j = 0; j < fns.length; j++) {
+            const [n, fn] = fns[(j + r) % fns.length];
+            const t0 = performance.now(); fn(); t[n].push(performance.now() - t0);
+        }
+    }
+    return Object.fromEntries(Object.entries(t).map(([n, a]) => [n, median(a)]));
+}
+
+let coldSerial = 0;
+/**
+ * px.wasm's bytes with a custom section of its own appended (ignored by the module; it makes the bytes new, so V8
+ * compiles them afresh instead of reusing a module it compiled from the same bytes before).
+ */
+function freshWasm(bytes) {
+    const name = Buffer.from("px_test_cold"), payload = Buffer.from(String(++coldSerial).padStart(8, "0"));
+    const body = Buffer.concat([Buffer.from([name.length]), name, payload]);
+    return Buffer.concat([bytes, Buffer.from([0, body.length]), body]);   // section id 0; both lengths below 128, one LEB byte each
+}
+
+/** A cold first call: px.wasm compiled afresh through `loadPx` (as kernels.js loads it), then `use(px)` once. `{ compile, first }` in ms. */
+async function coldCall(loadPx, bytes, use) {
+    const t0 = performance.now();
+    const px = await loadPx(freshWasm(bytes));
+    const t1 = performance.now();
+    use(px);
+    const t2 = performance.now();
+    return { compile: t1 - t0, first: t2 - t1 };
+}
+
+const coldText = (c) => `cold first call ${c.first.toFixed(1)} ms (compile ${c.compile.toFixed(1)} ms)`;
+
 /**
  * The relight kernels as the app runs them (docs/PERFORMANCE.md section 15.2): kernels.js, which loads px.wasm as a
  * pool worker does, against the JS twin and the SIMD build called directly, on a smooth depth map with
  * ensureRelightMaps' parameters (depth_scale 50, diffusion 30; the drag's quarter map with 1 tap and 16 steps). Each
- * call warmed up twice, then five rounds in a rotating order, medians. Always checks the routing: point and spot (a
- * spot goes as kind 0) run the twin, sun (kind 1) the Rust build, byte for byte. The times only with `PX_BENCH=1`
- * (1024 x 1024 and the quick 1024 x 682) or `PX_BENCH=large` (also 2048 x 1365 and 4096 x 2731, the map of a 3:2
- * picture with a long side of 4096 or more, WORK_MAX); without it the check runs once on a 512 x 341 map.
+ * call warmed up twice, then five rounds in a rotating order, medians (`benchMedians`), and the SIMD build's cold first
+ * call (`coldCall`). Always checks the routing: point and spot (a spot goes as kind 0) run the twin, sun (kind 1) the
+ * Rust build, byte for byte. The times only with `PX_BENCH=1` (1024 x 1024 and the quick 1024 x 682) or
+ * `PX_BENCH=large` (also 2048 x 1365 and 4096 x 2731, the map of a 3:2 picture with a long side of 4096 or more,
+ * WORK_MAX); without it the check runs once on a 512 x 341 map.
  */
 async function relightBench(js, simd) {
     const realFetch = globalThis.fetch;
@@ -494,18 +693,8 @@ async function relightBench(js, simd) {
     let rustCalls = 0;
     const march = routed.shadowMarch;
     routed.shadowMarch = function (...a) { rustCalls++; return march.apply(this, a); };
-    const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
-    const time = (fns) => {
-        for (let k = 0; k < 2; k++) for (const [, fn] of fns) fn();
-        const t = Object.fromEntries(fns.map(([n]) => [n, []]));
-        for (let r = 0; r < 5; r++) {
-            for (let j = 0; j < fns.length; j++) {
-                const [n, fn] = fns[(j + r) % fns.length];
-                const t0 = performance.now(); fn(); t[n].push(performance.now() - t0);
-            }
-        }
-        return Object.fromEntries(Object.entries(t).map(([n, a]) => [n, median(a)]));
-    };
+    const { loadPx } = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const wasmBytes = fs.readFileSync(path.join(PX_DIR, "px.wasm"));
     const bench = !!process.env.PX_BENCH;
     const sizes = bench ? [[1024, 1024, false], [1024, 682, true]] : [[512, 341, false]];
     if (process.env.PX_BENCH === "large") sizes.push([2048, 1365, false], [4096, 2731, false]);
@@ -515,8 +704,9 @@ async function relightBench(js, simd) {
         const long = Math.max(w, h), scale = 0.5 * long, radius = 0.3 * 0.05 * long, bias = 0.005 * scale;
         const taps = quick ? 1 : 4, steps = quick ? 16 : 32, tag = `${w} x ${h}${quick ? " quick" : ""}`;
         if (bench && !quick) {
-            const m = time([["routed", () => K.heightNormals(depth, w, h, scale, 2.0)], ["twin", () => js.heightNormals(depth, w, h, scale, 2.0)]]);
-            console.log(`       ${tag}: height_normals routed (rust) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms`);
+            const cold = await coldCall(loadPx, wasmBytes, (p) => p.heightNormals(depth, w, h, scale, 2.0));
+            const m = benchMedians([["routed", () => K.heightNormals(depth, w, h, scale, 2.0)], ["twin", () => js.heightNormals(depth, w, h, scale, 2.0)]]);
+            console.log(`       ${tag}: height_normals routed (rust) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms; simd ${coldText(cold)}`);
         }
         for (const [name, fx, fy, dist] of [["point", 0.30, 0.35, -30], ["spot", 0.65, 0.12, -60], ["sun", 0.15, 0.20, -30]]) {
             const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type: name, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
@@ -533,14 +723,60 @@ async function relightBench(js, simd) {
                 ok = false; detail += `${detail ? "; " : ""}${tag} ${name}: ran ${ran}${ran === want ? ", other bytes" : ""}`;
             }
             if (!bench) continue;
-            const m = time(Object.entries(run));
-            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd ${m.simd.toFixed(1)} ms (twin / simd ${(m.twin / m.simd).toFixed(2)})`);
+            const cold = await coldCall(loadPx, wasmBytes, (p) => p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h));
+            const m = benchMedians(Object.entries(run));
+            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd ${m.simd.toFixed(1)} ms (twin / simd ${(m.twin / m.simd).toFixed(2)}); simd ${coldText(cold)}`);
         }
     }
     routed.shadowMarch = march;
     K.setKernels("js");   // kernels.js stays loaded for the process: the later cases (jobCases) compare against the editor's JS
     check("shadow_march as routed: kind 0 (a point; ensureRelightMaps sends a spot as kind 0) runs the twin, kind 1 (a sun) the Rust build (byte for byte)", ok, detail);
     check("kernels.js back on the JS kernels for the later cases", K.kernelsInUse() === "js");
+}
+
+/**
+ * The call counters of px.js (docs/PLAN_WASM_BUILD.md §3.4): a kernel call counts under its export name and nothing
+ * else does, the counts go on across a new instance of the same module (kernels.js `releaseIfLarge`, here made to
+ * happen for real), the instance's own exports (`px.raw`) are not counted, and a reset clears them.
+ */
+async function counterCases(simd) {
+    const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);   // loaded by relightBench already
+    check("kernels.js re-exports px.js' pxCalls (one set of counters per thread)", K.pxCalls === P.pxCalls);
+    const m = new Float32Array(64 * 64).fill(0.5), u = new Uint16Array(64 * 64);
+    P.pxCalls(true);
+    simd.dilateMask(m, 64, 64, 2);
+    simd.dilateMask(m, 64, 64, 2);
+    simd.rangeMax(u, 64, 64);
+    let c = P.pxCalls();
+    check("pxCalls counts each kernel call by its export name, and not the allocator, version or size helpers",
+        c.dilate_mask === 2 && c.range_max === 1 && Object.keys(c).length === 2, JSON.stringify(c));
+    const fresh = new P.Px(new WebAssembly.Instance(simd.module, {}), simd.module);   // what releaseIfLarge makes
+    fresh.dilateMask(m, 64, 64, 2);
+    const ps = fresh.alloc(64 * 64 * 2), po = fresh.alloc(64 * 64 * 2);
+    fresh.raw.range_max(ps, 64, 64, po);   // the instance's own export: not counted
+    c = P.pxCalls();
+    check("the counts go on across a new instance of the same module; px.raw calls are not counted",
+        c.dilate_mask === 3 && c.range_max === 1 && fresh.raw === fresh.instance.exports && fresh.exports !== fresh.raw, JSON.stringify(c));
+    const was = P.pxCalls(true), after = P.pxCalls();
+    check("pxCalls(true) returns the counts and clears them", was.dilate_mask === 3 && Object.keys(after).length === 0, `${JSON.stringify(was)} then ${JSON.stringify(after)}`);
+    // kernels.js for real: its instance grown past RELEASE_BYTES (256 MB), released after the next call, the count goes on
+    K.setKernels("rust");
+    const before = K.rustPx();
+    if (!before) {
+        check("kernels.js has its Rust instance for the release check", false);
+    } else {
+        K.dilateMask(m, 64, 64, 2);
+        before.alloc(300 * 1048576);   // grows the memory without a kernel call
+        K.dilateMask(m, 64, 64, 2);    // releaseIfLarge after this call replaces the instance
+        const now = K.rustPx();
+        K.dilateMask(m, 64, 64, 2);
+        c = K.pxCalls(true);
+        check("kernels.js releaseIfLarge replaces a grown instance and the count goes on (3 calls over two instances)",
+            !!now && now !== before && now.byteLength < 256 * 1048576 && c.dilate_mask === 3 && Object.keys(c).length === 1,
+            `${JSON.stringify(c)}, ${now === before ? "the same instance" : "a new instance"} of ${now ? now.byteLength : 0} bytes`);
+    }
+    K.setKernels("js");   // as relightBench left it: the later cases compare against the editor's JS
 }
 
 /** The whole-job kernels (grow_mask, flood_shape) against the editor's JS for the same jobs. */
@@ -2293,6 +2529,7 @@ async function main() {
         },
     };
     const label = "reference (distanceTransform / floodMask for the EDT and the flood)";
+    twinSelfTest();
     await mipCases(ref, label, js);
     await edtCases(ref, label, js, raster);
     await floodCases(ref, label, js, raster);
@@ -2308,6 +2545,7 @@ async function main() {
     await blendGlslCases();
     await tierCCases(js, simdPx, scalarPx, ref);
     await relightBench(js, simdPx);   // before memoryCases grows simdPx past 2 GB
+    await counterCases(simdPx);
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));

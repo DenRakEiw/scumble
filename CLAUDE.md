@@ -191,8 +191,13 @@ code.
   harness; "K0a" in the plan's §7, `docs/measurements/k0a_2026-10-23/`, `docs/PERFORMANCE.md` §16; gates lint types tiff
   export layered pxjobs PASS on tiles). It found two things for the user and Stop 1: **a real save of an export of about
   0.7 GB or more ends the renderer** (oom; a 15k PSD with its paint layer, 925 MB; `docs/BUGS.md`, in 0.1.50 too), and
-  **a 15k PSD open blocks the window 14.3 s** (`readPsd` on the window). **Next: K0b** (harness II: maps, tools,
-  kernels), then K0c (the W0b baseline, three fresh runs per row). **The user's rules for it:** Rust wherever the
+  **a 15k PSD open blocks the window 14.3 s** (`readPsd` on the window). **K0b done 2026-10-23** (harness II: px.js
+  call counters `pxCalls`, the marks `range` / `program` / `freqsep` / `relight_maps`, stitch and edge-fit laps, the new
+  rows; "K0b" in the plan's §7, `docs/measurements/k0b_2026-10-23/`; 15 gates PASS on tiles). It found for Stop 1: the
+  window's JS combine is 76 % of select by depth and 0.4 s of the wand's block (K5), **a fill layer with a depth limit
+  costs about 11.5 s of a 15k layered export** (`limitAlphaRows`, K25), the bucket over a 15k band blocks 2.0 s, freqsep
+  2.4 s, relight's full march is 4.2 s per light. **Next: K0c** (the W0b baseline, three fresh runs per row, every §2
+  row and K0a's and K0b's rows, `k0a_chain.sh` / `k0b_chain.sh` as the start). **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
   time only finds where the time goes; the tie rule in the plan §1.1); **every session commits and pushes the branch,
   its measurement results committed too** under `docs/measurements/<step>_<date>/` ("dann gehen diese nicht verloren");

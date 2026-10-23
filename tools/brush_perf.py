@@ -1,12 +1,16 @@
-"""Smudge, clone and heal at 15000 x 10000 (docs/PLAN_0_1_31.md §4, docs/PERFORMANCE.md §15): runs tools/brush_perf.js
+"""Smudge, clone, heal and the retouch dabs (blur, sharpen, tone, sponge) at 15000 x 10000 (docs/PLAN_0_1_31.md §4,
+docs/PERFORMANCE.md §15, docs/PLAN_WASM_BUILD.md §4.9): runs tools/brush_perf.js
 in a running instance (port SCUMBLE_CDP_PORT, default 9555) and prints its table.
 
     python tools/brush_perf.py '{"TOOLS": ["clone"]}'
+    python tools/brush_perf.py '{"TOOLS": ["blur", "tone"], "SIZES": [200, 1000]}'
+    python tools/brush_perf.py '{"KERNELS": "js"}' liquify_perf.js     # Liquify on the JS twins (the route switch)
     python tools/brush_perf.py '{"SIZES": [200]}' liquify_perf.js    # another script of the same shape (Liquify)
 
 Start a fresh instance per tool, on its own profile, `--no-comfy`, the window in front and no hand on the mouse
 (tools/run_gates.sh does not run it: it is a measurement, not a gate). The JSON sets `window.__bp` (W, H, TOOLS, SIZES,
-SAMPLES, VIEWS, MOVES, MOVE_CSS, MODE, GAP, PEN, COALESCED, BASE_ROW, KEEP; defaults in the script). The rows go to
+SAMPLES, FX_SAMPLES, VIEWS, MOVES, MOVE_CSS, MODE, GAP, PEN, COALESCED, BASE_ROW, KEEP, KERNELS; liquify_perf.js its own,
+KERNELS and KEEP among them; defaults in each script). The rows go to
 `brush_perf.out.json` in the working directory as well.
 """
 import asyncio

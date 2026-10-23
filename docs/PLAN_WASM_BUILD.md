@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a built 2026-10-23 (§7), next K0b.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a and K0b built 2026-10-23 (§7), next K0c.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -684,3 +684,49 @@ reviewed the renderer diff and ran everything once at 15k (`docs/measurements/k0
   costs as much as deflate (a candidate the plan does not list); JS LZW 6.7 s on a one-row-strip file (K16); `convert`
   0.5-0.7 s on plain RGBA8 and `unpredict` 0.6-1.1 s (K15); the browser's inflate about 560 MB/s per worker, 2.9x on
   8 workers (the bar for K2, and K8's native route); Scumble's PNG rows 76 % Paeth, 23 % Average (K6).
+
+### K0b (2026-10-23)
+
+Built by a workflow of seven builders on disjoint files against one contract of names, each harness smoke-run on its own
+instance and port, and two checkers (renderer diff, harnesses; no musts, the shoulds fixed by hand); the main loop ran
+the gates and every new row once at 15k (`docs/measurements/k0b_2026-10-23/`, `docs/PERFORMANCE.md` §16).
+- **Call counters** (`px.js`): one counter per kernel export and thread at module level (they survive `releaseIfLarge`);
+  `this.exports` counts, `this.raw` does not (`px/bench.js` uses `raw`); `pxCalls(reset)`, re-exported by `kernels.js`;
+  `InpaintEditor.pxCalls(reset)` for the window. Workers reset at a job's start in an idle worker and put
+  `timing.pxCalls` on every reply with a `timing`; the stitch worker puts `pxCalls` on its replies, and
+  `prepareCropAsync` / `finishResultAsync` carry them on the worker route. The single editor worker can overlap jobs
+  that wait (png, export) and then counts both: a gate step that asserts a Rust path uses a pool job, the stitch worker
+  or the window. The wrapper costs about 6-16 ns per call (Node).
+- **Window marks:** `range` (start {source, mode, snap}, per backend and source edges / posted / held / combined with
+  readMs, loopMs, combineMs; done {ms, tiles, pct}, also {cancelled} on a cancelled run; `selectRange` returns `ms`),
+  `program` (fillBoxFromStack's filter branch: done {bands, pool, upload, filter, read, rows}, {failed} when a band
+  throws; a luma / colour range runs two such boxes side by side, so read each done's own fields), `freqsep` (start,
+  read, blur, split, written, done), `relight_maps` (start {quick, lights, w, h}, landed {chan, quick, current, ms} per
+  march, idle {quick} per layer; `relightMarching()` counts the marches in flight over all layers: wait on it, since a
+  deep `releaseCaches` drops a layer's cache and its idle can come early).
+- **Laps:** `cropPixels` / `finishPixels` / `stitchJob` / both async routes (keys per loop of §4.10, the encodes and
+  decode); `fitLayerRGBA({ laps })` adds shrink, ring, fit (`fit` is fitEdges alone; the whole edge fit is the three).
+- **Harnesses:** `native_test.py` (px bucket by function, per-row px calls, `wand_whole_add`, `bucket_fill` last of all,
+  the paint layer through `writeRect`, the stitch laps on the provider rows, the program marks); `perf_test.py`'s
+  relight rows under `--filter=relight` (memory read before them); `px_jobs.py` rows `wand_add`, `invert`,
+  `range_depth`, `range_depth_snap`, `range_luma`, `range_color`, `depth_guide`, `fill_limit` (after the old rows of each
+  round, which run as in W0); `selection_test.py` range cases in ms with jobs and marks; `export_test.py --fill-limit`
+  (`--filter=` already took any filter type; now validated); `w0_bench.py` `freqsep_4000`, `stitch_align_2048` /
+  `_4096`, the `edgefit_2048` split, `match_fallback_16k` (WebGL refused through `glContext().max` for the call),
+  `grow_fallback_15k`, `--size=WxH`; `brush_perf.js` blur / sharpen / tone / sponge and `KERNELS`; `liquify_perf.js`
+  `KERNELS` and `KEEP` (it now closes its document); `px_test.js` `twinCheck` / `twinRun` (simd and scalar builds against
+  the twin, odd offsets, byte- and bit-exact, named rules; first users range_max, dilate_mask, box_blurs), the counter
+  checks, `benchMedians` and `coldCall` under `PX_BENCH`.
+- **Not as planned:** `relight_shadow` replies carry no `timing`, so a march's landed ms is post to answer; with the
+  twins (`kernels = "js"`) a luma / colour range reads the picture on the window (`partsUsable` wants Rust), so its JS
+  / Rust A/B compares two read routes; px_test's always-printed one-shot timings stay single calls.
+- **For Stop 1** (one run each; K0c decides): the window's JS combine is 76 % of select by depth's 1.6 s and 40 % of
+  luma's 2.3 s, and 0.4 s of the wand's 0.54 s block (K5 pays twice); a fill layer with a depth limit costs about 11.5 s
+  of a layered export at 15k (`limitAlphaRows` on the window; a PSD 17.3 s; K25, after question 6.2); the bucket over a
+  15k band blocks the window 2.0 s in getImageData (K37's tile route); frequency separation blocks 2.4 s, the blur 2.1 s
+  (K26-K27); relight's full march is about 4.2 s per light in the app, not 2.7-2.9 (K12-K14); a 1000 px blur or sharpen
+  dab costs 263-278 ms per move at fit (K26); stitch at 4096^2 spends most in colorMatch, blur, dilate, warp and the
+  encodes, and the edge fit's shrink outweighs fitEdges (K32-K34); the grow fallback fits on the window at 15k (944 ms,
+  K39 is no memory risk there); the first call of a freshly compiled px.wasm runs 1.8-2.2x the warm median (Node), and
+  every worker compiles its own module: a measured candidate for K1's losing Rust jobs; wand_object still loses
+  (Rust 0.89x).

@@ -16,6 +16,8 @@ import { loadPx, Px } from "./px.js";
 import { resampleBlock as resampleBlockJS, resampleTable } from "../inpaint_resample.js";
 
 export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES } from "./kernels_js.js";
+// this thread's Rust kernel calls by export name (px.js, docs/PLAN_WASM_BUILD.md §3.4); they survive `releaseIfLarge`
+export { pxCalls } from "./px.js";
 
 const RELEASE_BYTES = 256 * 1048576;
 

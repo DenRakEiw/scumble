@@ -24,6 +24,36 @@ function lapper(laps) {
     return (key) => { const t1 = clock(); laps[key] = (laps[key] || 0) + (t1 - t); t = t1; };
 }
 
+// ---- call counters (docs/PLAN_WASM_BUILD.md §3.4) --------------------------------------------------------------------
+// One counter per kernel export and thread, so a gate step or a worker's timing can say which Rust kernels ran and how
+// often. They live here, not on an instance: kernels.js `releaseIfLarge` replaces the instance and the counts go on.
+// Not counted: the loader's own exports (`px_alloc`, `px_free`, `px_abi_version`, `px_simd`) and the size helpers
+// (`*_bytes`, `*_cap`), which do no pixel work.
+const UNCOUNTED = /^px_|_bytes$|_cap$/;
+const CALLS = new Map();   // export name -> { n }
+
+/** This thread's px kernel calls since the last reset: `{ <export name>: count }` of the ones called at least once (a copy); `reset` clears them. */
+export function pxCalls(reset = false) {
+    const out = {};
+    for (const [name, c] of CALLS) {
+        if (c.n) out[name] = c.n;
+        if (reset) c.n = 0;
+    }
+    return out;
+}
+
+/** The instance's exports with every kernel wrapped to count its calls; everything else as it is. */
+function countedExports(raw) {
+    const out = {};
+    for (const [name, value] of Object.entries(raw)) {
+        if (typeof value !== "function" || UNCOUNTED.test(name)) { out[name] = value; continue; }
+        let c = CALLS.get(name);
+        if (!c) CALLS.set(name, c = { n: 0 });
+        out[name] = (...args) => { c.n++; return value(...args); };
+    }
+    return Object.freeze(out);
+}
+
 /**
  * Instantiate a px module. `source` is a URL (fetched), a `Response`, bytes (an
  * `ArrayBuffer` or a view) or a compiled `WebAssembly.Module` (what a worker is posted).
@@ -45,7 +75,8 @@ export class Px {
     constructor(instance, module) {
         this.instance = instance;
         this.module = module;
-        this.exports = instance.exports;
+        this.raw = instance.exports;                      // the instance's own exports, uncounted
+        this.exports = countedExports(instance.exports);  // the same, each kernel call counted (`pxCalls`)
         this.memory = instance.exports.memory;
         const abi = this.exports.px_abi_version();
         if (abi !== PX_ABI) throw new Error(`px: module ABI ${abi}, this loader speaks ${PX_ABI}`);

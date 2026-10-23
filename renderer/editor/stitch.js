@@ -29,6 +29,42 @@ function makeCanvas(w, h) {
     return c;
 }
 
+// ---- laps (the K0b harness, docs/PLAN_WASM_BUILD.md §4.10) ---------------------------------
+// While a crop or a stitch runs with a `laps` object (`cropPixels`, `finishPixels`, the jobs and the async pair), the
+// milliseconds of each of its loops are added to it under the loop's name. The steps that read `LAPS` run synchronously
+// inside `withLaps`, so no other run's steps land in between; the async callers time their awaits themselves.
+
+let LAPS = null;
+
+/** The start of a step the current laps time (0 when none are taken). */
+function lapStart() { return LAPS ? performance.now() : 0; }
+
+/** The step since `t0` (`lapStart`) added to the current laps under `key`. */
+function lapEnd(key, t0) { if (LAPS && t0) LAPS[key] = (LAPS[key] || 0) + (performance.now() - t0); }
+
+/** `fn()`, timed under `key` in the current laps. */
+function lap(key, fn) {
+    const t0 = lapStart();
+    try { return fn(); } finally { lapEnd(key, t0); }
+}
+
+/** `fn()` with `laps` as the current laps (an outer one stays when `laps` is null). */
+function withLaps(laps, fn) {
+    if (!laps) return fn();
+    const was = LAPS;
+    LAPS = laps;
+    try { return fn(); } finally { LAPS = was; }
+}
+
+/** An awaited step since `t0` added to `laps` under `key`. */
+function lapSince(laps, key, t0) { laps[key] = (laps[key] || 0) + (performance.now() - t0); }
+
+/** A stitch worker reply's numbers (its `laps`, its `pxCalls`) added to `into`, name by name. */
+function addByName(into, more) {
+    if (!more) return;
+    for (const [k, v] of Object.entries(more)) if (typeof v === "number") into[k] = (into[k] || 0) + v;
+}
+
 /** Context padding, grow, feather and blend from the selection size (nodes.py _auto_selection_params). */
 export function autoSelectionParams(selW, selH, strength = 1) {
     const diag = Math.hypot(selW, selH);
@@ -83,28 +119,50 @@ function regionOf(editor, x, y, w, h) {
 
 /** The alpha channel of ImageData (a readRect of the selection, say) as a 0..1 mask. */
 function maskFromAlpha(img) {
+    const t0 = lapStart();
     const w = img.width, h = img.height, d = img.data;
     const m = maskOf(w, h);
     for (let i = 0, j = 3; i < w * h; i++, j += 4) m.data[i] = d[j] / 255;
+    lapEnd("maskFromAlpha", t0);
     return m;
 }
 
-function maskMax(a, b) { const o = maskOf(a.w, a.h); for (let i = 0; i < o.data.length; i++) o.data[i] = Math.max(a.data[i], b.data[i]); return o; }
-function maskClamp(m) { for (let i = 0; i < m.data.length; i++) m.data[i] = Math.min(1, Math.max(0, m.data[i])); return m; }
+function maskMax(a, b) {
+    const t0 = lapStart();
+    const o = maskOf(a.w, a.h);
+    for (let i = 0; i < o.data.length; i++) o.data[i] = Math.max(a.data[i], b.data[i]);
+    lapEnd("maskMax", t0);
+    return o;
+}
+
+function maskClamp(m) {
+    const t0 = lapStart();
+    for (let i = 0; i < m.data.length; i++) m.data[i] = Math.min(1, Math.max(0, m.data[i]));
+    lapEnd("maskClamp", t0);
+    return m;
+}
 
 /** Square dilation by px (max filter, separable). */
 export function dilate(m, px) {
     px = Math.floor(px);
     if (px <= 0) return m;
-    return { data: dilateMask(m.data, m.w, m.h, px), w: m.w, h: m.h };
+    const t0 = lapStart();
+    const out = { data: dilateMask(m.data, m.w, m.h, px), w: m.w, h: m.h };
+    lapEnd("dilate", t0);
+    return out;
 }
 
+// laps: "erode" is its two `1 - x` loops; the max filter between them is "dilate"'s
 function erode(m, px) {
     if (px <= 0) return m;
+    let t0 = lapStart();
     const inv = maskOf(m.w, m.h);
     for (let i = 0; i < inv.data.length; i++) inv.data[i] = 1 - m.data[i];
+    lapEnd("erode", t0);
     const d = dilate(inv, px);
+    t0 = lapStart();
     for (let i = 0; i < d.data.length; i++) d.data[i] = 1 - d.data[i];
+    lapEnd("erode", t0);
     return d;
 }
 
@@ -119,7 +177,10 @@ export function gaussBlur(m, sigma) {
     const mIdeal = (12 * sigma * sigma - 3 * wl * wl - 12 * wl - 9) / (-4 * wl - 4);
     const mm = Math.round(mIdeal);
     const radii = [0, 1, 2].map((i) => ((i < mm ? wl : wu) - 1) / 2);
-    return { data: boxBlurs(m.data, w, h, radii), w, h };
+    const t0 = lapStart();
+    const out = { data: boxBlurs(m.data, w, h, radii), w, h };
+    lapEnd("blur", t0);
+    return out;
 }
 
 /** Selection -> dilate(grow) -> blur(feather / 2.5); always opaque inside the selection. */
@@ -182,7 +243,7 @@ function selectionWindowBox(editor) {
 /** The selection's window as ImageData and where it lies: `{ img, ox, oy, fullW, fullH }`. */
 function selectionWindowPixels(editor) {
     const [x0, y0, x1, y1] = selectionWindowBox(editor);
-    return { img: editor.sel.readRect(x0, y0, x1 - x0, y1 - y0), ox: x0, oy: y0, fullW: editor.width, fullH: editor.height };
+    return { img: lap("selection", () => editor.sel.readRect(x0, y0, x1 - x0, y1 - y0)), ox: x0, oy: y0, fullW: editor.width, fullH: editor.height };
 }
 
 /** A window read (`selectionWindowPixels`) as the 0..1 mask a run works with, `{ data, w, h, ox, oy, fullW, fullH }`. */
@@ -209,6 +270,7 @@ function resizeMask(m, w, h) {
 
 /** Mask as a canvas: white with alpha = value (usable both as luminance and as alpha). */
 function maskToCanvas(m, { luminance = false } = {}) {
+    const t0 = lapStart();
     const c = makeCanvas(m.w, m.h);
     const ctx = c.getContext("2d");
     const img = ctx.createImageData(m.w, m.h);
@@ -219,6 +281,7 @@ function maskToCanvas(m, { luminance = false } = {}) {
         else { d[j] = 255; d[j + 1] = 255; d[j + 2] = 255; d[j + 3] = v; }
     }
     ctx.putImageData(img, 0, 0);
+    lapEnd("maskToCanvas", t0);
     return c;
 }
 
@@ -232,12 +295,14 @@ function selectionBbox(m, padding) {
     const { w, h } = m;
     const ox = m.ox | 0, oy = m.oy | 0, W = m.fullW || w, H = m.fullH || h;
     let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    const t0 = lapStart();
     for (let y = 0; y < h; y++) {
         const row = y * w;
         for (let x = 0; x < w; x++) {
             if (m.data[row + x] > 0.5) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
         }
     }
+    lapEnd("selectionBbox", t0);
     if (x1 < 0) return { has: false, x0: 0, y0: 0, x1: W, y1: H };
     return { has: true, x0: Math.max(0, ox + x0 - padding), y0: Math.max(0, oy + y0 - padding), x1: Math.min(W, ox + x1 + 1 + padding), y1: Math.min(H, oy + y1 + 1 + padding) };
 }
@@ -480,9 +545,10 @@ export function planFrame(editor, params, limits) {
 /**
  * The pixels of a planned crop: the crop box of the composite (`region`, anything `drawImage` takes, at the box's size)
  * with the fill mode, scaled to the emitted size, the denoise mask at that size, the original as a reference when the
- * fill asks for one. Canvases of the thread it runs in.
+ * fill asks for one. Canvases of the thread it runs in. `laps`: an object the steps' milliseconds are added to (K0b).
  */
-export function cropPixels(p, sel, region, { own = false } = {}) {
+export function cropPixels(p, sel, region, { own = false, laps = null } = {}) {
+    if (laps) return withLaps(laps, () => cropPixels(p, sel, region, { own }));
     const { x0, y0, cw, ch, ew, eh } = p;
     // `own`: the region is a canvas made for this crop (the stitch worker's) and becomes the crop itself
     let crop = own ? region : makeCanvas(cw, ch);
@@ -500,9 +566,9 @@ export function cropPixels(p, sel, region, { own = false } = {}) {
         crop = fillMasked(crop, dilate(selCrop, fillPx), p.fillMode);
     }
     if (p.resize) {
-        crop = drawResized(crop, ew, eh);
+        crop = lap("resize", () => drawResized(crop, ew, eh));
         denoise_mask = resizeMask(denoise_mask, ew, eh);
-        for (let i = 0; i < references.length; i++) references[i] = drawResized(references[i], ew, eh);
+        for (let i = 0; i < references.length; i++) references[i] = lap("resize", () => drawResized(references[i], ew, eh));
     }
     return { crop, mask: maskToCanvas(denoise_mask, { luminance: true }), maskAlpha: alphaMask(denoise_mask), references };
 }
@@ -518,7 +584,7 @@ export function prepareCrop(editor, params, limits, opts = {}) {
     const p = planCrop(cropSettingsOf(editor, params, limits, opts.crop), sel);
     // E2: the crop box composited on its own (`readBox`: a region pass at full resolution, or the box cut out of the
     // whole flatten when no margin gives those pixels), never the whole image for a box of it
-    const { crop, mask, maskAlpha, references } = cropPixels(p, sel, regionOf(editor, p.x0, p.y0, p.cw, p.ch));
+    const { crop, mask, maskAlpha, references } = cropPixels(p, sel, lap("region", () => regionOf(editor, p.x0, p.y0, p.cw, p.ch)));
     // `refIds`: the references of the click (docs/PLAN_REFS.md C3), in their order, a hidden one included
     if (opts.references !== false) for (const l of editor.refLayersFor(opts.refIds)) references.push(editor.layerPixels(l));
     return { crop, mask, maskAlpha, references, info: p.info, sel };
@@ -526,12 +592,14 @@ export function prepareCrop(editor, params, limits, opts = {}) {
 
 /** RGBA mask with alpha 0 where the model should repaint (OpenAI's convention). */
 function alphaMask(m) {
+    const t0 = lapStart();
     const c = makeCanvas(m.w, m.h);
     const ctx = c.getContext("2d");
     const img = ctx.createImageData(m.w, m.h);
     const d = img.data;
     for (let i = 0, j = 0; i < m.data.length; i++, j += 4) { d[j] = 0; d[j + 1] = 0; d[j + 2] = 0; d[j + 3] = m.data[i] > 0.5 ? 0 : 255; }
     ctx.putImageData(img, 0, 0);
+    lapEnd("alphaMask", t0);
     return c;
 }
 
@@ -577,8 +645,11 @@ export function finishNeedsRegion(info) {
  * a 2D canvas of the box's composite when `finishNeedsRegion(info)`, else null.
  * `info.keepAlpha` (set by the caller for a run that asked the model for a transparent
  * background) keeps the answer's own alpha channel instead of replacing it with the composite mask.
+ * `laps`: an object the steps' milliseconds are added to (K0b; the edge fit's as fitLayerRGBA names them: its `fit` is
+ * fitEdges alone, the whole edge fit is shrink + ring + fit).
  */
-export function finishPixels(info, sel, resultImage, region) {
+export function finishPixels(info, sel, resultImage, region, laps = null) {
+    if (laps) return withLaps(laps, () => finishPixels(info, sel, resultImage, region));
     const [x, y, w, h] = info.bbox;
     const width = info.width, height = info.height;
     const feather = info.feather | 0;
@@ -586,7 +657,7 @@ export function finishPixels(info, sel, resultImage, region) {
     const emitted = info.emitted;
     // `fit` "stretch": the adapter knows its answer covers the crop exactly (a preset shape, Image Expand's own size)
     const sameAspect = info.fit === "stretch" || (!!emitted && Math.abs(sw / sh - emitted[0] / emitted[1]) < 0.01);
-    let patch = drawResized(resultImage, w, h, { crop: sameAspect ? "disabled" : "center" });
+    let patch = lap("resize", () => drawResized(resultImage, w, h, { crop: sameAspect ? "disabled" : "center" }));
 
     // full-size composite mask, computed on a window around the region (the blur tails end there)
     const margin = Math.ceil(Math.max(feather, info.grow | 0, info.blend | 0) * 2 + 3 * Math.max(feather, info.blend | 0) / 2.5) + 8;
@@ -613,21 +684,25 @@ export function finishPixels(info, sel, resultImage, region) {
         try {
             const pdata = patch.getContext("2d").getImageData(0, 0, w, h);
             const rdata = region.getContext("2d").getImageData(0, 0, w, h);
+            const tc = lapStart();
             const layRGBA = new Uint8ClampedArray(pdata.data);
             for (let i = 0, j = 3; i < w * h; i++, j += 4) {
                 layRGBA[j] = Math.round(Math.min(1, Math.max(0, blend.data[i])) * 255);
             }
-            const r = fitLayerRGBA({ baseRGBA: rdata.data, layerRGBA: layRGBA, w, h });
+            lapEnd("alignCopy", tc);
+            const r = fitLayerRGBA({ baseRGBA: rdata.data, layerRGBA: layRGBA, w, h, laps: LAPS });
             align = { aligned: r.aligned, ...(r.reason ? { reason: r.reason } : {}), scale: r.scale, shift: r.shift, shear: r.shear, before: r.before, after: r.after };
             if (r.aligned && r.matrix) {
-                const warped = warpRGBA(pdata.data, w, h, r.matrix);
+                const warped = lap("warp", () => warpRGBA(pdata.data, w, h, r.matrix));
                 patch = makeCanvas(w, h);
                 const img = patch.getContext("2d").createImageData(w, h);
                 img.data.set(warped);
                 patch.getContext("2d").putImageData(img, 0, 0);
                 // where the warp read past the answer's edge it repeats the edge pixels: there the picture below shows
+                const tv = lapStart();
                 const cov = warpCoverage(w, h, r.matrix);
                 for (let i = 0; i < cov.length; i++) blend.data[i] *= cov[i];
+                lapEnd("coverage", tv);
             }
         } catch (err) {
             align = { aligned: false, reason: (err && err.message) || "fit failed" };
@@ -644,17 +719,19 @@ export function finishPixels(info, sel, resultImage, region) {
     if (info.color_match && region && !info.keepAlpha) {
         const keep = maskOf(w, h);
         for (let i = 0; i < keep.data.length; i++) keep.data[i] = 1 - blend.data[i];
-        patch = colorMatch(patch, region, keep);
+        patch = lap("colorMatch", () => colorMatch(patch, region, keep));
     }
 
     // RGBA patch: the model's pixels with the blend mask as alpha. With `keepAlpha` the
     // model's own alpha is kept and the blend mask only multiplies it, so a clean cut-out
     // keeps its edges and a model that ignored the request still blends in as before.
+    const ta = lapStart();
     const pd = patch.getContext("2d").getImageData(0, 0, w, h);
     for (let i = 0, j = 3; i < w * h; i++, j += 4) {
         const a = Math.min(1, Math.max(0, blend.data[i]));
         pd.data[j] = Math.round(info.keepAlpha ? a * pd.data[j] : a * 255);
     }
+    lapEnd("finalAlpha", ta);
     const out = makeCanvas(w, h);
     out.getContext("2d").putImageData(pd, 0, 0);
     return { patch: out, x, y, w, h, align };
@@ -675,7 +752,7 @@ function regionCanvas(editor, x, y, w, h) {
  */
 export function finishResult(editor, info, sel, resultImage) {
     const [x, y, w, h] = info.bbox;
-    return finishPixels(info, sel, resultImage, finishNeedsRegion(info) ? regionCanvas(editor, x, y, w, h) : null);
+    return finishPixels(info, sel, resultImage, finishNeedsRegion(info) ? lap("region", () => regionCanvas(editor, x, y, w, h)) : null);
 }
 
 /**
@@ -790,7 +867,9 @@ async function regionBytes(editor, x, y, w, h, held = undefined) {
  * worker, the crop box is composited by the tile workers (`editor.readBoxBytes`), and the worker makes the crop, the
  * masks and their PNGs. `{ image, mask, maskAlpha, references, width, height, info, sel, how }`: PNG bytes, the emitted
  * size, `info` as `prepareCrop` gives it, `sel` for `finishResultAsync`, `how` the region's way (or "window" when it
- * ran as before). Falls back to `prepareCrop` on the window when the worker is not there or fails.
+ * ran as before), `laps` the steps' milliseconds by name (K0b: the worker's loops and the window's waits) and, from the
+ * worker, `pxCalls` its kernel calls by name. Falls back to `prepareCrop` on the window when the worker is not there or
+ * fails.
  */
 export async function prepareCropAsync(editor, params, limits, opts = {}) {
     const settings = cropSettingsOf(editor, params, limits, opts.crop);
@@ -802,17 +881,28 @@ export async function prepareCropAsync(editor, params, limits, opts = {}) {
         const refLayers = withRefs ? editor.refLayersFor(opts.refIds) : [];
         let held = null, holding = null;
         try {
+            const laps = {}, pxCalls = {};
+            let t0 = performance.now();
             const win = selectionWindowPixels(editor);
+            lapSince(laps, "selection", t0);
             holding = typeof editor.holdRunStack === "function" ? editor.holdRunStack({ forRun: true }) : null;
             const refs = refLayers.map((l) => editor.layerPixels(l));
             const planned = await stitchCall("plan", { settings, sel: { data: win.img.data, width: win.img.width, height: win.img.height, ox: win.ox, oy: win.oy, fullW: win.fullW, fullH: win.fullH } }, [win.img.data.buffer]);
+            addByName(laps, planned.laps);
+            addByName(pxCalls, planned.pxCalls);
+            t0 = performance.now();   // "region": the held stack's arrival and the box composited from it
             held = holding ? await holding : null;
             const p = planned.plan;
             const region = await regionBytes(editor, p.x0, p.y0, p.cw, p.ch, holding ? held : undefined);
+            lapSince(laps, "region", t0);
             const made = await stitchCall("crop", { plan: p, sel: planned.sel, region: { data: region.data, width: region.width, height: region.height } }, [planned.sel.data.buffer, ...transferable(region.data)]);
+            addByName(laps, made.laps);
+            addByName(pxCalls, made.pxCalls);
             const references = made.references.slice();
+            t0 = performance.now();
             for (const c of refs) references.push(await canvasBytes(c));
-            return { image: made.image, mask: made.mask, maskAlpha: made.maskAlpha, references, width: p.ew, height: p.eh, info: p.info, sel: made.sel, how: region.how };
+            lapSince(laps, "encode", t0);
+            return { image: made.image, mask: made.mask, maskAlpha: made.maskAlpha, references, width: p.ew, height: p.eh, info: p.info, sel: made.sel, how: region.how, laps, pxCalls };
         } catch (err) {
             console.warn("Scumble: the crop in the stitch worker failed, cropping on the window:", (err && err.message) || err);
         } finally {
@@ -822,42 +912,56 @@ export async function prepareCropAsync(editor, params, limits, opts = {}) {
         }
     }
     if (editor.relightIdle) await editor.relightIdle();   // the window's crop: relight's full shadow maps, as readBoxBytes waits (F2.7)
-    const prep = prepareCrop(editor, params, limits, opts);
+    const laps = {};
+    const prep = withLaps(laps, () => prepareCrop(editor, params, limits, opts));
+    const t0 = performance.now();
     const [image, mask, maskAlpha, ...references] = await Promise.all([canvasBytes(prep.crop), canvasBytes(prep.mask), canvasBytes(prep.maskAlpha), ...prep.references.map((c) => canvasBytes(c))]);
-    return { image, mask, maskAlpha, references, width: prep.crop.width, height: prep.crop.height, info: prep.info, sel: prep.sel, how: "window" };
+    lapSince(laps, "encode", t0);
+    return { image, mask, maskAlpha, references, width: prep.crop.width, height: prep.crop.height, info: prep.info, sel: prep.sel, how: "window", laps };
 }
 
 /**
  * `finishResult` for a run, without holding the window: the answer (`bytes`, `mime`) is decoded and stitched in the
  * stitch worker; the region's composite, read only for a colour match, comes from the tile workers.
- * `{ blob, cutout, x, y, w, h, align, how }`: the patch as a PNG, whether it carries real transparency
- * (`transparentPixels`). Falls back to `finishResult` on the window.
+ * `{ blob, cutout, x, y, w, h, align, how, laps }`: the patch as a PNG, whether it carries real transparency
+ * (`transparentPixels`), the steps' milliseconds by name (K0b; from the worker also `pxCalls`, its kernel calls).
+ * Falls back to `finishResult` on the window.
  */
 export async function finishResultAsync(editor, info, selIn, bytes, mime = "image/png") {
     let sel = selIn;
     const [x, y, w, h] = info.bbox;
     if (STITCH_IN_WORKER && stitchWorker()) {
         try {
+            const laps = {};
+            const t0 = performance.now();
             const region = finishNeedsRegion(info) ? await regionBytes(editor, x, y, w, h) : null;
+            if (region) lapSince(laps, "region", t0);
             const answer = bytes instanceof Uint8Array ? bytes.slice() : new Uint8Array(bytes);
             // the window mask goes to the worker and comes back with the answer (no copy of a large selection here)
             const r = await stitchCall("finish", { info, sel, answer, mime, region: region ? { data: region.data, width: region.width, height: region.height } : null }, [answer.buffer, sel.data.buffer, ...(region ? transferable(region.data) : [])]);
             if (r.sel) sel.data = r.sel.data;
-            return { blob: new Blob([r.png], { type: "image/png" }), cutout: r.cutout, x, y, w, h, align: r.align, how: region ? region.how : "none" };
+            addByName(laps, r.laps);
+            return { blob: new Blob([r.png], { type: "image/png" }), cutout: r.cutout, x, y, w, h, align: r.align, how: region ? region.how : "none", laps, pxCalls: { ...(r.pxCalls || {}) } };
         } catch (err) {
             console.warn("Scumble: the stitch in the stitch worker failed, stitching on the window:", (err && err.message) || err);
         }
         // the mask went to the worker that failed: the selection's window as it is now
         if (!sel.data || sel.data.length !== sel.w * sel.h) sel = selectionWindow(editor);
     }
+    const laps = {};
+    let t0 = performance.now();
     const img = await bytesToImage(bytes, mime);
-    const fin = finishResult(editor, info, sel, img);
+    lapSince(laps, "decode", t0);
+    const fin = withLaps(laps, () => finishResult(editor, info, sel, img));
+    t0 = performance.now();
     const blob = await new Promise((resolve) => fin.patch.toBlob(resolve, "image/png"));
-    return { blob, cutout: transparentPixels(fin.patch), x, y, w, h, align: fin.align, how: "window" };
+    lapSince(laps, "encode", t0);
+    return { blob, cutout: transparentPixels(fin.patch), x, y, w, h, align: fin.align, how: "window", laps };
 }
 
-/** The stitch worker's side (stitch_worker.js): the jobs, over this module's own steps. */
+/** The stitch worker's side (stitch_worker.js): the jobs, over this module's own steps. Every reply carries `laps` (K0b). */
 export async function stitchJob(msg) {
+    const laps = {};
     const bytesOf = async (c) => canvasBytes(c);
     const canvasFrom = (r) => {
         const c = makeCanvas(r.width, r.height), ctx = c.getContext("2d");
@@ -874,23 +978,31 @@ export async function stitchJob(msg) {
     const selOf = (s) => ({ data: s.data, w: s.w, h: s.h, ox: s.ox, oy: s.oy, fullW: s.fullW, fullH: s.fullH });
     if (msg.op === "plan") {
         const s = msg.sel;
-        const sel = windowMask({ img: { data: s.data, width: s.width, height: s.height }, ox: s.ox, oy: s.oy, fullW: s.fullW, fullH: s.fullH });
-        const plan = planCrop(msg.settings, sel);
-        return { plan, sel: selOf(sel), transfer: [sel.data.buffer] };
+        const { sel, plan } = withLaps(laps, () => {
+            const m = windowMask({ img: { data: s.data, width: s.width, height: s.height }, ox: s.ox, oy: s.oy, fullW: s.fullW, fullH: s.fullH });
+            return { sel: m, plan: planCrop(msg.settings, m) };
+        });
+        return { plan, sel: selOf(sel), laps, transfer: [sel.data.buffer] };
     }
     if (msg.op === "crop") {
         const sel = selOf(msg.sel);
-        const out = cropPixels(msg.plan, sel, canvasFrom(msg.region), { own: true });
+        const out = cropPixels(msg.plan, sel, canvasFrom(msg.region), { own: true, laps });
+        const t0 = performance.now();
         const [image, mask, maskAlpha, ...references] = await Promise.all([bytesOf(out.crop), bytesOf(out.mask), bytesOf(out.maskAlpha), ...out.references.map(bytesOf)]);
-        return { image, mask, maskAlpha, references, sel, transfer: [image.buffer, mask.buffer, maskAlpha.buffer, ...references.map((r) => r.buffer), sel.data.buffer] };
+        lapSince(laps, "encode", t0);
+        return { image, mask, maskAlpha, references, sel, laps, transfer: [image.buffer, mask.buffer, maskAlpha.buffer, ...references.map((r) => r.buffer), sel.data.buffer] };
     }
     if (msg.op === "finish") {
+        let t0 = performance.now();
         const bmp = await createImageBitmap(new Blob([msg.answer], { type: msg.mime || "image/png" }));
+        lapSince(laps, "decode", t0);
         try {
-            const fin = finishPixels(msg.info, selOf(msg.sel), bmp, msg.region ? canvasFrom(msg.region) : null);
+            const fin = finishPixels(msg.info, selOf(msg.sel), bmp, msg.region ? canvasFrom(msg.region) : null, laps);
+            t0 = performance.now();
             const png = await bytesOf(fin.patch);
+            lapSince(laps, "encode", t0);
             const sel = selOf(msg.sel);
-            return { png, cutout: transparentPixels(fin.patch), align: fin.align, sel, transfer: [png.buffer, sel.data.buffer] };
+            return { png, cutout: transparentPixels(fin.patch), align: fin.align, sel, laps, transfer: [png.buffer, sel.data.buffer] };
         } finally { bmp.close(); }
     }
     throw new Error("unknown stitch job " + msg.op);

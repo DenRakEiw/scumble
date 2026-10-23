@@ -71,7 +71,17 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   stored references in `tools/refs/` (`--update` rewrites them, `--tolerance n` allows n
   levels); run it after anything that touches drawing.
   `python tools/perf_test.py [2048x1152 6000x4000 12000x8000]` is the drawing benchmark
-  (synthetic documents in their own tab, no ComfyUI; `docs/PERFORMANCE.md` §7).
+  (synthetic documents in their own tab, no ComfyUI; `docs/PERFORMANCE.md` §7); with `--filter=relight` it adds
+  relight's march rows (one light, three lights, a drag step's quick map, a pan during a march, the first march).
+  The kernel update's harness (`docs/PLAN_WASM_BUILD.md` K0a, K0b; measurements, not gates): `native_test.py` (the main
+  thread's px time by function, the px call counts per row, `wand_whole_add`, `bucket_fill`, the stitch laps),
+  `px_jobs.py` (the selection and map rows of §4.3 / §4.8 beside the old ones), `selection_test.py`'s two range cases
+  in ms, `export_test.py --perf ... --fill-limit`, `w0_bench.py` (`freqsep_4000`, `stitch_align_2048` / `_4096`,
+  `edgefit_2048`, `match_fallback_16k`, `grow_fallback_15k`, `--size=WxH`), `brush_perf.js` (TOOLS `blur`, `sharpen`,
+  `tone`, `sponge`; `KERNELS`), `liquify_perf.js` (`KERNELS`), and `PX_BENCH=1 node tools/px_test.js` (medians, a cold
+  first call). Each reads the window's step marks (`InpaintEditor.stepMarks`) and the px.js call counters
+  (`InpaintEditor.pxCalls`, a worker job's `timing.pxCalls`; the single editor worker's overlapping jobs count each
+  other's calls, so a gate step that asserts a Rust path ran uses a pool job, the stitch worker or the window).
   `python tools/mem_test.py [12000x8000] [--rounds 4] [--keep]` is the memory walk: a
   document per round, benchmarked, closed and collected, with the private bytes of the
   renderer and of the GPU process, a census of every live canvas and the line that made it.

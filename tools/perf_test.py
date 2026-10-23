@@ -23,6 +23,16 @@ time. "its landings" under invert counts the colour matches and filter passes th
 while those chains landed; its bracket is the longest block from the end of the operation until they
 had landed, whatever held the window: it includes the selection's background encode and any other
 timer of that window, not only the landings and their draws.
+
+With --filter=relight (and its depth map, --map=WxH, 4096x2731 by default) the run ends with relight's own rows
+(docs/PLAN_WASM_BUILD.md §4.5, K0b), after every row above so they stay comparable with runs before them: one light
+moved and three lights moved as a release does them, a drag step's quick map, a pan at 1:1 while the full march of a
+moved light runs, and the first march of the document (the one the setup starts; cold only for the first size of a
+fresh instance, and the rows above ran meanwhile). Each is timed from the window's relight_maps marks of its kind (full,
+or quick for the drag step; start to the end of the last march, InpaintEditor.stepMarks) and waits on
+ed.relightMarching(), with a 120 s limit:
+
+    python tools/perf_test.py 15000x10000 --filter=relight --map=4096x2731
 """
 import asyncio
 import json
@@ -117,7 +127,9 @@ BENCH = """
         ed.markFilterChanged(fx);
     }
     // relight without lights renders nothing (the filter skips it; N3's 15k rows were taken so): two point lights and a
-    // spot, the "Cyberpunk neon" preset placed on this picture, so the shadow march and the shading run (W0, 2026-10-23)
+    // spot, the "Cyberpunk neon" preset placed on this picture, so the shadow march and the shading run (W0, 2026-10-23).
+    // The relight rows at the end read the marks of the march this starts (the first one of the document) from here on.
+    const relightSince = performance.now();
     if (chosenFilter === "relight" && fx && fx.filter === "relight") {
         const { applyLightPreset } = await import("./editor/inpaint_relight.js");
         fx.params = { ...fx.params, lights: applyLightPreset("cyberpunk_neon", { width: W, height: H }) };
@@ -683,6 +695,7 @@ BENCH = """
         masked.maskPx = null; ed.markLayerChanged(masked);
     }
 
+    // read before the relight rows below, so a relight run's figures stay comparable with the runs before K0b
     let mem = null;
     try { mem = Math.round((await performance.measureUserAgentSpecificMemory()).bytes / 1048576); } catch (_) { /* needs isolation */ }
 
@@ -695,6 +708,161 @@ BENCH = """
         regions: rep.tiles.regions || 0, regionMB: +((rep.tiles.regionBytes || 0) / 1048576).toFixed(1),
         pyramidMB: +(rep.pyramid.bytes / 1048576).toFixed(1),
     } : null;
+
+    // --- K0b (docs/PLAN_WASM_BUILD.md 4.5): relight's shadow march, after every row above so it moves none of them --------
+    // Only with --filter=relight. A row moves lights as a release (or a drag step) does and waits until the layer's last
+    // march has answered: [the longest block of the window from the change on, its own frame included; the shadows landed:
+    // the relight_maps marks of the row's kind (full, or quick for the drag step) from start to the end of the last march,
+    // its write included]; "_marches" [marches posted, the slowest one's post to answer]. The pan row pans at 1:1, paced
+    // like a display, while the full march of a moved light runs. The first-march row reads the marks of the march the
+    // setup started (cold for the first size of a fresh instance); the rows above ran meanwhile and nothing probed the
+    // window, so it has no block. A build without the marks gets the window's own poll as the wall (a note says so).
+    if (fxId === "relight") {
+        const E = ed.constructor;
+        const notes = [];
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const LIMIT = 120000;
+        const hasMarks = typeof E.stepMarks === "function";
+        const marksIn = (since, until = Infinity) => (hasMarks ? E.stepMarks(false) : []).filter((m) => m.op === "relight_maps" && m.t >= since && m.t <= until);
+        // the relight_shadow marches in flight (a build without the counter: every relight job the editor waits for)
+        const marching = () => (typeof ed.relightMarching === "function" ? ed.relightMarching() : (ed._relightPending ? ed._relightPending.size : 0));
+        // when no march was on its way, seen twice 50 ms apart (a landing's redraw may ask for another): that first time,
+        // or null at the limit
+        const quiet = async (t0 = performance.now()) => {
+            for (;;) {
+                if (marching() === 0) {
+                    const at = performance.now();
+                    await sleep(50);
+                    if (marching() === 0) return at;
+                } else if (performance.now() - t0 > LIMIT) return null;
+                else await sleep(5);
+            }
+        };
+        // one run of the marches of one kind (quick or full) since `since`: from its first start to the end of its last
+        // march. A march ends at its landing, or at the idle mark right after it when it was the last one in flight (the
+        // idle comes after the channel's write, which is most of a landing at 15k). `own` takes only the first start's
+        // marches (its first `lights` landings of that kind). `other`: the marches of the other kind that started
+        // meanwhile (a pass of the other kind during the row; not counted, a note says so); `again`: later starts of the
+        // same kind before the run's last landing.
+        const runOf = (since, quick, { own = false } = {}) => {
+            const marks = marksIn(since);
+            const start = marks.find((m) => m.step === "start" && !!m.quick === quick);
+            if (!start) return null;
+            const after = marks.filter((m) => m.t >= start.t);
+            let landed = after.filter((m) => m.step === "landed" && !!m.quick === quick);
+            if (own) landed = landed.slice(0, Number(start.lights) || 0);
+            const last = landed[landed.length - 1];
+            const next = last ? after[after.indexOf(last) + 1] : null;
+            const end = last ? (next && next.step === "idle" ? next.t : last.t) : null;
+            const starts = after.filter((m) => m.step === "start" && (!last || m.t <= last.t));
+            const same = starts.filter((m) => !!m.quick === quick);
+            const lights = (ms) => ms.reduce((a, m) => a + (Number(m.lights) || 0), 0);
+            return {
+                ms: end != null ? +(end - start.t).toFixed(1) : null,
+                posted: own ? Number(start.lights) || 0 : lights(same),
+                slowest: landed.length ? +Math.max(...landed.map((m) => Number(m.ms) || 0)).toFixed(1) : null,
+                other: lights(starts.filter((m) => !!m.quick !== quick)),
+                again: same.length - 1,
+            };
+        };
+        // the wall of a row: its marks, else the poll from the change until no march was on its way
+        const wallOf = (key, run, since, at) => {
+            if (run && run.ms != null) return run.ms;
+            if (at == null) { notes.push(`${key}: still marching after ${LIMIT / 1000} s`); return null; }
+            notes.push(!hasMarks ? `${key}: no step marks in this build: the poll's wall`
+                : run ? `${key}: no landing mark: the poll's wall` : `${key}: no relight_maps start mark (no march posted?): the poll's wall`);
+            return +(at - since).toFixed(1);
+        };
+        const otherNote = (key, run, quick) => {
+            if (run && run.other) notes.push(`${key}: ${run.other} ${quick ? "full" : "quick"} march(es) started meanwhile, not counted (the block and the poll include them)`);
+        };
+        // the first march of the document: the setup's full march, from its start to the end of its own landings. The
+        // filter slider row above sets the preview, so quick marches of the same lights run beside it (not counted).
+        {
+            const run = runOf(relightSince, false, { own: true });
+            out.relight_first = run && run.ms != null ? [null, run.ms] : null;
+            out.relight_first_marches = run ? [run.posted, run.slowest] : null;
+            if (!run) notes.push("first march: no full relight_maps start since the setup");
+            else if (run.ms == null) notes.push("first march: none of its marches landed");
+            else if (run.again > 0) notes.push("first march: another full march started before its own had landed (the wall may hold its landings)");
+        }
+        const lightsNow = () => (fx.params && Array.isArray(fx.params.lights) ? fx.params.lights : []);
+        const dx = Math.max(8, Math.round(W / 50)), dy = Math.max(8, Math.round(H / 50));
+        // the lights `which` moved by (mx, my), their aim with them (a move drag's step), as a new params object
+        const moved = (which, mx, my) => {
+            fx.params = { ...fx.params, lights: lightsNow().map((l, i) => (which.includes(i)
+                ? { ...l, x: l.x + mx, y: l.y + my, ...(Array.isArray(l.aim) ? { aim: [l.aim[0] + mx, l.aim[1] + my] } : {}) } : l)) };
+        };
+        // what a light drag's pointer-up runs, and what one of its steps runs
+        const release = () => { ed.filterPreview = null; ed.ensureRelightMaps(fx, { quick: false }); ed.markFilterChanged(fx); ed.renderLayers(); ed.draw(); };
+        const dragStep = () => { ed.filterPreview = fx.id; ed.ensureRelightMaps(fx, { quick: true }); ed.markFilterChanged(fx, { soon: true }); };
+        const calm = async () => {   // the row before has landed: its marches, its chains, its GPU work
+            await ed.mipsSettled();
+            if ((await quiet()) == null) notes.push("a march was still on its way before a row, after the limit");
+            await ed.mipsSettled();
+            await sleep(60);
+            settle(false);   // the canvases there are; no display mirror made for it
+            await sleep(30);
+        };
+        const relightRow = async (key, quick, fn) => {
+            await calm();
+            const since = performance.now();
+            const done = probe();
+            fn();
+            const at = await quiet(since);
+            const blocked = done();
+            const run = runOf(since, quick);
+            out[key] = [blocked, wallOf(key, run, since, at)];
+            out[key + "_marches"] = run ? [run.posted, run.slowest] : null;
+            otherNote(key, run, quick);
+        };
+        ed.activeLayerId = fx.id;   // the layer whose lights a user drags, its handles shown
+        ed.renderLayers();
+        ed.fitView(); ed.sceneSig = null; ed.draw();
+        const all = lightsNow().map((_, i) => i);
+        await relightRow("relight_one", false, () => { moved([0], dx, 0); release(); });
+        await relightRow("relight_three", false, () => { moved(all.slice(0, 3), 0, dy); release(); });
+        await relightRow("relight_quick", true, () => { moved([Math.min(1, all.length - 1)], -dx, 0); dragStep(); });
+        release();   // the drag's end: the full march of where it left the light, not timed
+        // pan at 1:1 while a full march runs: [median frame, worst frame]; frames [start..idle]; the longest block of the
+        // window meanwhile (the landings and their redraws between the frames) [mip chains built on this thread]. The light
+        // moved is a point light: a spot's march ends in a sixth of the time (33 against 200 ms at 2048 x 1152, a 1024 map).
+        {
+            await calm();
+            ed.view.scale = 1; ed.view.angle = 0; ed._fitted = false;
+            ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
+            ed.sceneSig = null; ed.draw();
+            await calm();
+            ed.sceneSig = null; ed.draw(); ed.draw();
+            const T = await import("./editor/inpaint_tiles.js");
+            T.chainStats(true);
+            const since = performance.now();
+            const done = probe();
+            moved([Math.max(0, lightsNow().findIndex((l) => l.type === "point"))], dx, 0);
+            release();   // the change's own frame, not a pan frame
+            const ts = [];
+            let at = null;
+            for (let i = 0; performance.now() - since < LIMIT; i++) {
+                await sleep(16);   // paced like a display: the march's answers and their landings run between the frames
+                const a = performance.now();
+                ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw();
+                ts.push(performance.now() - a);
+                if (marching() === 0) { at = performance.now(); break; }
+            }
+            const held = done();
+            const cs = T.chainStats();
+            const run = runOf(since, false);
+            otherNote("pan", run, false);
+            ts.sort((x, y) => x - y);
+            out.relight_pan = ts.length ? [+ts[Math.floor(ts.length / 2)].toFixed(1), +ts[ts.length - 1].toFixed(1)] : null;
+            out.relight_pan_frames = [ts.length, wallOf("pan", run, since, at)];
+            out.relight_pan_held = [held, cs.main + cs.thumb];
+            await calm();
+            ed.fitView(); ed.sceneSig = null; ed.draw();
+        }
+        out.relight_notes = notes;
+    }
+
     shell.closeDocument(ed, { force: true });
     if (before) shell.activate(before);
     return JSON.stringify({ size: `${W}x${H}`, mp: +(W * H / 1e6).toFixed(1), filter: fxId, setBase: Math.round(setBaseMs), memMB: mem, view, display, ...out });
@@ -801,6 +969,23 @@ C2_ROWS = [
     ("  mirrors made MB [_masked]", "match_full_pick_mb"),
     ("magic wand over it", "match_full_wand"),
     ("  mirrors made MB [_masked]", "match_full_wand_mb"),
+]
+
+# K0b (docs/PLAN_WASM_BUILD.md §4.5), --filter=relight only: [the longest block, the shadows landed (the relight_maps
+# marks of the row's kind, start to the last march's end)]; "marches" [posted, the slowest one's post to answer]; the pan
+# row [median frame, worst frame]
+RELIGHT_ROWS = [
+    ("one light moved: landed", "relight_one"),
+    ("  marches [slowest landed]", "relight_one_marches"),
+    ("three lights moved", "relight_three"),
+    ("  marches [slowest landed]", "relight_three_marches"),
+    ("a drag step's quick map", "relight_quick"),
+    ("  marches [slowest landed]", "relight_quick_marches"),
+    ("pan at 1:1 during a march", "relight_pan"),
+    ("  frames [shadows landed]", "relight_pan_frames"),
+    ("  block [chains built here]", "relight_pan_held"),
+    ("the first march after start", "relight_first"),
+    ("  marches [slowest landed]", "relight_first_marches"),
 ]
 
 
@@ -976,6 +1161,30 @@ async def main():
                 continue
             cells.append("%22s" % ("-" if not v else f"{v[0]:.1f} ms  [{v[1]:.1f}]"))
         print("%-28s%s" % (label, "".join(cells)))
+    if any("relight_notes" in r for r in results):
+        def ms0(x):
+            return "-" if x is None else f"{x:.0f}"
+        print()
+        print("%-28s%s" % ("relight, blocked [landed]", ""))
+        print("-" * len(head))
+        for label, key in RELIGHT_ROWS:
+            cells = []
+            for r in results:
+                v = r.get(key)
+                if not v:
+                    cells.append("%22s" % "-")
+                elif key.endswith(("_marches", "_frames")):
+                    cells.append("%22s" % f"{v[0]}  [{ms0(v[1])} ms]")
+                elif key == "relight_pan":
+                    cells.append("%22s" % f"{v[0]:.1f} ms  [{v[1]:.1f}]")
+                elif key.endswith("_held"):
+                    cells.append("%22s" % f"{ms0(v[0])} ms  [{v[1]}]")
+                else:
+                    cells.append("%22s" % f"{ms0(v[0])} ms  [{ms0(v[1])}]")
+            print("%-28s%s" % (label, "".join(cells)))
+        for r in results:
+            for note in r.get("relight_notes") or []:
+                print("%-28s%s" % (r["size"], note))
     print()
     for r in results:
         gl = r.get("glMB")

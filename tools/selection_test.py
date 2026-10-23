@@ -1,8 +1,16 @@
 """Selection intersect, call sites and soft wand add test against the running app (PLAN_NIK9_BUILD.md §F4b).
 
     python tools/selection_test.py
+    python tools/selection_test.py --range-size 2048x1152 --only range_select_15k_tile_case,range_select_15k_luma_case
 
 Start the app first: ./node_modules/.bin/electron . --remote-debugging-port=9555
+
+The two range cases on a large document (15000 x 10000 unless `--range-size` names another) print their timings
+under their line (docs/PLAN_WASM_BUILD.md K0b): selectRange's own ms (0.1 s in its `seconds`), the harness's wall
+around it, its range_select jobs summed (`InpaintEditor.jobTimings`), the px module's calls (on the window, in the
+range_select jobs, in the stack_into jobs that read a luma case's picture; "-" in a build without the counters) and
+the window's "range" marks, each step the ms since the mark before it.
+`--only` runs the named steps (setup and cleanup always run).
 """
 import asyncio
 import json
@@ -14,6 +22,18 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _arg(name, default=None):
+    if name in sys.argv:
+        i = sys.argv.index(name)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return default
+
+
+RANGE_SIZE = [int(v) for v in _arg("--range-size", "15000x10000").lower().split("x")]
+ONLY = _arg("--only").split(",") if _arg("--only") else None
 
 STEPS = [
     ("setup", """
@@ -301,14 +321,15 @@ const ed = ednow(window.__selDoc);
 if (!ed.tileMode) return { skipped: "canvas backend" };
 
 const { makeMap } = await import("./editor/inpaint_maps.js");
+const [RW, RH] = [__RW__, __RH__];   // 15000 x 10000 unless --range-size names another
 const d15k = await run("new_document");
-await run("new_canvas", { doc: d15k.id, width: 15000, height: 10000 });
+await run("new_canvas", { doc: d15k.id, width: RW, height: RH });
 const ed15k = ednow(d15k.id);
 
 const mapW = 1024, mapH = 768;
 const ramp = new Uint16Array(mapW * mapH);
 for (let i = 0; i < ramp.length; i++) ramp[i] = Math.round(i * 65535 / ramp.length);
-await ed15k.setMap("depth", makeMap("depth", mapW, mapH, ramp, [15000, 0, 0, 10000, 0, 0], {}));
+await ed15k.setMap("depth", makeMap("depth", mapW, mapH, ramp, [RW, 0, 0, RH, 0, 0], {}));
 
 let flattenCount = 0;
 const origFlatten = ed15k.flattenToCanvas.bind(ed15k);
@@ -317,13 +338,13 @@ ed15k.flattenToCanvas = function(...args) {
     return origFlatten(...args);
 };
 
-const res = await ed15k.selectRange({ source: "depth", lo: 0.5, hi: 0.5, fLo: 0.5, fHi: 0.5 }, "replace");
+const { res, perf } = await rangeTimed(ed15k.constructor, () => ed15k.selectRange({ source: "depth", lo: 0.5, hi: 0.5, fLo: 0.5, fHi: 0.5 }, "replace"));
 
 if (flattenCount !== 0) throw new Error("15k case: flattenToCanvas called " + flattenCount);
 if (typeof res.seconds !== "number" || res.seconds < 0) throw new Error("15k case: invalid seconds " + res.seconds);
 
 await run("close_document", { doc: d15k.id, force: true });
-return { seconds: res.seconds, tiles: res.tiles, flattenCount };
+return { ms: perf.ms, tiles: res.tiles, flattenCount, perf: { ...perf, source: "depth", size: [RW, RH] } };
 """),
     ("range_select_luma_color_cases", """
 const ed = ednow(window.__selDoc);
@@ -465,8 +486,9 @@ return { total, stale: true };
 const ed = ednow(window.__selDoc);
 if (!ed.tileMode) return { skipped: "canvas backend" };
 
+const [RW, RH] = [__RW__, __RH__];   // 15000 x 10000 unless --range-size names another
 const d15k = await run("new_document");
-await run("new_canvas", { doc: d15k.id, width: 15000, height: 10000, color: "#ffffff" });
+await run("new_canvas", { doc: d15k.id, width: RW, height: RH, color: "#ffffff" });
 const ed15k = ednow(d15k.id);
 
 let flattenCount = 0;
@@ -477,13 +499,13 @@ ed15k.flattenToCanvas = function(...args) {
 };
 
 // Case 11: 15000 x 10000, luma -> as case 10, through the held stack
-const res = await ed15k.selectRange({ source: "luma", lo: 0.5, hi: 1.0, fLo: 0.2, fHi: 0 }, "replace");
+const { res, perf } = await rangeTimed(ed15k.constructor, () => ed15k.selectRange({ source: "luma", lo: 0.5, hi: 1.0, fLo: 0.2, fHi: 0 }, "replace"));
 
 if (flattenCount !== 0) throw new Error("15k luma case: flattenToCanvas called " + flattenCount);
 if (typeof res.seconds !== "number" || res.seconds < 0) throw new Error("15k luma case: invalid seconds " + res.seconds);
 
 await run("close_document", { doc: d15k.id, force: true });
-return { seconds: res.seconds, tiles: res.tiles, flattenCount };
+return { ms: perf.ms, tiles: res.tiles, flattenCount, perf: { ...perf, source: "luma", size: [RW, RH] } };
 """),
     ("selection_panel_range_cases", """
 const ed = ednow(window.__selDoc);
@@ -895,8 +917,91 @@ PRE = """(async () => {
     const run = (n, a) => commands.run(n, a || {});
     const ednow = (id) => host.editors().find((e) => e.node.id === id);
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    // a range case's timings (docs/PLAN_WASM_BUILD.md K0b): the wall around fn, selectRange's own ms, its range_select
+    // jobs summed (numbers by name, px calls by export), the window's px calls, and the window's "range" marks as
+    // native_test.py takes them: a "start" opens a run, each step the ms since the mark before it (a step seen twice in
+    // a run sums), total the last mark against the start, the marks' own values in extra
+    const rangeTimed = async (E, fn) => {
+        const marksOf = () => (typeof E.stepMarks === "function" ? E.stepMarks(true) : []);
+        const windowCalls = () => (typeof E.pxCalls === "function" ? E.pxCalls(true) : null);
+        E.jobTimings(true);
+        marksOf();
+        windowCalls();
+        const t0 = performance.now();
+        const res = await fn();
+        const wall = +(performance.now() - t0).toFixed(1);
+        const onWindow = windowCalls();
+        const jobs = { jobs: 0 }, stack = { jobs: 0, kernel: 0 };
+        let jobCalls = null, stackCalls = null;
+        const addCalls = (into, t) => {
+            if (!t.pxCalls || typeof t.pxCalls !== "object") return into;
+            into = into || {};
+            for (const [k, n] of Object.entries(t.pxCalls)) if (typeof n === "number") into[k] = (into[k] || 0) + n;
+            return into;
+        };
+        for (const t of E.jobTimings(true)) {
+            // a luma or colour range reads the picture through the held stack: its stack_into jobs apart
+            if (t.op === "stack_into") {
+                stack.jobs++;
+                stack.kernel = +(stack.kernel + (t.kernel || 0)).toFixed(1);
+                stackCalls = addCalls(stackCalls, t);
+                continue;
+            }
+            if (t.op !== "range_select") continue;
+            jobs.jobs++;
+            for (const [k, v] of Object.entries(t)) if (typeof v === "number") jobs[k] = +((jobs[k] || 0) + v).toFixed(1);
+            jobCalls = addCalls(jobCalls, t);
+        }
+        const runs = [];
+        let r = null;
+        for (const { op, step, t, ...more } of marksOf()) {
+            if (op !== "range") continue;
+            if (step === "start" || !r) {
+                r = { t0: t, last: t, steps: {}, extra: {}, nostart: step !== "start" };
+                runs.push(r);
+                if (step !== "start") r.steps[step] = 0;
+            } else {
+                r.steps[step] = +((r.steps[step] || 0) + t - r.last).toFixed(1);
+                r.last = t;
+            }
+            Object.assign(r.extra, more);
+        }
+        const marks = runs.map((m) => ({ steps: m.steps, total: +(m.last - m.t0).toFixed(1), extra: m.extra, ...(m.nostart ? { nostart: true } : {}) }));
+        return { res, perf: { ms: res && res.ms != null ? res.ms : null, wall, tiles: res ? res.tiles : null, jobs, stack, jobCalls, stackCalls, windowCalls: onWindow, marks } };
+    };
     %s
 })()"""
+
+
+def calls_text(calls):
+    """px calls by export as a short text; "-" in a build without the counters."""
+    if calls is None:
+        return "-"
+    return ", ".join(f"{k} {v}" for k, v in sorted(calls.items())) or "none"
+
+
+def print_range_perf(perf):
+    """The timing lines of a range case (K0b), under its [ok] line."""
+    w, h = perf.get("size") or [0, 0]
+    ms = perf.get("ms")
+    print(f"  range {perf.get('source')} {w}x{h}: selectRange {'-' if ms is None else f'{ms:.1f}'} ms (wall {perf.get('wall'):.1f} ms),"
+          f" {perf.get('tiles')} partial tiles")
+    jobs = dict(perf.get("jobs") or {})
+    n = jobs.pop("jobs", 0)
+    stack = perf.get("stack") or {}
+    print(f"   range_select jobs: {n}, summed {json.dumps(jobs)}"
+          + (f"; the picture in {stack['jobs']} stack_into jobs, kernel {stack.get('kernel', 0):.1f} ms summed" if stack.get("jobs") else ""))
+    print(f"   px calls: window {calls_text(perf.get('windowCalls'))}; range_select jobs {calls_text(perf.get('jobCalls'))}"
+          + (f"; stack_into jobs {calls_text(perf.get('stackCalls'))}" if stack.get("jobs") else ""))
+    marks = perf.get("marks") or []
+    if not marks:
+        print("   marks range: none")
+    for run in marks:
+        steps = ", ".join(f"{k} {v:.1f}" for k, v in (run.get("steps") or {}).items())
+        # the marks' own values; their ms (readMs, combineMs ...) to one decimal
+        extra = ", ".join(f"{k} {round(v, 1) if isinstance(v, float) else json.dumps(v)}" for k, v in (run.get("extra") or {}).items())
+        print(f"   marks range: {steps or '-'} | total {run.get('total', 0):.1f} ms" + (" (no start mark)" if run.get("nostart") else "")
+              + (f"  ({extra})" if extra else ""))
 
 
 async def run_all(c):
@@ -911,9 +1016,15 @@ async def run_all(c):
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
     ok = True
     for name, body in STEPS:
+        if ONLY and name not in ONLY and name not in ("setup", "cleanup"):
+            continue
+        body = body.replace("__RW__", str(RANGE_SIZE[0])).replace("__RH__", str(RANGE_SIZE[1]))
         try:
             res = await c.eval(PRE % body, timeout=240)
+            perf = res.pop("perf", None) if isinstance(res, dict) else None
             print("[ok] %s: %s" % (name, json.dumps(res)[:280]))
+            if perf:
+                print_range_perf(perf)
         except Exception as err:  # noqa: BLE001
             ok = False
             print("[FAIL] %s: %s" % (name, err))

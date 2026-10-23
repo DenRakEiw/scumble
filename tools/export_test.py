@@ -1172,7 +1172,12 @@ try {
 """),
 ]
 
-# python tools/export_test.py --perf 15000x10000: the timings of a large document (printed, not gated)
+# python tools/export_test.py --perf 15000x10000: the timings of a large document (printed, not gated). Options:
+# --filter=<type> the filter layer (levels unless given; fill, gradient, film.look, any type FILTERS holds),
+# --filter-params=k:v+k:v, --limit=source:lo:hi:fLo:fHi[:inv] on that layer (a depth limit makes a ramp map of
+# --map=WxH, 4096x2731 unless given), --blend=<mode> on the paint layers, and --fill-limit[=lo:hi:fLo:fHi[:inv]]: a
+# fill layer with a depth limit on top and the rows `fill_limit_rows` (fillPixels and limitAlphaRows apart) and
+# `psd_fill_limit` (the PSD with it; `fillRowsMs` its rows' reads in the writer)
 PERF = """
 const [W, H] = [__W__, __H__];
 const d = await run("new_document");
@@ -1209,8 +1214,12 @@ if (mapW > 0 && mapH > 0) {
     await ed.setMap("depth", makeMap("depth", mapW, mapH, ramp, [W, 0, 0, H, 0, 0]));
 }
 {
+    // --filter= names the filter layer's type: a built-in one (levels, the default; fill, gradient, ...) or a plugin's
+    // (film.look); an unknown one is an error, not a levels layer measured under another name
     const { FILTERS } = await import("./editor/inpaint_filters.js");
-    const fx = ed.addFilterLayer(FILTERS[__FILTER__] ? __FILTER__ : "levels");
+    if (!FILTERS[__FILTER__]) throw new Error(`--filter=${__FILTER__}: no filter layer of that type (${Object.keys(FILTERS).join(", ")})`);
+    if (FILTERS[__FILTER__].over && __LIMIT__ && __LIMIT__.source !== "depth") throw new Error("a fill layer takes a depth limit only (the app drops any other)");
+    const fx = ed.addFilterLayer(__FILTER__);
     const customParams = __FILTER_PARAMS__;
     if (customParams && Object.keys(customParams).length > 0) {
         fx.params = { ...fx.params, ...customParams };
@@ -1233,7 +1242,7 @@ const timed = async (fn) => {
     held = Math.max(held, performance.now() - last);   // a call that never yields is one block
     return { ms: Math.round(performance.now() - t0), blocked: Math.round(held), r };
 };
-const out = { size: [W, H] };
+const out = { size: [W, H], filter: __FILTER__, ...(__LIMIT__ ? { limit: __LIMIT__ } : {}) };
 let readMs = 0, bands = 0;
 const readBand = ed.readBand.bind(ed);
 ed.readBand = (...args) => { const t = performance.now(); try { return readBand(...args); } finally { readMs += performance.now() - t; bands++; } };
@@ -1265,6 +1274,69 @@ out.psd = { ms: ps.ms, blocked: ps.blocked, MB: ps.r ? +(ps.r.blob.size / 104857
 }
 const pm = await timed(() => ed.exportLayeredBands("psd"));
 out.psd_masked = { ms: pm.ms, blocked: pm.blocked, MB: pm.r ? +(pm.r.blob.size / 1048576).toFixed(1) : null };
+// --fill-limit (docs/PLAN_WASM_BUILD.md K0b): a fill layer with a depth limit on top, whose rows the layered export reads
+// through limitAlphaRows (fillLayerRows, inpaint_canvas.js; the rows above never ran it). The depth map is the
+// document's when an option above made one (a ramp without a guide: no snap), else one as the app keeps it: at the
+// work size, the picture as its guide, snap at the default strength; the depth a slope with the discs standing nearer.
+const fillLimit = __FILL_LIMIT__;
+if (fillLimit) {
+    const EDG = await import("./editor/inpaint_edges.js");
+    const FIL = await import("./editor/inpaint_filters.js");
+    const LIM = await import("./editor/inpaint_limit.js");
+    if (!ed.maps || !ed.maps.depth) {
+        const { makeMap } = await import("./editor/inpaint_maps.js");
+        const { workSize } = await import("./editor/inpaint_depth.js");
+        const [gw, gh] = workSize(W, H);
+        const sx = gw / W, sy = gh / H, depth = new Uint16Array(gw * gh);
+        for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) depth[y * gw + x] = Math.round((0.15 + 0.5 * x / gw + 0.2 * y / gh) * 65535);
+        for (let i = 0; i < 60; i++) {
+            const cx = ((i * 977) % W) * sx, cy = ((i * 613) % H) * sy, rx = W / 40 * sx, ry = W / 40 * sy, v = Math.round((0.9 - (i % 5) * 0.03) * 65535);
+            for (let y = Math.max(0, Math.floor(cy - ry)); y < Math.min(gh, Math.ceil(cy + ry)); y++) {
+                for (let x = Math.max(0, Math.floor(cx - rx)); x < Math.min(gw, Math.ceil(cx + rx)); x++) {
+                    const dx = (x + 0.5 - cx) / rx, dy = (y + 0.5 - cy) / ry;
+                    if (dx * dx + dy * dy <= 1) depth[y * gw + x] = v;
+                }
+            }
+        }
+        const guide = await host.pictureInput(ed, gw, gh, { skipFilters: true, background: "#808080" });
+        await ed.setMap("depth", makeMap("depth", gw, gh, depth, [W, 0, 0, H, 0, 0], { snap: { strength: EDG.SNAP_DEFAULT } }, guide.image));
+    }
+    const map = ed.maps.depth;
+    const fl = ed.addFilterLayer("fill");
+    fl.params = { ...fl.params, color: "#3080c0", limit: fillLimit };
+    ed.markFilterChanged(fl);
+    ed.renderLayers(); ed.draw();
+    await ed.mipsSettled();
+    // the layer's rows as fillLayerRows reads them, apart: per band of 256 rows (bandRows' default) fillPixels, then
+    // limitAlphaRows; snap as limitAlphaRows takes it (a guide and a strength above 0)
+    let fillMs = 0, limitMs = 0, bands = 0;
+    for (let y0 = 0; y0 < H; y0 += 256) {
+        const y1 = Math.min(H, y0 + 256);
+        const a = performance.now();
+        const rows = FIL.fillPixels("fill", fl.params, [W, H], [0, y0], W, y1 - y0);
+        const b = performance.now();
+        LIM.limitAlphaRows(rows, 0, y0, W, y1 - y0, fl.params.limit, map);
+        fillMs += b - a; limitMs += performance.now() - b; bands++;
+    }
+    const snap = !!(map.guide && EDG.snapParams(map.meta && map.meta.snap && map.meta.snap.strength));
+    out.fill_limit_rows = { ms: Math.round(fillMs + limitMs), fill: Math.round(fillMs), limit: Math.round(limitMs), bands, map: [map.w, map.h], snap };
+    // the PSD with that layer; the layer's row reads timed where the writer takes them (its source's `part`)
+    let rowsMs = 0;
+    const fillRows = ed.fillLayerRows.bind(ed);
+    ed.fillLayerRows = (l, bake) => {
+        const open = fillRows(l, bake);
+        if (l !== fl) return open;   // a fill layer of --filter=fill is not this row's
+        return () => {
+            const o = open();
+            const part = o.source.part.bind(o.source);
+            o.source.part = async (...args) => { const t = performance.now(); try { return await part(...args); } finally { rowsMs += performance.now() - t; } };
+            return o;
+        };
+    };
+    let pf;
+    try { pf = await timed(() => ed.exportLayeredBands("psd")); } finally { delete ed.fillLayerRows; }
+    out.psd_fill_limit = { ms: pf.ms, blocked: pf.blocked, MB: pf.r ? +(pf.r.blob.size / 1048576).toFixed(1) : null, fillRowsMs: Math.round(rowsMs) };
+}
 out.pool = E.parts.pool().stats();
 await run("close_document", { doc: d.id, force: true });
 return out;
@@ -1317,6 +1389,13 @@ async def run_all(c):
             mw, mh = map_arg.lower().split("x")
             map_w, map_h = int(mw), int(mh)
         blend_id = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--blend=")), None)
+        # --fill-limit[=lo:hi:fLo:fHi[:inv]]: the fill layer with a depth limit (K0b), 0.3:0.6:0.05:0.05 unless given
+        fill_arg = next((x for x in sys.argv if x == "--fill-limit" or x.startswith("--fill-limit=")), None)
+        fill_obj = None
+        if fill_arg:
+            fp = (fill_arg.split("=", 1)[1] if "=" in fill_arg else "0.3:0.6:0.05:0.05").split(":")
+            fill_obj = {"source": "depth", "lo": float(fp[0]), "hi": float(fp[1]), "fLo": float(fp[2]), "fHi": float(fp[3]),
+                        "invert": len(fp) > 4 and fp[4] in ("inv", "true", "1")}
         perf_js = (PERF.replace("__W__", w)
                        .replace("__H__", h)
                        .replace("__FILTER__", json.dumps(filter_id))
@@ -1324,7 +1403,8 @@ async def run_all(c):
                        .replace("__LIMIT__", json.dumps(limit_obj))
                        .replace("__MAP_W__", str(map_w))
                        .replace("__MAP_H__", str(map_h))
-                       .replace("__BLEND__", json.dumps(blend_id)))
+                       .replace("__BLEND__", json.dumps(blend_id))
+                       .replace("__FILL_LIMIT__", json.dumps(fill_obj)))
         res = await c.eval(PRE % (HELPERS, perf_js), timeout=1800)
         print(json.dumps(res, indent=1))
         return True

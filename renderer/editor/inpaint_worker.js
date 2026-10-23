@@ -53,7 +53,7 @@ import { liquifyStore } from "./inpaint_liquify.js";
 import { guidedFar } from "./inpaint_depth.js";
 import { u16Bilinear, rangeWeight, LUMA, opp, colourSimilarity, hexToRgb as hexToRgb01 } from "./inpaint_weights.js";
 import { snapField, fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls } from "./px/kernels.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
 
@@ -1363,11 +1363,18 @@ async function run(msg) {
 // There `self` is the window: a handler on it would answer any message posted to the page
 // with an error posted to the page, which it receives again, forever. Only a worker listens.
 const inWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
+// A reply's `timing` also carries `pxCalls`: the Rust kernel calls of this thread during the job, by export name
+// (docs/PLAN_WASM_BUILD.md §3.4), {} when only the twins ran. The counters start from zero when a job starts in an idle
+// worker; a pool worker runs one job at a time, the single worker can overlap jobs that wait (png, export) and then
+// counts the other's calls too, never fewer than the job's own.
+let jobsInFlight = 0;
 if (inWorker) self.onmessage = async (e) => {
     const msg = e.data || {};
     if (msg.op === "arena") { arenaMessage(msg); return; }
+    if (!jobsInFlight++) pxCalls(true);
     try {
         const result = await run(msg);
+        if (result && result.timing && typeof result.timing === "object") result.timing.pxCalls = pxCalls();
         // an ImageBitmap in the reply is transferred, never copied, and so are the buffers a job names in `transfer`
         const transfer = result && result.transfer ? result.transfer : result && result.bitmap ? [result.bitmap] : [];
         if (result) delete result.transfer;
@@ -1376,5 +1383,7 @@ if (inWorker) self.onmessage = async (e) => {
         // a bitmap that was transferred but never drawn would leak until the worker dies
         for (const k of ["bitmap", "selBitmap"]) { try { if (msg[k] && msg[k].close) msg[k].close(); } catch (_) { /* ignore */ } }
         self.postMessage({ id: msg.id, ok: false, error: String((err && err.message) || err) });
+    } finally {
+        jobsInFlight--;
     }
 };

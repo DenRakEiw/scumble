@@ -1,15 +1,20 @@
 /* global window, document, PointerEvent, requestAnimationFrame */
-// Smudge, clone and heal on a large document (15000 x 10000 by default): ms per pointer move and per press, and the
-// mirrors and the whole composite they hold (docs/PLAN_0_1_31.md §4 steps 1 and 2, docs/PERFORMANCE.md §15). One
-// expression, evaluated in a running instance by tools/brush_perf.py (which brings the window to the front first and
-// allows a longer run than cdp.py's 600 s). Parameters: `window.__bp = { ... }` before it (the defaults below). Run it
-// against a fresh dev instance on a profile of its own, --no-comfy, tiles on (the default); restart before every tool.
+// Smudge, clone, heal and the retouch dabs (blur, sharpen, tone, sponge) on a large document (15000 x 10000 by default):
+// ms per pointer move and per press, and the mirrors and the whole composite they hold (docs/PLAN_0_1_31.md §4 steps 1
+// and 2, docs/PERFORMANCE.md §15, docs/PLAN_WASM_BUILD.md §4.9). One expression, evaluated in a running instance by
+// tools/brush_perf.py (which brings the window to the front first and allows a longer run than cdp.py's 600 s).
+// Parameters: `window.__bp = { ... }` before it (the defaults below). Run it against a fresh dev instance on a profile of
+// its own, --no-comfy, tiles on (the default); restart before every tool.
 (async () => {
     const P = Object.assign({
         W: 15000, H: 10000,
+        // also "blur", "sharpen", "tone", "sponge" (FX below): named, not run by default, so a run without parameters
+        // still gives the rows of PERFORMANCE.md §15 and W0; one tool per fresh instance, as for the three
         TOOLS: ["smudge", "clone", "heal"],
-        SIZES: [50, 200, 400],           // image px; 1000 / 2000 for step 7 (set on ed.brushSize: setBrushSize caps at 400)
+        SIZES: null,                     // image px; null: 50 / 200 / 400, and 1000 for the retouch dabs (set on ed.brushSize: setBrushSize caps at 400); 2000 for step 7
         SAMPLES: ["image", "layer"],     // clone / heal: the options bar's Sample (ed.cloneOpts.sample)
+        FX_SAMPLES: ["layer"],           // the retouch dabs' Sample (smudgeOpts / toneOpts .sample): "layer" (the app's default), "below", "image"
+        KERNELS: "rust",                 // InpaintEditor.kernels for the run ("js": the twins in the window and in every job), put back after it
         VIEWS: ["fit", "1:1"],
         MOVES: 30,                       // pointer moves per stroke
         MOVE_CSS: 12,                    // CSS px per move: a steady hand at 60 Hz (720 px/s on the screen)
@@ -28,6 +33,11 @@
     const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
     const shell = await import("./shell.js");
     const host = (await import("./editor/host.js")).host;
+    const K = await import("./editor/px/kernels.js");   // the window's own module (the same URL inpaint_canvas.js imports)
+    // the retouch dabs: blur and sharpen are the smudge tool's modes, tone (dodge) and sponge (saturate) the tone tool's;
+    // all four run smudgeDab's filter branch on the window (blurRGBA / sharpenRGBA / toneRGBA / spongeRGBA,
+    // inpaint_stroke.js) and lay the box down through smudge_dab
+    const FX = { blur: ["smudge", "blur"], sharpen: ["smudge", "sharpen"], tone: ["tone", "dodge"], sponge: ["tone", "saturate"] };
     // how long the main thread was held: a 0 ms timer chain (Chromium clamps it to about 4 ms), as tools/perf_test.py's probe
     const probe = () => {
         let last = performance.now(), max = 0, sum = 0, over50 = 0, stop = false;
@@ -36,6 +46,24 @@
         setTimeout(tick, 0);
         return () => { gap(performance.now()); stop = true; return { max: r1(max), sum: Math.round(sum), over50 }; };
     };
+    // which kernels ran: the window's px calls by export name (null in a build without the counters), and the worker
+    // jobs' timings per op: the count, each numeric field summed, the routes seen and the px calls merged by name
+    const pxCalls = (IE, reset) => (typeof IE.pxCalls === "function" ? IE.pxCalls(reset) : null);
+    const jobSum = (list) => {
+        const out = {};
+        for (const t of list) {
+            const o = out[t.op] || (out[t.op] = { n: 0 });
+            o.n++;
+            for (const [key, v] of Object.entries(t)) {
+                if (typeof v === "number") o[key] = (o[key] || 0) + v;
+                else if (key === "kernels") o.kernels = o.kernels && o.kernels !== v ? "mixed" : v;
+                else if (key === "pxCalls" && v) { const c = o.pxCalls || (o.pxCalls = {}); for (const [f, n] of Object.entries(v)) c[f] = (c[f] || 0) + n; }
+            }
+        }
+        for (const o of Object.values(out)) for (const key of Object.keys(o)) if (key !== "n" && typeof o[key] === "number") o[key] = r1(o[key]);
+        return out;
+    };
+    const callText = (c) => (c ? Object.entries(c).map(([f, n]) => f + " " + n).join(", ") || "-" : "?");
 
     // ---- the document: a textured base and a full-size textured paint layer (built once; KEEP reuses it) ----
     let ed = window.__bpDoc != null ? host.editors().find((e) => e.node.id === window.__bpDoc) : null;
@@ -87,7 +115,7 @@
         built.ms = Math.round(performance.now() - t0);
     }
     shell.activate(ed);
-    const W = ed.width, H = ed.height, dpr = window.devicePixelRatio || 1;
+    const W = ed.width, H = ed.height, dpr = window.devicePixelRatio || 1, IE = ed.constructor;
     // erasing inside a selection felt worst to the user (docs/BUGS.md, the eraser of 0.1.32): the live stroke is drawn
     // through the selection's clip on every frame, and the marching ants are drawn over it
     if (P.SELECT) { ed.selectRectangle([Math.round(W * 0.05), Math.round(H * 0.05), Math.round(W * 0.95), Math.round(H * 0.95)], "replace"); await ed.mipsSettled(); }
@@ -140,9 +168,14 @@
         const L = ed.layers.find((l) => l.name === "Paint");
         const { x0, y } = place();
         pid++;
-        ed.setTool(tool);
+        const fx = FX[tool];
+        ed.setTool(fx ? fx[0] : tool);
         ed.brushSize = size; ed.hardness = P.HARDNESS; ed.eraseHardness = P.HARDNESS; ed.brushOpacity = 1; ed.brushTipId = null;
-        if (ed.smudgeOpts) ed.smudgeOpts.strength = 60;
+        // every row sets the mode and Sample it runs with: a blur row before a smudge row must not leave the smudge
+        // blurring, and the smudge on the base sets its Sample to image for the strokes after it
+        const smudgeFx = fx && fx[0] === "smudge";
+        if (ed.smudgeOpts) Object.assign(ed.smudgeOpts, { strength: 60, mode: smudgeFx ? fx[1] : "smudge" }, smudgeFx ? { sample } : tool === "smudge" ? { sample: "layer" } : {});
+        if (fx && fx[0] === "tone") Object.assign(ed.toneOpts, { mode: fx[1], range: "midtones", exposure: 50, protect: true, vibrance: true, sample });
         ed.activeLayerId = opts.onBase ? null : L.id;
         ed.renderLayers();
         ed.view.angle = 0;
@@ -167,6 +200,8 @@
         ed.draw = function (...a) { const t = performance.now(); try { return proto.apply(this, a); } finally { other.push(performance.now() - t); } };
         const row = { tool: opts.onBase ? "smudge (base)" : tool, sample: tool === "smudge" ? "-" : sample, size, view, scale: +scale.toFixed(3), pxPerMove: r1(d), cold: !!opts.cold };
         try {
+            pxCalls(IE, true); IE.jobTimings(true);   // the counts from here to the release are this stroke's
+            const undo0 = ed.undo[ed.undo.length - 1];
             const hold = probe();
             row.press = r1(send("pointerdown", x0, y));   // the press and its own draw() (onPointerDown ends with one)
             row.kind = ed.pointer ? ed.pointer.kind : null; row.memPress = mem();
@@ -203,6 +238,13 @@
             await ed.mipsSettled();
             await wait(30);
             row.release = hold2();
+            // the undo step the stroke pushed names what ran (Blur, Sharpen, Dodge, Saturate, Smudge, Clone, Heal): the
+            // retouch dabs share the smudge gesture and the smudge_dab kernel, so this tells their rows apart (smudge and
+            // the dabs push it at the press, clone and heal at the release)
+            const undo1 = ed.undo[ed.undo.length - 1];
+            row.step = undo1 && undo1 !== undo0 ? undo1.label || null : null;
+            row.pxCalls = pxCalls(IE, true);   // the window's, press to release (the retouch dabs run there)
+            row.jobs = jobSum(IE.jobTimings(true));   // the workers' (the mips the stroke's tiles asked for, a heal's blend)
         } finally {
             delete ed.draw;
             ed._drawQueued = false;
@@ -216,19 +258,24 @@
         return row;
     };
 
-    const out = { size: `${W}x${H}`, tiles: ed.tileMode, kernels: ed.constructor.kernels, dpr, canvas: [ed.canvas.width, ed.canvas.height],
+    // the route for the run: the window's kernels and every job's (inpaint_jobs.js posts the mode with each job);
+    // kernelsInUse says "js" too while the window's px.wasm has not loaded
+    const kernels0 = IE.kernels;
+    IE.kernels = P.KERNELS;
+    const out = { size: `${W}x${H}`, tiles: ed.tileMode, kernels: IE.kernels, kernelsInUse: K.kernelsInUse(), dpr, canvas: [ed.canvas.width, ed.canvas.height],
         visible: document.visibilityState, focused: document.hasFocus(), params: P, built, rows: [] };
-    if (P.MODE === "raf") {
-        const raf = await new Promise((r) => { const t = setTimeout(() => r(false), 3000); requestAnimationFrame(() => { clearTimeout(t); r(true); }); });
-        if (!raf) throw new Error("requestAnimationFrame does not fire (" + document.visibilityState + "): bring the window to the front, or MODE sync");
-    }
     try {
+        if (P.MODE === "raf") {
+            const raf = await new Promise((r) => { const t = setTimeout(() => r(false), 3000); requestAnimationFrame(() => { clearTimeout(t); r(true); }); });
+            if (!raf) throw new Error("requestAnimationFrame does not fire (" + document.visibilityState + "): bring the window to the front, or MODE sync");
+        }
         for (const tool of P.TOOLS) {
-            const samples = tool === "smudge" ? ["-"] : P.SAMPLES;
+            const samples = tool === "smudge" ? ["-"] : FX[tool] ? P.FX_SAMPLES : P.SAMPLES;
+            const sizes = P.SIZES || (FX[tool] ? [50, 200, 400, 1000] : [50, 200, 400]);
             for (const sample of samples) {
                 ed.releaseCaches({ mirrors: true });   // each tool / sample starts without display mirrors or the cached composite
                 out.rows.push(await stroke(tool, 200, "fit", sample, { moves: 6, cold: true }));
-                for (const view of P.VIEWS) for (const size of P.SIZES) out.rows.push(await stroke(tool, size, view, sample));
+                for (const view of P.VIEWS) for (const size of sizes) out.rows.push(await stroke(tool, size, view, sample));
             }
             if (tool === "smudge" && P.BASE_ROW) {
                 ed.releaseCaches({ mirrors: true });
@@ -242,11 +289,12 @@
             }
         }
     } finally {
+        IE.kernels = kernels0;   // "js" left behind would put every later run of the instance on the twins
         if (!P.KEEP) { shell.closeDocument(ed, { force: true }); window.__bpDoc = null; }
     }
-    out.table = ["tool | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed"]
-        .concat(out.rows.map((r) => [r.tool + (r.cold ? " (cold)" : ""), r.sample, r.size, r.view, r.pxPerMove, r.press, r.firstMove,
+    out.table = ["tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)"]
+        .concat(out.rows.map((r) => [r.tool + (r.cold ? " (cold)" : ""), r.step, r.sample, r.size, r.view, r.pxPerMove, r.press, r.firstMove,
             r.move ? r.move.med : "-", r.move ? r.move.worst : "-", r.frame ? r.frame.med : "-", r.blocked.max, r.blocked.sum, r.up,
-            r.release.max, r.mem[1].mirrorMB, (r.memPress || {}).flatMB, r.changed].join(" | ")));
+            r.release.max, r.mem[1].mirrorMB, (r.memPress || {}).flatMB, r.changed, callText(r.pxCalls)].join(" | ")));
     return out;
 })()

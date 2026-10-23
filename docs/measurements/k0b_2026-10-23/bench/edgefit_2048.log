@@ -1,0 +1,3 @@
+== edgefit_2048 ...
+   {"visibility": "visible", "focus": true, "fit": {"median": 123.02, "max": 154.59, "n": 3}, "fit_laps": {"shrink": 83.78, "ring": 9.59, "fit": 51.41}, "aligned": {"aligned": true, "scale": [1, 1], "shift": [-3, -2]}, "warp": {"median": 87.13, "max": 89.69, "n": 3}, "coverage": {"median": 10.77, "max": 12.98, "n": 3}, "pxCalls": {}, "split": {"shrink": 83.78, "ring": 9.59, "fitEdges": 51.41, "warp": 87.13, "coverage": 10.77}}
+RESULT

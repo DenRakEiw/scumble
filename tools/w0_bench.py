@@ -4,7 +4,7 @@ No ComfyUI. Start the app offline with a debugging port and keep its window in f
 not wasm, in a window behind: docs/PERFORMANCE.md section 10):
 
     ./node_modules/.bin/electron . --remote-debugging-port=9555 --user-data-dir=<scratch> --no-comfy
-    python tools/w0_bench.py [--json out.json] [--image=path/to/15k.jpg] [--files DIR] [--rows=name,name]
+    python tools/w0_bench.py [--json out.json] [--image=path/to/15k.jpg] [--files DIR] [--rows=name,name] [--size=WxH]
 
 Each row runs the module's own function on synthetic data of a stated size (a median of several runs where it is cheap)
 or, for the 15k rows, the editor's command on the picture. It never fails the caller: a row that throws prints its
@@ -12,7 +12,9 @@ error and the rest go on. Rows:
 
   freqsep_15k         the 15k picture: load_image of the JPEG, export a 15k PNG, load_image of it (wall each), then
                       frequency_separation of a 4000 x 4000 box (its limit is 16 MP)
-  edgefit_2048        edgefit.fitLayerRGBA on a 2048^2 base and a shifted copy; warpRGBA alone
+  edgefit_2048        edgefit.fitLayerRGBA on a 2048^2 base and a shifted copy, with its laps (shrink, ring, fit);
+                      warpRGBA and warpCoverage alone (the same matrix); `split` puts them side by side (its `fitEdges` is
+                      fitEdges alone, the laps' `fit`; the row's `fit` is the whole fitLayerRGBA call)
   stitch_masks_2048   stitch.js gaussBlur (sigma 8) and dilate (8 px) on a 2048^2 mask, and the JS max / clamp around them
   crc32_64mb          inpaint_png.crc32 over 64 MB (ms per MB)
   dabs_256            inpaint_stroke blurRGBA / sharpenRGBA / toneRGBA / spongeRGBA on a 256^2 dab
@@ -41,10 +43,42 @@ An inflate way is three runs: `wall` (the window, from the jobs sent to the last
 `inflate` are the jobs' own times summed (CPU time across the pool), `inflate_max` the slowest job's inflate.
 `in_MBps` / `out_MBps` are compressed / inflated bytes over the wall, `inflate_in_MBps` / `inflate_out_MBps` over
 `inflate_max` (the file reads left out). MB is 2^20 bytes.
+
+The K0b rows (docs/PLAN_WASM_BUILD.md sections 4.3, 4.9-4.11). `--size=WxH` runs each of them at that size instead of
+its own (a smoke run; the stitch rows take the largest multiple of 64 that fits in it as their crop's side). `blocked`
+is the longest time the window did not answer during the call (tools/native_test.py's probe), `pxCalls` the window's
+px kernel calls by export name (px/kernels.js `pxCalls`), `laps` the step times the module reports.
+
+  freqsep_4000        frequency_separation (radius 40, the 15k picture's default) of a 4000 x 4000 box of the 15k
+                      picture at (5500, 3000), as freqsep_15k's freqsep_16mp (`wall` is the same total), with the
+                      "freqsep" step marks; with --size, or without the JPEG, a box of a synthetic picture (centred)
+  stitch_align_2048   stitch.finishResultAsync with align and colour match (a new document's crop settings) on a 2048^2
+                      crop: a synthetic picture with a box selection, a fixed context of 1/8 of the side, no target
+                      size (the crop is the box and comes back at that size); the answer is the crop scaled by 1 %
+                      about its centre and moved by (3, 2) px. The stitch worker's route and the window's
+                      (setStitchInWorker(false)), each the median of 3 with its laps, `laps_sum` and `rest` (the wall
+                      less the laps per run, the median of those: the posts to the worker and what no lap names); prepareCropAsync's wall and laps
+                      once (the setup). `workerPx` the stitch worker's kernel calls (from the result, worker route
+                      only), `windowPx` the window's
+  stitch_align_4096   the same at 4096^2
+  match_fallback_16k  inpaint_filters.matchCanvas on a 4096^2 canvas with its WebGL2 path refused: the harness lowers the
+                      WebGL context's max side (`G.max`, inpaint_filters_gl.js `glContext()`) below the canvas for the
+                      timed calls and puts it back after, so applyMatchGL returns null and matchCanvas runs its CPU loop
+                      (the whole function: the canvas, the read, the loop, the write; `gl_refused` checks it);
+                      renderer files unchanged. Median of 3
+  grow_fallback_15k   inpaint_raster.growMask (the window's fallback when both worker routes return null: JS scans, the
+                      distance transform through kernels.js) and growMaskBounds (all of it in Rust, K39's candidate) on
+                      a 15000 x 10000 mask (an ellipse over 70 % of each side) grown by 20 px; the mask is made in the
+                      row, so the fallback's readRect / writeRect of the selection are not in it. A ladder of 1/4, 1/2
+                      and the whole area, each run (3 per route and size) its own page script with a garbage
+                      collection after it, each size printed as it ends: a size too large for the window leaves the
+                      smaller ones measured, `largest_ok` per route. Last in the order, since a renderer that runs out
+                      of memory takes every row after it along
 """
 import asyncio
 import json
 import os
+import statistics
 import sys
 import tempfile
 
@@ -62,6 +96,19 @@ TIF_FILE = os.path.join(FILES, "photo_15k.tif")
 MB = 1024 * 1024
 TMP = tempfile.mkdtemp(prefix="w0_bench_")
 
+
+def _size(s):
+    """`WxH` as (W, H), or None."""
+    if not s:
+        return None
+    w, h = s.lower().split("x")
+    return int(w), int(h)
+
+
+# --size=WxH: the K0b rows at this size instead of their own
+SIZE = _size(next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--size=")), None)
+             or next((sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == "--size" and i + 1 < len(sys.argv)), None))
+
 PRE = """(async () => {
     const commands = (await import('./commands.js')).commands;
     const host = (await import('./editor/host.js')).host;
@@ -70,6 +117,17 @@ PRE = """(async () => {
     const median = (xs) => { const s = xs.slice().sort((a, b) => a - b); return +s[Math.floor(s.length / 2)].toFixed(2); };
     const time = async (fn, n = 5) => { const ts = []; for (let i = 0; i < n; i++) { const a = performance.now(); await fn(i); ts.push(performance.now() - a); } return { median: median(ts), max: +Math.max(...ts).toFixed(2), n }; };
     const noise = (n, seed = 7) => { const a = new Uint8ClampedArray(n); let s = seed >>> 0; for (let i = 0; i < n; i++) { s = (s * 1664525 + 1013904223) >>> 0; a[i] = s >>> 24; } return a; };
+    // the median of each numeric key over several runs' laps objects (a key missing from a run is left out of its median)
+    const lapsMedian = (list) => {
+        const o = {};
+        for (const k of [...new Set(list.flatMap((l) => Object.keys(l || {})))]) {
+            const xs = list.map((l) => l && l[k]).filter((v) => typeof v === "number");
+            if (xs.length) o[k] = median(xs);
+        }
+        return o;
+    };
+    // this thread's px kernel calls by export name (px/kernels.js, K0b); null where this build has no counters
+    const pxc = async (reset = false) => { const K = await import('./editor/px/kernels.js'); return typeof K.pxCalls === "function" ? K.pxCalls(reset) : null; };
     const out = { visibility: document.visibilityState, focus: document.hasFocus() };
     try {
         %s
@@ -85,8 +143,18 @@ ROWS = {
         for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; base[i] = (x * 7 + y * 3) & 255; base[i + 1] = (x ^ y) & 255; base[i + 2] = ((x * y) >> 6) & 255; base[i + 3] = 255; }
         const layer = new Uint8ClampedArray(base.length);
         for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const sx = Math.min(w - 1, x + 3), sy = Math.min(h - 1, y + 2); const s = (sy * w + sx) * 4, d = (y * w + x) * 4; layer[d] = base[s]; layer[d + 1] = base[s + 1]; layer[d + 2] = base[s + 2]; layer[d + 3] = (x > 200 && x < w - 200 && y > 200 && y < h - 200) ? 255 : 0; }
-        out.fit = await time(() => E.fitLayerRGBA({ baseRGBA: base, layerRGBA: layer, w, h }), 3);
-        out.warp = await time(() => E.warpRGBA(layer, w, h, [1, 0, 3, 0, 1, 2]), 3);
+        // the fit's own laps (K0b): shrink (the working planes at 512), ring (edgeRing), fit (fitEdges)
+        const fitLaps = [];
+        let fitR = null;
+        await pxc(true);
+        out.fit = await time(() => { const laps = {}; fitR = E.fitLayerRGBA({ baseRGBA: base, layerRGBA: layer, w, h, laps }); fitLaps.push(laps); }, 3);
+        out.fit_laps = lapsMedian(fitLaps);
+        out.aligned = fitR ? { aligned: fitR.aligned, reason: fitR.reason, scale: fitR.scale, shift: fitR.shift } : null;
+        const M = [1, 0, 3, 0, 1, 2];
+        out.warp = await time(() => E.warpRGBA(layer, w, h, M), 3);
+        out.coverage = await time(() => E.warpCoverage(w, h, M), 3);
+        out.pxCalls = await pxc(true);
+        out.split = { shrink: out.fit_laps.shrink, ring: out.fit_laps.ring, fitEdges: out.fit_laps.fit, warp: out.warp.median, coverage: out.coverage.median };
     """,
     "stitch_masks_2048": """
         const S = await import('./editor/stitch.js');
@@ -379,8 +447,8 @@ def script(body, **args):
     return PRE % (HELPERS + "        const ARGS = " + json.dumps(args) + ";\n" + body)
 
 
-async def js(c, body, **args):
-    raw = await c.eval(script(body, **args), timeout=1800)
+async def js(c, body, timeout=1800, **args):
+    raw = await c.eval(script(body, **args), timeout=timeout)
     return json.loads(raw) if isinstance(raw, str) else raw
 
 
@@ -478,6 +546,296 @@ ROWS.update({
     "png_filter_types": row_png_filter_types,
     "tiff_inflate_15k": row_tiff_inflate_15k,
     "tiff_rows_256": row_tiff_rows_256,
+})
+
+# ---- K0b: frequency separation, stitch, the match and grow fallbacks ------------------------------------------------
+# Python coroutines like the K0a rows; their page scripts get HELPERS, then K0B, then the body.
+
+K0B = r"""
+        // the call's wall and the longest time the window did not answer during it (tools/native_test.py's probe)
+        const timed = async (fn) => {
+            let held = 0, last = performance.now(), on = true;
+            const beat = () => { const n = performance.now(); held = Math.max(held, n - last); last = n; if (on) setTimeout(beat, 0); };
+            setTimeout(beat, 0);
+            const t0 = performance.now();
+            let value;
+            try { value = await fn(); } finally { on = false; held = Math.max(held, performance.now() - last); }
+            return { wall: performance.now() - t0, blocked: held, value };
+        };
+        // a picture with structure at several scales (separable waves and a ramp), so a blur and an edge fit see real
+        // gradients, not noise; drawn here, encoded as a JPEG and opened through loadFile as load_image opens a file
+        const synthDoc = async (W, H) => {
+            const doc = (await run("new_document")).id;
+            const ed = host.editors().find((e) => e.node.id === doc);
+            host.shell.activate(ed);
+            const c = document.createElement("canvas");
+            c.width = W; c.height = H;
+            const ctx = c.getContext("2d");
+            const img = ctx.createImageData(W, H), d = img.data;
+            const wave = (n, f, p) => { const a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.sin(i * f + p); return a; };
+            const x1 = wave(W, 0.011, 0), x2 = wave(W, 0.047, 1), y1 = wave(H, 0.013, 2), y2 = wave(H, 0.041, 3);
+            for (let y = 0, j = 0; y < H; y++) {
+                for (let x = 0; x < W; x++, j += 4) {
+                    const a = x1[x] * y1[y];
+                    d[j] = 128 + 70 * a + 25 * (x2[x] + y2[y]);
+                    d[j + 1] = 128 + 50 * x2[x] * y1[y] + 40 * x1[x];
+                    d[j + 2] = 96 + 60 * y2[y] + 30 * a + 64 * x / W;
+                    d[j + 3] = 255;
+                }
+            }
+            ctx.putImageData(img, 0, 0);
+            const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.95));
+            c.width = 1; c.height = 1;
+            await ed.loadFile(new File([blob], `synthetic_${W}x${H}.jpg`, { type: "image/jpeg" }), { size: null, ask: false });
+            if (!ed.base || ed.width !== W || ed.height !== H) throw new Error(ed.status || "the synthetic picture did not open");
+            ed.history = []; if (ed.renderHistory) ed.renderHistory();
+            return { doc, ed };
+        };
+        const closeDoc = async (doc) => { try { await run("close_document", { doc, force: true }); } catch (_) {} };
+"""
+
+FREQSEP = r"""
+        let doc, ed;
+        if (ARGS.synthetic) {
+            ({ doc, ed } = await synthDoc(ARGS.w, ARGS.h));
+            out.picture = `synthetic ${ARGS.w} x ${ARGS.h}`;
+        } else {
+            doc = (await run("new_document")).id;
+            ed = host.editors().find((e) => e.node.id === doc);
+            host.shell.activate(ed);
+            const t = performance.now();
+            await run("load_image", { doc, path: ARGS.image });
+            out.load = ms(t);
+            out.picture = ARGS.image;
+        }
+        try {
+            out.size = [ed.width, ed.height];
+            await wait(3000);
+            const side = Math.min(ARGS.side, ed.width, ed.height);
+            const x = ARGS.x != null ? ARGS.x : Math.floor((ed.width - side) / 2), y = ARGS.y != null ? ARGS.y : Math.floor((ed.height - side) / 2);
+            await run("select_rect", { doc, x, y, w: side, h: side });
+            takeMarks(); await pxc(true);
+            const r = await timed(() => run("frequency_separation", { doc, radius: ARGS.radius }));
+            out.wall = r1(r.wall);
+            out.blocked = r1(r.blocked);
+            out.box = r.value && r.value.box; out.radius = r.value && r.value.radius;
+            out.marks = marksOf(takeMarks());
+            out.pxCalls = await pxc(true);
+        } finally { await closeDoc(doc); }
+"""
+
+STITCH_ALIGN = r"""
+        const S = await import('./editor/stitch.js');
+        const side = ARGS.side, pad = ARGS.pad, margin = ARGS.margin, P = side + 2 * margin;
+        const { doc, ed } = await synthDoc(P, P);
+        try {
+            out.picture = [P, P];
+            await wait(1500);
+            await run("select_rect", { doc, x: margin + pad, y: margin + pad, w: side - 2 * pad, h: side - 2 * pad });
+            // a new document's crop settings (auto feather, colour match, align) but a fixed context of `pad` and no
+            // target size: the crop is the box side x side and is sent at that size (a local recipe's way)
+            const params = { padding: pad, target_size: 0, feather: 0, multiple_of: 64 };
+            await pxc(true);
+            const p0 = await timed(() => S.prepareCropAsync(ed, params, null, { references: false, crop: { context: "manual" } }));
+            const prep = p0.value;
+            out.prepare = { wall: r1(p0.wall), blocked: r1(p0.blocked), how: prep.how, laps: prep.laps ? lapsMedian([prep.laps]) : null, ...(prep.pxCalls ? { workerPx: prep.pxCalls } : {}), windowPx: await pxc(true) };
+            const inf = prep.info;
+            out.bbox = inf.bbox; out.emitted = inf.emitted;
+            out.info = { align: inf.align, color_match: inf.color_match, auto_feather: inf.auto_feather, feather: inf.feather, grow: inf.grow, blend: inf.blend, paste: inf.paste };
+            if (inf.bbox[2] !== side || inf.bbox[3] !== side) out.note = `the crop is ${inf.bbox[2]} x ${inf.bbox[3]}, not ${side}^2`;
+            // the answer: the crop scaled by 1 % about its centre and moved by (3, 2) px, as an edit model returns one
+            const bmp = await createImageBitmap(new Blob([prep.image], { type: "image/png" }));
+            const ac = document.createElement("canvas");
+            ac.width = bmp.width; ac.height = bmp.height;
+            const actx = ac.getContext("2d");
+            const k = 1.01;
+            actx.setTransform(k, 0, 0, k, (1 - k) * bmp.width / 2 + 3, (1 - k) * bmp.height / 2 + 2);
+            actx.drawImage(bmp, 0, 0);
+            bmp.close();
+            const answer = new Uint8Array(await (await new Promise((r) => ac.toBlob(r, "image/png"))).arrayBuffer());
+            ac.width = 1; ac.height = 1;
+            out.answer_MB = +(answer.length / MB).toFixed(1);
+            const finish = async () => {
+                const runs = [];
+                for (let i = 0; i < ARGS.runs; i++) {
+                    await pxc(true);
+                    const r = await timed(() => S.finishResultAsync(ed, inf, prep.sel, answer, "image/png"));
+                    const v = r.value || {};
+                    const sum = Object.values(v.laps || {}).reduce((s, x) => s + (typeof x === "number" ? x : 0), 0);
+                    runs.push({ wall: r.wall, blocked: r.blocked, laps: v.laps || null, sum, how: v.how, align: v.align, pxCalls: v.pxCalls || null, windowPx: await pxc(true) });
+                    await wait(300);
+                }
+                const wall = median(runs.map((x) => x.wall)), sum = median(runs.map((x) => x.sum));
+                const a = runs[0].align || {};
+                return {
+                    wall, walls: runs.map((x) => r1(x.wall)), blocked: median(runs.map((x) => x.blocked)),
+                    laps: lapsMedian(runs.map((x) => x.laps)), laps_sum: sum, rest: median(runs.map((x) => x.wall - x.sum)), how: runs[0].how,
+                    align: { aligned: a.aligned, reason: a.reason, scale: a.scale, shift: a.shift },
+                    ...(runs[0].pxCalls ? { workerPx: runs[0].pxCalls } : {}), windowPx: runs[0].windowPx,
+                };
+            };
+            out.worker = await finish();
+            const was = S.setStitchInWorker(false);
+            try { out.window = await finish(); } finally { S.setStitchInWorker(was); }
+        } finally { await closeDoc(doc); }
+"""
+
+MATCH_FALLBACK = r"""
+        const F = await import('./editor/inpaint_filters.js');
+        const GL = await import('./editor/inpaint_filters_gl.js');
+        const W = ARGS.w, H = ARGS.h;
+        out.size = [W, H];
+        const src = document.createElement("canvas");
+        src.width = W; src.height = H;
+        src.getContext("2d").putImageData(new ImageData(noise(W * H * 4, 5), W, H), 0, 0);
+        // the statistics of the old match_loop_4096 row (its copy of the loop) and its strength
+        const stats = { meanS: [120, 110, 100], meanT: [100, 105, 110], scale: [1.05, 0.95, 1.0] }, k = 0.6;
+        const g = GL.glContext();
+        out.webgl2 = !!g;
+        // applyMatchGL refuses a source larger than the context's max side: lowered below the canvas for the timed calls
+        // (null here means no WebGL2 at all, and matchCanvas takes its CPU loop anyway)
+        const was = g ? g.max : 0;
+        const runs = [];
+        if (g) g.max = Math.min(W, H) - 1;
+        try {
+            out.gl_refused = GL.applyMatchGL(src, stats, k) === null;
+            for (let i = 0; i < ARGS.runs; i++) {
+                await pxc(true);
+                const r = await timed(() => F.matchCanvas(src, stats, k));
+                if (r.value) { r.value.width = 1; r.value.height = 1; }
+                runs.push({ wall: r.wall, blocked: r.blocked, pxCalls: await pxc(true) });
+            }
+        } finally { if (g) g.max = was; }
+        src.width = 1; src.height = 1;
+        out.cpu = { median: median(runs.map((x) => x.wall)), walls: runs.map((x) => r1(x.wall)), blocked: median(runs.map((x) => x.blocked)), n: runs.length };
+        out.pxCalls = runs.length ? runs[0].pxCalls : null;
+"""
+
+# one run of one grow route at one size; its own page script, so the mask and the kernel's grown memory are garbage when it answers
+GROW_STEP = r"""
+        const R = await import('./editor/inpaint_raster.js');
+        const K = await import('./editor/px/kernels.js');
+        const W = ARGS.w, H = ARGS.h;
+        let d = new Uint8ClampedArray(W * H * 4);
+        // the selection's layout (inpaint_raster.js): red with alpha 255 where selected, red with alpha 0 elsewhere
+        const word = (b) => new Uint32Array(new Uint8Array(b).buffer)[0];
+        const SEL = word([255, 0, 0, 255]), CLEAR = word([255, 0, 0, 0]);
+        const u = new Uint32Array(d.buffer);
+        u.fill(CLEAR);
+        // an ellipse over 70 % of each side
+        const cx = W / 2, cy = H / 2, rx = 0.35 * W, ry = 0.35 * H;
+        for (let y = 0; y < H; y++) {
+            const t = (y + 0.5 - cy) / ry;
+            if (t * t >= 1) continue;
+            const half = rx * Math.sqrt(1 - t * t);
+            const x0 = Math.max(0, Math.ceil(cx - half)), x1 = Math.min(W, Math.floor(cx + half));
+            if (x1 > x0) u.fill(SEL, y * W + x0, y * W + x1);
+        }
+        out.kernels = K.kernelsInUse();
+        await pxc(true);
+        const parts = {};
+        const t = performance.now();
+        const r = ARGS.route === "growMaskBounds" ? R.growMaskBounds(d, W, H, ARGS.n, { ms: parts }) : R.growMask(d, W, H, ARGS.n, { ms: parts });
+        out.wall = ms(t);
+        out.parts = Object.fromEntries(Object.entries(parts).map(([key, v]) => [key, r1(v)]));
+        if (ARGS.route === "growMaskBounds") out.bounds = r;
+        out.pxCalls = await pxc(true);
+        d = null;
+"""
+
+
+async def collect(c):
+    """A full garbage collection in the page, so one run's dead buffers (a 600 MB mask, a released wasm instance of a
+    GB or more) are not the next run's memory."""
+    try:
+        await c.call("HeapProfiler.collectGarbage")
+    except Exception:  # noqa: BLE001 - the measurement goes on without it
+        pass
+
+
+async def row_freqsep_4000(c):
+    synthetic = SIZE is not None or not os.path.exists(IMAGE)
+    w, h = SIZE or (4512, 4512)
+    args = {"synthetic": synthetic, "w": w, "h": h, "image": IMAGE, "side": 4000, "radius": 40,
+            "x": None if synthetic else 5500, "y": None if synthetic else 3000}
+    return await js(c, K0B + FREQSEP, **args)
+
+
+async def stitch_align(c, side):
+    if SIZE:
+        side = max(256, min(SIZE) // 64 * 64)
+    return await js(c, K0B + STITCH_ALIGN, side=side, pad=side // 8, margin=256, runs=3)
+
+
+async def row_stitch_align_2048(c):
+    return await stitch_align(c, 2048)
+
+
+async def row_stitch_align_4096(c):
+    return await stitch_align(c, 4096)
+
+
+async def row_match_fallback_16k(c):
+    w, h = SIZE or (4096, 4096)
+    return await js(c, K0B + MATCH_FALLBACK, w=w, h=h, runs=3)
+
+
+GROW_N = 20
+GROW_RUNS = 3
+
+
+async def row_grow_fallback_15k(c):
+    W, H = SIZE or (15000, 10000)
+    ladder = [(max(16, round(W / k)), max(16, round(H / k))) for k in (2, 2 ** 0.5, 1)]
+    out = {"n": GROW_N, "runs": GROW_RUNS, "ladder": [list(s) for s in ladder], "steps": [], "largest_ok": {}, "stopped": {}}
+    gone = None
+    for w, h in ladder:
+        step = {"size": [w, h], "MP": round(w * h / 1e6, 1)}
+        for route in ("growMask", "growMaskBounds"):
+            if route in out["stopped"]:
+                continue
+            runs = []
+            for _ in range(GROW_RUNS):
+                try:
+                    v = await js(c, GROW_STEP, timeout=300, w=w, h=h, n=GROW_N, route=route)
+                except Exception as e:  # noqa: BLE001 - the page did not answer: the renderer is gone or hangs
+                    gone = "%s at %d x %d: %s" % (route, w, h, str(e)[:300])
+                    break
+                if not isinstance(v, dict) or v.get("error"):
+                    out["stopped"][route] = "%d x %d: %s" % (w, h, (v or {}).get("error", v) if isinstance(v, dict) else v)
+                    break
+                runs.append(v)
+                await collect(c)
+            if runs and len(runs) == GROW_RUNS:
+                walls = [r["wall"] for r in runs]
+                parts = {}
+                for r in runs:
+                    for k, x in (r.get("parts") or {}).items():
+                        parts.setdefault(k, []).append(x)
+                step[route] = {"wall": round(statistics.median(walls), 1), "walls": walls,
+                               "parts": {k: round(statistics.median(x), 1) for k, x in parts.items()},
+                               "kernels": runs[0].get("kernels"), "pxCalls": runs[0].get("pxCalls")}
+                if route == "growMaskBounds":
+                    step[route]["bounds"] = runs[0].get("bounds")
+                out["largest_ok"][route] = [w, h]
+            elif runs:
+                step[route] = {"partial": [r["wall"] for r in runs]}
+            if gone:
+                break
+        print("   step %d x %d: %s" % (w, h, json.dumps(step)), flush=True)
+        out["steps"].append(step)
+        if gone:
+            out["renderer"] = "no answer (gone or hung; the rows after this one cannot run): " + gone
+            break
+    return out
+
+
+ROWS.update({
+    "freqsep_4000": row_freqsep_4000,
+    "stitch_align_2048": row_stitch_align_2048,
+    "stitch_align_4096": row_stitch_align_4096,
+    "match_fallback_16k": row_match_fallback_16k,
+    "grow_fallback_15k": row_grow_fallback_15k,   # last: see the module's docstring
 })
 
 
