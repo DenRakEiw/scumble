@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; next Stop 1.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done (§7: the new order and the user's questions before its first session).** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -813,3 +813,87 @@ confirmed by an adversarial checker.
 - **M8:** the window's synchronous release works in Electron 44 (sync in 3 of 3, the new instance 1.1 MB, the twin's
   bytes): K27 and K39 are unblocked.
 - Gates after the default: pxjobs selection pixels editor brush export PASS on tiles; px_test PASS.
+
+### Stop 1 (2026-10-23)
+
+Re-ranked by a workflow of a ranker and a critic from K0c's shares (`docs/measurements/w0b_2026-10-23/summary.txt`) and
+K1b (`docs/measurements/k1b_2026-10-23/run2/summary.txt`); the ranker's order was corrected for two musts (the PSD
+open's 9.8 s block left last and nobody asked; K1b's M9, the check of keepMB 16 on the wand rows, cut to one run) and
+several shoulds (K27 right after K26, the bucket after the M chain, K25 on its own needs). The table below is the order
+the work goes on in unless the user answers otherwise; the felt-cost ranking is inferred (no row counts how often a
+case occurs).
+
+#### The order after Stop 1 (the critic's corrected table)
+
+| # | session | content | basis | needs |
+|---|---|---|---|---|
+| 0 | M9 + second open | K1's M9 as written: M3 and M4 without `--ab`, three runs each; mem once, compared with K0c's +354 MB. One native_test row that opens the file twice in one instance | K:140-141; W:11-12, 37, 40 | K1b |
+| 1 | **G2** | The IPC probe at 600 / 800 MB, then the save in pieces. Gate step: a real 15k PSD save with the paint layer, then open_psd from that file. Full tier | B:63-64 (300 / 500 MB saved, 700 MB ends the renderer); W:63-67 (png 2,560 / blk 396, tiff 2,438 / 428, ora 6,879 / 842) | q6.8 (Q1) |
+| 2 | **D0** (only on the user's yes) | readPsd's `unpackRows`, `interleave` and mask loop into a pool job, plain JS. Full tier (a file reader) | W:68-69: open_psd 12,987, blk 9,796 (unpackRows 6,012 + interleave 2,432) | G2, Q2 |
+| 3 | **K5** | S: `sel_combine`, `alpha_any`, `view`, the extent cache | W:47-49 wand 1,733 / blk 492 (combineRows 322 + read 67), add 1,760 / 566; W:144-145 range depth 1,701 (combine 1,264), luma 2,445 (combine 944) | K1, #0 |
+| | *Stop 3* | Range and wand measured again; may reorder #9-#16 | | |
+| 4 | **K12** | L: stripes, SAB `out`, the depth slot, march groups. Pin the chain rows first | W:97-101 one light landed 3,813, three lights 4,525, first march 5,106; W:92-93 (chain rows 62 / 60 / 483) | K1 |
+| | *Stop 5* | Stripe efficiency decides K13-K14 and the threads spike | | q6.7 |
+| 5 | **K4** | The generic box pass | No felt row; it enables K26 and K24 | K1 |
+| 6 | **K26** | B: `blur_rgba`, `sharpen_rgba`. Pin the 6,140 ms move; add a dab after a 2 s pause | W:170-177 79 / 82 per move at 400 px, 244 / 256 at 1000 px, the dab 96-99 % of the move; W:252-253; K:138-139 | K4 |
+| 7 | **K27** | B: `tone_rgba`, `sponge_rgba`, `freq_split` | W:154 freqsep 2,213, blk 2,179 (blur 1,884); W:174-175 tone / sponge 70 / 88 per move at 1000 px | K26, M8 (K:107-109) |
+| 8 | **G6** (here if #0's second open also blocks, else after #21) | The shader link at start, in parallel. Normal tier | W:39-40 blk 497, getProgramParameter 441 (first open of a fresh instance) | q6.8, #0 |
+| 9 | **K9** | S: `flood_shape` `out_kind` / `cells`, the alpha-tile cut | W:48 shape 163; W:44-45 grow / shrink cut 74 / 65 | K5 |
+| 10 | **K11** | S: `mask_invert` | W:46 invert 212, all blocking (loop 115, tileExtent 34) | K5 |
+| 11 | **K21** | M: tile classes, skipped rows, the cut span | W:136 colour 4,943; W:144-145 | K5 (Stop 3) |
+| 12 | **K22** | M: `range_tiles_depth` | W:133-134, 139 range_depth 1,123 / 1,170; snap 2,856 (read 1,287 + combine 989) | K21 |
+| 13 | **K25** | M: `limit_alpha_rows` and the export / screen snap | W:108-109 fill_limit_rows 9,782; psd_fill_limit 14,287, blk 378 | K22, q6.2 |
+| 14 | **K23** | M: `range_tiles_rgba` | W:135-136 JS 4,556 / 4,943; W:140-142 (no clean A/B) | K22 |
+| 15 | **K36** | F: `composite_masked_tile` | W:85 bucket 80 [243]; in a 1000 px selection 172 [288] | K0b |
+| 16 | **K37** | F: the bucket over tiles | W:55-56 2,885, blk 1,466 (getImageData 1,067 for 572 MB) | K9, K36, q6.4 |
+| 17 | **W1** | SIMD for the writer's filter choice in `png_filter_rows`. Same bytes, no ABI change. Full tier | W:58 filter 4,571 / deflate 7,075; W:62 ORA filter 13,068; W:115 own-TIFF store 5,743 / 5,577; W:156 | K1, Q3 |
+| 18 | **K2** | Shared inflate, fuzz cases, A/B against native | W:158-159 png 1,048 / 978 / 360; tiff 1,043 / 334 | K1 |
+| | *Stop 2* | Rust or native inflate for every reader; P6 decided (miniz at 0.7x native or better) | | |
+| 19 | **K6** | P2: SIMD unfilter | W:39-40 unfilter 944 of 2,146; W:159 rows 75.6 % Paeth; W:243 (spread 461) | K0c |
+| 20 | **K7** | P3: part decode / finish | Kernel rows only | K2, K6 |
+| 21 | **K8** | P4: the parted reader, upload while decoding | W:39-40 open 3,076 (png_read 2,146); W:185 docperf open 5,762; P:212-213 (per layer of 32 MP or more) | K7, q6.5 |
+| | *Stop 4* | P5 | | q6.1 |
+| 22 | **K32** | E: stitch laps, mask kernels | W:54 maskMax 25 + maskClamp 19; W:149 JS max + clamp 12; W:161-162 finish 938 / 2,895 (dilate and blur already Rust) | K0b |
+| 23 | **K33** | E: `color_match_rgba`, `blend_alpha` | W:54 colorMatch 79; W:163 437 at 4096² | K32 |
+| 24 | **K34** | E: `edgefit_shrink`, `warp_rgba`, `warp_coverage` | W:148 shrink 78, warp 80; W:163 warp 310, shrink 251 | K32 |
+| 25 | **K13** | L: `shadow_march_f64` scalar, hoist, guard | What K12 leaves (Stop 5); W:191 point routed 3,344 (twin 3,348, simd 3,984; explains only) | K12 |
+| 26 | **K14** | L: f64x2; the sun decided | W:192 sun simd 1,505 / twin 2,684 (explains only) | K13, q6.6 |
+| 27 | **K24** | M: `guided_far`; grey and disparityRange into the job | W:137 depth_guide 1,379 / 1,357 (job 655 / 552) | K4 |
+| 28 | **K3** | P1: crc32, frame, combine | W:150 1.63 ms/MB; W:209-210, 244-245 (not visible in the wall) | K1 |
+| 29 | **K10a** | C: the design | No row | K0c |
+| 30 | **K10b** | C: gather, composite, filter, deflate by pointer | W:57-58 export_png 1,960 (compose 1,328, chunk 911); W:218 store 1,981-2,480 | K10a, K3 |
+| 31 | **K10c** | C: PSD pack, the wand's box, dissolve / clip | W:59-60 pack 5,220, rows 3,106; W:48 stack_into 2,517 | K10b |
+| 32 | **K15** | T: unpredict, predict, `tiff_to_rgba`, `tiffStrip` | W:114 own TIFF 4,907 (unpredict 762, convert 478); W:160 tiff_rows_256 2,204 | K0c, K10b, q6.4 |
+| 33 | **K16** | T: `tiff_unpack`, the LZW fix | W:117-118 lzw 13,690 (JS LZW 6,321); packbits 7,428 | K2 |
+| 34 | **K17** | T: plan, band reader, per-tile unpredict | One-worker A/B | K15, K16 |
+| 35 | **K18** | T: parallel bands | W:112-119 opens 4,453-13,690 | K17 |
+| 36 | **K20a** | D: the design | No row | K8, K17 |
+| 37 | **K20b** | D: the PSD reader (Rust inside D0's job) | W:68-69 (the wall D0 leaves; the full freeze if D0 is refused) | K20a |
+| 38 | **K20c** | D: the ORA reader | W:70-71 open_ora 7,491, blk 1,047 (bitmap 1,915 + fromImage 1,220) | K20b |
+| 39 | **K28** | B: `liquify_block` | W:180 land 142 / 122 | K1 |
+| 40 | **K29** | B: `liquify_preview`, plus a dab after a 2 s pause | W:180-181 preview p50 19 / 16, worst 78 / 74; K:138-139 | K28 |
+| 41 | **K30** | B: dense twin | W:180 dab p50 18 / 16 | K29 |
+| | *Stop 6* | Decides K31 | | |
+| 42 | **K31** | B: Rust `liquify_dab` | Stop 6's rows | K30 |
+| 43 | **K19** | T: writer deflate A/B (optional T6 after it) | W:116, 246 export own 2,141 (1,726-2,577) | K15, q6.3 |
+| 44 | **K35** | E: `edgefit_levels` (conditional) | W:148 fitEdges 53 of 134 | K34 |
+| 45 | **K38** | F: `matchCanvas` fallback | W:165 242 = blk, only without WebGL | K1, q6.4 |
+| 46 | **K39** | S: grow fallback | W:166 growMask 852 / growMaskBounds 665 | M8 (K:107-109) |
+| 47 | **K40** | Release block (the pool A/B rides here as information) | — | all built |
+| 48 | **K41** | Release chain, on the user's word | — | K40 |
+
+**If D0 is refused:** D stays at #36-38. The only other way forward is to narrow K20b's Needs to K2, K15's reader half and K16, which splits K15 and changes §5.
+
+**How often:** none of the frequency judgments above is measured. As in the proposal, they are inferred.
+
+#### Asked of the user before #1
+
+1. **(q6.8) The save fix and the other non-kernel items.**
+   - Should G2 (the save in pieces, after the 600 / 800 MB IPC probe) go first on the branch and ship in the one release?
+   - Or should a 0.1.51 hotfix of the save also go out from `main` now? 0.1.50 has the bug, and a hotfix moves main, which then has to be merged into the branch.
+   - Should the shader link (G6) be its own session, placed by the second-open row?
+   - Should the worker pool size stay information only, as an A/B row in K40?
+2. **(New, the same kind as 6.8) D0.** Should the 15k PSD open's window loops (`unpackRows`, `interleave`, the mask loop) move into a pool job as plain JS right after G2? The window would stop freezing for 9.8 s, but the open would still take about 13 s until K20b's Rust reader. The alternatives:
+   - narrow K20b's Needs, which splits K15;
+   - leave D at the end (#36-38).
+3. **(Information, an addition to the plan) W1.** A new session that makes the PNG writer's filter choice SIMD, with the same bytes and no ABI change. It goes in at #17 unless the user objects.

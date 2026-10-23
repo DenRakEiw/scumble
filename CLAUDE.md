@@ -207,8 +207,13 @@ code.
   `docs/measurements/k1b_2026-10-23/run2/`): Rust wins every A/B, so no route entry; V8 shares compiled wasm across the
   workers (no warm-up); `keepMB` 256 -> 16; the window's synchronous release works (K27, K39 unblocked). A first try lies
   in `docs/measurements/k1b_2026-10-23/json` and `gates/` uncommitted (`run_gates.sh` splits comma lists; its deletion
-  was refused by a safety check: the user deletes it). **Next: Stop 1** (re-rank §5 by K0c's shares and K1's result,
-  write the order into the plan; K0b / K0c point at K5, K25 and K20 moving up), then the first kernel session.
+  was refused by a safety check: the user deletes it). **Stop 1 done the same day** ("Stop 1" in the plan's §7: the new
+  order, from a ranker and a critic): #0 K1b's M9 (M3 / M4 without `--ab`, three runs, the check of keepMB 16 on the wand
+  rows), #1 G2 the export save in pieces (the 0.7 GB renderer end), #2 D0 (the PSD open's window loops into a pool job,
+  only on the user's yes), #3 K5, #4 K12, then K4, K26, K27, the E and M chains, the bucket. **Waiting for the user**
+  (asked 2026-10-23, the plan's "Asked of the user before #1"): Q1 G2 on the branch only or also a 0.1.51 hotfix from
+  main, G6 (the shader link) as its own session, the pool size as information; Q2 D0 yes or no; Q3 W1 (a SIMD filter
+  choice in the PNG writer) added. Without an answer the order stands as written and D0 is skipped.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
   time only finds where the time goes; the tie rule in the plan §1.1); **every session commits and pushes the branch,
