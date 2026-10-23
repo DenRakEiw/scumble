@@ -187,8 +187,12 @@ code.
   sollten diesmal an einem eher größeren update arbeiten ... vor release mehr entwickeln", "mach die fehlenden messungen
   und dann den umbauplan", then a `/clear` and the development. **The plan is `docs/PLAN_WASM_BUILD.md`** (653 lines,
   made by a workflow of six designers, two critics and a writer from the W0 numbers): sessions K0a-K41 in order, six
-  stops that re-rank by measurement, about 40-48 working days (inferred). **Start with K0a** (the reader / writer
-  harness), then K0b, K0c (the W0b baseline, three fresh runs per row). **The user's rules for it:** Rust wherever the
+  stops that re-rank by measurement, about 40-48 working days (inferred). **K0a done 2026-10-23** (the reader / writer
+  harness; "K0a" in the plan's §7, `docs/measurements/k0a_2026-10-23/`, `docs/PERFORMANCE.md` §16; gates lint types tiff
+  export layered pxjobs PASS on tiles). It found two things for the user and Stop 1: **a real save of an export of about
+  0.7 GB or more ends the renderer** (oom; a 15k PSD with its paint layer, 925 MB; `docs/BUGS.md`, in 0.1.50 too), and
+  **a 15k PSD open blocks the window 14.3 s** (`readPsd` on the window). **Next: K0b** (harness II: maps, tools,
+  kernels), then K0c (the W0b baseline, three fresh runs per row). **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
   time only finds where the time goes; the tie rule in the plan §1.1); **every session commits and pushes the branch,
   its measurement results committed too** under `docs/measurements/<step>_<date>/` ("dann gehen diese nicht verloren");

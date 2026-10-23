@@ -1,0 +1,12 @@
+host.saveExport of a blob of zeros on a fresh instance without a document (profile_savetest, 2026-10-23, offline).
+k0a_save_probe.py 300 500 700 900 1100 (the first call, at 10:34:48, failed on a folder given as the export path: EISDIR):
+ok {"MB":300,"ms":1268,"saved":{"path":".../save_probe/probe.bin","name":"probe.bin","bytes":314572800},"marks":[["start",0],["bytes",149],["written",1268]]}
+ok {"MB":500,"ms":2050,"saved":{"path":".../save_probe/probe.bin","name":"probe.bin","bytes":524288000},"marks":[["start",0],["bytes",244],["written",2050]]}
+FAIL 700 JS exception: TypeError: Failed to resolve module specifier './editor/host.js'   (the renderer ended, oom, 10:35:01; the eval landed in the reloading page)
+
+k0a_save_probe2.py, one call each on the same instance after that reload:
+ok bytes 1500 {"ok":1572864000}            (blob.arrayBuffer() of 1.5 GB alone; the log shows a renderer end at 10:35:32.4, after it returned)
+FAIL ipc 600 TypeError: Cannot read properties of undefined (reading 'file')   (the page was reloading; then the end at 10:35:38.8 and "it keeps ending: Scumble closes")
+ipc 800: not run (no instance left)
+
+So: 500 MB saves, 700 MB ends the renderer; where inside saveExport is not settled (renderer_ends.log has the times).

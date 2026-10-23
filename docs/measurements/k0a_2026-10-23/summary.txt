@@ -1,0 +1,69 @@
+K0a of docs/PLAN_WASM_BUILD.md: harness I (readers and writers), built and run once at 15000 x 10000.
+2026-10-23, branch wasm-kernels, offline, tiles, a fresh instance per run (chain.log, k0a_chain.sh, k0a_native_one.sh).
+ONE run per row: these numbers find where the time goes; K0c (W0b) takes three fresh runs per row and decides.
+w0_bench's later rows ran with the window visible but not focused ("focus": false).
+
+Gates (tiles, offline): lint types tiff export layered pxjobs: ALL PASS (gates/).
+
+== What the harness now splits (all ms; "summed" = over the pool's jobs, CPU time, not wall)
+
+Opening TIFF files (tiffperf --variant, the window's tiff_open marks + the tiff_read split):
+  variant (MB file)        open wall  tiff_read  wait(inflate+IO) decode  unpredict convert  copy   stored(PNG store) base
+  noise deflate+pred (491)   10,622     3,797      1,849            0     1,065      637     114     5,148            32
+  own photo deflate+pred(178) 5,334     2,341      1,051            0       586      496     103     2,292            29
+  lzw 1-row strips RGB (349) 14,224    10,556      1,814        6,705         0      478      78     1,877           534
+  packbits 1-row RGB (433)    7,773     3,907      1,790          237         0      464      76     1,999           535
+  zlib one strip RGB (262)    6,047     2,192      1,438            0         0      605      93     2,221           663
+  none one strip RGB (429)    5,409       889        125            0         0      609      80     2,288           699
+  The open's "pixels" step = tiff_read + the window's writeRect (274-330 ms). "stored" is uploadPixels: the picture
+  written as a PNG in 79 png_part jobs (png_part summed for the photo: filter 7,790, deflate 5,203, chunk/CRC 704).
+  Every third-party file gives the hash of the Pillow-decoded photo's 16 rows; own's rows equal its source.
+
+Writing TIFF (export marks / save marks / tiff_part):
+  noise 491 MB: export 5,521 = encode 3,506 + save 2,015 (bytes 213, written 1,802); tiff_part summed: deflate 24,757,
+    predict 1,172, rows 487
+  photo 178 MB: export 1,799 = encode 1,122 + save 677 (bytes 74, written 603); deflate 6,896, predict 946
+  native doc 244 MB: 2,575 = encode 1,427 + save 1,148 (bytes 250, written 898); deflate 7,881, rows 1,622, predict 1,150
+
+native_test 15k (native/native_main.log; the document with its full-size paint layer):
+  open_the_file (Scumble's PNG, 276 MB): wall 3,668, block 756; png_read 2,439: wait 1,291 (inflate), unfilter 1,055,
+    copy 62, write 2,374 (the feed waiting on the inflater), read 61, parse 1.3
+  export_png (stubbed save): 1,984; png_part summed 14,591: deflate 7,226, filter 4,536, compose 1,618, chunk 912
+  export_psd (stubbed): 1,293 (925 MB); psd_part summed: pack 4,958, rows 3,326
+  export_ora (stubbed): 5,748 (512 MB); png_part 237 jobs summed 35,669 (deflate 16,699, filter 14,119); crc 6 jobs
+    1,329 (crc 1,042 over 536 MB, read 287)
+  save_png (real): 2,866 = encode 1,854 + save 1,012 (bytes 134, written 878)
+  save_tiff (real): 2,575 (above)
+  save_ora (real, native_ora.log): 7,500 = encode 5,541 + save 1,958 (bytes 109, written 1,849)
+  save_psd (real): THE RENDERER ENDED (oom), twice (native_first_run_oom.log, native_psd_save_alone_oom.log): BUGS.md
+  open_psd (the export's blob, 925 MB): wall 18,182, LONGEST BLOCK 14,282: read 837, parsed 13,168 (readPsd on the
+    window: PackBits rows, interleave; no ZIP), layers 1,108 (Layer.fromImageData), stored 2,737, base 37
+  open_ora (blob, 512 MB): wall 7,251, block 888: read 535, layers 3,869 (createImageBitmap 2,388 + fromImage 1,423),
+    stored 2,638
+  open_tiff (n1.tif, 244 MB): wall 6,595: pixels 3,216 (tiff_read 3,131: wait 1,352, unpredict 962, convert 591),
+    stored 2,393
+
+w0_bench K0a rows (w0_bench/; Scumble's own files of the 15k photo, dist/w0_files):
+  files_15k: PNG 176 MB export 2,514 = encode 1,819 + save 694 (bytes 78, written 617); TIFF 178 MB 1,738 = 1,021 + 718
+  jpeg_open_15k: wall 1,247; image_read decode 364, read 642 (getImageData in the worker), draw 3
+  png_inflate_15k (browser inflate, median of 3): whole zlib in 1 worker 1,218 wall (inflate 1,019 = 562 MB/s out,
+    file read 193); 79 parts raw in 1 worker 1,192; 79 parts on 8 workers 424 wall (2.9x, 1,349 MB/s out)
+  png_filter_types (the photo's PNG): Paeth 75.57 %, Average 23.48 %, Sub 0.95 %, None 0, Up 0
+  tiff_inflate_15k (79 zlib strips): 1 worker 1,272 wall (555 MB/s out); 8 workers 434 (2.9x)
+  tiff_rows_256 (tiff_read on the pool, no window writes, median of 3): 2,642 = wait 1,075, convert 695, unpredict 647,
+    copy 106; per 256-row band: wait 26.9, convert 17.4, unpredict 16.2, copy 2.6
+
+Saving (save_probe/): host.saveExport of zeros on a fresh instance: 300 MB 1,268, 500 MB 2,050, 700 MB ends the renderer.
+
+== Verdict for Stop 1 (inferred from one run each; K0c confirms)
+- The PSD open blocks the window 14 s (readPsd's JS on the window): cluster D (K20) is worth more than the plan ranked.
+- Every TIFF / PSD / ORA open spends 1.9-2.7 s storing the picture as a PNG (uploadPixels), where png_filter_rows
+  (Rust) costs as much as deflate (photo 7,790 vs 5,203 summed): the writer's filter choice is a kernel candidate the
+  plan does not list (K10 / K6 neighbourhood), and so is the store itself (§4.6).
+- TIFF: JS LZW decode 6.7 s on a one-row-strip file (K16); convert of plain RGBA8 0.5-0.7 s where a copy would do and
+  unpredict 0.6-1.1 s (K15); inflate 1.0-1.8 s of wait.
+- Inflate: the browser's inflate runs about 555-560 MB/s (inflated) per worker and scales 2.9x on 8 workers: the bar a
+  Rust inflate (K2) has to beat; the parted PNG read (K8) has its native route measured.
+- Scumble's own PNG rows are Paeth (76 %) and Average (23 %): K6's SIMD unfilter goes wide over channels only.
+- A real save costs 0.6-2.0 s beyond the stubbed rows, and breaks from about 0.7 GB (BUGS.md): the export save (G2,
+  question 6.8) is now a fix, not an option.

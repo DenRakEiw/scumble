@@ -50,7 +50,7 @@ import * as dialogs from "../dialogs.js";
 import { tileBoxes, fusedSize } from "./inpaint_edges.js";
 import { modelSize, DEPTH_LARGE, roundHalfEven } from "./inpaint_depth.js";
 import { INTERACTIVE } from "./inpaint_pool.js";
-import { editorPool } from "./inpaint_jobs.js";
+import { editorPool, markStep } from "./inpaint_jobs.js";
 
 const PROXY = "/comfy";
 
@@ -4313,8 +4313,12 @@ export const host = {
     },
 
     async saveExport(blob, name) {
+        markStep("save", "start");   // the K0a harness: the bytes off the blob, then the write by main
         const data = new Uint8Array(await blob.arrayBuffer());
-        return window.scumble.file.save({ name, data, path: this.exportPath || undefined });
+        markStep("save", "bytes", { MB: data.length / 1048576 });
+        const saved = await window.scumble.file.save({ name, data, path: this.exportPath || undefined });
+        markStep("save", "written");
+        return saved;
     },
 
     /**

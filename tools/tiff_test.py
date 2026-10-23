@@ -21,9 +21,28 @@ writes the fixtures of tools/tiff_fixtures.py to <dir>/fixtures), then the app:
 - no_tiff_in_the_local_store: no .tif or .tiff file came into the local store during the gate.
 
     python tools/tiff_test.py [--out DIR] [--no-node]
-    python tools/tiff_test.py --size 15000x10000 [--out DIR]    the 15k measurement alone (not in the default run):
-        a noise picture (a PNG written here, like document_perf.py's) opened, exported as TIFF and opened again; the
-        export and open times, the file size and MB/s
+    python tools/tiff_test.py --size 15000x10000 [--variant noise|own|lzw|packbits|zlib1|raw|all|a,b,...]
+                              [--image PATH] [--out DIR]
+        the 15k measurement alone (not in the default run; docs/PLAN_WASM_BUILD.md 4.6 and K0a), one variant or several:
+        noise           (the default: W0's tiffperf row, unchanged) a noise picture of --size (a PNG written here, like
+                        document_perf.py's) opened, exported as TIFF and that TIFF opened in a new tab; 16 rows compared
+        own             the photo (--image, default dist/daily/adobe_15000x10000.jpg as tools/w0_bench.py) opened, exported
+                        as TIFF by the app (deflate + predictor 2: Scumble's own TIFF) and that opened in a new tab; 16
+                        rows compared
+        lzw, packbits   Pillow writes the photo (decoded by Pillow, RGB) as LZW / PackBits (its default strips: one row
+                        per strip at 15000 px)
+        zlib1           tifffile writes it with zlib in one strip, no predictor
+        raw             tifffile writes it uncompressed
+        The four third-party files are written once into DIR and reused (the time and size printed when written), with
+        <stem>_rows16.json beside them: the SHA-256 of the 16 measured rows of the decoded photo as RGBA. Each open
+        reports its wall (settled with mipsSettled), the window's tiff_open marks as durations (InpaintEditor.stepMarks),
+        the tiff_read worker timing (every field, InpaintEditor.jobTimings) and the other jobs of the open; noise and own
+        also the export's marks and jobs; the file's strips, compression and predictor read by tifffile. One
+        "[ok] variant <name>: {json}" line per variant (or [FAIL]); PASS when every variant opened at its size, noise's
+        and own's 16 rows equal the tab they were exported from, and the third-party variants give one hash of their 16
+        rows with alpha 255 (they come from one array; whether that hash is the decoded photo's is printed as asSource).
+        Variants run one after the other in one instance: for numbers to compare run each on a fresh instance
+        (tools/run_gates.sh <label> --offline tiffperf:15000x10000,--variant,own; commas for spaces).
 
 The fixtures and the exported files go to DIR (default $SCUMBLE_GATES/tiff_fixtures, else dist/gates/tiff_fixtures).
 Start the app first (tools/run_gates.sh <label> --offline [--tiles on|off] tiff does it).
@@ -50,6 +69,10 @@ GATES = os.environ.get("SCUMBLE_GATES", os.path.join(ROOT, "dist", "gates"))
 OUT = os.path.abspath(opt("--out", os.path.join(GATES, "tiff_fixtures")))
 FIX = os.path.join(OUT, "fixtures")
 SIZE = opt("--size")
+VARIANTS = ("noise", "own", "lzw", "packbits", "zlib1", "raw")   # the order of --variant all
+THIRD = ("lzw", "packbits", "zlib1", "raw")                      # written here from the photo, not by the app
+VARIANT = opt("--variant", "noise")
+IMAGE = os.path.abspath(opt("--image", os.path.join(ROOT, "dist", "daily", "adobe_15000x10000.jpg")))
 
 
 def P(*parts):
@@ -292,37 +315,114 @@ try {
 } finally { await run("close_document", { doc: d.id }); }
 """
 
-MEASURE = r"""
+MEASURE_HELP = r"""
+const settle = async (e) => { for (let i = 0; i < 1200 && (e._loading || !e.base); i++) await wait(100); if (e.mipsSettled) await e.mipsSettled(); };
+// the window's step marks (InpaintEditor.stepMarks) of one op as runs (docs/PLAN_WASM_BUILD.md K0a): each step's ms since
+// the mark before it of the same op, a "start" opens a run, total = the last mark minus the start; extras stay flat
+const runsOf = (marks, op) => {
+    const runs = [];
+    let run = null, t0 = 0, last = 0;
+    for (const m of marks) {
+        if (m.op !== op) continue;
+        if (m.step === "start" || !run) { run = {}; runs.push(run); t0 = last = m.t; }
+        if (m.step !== "start") { run[m.step] = Math.round(m.t - last); last = m.t; }
+        for (const [k, v] of Object.entries(m)) if (k !== "op" && k !== "step" && k !== "t") run[k] = typeof v === "number" ? +v.toFixed(1) : v;
+        run.total = Math.round(m.t - t0);
+    }
+    const tidy = runs.map(({ total, ...steps }) => ({ ...steps, total }));   // total last, for the reader
+    return tidy.length ? (tidy.length === 1 ? tidy[0] : tidy) : null;
+};
+// the workers' timings (InpaintEditor.jobTimings) summed per op as tools/native_test.py does: numbers added, labels kept
+const sums = (timings) => {
+    const out = {};
+    for (const t of timings) {
+        const key = t.op + (t.kind ? ":" + t.kind : "");
+        const j = out[key] || (out[key] = { jobs: 0 });
+        j.jobs++;
+        for (const [k, v] of Object.entries(t)) {
+            if (k === "op" || k === "kind") continue;
+            if (typeof v === "number") j[k] = +((j[k] || 0) + v).toFixed(1);
+            else if (typeof v === "string") { const s = new Set(j[k] ? String(j[k]).split("|") : []); s.add(v); j[k] = [...s].join("|"); }
+        }
+    }
+    return out;
+};
+const marksNow = (E) => (E.stepMarks ? E.stepMarks(true) : []);
+const resetAll = (E) => { E.jobTimings(true); marksNow(E); };
+// an open's marks and jobs, read and cleared: tiff_read apart, the other ops (the store's png_part, mips ...) as jobs
+const openParts = (E) => {
+    const marks = marksNow(E), jobs = sums(E.jobTimings(true)), tiffRead = jobs.tiff_read || null;
+    delete jobs.tiff_read;
+    return { steps: runsOf(marks, "tiff_open"), tiff_read: tiffRead, jobs };
+};
+"""
+
+MEASURE = MEASURE_HELP + r"""
 const W = __W__, H = __H__;
 const d = await run("new_document");
 const ed = ednow(d.id);
 host.shell.activate(ed);
-const settle = async (e) => { for (let i = 0; i < 1200 && (e._loading || !e.base); i++) await wait(100); if (e.mipsSettled) await e.mipsSettled(); };
+const E = ed.constructor;
 const t0 = performance.now();
 await run("load_image", { doc: d.id, path: __BASE__ });
 await settle(ed);
 const pngOpenMs = performance.now() - t0;
+resetAll(E);
 const t1 = performance.now();
 const ex = await run("export", { doc: d.id, format: "tiff", path: __TIF__ });
 const exportMs = performance.now() - t1;
+const exMarks = marksNow(E), exportSteps = { export: runsOf(exMarks, "export"), save: runsOf(exMarks, "save") }, exportJobs = sums(E.jobTimings(true));
 const d2 = await run("new_document");
 const ed2 = ednow(d2.id);
 host.shell.activate(ed2);
+resetAll(E);
 const t2 = performance.now();
 await run("load_image", { doc: d2.id, path: __TIF__ });
 await settle(ed2);
 const openMs = performance.now() - t2;
-// sixteen rows compared byte for byte (the noise is opaque)
+const open = openParts(E);
+// sixteen rows compared byte for byte (the noise and the photo are opaque)
 let rowsOff = 0;
 for (let k = 0; k < 16; k++) {
     const y = Math.min(H - 1, Math.floor((k * (H - 1)) / 15));
     const a = ed.basePx.readRect(0, y, W, 1).data, b = ed2.basePx.readRect(0, y, W, 1).data;
     for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) { rowsOff++; break; }
 }
-const tiles = !!ed.tileMode, size = [ed2.width, ed2.height], status = ed2.status;
+const tiles = !!ed.tileMode, baseSize = [ed.width, ed.height], size = [ed2.width, ed2.height], status = ed2.status;
 await run("close_document", { doc: d2.id });
 await run("close_document", { doc: d.id });
-return { tiles, pngOpenMs: Math.round(pngOpenMs), exportMs: Math.round(exportMs), openMs: Math.round(openMs), size, rowsOff, exportStatus: ex.status, openStatus: status };
+return { tiles, pngOpenMs: Math.round(pngOpenMs), exportMs: Math.round(exportMs), openMs: Math.round(openMs), baseSize, size, rowsOff, exportStatus: ex.status, openStatus: status,
+         openSteps: open.steps, tiff_read: open.tiff_read, openJobs: open.jobs, exportSteps, exportJobs };
+"""
+
+OPEN_VARIANT = MEASURE_HELP + r"""
+// a TIFF written outside the app opened in a new tab; its 16 rows hashed (SHA-256 over a copy) and their alpha counted
+const W = __W__, H = __H__;
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const E = ed.constructor;
+try {
+    resetAll(E);
+    const t0 = performance.now();
+    await run("load_image", { doc: d.id, path: __TIF__ });
+    await settle(ed);
+    const openMs = performance.now() - t0;
+    const open = openParts(E);
+    const size = [ed.width, ed.height];
+    let hash = null, alphaOff = null;
+    if (ed.width === W && ed.height === H) {
+        const rows = new Uint8Array(16 * W * 4);
+        for (let k = 0; k < 16; k++) {
+            const y = Math.min(H - 1, Math.floor((k * (H - 1)) / 15));
+            rows.set(ed.basePx.readRect(0, y, W, 1).data, k * W * 4);
+        }
+        alphaOff = 0;
+        for (let i = 3; i < rows.length; i += 4) if (rows[i] !== 255) alphaOff++;
+        hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", rows)), (b) => b.toString(16).padStart(2, "0")).join("");
+    }
+    return { tiles: !!ed.tileMode, openMs: Math.round(openMs), size, hash, alphaOff, status: ed.status, openSteps: open.steps, tiff_read: open.tiff_read, openJobs: open.jobs };
+} finally { await run("close_document", { doc: d.id }); }
 """
 
 
@@ -441,26 +541,148 @@ def noise_png(path, w, h):
     return os.path.getsize(path)
 
 
+def tiff_tags(path):
+    """The file's layout as tifffile reads it from the tags (no pixels: tifffile reads no LZW without imagecodecs)."""
+    import tifffile
+    with tifffile.TiffFile(path) as t:
+        p = t.pages[0]
+        return {"compression": int(p.compression), "predictor": int(p.predictor), "strips": len(p.dataoffsets), "rowsperstrip": int(p.rowsperstrip), "shape": list(p.shape)}
+
+
+def measured_rows(h):
+    """The 16 rows the measurement compares (the page's Math.min(H - 1, Math.floor(k * (H - 1) / 15)))."""
+    return [min(h - 1, (k * (h - 1)) // 15) for k in range(16)]
+
+
+def photo_files(names):
+    """The third-party TIFFs of the photo in OUT, written once from one Pillow-decoded RGB array and reused, and the
+    SHA-256 of that array's 16 measured rows as RGBA (alpha 255), kept in <stem>_rows16.json. Returns (files, known)."""
+    stem = os.path.splitext(os.path.basename(IMAGE))[0]
+    files = {n: os.path.join(OUT, "%s_%s.tif" % (stem, n)) for n in names}
+    side = os.path.join(OUT, "%s_rows16.json" % stem)
+    known = None
+    if os.path.exists(side):
+        with open(side, encoding="utf-8") as f:
+            known = json.load(f)
+    missing = [n for n in names if not os.path.exists(files[n])]
+    if known and not missing:
+        return files, known
+    import gc
+    import hashlib
+    import numpy as np
+    import tifffile
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None   # 150 MP is past Pillow's decompression-bomb warning
+    t = time.time()
+    with Image.open(IMAGE) as im:
+        im.load()
+        arr = np.asarray(im if im.mode == "RGB" else im.convert("RGB"))
+    h, w = arr.shape[:2]
+    print("photo decoded by Pillow: %d x %d in %.1f s (%s)" % (w, h, time.time() - t, IMAGE), flush=True)
+    rows = measured_rows(h)
+    rgba = np.empty((16, w, 4), np.uint8)
+    rgba[..., :3] = arr[rows]
+    rgba[..., 3] = 255
+    known = {"image": IMAGE, "size": [w, h], "rows": rows, "sha256": hashlib.sha256(rgba.tobytes()).hexdigest()}
+    with open(side, "w", encoding="utf-8", newline=chr(10)) as f:
+        json.dump(known, f, indent=1)
+    pim = None
+    for n in missing:
+        part = files[n][:-4] + ".part.tif"   # written under another name first: a broken run leaves no file to reuse
+        t = time.time()
+        if n in ("lzw", "packbits"):
+            if pim is None:
+                pim = Image.fromarray(arr)   # no info: the JPEG's ICC profile stays out of the file
+            pim.save(part, format="TIFF", compression="tiff_lzw" if n == "lzw" else "packbits")
+        elif n == "zlib1":
+            tifffile.imwrite(part, arr, photometric="rgb", compression="zlib", rowsperstrip=h, predictor=False, metadata=None)
+        else:
+            tifffile.imwrite(part, arr, photometric="rgb", metadata=None)
+        os.replace(part, files[n])
+        print("%s: %d MB in %.1f s (%s)" % (n, os.path.getsize(files[n]) // 1048576, time.time() - t, files[n]), flush=True)
+    del arr, rgba, pim
+    gc.collect()
+    return files, known
+
+
+def variant_line(ok, name, res):
+    """One "[ok] variant <name>: {json}" line, not cut (report() cuts at 1500 characters)."""
+    print("[%s] variant %s: %s" % ("ok" if ok else "FAIL", name, res if isinstance(res, str) else json.dumps(res, ensure_ascii=False)), flush=True)
+    return ok
+
+
 async def measure(c):
     w, h = (int(v) for v in SIZE.lower().split("x"))
+    names = list(VARIANTS) if VARIANT == "all" else [v.strip() for v in VARIANT.split(",") if v.strip()]
+    unknown = [v for v in names if v not in VARIANTS]
+    if unknown or not names:
+        print("[FAIL] --variant %s: not one of %s or all" % (VARIANT, ", ".join(VARIANTS)), flush=True)
+        return False
     os.makedirs(OUT, exist_ok=True)
-    base = os.path.join(OUT, "noise_%dx%d.png" % (w, h))
-    tif = os.path.join(OUT, "noise_%dx%d.tif" % (w, h))
-    if not os.path.exists(base):
-        t = time.time()
-        size = noise_png(base, w, h)
-        print("noise base: %d MB in %.1f s" % (size // 1048576, time.time() - t), flush=True)
-    r = await js(c, MEASURE, timeout=3600, W=str(w), H=str(h), BASE=json.dumps(base.replace("\\", "/")), TIF=json.dumps(tif.replace("\\", "/")))
-    mb = os.path.getsize(tif) / 1048576
-    raw = w * h * 4 / 1048576
-    import tifffile
-    with tifffile.TiffFile(tif) as t:
-        p = t.pages[0]
-        tags = {"compression": int(p.compression), "predictor": int(p.predictor), "strips": len(p.dataoffsets), "shape": list(p.shape)}
-    r.update(fileMB=round(mb), rawMB=round(raw), exportMBps_raw=round(raw / max(0.001, r["exportMs"] / 1000)), exportMBps_file=round(mb / max(0.001, r["exportMs"] / 1000)),
-             openMBps_raw=round(raw / max(0.001, r["openMs"] / 1000)), tifffile=tags)
-    ok = r["size"] == [w, h] and r["rowsOff"] == 0 and tags["compression"] == 8
-    report(ok, "size %dx%d" % (w, h), r)
+    ok = True
+    photo = [v for v in names if v != "noise"]
+    if photo and not os.path.exists(IMAGE):
+        for v in photo:
+            ok = variant_line(False, v, "no photo at %s (--image PATH)" % IMAGE) and ok
+        names = [v for v in names if v == "noise"]
+    third = [v for v in names if v in THIRD]
+    files, known = {}, None
+    if third:
+        try:
+            files, known = photo_files(third)   # written before any open, so no write runs beside one
+        except Exception as err:  # noqa: BLE001
+            for v in third:
+                ok = variant_line(False, v, "writing the third-party files: %s" % str(err)[:600]) and ok
+            names = [v for v in names if v not in THIRD]
+            third = []
+    if "own" in names or third:
+        from PIL import Image
+        Image.MAX_IMAGE_PIXELS = None
+        with Image.open(IMAGE) as im:
+            pw, ph = im.size
+    hashes = {}
+    for v in names:
+        try:
+            if v in ("noise", "own"):
+                if v == "noise":
+                    base = os.path.join(OUT, "noise_%dx%d.png" % (w, h))
+                    tif = os.path.join(OUT, "noise_%dx%d.tif" % (w, h))
+                    if not os.path.exists(base):
+                        t = time.time()
+                        size = noise_png(base, w, h)
+                        print("noise base: %d MB in %.1f s" % (size // 1048576, time.time() - t), flush=True)
+                    vw, vh = w, h
+                else:
+                    base = IMAGE
+                    tif = os.path.join(OUT, "%s_own.tif" % os.path.splitext(os.path.basename(IMAGE))[0])
+                    vw, vh = pw, ph
+                r = await js(c, MEASURE, timeout=3600, W=str(vw), H=str(vh), BASE=json.dumps(base.replace("\\", "/")), TIF=json.dumps(tif.replace("\\", "/")))
+                if v == "own":
+                    r["jpgOpenMs"] = r.pop("pngOpenMs")
+                mb = os.path.getsize(tif) / 1048576
+                vraw = vw * vh * 4 / 1048576
+                tags = tiff_tags(tif)
+                r.update(file=os.path.basename(tif), fileMB=round(mb), rawMB=round(vraw), exportMBps_raw=round(vraw / max(0.001, r["exportMs"] / 1000)),
+                         exportMBps_file=round(mb / max(0.001, r["exportMs"] / 1000)), openMBps_raw=round(vraw / max(0.001, r["openMs"] / 1000)), tifffile=tags)
+                good = r["size"] == [vw, vh] and r["baseSize"] == [vw, vh] and r["rowsOff"] == 0 and tags["compression"] == 8
+            else:
+                tif = files[v]
+                r = await js(c, OPEN_VARIANT, timeout=3600, W=str(pw), H=str(ph), TIF=json.dumps(tif.replace("\\", "/")))
+                mb = os.path.getsize(tif) / 1048576
+                vraw = pw * ph * 4 / 1048576
+                r.update(file=os.path.basename(tif), fileMB=round(mb), rawMB=round(vraw), openMBps_raw=round(vraw / max(0.001, r["openMs"] / 1000)), tifffile=tiff_tags(tif),
+                         asSource=bool(known and r.get("hash") == known.get("sha256")))
+                good = r["size"] == [pw, ph] and bool(r.get("hash")) and r.get("alphaOff") == 0
+                if r.get("hash"):
+                    hashes[v] = r["hash"]
+            ok = variant_line(good, v, r) and ok
+        except Exception as err:  # noqa: BLE001
+            ok = variant_line(False, v, str(err)[:1500]) and ok
+    if len(set(hashes.values())) > 1:
+        ok = report(False, "third-party hashes", "the files of one array give different rows: %s" % json.dumps(hashes)) and ok
+    elif hashes:
+        one = next(iter(hashes.values()))
+        report(True, "third-party hashes", "%d file(s) give one hash of 16 rows (%s); the decoded photo's: %s" % (len(hashes), one[:16], bool(known and one == known.get("sha256"))))
     return ok
 
 

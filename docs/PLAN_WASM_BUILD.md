@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; nothing of it is built.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a built 2026-10-23 (§7), next K0b.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -651,3 +651,36 @@ answer is taken and the hand-over says so.
 8. **The non-kernel items in this update** (§4.12): streaming the export save to main, the shader link at start, the
    pool size. Suggested: the save and the shader link as their own sessions after K39 if K0c confirms their shares; the
    pool size as information only.
+
+## 7. As built
+
+### K0a (2026-10-23)
+
+Built by a workflow of five builders on disjoint files and two checkers, against one contract of names; the main loop
+reviewed the renderer diff and ran everything once at 15k (`docs/measurements/k0a_2026-10-23/`).
+- **Worker splits** (all in each job's `timing`, summed per op by `native_test.py`): `tiff_read` gets `readTiff`'s new
+  optional `spent` (parse, wait, decode, copy, unpredict, convert, deliver, bands, pieces, codec; its return value
+  unchanged); `png_read` adds parse, read, write, wait, copy beside unfilter and deliver (feed and drain overlap);
+  `png_part` adds rows, prev, copyIn, filter, adler, deflate, copyOut (`px.js` `pngPart`'s optional `laps`) and chunk;
+  `tiff_part` rows, predict, deflate (`tiffPart`'s optional `laps`); `psd_part` rows, pack; `crc` read, crc. A new
+  benchmark op `inflate_bench` (ranges of a blob through `DecompressionStream`, whole or one stream per range with a
+  tail, the PNG filter-type count by `stride`).
+- **Window marks:** `markStep(op, step, extra)` in `inpaint_jobs.js`, `InpaintEditor.stepMarks(reset)`; ops `tiff_open`
+  (start, info, pixels {writeMs}, stored, base), `export` (start {fmt}, ready, encoded {MB}, saved), `layered_open`
+  (start {kind}, read, parsed {inflateMs}, layers {maskMs, rgbaMs, bitmapMs, fromImageMs}, stored, base, added), `save`
+  in `host.js` (start, bytes {MB}, written). A harness takes durations per op, a `start` opening a run.
+- **Harnesses:** `tiff_test.py --size WxH --variant noise|own|lzw|packbits|zlib1|raw|all` (the gate
+  `tiffperf:15000x10000,--variant,<v>,--out,<dir>` with commas, `run_gates.sh`; the files kept in `--out` and reused, so
+  one variant per fresh instance shares them); `native_test.py` rows `export_ora`, opt-in `save_png|psd|tiff|ora` (a real
+  export by path, `--out`, `--keep`) and `open_psd|ora|tiff` (the saved file, else the blob the export row kept, through
+  `loadFile`), the marks printed per row; `w0_bench.py` rows `files_15k` (`--files`, default `dist/w0_files`),
+  `jpeg_open_15k`, `png_inflate_15k`, `png_filter_types`, `tiff_inflate_15k`, `tiff_rows_256`.
+- **Not as planned:** the ORA export row is `native_test`'s `export_ora`, the PSD / ORA open rows open the export's blob
+  (the PSD cannot be saved: next point). `save_psd` at 15k ends the renderer (oom): `docs/BUGS.md` "Saving an export of
+  about 0.7 GB or more"; so question 6.8's export save is a fix now, not an option, and needs the user's place in the
+  order at Stop 1.
+- **For Stop 1** (one run each; K0c decides): the 15k PSD open blocks the window 14.3 s in `readPsd` (cluster D, K20);
+  every TIFF / PSD / ORA open spends 1.9-2.7 s in `uploadPixels`' PNG store, where `png_filter_rows`' filter choice
+  costs as much as deflate (a candidate the plan does not list); JS LZW 6.7 s on a one-row-strip file (K16); `convert`
+  0.5-0.7 s on plain RGBA8 and `unpredict` 0.6-1.1 s (K15); the browser's inflate about 560 MB/s per worker, 2.9x on
+  8 workers (the bar for K2, and K8's native route); Scumble's PNG rows 76 % Paeth, 23 % Average (K6).

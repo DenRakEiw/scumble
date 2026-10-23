@@ -1613,6 +1613,16 @@ Before 2026-10-12 the table came from one cold call of each build on uniform noi
 a 4096 x 4096 march: 14.1 s then, 1.7 s at 2f9aa60); in one run at 2f9aa60 those cold calls put the SIMD build ahead of
 the twin for a point light (98.5 / 107.4 ms) and the scalar build behind it (100.0 / 90.3 ms).
 
+## 16. The kernel update (item 44, branch `wasm-kernels`, 2026-10-23 on)
+
+The plan is `docs/PLAN_WASM_BUILD.md`; each session's raw logs and `summary.txt` are under
+`docs/measurements/<session>_<date>/`. A route is decided by the median wall time of the whole operation over three
+fresh runs (the plan's §1.1); one run only shows where the time goes.
+
+| Session | What | Result (15000 x 10000, one run unless named) | Folder |
+| --- | --- | --- | --- |
+| K0a | Harness I: the readers' and writers' splits (`tiff_read`, `png_read`, `png_part`, `tiff_part`, `psd_part`, `crc` timings; `InpaintEditor.stepMarks` for `tiff_open`, `layered_open`, `export`, `save`), `tiffperf --variant` (six TIFFs), `native_test` real saves and PSD / ORA / TIFF opens, `w0_bench` inflate, filter-type and TIFF band rows | A 15k PSD open blocks the window 14.3 s (`readPsd` on the window); every TIFF / PSD / ORA open stores the picture as a PNG for 1.9-2.7 s, where the Rust filter choice costs as much as deflate; JS LZW 6.7 s; the browser's inflate about 560 MB/s per worker, 2.9x on 8; Scumble's PNG rows 76 % Paeth, 23 % Average; a real save of about 0.7 GB or more ends the renderer (`docs/BUGS.md`) | `k0a_2026-10-23` |
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first

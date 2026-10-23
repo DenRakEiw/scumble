@@ -89,7 +89,9 @@ Since then: `tools/document_test.py` / `document_ux_test.py` / `document_perf.py
 what an exported picture says about itself; `node tools/secret_names_test.js` the names it leaves out of an embedded
 recipe), `node tools/font_ref_test.js` (which file a text's font is loaded from), `node tools/pixel_memory_test.js`
 (the tile store at the renderer's typed-array limit, the refusal stood in for), `tools/tiff_test.js` with `tools/tiff_fixtures.py` and
-`tools/tiff_test.py` (gates `tiff`, `tiffperf:WxH`), `tools/comfyview_test.py` (gate `comfyview`, the ComfyUI window of
+`tools/tiff_test.py` (gates `tiff`, `tiffperf:WxH`; `tiffperf:WxH,--variant,all` also opens Scumble's own TIFF of the
+15k photo and Pillow / tifffile files with LZW, PackBits, zlib in one strip and none, `docs/PLAN_WASM_BUILD.md` K0a),
+`tools/comfyview_test.py` (gate `comfyview`, the ComfyUI window of
 item 35 V1 against a stub server it starts, offline only: the start page with no target and no load, one window on a
 second open, its bounds kept; the stub page without `window.scumble`, `window.comfybar` or `require`, kept on its
 origin; Ctrl+S reaching the page and no Scumble menu command, also after the menu is built again, with a control key

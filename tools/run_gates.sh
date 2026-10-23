@@ -126,8 +126,9 @@ for g in "$@"; do
     # the .mcpb bundle (docs/PLAN_MCPB.md): plain Node (the manifest, the starter's search and start forms, the fallback
     # over stdio); with --exe also a real headless start through the starter on a profile of its own (--no-comfy)
     mcpb) timeout 900 node tools/mcpb_test.js ${EXE:+--exe "$EXE"} > "$OUT/mcpb.log" 2>&1; rc=$? ;;
-    # tiffperf:15000x10000: a TIFF export and open of a noise picture at size (docs/PLAN_0_1_29.md 3d, the 15k measurement)
-    tiffperf:*) timeout 3600 python tools/tiff_test.py --size ${g#tiffperf:} --out "$OUT/tiffperf" > "$OUT/tiffperf.log" 2>&1; rc=$? ;;
+    # tiffperf:15000x10000: a TIFF export and open of a noise picture at size (docs/PLAN_0_1_29.md 3d, the 15k measurement);
+    # tiffperf:15000x10000,--variant,all opens the other files of PLAN_WASM_BUILD K0a too (commas for spaces)
+    tiffperf:*) timeout 7200 python tools/tiff_test.py --size $(echo "${g#tiffperf:}" | tr ',' ' ') --out "$OUT/tiffperf" > "$OUT/tiffperf.log" 2>&1; rc=$? ;;
     exportperf:*) timeout 1800 python tools/export_test.py --perf $(echo "${g#exportperf:}" | tr ',' ' ') > "$OUT/exportperf.log" 2>&1; rc=$? ;;
     # mem:15000x10000,--rounds,4 (commas for spaces); four rounds at 15k take longer than the other gates' 420 s
     mem:*) timeout 2400 python tools/mem_test.py $(echo "${g#mem:}" | tr ',' ' ') > "$OUT/mem.log" 2>&1; rc=$? ;;

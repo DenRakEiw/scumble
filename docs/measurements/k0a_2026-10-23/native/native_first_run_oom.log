@@ -1,0 +1,127 @@
+probes in
+the save rows write into F:\canvas\dist\gates\k0a_2026-10-23\native_files (deleted at the end)
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1216, "encodeMs": 2633, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 3669 ms, longest block 696 ms
+   {"loadFileMs": 3583, "tiles": 2360}
+   main thread ms: idle 2480 | browser natives 672 | px kernels 3 | other JS 353 | GC 90 | (program) 230
+     natives: getProgramParameter 623, getImageData 10, setTimeout 9, getContext 7, getShaderParameter 6, f 3, row 2, beat 2
+     JS by file: inpaint_tiles.js 314, inpaint_compositor.js 12, inpaint_canvas.js 11, inpaint_arena.js 11, host.js 2, inpaint_resample.js 2, inpaint_jobs.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1330] 186, normalizeBlock [inpaint_tiles.js:540] 107, allocTileBytes [inpaint_arena.js:110] 7
+   boundaries (calls, ms inside the call, MB):
+     2d getImageData                          1      10.4 ms        0.3 MB
+     gl texSubImage2D                      2360       3.8 ms        1.0 MB
+     worker postMessage (moved)             164       2.2 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       1.3 ms        0.0 MB
+     blob arrayBuffer                         8       0.5 ms        0.0 MB
+     2d drawImage >= 1 MP                     5       0.3 ms       41.8 MB
+   worker png_read: 1 jobs, {"kernel": 2520.3, "parse": 1.1, "read": 60.7, "write": 2456.9, "wait": 1325.9, "copy": 67.9, "unfilter": 1093.3, "deliver": 13.3}
+   worker mips: 19 jobs, {"kernel": 621.9}
+
+== add_the_paint_layer: wall 1324 ms, longest block 1195 ms
+   {"tiles": 2301}
+   boundaries (calls, ms inside the call, MB):
+     2d getImageData                        160     983.5 ms      572.2 MB
+     gl texSubImage2D                      4061       6.5 ms        6.6 MB
+     2d putImageData                       2286       2.1 ms        1.1 MB
+     worker postMessage (moved)              90       1.7 ms        0.0 MB
+     2d drawImage >= 1 MP                    11       0.5 ms       92.0 MB
+     2d drawImage < 1 MP                     20       0.3 ms       11.2 MB
+   worker mips: 18 jobs, {"kernel": 623.9}
+
+== export_png: wall 2072 ms, longest block 83 ms
+   {"MB": 235.1}
+   main thread ms: idle 1913 | browser natives 117 | px kernels 0 | other JS 27 | GC 18 | (program) 115
+     natives: getProgramParameter 44, Blob 39, getContext 7, beat 6, getError 5, getShaderParameter 5, drawImage 3, ImageData 1
+     JS by file: inpaint_canvas.js 9, inpaint_tiles.js 8, inpaint_bands.js 2, inpaint_filters_gl.js 2, plugins.js 1, redact.js 1, inpaint_png.js 1, inpaint_status.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): -
+   boundaries (calls, ms inside the call, MB):
+     gl getError                             12       5.8 ms        0.0 MB
+     worker postMessage (moved)              79       3.9 ms        0.0 MB
+     2d drawImage < 1 MP                     27       2.3 ms        1.8 MB
+     2d putImageData                          2       0.3 ms        1.2 MB
+   worker png_part: 79 jobs, {"kernel": 15155.3, "compose": 1779.2, "rows": 1779.2, "prev": 13.1, "copyIn": 44.8, "filter": 4732.2, "adler": 204, "deflate": 7384, "copyOut": 59.5, "chunk": 934.9}
+   marks export: ready 0.1, encoded 2071.2, saved 0.1 | total 2071.4 ms  {"fmt": "png", "MB": 235.11711597442627}
+
+== export_psd: wall 1331 ms, longest block 83 ms
+   {"MB": 925.2}
+   main thread ms: idle 917 | browser natives 183 | px kernels 0 | other JS 38 | GC 26 | (program) 292
+     natives: Blob 158, __n1_postMessage 8, walk 6, postMessage 3, setTimeout 2, clearTimeout 2, messageBytes 1, row 1
+     JS by file: inpaint_pool.js 14, inpaint_canvas.js 11, inpaint_bands.js 7, inpaint_tiles.js 5
+     JS by function (self time; a typed-array copy counts for the function that makes it): w.onmessage [inpaint_pool.js:128] 9, setStatus [inpaint_canvas.js:3472] 9
+   boundaries (calls, ms inside the call, MB):
+     worker postMessage (moved)             237       8.3 ms        0.0 MB
+   worker psd_part: 237 jobs, {"kernel": 8586.4, "rows": 3274.3, "pack": 5305}
+   marks export: ready 0.0, encoded 1330.4, saved 0.0 | total 1330.5 ms  {"fmt": "psd", "MB": 925.2459812164307}
+
+== export_ora: wall 5247 ms, longest block 49 ms
+   {"MB": 511.6}
+   main thread ms: idle 4943 | browser natives 127 | px kernels 1 | other JS 25 | GC 10 | (program) 347
+     natives: Blob 80, beat 11, __n1_postMessage 8, setTimeout 7, walk 5, postMessage 5, toBlob 4, add 1
+     JS by file: inpaint_pool.js 11, inpaint_canvas.js 4, inpaint_bands.js 4, inpaint_png.js 3, inpaint_status.js 1, inpaint_encode.js 1, inpaint_tiles.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): w.onmessage [inpaint_pool.js:128] 6
+   boundaries (calls, ms inside the call, MB):
+     worker postMessage (moved)             243       9.4 ms        0.0 MB
+     canvas toBlob                            1       3.7 ms        0.2 MB
+     2d drawImage < 1 MP                      2       0.1 ms        1.1 MB
+   worker crc: 6 jobs, {"read": 259.5, "crc": 1040.5, "kernel": 1300, "bytes": 536404270}
+   worker png_part: 237 jobs, {"kernel": 34558.6, "compose": 1472.1, "rows": 2301, "prev": 16.3, "copyIn": 115.6, "filter": 13737.3, "adler": 568.3, "deflate": 16030.1, "copyOut": 121, "chunk": 1658}
+   marks export: ready 0.0, encoded 5246.4, saved 0.1 | total 5246.5 ms  {"fmt": "ora", "MB": 511.5555953979492}
+
+== save_png: wall 3032 ms, longest block 581 ms
+   {"MB": 235.1, "file": "F:\\canvas\\dist\\gates\\k0a_2026-10-23\\native_files\\n1.png"}
+   main thread ms: idle 2256 | browser natives 106 | px kernels 0 | other JS 539 | GC 13 | (program) 234
+     natives: Blob 34, invoke 23, (anonymous) 23, getError 10, beat 6, now 2, setTimeout 2, postMessage 2
+     JS by file: host.js 293, sandbox_bundle 234, inpaint_canvas.js 3, inpaint_bands.js 3, inpaint_tiles.js 2, inpaint_png.js 1, shell.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): saveExport [host.js:4315] 292, invoke [sandbox_bundle:2] 234
+   boundaries (calls, ms inside the call, MB):
+     blob arrayBuffer (until settled)         1     110.6 ms        0.0 MB
+     gl getError                             12       7.8 ms        0.0 MB
+     worker postMessage (moved)              79       3.9 ms        0.0 MB
+     2d drawImage < 1 MP                     27       1.3 ms        1.8 MB
+     blob arrayBuffer                         1       0.1 ms      235.1 MB
+   worker png_part: 79 jobs, {"kernel": 14918.9, "compose": 1459.7, "rows": 1459.7, "prev": 13.5, "copyIn": 43.4, "filter": 4825.8, "adler": 196.7, "deflate": 7487.5, "copyOut": 67.9, "chunk": 822.5}
+   marks export: ready 0.0, encoded 2003.2, saved 1028.0 | total 3031.2 ms  {"fmt": "png", "MB": 235.11711597442627}
+   marks save: bytes 110.7, written 917.2 | total 1027.9 ms  {"MB": 235.11711597442627}
+[FAIL] save_psd: JS exception: TypeError: Cannot read properties of undefined (reading 'commands')
+    at <anonymous>:2:36
+    at <anonymous>:110:3
+[FAIL] save_tiff: JS exception: TypeError: Cannot read properties of undefined (reading 'commands')
+    at <anonymous>:2:36
+    at <anonymous>:110:3
+[FAIL] save_ora: JS exception: TypeError: Cannot read properties of undefined (reading 'commands')
+    at <anonymous>:2:36
+    at <anonymous>:110:3
+[skip] open_psd: save_psd did not run (name it before open_psd)
+[skip] open_ora: save_ora did not run (name it before open_ora)
+[skip] open_tiff: save_tiff did not run (name it before open_tiff)
+[FAIL] close: JS exception: TypeError: Cannot read properties of undefined (reading 'commands')
+    at <anonymous>:2:36
+    at <anonymous>:113:3
+deleted 1 file(s) the save rows wrote
+Traceback (most recent call last):
+  File "F:\canvas\tools\native_test.py", line 757, in <module>
+    sys.exit(0 if asyncio.run(session(run_all)) else 1)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\<user>\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\<user>\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\<user>\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "F:\canvas\tools\cdp.py", line 98, in session
+    return await fn(c)
+           ^^^^^^^^^^^
+  File "F:\canvas\tools\native_test.py", line 707, in run_all
+    for level, text in (await c.logs())[-15:]:
+                        ^^^^^^^^^^^^^^
+  File "F:\canvas\tools\cdp.py", line 88, in logs
+    return json.loads(await self.eval("JSON.stringify(window.__log.splice(0))"))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\canvas\tools\cdp.py", line 72, in eval
+    raise RuntimeError("JS exception: " + str(desc))
+RuntimeError: JS exception: TypeError: Cannot read properties of undefined (reading 'splice')
+    at <anonymous>:1:29

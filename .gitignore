@@ -3,6 +3,8 @@ dist/
 out/
 .env
 *.log
+# the measurements of the kernel update are kept, logs included (docs/PLAN_WASM_BUILD.md §1.2)
+!docs/measurements/**/*.log
 __pycache__/
 models/
 NVIDIA Corporation/

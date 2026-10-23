@@ -16,6 +16,14 @@ export const PX_ABI = 20;
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
 
+const clock = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+
+/** A stopwatch over `laps`: each call adds the milliseconds since the one before (or since it was made) to `laps[key]`. */
+function lapper(laps) {
+    let t = clock();
+    return (key) => { const t1 = clock(); laps[key] = (laps[key] || 0) + (t1 - t); t = t1; };
+}
+
 /**
  * Instantiate a px module. `source` is a URL (fetched), a `Response`, bytes (an
  * `ArrayBuffer` or a view) or a compiled `WebAssembly.Module` (what a worker is posted).
@@ -418,7 +426,9 @@ export class Px {
      * One part of a PNG's zlib stream (docs/PLAN_BCE.md §E2): `rows` rows of RGBA8 filtered (`pngFilterRows`) and
      * deflated raw at `level`, every part but the `last` ending on a sync flush, so the parts of a picture are one
      * deflate stream when written one after the other. `{ bytes, adler, raw }`: the deflated part (a copy), the
-     * Adler-32 of its `raw` filtered bytes alone (joined by `adlerCombine`).
+     * Adler-32 of its `raw` filtered bytes alone (joined by `adlerCombine`). `laps` (optional, on `pngPart` below): the
+     * milliseconds of `copyIn` (the rows into memory), `filter`, `adler`, `deflate` (summed over its retries) and
+     * `copyOut` are added to its fields.
      */
     /** A whole zlib stream of `bytes` (a TIFF strip, inpaint_tiff.js): `78 9C`, one final deflate part, the Adler-32. */
     zlib(bytes, level) {
@@ -442,18 +452,27 @@ export class Px {
         } finally { a.reset(); }
     }
 
-    pngPart(rgba, w, rows, prev, level, last) {
+    pngPart(rgba, w, rows, prev, level, last, laps = null) {
         const a = this.job, n = rows * (1 + 4 * w);
+        const lap = laps ? lapper(laps) : null;
         try {
             const pr = this._in(a, rgba, rows * 4 * w), pp = prev ? this._in(a, prev, 4 * w) : 0, pf = a.take(n);
+            if (lap) lap("copyIn");
             this.exports.png_filter_rows(pr, w, rows, pp, pf);
+            if (lap) lap("filter");
             const adler = this.exports.adler32(pf, n, 1) >>> 0;
+            if (lap) lap("adler");
             // stored blocks are the worst case: 5 bytes per 64 KB, and the flush's own
             let cap = n + Math.ceil(n / 65535) * 5 + 64;
             for (;;) {
                 const po = a.take(cap);
                 const written = this.exports.deflate_part(pf, n, level, last ? 1 : 0, po, cap);
-                if (written >= 0) return { bytes: this.u8().slice(po, po + written), adler, raw: n };
+                if (lap) lap("deflate");
+                if (written >= 0) {
+                    const bytes = this.u8().slice(po, po + written);
+                    if (lap) lap("copyOut");
+                    return { bytes, adler, raw: n };
+                }
                 cap *= 2;
             }
         } finally { a.reset(); }

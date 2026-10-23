@@ -3,7 +3,7 @@
 No ComfyUI, no key. Start the app offline and with a debugging port, tiles on (the default):
 
     ./node_modules/.bin/electron . --remote-debugging-port=9555 --no-comfy
-    python tools/native_test.py [15000x10000] [--no-profile] [--json out.json] [row ...]
+    python tools/native_test.py [15000x10000] [--no-profile] [--json out.json] [--out DIR] [--keep] [--js] [row ...]
 
 N builds nothing: this is a measurement, not a gate, and it always ends with RESULT. Per row it prints
 
@@ -16,15 +16,37 @@ N builds nothing: this is a measurement, not a gate, and it always ends with RES
                    workers with their transfers and clones), and the WebGL calls (uploads, readbacks, draws)
   workers          the `timing` parts of every worker job of the row (summed over the workers, so CPU time, not wall):
                    pixel work against the reads and writes of canvases inside the worker
+  marks            the window's step marks of the row (inpaint_jobs.js `markStep`, ops tiff_open, export, layered_open,
+                   save), one line per run of an op: each step the ms since the op's mark before it (a "start" opens a
+                   run), the total from the start to the last mark, and the values the marks carry
 
 The document is a picture written per tile (a diagonal gradient the wand floods as a band, discs, three bits of noise so
 the PNG compresses like a photograph), encoded by the pool and opened from that file as a user's file would be. At
 15000 x 10000 a full-size paint layer is added; above the canvas limit the paint layer holds a stroke only.
+
+Rows by default: build_the_file, open_the_file, add_the_paint_layer, pan_and_zoom, stroke_and_release, grow_16,
+shrink_16, invert, wand_whole_picture, wand_one_disc, provider_crop, export_png, export_psd, export_ora, close. The
+export rows keep the file in memory (host.saveExport stubbed out). Naming rows runs those (with build_the_file,
+open_the_file and close); these run only when named, at their place in the list:
+
+  match_provider_crop film_provider_crop   after provider_crop: the crop under a matched layer and a film look (B item 7)
+  save_png save_psd save_tiff save_ora     after export_ora: a real export through the `export` command into --out DIR
+                                           (default a new temp folder), host.saveExport's read, IPC copy and write
+                                           included; the file's size in the row (the PSD alone is about 0.9 GB at
+                                           15000 x 10000, and its real save ends the renderer there: docs/BUGS.md)
+  open_psd open_ora open_tiff              then: load_image of the file the matching save row wrote, into a new tab that
+                                           is closed after the row; without that file the PSD / ORA the export row kept
+                                           in memory, opened by loadFile; skipped when neither ran
+  blend_* filter_* match_*                 last: the document in other states (B item 7)
+
+The save rows' files are deleted at the end unless --keep. Name add_the_paint_layer too for a PSD / ORA with two
+layers. --js switches every thread to the JS kernels after build_the_file.
 """
 import asyncio
 import json
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
@@ -36,10 +58,20 @@ if "--json" in ARGS:
     i = ARGS.index("--json")
     JSON_OUT = ARGS[i + 1]
     del ARGS[i:i + 2]
+OUT_ARG = None   # the save rows' folder (default a new temp folder)
+if "--out" in ARGS:
+    i = ARGS.index("--out")
+    OUT_ARG = ARGS[i + 1]
+    del ARGS[i:i + 2]
+KEEP = "--keep" in ARGS   # keep the save rows' files (deleted at the end otherwise)
 SIZE = next((a for a in ARGS if "x" in a.lower() and a[0].isdigit()), "15000x10000")
 ONLY = [a for a in ARGS if not a[0].isdigit() and not a.startswith("-")]
-# rows that change the document (B item 7): run only when named, after the rows they need
-OPT_IN = ("match_provider_crop", "film_provider_crop", "blend_export_png", "blend_export_psd", "blend_wand", "filter_export_png", "filter_export_psd", "filter_wand", "match_export_png", "match_export_psd", "match_wand")
+# a real export into the --out folder (K0a, docs/PLAN_WASM_BUILD.md §4.12): the row's format
+SAVE_ROWS = {"save_png": "png", "save_psd": "psd", "save_tiff": "tiff", "save_ora": "ora"}
+# the open of a file a save row wrote: the save row it needs
+OPEN_ROWS = {"open_psd": ("save_psd", "export_psd"), "open_ora": ("save_ora", "export_ora"), "open_tiff": ("save_tiff",)}
+# rows that change the document (B item 7) or write files (K0a): run only when named, after the rows they need
+OPT_IN = ("match_provider_crop", "film_provider_crop", *SAVE_ROWS, *OPEN_ROWS, "blend_export_png", "blend_export_psd", "blend_wand", "filter_export_png", "filter_export_psd", "filter_wand", "match_export_png", "match_export_psd", "match_wand")
 
 PROBES = r"""
 (() => {
@@ -144,12 +176,36 @@ PRE = r"""(async () => {
     const HUGE = W * H > 268e6 || W > 32767 || H > 32767;
     const ed = window.__n1doc ? ednow(window.__n1doc) : null;
     const E = (ed || host.editors()[0]).constructor;
-    // a row: probes and worker timings reset, the longest block of the main thread, then what the probes saw
+    const FILES = __FILES__;   // the save rows' files by format (null without a save row)
+    // the window's step marks (inpaint_jobs.js `markStep`; a build without them has none)
+    const stepMarks = () => (typeof E.stepMarks === "function" ? E.stepMarks(true) : []);
+    // the marks as durations: per op a list of runs, a "start" opens a run, each step the time since the op's previous
+    // mark (a step seen twice in a run sums), total the last mark against the start; the marks' own values in `extra`.
+    // A mark of an op with no run open opens one at its time (`nostart`).
+    const markRuns = (marks) => {
+        const out = {}, open = {};
+        for (const { op, step, t, ...more } of marks) {
+            let r = open[op];
+            if (step === "start" || !r) {
+                r = open[op] = { t0: t, last: t, steps: {}, extra: {}, nostart: step !== "start" };
+                (out[op] || (out[op] = [])).push(r);
+                if (step !== "start") r.steps[step] = 0;
+            } else {
+                r.steps[step] = +((r.steps[step] || 0) + t - r.last).toFixed(1);
+                r.last = t;
+            }
+            Object.assign(r.extra, more);
+        }
+        const runOf = (r) => ({ ...r.steps, total: +(r.last - r.t0).toFixed(1), ...(Object.keys(r.extra).length ? { extra: r.extra } : {}), ...(r.nostart ? { nostart: true } : {}) });
+        return Object.fromEntries(Object.entries(out).map(([op, runs]) => [op, runs.map(runOf)]));
+    };
+    // a row: probes, worker timings and step marks reset, the longest block of the main thread, then what the probes saw
     const row = async (fn) => {
         if (ed) { try { await ed.mipsSettled(); } catch (_) { /* ignore */ } }
         await wait(80);
         window.__n1.reset();
         E.jobTimings(true);
+        stepMarks();
         let held = 0, last = performance.now(), on = true;
         const beat = () => { const n = performance.now(); held = Math.max(held, n - last); last = n; if (on) setTimeout(beat, 0); };
         setTimeout(beat, 0);
@@ -167,7 +223,8 @@ PRE = r"""(async () => {
             j.jobs++;
             for (const [k, v] of Object.entries(t)) if (typeof v === "number") j[k] = +((j[k] || 0) + v).toFixed(1);
         }
-        return { wall: Math.round(wall), blocked: Math.round(held), calls, jobs, extra, error, status: ed ? ed.status : null, focused: document.hasFocus(), visibility: document.visibilityState };
+        const marks = markRuns(stepMarks());
+        return { wall: Math.round(wall), blocked: Math.round(held), calls, jobs, marks, extra, error, status: ed ? ed.status : null, focused: document.hasFocus(), visibility: document.visibilityState };
     };
     const saveTo = async (format) => {
         let saved = null;
@@ -175,7 +232,45 @@ PRE = r"""(async () => {
         host.saveExport = async (blob, name) => { saved = { blob, name }; return { path: "memory:" + name }; };
         try { ed.saveFormatSel.value = format; await ed.exportImage({ download: false }); } finally { host.saveExport = was; ed.saveFormatSel.value = "png"; }
         if (!saved) throw new Error("the export saved nothing: " + ed.status);
+        (window.__n1kept || (window.__n1kept = {}))[format] = saved.blob;   // an open row's file when its save row did not run
         return { MB: +(saved.blob.size / 1048576).toFixed(1) };
+    };
+    // a real export into the --out folder through the export command: host.saveExport's read, IPC copy and write included
+    const saveFile = async (format) => {
+        if (!FILES || !FILES[format]) throw new Error("no --out file for " + format);
+        const name = ed.saveNameInput ? ed.saveNameInput.value : null;
+        try {
+            const r = await run("export", { doc: window.__n1doc, format, path: FILES[format] });
+            (window.__n1saved || (window.__n1saved = {}))[format] = true;
+            return { MB: +(r.file.bytes / 1048576).toFixed(1), file: r.file.path };
+        } finally { ed.saveFormatSel.value = "png"; if (name != null) ed.saveNameInput.value = name; }
+    };
+    // the file a save row wrote, opened by load_image into a new tab inside the row; the tab is closed after it. Without
+    // that file, the blob its export row kept, opened by loadFile (no disk: a real save of the 0.9 GB PSD ends the
+    // renderer at 15k, docs/BUGS.md)
+    const openFile = async (format) => {
+        const fromFile = !!(window.__n1saved && window.__n1saved[format]);
+        const kept = window.__n1kept && window.__n1kept[format];
+        if (!fromFile && !kept) throw new Error("neither save_" + format + " nor export_" + format + " ran");
+        const d = await run("new_document");
+        const ed2 = ednow(d.id);
+        shell.activate(ed2);
+        await wait(300);
+        ed2.resizeCanvas();
+        try {
+            return await row(async () => {
+                const t0 = performance.now();
+                if (fromFile) await run("load_image", { doc: d.id, path: FILES[format] });
+                else await ed2.loadFile(new File([kept], "n1." + (format === "tiff" ? "tif" : format)));
+                const loaded = Math.round(performance.now() - t0);
+                ed2.fitView(); ed2.draw();
+                await ed2.mipsSettled();
+                return { loadImageMs: loaded, from: fromFile ? "file" : "blob", size: [ed2.width, ed2.height], layers: ed2.layers.length, status: ed2.status };
+            });
+        } finally {
+            await run("close_document", { doc: d.id, force: true });
+            if (ed) shell.activate(ed);
+        }
     };
     const rect40 = () => {
         ed.sel.clear();
@@ -408,6 +503,31 @@ return row(() => saveTo("png"));
     ("export_psd", True, r"""
 return row(() => saveTo("psd"));
 """),
+    ("export_ora", True, r"""
+return row(() => saveTo("ora"));
+"""),
+    ("save_png", True, r"""
+await run("select_none", { doc: window.__n1doc });
+return row(() => saveFile("png"));
+"""),
+    ("save_psd", True, r"""
+return row(() => saveFile("psd"));
+"""),
+    ("save_tiff", True, r"""
+return row(() => saveFile("tiff"));
+"""),
+    ("save_ora", True, r"""
+return row(() => saveFile("ora"));
+"""),
+    ("open_psd", True, r"""
+return openFile("psd");
+"""),
+    ("open_ora", True, r"""
+return openFile("ora");
+"""),
+    ("open_tiff", True, r"""
+return openFile("tiff");
+"""),
     ("blend_export_png", True, r"""
 // B item 7: the paint layer in a blend mode (multiply), which `stackPlan` used to turn away
 const paint = ed.layers.find((l) => l.kind === "paint");
@@ -479,7 +599,7 @@ return r;
 """),
     ("close", False, r"""
 const id = window.__n1doc;
-window.__n1doc = null; window.__n1blob = null;
+window.__n1doc = null; window.__n1blob = null; window.__n1kept = null; window.__n1saved = null;
 await run("close_document", { doc: id, force: true });
 return { closed: id, arena: A.arenaStats() };
 """),
@@ -545,6 +665,12 @@ def report(name, r, prof):
     for op, j in (r.get("jobs") or {}).items():
         rest = {k: v for k, v in j.items() if k not in ("jobs", "pixels", "tiles")}
         print(f"   worker {op}: {j['jobs']} jobs, {json.dumps(rest)}")
+    # the window's step marks: one line per run of an op, each step the ms since the op's mark before it
+    for op, runs in (r.get("marks") or {}).items():
+        for run in runs:
+            steps = ", ".join(f"{k} {v:.1f}" for k, v in run.items() if k not in ("total", "extra", "nostart"))
+            print(f"   marks {op}: {steps or '-'} | total {run['total']:.1f} ms" + (" (no start mark)" if run.get("nostart") else "")
+                  + (f"  {json.dumps(run['extra'])}" if run.get("extra") else ""))
 
 
 async def run_all(c):
@@ -560,12 +686,55 @@ async def run_all(c):
         await c.call("Profiler.enable")
         await c.call("Profiler.setSamplingInterval", interval=500)
     results = {"size": SIZE, "profiled": PROFILE, "rows": {}}
+    # the save rows' folder, made only when one of them is named
+    out_dir, made, files = None, False, None
+    if any(n in ONLY for n in SAVE_ROWS):
+        if OUT_ARG:
+            out_dir = os.path.abspath(OUT_ARG)
+            os.makedirs(out_dir, exist_ok=True)
+        else:
+            out_dir, made = tempfile.mkdtemp(prefix="native_test_"), True
+        files = {fmt: os.path.join(out_dir, "n1." + ("tif" if fmt == "tiff" else fmt)) for fmt in SAVE_ROWS.values()}
+        results["out"] = out_dir
+        print(f"the save rows write into {out_dir}" + (" (kept)" if KEEP else " (deleted at the end)"))
+    try:
+        await run_rows(c, w, h, files, results)
+    finally:
+        if files and not KEEP:
+            gone = 0
+            for p in files.values():
+                if os.path.exists(p):
+                    os.remove(p)
+                    gone += 1
+            if made:
+                try:
+                    os.rmdir(out_dir)
+                except OSError:
+                    pass
+            print(f"deleted {gone} file(s) the save rows wrote")
+    for level, text in (await c.logs())[-15:]:
+        if level == "error":
+            print("  console error:", text[:300])
+    if JSON_OUT:
+        with open(JSON_OUT, "w", encoding="utf-8", newline=chr(10)) as f:
+            json.dump(results, f, indent=1)
+    print("\nRESULT measured")
+    return True
+
+
+async def run_rows(c, w, h, files, results):
+    ran = set()   # the rows that ran without an error (the open rows need their save row's file)
     for name, profiled, body in ROWS:
         if ONLY and name not in ONLY and name not in ("build_the_file", "open_the_file", "close"):
             continue
         if name in OPT_IN and name not in ONLY:
             continue
-        expr = PRE.replace("__W__", w).replace("__H__", h).replace("__BODY__", body)
+        if name in OPEN_ROWS and not any(r in ran for r in OPEN_ROWS[name]):
+            need = " or ".join(OPEN_ROWS[name])
+            print(f"[skip] {name}: {need} did not run (name it before {name})")
+            results["rows"][name] = {"skipped": need + " did not run"}
+            continue
+        expr = PRE.replace("__W__", w).replace("__H__", h).replace("__FILES__", json.dumps(files)).replace("__BODY__", body)
         prof = None
         try:
             if PROFILE and profiled:
@@ -588,14 +757,8 @@ async def run_all(c):
         if "--js" in ARGS and name == "build_the_file":   # the JS twins in every thread, for an A/B of a kernel on its row
             print(await c.eval("(async () => { const E = (await import('./editor/inpaint_canvas.js')).InpaintEditor || window.editor.constructor; E.kernels = 'js'; return 'kernels: ' + E.kernels; })()"))
         results["rows"][name] = {"row": r, "profile": prof}
-    for level, text in (await c.logs())[-15:]:
-        if level == "error":
-            print("  console error:", text[:300])
-    if JSON_OUT:
-        with open(JSON_OUT, "w", encoding="utf-8", newline=chr(10)) as f:
-            json.dump(results, f, indent=1)
-    print("\nRESULT measured")
-    return True
+        if not (isinstance(r, dict) and (r.get("error") or r.get("skipped"))):
+            ran.add(name)
 
 
 if __name__ == "__main__":

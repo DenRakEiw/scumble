@@ -35,6 +35,19 @@ function keepTiming(msg) {
     if (JOB_TIMINGS.length > 5000) JOB_TIMINGS.splice(0, JOB_TIMINGS.length - 5000);
 }
 
+// The window's own steps of a long operation (opening a TIFF, an export, a save; docs/PLAN_WASM_BUILD.md K0a), marked as
+// they pass and kept beside the workers' timings (`InpaintEditor.stepMarks(true)` reads and clears them). A harness
+// takes each mark's `t` minus the previous mark's of the same `op`; a "start" step opens a new run of that op.
+const STEP_MARKS = [];
+
+/** Mark that `op` reached `step` now; `extra`'s keys go flat into the mark. Returns the mark (a later step may add to it). */
+function markStep(op, step, extra = null) {
+    const mark = { op, step, t: performance.now(), ...extra };
+    STEP_MARKS.push(mark);
+    if (STEP_MARKS.length > 5000) STEP_MARKS.splice(0, STEP_MARKS.length - 5000);
+    return mark;
+}
+
 function editorWorker() {
     if (WORKER_OFF) return null;
     if (WORKER) return WORKER;
@@ -219,4 +232,4 @@ async function buildLayered(format, { width, height, layers, composite }) {
     return format === "psd" ? buildPsd({ width, height, layers, composite }) : buildOra({ width, height, layers, composite });
 }
 
-export { JOB_TIMINGS, editorWorker, workerCall, editorPool, buildLayered };
+export { JOB_TIMINGS, STEP_MARKS, markStep, editorWorker, workerCall, editorPool, buildLayered };

@@ -1,0 +1,24 @@
+[ok] node selection_test.js passed
+[ok] node selection_test.js passed
+[ok] setup: {"doc": 2, "width": 800, "height": 600, "tiles": true}
+[ok] select_rect_intersect: {"bounds": [200, 200, 400, 400]}
+[ok] lasso_intersect_pointer_events: {"lassoBounds": [150, 150, 449, 450]}
+[ok] polygon_intersect_pointer_events: {"ok": true}
+[ok] soft_wand_add_keeps_alpha: {"alphaBefore": 204, "alphaAfter": 230}
+[ok] load_selection_intersect: {"bounds": [200, 200, 400, 400]}
+[ok] real_wand_on_tiles: {"ok": true, "bounds": [100, 100, 300, 300]}
+[ok] range_select_depth_cases: {"c1Vals": [0, 0, 255, 255, 255, 0, 0, 0, 0], "aCase2": 128, "aCase4": 100, "expectedSub": [255, 127, 0, 0, 255]}
+[ok] range_select_15k_tile_case: {"seconds": 1.4, "tiles": 2301, "flattenCount": 0}
+[ok] range_select_luma_color_cases: {"selectedStripes": [102, 119, 136, 153], "redVal": 255, "greenVal": 0, "blueVal": 0, "emptyBounds": true}
+[ok] range_select_invert_histogram_stale: {"total": 16384, "stale": true}
+[ok] range_select_15k_luma_case: {"seconds": 2.3, "tiles": 2360, "flattenCount": 0}
+[ok] selection_panel_range_cases: {"panelOk": true, "getImageDataCount": 0, "mid": 0.5003173876554513, "expectedV": 0.5003173876554513}
+[ok] object_standin_setup: {"doc": 5, "width": 1600, "height": 1200}
+[ok] object_case1_drag: {"box": [256, 255.99999999999994, 767.9999999999999, 768], "insideOk": true, "outsideOk": true}
+[ok] object_case2_second_drag_reuses_key: {"keyReused": "5:image:d92e064abb09a1a5a5f9"}
+[ok] object_case3_shift_alt_intersect: {"intersectOk": true}
+[ok] object_case4_click_empty_spot: {"clickOk": true}
+[ok] object_case5_15k_no_large_allocations: {"elapsedMs": 553.4, "maxU8Alloc": 87296, "maxCanvasMB": 9.2}
+[ok] object_case6_embedding_retry: {"retryOk": true, "segCalls": 2}
+[ok] cleanup: "ok"
+PASS

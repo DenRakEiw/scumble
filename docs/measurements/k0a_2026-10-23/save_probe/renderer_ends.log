@@ -1,0 +1,6 @@
+2026-10-23 10:31:40.298 ERROR [main] the window's renderer ended (oom, exit code -536870904): reloaded; the documents come back from the autosave
+2026-10-23 10:34:09.981 ERROR [main] the window's renderer ended (oom, exit code -536870904): reloaded; the documents come back from the autosave
+2026-10-23 10:34:48.382 ERROR [main] Error occurred in handler for 'file:save': Error: EISDIR: illegal operation on a directory, open 'F:\canvas\dist\gates\k0a_2026-10-23\save_probe' |     at async open (node:internal/fs
+2026-10-23 10:35:01.054 ERROR [main] the window's renderer ended (oom, exit code -536870904): reloaded; the documents come back from the autosave
+2026-10-23 10:35:32.400 ERROR [main] the window's renderer ended (oom, exit code -536870904): it ended again right after a reload: started without the documents, which are kept under Settings › Local files › Earlier 
+2026-10-23 10:35:38.788 ERROR [main] the window's renderer ended (oom, exit code -536870904): it keeps ending: Scumble closes

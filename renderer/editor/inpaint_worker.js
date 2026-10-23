@@ -24,6 +24,7 @@
  *   hash            the short SHA-1 of a blob.
  *   psd_part        one part of a PSD's channel data: rows (bytes or tiles) as PackBits per channel.
  *   crc             CRC-32 and size of a blob (a zip entry of an ORA file).
+ *   inflate_bench   byte ranges of a blob through the browser's inflater, counted and dropped: a benchmark only.
  *   png_read        a PNG file decoded as a stream, its rows back band by band (`progress` messages).
  *   image_read      any image file the browser decodes (JPEG, WebP, a PNG with a colour profile), decoded here and
  *                   read back band by band like png_read: the window never decodes or reads it.
@@ -422,10 +423,14 @@ async function pngPart(msg) {
     const rgba = partRowsOf(msg);
     const tc = now();
     const prev = msg.rgba ? (msg.prev ? new Uint8Array(msg.prev, 0, msg.w * 4) : null) : msg.stack ? rowsOfStack(msg, true) : rowsOfTiles(msg, true);
-    const r = p.pngPart(rgba, msg.w, msg.rows, prev, msg.level === undefined ? PNG_LEVEL : msg.level, !!msg.last);
+    const tp = now();
+    const laps = {};   // copyIn, filter, adler, deflate, copyOut (px.js pngPart)
+    const r = p.pngPart(rgba, msg.w, msg.rows, prev, msg.level === undefined ? PNG_LEVEL : msg.level, !!msg.last, laps);
     releaseIfLarge();
+    const tk = now();
     const chunk = pngChunk("IDAT", r.bytes);
-    return { chunk: chunk.buffer, adler: r.adler, raw: r.raw, transfer: [chunk.buffer], timing: { op: "png_part", kernels: "rust", pixels: msg.w * msg.rows, kernel: now() - t0, compose: msg.stack ? tc - t0 : 0 } };
+    const chunkMs = now() - tk;   // the chunk's copy and its JS CRC-32
+    return { chunk: chunk.buffer, adler: r.adler, raw: r.raw, transfer: [chunk.buffer], timing: { op: "png_part", kernels: "rust", pixels: msg.w * msg.rows, kernel: now() - t0, compose: msg.stack ? tc - t0 : 0, rows: tc - t0, prev: tp - tc, ...laps, chunk: chunkMs } };
 }
 
 /**
@@ -435,10 +440,12 @@ async function pngPart(msg) {
 async function psdPart(msg) {
     const t0 = now();
     const rgba = partRowsOf(msg);
+    const t1 = now();
     const packed = psdPackRows(rgba, msg.w, msg.rows);
+    const t2 = now();
     releaseIfLarge();
     const channels = packed.map((c) => ({ lens: c.lens.buffer, data: c.data.buffer }));
-    return { channels, transfer: channels.flatMap((c) => [c.lens, c.data]), timing: { op: "psd_part", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0 } };
+    return { channels, transfer: channels.flatMap((c) => [c.lens, c.data]), timing: { op: "psd_part", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0, rows: t1 - t0, pack: t2 - t1 } };
 }
 
 /**
@@ -448,31 +455,107 @@ async function psdPart(msg) {
 async function tiffPartJob(msg) {
     const t0 = now();
     const rgba = partRowsOf(msg);
+    const t1 = now();
     const p = rustPx();
     const level = msg.level === undefined ? PNG_LEVEL : msg.level;
-    const r = await tiffPart({ rgba, w: msg.w, rows: msg.rows, predictor: msg.predictor }, (bytes) => (p ? p.zlib(bytes, level) : deflate(bytes)));
+    const laps = {};   // predict, deflate (inpaint_tiff.js tiffPart)
+    const r = await tiffPart({ rgba, w: msg.w, rows: msg.rows, predictor: msg.predictor }, (bytes) => (p ? p.zlib(bytes, level) : deflate(bytes)), laps);
     releaseIfLarge();
-    return { chunk: r.chunk, raw: r.raw, transfer: [r.chunk], timing: { op: "tiff_part", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0 } };
+    return { chunk: r.chunk, raw: r.raw, transfer: [r.chunk], timing: { op: "tiff_part", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0, rows: t1 - t0, ...laps } };
 }
 
 /**
  * A TIFF read as a stream (inpaint_tiff.js `readTiff`), like `png_read`: `progress` messages `{ header }`, then
- * `{ rgba, y0, rows }` transferred; the reply carries what the reader found (`info`, with its notes).
+ * `{ rgba, y0, rows }` transferred; the reply carries what the reader found (`info`, with its notes), its timing the
+ * reader's split (`readTiff`'s `spent`).
  */
 async function tiffRead(msg) {
     const t0 = now();
+    const spent = {};
     const info = await readTiff(msg.blob, {
         rowsPerBand: msg.rowsPerBand || TILE,
         onHeader: (h) => { self.postMessage({ id: msg.id, progress: true, header: { width: h.width, height: h.height } }); },
         onRows: (rgba, y0, rows) => { self.postMessage({ id: msg.id, progress: true, rgba: rgba.buffer, y0, rows }, [rgba.buffer]); },
+        spent,
     });
-    return { info, timing: { op: "tiff_read", kernels: "js", pixels: info.width * info.height, kernel: now() - t0 } };
+    return { info, timing: { op: "tiff_read", kernels: "js", pixels: info.width * info.height, kernel: now() - t0, ...spent } };
 }
 
 /** CRC-32 and size of a blob (a zip entry of an ORA file). */
 async function crcJob(msg) {
+    const t0 = now();
     const bytes = new Uint8Array(await msg.blob.arrayBuffer());
-    return { crc: crc32(bytes), size: bytes.length };
+    const t1 = now();
+    const crc = crc32(bytes);
+    const t2 = now();
+    return { crc, size: bytes.length, timing: { op: "crc", read: t1 - t0, crc: t2 - t1, kernel: t2 - t0, bytes: bytes.length } };
+}
+
+/** The inflated length of `pieces` (Uint8Arrays, in order) through one `DecompressionStream(format)`; every piece of the output goes to `onPiece` and is dropped. */
+async function inflateCount(pieces, format, onPiece) {
+    const ds = new DecompressionStream(format);
+    const writer = ds.writable.getWriter(), reader = ds.readable.getReader();
+    let fedErr = null;
+    const feed = (async () => {   // fed while the output is read, or the inflater's back-pressure would stall it
+        try {
+            for (const p of pieces) await writer.write(p);
+            await writer.close();
+        } catch (err) { fedErr = err; }
+    })();
+    let out = 0;
+    try {
+        for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            out += value.length;
+            if (onPiece) onPiece(value);
+        }
+    } catch (err) {
+        reader.cancel().catch(() => {});   // the feeding side stops with it
+        throw err;
+    }
+    await feed;
+    if (fedErr) throw fedErr;
+    return out;
+}
+
+/**
+ * A benchmark of the browser's inflater (docs/PLAN_WASM_BUILD.md K0a), no caller in the editor. `ranges`
+ * ([offset, length, tail?]) of `blob` are read first (`read`), then inflated by `DecompressionStream(format)`
+ * (`inflate`, "deflate" or "deflate-raw"), so the file and the inflater are timed apart. `whole`: one stream fed with
+ * every range in order, as `png_read` feeds its IDAT payloads (tails ignored); otherwise one stream per range, one after
+ * the other, its `tail` bytes (e.g. [3, 0], an empty final block) appended. The output is counted, never kept; with
+ * `stride` > 0 (whole only) the first byte of every `stride`-byte row of it is counted too (inside `inflate`): a PNG's
+ * filter types, `filters` = [none, sub, up, average, paeth, other]. A broken stream throws.
+ */
+async function inflateBench(msg) {
+    const t0 = now();
+    const format = msg.format;
+    if (format !== "deflate" && format !== "deflate-raw") throw new Error("inflate_bench: format " + format);
+    const ranges = msg.ranges || [];
+    if (!ranges.length) throw new Error("inflate_bench: no ranges");
+    const whole = !!msg.whole, stride = whole && msg.stride > 0 ? Math.floor(msg.stride) : 0;
+    const inputs = [];
+    let bytes = 0;
+    for (const [off, len, tail] of ranges) {
+        const b = new Uint8Array(await msg.blob.slice(off, off + len).arrayBuffer());
+        bytes += b.length;
+        inputs.push(!whole && tail && tail.length ? [b, Uint8Array.from(tail)] : [b]);
+    }
+    const t1 = now();
+    const filters = stride ? [0, 0, 0, 0, 0, 0] : null;
+    let at = 0;   // bytes of the current row seen so far (a row can straddle pieces)
+    const count = stride ? (piece) => {
+        for (let i = (stride - at) % stride; i < piece.length; i += stride) { const f = piece[i]; filters[f < 5 ? f : 5]++; }
+        at = (at + piece.length) % stride;
+    } : null;
+    let out = 0;
+    if (whole) out = await inflateCount(inputs.flat(), format, count);
+    else for (const pieces of inputs) out += await inflateCount(pieces, format, null);
+    const t2 = now();
+    const reply = { out, timing: { op: "inflate_bench", format, streams: whole ? 1 : inputs.length, bytes, out, read: t1 - t0, inflate: t2 - t1, kernel: t2 - t0 } };
+    if (filters) reply.filters = filters;
+    return reply;
 }
 
 /**
@@ -488,7 +571,7 @@ async function pngRead(msg) {
         onHeader: (h) => { header = h; self.postMessage({ id: msg.id, progress: true, header: h }); },
         onRows: (rgba, y0, rows) => { self.postMessage({ id: msg.id, progress: true, rgba: rgba.buffer, y0, rows }, [rgba.buffer]); },
     });
-    return { width: info.width, height: info.height, texts: info.texts, header, timing: { op: "png_read", kernels: kernelsInUse(), pixels: info.width * info.height, kernel: now() - t0, unfilter: info.spent.unfilter, deliver: info.spent.deliver } };
+    return { width: info.width, height: info.height, texts: info.texts, header, timing: { op: "png_read", kernels: kernelsInUse(), pixels: info.width * info.height, kernel: now() - t0, ...info.spent } };   // readPng's split: parse, read, write, wait, copy, unfilter, deliver
 }
 
 /**
@@ -1247,6 +1330,7 @@ async function run(msg) {
     if (msg.op === "tiff_read") return tiffRead(msg);
     if (msg.op === "tiff_part") return tiffPartJob(msg);
     if (msg.op === "crc") return crcJob(msg);
+    if (msg.op === "inflate_bench") return inflateBench(msg);
     if (msg.op === "export_begin") {
         const opts = { width: msg.width, height: msg.height };
         exports_.set(msg.job, { format: msg.format, writer: msg.format === "psd" ? new PsdWriter(opts) : new OraWriter(opts) });

@@ -1,0 +1,64 @@
+probes in
+the save rows write into F:\canvas\dist\gates\k0a_2026-10-23\native_files_psdonly (deleted at the end)
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1463, "encodeMs": 2398, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 3749 ms, longest block 708 ms
+   {"loadFileMs": 3661, "tiles": 2360}
+   main thread ms: idle 2525 | browser natives 681 | px kernels 4 | other JS 405 | GC 71 | (program) 243
+     natives: getProgramParameter 644, getContext 8, getShaderParameter 7, setTimeout 7, beat 3, walk 3, postMessage 2, slice 2
+     JS by file: inpaint_tiles.js 342, inpaint_resample.js 24, inpaint_compositor.js 13, inpaint_canvas.js 9, inpaint_arena.js 7, inpaint_pool.js 5, host.js 2, inpaint_pixels.js 2
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1330] 222, normalizeBlock [inpaint_tiles.js:540] 102, canvasRoundTrip [inpaint_resample.js:165] 24, allocTileBytes [inpaint_arena.js:110] 6
+   boundaries (calls, ms inside the call, MB):
+     gl texSubImage2D                      2360       3.8 ms        1.0 MB
+     worker postMessage (moved)             164       2.4 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       1.6 ms        0.0 MB
+     blob arrayBuffer                         8       0.6 ms        0.0 MB
+     2d drawImage >= 1 MP                     5       0.2 ms       41.8 MB
+   worker png_read: 1 jobs, {"kernel": 2499.1, "parse": 1.5, "read": 62.4, "write": 2433.3, "wait": 1326.8, "copy": 70.8, "unfilter": 1071.1, "deliver": 14.4}
+   worker mips: 19 jobs, {"kernel": 593.1}
+
+== add_the_paint_layer: wall 1373 ms, longest block 1237 ms
+   {"tiles": 2301}
+   boundaries (calls, ms inside the call, MB):
+     2d getImageData                        160     998.5 ms      572.2 MB
+     gl texSubImage2D                      5309      11.5 ms       10.0 MB
+     2d putImageData                       2286       2.5 ms        1.1 MB
+     worker postMessage (moved)              90       1.8 ms        0.0 MB
+     gl bufferData                           77       0.7 ms        0.9 MB
+     2d drawImage >= 1 MP                    14       0.7 ms      117.2 MB
+     2d drawImage < 1 MP                     20       0.2 ms       11.2 MB
+   worker mips: 18 jobs, {"kernel": 730.9}
+[FAIL] save_psd: JS exception: TypeError: Cannot read properties of undefined (reading 'commands')
+    at <anonymous>:2:36
+    at <anonymous>:110:3
+[skip] open_psd: save_psd did not run (name it before open_psd)
+[FAIL] close: JS exception: TypeError: Cannot read properties of undefined (reading 'commands')
+    at <anonymous>:2:36
+    at <anonymous>:113:3
+deleted 0 file(s) the save rows wrote
+Traceback (most recent call last):
+  File "F:\canvas\tools\native_test.py", line 757, in <module>
+    sys.exit(0 if asyncio.run(session(run_all)) else 1)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\<user>\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\<user>\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\<user>\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "F:\canvas\tools\cdp.py", line 98, in session
+    return await fn(c)
+           ^^^^^^^^^^^
+  File "F:\canvas\tools\native_test.py", line 707, in run_all
+    for level, text in (await c.logs())[-15:]:
+                        ^^^^^^^^^^^^^^
+  File "F:\canvas\tools\cdp.py", line 88, in logs
+    return json.loads(await self.eval("JSON.stringify(window.__log.splice(0))"))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\canvas\tools\cdp.py", line 72, in eval
+    raise RuntimeError("JS exception: " + str(desc))
+RuntimeError: JS exception: TypeError: Cannot read properties of undefined (reading 'splice')
+    at <anonymous>:1:29

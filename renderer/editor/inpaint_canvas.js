@@ -30,7 +30,7 @@ import { TipPicker, noteRecentTip } from "./inpaint_tippicker.js";
 import { isTiff, TIFF_EXT, tiffInfo, readTiff, tiffPart } from "./inpaint_tiff.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
-import { JOB_TIMINGS, editorWorker, workerCall, editorPool, buildLayered } from "./inpaint_jobs.js";
+import { JOB_TIMINGS, STEP_MARKS, markStep, editorWorker, workerCall, editorPool, buildLayered } from "./inpaint_jobs.js";
 import { buildEditorModal } from "./inpaint_modal.js";
 import { encodeCanvas, canvasToBlob, partsUsable, partsRun, partsFlights, bandPause, partsFailed, nextPartsSeq, encodeTilePixels, encodeBands, encodeRows } from "./inpaint_encode.js";
 import { SUBFOLDER, uploadBlob, uploadCanvas, uploadPixels } from "./inpaint_upload.js";
@@ -536,13 +536,16 @@ async function isTiffFile(file) {
 /**
  * The pixels of a TIFF (inpaint_tiff.js `readTiff`, docs/PLAN_0_1_29.md 3d), decoded as a stream in a pool worker (in
  * the window without one) and written into this backend's pixels band by band: `{ px, info }`. The caller has read the
- * header (`tiffInfo`) and checked the size, so a file that is refused allocates nothing.
+ * header (`tiffInfo`) and checked the size, so a file that is refused allocates nothing. `writeMs` beside them: the
+ * milliseconds of the bands' `writeRect` calls (the K0a harness).
  */
 async function pixelsFromTiff(blob, Cls, progress = null) {
-    let px = null, W = 0, H = 0, info = null;
+    let px = null, W = 0, H = 0, info = null, writeMs = 0;
     const header = (h) => { W = h.width; H = h.height; px = Cls.empty(W, H); };
     const rows = (rgba, y0, n) => {
+        const t0 = performance.now();
         px.writeRect({ data: new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, n * W * 4), width: W, height: n }, 0, y0);
+        writeMs += performance.now() - t0;
         if (progress) progress((y0 + n) / H);
     };
     try {
@@ -558,7 +561,7 @@ async function pixelsFromTiff(blob, Cls, progress = null) {
         throw err;
     }
     if (!px) throw new Error("the TIFF gave no pixels");
-    return { px, info };
+    return { px, info, writeMs };
 }
 
 /** zlib ("deflate") or raw ("deflate-raw") bytes inflated by the browser. */
@@ -17579,6 +17582,13 @@ class InpaintEditor {
         return out;
     }
 
+    /** The window's step marks (inpaint_jobs.js `markStep`): a copy; `reset` clears them. */
+    static stepMarks(reset = false) {
+        const out = STEP_MARKS.slice();
+        if (reset) STEP_MARKS.length = 0;
+        return out;
+    }
+
     static referencedFiles() {
         const keep = new Set();
         const scan = (text) => { for (const m of String(text || "").matchAll(/"filename"\s*:\s*"([^"]+)"/g)) keep.add(m[1]); };
@@ -17855,9 +17865,12 @@ class InpaintEditor {
 
     async exportImage({ download = false } = {}) {
         if (!this.base) { this.setStatus("Nothing to save yet."); return null; }
+        const start = markStep("export", "start");   // its fmt once it is read below
         if (this.removePending || this.healPending || this.liquifyPending) { this.setStatus("Waiting for the stroke to land..."); await this.heldEdit(); }
         await this.relightSettled();   // every format: the layered and TIFF writers read bands that do not wait by themselves (F2.7)
+        markStep("export", "ready");
         const fmt = ["png", "jpg", "webp", "tiff", "psd", "ora"].includes(this.saveFormatSel && this.saveFormatSel.value) ? this.saveFormatSel.value : "png";
+        start.fmt = fmt;
         const stem = ((this.saveNameInput && this.saveNameInput.value) || "inpaint_canvas").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._ -]/gi, "_") || "inpaint_canvas";
         try {
             this.setStatus("Saving ...");
@@ -17903,7 +17916,9 @@ class InpaintEditor {
             if (fmt === "png" && !banded) {
                 try { blob = pngWithChunks(await blob.arrayBuffer(), { texts: pngTexts, chunks: pngChunks }); embedded = !!pngTexts; } catch (err) { console.warn("Inpaint Canvas: could not embed the workflow", err); }
             }
+            markStep("export", "encoded", { MB: blob ? blob.size / 1048576 : 0 });
             const saved = await host.saveExport(blob, `${stem}.${fmt === "tiff" ? "tif" : fmt}`, { editor: this, download });
+            markStep("export", "saved");
             if (!saved) { this.setStatus("Save cancelled."); return null; }
             const kb = Math.round(blob.size / 1024);
             this.setStatus(`Saved ${saved.path} (${canvas.width} × ${canvas.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " kB"}${fmt === "png" && embedded ? ", " + hostText("pngEmbedded", "recipe embedded") : ""}${note}).`, "info");
@@ -18377,17 +18392,23 @@ class InpaintEditor {
      * PNG, so the autosave, a document and ComfyUI never see the TIFF.
      */
     async loadTiff(file, later = () => false) {
+        const start = markStep("tiff_open", "start");   // its w and h once the header is read
         const name = file.name || "the TIFF";
         const info = await tiffInfo(file);
+        start.w = info.width; start.h = info.height;
         this.checkBaseSize(info.width, info.height);
+        markStep("tiff_open", "info");
         if (later()) return;
-        const { px, info: got } = await pixelsFromTiff(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${info.width} × ${info.height} px ... ${Math.round(f * 100)} %`); });
+        const { px, info: got, writeMs } = await pixelsFromTiff(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${info.width} × ${info.height} px ... ${Math.round(f * 100)} %`); });
+        markStep("tiff_open", "pixels", { writeMs });
         if (later()) { px.release(); return; }
         const stem = (file.name || "image").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
         this.setStatus(`Storing ${name} ...`);
         const { ref } = await uploadPixels(px, stem);
+        markStep("tiff_open", "stored");
         if (later()) { px.release(); return; }
         await this.setBasePixels(ref, px, { keepLayers: false });
+        markStep("tiff_open", "base");
         const notes = ((got && got.notes) || info.notes || []).filter(Boolean);
         this.setStatus(`Opened ${name}: ${info.width} × ${info.height}${notes.length ? "; " + notes.join("; ") : ""}.`, notes.length ? "warn" : "info");
     }
@@ -18397,27 +18418,48 @@ class InpaintEditor {
      * layer with `px` (this backend's pixels) in place of its bytes, bottom first.
      */
     async readLayered(file, kind) {
+        markStep("layered_open", "start", { kind });
         this.setStatus(`Reading the layers of ${file.name || "the file"} ...`);
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const doc = kind === "psd" ? await readPsd(bytes, { inflate: (b) => inflateBytes(b, "deflate") }) : await readOra(bytes, { inflateRaw: (b) => inflateBytes(b, "deflate-raw") });
+        markStep("layered_open", "read", { MB: bytes.length / 1048576 });
+        // the K0a harness: the inflates' time (they run one after another), and the layer loop's parts below
+        let inflateMs = 0, inflates = 0, maskMs = 0, rgbaMs = 0, bitmapMs = 0, fromImageMs = 0, t0 = 0;
+        const timed = async (b, format) => {
+            const t = performance.now();
+            try { return await inflateBytes(b, format); } finally { inflateMs += performance.now() - t; inflates++; }
+        };
+        const doc = kind === "psd" ? await readPsd(bytes, { inflate: (b) => timed(b, "deflate") }) : await readOra(bytes, { inflateRaw: (b) => timed(b, "deflate-raw") });
+        markStep("layered_open", "parsed", { inflateMs, inflates });
         this.checkBaseSize(doc.width, doc.height);
         if (doc.width * doc.height > CANVAS_MAX_PIXELS) throw new Error(`${doc.width} × ${doc.height} px is larger than a layered file can be opened at (268 MP); save it as PNG`);
         for (const L of doc.layers) {
             // a PSD mask (docs/PLAN_0_1_31.md 3e): one value per pixel of the layer, as the mask's alpha
             if (L.mask && L.mask.data) {
+                t0 = performance.now();
                 const m = new ImageData(L.w, L.h), d = m.data, v = L.mask.data;
                 for (let i = 0, o = 0; i < v.length; i++, o += 4) { d[o] = 255; d[o + 1] = 255; d[o + 2] = 255; d[o + 3] = v[i]; }
                 L.maskPx = this.pixels.Mask.fromImageData(m);
                 L.maskOff = !!L.mask.disabled;
+                maskMs += performance.now() - t0;
             }
             L.mask = null;
-            if (L.rgba) { L.px = this.pixels.Layer.fromImageData(new ImageData(L.rgba, L.w, L.h)); L.rgba = null; continue; }
+            if (L.rgba) {
+                t0 = performance.now();
+                L.px = this.pixels.Layer.fromImageData(new ImageData(L.rgba, L.w, L.h)); L.rgba = null;
+                rgbaMs += performance.now() - t0;
+                continue;
+            }
+            t0 = performance.now();
             const bmp = await createImageBitmap(new Blob([L.png], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+            bitmapMs += performance.now() - t0;
             L.w = bmp.width; L.h = bmp.height;
+            t0 = performance.now();
             L.px = this.pixels.Layer.fromImage(bmp, bmp.width, bmp.height);
+            fromImageMs += performance.now() - t0;
             bmp.close();
             L.png = null;
         }
+        markStep("layered_open", "layers", { maskMs, rgbaMs, bitmapMs, fromImageMs });
         return doc;
     }
 
@@ -18441,8 +18483,10 @@ class InpaintEditor {
         const stem = (file.name || "layered").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "layered";
         this.setStatus(`Storing ${file.name || "the file"} ...`);
         const { ref } = await uploadPixels(basePx, stem);
+        markStep("layered_open", "stored");
         if (later()) return;
         await this.setBasePixels(ref, basePx, { keepLayers: false });
+        markStep("layered_open", "base");
         let top = null;
         // PSD groups as folders (PLAN_0_1_31 §6.5), with ids of this document
         this.groupCounter = (this.groupCounter || 0) + 1;
@@ -18455,6 +18499,7 @@ class InpaintEditor {
         if (top) this.activeLayerId = top.id;
         this.renderLayers();
         this.draw();
+        markStep("layered_open", "added");
         const n = layers.length;
         this.setStatus(`Opened ${file.name || "the file"}: ${W} × ${H}, ${n} layer${n === 1 ? "" : "s"}${basePx === b?.px ? ` over "${b.name}" as the base` : ""}.${doc.notes.length ? " " + doc.notes.join("; ") + "." : ""}`, doc.lossy ? "warn" : "info");
     }

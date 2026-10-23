@@ -1,0 +1,48 @@
+-- 2048x1152 (2.4 MP), 3 rounds, checking bytes ...
+
+== 2048x1152  (window focused True, visible, 24 logical cores)
+  mips_direct  same bytes
+  mips_direct  kernel js     11.0  rust      3.1  (3.56x) | worker job js     11.0  rust      3.1  (3.56x) | wall js     15.6  rust      8.3  (1.88x)  tiles 40 in 1 jobs
+               parts js/rust: kernel 11.0/3.1
+  mips_whole   kernel js     10.7  rust      3.0  (3.62x) | worker job js     10.7  rust      3.0  (3.62x) | wall js     65.0  rust     58.2  (1.12x)  tiles 24 in 1 jobs, built on the main thread js 0 / rust 0
+               parts js/rust: kernel 10.7/3.0
+  band         same bytes
+  band         kernel js     24.8  rust      5.6  (4.42x) | worker job js     24.8  rust      5.6  (4.42x) | wall js     52.4  rust      6.3  (8.34x)  tiles 8 in 1 jobs
+               parts js/rust: kernel 24.8/5.6
+  grow         same bytes
+  grow         kernel js     19.5  rust      8.5  (2.29x) | worker job js     24.8  rust     12.6  (1.97x) | wall js     47.8  rust     22.5  (2.13x)  0.8 MP in 1 jobs
+               parts js/rust: kernel 0.0/8.5  edt 11.7/0.0  bounds 3.0/0.0  feature 1.5/0.0  write 2.2/0.0  read 1.3/1.5  resultBounds 1.1/0.0
+  shrink       same bytes
+  shrink       kernel js     11.8  rust      3.7  (3.20x) | worker job js     15.7  rust      7.4  (2.13x) | wall js     27.1  rust     18.2  (1.49x)  0.8 MP in 1 jobs
+               parts js/rust: kernel 0.0/3.7  edt 6.6/0.0  bounds 1.1/0.0  feature 0.7/0.0  write 2.4/0.0  read 1.1/1.0  resultBounds 1.0/0.0
+  wand_band    same bytes
+  wand_band    kernel js     33.0  rust     32.8  (1.00x) | worker job js     53.0  rust     32.9  (1.61x) | wall js    115.4  rust    158.1  (0.73x)  2.4 MP in 1 jobs
+               parts js/rust: flood 13.1/26.2  read 19.9/0.0  clip 0.0/0.0  bounds 7.9/0.0  shape 12.0/6.6
+  wand_object  same bytes
+  wand_object  kernel js      8.3  rust      3.7  (2.26x) | worker job js     13.9  rust      3.7  (3.76x) | wall js     32.6  rust     19.5  (1.67x)  2.4 MP in 1 jobs
+               parts js/rust: flood 1.2/3.1  read 5.6/0.0  clip 0.0/0.0  bounds 2.4/0.0  shape 4.7/0.5
+-- 15000x10000 (150.0 MP), 3 rounds, checking bytes ...
+
+== 15000x10000  (window focused True, visible, 24 logical cores)
+  mips_direct  same bytes
+  mips_direct  kernel js    471.6  rust    222.7  (2.12x) | worker job js    471.6  rust    222.7  (2.12x) | wall js    749.4  rust    588.3  (1.27x)  tiles 2360 in 19 jobs
+               parts js/rust: kernel 471.6/222.7
+  mips_whole   kernel js    995.4  rust    530.8  (1.88x) | worker job js    995.4  rust    530.8  (1.88x) | wall js    694.0  rust    928.9  (0.75x)  tiles 2301 in 18 jobs, built on the main thread js 0 / rust 0
+               parts js/rust: kernel 995.4/530.8
+  band         same bytes
+  band         kernel js    165.5  rust     43.0  (3.85x) | worker job js    165.5  rust     43.0  (3.85x) | wall js    167.1  rust     58.6  (2.85x)  tiles 59 in 1 jobs
+               parts js/rust: kernel 165.5/43.0
+  grow         same bytes
+  grow         kernel js   1073.3  rust    204.0  (5.26x) | worker job js   1219.6  rust    360.0  (3.39x) | wall js   1257.8  rust    384.7  (3.27x)  27.9 MP in 1 jobs
+               parts js/rust: kernel 0.0/204.0  edt 471.2/0.0  bounds 65.1/0.0  feature 72.0/0.0  write 81.5/0.0  read 55.6/67.4  resultBounds 383.5/0.0
+  shrink       same bytes
+  shrink       kernel js   1394.0  rust    266.4  (5.23x) | worker job js   1531.0  rust    392.3  (3.90x) | wall js   1592.1  rust    447.5  (3.56x)  27.9 MP in 1 jobs
+               parts js/rust: kernel 0.0/266.4  edt 1057.4/0.0  bounds 108.5/0.0  feature 79.7/0.0  write 94.5/0.0  read 63.5/52.2  resultBounds 53.9/0.0
+  wand_band    same bytes
+  wand_band    kernel js   3369.1  rust   1202.4  (2.80x) | worker job js   4716.1  rust   1227.6  (3.84x) | wall js   7304.8  rust   2497.8  (2.92x)  152.8 MP in 2 jobs
+               parts js/rust: flood 1995.7/891.7  read 1346.8/24.6  clip 0.0/0.0  bounds 335.5/0.0  shape 1037.8/310.8
+  wand_object  same bytes
+  wand_object  kernel js     22.7  rust     10.5  (2.16x) | worker job js     59.1  rust     32.1  (1.84x) | wall js    157.6  rust    270.5  (0.58x)  3.1 MP in 2 jobs
+               parts js/rust: flood 3.1/6.3  read 36.4/21.5  clip 0.0/0.0  bounds 10.2/0.0  shape 9.4/4.1
+
+PASS

@@ -1,0 +1,2 @@
+tiffperf:15000x10000,--variant,lzw,--out,/f/canvas/dist/gates/k0a_2026-10-23/tiff_files rc=0 20s PASS
+ALL PASS

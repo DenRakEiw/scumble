@@ -45,6 +45,31 @@ For 0.1.50 (`docs/PLAN_0_1_50.md`):
 
 ## Open
 
+### Saving an export of about 0.7 GB or more ends the window's renderer (found 2026-10-23, run, K0a)
+
+Seen: the K0a harness (`docs/PLAN_WASM_BUILD.md`) saved its exports for real for the first time; every earlier 15k
+export row stubbed `host.saveExport` out. The PSD of `tools/native_test.py`'s 15000 x 10000 document with its
+full-size paint layer (925 MB) never reached the disk: the renderer ended (`oom`, exit code -536870904, "reloaded; the
+documents come back from the autosave" in `scumble.log`), twice, the second time on a fresh instance with only that
+row (`dist/gates/k0a_2026-10-23/native_psdonly.log`). A probe on a fresh instance without any document
+(`host.saveExport` of a blob of zeros) saved 300 MB and 500 MB (marks: bytes 149 / 244 ms, written 1,268 / 2,050 ms)
+and ended the renderer at 700 MB. `blob.arrayBuffer()` of 1.5 GB alone returned, though the log shows another end 6 s
+later; the probe of the IPC alone was disturbed by the reload loop (Scumble closed after the third end), so where it
+breaks is inferred, not measured: most likely the IPC (`window.scumble.file.save` with the whole file as one
+`Uint8Array`, `host.js` `saveExport`), whose message is a copy of the bytes. The machine had 60 GB free. With the 15k
+document open, a TIFF of noise (491 MB), the ORA with the paint layer (511 MB), a PNG (235 MB) and a TIFF (244 MB)
+saved. The 0.1.50 release has the same `saveExport`. Logs and probes: `docs/measurements/k0a_2026-10-23/native/`,
+`save_probe/`.
+
+Who meets it: a PSD of a 15k document with one layer above the base (about 0.9 GB), a large ORA or TIFF of a picture
+that does not compress; a JPEG / WebP is far below.
+
+To do before code: probe the IPC alone at 600 / 800 MB on a fresh instance (`save_probe/k0a_save_probe2.py`, one call
+per instance); then the fix is the save in pieces (the blob's slices sent to main and
+appended to the temp file, or main reading the blob through a stream), which is §4.12 G2 / question 6.8 of
+`docs/PLAN_WASM_BUILD.md`: it moves from "maybe" to needed, and it is JS / IPC work, not a kernel. Its gate step: a
+real 15k PSD save with the paint layer (`native_test.py ... add_the_paint_layer save_psd open_psd`).
+
 ### A relight recipe imported or saved under a new id is accepted and never run (found 2026-10-12, read)
 
 Found by the review of docs/PLAN_RELIGHT_FIXES.md F3. Settings › Recipes › Import of a copy of `recipes/relight.json`
