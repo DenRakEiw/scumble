@@ -4,16 +4,16 @@ No ComfyUI. Start the app offline with a debugging port and keep its window in f
 not wasm, in a window behind: docs/PERFORMANCE.md section 10):
 
     ./node_modules/.bin/electron . --remote-debugging-port=9555 --user-data-dir=<scratch> --no-comfy
-    python tools/w0_bench.py [--json out.json] [--image path/to/15k.jpg]
+    python tools/w0_bench.py [--json out.json] [--image=path/to/15k.jpg] [--rows=name,name]
 
 Each row runs the module's own function on synthetic data of a stated size (a median of several runs where it is cheap)
 or, for the 15k rows, the editor's command on the picture. It never fails the caller: a row that throws prints its
 error and the rest go on. Rows:
 
-  freqsep_15k         frequency_separation on the 15k picture (wall)
-  png_open_15k        load_image of a 15k PNG written by the export (wall)
+  freqsep_15k         the 15k picture: load_image of the JPEG, export a 15k PNG, load_image of it (wall each), then
+                      frequency_separation of a 4000 x 4000 box (its limit is 16 MP)
   edgefit_2048        edgefit.fitLayerRGBA on a 2048^2 base and a shifted copy; warpRGBA alone
-  stitch_masks_2048   stitch.js gaussBlur (sigma 8) and dilate (8 px) on a 2048^2 mask
+  stitch_masks_2048   stitch.js gaussBlur (sigma 8) and dilate (8 px) on a 2048^2 mask, and the JS max / clamp around them
   crc32_64mb          inpaint_png.crc32 over 64 MB (ms per MB)
   dabs_256            inpaint_stroke blurRGBA / sharpenRGBA / toneRGBA / spongeRGBA on a 256^2 dab
   match_loop_4096     matchCanvas's CPU loop (the fallback when the shader is not there) on 4096^2
@@ -61,12 +61,15 @@ ROWS = {
     """,
     "stitch_masks_2048": """
         const S = await import('./editor/stitch.js');
-        const n = 2048 * 2048;
-        const mk = () => { const m = new Float32Array(n); for (let i = 0; i < n; i++) m[i] = ((i % 2048) > 512 && (i % 2048) < 1536 && i > n / 4 && i < 3 * n / 4) ? 1 : 0; return m; };
-        let m = mk();
-        out.gauss = await time(() => { m = mk(); return S.gaussBlur(m, 8); }, 3);
-        out.dilate = await time(() => { m = mk(); return S.dilate(m, 8); }, 3);
-        out.note = "gaussBlur / dilate take the mask the stitch builds; see stitch.js for its exact type (the row reports what the call costs on a Float32Array of 2048^2)";
+        const w = 2048, h = 2048, n = w * h;
+        const mk = () => { const d = new Float32Array(n); for (let i = 0; i < n; i++) d[i] = ((i % w) > 512 && (i % w) < 1536 && i > n / 4 && i < 3 * n / 4) ? 1 : 0; return { data: d, w, h }; };
+        out.gauss = await time(() => S.gaussBlur(mk(), 8), 3);
+        out.dilate = await time(() => S.dilate(mk(), 8), 3);
+        // the per-pixel JS around them (stitch.js maskMax + maskClamp, copied: they are not exported)
+        const a = mk(), b = mk();
+        out.max_clamp = await time(() => { const o = new Float32Array(n); for (let i = 0; i < n; i++) o[i] = Math.max(a.data[i], b.data[i]); for (let i = 0; i < n; i++) o[i] = Math.min(1, Math.max(0, o[i])); return o; }, 3);
+        out.mk = await time(() => mk(), 3);
+        out.note = "gaussBlur and dilate run Rust (box_blurs, dilate_mask) and include the mask's build (mk, also timed); max_clamp is the JS loop of denoiseMask";
     """,
     "crc32_64mb": """
         const P = await import('./editor/inpaint_png.js');
@@ -108,10 +111,6 @@ ROWS = {
         out.load_jpg = +(performance.now() - t).toFixed(0);
         out.size = [ed.width, ed.height];
         await wait(3000);
-        t = performance.now();
-        const r = await run("frequency_separation", { doc });
-        out.freqsep = +(performance.now() - t).toFixed(0);
-        out.layers = r && r.layers ? r.layers.length : null;
         // a 15k PNG of the composite, then opened again as a user's file
         t = performance.now();
         await run("export", { doc, format: "png", path: %(png)s });
@@ -121,6 +120,13 @@ ROWS = {
         await run("load_image", { doc: doc2, path: %(png)s });
         out.png_open = +(performance.now() - t).toFixed(0);
         try { await run("close_document", { doc: doc2, force: true }); } catch (_) {}
+        host.shell.activate(ed);
+        // frequency separation works on up to 16 MP: a 4000 x 4000 box of the 15k picture
+        await run("select_rect", { doc, x: 5500, y: 3000, w: 4000, h: 4000 });
+        t = performance.now();
+        const r = await run("frequency_separation", { doc });
+        out.freqsep_16mp = +(performance.now() - t).toFixed(0);
+        out.freqsep_result = r ? Object.keys(r).slice(0, 6) : null;
         try { await run("close_document", { doc, force: true }); } catch (_) {}
     """,
 }
@@ -132,7 +138,10 @@ async def main():
     async def go(c):
         await c.call("Page.bringToFront")
         await c.eval("(async () => { await import('./shell.js'); return 1; })()")
+        only = next((a.split("=", 1)[1].split(",") for a in sys.argv if a.startswith("--rows=")), None)
         for name, body in ROWS.items():
+            if only and name not in only:
+                continue
             js = PRE % (body % {"image": json.dumps(IMAGE), "png": json.dumps(os.path.join(TMP, "w0_15k.png"))} if "%(" in body else body)
             print(f"== {name} ...", flush=True)
             try:

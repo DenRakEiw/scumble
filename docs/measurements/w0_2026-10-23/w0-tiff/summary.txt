@@ -1,0 +1,2 @@
+tiffperf:15000x10000 rc=0 30s PASS
+ALL PASS
