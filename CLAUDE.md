@@ -613,6 +613,25 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   and a recipe (Generate new with boxes at least). **Promised on the issue for the next update** (the user's word,
   2026-10-19: a comment that it is on the list and ships with the next update, and that 0.1.49 brings FLUX 3 Image
   Klein and Comfy's SDK).
+- 48: **Canva Craft as an image model** (the user, 2026-10-23, with Canva's announcement of 2026-10-22,
+  https://community.canva.dev/t/connect-api-canva-craft-is-now-available-for-image-generation/8999). Known from one
+  read of the post and the API reference (2026-10-23; not run): Canva's own model CRAFT-1, up to 2K, text in pictures in
+  55 languages, it plans before it renders (about 50-60 s a job), through the Connect API's **preview** endpoint
+  `POST https://api.canva.com/rest/v1/image-generations` (`prompt` up to 10,000 chars, `idempotency_key` required and
+  kept 24 h, `aspect_ratio` `square` / `landscape` 16:9 / `portrait` 9:16 / `landscape_3_2` / `portrait_2_3` /
+  `portrait_4_5`, `model` `craft_v1_2k` (also `lucid_origin`, `z_image_turbo`; no fallback when the pinned one cannot
+  serve), `asset_upload` none / upload), then `GET .../image-generations/{jobId}` until `success` (the result's `url`
+  lives 24 h; errors `unsafe_input`, `timeout`, `model_not_available`, `model_retired`; 429 `credit_quota_exceeded` /
+  `credit_quota_cooldown` with `quota_usage`). **Text to image only**: no reference picture, no edit, no mask, so in
+  Scumble a Generate new recipe (`aspect` from its six ratios), never an inpaint. It runs on the user's Canva AI
+  credits, 20 requests a minute per user. **The hard part is the auth:** a user access token by OAuth (scope
+  `asset:write`, the user needs the `image_generation` capability), not an API key: Scumble has no OAuth flow (keys sit in
+  safeStorage), so a Canva Connect integration (client id, a redirect such as a loopback port, PKCE, token refresh)
+  would come first; client-credentials integrations are on an allowlist until Canva's developer billing ships, and
+  **public integrations that use a preview API do not pass Canva's review**, so until the endpoint leaves preview only
+  a private integration (each user their own, or the user's team) could use it. Craft on Canva's MCP server is "coming
+  soon" (a route without our own OAuth, maybe). Open: whether a private integration is open to every plan, the token's
+  lifetime, the output size per ratio. Not planned yet.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
