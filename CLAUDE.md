@@ -183,6 +183,30 @@ code.
   built as recommended). The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own
   melody; the other two fit released songs and must not be used as audio).
 
+- **THE CURRENT WORK (2026-10-23): the Rust-kernel update, item 44, on the branch `wasm-kernels`.** The user: "wir
+  sollten diesmal an einem eher größeren update arbeiten ... vor release mehr entwickeln", "mach die fehlenden messungen
+  und dann den umbauplan", then a `/clear` and the development. **The plan is `docs/PLAN_WASM_BUILD.md`** (653 lines,
+  made by a workflow of six designers, two critics and a writer from the W0 numbers): sessions K0a-K41 in order, six
+  stops that re-rank by measurement, about 40-48 working days (inferred). **Start with K0a** (the reader / writer
+  harness), then K0b, K0c (the W0b baseline, three fresh runs per row). **The user's rules for it:** Rust wherever the
+  *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
+  time only finds where the time goes; the tie rule in the plan §1.1); **every session commits and pushes the branch,
+  its measurement results committed too** under `docs/measurements/<step>_<date>/` ("dann gehen diese nicht verloren");
+  **one release at the end** (K40, K41 on the user's word), no small releases in between. W0 is done:
+  `docs/PLAN_WASM.md` §5 (the harvest of the old numbers) and `docs/measurements/w0_2026-10-23/` (the 15k rows;
+  `tools/w0_bench.py`; `perf_test.py`'s relight row now has three lights). The plan's §6 open questions are asked by
+  the session that needs one; with no answer by then its suggested answer is taken and the hand-over says so. `main`
+  stays the release state (0.1.50 + `10b1a39`); merge `main` into the branch when main moves. CI builds only `main`,
+  tags and pull requests, so pushing the branch costs no build.
+  **Node 0.4.0 / 0.4.1 on the Comfy Registry (the user's "ja, mach das", 2026-10-23):** 0.4.0 (`a75fa6c`, everything
+  since 0.3.4: boxes, the 0.1.44-0.1.50 editor, Q5) was **Flagged** by the registry's YARA scan for one token,
+  `.listen(` in `js/prompt_field.js` (read as a network socket); the method is `bindEvents()` since `10b1a39` (main, the
+  editor gate PASS), and **0.4.1** (`4e7bd24`, that editor build) was published the same morning, **Pending** at the
+  hand-over: check `https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions?include_status_reason=true`. Once 0.4.1
+  is Active, the app's texts that say "the Comfy Registry's 0.3.4 has no boxes" (`renderer/editor/comfyprompt.js`
+  `oldNodeBoxes` and NODE_REPO's comment, README 159, MANUAL 212, RECIPES 75 / 165) change to "0.4.1 or newer" on the
+  branch; should it be flagged again, read the reason there and rename the token the same way (the plan's K40 scans
+  the shipped files for such tokens before a node build).
 - **Edit-box prompting in the Inpaint Canvas node: built in the night 2026-10-14/15 (B0-B6 of
   `docs/PLAN_NODE_BOXES.md`), pushed and live on 2026-10-15** (the user: "kannst das update pushen und in meinem
   comfyui aktualisieren"): Scumble main pushed (`779e357..99c2cfd`); the live node folder fast-forwarded to `6a0ad1e`
