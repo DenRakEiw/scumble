@@ -210,10 +210,13 @@ code.
   was refused by a safety check: the user deletes it). **Stop 1 done the same day** ("Stop 1" in the plan's §7: the new
   order, from a ranker and a critic): #0 K1b's M9 (M3 / M4 without `--ab`, three runs, the check of keepMB 16 on the wand
   rows), #1 G2 the export save in pieces (the 0.7 GB renderer end), #2 D0 (the PSD open's window loops into a pool job,
-  only on the user's yes), #3 K5, #4 K12, then K4, K26, K27, the E and M chains, the bucket. **Waiting for the user**
-  (asked 2026-10-23, the plan's "Asked of the user before #1"): Q1 G2 on the branch only or also a 0.1.51 hotfix from
-  main, G6 (the shader link) as its own session, the pool size as information; Q2 D0 yes or no; Q3 W1 (a SIMD filter
-  choice in the PNG writer) added. Without an answer the order stands as written and D0 is skipped.
+  only on the user's yes), #3 K5, #4 K12, then K4, K26, K27, the E and M chains, the bucket. **The user's answers
+  (2026-10-24, every recommendation taken; the plan's §7 "The user's answers"):** G2, the save in pieces, is built on
+  `main` and released as **hotfix 0.1.51** (prepared locally, asked once before the release chain), then `main` is merged
+  into the branch; D0 yes, right after; W1 (a SIMD filter choice in `png.rs` `filter_row`, same bytes) at #4 after K5;
+  G6 (the shader link, per document) its own short session after W1. **Next: G2 on `main`** (`git checkout main`; the
+  IPC probe at 600 / 800 MB, then the fix in `host.js` and main's file-save IPC, the gate step of `docs/BUGS.md`).
+  Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
   time only finds where the time goes; the tie rule in the plan §1.1); **every session commits and pushes the branch,

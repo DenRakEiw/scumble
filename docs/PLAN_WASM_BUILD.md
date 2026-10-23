@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done (§7: the new order and the user's questions before its first session).** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); next G2 on `main` as the hotfix 0.1.51.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -897,3 +897,27 @@ case occurs).
    - narrow K20b's Needs, which splits K15;
    - leave D at the end (#36-38).
 3. **(Information, an addition to the plan) W1.** A new session that makes the PNG writer's filter choice SIMD, with the same bytes and no ABI change. It goes in at #17 unless the user objects.
+
+#### The user's answers (2026-10-24) and the order they set
+
+Asked with a recommendation each (researched in the code); the user took every recommendation:
+- **Q1, the save crash: a hotfix 0.1.51 from `main`.** G2 is built on `main` (it touches only `renderer/editor/host.js`
+  and main's file-save IPC, no kernel: the export goes to main in pieces of about 64 MB appended to the temp file, not as
+  one `Uint8Array` in one message), with its gate step (a real 15k PSD save with the paint layer, then `open_psd` from
+  that file) and the IPC probe at 600 / 800 MB first; then released as 0.1.51 by `docs/RELEASING.md` (prepared locally,
+  asked once before the chain; the Store update may carry the open 0.1.48-0.1.50 with it); then `main` is merged into
+  `wasm-kernels`. The user's rule "one release at the end" is for the kernel work; a fix of released code is not.
+- **Q1, the shader link (G6): its own short session (about half a day), after K5 and W1.** The compositor is made per
+  editor (`inpaint_canvas.js` `compositor()`, about :21506), so the 0.44 s block is likely paid per opened document:
+  the session first opens a second document; a cheap second link (Chromium's program cache) means compiling at start in
+  idle time is enough, else `KHR_parallel_shader_compile` (poll `COMPLETION_STATUS_KHR` instead of reading
+  `LINK_STATUS` right after the link; check once that Electron 44 offers it).
+- **Q2, D0: yes, right after G2.** Its pool job is the one K20b later puts Rust into; G2 makes real 15k PSD files to open.
+- **Q3, W1: yes, at #4, right after K5.** `png.rs` `filter_row` is scalar (five filters byte by byte, Paeth computed
+  again for the output); all five filters depend on the raw bytes only, so the sums go 16 bytes wide and the chosen row
+  is kept, not recomputed; same choice, same bytes, no ABI change. It runs in every layer upload, every PNG export and
+  every store after a TIFF / PSD / ORA open.
+
+**The order from here:** G2 on `main` -> 0.1.51 -> merge `main` into `wasm-kernels` -> #0 M9 -> D0 -> K5 (Stop 3) -> W1 ->
+K12 (Stop 5) -> G6 -> then the critic's table above from K4 on (K4, K26, K27, the E chain, the M chain with K25, K9,
+K11, the bucket K36-K37, the P chain, ...).
