@@ -95,3 +95,45 @@ only when their module is open or a measurement names them.
 - #5 and #6 when their modules are open for another reason.
 
 About 1-2 days per kernel including the measurement; W1-W3 are the ones that change what the user feels.
+
+## 5. W0 as harvested (2026-10-23)
+
+The user (2026-10-23): "wir haben ja auch viel gemessen vorher schon"; the rule stands as decided 2026-09-17: **Rust
+wherever it is faster, however little; JS only where Rust is slower** (`docs/PERFORMANCE.md` §12, `PLAN_BCE.md`; the
+3x rule of phase B is gone). W0 therefore first harvested every earlier measurement (a read-only workflow of six
+agents, every verdict checked against the code at `7def997`; the full table in this session's scratchpad
+`w0_synthesis.md`) instead of measuring everything again.
+
+- **Done (Rust):** mips, EDT grow / shrink, flood / wand, `composite_tile` with every blend mode, `dilate_mask`,
+  `box_blurs`, `smudge_dab`, `poisson_blend` (heal: 73 vs 162 ms on 512^2), `match_pixels`, PNG filter / unfilter and
+  `deflate_part` (84 against about 25 MB/s per worker), `psd_pack_rows`, `resample_block`, `range_max`, relight's
+  `height_normals` and the sun's march. Measured 1.4-6.1x on the kernels.
+- **Switch now (a Rust kernel exists, JS still runs):** the main thread's grow fallback (`growMask`,
+  `inpaint_raster.js` 97-135; `growMaskBounds` -> `grow_mask` exists, the job measured 2.80x); a rare path, routing only.
+  Unclear until measured: the `matchCanvas` CPU fallback (`inpaint_filters.js` 272-292; `match_pixels` was measured
+  against the `Math.fround` twin, not this loop) and the TIFF strips without a pool (`CompressionStream`; native won
+  the only deflate A/B, at level 6).
+- **Stays JS (Rust slower):** relight's point / spot `shadow_march` (the twin 0.67-0.83 of Rust's time, 2.63 against
+  3.56 s at 4096 x 2731; `kernels.js` 152), until a faster Rust loop beats it. Splitting one light's march into
+  stripes over the workers (the kernel takes `row0` / `rows` already) changes the wall time only, never measured.
+- **Build a kernel, then measure (largest known cost first):** the TIFF reader (a 15k open 8.6 s, not split up), the PNG
+  reader's inflate and its byte-wise `crc32` (a 15k open 2.7 s wall), `rangeSelectJob` with `snapField` and
+  `limitAlphaRows` (select by range at 15k 1.4-2.6 s, the depth snap 1.2 s, whole jobs), the stitch's per-pixel passes
+  (about 190 of 571 ms of a crop), invert (169-211 ms at 15k, a JS loop on the main thread), then liquify (no Rust
+  twin), the compositor's remaining JS passes (#3), frequency separation and the tone / blur / sharpen / sponge dabs
+  (#4), edgefit (#5); the threads spike (#7) last.
+- **Corrections to section 2:** the "about 1 s" edge pass (#1) and the 441 / 641 / 3,431 ms were numpy / ONNX timings,
+  not the app's JS; heal's "204 ms / 1.7 s" (#4) were the old flatten's; `range_max`'s "20 vs 102 ms" were single cold
+  calls.
+- **Open question for the user:** which column decides, the kernel's or the job's wall time? For the mips after a whole
+  change the kernel is 1.46-3.56x faster in Rust, but the wall time with the window in front was slower in three of
+  four release runs (0.57-0.64x); the cause was never measured. Recommended: the wall time of the real job (what the
+  user feels), the kernel column only to find where the time goes.
+- **The gaps** (no split 15k baseline): snap and the guided filter in the app, the histograms, `limitAlphaRows`, the
+  compositor's remaining passes, frequency separation, the dabs, edgefit, inflate alone, `crc32`, the TIFF parts, the
+  PSD / ORA readers, the ONNX normalisation, the `matchCanvas` loop, relight in the app with lights. Harnesses, all
+  offline: `pxjobs`, `perf:15000x10000` (relight: `,--filter=relight,--map=4096x2731`, with lights), `native`,
+  `edges selection`, `exportperf:15000x10000,--limit=...`, `tiffperf:15000x10000`, `PX_BENCH=large` px_test.js,
+  `brush_perf.py` with `liquify_perf.js`; none yet for frequency separation, the dabs, edgefit, the histograms,
+  `crc32` and the readers (a `PX_BENCH` row twin against Rust in px_test.js is the cheapest). Measure with the window
+  in front (V8's efficiency mode slows JS, not wasm, in a window behind: `docs/PERFORMANCE.md` §10).
