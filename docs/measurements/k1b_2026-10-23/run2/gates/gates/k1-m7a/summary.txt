@@ -1,0 +1,2 @@
+pxprobe:--regrow rc=0 5s PASS
+ALL PASS

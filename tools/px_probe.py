@@ -445,6 +445,7 @@ async def main():
     sys.stdout.reconfigure(encoding="utf-8")
 
     async def run(c):
+        await c.call("Page.bringToFront")   # a probe counts only with the window in front (as brush_perf.py does)
         not_counted = False
         for mode in MODES:
             if mode == "cold":

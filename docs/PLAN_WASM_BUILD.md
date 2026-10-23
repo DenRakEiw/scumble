@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a (K1's build) done the same day, next K1b (its measurements and defaults, design `docs/PLAN_WASM_K1.md` §3 and S9), then Stop 1.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; next Stop 1.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -789,3 +789,27 @@ route set the behaviour is today's (no kernel route means Rust; `releaseMB` = `k
 - **For K1b** (the smoke runs at 2048, not a verdict): M5's one-instance figures point at V8 sharing code across
   workers; M6 must read the split's `first` figures, not the wall (new workers load inside the row); the flood ladder means
   something only at 15k.
+
+### K1b (2026-10-23): K1's measurements and defaults
+
+`docs/PLAN_WASM_K1.md` §3 at 15000 x 10000 (`docs/measurements/k1b_2026-10-23/run2/`, `summary.txt`; a first try is in
+the folder above it: `run_gates.sh` turns every comma into a space and split the `--only` lists, and the harnesses did
+not bring the window to the front; `px_jobs.py` and `px_probe.py` now call `Page.bringToFront`; five runs px_jobs did not
+count, the window behind, were run again). Three fresh runs each, the medians and verdicts by an analyst, every default
+confirmed by an adversarial checker.
+- **M1 (clean of contamination):** Rust wins every row, JS / Rust: mips_direct 537 / 396, mips_whole 583 / 562 (a tie,
+  Rust by the kernel row), band 152 / 29, wand_band 4,653 / 2,127, wand_object 160 / 114 (K0b's loser now wins). The
+  split (`--split`) costs less than the spread, so decision runs keep it.
+- **M2 (mips route):** Rust on both rows (579 / 396 and 641 / 575, inside the spread, Rust's kernel row faster); Rust's
+  copies in and out (87-225 ms a row) are about as large as its kernel: margin left, not a loss. **No mips entry.**
+- **M3, M4 (flood route on one read route):** Rust beyond the spread on wand_band and wand_add, a tie on wand_object
+  (125 / 131, Rust by the kernel row); the ladder: Rust at every step from a 0.26 MP box to 150 MP. **No flood entry.**
+  Of the legacy flip's wand_band gap (2,525 ms) the flood route is 632 and the read route about 1,900-2,100 (inferred).
+- **M5:** A0 ≈ B0 ≈ warm in all three rotations: V8 shares compiled code across the workers' isolates; posting the
+  Module saves only the compile (0.3-0.4 ms); no warm-up. The process's one cold call is the window's first (1.6-2.0x).
+  M6 was not run (no felt row shows a cold call).
+- **M7:** re-growing costs about 0.07 ms per MB (9.1 ms at 128 MB), below every wand row's spread; **keepMB 256 -> 16**
+  (`kernels.js` `DEFAULT_ROUTES`): after a stubbed 15k PNG export the pool keeps 11.7 MB instead of 288 MB.
+- **M8:** the window's synchronous release works in Electron 44 (sync in 3 of 3, the new instance 1.1 MB, the twin's
+  bytes): K27 and K39 are unblocked.
+- Gates after the default: pxjobs selection pixels editor brush export PASS on tiles; px_test PASS.

@@ -1,0 +1,16 @@
+-- 15000x10000 (150.0 MP), 3 rounds ...
+
+== 15000x10000  (window focused True, visible, 24 logical cores)
+  arms: the "js" column mips=js, the "rust" column mips=rust
+  mips_direct      kernel js    402.3  rust    222.3  (1.81x) | worker job js    402.3  rust    222.3  (1.81x) | wall js    579.0  rust    396.1  (1.46x)  tiles 2360 in 19 jobs
+                   parts js/rust: kernel 402.3/222.3
+                   px calls js: window none; jobs none | rust: window none; jobs clamp_extend 98, mip_chain 2458
+                   split js/rust: job 402.6/222.6  copyIn 0.0/33.7 (0.0/590.0 MB, shared 0.0/0.0 MB)  copyOut 0.0/66.4 (0.0/204.6 MB)  alloc 0.0/0.0  grew MB 0.0/0.0  bytes0 MB 2/2 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {} rust {clamp_extend 0.4, mip_chain 122.6}  first js {} rust {}  queue 2.1/2.3  trip 416.8/236.4  workers 1/1  outside jobs 176.3/175.7
+  mips_whole       kernel js    709.7  rust    507.1  (1.40x) | worker job js    709.7  rust    507.1  (1.40x) | wall js    699.2  rust    639.4  (1.09x)  tiles 2301 in 18 jobs, built on the main thread js 0 / rust 0
+                   parts js/rust: kernel 709.7/507.1
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs clamp_extend 39, mip_chain 2340
+                   split js/rust: job 710.1/507.6  copyIn 0.0/59.9 (0.0/579.2 MB, shared 0.0/579.2 MB)  copyOut 0.0/153.2 (0.0/196.1 MB)  alloc 0.0/0.0  grew MB 0.0/0.0  bytes0 MB 2/2 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {} rust {clamp_extend 0.2, mip_chain 290.3}  first js {} rust {}  queue 0.1/0.1  trip 850.0/625.4  workers 8/8
+  instances renewed over the rows: {release 0, idle 0, trap 0, oom 0}
+  instances renewed after a trap or out of memory on the 10 threads read: 0
+
+PASS

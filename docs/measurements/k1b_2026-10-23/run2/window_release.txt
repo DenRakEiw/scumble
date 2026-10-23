@@ -1,0 +1,3 @@
+  window release: sync (grown 302 MB, the new instance 1.1 MB, the twin's bytes)
+  window release: sync (grown 353 MB, the new instance 1.1 MB, the twin's bytes)
+  window release: sync (grown 302 MB, the new instance 1.1 MB, the twin's bytes)

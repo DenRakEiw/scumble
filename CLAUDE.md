@@ -203,9 +203,13 @@ code.
   loop weiter bis der kontext ... ca 60%"; K1's build from its design `docs/PLAN_WASM_K1.md`, whose §6 questions went with
   the suggested answers: the route map, `pxTimed` / `pxLaps` / `pxSplit`, trap recovery, the idle trim, jobs' fields taken
   at queue time, `px_jobs.py --ab`, `ab_median.py`, `px_probe.py`; no bytes change, ABI 20; 19 gates PASS on tiles;
-  "K1a" in the plan's §7). **Next: K1b**: the measurements of `docs/PLAN_WASM_K1.md` §3 (M0-M9, three fresh runs each,
-  the window in front) and the defaults they set (S9 steps 4-8: `flood`, maybe `mips`, `keepMB`), then **Stop 1** (re-rank
-  §5 by K0c's shares and K1's result). **The user's rules for it:** Rust wherever the
+  "K1a" in the plan's §7). **K1b done the same day** (M0-M8 at 15k, three fresh runs each; "K1b" in the plan's §7,
+  `docs/measurements/k1b_2026-10-23/run2/`): Rust wins every A/B, so no route entry; V8 shares compiled wasm across the
+  workers (no warm-up); `keepMB` 256 -> 16; the window's synchronous release works (K27, K39 unblocked). A first try lies
+  in `docs/measurements/k1b_2026-10-23/json` and `gates/` uncommitted (`run_gates.sh` splits comma lists; its deletion
+  was refused by a safety check: the user deletes it). **Next: Stop 1** (re-rank §5 by K0c's shares and K1's result,
+  write the order into the plan; K0b / K0c point at K5, K25 and K20 moving up), then the first kernel session.
+  **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
   time only finds where the time goes; the tie rule in the plan §1.1); **every session commits and pushes the branch,
   its measurement results committed too** under `docs/measurements/<step>_<date>/` ("dann gehen diese nicht verloren");

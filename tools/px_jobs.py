@@ -1217,6 +1217,7 @@ async def main():
     sys.stdout.reconfigure(encoding="utf-8")
 
     async def run(c):
+        await c.call("Page.bringToFront")   # a timing run counts only with the window in front (as brush_perf.py does)
         bad = 0
         uncounted = False
         for n, (size, check) in enumerate(RUNS):

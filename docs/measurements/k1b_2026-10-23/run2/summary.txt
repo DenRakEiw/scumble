@@ -1,0 +1,141 @@
+K1b of docs/PLAN_WASM_BUILD.md: the measurements of docs/PLAN_WASM_K1.md §3 (M0-M5, M7, M8; M6 not needed; M9 runs
+after the defaults land). 2026-10-23 16:02-16:25, branch wasm-kernels at 9d0d5d5 (K1a) plus two uncommitted harness
+lines (tools/px_jobs.py and tools/px_probe.py call Page.bringToFront before their rows). 15000 x 10000, --offline
+(--no-comfy), tiles, every run a fresh instance with its own profile, no DevTools frontend, no profiler. px_jobs started
+directly by ../k1_chain.sh (run_gates.sh turns the commas of --only into spaces), the probes and M8 through
+run_gates.sh. Every px_jobs run: 3 rounds, its own PX_JOBS_JSON; verdicts by tools/ab_median.py over r1-r3 (median of
+the per-run medians; spread = max - min of the per-run medians, the larger arm's; all rounds decide). Electron 44.2.0,
+Chrome 152.0.7977.76, V8 15.2.124.19-electron.0. All ms wall unless named.
+
+The first chain (15:47-16:01, ../chain.log, ../gates/) counts for nothing: its px_jobs runs went through run_gates.sh,
+whose comma split broke --only (ValueError at once, rc 1), and the ladder r1 / r3 and probe r1 ran with the window
+behind (NOT COUNTED). Then the bringToFront lines, then this chain (run2/).
+Re-run here (../k1_rerun.sh): k1-m1-r3, k1-m1s-r2, k1-m2-r1, k1-m2-r2, k1-m4-r2 ended rc 2 = NOT COUNTED (the window
+not in front, nothing written to the jsonl); each counted on its first retry (16:21-16:25). Every kept run logged
+focused True, visible; every px_jobs run PASS; no route-not-taken row; no trap or out-of-memory renewal on any thread
+(only release renewals: the 150 MP flood jobs grow 644 MB, above releaseMB 256). Not an error: one "Failed to create
+memory dump" (app_k1-m2-r3.log).
+
+== M0 (versions.txt, v8_options.txt; the flag check ../v8_flag_accept.txt from the first chain, the same binary)
+V8 lists --wasm-tier-up, --wasm-dynamic-tiering, --wasm-lazy-compilation, --wasm-native-module-cache (all on by
+default), --wasm-sync-tier-up (off), --wasm-tiering-budget (13,000,000), --wasm-in-js-inlining-*. The check is weak:
+every flag gave rc 0, the control --no-such-flag-k1 too (it prints "bad option"); the boolean flags printed nothing
+(accepted), the int flags "illegal value" (no value passed). Facts for Stop 1 only.
+
+== M1: K0b-comparable rows, no --ab (the legacy kernels flip); 3 runs without --split (M1), 3 with (M1s)
+row          arm   M1 median (min-max)   M1s median (min-max)  M1s-M1 / spread  K0c 3 runs (min-max)  K0b 1 run
+mips_direct  js      536.5 (493-600)       562.8 (504-608)       +26 / 107       532 (531-572) *       524
+             rust    396.3 (382-397)       413.0 (344-424)       +17 / 80        409 (385-433) *       384
+mips_whole   js      583.1 (538-632)       634.7 (545-687)       +52 / 141       557 (484-687) *       583
+             rust    561.7 (503-616)       542.8 (536-584)       -19 / 113       505 (495-509) *       510
+band         js      151.7 (140-173)       180.0 (137-222)       +28 / 85        152 (148-164)         159
+             rust     29.2 (27-38)          29.7 (27-33)          +1 / 11         31 (30-43)            60
+wand_band    js     4652.5 (4569-5257)    4805.3 (4351-5425)    +153 / 1074     3,770 (3,742-4,094)   4,534
+             rust   2127.3 (2017-2564)    2090.3 (1888-2389)     -37 / 547      2,382 (1,919-2,684)   2,214
+wand_object  js      160.1 (131-169)       146.8 (124-152)       -13 / 38        152 (136-153)         154
+             rust    114.4 (109-117)       108.4 (100-135)        -6 / 35        127 (124-128)         173
+(* K0c's mips rows contaminated; K0c's px_jobs window was behind in every run, K0b's and K1b's in front)
+Verdict (ab_median, per set): rust in every row of both sets, beyond the spread except mips_whole (inside; rust by the
+kernel row, 534 vs 748 / 498 vs 806).
+Clean of contamination: the js column made no px call in any M1 / M1s row (K0c's JS rows counted clamp_extend 35,
+mip_chain 1,059). wand_object, K0b's loser (173 vs 154), wins the whole operation now: 114 vs 160, beyond 38.
+The split's cost: |M1s - M1| is inside the spread (the larger of the two sets' for that arm) in all 10 row / arm pairs
+(largest +153 against 1,074; Rust's largest +17 against 80): --split costs less than the spread, decision runs keep it.
+
+== M2: --ab mips=js:rust, --split; mips stays Rust
+row          twin median (min-max)  rust median (min-max)  diff / spread   kernel row twin / rust   verdict
+mips_direct  579.0 (441-626)        396.1 (336-411)        +183 / 184      402 / 222                rust (tie rule)
+mips_whole   641.2 (524-699)        575.2 (525-639)         +66 / 175      710 / 473                rust (tie rule)
+Both inside the spread (mips_direct by 1.5 ms), decided by the kernel row; the twin wins neither, and M1 gives rust
+too (beyond the spread on mips_direct). The split, Rust arm per run (it explains, it does not decide):
+  mips_direct, 19 jobs on 1 worker: job 179-250 (twin 295-417), mip_chain 85-136, copyIn 29-34 (590 MB, none shared),
+  copyOut 57-76 (205 MB); outside the jobs 149-177 in both arms; queue 1-2.
+  mips_whole, 18 jobs on 8 workers: job 453-508 (twin 556-1,001), mip_chain 217-293, copyIn 52-60 (579 MB, all
+  shared), copyOut 126-170 (196 MB); trip 529-625 (twin 659-1,358).
+  The window: twin arm no px call; Rust arm mip_chain 16 in mips_whole (the window chains the route flips).
+Rust's copies (copyIn + copyOut 87-225 ms per row) are as large as its kernel: margin left, not a loss.
+
+== M3: --ab flood=js:rust on one read route (Rust), --split
+row          twin median (min-max)  rust median (min-max)  diff / spread   kernel row twin / rust   verdict
+wand_band    2531.7 (2451-2538)     1899.9 (1895-1934)     +632 / 87       1,353 / 920              rust
+wand_object   125.5 (121-128)        131.4 (117-134)         -6 / 17       23.4 / 6.0               rust (tie rule)
+wand_add     2369.8 (2346-2580)     2037.5 (1987-2104)     +332 / 234      1,350 / 914              rust
+Rust arm: flood_shape 531-566 per row, copyIn 100-120 (587 MB, 576 shared), grew 644 MB, 3 release renewals per run.
+With M1: the legacy flip's wand_band gap of 2,525 (4,653 vs 2,127) is 632 from the flood route and about 1,900-2,100
+from the read route (inferred, across runs). wand_object: the flood jobs are 28 (Rust) vs 39 (twin) of a 125-131 wall
+(read 17-20, flood 4.2-4.4, bounds 4.2 / 0, shape 9.1 / 1.7); the rest is the window's. Rust's rounds swing 99-203.
+
+== M4: --ab flood=js:rust on flood_ladder (squares on a top layer), --split; box = the row's box job
+step  box MP   twin median (min-max)  rust median (min-max)  diff / spread   kernel twin / rust  verdict
+256     0.26    183.4 (128-189)        164.7 (142-171)        +19 / 61        15.7 / 5.7          rust (tie rule)
+512     0.59     63.0 (62-80)           61.5 (54-68)           +2 / 17        16.1 / 5.1          rust (tie rule)
+1024    1.64     87.8 (84-88)           69.4 (68-70)          +18 / 4         30.1 / 11.1         rust
+2048    5.31    157.0 (149-161)        125.9 (125-130)        +31 / 12        63.5 / 34.9         rust
+4096   18.94    439.7 (421-445)        360.5 (344-362)        +79 / 25        212.1 / 135.4       rust
+8192  150.00   2038.1 (1982-2062)     1631.0 (1617-1665)     +407 / 81      1,028 / 745         rust
+Rust at every step from 256 (0.26 MP): ab_median "rust at every step from 256: no flood entry". Beyond the spread from
+1024 (1.64 MP) up; 256 and 512 by the tie rule with the faster kernel row.
+
+== M5: pxprobe --cold, three rotations; flood_shape 2048^2, call 0 / the median of the warm calls
+               r1 (ABC)              r2 (BCA)              r3 (CAB)
+window W0      38.9 / 23.0  1.70x    38.5 / 23.8  1.62x    54.1 / 26.9  2.01x
+A thread       24.4 / 23.0  1.06x    24.1 / 26.0  0.93x    24.3 / 24.0  1.01x
+B posted       24.0 / 23.9  1.00x    24.5 / 23.4  1.05x    24.5 / 24.3  1.01x
+C bytes        38.9 / 24.6  1.58x    38.2 / 23.2  1.64x    38.9 / 24.0  1.62x
+Verdict, the table's first row: A0 ~ B0 ~ warm, C0 cold (+14-15 ms) in all three rotations: V8 shares the compiled
+code across isolates for the same module; a worker's own compile of the URL is as warm as a posted Module. Posting a
+module saves only compile (0.3-0.4 ms); no warm-up needed. The window's call 0 (+15-27) is the process's one cold call.
+mip_chain (256^2, 0.1-0.4 ms a call, below the about 1 ms where per-export ms are trustworthy, design §5) scatters
+(A 3.94 / 1.80 / 3.85x, B 1.94 / 3.68 / 2.00x, C 3.61 / 3.95 / 3.79x), at most 0.3 ms absolute: it decides nothing.
+A new worker's first reply comes 99-105 ms after it is created (A, B), 114-121 ms (C).
+M6 not run: M5 shows sharing, and no felt row's round 0 shows a cold call (`first` flood_shape: the ladder's 3.0-3.8
+against 2.0-2.9 warm; wand_band's 517-540 in M3 is its whole kernel, 531-566).
+
+== M7a: re-growth (pxprobe --regrow): flood_shape on a fresh instance against the grown one, 5 pairs per size
+  MB   fresh median [min-max]   grown median [min-max]   penalty
+  16     18.5 [18.0-19.4]         17.1 [17.0-17.3]          1.4
+  32     37.7 [36.9-38.3]         34.7 [34.0-37.9]          3.0
+  64     74.1 [72.9-75.3]         68.3 [67.8-74.9]          5.9
+  69     79.8 [78.0-84.2]         73.8 [73.2-74.4]          6.0   the liquify window's size (design §5)
+ 128    145.5 [144.2-146.3]      136.4 [135.2-142.6]        9.1
+About 0.07 ms per MB (inferred, linear in these five).
+== M7b: retention 3 s after a stubbed 15k PNG export (824-1,065 ms), per keepMB (releaseMB 256)
+keepMB 16, 32:       the 8 pool workers (34.1 / 37.1 MB after the export) trimmed at idle to 1.1 MB each (sync);
+                     sum 288.2 MB after the export, 11.7 MB at +3 s.
+keepMB 64, 128, 256: nothing trimmed, 288.2 MB kept. The window 2.1 MB and the editor worker 1.1 MB in every case.
+
+== M8: the window's release (the pxjobs gate's check runs, gates/gates/k1-m8, PASS in 152 s)
+window release: sync in 3 of 3 (grown 302 / 353 / 302 MB, the new instance 1.1 MB, the twin's bytes): Electron 44
+drops the window's grown instance synchronously; K27 and K39 can rely on it (the async branch stays as the fallback).
+All 44 check rows: same bytes on both arms (2048x1152 and 15000x10000).
+
+== The defaults (design §3 "Thresholds"; questions 2 and 3 taken with their suggested answers, no answer from the user)
+flood   none, Rust everywhere: M4 is rust at every step from 256 (box 0.26 MP) to the whole picture, and "Rust
+        winning everywhere means no entry". Question 3 (inside the spread with a slower kernel row: the twin) never
+        applies: at 256 and 512, the two steps inside the spread, Rust's kernel row is the faster. M3 agrees.
+mips    none, Rust stays: "js" only if M2's verdict is the twin; M2 gives rust on both rows (M1 / M1s too).
+keepMB  16: the smallest of 16 / 32 / 64 / 128 whose re-grow penalty is beyond the wand_object row's spread, capped
+        at 64 MB (question 2); none is beyond (the largest, 9.1 at 128 MB, against 16.5 in M3, 35.1 in M1s, 38.3 in
+        M1), so "the smallest value inside the budget": 16. Kept after a 15k export: 11.7 MB instead of 288 MB.
+        Only M1's Rust arm taken alone (7.4) lies below the 128 MB penalty; 128 is above the cap, 16-69 MB below 7.4.
+Sync / async: sync (M8). M5: the first row (shared code). So kernels.js gets no route entry from K1b; keepMB 256 -> 16.
+
+== For Stop 1
+- No route loses as a whole operation: every A/B of K1b goes to Rust (M1-M4), so kernels.js routes nothing to the
+  twins. K1's open loser, wand_object, is a Rust win with the read route (M1 114 vs 160, beyond 38) and a tie on the
+  flood route alone (M3 131 vs 126, inside 17), kept Rust by the kernel row; 70-80 % of its wall is outside the
+  flood jobs.
+- The only part where Rust is slower: the coarse pass's flood on the 2.8 MP map when the region is small (wand_object,
+  ladder 256-2048: Rust 2.0-3.1 vs twin 0.2-2.3 ms per job); Rust's bounds (0) and shape more than make up for it.
+- Cold calls: shared across isolates (M5 row 1); posting the window's Module saves only its 0.3-0.4 ms compile; no
+  warm-up op and no js-flags needed (M6 not run, M0's flags stay facts). The one cold call per process (+15-27 ms on
+  a 2048^2 flood_shape) lands on whichever thread runs the code first (inferred), the window here. A new worker
+  answers after about 100 ms.
+- Where Rust's time goes beyond the kernel: copies. mips_whole copyOut 126-170 + copyIn 52-60 against mip_chain
+  217-293; wand_band copyIn 100-120 (587 MB) and a 644 MB grow released after each job (above releaseMB 256).
+- The wand across the picture is half outside the flood jobs (Rust 1,900 wall vs 928 in jobs; twin 2,532 vs 1,385);
+  the legacy flip's read route costs about 1,900-2,100 more than Rust's (M1 against M3).
+- keepMB 16 trims the liquify window (~69 MB) after the 2 s idle: the next dab pays about 6 ms (inferred from M7a's
+  69 MB row on a worker; the window's own re-growth was not measured).
+- M9 next, once the default lands: M3 and M4 without --ab (3 runs each) and mem:15000x10000 once; native_test's wand
+  rows are not needed (no flood default landed).

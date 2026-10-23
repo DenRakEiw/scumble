@@ -2,6 +2,10 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
+## Unreleased
+
+- **The pixel kernels hold less memory and recover on their own.** After an operation, a worker that grew past 16 MB returns to its starting size within a few seconds (after a 15000 x 10000 export the workers keep about 12 MB instead of about 290 MB), and a kernel that fails is replaced and the job finishes the slower way instead of failing.
+
 ## 0.1.50 - 2026-10-22
 
 - **MOSS-Image on your own ComfyUI.** A local recipe for OpenMOSS's open MOSS-Image model (ComfyUI 0.42 or newer runs it on its own nodes; the weights are Apache-2.0): it makes new pictures with *Generate new*, and with the Boxes switch on your New and Text boxes go as its JSON layout, each box placed in the picture's pixels and a Text box's words rendered there (issue #6). It takes no picture to edit, so *Generate* on a selection says to use *Generate new*.
