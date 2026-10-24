@@ -15,6 +15,16 @@ Nothing at the moment (0.1.50's and 0.1.51's fixes went out with them; `CHANGELO
 
 ## Open
 
+### The helper downloader sends the Hugging Face token to every URL and checks only the size (found 2026-10-24, read, item 49's plan)
+
+`electron/main/onnx/models.js` `_file` (`:297-299` at `ec1142b`) puts `authorization: Bearer <token>` on every
+download request, whatever the URL's host. Today every registry URL is on `huggingface.co`, so the token goes nowhere
+else (and undici drops `Authorization` on a cross-origin redirect, so HF's storage redirects do not get it either); a
+model hosted anywhere else (GitHub release assets, Google Cloud Storage) would receive the user's Hugging Face token. The
+same function compares only the file size (`:328`), no hash. Not reachable today; to fix before the first non-HF URL
+goes into the registry: the token only to `huggingface.co` hosts, a sha256 per file. Planned as session I2 of
+`docs/PLAN_CORRIDORKEY.md`.
+
 ### The `depth` gate runs a test that does not exist (found 2026-10-23, read, K0c)
 
 `tools/run_gates.sh` has no rule of its own for `depth`, so its default branch runs `python tools/depth_test.py`,
