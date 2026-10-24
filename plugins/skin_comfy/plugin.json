@@ -7,7 +7,7 @@
   "skin": {
     "css": "skin.css",
     "background": "#1d1a25",
-    "swatch": ["#1d1a25", "#29252f", "#3a3542", "#f2ff59", "#5b45b5"],
+    "swatch": ["#1d1a25", "#26222f", "#3a3640", "#f2ff59", "#5a3fa0"],
     "tokens": 1
   }
 }
