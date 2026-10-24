@@ -227,7 +227,9 @@ code.
   no node build (no shipped editor file changed). **Open:** the Store update: `dist/Scumble-0.1.51.msix` with
   `dist/store-listing/whats-new-0.1.51.txt` (written for everything since 0.1.47, the Store's live version; 0.1.48 to
   0.1.50 were never submitted), the user's upload. `main` merged into `wasm-kernels` the same day (`saveExport` keeps
-  K0a's marks: start, pieces, written). **Next: #0 M9 + the second open, then D0.**
+  K0a's marks: start, pieces, written). **Next: #0 M9 + the second open, then D0.** **Beside it (2026-10-24): CorridorKey 2.0 planned** (item 49,
+  `docs/PLAN_CORRIDORKEY.md`), waiting for the user's answers to its §6 (branch and release, route order, pack A on the
+  production ComfyUI, keying the base).
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
@@ -680,6 +682,21 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   asks Corridor in their help Discord (a forum post drafted 2026-10-24 with three questions: a native integration, the
   ComfyUI route, v2 on stills). For the next update; about 1-2 sessions plus a live run on the user's ComfyUI (the
   node pack's install on the user's word).
+  **Corridor's answer (2026-10-24, Neex in their help Discord, pasted by the user):** as long as the software is free,
+  it may implement CK2.0 (and 1.0) however it likes; a commercial version later needs an agreement with them first.
+  Stills work well on CK2.0, and the alpha hint works in real time (instant results while painting a hint). So the
+  "never in the app" above is lifted for the free app (GitHub and Store); a sale means asking Corridor first (beside the
+  lawyer check). The user: "können es integrieren ^^ aber dann v2". The verbatim message goes into the plan
+  (`docs/PLAN_CORRIDORKEY.md`). A thank-you reply drafted for the user the same day, with four short questions
+  (GPL-3.0 for our glue, hosting an ONNX conversion, the credit, what the real-time hint runs in).
+  **Planned 2026-10-24: `docs/PLAN_CORRIDORKEY.md`** (research of five readers in `docs/research/ck2_2026-10-24/`, three
+  designs, two critics). Corrections to the above: v2 is its own repo `nikopueringer/CorridorKey2.0`, public since
+  2026-10-13; its "RVM" is DeepMind's Recurrent Video MAE, not Robust Video Matting; 5.08 GB in all (CK2 2.66 GB,
+  C-RADIOv4 1.72, MoGe-2 ViT-B 0.42, RVM 0.27), CUDA bf16 only, native resolution; the hint enters at the first layer
+  and no public code has a live hint; v1 rests on CC BY-NC Hiera weights (out). Exactly two ComfyUI packs run v2
+  (marawan206, hashu786, days old), Comfy Cloud has none. The plan: phase 1 the user's ComfyUI with pack A through a
+  helper prompt of Scumble's own (C0 probe, C1-C5, optional C6-C8), a new layer with the unmixed colour and the matte
+  as its layer mask; phase 2 in-app on ONNX only after a measured spike (P2-S0) and Corridor's written answers.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
