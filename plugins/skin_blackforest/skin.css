@@ -1,0 +1,99 @@
+/* Black Forest - forest-night greens, warm cream type, a sage accent and calm rounded panels with a faint
+   brushed texture on the top bar. A built-in skin (docs/SKINS.md): no logo, wordmark, font or picture of anyone
+   else; the fonts are system fonts and every decoration is CSS of our own. The tokens below are the stable part,
+   the free CSS after them reads the app's ids and classes. The assistant's questions keep their default look,
+   as in every skin. */
+
+:root {
+  --sc-bg: #0b1411;
+  --sc-chrome: #0f1a16;
+  --sc-chrome-edge: #050a08;
+  --sc-surface: #111d19;
+  --sc-raised: #1a2823;
+  --sc-selected: #22342d;
+  --sc-well: #09110e;
+  --sc-field: #08100d;
+  --sc-btn: #1a2823;
+  --sc-btn-hover: #24362f;
+  --sc-border: #2f433b;
+  --sc-line: #1f2e28;
+  --sc-fg-strong: #f6f1e6;
+  --sc-fg: #e9e3d6;
+  --sc-fg-2: #bdc3b9;
+  --sc-muted: #8f9a92;
+  --sc-faint: #6f7b73;
+  --sc-accent: #efe9dc;
+  --sc-active: #7fa58f;
+  --sc-active-bg: #efe9dc;
+  --sc-on-active: #0b1411;
+  --sc-go: #efe9dc;
+  --sc-warn: #e2c27a;
+  --sc-ok: #93c9a2;
+  --sc-error: #ef7b66;
+  --sc-error-bg: #33191a;
+  --sc-link: #a9cdb8;
+  --sc-backdrop: rgba(3, 8, 6, 0.62);
+  --sc-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  --sc-scheme: dark;
+  --sc-control: #7fa58f;
+  --sc-scrollbar: #2f433b #0b1411;
+  --sc-font: "Segoe UI Variable Display", "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --sc-font-mono: ui-monospace, Consolas, "DejaVu Sans Mono", monospace;
+  --sc-radius-sm: 8px;
+  --sc-radius: 10px;
+  --sc-radius-lg: 16px;
+}
+
+/* ---- 1. the top bar: deep green with a faint sage brush texture, the name in cream ------------------------- */
+#shell-bar {
+  background:
+    repeating-linear-gradient(112deg, rgba(127, 165, 143, 0.09) 0 2px, transparent 2px 9px),
+    repeating-linear-gradient(68deg, rgba(127, 165, 143, 0.06) 0 1px, transparent 1px 13px),
+    radial-gradient(120% 220% at 70% 0%, rgba(93, 122, 108, 0.35), transparent 60%),
+    #12201b;
+  border-bottom: 1px solid #22342d;
+}
+#shell-logo { color: #f6f1e6; font-weight: 600; letter-spacing: -0.01em; }
+#shell-bar .dot.connected { background: #93c9a2; }
+
+/* ---- 2. buttons: quiet rounded slabs; the primary ones filled cream with dark type -------------------------- */
+#gen-go, #up-go, .ipc-ib.ipc-primary {
+  background: #efe9dc;
+  border-color: #efe9dc;
+  color: #0b1411;
+  font-weight: 600;
+}
+#gen-go:hover:not(:disabled), #up-go:hover:not(:disabled), .ipc-ib.ipc-primary:hover:not(:disabled) { background: #ffffff; border-color: #ffffff; }
+.ipc-ib.ipc-active { border-color: #efe9dc; }
+
+/* ---- 3. dialogs and panels: soft corners, a thin green frame, tight headings -------------------------------- */
+#shell-settings, #gen-dialog, #up-dialog, #log-dialog, .ipc-modal { border: 1px solid #22342d; border-radius: 16px; }
+#shell-settings h2, #gen-dialog h2, #up-dialog h2, #log-dialog h2 { letter-spacing: -0.015em; font-weight: 600; }
+.ipc-tools .ipc-ib { border-radius: 10px; }
+.shell-tab { border-radius: 10px 10px 0 0; margin-top: 3px; }
+.ipc-layer.ipc-selected { box-shadow: inset 3px 0 0 #7fa58f; }
+
+/* ---- 4. the side panel's tabs in sentence case with a cream line under the open one --------------------------- */
+.ipc-tab { text-transform: none; font-size: 12px; font-weight: 600; letter-spacing: 0; }
+.ipc-tab.ipc-active { border-bottom-color: #efe9dc; }
+
+/* ---- 5. fields light up sage on focus -------------------------------------------------------------------------- */
+.shell-field select:focus, .shell-field input:focus, .shell-provider input:focus, #shell-settings select:focus,
+#gen-dialog select:focus, #gen-dialog textarea:focus, #up-dialog select:focus, #up-dialog textarea:focus,
+#log-dialog .log-bar input:focus, .as-head select:focus, .as-free input:focus, .as-foot textarea:focus,
+.hp-search:focus, select.hp-model:focus, .hp-text:focus, .ipc-num:focus, .ipc-sel:focus,
+.ipc-sec .ipc-seg input[type=text]:focus, .ipc-askbox .ipc-askinput:focus, .ipc-askfield input:focus,
+.ipc-text textarea:focus, .ipc-prompt textarea:focus {
+  border-color: #7fa58f;
+  box-shadow: 0 0 0 2px rgba(127, 165, 143, 0.18);
+}
+
+/* ---- 6. chat bubbles as cream cards for what you wrote, dark ones for the answers ----------------------------- */
+.as-bubble, .hp-bubble { border: 1px solid #22342d; border-radius: 14px; }
+
+/* ---- 7. selection and keyboard focus ---------------------------------------------------------------------------- */
+::selection { background: #7fa58f; color: #0b1411; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 2px solid #7fa58f;
+  outline-offset: 2px;
+}

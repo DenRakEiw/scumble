@@ -1,0 +1,128 @@
+/* Comfy - a deep aubergine night with neon-yellow pills, node cards with yellow sockets and a violet band on the
+   top bar. A built-in skin (docs/SKINS.md; the name on the user's word, 2026-10-24, section 10's exception): the
+   colours and shapes only, no logo, wordmark, font or picture of anyone else; the fonts are system fonts and every
+   decoration is CSS of our own. The tokens below are the stable part, the free CSS after them reads the app's ids
+   and classes. The assistant's questions keep their default look, as in every skin. */
+
+:root {
+  --sc-bg: #1d1a25;
+  --sc-chrome: #221e2b;
+  --sc-chrome-edge: #0f0d14;
+  --sc-surface: #25212e;
+  --sc-raised: #2f2a39;
+  --sc-selected: #3b3452;
+  --sc-well: #18151f;
+  --sc-field: #15121b;
+  --sc-btn: #2f2a39;
+  --sc-btn-hover: #3d3749;
+  --sc-border: #4a4356;
+  --sc-line: #352f40;
+  --sc-fg-strong: #ffffff;
+  --sc-fg: #ece9f2;
+  --sc-fg-2: #c4bfcf;
+  --sc-muted: #9a93a8;
+  --sc-faint: #7d768b;
+  --sc-accent: #f2ff59;
+  --sc-active: #f2ff59;
+  --sc-active-bg: #f2ff59;
+  --sc-on-active: #17141e;
+  --sc-go: #f2ff59;
+  --sc-warn: #ffc95c;
+  --sc-ok: #8ff0a4;
+  --sc-error: #ff6b86;
+  --sc-error-bg: #3e1d29;
+  --sc-link: #c3b4ff;
+  --sc-backdrop: rgba(10, 8, 16, 0.62);
+  --sc-shadow: 0 14px 36px rgba(6, 4, 12, 0.6);
+  --sc-scheme: dark;
+  --sc-control: #f2ff59;
+  --sc-scrollbar: #4a4356 #1d1a25;
+  --sc-font: "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --sc-font-mono: ui-monospace, Consolas, "DejaVu Sans Mono", monospace;
+  --sc-radius-sm: 10px;
+  --sc-radius: 10px;
+  --sc-radius-lg: 18px;
+}
+
+/* ---- 1. the top bar: a violet band along its top edge, the name in bold yellow italics ---------------------- */
+#shell-bar { background: linear-gradient(180deg, #4a37a0 0 3px, #221e2b 3px); }
+#shell-logo { color: #f2ff59; font-weight: 800; font-style: italic; letter-spacing: 0.01em; }
+#shell-bar .dot.connected { background: #f2ff59; box-shadow: 0 0 6px rgba(242, 255, 89, 0.7); }
+
+/* ---- 2. pills: every button a capsule, the primary ones filled yellow with dark capitals ---------------------- */
+#shell-bar button, #shell-settings button, #gen-dialog button, #up-dialog button, #log-dialog button,
+.as-head button:not(.as-chat-open):not(.as-chat-del), .as-foot button, #help button:not(.hp-link):not(.hp-read),
+.ipc-top .ipc-ib, .ipc-subbar .ipc-ib, .ipc-sec .ipc-ib, .ipc-modal .ipc-ib, .ipc-askbox .ipc-ib {
+  border-radius: 999px;
+}
+#gen-go, #up-go, .ipc-ib.ipc-primary {
+  background: #f2ff59;
+  border-color: #f2ff59;
+  color: #17141e;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-radius: 999px;
+}
+#gen-go:hover:not(:disabled), #up-go:hover:not(:disabled), .ipc-ib.ipc-primary:hover:not(:disabled) {
+  background: #f8ff9a;
+  box-shadow: 0 0 0 3px rgba(242, 255, 89, 0.18);
+}
+/* the outlined pill of a toggled tool or an open mode: the face stays yellow, the text dark */
+.ipc-ib.ipc-active { box-shadow: 0 0 10px rgba(242, 255, 89, 0.28); }
+
+/* ---- 3. node cards: dialogs and the side panel's sections as rounded cards with a yellow socket ---------------- */
+#shell-settings, #gen-dialog, #up-dialog, #log-dialog, .ipc-modal {
+  border: 1px solid #3a3443;
+  border-radius: 18px;
+  box-shadow: 0 18px 46px rgba(6, 4, 12, 0.65);
+}
+.ipc-tools { background: #1f1b27; }
+.ipc-tools .ipc-ib { border-radius: 12px; }
+.ipc-side { background: #1f1b27; }
+.ipc-sec { position: relative; background: #26222f; border: 1px solid #332d3d; border-radius: 14px; margin: 6px 8px 6px 10px; }
+/* a socket on the card's left edge, half outside it, as a node's input: it never covers what the card holds */
+.ipc-sec::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f2ff59;
+  box-shadow: 0 0 6px rgba(242, 255, 89, 0.55);
+  pointer-events: none;
+}
+/* a section inside a section is part of its card: no card in a card, one socket */
+.ipc-sec .ipc-sec { background: transparent; border: none; margin: 0; }
+.ipc-sec .ipc-sec::after { display: none; }
+
+/* ---- 4. small capitals for tabs and section names, the selected layer outlined in yellow -------------------- */
+.ipc-tab { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+/* a document tab keeps its file name as written */
+.shell-tab { font-weight: 600; border-radius: 12px 12px 0 0; margin-top: 3px; }
+#shell-settings h2, #gen-dialog h2, #up-dialog h2, #log-dialog h2 { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 800; }
+.ipc-layer.ipc-selected { box-shadow: inset 3px 0 0 #f2ff59; }
+.ipc-layer { border-radius: 8px; }
+
+/* ---- 5. fields: deep wells that light up yellow on focus ---------------------------------------------------- */
+.shell-field select:focus, .shell-field input:focus, .shell-provider input:focus, #shell-settings select:focus,
+#gen-dialog select:focus, #gen-dialog textarea:focus, #up-dialog select:focus, #up-dialog textarea:focus,
+#log-dialog .log-bar input:focus, .as-head select:focus, .as-free input:focus, .as-foot textarea:focus,
+.hp-search:focus, select.hp-model:focus, .hp-text:focus, .ipc-num:focus, .ipc-sel:focus,
+.ipc-sec .ipc-seg input[type=text]:focus, .ipc-askbox .ipc-askinput:focus, .ipc-askfield input:focus,
+.ipc-text textarea:focus, .ipc-prompt textarea:focus {
+  border-color: #f2ff59;
+  box-shadow: 0 0 0 2px rgba(242, 255, 89, 0.16);
+}
+
+/* ---- 6. chat bubbles as small node cards ---------------------------------------------------------------------- */
+.as-bubble, .hp-bubble { border: 1px solid #3a3443; border-radius: 14px; }
+
+/* ---- 7. selection and keyboard focus -------------------------------------------------------------------------- */
+::selection { background: #f2ff59; color: #17141e; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 2px solid #f2ff59;
+  outline-offset: 2px;
+}

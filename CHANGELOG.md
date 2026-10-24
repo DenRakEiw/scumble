@@ -5,6 +5,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 ## 0.1.51 - 2026-10-24
 
 - **Large exports save again.** Saving an export of more than about 500 MB (a PSD of a 15,000 x 10,000 picture with a layer above it is about 0.9 GB, and a large ORA or TIFF can pass it too) ended Scumble's window: it reloaded and brought the documents back from the autosave, but the file was never written. An export now goes to the disk in pieces, whatever its size.
+- **Two new skins** under *Settings › Appearance* (and *View › Skin*): **Comfy**, a deep aubergine night with neon-yellow pills, the side panel's sections as node cards with a yellow socket, and **Black Forest**, forest-night greens with warm cream type, sage accents and calm rounded panels.
 - An export is written to a temporary file beside the target and put in its place only once every byte is written, as a `.scumble` document is: a save that fails, or a disk that is too full for it (now said before anything is written), leaves an older file of the same name as it was. When another program holds that file open (a viewer), or the file has other names (a hard link), the export is written into it as before; a symbolic link keeps pointing at the new picture. A read-only target is refused before the export is written.
 
 ## 0.1.50 - 2026-10-22
