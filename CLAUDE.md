@@ -223,7 +223,7 @@ code.
   published 2026-10-24T01:44:48Z, title "Scumble 0.1.51: large exports save again, and two new skins", the eight
   assets checked (the zip's layout, the `.mcpb` 0.1.51 with 116 tools, `latest.yml`; the zip's start test skipped);
   the post `v0-1-51` live with the manual sync and hub 0.1.51 (`Portfolio_vercel` `9bd0a3d`, Vercel success);
-  `server.json` 0.1.51 committed (`2d9a353`), the MCP Registry publish waited on the user's device code (see below);
+  `server.json` 0.1.51 committed (`2d9a353`) and published to the MCP Registry (the user's second device code; 0.1.51 latest);
   no node build (no shipped editor file changed). **Open:** the Store update: `dist/Scumble-0.1.51.msix` with
   `dist/store-listing/whats-new-0.1.51.txt` (written for everything since 0.1.47, the Store's live version; 0.1.48 to
   0.1.50 were never submitted), the user's upload. `main` merged into `wasm-kernels` the same day (`saveExport` keeps
