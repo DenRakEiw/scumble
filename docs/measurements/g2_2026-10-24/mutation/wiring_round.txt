@@ -1,0 +1,20 @@
+one_message      RED  [FAIL] a_600_mb_export_is_saved_in_pieces: JS exception: TypeError: Cannot read properties of undefined (reading 'commands') | [FAIL] a_cancelled_save_leaves_the_target_and_no_temporary_file: JS exception: TypeError: Cannot read propertie
+piece_bounds     RED  [FAIL] a_600_mb_export_is_saved_in_pieces: JS exception: Error: Error invoking remote method 'file:saveWrite': Error: a piece of the file came at byte 67108864, not at 67108863
+no_finish        RED  [FAIL] a_600_mb_export_is_saved_in_pieces: size 13, not 629157945; answer {"saved": {"path": "<home>\\AppData\\Local\\Temp\\scumble-export-saves-ffo1tu77\\big.psd", "bytes": 629157945}, " | [FAIL] a_cancelled_save_leaves_the_
+reload_drop      RED  [FAIL] a_reload_drops_the_open_save: left ['big.psd.saving-58036-3']; target 992 bytes
+reload_gate      survived  
+abort_ipc        RED  [FAIL] a_cancelled_save_leaves_the_target_and_no_temporary_file: answer {"aborted": true, "after": null}; left ['big.psd.saving-49596-2']; target 992 bytes | [FAIL] a_reload_drops_the_open_save: the open save's temporary file is not there
+abort_preload    RED  [FAIL] a_cancelled_save_leaves_the_target_and_no_temporary_file: answer {"aborted": true, "after": null}; left ['big.psd.saving-3624-2']; target 992 bytes | [FAIL] a_reload_drops_the_open_save: the open save's temporary file is not there:
+SOME SURVIVED
+2,3c2,3
+<  docs/BUGS.md             |  14 ++
+<  docs/TESTING.md          |  12 ++
+---
+>  docs/BUGS.md             |  11 +
+>  docs/TESTING.md          |   7 +
+10c10
+<  9 files changed, 828 insertions(+), 32 deletions(-)
+---
+>  9 files changed, 820 insertions(+), 32 deletions(-)
+
+[exited with code 1]

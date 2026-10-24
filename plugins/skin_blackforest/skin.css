@@ -1,0 +1,189 @@
+/* Black Forest - forest-night greens, warm cream type, a sage accent and calm, editorial panels: small bold labels in
+   sentence case, monospaced captions for the meta lines, cream cards for what you wrote and a faint brushed sage
+   texture on the top bar and the dialogs' heads. A built-in skin (docs/SKINS.md): no logo, wordmark, font or picture
+   of anyone else; the fonts are system fonts and every decoration is CSS of our own. The tokens below are the stable
+   part, the free CSS after them reads the app's ids and classes. The assistant's questions keep their default look,
+   as in every skin. */
+
+:root {
+  --sc-bg: #0b1411;
+  --sc-chrome: #0f1a16;
+  --sc-chrome-edge: #050a08;
+  --sc-surface: #111d19;
+  --sc-raised: #1a2823;
+  --sc-selected: #22342d;
+  --sc-well: #09110e;
+  --sc-field: #08100d;
+  --sc-btn: #1a2823;
+  --sc-btn-hover: #24362f;
+  --sc-border: #2f433b;
+  --sc-line: #1f2e28;
+  --sc-fg-strong: #f6f1e6;
+  --sc-fg: #e9e3d6;
+  --sc-fg-2: #bdc3b9;
+  --sc-muted: #8f9a92;
+  --sc-faint: #7b877f;
+  --sc-accent: #efe9dc;
+  --sc-active: #7fa58f;
+  --sc-active-bg: #efe9dc;
+  --sc-on-active: #0b1411;
+  --sc-go: #efe9dc;
+  --sc-warn: #e2c27a;
+  --sc-ok: #93c9a2;
+  --sc-error: #ef7b66;
+  --sc-error-bg: #33191a;
+  --sc-link: #a9cdb8;
+  --sc-backdrop: rgba(3, 8, 6, 0.62);
+  --sc-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  --sc-scheme: dark;
+  --sc-control: #7fa58f;
+  --sc-scrollbar: #2f433b #0b1411;
+  --sc-font: "Segoe UI Variable Display", "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --sc-font-mono: ui-monospace, Consolas, "DejaVu Sans Mono", monospace;
+  --sc-radius-sm: 8px;
+  --sc-radius: 10px;
+  --sc-radius-lg: 16px;
+}
+
+/* ---- 1. the top bars (the window's, the ComfyUI window's): a faint sage brush texture, the name in cream ------- */
+#shell-bar, #cb-bar {
+  background:
+    repeating-linear-gradient(101deg, rgba(239, 233, 220, 0.035) 0 1px, transparent 1px 6px, rgba(127, 165, 143, 0.07) 6px 8px, transparent 8px 19px),
+    repeating-linear-gradient(97deg, rgba(5, 10, 8, 0.22) 0 3px, transparent 3px 27px),
+    radial-gradient(45% 260% at 18% 100%, rgba(93, 122, 108, 0.22), transparent 70%),
+    radial-gradient(70% 260% at 78% 0%, rgba(93, 122, 108, 0.38), transparent 65%),
+    #12201b;
+  border-bottom: 1px solid #22342d;
+}
+#shell-logo { color: #f6f1e6; font-weight: 600; letter-spacing: -0.01em; }
+#shell-bar .dot.connected { background: #93c9a2; }
+#shell-bar button, #cb-bar button { border-radius: 12px; }
+/* the open document: the bar's green with a thin sage line, not a bright frame; the plus in the interface font */
+.shell-tab { border-radius: 8px 8px 0 0; margin-top: 3px; border-right-color: transparent; }
+.shell-tab.active { box-shadow: inset 0 2px 0 #7fa58f; }
+#shell-tab-add { font-family: inherit; border-right-color: transparent; }
+
+/* ---- 2. buttons: quiet rounded slabs; the primary ones filled cream with dark type ----------------------------- */
+#gen-go, #up-go, .ipc-ib.ipc-primary {
+  background: #efe9dc;
+  border-color: #efe9dc;
+  color: #0b1411;
+  font-weight: 600;
+}
+#gen-go:hover:not(:disabled), #up-go:hover:not(:disabled), .ipc-ib.ipc-primary:hover:not(:disabled) { background: #ffffff; border-color: #ffffff; }
+.ipc-ib.ipc-active { border-color: #efe9dc; }
+/* the depth panel's "From layer..." is left to the browser by the editor: the same slab as its neighbours */
+.ipc-depth-from-layer-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px; cursor: pointer;
+  background: #1a2823; color: #e9e3d6; border: 1px solid #2f433b; border-radius: 10px; font: 12px var(--sc-font);
+}
+.ipc-depth-from-layer-btn:hover { background: #24362f; color: #f6f1e6; }
+
+/* ---- 3. tools and the options bar: plain icons, a green pill under the pointer, the chosen tool in cream ------- */
+.ipc-tools .ipc-ib { border-radius: 10px; background: transparent; border-color: transparent; }
+.ipc-tools .ipc-ib:hover, .ipc-tools .ipc-ib:active { background: #1e2d27; border-color: #1e2d27; color: #f6f1e6; }
+.ipc-tools .ipc-ib.ipc-toggle-on { background: #22342d; border-color: #2f433b; color: #efe9dc; }
+.ipc-tools .ipc-ib.ipc-active, .ipc-tools .ipc-ib.ipc-active:hover { background: #efe9dc; border-color: #efe9dc; color: #0b1411; }
+.ipc-tools .ipc-ib.ipc-active .ipc-tri { border-bottom-color: #0b1411; }
+.ipc-tools .ipc-grp { text-transform: none; letter-spacing: 0; font-size: 10px; font-weight: 600; color: #8f9a92; }
+/* the floating options bar keeps to one calm row: a long hint ends in an ellipsis instead of a tall column */
+.ipc-subbar { border-color: #22342d; }
+.ipc-subbar .ipc-hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* ---- 4. flyouts and context menus: plain rows like a sidebar, the row under the pointer on a green pill -------- */
+.ipc-flyout { padding: 6px; gap: 1px; border-color: #22342d; }
+.ipc-flyout .ipc-ib { background: transparent; border-color: transparent; border-radius: 8px; }
+.ipc-flyout .ipc-ib:hover { background: #263a32; border-color: #263a32; color: #f6f1e6; }
+.ipc-flyout .ipc-ib.ipc-active { background: #22342d; border-color: #22342d; color: #f6f1e6; box-shadow: inset 3px 0 0 #7fa58f; }
+.ipc-flyout .ipc-ib:disabled, .ipc-flyout .ipc-ib:disabled:hover { background: transparent; border-color: transparent; color: #e9e3d6; }
+.ipc-flyout .ipc-sep { background: #1f2e28; margin: 4px 6px; }
+.ipc-choices-group, .ipc-tippop .ipc-tp-label, .ipc-refpop .ipc-rp-head { text-transform: none; letter-spacing: 0; font-size: 11px; font-weight: 600; }
+
+/* ---- 5. dialogs and panels: soft corners, a thin green frame, a brushed sage head with the title in cream ------ */
+#shell-settings, #gen-dialog, #up-dialog, #log-dialog { border: 1px solid #22342d; border-radius: 16px; }
+#shell-settings h2, #gen-dialog h2, #up-dialog h2, #log-dialog h2 {
+  margin: -16px -20px 4px;
+  padding: 18px 20px 14px;
+  font-size: 17px; font-weight: 600; letter-spacing: -0.015em; color: #f6f1e6;
+  background:
+    repeating-linear-gradient(101deg, rgba(239, 233, 220, 0.04) 0 1px, transparent 1px 6px, rgba(127, 165, 143, 0.09) 6px 8px, transparent 8px 19px),
+    repeating-linear-gradient(97deg, rgba(5, 10, 8, 0.2) 0 3px, transparent 3px 27px),
+    radial-gradient(40% 160% at 30% 110%, rgba(93, 122, 108, 0.3), transparent 70%),
+    radial-gradient(70% 190% at 88% 0%, rgba(93, 122, 108, 0.6), transparent 64%),
+    linear-gradient(90deg, #13221c, #1a2a24);
+  border-bottom: 1px solid #22342d;
+}
+#log-dialog h2 { margin: -14px -18px 0; padding: 16px 18px 12px; }
+#shell-settings h2 + section { border-top-color: transparent; padding-top: 2px; }
+.ipc-askbox { border-color: #22342d; }
+.ipc-askbox .ipc-asktitle { color: #f6f1e6; letter-spacing: -0.01em; }
+/* the app's own questions read only the tokens; dim the window behind them as behind every other dialog */
+dialog.sc-dialog::backdrop { background: rgba(3, 8, 6, 0.45); }
+
+/* ---- 6. labels in sentence case: the side panel's tabs and section heads, Settings' sections, Help's groups ---- */
+.ipc-tab { text-transform: none; font-size: 12px; font-weight: 600; letter-spacing: 0; }
+.ipc-tab.ipc-active { border-bottom-color: #efe9dc; }
+.ipc-side h4, .ipc-side summary {
+  text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600; color: #e9e3d6;
+  background: #13211c; border-top-color: #1f2e28; border-bottom-color: #1f2e28;
+}
+.ipc-side summary:hover { color: #f6f1e6; }
+.ipc-side summary::before { color: #7fa58f; }
+#shell-settings h3 { text-transform: none; letter-spacing: -0.005em; font-size: 14px; font-weight: 650; color: #f6f1e6; }
+.shell-recipe-family { text-transform: none; letter-spacing: 0; font-weight: 600; color: #bdc3b9; }
+.hp-group { text-transform: none; letter-spacing: 0; }
+.shell-group > summary { border-radius: 10px; }
+
+/* ---- 7. monospaced captions for the meta lines: layer kinds, recipe facts, key hints, counts ------------------- */
+.ipc-layer .ipc-kind, .ipc-layer select.ipc-kindsel { text-transform: none; letter-spacing: 0; font-family: var(--sc-font-mono); font-size: 10.5px; }
+.shell-recipe .shell-recipe-meta, .shell-plugin-name small, .shell-plugin-regs,
+.ipc-flyout .ipc-key, .ipc-refbar-count, .ipc-refcount, .ipc-kbd, .boxes-row .boxes-id, .boxes-geo .boxes-field {
+  font-family: var(--sc-font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+/* a recipe's facts as a caption under its name, as on a card */
+.shell-recipe .shell-recipe-meta { display: block; margin: 1px 0 0; font-weight: 400; color: #8f9a92; }
+
+/* ---- 8. fields light up sage on focus; the fields the app leaves to the browser get the same well -------------- */
+.shell-field select:focus, .shell-field input:focus, .shell-provider input:focus, #shell-settings select:focus,
+#gen-dialog select:focus, #gen-dialog textarea:focus, #up-dialog select:focus, #up-dialog textarea:focus,
+#log-dialog .log-bar input:focus, .as-head select:focus, .as-free input:focus, .as-foot textarea:focus,
+.hp-search:focus, select.hp-model:focus, .hp-text:focus, .ipc-num:focus, .ipc-sel:focus,
+.ipc-sec .ipc-seg input[type=text]:focus, .ipc-askbox .ipc-askinput:focus, .ipc-askfield input:focus,
+.ipc-text textarea:focus, .ipc-prompt textarea:focus, .ipc-settings input[type=text]:focus, #shell-settings input:focus,
+#log-dialog .log-bar select:focus, #gen-template:focus, #gen-upsample:focus, .ipc-depth-detail-select:focus {
+  border-color: #7fa58f;
+  box-shadow: 0 0 0 2px rgba(127, 165, 143, 0.18);
+}
+#shell-settings select, #shell-settings input[type=text], #shell-settings input[type=number], #log-dialog .log-bar select,
+#log-dialog .log-bar input, #gen-template, #gen-upsample, .ipc-settings input[type=text] {
+  background: #08100d; color: #e9e3d6; border: 1px solid #1f2e28; border-radius: 10px; padding: 3px 7px; font: inherit;
+}
+.ipc-settings input[type=text] { box-sizing: border-box; }
+.ipc-depth-detail-select {
+  background: #08100d; color: #e9e3d6; border: 1px solid #1f2e28; border-radius: 10px; padding: 2px 5px; font: 11px var(--sc-font);
+}
+.ipc-depth-detail-label { color: #bdc3b9; }
+/* the upsample row of Generate new: two long selects share the line instead of pushing the button out of the dialog */
+#gen-template, #gen-upsample { flex: 1 1 0; min-width: 0; }
+#gen-upsample-go { flex: none; }
+
+/* ---- 9. lists: the selected layer and undo step on a green pill with a sage stripe ----------------------------- */
+.ipc-layer.ipc-selected, .ipc-undo-row.ipc-undo-current { box-shadow: inset 3px 0 0 #7fa58f; }
+
+/* ---- 10. chat: what you wrote on a cream card with dark type, the answers on dark green ------------------------ */
+.as-bubble, .hp-bubble { border: 1px solid #22342d; border-radius: 14px; }
+.as-user, .hp-user { background: #efe9dc; border-color: #efe9dc; color: #14211c; }
+.as-user code, .hp-user code { background: rgba(11, 20, 17, 0.07); border-color: rgba(11, 20, 17, 0.16); color: #14211c; }
+.as-user a, .hp-user a { color: #2f4f40; }
+.hp-hit { background: #7fa58f; color: #0b1411; }
+
+/* ---- 11. selection and keyboard focus -------------------------------------------------------------------------- */
+::selection { background: #7fa58f; color: #0b1411; }
+button:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 2px solid #7fa58f;
+  outline-offset: 2px;
+}
+/* a field already lights its border: the ring sits on it, one ring instead of two */
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid rgba(127, 165, 143, 0.6); outline-offset: 0; }

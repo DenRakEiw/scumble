@@ -1,0 +1,42 @@
+G2 (docs/PLAN_WASM_BUILD.md Stop 1 #1, the hotfix 0.1.51 on main): the export save in pieces. 2026-10-24, main at
+10b1a39 plus the G2 diff, offline instances (--no-comfy), each on a fresh profile.
+
+1. The IPC probe (ipc_probe/; probe_run.py runs k0a_save_probe2.py once per fresh instance, before the fix):
+   one window.scumble.file.save of bytes made in place (no blob), the whole file as one Uint8Array in one message
+     500 MB  saved (524,288,000 bytes, 3.2 s for the call)
+     600 MB  the renderer ended: oom, exit code -536870904 (scumble_ipc_600.txt)
+     800 MB  the renderer ended: oom, exit code -536870904 (scumble_ipc_800.txt)
+   So the IPC message itself is the cause (K0a's open question): one message of about 512 MiB or more ends the renderer.
+   blob.arrayBuffer() of 1.5 GB had returned in K0a's probe, so the read of the blob is not.
+
+2. The gates with the fix (gates/):
+   g2-tiles   lint types export document: ALL PASS. export: filesaves_test.js 13 of 13; a 600 MB export
+              (629,157,945 bytes) through host.saveExport in 10 pieces, 2,178 ms, read back whole against its pattern;
+              a cancelled save; a reload with a save open (its temporary file goes)
+   g2-canvas  export: ALL PASS (the 600 MB save 2,088 ms; the cancel; the reload)
+
+3. 15000 x 10000 (native_15k/; run15k.py runs the branch's tools/native_test.py at wasm-kernels 04950fb against main's
+   build, rows add_the_paint_layer export_psd save_psd open_psd save_ora open_ora; a build without step marks prints none):
+     export_psd (in memory)   1,474 ms, block 87 ms, 925.2 MB
+     save_psd (real)          4,522 ms, block 124 ms, 925.2 MB written   (0.1.50: the renderer ended, K0a)
+     save_ora (real)          6,576 ms, block 125 ms, 511.6 MB written
+     open_psd of that file   19,362 ms, block 13,586 ms (readPsd on the window: D0, the next session after the merge)
+     open_ora of that file    8,359 ms, block 1,067 ms
+   No renderer end in the run (scumble_log_excerpt.txt).
+
+4. The review (a workflow of 4 reviewers and 15 verifiers over the diff): 10 findings kept, all fixed before the
+   commit (a save opened while its page reloaded, a refused navigation dropping the saves, a target another program
+   holds open now written in place after the refused rename, a held temporary file kept in the list for the sweep, a
+   target name near 255 characters, symbolic and hard links, the handle checks, the counted pieces, the 600 MB file
+   left on an exception).
+
+5. The mutation round (mutation/; mutate.py): every guard of electron/main/filesaves.js broken on a scratch copy
+   (module_round.txt: 26 of 26 red against tools/filesaves_test.js; a first check of the page's generation before the
+   open survived because the one after the open covers it, so it was removed) and the wiring broken in place, each
+   on a fresh instance against `export_test.py saves` (wiring_round.txt): one message instead of pieces, a piece off
+   by one, no finish, no drop on a reload, the abort's IPC and preload all red; the URL test on the navigation drop
+   survived (neither a script's location change nor a CDP file drop reaches did-start-navigation before will-navigate
+   refuses it; docs/TESTING.md says so). Files restored after the round (git diff --stat unchanged).
+
+6. The gates after the fixes: g2b-tiles (lint types export document), g2b-canvas, g2c-tiles and g2c-canvas (export
+   with the file drop): ALL PASS; the 600 MB save 1,750-2,416 ms in 10 pieces.

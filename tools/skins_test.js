@@ -245,6 +245,8 @@ const KIND = {
 
 const FORBIDDEN = ["winamp", "nullsoft", "webamp", "llama", "microduck", "pollen", "hugging face", "huggingface"];
 const FORBIDDEN_90S = ["main.bmp", "cbuttons.bmp", "text.bmp", "viscolor.txt", ".wsz"];
+// the two skins of 0.1.51 recall a site's look, never its company, wordmark or files (docs/SKINS.md section 10)
+const FORBIDDEN_OF = { skin_comfy: ["comfy.org", "comfyorg", "comfy org", ".woff", ".svg"], skin_blackforest: ["black forest labs", "bfl", "flux", ".woff", ".svg"] };
 
 // ---- the checks ---------------------------------------------------------------------------------------------
 
@@ -468,7 +470,7 @@ async function main() {
         need(theme, "inpaint_theme.js");
         need(skinsMod, "electron/main/skins.js");
         const out = [];
-        for (const [id, name] of [["skin_90s", "90s"], ["skin_duck", "Duck"]]) {
+        for (const [id, name] of [["skin_90s", "90s"], ["skin_duck", "Duck"], ["skin_comfy", "Comfy"], ["skin_blackforest", "Black Forest"]]) {
             const dir = path.join(ROOT, "plugins", id);
             if (!fs.existsSync(path.join(dir, "plugin.json"))) throw new Error(`plugins/${id}/plugin.json is missing`);
             const m = JSON.parse(fs.readFileSync(path.join(dir, "plugin.json"), "utf8"));
@@ -485,7 +487,7 @@ async function main() {
             for (const f of files) {
                 const base = path.basename(f), relf = path.relative(dir, f).replace(/\\/g, "/");
                 if (base !== "plugin.json" && !skinsMod.SKIN_FILE_RE.test(base)) throw new Error(`${id}/${relf} is not a file a skin may carry`);
-                const words = FORBIDDEN.concat(id === "skin_90s" ? FORBIDDEN_90S : []);
+                const words = FORBIDDEN.concat(id === "skin_90s" ? FORBIDDEN_90S : [], FORBIDDEN_OF[id] || []);
                 const hay = (relf + "\n" + (/\.(css|json|svg|txt|md)$/i.test(base) ? fs.readFileSync(f, "utf8") : "")).toLowerCase();
                 const hit = words.find((w) => hay.includes(w));
                 if (hit) throw new Error(`${id}/${relf} carries "${hit}"`);

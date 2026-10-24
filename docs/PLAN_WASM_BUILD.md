@@ -921,3 +921,23 @@ Asked with a recommendation each (researched in the code); the user took every r
 **The order from here:** G2 on `main` -> 0.1.51 -> merge `main` into `wasm-kernels` -> #0 M9 -> D0 -> K5 (Stop 3) -> W1 ->
 K12 (Stop 5) -> G6 -> then the critic's table above from K4 on (K4, K26, K27, the E chain, the M chain with K25, K9,
 K11, the bucket K36-K37, the P chain, ...).
+
+### G2 (2026-10-24): on `main`, released as 0.1.51
+
+- **The probe** (fresh instances, one `window.scumble.file.save` of bytes made in place): 500 MB saved, 600 and 800 MB
+  ended the renderer (oom, -536870904). The IPC message itself was K0a's open question: about 512 MiB a message.
+- **Built** (main `feee54a`): `electron/main/filesaves.js` (pieces appended to a temp beside the target from
+  `docfile.tempFor`, listed for the sweep, renamed at the end; the owner a webContents id, a page's generation so a save
+  opened while its page reloaded is dropped; a rename refused with BUSY or a hard link written in place; a symbolic link
+  saved through; a folder, a read-only file and a full drive refused before a write; a held temp stays listed);
+  `docfile.tempFor` cuts the temp's name to 255; `host.js` `saveExport` in 64 MB pieces (`SAVE_PIECE`); preload
+  `file.saveStart / saveWrite / saveFinish / saveAbort`; main drops a page's saves on its reload (app URLs only), its
+  renderer's end and at `will-quit`; `file:save` goes through the same writer.
+- **Checked:** a review workflow (4 reviewers, 15 verifiers: 10 findings, all fixed); `tools/filesaves_test.js` (17
+  cases); the `export` gate's saves checks on both backends (600 MB in 10 counted pieces read back whole, a cancel, a
+  file drop, a reload); the mutation round (module 26 of 26 red; the wiring red but the navigation's URL test, which
+  neither a script's navigation nor a CDP drop reaches); a real 15k PSD of 925 MB saved in 4.5 s (block 124 ms) and
+  opened from that file in 19.4 s (block 13.6 s: D0). `docs/measurements/g2_2026-10-24/`.
+- **Rode along** on the user's word: the skins Comfy and Black Forest. 0.1.51 published 2026-10-24T01:44:48Z.
+- **Merged into this branch** the same day: `saveExport` keeps K0a's marks (start, pieces, written), `docs/BUGS.md`
+  drops the K0a entry. Next: #0 M9 and the second open, then D0.

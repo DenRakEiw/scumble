@@ -1,0 +1,13 @@
+{
+  "name": "Black Forest",
+  "version": "1.0.0",
+  "description": "Forest-night greens, warm cream type, sage accents and calm rounded panels.",
+  "author": "Scumble",
+  "registers": ["skin"],
+  "skin": {
+    "css": "skin.css",
+    "background": "#0b1411",
+    "swatch": ["#0b1411", "#14211c", "#1e2d27", "#efe9dc", "#7fa58f"],
+    "tokens": 1
+  }
+}

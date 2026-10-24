@@ -1,0 +1,5 @@
+lint rc=0 33s 
+types rc=0 5s 
+export rc=0 142s PASS
+document rc=0 37s PASS
+ALL PASS

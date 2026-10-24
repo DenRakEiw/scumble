@@ -11,37 +11,7 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
-For 0.1.50 (`docs/PLAN_0_1_50.md`):
-- **The local Flux.2 Klein example fails in the sampler: "mat1 and mat2 shapes cannot be multiplied"** (reported
-  2026-10-02, Reddit): a local Klein run (the shipped Klein recipes, or a graph whose CLIPLoader has type flux2 / flux3
-  and whose model file names Klein) that fails with that torch error now says, in red, which model and text encoder
-  files it sent and which encoder fits (Klein 9B qwen_3_8b, 4B qwen_3_4b, FLUX 3 Image Klein qwen3vl_4b), or, when
-  the names fit, the other causes (a ComfyUI too old, a file holding another model); both Klein recipes' descriptions
-  name the fitting encoder (Q1, `host.js` `kleinRun` / `kleinEncoderHint`; the `generate` gate's step
-  `a_klein_shape_error_names_the_text_encoder`). The reporter's own files are still not known; 7680 features read as
-  Qwen3 4B's output is inferred (3 x 2560), not measured.
-- **PNG / TIFF export with a size or a frame** (Size limits below): a Size or Canvas row past one canvas (65,535 px a
-  side, 268 MP) is refused before anything is drawn; a WebP past 16,383 px a side is refused (Chromium wrote it cut
-  to that width, measured); a typed size past 32,768 px a side is scaled down with the aspect kept and the status line
-  says so (Q3, `host.js` `exportSizeRefusal`, `capExportSide`; the `export` gate's step
-  `an_export_past_one_canvas_is_refused`, both backends). Still open: a 100 % export of a document past 32,768 px a
-  side comes out scaled down to 32,768 px with only the "Saved ... (w x h)" line saying so (`exportPixels` holds every
-  export to that side; the PNG band writer could write it at full size, which would also need JPEG's 65,500 px limit,
-  measured).
-- **A layer of an unknown kind without a `ref` is dropped on open without a note** (the .scumble review below): the
-  load counts it and a filter layer that throws, and the status line after the open says in red how many were left
-  out and that the next save drops them; `open_document` and `reopen_closed_tab` carry the note (Q4,
-  `inpaint_canvas.js` `leftOut`, `leftOutText`; the `document` gate's step 11).
-- **The node skips a reference it cannot load** (Reference layers dropped without a word, below): with `named_refs`
-  set the node raises "Inpaint Canvas: reference N (@imgN) could not be loaded ..." (node commit `9a6c9dc`, branch
-  `named-refs-raise`, live once the node is built and pushed with 0.1.50); the app shows it as "Inpaint Canvas
-  failed: ..." (Q5).
-- The Realism Pass on RTX 40 and 30 (below) is half covered: a whole-picture pass whose answer is the picture that went
-  (compared pixel for pixel on 5 x 5 pieces, from Strength 0.25) still lands, with a red line that the pass changed
-  nothing on that card, and every pass logs its difference (Q2, `realism.js` `compareTiles` / `unchangedNote`). The
-  bounds (largest 4, mean 1 level) were never measured on a card, and a pass on a selection does not compare.
-
----
+Nothing at the moment (0.1.50's and 0.1.51's fixes went out with them; `CHANGELOG.md` has them).
 
 ## Open
 
@@ -52,31 +22,6 @@ which does not exist: only `tools/depth_test.js` does (`docs/TESTING.md` lists t
 only fail (Python's "can't open file"), and whatever `depth_test.js` checks is not in any gate run. Fix: a rule
 `depth) node tools/depth_test.js` in `run_gates.sh` if the Node test is the gate (it needs no app), or the Python
 test written; then TESTING.md's line. Outside the kernel plan (`docs/PLAN_WASM_BUILD.md` §4.12).
-
-### Saving an export of about 0.7 GB or more ends the window's renderer (found 2026-10-23, run, K0a)
-
-Seen: the K0a harness (`docs/PLAN_WASM_BUILD.md`) saved its exports for real for the first time; every earlier 15k
-export row stubbed `host.saveExport` out. The PSD of `tools/native_test.py`'s 15000 x 10000 document with its
-full-size paint layer (925 MB) never reached the disk: the renderer ended (`oom`, exit code -536870904, "reloaded; the
-documents come back from the autosave" in `scumble.log`), twice, the second time on a fresh instance with only that
-row (`dist/gates/k0a_2026-10-23/native_psdonly.log`). A probe on a fresh instance without any document
-(`host.saveExport` of a blob of zeros) saved 300 MB and 500 MB (marks: bytes 149 / 244 ms, written 1,268 / 2,050 ms)
-and ended the renderer at 700 MB. `blob.arrayBuffer()` of 1.5 GB alone returned, though the log shows another end 6 s
-later; the probe of the IPC alone was disturbed by the reload loop (Scumble closed after the third end), so where it
-breaks is inferred, not measured: most likely the IPC (`window.scumble.file.save` with the whole file as one
-`Uint8Array`, `host.js` `saveExport`), whose message is a copy of the bytes. The machine had 60 GB free. With the 15k
-document open, a TIFF of noise (491 MB), the ORA with the paint layer (511 MB), a PNG (235 MB) and a TIFF (244 MB)
-saved. The 0.1.50 release has the same `saveExport`. Logs and probes: `docs/measurements/k0a_2026-10-23/native/`,
-`save_probe/`.
-
-Who meets it: a PSD of a 15k document with one layer above the base (about 0.9 GB), a large ORA or TIFF of a picture
-that does not compress; a JPEG / WebP is far below.
-
-To do before code: probe the IPC alone at 600 / 800 MB on a fresh instance (`save_probe/k0a_save_probe2.py`, one call
-per instance); then the fix is the save in pieces (the blob's slices sent to main and
-appended to the temp file, or main reading the blob through a stream), which is §4.12 G2 / question 6.8 of
-`docs/PLAN_WASM_BUILD.md`: it moves from "maybe" to needed, and it is JS / IPC work, not a kernel. Its gate step: a
-real 15k PSD save with the paint layer (`native_test.py ... add_the_paint_layer save_psd open_psd`).
 
 ### A relight recipe imported or saved under a new id is accepted and never run (found 2026-10-12, read)
 
@@ -103,8 +48,11 @@ the tile backend (`inpaint_canvas.js` `checkBaseSize`, refusals tested in `edito
   268 MP Chromium's canvas draws and reads nothing, so an empty base is possible. Not measured.
 - **JPEG / WebP above 268 MP are not refused** although a comment in `inpaint_canvas.js` (near 548) and
   `docs/PLAN_BCE.md` promise a refusal that names PNG; the file goes to `createImageBitmap` in a worker. Not measured.
-- **(Fixed for 0.1.50, above.) PNG / TIFF export with a size or a frame** caps each side at 32,768 px silently and goes
-  through one canvas: an output above 268 MP from a smaller document is not checked (`host.js` near 582-632).
+- **(Fixed in 0.1.50.) PNG / TIFF export with a size or a frame**: a Size or Canvas row past one canvas is refused, a
+  typed side past 32,768 px is scaled down with the aspect kept. Still open: a 100 % export of a document past
+  32,768 px a side comes out scaled down to 32,768 px with only the "Saved ... (w x h)" line saying so (`exportPixels`
+  holds every export to that side; the PNG band writer could write it at full size, which would also need JPEG's
+  65,500 px limit, measured).
 - **The PSD fallback writer** (canvas backend, or no worker pool) checks neither the 30,000 px side nor the 4 GiB
   section limit that the banded writer checks (`inpaint_bands.js` near 289).
 - **Files above 2 GiB fail to open from the dialog or a path** (`fsp.readFile` in `electron/main/main.js` near 760);

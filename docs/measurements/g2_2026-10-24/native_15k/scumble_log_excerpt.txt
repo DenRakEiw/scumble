@@ -1,0 +1,1 @@
+2026-10-24 01:44:01.789 INFO  [main] log started, <scratch>\g2\m15k\profile\logs\scumble.log

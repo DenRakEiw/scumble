@@ -6,6 +6,12 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 - **The pixel kernels hold less memory and recover on their own.** After an operation, a worker that grew past 16 MB returns to its starting size within a few seconds (after a 15000 x 10000 export the workers keep about 12 MB instead of about 290 MB), and a kernel that fails is replaced and the job finishes the slower way instead of failing.
 
+## 0.1.51 - 2026-10-24
+
+- **Large exports save again.** Saving an export of more than about 500 MB (a PSD of a 15,000 x 10,000 picture with a layer above it is about 0.9 GB, and a large ORA or TIFF can pass it too) ended Scumble's window: it reloaded and brought the documents back from the autosave, but the file was never written. An export now goes to the disk in pieces, whatever its size.
+- **Two new skins** under *Settings › Appearance* (and *View › Skin*): **Comfy**, a deep aubergine night with neon-yellow pills, the side panel's sections as node cards with a yellow socket, and **Black Forest**, forest-night greens with warm cream type, sage accents and calm rounded panels.
+- An export is written to a temporary file beside the target and put in its place only once every byte is written, as a `.scumble` document is: a save that fails, or a disk that is too full for it (now said before anything is written), leaves an older file of the same name as it was. When another program holds that file open (a viewer), or the file has other names (a hard link), the export is written into it as before; a symbolic link keeps pointing at the new picture. A read-only target is refused before the export is written.
+
 ## 0.1.50 - 2026-10-22
 
 - **MOSS-Image on your own ComfyUI.** A local recipe for OpenMOSS's open MOSS-Image model (ComfyUI 0.42 or newer runs it on its own nodes; the weights are Apache-2.0): it makes new pictures with *Generate new*, and with the Boxes switch on your New and Text boxes go as its JSON layout, each box placed in the picture's pixels and a Text box's words rendered there (issue #6). It takes no picture to edit, so *Generate* on a selection says to use *Generate new*.

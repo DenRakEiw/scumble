@@ -1,7 +1,7 @@
 # Skins
 
 A skin changes how Scumble looks: its colours, fonts and shapes. It never changes the picture, and it
-carries no code. Scumble ships two, **90s** and **Duck**; anyone can make another one.
+carries no code. Scumble ships four, **90s**, **Duck**, **Comfy** and **Black Forest**; anyone can make another one.
 
 - The mechanism: `electron/main/skins.js` (the manifest, which skin is in use, the virtual stylesheet),
   `renderer/skins.js` (switching in the window, the assistant's question drawn out of a skin's reach, the
@@ -226,7 +226,7 @@ failed check.
 
 ## 9. The built-in skins
 
-Both set every token, use only system fonts and draw their decoration with CSS gradients: no pictures, no
+All four set every token, use only system fonts and draw their decoration with CSS gradients: no pictures, no
 downloaded fonts. Read them as examples.
 
 - **90s** (`plugins/skin_90s`): a late-90s media player. Bevelled slate panels, black LCD readouts with green
@@ -235,6 +235,15 @@ downloaded fonts. Read them as examples.
 - **Duck** (`plugins/skin_duck`): warm cream panels, lavender bars and an orange accent in soft, rounded
   shapes, a dark face-plate top bar, a round lens mark on the primary buttons, soft shadows. The assistant's
   questions stay dark inside it (section 5).
+- **Comfy** (`plugins/skin_comfy`, 0.1.51): a deep aubergine night with a violet band on the top bars, neon-yellow
+  pills (filled for the main action of a place, outlined for the others), the side panel's folding sections as
+  rounded node cards whose name is the title bar with a yellow socket on its left edge, menus as one rounded card,
+  small bold capitals for the bars and titles. Its name is section 10's one exception (the user, 2026-10-24, for the
+  Comfy challenge): only the colours and shapes, no logo, wordmark, font or picture.
+- **Black Forest** (`plugins/skin_blackforest`, 0.1.51): forest-night greens, warm cream type and a sage accent,
+  a brushed sage texture on the top bars and the dialog heads, cream-filled primary buttons, sentence case for the
+  tabs and section heads, monospaced captions for layer kinds, shortcuts and recipe facts, what you wrote in the
+  Assistant and Help as cream cards.
 
 ## 10. Names and artwork
 
@@ -242,3 +251,6 @@ Do not ship other people's names, logos, wordmarks or artwork in a skin: not in 
 `plugin.json`, its stylesheet or its pictures. A look may recall an era or a device; a skin under someone
 else's name reads as their endorsement. Make the drawings yourself (CSS, or pictures you made), and check the
 licence of any font file you put in the folder.
+
+The one exception is **Comfy**, named so on the user's word (2026-10-24): its folder and stylesheet still carry
+no logo, wordmark, font or picture of anyone else.

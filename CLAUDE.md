@@ -82,7 +82,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-19: 0.1.49 released and in the MCP Registry; the Store updates of 0.1.48 / 0.1.49 open)
+## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
 - **0.1.49 = Comfy Cloud and Comfy Router on Comfy's official SDK + eight quick wins (the user, 2026-10-18: "alles in
   einem update", all eight quick wins picked, "mache plan und fange mit der entwicklung an").** The plan is
@@ -214,8 +214,20 @@ code.
   (2026-10-24, every recommendation taken; the plan's §7 "The user's answers"):** G2, the save in pieces, is built on
   `main` and released as **hotfix 0.1.51** (prepared locally, asked once before the release chain), then `main` is merged
   into the branch; D0 yes, right after; W1 (a SIMD filter choice in `png.rs` `filter_row`, same bytes) at #4 after K5;
-  G6 (the shader link, per document) its own short session after W1. **Next: G2 on `main`** (`git checkout main`; the
-  IPC probe at 600 / 800 MB, then the fix in `host.js` and main's file-save IPC, the gate step of `docs/BUGS.md`).
+  G6 (the shader link, per document) its own short session after W1. **G2 done and 0.1.51 is out (2026-10-24; "G2" in
+  the plan's §7, `docs/measurements/g2_2026-10-24/`):** the probe showed the IPC message itself ends the renderer
+  (500 MB saved, 600 / 800 MB oom); `electron/main/filesaves.js` takes an export in 64 MB pieces into a temp beside the
+  target (a review workflow's 10 findings fixed; mutation round red but the navigation's URL test); the skins **Comfy**
+  and **Black Forest** rode along on the user's word ("wegen dem contest"; Comfy is SKINS.md §10's one exception;
+  polished by two agents). Released on the user's "Ja, komplett": main `10b1a39..2d9a353`, tag v0.1.51 on `7c79cb9`,
+  published 2026-10-24T01:44:48Z, title "Scumble 0.1.51: large exports save again, and two new skins", the eight
+  assets checked (the zip's layout, the `.mcpb` 0.1.51 with 116 tools, `latest.yml`; the zip's start test skipped);
+  the post `v0-1-51` live with the manual sync and hub 0.1.51 (`Portfolio_vercel` `9bd0a3d`, Vercel success);
+  `server.json` 0.1.51 committed (`2d9a353`), the MCP Registry publish waited on the user's device code (see below);
+  no node build (no shipped editor file changed). **Open:** the Store update: `dist/Scumble-0.1.51.msix` with
+  `dist/store-listing/whats-new-0.1.51.txt` (written for everything since 0.1.47, the Store's live version; 0.1.48 to
+  0.1.50 were never submitted), the user's upload. `main` merged into `wasm-kernels` the same day (`saveExport` keeps
+  K0a's marks: start, pieces, written). **Next: #0 M9 + the second open, then D0.**
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
@@ -652,6 +664,22 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   a private integration (each user their own, or the user's team) could use it. Craft on Canva's MCP server is "coming
   soon" (a route without our own OAuth, maybe). Open: whether a private integration is open to every plan, the token's
   lifetime, the output size per ratio. Not planned yet.
+- 49: **CorridorKey: keying a green or blue screen with real alpha** (the user, 2026-10-24, with
+  https://github.com/nikopueringer/CorridorKey: "können wir das auch für images nehmen?", then "evtl im nächsten
+  update"). Read 2026-10-24 (not run): v1 (GreenFormer, ~300 MB, a 2048 backbone) keys each frame on its own from the
+  picture and a coarse alpha hint and returns the unmixed straight foreground colour and a linear alpha, so a still is
+  one frame; v2 (July 2026, by Zachary Harris with Corridor, 5 GB plus C-RADIOv4, MoGe-2 and RVM, RTX 30 or newer)
+  works in time windows over a clip or a frame folder, hint optional: **whether a single still runs through v2 is to
+  be checked** (the user: "das müssten wir prüfen"). Licence of both: CC BY-NC-SA 4.0 with Corridor's additional terms
+  (no repackaging or redistribution, no paid inference, "commercial software integration" needs their written
+  agreement; v2 adds free access for derivatives and a clause for companies above US $20M revenue): **never in the app
+  without their agreement** (no ONNX in the bundle; GPL-3.0 and the MIT/Apache/BSD/OFL rule). The route that needs
+  none: a local ComfyUI recipe on a community node pack the user installs (`cnoellert/comfyui-corridorkey`: IMAGE +
+  MASK -> Foreground, Alpha; `SeanBRVFX/ComfyUI-CorridorKey`: fg, matte, processed, QC; neither names a licence), the
+  selection as the hint, the result a layer with real alpha (also for a subject generated on flat green). The user
+  asks Corridor in their help Discord (a forum post drafted 2026-10-24 with three questions: a native integration, the
+  ComfyUI route, v2 on stills). For the next update; about 1-2 sessions plus a live run on the user's ComfyUI (the
+  node pack's install on the user's word).
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.

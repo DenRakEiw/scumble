@@ -18,6 +18,21 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   `python tools/mcp_attach_test.py` (run by the `mcp` gate after it) checks `--attach-only`, the switch of the repo's
   `.mcp.json`, on a profile of its own: `ping` alone and nothing started while no Scumble runs, the attach to an
   instance it starts (port 9573) with `tools/list_changed`, nothing started after that instance closes.
+  `node tools/filesaves_test.js` (plain Node, run first by the `export` gate) pins `electron/main/filesaves.js`, an
+  export saved in pieces (0.1.51): the bytes of uneven pieces, an older target kept until the finish, a cancel, a
+  piece out of order, twice or past the size, a short finish, another page's piece, abortAll per page, the refusals
+  before a write (a folder, a missing folder, a read-only file, a full drive, no size), EBUSY on the rename (then the
+  write in place, and its refusal), pieces sent without waiting, the next start's sweep of a killed save, a page
+  dropped while its save waits for the dialog or for the open, a hard link and a symbolic link, a 250-character name,
+  a temporary file still held at a cancel (it stays listed), and every dropped save's handle closed (`fh.stat()` EBADF:
+  on Windows the name of an open file goes at its unlink). The `export` gate then saves 600 MB through
+  `host.saveExport` (the size that ended the renderer in one message), counts the pieces read off the blob and reads
+  the file back whole, cancels a save, drops a file on the shell bar with a save open (the save stays), and reloads the
+  window with a save open (its temporary file goes), on both backends. Not covered in the app: the drop on a renderer
+  end (`render-process-gone`) and at `will-quit` (one line each in `main.js`; the module's `abortAll` is tested), and
+  the URL test that keeps a refused navigation from dropping the saves: neither a script's `location` change nor a CDP
+  file drop reaches `did-start-navigation` before `will-navigate` refuses it (the mutation that drops the test survived
+  both, 2026-10-24), so the drop check above holds either way.
   `python tools/llm_test.py` checks the OpenAI-compatible upsample endpoint against
   `tools/llm_mock.py` (a mock server it starts itself; no ComfyUI, no key, no local model).
   `python tools/boxes_test.py` covers the Boxes plugin (item 28 S3a-S3d): the commands and their refusals, one undo

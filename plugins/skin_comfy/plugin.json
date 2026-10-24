@@ -1,0 +1,13 @@
+{
+  "name": "Comfy",
+  "version": "1.0.0",
+  "description": "A deep aubergine night with neon-yellow pills, node cards and yellow sockets.",
+  "author": "Scumble",
+  "registers": ["skin"],
+  "skin": {
+    "css": "skin.css",
+    "background": "#1d1a25",
+    "swatch": ["#1d1a25", "#26222f", "#3a3640", "#f2ff59", "#5a3fa0"],
+    "tokens": 1
+  }
+}

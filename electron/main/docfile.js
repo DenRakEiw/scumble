@@ -360,6 +360,20 @@ function writeList(registry, list) {
     fs.writeFileSync(tmp, JSON.stringify(list), "utf8");
     fs.renameSync(tmp, registry);
 }
+/**
+ * The temporary file a save writes beside its target (TEMP_RE's shape; the sweep deletes only that shape). Its name is
+ * cut to 255 UTF-16 units, NTFS's limit for one name: a target whose own name is near that could not be saved otherwise.
+ */
+function tempFor(target) {
+    const tail = `.saving-${process.pid}-${++tempSeq}`;
+    const base = path.basename(target);
+    let n = Math.max(1, 255 - tail.length);
+    if (n < base.length) {
+        const c = base.charCodeAt(n - 1);
+        if (c >= 0xD800 && c <= 0xDBFF) n--;   // never half a surrogate pair
+    }
+    return path.join(path.dirname(target), base.slice(0, n) + tail);
+}
 function registerTemp(registry, p) { if (registry) writeList(registry, [...readList(registry).filter((x) => x !== p), p]); }
 function unregisterTemp(registry, p) { if (registry) writeList(registry, readList(registry).filter((x) => x !== p)); }
 
@@ -426,7 +440,7 @@ async function writeDocument({ target, header, thumbnail = null, files = [], reg
     const total = entries.reduce((n, e) => n + (e.data ? e.data.length : e.size) + 100 + Buffer.byteLength(e.name) * 2, 0);
     const free = await freeSpace(dir);
     if (free < total + 1048576) throw failure(`the file needs ${fmtBytes(total)} and its drive has ${fmtBytes(free)} free`, "ENOSPC");
-    const temp = `${target}.saving-${process.pid}-${++tempSeq}`;
+    const temp = tempFor(target);
     registerTemp(registry, temp);
     const when = dosTime(new Date());
     let fh = null, pos = 0, done = 0;
@@ -499,8 +513,10 @@ async function writeDocument({ target, header, thumbnail = null, files = [], reg
         return { bytes: pos, entries: written.length, ms: Date.now() - t0 };
     } catch (err) {
         if (fh) { try { await fh.close(); } catch (_) { /* closed */ } }
-        try { await fsp.unlink(temp); } catch (_) { /* never made */ }
-        try { unregisterTemp(registry, temp); } catch (_) { /* the sweep deletes it; the error below is the one that counts */ }
+        // a temporary file something still holds stays listed: the next start's sweep deletes it
+        let gone = true;
+        try { await fsp.unlink(temp); } catch (e) { gone = e.code === "ENOENT"; }
+        if (gone) { try { unregisterTemp(registry, temp); } catch (_) { /* the sweep deletes it; the error below is the one that counts */ } }
         throw err;
     }
 }
@@ -731,7 +747,8 @@ function isScumble(head) {
 module.exports = {
     MIME, FORMAT_VERSION, READER_VERSION, HEADER_ENTRY, THUMB_ENTRY, TEMP_RE, LIMITS,
     setLimits, resetLimits, mirrorPath, keyOf, entryOf, refOfEntry, collectRefs, renameRefs,
-    buildHeader, checkHeader, writeDocument, readDirectory, openDocument, sweepTemps, registerTemp, unregisterTemp,
+    buildHeader, checkHeader, writeDocument, readDirectory, openDocument, sweepTemps, tempFor, registerTemp, unregisterTemp,
+    renameRetry, freeSpace, BUSY,
     isScumble, crcOfFile, fmtBytes, FEATURES, featuresOf, readerFor, versionFor,
     READER_OF_BLEND,
 };

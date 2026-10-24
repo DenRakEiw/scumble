@@ -1,0 +1,248 @@
+/* Comfy - a deep aubergine night with neon-yellow pills, node cards with yellow sockets and a violet band on the
+   top bar. A built-in skin (docs/SKINS.md; the name on the user's word, 2026-10-24, section 10's exception): the
+   colours and shapes only, no logo, wordmark, font or picture of anyone else; the fonts are system fonts and every
+   decoration is CSS of our own. The tokens below are the stable part, the free CSS after them reads the app's ids
+   and classes. The assistant's questions keep their default look, as in every skin. One accent: the filled yellow
+   pill is the main action of a place (Generate, Upscale, Generate new), the outlined one a secondary action. */
+
+:root {
+  --sc-bg: #1d1a25;
+  --sc-chrome: #221e2b;
+  --sc-chrome-edge: #0f0d14;
+  --sc-surface: #25212e;
+  --sc-raised: #2f2a39;
+  --sc-selected: #3b3452;
+  --sc-well: #18151f;
+  --sc-field: #15121b;
+  --sc-btn: #2f2a39;
+  --sc-btn-hover: #3d3749;
+  --sc-border: #4a4356;
+  --sc-line: #352f40;
+  --sc-fg-strong: #ffffff;
+  --sc-fg: #ece9f2;
+  --sc-fg-2: #c4bfcf;
+  --sc-muted: #a7a0b5;
+  --sc-faint: #8b8499;
+  --sc-accent: #f2ff59;
+  --sc-active: #f2ff59;
+  --sc-active-bg: #f2ff59;
+  --sc-on-active: #17141e;
+  --sc-go: #f2ff59;
+  --sc-warn: #ffc95c;
+  --sc-ok: #8ff0a4;
+  --sc-error: #ff6b86;
+  --sc-error-bg: #3e1d29;
+  --sc-link: #c3b4ff;
+  --sc-backdrop: rgba(10, 8, 16, 0.62);
+  --sc-shadow: 0 14px 36px rgba(6, 4, 12, 0.6);
+  --sc-scheme: dark;
+  --sc-control: #f2ff59;
+  --sc-scrollbar: #4a4356 #1d1a25;
+  --sc-font: "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --sc-font-mono: ui-monospace, Consolas, "DejaVu Sans Mono", monospace;
+  --sc-radius-sm: 10px;
+  --sc-radius: 10px;
+  --sc-radius-lg: 18px;
+}
+
+/* ---- 1. the top bars: a violet gradient band along their top edge, the name in bold yellow italics ---------- */
+#shell-bar, #cb-bar { background: linear-gradient(90deg, #3b2e7e, #5a3fa0) top / 100% 3px no-repeat, #221e2b; }
+#shell-logo { color: #f2ff59; font-weight: 800; font-style: italic; letter-spacing: 0.01em; }
+#shell-bar .dot.connected { background: #f2ff59; box-shadow: 0 0 6px rgba(242, 255, 89, 0.7); }
+/* the bar's labels and buttons read as a site's navigation: small bold capitals; what is typed or picked keeps its case.
+   Capitals are wider: slimmer buttons and gaps keep the bar as wide as the default look's (it must fit 1280 px) */
+#shell-bar { gap: 8px; }
+#shell-bar > button:not(#shell-update), #shell-bar > .shell-field { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+#shell-bar > button:not(#shell-update) { padding: 3px 8px; }
+#shell-bar > .shell-field select, #shell-bar > .shell-field input { font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: normal; }
+
+/* ---- 2. pills: every button a capsule, the primary ones filled yellow with dark capitals ---------------------- */
+#shell-bar button, #shell-settings button, #gen-dialog button, #up-dialog button, #log-dialog button,
+.as-head button:not(.as-chat-open):not(.as-chat-del), .as-foot button, #help button:not(.hp-link):not(.hp-read),
+#cb-bar button, .cb-row button,
+.ipc-top .ipc-ib, .ipc-subbar .ipc-ib, .ipc-sec .ipc-ib, .ipc-modal .ipc-ib, .ipc-askbox .ipc-ib {
+  border-radius: 999px;
+}
+/* a capsule that wraps its label turns into an oval: the dialogs' buttons keep theirs on one line */
+#shell-settings button, #gen-dialog button, #up-dialog button, #log-dialog button, #cb-bar button { white-space: nowrap; }
+#shell-settings .shell-row > button { flex: none; }
+#gen-go, #up-go, .ipc-ib.ipc-primary {
+  background: #f2ff59;
+  border-color: #f2ff59;
+  color: #17141e;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-radius: 999px;
+}
+#gen-go:hover:not(:disabled), #up-go:hover:not(:disabled), .ipc-ib.ipc-primary:hover:not(:disabled) {
+  background: #f8ff9a;
+  box-shadow: 0 0 0 3px rgba(242, 255, 89, 0.18);
+}
+/* a primary that cannot run yet: a flat grey pill, not a muddy half-transparent yellow */
+#gen-go:disabled, #up-go:disabled, .ipc-ib.ipc-primary:disabled {
+  background: #3a3640;
+  border-color: #3a3640;
+  color: #9a93a8;
+  opacity: 1;
+  box-shadow: none;
+}
+/* the outlined pill: a secondary action inside a panel (Upsample, Send, Ask) keeps the yellow as its frame */
+.ipc-sec .ipc-ib.ipc-primary, #gen-dialog #gen-upsample-go, .as-foot-row > button, #help .hp-send {
+  background: transparent;
+  border: 1px solid #f2ff59;
+  color: #ffffff;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.ipc-sec .ipc-ib.ipc-primary:hover:not(:disabled), #gen-dialog #gen-upsample-go:hover:not(:disabled),
+.as-foot-row > button:hover:not(:disabled), #help .hp-send:hover:not(:disabled) {
+  background: rgba(242, 255, 89, 0.12);
+  color: #ffffff;
+  box-shadow: none;
+}
+.ipc-sec .ipc-ib.ipc-primary:disabled, #gen-dialog #gen-upsample-go:disabled, .as-foot-row > button:disabled, #help .hp-send:disabled {
+  background: transparent;
+  border-color: #4a4356;
+  color: #8b8499;
+  opacity: 1;
+}
+/* a toggled tool or an open mode keeps the filled yellow face and gets a soft glow */
+.ipc-ib.ipc-active { box-shadow: 0 0 10px rgba(242, 255, 89, 0.28); }
+/* the few small buttons of the side panel the app leaves to the browser (the depth map's From layer, its edit row,
+   Cancel while it runs): the same small pill as their neighbours */
+.ipc-side button.ipc-small:not(.ipc-ib) {
+  background: #2f2a39;
+  color: #ece9f2;
+  border: 1px solid #4a4356;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ipc-side button.ipc-small:not(.ipc-ib):hover:not(:disabled) { background: #3d3749; color: #ffffff; }
+
+/* ---- 3. node cards: dialogs and the side panel's sections as rounded cards with a yellow socket ---------------- */
+#shell-settings, #gen-dialog, #up-dialog, #log-dialog, .ipc-askbox {
+  border: 1px solid #3a3443;
+  border-radius: 18px;
+  box-shadow: 0 18px 46px rgba(6, 4, 12, 0.65);
+}
+.ipc-tools { background: #1f1b27; }
+.ipc-tools .ipc-ib { border-radius: 12px; }
+.ipc-side { background: #1f1b27; }
+/* one card per section of the side panel: a folding section is a node (its name the title bar, its rows the body),
+   and a list section (Layers, References) is a node made of its head and its list. The rows inside stay flush. */
+.ipc-side details { position: relative; background: #26222f; border: 1px solid #332d3d; border-radius: 16px; margin: 6px 4px 6px 8px; }
+.ipc-side details > summary {
+  position: relative;
+  background: transparent;
+  border: none;
+  border-radius: 15px;
+  padding: 8px 12px;
+  font-weight: 700;
+  color: #c4bfcf;
+}
+.ipc-side details[open] > summary { border-bottom: 1px solid #332d3d; border-radius: 15px 15px 0 0; }
+.ipc-side details > summary:hover { color: #ffffff; }
+.ipc-side details details { background: transparent; border: none; border-radius: 0; margin: 0; }
+.ipc-side details details > summary::after { display: none; }
+.ipc-side > .ipc-pane > h4 {
+  position: relative;
+  background: #26222f;
+  border: 1px solid #332d3d;
+  border-radius: 16px 16px 0 0;
+  margin: 6px 4px 0 8px;
+  padding: 7px 10px 7px 12px;
+  font-weight: 700;
+  color: #c4bfcf;
+}
+.ipc-side > .ipc-pane > h4 + .ipc-list { background: #26222f; border: 1px solid #332d3d; border-top: none; border-radius: 0 0 16px 16px; margin: 0 4px 6px 8px; }
+/* the card frame costs width: a thin scroll bar and slimmer layer rows give it back */
+.ipc-side .ipc-pane { scrollbar-width: thin; }
+.ipc-side .ipc-layer { padding-left: calc(6px + var(--ipc-depth, 0) * 14px); padding-right: 6px; }
+/* a socket on the title bar's left edge, half outside the card, as a node's input: it never covers what the card holds */
+.ipc-side details > summary::after, .ipc-side > .ipc-pane > h4::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -6px;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: #f2ff59;
+  box-shadow: 0 0 6px rgba(242, 255, 89, 0.55);
+  pointer-events: none;
+}
+
+/* ---- 4. menus: the tool flyouts and the context menus as one card with flat rows, not a stack of pills -------- */
+.ipc-flyout { background: #2f2a39; border-color: #4a4356; border-radius: 16px; padding: 6px; }
+.ipc-flyout .ipc-ib { background: transparent; border-color: transparent; border-radius: 10px; }
+.ipc-flyout .ipc-ib:hover:not(:disabled) { background: #3d3749; border-color: transparent; }
+.ipc-flyout .ipc-ib.ipc-active { background: #f2ff59; border-color: #f2ff59; color: #17141e; box-shadow: none; }
+.ipc-flyout .ipc-ib.ipc-active .ipc-key { color: #3a3640; }
+.ipc-flyout .ipc-ib.ipc-toggle-on { background: #3b3452; border-color: transparent; }
+.ipc-flyout .ipc-ib:disabled, .ipc-flyout .ipc-ib:disabled:hover { background: transparent; }
+
+/* ---- 5. small capitals for tabs and section names, the selected layer outlined in yellow -------------------- */
+.ipc-tab { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+/* a document tab keeps its file name as written */
+.shell-tab { font-weight: 600; border-radius: 12px 12px 0 0; margin-top: 3px; }
+#shell-settings h2, #gen-dialog h2, #up-dialog h2, #log-dialog h2 { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 800; }
+#help .hp-name { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 800; font-size: 13px; }
+.ipc-layer.ipc-selected { box-shadow: inset 3px 0 0 #f2ff59; }
+/* the faint kind and count of a layer stay readable on the selected violet */
+.ipc-layer.ipc-selected .ipc-kind:not(.ipc-ctrl):not(.ipc-ref):not(.ipc-fxk),
+.ipc-layer.ipc-multi .ipc-kind:not(.ipc-ctrl):not(.ipc-ref):not(.ipc-fxk) { color: #b9b2c8; }
+.ipc-layer { border-radius: 8px; }
+
+/* ---- 6. fields: deep wells that light up yellow on focus ---------------------------------------------------- */
+/* fields the app leaves to the browser (a few rows of Settings, the Generate new dialog's upsample row, the Console's
+   filter, the recipe's settings in the side panel) get the same well as the others */
+#shell-settings select,
+#shell-settings input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),
+#gen-dialog .shell-row > select, #log-dialog .log-bar select, #log-dialog .log-bar input,
+.ipc-sec.ipc-settings select:not(.ipc-sel),
+.ipc-sec.ipc-settings input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),
+.ipc-side select.ipc-select:not(.ipc-sel) {
+  box-sizing: border-box;
+  background: #15121b;
+  color: #ece9f2;
+  border: 1px solid #352f40;
+  border-radius: 10px;
+  padding: 4px 8px;
+  font: inherit;
+}
+/* the upsample row of Generate new: two lists that share the row and one button that keeps its label */
+#gen-dialog .shell-row > select { flex: 1 1 0; min-width: 0; }
+#gen-dialog .shell-row > #gen-template { flex: 0 1 auto; }
+#gen-dialog #gen-upsample-go { flex: none; }
+.shell-field select:focus, .shell-field input:focus, .shell-provider input:focus, #shell-settings select:focus, #shell-settings input:focus,
+#gen-dialog select:focus, #gen-dialog textarea:focus, #up-dialog select:focus, #up-dialog textarea:focus,
+#log-dialog .log-bar select:focus, #log-dialog .log-bar input:focus, .as-head select:focus, .as-free input:focus, .as-foot textarea:focus,
+.hp-search:focus, select.hp-model:focus, .hp-text:focus, .ipc-num:focus, .ipc-sel:focus, .ipc-settings input:focus, .ipc-settings select:focus,
+.ipc-sec .ipc-seg input[type=text]:focus, .ipc-askbox .ipc-askinput:focus, .ipc-askfield input:focus,
+.ipc-text textarea:focus, .ipc-prompt textarea:focus, .ipc-pf:focus, #cb-name:focus, .cb-field select:focus {
+  border-color: #f2ff59;
+  box-shadow: 0 0 0 2px rgba(242, 255, 89, 0.16);
+}
+
+/* ---- 7. chat bubbles as small node cards, the chat list and the manual's search hits ------------------------- */
+.as-bubble, .hp-bubble { border: 1px solid #3a3443; border-radius: 14px; }
+.as-chats { border-radius: 12px; }
+.as-chats > .as-note { padding: 6px 10px; }
+/* a search hit has to be found on a dark page: a yellow wash, not the selected violet */
+.hp-hit { background: rgba(242, 255, 89, 0.24); color: #ffffff; box-shadow: 0 0 0 1px rgba(242, 255, 89, 0.4); border-radius: 4px; }
+
+/* ---- 8. the mascot in Settings > About sits on its own dark tile: round it into a card ------------------------- */
+#set-about-mascot { border-radius: 16px; }
+
+/* ---- 9. selection and keyboard focus -------------------------------------------------------------------------- */
+::selection { background: #f2ff59; color: #17141e; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 2px solid #f2ff59;
+  outline-offset: 2px;
+}

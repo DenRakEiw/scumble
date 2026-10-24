@@ -12,7 +12,10 @@ Start the app first: ./node_modules/.bin/electron . --remote-debugging-port=9555
 import asyncio
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
@@ -1352,6 +1355,169 @@ PRE = """(async () => {
 })()"""
 
 
+# An export saved in pieces (docs/BUGS.md: one IPC message of about 512 MiB or more ended the renderer; a save of 600 MB
+# did, measured 2026-10-24): host.saveExport of a 600 MB blob over an older file, read back whole here against the
+# pattern it was made of; a save cancelled through the window's own calls; a reload with a save open, whose temporary
+# file main deletes. Electron/main/filesaves.js itself is tools/filesaves_test.js (run first, plain Node).
+BIG = 600 * 1048576 + 12345
+PART = 7 * 1048576 + 12          # the blob repeats a part of this size: a misplaced 64 MB piece shows
+PART_BYTES = (bytes(range(251)) * (PART // 251 + 1))[:PART]
+PIECE = 64 * 1048576            # host.js SAVE_PIECE
+KEPT = b"the file the later checks keep " * 32
+
+SAVE_BIG = """
+const N = %d, S = %d, target = %s;
+const part = new Uint8Array(S);
+for (let i = 0; i < S; i++) part[i] = i %% 251;
+const k = Math.floor(N / S);
+const blob = new Blob([...Array(k).fill(part), part.subarray(0, N - k * S)]);
+// the pieces as saveExport reads them off the blob: a save in one message reads none
+const slice = blob.slice.bind(blob);
+let pieces = 0, largest = 0;
+blob.slice = (a, b) => { pieces++; largest = Math.max(largest, b - a); return slice(a, b); };
+const was = host.exportPath;
+host.exportPath = target;
+const t = performance.now();
+try {
+    const saved = await host.saveExport(blob, "big.psd");
+    return { saved, ms: Math.round(performance.now() - t), pieces, largest };
+} finally { host.exportPath = was; }
+"""
+
+SAVE_ABORT = """
+const f = window.scumble.file, target = %s;
+const open = await f.saveStart({ name: "big.psd", size: 4096, path: target });
+await f.saveWrite({ id: open.id, offset: 0, data: new Uint8Array(1024) });
+const aborted = await f.saveAbort({ id: open.id });
+let after = null;
+try { await f.saveWrite({ id: open.id, offset: 1024, data: new Uint8Array(1024) }); } catch (err) { after = err.message; }
+return { aborted, after };
+"""
+
+SAVE_OPEN = """
+const f = window.scumble.file;
+const open = await f.saveStart({ name: "big.psd", size: 4096, path: %s });
+await f.saveWrite({ id: open.id, offset: 0, data: new Uint8Array(1024) });
+window.__openSave = open.id;
+return open.id;
+"""
+
+
+def temps_in(folder):
+    return [f for f in os.listdir(folder) if ".saving-" in f]
+
+
+def same_as_pattern(file, n):
+    """Is `file` n bytes of PART_BYTES repeated? Returns None, or where it first differs."""
+    if os.path.getsize(file) != n:
+        return "size %d, not %d" % (os.path.getsize(file), n)
+    with open(file, "rb") as fh:
+        at = 0
+        while at < n:
+            got = fh.read(32 * 1048576)
+            want = bytearray()
+            o, left = at, len(got)
+            while left:
+                i = o % PART
+                k = min(left, PART - i)
+                want += PART_BYTES[i:i + k]
+                o += k
+                left -= k
+            if got != want:
+                first = next(j for j in range(len(got)) if got[j] != want[j])
+                return "differs at byte %d" % (at + first)
+            at += len(got)
+    return None
+
+
+async def save_in_pieces(c, folder):
+    """The 600 MB save and the cancel; True when both hold."""
+    ok = True
+    target = os.path.join(folder, "big.psd")
+    with open(target, "wb") as fh:
+        fh.write(b"an older file")
+    try:
+        res = await c.eval(PRE % ("", SAVE_BIG % (BIG, PART, json.dumps(target))), timeout=600)
+        saved = res.get("saved") or {}
+        bad = same_as_pattern(target, BIG)
+        want = -(-BIG // PIECE)
+        if res.get("pieces") != want or res.get("largest", PIECE + 1) > PIECE:
+            bad = "%s pieces of at most %s bytes read off the blob, not %d of at most %d" % (res.get("pieces"), res.get("largest"), want, PIECE)
+        if bad or saved.get("bytes") != BIG or os.path.normcase(saved.get("path", "")) != os.path.normcase(target) or temps_in(folder):
+            raise RuntimeError("%s; answer %s; left %s" % (bad, json.dumps(res), temps_in(folder)))
+        print("[ok] a_600_mb_export_is_saved_in_pieces: %d bytes in %d pieces, %d ms, read back whole" % (BIG, res["pieces"], res["ms"]))
+    except Exception as err:  # noqa: BLE001
+        ok = False
+        print("[FAIL] a_600_mb_export_is_saved_in_pieces: %s" % str(err)[:900])
+    finally:
+        with open(target, "wb") as fh:   # the later checks need a target of known bytes, not 600 MB on the disk
+            fh.write(KEPT)
+    try:
+        res = await c.eval(PRE % ("", SAVE_ABORT % json.dumps(target)), timeout=120)
+        if res.get("aborted") is not True or "no such save" not in (res.get("after") or "") or temps_in(folder) or open(target, "rb").read() != KEPT:
+            raise RuntimeError("answer %s; left %s; target %d bytes" % (json.dumps(res), temps_in(folder), os.path.getsize(target)))
+        print("[ok] a_cancelled_save_leaves_the_target_and_no_temporary_file")
+    except Exception as err:  # noqa: BLE001
+        ok = False
+        print("[FAIL] a_cancelled_save_leaves_the_target_and_no_temporary_file: %s" % str(err)[:900])
+    return ok
+
+
+async def reload_drops_the_save(c, folder):
+    """Last on each backend: a reload with a save open; main deletes its temporary file, the target stays."""
+    target = os.path.join(folder, "big.psd")
+    try:
+        await c.eval(PRE % ("", SAVE_OPEN % json.dumps(target)), timeout=120)
+        if len(temps_in(folder)) != 1:
+            raise RuntimeError("the open save's temporary file is not there: %s" % temps_in(folder))
+        # a file dropped on the shell bar: Chromium starts a navigation to it (did-start-navigation fires), will-navigate
+        # refuses it, the page and its save stay (a script's location change reaches will-navigate first, so it proves
+        # nothing here)
+        dropped = os.path.join(folder, "dropped.png")
+        with open(dropped, "wb") as fh:
+            fh.write(b"not a picture")
+        drag = {"items": [], "files": [dropped], "dragOperationsMask": 1}
+        for kind in ("dragEnter", "dragOver", "drop"):
+            await c.call("Input.dispatchDragEvent", type=kind, x=640, y=12, data=drag)
+        await asyncio.sleep(1.5)
+        kept = await c.eval("(async () => { try { await window.scumble.file.saveWrite({ id: window.__openSave, offset: 1024, data: new Uint8Array(1024) }); return 'kept'; } catch (err) { return err.message; } })()", timeout=60)
+        if kept != "kept" or len(temps_in(folder)) != 1:
+            raise RuntimeError("a refused navigation dropped the save: %s; temps %s" % (kept, temps_in(folder)))
+        print("[ok] a_refused_navigation_keeps_the_open_save")
+        await c.call("Page.reload")
+        for _ in range(60):
+            await asyncio.sleep(0.5)
+            if not temps_in(folder):
+                break
+        if temps_in(folder) or open(target, "rb").read() != KEPT:
+            raise RuntimeError("left %s; target %d bytes" % (temps_in(folder), os.path.getsize(target)))
+        # the new page is up before the next gate connects (the old page's marker is gone, the shell imports)
+        for _ in range(120):
+            try:
+                if await c.eval("(async () => { if (window.__openSave) return 'old'; await import('./shell.js'); return 'ready'; })()", timeout=30) == "ready":
+                    break
+            except Exception:  # noqa: BLE001
+                pass
+            await asyncio.sleep(0.5)
+        else:
+            raise RuntimeError("the window did not come back after the reload")
+        print("[ok] a_reload_drops_the_open_save")
+        return True
+    except Exception as err:  # noqa: BLE001
+        print("[FAIL] a_reload_drops_the_open_save: %s" % str(err)[:900])
+        return False
+
+
+def node_saves():
+    r = subprocess.run(["node", os.path.join(os.path.dirname(os.path.abspath(__file__)), "filesaves_test.js")], capture_output=True, text=True, timeout=300)
+    for line in r.stdout.splitlines():
+        if line.startswith("[") or line in ("PASS", "FAIL"):
+            print("  filesaves_test.js " + line)
+    ok = r.returncode == 0
+    print("[%s] filesaves_test_js" % ("ok" if ok else "FAIL"))
+    return ok
+
+
 async def run_all(c):
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
     if "--perf" in sys.argv:
@@ -1408,8 +1574,26 @@ async def run_all(c):
         res = await c.eval(PRE % (HELPERS, perf_js), timeout=1800)
         print(json.dumps(res, indent=1))
         return True
-    ok = True
     only = [a for a in sys.argv[1:] if not a.startswith("-")]
+    folder = tempfile.mkdtemp(prefix="scumble-export-saves-")
+    try:
+        return await run_steps(c, folder, only)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)   # whatever ends the run, no export of the saves' checks stays
+
+
+async def run_steps(c, folder, only):
+    ok = True
+    saves = not only or "saves" in only
+    if saves:
+        ok = node_saves() and ok
+        ok = await save_in_pieces(c, folder) and ok
+
+    async def finish(ok):
+        if saves:
+            ok = await reload_drops_the_save(c, folder) and ok
+        print("PASS" if ok else "FAIL")
+        return ok
     # the steps of both backends first (the size refusals of exportCanvas)
     for name, body in STEPS_BOTH:
         if only and name not in only:
@@ -1423,8 +1607,7 @@ async def run_all(c):
     tiles = await c.eval("(async () => { const h = (await import('./editor/host.js')).host; const e = h.editors()[0]; return e ? !!e.tileMode : null; })()")
     if tiles is False:
         print("[ok] skipped: the canvas backend keeps its canvas paths (bands are for the tile engine)")
-        print("PASS" if ok else "FAIL")
-        return ok
+        return await finish(ok)
     for name, body in STEPS:
         if only and name not in only and name not in ("setup_document", "close"):
             continue
@@ -1439,8 +1622,7 @@ async def run_all(c):
     for level, text in (await c.logs())[-15:]:
         if level == "error":
             print("  console error:", text[:220])
-    print("PASS" if ok else "FAIL")
-    return ok
+    return await finish(ok)
 
 
 if __name__ == "__main__":
