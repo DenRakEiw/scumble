@@ -228,8 +228,8 @@ code.
   `dist/store-listing/whats-new-0.1.51.txt` (written for everything since 0.1.47, the Store's live version; 0.1.48 to
   0.1.50 were never submitted), the user's upload. `main` merged into `wasm-kernels` the same day (`saveExport` keeps
   K0a's marks: start, pieces, written). **Next: #0 M9 + the second open, then D0.** **Beside it (2026-10-24): CorridorKey 2.0 planned** (item 49,
-  `docs/PLAN_CORRIDORKEY.md`), waiting for the user's answers to its §6 (branch and release, route order, pack A on the
-  production ComfyUI, keying the base).
+  `docs/PLAN_CORRIDORKEY.md`) on its own branch `corridorkey` off `main` (worktree `.claude/worktrees/corridorkey`),
+  released as 0.1.52 on the user's word; next there: I0a (pack A's code check, findings to the user before any install).
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
@@ -694,9 +694,18 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   2026-10-13; its "RVM" is DeepMind's Recurrent Video MAE, not Robust Video Matting; 5.08 GB in all (CK2 2.66 GB,
   C-RADIOv4 1.72, MoGe-2 ViT-B 0.42, RVM 0.27), CUDA bf16 only, native resolution; the hint enters at the first layer
   and no public code has a live hint; v1 rests on CC BY-NC Hiera weights (out). Exactly two ComfyUI packs run v2
-  (marawan206, hashu786, days old), Comfy Cloud has none. The plan: phase 1 the user's ComfyUI with pack A through a
-  helper prompt of Scumble's own (C0 probe, C1-C5, optional C6-C8), a new layer with the unmixed colour and the matte
-  as its layer mask; phase 2 in-app on ONNX only after a measured spike (P2-S0) and Corridor's written answers.
+  (marawan206, hashu786, days old), Comfy Cloud has none. **The user's answers (2026-10-24):** in-app first (against the
+  first plan's ComfyUI first), a branch `corridorkey` off `main` released as 0.1.52, pack A (marawan206) on the
+  production ComfyUI after a code check, a mid-grey Fill layer under a key of the base. **The re-planned spine:** CK2
+  inside Scumble on onnxruntime-node in a utility process (LaMa's shape), the three feature models cached per picture,
+  stage 1 + 2 per hint, so the matte follows the selection brush while the Key dialog is open; keyed at a working size
+  (1,024 px default) and refined against the full picture (an app-only worker); a new layer with the unmixed colour and
+  the matte as its layer mask. Sessions I0a (code check, pinned install, reference keys), I0b (the spike: Nucito's fp16
+  set, DML / WebGPU / CPU, go / no-go = **Stop A**), I0c (ORT pin, if needed), I1 (our own export, a dev-side venv), I2
+  (downloader: sha256, the HF token only to HF; `docs/BUGS.md`), I3 (key process), I4 (landing), I5 (dialog, live loop),
+  I6 (refine), I7 (command), I8 (docs, live run, **Stop B**); Route B (pack A through ComfyUI, B0-B5) on a no-go or by
+  the user's Stop B decision. The in-app release needs Corridor's written yes to hosting a converted set (asked in the
+  thank-you reply's second version); open for the user: whether and which reply went (plan §6).
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
