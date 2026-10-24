@@ -1,0 +1,566 @@
+{
+ "size": "15000x10000",
+ "profiled": false,
+ "rows": {
+  "build_the_file": {
+   "row": {
+    "size": [
+     15000,
+     10000
+    ],
+    "MP": 150,
+    "fillMs": 1496,
+    "encodeMs": 2257,
+    "MB": 275.8,
+    "arena": {
+     "slots": 2360,
+     "chunks": 10,
+     "allocated": 2360,
+     "freed": 0,
+     "droppedChunks": 0,
+     "refused": 0,
+     "failed": 0,
+     "enabled": true,
+     "bytes": 671088640,
+     "freeSlots": 200
+    }
+   },
+   "profile": null
+  },
+  "open_the_file": {
+   "row": {
+    "wall": 3495,
+    "blocked": 662,
+    "calls": {
+     "blob arrayBuffer": {
+      "n": 8,
+      "ms": 0.8,
+      "MB": 0
+     },
+     "blob arrayBuffer (until settled)": {
+      "n": 8,
+      "ms": 1.8,
+      "MB": 0
+     },
+     "worker postMessage (moved)": {
+      "n": 164,
+      "ms": 2.1,
+      "MB": 0
+     },
+     "2d putImageData": {
+      "n": 1,
+      "ms": 0.1,
+      "MB": 0.3
+     },
+     "2d getImageData": {
+      "n": 1,
+      "ms": 0.1,
+      "MB": 0.3
+     },
+     "gl bufferData": {
+      "n": 12,
+      "ms": 0.1,
+      "MB": 0.1
+     },
+     "gl texImage2D": {
+      "n": 13,
+      "ms": 0.1,
+      "MB": 0
+     },
+     "gl texSubImage2D": {
+      "n": 2360,
+      "ms": 2.9,
+      "MB": 1
+     },
+     "gl draw": {
+      "n": 13,
+      "ms": 0,
+      "MB": 0
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 5,
+      "ms": 0.2,
+      "MB": 41.8
+     }
+    },
+    "jobs": {
+     "png_read": {
+      "jobs": 1,
+      "pixels": 150000000,
+      "kernel": 2344.4,
+      "unfilter": 1038.5,
+      "deliver": 11.9
+     },
+     "mips": {
+      "jobs": 19,
+      "tiles": 2344,
+      "kernel": 544.6
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": null,
+     "workers": {}
+    },
+    "extra": {
+     "loadFileMs": 3417,
+     "tiles": 2360
+    },
+    "error": null,
+    "status": "15000 \u00d7 10000",
+    "focused": false,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "add_the_paint_layer": {
+   "row": {
+    "wall": 974,
+    "blocked": 881,
+    "calls": {
+     "worker postMessage (moved)": {
+      "n": 90,
+      "ms": 1.5,
+      "MB": 0
+     },
+     "2d putImageData": {
+      "n": 2286,
+      "ms": 2,
+      "MB": 1.1
+     },
+     "2d drawImage < 1 MP": {
+      "n": 20,
+      "ms": 0.2,
+      "MB": 11.2
+     },
+     "gl texImage2D": {
+      "n": 17,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl texSubImage2D": {
+      "n": 4589,
+      "ms": 6.6,
+      "MB": 9.9
+     },
+     "gl draw": {
+      "n": 66,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl bufferData": {
+      "n": 57,
+      "ms": 0.2,
+      "MB": 0.6
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 11,
+      "ms": 0.4,
+      "MB": 92
+     }
+    },
+    "jobs": {
+     "mips": {
+      "jobs": 18,
+      "tiles": 2301,
+      "kernel": 544.3
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": null,
+     "workers": {}
+    },
+    "extra": {
+     "tiles": 2301,
+     "genMs": 73,
+     "writeMs": 772,
+     "addMs": 130
+    },
+    "error": null,
+    "status": "15000 \u00d7 10000",
+    "focused": false,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "export_psd": {
+   "row": {
+    "wall": 1474,
+    "blocked": 87,
+    "calls": {
+     "worker postMessage (moved)": {
+      "n": 237,
+      "ms": 10,
+      "MB": 0
+     },
+     "2d putImageData": {
+      "n": 2,
+      "ms": 0.3,
+      "MB": 1.2
+     },
+     "2d drawImage < 1 MP": {
+      "n": 27,
+      "ms": 2.2,
+      "MB": 1.8
+     },
+     "gl bufferData": {
+      "n": 1,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl texImage2D": {
+      "n": 25,
+      "ms": 0.3,
+      "MB": 0.3
+     },
+     "gl draw": {
+      "n": 12,
+      "ms": 0.1,
+      "MB": 0
+     },
+     "gl getError": {
+      "n": 12,
+      "ms": 5.7,
+      "MB": 0
+     }
+    },
+    "jobs": {
+     "psd_part": {
+      "jobs": 237,
+      "pixels": 450000000,
+      "kernel": 9414
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": null,
+     "workers": {}
+    },
+    "extra": {
+     "MB": 925.2
+    },
+    "error": null,
+    "status": "Saved memory:inpaint_canvas.psd (15000 \u00d7 10000, 925.2 MB, 2 layers, 1474 ms).",
+    "focused": false,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "save_psd": {
+   "row": {
+    "wall": 4522,
+    "blocked": 124,
+    "calls": {
+     "worker postMessage (moved)": {
+      "n": 237,
+      "ms": 7.7,
+      "MB": 0
+     },
+     "blob arrayBuffer": {
+      "n": 15,
+      "ms": 2.5,
+      "MB": 925.2
+     },
+     "blob arrayBuffer (until settled)": {
+      "n": 15,
+      "ms": 382.6,
+      "MB": 0
+     }
+    },
+    "jobs": {
+     "psd_part": {
+      "jobs": 237,
+      "pixels": 450000000,
+      "kernel": 7692.7
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": null,
+     "workers": {}
+    },
+    "extra": {
+     "MB": 925.2,
+     "file": "<scratch>\\g2\\m15k\\files\\n1.psd"
+    },
+    "error": null,
+    "status": "Saved <scratch>\\g2\\m15k\\files\\n1.psd (15000 \u00d7 10000, 925.2 MB, 2 layers, 1264 ms).",
+    "focused": false,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "save_ora": {
+   "row": {
+    "wall": 6576,
+    "blocked": 125,
+    "calls": {
+     "worker postMessage (moved)": {
+      "n": 243,
+      "ms": 8.4,
+      "MB": 0
+     },
+     "2d drawImage < 1 MP": {
+      "n": 2,
+      "ms": 0,
+      "MB": 1.1
+     },
+     "canvas toBlob": {
+      "n": 1,
+      "ms": 4,
+      "MB": 0.2
+     },
+     "blob arrayBuffer": {
+      "n": 8,
+      "ms": 1.2,
+      "MB": 511.6
+     },
+     "blob arrayBuffer (until settled)": {
+      "n": 8,
+      "ms": 145.8,
+      "MB": 0
+     }
+    },
+    "jobs": {
+     "png_part": {
+      "jobs": 237,
+      "pixels": 450000000,
+      "kernel": 31664.6,
+      "compose": 1346.7
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": null,
+     "workers": {}
+    },
+    "extra": {
+     "MB": 511.6,
+     "file": "<scratch>\\g2\\m15k\\files\\n1.ora"
+    },
+    "error": null,
+    "status": "Saved <scratch>\\g2\\m15k\\files\\n1.ora (15000 \u00d7 10000, 511.6 MB, 2 layers, 4868 ms).",
+    "focused": false,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "open_psd": {
+   "row": {
+    "wall": 19362,
+    "blocked": 13586,
+    "calls": {
+     "blob arrayBuffer": {
+      "n": 2,
+      "ms": 0.3,
+      "MB": 925.2
+     },
+     "blob arrayBuffer (until settled)": {
+      "n": 2,
+      "ms": 775.9,
+      "MB": 0
+     },
+     "worker postMessage (moved)": {
+      "n": 261,
+      "ms": 5.3,
+      "MB": 0
+     },
+     "gl bufferData": {
+      "n": 133,
+      "ms": 43.1,
+      "MB": 1.4
+     },
+     "gl texImage2D": {
+      "n": 40,
+      "ms": 0.1,
+      "MB": 0
+     },
+     "gl texSubImage2D": {
+      "n": 10745,
+      "ms": 19,
+      "MB": 22.3
+     },
+     "gl draw": {
+      "n": 152,
+      "ms": 0.1,
+      "MB": 0
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 24,
+      "ms": 1,
+      "MB": 200.9
+     },
+     "2d putImageData": {
+      "n": 2286,
+      "ms": 2.1,
+      "MB": 1.1
+     },
+     "2d drawImage < 1 MP": {
+      "n": 20,
+      "ms": 0.2,
+      "MB": 11.2
+     }
+    },
+    "jobs": {
+     "png_part": {
+      "jobs": 79,
+      "pixels": 150000000,
+      "kernel": 11772.6,
+      "compose": 0
+     },
+     "mips": {
+      "jobs": 37,
+      "tiles": 4645,
+      "kernel": 2515.1
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": null,
+     "workers": {}
+    },
+    "extra": {
+     "loadImageMs": 18901,
+     "from": "file",
+     "size": [
+      15000,
+      10000
+     ],
+     "layers": 1,
+     "status": "Opened n1.psd: 15000 \u00d7 10000, 1 layer over \"Background\" as the base."
+    },
+    "error": null,
+    "status": "Saved <scratch>\\g2\\m15k\\files\\n1.ora (15000 \u00d7 10000, 511.6 MB, 2 layers, 4868 ms).",
+    "focused": false,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "open_ora": {
+   "row": {
+    "wall": 8359,
+    "blocked": 1067,
+    "calls": {
+     "worker postMessage (moved)": {
+      "n": 440,
+      "ms": 7.2,
+      "MB": 0
+     },
+     "blob arrayBuffer": {
+      "n": 2,
+      "ms": 0.3,
+      "MB": 511.6
+     },
+     "blob arrayBuffer (until settled)": {
+      "n": 2,
+      "ms": 280.3,
+      "MB": 0
+     },
+     "createImageBitmap": {
+      "n": 2,
+      "ms": 2.4,
+      "MB": 276.4
+     },
+     "createImageBitmap (until settled)": {
+      "n": 2,
+      "ms": 2383.9,
+      "MB": 0
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 45,
+      "ms": 10.5,
+      "MB": 13908.7
+     },
+     "2d getImageData": {
+      "n": 26,
+      "ms": 1213.5,
+      "MB": 1144.4
+     },
+     "2d putImageData": {
+      "n": 2288,
+      "ms": 2.2,
+      "MB": 1.1
+     },
+     "gl bufferData": {
+      "n": 112,
+      "ms": 29.7,
+      "MB": 1.2
+     },
+     "gl texImage2D": {
+      "n": 36,
+      "ms": 0.1,
+      "MB": 0
+     },
+     "gl texSubImage2D": {
+      "n": 9093,
+      "ms": 15.9,
+      "MB": 18.3
+     },
+     "gl draw": {
+      "n": 128,
+      "ms": 0.1,
+      "MB": 0
+     },
+     "2d drawImage < 1 MP": {
+      "n": 20,
+      "ms": 0.2,
+      "MB": 11.2
+     }
+    },
+    "jobs": {
+     "png_part": {
+      "jobs": 121,
+      "pixels": 229125000,
+      "kernel": 15370.2,
+      "compose": 0
+     },
+     "mips": {
+      "jobs": 37,
+      "tiles": 4645,
+      "kernel": 876.6
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": null,
+     "workers": {}
+    },
+    "extra": {
+     "loadImageMs": 8199,
+     "from": "file",
+     "size": [
+      15000,
+      10000
+     ],
+     "layers": 1,
+     "status": "Opened n1.ora: 15000 \u00d7 10000, 1 layer over \"Background\" as the base."
+    },
+    "error": null,
+    "status": "Saved <scratch>\\g2\\m15k\\files\\n1.ora (15000 \u00d7 10000, 511.6 MB, 2 layers, 4868 ms).",
+    "focused": false,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "close": {
+   "row": {
+    "closed": 2,
+    "arena": {
+     "slots": 9322,
+     "chunks": 37,
+     "allocated": 16343,
+     "freed": 7021,
+     "droppedChunks": 27,
+     "refused": 0,
+     "failed": 0,
+     "enabled": true,
+     "bytes": 2483027968,
+     "freeSlots": 150
+    }
+   },
+   "profile": null
+  }
+ },
+ "out": "<scratch>\\g2\\m15k\\files"
+}

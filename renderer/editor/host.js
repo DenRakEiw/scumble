@@ -94,6 +94,12 @@ const EXPORT_PERCENTS = [200, 150, 100, 75, 50, 33, 25, 10];
  * document's own size at 100 % included; lifting that needs a JPEG entry here.
  */
 const ENCODER_MAX_SIDE = Object.freeze({ webp: { side: 16383, name: "a WebP" } });
+/**
+ * The piece an export goes to main in (saveExport): one IPC message of about 512 MiB or more ends this renderer (oom;
+ * 500 MB saved and 600 MB ended it, measured 2026-10-24), and a piece is read off the blob on its own, so no copy of
+ * the whole file is made here either.
+ */
+const SAVE_PIECE = 64 * 1048576;
 
 /**
  * w × h with its longer side held to MAX_EXPORT_SIDE, the aspect kept (the Size and Canvas rows; each side clamped on
@@ -4312,9 +4318,22 @@ export const host = {
         }
     },
 
+    /** Save an export (the dialog, or `exportPath`) in pieces of SAVE_PIECE; null when the dialog was cancelled. */
     async saveExport(blob, name) {
-        const data = new Uint8Array(await blob.arrayBuffer());
-        return window.scumble.file.save({ name, data, path: this.exportPath || undefined });
+        const file = window.scumble.file;
+        const open = await file.saveStart({ name, size: blob.size, path: this.exportPath || undefined });
+        if (!open) return null;
+        try {
+            for (let at = 0; at < blob.size; at += SAVE_PIECE) {
+                const data = new Uint8Array(await blob.slice(at, Math.min(blob.size, at + SAVE_PIECE)).arrayBuffer());
+                await file.saveWrite({ id: open.id, offset: at, data });
+            }
+            return await file.saveFinish({ id: open.id });
+        } catch (err) {
+            // the target stays as it was; main has dropped a save whose piece or finish failed already
+            file.saveAbort({ id: open.id }).catch(() => {});
+            throw err;
+        }
     },
 
     /**

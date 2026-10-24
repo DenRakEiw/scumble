@@ -11,6 +11,20 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+For 0.1.51 (the hotfix of `docs/PLAN_WASM_BUILD.md` G2, built on `main`):
+- **Saving an export of about 0.7 GB or more ends the window's renderer** (found 2026-10-23 by K0a): the IPC alone was
+  the cause, measured 2026-10-24 on fresh instances with one `window.scumble.file.save` of bytes made in place (no
+  blob): 500 MB saved, 600 MB and 800 MB ended the renderer (oom, exit code -536870904), so one IPC message of about
+  512 MiB or more ends it. `host.saveExport` now sends the export in pieces of 64 MB, each read off the blob on its own
+  (`file:saveStart` / `saveWrite` / `saveFinish` / `saveAbort`); main (`electron/main/filesaves.js`) appends them to a
+  temporary file beside the target, listed in `document-temps.json` for the next start's sweep, and renames it over
+  the target at the end; a failure, a cancel, a reload or a renderer end deletes it and leaves the target. A target
+  another program holds open (Windows refuses its rename whatever the holder shares, measured by the review) or a hard
+  link is written in place at the end, as before; a symbolic link is saved through. Tests: `node tools/filesaves_test.js`,
+  the `export` gate's `a_600_mb_export_is_saved_in_pieces`, a cancel, a refused navigation, a reload with a save open
+  (both backends). Measurements: `docs/measurements/g2_2026-10-24/` (a real 15k PSD of 925 MB saved in 4.5 s and
+  opened from that file).
+
 For 0.1.50 (`docs/PLAN_0_1_50.md`):
 - **The local Flux.2 Klein example fails in the sampler: "mat1 and mat2 shapes cannot be multiplied"** (reported
   2026-10-02, Reddit): a local Klein run (the shipped Klein recipes, or a graph whose CLIPLoader has type flux2 / flux3

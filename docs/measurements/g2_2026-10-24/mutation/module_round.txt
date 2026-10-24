@@ -1,0 +1,26 @@
+offset_check     RED  [FAIL] 3b. a piece out of order drops the save: Error: a skipped piece: no error
+size_check       RED  [FAIL] 3d. a piece past the size drops the save: Error: a piece too long: no error
+short_finish     RED  [FAIL] 3e. a finish that came short drops the save: Error: a short finish: no error
+owner_check      RED  [FAIL] 4. only the page that opened a save writes to it; abortAll drops one page's saves: Error: another page's piece: no error
+abort_owner      RED  [FAIL] 4. only the page that opened a save writes to it; abortAll drops one page's saves: Error: another page aborted the save
+drop_unlink      RED  [FAIL] 3a. a cancel mid-way leaves the target as it was: Error: after the cancel: a temporary file is left: three.tif.saving-50740-3
+drop_unregister  RED  [FAIL] 3a. a cancel mid-way leaves the target as it was: Error: after the cancel: the registry still lists <home>\AppData\Local\Temp\scumble-filesaves-wOb2MO\three.tif
+drop_keeps_held  RED  [FAIL] 12. a temporary file something still holds at the cancel stays listed for the next start's sweep: Error: the held temporary file is not listed any more
+drop_close       RED  [FAIL] 3a. a cancel mid-way leaves the target as it was: Error: after the cancel: the temporary file's handle is still open
+gen_after_open   RED  [FAIL] 9. a page dropped while its save waits for the dialog gets no save: Error: the late open: no error
+gen_bump         RED  [FAIL] 9. a page dropped while its save waits for the dialog gets no save: Error: the late open: no error
+hardlink_in_place RED  [FAIL] 10. a hard link is written in place (every name gets the bytes); a symbolic link is saved through: Error: the hard link's other name keeps the old bytes
+symlink_through  RED  [FAIL] 10. a hard link is written in place (every name gets the bytes); a symbolic link is saved through: Error: the link was replaced or the file it points to kept the old bytes
+copy_fallback    RED  [FAIL] 6. a target held by another program (EBUSY on the rename): written in place, or refused when that fails too: Error: busy
+temp_name_cap    RED  [FAIL] 11. a target whose own name is 250 characters long saves (the temporary name is cut to 255): Error: ENOENT: no such file or directory, open '<home>\AppData\Loca
+no_register      RED  [FAIL] 1. a file in uneven pieces comes out byte for byte, and leaves nothing behind: Error: the temporary file is not listed beside the target: 
+no_rename        RED  [FAIL] 1. a file in uneven pieces comes out byte for byte, and leaves nothing behind: Error: ENOENT: no such file or directory, open '<home>\AppData\Local\Temp\scumble
+readonly_check   RED  [FAIL] 5. refused before anything is written: Error: a read-only target: no error
+folder_check     RED  [FAIL] 5. refused before anything is written: Error: a folder: no error
+free_check       RED  [FAIL] 5. refused before anything is written: Error: a size the drive cannot take: no error
+size_arg         RED  [FAIL] 5. refused before anything is written: Error: no size: no error
+step_chain       RED  [FAIL] 7. two pieces sent without waiting land in order; an empty file: Error: a piece of the file came at byte 65536, not at 0
+step_drop        RED  [FAIL] 3b. a piece out of order drops the save: Error: out of order: the temporary file's handle is still open
+abortall_owner   RED  [FAIL] 4. only the page that opened a save writes to it; abortAll drops one page's saves: Error: abortAll(A) dropped other than one
+busy_message     RED  [FAIL] 6. a target held by another program (EBUSY on the rename): written in place, or refused when that fails too: Error: held for good: the error was "busy"
+ALL RED

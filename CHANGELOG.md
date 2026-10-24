@@ -2,6 +2,11 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
+## 0.1.51 - 2026-10-24
+
+- **Large exports save again.** Saving an export of more than about 500 MB (a PSD of a 15,000 x 10,000 picture with a layer above it is about 0.9 GB, and a large ORA or TIFF can pass it too) ended Scumble's window: it reloaded and brought the documents back from the autosave, but the file was never written. An export now goes to the disk in pieces, whatever its size.
+- An export is written to a temporary file beside the target and put in its place only once every byte is written, as a `.scumble` document is: a save that fails, or a disk that is too full for it (now said before anything is written), leaves an older file of the same name as it was. When another program holds that file open (a viewer), or the file has other names (a hard link), the export is written into it as before; a symbolic link keeps pointing at the new picture. A read-only target is refused before the export is written.
+
 ## 0.1.50 - 2026-10-22
 
 - **MOSS-Image on your own ComfyUI.** A local recipe for OpenMOSS's open MOSS-Image model (ComfyUI 0.42 or newer runs it on its own nodes; the weights are Apache-2.0): it makes new pictures with *Generate new*, and with the Boxes switch on your New and Text boxes go as its JSON layout, each box placed in the picture's pixels and a Text box's words rendered there (issue #6). It takes no picture to edit, so *Generate* on a selection says to use *Generate new*.

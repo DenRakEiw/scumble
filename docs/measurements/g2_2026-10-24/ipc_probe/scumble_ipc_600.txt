@@ -1,0 +1,2 @@
+2026-10-24 01:29:06.640 INFO  [main] log started, <scratch>\g2\probe\profile_ipc_600\logs\scumble.log
+2026-10-24 01:29:15.677 ERROR [main] the window's renderer ended (oom, exit code -536870904): reloaded; the documents come back from the autosave

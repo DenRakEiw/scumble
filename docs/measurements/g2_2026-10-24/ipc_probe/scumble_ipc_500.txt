@@ -1,0 +1,1 @@
+2026-10-24 01:29:42.535 INFO  [main] log started, <scratch>\g2\probe\profile_ipc_500\logs\scumble.log

@@ -83,7 +83,14 @@ contextBridge.exposeInMainWorld("scumble", {
     },
     file: {
         open: () => ipcRenderer.invoke("file:open"),
+        // one message: small files only (one of about 512 MiB or more ends the renderer); an export goes in pieces:
+        // saveStart({ name, size, path? }) -> { id, path, name } or null, saveWrite({ id, offset, data }) in order,
+        // saveFinish({ id }) -> { path, name, bytes }, saveAbort({ id }) (electron/main/filesaves.js)
         save: (args) => ipcRenderer.invoke("file:save", args),
+        saveStart: (args) => ipcRenderer.invoke("file:saveStart", args),
+        saveWrite: (args) => ipcRenderer.invoke("file:saveWrite", args),
+        saveFinish: (args) => ipcRenderer.invoke("file:saveFinish", args),
+        saveAbort: (args) => ipcRenderer.invoke("file:saveAbort", args),
         read: (file) => ipcRenderer.invoke("file:read", file),
         onOpened: (cb) => on("file:opened", cb),
     },

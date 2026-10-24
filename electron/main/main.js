@@ -59,6 +59,7 @@ const autosave = require("./autosave");
 const { QuitGuard, CrashGuard, isCrash } = require("./quit");
 const { Documents, isDocumentPath, pathKey, documentArgs } = require("./documents");
 const docfile = require("./docfile");
+const { FileSaves } = require("./filesaves");
 const registration = require("./mcp/registration");
 const { ComfyView } = require("./comfyview");
 
@@ -143,6 +144,9 @@ const documents = new Documents({
         return !app.isPackaged && /^enospc@\d+$/.test(f) ? { enospcAt: +f.slice(7) } : null;
     },
 });
+// an export comes from the window in pieces (filesaves.js: one IPC message of about 512 MiB ends the renderer), into a
+// temporary file of the same temp list
+const fileSaves = new FileSaves({ registry: documents.registry, choose: (name, filters) => chooseSavePath(name, filters) });
 const flushWaits = new Map();   // id -> resolve, while the window saves (app:flush / app:flushed)
 let flushSeq = 0;
 const askWaits = new Map();     // id -> { shown, answer }, while the window asks (dialog:ask / dialog:shown / dialog:answer)
@@ -387,9 +391,12 @@ function createWindow() {
         if (!details || details.isSameDocument || !details.isMainFrame) return;
         // a new page of the app (a reload): the Comfy Cloud pictures the old one did not ack go to it (a navigation
         // out of the app is refused by will-navigate below and keeps the page)
-        if (String(details.url || "").startsWith(ORIGIN + "/")) cloudPageGone();
+        const reload = String(details.url || "").startsWith(ORIGIN + "/");
+        if (reload) cloudPageGone();
         for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window reloaded" });
         for (const w of askWaits.values()) w.gone();
+        // its exports (the targets stay); not for a file dropped on the window, whose navigation is refused
+        if (reload) fileSaves.abortAll(win.webContents.id).catch((err) => console.warn("file saves:", err.message));
         // the canvas-only view does not survive a reload: its full screen goes with it (F11's stays)
         if (viewFullScreen && !win.isDestroyed()) win.setFullScreen(false);
     });
@@ -399,6 +406,7 @@ function createWindow() {
         for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window's renderer ended" });
         for (const w of askWaits.values()) w.gone();
         documents.abortAll();   // its saves: the temporary files go, the targets stay; the reload restores the session
+        fileSaves.abortAll(win.webContents.id).catch((err) => console.warn("file saves:", err.message));
         if (quitGuard.done || quitGuard.flushing || !isCrash(d) || win.isDestroyed()) return;   // not while it closes
         const plan = crashGuard.record();
         const what = plan === "reload" ? "reloaded; the documents come back from the autosave"
@@ -841,23 +849,29 @@ async function readFile(file) {
     return { name: path.basename(file), path: file, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
 }
 
-/** Write bytes to a file. With `path` given (scripts, MCP export) no dialog is shown. */
-async function saveFile({ name, data, filters, path: target }) {
+/** Where an export goes: the save dialog (null when cancelled); the folder is remembered for the next one. */
+async function chooseSavePath(name, filters) {
     const ext = path.extname(name || "").slice(1).toLowerCase();
-    let filePath = target;
-    if (!filePath) {
-        needWindow("Save");
-        const r = await dialog.showSaveDialog(win, {
-            title: "Save image",
-            defaultPath: path.join(settings.get().lastSaveDir || app.getPath("pictures"), name || "scumble.png"),
-            filters: filters || (ext ? [{ name: ext === "tif" ? "TIFF" : ext.toUpperCase(), extensions: ext === "tif" ? ["tif", "tiff"] : [ext] }, { name: "All files", extensions: ["*"] }] : [{ name: "All files", extensions: ["*"] }]),
-        });
-        if (r.canceled || !r.filePath) return null;
-        filePath = r.filePath;
-        settings.set({ lastSaveDir: path.dirname(filePath) });
-    }
-    await fsp.writeFile(filePath, Buffer.from(data.buffer, data.byteOffset, data.byteLength));
-    return { path: filePath, name: path.basename(filePath), bytes: data.byteLength };
+    needWindow("Save");
+    const r = await dialog.showSaveDialog(win, {
+        title: "Save image",
+        defaultPath: path.join(settings.get().lastSaveDir || app.getPath("pictures"), name || "scumble.png"),
+        filters: filters || (ext ? [{ name: ext === "tif" ? "TIFF" : ext.toUpperCase(), extensions: ext === "tif" ? ["tif", "tiff"] : [ext] }, { name: "All files", extensions: ["*"] }] : [{ name: "All files", extensions: ["*"] }]),
+    });
+    if (r.canceled || !r.filePath) return null;
+    settings.set({ lastSaveDir: path.dirname(r.filePath) });
+    return r.filePath;
+}
+
+/**
+ * Write bytes to a file in one message (file:save, small files: the window's exports go in pieces, file:saveStart).
+ * With `path` given (scripts, MCP export) no dialog is shown. The target is replaced only once every byte is written.
+ */
+async function saveFile({ name, data, filters, path: target }, owner) {
+    const open = await fileSaves.start(owner, { name, filters, path: target, size: data.byteLength });
+    if (!open) return null;
+    await fileSaves.write(owner, { id: open.id, offset: 0, data });   // a failure drops the save: the target stays
+    return fileSaves.finish(owner, { id: open.id });
 }
 
 // ---- recent documents (docs/PLAN_DOCUMENTS.md §5.5): main owns the list, the renderer never keeps a copy ----------
@@ -1127,7 +1141,12 @@ function installIpc() {
     ipcMain.handle("documents:stat", async (_e, file) => { try { const st = await fsp.stat(String(file)); return { exists: st.isFile(), mtime: st.mtimeMs, size: st.size }; } catch (_) { return { exists: false }; } });
     ipcMain.handle("files:openFolder", async () => { const r = mirror.root(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(msix.forExplorer(r)); });
     ipcMain.handle("file:open", () => openImage());
-    ipcMain.handle("file:save", (_e, args) => saveFile(args));
+    ipcMain.handle("file:save", (e, args) => saveFile(args, e.sender.id));
+    // an export in pieces (filesaves.js): start (the dialog, or `path`), each piece at its offset, finish or abort
+    ipcMain.handle("file:saveStart", (e, args) => fileSaves.start(e.sender.id, args));
+    ipcMain.handle("file:saveWrite", (e, args) => fileSaves.write(e.sender.id, args));
+    ipcMain.handle("file:saveFinish", (e, args) => fileSaves.finish(e.sender.id, args));
+    ipcMain.handle("file:saveAbort", (e, args) => fileSaves.abort(e.sender.id, args));
     ipcMain.handle("file:read", (_e, file) => readFile(String(file)));
     ipcMain.handle("recipes:list", () => listRecipes());
     ipcMain.handle("recipes:import", (_e, file) => importRecipe(file));
@@ -1362,9 +1381,15 @@ function startApp() {
     // the last session's state becomes an earlier generation (autosave.js), also when an agent starts the app: what it
     // changes then never replaces the user's last state (the rotation moves only when the files differ)
     try { autosave.rotate(app.getPath("userData")); } catch (err) { console.warn("autosave: rotate", err.message); }
-    // the temporary files of a document save the last session did not finish (killed): the targets were never touched
-    try { const gone = documents.sweep(); if (gone.length) log.record({ source: "main", message: `removed ${gone.length} unfinished document save${gone.length === 1 ? "" : "s"} of the last session` }); } catch (err) { console.warn("documents: sweep", err.message); }
-    app.on("will-quit", () => { if (documents.busy) { documents.abortAll(); try { documents.sweep(); } catch (_) { /* the next start sweeps */ } } });
+    // the temporary files of a document save or an export the last session did not finish (killed): the targets were
+    // never touched
+    try { const gone = documents.sweep(); if (gone.length) log.record({ source: "main", message: `removed ${gone.length} unfinished save${gone.length === 1 ? "" : "s"} of the last session` }); } catch (err) { console.warn("documents: sweep", err.message); }
+    app.on("will-quit", () => {
+        if (!documents.busy && !fileSaves.busy) return;
+        documents.abortAll();
+        fileSaves.abortAll().catch(() => {});
+        try { documents.sweep(); } catch (_) { /* the next start sweeps */ }
+    });
     installProtocol();
     installIpc();
     // made now, opened only when the user asks (docs/PLAN_COMFY_VIEW.md §2.5: no request because the feature exists)
