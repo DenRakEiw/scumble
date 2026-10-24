@@ -1,0 +1,21 @@
+  filesaves_test.js [ok] 1. a file in uneven pieces comes out byte for byte, and leaves nothing behind: 5255225 bytes in 6 pieces
+  filesaves_test.js [ok] 2. an existing target keeps its old bytes until the finish
+  filesaves_test.js [ok] 3a. a cancel mid-way leaves the target as it was
+  filesaves_test.js [ok] 3b. a piece out of order drops the save: a piece of the file came at byte 1500, not at 1000
+  filesaves_test.js [ok] 3c. a piece written twice drops the save: a piece of the file came at byte 0, not at 1000
+  filesaves_test.js [ok] 3d. a piece past the size drops the save: the file grew past its size of 3000 bytes
+  filesaves_test.js [ok] 3e. a finish that came short drops the save: the file came short: 1000 of 3000 bytes
+  filesaves_test.js [ok] 3f. a piece that is not bytes drops the save: a piece of the file is not bytes
+  filesaves_test.js [ok] 4. only the page that opened a save writes to it; abortAll drops one page's saves
+  filesaves_test.js [ok] 5. refused before anything is written
+  filesaves_test.js [ok] 6. a target held by another program (EBUSY on the rename): 20 tries held for good
+  filesaves_test.js [ok] 7. two pieces sent without waiting land in order; an empty file
+  filesaves_test.js [ok] 8. a killed save leaves its temporary file listed, and the next start's sweep deletes it
+  filesaves_test.js PASS
+[ok] filesaves_test_js
+[ok] a_600_mb_export_is_saved_in_pieces: 629157945 bytes in 10 pieces, 2088 ms, read back whole
+[ok] a_cancelled_save_leaves_the_target_and_no_temporary_file
+[ok] an_export_past_one_canvas_is_refused: {"size": "Save failed: The export would be 30,000 \u00d7 22,500 px, more than one canvas holds (65,535 px a side, 268 megapixels). Make the Size or the Canvas row in the Export section smaller (the export command's scale, width or canvas_width).", "frame": "Save failed: The export's canvas would be 30,000 \u00d7 20,000 px, more than one canvas holds (65,535 px a side, 268 megapixels). Make the Size or the Canvas row in the Export section smaller (the export command's scale, width or canvas_width).", "webp": "Save failed: The export would be 16,384 \u00d7 100 px, and a WebP holds at most 16,383 px a side: save it as PNG, JPEG or TIFF, or make the Size or the Canvas row smaller.", "percent": [32768, 200]}
+[ok] skipped: the canvas backend keeps its canvas paths (bands are for the tile engine)
+[ok] a_reload_drops_the_open_save
+PASS

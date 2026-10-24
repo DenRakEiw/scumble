@@ -1,0 +1,102 @@
+probes in
+the save rows write into <scratch>\g2\m15k\files (deleted at the end)
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1496, "encodeMs": 2257, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 3495 ms, longest block 662 ms
+   {"loadFileMs": 3417, "tiles": 2360}
+   boundaries (calls, ms inside the call, MB):
+     gl texSubImage2D                      2360       2.9 ms        1.0 MB
+     worker postMessage (moved)             164       2.1 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       1.8 ms        0.0 MB
+     blob arrayBuffer                         8       0.8 ms        0.0 MB
+     2d drawImage >= 1 MP                     5       0.2 ms       41.8 MB
+   worker png_read: 1 jobs, {"kernel": 2344.4, "unfilter": 1038.5, "deliver": 11.9}
+   worker mips: 19 jobs, {"kernel": 544.6}
+   px calls, window: (no counters in this build)
+   px calls, workers: -
+
+== add_the_paint_layer: wall 974 ms, longest block 881 ms
+   {"tiles": 2301, "genMs": 73, "writeMs": 772, "addMs": 130}
+   boundaries (calls, ms inside the call, MB):
+     gl texSubImage2D                      4589       6.6 ms        9.9 MB
+     2d putImageData                       2286       2.0 ms        1.1 MB
+     worker postMessage (moved)              90       1.5 ms        0.0 MB
+     2d drawImage >= 1 MP                    11       0.4 ms       92.0 MB
+     2d drawImage < 1 MP                     20       0.2 ms       11.2 MB
+   worker mips: 18 jobs, {"kernel": 544.3}
+   px calls, window: (no counters in this build)
+   px calls, workers: -
+
+== export_psd: wall 1474 ms, longest block 87 ms
+   {"MB": 925.2}
+   boundaries (calls, ms inside the call, MB):
+     worker postMessage (moved)             237      10.0 ms        0.0 MB
+     gl getError                             12       5.7 ms        0.0 MB
+     2d drawImage < 1 MP                     27       2.2 ms        1.8 MB
+     2d putImageData                          2       0.3 ms        1.2 MB
+   worker psd_part: 237 jobs, {"kernel": 9414}
+   px calls, window: (no counters in this build)
+   px calls, workers: -
+
+== save_psd: wall 4522 ms, longest block 124 ms
+   {"MB": 925.2, "file": "<scratch>\\g2\\m15k\\files\\n1.psd"}
+   boundaries (calls, ms inside the call, MB):
+     blob arrayBuffer (until settled)        15     382.6 ms        0.0 MB
+     worker postMessage (moved)             237       7.7 ms        0.0 MB
+     blob arrayBuffer                        15       2.5 ms      925.2 MB
+   worker psd_part: 237 jobs, {"kernel": 7692.7}
+   px calls, window: (no counters in this build)
+   px calls, workers: -
+
+== save_ora: wall 6576 ms, longest block 125 ms
+   {"MB": 511.6, "file": "<scratch>\\g2\\m15k\\files\\n1.ora"}
+   boundaries (calls, ms inside the call, MB):
+     blob arrayBuffer (until settled)         8     145.8 ms        0.0 MB
+     worker postMessage (moved)             243       8.4 ms        0.0 MB
+     canvas toBlob                            1       4.0 ms        0.2 MB
+     blob arrayBuffer                         8       1.2 ms      511.6 MB
+     2d drawImage < 1 MP                      2       0.0 ms        1.1 MB
+   worker png_part: 237 jobs, {"kernel": 31664.6, "compose": 1346.7}
+   px calls, window: (no counters in this build)
+   px calls, workers: -
+
+== open_psd: wall 19362 ms, longest block 13586 ms
+   {"loadImageMs": 18901, "from": "file", "size": [15000, 10000], "layers": 1, "status": "Opened n1.psd: 15000 \u00d7 10000, 1 layer over \"Background\" as the base."}
+   boundaries (calls, ms inside the call, MB):
+     blob arrayBuffer (until settled)         2     775.9 ms        0.0 MB
+     gl bufferData                          133      43.1 ms        1.4 MB
+     gl texSubImage2D                     10745      19.0 ms       22.3 MB
+     worker postMessage (moved)             261       5.3 ms        0.0 MB
+     2d putImageData                       2286       2.1 ms        1.1 MB
+     2d drawImage >= 1 MP                    24       1.0 ms      200.9 MB
+     blob arrayBuffer                         2       0.3 ms      925.2 MB
+     2d drawImage < 1 MP                     20       0.2 ms       11.2 MB
+   worker png_part: 79 jobs, {"kernel": 11772.6, "compose": 0}
+   worker mips: 37 jobs, {"kernel": 2515.1}
+   px calls, window: (no counters in this build)
+   px calls, workers: -
+
+== open_ora: wall 8359 ms, longest block 1067 ms
+   {"loadImageMs": 8199, "from": "file", "size": [15000, 10000], "layers": 1, "status": "Opened n1.ora: 15000 \u00d7 10000, 1 layer over \"Background\" as the base."}
+   boundaries (calls, ms inside the call, MB):
+     createImageBitmap (until settled)        2    2383.9 ms        0.0 MB
+     2d getImageData                         26    1213.5 ms     1144.4 MB
+     blob arrayBuffer (until settled)         2     280.3 ms        0.0 MB
+     gl bufferData                          112      29.7 ms        1.2 MB
+     gl texSubImage2D                      9093      15.9 ms       18.3 MB
+     2d drawImage >= 1 MP                    45      10.5 ms    13908.7 MB
+     worker postMessage (moved)             440       7.2 ms        0.0 MB
+     createImageBitmap                        2       2.4 ms      276.4 MB
+     2d putImageData                       2288       2.2 ms        1.1 MB
+     blob arrayBuffer                         2       0.3 ms      511.6 MB
+     2d drawImage < 1 MP                     20       0.2 ms       11.2 MB
+   worker png_part: 121 jobs, {"kernel": 15370.2, "compose": 0}
+   worker mips: 37 jobs, {"kernel": 876.6}
+   px calls, window: (no counters in this build)
+   px calls, workers: -
+[ok] close: {"closed": 2, "arena": {"slots": 9322, "chunks": 37, "allocated": 16343, "freed": 7021, "droppedChunks": 27, "refused": 0, "failed": 0, "enabled": true, "bytes": 2483027968, "freeSlots": 150}}
+deleted 2 file(s) the save rows wrote
+
+RESULT measured
+
+--- stderr

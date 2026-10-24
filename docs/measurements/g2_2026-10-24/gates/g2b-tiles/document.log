@@ -1,0 +1,18 @@
+[ok] node: 17 checks
+  built on tiles: 13 layers ['paint/paint/none/multiply', 'image/image/none/normal', 'reference/image/reference/normal', 'control/paint/control/normal', 'text/text/none/screen', 'Result 1/result/none/normal', 'curves/filter/none/normal', 'grain/filter/none/normal', 'film/filter/none/normal', 'cube/paint/none/normal', 'cube depth/paint/control/normal', 'AI label/paint/none/normal', 'hidden/paint/none/normal'], history 1, film film.halation, AI label True, plugins ['glb']  (2.5 s)
+[ok] every_kind_round_trips (3.2 s): 915 KB, 18 entries, written in 12 ms (save 160 ms, open 495 ms); state, 13 layers, masks, selection and flatten equal to the restore of the saved state; against the live document, partly transparent pixels one level off: text 32 px by 1; zipfile clean; glb.edit {'before': [615, 540], 'after': [468, 440]}
+[ok] reopen_copies_nothing (3.1 s): mirror 17 files before, 17 after; added [], changed []; main: imported 0, reused 15, renamed {}; state equal True
+  collide.scumble saved (0.8 s)
+[ok] newer_documents (1.3 s): minReader 99 refused (Error invoking remote method 'documents:open': Error: made by a newer Scumble (9.9.9) in a...), nothing imported; version 99 opened with the note, and the unknown kind, filter id, top-level field and plugin data (with their files) came back unchanged in the next save; the layer without a file left out with a word, also in open_document's notes (with a filter layer that would not load), on two plain lines after the load
+[ok] a_comfy_whole_picture_upscale_round_trips (2.8 s): 400 x 300 upscaled to 800 x 600 on the stubbed ComfyUI route, 2 layers; saved (98 KB), closed and opened: size, state, layer places, pixels, base and selection as before the save
+  big.scumble: 6000 x 4000, 206 MB written in 148 ms (loaded in 2014 ms; 2.4 s)
+[ok] a_save_in_place_is_atomic (1.3 s): 93 reads (30 while the temporary file existed): 34 old, then 59 new, none torn; 206 MB in 191 ms
+[ok] cancel_leaves_the_old_file (0.3 s): cancelled at the first progress (Error invoking remote method 'documents:write': Error: the save was cancelled); target byte-identical, no temporary file, docFile unchanged
+[ok] a_kill_mid_save_keeps_the_old_file (3.7 s): killed at 8 MB of the temporary file; target byte-identical; the next start removed it ([]) and restored the document (2 layers, prompt 'big-2 atomic')
+[ok] a_close_waits_for_the_save (4.4 s): WM_CLOSE at 206 MB; the temporary file was renamed 0.14 s after the close, the process ended 0.34 s after it (exit 0); zipfile clean; it opens with the saved prompt and base
+[ok] opens_in_a_fresh_profile (2.3 s): state, layers, masks, selection and flatten equal to the first profile's; 15 files imported byte for byte; open 1118 ms; glb.edit {'before': [615, 540], 'after': [468, 440]}
+[ok] a_colliding_name_is_renamed (1.4 s): imported as ['photo (1).png', 'same (1).png'] (one of another size, one of the same size 60168 bytes with other bytes); the open documents kept their pixels; the state equal after mapping the names
+[ok] disk_full_leaves_the_old_file (0.6 s): Error invoking remote method 'documents:write': Error: no space left on the drive (a test fault); target byte-identical, no temporary file, docFile unchanged
+  closed the fresh profile's instance in 0.2 s (exit 0)
+  gate time 37 s
+PASS
