@@ -11,53 +11,27 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
-For 0.1.51 (the hotfix of `docs/PLAN_WASM_BUILD.md` G2, built on `main`):
-- **Saving an export of about 0.7 GB or more ends the window's renderer** (found 2026-10-23 by K0a): the IPC alone was
-  the cause, measured 2026-10-24 on fresh instances with one `window.scumble.file.save` of bytes made in place (no
-  blob): 500 MB saved, 600 MB and 800 MB ended the renderer (oom, exit code -536870904), so one IPC message of about
-  512 MiB or more ends it. `host.saveExport` now sends the export in pieces of 64 MB, each read off the blob on its own
-  (`file:saveStart` / `saveWrite` / `saveFinish` / `saveAbort`); main (`electron/main/filesaves.js`) appends them to a
-  temporary file beside the target, listed in `document-temps.json` for the next start's sweep, and renames it over
-  the target at the end; a failure, a cancel, a reload or a renderer end deletes it and leaves the target. A target
-  another program holds open (Windows refuses its rename whatever the holder shares, measured by the review) or a hard
-  link is written in place at the end, as before; a symbolic link is saved through. Tests: `node tools/filesaves_test.js`,
-  the `export` gate's `a_600_mb_export_is_saved_in_pieces`, a cancel, a refused navigation, a reload with a save open
-  (both backends). Measurements: `docs/measurements/g2_2026-10-24/` (a real 15k PSD of 925 MB saved in 4.5 s and
-  opened from that file).
-
-For 0.1.50 (`docs/PLAN_0_1_50.md`):
-- **The local Flux.2 Klein example fails in the sampler: "mat1 and mat2 shapes cannot be multiplied"** (reported
-  2026-10-02, Reddit): a local Klein run (the shipped Klein recipes, or a graph whose CLIPLoader has type flux2 / flux3
-  and whose model file names Klein) that fails with that torch error now says, in red, which model and text encoder
-  files it sent and which encoder fits (Klein 9B qwen_3_8b, 4B qwen_3_4b, FLUX 3 Image Klein qwen3vl_4b), or, when
-  the names fit, the other causes (a ComfyUI too old, a file holding another model); both Klein recipes' descriptions
-  name the fitting encoder (Q1, `host.js` `kleinRun` / `kleinEncoderHint`; the `generate` gate's step
-  `a_klein_shape_error_names_the_text_encoder`). The reporter's own files are still not known; 7680 features read as
-  Qwen3 4B's output is inferred (3 x 2560), not measured.
-- **PNG / TIFF export with a size or a frame** (Size limits below): a Size or Canvas row past one canvas (65,535 px a
-  side, 268 MP) is refused before anything is drawn; a WebP past 16,383 px a side is refused (Chromium wrote it cut
-  to that width, measured); a typed size past 32,768 px a side is scaled down with the aspect kept and the status line
-  says so (Q3, `host.js` `exportSizeRefusal`, `capExportSide`; the `export` gate's step
-  `an_export_past_one_canvas_is_refused`, both backends). Still open: a 100 % export of a document past 32,768 px a
-  side comes out scaled down to 32,768 px with only the "Saved ... (w x h)" line saying so (`exportPixels` holds every
-  export to that side; the PNG band writer could write it at full size, which would also need JPEG's 65,500 px limit,
-  measured).
-- **A layer of an unknown kind without a `ref` is dropped on open without a note** (the .scumble review below): the
-  load counts it and a filter layer that throws, and the status line after the open says in red how many were left
-  out and that the next save drops them; `open_document` and `reopen_closed_tab` carry the note (Q4,
-  `inpaint_canvas.js` `leftOut`, `leftOutText`; the `document` gate's step 11).
-- **The node skips a reference it cannot load** (Reference layers dropped without a word, below): with `named_refs`
-  set the node raises "Inpaint Canvas: reference N (@imgN) could not be loaded ..." (node commit `9a6c9dc`, branch
-  `named-refs-raise`, live once the node is built and pushed with 0.1.50); the app shows it as "Inpaint Canvas
-  failed: ..." (Q5).
-- The Realism Pass on RTX 40 and 30 (below) is half covered: a whole-picture pass whose answer is the picture that went
-  (compared pixel for pixel on 5 x 5 pieces, from Strength 0.25) still lands, with a red line that the pass changed
-  nothing on that card, and every pass logs its difference (Q2, `realism.js` `compareTiles` / `unchangedNote`). The
-  bounds (largest 4, mean 1 level) were never measured on a card, and a pass on a selection does not compare.
-
----
+Nothing at the moment (0.1.50's and 0.1.51's fixes went out with them; `CHANGELOG.md` has them).
 
 ## Open
+
+### The helper downloader sends the Hugging Face token to every URL and checks only the size (found 2026-10-24, read, item 49's plan)
+
+`electron/main/onnx/models.js` `_file` (`:297-299` at `ec1142b`) puts `authorization: Bearer <token>` on every
+download request, whatever the URL's host. Today every registry URL is on `huggingface.co`, so the token goes nowhere
+else (and undici drops `Authorization` on a cross-origin redirect, so HF's storage redirects do not get it either); a
+model hosted anywhere else (GitHub release assets, Google Cloud Storage) would receive the user's Hugging Face token. The
+same function compares only the file size (`:328`), no hash. Not reachable today; to fix before the first non-HF URL
+goes into the registry: the token only to `huggingface.co` hosts, a sha256 per file. Planned as session I2 of
+`docs/PLAN_CORRIDORKEY.md`.
+
+### The `depth` gate runs a test that does not exist (found 2026-10-23, read, K0c)
+
+`tools/run_gates.sh` has no rule of its own for `depth`, so its default branch runs `python tools/depth_test.py`,
+which does not exist: only `tools/depth_test.js` does (`docs/TESTING.md` lists the `.py` as the gate). The gate can
+only fail (Python's "can't open file"), and whatever `depth_test.js` checks is not in any gate run. Fix: a rule
+`depth) node tools/depth_test.js` in `run_gates.sh` if the Node test is the gate (it needs no app), or the Python
+test written; then TESTING.md's line. Outside the kernel plan (`docs/PLAN_WASM_BUILD.md` §4.12).
 
 ### A relight recipe imported or saved under a new id is accepted and never run (found 2026-10-12, read)
 
@@ -84,8 +58,11 @@ the tile backend (`inpaint_canvas.js` `checkBaseSize`, refusals tested in `edito
   268 MP Chromium's canvas draws and reads nothing, so an empty base is possible. Not measured.
 - **JPEG / WebP above 268 MP are not refused** although a comment in `inpaint_canvas.js` (near 548) and
   `docs/PLAN_BCE.md` promise a refusal that names PNG; the file goes to `createImageBitmap` in a worker. Not measured.
-- **(Fixed for 0.1.50, above.) PNG / TIFF export with a size or a frame** caps each side at 32,768 px silently and goes
-  through one canvas: an output above 268 MP from a smaller document is not checked (`host.js` near 582-632).
+- **(Fixed in 0.1.50.) PNG / TIFF export with a size or a frame**: a Size or Canvas row past one canvas is refused, a
+  typed side past 32,768 px is scaled down with the aspect kept. Still open: a 100 % export of a document past
+  32,768 px a side comes out scaled down to 32,768 px with only the "Saved ... (w x h)" line saying so (`exportPixels`
+  holds every export to that side; the PNG band writer could write it at full size, which would also need JPEG's
+  65,500 px limit, measured).
 - **The PSD fallback writer** (canvas backend, or no worker pool) checks neither the 30,000 px side nor the 4 GiB
   section limit that the banded writer checks (`inpaint_bands.js` near 289).
 - **Files above 2 GiB fail to open from the dialog or a path** (`fsp.readFile` in `electron/main/main.js` near 760);

@@ -82,7 +82,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-19: 0.1.49 released and in the MCP Registry; the Store updates of 0.1.48 / 0.1.49 open)
+## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
 - **0.1.49 = Comfy Cloud and Comfy Router on Comfy's official SDK + eight quick wins (the user, 2026-10-18: "alles in
   einem update", all eight quick wins picked, "mache plan und fange mit der entwicklung an").** The plan is
@@ -183,6 +183,73 @@ code.
   built as recommended). The challenge song texts are in `dist/video/trailer/` (`song_scumble_new.md` is the newest, own
   melody; the other two fit released songs and must not be used as audio).
 
+- **THE CURRENT WORK (2026-10-23): the Rust-kernel update, item 44, on the branch `wasm-kernels`.** The user: "wir
+  sollten diesmal an einem eher größeren update arbeiten ... vor release mehr entwickeln", "mach die fehlenden messungen
+  und dann den umbauplan", then a `/clear` and the development. **The plan is `docs/PLAN_WASM_BUILD.md`** (653 lines,
+  made by a workflow of six designers, two critics and a writer from the W0 numbers): sessions K0a-K41 in order, six
+  stops that re-rank by measurement, about 40-48 working days (inferred). **K0a done 2026-10-23** (the reader / writer
+  harness; "K0a" in the plan's §7, `docs/measurements/k0a_2026-10-23/`, `docs/PERFORMANCE.md` §16; gates lint types tiff
+  export layered pxjobs PASS on tiles). It found two things for the user and Stop 1: **a real save of an export of about
+  0.7 GB or more ends the renderer** (oom; a 15k PSD with its paint layer, 925 MB; `docs/BUGS.md`, in 0.1.50 too), and
+  **a 15k PSD open blocks the window 14.3 s** (`readPsd` on the window). **K0b done 2026-10-23** (harness II: px.js
+  call counters `pxCalls`, the marks `range` / `program` / `freqsep` / `relight_maps`, stitch and edge-fit laps, the new
+  rows; "K0b" in the plan's §7, `docs/measurements/k0b_2026-10-23/`; 15 gates PASS on tiles). It found for Stop 1: the
+  window's JS combine is 76 % of select by depth and 0.4 s of the wand's block (K5), **a fill layer with a depth limit
+  costs about 11.5 s of a 15k layered export** (`limitAlphaRows`, K25), the bucket over a 15k band blocks 2.0 s, freqsep
+  2.4 s, relight's full march is 4.2 s per light. **K0c done 2026-10-23** (the W0b baseline: every row three times on
+  fresh instances, `docperf` / `mem` / `huge` once; medians, spreads and "The shares for Stop 1" in
+  `docs/measurements/w0b_2026-10-23/summary.txt`, "K0c" in the plan's §7; px_jobs' mips rows are contaminated, K1 fixes
+  the harness; `mem` prints a FAIL line, the GPU process +354 MB). **K1a done 2026-10-23** (the user: "mach so lange mit
+  loop weiter bis der kontext ... ca 60%"; K1's build from its design `docs/PLAN_WASM_K1.md`, whose §6 questions went with
+  the suggested answers: the route map, `pxTimed` / `pxLaps` / `pxSplit`, trap recovery, the idle trim, jobs' fields taken
+  at queue time, `px_jobs.py --ab`, `ab_median.py`, `px_probe.py`; no bytes change, ABI 20; 19 gates PASS on tiles;
+  "K1a" in the plan's §7). **K1b done the same day** (M0-M8 at 15k, three fresh runs each; "K1b" in the plan's §7,
+  `docs/measurements/k1b_2026-10-23/run2/`): Rust wins every A/B, so no route entry; V8 shares compiled wasm across the
+  workers (no warm-up); `keepMB` 256 -> 16; the window's synchronous release works (K27, K39 unblocked). A first try lies
+  in `docs/measurements/k1b_2026-10-23/json` and `gates/` uncommitted (`run_gates.sh` splits comma lists; its deletion
+  was refused by a safety check: the user deletes it). **Stop 1 done the same day** ("Stop 1" in the plan's §7: the new
+  order, from a ranker and a critic): #0 K1b's M9 (M3 / M4 without `--ab`, three runs, the check of keepMB 16 on the wand
+  rows), #1 G2 the export save in pieces (the 0.7 GB renderer end), #2 D0 (the PSD open's window loops into a pool job,
+  only on the user's yes), #3 K5, #4 K12, then K4, K26, K27, the E and M chains, the bucket. **The user's answers
+  (2026-10-24, every recommendation taken; the plan's §7 "The user's answers"):** G2, the save in pieces, is built on
+  `main` and released as **hotfix 0.1.51** (prepared locally, asked once before the release chain), then `main` is merged
+  into the branch; D0 yes, right after; W1 (a SIMD filter choice in `png.rs` `filter_row`, same bytes) at #4 after K5;
+  G6 (the shader link, per document) its own short session after W1. **G2 done and 0.1.51 is out (2026-10-24; "G2" in
+  the plan's §7, `docs/measurements/g2_2026-10-24/`):** the probe showed the IPC message itself ends the renderer
+  (500 MB saved, 600 / 800 MB oom); `electron/main/filesaves.js` takes an export in 64 MB pieces into a temp beside the
+  target (a review workflow's 10 findings fixed; mutation round red but the navigation's URL test); the skins **Comfy**
+  and **Black Forest** rode along on the user's word ("wegen dem contest"; Comfy is SKINS.md §10's one exception;
+  polished by two agents). Released on the user's "Ja, komplett": main `10b1a39..2d9a353`, tag v0.1.51 on `7c79cb9`,
+  published 2026-10-24T01:44:48Z, title "Scumble 0.1.51: large exports save again, and two new skins", the eight
+  assets checked (the zip's layout, the `.mcpb` 0.1.51 with 116 tools, `latest.yml`; the zip's start test skipped);
+  the post `v0-1-51` live with the manual sync and hub 0.1.51 (`Portfolio_vercel` `9bd0a3d`, Vercel success);
+  `server.json` 0.1.51 committed (`2d9a353`) and published to the MCP Registry (the user's second device code; 0.1.51 latest);
+  no node build (no shipped editor file changed). **Open:** the Store update: `dist/Scumble-0.1.51.msix` with
+  `dist/store-listing/whats-new-0.1.51.txt` (written for everything since 0.1.47, the Store's live version; 0.1.48 to
+  0.1.50 were never submitted), the user's upload. `main` merged into `wasm-kernels` the same day (`saveExport` keeps
+  K0a's marks: start, pieces, written). **Next: #0 M9 + the second open, then D0.** **Beside it (2026-10-24): CorridorKey 2.0 planned** (item 49,
+  `docs/PLAN_CORRIDORKEY.md`) on its own branch `corridorkey` off `main` (worktree `.claude/worktrees/corridorkey`),
+  released as 0.1.52 on the user's word; next there: I0a (pack A's code check, findings to the user before any install).
+  Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
+  **The user's rules for it:** Rust wherever the
+  *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
+  time only finds where the time goes; the tie rule in the plan §1.1); **every session commits and pushes the branch,
+  its measurement results committed too** under `docs/measurements/<step>_<date>/` ("dann gehen diese nicht verloren");
+  **one release at the end** (K40, K41 on the user's word), no small releases in between. W0 is done:
+  `docs/PLAN_WASM.md` §5 (the harvest of the old numbers) and `docs/measurements/w0_2026-10-23/` (the 15k rows;
+  `tools/w0_bench.py`; `perf_test.py`'s relight row now has three lights). The plan's §6 open questions are asked by
+  the session that needs one; with no answer by then its suggested answer is taken and the hand-over says so. `main`
+  stays the release state (0.1.50 + `10b1a39`); merge `main` into the branch when main moves. CI builds only `main`,
+  tags and pull requests, so pushing the branch costs no build.
+  **Node 0.4.0 / 0.4.1 on the Comfy Registry (the user's "ja, mach das", 2026-10-23):** 0.4.0 (`a75fa6c`, everything
+  since 0.3.4: boxes, the 0.1.44-0.1.50 editor, Q5) was **Flagged** by the registry's YARA scan for one token,
+  `.listen(` in `js/prompt_field.js` (read as a network socket); the method is `bindEvents()` since `10b1a39` (main, the
+  editor gate PASS), and **0.4.1** (`4e7bd24`, that editor build) was published the same morning, **Pending** at the
+  hand-over: check `https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions?include_status_reason=true`. Once 0.4.1
+  is Active, the app's texts that say "the Comfy Registry's 0.3.4 has no boxes" (`renderer/editor/comfyprompt.js`
+  `oldNodeBoxes` and NODE_REPO's comment, README 159, MANUAL 212, RECIPES 75 / 165) change to "0.4.1 or newer" on the
+  branch; should it be flagged again, read the reason there and rename the token the same way (the plan's K40 scans
+  the shipped files for such tokens before a node build).
 - **Edit-box prompting in the Inpaint Canvas node: built in the night 2026-10-14/15 (B0-B6 of
   `docs/PLAN_NODE_BOXES.md`), pushed and live on 2026-10-15** (the user: "kannst das update pushen und in meinem
   comfyui aktualisieren"): Scumble main pushed (`779e357..99c2cfd`); the live node folder fast-forwarded to `6a0ad1e`
@@ -580,6 +647,65 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   and a recipe (Generate new with boxes at least). **Promised on the issue for the next update** (the user's word,
   2026-10-19: a comment that it is on the list and ships with the next update, and that 0.1.49 brings FLUX 3 Image
   Klein and Comfy's SDK).
+- 48: **Canva Craft as an image model** (the user, 2026-10-23, with Canva's announcement of 2026-10-22,
+  https://community.canva.dev/t/connect-api-canva-craft-is-now-available-for-image-generation/8999). Known from one
+  read of the post and the API reference (2026-10-23; not run): Canva's own model CRAFT-1, up to 2K, text in pictures in
+  55 languages, it plans before it renders (about 50-60 s a job), through the Connect API's **preview** endpoint
+  `POST https://api.canva.com/rest/v1/image-generations` (`prompt` up to 10,000 chars, `idempotency_key` required and
+  kept 24 h, `aspect_ratio` `square` / `landscape` 16:9 / `portrait` 9:16 / `landscape_3_2` / `portrait_2_3` /
+  `portrait_4_5`, `model` `craft_v1_2k` (also `lucid_origin`, `z_image_turbo`; no fallback when the pinned one cannot
+  serve), `asset_upload` none / upload), then `GET .../image-generations/{jobId}` until `success` (the result's `url`
+  lives 24 h; errors `unsafe_input`, `timeout`, `model_not_available`, `model_retired`; 429 `credit_quota_exceeded` /
+  `credit_quota_cooldown` with `quota_usage`). **Text to image only**: no reference picture, no edit, no mask, so in
+  Scumble a Generate new recipe (`aspect` from its six ratios), never an inpaint. It runs on the user's Canva AI
+  credits, 20 requests a minute per user. **The hard part is the auth:** a user access token by OAuth (scope
+  `asset:write`, the user needs the `image_generation` capability), not an API key: Scumble has no OAuth flow (keys sit in
+  safeStorage), so a Canva Connect integration (client id, a redirect such as a loopback port, PKCE, token refresh)
+  would come first; client-credentials integrations are on an allowlist until Canva's developer billing ships, and
+  **public integrations that use a preview API do not pass Canva's review**, so until the endpoint leaves preview only
+  a private integration (each user their own, or the user's team) could use it. Craft on Canva's MCP server is "coming
+  soon" (a route without our own OAuth, maybe). Open: whether a private integration is open to every plan, the token's
+  lifetime, the output size per ratio. Not planned yet.
+- 49: **CorridorKey: keying a green or blue screen with real alpha** (the user, 2026-10-24, with
+  https://github.com/nikopueringer/CorridorKey: "können wir das auch für images nehmen?", then "evtl im nächsten
+  update"). Read 2026-10-24 (not run): v1 (GreenFormer, ~300 MB, a 2048 backbone) keys each frame on its own from the
+  picture and a coarse alpha hint and returns the unmixed straight foreground colour and a linear alpha, so a still is
+  one frame; v2 (July 2026, by Zachary Harris with Corridor, 5 GB plus C-RADIOv4, MoGe-2 and RVM, RTX 30 or newer)
+  works in time windows over a clip or a frame folder, hint optional: **whether a single still runs through v2 is to
+  be checked** (the user: "das müssten wir prüfen"). Licence of both: CC BY-NC-SA 4.0 with Corridor's additional terms
+  (no repackaging or redistribution, no paid inference, "commercial software integration" needs their written
+  agreement; v2 adds free access for derivatives and a clause for companies above US $20M revenue): **never in the app
+  without their agreement** (no ONNX in the bundle; GPL-3.0 and the MIT/Apache/BSD/OFL rule). The route that needs
+  none: a local ComfyUI recipe on a community node pack the user installs (`cnoellert/comfyui-corridorkey`: IMAGE +
+  MASK -> Foreground, Alpha; `SeanBRVFX/ComfyUI-CorridorKey`: fg, matte, processed, QC; neither names a licence), the
+  selection as the hint, the result a layer with real alpha (also for a subject generated on flat green). The user
+  asks Corridor in their help Discord (a forum post drafted 2026-10-24 with three questions: a native integration, the
+  ComfyUI route, v2 on stills). For the next update; about 1-2 sessions plus a live run on the user's ComfyUI (the
+  node pack's install on the user's word).
+  **Corridor's answer (2026-10-24, Neex in their help Discord, pasted by the user):** as long as the software is free,
+  it may implement CK2.0 (and 1.0) however it likes; a commercial version later needs an agreement with them first.
+  Stills work well on CK2.0, and the alpha hint works in real time (instant results while painting a hint). So the
+  "never in the app" above is lifted for the free app (GitHub and Store); a sale means asking Corridor first (beside the
+  lawyer check). The user: "können es integrieren ^^ aber dann v2". The verbatim message goes into the plan
+  (`docs/PLAN_CORRIDORKEY.md`). A thank-you reply drafted for the user the same day, with four short questions
+  (GPL-3.0 for our glue, hosting an ONNX conversion, the credit, what the real-time hint runs in).
+  **Planned 2026-10-24: `docs/PLAN_CORRIDORKEY.md`** (research of five readers in `docs/research/ck2_2026-10-24/`, three
+  designs, two critics). Corrections to the above: v2 is its own repo `nikopueringer/CorridorKey2.0`, public since
+  2026-10-13; its "RVM" is DeepMind's Recurrent Video MAE, not Robust Video Matting; 5.08 GB in all (CK2 2.66 GB,
+  C-RADIOv4 1.72, MoGe-2 ViT-B 0.42, RVM 0.27), CUDA bf16 only, native resolution; the hint enters at the first layer
+  and no public code has a live hint; v1 rests on CC BY-NC Hiera weights (out). Exactly two ComfyUI packs run v2
+  (marawan206, hashu786, days old), Comfy Cloud has none. **The user's answers (2026-10-24):** in-app first (against the
+  first plan's ComfyUI first), a branch `corridorkey` off `main` released as 0.1.52, pack A (marawan206) on the
+  production ComfyUI after a code check, a mid-grey Fill layer under a key of the base. **The re-planned spine:** CK2
+  inside Scumble on onnxruntime-node in a utility process (LaMa's shape), the three feature models cached per picture,
+  stage 1 + 2 per hint, so the matte follows the selection brush while the Key dialog is open; keyed at a working size
+  (1,024 px default) and refined against the full picture (an app-only worker); a new layer with the unmixed colour and
+  the matte as its layer mask. Sessions I0a (code check, pinned install, reference keys), I0b (the spike: Nucito's fp16
+  set, DML / WebGPU / CPU, go / no-go = **Stop A**), I0c (ORT pin, if needed), I1 (our own export, a dev-side venv), I2
+  (downloader: sha256, the HF token only to HF; `docs/BUGS.md`), I3 (key process), I4 (landing), I5 (dialog, live loop),
+  I6 (refine), I7 (command), I8 (docs, live run, **Stop B**); Route B (pack A through ComfyUI, B0-B5) on a no-go or by
+  the user's Stop B decision. The in-app release needs Corridor's written yes to hosting a converted set (asked in the
+  thank-you reply's second version); open for the user: whether and which reply went (plan §6).
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
