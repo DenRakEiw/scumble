@@ -292,7 +292,7 @@ async function time() {
     ];
     for (const [W, H] of sizes) {
         // one band's worth of picture rows, handed out again for every band (the read itself is the caller's cost)
-        const maxRows = Math.min(H, Math.ceil(K.REFINE.bandPx / W) + 200);
+        const maxRows = W * H <= K.REFINE.unbandedPx ? H : Math.min(H, Math.ceil(K.REFINE.bandPx / W) + 200);
         const rows = new Uint8ClampedArray(W * maxRows * 4);
         for (let y = 0; y < maxRows; y++) for (let x = 0; x < W; x++) {
             const a = Math.max(0, Math.min(1, (x - W * 0.4) / 3 + 0.5)), o = (y * W + x) * 4;

@@ -39,8 +39,8 @@
  * measurement's foil: it finds no edge between green and a skin tone of equal luminance). On the sRGB bytes by default;
  * `linear` decodes them first. A camera mixes subject and screen in linear light, but the bucket picture is a byte
  * average of the full-resolution one (the tile levels), so only in sRGB is the bucket guide the area average of the
- * full-resolution guide that the fit's transfer from one scale to the other assumes; sRGB measured better on every
- * condition, edges mixed in linear light and sensor noise included (docs/ck2/refine_notes.md).
+ * full-resolution guide that the fit's transfer from one scale to the other assumes; sRGB measured better on the mean
+ * of every condition, edges mixed in linear light and sensor noise included (docs/ck2/refine_notes.md).
  */
 
 import { boxBlurs } from "./px/kernels.js";

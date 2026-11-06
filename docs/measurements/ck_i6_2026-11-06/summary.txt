@@ -1,0 +1,18 @@
+CorridorKey I6 (item 49): the key matte's refine, renderer/editor/keymatte.js, measured as a module alone, 2026-11-06,
+branch ck-refine. The reasoning and the integration's call: docs/ck2/refine_notes.md.
+
+edges.txt   node tools/keymatte_test.js --measure: 8 synthetic scenes (equal-luminance skin on green and on blue, teal, a
+            fold, a shadow on the screen, sub-pixel stripes, a motion blur, hair), s = 4 and 15 (a 4k and a 15k box keyed
+            at 1,024), every method and guide; the engine's softness (auto's pick against fixed pass counts, engines of
+            0-3 passes); linear vs sRGB; noise; the rgb guide's r / eps / flat grid over five conditions.
+timing.txt  node tools/keymatte_test.js --time: 4k, 8k, 15k boxes, bucket 1,024 x 683, JS twin and px.wasm boxes, the
+            lock free, the module alone (the picture rows a view).
+
+Chosen: method "fast" (the linear model fitted at the bucket, applied at full resolution), the three-channel guide on
+the sRGB bytes, confidence-weighted windows, the engine's softness matched by the fit's residual; r 4 bucket px, eps
+3e-6, flat 2e-5. Mean MAE over the 8 scenes (levels of 255), s = 4 / 15:
+  bilinear 26.7 / 25.4; the plan's full-resolution guided filter (chroma guide, r 1.5 x factor) 22.9 / 21.6;
+  fast chroma (best) 3.1 / 3.0; fast rgb defaults 1.4 / 0.7 (worst leak beyond 1.5 px 8 / 4 levels, crossing <= 0.37 px).
+Time of the default, px.wasm boxes: 4k 0.48 s, 8k 0.86 s, 15k 1.86 s in all (bucket fit 0.34-0.39 s, then about 10 ns a
+pixel, 41 ms per 4 MP band at 15k); the plan's full-resolution filter 7.8 s at 15k.
+Synthetic only: no CK2 matte was refined (Stop A runs in parallel).

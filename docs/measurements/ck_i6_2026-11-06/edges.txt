@@ -1,0 +1,221 @@
+
+== s = 4 (a 4096-px box keyed at 1,024 px), 8 scenes; levels of 255, px ==
+config                        meanMAE  worstLeak  worstCross  | MAE per scene: skin blue teal fold shade stripes blur hair
+fast rgb r6 e0.000001            1.18          7        0.35  | 0.9 0.3 0.4 1.2 1.4 1.3 0.6 3.3
+fast rgb r4 e0.000001            1.23          6        0.35  | 0.9 0.5 0.5 1.2 1.4 1.4 0.7 3.3
+fast rgb r2 e0.000001            1.39          5        0.35  | 1.2 0.7 0.8 1.1 1.6 1.5 0.7 3.5
+fast rgb r4 e0.00001             1.58         12        0.36  | 1.2 0.8 0.6 1.7 1.5 1.4 1.5 4.0
+fast rgb r6 e0.00001             1.60         12        0.36  | 1.2 0.7 0.5 1.7 1.5 1.2 1.8 4.1
+fast rgb r1 e0.000001            1.69         10        0.35  | 1.6 1.1 1.1 1.4 1.8 1.7 0.9 3.9
+fast rgb r2 e0.00001             1.69         12        0.36  | 1.5 0.9 0.8 1.7 1.7 1.5 1.5 3.9
+fast rgb r1 e0.00001             2.06         21        0.36  | 1.8 1.3 1.2 2.4 1.8 1.7 1.8 4.4
+fast rgb r4 e0.0001              2.65         35        0.37  | 1.5 1.0 1.1 3.9 1.8 2.5 4.4 5.0
+fast rgb r2 e0.0001              2.68         38        0.38  | 1.7 1.3 1.4 4.0 1.9 2.5 3.4 5.3
+fast rgb r6 e0.0001              2.72         36        0.37  | 1.4 0.9 1.0 4.0 1.7 2.6 5.1 5.0
+fast chroma r1 e0.000001         3.12         29        0.35  | 1.7 1.2 1.2 3.4 7.0 3.1 2.5 4.8
+fast rgb r1 e0.0001              3.20         51        0.38  | 2.0 1.6 2.1 5.1 2.0 2.6 3.2 7.0
+fast chroma r1 e0.00001          3.25         29        0.35  | 1.8 1.3 1.3 3.4 7.0 3.2 2.5 5.5
+fast chroma r2 e0.000001         3.69         30        0.37  | 1.4 0.9 0.8 3.4 9.0 6.2 3.7 4.1
+fast chroma r2 e0.00001          3.76         30        0.37  | 1.4 0.9 0.9 3.4 9.1 6.2 3.7 4.4
+fast chroma r4 e0.000001         4.15         33        0.41  | 1.2 0.7 0.6 3.6 11.1 6.7 5.4 4.1
+fast chroma r4 e0.00001          4.21         33        0.41  | 1.2 0.7 0.7 3.6 11.1 6.7 5.4 4.3
+fast chroma r6 e0.000001         4.39         37        0.44  | 1.1 0.7 0.5 3.6 11.9 7.0 6.1 4.2
+fast chroma r1 e0.0001           4.40         29        0.35  | 2.3 1.8 2.5 3.5 7.6 3.2 2.9 11.3
+fast chroma r6 e0.00001          4.44         37        0.44  | 1.1 0.7 0.6 3.7 11.9 7.0 6.2 4.4
+fast chroma r2 e0.0001           4.56         30        0.37  | 1.9 1.3 1.9 3.6 9.5 6.6 4.0 7.8
+fast chroma r4 e0.0001           4.83         33        0.42  | 1.6 1.1 1.6 3.7 11.4 7.1 5.6 6.6
+fast dist r1 e0.000001           4.93         61        0.58  | 1.9 1.4 1.3 5.2 13.2 8.8 3.4 4.4
+fast dist r1 e0.00001            5.02         61        0.58  | 1.9 1.4 1.4 5.2 13.2 8.8 3.4 4.8
+fast chroma r6 e0.0001           5.03         37        0.44  | 1.6 1.0 1.6 3.8 12.2 7.5 6.3 6.3
+fast dist r1 e0.0001             5.85         62        0.58  | 2.3 2.0 2.6 5.4 13.6 8.8 3.3 8.8
+fast dist r2 e0.000001           5.89         67        0.57  | 1.6 1.0 0.8 6.0 17.3 12.4 4.2 3.9
+fast dist r2 e0.00001            5.95         67        0.57  | 1.6 1.0 0.9 6.0 17.3 12.4 4.3 4.2
+fast dist r2 e0.0001             6.44         68        0.57  | 1.9 1.5 2.0 6.1 17.6 12.3 3.9 6.2
+fast dist r4 e0.000001           6.85         78        0.57  | 1.3 0.8 0.6 6.5 21.4 13.9 6.2 4.0
+fast dist r4 e0.00001            6.90         78        0.57  | 1.4 0.8 0.7 6.6 21.5 13.9 6.3 4.2
+fast dist r6 e0.000001           7.26         85        0.58  | 1.3 0.8 0.5 6.8 23.0 14.4 7.1 4.2
+fast dist r6 e0.00001            7.29         85        0.58  | 1.3 0.8 0.6 6.8 23.0 14.4 7.2 4.3
+fast dist r4 e0.0001             7.36         78        0.57  | 1.7 1.3 1.6 6.8 21.7 13.8 6.4 5.6
+fast dist r6 e0.0001             7.72         85        0.58  | 1.6 1.2 1.6 6.9 23.3 14.4 7.3 5.5
+fast luma r1 e0.000001          15.01        255        8.72  | 15.5 11.1 3.3 29.8 8.7 33.1 13.5 4.9
+fast luma r1 e0.00001           15.81        255        8.54  | 19.8 14.8 4.0 33.0 8.3 30.2 10.9 5.5
+fast luma r1 e0.0001            20.58        255        7.62  | 33.5 30.7 8.8 32.7 6.7 29.3 12.2 10.7
+full chroma K1.5 e0.0001        22.94         63        0.37  | 20.6 20.5 20.5 23.4 23.3 23.9 7.4 43.9
+full chroma K1 e0.0001          23.11         70        0.35  | 21.0 21.0 20.9 23.8 23.7 24.1 7.3 43.1
+full chroma K2 e0.0001          23.27         58        0.39  | 21.2 21.1 21.0 23.2 23.3 23.7 7.7 44.9
+full chroma K1 e0.001           23.56         71        0.34  | 21.4 21.2 21.5 24.1 24.2 24.7 7.9 43.4
+full dist K1 e0.0001            23.57         87        0.48  | 21.1 21.0 20.9 24.6 24.0 26.6 7.3 43.1
+full chroma K1.5 e0.001         23.70         65        0.37  | 21.3 21.1 21.6 24.0 24.1 24.9 8.2 44.5
+full dist K1.5 e0.0001          23.82         88        0.50  | 20.7 20.6 20.5 24.5 24.6 28.3 7.5 44.0
+full dist K1 e0.001             23.95         87        0.47  | 21.4 21.3 21.6 24.9 24.6 26.7 7.8 43.4
+full chroma K2 e0.001           24.37         60        0.39  | 22.2 21.9 22.7 24.1 24.3 25.2 8.8 45.7
+full dist K1.5 e0.001           24.44         88        0.49  | 21.2 21.1 21.6 25.0 25.4 28.5 8.2 44.3
+full dist K2 e0.0001            24.57         86        0.50  | 21.3 21.1 21.0 24.4 26.1 29.9 7.8 44.9
+fast luma r2 e0.00001           24.74        255       99.00  | 18.7 13.0 3.2 60.0 38.3 42.1 18.1 4.6
+full dist K2 e0.001             25.44         87        0.49  | 22.1 22.0 22.8 25.1 27.1 30.2 8.9 45.4
+bilinear                        26.65         91        0.15  | 26.7 26.7 26.7 26.7 26.7 26.7 8.0 45.1
+fast luma r2 e0.000001          26.85        255       99.00  | 13.6 9.3 2.6 60.7 38.1 65.9 20.3 4.4
+full luma K1 e0.0001            27.62        101        0.62  | 26.8 24.8 21.4 32.9 25.7 35.4 10.8 43.1
+fast luma r2 e0.0001            29.05        255       12.37  | 40.2 34.5 7.6 49.4 39.1 35.7 18.5 7.5
+full luma K1 e0.001             29.27        104        0.35  | 29.9 29.3 24.3 33.9 26.8 35.4 11.1 43.4
+full luma K1.5 e0.0001          31.85        107        0.68  | 29.7 26.6 21.1 42.1 31.4 45.6 14.3 44.0
+fast luma r4 e0.000001          32.79        255       99.00  | 12.2 8.0 2.1 71.8 54.2 79.3 30.3 4.4
+fast luma r4 e0.00001           33.27        255       99.00  | 18.2 12.1 2.7 73.7 54.3 71.8 28.6 4.6
+full luma K1.5 e0.001           34.85        110        0.46  | 36.0 35.3 26.4 42.9 32.9 45.7 15.1 44.5
+fast luma r6 e0.000001          35.20        255       99.00  | 11.5 7.5 1.9 74.3 61.6 85.1 35.3 4.5
+fast luma r6 e0.00001           35.96        255       99.00  | 18.2 11.9 2.5 74.4 61.6 80.6 33.8 4.7
+full luma K2 e0.0001            37.09        115        1.39  | 34.1 29.9 22.0 52.5 39.2 55.8 18.3 45.0
+fast luma r4 e0.0001            39.01        255       99.00  | 46.6 37.9 7.2 76.9 55.3 49.6 32.1 6.6
+full luma K2 e0.001             41.62        115        1.39  | 44.0 43.2 29.9 53.2 41.2 55.8 19.9 45.7
+fast luma r6 e0.0001            43.28        255       99.00  | 49.6 39.6 7.3 81.4 61.9 60.7 39.4 6.4
+  best bilinear     bilinear: skin mae 26.7 p99 113 leak 91 cross 0.15; blue mae 26.7 p99 113 leak 91 cross 0.15; teal mae 26.7 p99 113 leak 91 cross 0.15; fold mae 26.7 p99 113 leak 91 cross 0.15; shade mae 26.7 p99 113 leak 91 cross 0.15; stripes mae 26.7 p99 113 leak 91 cross 0.15; blur mae 8.0 p99 30; hair mae 45.1 p99 206
+  best full luma    full luma K1 e0.0001: skin mae 26.8 p99 97 leak 84 cross 0.62; blue mae 24.8 p99 88 leak 77 cross 0.41; teal mae 21.4 p99 69 leak 63 cross 0.23; fold mae 32.9 p99 113 leak 101 cross 0.35; shade mae 25.7 p99 83 leak 69 cross 0.36; stripes mae 35.4 p99 114 leak 100 cross 0.33; blur mae 10.8 p99 33; hair mae 43.1 p99 202
+  best full chroma  full chroma K1.5 e0.0001: skin mae 20.6 p99 54 leak 51 cross 0.25; blue mae 20.5 p99 54 leak 50 cross 0.17; teal mae 20.5 p99 54 leak 50 cross 0.14; fold mae 23.4 p99 55 leak 57 cross 0.26; shade mae 23.3 p99 60 leak 58 cross 0.37; stripes mae 23.9 p99 66 leak 63 cross 0.30; blur mae 7.4 p99 18; hair mae 43.9 p99 197
+  best full dist    full dist K1 e0.0001: skin mae 21.1 p99 66 leak 61 cross 0.26; blue mae 21.0 p99 66 leak 61 cross 0.18; teal mae 20.9 p99 66 leak 60 cross 0.14; fold mae 24.6 p99 69 leak 68 cross 0.32; shade mae 24.0 p99 73 leak 70 cross 0.24; stripes mae 26.6 p99 94 leak 87 cross 0.48; blur mae 7.3 p99 19; hair mae 43.1 p99 202
+  best fast luma    fast luma r1 e0.000001: skin mae 15.5 p99 138 leak 50 cross 0.77; blue mae 11.1 p99 71 leak 35 cross 0.49; teal mae 3.3 p99 28 leak 9 cross 0.25; fold mae 29.8 p99 173 leak 205 cross 2.15; shade mae 8.7 p99 96 leak 103 cross 0.50; stripes mae 33.1 p99 255 leak 255 cross 8.72; blur mae 13.5 p99 56; hair mae 4.9 p99 36
+  best fast chroma  fast chroma r1 e0.000001: skin mae 1.7 p99 29 leak 5 cross 0.25; blue mae 1.2 p99 17 leak 4 cross 0.17; teal mae 1.2 p99 8 leak 4 cross 0.14; fold mae 3.4 p99 33 leak 29 cross 0.28; shade mae 7.0 p99 48 leak 22 cross 0.35; stripes mae 3.1 p99 39 leak 14 cross 0.32; blur mae 2.5 p99 10; hair mae 4.8 p99 35
+  best fast dist    fast dist r1 e0.000001: skin mae 1.9 p99 33 leak 5 cross 0.27; blue mae 1.4 p99 21 leak 4 cross 0.19; teal mae 1.3 p99 9 leak 4 cross 0.14; fold mae 5.2 p99 48 leak 48 cross 0.36; shade mae 13.2 p99 62 leak 61 cross 0.32; stripes mae 8.8 p99 80 leak 40 cross 0.58; blur mae 3.4 p99 14; hair mae 4.4 p99 33
+  best fast rgb     fast rgb r6 e0.000001: skin mae 0.9 p99 25 leak 1 cross 0.24; blue mae 0.3 p99 11 leak 1 cross 0.15; teal mae 0.4 p99 8 leak 1 cross 0.15; fold mae 1.2 p99 24 leak 7 cross 0.23; shade mae 1.4 p99 44 leak 1 cross 0.32; stripes mae 1.3 p99 47 leak 1 cross 0.35; blur mae 0.6 p99 4; hair mae 3.3 p99 26
+
+== s = 15 (a 15360-px box keyed at 1,024 px), 8 scenes; levels of 255, px ==
+config                        meanMAE  worstLeak  worstCross  | MAE per scene: skin blue teal fold shade stripes blur hair
+fast rgb r6 e0.000001            0.54          3        0.36  | 0.3 0.2 0.3 0.4 0.4 0.3 0.6 1.8
+fast rgb r4 e0.000001            0.63          3        0.36  | 0.5 0.3 0.4 0.4 0.4 0.4 0.7 1.9
+fast rgb r2 e0.000001            0.82          3        0.36  | 0.7 0.6 0.6 0.5 0.6 0.5 0.7 2.3
+fast rgb r6 e0.00001             0.82          9        0.37  | 0.4 0.2 0.4 0.8 0.4 0.4 1.8 2.1
+fast rgb r4 e0.00001             0.89          9        0.37  | 0.5 0.4 0.5 0.9 0.5 0.4 1.6 2.3
+fast rgb r2 e0.00001             1.10         11        0.37  | 0.7 0.6 0.7 1.1 0.6 0.5 1.5 3.0
+fast rgb r1 e0.000001            1.20          7        0.36  | 1.0 0.9 1.0 0.8 0.8 0.7 0.9 3.5
+fast rgb r1 e0.00001             1.59         20        0.37  | 1.1 0.9 1.1 1.7 0.8 0.7 1.8 4.6
+fast rgb r4 e0.0001              2.23         32        0.39  | 0.7 0.6 1.0 3.1 0.8 1.8 4.4 5.5
+fast rgb r6 e0.0001              2.23         32        0.38  | 0.7 0.6 0.9 3.2 0.7 1.8 5.1 4.9
+fast rgb r2 e0.0001              2.44         36        0.39  | 0.9 0.8 1.3 3.3 0.8 1.8 3.4 7.1
+fast chroma r1 e0.000001         2.95         28        0.36  | 1.1 0.9 1.2 2.8 6.8 2.5 2.5 5.8
+fast rgb r1 e0.0001              3.06         51        0.39  | 1.3 1.2 2.0 4.3 1.0 2.0 3.2 9.4
+fast chroma r1 e0.00001          3.21         28        0.36  | 1.2 1.0 1.3 2.8 6.9 2.5 2.6 7.5
+fast chroma r2 e0.000001         3.41         30        0.38  | 0.8 0.6 0.8 3.0 8.8 5.8 3.7 3.9
+fast chroma r2 e0.00001          3.61         30        0.38  | 0.8 0.7 0.8 3.0 8.9 5.8 3.7 5.2
+fast chroma r4 e0.000001         3.74         34        0.42  | 0.6 0.4 0.5 3.0 10.8 6.2 5.4 3.0
+fast chroma r6 e0.000001         3.88         38        0.45  | 0.4 0.2 0.4 3.1 11.5 6.5 6.1 2.7
+fast chroma r4 e0.00001          3.89         34        0.42  | 0.6 0.4 0.6 3.1 10.9 6.3 5.4 4.0
+fast chroma r6 e0.00001          4.03         38        0.45  | 0.5 0.3 0.5 3.1 11.6 6.6 6.2 3.5
+fast chroma r1 e0.0001           4.35         28        0.36  | 1.9 1.6 2.5 3.1 7.4 2.6 2.9 12.8
+fast dist r1 e0.000001           4.61         66        0.58  | 1.1 1.0 1.2 4.4 14.0 7.4 3.4 4.5
+fast chroma r2 e0.0001           4.69         32        0.39  | 1.3 1.0 1.9 3.2 9.3 6.3 4.0 10.7
+fast dist r1 e0.00001            4.82         66        0.58  | 1.1 1.0 1.3 4.4 14.0 7.4 3.4 5.9
+fast chroma r4 e0.0001           4.87         34        0.43  | 1.0 0.7 1.6 3.3 11.2 6.8 5.6 8.8
+fast chroma r6 e0.0001           4.98         38        0.45  | 0.9 0.7 1.5 3.4 12.0 7.1 6.3 7.9
+fast dist r2 e0.000001           5.48         70        0.57  | 0.8 0.7 0.8 5.2 18.1 11.1 4.2 2.9
+fast dist r2 e0.00001            5.63         70        0.57  | 0.8 0.7 0.9 5.3 18.1 11.1 4.3 3.9
+fast dist r1 e0.0001             5.85         67        0.58  | 1.7 1.7 2.5 4.6 14.4 7.4 3.4 11.1
+fast dist r4 e0.000001           6.38         79        0.58  | 0.6 0.4 0.5 6.0 22.3 12.6 6.2 2.3
+fast dist r2 e0.0001             6.48         70        0.57  | 1.2 1.1 1.9 5.4 18.5 11.0 3.9 8.8
+fast dist r4 e0.00001            6.48         79        0.58  | 0.6 0.5 0.6 6.0 22.3 12.6 6.3 2.9
+fast dist r6 e0.000001           6.70         85        0.58  | 0.5 0.3 0.5 6.1 23.8 13.2 7.1 2.1
+fast dist r6 e0.00001            6.80         85        0.59  | 0.5 0.3 0.5 6.1 23.9 13.2 7.2 2.6
+fast dist r4 e0.0001             7.26         80        0.58  | 0.9 0.8 1.6 6.2 22.6 12.6 6.4 7.0
+fast dist r6 e0.0001             7.54         86        0.59  | 0.9 0.8 1.5 6.3 24.1 13.2 7.3 6.2
+fast luma r1 e0.000001          19.52        255       44.27  | 14.3 10.7 2.9 31.6 7.0 70.6 13.7 5.4
+fast luma r1 e0.00001           20.06        255       35.53  | 19.5 14.8 3.7 35.2 6.6 62.7 11.0 7.1
+full chroma K1.5 e0.0001        21.64         76        0.40  | 22.6 22.6 22.6 25.5 25.2 25.9 7.4 21.3
+full chroma K2 e0.0001          21.88         71        0.41  | 23.2 23.1 23.1 25.3 25.1 25.8 7.6 21.9
+full chroma K1 e0.0001          22.06         85        0.38  | 23.3 23.3 23.3 26.0 25.8 26.3 7.3 21.2
+fast luma r1 e0.0001            22.21        255       25.48  | 34.9 32.1 8.9 35.1 5.2 36.8 12.2 12.4
+full chroma K1.5 e0.001         22.32         79        0.41  | 23.2 23.1 23.6 26.0 25.9 26.9 8.2 21.6
+full dist K1.5 e0.0001          22.40        100        0.54  | 22.6 22.6 22.6 26.5 26.4 29.7 7.4 21.4
+full dist K1 e0.0001            22.41        104        0.54  | 23.3 23.3 23.3 26.7 26.1 28.1 7.3 21.2
+full chroma K1 e0.001           22.43         87        0.38  | 23.6 23.5 23.8 26.2 26.2 26.8 7.9 21.4
+full dist K1 e0.001             22.74        104        0.53  | 23.6 23.6 23.8 26.9 26.7 28.2 7.8 21.3
+full chroma K2 e0.001           22.85         74        0.41  | 24.0 23.9 24.7 26.1 26.0 27.1 8.8 22.3
+full dist K1.5 e0.001           22.98        101        0.53  | 23.1 23.2 23.7 26.9 27.3 29.9 8.2 21.5
+full dist K2 e0.0001            23.03         97        0.54  | 23.2 23.1 23.1 26.3 27.8 31.0 7.7 21.9
+full dist K2 e0.001             23.83         98        0.53  | 23.9 23.9 24.7 27.0 28.7 31.4 8.8 22.1
+bilinear                        25.41        120        0.59  | 28.8 28.8 28.8 28.8 28.8 28.8 8.0 22.8
+full luma K1 e0.0001            25.85        125        1.32  | 27.9 26.5 23.6 34.0 27.3 36.0 10.3 21.2
+full luma K1 e0.001             27.40        126        1.32  | 31.2 30.8 26.1 34.9 28.2 36.0 10.6 21.4
+fast luma r2 e0.000001          28.12        255       99.00  | 11.6 8.3 2.2 62.1 39.5 77.2 20.5 3.6
+fast luma r2 e0.00001           29.63        255       99.00  | 17.5 12.6 2.7 61.6 39.6 80.0 18.2 4.9
+full luma K1.5 e0.0001          29.94        128        1.72  | 30.3 28.0 23.1 43.1 32.8 46.9 13.8 21.4
+fast luma r4 e0.000001          32.89        255       99.00  | 9.8 6.8 1.6 74.2 55.6 81.8 30.4 2.8
+full luma K1.5 e0.001           32.93        129        1.89  | 37.2 36.8 28.1 43.9 34.3 47.0 14.6 21.6
+fast luma r2 e0.0001            34.02        255       40.20  | 41.1 35.6 7.5 51.9 40.5 66.9 18.5 10.2
+full luma K2 e0.0001            34.69        139        4.72  | 34.0 30.9 23.9 52.7 40.1 56.5 17.6 21.9
+fast luma r6 e0.000001          35.11        255       99.00  | 9.1 6.2 1.4 77.5 62.2 86.7 35.3 2.6
+fast luma r4 e0.00001           35.14        255       99.00  | 16.6 11.4 2.1 77.1 55.8 85.7 28.7 3.7
+fast luma r6 e0.00001           36.94        255       99.00  | 16.4 11.1 1.9 77.4 62.2 89.3 33.8 3.3
+full luma K2 e0.001             39.12        139        4.72  | 44.4 44.1 31.4 53.4 42.0 56.5 19.0 22.2
+fast luma r4 e0.0001            44.54        255       99.00  | 47.1 38.7 7.1 79.7 56.8 86.6 32.1 8.3
+fast luma r6 e0.0001            47.83        255       99.00  | 49.9 40.3 7.1 83.9 62.5 92.0 39.4 7.5
+  best bilinear     bilinear: skin mae 28.8 p99 121 leak 120 cross 0.59; blue mae 28.8 p99 121 leak 120 cross 0.59; teal mae 28.8 p99 121 leak 120 cross 0.59; fold mae 28.8 p99 121 leak 120 cross 0.59; shade mae 28.8 p99 121 leak 120 cross 0.59; stripes mae 28.8 p99 121 leak 120 cross 0.59; blur mae 8.0 p99 30; hair mae 22.8 p99 230
+  best full luma    full luma K1 e0.0001: skin mae 27.9 p99 103 leak 102 cross 0.79; blue mae 26.5 p99 95 leak 94 cross 0.50; teal mae 23.6 p99 78 leak 78 cross 0.27; fold mae 34.0 p99 118 leak 119 cross 0.57; shade mae 27.3 p99 88 leak 89 cross 0.42; stripes mae 36.0 p99 120 leak 125 cross 1.32; blur mae 10.3 p99 32; hair mae 21.2 p99 229
+  best full chroma  full chroma K1.5 e0.0001: skin mae 22.6 p99 61 leak 61 cross 0.27; blue mae 22.6 p99 61 leak 61 cross 0.17; teal mae 22.6 p99 61 leak 61 cross 0.14; fold mae 25.5 p99 61 leak 62 cross 0.29; shade mae 25.2 p99 65 leak 66 cross 0.40; stripes mae 25.9 p99 72 leak 76 cross 0.32; blur mae 7.4 p99 18; hair mae 21.3 p99 228
+  best full dist    full dist K1.5 e0.0001: skin mae 22.6 p99 61 leak 61 cross 0.29; blue mae 22.6 p99 61 leak 61 cross 0.20; teal mae 22.6 p99 61 leak 61 cross 0.14; fold mae 26.5 p99 67 leak 70 cross 0.34; shade mae 26.4 p99 74 leak 75 cross 0.22; stripes mae 29.7 p99 97 leak 100 cross 0.54; blur mae 7.4 p99 18; hair mae 21.4 p99 228
+  best fast luma    fast luma r1 e0.000001: skin mae 14.3 p99 54 leak 53 cross 0.85; blue mae 10.7 p99 38 leak 38 cross 0.53; teal mae 2.9 p99 8 leak 8 cross 0.27; fold mae 31.6 p99 186 leak 222 cross 8.05; shade mae 7.0 p99 89 leak 109 cross 0.50; stripes mae 70.6 p99 255 leak 255 cross 44.27; blur mae 13.7 p99 57; hair mae 5.4 p99 73
+  best fast chroma  fast chroma r1 e0.000001: skin mae 1.1 p99 4 leak 4 cross 0.26; blue mae 0.9 p99 4 leak 4 cross 0.18; teal mae 1.2 p99 4 leak 5 cross 0.15; fold mae 2.8 p99 27 leak 28 cross 0.29; shade mae 6.8 p99 23 leak 23 cross 0.36; stripes mae 2.5 p99 14 leak 18 cross 0.33; blur mae 2.5 p99 11; hair mae 5.8 p99 77
+  best fast dist    fast dist r1 e0.000001: skin mae 1.1 p99 4 leak 4 cross 0.29; blue mae 1.0 p99 4 leak 4 cross 0.20; teal mae 1.2 p99 4 leak 5 cross 0.14; fold mae 4.4 p99 46 leak 46 cross 0.38; shade mae 14.0 p99 63 leak 66 cross 0.35; stripes mae 7.4 p99 45 leak 45 cross 0.58; blur mae 3.4 p99 14; hair mae 4.5 p99 60
+  best fast rgb     fast rgb r6 e0.000001: skin mae 0.3 p99 1 leak 1 cross 0.28; blue mae 0.2 p99 1 leak 1 cross 0.20; teal mae 0.3 p99 1 leak 1 cross 0.16; fold mae 0.4 p99 3 leak 3 cross 0.25; shade mae 0.4 p99 1 leak 1 cross 0.34; stripes mae 0.3 p99 1 leak 1 cross 0.36; blur mae 0.6 p99 4; hair mae 1.8 p99 32
+
+== the engine's softness: auto's pick and MAE/leak per fixed pass count k (defaults otherwise) ==
+s 4 engine 0: skin auto 0 [0:1.3/3 1:1.2/0 2:1.3/0 3:1.3/0 4:1.4/0] bilinear 20.3 | fold auto 0 [0:1.3/2 1:6.3/26 2:6.1/34 3:0.7/6 4:1.0/3] bilinear 20.3 | hair auto 0 [0:3.6 1:2.7 2:3.2 3:3.5 4:3.8] bilinear 38.7 | stripes auto 0 [0:1.8/2 1:1.7/0 2:1.6/3 3:4.5/84 4:24.4/255] bilinear 20.3
+s 4 engine 1: skin auto 1 [0:11.1/18 1:1.1/2 2:0.9/0 3:0.9/0 4:0.9/0] bilinear 26.7 | fold auto 1 [0:12.7/80 1:1.3/8 2:0.9/9 3:0.3/1 4:0.6/1] bilinear 26.7 | hair auto 1 [0:28.0 1:3.7 2:2.2 3:2.3 4:2.6] bilinear 45.1 | stripes auto 1 [0:10.7/16 1:1.4/2 2:1.2/0 3:3.1/35 4:26.4/248] bilinear 26.7
+s 4 engine 2: skin auto 2 [0:15.7/25 1:5.8/8 2:1.0/1 3:0.7/0 4:0.7/0] bilinear 28.3 | fold auto 2 [0:17.0/113 1:9.6/94 2:1.4/14 3:0.4/0 4:0.5/0] bilinear 28.3 | hair auto 2 [0:34.6 1:12.6 2:3.7 3:2.1 4:2.1] bilinear 46.5 | stripes auto 2 [0:15.0/23 1:5.7/9 2:1.3/3 3:4.1/23 4:25.3/178] bilinear 28.3
+s 4 engine 3: skin auto 3 [0:18.9/30 1:9.3/14 2:4.4/6 3:1.0/1 4:0.6/0] bilinear 29.5 | fold auto 3 [0:19.7/131 1:13.8/147 2:7.1/79 3:1.5/18 4:0.5/0] bilinear 29.5 | hair auto 3 [0:38.3 1:19.2 2:9.5 3:3.9 4:2.2] bilinear 47.7 | stripes auto 3 [0:18.0/28 1:9.1/14 2:4.5/12 3:5.3/35 4:22.5/133] bilinear 29.5
+s 15 engine 0: skin auto 0 [0:0.9/3 1:0.4/0 2:0.4/0 3:0.4/0 4:0.4/0] bilinear 23.0 | fold auto 0 [0:0.6/2 1:5.9/34 2:3.8/37 3:0.2/4 4:0.5/3] bilinear 23.0 | hair auto 0 [0:1.6 1:0.7 2:0.8 3:0.9 4:1.2] bilinear 21.1 | stripes auto 0 [0:0.7/2 1:0.5/5 2:0.7/11 3:9.6/144 4:24.4/255] bilinear 23.0
+s 15 engine 1: skin auto 1 [0:10.9/16 1:0.5/1 2:0.3/0 3:0.3/0 4:0.3/0] bilinear 28.8 | fold auto 1 [0:12.5/82 1:0.6/4 2:0.6/10 3:0.1/1 4:0.2/1] bilinear 28.8 | hair auto 1 [0:11.6 1:2.0 2:0.9 3:0.9 4:1.1] bilinear 22.8 | stripes auto 1 [0:10.3/16 1:0.4/1 2:0.4/6 3:6.1/91 4:20.1/254] bilinear 28.8
+s 15 engine 2: skin auto 2 [0:15.6/23 1:5.4/8 2:0.4/1 3:0.2/0 4:0.2/0] bilinear 29.8 | fold auto 2 [0:16.8/116 1:8.7/90 2:0.7/8 3:0.1/0 4:0.2/0] bilinear 29.8 | hair auto 2 [0:14.9 1:5.9 2:2.4 3:1.5 4:1.4] bilinear 23.6 | stripes auto 2 [0:14.8/23 1:5.0/8 2:0.7/5 3:5.2/62 4:19.1/203] bilinear 29.8
+s 15 engine 3: skin auto 3 [0:18.8/29 1:9.0/13 2:4.1/5 3:0.3/1 4:0.2/0] bilinear 30.9 | fold auto 3 [0:19.6/135 1:12.9/143 2:6.2/69 3:0.7/11 4:0.2/0] bilinear 30.9 | hair auto 3 [0:16.9 1:8.8 2:5.0 3:2.9 4:2.1] bilinear 24.3 | stripes auto 3 [0:18.0/28 1:8.6/14 2:3.8/10 3:5.3/44 4:19.8/166] bilinear 30.9
+
+== the defaults: linear vs sRGB guide, and an engine matte with +-0.02 noise ==
+s 4 noise 0 linear: skin 0.5/2/0.17  blue 0.4/2/0.17  teal 0.7/2/0.17  fold 0.6/2/0.17  shade 3.4/16/0.19  stripes 2.0/7/0.18  blur 0.5  hair 5.7
+s 4 noise 0 sRGB  : skin 1.1/2/0.26  blue 0.6/1/0.17  teal 0.6/1/0.15  fold 1.3/8/0.24  shade 1.5/1/0.32  stripes 1.4/2/0.36  blur 0.8  hair 3.7
+s 4 noise 0.02 linear: skin 1.2/5/0.17  blue 1.2/5/0.17  teal 1.3/5/0.17  fold 1.3/5/0.17  shade 1.6/18/0.19  stripes 1.6/8/0.17  blur 1.2  hair 5.0
+s 4 noise 0.02 sRGB  : skin 1.4/5/0.27  blue 1.3/5/0.17  teal 1.3/5/0.15  fold 1.3/8/0.24  shade 1.4/5/0.33  stripes 1.4/5/0.36  blur 1.3  hair 3.5
+s 15 noise 0 linear: skin 0.5/3/0.17  blue 0.4/2/0.17  teal 0.6/3/0.17  fold 0.8/2/0.17  shade 4.0/20/0.20  stripes 2.2/10/0.18  blur 0.5  hair 3.3
+s 15 noise 0 sRGB  : skin 0.5/1/0.28  blue 0.3/1/0.21  teal 0.4/1/0.16  fold 0.6/4/0.25  shade 0.4/1/0.34  stripes 0.4/1/0.37  blur 0.8  hair 2.0
+s 15 noise 0.02 linear: skin 1.2/5/0.18  blue 1.2/5/0.17  teal 1.3/5/0.17  fold 1.3/5/0.17  shade 1.7/22/0.20  stripes 1.6/10/0.18  blur 1.2  hair 3.4
+s 15 noise 0.02 sRGB  : skin 1.3/5/0.29  blue 1.2/5/0.21  teal 1.3/5/0.16  fold 1.2/5/0.25  shade 1.2/5/0.34  stripes 1.2/5/0.36  blur 1.3  hair 2.5
+
+== the rgb guide: linear or sRGB, r, eps, flat; mean MAE of the 8 scenes per condition ==
+conditions: {"s":4,"soft":1} {"s":15,"soft":1} {"s":4,"soft":2} {"s":15,"soft":1,"pnoise":3} {"s":4,"soft":1,"pnoise":3,"noise":0.02}
+sRGB r4 e0.000003 flat0.000005  1.42  per condition 1.29 0.52 1.25 2.07 1.96  worst leak 15, crossing 0.39 px
+sRGB r6 e0.000001           1.43  per condition 1.18 0.54 1.13 2.20 2.12  worst leak 15, crossing 0.39 px
+sRGB r4 e0.000001           1.44  per condition 1.23 0.63 1.19 2.17 1.98  worst leak 15, crossing 0.39 px
+sRGB r3 e0.000001           1.46  per condition 1.28 0.69 1.25 2.14 1.92  worst leak 15, crossing 0.38 px
+sRGB r2 e0.000001           1.51  per condition 1.39 0.82 1.34 2.11 1.88  worst leak 16, crossing 0.38 px
+sRGB r4 e0.000003           1.51  per condition 1.37 0.69 1.37 2.15 1.96  worst leak 15, crossing 0.39 px
+sRGB r6 e0.000003           1.52  per condition 1.36 0.60 1.34 2.18 2.09  worst leak 14, crossing 0.39 px
+sRGB r3 e0.000003           1.52  per condition 1.41 0.75 1.40 2.12 1.90  worst leak 15, crossing 0.39 px
+sRGB r2 e0.000003           1.57  per condition 1.51 0.89 1.49 2.09 1.86  worst leak 16, crossing 0.38 px
+sRGB r4 e0.00001            1.67  per condition 1.58 0.89 1.73 2.16 1.97  worst leak 20, crossing 0.40 px
+sRGB r3 e0.00001            1.67  per condition 1.62 0.95 1.76 2.14 1.91  worst leak 22, crossing 0.39 px
+sRGB r6 e0.00001            1.68  per condition 1.60 0.82 1.72 2.20 2.09  worst leak 19, crossing 0.40 px
+sRGB r2 e0.00001            1.73  per condition 1.69 1.10 1.86 2.12 1.87  worst leak 25, crossing 0.39 px
+sRGB r4 e0.000003 flat0.0001  1.84  per condition 1.65 1.26 1.73 2.54 2.03  worst leak 15, crossing 0.39 px
+linear r6 e0.000001         1.97  per condition 1.42 1.24 1.45 3.29 2.44  worst leak 31, crossing 0.23 px
+sRGB r4 e0.00003            1.98  per condition 1.91 1.32 2.35 2.34 2.00  worst leak 31, crossing 0.41 px
+sRGB r3 e0.00003            1.99  per condition 1.92 1.38 2.38 2.33 1.95  worst leak 33, crossing 0.41 px
+linear r6 e0.000003         2.01  per condition 1.55 1.38 1.54 3.17 2.42  worst leak 31, crossing 0.23 px
+sRGB r6 e0.00003            2.02  per condition 1.96 1.28 2.35 2.38 2.13  worst leak 29, crossing 0.40 px
+linear r4 e0.000001         2.03  per condition 1.55 1.36 1.56 3.33 2.32  worst leak 30, crossing 0.24 px
+sRGB r2 e0.00003            2.06  per condition 1.99 1.53 2.50 2.36 1.92  worst leak 38, crossing 0.41 px
+linear r3 e0.000001         2.09  per condition 1.68 1.49 1.64 3.35 2.27  worst leak 28, crossing 0.24 px
+linear r4 e0.000003         2.09  per condition 1.72 1.54 1.67 3.21 2.31  worst leak 30, crossing 0.23 px
+linear r6 e0.00001          2.15  per condition 1.78 1.62 1.83 3.11 2.41  worst leak 30, crossing 0.23 px
+linear r3 e0.000003         2.16  per condition 1.84 1.66 1.77 3.24 2.26  worst leak 28, crossing 0.24 px
+linear r2 e0.000001         2.19  per condition 1.87 1.70 1.82 3.32 2.24  worst leak 29, crossing 0.26 px
+linear r4 e0.00001          2.22  per condition 1.93 1.77 1.96 3.16 2.31  worst leak 29, crossing 0.24 px
+linear r2 e0.000003         2.27  per condition 2.03 1.88 1.94 3.25 2.23  worst leak 28, crossing 0.26 px
+linear r3 e0.00001          2.29  per condition 2.04 1.90 2.05 3.20 2.26  worst leak 27, crossing 0.25 px
+linear r2 e0.00001          2.40  per condition 2.21 2.10 2.23 3.23 2.24  worst leak 27, crossing 0.26 px
+linear r6 e0.00003          2.41  per condition 2.05 1.90 2.46 3.18 2.45  worst leak 39, crossing 0.28 px
+linear r4 e0.00003          2.50  per condition 2.22 2.08 2.63 3.23 2.34  worst leak 39, crossing 0.28 px
+linear r3 e0.00003          2.59  per condition 2.36 2.23 2.77 3.29 2.31  worst leak 40, crossing 0.28 px
+sRGB r4 e0.0001             2.73  per condition 2.65 2.23 3.68 2.98 2.15  worst leak 59, crossing 0.50 px
+linear r2 e0.00003          2.74  per condition 2.56 2.49 3.00 3.38 2.29  worst leak 44, crossing 0.29 px
+sRGB r3 e0.0001             2.75  per condition 2.64 2.28 3.73 2.98 2.10  worst leak 60, crossing 0.51 px
+sRGB r6 e0.0001             2.78  per condition 2.72 2.23 3.66 3.03 2.28  worst leak 59, crossing 0.49 px
+sRGB r2 e0.0001             2.83  per condition 2.68 2.44 3.90 3.05 2.07  worst leak 62, crossing 0.53 px
+linear r6 e0.0001           3.14  per condition 2.75 2.69 3.93 3.71 2.62  worst leak 80, crossing 0.52 px
+linear r4 e0.0001           3.25  per condition 2.91 2.90 4.16 3.78 2.51  worst leak 80, crossing 0.52 px
+linear r3 e0.0001           3.38  per condition 3.08 3.09 4.37 3.88 2.48  worst leak 82, crossing 0.54 px
+linear r2 e0.0001           3.60  per condition 3.37 3.41 4.72 4.05 2.47  worst leak 85, crossing 0.57 px

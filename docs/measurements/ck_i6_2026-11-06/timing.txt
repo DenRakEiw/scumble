@@ -1,0 +1,21 @@
+node v24.18.0, AMD Ryzen 9 7900X3D 12-Core Processor          ; bucket 1024 x 683; ms of the module alone (the read is a view, < 1 ms)
+4096 x 2731 (11.2 MP) bilinear             box js  :     49 ms in all, fit 0 ms, 1 bands (49 ms each), r 0, halo 0, 4.4 ns/px
+4096 x 2731 (11.2 MP) fast rgb (default)   box js  :    592 ms in all, fit 456 ms, 1 bands (592 ms each), r 4, halo 0, 52.9 ns/px
+4096 x 2731 (11.2 MP) fast rgb (default)   box rust:    483 ms in all, fit 339 ms, 1 bands (483 ms each), r 4, halo 0, 43.2 ns/px
+4096 x 2731 (11.2 MP) fast chroma          box js  :    355 ms in all, fit 220 ms, 1 bands (355 ms each), r 4, halo 0, 31.7 ns/px
+4096 x 2731 (11.2 MP) fast chroma          box rust:    293 ms in all, fit 161 ms, 1 bands (293 ms each), r 4, halo 0, 26.2 ns/px
+4096 x 2731 (11.2 MP) full chroma K1.5     box js  :    596 ms in all, fit 0 ms, 1 bands (596 ms each), r 6, halo 12, 53.3 ns/px
+4096 x 2731 (11.2 MP) full chroma K1.5     box rust:    486 ms in all, fit 0 ms, 1 bands (486 ms each), r 6, halo 12, 43.4 ns/px
+8192 x 5461 (44.7 MP) bilinear             box js  :    195 ms in all, fit 0 ms, 11 bands (18 ms each), r 0, halo 0, 4.4 ns/px
+8192 x 5461 (44.7 MP) fast rgb (default)   box js  :   1162 ms in all, fit 620 ms, 11 bands (106 ms each), r 4, halo 0, 26.0 ns/px
+8192 x 5461 (44.7 MP) fast rgb (default)   box rust:    863 ms in all, fit 393 ms, 11 bands (78 ms each), r 4, halo 0, 19.3 ns/px
+8192 x 5461 (44.7 MP) fast chroma          box js  :    663 ms in all, fit 193 ms, 11 bands (60 ms each), r 4, halo 0, 14.8 ns/px
+8192 x 5461 (44.7 MP) fast chroma          box rust:    575 ms in all, fit 142 ms, 11 bands (52 ms each), r 4, halo 0, 12.9 ns/px
+8192 x 5461 (44.7 MP) full chroma K1.5     box js  :   2657 ms in all, fit 0 ms, 11 bands (242 ms each), r 12, halo 24, 59.4 ns/px
+8192 x 5461 (44.7 MP) full chroma K1.5     box rust:   2081 ms in all, fit 0 ms, 11 bands (189 ms each), r 12, halo 24, 46.5 ns/px
+15000 x 10000 (150.0 MP) bilinear             box js  :    544 ms in all, fit 0 ms, 36 bands (15 ms each), r 0, halo 0, 3.6 ns/px
+15000 x 10000 (150.0 MP) fast rgb (default)   box js  :   2076 ms in all, fit 473 ms, 36 bands (58 ms each), r 4, halo 0, 13.8 ns/px
+15000 x 10000 (150.0 MP) fast rgb (default)   box rust:   1860 ms in all, fit 369 ms, 36 bands (52 ms each), r 4, halo 0, 12.4 ns/px
+15000 x 10000 (150.0 MP) fast chroma          box js  :   1750 ms in all, fit 271 ms, 36 bands (49 ms each), r 4, halo 0, 11.7 ns/px
+15000 x 10000 (150.0 MP) fast chroma          box rust:   1588 ms in all, fit 135 ms, 36 bands (44 ms each), r 4, halo 0, 10.6 ns/px
+15000 x 10000 (150.0 MP) full chroma K1.5     box rust:   7837 ms in all, fit 0 ms, 36 bands (218 ms each), r 22, halo 44, 52.2 ns/px
