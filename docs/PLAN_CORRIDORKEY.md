@@ -1,9 +1,12 @@
 # CorridorKey 2.0 in Scumble: the build plan (item 49)
 
-**Status: planned 2026-10-24 against `ec1142b` (branch `wasm-kernels`; `main` = 0.1.51 at `2d9a353`); re-planned the
-same day after the user's answers (in-app first, a `corridorkey` branch off `main`, 0.1.52, pack A after a code check,
-the grey Fill layer), then critic-checked a second time (feasibility and the rules, 41 findings: every must and should
-folded in, the nice ones where they cost a line; the code anchors of every finding re-read). Nothing built.**
+**Status (2026-11-06): I0a and I0b done; Stop A is a no-go for the in-app route on Nucito's set** (DirectML refuses
+stage 1, WebGPU runs all five graphs but misses parity at both buckets; §5 "Stop A"), **so Route B (B0-B5, §4.11) is
+0.1.52** and I0c, I1-I8 are not built for it; the in-app route is a later update on the user's word. Planned
+2026-10-24 against `ec1142b` (branch `wasm-kernels`; `main` = 0.1.51 at `2d9a353`); re-planned the same day after the
+user's answers (in-app first, a `corridorkey` branch off `main`, 0.1.52, pack A after a code check, the grey Fill
+layer), then critic-checked a second time (feasibility and the rules, 41 findings: every must and should folded in, the
+nice ones where they cost a line; the code anchors of every finding re-read). No app code built yet.**
 This file turns the research of 2026-10-24 (five read-only readers: CK2's pipeline from source, the licences, the
 in-app ONNX feasibility, the ComfyUI packs, Scumble's own anchors), three designs (ComfyUI first, in-app first, the
 user's flow), two critiques of them (feasibility; the user's rules) and the user's four answers into sessions. Every
@@ -455,6 +458,11 @@ the fp32 sources from the ComfyUI machine's `models/corridorkey2/` once I0a has 
 7. Blue screens: is the foreground already unmixed for blue spill, and does the green-limit despill need its blue
    counterpart on stills (we swap the channel, as one ComfyUI pack does)?
 
+**After Stop A's no-go (2026-11-06):** 5 and 6 as written describe the in-app route. For 0.1.52 (Route B) question 6
+reads: "Scumble sends the picture at native size, up to 16 MP and 8,192 px a side, to the user's own ComfyUI with a
+CK2.0 node pack, and scales it down above that. Is CK2.0 validated on stills above 4K and above about 8,192 px a side,
+and would you cap and downscale, or tile?" 2 (hosting) can wait: 0.1.52 hosts nothing.
+
 ## 4. The design
 
 ### 4.1 Routes
@@ -549,7 +557,10 @@ resident bucket per picture; a larger bucket only for Apply when the setting ask
 the ORT version the engine needs**; a go only on 1.30.0 (or on its WebGPU provider) adds the session I0c (the exact pin,
 the helper gates again, the packaged exe's `require` from the asar) before I1. **No-go:** no GPU provider meets the
 list; the in-app route stops here with its numbers in `docs/measurements/ck_i0b_<date>/`, the plan says so, and Route B
-(B1-B5, §4.11) becomes 0.1.52. **A go with conditions** (one provider only, a bucket cap below 1024, memory close to the
+(B0-B5, §4.11) becomes 0.1.52. **Stop A's reading of this list (2026-11-06, §5 "Stop A"):** against fp32 the bf16
+reference itself fails the alpha max item and, on an ill-conditioned still, the edge-band alpha MAE row, so those two
+are miscalibrated against the reference's own noise; a later attempt sets them from the reference's spread against
+fp32 before it measures its own export. **A go with conditions** (one provider only, a bucket cap below 1024, memory close to the
 limit) is recorded as the engine's readiness table (§4.8) and the working-size default, **but only as the gate for
 starting I1**: the table and the default that ship are written from I1's numbers on the own export (§4.3), not from
 Nucito's graphs, which no user runs.
@@ -916,7 +927,7 @@ the 0.1.52 notes cover them) and the CHANGELOG merge.
 
 ### 4.11 Route B: the user's ComfyUI with a CK2 node pack (kept whole; sessions B0-B5)
 
-**When it is built:** as the whole of 0.1.52 on a no-go at Stop A, or by the user's decision at Stop B without
+**When it is built:** as the whole of 0.1.52 on a no-go at Stop A (**the case since 2026-11-06**, §5 "Stop A"), or by the user's decision at Stop B without
 Corridor's written yes to hosting (§4.3, §6); otherwise as the phase 2 option *Full resolution on your ComfyUI* after
 Stop B. Pack A is installed at I0a in either case (the parity reference; on the user's word after the code check), so
 Route B starts from a running pack; should the user decline it, B0 installs it then.
@@ -961,7 +972,7 @@ as the file open uses it, `inpaint_canvas.js:683`), then §4.5's steps 2-6 (the 
 `PreviewImage` nodes on `foreground` and `alpha` through `MaskToImage`, `comfyPictureRun` learning `outputs: [fgId,
 alphaId]` (one more branch in its wait, `host.js:3054-3073`).
 
-**Resolution on Route B:** the box native while its area is at most `KEY_CAP` (default **16 MP**) and its longer side at
+**Resolution on Route B:** the box native while its area is at most `KEY_CAP` (default **16 MP**, provisional until B0: §5 "Stop A") and its longer side at
 most **8,192** (C-RADIO's tested range at H/4), the cap a setting set from I0a's numbers (whether 16 MP is a tolerable
 few seconds in normal mode on the 5090, or 8 MP is the default; §2.2 on the eight-frame estimate); scaled by one factor
 above it (`realism.fitAreaSize`'s shape, `realism.js:341`), the answer brought back to the box by the app per band and
@@ -1032,8 +1043,8 @@ Efforts in days, **inferred**.
 | # | Session, goal | Files (anchors) | Tests (tier) | Done when | Effort |
 |---|---|---|---|---|---|
 | **I0a** | **Pack A's code check, its install, the reference keys** (the user's answer 3). **Done 2026-11-06, pinned at `c7662de`** (`c7662de1832539b257ed055326dd2ead4393f1f1`, main's HEAD of 2026-11-02; the code check read `eeee7fa` and `c7662de` and recommended the latter: `docs/measurements/ck_i0a_2026-11-06/findings.md`; the install `install.md`, the keys and the Route B facts `summary.txt` beside it). **First a code read of pack A at `eeee7fa`** (as planned; read at `c7662de` too; a two-day-old repo by an unknown author, 0 stars, running Python inside the production ComfyUI; the clone in the planning session's scratchpad `ck_comfy/`, re-cloned if gone): every file and `requirements.txt` read for network access beyond the model hosts (HF, Google Cloud Storage), `subprocess` / `os.system`, `eval` / `exec`, pickled loads (`torch.load` without `weights_only`: MoGe's `model.pt` is a torch pickle, upstream loads it too, said as such), obfuscated or downloaded code, writes outside `models/corridorkey2/`; the diff of the vendored part against upstream `485f5e9`. **The findings to the user before anything is installed.** On the user's word: the clone pinned to **`c7662de`** into `custom_nodes` (B0-B5 and I8's pinned-revision rows use this commit, not `eeee7fa`); its requirements checked with `python_embeded\python.exe -m pip install --dry-run -r requirements.txt` (today "nothing to install": safetensors 0.8.0, einops 0.8.1, timm 1.0.19, scipy 1.15.2, opencv-python 4.10.0.84 beside three other opencv builds, huggingface_hub 1.27.0 all satisfy the pack's `>=` pins; recorded in the summary; any future pin that would change a package is shown to the user as a diff against the freeze taken before the v0.44.0 update, `pip_freeze_before.txt` of 2026-11-06 in that session's scratchpad `comfy_update/`, before anything is installed into the production Python; at `c7662de` on 0.44.0 the dry run was again "nothing to install" and the I0a check found `python_embeded` differing from that freeze only by the v0.44.0 update's packages); a restart only when the machine is free and on the user's word; the 5.1 GB fetched by the user (the ComfyUI page or `scripts/download_models.py`). `/object_info` of the pack's nodes saved to `tools/refs/corridorkey/`. **The reference keys** (the parity reference for I0b and I1): a scratch script on `python_embeded` calling **the pack's vendored upstream `corridorkey` package** (plain torch plus the utils3d shim; not `ck_comfy`, which imports `comfy_api.latest` and `comfy.utils` and exists only inside ComfyUI's process, `comfyui.md` §1), **with ComfyUI idle after Free VRAM (`/free`) with the queue empty, or stopped on the user's word** (the reference runs torch on the same card as ComfyUI's resident models: 8.1 GB used idle today, 29 GB with Flux, the 125 s paging precedent), `nvidia-smi` recorded before and after; it keys **five** of the user's stills (a green plate, a blue plate, one FLUX 3 subject on flat green, one with fine hair, **one with blown highlights or speculars**: a lit edge, a reflection, for the fp16 overflow check) at the spike's buckets (768², 1024², the box grown and padded as §4.7 points 1-2 say) and at native, with and without a rough brush hint (the hint saved beside), and writes per still and bucket **(a) the exact bucket-sized 8-bit input PNG the run consumed** (the resample stated: OpenCV `INTER_AREA`; the spike feeds this file byte for byte), **(b) the three /64 feature maps, the baton and the raw 4-channel stage-2 logits as float arrays** (float16 `.npy`), and the decoded alpha and fg as float16 `.npy` plus 8-bit PNGs, into `dist/ck_ref/` (untracked; sha256 in the summary). **If the user declines pack A after the code check**, the reference comes from upstream `infer.py` under I1's venv torch instead (the same card rule). **The Route B facts** taken while the pack is there: seconds cold and warm at 1, 4 and 16 MP through the server with the Advanced node's `info` mode string, `/system_stats` VRAM, `keep_on_gpu` and whether `/free` releases it, the `rgba` PNG read back (8-bit? straight?), the polarity of a grey hint through `ImageToMask`; the rest of Route B's probe waits for B0 | `docs/measurements/ck_i0a_<date>/summary.txt`, `tools/refs/corridorkey/`, `dist/ck_ref/` (untracked) | none (a measurement) | the findings delivered; the install pinned, the dry run recorded; five stills with hint / no hint at two buckets and native saved as input PNGs, feature maps, baton, logits and decoded arrays; the Route B facts noted | 0.5 + the user's time |
-| **I0b** | **The spike, measurement only, no app code** (§4.2): Nucito's set into a scratch folder; **first the pre- and post-processing table** of every graph from Nucito's README and JS loader, checked against `runtime.py` / `color_utils.py` and written into the harness; `tools/ck_spike/` (the Electron entry with `--ort <module dir>`, the utility-process script; `ort.env.versions.node` in every row); I0a's input PNGs fed byte for byte (RGB at the buckets; native's `in/input.png` is the still as is, RGBA with alpha 255, its alpha dropped first); per provider dml / webgpu / cpu on 1.29.0 and 1.30.0: sessions, placement, load, private bytes, the process's GPU dedicated usage from the Windows counters (nvidia-smi's total as a cross-check), run seconds per part at 768² and 1024², the hint loop as model time and as post → answer in main, **parity per graph** (features, baton, logits; the edge band, its fg row alpha-weighted), NaN / Inf and the fg error on **hair_green** (the real fp16 stress: I0a's decoded fg reaches 164.9 linear at alpha 0.17 on its hair edge, 2,094 px above 4.0 linear at native) and on the highlight still (11.2 at most), the ladder over the buckets, `kill()`, the CPU cost | `tools/ck_spike/`, `docs/measurements/ck_i0b_<date>/` (summary, the processing table, placement logs, counter and nvidia-smi rows, parity per graph, the ladder, kill timing) | none (a measurement) | **Stop A:** go / no-go by §4.2's list; the provider; **the ORT version the engine needs**; the working size (= the live bucket) and the buckets allowed, as the gate for I1; the loop's end-to-end cadence; the CPU sentence's N. On a no-go: B0-B5 become 0.1.52 and I1-I7 are not built | 1 |
-| **I0c** (only if Stop A's go is on a version other than the installed 1.29.0) | **The runtime pin:** `onnxruntime-node` pinned **exactly** to the version Stop A names (the `^` becomes an exact pin either way, as the Comfy SDK's did in S0); the helper gates again on tiles (`depth`, `maskview`, `edges`, `selection`, the cutout steps of `commands`), `helpers_test.js` for SAM2 and the matting, LaMa's CPU path once by hand; `npm run dist` and the check that the packaged exe requires the module from inside `app.asar` | `package.json`, `package-lock.json`, `docs/HELPERS.md` (the version line) | the gates named; the asar check | the pin exact; every helper green on the new version; the exe loads it from the asar | 0.25-0.5 |
+| **I0b** | **Done 2026-11-06: a no-go** (`812abb9`; "I0b as built" and "Stop A" below this table; `docs/measurements/ck_i0b_2026-11-06/`). **The spike, measurement only, no app code** (§4.2): Nucito's set into a scratch folder; **first the pre- and post-processing table** of every graph from Nucito's README and JS loader, checked against `runtime.py` / `color_utils.py` and written into the harness; `tools/ck_spike/` (the Electron entry with `--ort <module dir>`, the utility-process script; `ort.env.versions.node` in every row); I0a's input PNGs fed byte for byte (RGB at the buckets; native's `in/input.png` is the still as is, RGBA with alpha 255, its alpha dropped first); per provider dml / webgpu / cpu on 1.29.0 and 1.30.0: sessions, placement, load, private bytes, the process's GPU dedicated usage from the Windows counters (nvidia-smi's total as a cross-check), run seconds per part at 768² and 1024², the hint loop as model time and as post → answer in main, **parity per graph** (features, baton, logits; the edge band, its fg row alpha-weighted), NaN / Inf and the fg error on **hair_green** (the real fp16 stress: I0a's decoded fg reaches 164.9 linear at alpha 0.17 on its hair edge, 2,094 px above 4.0 linear at native) and on the highlight still (11.2 at most), the ladder over the buckets, `kill()`, the CPU cost | `tools/ck_spike/`, `docs/measurements/ck_i0b_<date>/` (summary, the processing table, placement logs, counter and nvidia-smi rows, parity per graph, the ladder, kill timing) | none (a measurement) | **Stop A:** go / no-go by §4.2's list; the provider; **the ORT version the engine needs**; the working size (= the live bucket) and the buckets allowed, as the gate for I1; the loop's end-to-end cadence; the CPU sentence's N. On a no-go: B0-B5 become 0.1.52 and I1-I7 are not built | 1 |
+| **I0c** (only if Stop A's go is on a version other than the installed 1.29.0; **not built**: Stop A is a no-go, and 1.30.0 gave bit-identical arrays anyway) | **The runtime pin:** `onnxruntime-node` pinned **exactly** to the version Stop A names (the `^` becomes an exact pin either way, as the Comfy SDK's did in S0); the helper gates again on tiles (`depth`, `maskview`, `edges`, `selection`, the cutout steps of `commands`), `helpers_test.js` for SAM2 and the matting, LaMa's CPU path once by hand; `npm run dist` and the check that the packaged exe requires the module from inside `app.asar` | `package.json`, `package-lock.json`, `docs/HELPERS.md` (the version line) | the gates named; the asar check | the pin exact; every helper green on the new version; the exe loads it from the asar | 0.25-0.5 |
 | **I1** | **The export** (§4.3; on a go; the venv's disk use said in one line in chat before it is installed): the venv in a scratch folder, the fp32 sources from `models/corridorkey2/` of the user's ComfyUI, **MarcelineVPQ's scripts' LICENSE read in the first hour** (the MHA attempt is gated on it: 1 day with the scripts, 2-3 without), **the decomposed rung first** (Nucito's recipe, opset 17-21, default domain, buckets 768 and 1024) so a shipping set exists, then fp16 + `MultiHeadAttention` at opset ≤ 21 at 768 and 1024 and, on the passing provider, 1536 and 2048 measured (the ladder above 1024), parity per bucket and per graph against I0a's reference, C-RADIO fp16 or fp32 by the parity, the manifest with sha256 per file, the notices; the hosting question re-asked with the numbers if unanswered | `dist/ck_export/` and `dist/ck_onnx/<version>/` (untracked), `docs/measurements/ck_i1_<date>/export.md` and the go list's numbers | the parity run per bucket and per graph (the go thresholds); **Stop A's whole go list again on the own export** at 768 and 1024 on the same provider (placement, load, private bytes, GPU memory, run seconds, the hint loop end to end, `kill()`) | the set that ships named (fused, or the decomposed rung at ≤ 1024 with the reason); the go list green on it at 768 and 1024; the ladder's 1536 / 2048 recorded as kept or dropped with the reason; **the readiness table and the working-size default written from these numbers**; the manifest written | 1 (2-3 without the scripts) |
 | **I2** | **The registry and the downloader hardening** (§4.4): the `kind: "key"` entry under `onnx/corridorkey2/` with original names (never a bare `corridorkey2` in `SUBDIRS`), sha256 per file, the token only to `huggingface.co`, overall progress, the free-disk check, the terms dialog, `keying.inAppOffered` false and nothing offered while the URL is null; `DEFAULTS.key` / `MISSING.key`, `helpers.key`, the row's kind label and licence; `THIRD_PARTY_NOTICES.md` drafted (committed with the set's hosting); the `docs/BUGS.md` token line (written with the plan's commit) closed in the same commit | `electron/main/onnx/models.js` (`:78`, `:84-95`, `:269-273`, `:292-331`), `index.js` (`:20, :158`), `electron/main/settings.js:23`, `renderer/shell.js` (`:2077-2079`, `:2088-2090`, `:2136-2143`), `renderer/dialogs.js`, `docs/BUGS.md`, `THIRD_PARTY_NOTICES.md` | Light: `node tools/scan_test.js` (ftruncate sizes: no 2.4 GB on disk), a new `tools/download_test.js` on a local HTTP server (a sha256 mismatch refused and the `.part` deleted; the token sent to an HF host and not to another; a resume; the subfolder under `onnx/`; the overall progress rows; the free-disk refusal; a null URL not offered and `inAppOffered` false), `lint`, `types`, the settings migration test | the tests green; the Helpers row shows the set with its licence and one bar | 0.75 |
 | **I3** | **The key process** (§4.4): `keyer.js`, `key_process.js`, `keycolor.js`; `index.js` `keyPrepare` / `keyRun` / `keyFree`, `MISSING.key`, the instance killed by `clearInstances` / `free` / `remove` / `will-quit` and the 60 s idle timer; `main.js:1211-1226`, `preload.js:182-199`; `host.keyEngine` wrappers through `helperCall` (`host.js:4814`) **with the request coalescing** (one in flight, one pending, tickets), `editor.helperUsed`, `freeHelpers` (`:5357`); the features cache by hash, one resident bucket per picture, the provider policy | new `electron/main/onnx/keyer.js`, `key_process.js`, `keycolor.js`; `index.js`, `main.js`, `electron/preload.js`, `host.js`, new `tools/keycolor_test.js` | Light: `node tools/keycolor_test.js` (the edge pad and its inverse, the colour codes round trip within 1e-6 against README L509-541's formulas, **the decoded alpha and fg against I0a's decoded arrays** on one reference crop, the despill on known triples for green and blue, the hint plane and quality; the coalescing on a stubbed engine: ten hints in a burst give one run in flight and the last one pending); **the parity test** `node tools/helpers_test.js --key` with the real set (skipped where the set is missing): one I0a reference within the go thresholds logits to logits, polarity, private bytes and the GPU counter before and after `kill()`; `lint`, `types` | the parity test green on the spike's provider; the process gone within 3 s of a kill with the memory back | 1.5 |
@@ -1058,6 +1069,173 @@ I0b's preconditions and I8; Route B about 3.5-4.5 days more if built (B0-B5), or
 end-to-end cadence; on a no-go B0-B5 are 0.1.52), **B** after I8 (the refined matte on the user's pictures; Route B's
 phase 2 option; the hosting answer, or the user's decision without it; a defect). Not a stop: I5's mid-stroke Re-key
 decision (measured by the user's hand, recorded in the hand-over).
+
+### I0a as built (2026-11-06)
+
+**Done** in two parts and a check (`09a1b3e`, `156af0e`, the check's fixes `481fae0`; `docs/measurements/ck_i0a_2026-11-06/`:
+`findings.md`, `install.md`, `summary.txt`). **The code check** of pack A at `eeee7fa` and `c7662de`: network only in the
+loader's download (Hugging Face at pinned revisions, the stored token to huggingface.co only; RVM from Google Cloud
+Storage with its MD5), no `eval` / `exec`, no obfuscation, `subprocess` vendored and never called, every pickle path
+`weights_only=True` or unreachable, writes only under `models/corridorkey2/`, C-RADIO's pinned `hf_model.py` run
+in-process as upstream does. Verdict: safe at **`c7662de`**, kept pinned, `auto_download` false from Scumble. **The
+install,** on the user's word ("ja, in custom nodes laden"): the clone detached at `c7662de` (116 files equal to the
+checked tree); `pip install --dry-run` "nothing to install" (the six `>=` pins satisfied; `python_embeded` differs from
+`pip_freeze_before.txt` only by v0.44.0's packages); the 35 model files (5,076,141,689 bytes) fetched into an empty
+folder, each checked against the host's sha256, git sha1 or RVM MD5 and size, then moved into place. **The stills:** none
+of the user's was in the repo, so five were made with FLUX 3 Image Klein on the user's ComfyUI through a dev instance
+(green_plate, blue_plate, flat_green_plant, hair_green, highlights_green; 1344², sha256 in the summary). **The reference
+keys:** 30 (five stills × b768, b1024, native × hint, no hint) with pack A's vendored upstream code under bf16 autocast
+(`python_embeded -I -B`, ComfyUI stopped): per case the input PNG, the three /64 feature maps, the baton, aux, the raw
+logits and the decoded alpha and fg, into `dist/ck_ref/` (untracked; 396 files, 921,692,497 bytes, sha256 in
+`manifest.txt`); no NaN / Inf; a rerun bit-identical but aux (one or two bf16 steps). The fp16 stress case is
+**hair_green** (decoded fg 164.9 linear at alpha 0.17), not the highlights still (11.2). **Route B's facts**
+(`routeb.json`): normal mode at 1, 4 and 16 MP on the 5090; warm 2.65 / 2.89 / 6.60 s wall (the key node 2.40 / 2.63 /
+5.96 s), cold 12.2 / 12.0 / 15.3 s; 16 MP about 9 GB over idle by nvidia-smi (the pack's estimate 23.2 GB); with
+`keep_on_gpu` 0.72 s warm at 1 MP (the key node 0.63 s) and 4.6 GB parked, which `/free` releases only with
+`free_memory: true`; the `rgba` output an 8-bit straight RGBA PNG equal byte for byte to `foreground` and `alpha` (no
+two-output fallback needed); a grey hint through `ImageToMask` (red) reads white = subject. `/object_info` of the 17
+classes in `tools/refs/corridorkey/`. ComfyUI started by the step at 09:52:50Z and stopped at 10:01:19Z, queue and
+history empty after it. **What differs from the row:** the stills are made, not the user's, and square (the box's growth
+to a bucket's aspect and its edge padding never exercised); the 5.1 GB fetched in the session, not by the user;
+`hint_quality` 0.75 for the rough hint; `fg_linear` and aux saved besides; Route B's 16 MP input a 3× Lanczos upscale.
+
+### I0b as built (2026-11-06)
+
+**Done** (`812abb9`, pushed; the harness `tools/ck_spike/`; `docs/measurements/ck_i0b_2026-11-06/`, whose `summary.txt`
+holds every number here). Nucito's set at `1ae72ca` (106 files, 2,837,154,621 bytes, each against the Hugging Face tree
+listing; no token sent) into the scratchpad; onnxruntime-node 1.29.0 (the scratch copy's `onnxruntime.dll`
+byte-identical to the app's) and 1.30.0 in scratch module folders, never in the app's `node_modules`. The user's ComfyUI
+was down the whole step and not started; every download and GPU batch under the busy lock.
+
+- **The processing table** (`processing.md`): Nucito publishes no loader, so it was read from the graphs and checked
+  against upstream's code; the JS inputs equal numpy / OpenCV to float32 precision; I0a's bucket PNGs fed byte for byte.
+- **Placement:** WebGPU every node of every graph on the GPU (both versions, 768 and 1024). DirectML builds cradio,
+  moge, rvm and stage 2 and **refuses stage 1** with 80070057 on both versions: in `DmlGraphFusionTransformer` at the
+  default optimisation level, at basic and at disabled (extended not run), and with graph fusion off at kernel creation
+  (`MLOperatorAuthorImpl.cpp:2495`). Bisected on the 384 graph (1.29.0, fusion off) to node 17,373, **`MatMul
+  /s1/dec_16.2/attn/proj/MatMul`**, the output projection of the attention in stage 1's /16 decoder block dec_16.2
+  (dec_16.0 and dec_16.1 build); the same node at 768 and 1024 is inferred, why that MatMul is unverified. The CPU
+  provider loads everything.
+- **Times on WebGPU:** five graphs loaded in 7.8-9.3 s; a still at 1024 in 0.25 s warm, 1.3 s cold after the load; the
+  hint loop post → answer in main, median of 10: 217-220 ms at 1024 (model 207-210, IPC 9-10), 158-162 at 768, 95-98
+  at 512, 94 at 384 (1.30; 133 on 1.29, one slow run). DirectML's stage 2 alone 48-58 ms at 1024 (WebGPU 120).
+- **Memory:** WebGPU 5.0 GB private and 4.2 GB GPU after runs at 1024; after `kill()` the GPU counter at 0 in 0.13-0.37 s,
+  the process gone in 0.28-0.43 s. DirectML's four graphs 5.3 / 4.6 GB, back in 0.59-0.95 s.
+- **Parity** (`parity/`): WebGPU 40 cases per version; DirectML stage 2 alone on I0a's baton for hair_green and
+  highlights_green at 768 and 1024 (8 cases), its chain never run; 1.29 and 1.30 bit-identical (200 of 200 WebGPU and 32
+  of 32 DirectML arrays). **Added beyond the row: an fp32 calibration**, I0a's 20 bucket cases run again with upstream's
+  code in fp32 (`scripts/ck_ref_fp32.py`), to tell the reference's noise from ours. Against §4.2's list WebGPU **passes
+  0 of 40** against the bf16 reference (alpha MAE median 2.1-2.3e-3, alpha max 0.04-0.78, edge-band alpha MAE median
+  6.5-6.6e-3; the fg rows pass: fg MAE ≤ 2.3e-3, edge fg alpha-weighted ≤ 7.4e-3) and **0 of 40** against fp32; its
+  stage 2 alone on I0a's baton **passes 0 of 20** against fp32. DirectML's stage 2 alone **passes 8 of 8 against fp32**
+  (alpha MAE ≤ 1.22e-3, max 0.013, edge ≤ 1.63e-3) and **3 of 8 against I0a's bf16 reference** (all five failures on the
+  alpha max alone). The bf16 reference itself passes **6 of 20** against fp32. Feature maps' cosine against fp32: WebGPU
+  ≥ 0.9928, the reference ≥ 0.9937, DirectML ≥ 0.9995. Inputs rounded to bf16 change nothing. No NaN / Inf in any array;
+  hair_green's fp16 fg holds (147 linear; relative error 5.1-5.8 % above 4.0 linear, the reference's 4.0-5.0 %).
+- **Inside the opaque subject** (`parity/interior.txt`): WebGPU puts 25-28 % of the pixels below 255 and 0.3-0.7 % below
+  251 (min 0.94-0.97), in a faint periodic grid; the bf16 reference 3-10 % and below 251 at most 0.02 % (one case);
+  DirectML's stage 2 3-5 % and none below 251.
+- **By eye** (`eye_hair_1024.jpg`, hair_green b1024 with hint, composited over grey): the WebGPU matte and its composite
+  cannot be told from fp32's; the grid shows only in the ×20 difference panel. Over black or white it was not looked at.
+- **CPU:** 601 s for the three feature graphs at 768, stage 1 + 2 unfinished after 890 s: about 25 minutes or more per
+  768² still.
+
+**What differs from the row:** no Nucito loader (the table read from the graphs); the fp32 calibration and the DirectML
+bisection added; the ladder 384-1024 on WebGPU only (its 384 and 512 inputs resized here, `ladder_inputs.json`); the CPU
+benched in part; "cold" is process-cold with a warm OS file cache; the native 1408 cases not run (not a bucket of the set).
+
+### Stop A (2026-11-06): no-go
+
+**The answer: a no-go for the in-app route on Nucito's set, by §4.2's list as written.** A go needs every item on one GPU
+provider: DirectML misses the load (stage 1), WebGPU misses parity at both buckets measured, and by §7's bucket rule
+("a parity failure at one bucket drops that bucket") none is left. Not a go with conditions either: that covers one
+provider, a bucket cap below 1024 or memory near the limit, not a parity failure at every bucket.
+
+| Item (§4.2) | WebGPU (1.29 = 1.30) | DirectML (1.29 = 1.30) |
+|---|---|---|
+| all five graphs load | yes | **no**: stage 1 refused |
+| CPU nodes ≤ 5 %, none in attention | 0 % | 0 % on the four it builds |
+| parity, the list as written | **passes 0 of 40** (and 0 of 40 against fp32) | stage 2 alone: 8 of 8 against fp32, 3 of 8 against the reference; the chain untested |
+| the hair edge by eye at 100 % | passes (over grey) | not looked at |
+| a still at 1024 ≤ 3 s warm, ≤ 15 s cold | 0.25 s / 1.3 s | - |
+| five graphs loaded ≤ 20 s | 7.8-9.3 s | - |
+| private ≤ 10 GB, GPU ≤ 8 GB after a run | 5.0 / 4.2 GB | 5.3 / 4.6 GB (four graphs) |
+| GPU at 0 and private back ≤ 3 s after `kill()` | 0.13-0.37 s / 0.28-0.43 s | 0.59-0.95 s |
+| hint loop ≤ 250 ms end to end | 1024: 217-220 ms | - |
+
+**The list's calibration, and why the verdict still stands.** Against fp32 the bf16 reference fails the list in 14 of
+its 20 cases: all 14 on the alpha max (up to 0.68), 9 on the max alone, 5 also on the edge-band alpha MAE (up to 0.051,
+on the ill-conditioned flat_green_plant, whose leaf is lit close to the screen's green). So **the alpha max item and the
+edge-band row are miscalibrated** against the reference's own noise. With the max item left out, against fp32 (counted
+from `parity_bf16ref_vs_fp32.jsonl` and `parity_vs_fp32.jsonl` with §4.2's limits): the reference passes 15 of 20,
+WebGPU 3 of 10 at 1024 and 4 of 10 at 768; WebGPU's remaining failures are the raw alpha MAE (4-5 of 10 per bucket; the
+reference 0 of 20) and the edge row (3-5 of 10). Per case WebGPU's raw alpha MAE is 2.3-3.0 times the reference's (1.0
+and 1.9 on flat_green_plant at 768); its clamped, visible alpha MAE is at most 1.89e-3, inside 2e-3, but about 2-6 times
+the reference's (0.7 and 1.5 on flat_green_plant at 768); its edge band 0.3-2.5 times (median about 1.2-1.6). A list set
+at twice the reference's worst case would pass the raw alpha MAE row (WebGPU at most 3.66e-3 against 2 × 1.85e-3). **Keeping the list's
+verdict is therefore a judgement, not a measurement:** it rests on the factor one would choose, on WebGPU's error being
+its own (stage 2's fp16 arithmetic: the inputs, the features and bf16-rounded inputs ruled out) and on the interior grid,
+which shows only in a ×20 difference over grey; that it shows on a contrasting background at 100 % is **inferred** (the
+cheap check, no GPU: composite the saved WebGPU arrays, the scratchpad's `ck_i0b/runs/*/arrays`, over black and white).
+
+**What Stop A names** (records for a later attempt; nothing of it ships in 0.1.52):
+- **The provider:** none passes. **DirectML is the lead:** its stage 2 is about twice WebGPU's speed (about 55 ms at
+  1024 against 120) and the closest to fp32, and it is blocked only by one node of Nucito's export. **WebGPU is the
+  second lead:** an own export with stage 2 (or its head) kept in fp32 would take out the located fp16 error, at a cost
+  in loop time (inferred: perhaps the live bucket drops to 768). A hybrid, stage 1 on WebGPU and stage 2 on DirectML, is
+  untested and breaks §4.2's "one provider".
+- **The ORT version:** 1.29.0 as installed; 1.30.0 gives bit-identical arrays and the same times. **No I0c.** The `^`
+  pin in `package.json` stays until an in-app route is built.
+- **The working size and the buckets:** none for 0.1.52. Recorded: on WebGPU §4.7 point 2's rule would give 1,024
+  (217-220 ms against the 250 ms limit); following the brush dab by dab (≤ 150 ms) needs 512 or below. 1536 and 2048
+  belong to an own export.
+- **The loop's cadence on WebGPU:** about 4.6 updates a second at 1024, 6.3 at 768, 10 at 512. Route B has no live
+  loop: a hint change re-runs the whole key through ComfyUI (I0a at 1 MP: 0.72 s warm with `keep_on_gpu`, 2.65 s wall
+  without, 2.40 s of it the key node).
+- **The CPU sentence's N:** about 25 minutes or more per 768² still: no fallback, and no CPU sentence ships.
+
+**For a later in-app attempt** (its own update, on the user's word): every in-app route needs I1's own export anyway
+(Nucito's set never ships, §4.3), so the export is not a cost of the no-go; what the no-go costs is the passed gate. For
+the DirectML lead the decomposed rung in Nucito's recipe would likely hit the same attention-projection MatMul
+(inferred), so **the fused `MultiHeadAttention` rung goes first** there; then Stop A's list again on the own export,
+**with the alpha max and edge-band limits set from the reference's spread against fp32**. The fp32 arrays live only in
+the session scratchpad (`ck_i0b/ref_fp32`, 141 files, 757,807,449 bytes, sha256 in `ref_fp32_sha256.txt` beside the
+summary), a temp folder: worth keeping beside the untracked `dist/ck_ref/` (a move, the user's call);
+`scripts/ck_ref_fp32.py` makes them again. Nucito's set (2.84 GB) stays in the scratchpad's `ck_spike_dl/set` and can be
+fetched again at `1ae72ca`. I1's venv: Python and Torch in a scratch folder, about 3 GB, never in the app or the repo,
+said in chat before it is installed.
+
+**The plan's consequence (§4.2, §4.11, §5):** the in-app route stops here; **Route B (B0-B5) is 0.1.52**, about 4.5-5.5
+days by §5's totals; I0c and I1-I8 are not built for it. Stop B's hosting branch does not apply: Scumble hosts nothing,
+pack A fetches the weights from their upstream hosts on the user's ComfyUI machine. No in-app text in the CHANGELOG, the
+manual or the Store notes; no node build. The `docs/BUGS.md` Hugging Face token line stays open (I2 is not built); it is
+not live, since every registry URL is huggingface.co. **`KEY_CAP`'s 16 MP default is provisional until B0** (16 MP costs
+about 9 GB over idle and 6.6 s warm, on a card where Flux takes 29 GB; B0's eviction and reload item is still open).
+
+**B0, what is left** (I0a took 1, 4 and 16 MP in normal mode, `keep_on_gpu`, `/free`, the `rgba` read-back and the
+polarity): the despill on blue by eye; what the pack evicts and how the next Generate reloads; a tight box against a
+loose one; **a Cancel mid-run and whether the interrupt flag stays set** (B2, B3 and B5 cancel through the token, so
+this stays even without the `auto_download` test); the `key` gate's Route B fixture; 2 and 8 MP and hint against no
+hint per size only if the eviction numbers move the cap off 16 MP (1, 4 and 16 MP bracket it). The run with
+`auto_download: true` on an empty models folder (the present `models/corridorkey2` moved aside, 5.1 GB fetched again)
+is recommended skipped: Scumble then always sends `false`, and the first-run block points to the pack's download
+script or to the loader in the ComfyUI page.
+
+**Asked of the user with Stop A** (the main session asks; with no answer by B0 the recommendation is taken and the
+hand-over says so): (1) B0 on the user's ComfyUI: may Claude start it with `run_nvidia_gpu.bat`'s command line and queue
+test prompts through pack A, or will the user start it? *Recommended: yes, when the machine is free.* (2) The
+`auto_download: true` run: skip or do? *Recommended: skip.* (3) Corridor's follow-ups: 4, 6 in its Route B wording
+(§3.4) and 7, and 1-3 and 5 again in short while the version of the thank-you reply that went is unconfirmed (§6); 2 can
+wait. *Recommended: yes, briefly; a draft on request.* (4) The in-app route: **(a)** its own later update (an own export
+with the fused rung first for DirectML, or stage 2 in fp32 for WebGPU, 1-3 days until it is known whether stage 1 runs
+on DirectML; the list recalibrated; then I2-I8, 6.75 days by the table plus the release block), with Route B shipped in
+0.1.52 before it; or **(b)** before 0.1.52, which puts the same days ahead of the release and holds back everything else
+0.1.52 carries (LoRAs, GPT-Image-2.6, P-H3-Image, and D0, K5, W1 and K12 from the kernel branch); Route B is then built
+only at Stop B's decision (§4.11 phase 2) or on a second no-go. *Recommended: (a).*
+
+**Next:** B0 with the user present and their yes (`/queue` first, own prompts taken off); without them, B1 (Light,
+against `tools/refs/corridorkey/` and I0a's numbers) and B2 against a stubbed `comfyPictureRun` first, B0's last items
+and the gate's fixture on the user's word; then B3-B5, B5 the live run with the user present.
 
 ## 6. The user's answers, and the questions still open
 
@@ -1109,10 +1287,12 @@ Licence-required texts (the seat sentence, the terms paragraph) are stated, not 
    downloader)? *Recommended: Hugging Face.* If Corridor publishes an official export, the registry points at it instead.
 2. **Corridor's remaining written questions (after Stop A).** Send 4, 6 and 7 of §3.4 (and 5, unless it went), and 2
    again with the spike's numbers, in the same thread or by email? *Recommended: yes, after Stop A, so the message says
-   what we measured.*
+   what we measured.* **Due now (Stop A, 2026-11-06):** 4, 6 in its Route B wording (§3.4) and 7; 2 can wait (0.1.52
+   hosts nothing); 1-3 and 5 again in short while the version of the thank-you reply that went is unconfirmed.
 3. **No written hosting answer by Stop B (at Stop B; the user's time and their outward relation).** Build Route B
    (B0-B5, about four more days) for 0.1.52; wait for the answer before any release; or release 0.1.52 with the in-app
-   route dormant (`keying.inAppOffered` false, §4.3) and nothing else of keying in it? *Recommended: Route B.*
+   route dormant (`keying.inAppOffered` false, §4.3) and nothing else of keying in it? *Recommended: Route B.* **Moot
+   since Stop A's no-go (2026-11-06):** Route B is 0.1.52 and nothing is hosted.
 4. **Store policy 11.16** (the live generative-AI disclosure, in force since 7.19): was it ticked in the 0.1.47
    submission? *Recommended: check in Partner Center at the next Store update; not CK-specific.*
 
@@ -1140,6 +1320,10 @@ Comfy Cloud and no paid host.
   (about 1 GB of transients at 1024², inferred). **Changes the plan** on a no-go at Stop A: Route B (B0-B5) is 0.1.52,
   the engine's sessions are not built, the numbers go to `docs/measurements/ck_i0b_<date>/` and the plan's status line
   says so. A go on WebGPU alone means the readiness line names WebGPU and the manual says "experimental provider".
+  **Measured 2026-11-06 (I0b): a no-go.** DirectML refuses stage 1 at one node (`MatMul
+  /s1/dec_16.2/attn/proj/MatMul`, bisected on the 384 graph), WebGPU runs all five graphs on the GPU and passes every
+  item but parity, which it misses at both buckets (stage 2's fp16 arithmetic, located); so Route B (B0-B5) is 0.1.52,
+  the numbers are in `docs/measurements/ck_i0b_2026-11-06/` and the leads for a later attempt in §5 "Stop A".
 - **Parity.** The reference is a bf16 autocast run on the user's card (I0a), the engine fp16 on another provider: two
   roundings, and fp16's range on top (upstream chose bf16 on MPS because scene-linear highlights overflowed fp16,
   `pipeline.md` §5; Scumble's 8-bit sRGB input bounds the input code, the stage-2 activations and the fg logits on
@@ -1149,7 +1333,9 @@ Comfy Cloud and no paid host.
   The thresholds of §4.2 allow for the roundings; what they cannot catch, the user's eye on hair at 100 % does (Stop A
   and I8). **A failure is located, not guessed:** the per-graph rows (features, baton, logits) and the identical input
   PNG name the graph and its pre-processing; a pre-processing mismatch is a harness fix, not a no-go. A parity failure
-  at one bucket drops that bucket, not the route.
+  at one bucket drops that bucket, not the route. **I0b (2026-11-06):** an fp32 run of I0a's cases showed that the bf16
+  reference itself fails the alpha max item (14 of 20) and on one ill-conditioned still the edge-band row (5 of 20);
+  a later attempt sets those two limits from the reference's spread against fp32 (§5 "Stop A").
 - **The export.** MarcelineVPQ's five patches (shifted windows, 4D attention, the C-RADIO position grid on portrait
   inputs, MoGe's position encoding, `value_info` dropped) are known; new ones may appear at 1536 / 2048; C-RADIO may
   have to stay fp32 (+0.86 GB). The scripts' licence may be non-permissive (own scripts then, two to three days). **The

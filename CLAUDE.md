@@ -731,6 +731,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   the user's Stop B decision. **The user's decision (2026-11-06):** the thank-you reply went; the user reads Neex's
   "implement however you like" for the free app as covering the in-app route with a hosted ONNX conversion, so the
   in-app release no longer waits for a written answer (plan §0); the notices of §3.3 stay.
+  **I0a and I0b done 2026-11-06** (pack A pinned at `c7662de` in the user's `custom_nodes` with its 5.1 GB, 30 bf16
+  reference keys; the spike on Nucito's fp16 set): **Stop A is a no-go** for the in-app route (DirectML refuses stage 1
+  at one MatMul, WebGPU runs everything but misses parity at both buckets), so **Route B (B0-B5) is 0.1.52** and
+  I0c-I8 are not built; the in-app route is a later update on the user's word (plan §5 "Stop A", with four questions for
+  the user). Next: B0 with the user present (or B1 / B2 first without them).
 - 50: **LoRAs on the user's ComfyUI and Comfy Cloud, and MOSS Image Edit** (issues #10, hwatik, 2026-10-24: "lora
   support for local generations ... qwen 2.1 or moss"; #11, nadergits, 2026-10-31: "add moss image edit ... with
   loras"; the user, 2026-11-06). **The user's decisions:** LoRAs only for the user's own ComfyUI (local or remote) and
