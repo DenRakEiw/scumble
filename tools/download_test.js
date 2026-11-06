@@ -12,7 +12,8 @@
 // a sha256 (size only), a set in its own folder under onnx/ (the app folder and a ComfyUI models folder; a bare folder
 // of the same name never counted; a file of the wrong size fetched again), the overall progress over a set, the
 // free-disk refusal before the first request, the terms, a set without URLs not offered (the CorridorKey 2.0
-// placeholder included), 401/403 wording, cancel, already downloading, verify and remove. Exits non-zero on a failure.
+// placeholder included), 401/403 wording, cancel, already downloading, verify and remove, and tools/ck2_catalogue.js
+// on a fake built set (the entry it writes downloads through the registry). Exits non-zero on a failure.
 "use strict";
 
 const fs = require("node:fs");
@@ -462,6 +463,44 @@ async function refusals() {
     } finally { fs.rmSync(root, { recursive: true, force: true }); freeBytes = Infinity; }
 }
 
+async function catalogueTool() {
+    // tools/ck2_catalogue.js on a fake built set: sizes and hashes read from the files, offered only with a base URL
+    const cat = require("./ck2_catalogue");
+    const dir = tmp("cat");
+    const root = tmp("catroot");
+    try {
+        const parts = { "a.weights": crypto.randomBytes(70000), "a_768x768.onnx": crypto.randomBytes(3000), "THIRD_PARTY_NOTICES.md": Buffer.from("notices"), "LICENSE": Buffer.from("licence") };
+        for (const [n, b] of Object.entries(parts)) fs.writeFileSync(path.join(dir, n), b);
+        fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ files: ["a.weights", "a_768x768.onnx"] }));
+        fs.writeFileSync(path.join(dir, "x.onnx.part"), "left over");
+        const current = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "electron", "main", "onnx", "corridorkey2.json"), "utf8"));
+        const built = await cat.build(dir, { current, version: "t1" });
+        const names = built.files.map((f) => f.name);
+        check("the catalogue tool: every file with its size and sha256, the manifest first, no .part, the terms kept",
+            names[0] === "manifest.json" && names.length === 5 && !names.some((n) => n.endsWith(".part"))
+            && built.files.every((f) => f.sha256 === sha(fs.readFileSync(path.join(dir, f.name))) && f.size === fs.statSync(path.join(dir, f.name)).size)
+            && built.placeholder === false && built.subdir === "onnx/corridorkey2" && built.terms && built.version === "t1", names);
+        const noBase = models.fromSetCatalogue(built);
+        check("built without a base URL: not offered", !models.offered(noBase) && !noBase.invalid);
+        // serve the built set from A and download it through the registry entry the tool wrote
+        for (const [n, b] of Object.entries(parts)) content.set(n, b);
+        content.set("manifest.json", fs.readFileSync(path.join(dir, "manifest.json")));
+        const withBase = await cat.build(dir, { current, version: "t1", base: `${A}/ok` });
+        const m = models.fromSetCatalogue({ ...withBase, id: "cat_set" });
+        registry.cat_set = m;
+        accepted.add("cat_set");
+        check("built with a base URL: offered, every URL the base plus the name", models.offered(m) && m.files.every((f) => f.url === `${A}/ok/${encodeURIComponent(f.name)}`));
+        check("the terms paragraph names the size and the host", /about \d\.\d GB/.test(models.termsText(m)) && models.termsText(m).includes("127.0.0.1"));
+        const r = await attempt(() => downloader(root).download("cat_set"));
+        check("the set the tool described downloads, checks and lands in onnx/<id>/", !r.error && models.locate(m, root).present, r);
+        check("--check finds no difference on the folder, and a changed file", (await cat.compare(withBase, dir)).length === 0
+            && (() => { fs.writeFileSync(path.join(dir, "LICENSE"), "changed"); return true; })() && (await cat.compare(withBase, dir)).length === 1);
+        fs.writeFileSync(path.join(dir, "stray.onnx"), "x");
+        const stray = await attempt(() => cat.build(dir, { current }));
+        check("a file the manifest does not list is refused", stray.error && /not in the manifest stray\.onnx/.test(stray.error), stray);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(root, { recursive: true, force: true }); }
+}
+
 async function cancelAndBusy() {
     const root = tmp("cancel");
     try {
@@ -497,6 +536,7 @@ async function cancelAndBusy() {
         await resumes();
         await sets();
         await refusals();
+        await catalogueTool();
         await cancelAndBusy();
     } catch (err) {
         fail++;

@@ -213,7 +213,7 @@ function locate(model, dir, links = null) {
 
 function rowOf(m, dir, links, elsewhere) {
     const row = { id: m.id, kind: m.kind, label: m.label, note: m.note, source: m.source, sourceUrl: m.sourceUrl, license: m.license, gated: !!m.gated, offered: offered(m), ...locate(m, dir, links), elsewhere: (elsewhere && elsewhere[m.id]) || [] };
-    if (m.subdir) Object.assign(row, { set: true, subdir: m.subdir, folder: targetDir(m, dir), version: m.version, approxBytes: m.approxBytes, terms: m.terms, placeholder: m.placeholder, invalid: m.invalid });
+    if (m.subdir) Object.assign(row, { set: true, subdir: m.subdir, folder: targetDir(m, dir), version: m.version, approxBytes: m.approxBytes, terms: m.terms, termsText: termsText(m), placeholder: m.placeholder, invalid: m.invalid });
     return row;
 }
 
@@ -238,6 +238,19 @@ function paths(model, dir, links = null) {
     const out = {};
     for (const f of loc.files) out[f.role] = f.path;
     return out;
+}
+
+/**
+ * A set's terms paragraph for the pre-download dialog with `{size}` ("2.4 GB") and `{host}` (where the files come
+ * from: "Hugging Face" for huggingface.co, else the host) filled in; "" for a model without terms.
+ */
+function termsText(model) {
+    if (!model || !model.terms || !model.terms.text) return "";
+    const url = (model.files.find((f) => f.url) || {}).url || null;
+    let host = "its host";
+    try { if (url) { const h = new URL(url).hostname; host = h === "huggingface.co" || h === "hf.co" ? "Hugging Face" : h; } } catch (_) { /* keep */ }
+    const bytes = model.approxBytes || model.files.reduce((a, f) => a + (f.size || 0), 0);
+    return model.terms.text.replace(/\{size\}/g, (bytes / 1e9).toFixed(1) + " GB").replace(/\{host\}/g, host);
 }
 
 /** The folder of a present set (what the key process loads from), or null. */
@@ -635,6 +648,6 @@ async function remove(id, dir, lookup = byId) {
 }
 
 module.exports = {
-    MODELS, byId, offered, locate, describeAll, describe, paths, setFolder, downloadDir, targetDir, isComfyModelsDir,
+    MODELS, byId, offered, locate, describeAll, describe, paths, setFolder, termsText, downloadDir, targetDir, isComfyModelsDir,
     Downloader, remove, verify, hashFile, hfTokenAllowed, fromSetCatalogue, IMAGENET, scanFolder, matchScan,
 };
