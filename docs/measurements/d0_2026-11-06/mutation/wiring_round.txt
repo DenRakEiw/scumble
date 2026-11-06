@@ -1,0 +1,38 @@
+D0 wiring round, after the review fixes (2026-11-06; the layered gate, tiles, offline, a fresh instance of an app copy per mutant).
+First pass: 18 of 22 red; the four survivors got test cases in the layered gate's D0 step (a band this thread cannot
+write, an open over before its job, the status of a later open, an answer without a document); second pass: all four red.
+So 22 of 22 red. Untouched and restored copies PASS in both passes.
+
+== first pass
+untouched copy: PASS
+pool_off               red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: roundtrip: the pool route did not run ()
+band_y                 red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: flat: the pool's layers differ from the window's: {"width":300,"height":600,"groups":[],"notes":[],"lossy":false,"layers":[],"composite":"720000:3955977183"} / {"width":3
+mask_as_layer          red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: loose: the pool's layers differ from the window's: {"width":40,"height":30,"groups":[{"id":"g1","name":"Group","visible":false,"collapsed":false,"parent":null}],"notes":[
+mask_into_layer        red  [FAIL] a_file_without_a_covering_bottom_opens_over_a_transparent_base: JS exception: Error: the PSD worker sent no mask for layer "Masked"
+window_header_check    red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a file too large: no error (pool, workers lost 0, jobs 1)
+refused_fallback       SURVIVED  ALL PASS
+failed_fallback        red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a truncated file: the file ends early (truncated or not a PSD) (fallback, workers lost 0)
+mask_off               red  [FAIL] layer_masks_survive_a_psd_round_trip: JS exception: Error: bands: Switched off has maskOff false
+take_index             red  [FAIL] a_psd_opens_with_its_layers: JS exception: Error: the PSD worker sent no pixels for layer "Offset opaque"
+composite_base         red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: the flat file's base is not its merged picture as the window reads it
+worker_inflate         red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: Failed to fetch
+worker_throws          red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a truncated file: the file ends early (truncated or not a PSD) (fallback, workers lost 0)
+worker_mask_flag       red  [FAIL] a_file_without_a_covering_bottom_opens_over_a_transparent_base: JS exception: Error: the PSD worker sent no mask for layer "Masked"
+stop_ignored           red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a stopped read: no error {"stopped":0,"lost":0,"jobs":1,"calls":1}
+stop_pre_job           SURVIVED  ALL PASS
+stop_as_fallback       red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a stopped read: no error {"stopped":1,"lost":0,"jobs":1,"calls":2}
+stop_counted_lost      red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a stopped read: pool jobs of psd_read cancelled {"stopped":0,"lost":1,"jobs":1,"calls":2}
+later_not_destroyed    red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a closed tab: [40,30,3,{"ref":{"filename":"loose_2743d5f24eea.png","subfolder":"inpaint_canvas","type":"input"},"px":{"_c":null,"_ctx":null,"_drawing":0,"_w":40,"_h":30,"
+later_not_passed       red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a later open: [300,600,0,{"ref":{"filename":"flat_4f370132e1b8.png","subfolder":"inpaint_canvas","type":"input"},"px":{"_c":null,"_ctx":null,"_drawing":0,"_w":300,"_h":60
+superseded_loud        SURVIVED  ALL PASS
+bands_fallback         red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a worker lost mid-read: no error (fallback)
+no_doc_guard           SURVIVED  ALL PASS
+restored copy: PASS
+
+== second pass (the four survivors, with the new cases)
+untouched copy: PASS
+refused_fallback       red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a band not written: no error (fallback) {"stopped":1,"lost":0,"jobs":1,"calls":1}
+stop_pre_job           red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: an open over before its job: pool jobs of psd_read cancelled {"stopped":1,"lost":0,"jobs":1,"calls":1}
+superseded_loud        red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a later open: [300,600,0,{"ref":{"filename":"flat_4f370132e1b8.png","subfolder":"inpaint_canvas","type":"input"},"px":{"_c":null,"_ctx":null,"_drawing":0,"_w":300,"_h":60
+no_doc_guard           red  [FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: an answer without a document: Cannot read properties of undefined (reading 'layers') (threw)
+restored copy: PASS

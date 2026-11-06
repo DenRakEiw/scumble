@@ -1,0 +1,26 @@
+[04:26:50] ab: 3 runs per route, alternating pool / window, rows add_the_paint_layer export_psd save_psd open_psd; HEAD bbff117 plus the D0 diff
+[04:26:50] ab-pool-r1: gpu 6758 MiB, 8 %
+[04:27:27] ab-pool-r1: rc=0 open_psd wall 11610 blocked 1110 focused True route pool
+[04:27:27] ab-window-r1: gpu 7014 MiB, 10 %
+[04:28:11] ab-window-r1: rc=0 open_psd wall 17749 blocked 11622 focused False route window switch false
+[04:28:11] ab-window-r1: NOT COUNTED (the window was behind or the row did not run)
+[04:28:11] ab-window-r1-try2: gpu 6971 MiB, 5 %
+[04:28:53] ab-window-r1-try2: rc=0 open_psd wall 16176 blocked 10314 focused True route window switch false
+[04:28:53] ab-pool-r2: gpu 5107 MiB, 6 %
+[04:29:29] ab-pool-r2: rc=0 open_psd wall 10971 blocked 1847 focused True route pool
+[04:29:29] ab-window-r2: gpu 5736 MiB, 8 %
+[04:30:12] ab-window-r2: rc=0 open_psd wall 16582 blocked 10970 focused True route window switch false
+[04:30:12] ab-pool-r3: gpu 6208 MiB, 8 %
+[04:30:47] ab-pool-r3: rc=0 open_psd wall 11021 blocked 1829 focused False route pool
+[04:30:47] ab-pool-r3: NOT COUNTED (the window was behind or the row did not run)
+[04:30:47] ab-pool-r3-try2: gpu 6244 MiB, 8 %
+[04:31:26] ab-pool-r3-try2: rc=0 open_psd wall 12882 blocked 1920 focused True route pool
+[04:31:26] ab-window-r3: gpu 6842 MiB, 7 %
+[04:32:11] ab-window-r3: rc=0 open_psd wall 17858 blocked 12141 focused True route window switch false
+[04:32:11] done
+[04:32:48] ab: 1 runs per route, alternating pool / window, rows add_the_paint_layer export_psd save_psd open_psd; HEAD bbff117 plus the D0 diff
+[04:32:48] ab-pool-r4: gpu 5860 MiB, 4 %
+[04:33:23] ab-pool-r4: rc=0 open_psd wall 10736 blocked 1805 focused True route pool
+[04:33:23] ab-window-r4: gpu 5730 MiB, 8 %
+[04:34:04] ab-window-r4: rc=0 open_psd wall 15422 blocked 9698 focused True route window switch false
+[04:34:04] done

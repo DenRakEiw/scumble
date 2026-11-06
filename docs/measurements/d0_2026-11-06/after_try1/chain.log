@@ -1,0 +1,16 @@
+[02:55:02] after: 3 runs, rows add_the_paint_layer export_psd save_psd open_psd; HEAD bbff117
+[02:55:02] machine_busy.lock exists: waiting
+[02:59:02] waited 240 s for the lock (gone)
+[02:59:02] after-r1: gpu 4181 MiB, 1 %
+[02:59:36] after-r1: rc=0 open_psd wall 9712 blocked 827 focused True visible; renderer ends []
+[02:59:36] after-r2: gpu 4310 MiB, 4 %
+[03:00:10] after-r2: rc=0 open_psd wall 9894 blocked 938 focused False visible; renderer ends []
+[03:00:10] after-r2: NOT COUNTED (the window was behind or the row did not run)
+[03:00:10] after-r2-try2: gpu 4131 MiB, 5 %
+[03:00:45] after-r2-try2: rc=0 open_psd wall 9464 blocked 975 focused True visible; renderer ends []
+[03:00:45] after-r3: gpu 4385 MiB, 2 %
+[03:01:19] after-r3: rc=0 open_psd wall 9698 blocked 1099 focused False visible; renderer ends []
+[03:01:19] after-r3: NOT COUNTED (the window was behind or the row did not run)
+[03:01:19] after-r3-try2: gpu 4319 MiB, 2 %
+[03:01:51] after-r3-try2: rc=0 open_psd wall 8828 blocked 1078 focused True visible; renderer ends []
+[03:01:51] done

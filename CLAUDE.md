@@ -229,7 +229,9 @@ code.
   0.1.50 were never submitted), the user's upload. `main` merged into `wasm-kernels` the same day (`saveExport` keeps
   K0a's marks: start, pieces, written). **#0 M9 + the second open done 2026-11-06** (`docs/measurements/m9_2026-11-06/`: K1's defaults hold, keepMB 16 costs
   nothing on the wand rows, and a second document's open does not pay the 0.4 s shader link, so G6 stays where the user
-  put it). **Next: D0.** **Beside it (2026-10-24): CorridorKey 2.0 planned** (item 49,
+  put it). **D0 done 2026-11-06** (`docs/measurements/d0_2026-11-06/`: the PSD reader in the pool job `psd_read`, plain
+  JS; a 15k PSD open blocks the window 1.8 s instead of 11.0 s in the same machine state (baseline 9.0 s), the block
+  left is the file's read into the window, `docs/BUGS.md`). **Next: K5.** **Beside it (2026-10-24): CorridorKey 2.0 planned** (item 49,
   `docs/PLAN_CORRIDORKEY.md`) on its own branch `corridorkey` off `main` (worktree `.claude/worktrees/corridorkey`),
   released as 0.1.52 on the user's word; next there: I0a (pack A's code check, findings to the user before any install).
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.

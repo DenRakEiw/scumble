@@ -45,7 +45,7 @@ export class WorkerPool {
         this.queues = Array.from({ length: PRIORITIES }, () => []);
         this.seq = 0;
         this.off = false;
-        this.stats_ = { run: 0, done: 0, failed: 0, cancelled: 0, started: 0, lost: 0 };
+        this.stats_ = { run: 0, done: 0, failed: 0, cancelled: 0, started: 0, lost: 0, stopped: 0 };
         this._unsubscribe = null;
     }
 
@@ -167,10 +167,10 @@ export class WorkerPool {
         // a job that answers in pieces (`png_read`: a band at a time): `progress` messages before the reply. A cancelled
         // job's worker is stopped, since nothing else ends a stream it is in the middle of.
         if (msg.progress) {
-            if (job.cancelled) { this._lost(s, new Error("cancelled")); return; }
+            if (job.cancelled) { this._lost(s, new Error("cancelled"), true); return; }
             clearTimeout(job.timer);
             job.timer = setTimeout(() => this._lost(s, new Error(`pool job ${job.op} timed out`)), job.timeout || this.timeout);
-            if (job.onProgress) { try { job.onProgress(msg); } catch (err) { job.cancelled = true; job.reject(err); this._lost(s, err); } }
+            if (job.onProgress) { try { job.onProgress(msg); } catch (err) { job.cancelled = true; job.reject(err); this._lost(s, err, true); } }
             return;
         }
         clearTimeout(job.timer);
@@ -183,18 +183,22 @@ export class WorkerPool {
         this._pump();
     }
 
-    /** A worker that failed or never answered: gone, with the job it ran. */
-    _lost(s, err) {
+    /**
+     * A worker that failed or never answered: gone, with the job it ran. `stopped`: the caller ended the stream (its
+     * `onProgress` threw, or the job was cancelled mid-stream), so the worker is stopped but not counted as lost: only
+     * failures count towards switching the pool off.
+     */
+    _lost(s, err, stopped = false) {
         const i = this.workers.indexOf(s);
         if (i < 0) return;
         this.workers.splice(i, 1);
-        this.stats_.lost++;
+        if (stopped) this.stats_.stopped++; else this.stats_.lost++;
         try { s.w.terminate(); } catch (_) { /* ignore */ }
         const job = s.job;
         s.job = null;
         if (job) {
             clearTimeout(job.timer);
-            this.stats_.failed++;
+            if (!stopped) this.stats_.failed++;
             if (!job.cancelled) job.reject(new Error("pool worker gone: " + ((err && err.message) || err)));
         }
         // a worker that dies at once every time would be started for ever

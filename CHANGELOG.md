@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Opening a large PSD no longer freezes the window.** Its layers are read in the background and come in while the window stays usable: for a 15,000 x 10,000 PSD with a layer above the background, the window used to stop answering for 9 to 11 seconds and now stops for under 2 (while the file itself is read in), and the open takes about a third less time.
 - **The pixel kernels hold less memory and recover on their own.** After an operation, a worker that grew past 16 MB returns to its starting size within a few seconds (after a 15000 x 10000 export the workers keep about 12 MB instead of about 290 MB), and a kernel that fails is replaced and the job finishes the slower way instead of failing.
 
 ## 0.1.51 - 2026-10-24

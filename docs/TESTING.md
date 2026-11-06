@@ -103,7 +103,19 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   `tools/px_probe.py` (`--cold`, `--regrow`, `--retention`; gate `pxprobe:<args>` with commas). `node tools/px_test.js`
   takes about 8 s longer since K1 (its lifecycle cases wait out the 2 s idle trim). `native_test.py ... open_again`
   (#0 of the plan's §7) opens the same file a second time into a new tab and prints both opens side by side with the
-  programs' link waits (`gl getProgramParameter`, counted in every row's boundaries since).
+  programs' link waits (`gl getProgramParameter`, counted in every row's boundaries since). `native_test.py` brings
+  the window to the front first (`Page.bringToFront`, as `px_jobs.py` does); every row still says `focused`, and a
+  chain counts a row only with the window in front (the user may be at the machine).
+  D0 (the PSD open in the pool job `psd_read`): `node tools/layered_test.js` twins `readPsdStream` against the
+  window's `readPsd` on every PSD it reads (bands of 3 and of 256 rows, the masks against a frozen copy of the window's
+  mask loop); `node tools/layered_test.js --twin-file PATH` does one file of any size by SHA-256 (the 15k PSD, the
+  Photoshop-written `tools/fixtures/blendmodes/blendmodes.psd`). The `layered` gate's step
+  `the_pool_and_the_window_read_a_psd_alike` reads the gate's PSDs and the Photoshop fixture through the pool and the
+  window and compares this backend's pixels, and checks the refusals, the fallback, the stop of an open that is over
+  and a worker lost mid-read (`pool.stats()` `lost` against `stopped`). The switch `InpaintEditor.psdOnPool` (false: the
+  window's reader; "fail": a job no worker knows, so the fallback runs) is a class switch for harnesses, like
+  `mipsOnPool` and `pngParts`, not a route of `px/kernels.js`: it chooses where the reader runs, not which kernel
+  (K20b's JS / Rust choice inside `psd_read` becomes a route).
   `python tools/mem_test.py [12000x8000] [--rounds 4] [--keep]` is the memory walk: a
   document per round, benchmarked, closed and collected, with the private bytes of the
   renderer and of the GPU process, a census of every live canvas and the line that made it.

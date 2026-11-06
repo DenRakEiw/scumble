@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); next G2 on `main` as the hotfix 0.1.51.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0 and D0 done 2026-11-06 (§7); next K5.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -403,7 +403,12 @@ entry of this map.
 
 ### 4.7 D: the PSD and ORA readers (K20a-c)
 
-- **Today, no design and no row:** `readLayered` (`inpaint_canvas.js:18399-18420`) reads the whole file into one array
+- **Since D0 (2026-11-06, §7):** a PSD is read in the pool job `psd_read` (`inpaint_worker.js`, plain JS:
+  `inpaint_layered.js` `readPsdStream`, readPsd's own parse sending each layer's RGBA and mask bands as soon as its
+  channels are read); the window checks the size from the header and writes the bands into its pixels
+  (`inpaint_canvas.js` `readPsdOnPool`). K20b puts the Rust reader into that job; the window's `readPsd` stays the
+  fallback and the twin. An ORA is read on the window as below.
+- **Before D0, no design and no row:** `readLayered` (`inpaint_canvas.js:18399-18420`) reads the whole file into one array
   (`:18401`), inflates with `inflateBytes` (`DecompressionStream`, `:565`), runs JS `unpackRows`, `unpredict` and
   `interleave` (`inpaint_layered.js:68`, `:92`, `:179`) and the mask loop (`inpaint_canvas.js:18407-18409`), takes each
   ORA layer through `createImageBitmap` and `Layer.fromImage` (`:18415-18417`, a GPU readback, about 1 s per 150 MP like
@@ -976,3 +981,66 @@ PASS with the window in front; three tries the window was behind (NOT COUNTED) c
   as this note is the user's call when it comes up.
 
 Next: D0.
+
+### D0 (2026-11-06): the PSD reader in a pool job, plain JS
+
+The order after Stop 1, #2 (the user's yes of 2026-10-24), on `bbff117`; full tier. `docs/measurements/d0_2026-11-06/`
+(`summary.txt`; the chains `d0_chain.py`, `d0_ab.py`; `twin15k.py`; `mutation/`).
+- **Built:** `inpaint_layered.js`: readPsd's body is `decodePsd(input, inflate, stream)`, and `readPsd` is
+  `decodePsd(.., null)`, byte for byte the old path (the merged picture's decode moved into `mergedPlanes`).
+  `readPsdStream` is the same parse for a worker: each layer's pixels and mask go out as RGBA bands of 256 rows
+  (`onRows`) as soon as its channels are read, and its planes are dropped, so one layer's planes are held at a time (a
+  record without pixels drops its planes too); the merged picture is read only when no layer has pixels, the one case
+  `loadLayered` shows it (a third of the old parse at 15k is gone). `inpaint_worker.js` job `psd_read`: the worker reads
+  the blob itself (the window makes no array of the file) and drops the array at the end. `inpaint_canvas.js`:
+  `psdOnPool`, `readPsdOnPool` (the size checked from the header's 26 bytes before the job is queued; each band written
+  into `Layer` / `Mask` pixels by `writeRect` as it arrives, about 12 ms a 15k band, never a tile written by a worker;
+  the status line counts the layer and its rows), `checkLayeredSize`; `loadLayered` and `addImageLayers` take
+  `compositePx`. An open that is over (a later open, a closed tab: `loadFile`'s `later` reads `_destroyed` too) stops its
+  job at the next band and releases its layers, masks, merged picture and base. `inpaint_pool.js`: a stop the caller asked
+  for (an `onProgress` that throws, a cancel mid-stream) is counted as `stopped`, not `lost`, so it never switches the
+  pool off.
+- **The job's contract** (what K20a and K20b build on): in, `{ blob, rowsPerBand }`; the window has checked signature,
+  version, mode, depth and then the size from the header (a refusal of the first four is the reader's, in its words);
+  out, `progress` messages `{ index, mask, rgba, w, h, y0, rows }` (the buffer transferred), a layer's pixel bands
+  before its mask bands (white with the mask as alpha, what the editor's `Mask` is made from); the reply readPsd's answer
+  with `index` in place of a layer's `rgba`, its `mask` without `data`, `composite` an index (only for a file without
+  layers) or null; or `{ failed }` with the reader's message, thrown on the window without a second read. A job that
+  cannot run before its first band (no pool, a lost worker, an op no worker knows) falls back to the window's `readPsd`;
+  after a band it is an error (a second read on the window needs more memory still). Timing: read, channels, inflate,
+  interleave, mask, deliver, bands.
+- **The marks on the pool route:** no `read` step; `parsed` (`route: "pool"`) includes the band writes; `layers` is 0,
+  with `rgbaMs` / `maskMs` as extras. So `mark total` is not comparable across the two routes; compare `open_psd`'s wall.
+- **The review** (a workflow on the first build: 19 findings, none rejected): the size refusal had thrown from
+  `onProgress`, which the pool counted as a lost worker (two on a small machine switched the pool off) after the worker
+  had read the whole file; a superseded or closed tab's read ran on and kept its pixels; any failure fell back to a
+  second read; the gates `blendmodes` and `groups`, the Photoshop-written fixture, a same-state A/B and the docs were
+  missing. All fixed. Left as is: no backpressure on the bands, and two tabs may now read 15k PSDs at once on two workers
+  (each near the old single open's peak, inferred); no busy flag for an open (a tab without a base closes without asking
+  anyway); `InpaintEditor.psdOnPool` stays a class switch like `mipsOnPool` and `pngParts` (it picks where the reader
+  runs; K20b's JS / Rust choice inside `psd_read` becomes a route of `px/kernels.js`).
+- **Numbers** (15000 x 10000, the real 925 MB PSD of G2's kind saved through `saveExport` and opened from its file; three
+  counted fresh runs each, medians): the same-state A/B on the final build (`after/`, the routes alternating, the card at
+  5.1-7.0 GB): pool wall **10,971** [10,736-12,882], block **1,847** [1,805-1,920]; the window's reader wall 16,582
+  [15,422-17,858], block 10,970 [9,698-12,141]: the block -83 %, the wall -34 %. The baseline on `bbff117` (`before/`,
+  the card at 3.3 GB): wall 14,015, block 8,968. The worker's `psd_read` 5.4 s (read 0.3, channels 3.1, interleave 2.0)
+  where the window's parse took 10.1 s; the window idle 7.9 s of the open instead of 3.8.
+- **Where the block left is:** not in the reader. A long-task probe on a fresh profile (`after/longtasks_first_open.json`)
+  finds no long task between `start` and `stored`; the 1.7 s before `start` is `load_image`'s read of the whole file into
+  the renderer, and on a profile's first document the 0.55 s shader link after `stored` (G6). Ctrl+O sends the file the
+  same way: `docs/BUGS.md` "Ctrl+O sends the whole file to the window in one message", for the user to place at a Stop.
+- **Tests:** the twins (byte identity): `node tools/layered_test.js` (45 PSDs, bands of 3 and 256, 122 checks),
+  `--twin-file` on the 15k file and on `tools/fixtures/blendmodes/blendmodes.psd` by SHA-256; the `layered` gate's step
+  `the_pool_and_the_window_read_a_psd_alike` (seven PSDs through both routes in this backend's pixels, the refusals,
+  the fallback, the stops, a worker lost mid-read) on both backends; `twin15k.py`, the 15k file in the app, equal on
+  tiles and canvas with the same hashes. Gates on tiles: lint types layered export document pxjobs blendmodes groups
+  pixels clip PASS; on canvas the same but pxjobs (tiles only by design) PASS. The mutation round: module 20 of 21 red
+  (a zero-area header's merged picture survives, cosmetic), wiring 22 of 22 red (four after the step got their cases).
+- **Not measured** (inferred): the open's peak memory (the worker holds the file's array and one layer's planes, about
+  1.5 GB at 15k, where `readPsd` held every plane, every RGBA buffer and the merged picture on the window); a 15k layer
+  with a full-size mask (`maskMs` 0 in every 15k row; masks are covered by the small files and the twins).
+- **What K20b fills:** the Rust reader inside `psd_read` (the unpacks, the prediction and the interleave as kernels,
+  the same messages and answer), with its own route for the JS / Rust choice; the window's `readPsd` stays the twin and
+  the fallback. The ORA reader is still the window's (K20c).
+
+Next: K5.

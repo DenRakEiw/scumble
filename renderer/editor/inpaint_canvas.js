@@ -21,7 +21,7 @@ import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SM
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds, selModeOf, selectionGco, tilesSource, bytesSource, rectSource } from "./inpaint_raster.js";
 import { GLCompositor, BLEND_FN_GLSL } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
-import { INTERACTIVE, NORMAL, EXPORT } from "./inpaint_pool.js";
+import { INTERACTIVE, NORMAL, EXPORT, CancelledError } from "./inpaint_pool.js";
 import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.js";
 import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter, writeTiff } from "./inpaint_bands.js";
 import { compositeBox, releaseBoxBuffers } from "./inpaint_boxstack.js";
@@ -562,6 +562,15 @@ async function pixelsFromTiff(blob, Cls, progress = null) {
     }
     if (!px) throw new Error("the TIFF gave no pixels");
     return { px, info, writeMs };
+}
+
+/**
+ * D0 (docs/PLAN_WASM_BUILD.md §7): a PSD goes to a pool worker (`readPsdOnPool`) unless `InpaintEditor.psdOnPool` is
+ * false (a harness's twin of the window's reader), the pool is off or there is none, or the file is not a Blob the job
+ * can take; the window's reader is the fallback.
+ */
+function psdOnPool(file) {
+    return InpaintEditor.psdOnPool !== false && typeof Worker === "function" && typeof Blob === "function" && file instanceof Blob && !editorPool().off;
 }
 
 /** zlib ("deflate") or raw ("deflate-raw") bytes inflated by the browser. */
@@ -16867,6 +16876,7 @@ class InpaintEditor {
                 if (layered) {
                     // a PSD / ORA dropped on a document: every layer of it, where the file has it, the bottom one included
                     const doc = await this.readLayered(file, layered);
+                    if (doc.compositePx) { doc.compositePx.release(); doc.compositePx = null; }   // a flat PSD adds no layer
                     // each new reference goes below the others (addLayer): top first keeps the file's stacking order
                     const order = host.refTokens && role === "reference" ? [...doc.layers].reverse() : doc.layers;
                     // its groups come along as groups (PLAN_0_1_31 §6.5), with ids of this document; references are in none
@@ -18453,7 +18463,8 @@ class InpaintEditor {
         // an open that is still decoding (a large file in a worker takes seconds, the window stays usable) must not land
         // over a later one: the last file asked for is the base
         const token = (this._openToken = (this._openToken || 0) + 1);
-        const later = () => this._openToken !== token;
+        // a closed tab's open is over too: its read stops at its next band and nothing reaches the local store
+        const later = () => this._destroyed || this._openToken !== token;
         const before = this.base;
         try {
             const layered = await layeredKind(file);
@@ -18522,11 +18533,21 @@ class InpaintEditor {
 
     /**
      * A PSD or ORA file read into pixels (inpaint_layered.js): `{ width, height, layers, composite, notes }`, each
-     * layer with `px` (this backend's pixels) in place of its bytes, bottom first.
+     * layer with `px` (this backend's pixels) in place of its bytes, bottom first. `later()` true: the open is over (a
+     * later one, a closed tab), and a PSD read in a worker stops at its next band (a CancelledError).
      */
-    async readLayered(file, kind) {
+    async readLayered(file, kind, later = () => false) {
         markStep("layered_open", "start", { kind });
         this.setStatus(`Reading the layers of ${file.name || "the file"} ...`);
+        if (kind === "psd" && psdOnPool(file)) {
+            const got = await this.readPsdOnPool(file, later);
+            if (got) {
+                const t = got.timing || {};
+                markStep("layered_open", "parsed", { route: "pool", inflateMs: t.inflate || 0, inflates: t.inflates || 0 });
+                markStep("layered_open", "layers", { maskMs: got.maskMs, rgbaMs: got.rgbaMs, bitmapMs: 0, fromImageMs: 0 });
+                return got.doc;
+            }
+        }
         const bytes = new Uint8Array(await file.arrayBuffer());
         markStep("layered_open", "read", { MB: bytes.length / 1048576 });
         // the K0a harness: the inflates' time (they run one after another), and the layer loop's parts below
@@ -18537,8 +18558,7 @@ class InpaintEditor {
         };
         const doc = kind === "psd" ? await readPsd(bytes, { inflate: (b) => timed(b, "deflate") }) : await readOra(bytes, { inflateRaw: (b) => timed(b, "deflate-raw") });
         markStep("layered_open", "parsed", { inflateMs, inflates });
-        this.checkBaseSize(doc.width, doc.height);
-        if (doc.width * doc.height > CANVAS_MAX_PIXELS) throw new Error(`${doc.width} × ${doc.height} px is larger than a layered file can be opened at (268 MP); save it as PNG`);
+        this.checkLayeredSize(doc.width, doc.height);
         for (const L of doc.layers) {
             // a PSD mask (docs/PLAN_0_1_31.md 3e): one value per pixel of the layer, as the mask's alpha
             if (L.mask && L.mask.data) {
@@ -18570,14 +18590,115 @@ class InpaintEditor {
         return doc;
     }
 
+    /** A layered file's size against what this document can open: the document's bounds, then the canvas limit. */
+    checkLayeredSize(w, h) {
+        this.checkBaseSize(w, h);
+        if (w * h > CANVAS_MAX_PIXELS) throw new Error(`${w} × ${h} px is larger than a layered file can be opened at (268 MP); save it as PNG`);
+    }
+
+    /**
+     * D0 (docs/PLAN_WASM_BUILD.md §7): a PSD read by a pool worker (`psd_read`, inpaint_layered.js `readPsdStream`), its
+     * layers and masks written into this backend's pixels band by band as they arrive, so the window never runs the
+     * reader's loops and makes no array of the file. `{ doc, rgbaMs, maskMs, timing }`, `doc` as readLayered answers
+     * it (each layer with `px`, a masked one with `maskPx` and `maskOff`; a file without layers with `compositePx`, the
+     * merged picture, which is read only then), or null when the pool could not take the job before any band came: the
+     * caller reads the file on this thread. The size is checked here from the header's 26 bytes before the job is
+     * queued, so a file too large costs no worker and no read; a file the reader refuses throws its message as the
+     * window's reader would; `later()` true stops the job at its next band (a CancelledError, the worker counted as
+     * stopped, not lost).
+     */
+    async readPsdOnPool(file, later = () => false) {
+        const head = new Uint8Array(await file.slice(0, 26).arrayBuffer());
+        if (head.length >= 26) {
+            // the reader's order of checks: signature and version, mode, depth, then the size (a refusal of the first
+            // three is the worker's, in the reader's own words)
+            const v = new DataView(head.buffer, head.byteOffset, head.length);
+            const mode = v.getUint16(24), depth = v.getUint16(22);
+            if (v.getUint32(0) === 0x38425053 && v.getUint16(4) === 1 && (mode === 3 || mode === 1) && (depth === 8 || depth === 16)) this.checkLayeredSize(v.getUint32(18), v.getUint32(14));
+        }
+        if (later()) throw new CancelledError("psd_read");
+        const Layer = this.pixels.Layer, Mask = this.pixels.Mask;
+        const made = new Map();   // stream index -> { px, maskPx }
+        const name = file.name || "the file";
+        let refused = null, stopped = false, bands = 0, rgbaMs = 0, maskMs = 0;
+        const drop = () => { for (const e of made.values()) for (const p of [e.px, e.maskPx]) if (p) p.release(); made.clear(); };
+        let r;
+        try {
+            // "fail": a harness's way to see the fallback (an op no worker knows)
+            r = await editorPool().run(InpaintEditor.psdOnPool === "fail" ? "psd_read_refused" : "psd_read", { blob: file }, [], {
+                timeout: 600000,
+                onProgress: (m) => {
+                    if (later()) { stopped = true; throw new CancelledError("psd_read"); }
+                    try {
+                        const t0 = performance.now();
+                        let e = made.get(m.index);
+                        if (!e) made.set(m.index, (e = { px: null, maskPx: null }));
+                        const key = m.mask ? "maskPx" : "px";
+                        if (!e[key]) e[key] = (m.mask ? Mask : Layer).empty(m.w, m.h);
+                        e[key].writeRect({ data: new Uint8ClampedArray(m.rgba), width: m.w, height: m.rows }, 0, m.y0);
+                        if (m.mask) maskMs += performance.now() - t0; else rgbaMs += performance.now() - t0;
+                        bands++;
+                        if (!m.mask) this.setStatus(`Reading the layers of ${name} ... layer ${made.size}, ${Math.round(((m.y0 + m.rows) / m.h) * 100)} %`);
+                    } catch (err) { refused = err; throw err; }
+                },
+            });
+        } catch (err) {
+            drop();
+            if (stopped) throw new CancelledError("psd_read");
+            if (refused) throw refused;
+            // the job could not run (no pool, an op no worker knows): the window's reader. A worker lost after bands
+            // came (most likely out of memory at this size) is not read again here, which needs more memory still
+            if (bands) throw new Error(`reading ${name} failed in its worker: ${(err && err.message) || err}`);
+            console.warn("Inpaint Canvas: reading the PSD in a worker failed, reading it here:", (err && err.message) || err);
+            return null;
+        }
+        if (r && r.failed) { drop(); throw new Error(r.failed); }
+        if (!r || !r.doc) { drop(); throw new Error(`reading ${name} failed in its worker: no answer`); }
+        const doc = r.doc, taken = [];
+        const take = (i, what) => {
+            const e = made.get(i);
+            if (!e || !e.px) throw new Error(`the PSD worker sent no pixels for ${what}`);
+            made.delete(i);
+            taken.push(e);
+            return e;
+        };
+        try {
+            for (const L of doc.layers) {
+                const e = take(L.index, `layer "${L.name}"`);
+                L.px = e.px;
+                if (L.mask) {
+                    if (!e.maskPx) throw new Error(`the PSD worker sent no mask for layer "${L.name}"`);
+                    L.maskPx = e.maskPx;
+                    L.maskOff = !!L.mask.disabled;
+                } else if (e.maskPx) { e.maskPx.release(); e.maskPx = null; }
+                L.mask = null;
+                delete L.index;
+            }
+            if (doc.composite != null) doc.compositePx = take(doc.composite, "the merged picture").px;
+            doc.composite = null;
+        } catch (err) {
+            for (const e of taken) for (const p of [e.px, e.maskPx]) if (p) p.release();
+            drop();
+            throw err;
+        }
+        drop();   // bands the answer names no layer for
+        return { doc, rgbaMs, maskMs, timing: r.timing || null };
+    }
+
     /**
      * Open a PSD or ORA with its layers. The bottom layer becomes the base when it covers the whole picture, is
      * visible, opaque in the normal mode (what Photoshop's Background and the editor's own export are); otherwise the
      * base is transparent and every layer stays a layer. A flat PSD opens from its merged picture.
      */
     async loadLayered(file, kind, later = () => false) {
-        const doc = await this.readLayered(file, kind);
-        if (later()) return;
+        let doc;
+        try { doc = await this.readLayered(file, kind, later); } catch (err) { if (later()) return; throw err; }
+        // an open that is over (a later one, a closed tab) lets go of what its read made
+        const dropDoc = (also = null) => {
+            const seen = new Set();
+            for (const p of [...doc.layers.flatMap((L) => [L.px, L.maskPx]), doc.compositePx, also]) if (p && !seen.has(p)) { seen.add(p); p.release(); }
+        };
+        if (later()) { dropDoc(); return; }
         const W = doc.width, H = doc.height;
         const layers = doc.layers.slice();
         let basePx = null;
@@ -18585,13 +18706,15 @@ class InpaintEditor {
         if (b && b.x === 0 && b.y === 0 && b.w === W && b.h === H && b.visible && b.opacity >= 0.999 && b.blend === "normal" && !b.maskPx) { basePx = b.px; layers.shift(); }
         // a layer clipped to what became the base would show "clipped without effect": the base covers the picture anyway
         if (basePx) for (const L of layers) { if (!L.clip) break; L.clip = false; }
+        else if (!layers.length && doc.compositePx) basePx = doc.compositePx;   // D0's pool route: already pixels
         else if (!layers.length && doc.composite) basePx = this.pixels.Layer.fromImageData(new ImageData(doc.composite, W, H));
         else basePx = this.pixels.Layer.empty(W, H);
+        if (doc.compositePx && basePx !== doc.compositePx) { doc.compositePx.release(); doc.compositePx = null; }
         const stem = (file.name || "layered").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "layered";
         this.setStatus(`Storing ${file.name || "the file"} ...`);
         const { ref } = await uploadPixels(basePx, stem);
         markStep("layered_open", "stored");
-        if (later()) return;
+        if (later()) { dropDoc(basePx); return; }
         await this.setBasePixels(ref, basePx, { keepLayers: false });
         markStep("layered_open", "base");
         let top = null;

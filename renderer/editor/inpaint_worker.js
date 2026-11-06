@@ -24,6 +24,8 @@
  *   hash            the short SHA-1 of a blob.
  *   psd_part        one part of a PSD's channel data: rows (bytes or tiles) as PackBits per channel.
  *   crc             CRC-32 and size of a blob (a zip entry of an ORA file).
+ *   psd_read        a PSD file read here (inpaint_layered.js `readPsdStream`): its layers back band by band as RGBA
+ *                   (`progress` messages), the window never runs the reader's loops (docs/PLAN_WASM_BUILD.md §7 D0).
  *   inflate_bench   byte ranges of a blob through the browser's inflater, counted and dropped: a benchmark only.
  *   png_read        a PNG file decoded as a stream, its rows back band by band (`progress` messages).
  *   image_read      any image file the browser decodes (JPEG, WebP, a PNG with a colour profile), decoded here and
@@ -53,6 +55,7 @@ import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, clipCoverage, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
 import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
 import { readTiff, tiffPart } from "./inpaint_tiff.js";
+import { readPsdStream } from "./inpaint_layered.js";
 import { resampleStore } from "./inpaint_resample.js";
 import { liquifyStore } from "./inpaint_liquify.js";
 import { guidedFar } from "./inpaint_depth.js";
@@ -502,6 +505,44 @@ async function tiffRead(msg) {
         spent,
     });
     return { info, timing: { op: "tiff_read", kernels: "js", pixels: info.width * info.height, kernel: now() - t0, ...spent } };
+}
+
+/** zlib bytes inflated by the browser (the window's inflateBytes, inpaint_canvas.js: the same inflater, the same bytes). */
+async function inflateZlib(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/**
+ * A PSD read in this worker (inpaint_layered.js `readPsdStream`, docs/PLAN_WASM_BUILD.md §7 D0): the file's bytes read
+ * here from the blob, so the window makes no array of them (the window has checked the size from the header's 26 bytes
+ * before it queued the job); `progress` messages `{ index, mask, rgba, w, h, y0, rows }` (the band's buffer
+ * transferred), a layer at a time, its pixels before its mask; the reply `{ doc }` (readPsdStream's answer), or `{ failed }` with the reader's message for a file it refuses,
+ * which the window shows as its own reader would, without reading the file again. Plain JS: K20b puts the Rust reader
+ * into this job. Its timing: read (the blob), channels, inflate, interleave, mask, deliver (the posts), bands.
+ */
+async function psdRead(msg) {
+    const t0 = now();
+    const bytes = new Uint8Array(await msg.blob.arrayBuffer());
+    const read = now() - t0;
+    const spent = {};
+    let inflate = 0, inflates = 0, pixels = 0;
+    const timing = () => ({ op: "psd_read", kernels: "js", pixels, kernel: now() - t0, read, inflate, inflates, ...spent });
+    try {
+        const doc = await readPsdStream(bytes, {
+            inflate: async (b) => { const t = now(); try { return await inflateZlib(b); } finally { inflate += now() - t; inflates++; } },
+            rowsPerBand: msg.rowsPerBand || TILE,
+            onHeader: (h) => { pixels = h.width * h.height; },   // the window checked the size from the header before the job
+            onRows: (index, kind, rgba, w, h, y0, rows) => { self.postMessage({ id: msg.id, progress: true, index, mask: kind === "mask", rgba: rgba.buffer, w, h, y0, rows }, [rgba.buffer]); },
+            spent,
+        });
+        return { doc, timing: timing() };
+    } catch (err) {
+        return { failed: String((err && err.message) || err), timing: timing() };
+    } finally {
+        // the file's array goes now, not at this idle worker's next collection (the answer holds no view of it)
+        try { if (typeof bytes.buffer.transfer === "function") bytes.buffer.transfer(0); } catch (_) { /* detached already */ }
+    }
 }
 
 /** CRC-32 and size of a blob (a zip entry of an ORA file). */
@@ -1409,6 +1450,7 @@ async function run(msg) {
     if (msg.op === "png_read") return pngRead(msg);
     if (msg.op === "image_read") return imageRead(msg);
     if (msg.op === "tiff_read") return tiffRead(msg);
+    if (msg.op === "psd_read") return psdRead(msg);
     if (msg.op === "tiff_part") return tiffPartJob(msg);
     if (msg.op === "crc") return crcJob(msg);
     if (msg.op === "inflate_bench") return inflateBench(msg);

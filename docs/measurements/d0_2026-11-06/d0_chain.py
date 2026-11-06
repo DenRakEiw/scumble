@@ -1,0 +1,137 @@
+"""D0 (docs/PLAN_WASM_BUILD.md §7 #2): the 15k PSD open, before and after readPsd's loops moved into a pool job.
+
+Each run is a fresh offline instance (tiles on, its own profile in the scratch folder) that runs tools/native_test.py
+15000x10000 with the rows add_the_paint_layer export_psd save_psd open_psd: the PSD (the base and a full-size paint
+layer, about 925 MB) saved for real through host.saveExport (G2) and opened from that file into a new tab. A run whose
+open_psd row ran with the window behind (document.hasFocus() false) is NOT COUNTED and tried again, up to three times.
+Before every run the main session's lock file is waited for (at most 45 minutes, the wait logged).
+
+    python d0_chain.py OUTDIR LABEL [RUNS] [--keep-psd PATH]
+
+OUTDIR/LABEL-rN.json / .log per run, OUTDIR/chain.log; with --keep-psd the first counted run's PSD is moved to PATH
+(the twin test's 15k file), every other file a save row wrote is deleted.
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request
+
+ROOT = r"F:\canvas"
+SCRATCH = r"C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad"
+LOCK = os.path.join(SCRATCH, "machine_busy.lock")
+ROWS = ["add_the_paint_layer", "export_psd", "save_psd", "open_psd"]
+
+args = sys.argv[1:]
+keep_psd = None
+if "--keep-psd" in args:
+    i = args.index("--keep-psd")
+    keep_psd = args[i + 1]
+    del args[i:i + 2]
+OUT, LABEL = args[0], args[1]
+RUNS = int(args[2]) if len(args) > 2 else 3
+os.makedirs(OUT, exist_ok=True)
+CHAIN = os.path.join(OUT, "chain.log")
+
+
+def log(s):
+    line = time.strftime("[%H:%M:%S] ") + s
+    print(line, flush=True)
+    with open(CHAIN, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def wait_lock():
+    t0 = time.time()
+    if not os.path.exists(LOCK):
+        return 0
+    log("machine_busy.lock exists: waiting")
+    while os.path.exists(LOCK) and time.time() - t0 < 45 * 60:
+        time.sleep(60)
+    waited = time.time() - t0
+    log(f"waited {waited:.0f} s for the lock ({'gone' if not os.path.exists(LOCK) else 'still there, going on'})")
+    return waited
+
+
+def up():
+    try:
+        urllib.request.urlopen("http://127.0.0.1:9555/json/version", timeout=1).read()
+        return True
+    except Exception:
+        return False
+
+
+def gpu():
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,utilization.gpu", "--format=csv,noheader"], capture_output=True, text=True, timeout=20)
+        return r.stdout.strip()
+    except Exception as e:
+        return f"(nvidia-smi: {e})"
+
+
+def one(tag):
+    if up():
+        raise SystemExit("an instance answers on 9555 already: close it first")
+    prof = os.path.join(SCRATCH, "d0", "profile_" + tag)
+    files = os.path.join(SCRATCH, "d0", "files_" + tag)
+    shutil.rmtree(prof, ignore_errors=True)
+    shutil.rmtree(files, ignore_errors=True)
+    os.makedirs(prof)
+    os.makedirs(files)
+    applog = open(os.path.join(OUT, f"app_{tag}.log"), "w")
+    app = subprocess.Popen([os.path.join(ROOT, r"node_modules\electron\dist\electron.exe"), ".", "--remote-debugging-port=9555",
+                            "--user-data-dir=" + prof, "--no-comfy"], cwd=ROOT, stdout=applog, stderr=subprocess.STDOUT)
+    for _ in range(240):
+        if up():
+            break
+        time.sleep(0.5)
+    time.sleep(8)
+    js = os.path.join(OUT, tag + ".json")
+    cmd = [sys.executable, os.path.join(ROOT, "tools", "native_test.py"), "15000x10000", "--out", files, "--json", js]
+    if keep_psd:
+        cmd.append("--keep")
+    r = subprocess.run(cmd + ROWS, cwd=ROOT, capture_output=True, text=True, timeout=3000)
+    with open(os.path.join(OUT, tag + ".log"), "w", encoding="utf-8") as f:
+        f.write(r.stdout + "\n--- stderr\n" + r.stderr)
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "close_app.py")], cwd=ROOT, env=dict(os.environ, SCUMBLE_CDP_PORT="9555"), capture_output=True, timeout=120)
+    try:
+        app.wait(timeout=90)
+    except subprocess.TimeoutExpired:
+        app.kill()
+    applog.close()
+    sl = os.path.join(prof, "logs", "scumble.log")
+    ends = []
+    if os.path.exists(sl):
+        ends = [l.strip()[:200] for l in open(sl, encoding="utf-8", errors="replace") if "renderer ended" in l]
+    row = None
+    try:
+        row = json.load(open(js, encoding="utf-8"))["rows"].get("open_psd", {}).get("row")
+    except Exception as e:
+        log(f"{tag}: no json ({e}); rc={r.returncode}")
+    psd = os.path.join(files, "n1.psd")
+    return row, ends, prof, files, psd, r.returncode
+
+
+log(f"{LABEL}: {RUNS} runs, rows {' '.join(ROWS)}; HEAD {subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()}")
+for n in range(1, RUNS + 1):
+    for attempt in range(1, 4):
+        wait_lock()
+        tag = f"{LABEL}-r{n}" + ("" if attempt == 1 else f"-try{attempt}")
+        log(f"{tag}: gpu {gpu()}")
+        row, ends, prof, files, psd, rc = one(tag)
+        focused = bool(row and row.get("focused"))
+        if row:
+            log(f"{tag}: rc={rc} open_psd wall {row.get('wall')} blocked {row.get('blocked')} focused {row.get('focused')} {row.get('visibility')}; renderer ends {ends}")
+        if keep_psd and focused and os.path.exists(psd):
+            os.makedirs(os.path.dirname(keep_psd), exist_ok=True)
+            shutil.move(psd, keep_psd)
+            log(f"kept the PSD as {keep_psd} ({os.path.getsize(keep_psd)} bytes)")
+            keep_psd = None
+        shutil.rmtree(prof, ignore_errors=True)
+        shutil.rmtree(files, ignore_errors=True)
+        if focused:
+            break
+        log(f"{tag}: NOT COUNTED (the window was behind or the row did not run)")
+log("done")

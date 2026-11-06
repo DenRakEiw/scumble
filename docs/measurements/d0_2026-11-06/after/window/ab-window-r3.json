@@ -1,0 +1,910 @@
+{
+ "size": "15000x10000",
+ "profiled": true,
+ "rows": {
+  "build_the_file": {
+   "row": {
+    "size": [
+     15000,
+     10000
+    ],
+    "MP": 150,
+    "fillMs": 1352,
+    "encodeMs": 2244,
+    "MB": 275.8,
+    "arena": {
+     "slots": 2360,
+     "chunks": 10,
+     "allocated": 2360,
+     "freed": 0,
+     "droppedChunks": 0,
+     "refused": 0,
+     "failed": 0,
+     "enabled": true,
+     "bytes": 671088640,
+     "freeSlots": 200
+    }
+   },
+   "profile": null
+  },
+  "open_the_file": {
+   "row": {
+    "wall": 3528,
+    "blocked": 655,
+    "calls": {
+     "blob arrayBuffer": {
+      "n": 8,
+      "ms": 0.6,
+      "MB": 0
+     },
+     "blob arrayBuffer (until settled)": {
+      "n": 8,
+      "ms": 1.6,
+      "MB": 0
+     },
+     "worker postMessage (moved)": {
+      "n": 164,
+      "ms": 2.2,
+      "MB": 0
+     },
+     "2d putImageData": {
+      "n": 1,
+      "ms": 0.1,
+      "MB": 0.3
+     },
+     "2d getImageData": {
+      "n": 1,
+      "ms": 0.1,
+      "MB": 0.3
+     },
+     "gl compileShader": {
+      "n": 6,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getShaderParameter": {
+      "n": 6,
+      "ms": 5.3,
+      "MB": 0
+     },
+     "gl linkProgram": {
+      "n": 3,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getProgramParameter": {
+      "n": 3,
+      "ms": 593.1,
+      "MB": 0
+     },
+     "gl bufferData": {
+      "n": 12,
+      "ms": 0.1,
+      "MB": 0.1
+     },
+     "gl texImage2D": {
+      "n": 13,
+      "ms": 0.1,
+      "MB": 0
+     },
+     "gl texSubImage2D": {
+      "n": 2360,
+      "ms": 3.1,
+      "MB": 1
+     },
+     "gl draw": {
+      "n": 13,
+      "ms": 0,
+      "MB": 0
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 5,
+      "ms": 0.2,
+      "MB": 41.8
+     }
+    },
+    "jobs": {
+     "png_read": {
+      "jobs": 1,
+      "pixels": 150000000,
+      "kernel": 2335.9,
+      "parse": 0.7,
+      "read": 53.9,
+      "write": 2279.2,
+      "wait": 1213.5,
+      "copy": 57.8,
+      "unfilter": 1039,
+      "deliver": 8.4,
+      "gen": 0,
+      "pxCalls": {
+       "png_unfilter_rows": 40
+      }
+     },
+     "mips": {
+      "jobs": 19,
+      "tiles": 2344,
+      "kernel": 512.8,
+      "gen": 0,
+      "pxCalls": {
+       "clamp_extend": 98,
+       "mip_chain": 2442
+      }
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": {
+      "mip_chain": 16
+     },
+     "workers": {
+      "png_unfilter_rows": 40,
+      "clamp_extend": 98,
+      "mip_chain": 2442
+     }
+    },
+    "extra": {
+     "loadFileMs": 3446,
+     "tiles": 2360,
+     "compositorBefore": "not made",
+     "compositorAfter": "made"
+    },
+    "error": null,
+    "status": "15000 \u00d7 10000",
+    "focused": true,
+    "visibility": "visible"
+   },
+   "profile": {
+    "idle": 2453.629,
+    "gc": 58.211,
+    "program": 232.646,
+    "natives": {
+     "(anonymous)": 0.997,
+     "beat": 3.516,
+     "slice": 1.057,
+     "setTimeout": 1.062,
+     "getContext": 5.904999999999999,
+     "getShaderParameter": 4.176,
+     "getProgramParameter": 594.653,
+     "f": 4.733,
+     "texSubImage2D": 1.068,
+     "now": 1.066,
+     "postMessage": 1.215,
+     "__n1_postMessage": 1.081
+    },
+    "px": 2.382,
+    "pxfn": {
+     "mipChain [px.js:289]": 1.018,
+     "wasm-function[15] [wasm]": 1.364
+    },
+    "js": {
+     "inpaint_upload.js": 1.067,
+     "inpaint_canvas.js": 15.358,
+     "inpaint_tiles.js": 300.771,
+     "inpaint_resample.js": 1.569,
+     "inpaint_arena.js": 13.623000000000001,
+     "shell.js": 2.104,
+     "inpaint_pool.js": 5.518,
+     "inpaint_status.js": 1.059,
+     "inpaint_pixels.js": 0.744,
+     "inpaint_compositor.js": 9.337,
+     "plugins.js": 1.015
+    },
+    "fn": {
+     "uploadBlob [inpaint_upload.js:16]": 1.067,
+     "hugePngSize [inpaint_canvas.js:658]": 1.049,
+     "onProgress [inpaint_canvas.js:694]": 1.048,
+     "normalizeBlock [inpaint_tiles.js:540]": 118.18,
+     "canvasRoundTrip [inpaint_resample.js:165]": 1.569,
+     "_putBlock [inpaint_tiles.js:1330]": 169.911,
+     "newTile [inpaint_tiles.js:93]": 0.606,
+     "release [inpaint_arena.js:76]": 1.089,
+     "allocTileBytes [inpaint_arena.js:110]": 10.377,
+     "(anonymous) [shell.js:201]": 2.104,
+     "setStatus [inpaint_canvas.js:3482]": 7.556,
+     "w.onmessage [inpaint_pool.js:132]": 4.454,
+     "writeRect [inpaint_tiles.js:1406]": 2.106,
+     "newChunk [inpaint_arena.js:93]": 2.157,
+     "writable [inpaint_tiles.js:967]": 1.058,
+     "statusKindOf [inpaint_status.js:11]": 1.059,
+     "renderLayers [inpaint_canvas.js:18936]": 1.047,
+     "_guard [inpaint_pixels.js:154]": 0.744,
+     "frameInfoText [inpaint_canvas.js:5865]": 0.312,
+     "el [inpaint_canvas.js:876]": 0.192,
+     "viewportRegion [inpaint_canvas.js:21600]": 0.814,
+     "available [inpaint_compositor.js:309]": 1.067,
+     "glViewComposite [inpaint_canvas.js:21685]": 1.063,
+     "_newPage [inpaint_compositor.js:624]": 0.988,
+     "premulTable [inpaint_tiles.js:640]": 1.007,
+     "_upload [inpaint_compositor.js:847]": 1.009,
+     "put [inpaint_tiles.js:1139]": 0.354,
+     "coarseSlot [inpaint_tiles.js:1183]": 1.761,
+     "tileAt [inpaint_tiles.js:1001]": 1.066,
+     "_tileInstances [inpaint_compositor.js:697]": 1.403,
+     "_drawLevel [inpaint_compositor.js:799]": 1.058,
+     "_stampAt [inpaint_tiles.js:1064]": 0.516,
+     "_uploadCoarse [inpaint_compositor.js:813]": 1.051,
+     "composite [inpaint_compositor.js:1026]": 2.761,
+     "drawScene [inpaint_canvas.js:23734]": 0.234,
+     "overlay [plugins.js:599]": 1.015,
+     "_flush [inpaint_tiles.js:295]": 2.047,
+     "(anonymous) [inpaint_tiles.js:333]": 1.084,
+     "staleViewCachesAbove [inpaint_canvas.js:23122]": 2.043,
+     "_reply [inpaint_pool.js:164]": 1.064,
+     "_land [inpaint_tiles.js:328]": 1.075
+    }
+   }
+  },
+  "add_the_paint_layer": {
+   "row": {
+    "wall": 1057,
+    "blocked": 958,
+    "calls": {
+     "worker postMessage (moved)": {
+      "n": 90,
+      "ms": 1.6,
+      "MB": 0
+     },
+     "2d putImageData": {
+      "n": 2286,
+      "ms": 2.1,
+      "MB": 1.1
+     },
+     "2d drawImage < 1 MP": {
+      "n": 20,
+      "ms": 0.2,
+      "MB": 11.2
+     },
+     "gl texImage2D": {
+      "n": 17,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl texSubImage2D": {
+      "n": 5309,
+      "ms": 7.2,
+      "MB": 10
+     },
+     "gl draw": {
+      "n": 89,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl bufferData": {
+      "n": 77,
+      "ms": 0.3,
+      "MB": 0.9
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 14,
+      "ms": 0.4,
+      "MB": 117.2
+     }
+    },
+    "jobs": {
+     "mips": {
+      "jobs": 18,
+      "tiles": 2301,
+      "kernel": 534.9,
+      "gen": 0,
+      "pxCalls": {
+       "clamp_extend": 39,
+       "mip_chain": 2340
+      }
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": {
+      "mip_chain": 16
+     },
+     "workers": {
+      "clamp_extend": 39,
+      "mip_chain": 2340
+     }
+    },
+    "extra": {
+     "tiles": 2301,
+     "genMs": 73,
+     "writeMs": 846,
+     "addMs": 138
+    },
+    "error": null,
+    "status": "15000 \u00d7 10000",
+    "focused": true,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "export_psd": {
+   "row": {
+    "wall": 1465,
+    "blocked": 86,
+    "calls": {
+     "worker postMessage (moved)": {
+      "n": 237,
+      "ms": 8.9,
+      "MB": 0
+     },
+     "2d putImageData": {
+      "n": 2,
+      "ms": 0.3,
+      "MB": 1.2
+     },
+     "2d drawImage < 1 MP": {
+      "n": 27,
+      "ms": 2.9,
+      "MB": 1.8
+     },
+     "gl compileShader": {
+      "n": 4,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getShaderParameter": {
+      "n": 4,
+      "ms": 3.5,
+      "MB": 0
+     },
+     "gl linkProgram": {
+      "n": 2,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getProgramParameter": {
+      "n": 2,
+      "ms": 48.7,
+      "MB": 0
+     },
+     "gl bufferData": {
+      "n": 1,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl texImage2D": {
+      "n": 25,
+      "ms": 0.3,
+      "MB": 0.3
+     },
+     "gl draw": {
+      "n": 12,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getError": {
+      "n": 12,
+      "ms": 5.9,
+      "MB": 0
+     }
+    },
+    "jobs": {
+     "psd_part": {
+      "jobs": 237,
+      "pixels": 450000000,
+      "kernel": 9108.7,
+      "rows": 3747.4,
+      "pack": 5354.1,
+      "gen": 0,
+      "pxCalls": {
+       "psd_pack_rows": 948,
+       "composite_tile": 78
+      }
+     }
+    },
+    "marks": {
+     "export": [
+      {
+       "ready": 0.1,
+       "encoded": 1464.3,
+       "saved": 0.1,
+       "total": 1464.5,
+       "extra": {
+        "fmt": "psd",
+        "MB": 925.2459812164307
+       }
+      }
+     ]
+    },
+    "pxCalls": {
+     "window": {},
+     "workers": {
+      "psd_pack_rows": 948,
+      "composite_tile": 78
+     }
+    },
+    "extra": {
+     "MB": 925.2
+    },
+    "error": null,
+    "status": "Saved memory:inpaint_canvas.psd (15000 \u00d7 10000, 925.2 MB, 2 layers, 1464 ms).",
+    "focused": true,
+    "visibility": "visible"
+   },
+   "profile": {
+    "idle": 1000.859,
+    "gc": 30.874,
+    "program": 248.0,
+    "natives": {
+     "walk": 3.3770000000000002,
+     "__n1_postMessage": 5.315,
+     "beat": 2.276,
+     "f": 0.238,
+     "drawImage": 3.4699999999999998,
+     "getContext": 5.356,
+     "getShaderParameter": 3.3070000000000004,
+     "getProgramParameter": 47.882000000000005,
+     "getError": 5.476,
+     "setTimeout": 3.593,
+     "clearTimeout": 2.081,
+     "Blob": 154.531,
+     "toggle": 2.059,
+     "remove": 2.143,
+     "postMessage": 4.368,
+     "row": 1.051
+    },
+    "px": 0.0,
+    "pxfn": {},
+    "js": {
+     "inpaint_tiles.js": 11.529,
+     "inpaint_compositor.js": 1.995,
+     "reftokens.js": 1.064,
+     "inpaint_canvas.js": 11.598,
+     "inpaint_bands.js": 7.191999999999999,
+     "inpaint_pool.js": 19.332,
+     "plugins.js": 1.006,
+     "inpaint_filters_gl.js": 5.254,
+     "main.js": 1.059,
+     "host.js": 2.057
+    },
+    "fn": {
+     "put [inpaint_tiles.js:1139]": 3.421,
+     "_upload [inpaint_compositor.js:847]": 1.004,
+     "_stampAt [inpaint_tiles.js:1064]": 1.067,
+     "_slot [inpaint_compositor.js:649]": 0.991,
+     "parse [reftokens.js:42]": 1.064,
+     "exportLayeredBands [inpaint_canvas.js:17850]": 2.124,
+     "fromTiles [inpaint_canvas.js:17809]": 1.085,
+     "tileRowNames [inpaint_tiles.js:2352]": 1.067,
+     "layer [inpaint_bands.js:301]": 1.002,
+     "w.onmessage [inpaint_pool.js:132]": 12.066,
+     "(anonymous) [inpaint_bands.js:218]": 4.289,
+     "passStores [inpaint_canvas.js:9118]": 1.057,
+     "(anonymous) [inpaint_canvas.js:9185]": 1.057,
+     "regionCanvas [inpaint_tiles.js:2174]": 5.974,
+     "drawTilesInto [inpaint_canvas.js:2402]": 1.084,
+     "shade [plugins.js:740]": 1.006,
+     "context [inpaint_filters_gl.js:671]": 1.065,
+     "pluginProgram [inpaint_filters_gl.js:1016]": 1.045,
+     "renderTiled [inpaint_filters_gl.js:158]": 3.144,
+     "render [main.js:127]": 1.059,
+     "(anonymous) [inpaint_bands.js:228]": 0.794,
+     "(anonymous) [inpaint_pool.js:59]": 2.174,
+     "_reply [inpaint_pool.js:164]": 0.996,
+     "editor.setStatus [host.js:843]": 2.057,
+     "part [inpaint_bands.js:35]": 1.107,
+     "setStatus [inpaint_canvas.js:3482]": 3.162,
+     "run [inpaint_pool.js:57]": 3.149,
+     "getValue [inpaint_canvas.js:24577]": 1.001,
+     "_send [inpaint_pool.js:150]": 0.947,
+     "exportImage [inpaint_canvas.js:17983]": 1.028
+    }
+   }
+  },
+  "save_psd": {
+   "row": {
+    "wall": 4600,
+    "blocked": 125,
+    "calls": {
+     "worker postMessage (moved)": {
+      "n": 237,
+      "ms": 8.2,
+      "MB": 0
+     },
+     "blob arrayBuffer": {
+      "n": 15,
+      "ms": 2.3,
+      "MB": 925.2
+     },
+     "blob arrayBuffer (until settled)": {
+      "n": 15,
+      "ms": 356.3,
+      "MB": 0
+     }
+    },
+    "jobs": {
+     "psd_part": {
+      "jobs": 237,
+      "pixels": 450000000,
+      "kernel": 7943.6,
+      "rows": 3359.6,
+      "pack": 4580.2,
+      "gen": 0,
+      "pxCalls": {
+       "psd_pack_rows": 948,
+       "composite_tile": 78
+      }
+     }
+    },
+    "marks": {
+     "export": [
+      {
+       "ready": 0,
+       "encoded": 1222,
+       "saved": 3377,
+       "total": 4599.1,
+       "extra": {
+        "fmt": "psd",
+        "MB": 925.2459812164307
+       }
+      }
+     ],
+     "save": [
+      {
+       "pieces": 3306.4,
+       "written": 70.3,
+       "total": 3376.7,
+       "extra": {
+        "MB": 925.2459812164307,
+        "pieces": 15
+       }
+      }
+     ]
+    },
+    "pxCalls": {
+     "window": {},
+     "workers": {
+      "psd_pack_rows": 948,
+      "composite_tile": 78
+     }
+    },
+    "extra": {
+     "MB": 925.2,
+     "file": "C:\\Users\\SCHOEN~1\\AppData\\Local\\Temp\\claude\\F--canvas\\543d44fb-4d2d-4818-8804-974916d10a44\\scratchpad\\d0\\files_ab-window-r3\\n1.psd"
+    },
+    "error": null,
+    "status": "Saved C:\\Users\\SCHOEN~1\\AppData\\Local\\Temp\\claude\\F--canvas\\543d44fb-4d2d-4818-8804-974916d10a44\\scratchpad\\d0\\files_ab-window-r3\\n1.psd (15000 \u00d7 10000, 925.2 MB, 2 layers, 1222 ms).",
+    "focused": true,
+    "visibility": "visible"
+   },
+   "profile": {
+    "idle": 2096.711,
+    "gc": 51.861,
+    "program": 712.789,
+    "natives": {
+     "(anonymous)": 68.538,
+     "walk": 4.2059999999999995,
+     "__n1_postMessage": 6.535,
+     "remove": 1.645,
+     "postMessage": 2.052,
+     "Blob": 151.043,
+     "setTimeout": 5.155,
+     "clearTimeout": 1.043,
+     "beat": 4.656,
+     "now": 0.541,
+     "add": 1.055,
+     "invoke": 90.983,
+     "slice": 3.358,
+     "row": 1.066
+    },
+    "px": 0.0,
+    "pxfn": {},
+    "js": {
+     "inpaint_tiles.js": 2.125,
+     "inpaint_canvas.js": 8.299,
+     "inpaint_bands.js": 5.451,
+     "inpaint_pool.js": 13.101999999999999,
+     "host.js": 1160.605,
+     "sandbox_bundle": 360.527
+    },
+    "fn": {
+     "tileRowNames [inpaint_tiles.js:2352]": 2.125,
+     "report [inpaint_canvas.js:17866]": 2.102,
+     "(anonymous) [inpaint_bands.js:218]": 2.101,
+     "room [inpaint_bands.js:202]": 2.141,
+     "w.onmessage [inpaint_pool.js:132]": 9.934,
+     "setStatus [inpaint_canvas.js:3482]": 5.149,
+     "push [inpaint_bands.js:234]": 0.154,
+     "_next [inpaint_pool.js:107]": 1.113,
+     "editor.setStatus [host.js:843]": 1.1,
+     "packChannels [inpaint_bands.js:216]": 1.055,
+     "(anonymous) [inpaint_pool.js:59]": 0.988,
+     "_reply [inpaint_pool.js:164]": 1.067,
+     "exportImage [inpaint_canvas.js:17983]": 1.048,
+     "saveExport [host.js:4322]": 1159.505,
+     "invoke [sandbox_bundle:2]": 360.527
+    }
+   }
+  },
+  "open_psd": {
+   "row": {
+    "wall": 17858,
+    "blocked": 12141,
+    "calls": {
+     "blob arrayBuffer": {
+      "n": 2,
+      "ms": 0.3,
+      "MB": 925.2
+     },
+     "blob arrayBuffer (until settled)": {
+      "n": 2,
+      "ms": 506.7,
+      "MB": 0
+     },
+     "worker postMessage (moved)": {
+      "n": 261,
+      "ms": 5.7,
+      "MB": 0
+     },
+     "gl compileShader": {
+      "n": 6,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getShaderParameter": {
+      "n": 6,
+      "ms": 4.5,
+      "MB": 0
+     },
+     "gl linkProgram": {
+      "n": 3,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getProgramParameter": {
+      "n": 3,
+      "ms": 1.7,
+      "MB": 0
+     },
+     "gl bufferData": {
+      "n": 112,
+      "ms": 153.7,
+      "MB": 1.2
+     },
+     "gl texImage2D": {
+      "n": 38,
+      "ms": 0.2,
+      "MB": 0
+     },
+     "gl texSubImage2D": {
+      "n": 9477,
+      "ms": 16,
+      "MB": 20
+     },
+     "gl draw": {
+      "n": 128,
+      "ms": 0.1,
+      "MB": 0
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 21,
+      "ms": 0.8,
+      "MB": 175.8
+     },
+     "2d putImageData": {
+      "n": 2286,
+      "ms": 2,
+      "MB": 1.1
+     },
+     "2d drawImage < 1 MP": {
+      "n": 20,
+      "ms": 0.2,
+      "MB": 11.2
+     }
+    },
+    "jobs": {
+     "png_part": {
+      "jobs": 79,
+      "pixels": 150000000,
+      "kernel": 13187.3,
+      "compose": 0,
+      "rows": 430.6,
+      "prev": 2.9,
+      "copyIn": 50.9,
+      "filter": 4250.8,
+      "adler": 178.4,
+      "deflate": 7173.6,
+      "copyOut": 49.8,
+      "chunk": 1047.4,
+      "gen": 0,
+      "pxCalls": {
+       "adler32": 79,
+       "deflate_part": 79,
+       "png_filter_rows": 79
+      }
+     },
+     "mips": {
+      "jobs": 37,
+      "tiles": 4645,
+      "kernel": 1756.4,
+      "gen": 0,
+      "pxCalls": {
+       "clamp_extend": 137,
+       "mip_chain": 4782
+      }
+     }
+    },
+    "marks": {
+     "layered_open": [
+      {
+       "read": 235.8,
+       "parsed": 11083.3,
+       "layers": 1050.2,
+       "stored": 2662.8,
+       "base": 29.9,
+       "added": 29.8,
+       "total": 15091.8,
+       "extra": {
+        "kind": "psd",
+        "MB": 925.2459812164307,
+        "inflateMs": 0,
+        "inflates": 0,
+        "maskMs": 0,
+        "rgbaMs": 1049.9550000000745,
+        "bitmapMs": 0,
+        "fromImageMs": 0
+       }
+      }
+     ]
+    },
+    "pxCalls": {
+     "window": {
+      "mip_chain": 32
+     },
+     "workers": {
+      "adler32": 79,
+      "deflate_part": 79,
+      "png_filter_rows": 79,
+      "clamp_extend": 137,
+      "mip_chain": 4782
+     }
+    },
+    "extra": {
+     "loadImageMs": 17521,
+     "from": "file",
+     "size": [
+      15000,
+      10000
+     ],
+     "layers": 1,
+     "status": "Opened n1.psd: 15000 \u00d7 10000, 1 layer over \"Background\" as the base."
+    },
+    "error": null,
+    "status": "Saved C:\\Users\\SCHOEN~1\\AppData\\Local\\Temp\\claude\\F--canvas\\543d44fb-4d2d-4818-8804-974916d10a44\\scratchpad\\d0\\files_ab-window-r3\\n1.psd (15000 \u00d7 10000, 925.2 MB, 2 layers, 1222 ms).",
+    "focused": true,
+    "visibility": "visible"
+   },
+   "profile": {
+    "idle": 3801.39,
+    "gc": 439.309,
+    "program": 1676.92,
+    "natives": {
+     "clearRect": 3.1289999999999996,
+     "addEventListener": 1.054,
+     "appendChild": 1.065,
+     "createElement": 1.01,
+     "getBoundingClientRect": 13.923,
+     "beat": 3.612,
+     "(anonymous)": 75.281,
+     "File": 168.489,
+     "slice": 1.049,
+     "setTimeout": 3.14,
+     "ImageData": 1.057,
+     "postMessage": 3.115,
+     "now": 7.615,
+     "__n1_postMessage": 5.1739999999999995,
+     "messageBytes": 1.059,
+     "walk": 4.3999999999999995,
+     "Blob": 37.771,
+     "getContext": 5.083,
+     "getShaderParameter": 5.249,
+     "getProgramParameter": 0.981,
+     "f": 5.231999999999999,
+     "texSubImage2D": 16.652,
+     "bufferData": 153.44,
+     "pixelStorei": 1.061,
+     "add": 1.08,
+     "setTransform": 1.009,
+     "remove": 1.202
+    },
+    "px": 3.5860000000000003,
+    "pxfn": {
+     "wasm-function[15] [wasm]": 1.238,
+     "_in [px.js:244]": 1.101,
+     "mipChain [kernels.js:317]": 1.247
+    },
+    "js": {
+     "inpaint_modal.js": 2.242,
+     "inpaint_canvas.js": 13.462000000000002,
+     "plugins.js": 1.052,
+     "inpaint_rangebar.js": 1.042,
+     "main.js": 2.052,
+     "inpaint_layered.js": 10766.883000000002,
+     "inpaint_tiles.js": 406.66299999999995,
+     "inpaint_resample.js": 598.475,
+     "inpaint_arena.js": 6.594,
+     "inpaint_pool.js": 5.257,
+     "shell.js": 2.106,
+     "inpaint_bands.js": 1.042,
+     "inpaint_compositor.js": 71.21499999999999,
+     "host.js": 1.6469999999999998,
+     "commands.js": 1.069
+    },
+    "fn": {
+     "buildTopBar [inpaint_modal.js:85]": 1.187,
+     "iconButton [inpaint_canvas.js:1472]": 1.118,
+     "slider [plugins.js:801]": 1.052,
+     "draw [inpaint_rangebar.js:235]": 1.042,
+     "visible [main.js:153]": 2.052,
+     "getValue [inpaint_canvas.js:24577]": 0.718,
+     "readLayered [inpaint_canvas.js:18539]": 4.15,
+     "readPsd [inpaint_layered.js:247]": 1.079,
+     "readChannel [inpaint_layered.js:109]": 200.20399999999998,
+     "unpackRows [inpaint_layered.js:72]": 7847.515,
+     "mergedPlanes [inpaint_layered.js:315]": 151.518,
+     "interleave [inpaint_layered.js:183]": 2566.027,
+     "decodePsd [inpaint_layered.js:338]": 0.54,
+     "_putBlock [inpaint_tiles.js:1330]": 312.047,
+     "canvasRoundTrip [inpaint_resample.js:165]": 598.475,
+     "allocTileBytes [inpaint_arena.js:110]": 3.237,
+     "newChunk [inpaint_arena.js:93]": 3.357,
+     "writeRect [inpaint_tiles.js:1406]": 0.998,
+     "blockAlphaZero [inpaint_tiles.js:572]": 1.071,
+     "newTile [inpaint_tiles.js:93]": 1.008,
+     "writable [inpaint_tiles.js:967]": 0.998,
+     "setStatus [inpaint_canvas.js:3482]": 1.05,
+     "clone [inpaint_tiles.js:1624]": 0.171,
+     "w.onmessage [inpaint_pool.js:132]": 5.257,
+     "watchMemory [shell.js:2316]": 1.051,
+     "writePng [inpaint_bands.js:168]": 1.042,
+     "release [inpaint_tiles.js:1642]": 1.068,
+     "renderLayers [inpaint_canvas.js:18936]": 1.045,
+     "_tileInstances [inpaint_compositor.js:697]": 3.7670000000000003,
+     "_upload [inpaint_compositor.js:847]": 55.83,
+     "premulTable [inpaint_tiles.js:640]": 0.35800000000000004,
+     "tileWithGutter [inpaint_tiles.js:1117]": 9.064,
+     "composite [inpaint_compositor.js:1026]": 3.116,
+     "request [inpaint_tiles.js:269]": 3.173,
+     "coarseSlot [inpaint_tiles.js:1183]": 5.614,
+     "_slot [inpaint_compositor.js:649]": 8.501999999999999,
+     "words [inpaint_tiles.js:529]": 0.993,
+     "renderUndoList [inpaint_modal.js:522]": 1.055,
+     "thumbnailCanvas [inpaint_tiles.js:2055]": 11.4,
+     "u32Of [inpaint_tiles.js:471]": 1.049,
+     "drawLayerFitted [inpaint_canvas.js:16990]": 1.06,
+     "drawThumb [inpaint_canvas.js:2343]": 1.081,
+     "_flush [inpaint_tiles.js:295]": 2.084,
+     "compositor [inpaint_canvas.js:21624]": 1.066,
+     "put [inpaint_tiles.js:1139]": 45.332,
+     "_levelBytes [inpaint_tiles.js:1025]": 1.907,
+     "comfyPlan [host.js:2004]": 1.057,
+     "infoAt [inpaint_tiles.js:1127]": 5.249,
+     "shown [inpaint_canvas.js:21938]": 1.066,
+     "drawViewComposite [inpaint_canvas.js:21756]": 1.108,
+     "mayBuild [inpaint_tiles.js:248]": 2.073,
+     "_land [inpaint_tiles.js:328]": 1.006,
+     "run [commands.js:2857]": 1.069,
+     "renderTabs [shell.js:214]": 1.055,
+     "hashString [host.js:136]": 0.59
+    }
+   }
+  },
+  "close": {
+   "row": {
+    "closed": 2,
+    "arena": {
+     "slots": 9322,
+     "chunks": 37,
+     "allocated": 11682,
+     "freed": 2360,
+     "droppedChunks": 9,
+     "refused": 0,
+     "failed": 0,
+     "enabled": true,
+     "bytes": 2483027968,
+     "freeSlots": 150
+    }
+   },
+   "profile": null
+  }
+ },
+ "out": "C:\\Users\\SCHOEN~1\\AppData\\Local\\Temp\\claude\\F--canvas\\543d44fb-4d2d-4818-8804-974916d10a44\\scratchpad\\d0\\files_ab-window-r3"
+}

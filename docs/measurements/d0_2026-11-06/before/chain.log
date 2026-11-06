@@ -1,0 +1,12 @@
+[02:40:50] before: 3 runs, rows add_the_paint_layer export_psd save_psd open_psd; HEAD bbff117
+[02:40:50] before-r1: gpu 3291 MiB, 2 %
+[02:41:29] before-r1: rc=0 open_psd wall 14783 blocked 9337 focused False visible; renderer ends []
+[02:41:29] before-r1: NOT COUNTED (the window was behind or the row did not run)
+[02:41:29] before-r1-try2: gpu 3295 MiB, 4 %
+[02:42:12] before-r1-try2: rc=0 open_psd wall 14015 blocked 8968 focused True visible; renderer ends []
+[02:42:12] kept the PSD as C:/Users/SCHOEN~1/AppData/Local/Temp/claude/F--canvas/543d44fb-4d2d-4818-8804-974916d10a44/scratchpad/d0/psd15k.psd (970190730 bytes)
+[02:42:12] before-r2: gpu 3304 MiB, 2 %
+[02:42:49] before-r2: rc=0 open_psd wall 13945 blocked 8900 focused True visible; renderer ends []
+[02:42:49] before-r3: gpu 3296 MiB, 5 %
+[02:43:27] before-r3: rc=0 open_psd wall 14030 blocked 9017 focused True visible; renderer ends []
+[02:43:27] done

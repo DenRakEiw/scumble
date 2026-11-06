@@ -1,0 +1,4 @@
+C:/Users/SCHOEN~1/AppData/Local/Temp/claude/F--canvas/543d44fb-4d2d-4818-8804-974916d10a44/scratchpad/d0/psd15k.psd: 925.2 MB
+readPsd 7837 ms (2 layers Background 15000x10000, Paint 15000x10000, merged picture read); readPsdStream 4611 ms {"channels":2886.590000000001,"interleave":1249.6802000000007,"mask":0,"deliver":473.0123999999996,"bands":80}
+[ok] the worker's reader equals readPsd on psd15k.psd: every layer's bytes and mask by SHA-256, the fields, groups, notes
+PASS

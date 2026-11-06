@@ -1,0 +1,99 @@
+{
+ "same": true,
+ "routes": [
+  "pool"
+ ],
+ "tiles": false,
+ "poolMs": 5080,
+ "winMs": 12964,
+ "pool": {
+  "width": 15000,
+  "height": 10000,
+  "groups": [],
+  "notes": [],
+  "lossy": false,
+  "layers": [
+   {
+    "name": "Background",
+    "x": 0,
+    "y": 0,
+    "w": 15000,
+    "h": 10000,
+    "opacity": 1,
+    "visible": true,
+    "blend": "normal",
+    "group": null,
+    "clip": false,
+    "maskOff": false,
+    "pw": 15000,
+    "ph": 10000,
+    "px": 3573372030,
+    "mask": null,
+    "kind": "LayerPixels"
+   },
+   {
+    "name": "Paint",
+    "x": 0,
+    "y": 0,
+    "w": 15000,
+    "h": 10000,
+    "opacity": 1,
+    "visible": true,
+    "blend": "normal",
+    "group": null,
+    "clip": false,
+    "maskOff": false,
+    "pw": 15000,
+    "ph": 10000,
+    "px": 1177346181,
+    "mask": null,
+    "kind": "LayerPixels"
+   }
+  ]
+ },
+ "win": {
+  "width": 15000,
+  "height": 10000,
+  "groups": [],
+  "notes": [],
+  "lossy": false,
+  "layers": [
+   {
+    "name": "Background",
+    "x": 0,
+    "y": 0,
+    "w": 15000,
+    "h": 10000,
+    "opacity": 1,
+    "visible": true,
+    "blend": "normal",
+    "group": null,
+    "clip": false,
+    "maskOff": false,
+    "pw": 15000,
+    "ph": 10000,
+    "px": 3573372030,
+    "mask": null,
+    "kind": "LayerPixels"
+   },
+   {
+    "name": "Paint",
+    "x": 0,
+    "y": 0,
+    "w": 15000,
+    "h": 10000,
+    "opacity": 1,
+    "visible": true,
+    "blend": "normal",
+    "group": null,
+    "clip": false,
+    "maskOff": false,
+    "pw": 15000,
+    "ph": 10000,
+    "px": 1177346181,
+    "mask": null,
+    "kind": "LayerPixels"
+   }
+  ]
+ }
+}

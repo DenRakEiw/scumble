@@ -918,6 +918,7 @@ def report(name, r, prof):
 
 async def run_all(c):
     w, h = SIZE.lower().split("x")
+    await c.call("Page.bringToFront")   # a timing row counts only with the window in front (px_jobs.py does the same); each row says `focused`
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); const h = await import('./editor/host.js'); window.__host = h.host; window.__shell = await import('./shell.js'); return 1; })()")
     connected = await c.eval("(async () => { const s = await window.scumble.comfy.status(); return s && s.state; })()")
     if connected in ("connected", "missing-node"):

@@ -15,6 +15,18 @@ Nothing at the moment (0.1.50's and 0.1.51's fixes went out with them; `CHANGELO
 
 ## Open
 
+### Ctrl+O sends the whole file to the window in one message (found 2026-11-06, read and measured once, D0)
+
+`electron/main/main.js` `openImage` (`:833-842` at `bbff117`) reads the chosen file whole (`fsp.readFile`) and sends
+it in one `file:opened` IPC message; `renderer/shell.js` (`:2943-2946`) makes a `File` of it and opens that. For a
+15k PSD of 925 MB that is the one block D0 leaves in the open: 1.0-1.8 s of the window in native_test's row (the 1.71 s gap before
+`layered_open` `start` in `docs/measurements/d0_2026-11-06/after/longtasks_first_open.json` is the same transfer
+through `load_image`'s `window.scumble.file.read`). To be measured before code: the block of a Ctrl+O open apart from
+the reader; the ceiling of a main -> window message (G2 found about 512 MiB a message for window -> main, while 925 MB
+came through main -> window here; a PSD v1 of 30k x 30k is larger still); whether a drop from Explorer (a disk-backed
+`File`) pays any read. A fix would hand the window a path and let the worker read the file in pieces. The user places
+it at a later Stop of `docs/PLAN_WASM_BUILD.md`.
+
 ### The helper downloader sends the Hugging Face token to every URL and checks only the size (found 2026-10-24, read, item 49's plan)
 
 `electron/main/onnx/models.js` `_file` (`:297-299` at `ec1142b`) puts `authorization: Bearer <token>` on every
