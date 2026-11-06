@@ -230,6 +230,8 @@ code.
   K0a's marks: start, pieces, written). **Next: #0 M9 + the second open, then D0.** **Beside it (2026-10-24): CorridorKey 2.0 planned** (item 49,
   `docs/PLAN_CORRIDORKEY.md`) on its own branch `corridorkey` off `main` (worktree `.claude/worktrees/corridorkey`),
   released as 0.1.52 on the user's word; next there: I0a (pack A's code check, findings to the user before any install).
+  **And (2026-11-06): LoRAs and MOSS Image Edit** (item 50, `docs/PLAN_LORAS.md`, issues #10 / #11) in the same 0.1.52
+  on `corridorkey`; next there: LR0 (the splice module); the user's ComfyUI is at v0.44.0 since 2026-11-06.
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
@@ -706,6 +708,26 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   I6 (refine), I7 (command), I8 (docs, live run, **Stop B**); Route B (pack A through ComfyUI, B0-B5) on a no-go or by
   the user's Stop B decision. The in-app release needs Corridor's written yes to hosting a converted set (asked in the
   thank-you reply's second version); open for the user: whether and which reply went (plan §6).
+- 50: **LoRAs on the user's ComfyUI and Comfy Cloud, and MOSS Image Edit** (issues #10, hwatik, 2026-10-24: "lora
+  support for local generations ... qwen 2.1 or moss"; #11, nadergits, 2026-10-31: "add moss image edit ... with
+  loras"; the user, 2026-11-06). **The user's decisions:** LoRAs only for the user's own ComfyUI (local or remote) and
+  Comfy Cloud, never for API providers; the recipes stay as they are and Scumble splices the switched-on LoRAs into the
+  queued copy at run time as a `LoraLoaderModelOnly` chain (no bypassed placeholder nodes: the API format has no bypass,
+  and a placeholder's `lora_name` must exist on the server); up to **5** rows per recipe (a picker over the server's list
+  with search, a strength, an on / off switch, a **+**), stored per recipe; the base model and the trigger words shown as
+  a hint (tensor key prefixes when the ComfyUI models folder is linked, else `/view_metadata` and the subfolder; metadata
+  lies, the user's `anna_qwen` says `sd_1.5`; never a refusal, ComfyUI itself loads a wrong LoRA silently); released
+  **with CorridorKey 2.0 in 0.1.52** on `corridorkey`. "MOSS Image Edit" is a community LoRA (chinoll/Moss-Image-Edit,
+  rehosted by Comfy-Org, 297 MB) plus core `TextEncodeMOSSImageEdit` from ComfyUI v0.43.0: a local recipe and a Comfy
+  Cloud variant from Comfy's template `image_moss_image_edit`. **The user's ComfyUI updated to v0.44.0 on 2026-11-06**
+  (the user's "ok, update" after the pins were shown: comfy-aimdo 0.6.0, comfy-kitchen 0.2.40, embedded-docs 0.5.16,
+  frontend 1.57.6, workflow-templates 0.11.101, torch unchanged; `update.py --stable`, backup branch
+  `backup_branch_2026-11-06_02_55_11`, the pip freeze before it in that session's scratchpad `comfy_update/`; one probe
+  start with the user's flags: 5,904 classes, InpaintCanvas 23 outputs, RTX VSR, DLSS5, `SAM3Segment`, the same three
+  IMPORT FAILED as on 0.42.4 and 0.41.2 (`dlss`, `inpaint`, `comfyui-tosvg`); stopped again, as it was). **The plan is
+  `docs/PLAN_LORAS.md`** (research of three readers in `docs/research/issues10_11_2026-11-06/`, two critics): sessions
+  LR0-LR10, about 8.5-9 days (inferred); open: its §6 Q1-Q4 (one MOSS edit recipe, who downloads the edit LoRA, issue
+  comments now, the Qwen 2.1 LoRA for the live run).
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
