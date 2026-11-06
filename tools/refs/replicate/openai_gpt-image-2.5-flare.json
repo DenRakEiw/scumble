@@ -1,0 +1,139 @@
+{
+ "model": "openai/gpt-image-2.5-flare",
+ "source": "https://replicate.com/openai/gpt-image-2.5-flare/api/schema (the Input schema), read 2026-11-06",
+ "components": {
+  "schemas": {
+   "Input": {
+    "type": "object",
+    "title": "Input",
+    "required": [
+     "prompt"
+    ],
+    "properties": {
+     "prompt": {
+      "type": "string",
+      "title": "Prompt",
+      "x-order": 0,
+      "description": "A text description of the desired image"
+     },
+     "quality": {
+      "enum": [
+       "low",
+       "medium",
+       "high",
+       "xhigh",
+       "max",
+       "auto"
+      ],
+      "type": "string",
+      "title": "quality",
+      "description": "The quality of the generated image. Higher quality takes longer and costs more.",
+      "default": "auto",
+      "x-order": 5
+     },
+     "background": {
+      "enum": [
+       "auto",
+       "transparent",
+       "opaque"
+      ],
+      "type": "string",
+      "title": "background",
+      "description": "Set whether the background is transparent or opaque or choose automatically",
+      "default": "auto",
+      "x-order": 6
+     },
+     "moderation": {
+      "enum": [
+       "auto",
+       "low"
+      ],
+      "type": "string",
+      "title": "moderation",
+      "description": "Content moderation level",
+      "default": "auto",
+      "x-order": 9
+     },
+     "aspect_ratio": {
+      "enum": [
+       "1:1",
+       "3:2",
+       "2:3",
+       "4:3",
+       "3:4",
+       "16:9",
+       "9:16",
+       "auto",
+       "1024x1024",
+       "1536x1024",
+       "1024x1536",
+       "1536x1152",
+       "1152x1536",
+       "2048x2048",
+       "2048x1152",
+       "1152x2048",
+       "3840x2160",
+       "2160x3840"
+      ],
+      "type": "string",
+      "title": "aspect_ratio",
+      "description": "The size of the generated image. Use 'auto' to let the model pick. Sizes above 2560x1440 are experimental and may give more variable results.",
+      "default": "1:1",
+      "x-order": 2
+     },
+     "input_images": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "format": "uri"
+      },
+      "title": "Input Images",
+      "x-order": 3,
+      "nullable": true,
+      "description": "A list of images to use as input for the generation"
+     },
+     "output_format": {
+      "enum": [
+       "png",
+       "jpeg",
+       "webp"
+      ],
+      "type": "string",
+      "title": "output_format",
+      "description": "Output format",
+      "default": "webp",
+      "x-order": 8
+     },
+     "openai_api_key": {
+      "type": "string",
+      "title": "Openai Api Key",
+      "format": "password",
+      "x-order": 1,
+      "nullable": true,
+      "writeOnly": true,
+      "description": "Your OpenAI API key (optional - uses proxy if not provided)",
+      "x-cog-secret": true
+     },
+     "number_of_images": {
+      "type": "integer",
+      "title": "Number Of Images",
+      "default": 1,
+      "maximum": 10,
+      "minimum": 1,
+      "x-order": 4,
+      "description": "Number of images to generate (1-10)"
+     },
+     "output_compression": {
+      "type": "integer",
+      "title": "Output Compression",
+      "default": 90,
+      "maximum": 100,
+      "minimum": 0,
+      "x-order": 7,
+      "description": "Compression level (0-100%)"
+     }
+    }
+   }
+  }
+ }
+}

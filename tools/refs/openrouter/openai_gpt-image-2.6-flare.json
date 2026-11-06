@@ -1,0 +1,170 @@
+{
+ "source": "https://openrouter.ai/api/v1/images/models and /api/v1/images/models/openai/gpt-image-2.6-flare/endpoints, read 2026-11-06",
+ "model": {
+  "id": "openai/gpt-image-2.6-flare",
+  "name": "OpenAI: GPT Image 2.6 Flare",
+  "description": "GPT Image 2.6 Flare is OpenAI's image generation and editing model optimized for speed: fast iteration and interactive text-to-image and image-to-image workflows, generating about 50% faster than GPT Image 2.5....",
+  "created": 1793835351,
+  "architecture": {
+   "input_modalities": [
+    "text",
+    "image"
+   ],
+   "output_modalities": [
+    "image"
+   ]
+  },
+  "supported_parameters": {
+   "aspect_ratio": {
+    "type": "enum",
+    "values": [
+     "1:1",
+     "3:2",
+     "2:3",
+     "4:3",
+     "3:4",
+     "16:9",
+     "9:16",
+     "21:9",
+     "auto"
+    ]
+   },
+   "output_format": {
+    "type": "enum",
+    "values": [
+     "png",
+     "jpeg",
+     "webp",
+     "gif"
+    ]
+   },
+   "quality": {
+    "type": "enum",
+    "values": [
+     "auto",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ]
+   },
+   "background": {
+    "type": "enum",
+    "values": [
+     "auto",
+     "transparent",
+     "opaque"
+    ]
+   },
+   "n": {
+    "type": "range",
+    "min": 1,
+    "max": 10
+   },
+   "input_references": {
+    "type": "range",
+    "min": 0,
+    "max": 16
+   },
+   "output_compression": {
+    "type": "range",
+    "min": 0,
+    "max": 100
+   }
+  },
+  "supports_streaming": true,
+  "endpoints": "/api/v1/images/models/openai/gpt-image-2.6-flare/endpoints"
+ },
+ "endpoints": {
+  "id": "openai/gpt-image-2.6-flare",
+  "endpoints": [
+   {
+    "provider_name": "OpenAI",
+    "provider_slug": "openai",
+    "provider_tag": "openai",
+    "supported_parameters": {
+     "aspect_ratio": {
+      "type": "enum",
+      "values": [
+       "1:1",
+       "3:2",
+       "2:3",
+       "4:3",
+       "3:4",
+       "16:9",
+       "9:16",
+       "21:9",
+       "auto"
+      ]
+     },
+     "output_format": {
+      "type": "enum",
+      "values": [
+       "png",
+       "jpeg",
+       "webp",
+       "gif"
+      ]
+     },
+     "quality": {
+      "type": "enum",
+      "values": [
+       "auto",
+       "low",
+       "medium",
+       "high",
+       "xhigh",
+       "max"
+      ]
+     },
+     "background": {
+      "type": "enum",
+      "values": [
+       "auto",
+       "transparent",
+       "opaque"
+      ]
+     },
+     "n": {
+      "type": "range",
+      "min": 1,
+      "max": 10
+     },
+     "input_references": {
+      "type": "range",
+      "min": 0,
+      "max": 16
+     },
+     "output_compression": {
+      "type": "range",
+      "min": 0,
+      "max": 100
+     }
+    },
+    "allowed_passthrough_parameters": [
+     "moderation",
+     "complexity"
+    ],
+    "supports_streaming": true,
+    "pricing": [
+     {
+      "billable": "input_image",
+      "unit": "token",
+      "cost_usd": 8e-06
+     },
+     {
+      "billable": "input_text",
+      "unit": "token",
+      "cost_usd": 5e-06
+     },
+     {
+      "billable": "output_image",
+      "unit": "token",
+      "cost_usd": 3e-05
+     }
+    ]
+   }
+  ]
+ }
+}

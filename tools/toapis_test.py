@@ -35,7 +35,7 @@ from toapis_mock import Mock  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEY = "sk-toapistest-0123456789"
 REFERRAL = "https://toapis.com/login?aff=vfR1"
-HOMES = {"gpt_image_2": "openai", "gpt_image_2_5_flare": "openai", "gpt_image_2_5_sunburst": "openai", "nano_banana_2": "gemini", "nano_banana_2_lite": "gemini", "nano_banana_pro": "gemini",
+HOMES = {"gpt_image_2": "openai", "gpt_image_2_5_flare": "openai", "gpt_image_2_5_sunburst": "openai", "gpt_image_2_6_sunburst": "openai", "nano_banana_2": "gemini", "nano_banana_2_lite": "gemini", "nano_banana_pro": "gemini",
          "flux2_pro": "bfl", "flux2_flex": "bfl", "seedream_5_lite": "fal", "seedream_5_pro": "fal", "qwen_image_edit": "fal"}
 
 PRE = """(async () => {

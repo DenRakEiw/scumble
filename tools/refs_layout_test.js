@@ -521,6 +521,10 @@ const UNDOCUMENTED = {
     "nano_banana_pro/fal": { max: null, why: "fal nano-banana-pro/edit: no maxItems, no number" },
     "nano_banana_2_1/fal": { max: null, why: "fal nano-banana-2.1/edit: image_urls has no maxItems and the schema names no number (read 2026-10-07)" },
     "gpt_image_2/replicate": { max: null, why: "replicate.com openai/gpt-image-2: \"pass multiple images\", no number" },
+    "gpt_image_2_5_flare/replicate": { max: null, why: "replicate.com openai/gpt-image-2.5-flare: input_images has no maxItems, no number (read 2026-11-06)" },
+    "gpt_image_2_5_sunburst/replicate": { max: null, why: "replicate.com openai/gpt-image-2.5-sunburst: input_images has no maxItems, no number (read 2026-11-06)" },
+    "gpt_image_2_6_flare/replicate": { max: null, why: "replicate.com openai/gpt-image-2.6-flare: input_images has no maxItems, no number (read 2026-11-06)" },
+    "gpt_image_2_6_sunburst/replicate": { max: null, why: "replicate.com openai/gpt-image-2.6-sunburst: input_images has no maxItems, no number (read 2026-11-06)" },
     "nano_banana_2_lite/wavespeed": { max: null, why: "WaveSpeed nano-banana-2-lite-edit: the images row has no range" },
     "reve/wavespeed": { max: null, why: "no WaveSpeed Reve edit page found (404)" },
     "gpt_image_2_5_flare/toapis:official": { max: null, why: "ToAPIs gpt-image-2.5-official: no maximum named" },
@@ -1576,6 +1580,18 @@ async function main() {
             before = (id) => require(path.join(dir, id + ".js"));
             oldRecipes = new Set(execFileSync("git", ["-C", ROOT, "ls-tree", "--name-only", `${BEFORE_26F}:recipes`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split(/\r?\n/).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")));
         } catch (err) { why = String(err && err.message || err).split(/\r?\n/)[0]; }
+        // a provider variant added to an older recipe later (GPT Image 2.5 on fal and Replicate, 2026-11-06) has no
+        // request of before either: the old recipe file names the variants it had
+        const oldVariants = new Map();
+        const hadVariant = (s) => {
+            if (!oldVariants.has(s.recipe)) {
+                let ids = null;
+                try { ids = new Set(Object.keys(JSON.parse(execFileSync("git", ["-C", ROOT, "show", `${BEFORE_26F}:recipes/${s.recipe}.json`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })).providers || {})); } catch (_) { ids = null; }
+                oldVariants.set(s.recipe, ids);
+            }
+            const ids = oldVariants.get(s.recipe);
+            return !ids || ids.has(s.provider);
+        };
         const reset = (m) => { if (m && typeof m._resetHosts === "function") m._resetHosts(); };
         /** Where two values differ: "path: a -> b" per leaf (a Buffer is a leaf). */
         const diffPaths = (a, b, at = "", out = []) => {
@@ -1593,6 +1609,9 @@ async function main() {
         // and since 0.1.36 Gemini direct sends the asked aspect where the Aspect row's "auto" sent none (docs/BUGS.md)
         const FIXED_IN_26F = (s, d) => (s.provider === "replicate" && /^input\.aspect_ratio: match_input_image -> (?!match_input_image$)\d+:\d+$/.test(d))
             || (s.provider === "gemini" && /^generationConfig\.imageConfig(\.aspectRatio: undefined -> \d+:\d+|: undefined -> \{"aspectRatio":"\d+:\d+"\})$/.test(d));
+        // changed on purpose later: WaveSpeed's GPT Image 2.5 routes take no seed (their schemas are strict,
+        // tools/refs/wavespeed, read 2026-11-06), so the variant's `accepts` keeps it home since then
+        const CHANGED_LATER = (s, d) => s.provider === "wavespeed" && /^gpt_image_2_5_/.test(s.recipe) && /^seed: \d+ -> undefined$/.test(d);
         const zero = { shapes: 0, sameShape: [], sameBefore: [], fixed: 0 };
         const zeroShape = async (s, extra) => {
             const name = `${labelOf(s)}${extra.aspect === null ? " (a free size)" : ""}`;
@@ -1608,11 +1627,11 @@ async function main() {
             const b = await capture(p, old, "generate");
             const d1 = differs(b, a);
             if (d1.length) zero.sameShape.push(`${name}: ${d1.join("; ")}`);
-            if (!before || (oldRecipes && !oldRecipes.has(s.recipe))) return;
+            if (!before || (oldRecipes && !oldRecipes.has(s.recipe)) || !hadVariant(s)) return;
             const q = before(s.provider);
             reset(p); reset(q);
             const c = await capture(q, old, "generate");
-            const d2 = differs(c, a);
+            const d2 = differs(c, a).filter((d) => !CHANGED_LATER(s, d));
             const fixed = d2.filter((d) => FIXED_IN_26F(s, d));
             if (fixed.length) zero.fixed++;
             if (d2.length > fixed.length) zero.sameBefore.push(`${name}: ${d2.filter((d) => !FIXED_IN_26F(s, d)).join("; ")}`);

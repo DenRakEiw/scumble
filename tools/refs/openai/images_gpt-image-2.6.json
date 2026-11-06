@@ -1,0 +1,372 @@
+{
+ "source": "github.com/openai/openai-openapi openapi.yaml at 9752a7f1 (2026-11-06T02:14Z), read 2026-11-06",
+ "edits": {
+  "schema": "CreateImageEditRequest",
+  "properties": {
+   "model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "string",
+      "enum": [
+       "gpt-image-1.5",
+       "gpt-image-2",
+       "gpt-image-2-2026-04-21",
+       "gpt-image-2.5-sunburst",
+       "gpt-image-2.5-sunburst-2026-09-08",
+       "gpt-image-2.5-flare",
+       "gpt-image-2.5-flare-2026-09-08",
+       "gpt-image-2.6-sunburst",
+       "gpt-image-2.6-flare",
+       "gpt-image-1",
+       "gpt-image-1-mini",
+       "chatgpt-image-latest",
+       "dall-e-2"
+      ],
+      "x-openai-enum-deprecations": {
+       "gpt-image-1": {
+        "message": "GPT Image 1 was shut down on October 23, 2026. Use gpt-image-2.5-sunburst or gpt-image-2.5-flare instead."
+       },
+       "dall-e-2": {
+        "message": "This model was retired on May 12, 2026. Use a GPT image model instead."
+       }
+      },
+      "x-stainless-const": true
+     }
+    ],
+    "x-oaiTypeLabel": "string",
+    "example": "gpt-image-1.5",
+    "description": "The GPT image model to use for image editing\n(`gpt-image-1-mini`, `gpt-image-1.5`, `gpt-image-2`,\n`gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`,\n`gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`,\n`gpt-image-2.5-flare-2026-09-08`, `gpt-image-2.6-sunburst`, `gpt-image-2.6-flare`,\nor `chatgpt-image-latest`).\n\n`gpt-image-1` was shut down on October 23, 2026. Use\n`gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` instead.\n"
+   },
+   "image": {
+    "anyOf": [
+     {
+      "type": "string",
+      "format": "binary"
+     },
+     {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+       "type": "string",
+       "format": "binary"
+      }
+     }
+    ],
+    "description": "The image(s) to edit. Must be a supported image file or an array of images.\n\nFor the GPT image models (`gpt-image-1-mini`, `gpt-image-1.5`,\n`gpt-image-2`, `gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`,\n`gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`, and\n`gpt-image-2.5-flare-2026-09-08`), each image should be a `png`, `webp`, or `jpg`\nfile less than 50MB. You can provide up to 16 images. `chatgpt-image-latest`\nfollows the same input constraints as GPT image models.\n"
+   },
+   "size": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "string",
+      "enum": [
+       "1024x1024",
+       "1536x1024",
+       "1024x1536",
+       "auto",
+       "256x256",
+       "512x512"
+      ],
+      "x-openai-enum-deprecations": {
+       "256x256": {
+        "message": "This legacy size suggestion is retained for SDK compatibility. Check the selected GPT image model's supported sizes."
+       },
+       "512x512": {
+        "message": "This legacy size suggestion is retained for SDK compatibility. Check the selected GPT image model's supported sizes."
+       }
+      }
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "auto",
+    "example": "1024x1024",
+    "description": "The size of the generated images. Defaults to `auto`. For `gpt-image-2`, `gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`, `gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`, and `gpt-image-2.5-flare-2026-09-08`, arbitrary resolutions are supported as `WIDTHxHEIGHT` strings, for example `1536x864`. Width and height must both be divisible by 16 and the requested aspect ratio must be between 1:3 and 3:1. Resolutions above `2560x1440` are experimental, and the maximum supported resolution is `3840x2160`. The requested size must also satisfy the model's current pixel and edge limits. The standard sizes `1024x1024`, `1536x1024`, and `1024x1536` are supported by the GPT image models; `auto` is supported for models that allow automatic sizing."
+   },
+   "quality": {
+    "anyOf": [
+     {
+      "type": "string",
+      "enum": [
+       "low",
+       "medium",
+       "high",
+       "xhigh",
+       "max",
+       "auto",
+       "standard"
+      ],
+      "x-openai-enum-deprecations": {
+       "standard": {
+        "message": "This quality was only supported by retired DALL·E models. Use a GPT image quality instead."
+       }
+      }
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "auto",
+    "example": "high",
+    "description": "The quality of the image that will be generated for GPT image models. The GPT image models support `low`, `medium`, and `high`. `gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`, including their `2026-09-08` snapshots, also support `xhigh` and `max`. Defaults to `auto`.\n"
+   },
+   "complexity": {
+    "$ref": "#/components/schemas/complexity"
+   },
+   "background": {
+    "anyOf": [
+     {
+      "type": "string",
+      "enum": [
+       "transparent",
+       "opaque",
+       "auto"
+      ]
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "auto",
+    "example": "transparent",
+    "description": "Set the background of the generated image(s). This parameter is only supported for\nthe GPT image models. Must be one of `transparent`, `opaque`, or `auto` (default\nvalue). When `auto` is used, the model will automatically determine the best\nbackground for the image.\n\n`gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`, including their `2026-09-08`\nsnapshots, support `opaque` and `transparent` backgrounds. Transparent backgrounds\nare available for supported GPT Image models. For `gpt-image-2` and\n`gpt-image-2-2026-04-21`, this support is in preview. When using `transparent`,\nset the output format to `png` or `webp`.\n"
+   },
+   "output_format": {
+    "anyOf": [
+     {
+      "$ref": "#/components/schemas/ImagesApiOutputFormat"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "png",
+    "example": "png",
+    "description": "The format in which the generated images are returned. This parameter is\nonly supported for the GPT image models.\nThe default value is `png`.\nSVG output requires a supported image model and project access.\n"
+   },
+   "mask": {
+    "description": "An additional image whose fully transparent areas (e.g. where alpha is zero) indicate where `image` should be edited. If there are multiple images provided, the mask will be applied on the first image. Must be a valid PNG file, less than 4MB, and have the same dimensions as `image`.",
+    "type": "string",
+    "format": "binary"
+   },
+   "n": {
+    "type": [
+     "integer",
+     "null"
+    ],
+    "minimum": 1,
+    "maximum": 10,
+    "default": 1,
+    "example": 1,
+    "description": "The number of images to generate. Must be between 1 and 10."
+   },
+   "input_fidelity": {
+    "anyOf": [
+     {
+      "$ref": "#/components/schemas/InputFidelity"
+     },
+     {
+      "type": "null"
+     }
+    ]
+   }
+  }
+ },
+ "generations": {
+  "schema": "CreateImageRequest",
+  "properties": {
+   "model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "string",
+      "enum": [
+       "gpt-image-1.5",
+       "gpt-image-2",
+       "gpt-image-2-2026-04-21",
+       "gpt-image-2.5-sunburst",
+       "gpt-image-2.5-sunburst-2026-09-08",
+       "gpt-image-2.5-flare",
+       "gpt-image-2.5-flare-2026-09-08",
+       "gpt-image-2.6-sunburst",
+       "gpt-image-2.6-flare",
+       "gpt-image-1",
+       "gpt-image-1-mini",
+       "chatgpt-image-latest",
+       "dall-e-2",
+       "dall-e-3"
+      ],
+      "x-openai-enum-deprecations": {
+       "gpt-image-1": {
+        "message": "GPT Image 1 was shut down on October 23, 2026. Use gpt-image-2.5-sunburst or gpt-image-2.5-flare instead."
+       },
+       "dall-e-2": {
+        "message": "This model was retired on May 12, 2026. Use a GPT image model instead."
+       },
+       "dall-e-3": {
+        "message": "This model was retired on May 12, 2026. Use a GPT image model instead."
+       }
+      }
+     }
+    ],
+    "x-oaiTypeLabel": "string",
+    "example": "gpt-image-2.5-flare",
+    "description": "The GPT image model to use for image generation. Specify a model explicitly.\nSupported models include `gpt-image-1-mini`, `gpt-image-1.5`, `gpt-image-2`,\n`gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`,\n`gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`,\n`gpt-image-2.5-flare-2026-09-08`, `gpt-image-2.6-sunburst`, `gpt-image-2.6-flare`,\nand `chatgpt-image-latest`.\n\n`gpt-image-1` was shut down on October 23, 2026. Use\n`gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` instead.\n"
+   },
+   "size": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "string",
+      "enum": [
+       "auto",
+       "1024x1024",
+       "1536x1024",
+       "1024x1536",
+       "256x256",
+       "512x512",
+       "1792x1024",
+       "1024x1792"
+      ],
+      "x-openai-enum-deprecations": {
+       "256x256": {
+        "message": "This legacy size suggestion is retained for SDK compatibility. Check the selected GPT image model's supported sizes."
+       },
+       "512x512": {
+        "message": "This legacy size suggestion is retained for SDK compatibility. Check the selected GPT image model's supported sizes."
+       },
+       "1792x1024": {
+        "message": "This legacy size suggestion is retained for SDK compatibility. Check the selected GPT image model's supported sizes."
+       },
+       "1024x1792": {
+        "message": "This legacy size suggestion is retained for SDK compatibility. Check the selected GPT image model's supported sizes."
+       }
+      }
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "auto",
+    "example": "1024x1024",
+    "description": "The size of the generated images. For `gpt-image-2`, `gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`, `gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`, and `gpt-image-2.5-flare-2026-09-08`, arbitrary resolutions are supported as `WIDTHxHEIGHT` strings, for example `1536x864`. Width and height must both be divisible by 16 and the requested aspect ratio must be between 1:3 and 3:1. Resolutions above `2560x1440` are experimental, and the maximum supported resolution is `3840x2160`. The requested size must also satisfy the model's current pixel and edge limits. The standard sizes `1024x1024`, `1536x1024`, and `1024x1536` are supported by the GPT image models; `auto` is supported for models that allow automatic sizing."
+   },
+   "quality": {
+    "anyOf": [
+     {
+      "type": "string",
+      "enum": [
+       "low",
+       "medium",
+       "high",
+       "xhigh",
+       "max",
+       "auto",
+       "standard",
+       "hd"
+      ],
+      "x-openai-enum-deprecations": {
+       "standard": {
+        "message": "This quality was only supported by retired DALL·E models. Use a GPT image quality instead."
+       },
+       "hd": {
+        "message": "This quality was only supported by retired DALL·E models. Use a GPT image quality instead."
+       }
+      }
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "auto",
+    "example": "medium",
+    "description": "The quality of the image that will be generated.\n\n- `auto` (default value) will automatically select the best quality for the given\n  model.\n- `high`, `medium` and `low` are supported for the GPT image models.\n- `gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`, including their `2026-09-08`\n  snapshots, also support `xhigh` and `max`.\n"
+   },
+   "complexity": {
+    "$ref": "#/components/schemas/complexity"
+   },
+   "background": {
+    "anyOf": [
+     {
+      "type": "string",
+      "enum": [
+       "transparent",
+       "opaque",
+       "auto"
+      ]
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "auto",
+    "example": "transparent",
+    "description": "Set the background of the generated image(s). This parameter is only supported for\nthe GPT image models. Must be one of `transparent`, `opaque`, or `auto` (default\nvalue). When `auto` is used, the model will automatically determine the best\nbackground for the image.\n\n`gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`, including their `2026-09-08`\nsnapshots, support `opaque` and `transparent` backgrounds. Transparent backgrounds\nare available for supported GPT Image models. For `gpt-image-2` and\n`gpt-image-2-2026-04-21`, this support is in preview. When using `transparent`,\nset the output format to `png` or `webp`.\n"
+   },
+   "output_format": {
+    "anyOf": [
+     {
+      "$ref": "#/components/schemas/ImagesApiOutputFormat"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "png",
+    "example": "png",
+    "description": "The format in which the generated images are returned. This parameter is only supported for the GPT image models."
+   },
+   "moderation": {
+    "anyOf": [
+     {
+      "type": "string",
+      "enum": [
+       "low",
+       "auto"
+      ]
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "auto",
+    "example": "low",
+    "description": "Control the content-moderation level for images generated by the GPT image models. Must be either `low` for less restrictive filtering or `auto` (default value)."
+   },
+   "n": {
+    "type": [
+     "integer",
+     "null"
+    ],
+    "minimum": 1,
+    "maximum": 10,
+    "default": 1,
+    "example": 1,
+    "description": "The number of images to generate. Must be between 1 and 10."
+   }
+  }
+ },
+ "complexity": {
+  "type": [
+   "string",
+   "null"
+  ],
+  "enum": [
+   "low",
+   "medium",
+   "high",
+   null
+  ],
+  "description": "Computation spent planning the image, independently of rendering quality. Uses the image model's configured default when omitted. For SVG output, controls the reference image, independently of the SVG author's reasoning."
+ }
+}

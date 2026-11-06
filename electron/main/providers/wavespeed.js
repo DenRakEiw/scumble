@@ -11,6 +11,11 @@
 //         { image, mask_url, reference_images, prompt } (Ideogram 4.5 edit: the references in a list of their own,
 //                                                       unnumbered)
 //   edit: { images: [crop, references...], prompt }   (nano-banana, gpt-image, seedream, flux-2, qwen)
+//   fill with an image list: { images: [crop, references...], mask_image, prompt }  (GPT Image 2.5 and 2.6 edit: a
+//         variant of input "fill" naming `fields.images` and `fields.mask`; the mask is the first picture's, white =
+//         edit, and no aspect preset goes beside it: the route picks the shape "automatically from the input image"
+//         (read 2026-11-06; not verified that it keeps the exact ratio), and the variant's `limits.aspects` (the same
+//         15 presets) has widened the crop to one of them, so a pick among them cannot differ from the crop)
 // A recipe variant may rename the inputs with `fields` ({ image, images, mask, references }); `options`:
 // `aspect_ratios` (the model's presets, the closest to the crop is sent unless the settings
 // pick one; never on a fill), `size: "star"` (send the crop size as "W*H", fitted to `max_side`), `max_images` (how
@@ -82,6 +87,15 @@ function starSize(w, h, maxSide) {
     return `${r(w)}*${r(h)}`;
 }
 
+/**
+ * A fill whose route takes the image list (`fields.images`) and names a mask field beside it (`fields.mask`, GPT Image
+ * 2.5 / 2.6 edit's mask_image), with a mask to send: the mask goes there; an edit run or a text run sends none.
+ */
+function maskBeside(req) {
+    const f = req.fields || {};
+    return req.kind !== "text" && req.kind !== "edit" && !!f.images && typeof f.mask === "string" && !!f.mask && !!(req.mask && req.mask.length);
+}
+
 /** The variant's allowlist for this run (`text_accepts` on a text run when it has one, else `accepts`), or null. */
 function acceptsOf(req) {
     const o = req.options || {};
@@ -141,6 +155,11 @@ async function inputFor(req, ctx, info = {}) {
         for (let i = 0; i < req.references.length; i++) urls.push(await upload(ctx, req.references[i], `scumble-${stamp}-ref${i + 1}.png`));
         input[f.images || "images"] = urls;
         pictures.add(f.images || "images");
+        // a fill whose route takes the image list and a mask beside it (GPT Image 2.5 / 2.6 edit): the selection's mask
+        if (maskBeside(req)) {
+            input[f.mask] = await upload(ctx, req.mask, `scumble-${stamp}-mask.png`);
+            pictures.add(f.mask);
+        }
     } else {
         const who = `WaveSpeed ${String(req.model || "")}`;
         const lay = layout(req), n = countOf(lay);
@@ -187,8 +206,9 @@ async function inputFor(req, ctx, info = {}) {
         // an edit sent at a preset comes back in its shape, which the stitch stretches onto the crop
         if (req.kind !== "text" && input.aspect_ratio) info.fit = "stretch";
     }
-    // a fill answers at the crop's size: no aspect preset (Ideogram 4.5's edit refuses one beside a mask)
-    if (!fill && o.sizing !== "flux3" && Array.isArray(o.aspect_ratios) && o.aspect_ratios.length && input.aspect_ratio == null) input.aspect_ratio = closestAspect(req.width, req.height, o.aspect_ratios);
+    // a fill answers at the crop's size: no aspect preset (Ideogram 4.5's edit refuses one beside a mask), nor beside a
+    // mask that goes with an image list (the route picks the shape from the crop, which limits.aspects made a preset's)
+    if (!fill && !pictures.has(f.mask) && o.sizing !== "flux3" && Array.isArray(o.aspect_ratios) && o.aspect_ratios.length && input.aspect_ratio == null) input.aspect_ratio = closestAspect(req.width, req.height, o.aspect_ratios);
     if (req.kind === "text") {
         // a value the text route does not take becomes the one the variant names for it (a new image gets the edit's
         // Settings rows, host.providerParams)
@@ -211,17 +231,19 @@ async function inputFor(req, ctx, info = {}) {
 }
 
 /**
- * Where inputFor above puts each picture of a fill or an edit (the image list carries no mask). `max` is the variant's
- * options.max_images (the pictures in the list; with `fields.references` the crop and the references); the fill shape
- * sends no reference, unless it names a `fields.references` list (Ideogram 4.5): its references go there unnumbered
- * (`style`, so the prompt cannot name one).
+ * Where inputFor above puts each picture of a fill or an edit (the image list carries no mask; a fill that names
+ * `fields.mask` beside the list sends the mask in that field of its own). `max` is the variant's options.max_images
+ * (the pictures in the list; with `fields.references` the crop and the references); the fill shape sends no reference,
+ * unless it names a `fields.references` list (Ideogram 4.5): its references go there unnumbered (`style`, so the
+ * prompt cannot name one).
  */
 function layout(req) {
     const f = req.fields || {}, o = req.options || {};
     const max = +o.max_images > 0 ? +o.max_images : null;
     if (req.kind === "edit" || f.images) {
         const F = f.images || "images";
-        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])], max });
+        const own = maskBeside(req) ? [["mask", f.mask]] : [];
+        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])], own, max });
     }
     const mask = req.mask ? [["mask", f.mask || "mask_image"]] : [];
     if (f.references) {

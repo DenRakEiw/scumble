@@ -551,7 +551,8 @@ the parameter the adapter sends), `fixed` (parameters sent as they are), `fields
 (input names: Replicate and fal, `{ image, images, mask }`; fal takes `"mask": false` for
 an image-to-image endpoint that has no mask, such as Ideogram 4), `options` (adapter
 switches: fal `sizing: "none"` for endpoints without a free `image_size`, fal `sizing: "flux3"` with `min_side` /
-`max_pixels` for FLUX 3 ("FLUX 3 Image" below), fal
+`max_pixels` for FLUX 3 ("FLUX 3 Image" below), fal `sizing: "pixels"` with `pixels` (the model's size rules) for
+GPT Image 2.5 and 2.6 ("GPT Image 2.6" below), fal
 `omit: ["output_format", ...]` for an endpoint that refuses the fields the other models
 take; ToAPIs' channels, sizes and tiers, below; OpenRouter's accepted parameters, presets, tiers and
 picture limits, below; ModelArk's pixel range, picture count, PNG switch and regions, below; Oxen.ai's accepted
@@ -561,7 +562,9 @@ parameters, picture field, mask convention, aspect rule, tiers and presets, with
 unnumbered references and `max_ratio` / `max_bytes` checks, "Ideogram 4.5" below; WaveSpeed's `mask: "black"`,
 `negative: false`, `accepts` / `text_accepts` (the allowlist of optional keys per route), `tiers`, `text_values`,
 `fields.references`, `max_ratio` / `max_bytes` for the same model, `sizing: "flux3"` with `min_side` / `max_pixels`
-for FLUX 3 ("FLUX 3 Image" below); Comfy Router's `seed_max`, `resolutions` (Ideogram's
+for FLUX 3 ("FLUX 3 Image" below), and on a `fill` with `fields.images` the mask beside the image list in
+`fields.mask` (GPT Image 2.5 and 2.6); Replicate's `omit` (input fields the model's schema lacks: GPT Image's seed
+and negative prompt); OpenRouter's `passthrough` `complexity` (GPT Image 2.6); Comfy Router's `seed_max`, `resolutions` (Ideogram's
 1K / 2K presets) and `text_values` for it, beside the `max_images`, `max_ratio` and `max_bytes` every Router variant
 may set (its ideogram dialect knows the mask and the references itself); Magnific takes none, its route table knows each route's rules),
 `limits` (the size ceiling, below), `edit: false` (the variant makes images from
@@ -590,7 +593,9 @@ steeper than that gets more context on its short side, so a thin selection is no
 (Seedream on ToAPIs, whose pages say [1/3, 3]; Seedream on ModelArk and OpenRouter 16, ModelArk's
 [1/16, 16]). `aspects` lists the only shapes a model renders, as `"W:H"` (Seedream and GPT Image 2 on
 Magnific, whose edit routes take an `aspect_ratio` preset and no free size, and FLUX 3 Image, whose 15 presets are
-the only shapes it takes besides `auto`): `planCrop` widens the crop's context
+the only shapes it takes besides `auto`; GPT Image 2.5 and 2.6 on WaveSpeed carry WaveSpeed's 15 presets too, since a
+masked edit there sends no preset and the host picks the shape from the input image, not verified to keep the exact
+ratio; that adapter sets no `info.fit`, the stitch's own shape check stretches an answer in the crop's shape): `planCrop` widens the crop's context
 to the nearest preset the picture can give (on the short side, as for `ratio`, sets `info.aspect`), so the answer
 comes back in the crop's own shape and the adapter tells the stitch to stretch it (`info.fit`, "Magnific" below);
 a preset the picture cannot give (the whole picture at another shape) leaves the crop as it is, and the answer is
@@ -599,9 +604,10 @@ centre-cropped as before. `[]`, the default, is any shape. Without either, the c
 source, not with a guess. Today: **FLUX.2 and FLUX.1 Fill 1440** (2048 answers with an
 error), **FLUX 3 Image 2048 in 16 px steps with its 15 aspect presets as `aspects` and a `min` of 608** (the model
 refuses a picture under 256 px a side, and `min` holds the long side: 608 keeps the short side at 256 even at 21:9;
-2048 keeps an edit at the 2k tier, "FLUX 3 Image" below), **GPT Image 2.5 Flare and Sunburst 3840 with an 8,294,400 px budget and a 655,360 px
+2048 keeps an edit at the 2k tier, "FLUX 3 Image" below), **GPT Image 2.5 and 2.6 Flare and Sunburst 3840 with an 8,294,400 px budget and a 655,360 px
 floor** (the model's own size rules: both edges a multiple of 16, at most 3840 an edge, a
-ratio no steeper than 3:1), **GPT Image 2 2048 with the same budget** (the size rules of the
+ratio no steeper than 3:1; the 2.6 OpenAI, fal and ToAPIs variants and the fal variants of 2.5 also carry `ratio: 3`, so a thin selection
+gets more context instead of an answer of another shape), **GPT Image 2 2048 with the same budget** (the size rules of the
 OpenAI partner node), **Seedream 5 on fal 4096 with a 4 MP budget for pro and a 16 MP one
 for lite** (its `image_size` is a free size with an area range, not a side limit),
 **Seedream on Comfy Cloud 2496 / 4992** (what the partner node fits it into), **Seedream on
@@ -743,6 +749,9 @@ of the request, and each family has its own word for it (the vendors' prompting 
   | `ideogram_4_5` · WaveSpeed | 4 | https://wavespeed.ai/docs/docs-api/ideogram-ai/ideogram-ai-ideogram-v4.5-edit (`reference_images` up to 4, 3 with `mask_url`; read 2026-10-02) |
   | `ideogram_4_5` · Comfy Router | 4 | https://docs.comfy.org/router-schemas/ideogram/ideogram-4-5.json (`reference_images` up to 4, 3 with a mask; read 2026-10-02, saved in `tools/refs/comfyrouter/`) |
   | `gpt_image_2` · fal | 16 | https://fal.ai/models/openai/gpt-image-2/edit/api |
+  | `gpt_image_2_5_*`, `gpt_image_2_6_*` · fal | 16 | `image_urls` `maxItems: 16` in the saved schemas (`tools/refs/fal/openai_gpt-image-2.*`, read 2026-11-06) |
+  | `gpt_image_2_6_*` · WaveSpeed, OpenAI | 16 | `images` `maxItems: 16` (`tools/refs/wavespeed/openai_gpt-image-2.6-*`); OpenAI's `image` `maxItems: 16` (`tools/refs/openai/images_gpt-image-2.6.json`) |
+  | `gpt_image_2_6_sunburst` · ToAPIs | 16 | https://docs.toapis.com/docs/en/api-reference/images/gpt-image-2.6-official/generation.md ("up to 16 images", read 2026-11-06) |
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · WaveSpeed | 16 | https://wavespeed.ai/docs/docs-api/openai/openai-gpt-image-2-edit, `…-2.5-flare-edit`, `…-2.5-sunburst-edit` ("0 ~ 16 items") |
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · OpenAI | 16 | OpenAI's `image[]` (not read at a URL in this step; not read by `openai.js` yet, above) |
   | `nano_banana_2`, `_2_lite`, `_pro` · Gemini | 14 | Google's limit (not read at a URL in this step) |
@@ -764,6 +773,8 @@ of the request, and each family has its own word for it (the vendors' prompting 
     (`image_urls` has no `maxItems`).
   - `gpt_image_2` · Replicate: the page says "pass multiple images" and names no number; its schema page did not
     render.
+  - `gpt_image_2_5_flare`, `_sunburst`, `gpt_image_2_6_flare`, `_sunburst` · Replicate: `input_images` has no
+    `maxItems` and the page names no number (read 2026-11-06).
   - `nano_banana_2_lite` · WaveSpeed: the `images` row has no range.
   - `reve` · WaveSpeed: no docs page found (the edit pages answered 404). A search summary says the endpoint takes a
     single input image, unconfirmed; if that holds, the recipe's "crop plus the reference layers" is wrong and the
@@ -884,12 +895,16 @@ part for you and is offered for the OpenAI recipes.
 
 The ToAPIs variants of the three GPT recipes carry the row too (on GPT Image 2's standard channel and
 on every GPT Image 2.5 channel only `transparent` is sent, as their pages ask); none of that has run
-live. On OpenRouter only the two GPT Image 2.5 variants (Flare, Sunburst) carry it, because
+live. On OpenRouter only the GPT Image 2.5 and 2.6 variants (Flare, Sunburst) carry it, because
 `GET /api/v1/images/models` lists `auto`, `transparent` and `opaque` for them and only `auto` and
 `opaque` for GPT Image 2 (2026-09-19); GPT Image 2 on OpenRouter therefore has neither the row nor
-the Generate-new checkbox. OpenRouter lists no `output_format` for the OpenAI models, so the format
-of a transparent answer is the host's default (not verified). Other providers are not wired for it: fal, WaveSpeed and Comfy Cloud may or may not pass
-`background` through to the same models, and none of that is verified. ModelArk documents a
+the Generate-new checkbox. OpenRouter lists no `output_format` for GPT Image 2 and 2.5, so the format
+of a transparent answer there is the host's default (not verified); for GPT Image 2.6 it lists png, jpeg, webp and gif,
+and its variants send `png`. GPT Image 2.6 carries the row on OpenAI, fal, Replicate,
+ToAPIs (Sunburst) and OpenRouter, and GPT Image 2.5's new fal and Replicate variants carry it too (their schemas
+list `background`, read 2026-11-06; fal and Replicate are sent PNG); none of that has run live. Other providers are
+not wired for it: WaveSpeed's GPT routes have no `background` field, and fal's GPT Image 2 variant and Comfy Cloud may
+or may not pass it through, which is not verified. ModelArk documents a
 `background` for Seedream 5.0 pro, but "only for image-to-image generation with exactly one input image
 that has an alpha channel", which an inpaint crop is not; its variant does not carry the row. Add the row to a
 variant when you have a source. `tools/transparent_test.py` is the gate.
@@ -974,7 +989,8 @@ shown reference layers along; one without makes pictures from the prompt alone.
   | FLUX.2 [klein] | BFL, Oxen.ai (`max: 4`); fal and WaveSpeed (`/edit`) | - |
   | FLUX 3 Image | BFL, OpenRouter, Comfy Router, Oxen.ai; fal (`edit-image`), WaveSpeed (`image-edit`) | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
-  | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, OpenRouter, Comfy Router, Oxen.ai; WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
+  | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
+  | GPT Image 2.6 Flare, Sunburst | OpenAI, ToAPIs (Sunburst), Replicate, OpenRouter; fal and WaveSpeed (`/edit`) | - |
   | Nano Banana 2.1 | Gemini, ToAPIs, OpenRouter, Comfy Router, Replicate; fal and WaveSpeed (`/edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
   | Seedream 5 lite, 5 pro | ModelArk, ToAPIs, OpenRouter, Comfy Router, Replicate (lite), Oxen.ai (pro); fal (`/edit`, `options: { sizing: "image_size" }`), WaveSpeed (`/edit`), Magnific (the `-edit` route) | - |
@@ -1325,6 +1341,53 @@ resampler is used), the Navier-Stokes "border" fill (behaves like "blur").
 A hidden `loopback` provider returns the crop unchanged (no key); `tools/smoke_test.py`
 uses it to check the crop / stitch path.
 
+### GPT Image 2.6 Sunburst and Flare
+
+`recipes/gpt_image_2_6_sunburst.json` and `recipes/gpt_image_2_6_flare.json` (2026-11-06; OpenAI released the pair on
+2026-11-04) copy the GPT Image 2.5 pair's shape: family OpenAI, home `openai`, `refs.name` `Image {n}`, the size rules
+of 2.5, and the order of the provider select. **Every variant is written from the host's docs and schemas, read
+2026-11-06 and saved under `tools/refs/` (fal, wavespeed, replicate, openrouter, toapis, openai), and none has run
+against the live API**; `tools/gpt26_test.js` holds each host's request to its saved schema (the sizes at 3840 x 2160
+and at odd, about 1:4 and small crops, the Complexity row, the mask where the host takes one, WaveSpeed's crop widened
+to a preset, ToAPIs' body against its page's parameter list, no GIF or SVG).
+
+| Host | Model id (Sunburst; Flare likewise) | Input | Size | Complexity | Pictures |
+|---|---|---|---|---|---|
+| OpenAI (home) | `gpt-image-2.6-sunburst` | fill: `mask` (alpha 0 = repaint) as on 2.5, **not verified for 2.6** (the 2.6 model pages drop 2.5's "inpainting" line; the spec's `mask` field is generic, the prompting guide points masked edits to the mask section) | `size` `WxH` (`sizeRules`) | `complexity` | 16 |
+| fal.ai | `openai/gpt-image-2.6/sunburst/edit`; new images `.../text-to-image` | fill: `image_urls`, `mask_url` (white = repaint) | `image_size` `{ width, height }` inside the rules (`sizing: "pixels"`) | `reasoning_effort`, fal's name for it | 16 |
+| Replicate | `openai/gpt-image-2.6-sunburst` | edit: `input_images`, no mask field (the stitch keeps the selection) | an edit `aspect_ratio: "auto"`; a new image the asked aspect, else the closest of Replicate's seven | `complexity` | undocumented |
+| WaveSpeedAI | `openai/gpt-image-2.6-sunburst/edit`; new images `/text-to-image` | fill: `images` and `mask_image` (white = repaint) | with a mask no preset: WaveSpeed picks the shape from the crop (its docs; not verified that it keeps the exact ratio), and `limits.aspects` (its 15 presets) widens the crop to the nearest preset first; else the closest of 15; the Resolution row (1k, 2k, 4k) | `complexity` | 16 |
+| OpenRouter | `openai/gpt-image-2.6-sunburst` | fill (the mask as a second picture) | none (the host picks; new images 1536) | a passthrough, `provider.options.openai.complexity` | 16 |
+| ToAPIs | `gpt-image-2.6-sunburst-official` (Sunburst only) | fill: `mask_url` (alpha) | `WxH` inside the rules | `complexity` | 16 |
+
+- **The size rules** are 2.5's: both edges a multiple of 16, at most 3840 an edge, 655,360 to 8,294,400 pixels, no
+  steeper than 3:1. OpenAI's prose states the multiples of 16 and the ratio for 2.6; the edge and the pixel range come
+  from OpenAI's own token calculator, which holds 2.6 to them, and from fal's and ToAPIs' 2.6 pages, which state all
+  four (inferred for OpenAI direct). `openai.js` `sizeRules` matches `/gpt-image-2\.[56]/` (before, a 2.6 id fell
+  through to GPT Image 2's 2048 edge), and Comfy Router's use of `openai._sizeFor` follows the same rule.
+- **Complexity** is a Settings row on every 2.6 variant: low, medium, high, **default high** (the user's choice, and
+  the model's own default when the field is left out; OpenAI recommends low for most edits). Low is faster for
+  simple edits and, on the hosts that bill by tokens (OpenAI, fal, OpenRouter, ToAPIs), probably cheaper: not
+  documented (OpenAI and ToAPIs say complexity has no separate fee; a live run's `usage` shows it); Replicate (per
+  image by quality) and WaveSpeed ("does not change the price") bill it the same. `openai.js` `common()` sends it for 2.6
+  ids only, so Comfy Router's 2.5 and 2 bodies stay as they were.
+- **Not offered:** GIF and SVG output (a layer is a raster picture: `common()` turns any other format into PNG, and
+  fal, Replicate and WaveSpeed are sent PNG), `markup` edits (they exclude the mask), Batch and the Responses tool.
+- **Not yet, re-check before the release:** Comfy Cloud (the partner node `OpenAIGPTImageNodeV2` lists 2.5's options
+  only on 2026-11-06; Comfy-Org/ComfyUI#17558 adds 2.6 with a `model.complexity` combo, merged that day, its backport
+  v0.44.1 still open), Comfy Router (its `router-schemas/openai/gpt-image-2.6-*.json` answer 404), Oxen.ai (not in its
+  model list), Magnific (not in its OpenAPI spec of 2026-11-05), and ToAPIs' Flare (`gpt-image-2.6-flare-official`,
+  "Pending pricing approval; disabled" in ToAPIs' price list).
+- **Price:** the token rates of 2.5 ($5 text in, $8 image in, $30 image out per 1M); OpenAI's calculator gives 2.6
+  4.2 times 2.5's output tokens at quality low and 3.3 times at medium, the same at high and above.
+
+**The GPT Image 2.5 fixes of the same day** (from the hosts' docs, none run live): fal (`openai/gpt-image-2.5/<name>/edit`
+and `.../text-to-image`, listed since 2026-09-11) and Replicate (`openai/gpt-image-2.5-<name>`, official models) are new
+variants of the 2.5 pair, the 2.6 shapes without the Complexity row; WaveSpeed's 2.5 edit takes `mask_image` now, so its
+variant became a fill with the mask beside the image list, and it carries an `accepts` list (WaveSpeed's schemas are
+strict and name no seed). `tools/refs_layout_test.js` compares these WaveSpeed text runs with the requests before 26f
+except for the seed.
+
 ### Upscale recipes (`task: "upscale"`)
 
 An upscale recipe is a provider recipe with `"task": "upscale"` (the default task is `edit`). It runs through the
@@ -1480,7 +1543,7 @@ cloud's own node versions.
 
 ### ToAPIs (`toapis`)
 
-[ToAPIs](https://toapis.com) is a reseller on a New API gateway: one key for GPT Image 2 and 2.5,
+[ToAPIs](https://toapis.com) is a reseller on a New API gateway: one key for GPT Image 2, 2.5 and 2.6 Sunburst,
 Nano Banana 2 / 2 Lite / Pro, FLUX.2 pro and flex, Seedream 5 lite and pro, and Qwen Image 3.0.
 The adapter `electron/main/providers/toapis.js` is written from the English docs
 (`docs.toapis.com/docs/en/...`, read 2026-09-15) and **has not run against the live API** from Scumble;
@@ -1495,7 +1558,7 @@ says so.
 
 **Where it shows up.** First in every provider list: the key rows (first in `PROVIDERS`), each served
 recipe's provider select, the Generate-new select and `list_recipes` (`toapis` is the first key of
-`providers` in the eleven recipe files), and in `TEXT_PROVIDERS`. **No recipe's `default` changed and
+`providers` in the thirteen recipe files that carry it), and in `TEXT_PROVIDERS`. **No recipe's `default` changed and
 nothing switches to ToAPIs on its own** (the user's decision of 2026-09-15): a recipe runs on ToAPIs
 when you pick it in the recipe's select, in Generate new or with `select_recipe(id, "toapis")`. With a
 key stored, the row's *check balance* asks `GET /v1/balance` (free, IPC `provider:balance`) and shows
@@ -1546,6 +1609,7 @@ prices, far below the vendor's, suggest third-party backends.
 |---|---|---|---|---|
 | `gpt_image_2` | `gpt-image-2-official` | official, vip (`gpt-image-2-vip`, no mask), standard (`gpt-image-2`, no mask, presets, no quality) | **fill**: `mask_url` from the alpha mask; the crop's own ratio | `resolution` 1k / 2k / 4k |
 | `gpt_image_2_5_flare`, `_sunburst` | `gpt-image-2.5-<name>-official` | official, vip (`-vip`), standard (plain id: presets, a 1K / 2K / 4K tier, no quality) | edit; `WxH` in 16 px steps, 655,360 to 8,294,400 px, at most 3:1 | none (pixels) |
+| `gpt_image_2_6_sunburst` | `gpt-image-2.6-sunburst-official` | none (only the official channel serves 2.6; Flare's `gpt-image-2.6-flare-official` is listed "Pending pricing approval; disabled", 2026-11-06, so `gpt_image_2_6_flare` has no ToAPIs variant) | **fill**: `mask_url` from the alpha mask, 16 images; `WxH` as 2.5's, Complexity | none (pixels) |
 | `nano_banana_2` | `gemini-3.1-flash-image-official` | official, vip (`-preview-vip`), standard (`-preview`); both with `{url}` objects | edit; the closest of the channel's presets | `metadata.resolution` 1K / 2K / 4K |
 | `nano_banana_2_lite` | `gemini-3.1-flash-lite-image-official` | none | as 3.1 Flash official | as 3.1 Flash |
 | `nano_banana_2_1` | `gemini-nano-banana-2.1` (standard; no official channel) | standard, vip (`-vip`); both with `{url}` objects, the shape of the 3.1 Flash channels (no page for 2.1, not verified) | edit; the closest of the channel's presets | `metadata.resolution` 1K / 2K / 4K |
@@ -1556,7 +1620,7 @@ prices, far below the vendor's, suggest third-party backends.
 | `qwen_image_edit` | `qwen-image-3.0` | standard, pro (`qwen-image-3.0-pro`) | edit, 3 images; `WxH` (512² to 2048², at most 8:1), `metadata.seed`, `metadata.negative_prompt`, fixed `metadata.prompt_extend: false` | none (pixels) |
 
 A variant's `options` describe the rest: `mask` (a `fill` run uploads `req.maskAlpha`, alpha 0 =
-repaint, as `mask_url`; only `gpt-image-2-official` has one, every other channel leaves the mask out
+repaint, as `mask_url`; only `gpt-image-2-official` and `gpt-image-2.6-sunburst-official` have one, every other channel leaves the mask out
 and the stitch keeps the selection), `size` (`ratio`: the crop's reduced `W:H`, clamped to 3:1;
 `preset`: the closest of `ratios`, or a text run's own aspect when it is one of them; `pixels`: `WxH`
 under `pixels` rules), `tiers` with `tier_key` and `tier_sizes` (a *Resolution* row left on auto takes the
@@ -1645,8 +1709,8 @@ allowlist, the mask on every channel, and ToAPIs last in `PROVIDERS`.
 ### OpenRouter (`openrouter`)
 
 [OpenRouter](https://openrouter.ai) is an aggregator: one key for most hosted models, each request routed to
-a host that serves the model. Scumble uses its unified Image API for 15 recipes (GPT Image 2 and 2.5 Flare /
-Sunburst, Nano Banana 2 / 2 Lite / Pro, FLUX 3 Image, FLUX.2 max / pro / flex, Seedream 5 lite and pro, Grok Imagine 2.0,
+a host that serves the model. Scumble uses its unified Image API for 18 recipes (GPT Image 2, 2.5 and 2.6 Flare /
+Sunburst, Nano Banana 2.1, 2 / 2 Lite / Pro, FLUX 3 Image, FLUX.2 max / pro / flex, Seedream 5 lite and pro, Grok Imagine 2.0,
 and in Generate new only Krea 2 and Recraft V4) and its Chat Completions for prompt upsampling (docs/HELPERS.md
 "Through the OpenRouter key"). The adapter `electron/main/providers/openrouter.js` is written from OpenRouter's
 docs (the `.md` twins of `openrouter.ai/docs/...`, `openapi.json`, the per-model guides at
@@ -1666,12 +1730,12 @@ reaches the user as the provider's own sentence.
 
 **Where it shows up.** The key row comes after Comfy Cloud in Settings › API providers (`PROVIDERS` in
 `providers/index.js`, before Anthropic's key-only row), with the hint `sk-or-v1-...`, *get a key*
-(`openrouter.ai/settings/keys`, no referral code) and, with a key stored, *check balance*. In the 14 recipe
+(`openrouter.ai/settings/keys`, no referral code) and, with a key stored, *check balance*. In the 18 recipe
 files `openrouter` is the **last** key of `providers`, so it is last in each recipe's provider select, in
 Generate new and in `list_recipes`; ToAPIs stays first. **No recipe's `default` changed and nothing switches
 to OpenRouter on its own**: a recipe runs there when you pick it in the recipe's select, in Generate new or
 with `select_recipe(id, "openrouter")`. `openrouter` is in `TEXT_PROVIDERS`, and a text run uses the edit
-variant's model id (the Image API takes `input_references` as optional). The descriptions of the 15 recipes
+variant's model id (the Image API takes `input_references` as optional). The descriptions of the 18 recipes
 say "Also on OpenRouter." FLUX 3 Image's variant (docs/PLAN_0_1_38.md B3) sets the options that make it
 BFL's request: `prompt: "as_written"` (no instruction around the prompt, so the box rows stay at its end; a blank
 prompt is refused), `edit_aspect: "preset_or_auto"` (an edit sends the preset the crop was widened to, or the one
@@ -1717,9 +1781,9 @@ Streaming exists for OpenAI's models only and is not used.
 
 **Fill and edit.** The Image API has **no mask field**: neither the request schema nor any model's
 `supported_parameters` lists one, and OpenAI's passthrough allowlist (`provider.options`) is `moderation`
-alone. So the variants split three ways:
+(and `complexity` on GPT Image 2.6). So the variants split three ways:
 
-- **GPT Image 2 / 2.5 and Nano Banana** (`input: "fill"`): the mask (`req.mask`, white = repaint) goes along
+- **GPT Image 2 / 2.5 / 2.6 and Nano Banana** (`input: "fill"`): the mask (`req.mask`, white = repaint) goes along
   as the **second picture**, and the prompt begins "Edit image 1. Image 2 is a mask: change only the white
   area of the mask, keep everything else exactly as it is, and keep the image size and framing." ("Edit Image
   1. …" under GPT Image's `refs.name`, `Image {n}`), as the Gemini adapter does; the clause after the colon is
@@ -1768,8 +1832,8 @@ ToAPIs, not to a fixed 2K.
   (`supported_parameters`, read 2026-09-19) the adapter may send; **nothing else is sent**, because the
   per-model guides say "an unlisted value is rejected, and a listed one can still be refused by whichever
   provider serves the call". So `seed` goes to FLUX.2, Seedream and Krea only, `n: 1` to every model but
-  Krea (which lists no `n`), `output_format` to FLUX.2 only (fixed `png`), `quality` to GPT and Grok,
-  `background` to GPT Image 2.5 only; `output_compression`, which the OpenAI models list, is in no
+  Krea (which lists no `n`), `output_format` to FLUX.2 and GPT Image 2.6 only (fixed `png`), `quality` to GPT and Grok,
+  `background` to GPT Image 2.5 and 2.6 only; `output_compression`, which the OpenAI models list, is in no
   variant's `accepts`, and neither is GPT Image 2's `background` (only `auto` / `opaque`);
 - `ratios`: the model's `aspect_ratio` presets without `auto` (text runs only);
 - `tiers`: `{ "1K": 1024, ... }`, the model's `resolution` values with the long side each stands for;
@@ -1880,7 +1944,7 @@ a test key never reaches openrouter.ai.
 
 | Host (slug) | Serves here | Headquarters / datacentres | Keeps prompts |
 |---|---|---|---|
-| OpenAI (`openai`) | GPT Image 2, 2.5 Flare, 2.5 Sunburst | US / none listed | yes, for a period not given |
+| OpenAI (`openai`) | GPT Image 2, 2.5 and 2.6 Flare and Sunburst | US / none listed | yes, for a period not given |
 | Google AI Studio (`google-ai-studio`) | Nano Banana 2, 2 Lite, Pro | US / none listed | 55 days |
 | Google Vertex (`google-vertex`) | the same three (Pro up to 2K) | US / none listed | no (on `GET /api/v1/endpoints/zdr`) |
 | Black Forest Labs (`black-forest-labs`) | FLUX.2 max, pro, flex | not listed | 30 days |
@@ -1903,6 +1967,7 @@ crop, the mask, *Original* and the reference layers together):
 |---|---|---|---|---|---|---|
 | `gpt_image_2` | `openai/gpt-image-2` | fill (mask as 2nd picture) | Quality (auto, low, medium, high) | none: the host picks the size | 16 | 1536 |
 | `gpt_image_2_5_flare`, `_sunburst` | `openai/gpt-image-2.5-flare`, `-sunburst` | fill | Quality (auto to max), Background (auto, opaque, transparent) | none | 16 | 1536 |
+| `gpt_image_2_6_flare`, `_sunburst` | `openai/gpt-image-2.6-flare`, `-sunburst` (`GET /api/v1/images/models`, 2026-11-06) | fill | Quality (auto to max), Background, Complexity (a passthrough to OpenAI: `provider.options.openai.complexity`, which the endpoint's `allowed_passthrough_parameters` names) | none | 16 | 1536 |
 | `nano_banana_2` | `google/gemini-3.1-flash-image` | fill | Resolution | 512, 1K, 2K, 4K | 14 | 1024, 2048, 4096 |
 | `nano_banana_2_lite` | `google/gemini-3.1-flash-lite-image` | fill | none | 1K, always sent | 14 | 1024 |
 | `nano_banana_2_1` | `google/gemini-nano-banana-2.1` (`/api/v1/models`, 2026-10-07) | fill | Resolution (no Thinking: how OpenRouter's `reasoning` maps to it is not documented) | 1K, 2K, 4K | 14 | 1024, 2048, 4096 |

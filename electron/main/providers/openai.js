@@ -6,16 +6,20 @@
 // references alone (no crop, no mask) at the asked size (textLayout, 26f).
 //
 // The parameters follow developers.openai.com/api/docs/guides/image-prompting and the
-// /v1/images reference, both read 2026-09-11:
-//   model              gpt-image-2.5-flare / -sunburst, gpt-image-2, gpt-image-1.5, gpt-image-1
-//   quality            auto | low | medium | high, plus xhigh and max on 2.5
+// /v1/images reference, both read 2026-09-11 (GPT Image 2.6 from the guides, the model pages and the OpenAPI spec of
+// 2026-11-05, read 2026-11-06):
+//   model              gpt-image-2.6-flare / -sunburst, gpt-image-2.5-flare / -sunburst, gpt-image-2, gpt-image-1.5,
+//                      gpt-image-1
+//   quality            auto | low | medium | high, plus xhigh and max on 2.5 and 2.6
+//   complexity         low | medium | high, 2.6 only: how much the model plans before it draws (high when left out)
 //   size               auto or WIDTHxHEIGHT (see sizeRules below)
 //   background         auto | opaque | transparent   -> a cut-out with a real alpha channel
 //   output_format      png | jpeg | webp             -> png or webp for transparency
 //   output_compression 0..100, jpeg and webp only
 //   moderation         auto | low
 //   input_fidelity     high | low, only on 1.5 and 1; gpt-image-2 is always high, omit it
-// `stream` / `partial_images` are not used: the app wants the finished image, not previews.
+// `stream` / `partial_images` are not used: the app wants the finished image, not previews. Neither are 2.6's GIF and
+// SVG output (a layer is a raster picture: common() turns any other format into PNG) nor `markup` (it excludes the mask).
 "use strict";
 
 const { readError, closestSize, fitPixels } = require("./util");
@@ -29,11 +33,13 @@ const MIME = { png: "image/png", jpeg: "image/jpeg", webp: "image/webp" };
  * What a model takes for `size`. GPT Image 2.5 documents a free size with both edges a
  * multiple of 16, at most 3840 per edge, a total of 655,360 to 8,294,400 pixels and a
  * ratio no steeper than 3:1 (above 3,686,400 pixels the docs call the result experimental).
- * GPT Image 2 takes a free size in multiples of 16, 1.5 and 1 only the three fixed shapes.
- * Test 2.5 first: "gpt-image-2" is a prefix of "gpt-image-2.5-flare".
+ * GPT Image 2.6 takes the same: the prompting guide names the multiples of 16 and 1:3 to 3:1 for 2.6, OpenAI's own
+ * token calculator holds 2.6 to the edge and the pixel range, and fal and ToAPIs state all four for 2.6 (read
+ * 2026-11-06). GPT Image 2 takes a free size in multiples of 16, 1.5 and 1 only the three fixed shapes.
+ * Test 2.5 and 2.6 first: "gpt-image-2" is a prefix of "gpt-image-2.5-flare" and "gpt-image-2.6-flare".
  */
 function sizeRules(model) {
-    if (/gpt-image-2\.5/.test(model)) return { custom: true, step: 16, max: 3840, minPixels: 655360, maxPixels: 8294400, maxRatio: 3 };
+    if (/gpt-image-2\.[56]/.test(model)) return { custom: true, step: 16, max: 3840, minPixels: 655360, maxPixels: 8294400, maxRatio: 3 };
     if (/gpt-image-2/.test(model)) return { custom: true, step: 16, max: 2048, minPixels: 0, maxPixels: 8294400, maxRatio: 0 };
     return { custom: false };
 }
@@ -71,6 +77,11 @@ function common(p, model) {
 
     const moderation = String(p.moderation || "auto").toLowerCase();
     if (moderation === "low") out.moderation = "low";
+
+    // GPT Image 2.6's planning depth (the Complexity row; OpenAI's default is high). Another model never gets it: the
+    // field is new with 2.6, and Comfy Router sends this set for 2.5 and 2 too
+    const complexity = String(p.complexity || "").toLowerCase();
+    if (/^(low|medium|high)$/.test(complexity) && /gpt-image-2\.6/.test(model)) out.complexity = complexity;
 
     // gpt-image-2 processes image inputs at high fidelity and rejects nothing but wastes the
     // field; the docs say to omit it there. 1.5 and 1 take low / high.

@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **GPT Image 2.6 Sunburst and Flare** (OpenAI's models of 2026-11-04) as two new recipes, on OpenAI's own API and on fal.ai, Replicate, WaveSpeedAI and OpenRouter, Sunburst on ToAPIs too: the same sizes as 2.5 (up to 3840 px an edge), quality up to max, and a new *Complexity* row in the Settings panel, how much the model plans before it draws: low is faster for simple edits, high (the default) suits busy scenes and lettering. Written from the providers' documentation, not run against the live services yet. GPT Image 2.5 Flare and Sunburst run on fal.ai and Replicate now too, and on WaveSpeedAI they inpaint with your selection as the mask instead of an instruction edit of the whole crop.
 - **LoRAs on your own ComfyUI** (issue #10, in progress): a run of a ComfyUI recipe loads the LoRAs stored for that recipe, in their order and at their strengths, between the recipe's model loader and whatever reads the model, in the copy of the graph that is queued (the recipe file never changes). The status line and the result's line in the history name them ("FLUX 3 Image Klein via your ComfyUI + 2 LoRAs: Flux3_Targa 0.8, nyc_style 1.0, 14 s"), an exported PNG's recipe chunk lists them, and a LoRA file your ComfyUI does not have refuses the run before anything is uploaded.
 
 ## 0.1.51 - 2026-10-24

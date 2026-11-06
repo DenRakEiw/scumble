@@ -1,0 +1,527 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Queue OpenAPI for fal-ai/gpt-image-2.6-flare",
+  "version": "1.0.0",
+  "description": "The OpenAPI schema for the fal-ai/gpt-image-2.6-flare queue.",
+  "x-fal-metadata": {
+   "endpointId": "fal-ai/gpt-image-2.6-flare",
+   "playgroundUrl": "https://fal.ai/models/fal-ai/gpt-image-2.6-flare",
+   "documentationUrl": "https://fal.ai/models/fal-ai/gpt-image-2.6-flare/api",
+   "about": "Generate images with the selected GPT Image 2.6 model."
+  }
+ },
+ "components": {
+  "securitySchemes": {
+   "apiKeyAuth": {
+    "type": "apiKey",
+    "in": "header",
+    "name": "Authorization",
+    "description": "Fal Key"
+   }
+  },
+  "schemas": {
+   "QueueStatus": {
+    "type": "object",
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "IN_QUEUE",
+       "IN_PROGRESS",
+       "COMPLETED"
+      ]
+     },
+     "request_id": {
+      "type": "string",
+      "description": "The request id."
+     },
+     "response_url": {
+      "type": "string",
+      "description": "The response url."
+     },
+     "status_url": {
+      "type": "string",
+      "description": "The status url."
+     },
+     "cancel_url": {
+      "type": "string",
+      "description": "The cancel url."
+     },
+     "logs": {
+      "type": "object",
+      "description": "The logs.",
+      "additionalProperties": true
+     },
+     "metrics": {
+      "type": "object",
+      "description": "The metrics.",
+      "additionalProperties": true
+     },
+     "queue_position": {
+      "type": "integer",
+      "description": "The queue position."
+     }
+    },
+    "required": [
+     "status",
+     "request_id"
+    ]
+   },
+   "GptImage26FlareInput": {
+    "description": "GPT Image 2.6 generation inputs.",
+    "properties": {
+     "prompt": {
+      "description": "The prompt for image generation",
+      "maxLength": 32000,
+      "title": "Prompt",
+      "type": "string",
+      "examples": [
+       "create a realistic image taken with iphone at these coordinates 41°43′32″N 49°56′49″W 15 April 1912"
+      ],
+      "minLength": 1
+     },
+     "output_compression": {
+      "description": "Compression level from 0 to 100. Only supported when output_format is 'jpeg' or 'webp'.",
+      "title": "Output Compression",
+      "anyOf": [
+       {
+        "maximum": 100,
+        "type": "integer",
+        "minimum": 0
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "frame_count": {
+      "default": 9,
+      "maximum": 16,
+      "description": "GIF only: number of frames. image_size applies to each frame; reduce size or count if the request exceeds the pixel budget.",
+      "title": "Frame Count",
+      "type": "integer",
+      "minimum": 2
+     },
+     "reasoning_effort": {
+      "default": "high",
+      "enum": [
+       "low",
+       "medium",
+       "high"
+      ],
+      "title": "Reasoning Effort",
+      "type": "string",
+      "description": "How much the model plans before rendering, independently of quality (OpenAI `complexity`). Higher levels can help with dense text and complex layouts but add latency."
+     },
+     "num_images": {
+      "default": 1,
+      "maximum": 10,
+      "description": "Number of images to generate. Must be 1 for SVG output. For GIF output, all frames of all outputs share the request's pixel budget.",
+      "title": "Number of Images",
+      "type": "integer",
+      "examples": [
+       1
+      ],
+      "minimum": 1
+     },
+     "sync_mode": {
+      "default": false,
+      "description": "If `True`, the media will be returned as a data URI and the output data won't be available in the request history.",
+      "title": "Sync Mode",
+      "type": "boolean"
+     },
+     "quality": {
+      "default": "high",
+      "enum": [
+       "auto",
+       "low",
+       "medium",
+       "high",
+       "xhigh",
+       "max"
+      ],
+      "title": "Quality",
+      "type": "string",
+      "description": "Rendering quality for the generated image. For SVG output it controls the reference image used to create the vector."
+     },
+     "output_format": {
+      "default": "png",
+      "enum": [
+       "jpeg",
+       "png",
+       "webp",
+       "gif",
+       "svg"
+      ],
+      "description": "Output format for the images. 'gif' returns an animation and 'svg' a vector image.",
+      "title": "Output Format",
+      "type": "string"
+     },
+     "frame_duration_ms": {
+      "default": 200,
+      "maximum": 2000,
+      "description": "GIF only: milliseconds per frame, rounded to 10 ms.",
+      "title": "Frame Duration Ms",
+      "type": "integer",
+      "minimum": 20
+     },
+     "svg_model": {
+      "default": "gpt-6-astra",
+      "enum": [
+       "gpt-6-astra",
+       "gpt-5.5",
+       "gpt-5.4",
+       "gpt-5.6-terra",
+       "gpt-6-luna"
+      ],
+      "description": "SVG only: the model that converts the generated reference image into vector paths. Larger models produce more accurate shapes.",
+      "title": "Svg Model",
+      "type": "string"
+     },
+     "image_size": {
+      "default": "landscape_4_3",
+      "description": "The size of the generated image. Supports preset names, explicit {width, height}, or 'auto' to let the model pick the best size. Concrete sizes must have both dimensions as multiples of 16, max edge 3840px, aspect ratio <= 3:1, total pixels between 655,360 and 8,294,400.",
+      "title": "Image Size",
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ImageSize"
+       },
+       {
+        "enum": [
+         "square_hd",
+         "square",
+         "portrait_4_3",
+         "portrait_16_9",
+         "landscape_4_3",
+         "landscape_16_9",
+         "auto"
+        ],
+        "type": "string"
+       }
+      ]
+     },
+     "background": {
+      "default": "auto",
+      "enum": [
+       "auto",
+       "transparent",
+       "opaque"
+      ],
+      "description": "Background for the generated image",
+      "title": "Background",
+      "type": "string"
+     },
+     "enable_safety_checker": {
+      "default": true,
+      "description": "Authorized callers may set false to request relaxed screening.",
+      "title": "Enable Safety Checker",
+      "type": "boolean"
+     }
+    },
+    "x-fal-order-properties": [
+     "prompt",
+     "image_size",
+     "background",
+     "quality",
+     "reasoning_effort",
+     "num_images",
+     "output_format",
+     "output_compression",
+     "frame_count",
+     "frame_duration_ms",
+     "svg_model",
+     "sync_mode",
+     "enable_safety_checker"
+    ],
+    "title": "GPTImage26TextToImageRequest",
+    "required": [
+     "prompt"
+    ],
+    "type": "object"
+   },
+   "GptImage26FlareOutput": {
+    "properties": {
+     "images": {
+      "description": "The generated images.",
+      "title": "Images",
+      "type": "array",
+      "examples": [
+       [
+        {
+         "width": 1024,
+         "height": 1024,
+         "content_type": "image/png",
+         "file_name": "EnWrO3XWjPE0nxBDpaQrj.png",
+         "url": "https://v3b.fal.media/files/b/0a869129/EnWrO3XWjPE0nxBDpaQrj.png"
+        }
+       ]
+      ],
+      "items": {
+       "$ref": "#/components/schemas/ImageFile"
+      }
+     }
+    },
+    "x-fal-order-properties": [
+     "images"
+    ],
+    "title": "ImageResponse",
+    "required": [
+     "images"
+    ],
+    "type": "object"
+   },
+   "ImageSize": {
+    "properties": {
+     "width": {
+      "default": 512,
+      "description": "The width of the generated image.",
+      "exclusiveMinimum": 0,
+      "title": "Width",
+      "type": "integer",
+      "maximum": 14142
+     },
+     "height": {
+      "default": 512,
+      "description": "The height of the generated image.",
+      "exclusiveMinimum": 0,
+      "title": "Height",
+      "type": "integer",
+      "maximum": 14142
+     }
+    },
+    "x-fal-order-properties": [
+     "width",
+     "height"
+    ],
+    "title": "ImageSize",
+    "type": "object"
+   },
+   "ImageFile": {
+    "properties": {
+     "width": {
+      "description": "The width of the image",
+      "title": "Width",
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "file_size": {
+      "description": "The size of the file in bytes.",
+      "title": "File Size",
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "examples": [
+       4404019
+      ]
+     },
+     "height": {
+      "description": "The height of the image",
+      "title": "Height",
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "content_type": {
+      "description": "The mime type of the file.",
+      "title": "Content Type",
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "examples": [
+       "image/png"
+      ]
+     },
+     "file_name": {
+      "description": "The name of the file. It will be auto-generated if not provided.",
+      "title": "File Name",
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "examples": [
+       "z9RV14K95DvU.png"
+      ]
+     },
+     "url": {
+      "description": "The URL where the file can be downloaded from.",
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "x-fal-order-properties": [
+     "url",
+     "content_type",
+     "file_name",
+     "file_size",
+     "width",
+     "height"
+    ],
+    "title": "ImageFile",
+    "required": [
+     "url"
+    ],
+    "type": "object"
+   }
+  }
+ },
+ "paths": {
+  "/fal-ai/gpt-image-2.6-flare/requests/{request_id}/status": {
+   "get": {
+    "parameters": [
+     {
+      "name": "request_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "description": "Request ID"
+      }
+     },
+     {
+      "name": "logs",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "number",
+       "description": "Whether to include logs (`1`) in the response or not (`0`)."
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The request status.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueStatus"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/fal-ai/gpt-image-2.6-flare/requests/{request_id}/cancel": {
+   "put": {
+    "parameters": [
+     {
+      "name": "request_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "description": "Request ID"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The request was cancelled.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "success": {
+           "type": "boolean",
+           "description": "Whether the request was cancelled successfully."
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/fal-ai/gpt-image-2.6-flare": {
+   "post": {
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GptImage26FlareInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The request status.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueStatus"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/fal-ai/gpt-image-2.6-flare/requests/{request_id}": {
+   "get": {
+    "parameters": [
+     {
+      "name": "request_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "description": "Request ID"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Result of the request.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptImage26FlareOutput"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "servers": [
+  {
+   "url": "https://queue.fal.run"
+  }
+ ],
+ "security": [
+  {
+   "apiKeyAuth": []
+  }
+ ]
+}
