@@ -1,0 +1,9 @@
+WARN Inpaint Canvas: selection encode failed Error: the selection is too large to be saved without the worker pool
+    at scumble://app/editor/inpaint_canvas.js:24583:76
+WARN Inpaint Canvas: selection encode failed Error: the selection is too large to be saved without the worker pool
+    at scumble://app/editor/inpaint_canvas.js:24583:76
+ERROR Relight render failed: Error: Relight (magnific): relight gate route: stopped at the send
+    at refusal (scumble://app/editor/inpaint_status.js:46:26)
+    at say (scumble://app/editor/host.js:3599:76)
+    at Object.relightWhole (scumble://app/editor/host.js:3933:19)
+    at async scumble://app/editor/inpaint_canvas.js:20508:21

@@ -1290,7 +1290,7 @@ would block (Route B has no live loop; the panel serves it as it is). (3) `tools
 generate `docs/COMMANDS.md`) and `electron/main/assistant/policy.js` (RUNS and the ask card, I7's own file list): kept;
 B4 changes the ask card's words ("on your GPU") to the route's. Nothing contradicted the plan.
 
-**Still to merge before the release block: K12b.** `ck-merge` took `wasm-kernels` at `2ea002b` (D0, K5, W1, K12, Stop
+**K12b merged (2026-11-06, the second merge; `docs/measurements/merge2_0152_2026-11-06/`).** Before it: `ck-merge` took `wasm-kernels` at `2ea002b` (D0, K5, W1, K12, Stop
 5); K12b (`wasm-kernels` `7e24df7` and after, the full marches' stripes fed to the pool a few at a time) came later, and
 the user answered Stop 5 "Ja, in 0.1.52" (`PLAN_WASM_BUILD.md` §7 "Stop 5" on `wasm-kernels` `404c5d6`, answer 3): a
 **second merge of `wasm-kernels` into `corridorkey`** after K12b's commit, with the gates of the first merge, before the

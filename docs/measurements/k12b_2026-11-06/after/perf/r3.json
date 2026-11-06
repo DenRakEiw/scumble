@@ -1,0 +1,1762 @@
+[
+ {
+  "size": "15000x10000",
+  "mp": 150,
+  "filter": "relight",
+  "setBase": 4496,
+  "memMB": null,
+  "view": "1820x1198",
+  "display": {
+   "mirrors": 2,
+   "mirrorMB": 1144.4,
+   "regions": 15,
+   "regionMB": 196.2,
+   "pyramidMB": 0
+  },
+  "focus": [
+   true,
+   "visible",
+   true,
+   "visible"
+  ],
+  "opacity_tick": [
+   27.9,
+   39.9
+  ],
+  "match_tick": [
+   18.5,
+   19.6
+  ],
+  "filter_tick": [
+   11.1,
+   19.7
+  ],
+  "pan": [
+   4,
+   8.1
+  ],
+  "zoom": [
+   3.9,
+   7.1
+  ],
+  "fit": [
+   0,
+   0.1
+  ],
+  "redraw_cached": [
+   0,
+   0.1
+  ],
+  "pan_1to1": [
+   4,
+   7.9
+  ],
+  "gl_stack": 1,
+  "pan_1to1_gl": [
+   0.1,
+   0.3
+  ],
+  "pan_fit_gl": [
+   0.3,
+   5.8
+  ],
+  "first_1to1_gl": [
+   1.8,
+   1.8
+  ],
+  "glMB": {
+   "atlas": 94.8,
+   "pages": 82,
+   "slots": 18874,
+   "textures": 0
+  },
+  "whole_quiet": [
+   1056.5,
+   0
+  ],
+  "whole_level": 3,
+  "whole_level_row": [
+   3,
+   1
+  ],
+  "whole_fit_gl": [
+   20.9,
+   20.9
+  ],
+  "whole_fit_gl_state": [
+   0,
+   0
+  ],
+  "whole_fit_gl_chains": [
+   16,
+   2360
+  ],
+  "whole_fit_gl_settled": [
+   78.1,
+   28.7
+  ],
+  "whole_fit_gl_landed": [
+   2360,
+   0
+  ],
+  "touch_fit_gl": [
+   9.8,
+   9.8
+  ],
+  "whole_1to1_gl": [
+   32,
+   32
+  ],
+  "whole_1to1_gl_state": [
+   0,
+   0
+  ],
+  "whole_1to1_gl_chains": [
+   16,
+   2344
+  ],
+  "whole_1to1_gl_settled": [
+   75.1,
+   16.3
+  ],
+  "whole_1to1_gl_landed": [
+   2344,
+   2344
+  ],
+  "panel_flatten_sync": [
+   357.5,
+   357.5
+  ],
+  "panel_flatten_sync_chains": [
+   2360,
+   0
+  ],
+  "panel_flatten_sync_keptMB": [
+   221,
+   0
+  ],
+  "panel_flatten_settled": [
+   36.9,
+   115.5
+  ],
+  "panel_flatten_settled_chains": [
+   98,
+   2262
+  ],
+  "panel_flatten_settled_keptMB": [
+   32.7,
+   0
+  ],
+  "whole_1to1_lights": [
+   390.6,
+   390.6
+  ],
+  "whole_1to1_lights_state": [
+   1,
+   0
+  ],
+  "whole_1to1_lights_chains": [
+   2376,
+   2344
+  ],
+  "whole_1to1_lights_settled": [
+   61.4,
+   9.7
+  ],
+  "whole_1to1_lights_landed": [
+   2344,
+   97
+  ],
+  "stroke_frame": [
+   0.9,
+   6.3
+  ],
+  "stroke_commit": [
+   17,
+   85
+  ],
+  "undo_bytes": 4718592,
+  "undo_step": [
+   36.6,
+   0
+  ],
+  "selection_change": [
+   21.1,
+   0
+  ],
+  "get_value": [
+   0.1,
+   52.1
+  ],
+  "bounds_scan": [
+   2.3,
+   3
+  ],
+  "draw_with_ants": [
+   0.4,
+   26.5
+  ],
+  "full_composite": [
+   266.5,
+   1951.5
+  ],
+  "grow": [
+   70.4,
+   527.2
+  ],
+  "shrink": [
+   48.3,
+   331.8
+  ],
+  "invert": [
+   241,
+   235.3
+  ],
+  "invert_landings": [
+   0,
+   18.3
+  ],
+  "feather": [
+   46.4,
+   381.2
+  ],
+  "wand": [
+   218.6,
+   2163.9
+  ],
+  "wand_object": [
+   138.5,
+   194.6
+  ],
+  "bucket": [
+   91,
+   149.1
+  ],
+  "fill_small": [
+   34.4,
+   34.2
+  ],
+  "undo_fill": [
+   33.9,
+   33.6
+  ],
+  "clear_small": [
+   34.8,
+   33.6
+  ],
+  "long_stroke": [
+   160.3,
+   158.8
+  ],
+  "long_buffer": [
+   14698,
+   9698,
+   28
+  ],
+  "long_commit": [
+   72.1,
+   71.9
+  ],
+  "png": [
+   10.5,
+   1456.9
+  ],
+  "png_main": [
+   220.9,
+   1232
+  ],
+  "point_add": [
+   146.9,
+   142.3
+  ],
+  "point_add_plain": [
+   59.9,
+   59.7
+  ],
+  "mean_color": [
+   64.6,
+   64.5
+  ],
+  "mean_color_plain": [
+   13.3,
+   13.2
+  ],
+  "bucket_sel": [
+   147.3,
+   244.4
+  ],
+  "screenshot": [
+   22.4,
+   22.3
+  ],
+  "screenshot_mb": [
+   0,
+   0
+  ],
+  "prompt_ctx": [
+   67.6,
+   67.4
+  ],
+  "prompt_ctx_mb": [
+   0,
+   0
+  ],
+  "prompt_ctx_sel": [
+   93.3,
+   93.1
+  ],
+  "prompt_ctx_sel_mb": [
+   0,
+   0
+  ],
+  "object_input": [
+   62.4,
+   62.3
+  ],
+  "object_input_mb": [
+   0,
+   0
+  ],
+  "object_input_old": [
+   1533.1,
+   1533
+  ],
+  "object_input_old_mb": [
+   1733,
+   0
+  ],
+  "cutout_input": [
+   62.1,
+   23.4
+  ],
+  "cutout_input_mb": [
+   0,
+   0
+  ],
+  "cutout_input_old": [
+   502.9,
+   502.8
+  ],
+  "cutout_input_old_mb": [
+   0,
+   0
+  ],
+  "wand_masked": [
+   214.9,
+   521.5
+  ],
+  "wand_masked_mb": [
+   0,
+   0
+  ],
+  "pick_layer": [
+   49.6,
+   5.6
+  ],
+  "pick_layer_mb": [
+   0,
+   0
+  ],
+  "wand_layer": [
+   50.7,
+   89.9
+  ],
+  "wand_layer_mb": [
+   0,
+   0
+  ],
+  "pan_masked_filter": [
+   4,
+   4.9
+  ],
+  "pan_masked_filter_mb": [
+   0,
+   0
+  ],
+  "peek_fit": [
+   29.7,
+   29.7
+  ],
+  "peek_fit_mb": [
+   0,
+   0
+  ],
+  "peek_1to1": [
+   21.7,
+   21.7
+  ],
+  "peek_1to1_mb": [
+   0,
+   0
+  ],
+  "move_first": [
+   0.2,
+   0.2
+  ],
+  "move_mb": [
+   0,
+   0
+  ],
+  "match_full_fit": [
+   13.6,
+   0.2
+  ],
+  "match_full_fit_mb": [
+   0,
+   0
+  ],
+  "match_full_1to1": [
+   125.5,
+   35.4
+  ],
+  "match_full_1to1_mb": [
+   0,
+   0
+  ],
+  "match_full_pan": [
+   3.9,
+   11.8
+  ],
+  "match_full_pan_mb": [
+   0,
+   0
+  ],
+  "match_full_pick": [
+   23.8,
+   23.8
+  ],
+  "match_full_pick_mb": [
+   0,
+   0
+  ],
+  "match_full_wand": [
+   187.1,
+   601.7
+  ],
+  "match_full_wand_mb": [
+   0,
+   0
+  ],
+  "relight_first": [
+   null,
+   2527.9
+  ],
+  "relight_first_marches": [
+   3,
+   2517.9
+  ],
+  "relight_one": [
+   60.3,
+   670.4
+  ],
+  "relight_one_marches": [
+   1,
+   655.5
+  ],
+  "relight_one_gaps": [
+   [
+    654.9,
+    60.3
+   ],
+   [
+    0,
+    38.9
+   ],
+   [
+    216.9,
+    6
+   ]
+  ],
+  "relight_one_landings": [
+   655.7
+  ],
+  "relight_one_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_one_stripes": [
+   32,
+   8
+  ],
+  "relight_one_kernel": [
+   4889.2,
+   204.4
+  ],
+  "relight_one_busy": 0.912,
+  "relight_one_workers": 8,
+  "relight_one_first": [
+   129,
+   177.8
+  ],
+  "relight_one_job": [
+   60.9,
+   3708.7
+  ],
+  "relight_one_job_marches": [
+   1,
+   3690.7
+  ],
+  "relight_one_job_gaps": [
+   [
+    3689.8,
+    60.9
+   ],
+   [
+    1550.7,
+    51
+   ],
+   [
+    0,
+    42
+   ]
+  ],
+  "relight_one_job_landings": [
+   3690.8
+  ],
+  "relight_one_job_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_one_job_stripes": [
+   1,
+   1
+  ],
+  "relight_one_job_kernel": [
+   3690.3,
+   3690.3
+  ],
+  "relight_one_job_busy": 0.995,
+  "relight_one_job_workers": 1,
+  "relight_one_job_first": [
+   3690.3,
+   null
+  ],
+  "relight_one_rep": [
+   56.5,
+   550.4
+  ],
+  "relight_one_rep_marches": [
+   1,
+   541.5
+  ],
+  "relight_one_rep_gaps": [
+   [
+    0,
+    56.5
+   ],
+   [
+    550.5,
+    37
+   ],
+   [
+    539.2,
+    11.3
+   ]
+  ],
+  "relight_one_rep_landings": [
+   541.6
+  ],
+  "relight_one_rep_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_one_rep_stripes": [
+   32,
+   8
+  ],
+  "relight_one_rep_kernel": [
+   4110.1,
+   161
+  ],
+  "relight_one_rep_busy": 0.933,
+  "relight_one_rep_workers": 8,
+  "relight_one_rep_first": [
+   124.4,
+   130.1
+  ],
+  "relight_one_eff": [
+   0.688,
+   0.912
+  ],
+  "relight_one_overhead": 1.325,
+  "relight_one_rep_eff": [
+   0.838,
+   0.933
+  ],
+  "relight_one_rep_overhead": 1.114,
+  "relight_one_s64": [
+   46.5,
+   541.6
+  ],
+  "relight_one_s64_marches": [
+   1,
+   532.2
+  ],
+  "relight_one_s64_gaps": [
+   [
+    0,
+    46.5
+   ],
+   [
+    541.7,
+    35.8
+   ],
+   [
+    527.8,
+    13.9
+   ]
+  ],
+  "relight_one_s64_landings": [
+   532.3
+  ],
+  "relight_one_s64_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_one_s64_stripes": [
+   64,
+   8
+  ],
+  "relight_one_s64_kernel": [
+   4027.3,
+   75
+  ],
+  "relight_one_s64_busy": 0.929,
+  "relight_one_s64_workers": 8,
+  "relight_one_s64_first": [
+   62.8,
+   62.7
+  ],
+  "relight_one_s64_eff": [
+   0.852,
+   0.929
+  ],
+  "relight_one_s64_overhead": 1.091,
+  "relight_one_nofeed": [
+   50.7,
+   539.2
+  ],
+  "relight_one_nofeed_marches": [
+   1,
+   529.9
+  ],
+  "relight_one_nofeed_gaps": [
+   [
+    0,
+    50.7
+   ],
+   [
+    554.8,
+    20.3
+   ],
+   [
+    539.3,
+    15.5
+   ]
+  ],
+  "relight_one_nofeed_landings": [
+   529.9
+  ],
+  "relight_one_nofeed_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_one_nofeed_stripes": [
+   32,
+   8
+  ],
+  "relight_one_nofeed_kernel": [
+   4085.6,
+   140.8
+  ],
+  "relight_one_nofeed_busy": 0.947,
+  "relight_one_nofeed_workers": 8,
+  "relight_one_nofeed_first": [
+   119.8,
+   130.2
+  ],
+  "relight_one_nofeed_eff": [
+   0.856,
+   0.947
+  ],
+  "relight_one_nofeed_overhead": 1.107,
+  "relight_three": [
+   54.1,
+   1109.7
+  ],
+  "relight_three_marches": [
+   3,
+   1099.9
+  ],
+  "relight_three_gaps": [
+   [
+    0,
+    54.1
+   ],
+   [
+    1084.2,
+    51
+   ],
+   [
+    527,
+    19.9
+   ]
+  ],
+  "relight_three_landings": [
+   531.3,
+   1074.5,
+   1100.2
+  ],
+  "relight_three_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_three_stripes": [
+   96,
+   8
+  ],
+  "relight_three_kernel": [
+   8607.5,
+   147.7
+  ],
+  "relight_three_busy": 0.97,
+  "relight_three_workers": 8,
+  "relight_three_first": [
+   120.7,
+   121.6
+  ],
+  "relight_three_job": [
+   54.9,
+   5191.9
+  ],
+  "relight_three_job_marches": [
+   3,
+   5182.5
+  ],
+  "relight_three_job_gaps": [
+   [
+    5179.7,
+    54.9
+   ],
+   [
+    0,
+    42.8
+   ],
+   [
+    3728.3,
+    21.1
+   ]
+  ],
+  "relight_three_job_landings": [
+   466.9,
+   3712.1,
+   5182.6
+  ],
+  "relight_three_job_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_three_job_stripes": [
+   3,
+   3
+  ],
+  "relight_three_job_kernel": [
+   9360.3,
+   5182
+  ],
+  "relight_three_job_busy": 0.601,
+  "relight_three_job_workers": 3,
+  "relight_three_job_first": [
+   3711.7,
+   null
+  ],
+  "relight_three_rep": [
+   53.8,
+   1117.9
+  ],
+  "relight_three_rep_marches": [
+   3,
+   1107.8
+  ],
+  "relight_three_rep_gaps": [
+   [
+    1107.8,
+    53.8
+   ],
+   [
+    0,
+    51.7
+   ],
+   [
+    1081.5,
+    26.3
+   ]
+  ],
+  "relight_three_rep_landings": [
+   620.8,
+   1085.8,
+   1108.1
+  ],
+  "relight_three_rep_others": [
+   41,
+   0,
+   0
+  ],
+  "relight_three_rep_stripes": [
+   96,
+   8
+  ],
+  "relight_three_rep_kernel": [
+   8586.7,
+   200.3
+  ],
+  "relight_three_rep_busy": 0.96,
+  "relight_three_rep_workers": 8,
+  "relight_three_rep_first": [
+   122.2,
+   121.9
+  ],
+  "relight_three_eff": [
+   1.054,
+   0.97
+  ],
+  "relight_three_overhead": 0.92,
+  "relight_three_rep_eff": [
+   1.047,
+   0.96
+  ],
+  "relight_three_rep_overhead": 0.917,
+  "relight_three_s64": [
+   52.7,
+   1117.1
+  ],
+  "relight_three_s64_marches": [
+   3,
+   1105.7
+  ],
+  "relight_three_s64_gaps": [
+   [
+    0,
+    52.7
+   ],
+   [
+    1101.5,
+    46.7
+   ],
+   [
+    1075.4,
+    17
+   ]
+  ],
+  "relight_three_s64_landings": [
+   571.4,
+   1066.1,
+   1105.9
+  ],
+  "relight_three_s64_others": [
+   35,
+   0,
+   0
+  ],
+  "relight_three_s64_stripes": [
+   192,
+   8
+  ],
+  "relight_three_s64_kernel": [
+   8573.1,
+   77.7
+  ],
+  "relight_three_s64_busy": 0.959,
+  "relight_three_s64_workers": 8,
+  "relight_three_s64_first": [
+   59.6,
+   60.2
+  ],
+  "relight_three_s64_eff": [
+   1.047,
+   0.959
+  ],
+  "relight_three_s64_overhead": 0.916,
+  "relight_three_nofeed": [
+   175.5,
+   1353.3
+  ],
+  "relight_three_nofeed_marches": [
+   3,
+   1321.8
+  ],
+  "relight_three_nofeed_gaps": [
+   [
+    1131.9,
+    175.5
+   ],
+   [
+    1307.4,
+    71.1
+   ],
+   [
+    0,
+    51.5
+   ]
+  ],
+  "relight_three_nofeed_landings": [
+   598.5,
+   1136.4,
+   1322.9
+  ],
+  "relight_three_nofeed_others": [
+   24,
+   0,
+   0
+  ],
+  "relight_three_nofeed_stripes": [
+   96,
+   8
+  ],
+  "relight_three_nofeed_kernel": [
+   8657.2,
+   152.1
+  ],
+  "relight_three_nofeed_busy": 0.8,
+  "relight_three_nofeed_workers": 8,
+  "relight_three_nofeed_first": [
+   127.2,
+   122.4
+  ],
+  "relight_three_nofeed_eff": [
+   0.865,
+   0.8
+  ],
+  "relight_three_nofeed_overhead": 0.925,
+  "relight_three_mv_nofeed": [
+   53.4,
+   1158.8
+  ],
+  "relight_three_mv_nofeed_marches": [
+   3,
+   1148.7
+  ],
+  "relight_three_mv_nofeed_gaps": [
+   [
+    1131.5,
+    53.4
+   ],
+   [
+    0,
+    48
+   ],
+   [
+    592.7,
+    18.5
+   ]
+  ],
+  "relight_three_mv_nofeed_landings": [
+   581.7,
+   1122,
+   1149
+  ],
+  "relight_three_mv_nofeed_others": [
+   14,
+   0,
+   0
+  ],
+  "relight_three_mv_nofeed_stripes": [
+   96,
+   8
+  ],
+  "relight_three_mv_nofeed_kernel": [
+   8569.8,
+   157.9
+  ],
+  "relight_three_mv_nofeed_busy": 0.924,
+  "relight_three_mv_nofeed_workers": 8,
+  "relight_three_mv_nofeed_first": [
+   120.2,
+   122.1
+  ],
+  "relight_three_mv_feed": [
+   50.8,
+   1091.3
+  ],
+  "relight_three_mv_feed_marches": [
+   3,
+   1081.8
+  ],
+  "relight_three_mv_feed_gaps": [
+   [
+    1078.2,
+    50.8
+   ],
+   [
+    0,
+    38.6
+   ],
+   [
+    1041.1,
+    27.9
+   ]
+  ],
+  "relight_three_mv_feed_landings": [
+   536,
+   1043.5,
+   1082.2
+  ],
+  "relight_three_mv_feed_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_three_mv_feed_stripes": [
+   96,
+   8
+  ],
+  "relight_three_mv_feed_kernel": [
+   8498.6,
+   146.8
+  ],
+  "relight_three_mv_feed_busy": 0.973,
+  "relight_three_mv_feed_workers": 8,
+  "relight_three_mv_feed_first": [
+   118.5,
+   122.7
+  ],
+  "relight_quick": [
+   37.2,
+   40.1
+  ],
+  "relight_quick_marches": [
+   1,
+   39.5
+  ],
+  "relight_quick_gaps": [
+   [
+    7,
+    37.2
+   ],
+   [
+    59.8,
+    10.5
+   ],
+   [
+    0,
+    7
+   ]
+  ],
+  "relight_quick_landings": [
+   46.3
+  ],
+  "relight_quick_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_quick_stripes": [
+   21,
+   8
+  ],
+  "relight_quick_kernel": [
+   37.6,
+   2.6
+  ],
+  "relight_quick_busy": 0.117,
+  "relight_quick_workers": 8,
+  "relight_quick_first": [
+   1.8,
+   1.7
+  ],
+  "relight_quick_job": [
+   37,
+   32.7
+  ],
+  "relight_quick_job_marches": [
+   1,
+   31.5
+  ],
+  "relight_quick_job_gaps": [
+   [
+    0,
+    37
+   ],
+   [
+    47.5,
+    13.8
+   ],
+   [
+    71.1,
+    5.5
+   ]
+  ],
+  "relight_quick_job_landings": [
+   37.1
+  ],
+  "relight_quick_job_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_quick_job_stripes": [
+   1,
+   1
+  ],
+  "relight_quick_job_kernel": [
+   30.3,
+   30.3
+  ],
+  "relight_quick_job_busy": 0.926,
+  "relight_quick_job_workers": 1,
+  "relight_quick_job_first": [
+   30.3,
+   null
+  ],
+  "relight_quick_rep": [
+   36.8,
+   37.4
+  ],
+  "relight_quick_rep_marches": [
+   1,
+   36.7
+  ],
+  "relight_quick_rep_gaps": [
+   [
+    0,
+    36.8
+   ],
+   [
+    40.9,
+    15.3
+   ],
+   [
+    82.1,
+    5.5
+   ]
+  ],
+  "relight_quick_rep_landings": [
+   40.2
+  ],
+  "relight_quick_rep_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_quick_rep_stripes": [
+   21,
+   8
+  ],
+  "relight_quick_rep_kernel": [
+   35.9,
+   2.1
+  ],
+  "relight_quick_rep_busy": 0.12,
+  "relight_quick_rep_workers": 8,
+  "relight_quick_rep_first": [
+   1.8,
+   1.5
+  ],
+  "relight_pan": [
+   3.9,
+   4.8
+  ],
+  "relight_pan_frames": [
+   26,
+   547.4
+  ],
+  "relight_pan_held": [
+   70.5,
+   0
+  ],
+  "relight_whole_calm": [
+   36.7,
+   91.3
+  ],
+  "relight_whole_calm_held": [
+   37.4,
+   16,
+   2344,
+   0
+  ],
+  "relight_whole_march": [
+   37.6,
+   244.2
+  ],
+  "relight_whole_march_held": [
+   34,
+   16,
+   2344,
+   3
+  ],
+  "relight_whole_nofeed": [
+   44.8,
+   137.3
+  ],
+  "relight_whole_nofeed_held": [
+   6.8,
+   16,
+   2344,
+   3
+  ],
+  "relight_whole_march2": [
+   41.7,
+   167.6
+  ],
+  "relight_whole_march2_held": [
+   17.1,
+   16,
+   2344,
+   3
+  ],
+  "relight_normal_calm": [
+   0,
+   2.6
+  ],
+  "relight_normal_calm_marching": 0,
+  "relight_normal_march": [
+   73.2,
+   74.4
+  ],
+  "relight_normal_march_marching": 3,
+  "relight_normal_job": [
+   5.3,
+   6.8
+  ],
+  "relight_normal_job_marching": 3,
+  "relight_normal_nofeed": [
+   1026.8,
+   1062.7
+  ],
+  "relight_normal_nofeed_marching": 3,
+  "relight_heavy_size": [
+   31,
+   60.2
+  ],
+  "relight_heavy_calm": [
+   0,
+   0
+  ],
+  "relight_heavy_calm_answer": [
+   216.1,
+   219.4
+  ],
+  "relight_heavy_calm_job": 217.1,
+  "relight_heavy_calm_marching": 0,
+  "relight_heavy_march": [
+   72.1,
+   173.3
+  ],
+  "relight_heavy_march_answer": [
+   173.4,
+   237
+  ],
+  "relight_heavy_march_job": 103.5,
+  "relight_heavy_march_marching": 3,
+  "relight_heavy_job": [
+   0,
+   94.5
+  ],
+  "relight_heavy_job_answer": [
+   93.7,
+   169.4
+  ],
+  "relight_heavy_job_job": 93.6,
+  "relight_heavy_job_marching": 3,
+  "relight_heavy_nofeed": [
+   1030.1,
+   1043.8
+  ],
+  "relight_heavy_nofeed_answer": [
+   1145.7,
+   1151.1
+  ],
+  "relight_heavy_nofeed_job": 117.8,
+  "relight_heavy_nofeed_marching": 3,
+  "relight_sun": [
+   46.1,
+   251.9
+  ],
+  "relight_sun_marches": [
+   1,
+   236.4
+  ],
+  "relight_sun_gaps": [
+   [
+    0,
+    46.1
+   ],
+   [
+    234.6,
+    32.2
+   ],
+   [
+    51.1,
+    5.8
+   ]
+  ],
+  "relight_sun_landings": [
+   236.6
+  ],
+  "relight_sun_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_sun_stripes": [
+   32,
+   8
+  ],
+  "relight_sun_kernel": [
+   1676.9,
+   78.1
+  ],
+  "relight_sun_busy": 0.832,
+  "relight_sun_workers": 8,
+  "relight_sun_first": [
+   33.2,
+   59.8
+  ],
+  "relight_sun_job": [
+   58.4,
+   1484.6
+  ],
+  "relight_sun_job_marches": [
+   1,
+   1467.2
+  ],
+  "relight_sun_job_gaps": [
+   [
+    1464.2,
+    58.4
+   ],
+   [
+    0,
+    38.9
+   ],
+   [
+    267.4,
+    6
+   ]
+  ],
+  "relight_sun_job_landings": [
+   1467.3
+  ],
+  "relight_sun_job_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_sun_job_stripes": [
+   1,
+   1
+  ],
+  "relight_sun_job_kernel": [
+   1466.9,
+   1466.9
+  ],
+  "relight_sun_job_busy": 0.988,
+  "relight_sun_job_workers": 1,
+  "relight_sun_job_first": [
+   1466.9,
+   null
+  ],
+  "relight_sun_rep": [
+   48,
+   251.6
+  ],
+  "relight_sun_rep_marches": [
+   1,
+   243.2
+  ],
+  "relight_sun_rep_gaps": [
+   [
+    0,
+    48
+   ],
+   [
+    251.7,
+    14.4
+   ],
+   [
+    241.8,
+    9.9
+   ]
+  ],
+  "relight_sun_rep_landings": [
+   243.3
+  ],
+  "relight_sun_rep_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_sun_rep_stripes": [
+   32,
+   8
+  ],
+  "relight_sun_rep_kernel": [
+   1641.6,
+   73.3
+  ],
+  "relight_sun_rep_busy": 0.816,
+  "relight_sun_rep_workers": 8,
+  "relight_sun_rep_first": [
+   28.8,
+   62.7
+  ],
+  "relight_sun_eff": [
+   0.728,
+   0.832
+  ],
+  "relight_sun_overhead": 1.143,
+  "relight_sun_rep_eff": [
+   0.729,
+   0.816
+  ],
+  "relight_sun_rep_overhead": 1.119,
+  "relight_sun_s64": [
+   44,
+   262.4
+  ],
+  "relight_sun_s64_marches": [
+   1,
+   254
+  ],
+  "relight_sun_s64_gaps": [
+   [
+    0,
+    44
+   ],
+   [
+    262.5,
+    14.1
+   ],
+   [
+    249.6,
+    12.9
+   ]
+  ],
+  "relight_sun_s64_landings": [
+   254.1
+  ],
+  "relight_sun_s64_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_sun_s64_stripes": [
+   64,
+   8
+  ],
+  "relight_sun_s64_kernel": [
+   1610.8,
+   37
+  ],
+  "relight_sun_s64_busy": 0.767,
+  "relight_sun_s64_workers": 8,
+  "relight_sun_s64_first": [
+   6.8,
+   29.8
+  ],
+  "relight_sun_s64_eff": [
+   0.699,
+   0.767
+  ],
+  "relight_sun_s64_overhead": 1.098,
+  "relight_sun_nofeed": [
+   44.4,
+   243.6
+  ],
+  "relight_sun_nofeed_marches": [
+   1,
+   235
+  ],
+  "relight_sun_nofeed_gaps": [
+   [
+    0,
+    44.4
+   ],
+   [
+    243.7,
+    14.2
+   ],
+   [
+    232.1,
+    11.7
+   ]
+  ],
+  "relight_sun_nofeed_landings": [
+   235
+  ],
+  "relight_sun_nofeed_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_sun_nofeed_stripes": [
+   32,
+   8
+  ],
+  "relight_sun_nofeed_kernel": [
+   1601,
+   73.9
+  ],
+  "relight_sun_nofeed_busy": 0.822,
+  "relight_sun_nofeed_workers": 8,
+  "relight_sun_nofeed_first": [
+   28.5,
+   62.5
+  ],
+  "relight_sun_nofeed_eff": [
+   0.753,
+   0.822
+  ],
+  "relight_sun_nofeed_overhead": 1.091,
+  "relight_sun_feed2": [
+   45.7,
+   253.6
+  ],
+  "relight_sun_feed2_marches": [
+   1,
+   245.1
+  ],
+  "relight_sun_feed2_gaps": [
+   [
+    0,
+    45.7
+   ],
+   [
+    253.7,
+    14.8
+   ],
+   [
+    242.3,
+    11.4
+   ]
+  ],
+  "relight_sun_feed2_landings": [
+   245.2
+  ],
+  "relight_sun_feed2_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_sun_feed2_stripes": [
+   32,
+   8
+  ],
+  "relight_sun_feed2_kernel": [
+   1627.3,
+   73.9
+  ],
+  "relight_sun_feed2_busy": 0.802,
+  "relight_sun_feed2_workers": 8,
+  "relight_sun_feed2_first": [
+   24.8,
+   61.3
+  ],
+  "relight_sun_feed2_eff": [
+   0.723,
+   0.802
+  ],
+  "relight_sun_feed2_overhead": 1.109,
+  "relight_nodraw": [
+   47.8,
+   507.8
+  ],
+  "relight_nodraw_marches": [
+   1,
+   498.8
+  ],
+  "relight_nodraw_gaps": [
+   [
+    497,
+    47.8
+   ],
+   [
+    28.5,
+    27.4
+   ],
+   [
+    130.6,
+    6
+   ]
+  ],
+  "relight_nodraw_landings": [
+   498.9
+  ],
+  "relight_nodraw_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_nodraw_stripes": [
+   32,
+   8
+  ],
+  "relight_nodraw_kernel": [
+   3877,
+   143.1
+  ],
+  "relight_nodraw_busy": 0.954,
+  "relight_nodraw_workers": 8,
+  "relight_nodraw_first": [
+   116.7,
+   121.9
+  ],
+  "relight_nodraw_job": [
+   51.8,
+   3607.1
+  ],
+  "relight_nodraw_job_marches": [
+   1,
+   3598.5
+  ],
+  "relight_nodraw_job_gaps": [
+   [
+    3596,
+    51.8
+   ],
+   [
+    0,
+    41.3
+   ],
+   [
+    1546.5,
+    6.2
+   ]
+  ],
+  "relight_nodraw_job_landings": [
+   3598.5
+  ],
+  "relight_nodraw_job_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_nodraw_job_stripes": [
+   1,
+   1
+  ],
+  "relight_nodraw_job_kernel": [
+   3598.2,
+   3598.2
+  ],
+  "relight_nodraw_job_busy": 0.998,
+  "relight_nodraw_job_workers": 1,
+  "relight_nodraw_job_first": [
+   3598.2,
+   null
+  ],
+  "relight_nodraw_eff": [
+   0.886,
+   0.954
+  ],
+  "relight_nodraw_overhead": 1.077,
+  "relight_draw": [
+   36.4,
+   499.4
+  ],
+  "relight_draw_marches": [
+   1,
+   490.9
+  ],
+  "relight_draw_gaps": [
+   [
+    0,
+    36.4
+   ],
+   [
+    533.3,
+    23.4
+   ],
+   [
+    499.6,
+    16.5
+   ]
+  ],
+  "relight_draw_landings": [
+   491
+  ],
+  "relight_draw_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_draw_stripes": [
+   32,
+   8
+  ],
+  "relight_draw_kernel": [
+   3831.1,
+   134
+  ],
+  "relight_draw_busy": 0.959,
+  "relight_draw_workers": 8,
+  "relight_draw_first": [
+   114,
+   121
+  ],
+  "relight_draw_job": [
+   64.2,
+   3678.5
+  ],
+  "relight_draw_job_marches": [
+   1,
+   3656.2
+  ],
+  "relight_draw_job_gaps": [
+   [
+    3655.6,
+    64.2
+   ],
+   [
+    0,
+    48.7
+   ],
+   [
+    85.6,
+    6
+   ]
+  ],
+  "relight_draw_job_landings": [
+   3656.2
+  ],
+  "relight_draw_job_others": [
+   0,
+   0,
+   0
+  ],
+  "relight_draw_job_stripes": [
+   1,
+   1
+  ],
+  "relight_draw_job_kernel": [
+   3655.7,
+   3655.7
+  ],
+  "relight_draw_job_busy": 0.994,
+  "relight_draw_job_workers": 1,
+  "relight_draw_job_first": [
+   3655.7,
+   null
+  ],
+  "relight_draw_eff": [
+   0.915,
+   0.959
+  ],
+  "relight_draw_overhead": 1.048,
+  "relight_notes": [
+   "relight_sun: its jobs ran rust",
+   "relight_sun_job: its jobs ran rust",
+   "relight_sun_rep: its jobs ran rust",
+   "relight_sun_s64: its jobs ran rust",
+   "relight_sun_nofeed: its jobs ran rust",
+   "relight_sun_feed2: its jobs ran rust"
+  ]
+ }
+]

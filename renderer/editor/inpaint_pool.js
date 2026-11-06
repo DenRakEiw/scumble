@@ -45,6 +45,7 @@ export class WorkerPool {
         this.queues = Array.from({ length: PRIORITIES }, () => []);
         this.seq = 0;
         this.off = false;
+        this.terminated = false;
         this.stats_ = { run: 0, done: 0, failed: 0, cancelled: 0, started: 0, lost: 0, stopped: 0 };
         this._unsubscribe = null;
     }
@@ -94,8 +95,13 @@ export class WorkerPool {
         return n;
     }
 
-    /** Stop every worker (tests; the editor's pool lives as long as the page). Queued and running jobs are rejected. */
+    /**
+     * Stop every worker (tests, a harness's fresh pool; the editor's pool lives as long as the page). Queued and running
+     * jobs are rejected. `terminated` stays set, so whoever feeds the pool jobs in turns (inpaint_relight.js's marches'
+     * feed) stops posting instead of starting new workers that nothing would stop.
+     */
     terminate() {
+        this.terminated = true;
         for (const q of this.queues) for (const job of q.splice(0)) job.reject(new Error("pool terminated"));
         for (const s of this.workers.splice(0)) {
             if (s.job) { clearTimeout(s.job.timer); if (!s.job.cancelled) s.job.reject(new Error("pool terminated")); }

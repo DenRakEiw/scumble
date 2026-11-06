@@ -2295,6 +2295,9 @@ JS = r"""
                 kFx._selectedLightId = kFx.params.lights[0].id;
                 await settle(docK);
                 const c0 = pool.stats().cancelled, t0 = performance.now();
+                // K12b: a superseded full march's stripes still in the pool's feed are dropped there, never posted
+                const feedDropped = () => (typeof RL.marchFeedStats === "function" ? RL.marchFeedStats(pool).dropped : 0);
+                const d0 = feedDropped();
                 E.jobTimings(true);
                 const keys = [];
                 for (let i = 0; i < 3; i++) {
@@ -2306,8 +2309,8 @@ JS = r"""
                 const landed = E.stepMarks(false).filter((m) => m.op === "relight_maps" && m.t >= t0 && m.step === "landed" && !m.quick);
                 const vis = kFx._relight && kFx._relight.vis;
                 const jobs = E.jobTimings(true).filter((t) => t.op === "relight_shadow" && t.w === kMw && t.h === kMh);
-                const cancelled = pool.stats().cancelled - c0;
-                notes["nk_" + type] = { landed: landed.length, cancelled, jobs: jobs.length, keysDistinct: new Set(keys).size };
+                const inFeed = feedDropped() - d0, cancelled = pool.stats().cancelled - c0 + inFeed;
+                notes["nk_" + type] = { landed: landed.length, cancelled, inFeed, jobs: jobs.length, keysDistinct: new Set(keys).size };
                 check(`nk (${type}): three nudges, only the last key lands`, new Set(keys).size === 3 && landed.length === 1 && landed[0].current === true
                     && !!vis && vis.keys[0] === keys[2], { landed: landed.map((m) => m.current), key: vis && vis.keys[0] === keys[2] });
                 // counted by marches, not by jobs (a single cancelled march is several stripes): three full marches posted, and
@@ -2316,8 +2319,8 @@ JS = r"""
                 const fullPosted = E.stepMarks(false).filter((m) => m.op === "relight_maps" && m.t >= t0 && m.step === "start" && !m.quick)
                     .reduce((a, m) => a + (Number(m.lights) || 0), 0);
                 const perMarch = RL.stripePlan(kMh, RL.STRIPES_PER_WORKER * pool.size).length;
-                check(`nk (${type}): three full marches posted, the two superseded ones cancelled in the pool (${perMarch} stripes each)`,
-                    fullPosted === 3 && perMarch > 1 && cancelled === 2 * perMarch, { fullPosted, cancelled, perMarch });
+                check(`nk (${type}): three full marches posted, the two superseded ones cancelled in the pool and its feed (${perMarch} stripes each)`,
+                    fullPosted === 3 && perMarch > 1 && cancelled === 2 * perMarch, { fullPosted, cancelled, inFeed, perMarch });
                 const quickLanded = E.stepMarks(false).filter((m) => m.op === "relight_maps" && m.t >= t0 && m.step === "landed" && m.quick).length;
                 check(`nk (${type}): each nudge's quick march landed (a superseded full march takes no quick one with it)`, quickLanded === 3, { quickLanded });
                 check(`nk (${type}): the march ran in stripes (more than one job, each fewer rows than the map)`, jobs.length >= 2 && jobs.some((t) => t.row0 > 0)
@@ -2369,6 +2372,53 @@ JS = r"""
                 check("nk: on the route relightStripes 0 the march is one job of all rows, the same bytes as one call",
                     jobs.length === 1 && jobs[0].row0 === 0 && jobs[0].rows === kMh && channelDiff() === 0, { jobs: jobs.map((t) => [t.row0, t.rows]), diff: channelDiff() });
             } finally { E.setRoute("relightStripes", null); }
+            // K12b: the marches' feed. Three lights released at once: right after the release at most the pool's size + 1
+            // of their stripes is posted (every worker and one queued: another NORMAL job waits for about one stripe), the
+            // rest waits in the feed; all of them are posted in the end, every channel lands with the bytes of one call, and
+            // the feed never had more than that posted at once. A quick march posted meanwhile bypasses the feed and lands
+            // before the full marches' last stripe. The route relightFeed 0 posts every stripe at once.
+            if (typeof RL.marchFeedStats === "function") {
+                await settle(docK);
+                kFx.params = { ...kFx.params, lights: [0, 1, 2].map((i) => ({ ...defaultLight(i, { width: kW, height: kH }), type: "point", x: 90 + 150 * i, y: 140 + 30 * i, dist: -40 })) };
+                const perMarch = RL.stripePlan(kMh, RL.STRIPES_PER_WORKER * pool.size).length, budget = pool.size + 1;
+                const f0 = RL.marchFeedStats(pool), p0 = pool.pending, tf = performance.now();
+                docK.ensureRelightMaps(kFx, { quick: false });
+                const f1 = RL.marchFeedStats(pool), p1 = pool.pending;
+                // a drag step's quick march while those full marches wait in the feed: it bypasses the feed (every stripe
+                // posted at once, INTERACTIVE), so the pool takes its stripes at once and its map lands before the full
+                // marches' last stripe (fed behind them it would wait for every one of their stripes to be posted)
+                const tq = performance.now();
+                docK.ensureRelightMaps(kFx, { quick: true });
+                const fq = RL.marchFeedStats(pool), pq = pool.pending;
+                const qLights = E.stepMarks(false).filter((m) => m.op === "relight_maps" && m.t >= tq && m.step === "start" && m.quick)
+                    .reduce((a, m) => a + (Number(m.lights) || 0), 0);
+                const qPer = RL.stripePlan(Math.max(1, Math.floor(kMh / 4)), RL.STRIPES_PER_WORKER * pool.size).length;
+                await settle(docK);
+                const f2 = RL.marchFeedStats(pool);
+                const vis = kFx._relight && kFx._relight.vis;
+                const keysOk = !!vis && [0, 1, 2].every((i) => vis.keys[i] === docK.relightChannelKey(kFx, i, false));
+                check("nf: three lights' full marches through the feed: at most the pool's size + 1 posted at once, the rest waiting, all posted in the end",
+                    p0 === 0 && f1.posted - f0.posted === Math.min(budget, 3 * perMarch) && p1 <= budget && f1.limit === budget && f1.waiting === 3 * perMarch - (f1.posted - f0.posted)
+                        && f2.posted - f0.posted === 3 * perMarch && f2.waiting === 0 && f2.flying === 0 && f2.peak <= budget && keysOk && channelDiff() === 0,
+                    { p0, p1, size: pool.size, budget, limit: f1.limit, perMarch, posted: [f1.posted - f0.posted, f2.posted - f0.posted], waiting: f1.waiting, peak: f2.peak, keysOk, diff: channelDiff() });
+                const marks = E.stepMarks(false).filter((m) => m.op === "relight_maps" && m.step === "landed");
+                const qLanded = marks.filter((m) => m.quick && m.t >= tq), fLanded = marks.filter((m) => !m.quick && m.t >= tf);
+                const qLast = Math.max(...qLanded.map((m) => m.t)), fLast = Math.max(...fLanded.map((m) => m.t));
+                check("nf: a quick march during them bypasses the feed: nothing more fed, its stripes on the pool at once, landed before the full marches' last",
+                    qLights === 3 && fq.posted === f1.posted && fq.waiting === f1.waiting && pq - p1 === qLights * qPer && qLanded.length === qLights
+                        && fLanded.length === 3 && qLast < fLast,
+                    { qLights, qPer, fed: fq.posted - f1.posted, pending: [p1, pq], qLanded: qLanded.length, fLanded: fLanded.length, lead: Math.round((fLast - qLast) * 10) / 10 });
+                E.setRoute("relightFeed", 0);
+                try {
+                    kFx.params = { ...kFx.params, lights: kFx.params.lights.map((l) => ({ ...l, x: l.x + 9 })) };
+                    const g0 = RL.marchFeedStats(pool);
+                    docK.ensureRelightMaps(kFx, { quick: false });
+                    const p2 = pool.pending, g1 = RL.marchFeedStats(pool);
+                    await settle(docK);
+                    check("nf: on the route relightFeed 0 every stripe is posted at once (K12), none through the feed, the same bytes",
+                        p2 === 3 * perMarch && g1.posted === g0.posted && channelDiff() === 0, { p2, perMarch, fed: g1.posted - g0.posted, diff: channelDiff() });
+                } finally { E.setRoute("relightFeed", null); }
+            }
         } finally { console.warn = warnWas; }
         const bad = warned.filter((w) => /relight_shadow|cancelled/i.test(w));
         check("nk: no warning for a cancelled march", bad.length === 0, bad.slice(0, 3));

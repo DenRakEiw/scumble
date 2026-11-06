@@ -1,0 +1,35 @@
+[12:53:04] commit 2ea002b (dirty: 6 files); px ABI ABI = 21; rounds: 1 2 3
+[12:53:04] px.wasm 1000640eba8b5574, px_scalar.wasm ade55404e282dd7d
+lock: held by 'CK I0b DirectML bisect + CPU stages 46352 2026-11-06T12:43:53', waiting
+lock: taken after 900 s
+[13:08:04] lock: taken (K12b measuring 20816 2026-11-06T12:53:04)
+others: busy, waiting: 26816 timeout.exe: "C:\Program Files\Git\usr\bin\timeout.exe" 600 bash tools/run_gates.sh ckui-fix-ton --offline --tiles on key; 27356 bash.exe: "C:\Program Files\Git\usr\bin\bash.exe" tools/run_gates.sh ckui-fix-ton --offline --tiles on key
+[13:08:35] others: 0 busy; no instance on 9571; waited 31 s
+[13:08:35] perf-relight r1 (try 1)
+[13:08:39] gpu: 3513 MiB, 2 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 90s 
+ALL PASS
+[13:10:25] rc=0
+[13:10:29] gpu: 3548 MiB, 0 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[13:10:30] lock: taken (K12b measuring 2036 2026-11-06T13:10:30)
+[13:10:30] others: 0 busy; no instance on 9571
+[13:10:30] perf-relight r2 (try 1)
+[13:10:35] gpu: 3568 MiB, 2 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 90s 
+ALL PASS
+[13:12:21] rc=0
+[13:12:25] gpu: 3530 MiB, 2 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[13:12:25] lock: taken (K12b measuring 25900 2026-11-06T13:12:25)
+[13:12:26] others: 0 busy; no instance on 9571
+[13:12:26] perf-relight r3 (try 1)
+[13:12:30] gpu: 3531 MiB, 2 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 90s 
+ALL PASS
+[13:14:16] rc=0
+[13:14:21] gpu: 3531 MiB, 2 %; comfy 8188: 000, no queue
+lock: released
+[13:14:21] done
