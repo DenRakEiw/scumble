@@ -1290,6 +1290,13 @@ would block (Route B has no live loop; the panel serves it as it is). (3) `tools
 generate `docs/COMMANDS.md`) and `electron/main/assistant/policy.js` (RUNS and the ask card, I7's own file list): kept;
 B4 changes the ask card's words ("on your GPU") to the route's. Nothing contradicted the plan.
 
+**Still to merge before the release block: K12b.** `ck-merge` took `wasm-kernels` at `2ea002b` (D0, K5, W1, K12, Stop
+5); K12b (`wasm-kernels` `7e24df7` and after, the full marches' stripes fed to the pool a few at a time) came later, and
+the user answered Stop 5 "Ja, in 0.1.52" (`PLAN_WASM_BUILD.md` §7 "Stop 5" on `wasm-kernels` `404c5d6`, answer 3): a
+**second merge of `wasm-kernels` into `corridorkey`** after K12b's commit, with the gates of the first merge, before the
+release block. Should it be skipped, the Relight line of the CHANGELOG names the NORMAL job's wait during a full march
+and the drag step's +7 ms (`PLAN_WASM_BUILD.md` "K12" on this branch).
+
 **Open for B1-B4:** the menu entry and `key_screen` are visible and answer the dormant state until B3 / B4; README,
 `docs/MCP.md` and the LoRA CHANGELOG line still say 117 tools (`key_screen` is the 118th): B4 sets the count with the
 command's Route B form. **The gates** (2026-11-06, `--offline`, port 9571, `dist/gates/gates/ckint-*`): on tiles `lint types key editor export
@@ -1394,6 +1401,57 @@ carries it (Route B only: no in-app text).
 connected: status and the command say why) PASS on both backends (`b4-key-tiles`, `b4-key-canvas`); `lint types
 commands mcp mcpb assistant` PASS on tiles (`b4-tiles`; `assistant_test.js` gained
 `key_screen_asks_with_its_route_and_is_refused_when_its_route_cannot_key`).
+
+### The review fixes and B5's docs (2026-11-06)
+
+**A review of Route B (B0-B4) found five musts and five nice points; all fixed:**
+- **The layers again by id** (`host.landKey`): a key on your ComfyUI waits 10-17 s with the Key dialog non-modal, and an
+  undo or redo of a layers step rebuilds every layer object (`inpaint_canvas.js` `historyStepNow` / `applySnapshot`), a
+  delete takes one away. `landKey` now finds the source and the Re-key layer by id once the bands are written: a first
+  key lands right above the live source and hides it, a source deleted meanwhile lands as a key of the visible picture
+  does (`topFilterRun`) with nothing hidden, and a Re-key whose layer is gone throws `keying.TEXTS.rekeyGone` (plain:
+  "the key layer changed while it keyed; nothing was replaced. Re-key again.") with no undo step. The in-app route
+  shares the fix. The `key` gate's new step `comfy stale` (a delayed stub, a layers undo and a delete during the wait).
+- **§3.3's notices on Route B:** `keying.termsParagraph({ comfy: true })` (the licence, the four parts and their
+  licences, "which the node pack downloads from their publishers onto your ComfyUI", the keyed-pictures line, the seat
+  clause) in the dialog's first-run block with *The licence* and *corridorkey.com* beside the pack's page; **About**
+  (`renderer/shell.js`) carries §3.3's credit without the in-app words ("..., which its node pack downloads from their
+  publishers onto your ComfyUI"). Both asserted in the `dialog comfy` step.
+- **The card rule is the key's own** (`keying.cardFit`, replacing `realism.gpuGeneration` in `serverSupport`): CUDA bf16
+  needs Ampere or newer, so only positive evidence refuses: another maker's device (ROCm lists AMD as `cuda:N`) or a
+  known pre-Ampere name (GTX, GT, MX, the RTX 20 series, Quadro RTX, TITAN RTX, Quadro, Tesla, TITAN, the K / P / V / T
+  cards); A10 / A10G / A16 / A30 / A40 / A100, L4 / L40 / L40S, H100 / H200 / GH200, B200 and unknown NVIDIA names pass
+  (a RunPod pod keys). The words are "an NVIDIA card of the RTX 30 generation (Ampere) or newer" (`keying.CARD_NEED`)
+  in the readiness lines, `hint`'s CUDA sentence, `key_screen`'s description and the CHANGELOG.
+- **Pack B is not offered** (`offered: false` in `keying.PACKS`; the review's recommendation for 0.1.52): it has no
+  download switch and fetches about 5.1 GB inside the first key's job unless the server sets
+  `CORRIDORKEY2_NO_DOWNLOAD=1`, which would block that ComfyUI's queue past Scumble's wait while the texts say Scumble
+  never downloads. `packFor` still detects it; `serverSupport` names it and points to pack A (both installed: pack A
+  keys). `comfyFirstRun` for a pack without a switch says it downloads by itself; `key_screen`'s description names pack
+  A and says pack B is refused.
+- **The nice points:** the ask card's hint and trust as the command sends them (`policy.js` `keyCard`: hint "mask" is
+  "the source layer's mask" at 0.95, no `trust` shows `status.key.trust`, the stored one, each snapped to the three
+  trusts; `status.key` gained `trust`); `route: "app"` is refused while `status.key`'s default is not the in-app engine
+  (`keying.TEXTS.notInstalled`), no ask for a route this build cannot run; `withSpecDefaults` fills a BOOLEAN whose name
+  holds "download" with `false`, never its default, and `keyPrompt` refuses a loader that no longer lists the pack's
+  `downloadSwitch` before anything is sent; K12b's second merge recorded above ("The integration"); the texts point to
+  the manual chapter's title, *Help › Scumble help › Key green / blue screen*.
+
+**B5's docs:** the manual chapter *Key green / blue screen* (`docs/MANUAL.md`, slug `key-screen`, before *Documents*:
+what it does, the rows, the landing, the box and the cap, Re-key, the B0 times and the reload, the licence paragraph
+and the seat clause, what the ComfyUI machine needs, the steps as pack A's README has them at `c7662de`, every refusal
+and failure sentence, the 8-bit note, the cutout as the alternative, agents); `docs/RECIPES.md` "Key green / blue screen
+(not a recipe: a graph Scumble builds)" (the graph, the checks, pack B's refusal, what ran through the server);
+`docs/HELPERS.md` "Models on your ComfyUI that Scumble drives" (CorridorKey 2.0's set with its sources, revisions and
+licences, and the Realism Pass's runtime); the CHANGELOG line with the card, the chapter and the licence credit. No
+in-app text anywhere. **Open: B5's live run** (the user present, `/queue` first; `docs/measurements/ck_b5_<date>/`).
+
+**Tests:** `node tools/keying_test.js` (the Route B paragraph; `cardFit` on 20 passing and 17 refused names and the
+generations; a RunPod A100 / H100 / L40S / A40 keys, one Ampere card among older ones is enough; pack B refused, both
+packs: A; `comfyFirstRun` per pack; the renamed switch refused, a download BOOLEAN filled false) and
+`node tools/assistant_test.js` PASS; the gates (2026-11-06, `--offline`, port 9571, `dist/gates/gates/fix-*`): on tiles
+`lint types key editor export skins commands mcp mcpb assistant loras recipes help` PASS (`fix-tiles`; `help` after the
+new chapter's "Settings › Helpers" was named as the dialog names it, `fix-help`), `key` on canvases PASS (`fix-canvas`).
 
 ## 6. The user's answers, and the questions still open
 

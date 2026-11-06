@@ -262,6 +262,8 @@
     check("boxLine: a Re-key says what it reads", K.boxLine({ box: [0, 0, 512, 512], content: [0, 0, 512, 512], rekey: true, from: "Subject (hidden)" }).endsWith(", read from Subject (hidden)"));
     const tp = K.termsParagraph({ gb: 2.43, host: "Hugging Face" });
     check("termsParagraph: the four parts, their licences, the size, the host, the seat clause", ["Corridor Key Licence 2.0", "C-RADIOv4 (NVIDIA Open Model License)", "MoGe-2 (MIT)", "RVM (Google DeepMind, CC BY 4.0)", "about 2.4 GB", "downloaded from Hugging Face", "US $20M"].every((s) => tp.includes(s)), tp);
+    const tc = K.termsParagraph({ comfy: true });
+    check("termsParagraph comfy: the licence, the four parts, the node pack's download onto your ComfyUI, the keyed pictures, the seat clause; no host", ["Corridor Key Licence 2.0", "used with their permission in this free app", "C-RADIOv4 (NVIDIA Open Model License)", "MoGe-2 (MIT)", "RVM (Google DeepMind, CC BY 4.0)", "about 5.1 GB", "which the node pack downloads from their publishers onto your ComfyUI", "Your keyed pictures are yours, also commercially", "US $20M", "corridorkey.com"].every((x) => tc.includes(x)) && !/conversion to ONNX|downloaded from/.test(tc), tc);
     check("readyLine", K.readyLine("dml", 1024) === "CorridorKey 2.0 in Scumble on DirectML, working size 1,024 px.");
 
     // ---- Route B: your ComfyUI with a node pack (§4.11, B1) ----
@@ -375,6 +377,15 @@
     const gp = specProblems(gg, grown);
     check("withSpecDefaults: new required inputs get the spec's default or first option, a new socket is left alone", gg.ck_key.inputs.matte_mode === "fine" && gg.ck_key.inputs.refine_steps === 3 && gg.ck_key.inputs.tag === "one" && gg.ck_model.inputs.precision === "bf16" && !("guide" in gg.ck_key.inputs) && gp.length === 1 && /guide missing/.test(gp[0]), JSON.stringify(gp));
     const kept = K.withSpecDefaults({ n: { class_type: "CorridorKey2Basic", inputs: { hint_quality: "rough matte (0.75)" } } }, infoA);
+    const renamed = JSON.parse(JSON.stringify(infoA));
+    delete renamed.CorridorKey2ModelLoader.input.required.auto_download;
+    if (renamed.CorridorKey2ModelLoader.input.optional) delete renamed.CorridorKey2ModelLoader.input.optional.auto_download;
+    renamed.CorridorKey2ModelLoader.input.required.download_missing = ["BOOLEAN", { default: true }];
+    let renamedMsg = "";
+    try { K.keyPrompt("marawan206", { picture: pic }, { screen: "green", trust: 0.5, despill: 0.5 }, renamed); } catch (err) { renamedMsg = err.message; }
+    check("keyPrompt: a loader without its auto_download switch is refused before anything is sent", renamedMsg.startsWith(K.LABEL) && /has no auto_download switch/.test(renamedMsg) && /nothing was sent/.test(renamedMsg), renamedMsg);
+    const dl = K.withSpecDefaults({ n: { class_type: "L", inputs: {} } }, { L: { input: { required: { download_missing: ["BOOLEAN", { default: true }], keep: ["BOOLEAN", { default: true }] } } } });
+    check("withSpecDefaults: a BOOLEAN that downloads goes false, never its default true; another BOOLEAN takes its default", dl.n.inputs.download_missing === false && dl.n.inputs.keep === true, JSON.stringify(dl.n.inputs));
     check("withSpecDefaults: what the builder gave stays, an unknown class is not touched", kept.n.inputs.hint_quality === "rough matte (0.75)" && kept.n.inputs.despill === 0.5 && kept.n.inputs.screen === "green" && JSON.stringify(K.withSpecDefaults({ x: { class_type: "Nope", inputs: {} } }, infoA).x.inputs) === "{}");
 
     // the cap: the box native up to 16 MP (2^20 px each) and 8,192 a side, else one factor below both
@@ -417,15 +428,30 @@
     // readiness on your ComfyUI
     const R5090 = ["cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync"];
     const sNo = K.serverSupport({ state: "disconnected" });
-    check("serverSupport: not connected: info, the whole need in one sentence", !sNo.ok && sNo.kind === "info" && sNo.show === "hidden" && sNo.reason === "Full resolution on your ComfyUI needs your own ComfyUI with an RTX 30, 40 or 50 card and a CorridorKey 2.0 node pack: connect it under Settings › ComfyUI.", sNo.reason);
+    check("serverSupport: not connected: info, the whole need in one sentence", !sNo.ok && sNo.kind === "info" && sNo.show === "hidden" && sNo.reason === "Full resolution on your ComfyUI needs your own ComfyUI with an NVIDIA card of the RTX 30 generation (Ampere) or newer and a CorridorKey 2.0 node pack: connect it under Settings › ComfyUI.", sNo.reason);
     const sOld = K.serverSupport({ state: "connected", gpus: ["cuda:0 NVIDIA GeForce GTX 1080 Ti : cudaMallocAsync"], objectInfo: infoA });
-    check("serverSupport: CUDA devices, none RTX 30 or later: a warning naming the card", !sOld.ok && sOld.kind === "warn" && sOld.reason.includes("it shows NVIDIA GeForce GTX 1080 Ti."), sOld.reason);
+    check("serverSupport: CUDA devices, none Ampere or later: a warning naming the card", !sOld.ok && sOld.kind === "warn" && sOld.reason === "Full resolution on your ComfyUI needs an NVIDIA card of the RTX 30 generation (Ampere) or newer on your ComfyUI's machine; it shows NVIDIA GeForce GTX 1080 Ti.", sOld.reason);
+    // the card rule (CUDA bf16: Ampere or newer), its own and not the DLSS pack's RTX-only one: data-centre cards pass
+    const passes = ["NVIDIA A100-SXM4-80GB", "NVIDIA A100-PCIE-40GB", "NVIDIA H100 80GB HBM3", "NVIDIA H200", "NVIDIA GH200 480GB", "NVIDIA L40S", "NVIDIA L40", "NVIDIA L4", "NVIDIA A40", "NVIDIA A10G", "NVIDIA A10", "NVIDIA A16", "NVIDIA A30", "NVIDIA B200", "NVIDIA RTX A6000", "NVIDIA RTX 2000 Ada Generation", "NVIDIA RTX PRO 6000 Blackwell Workstation Edition", "NVIDIA GeForce RTX 3060", "NVIDIA GeForce RTX 4090", "NVIDIA GeForce RTX 5090"];
+    const refuses = ["NVIDIA GeForce GTX 1080 Ti", "NVIDIA GeForce GTX 1660 SUPER", "NVIDIA GeForce RTX 2080 Ti", "NVIDIA GeForce RTX 2060", "Quadro RTX 8000", "Quadro P5000", "NVIDIA TITAN RTX", "NVIDIA TITAN V", "NVIDIA TITAN Xp", "Tesla V100-SXM2-16GB", "Tesla T4", "Tesla P100-PCIE-16GB", "Tesla K80", "NVIDIA T4", "NVIDIA GeForce MX450", "NVIDIA GeForce GT 1030", "AMD Radeon RX 7900 XTX"];
+    const cardBad = [...passes.filter((n) => !K.cardFit(`cuda:0 ${n} : cudaMallocAsync`).ok), ...refuses.filter((n) => K.cardFit(`cuda:0 ${n} : native`).ok)];
+    check(`cardFit: ${passes.length} Ampere-or-later names pass (A100, H100, L40S, A40, A10G, L4 among them), ${refuses.length} earlier or other makers' refuse`, !cardBad.length, cardBad.join(", "));
+    const gens = ["NVIDIA A100-SXM4-80GB", "NVIDIA L40S", "NVIDIA H100 80GB HBM3", "NVIDIA B200", "NVIDIA GeForce RTX 4090"].map((n) => K.cardFit(`cuda:0 ${n}`).generation).join();
+    check("cardFit: the generation by architecture (Ampere 30, Ada and Hopper 40, Blackwell 50)", gens === "30,40,40,50,40", gens);
+    const sDc = ["NVIDIA A100-SXM4-80GB", "NVIDIA H100 80GB HBM3", "NVIDIA L40S", "NVIDIA A40"].map((n) => K.serverSupport({ state: "connected", gpus: [`cuda:0 ${n} : cudaMallocAsync`], objectInfo: infoA }));
+    check("serverSupport: a RunPod A100, H100, L40S or A40 with pack A keys", sDc.every((x) => x.ok && x.pack === "marawan206") && sDc[0].gpu === "NVIDIA A100-SXM4-80GB" && sDc[0].line === "CorridorKey 2.0 on your ComfyUI through ComfyUI-CorridorKey2.0 on NVIDIA A100-SXM4-80GB.", JSON.stringify(sDc.map((x) => [x.ok, x.reason])));
+    const sMix = K.serverSupport({ state: "connected", gpus: ["cuda:0 NVIDIA GeForce GTX 1080 Ti", "cuda:1 NVIDIA A40"], objectInfo: infoA });
+    check("serverSupport: one Ampere card among older ones is enough, and it is the one named", sMix.ok && sMix.gpu === "NVIDIA A40" && sMix.generation === 30, JSON.stringify(sMix));
     const sOk = K.serverSupport({ state: "connected", gpus: R5090, objectInfo: infoA });
     check("serverSupport: all there: offered, pack A named with the card", sOk.ok && sOk.show === "ready" && sOk.pack === "marawan206" && sOk.verified && sOk.note === "" && sOk.line === "CorridorKey 2.0 on your ComfyUI through ComfyUI-CorridorKey2.0 on NVIDIA GeForce RTX 5090." && sOk.generation === 50, JSON.stringify(sOk));
     const sB = K.serverSupport({ state: "connected", gpus: R5090, objectInfo: infoB });
-    check("serverSupport: pack B offered with its unverified note", sB.ok && sB.pack === "hashu786" && !sB.verified && /has not keyed with Scumble yet/.test(sB.note), JSON.stringify(sB));
+    check("serverSupport: pack B is named and refused (it downloads its models by itself), pointing to pack A", !sB.ok && sB.show === "disabled" && sB.kind === "warn" && sB.pack === "hashu786" && !sB.verified && sB.reason === "Full resolution on your ComfyUI: ComfyUI-CorridorKey2 downloads its models (about 5.1 GB) by itself on its first key and has not keyed with Scumble; install ComfyUI-CorridorKey2.0 on your ComfyUI instead (Help › Scumble help › Key green / blue screen).", JSON.stringify(sB));
+    const sAB = K.serverSupport({ state: "connected", gpus: R5090, objectInfo: { ...infoA, ...packB } });
+    check("serverSupport: both packs installed: pack A keys", sAB.ok && sAB.pack === "marawan206", JSON.stringify(sAB));
+    const frA = K.comfyFirstRun("marawan206"), frB = K.comfyFirstRun("hashu786");
+    check("comfyFirstRun: pack A never downloads through Scumble; pack B says it downloads by itself unless CORRIDORKEY2_NO_DOWNLOAD=1", /Scumble never downloads them there/.test(frA) && /download_models\.py/.test(frA) && !/never downloads/.test(frB) && /downloads them by itself inside its first key's job unless that ComfyUI runs with CORRIDORKEY2_NO_DOWNLOAD=1/.test(frB) && /download_weights\.py/.test(frB), frB);
     const sNone = K.serverSupport({ state: "connected", gpus: R5090, objectInfo: base });
-    check("serverSupport: no pack's nodes: a warning pointing to the manual", !sNone.ok && sNone.kind === "warn" && sNone.reason.endsWith("install one there (Help › Scumble help › Key screen)."), sNone.reason);
+    check("serverSupport: no pack's nodes: a warning pointing to the manual", !sNone.ok && sNone.kind === "warn" && sNone.reason.endsWith("install one there (Help › Scumble help › Key green / blue screen)."), sNone.reason);
     const { InpaintCanvas: _ic, ...noCanvas } = infoA;
     const sNc = K.serverSupport({ state: "connected", gpus: R5090, objectInfo: noCanvas });
     const sMn = K.serverSupport({ state: "missing-node", gpus: R5090, objectInfo: null });
@@ -442,7 +468,7 @@
     const mm = K.missingModels(missA);
     check("missingModels: pack A's loader, the files from the models folder on", JSON.stringify(mm) === JSON.stringify(["corridorkey_v2.safetensors", "foundations/moge/model.pt", "foundations/cradio/model.safetensors"]), JSON.stringify(mm));
     const hA = K.hint(missA);
-    check("hint: missing models name the files and both ways to fetch them on the ComfyUI machine", hA === "Key screen: the CorridorKey 2.0 models are not on your ComfyUI yet (missing: corridorkey_v2.safetensors, foundations/moge/model.pt, foundations/cradio/model.safetensors). Fetch them there once, about 5.1 GB: run the pack's scripts/download_models.py with ComfyUI's Python on that machine, or run its Load Model node once in the ComfyUI page with auto_download on (Help › Scumble help › Key screen).", hA);
+    check("hint: missing models name the files and both ways to fetch them on the ComfyUI machine", hA === "Key screen: the CorridorKey 2.0 models are not on your ComfyUI yet (missing: corridorkey_v2.safetensors, foundations/moge/model.pt, foundations/cradio/model.safetensors). Fetch them there once, about 5.1 GB: run the pack's scripts/download_models.py with ComfyUI's Python on that machine, or run its Load Model node once in the ComfyUI page with auto_download on (Help › Scumble help › Key green / blue screen).", hA);
     const mlb = K.missingModels(`Missing CorridorKey 2.0 model files: ${root}\\foundations\\rvm\\pretrain_rvm_small16_256_204031069.npz, ${root}\\foundations\\cradio\\hf_model.py`);
     check("missingModels: the comma-separated form (load_base, the download's check)", JSON.stringify(mlb) === JSON.stringify(["foundations/rvm/pretrain_rvm_small16_256_204031069.npz", "foundations/cradio/hf_model.py"]), JSON.stringify(mlb));
     const missB = "CorridorKey 2.0 model files are missing (auto-download is disabled by CORRIDORKEY2_NO_DOWNLOAD):\n  - /srv/comfy/models/corridorkey2/weights/corridorkey_v2.safetensors\n\nDownload them manually into /srv/comfy/models/corridorkey2 (about 5 GB) by running\n  python -s ComfyUI/custom_nodes/ComfyUI-CorridorKey2/scripts/download_weights.py";
@@ -450,7 +476,7 @@
     check("hint: pack B's missing models: its file, its script, the server switch, no auto_download", JSON.stringify(K.missingModels(missB)) === '["weights/corridorkey_v2.safetensors"]' && hB.includes("scripts/download_weights.py") && hB.includes("CORRIDORKEY2_NO_DOWNLOAD") && !hB.includes("auto_download"), hB);
     check("missingModels: any other failure is null", K.missingModels("CUDA out of memory") === null && K.missingModels("") === null);
     const hCuda = K.hint("CorridorKey 2.0 keying needs an NVIDIA GPU (CUDA) or an Apple Silicon Mac (Metal/MPS); ComfyUI is running on 'cpu'. On the CPU a single frame would take minutes.\n");
-    check("hint: no CUDA device, with the device ComfyUI runs on", hCuda === "Key screen: CorridorKey 2.0 needs an NVIDIA GPU (CUDA) on your ComfyUI's machine, and that ComfyUI runs on cpu. Start it on an RTX 30, 40 or 50 card.", hCuda);
+    check("hint: no CUDA device, with the device ComfyUI runs on", hCuda === "Key screen: CorridorKey 2.0 needs an NVIDIA GPU (CUDA) on your ComfyUI's machine, and that ComfyUI runs on cpu. Start it on an NVIDIA card of the RTX 30 generation (Ampere) or newer.", hCuda);
     check("hint: pack B's CUDA refusal", /needs an NVIDIA GPU \(CUDA\) on your ComfyUI's machine\. Start it/.test(K.hint("CorridorKey 2.0 requires an NVIDIA CUDA GPU.")));
     const hOom = K.hint("CUDA out of memory. Tried to allocate 3.20 GiB. GPU 0 has a total capacity of 31.84 GiB" + tips);
     const hOom2 = K.hint("Allocation on device " + tips);

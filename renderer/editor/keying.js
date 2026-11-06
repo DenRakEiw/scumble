@@ -604,7 +604,7 @@ export function isFeaturesGone(err) {
 export const TEXTS = Object.freeze({
     notInstalled: `${LABEL}: the ${ENGINE} engine is not part of this build yet.`,
     notOffered: `${LABEL}: the ${ENGINE} set is not available for download yet.`,
-    notDownloaded: `${LABEL} needs the ${ENGINE} set (about 2.4 GB): download it in Settings › Helpers (Help › Scumble help › Key screen).`,
+    notDownloaded: `${LABEL} needs the ${ENGINE} set (about 2.4 GB): download it in Settings › Helpers (Help › Scumble help › Key green / blue screen).`,
     runGoing: `${LABEL}: a run is still going on this document.`,
     keyGoing: `${LABEL}: a key is still running.`,
     loading: `${LABEL}: the document is still loading.`,
@@ -613,6 +613,7 @@ export const TEXTS = Object.freeze({
     askScreen: `${LABEL}: the border of the box is neither clearly green nor clearly blue. Pick Green or Blue under Screen.`,
     cancelled: `${LABEL} cancelled.`,
     maskHint: `${LABEL}: hint "mask" needs a source layer with a mask (set_mask), or rekey on a key layer.`,
+    rekeyGone: `${LABEL}: the key layer changed while it keyed; nothing was replaced. Re-key again.`,
 });
 
 /** The first-run block's links (§3.3): the licence and Corridor's site. */
@@ -622,13 +623,21 @@ export const CORRIDOR_URL = "https://corridorkey.com";
 /**
  * The pre-download paragraph (§3.3) for the Key dialog's first-run block and I2's terms dialog: the set, its four parts
  * and their licences, its size, the host, the seat clause. `gb` and `host` from keyEngine.status() when it names them.
+ * `comfy`: Route B's first-run block (§3.3 second bullet): the four parts as the node pack downloads them from their
+ * publishers onto your ComfyUI, in place of Scumble's set and its host.
  */
-export function termsParagraph({ gb = null, host = "" } = {}) {
+export function termsParagraph({ gb = null, host = "", comfy = false } = {}) {
+    const seat = "Your keyed pictures are yours, also commercially. "
+        + "Organisations with more than US $20M yearly revenue need one CorridorKey seat per user (corridorkey.com).";
+    if (comfy) {
+        return `${ENGINE} by Corridor Digital, Corridor Key Licence 2.0 (CC BY-NC-SA 4.0 with their terms), used with their permission in this free app; `
+            + `it runs their weights with C-RADIOv4 (NVIDIA Open Model License), MoGe-2 (MIT) and RVM (Google DeepMind, CC BY 4.0), about ${COMFY_SET_GB} GB, `
+            + `which the node pack downloads from their publishers onto your ComfyUI. ${seat}`;
+    }
     const size = Number.isFinite(+gb) && +gb > 0 ? `about ${Math.round(+gb * 10) / 10} GB` : "about 2.4 GB";
     return `${ENGINE} by Corridor Digital, Corridor Key Licence 2.0 (CC BY-NC-SA 4.0 with their terms), used with their permission in this free app; `
         + `this set is a conversion to ONNX of their weights and of C-RADIOv4 (NVIDIA Open Model License), MoGe-2 (MIT) and RVM (Google DeepMind, CC BY 4.0), ${size}`
-        + `${host ? `, downloaded from ${host}` : ""}. Your keyed pictures are yours, also commercially. `
-        + "Organisations with more than US $20M yearly revenue need one CorridorKey seat per user (corridorkey.com).";
+        + `${host ? `, downloaded from ${host}` : ""}. ${seat}`;
 }
 
 /**
@@ -707,7 +716,8 @@ export const COMFY_OUTPUT = "ck_out";
 export const COMFY_LONG = 8192;
 /** The set the packs fetch onto the ComfyUI machine (pack A's loader: "about 5.1 GB"). */
 export const COMFY_SET_GB = 5.1;
-const MANUAL = `(Help › Scumble help › ${LABEL})`;
+// the manual chapter's title (docs/MANUAL.md, slug key-screen)
+const MANUAL = "(Help › Scumble help › Key green / blue screen)";
 
 /** Pack A's hint_quality presets as /object_info listed them at c7662de (tools/refs/corridorkey/CorridorKey2Basic.json). */
 const PACK_A_TRUSTS = Object.freeze(["clean matte (0.95)", "rough matte (0.75)", "loose hint (0.5)"]);
@@ -717,7 +727,8 @@ const PACK_A_WEIGHTS = "corridorkey_v2.safetensors";
  * The two packs that run CorridorKey 2.0 (§2.2), in the shape of inpaint_canvas.js CUTOUT_BACKENDS: the one present is
  * the one whose classes the server lists (packFor; neither class name clashes). A is the primary, installed on the
  * user's ComfyUI at `pinned` by I0a and the one run live; B's entry is written from its source at `pinned` (read
- * 2026-10-24, never installed) and stays `verified: false` until a live run. `build(hint, v, info)` gives the pack's
+ * 2026-10-24, never installed) and stays `verified: false` until a live run; it is detected but not `offered` (it
+ * downloads its models by itself, serverSupport refuses it with that). `build(hint, v, info)` gives the pack's
  * own nodes of keyPrompt's graph: `hint` the MASK link or null, `v` keyPrompt's values, `info` the node list.
  * `inputs` names the pack's inputs for the hint, the trust, the despill, the screen and the download switch.
  */
@@ -735,6 +746,7 @@ export const PACKS = Object.freeze([
         downloadSwitch: "auto_download",
         script: "scripts/download_models.py",
         verified: true,
+        offered: true,
         build(hint, v, info) {
             const weights = specOf(info, "CorridorKey2ModelLoader", "weights");
             return {
@@ -765,6 +777,10 @@ export const PACKS = Object.freeze([
         downloadSwitch: null,
         script: "scripts/download_weights.py",
         verified: false,
+        // not offered (0.1.52): it has no download switch and fetches about 5.1 GB inside the first key's job unless the
+        // server runs with CORRIDORKEY2_NO_DOWNLOAD=1 (corridor_key2/engine.py ensure_models at 141c31b), which would
+        // block that ComfyUI's queue past Scumble's wait; serverSupport names it and points to pack A
+        offered: false,
         build(hint, v, info) {
             return {
                 ck_key: {
@@ -853,7 +869,8 @@ export function trustOption(spec, trust, fallback = null) {
  * the node list: a combo's default or its first option, a value's default), so a pack that adds a required input
  * still validates. The twin of inpaint_canvas.js withSpecDefaults (issue #7), kept here on purpose: that one reads
  * host.nodeTypes() and ships in the node's editor build, this module is app-only (§4.11) and takes the raw
- * /object_info answer. Links (IMAGE, MASK, ...) have no default and stay as they are. Changes and returns `nodes`.
+ * /object_info answer. Links (IMAGE, MASK, ...) have no default and stay as they are; a BOOLEAN whose name holds
+ * "download" is set false, never to its default. Changes and returns `nodes`.
  */
 export function withSpecDefaults(nodes, objectInfo) {
     const info = objectInfo && typeof objectInfo === "object" ? objectInfo : {};
@@ -863,6 +880,9 @@ export function withSpecDefaults(nodes, objectInfo) {
         for (const [name, spec] of Object.entries(req)) {
             if (name in node.inputs || !Array.isArray(spec)) continue;
             const opts = spec[1] && typeof spec[1] === "object" ? spec[1] : {};
+            // a switch that downloads (pack A's auto_download defaults to true) goes off, never on by the server's
+            // default: a renamed switch would otherwise start the 5.1 GB download inside the job
+            if (spec[0] === "BOOLEAN" && /download/i.test(name)) { node.inputs[name] = false; continue; }
             if (comboOptions(spec)) {
                 const v = comboDefault(spec, undefined);
                 if (v !== undefined) node.inputs[name] = v;
@@ -895,6 +915,12 @@ export function keyPrompt(pack, refs, values, objectInfo = null) {
     if (v.screen !== "green" && v.screen !== "blue") throw new Error(`${LABEL}: the screen must be green or blue for your ComfyUI, not ${JSON.stringify(v.screen)}.`);
     const despill = Number.isFinite(+v.despill) ? Math.min(1, Math.max(0, +v.despill)) : keyDefaults.despill;
     const vals = { screen: v.screen, trust: trustOf(v.trust).value, despill, keepOnGpu: v.keepOnGpu === true, evicts: v.evicts === true };
+    if (objectInfo && p.downloadSwitch) {
+        const loader = p.needs[0];
+        if (objectInfo[loader] && !specOf(objectInfo, loader, p.downloadSwitch)) {
+            throw new Error(`${LABEL}: this version of ${p.label} has no ${p.downloadSwitch} switch on its ${loader}, the one Scumble turns off; it could download its models (about ${COMFY_SET_GB} GB) by itself inside the job, so nothing was sent. Update Scumble, or keep the pack at ${p.pinned} ${MANUAL}.`);
+        }
+    }
     const g = { ck_in: loadRef(refs.picture) };
     const hasHint = !!(refs.hint && refs.hint.filename);
     if (hasHint) {
@@ -1000,13 +1026,15 @@ export const MISSING_TEXT = "models are not on your ComfyUI yet";
 
 /**
  * The Key dialog's first-run block for your ComfyUI (§4.11 "The download and the first run"): the models are fetched
- * once onto that machine, never by Scumble (every graph sends auto_download off; B0's download run was skipped).
+ * once onto that machine, never by Scumble (every graph to pack A sends auto_download off; B0's download run was
+ * skipped). A pack without a download switch (B) fetches them by itself inside its first key's job: said as such.
  */
 export function comfyFirstRun(pack) {
     const p = packById(pack) || PACKS[0];
-    const ways = p.downloadSwitch
-        ? `run the pack's ${p.script} with ComfyUI's Python on that machine, or run its Load Model node once in the ComfyUI page with ${p.downloadSwitch} on`
-        : `run the pack's ${p.script} with ComfyUI's Python on that machine`;
+    if (!p.downloadSwitch) {
+        return `The first key needs the ${ENGINE} models on your ComfyUI (about ${COMFY_SET_GB} GB from their own hosts). ${p.label} downloads them by itself inside its first key's job unless that ComfyUI runs with CORRIDORKEY2_NO_DOWNLOAD=1; Scumble cannot switch that off. Fetch them first: run the pack's ${p.script} with ComfyUI's Python on that machine.`;
+    }
+    const ways = `run the pack's ${p.script} with ComfyUI's Python on that machine, or run its Load Model node once in the ComfyUI page with ${p.downloadSwitch} on`;
     return `The first key needs the ${ENGINE} models on your ComfyUI (about ${COMFY_SET_GB} GB from their own hosts); Scumble never downloads them there. Fetch them once: ${ways}.`;
 }
 
@@ -1034,30 +1062,60 @@ function cleanGpu(name) {
     return String(name || "").replace(/^\s*[a-z]+:\d+\s+/i, "").replace(/\s*:\s*[A-Za-z]+\s*$/, "").trim();
 }
 
+/** The card a key on your ComfyUI needs, in the readiness lines' words. */
+export const CARD_NEED = "an NVIDIA card of the RTX 30 generation (Ampere) or newer";
+
+/**
+ * Whether a CUDA device of your ComfyUI can run CorridorKey 2.0 (CUDA bf16: NVIDIA's Ampere generation or newer, §2.1),
+ * by its name (ComfyUI's /system_stats shows no compute capability). Its own rule, not realism.gpuGeneration's (that one
+ * is the DLSS pack's: RTX names only, so it would refuse every data-centre card). Only positive evidence refuses: a
+ * device of another maker (ROCm lists AMD cards as cuda:N) or a known name from before Ampere (GTX, GT, MX, the RTX 20
+ * series, Quadro RTX and TITAN RTX, Quadro, Tesla, TITAN, the K / P / V / T data-centre cards). Every other name passes:
+ * the RTX 30, 40 and 50 names and the workstation ones (gpuGeneration), A2 / A10 / A10G / A16 / A30 / A40 / A100,
+ * L4 / L20 / L40 / L40S, H100 / H200 / GH200, B100 / B200 / GB200, and NVIDIA names Scumble does not know yet.
+ * -> { ok, generation } (30 Ampere, 40 Ada and Hopper, 50 Blackwell, 0 not known)
+ */
+export function cardFit(name) {
+    const up = cleanGpu(name).toUpperCase();
+    if (/\b(AMD|RADEON|INTEL|ARC)\b/.test(up)) return { ok: false, generation: 0 };
+    const g = gpuGeneration(up);
+    if (g >= 30) return { ok: true, generation: g };
+    if (up.includes("RTX") || /\b(GTX|GT|MX)\s*\d/.test(up) || /\b(QUADRO|TESLA|TITAN)\b/.test(up) || /\b[KPVT]\d{1,3}\b/.test(up)) return { ok: false, generation: 0 };
+    const generation = /\b(B\d{3}|GB\d{3})\b|\bBLACKWELL\b/.test(up) ? 50
+        : /\b(L\d{1,2}S?|H\d{3}|GH\d{3})\b|\b(ADA|HOPPER)\b/.test(up) ? 40
+            : /\bA\d{1,3}[A-Z]?\b/.test(up) ? 30 : 0;
+    return { ok: true, generation };
+}
+
 /**
  * Whether your ComfyUI can key (§4.11 "Readiness on Route B", realism.serverSupport as the model, no os check: the
  * packs run on CUDA, not on Windows only). `state` is the ComfyUI status's state, `gpus` /system_stats' device names,
  * `objectInfo` the node list (null when not read). Only positive evidence refuses: a card refuses only when ComfyUI
- * runs on CUDA devices and none is an RTX 30 or later (gpuGeneration); no CUDA device listed is left to the pack.
+ * runs on CUDA devices and cardFit refuses each; no CUDA device listed is left to the pack. A pack that is not
+ * `offered` (B) is named and refused.
  * -> { ok, show: "hidden" | "disabled" | "ready", kind, reason, line, gpu, generation, pack (its id or null),
  *      packLabel, verified, note }
  */
 export function serverSupport({ state, gpus, objectInfo } = {}) {
     const out = (ok, show, kind, reason, extra = {}) => ({ ok, show, kind, reason, line: "", gpu: "", generation: 0, pack: null, packLabel: "", verified: false, note: "", ...extra });
     if (state !== "connected" && state !== "missing-node") {
-        return out(false, "hidden", "info", `${ROUTE_LABEL} needs your own ComfyUI with an RTX 30, 40 or 50 card and a ${ENGINE} node pack: connect it under Settings › ComfyUI.`);
+        return out(false, "hidden", "info", `${ROUTE_LABEL} needs your own ComfyUI with ${CARD_NEED} and a ${ENGINE} node pack: connect it under Settings › ComfyUI.`);
     }
     const cuda = (Array.isArray(gpus) ? gpus.map(String) : []).filter((g) => /^\s*cuda:\d+/i.test(g));
-    const good = cuda.find((g) => gpuGeneration(g) >= 30);
+    const rated = cuda.map((g) => ({ g, ...cardFit(g) }));
+    const good = rated.find((r) => r.ok) || null;
     if (cuda.length && !good) {
         const shown = cuda.map(cleanGpu).filter(Boolean).join(", ") || "no NVIDIA card";
-        return out(false, "disabled", "warn", `${ROUTE_LABEL} needs an RTX 30, 40 or 50 card on your ComfyUI's machine; it shows ${shown}.`, { gpu: cleanGpu(cuda[0]), generation: gpuGeneration(cuda[0]) });
+        return out(false, "disabled", "warn", `${ROUTE_LABEL} needs ${CARD_NEED} on your ComfyUI's machine; it shows ${shown}.`, { gpu: cleanGpu(cuda[0]), generation: rated[0].generation });
     }
-    const gpu = good ? cleanGpu(good) : "", generation = good ? gpuGeneration(good) : 0;
+    const gpu = good ? cleanGpu(good.g) : "", generation = good ? good.generation : 0;
     const pack = packFor(objectInfo);
     const of = pack ? { pack: pack.id, packLabel: pack.label, verified: pack.verified } : {};
     if (objectInfo && !pack) {
         return out(false, "disabled", "warn", `${ROUTE_LABEL} needs a ${ENGINE} node pack on your ComfyUI: install one there ${MANUAL}.`, { gpu, generation });
+    }
+    if (pack && pack.offered === false) {
+        return out(false, "disabled", "warn", `${ROUTE_LABEL}: ${pack.label} downloads its models (about ${COMFY_SET_GB} GB) by itself on its first key and has not keyed with Scumble; install ${PACKS[0].label} on your ComfyUI instead ${MANUAL}.`, { gpu, generation, ...of });
     }
     if ((objectInfo && !objectInfo.InpaintCanvas) || (!objectInfo && state === "missing-node")) {
         return out(false, "disabled", "warn", `${ROUTE_LABEL} also needs the Inpaint Canvas node pack on your ComfyUI.`, { gpu, generation, ...of });
@@ -1125,7 +1183,7 @@ export function hint(message, pack = null) {
     }
     let g = /needs an NVIDIA GPU \(CUDA\)[^']*'([^']+)'/.exec(m);
     if (g || /needs an NVIDIA GPU \(CUDA\)|requires an NVIDIA CUDA GPU/.test(m)) {
-        return `${LABEL}: ${ENGINE} needs an NVIDIA GPU (CUDA) on your ComfyUI's machine${g ? `, and that ComfyUI runs on ${g[1]}` : ""}. Start it on an RTX 30, 40 or 50 card.`;
+        return `${LABEL}: ${ENGINE} needs an NVIDIA GPU (CUDA) on your ComfyUI's machine${g ? `, and that ComfyUI runs on ${g[1]}` : ""}. Start it on an NVIDIA card of the RTX 30 generation (Ampere) or newer.`;
     }
     if (/Windows commit limit/.test(m)) {
         return `${LABEL}: the Windows commit limit (RAM plus page file) on your ComfyUI's machine leaves too little room for this box. Key a smaller box, close other programs there, or enlarge the page file.`;

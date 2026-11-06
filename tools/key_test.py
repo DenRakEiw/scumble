@@ -1132,6 +1132,79 @@ host.shell.activate(ed);
 return { took: Math.round(took) };
 """),
 
+    ("comfy stale", r"""
+// landKey finds its layers again by id: a layers undo while your ComfyUI keys rebuilds every layer object, a delete takes
+// one away. Source = a layer: the key lands right above the live source and hides it; the source deleted: it lands as a
+// key of the picture does, nothing hidden. Re-key whose key layer an undo took away: refused, nothing replaced.
+const C = window.__comfyStub, fx = window.__ckFix;
+comfyOn(); engineOff(); closeDialog();
+const ed = ednow(window.__ckDoc);
+host.shell.activate(ed);
+await run("select_none", { doc: ed.node.id });
+const src = ed.addPaintLayer();
+src.name = "Subject";
+src.px.writeRect(new ImageData(new Uint8ClampedArray(fx.input.data), 512, 400), 0, 0);
+ed.markLayerChanged(src);
+const sid = src.id;
+let p = null, extra = { id: null };
+try {
+    // a layers step to undo while it keys: a layer deleted (its undo brings it back and rebuilds every layer object)
+    extra = ed.addPaintLayer();
+    extra.name = "Extra";
+    const tid = extra.id;
+    ed.removeLayer(tid);
+    const n0 = ed.layers.length, c0 = C.calls.length;
+    C.delay = 600;
+    p = host.keyScreen(ed, { source: sid, layer: ed.layers.find((l) => l.id === sid), hint: "none", screen: "green" });
+    ok(await waitFor(() => C.calls.length === c0 + 1), "the job went");
+    const before = ed.layers.find((l) => l.id === sid);
+    await ed.undoStep();   // the delete: a layers step, every layer object rebuilt
+    const live = ed.layers.find((l) => l.id === sid);
+    ok(live && live !== before && ed.layers.some((l) => l.id === tid), "the undo rebuilt the layer objects and brought the deleted layer back", { live: !!live, same: live === before, extra: ed.layers.some((l) => l.id === tid), status: ed.status });
+    let out = await p;
+    p = null;
+    const at = ed.layers.indexOf(out.layer), si = ed.layers.findIndex((l) => l.id === sid);
+    const liveNow = ed.layers[si];
+    ok(out.layer && at === si + 1 && liveNow.visible === false && out.hidden === liveNow && /Subject is hidden/.test(ed.status), "the key landed right above the live source and hid it", { at, si, vis: liveNow.visible, status: ed.status.slice(0, 200) });
+    await ed.undoStep();
+    ok(ed.layers.length === n0 + 1 && ed.layers.find((l) => l.id === sid).visible === true, "one undo takes the key back and shows the source");
+    // the source deleted while it keys: lands as a key of the picture, nothing hidden
+    const c1 = C.calls.length;
+    p = host.keyScreen(ed, { source: sid, layer: ed.layers.find((l) => l.id === sid), hint: "none", screen: "green", grey: false });
+    ok(await waitFor(() => C.calls.length === c1 + 1), "the second job went");
+    ed.removeLayer(sid);
+    out = await p;
+    p = null;
+    const below = ed.layers.slice(ed.layers.indexOf(out.layer) + 1);
+    ok(out.layer && !out.hidden && ed.layers.every((l) => l.visible || l.kind === "filter") && !/is hidden/.test(ed.status), "the source gone: the key landed with nothing hidden", { status: ed.status.slice(0, 200) });
+    ok(below.every((l) => l.kind === "filter"), "at the top under the filters, as a key of the picture lands", ed.layers.map((l) => l.name));
+    await ed.undoStep();
+    await ed.undoStep();
+    ok(ed.layers.some((l) => l.id === sid), "two undos: the key gone, the source back");
+    // Re-key whose key layer an undo took away while it keyed: refused, nothing replaced, no undo step
+    const k = await host.keyScreen(ed, { hint: "none", screen: "green", grey: false });
+    const kid = k.layer.id, n1 = ed.layers.length;
+    const c2 = C.calls.length;
+    p = host.keyScreen(ed, { rekey: true, layer: k.layer });
+    ok(await waitFor(() => C.calls.length === c2 + 1), "the Re-key's job went");
+    await ed.undoStep();   // takes the first key away
+    const u1 = ed.undo.length;
+    let msg = "";
+    try { await p; } catch (err) { msg = err.message; }
+    p = null;
+    ok(msg === K.TEXTS.rekeyGone && !ed.layers.some((l) => l.id === kid) && ed.layers.length === n1 - 1 && ed.undo.length === u1 && ed.statusKind !== "error" && !ed.providerPending && !host._keyBusy, "Re-key on a key layer gone meanwhile: refused plainly, nothing replaced, no step", { msg, kind: ed.statusKind });
+} finally {
+    C.delay = 0;
+    if (p) { try { await p; } catch (_) { /* ended */ } }
+    for (const id of [sid, extra.id]) {
+        const i = ed.layers.findIndex((l) => l.id === id);
+        if (i >= 0) ed.layers.splice(i, 1);
+    }
+    ed.layersRestacked();
+}
+return { ok: true };
+"""),
+
     ("comfy command", r"""
 // B4: key_screen on your ComfyUI (route comfyui, the default of this build) and status.key.comfy
 const C = window.__comfyStub;
@@ -1184,6 +1257,12 @@ ok(!st.rows.previewRow && st.rows.keepRow && !st.rows.evictsRow && st.rows.timeo
 ok(!dlg.session && host.keySession === null && C.calls.length === c0 && stub.calls.length === s0, "no live loop: no session, nothing prepared or run before Key");
 ok(st.ready.startsWith("CorridorKey 2.0 on your ComfyUI through ComfyUI-CorridorKey2.0 on NVIDIA GeForce RTX 5090.") && st.ready.includes(K.COMFY_COST) && !st.keyDisabled, "the readiness line: the pack, the card, what a key costs there", st.ready);
 ok(st.boxLine === "Keys the selection's box, 512 × 400, at its own size." && st.firstRun === K.comfyFirstRun("marawan206") && /download_models\.py/.test(st.firstRun) && /No live preview/.test(st.loop), "the box line, the first-run block, no live preview", st);
+ok(st.comfyTerms === K.termsParagraph({ comfy: true }) && /Corridor Key Licence 2\.0/.test(st.comfyTerms) && /US \$20M/.test(st.comfyTerms) && /onto your ComfyUI/.test(st.comfyTerms) && st.comfyLinks.join("|") === "The node pack's page|The licence|corridorkey.com", "the first-run block carries the licence paragraph (Route B's words) with the licence and corridorkey.com links", { t: st.comfyTerms, l: st.comfyLinks });
+await host.shell.openSettings();
+await wait(300);
+const about = document.getElementById("set-about").textContent;
+document.getElementById("shell-settings").close();
+ok(/Green and blue screen keying by CorridorKey 2\.0 from Corridor Digital \(Corridor Key Licence, a CC BY-NC-SA 4\.0 variant\), used with permission in this free app; it builds on C-RADIOv4 \(NVIDIA\), MoGe-2 \(Microsoft\) and RVM \(Google DeepMind\)/.test(about) && !/ONNX/.test(about), "About credits CorridorKey 2.0 and its parts (no in-app words)", about.slice(0, 400));
 // the box line follows the selection, still nothing runs
 await run("select_none", { doc: ed.node.id });
 await wait(80);

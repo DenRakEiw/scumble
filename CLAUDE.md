@@ -758,6 +758,17 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `route`, `status.key.comfy`, the ask card's route; the `key` gate's `comfy *` and `dialog comfy` steps on both
   backends; plan §5 "B2 as built" ff.). Next: B5 (the manual's Route B section, RECIPES / HELPERS, the live run on the
   user's ComfyUI with the user present).
+  **Route B is built; B5's docs done, its live run open (2026-11-06; plan §5 "The review fixes and B5's docs").** A
+  review's five musts fixed: `landKey` finds its layers again by id (an undo or a delete during the wait), Route B's
+  first-run block carries §3.3's licence paragraph with the licence and corridorkey.com links and About credits
+  CorridorKey 2.0, `keying.cardFit` (Ampere or newer by name, data-centre cards pass) replaces the DLSS pack's rule,
+  pack B (`hashu786`) is detected but refused (it downloads its 5.1 GB inside the job); the nice ones too (the ask card's
+  hint and trust as sent, `route: "app"` refused, a renamed download switch refused / filled false). The manual's
+  chapter *Key green / blue screen* (slug `key-screen`), `docs/RECIPES.md` and `docs/HELPERS.md` "Models on your ComfyUI
+  that Scumble drives", the CHANGELOG line with the licence credit. **Open: B5's live run** (the user present, `/queue`
+  first) and **a second merge of `wasm-kernels` into `corridorkey` (K12b, `7e24df7` and after) before the release
+  block**, the user's "Ja, in 0.1.52"; skipped, the Relight CHANGELOG line names the NORMAL job's wait and the drag
+  step's +7 ms.
 - 50: **LoRAs on the user's ComfyUI and Comfy Cloud, and MOSS Image Edit** (issues #10, hwatik, 2026-10-24: "lora
   support for local generations ... qwen 2.1 or moss"; #11, nadergits, 2026-10-31: "add moss image edit ... with
   loras"; the user, 2026-11-06). **The user's decisions:** LoRAs only for the user's own ComfyUI (local or remote) and

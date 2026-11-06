@@ -4599,8 +4599,12 @@ export const host = {
         }
         if (gone()) return null;
         if (token && token.cancelled) throw Object.assign(new Error(T.cancelled), { hint: T.cancelled, kind: "cancelled", statusKind: "info" });
+        // the layers again by id: a key on your ComfyUI waits seconds while the dialog is non-modal, and an undo or redo
+        // of a layers step meanwhile rebuilds every layer object (inpaint_canvas.js undoStep), a delete takes one away
+        const live = (l) => (l && editor.layers.find((x) => x.id === l.id)) || null;
         if (rekeyLayer) {
-            const l = rekeyLayer;
+            const l = live(rekeyLayer);
+            if (!l) throw refusal(T.rekeyGone, "info");
             editor.pushUndo({ kind: "layerfull", id: l.id, label: "Re-key" });
             l.px = editor.ownPixels ? editor.ownPixels(px) : px;
             l.maskPx = editor.ownPixels ? editor.ownPixels(m) : m;
@@ -4613,6 +4617,8 @@ export const host = {
             editor.draw();
             return { layer: l, grey: null, hidden: null, matteBox: mbox, refine: refined };
         }
+        // a source layer deleted meanwhile: the key lands as a key of the visible picture does, nothing hidden
+        source = live(source);
         const isFill = (x) => editor.isFillLayer(x);
         const skip = (x) => editor.isReference(x) || editor.isControl(x) || (x.kind !== "filter" && !x.visible);
         const at = source ? editor.layers.indexOf(source) + 1 : realism.topFilterRun(editor.layers, isFill, skip);
@@ -4724,7 +4730,7 @@ export const host = {
         return app.offered ? "app" : "comfyui";
     },
 
-    /** Whether your ComfyUI can key now (keying.serverSupport: connected, an RTX 30+ card, a pack, Inpaint Canvas). */
+    /** Whether your ComfyUI can key now (keying.serverSupport: connected, an NVIDIA card of the Ampere generation or newer, pack A, Inpaint Canvas). */
     keyComfySupport() {
         const s = this.server || { state: "disconnected", gpus: [] };
         return keying.serverSupport({ state: s.state, gpus: s.gpus, objectInfo: this.objectInfo });

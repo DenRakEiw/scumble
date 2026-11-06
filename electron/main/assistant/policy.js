@@ -357,9 +357,12 @@ function keyRow(call, facts) {
     if (k) {
         const r = route === "comfyui" ? k.comfy : k.route === "app" ? k : null;
         if (r && r.ready === false) return REFUSE(String(r.reason || "Key screen cannot run on this document"));
+        // the in-app route asked while status.key's default is not it: keyRoute picks "app" whenever its engine is
+        // ready, so this build cannot run it (the command answers keying.TEXTS.notInstalled)
+        if (route === "app" && (k.route !== "app" || !k.provider)) return REFUSE(KEY_APP_MISSING);
     }
     const comfy = route === "comfyui";
-    const card = keyCard(call);
+    const card = keyCard(call, k);
     const pack = comfy && k && k.comfy && k.comfy.pack_label ? ` (${k.comfy.pack_label})` : "";
     card.settings = { route: comfy ? `your ComfyUI${pack}` : "in Scumble", ...card.settings };
     return ASK(comfy
@@ -367,12 +370,27 @@ function keyRow(call, facts) {
         : "keys the green / blue screen with CorridorKey 2.0 in Scumble on your GPU", card);
 }
 
-/** key_screen's ask card (item 49, docs/PLAN_CORRIDORKEY.md §4.8): the screen, the hint and its trust, what it does. */
-function keyCard(call) {
+/** keying.TEXTS.notInstalled (renderer/editor/keying.js; the main process does not load that module). */
+const KEY_APP_MISSING = "Key screen: the CorridorKey 2.0 engine is not part of this build yet.";
+/** keying.TRUSTS' values: the command snaps a trust to the nearest (keying.trustOf). */
+const KEY_TRUSTS = [0.5, 0.75, 0.95];
+const keyTrust = (n) => KEY_TRUSTS.reduce((best, t) => (Math.abs(t - n) < Math.abs(best - n) ? t : best), KEY_TRUSTS[0]);
+
+/**
+ * key_screen's ask card (item 49, docs/PLAN_CORRIDORKEY.md §4.8): the screen, the hint and its trust as the command
+ * sends them (renderer/commands.js key_screen: rekey and hint "mask" 0.95 unless trust is given, else status.key's
+ * stored trust, each snapped to keying.TRUSTS), what it does. `k` is status.key (facts.key) or null.
+ */
+function keyCard(call, k) {
     const a = (call && call.args) || {};
-    const trust = a.trust == null || a.trust === "" ? 0.5 : Number(a.trust);
-    const hint = a.rekey ? "the key layer's mask" : a.hint === "none" ? "none" : "the selection";
-    return { settings: { screen: a.screen || "auto", hint, trust: a.rekey ? 0.95 : trust, ...(a.preview ? { preview: "the matte becomes the selection" } : {}), ...(a.rekey ? { rekey: "yes" } : {}) } };
+    const given = a.trust != null && a.trust !== "" && Number.isFinite(+a.trust) ? Math.min(1, Math.max(0, +a.trust)) : null;
+    const stored = k && Number.isFinite(+k.trust) ? +k.trust : null;
+    const hint = a.rekey ? "the key layer's mask" : a.hint === "none" ? "none" : a.hint === "mask" ? "the source layer's mask" : "the selection";
+    const trust = a.rekey ? 0.95
+        : given != null ? keyTrust(given)
+            : a.hint === "mask" ? 0.95
+                : stored != null ? keyTrust(stored) : "your default";
+    return { settings: { screen: a.screen || "auto", hint, trust, ...(a.preview ? { preview: "the matte becomes the selection" } : {}), ...(a.rekey ? { rekey: "yes" } : {}) } };
 }
 
 function exportRow(call, facts, fallback, fixedPng) {

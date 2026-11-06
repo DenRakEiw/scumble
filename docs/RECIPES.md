@@ -423,6 +423,50 @@ the Cloud copy writes it into the copy's variant (`detach`), and `tools/cloud_re
   pass on 5456 × 3072 in about 8 s on the server, +4.6 GB of graphics memory, and on a transparent 1024 × 1024 picture
   with its alpha back exactly.
 
+### Key green / blue screen (not a recipe: a graph Scumble builds)
+
+*Image › Key Green / Blue Screen...* and `key_screen` (item 49, 0.1.52; `docs/PLAN_CORRIDORKEY.md` §4.11, "B2 as
+built" to "B4 as built") run CorridorKey 2.0 by Corridor Digital on the user's ComfyUI through the community node pack
+**ComfyUI-CorridorKey2.0** (`github.com/marawan206/ComfyUI-CorridorKey2.0`, tested at `c7662de`, 2026-11-02; installed
+on the user's ComfyUI by I0a, `docs/measurements/ck_i0a_2026-11-06/`). It is no recipe file and is not in the recipe
+picker: `renderer/editor/keying.js` (app-only, not in the node build) builds the graph per key, `keyPrompt(pack, refs,
+values, objectInfo)`, six nodes with a hint and four without:
+
+```
+ck_in       InpaintCanvasLoadRef    { ref: the box, PNG }
+ck_hint_img InpaintCanvasLoadRef    { ref: the hint, grey PNG, white = subject }    with a hint only
+ck_hint     ImageToMask             { image: ck_hint_img, channel: "red" }
+ck_model    CorridorKey2ModelLoader { weights: the spec's default, auto_download: false, keep_on_gpu, vram_reserve_gb: 0.5 }
+ck_key      CorridorKey2Basic       { model, images: ck_in, alpha_hint: ck_hint?, hint_quality, invert_hint: false, despill, screen }
+ck_out      PreviewImage            { images: ["ck_key", 2] }                       rgba: 8-bit straight RGBA
+```
+
+`hint_quality` is the pack's combo ("clean matte (0.95)", "rough matte (0.75)", "loose hint (0.5)"), picked by the
+number of the dialog's trust (`trustOption`), never by the name. `withSpecDefaults` fills any required input a later
+pack version adds with the server's default, except a BOOLEAN whose name holds "download", which goes `false`; a loader
+that no longer lists `auto_download` is refused before anything is sent (`keyPrompt`). `PreviewImage` writes a temp
+file, so nothing lands in the user's output folder; the box and the hint go up through `uploadInput` into the input
+folder's `inpaint_canvas` subfolder, as every local run's pictures do. The answer is decoded in bands
+(`host.keyComfyDecode`) and landed by `host.landKey`, shared with the in-app route (dormant in this build).
+
+**Before anything is uploaded** `keying.serverSupport` checks the connection, the devices `/system_stats` reports
+(`cardFit`: an NVIDIA card of the Ampere generation or newer by its name, data-centre cards included; a device list the
+server does not report is left to the pack), the pack's classes in `/object_info` (`packFor`), and `InpaintCanvas`.
+The second pack that runs CorridorKey 2.0, **ComfyUI-CorridorKey2** (`hashu786`, read at `141c31b`, never installed),
+is in `keying.PACKS` (its graph: `CorridorKey2` on slot 4, `window: "1/1"`) but **not offered**: it has no download
+switch and fetches its 5.1 GB inside the first key's job unless the server runs with `CORRIDORKEY2_NO_DOWNLOAD=1`, so
+`serverSupport` refuses it and names pack A. The pack's own errors come back as sentences (`keying.hint`: the models
+missing with the files named, no CUDA device, out of memory, the Windows commit limit, the low-VRAM mode's disk) that
+point to the manual's chapter *Key green / blue screen* (`docs/MANUAL.md`, slug `key-screen`), which has the pack's
+install steps as its README had them at `c7662de`. **The box** goes at its own size up to `settings.key.cap` (16 MP,
+B0) and 8,192 a side, else scaled by one factor and its matte refined against the full-resolution picture
+(`keymatte.js`, I6). **Run through the server** in I0a and B0 (`docs/measurements/ck_b0_2026-11-06/summary.txt`; RTX
+5090, ComfyUI 0.44.0): a whole-picture key equals the upstream reference within one 8-bit level; the key node 2.3 s at
+1 MP, about 7 s at 16 MP; every key after another prompt runs the loader again (8.9-10.0 s) and empties the GPU of
+that prompt's models; a Cancel stops a 16 MP key within about 1 s and leaves no interrupt flag set. **Not run yet from
+the app** against the real server (B5's live run). No Comfy Cloud or paid-host route (the Corridor Key Licence's
+§2(b); Comfy Cloud has no node for it).
+
 ### Presets
 
 The Settings section starts with a **Preset** row when the recipe has two or more file

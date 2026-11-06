@@ -466,14 +466,18 @@ class KeyDialog {
         // the first-run block on your ComfyUI: the models are fetched once onto that machine, never by Scumble
         E.comfyFirst = box.appendChild(node("div", "terms"));
         E.comfyFirstText = E.comfyFirst.appendChild(node("div", ""));
+        // §3.3's licence paragraph in Route B's words (the pack downloads the parts from their publishers there)
+        E.comfyTerms = E.comfyFirst.appendChild(node("div", "", keying.termsParagraph({ comfy: true })));
         const packLinks = E.comfyFirst.appendChild(node("div", ""));
-        E.packLink = packLinks.appendChild(node("a", "", "The node pack's page"));
-        E.packLink.href = "#";
-        E.packLink.addEventListener("click", (e) => {
-            e.preventDefault();
-            const p = keying.packById(host.keyComfySupport().pack) || keying.PACKS[0];
-            try { window.scumble.openExternal(p.url); } catch (err) { console.warn(err); }
-        });
+        const packLink = (text, url) => {
+            const a = packLinks.appendChild(node("a", "", text));
+            a.href = "#";
+            a.addEventListener("click", (e) => { e.preventDefault(); try { window.scumble.openExternal(url()); } catch (err) { console.warn(err); } });
+            return a;
+        };
+        E.packLink = packLink("The node pack's page", () => (keying.packById(host.keyComfySupport().pack) || keying.PACKS[0]).url);
+        E.comfyLicence = packLink("The licence", () => keying.LICENCE_URL);
+        E.comfyCorridor = packLink("corridorkey.com", () => keying.CORRIDOR_URL);
         // the first-run block (§1 "The first time", §3.3): what the set is, its parts and licences, the seat clause, and
         // the download (I2's terms dialog through keyEngine.download once it exists; Settings › Helpers meanwhile)
         E.terms = box.appendChild(node("div", "terms"));
@@ -721,7 +725,8 @@ class KeyDialog {
             values: { ...this.values }, session: this.session ? this.session.state() : null, keyDisabled: !!E.key.disabled,
             rows: Object.fromEntries(Object.entries(E).filter(([k]) => k.endsWith("Row")).map(([k, n]) => [k, !n.hidden])), ready: E.ready.textContent,
             boxLine: E.boxLine.hidden ? "" : E.boxLine.textContent, loop: E.loop.hidden ? "" : E.loop.textContent,
-            firstRun: E.comfyFirst.hidden ? "" : E.comfyFirstText.textContent, routeFixed: !!E.route.disabled, comfyBox: this.comfyPlan ? this.comfyPlan.box.slice() : null,
+            firstRun: E.comfyFirst.hidden ? "" : E.comfyFirstText.textContent, comfyTerms: E.comfyFirst.hidden ? "" : E.comfyTerms.textContent,
+            comfyLinks: E.comfyFirst.hidden ? [] : [E.packLink, E.comfyLicence, E.comfyCorridor].map((a) => a.textContent), routeFixed: !!E.route.disabled, comfyBox: this.comfyPlan ? this.comfyPlan.box.slice() : null,
         };
     }
 

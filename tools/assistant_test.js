@@ -1432,21 +1432,29 @@ async function main() {
                 && upBlind.action === "ask" && eq(upBlind.card, { settings: { factor: "2×" } }),
                 JSON.stringify({ up2, upCap, oneCap, upLinux, upBlind }));
             // item 49 B4: key_screen asks with its route on the card (status.key's default, your ComfyUI with its pack),
-            // a route status says cannot key is refused with the reason, and route app asks in Scumble's words
+            // a route status says cannot key is refused with the reason; route app is refused while status.key's
+            // default is not the in-app engine (this build has none) and asks in Scumble's words once it is; the card
+            // shows the hint and the trust the command sends (the source layer's mask at 0.95, else the stored trust)
             const fk = (extra) => { const x = facts(extra); x.tools.add("key_screen"); return x; };
-            const kReady = { ready: true, reason: null, route: "comfyui", comfy: { ready: true, reason: null, pack: "marawan206", pack_label: "ComfyUI-CorridorKey2.0" } };
-            const connect = "Full resolution on your ComfyUI needs your own ComfyUI with an RTX 30, 40 or 50 card and a CorridorKey 2.0 node pack: connect it under Settings › ComfyUI.";
+            const kReady = { ready: true, reason: null, route: "comfyui", trust: 0.75, comfy: { ready: true, reason: null, pack: "marawan206", pack_label: "ComfyUI-CorridorKey2.0" } };
+            const connect = "Full resolution on your ComfyUI needs your own ComfyUI with an NVIDIA card of the RTX 30 generation (Ampere) or newer and a CorridorKey 2.0 node pack: connect it under Settings › ComfyUI.";
             const kAsk = policy.decide({ name: "key_screen", args: { hint: "none", screen: "green" } }, fk({ key: kReady }));
             const kBlind = policy.decide({ name: "key_screen", args: {} }, fk());
             const kNo = policy.decide({ name: "key_screen", args: {} }, fk({ key: { ...kReady, ready: false, reason: connect, comfy: { ready: false, reason: connect, pack: null, pack_label: null } } }));
             const kApp = policy.decide({ name: "key_screen", args: { route: "app", rekey: true } }, fk({ key: kReady }));
+            const kAppReady = policy.decide({ name: "key_screen", args: { route: "app", rekey: true } }, fk({ key: { ...kReady, route: "app", provider: "dml" } }));
+            const kMask = policy.decide({ name: "key_screen", args: { source: "Subject", hint: "mask" } }, fk({ key: kReady }));
+            const kMaskT = policy.decide({ name: "key_screen", args: { hint: "mask", trust: 0.6 } }, fk({ key: kReady }));
             check("key_screen_asks_with_its_route_and_is_refused_when_its_route_cannot_key",
                 policy.RUNS.has("key_screen") && kAsk.action === "ask" && kAsk.reason === "keys the green / blue screen with CorridorKey 2.0 on your ComfyUI: it queues there and adds a layer"
-                && eq(kAsk.card, { settings: { route: "your ComfyUI (ComfyUI-CorridorKey2.0)", screen: "green", hint: "none", trust: 0.5 } })
-                && kBlind.action === "ask" && kBlind.card.settings.route === "your ComfyUI"
+                && eq(kAsk.card, { settings: { route: "your ComfyUI (ComfyUI-CorridorKey2.0)", screen: "green", hint: "none", trust: 0.75 } })
+                && kBlind.action === "ask" && kBlind.card.settings.route === "your ComfyUI" && kBlind.card.settings.trust === "your default"
                 && kNo.action === "refuse" && kNo.reason === connect
-                && kApp.action === "ask" && /in Scumble on your GPU/.test(kApp.reason) && kApp.card.settings.route === "in Scumble" && kApp.card.settings.trust === 0.95,
-                JSON.stringify({ kAsk, kBlind, kNo, kApp }));
+                && kApp.action === "refuse" && kApp.reason === "Key screen: the CorridorKey 2.0 engine is not part of this build yet."
+                && kAppReady.action === "ask" && /in Scumble on your GPU/.test(kAppReady.reason) && kAppReady.card.settings.route === "in Scumble" && kAppReady.card.settings.trust === 0.95
+                && kMask.action === "ask" && kMask.card.settings.hint === "the source layer's mask" && kMask.card.settings.trust === 0.95
+                && kMaskT.card.settings.trust === 0.5,
+                JSON.stringify({ kAsk, kBlind, kNo, kApp, kAppReady, kMask, kMaskT }));
             // release review 2026-10-05: cancel_run always asks, on the pinned document too, and says what is lost
             const fc = () => { const x = facts(); x.tools.add("cancel_run"); return x; };
             const cOne = policy.decide({ name: "cancel_run", args: { doc: 4 } }, fc());

@@ -407,6 +407,24 @@ Gate: `node tools/scan_test.js` (a synthetic ComfyUI folder with files truncated
 registry sizes, 22 checks, no models needed); `node tools/scan_test.js --dir <folder>`
 prints the report for a real folder.
 
+## Models on your ComfyUI that Scumble drives
+
+Scumble never downloads these and never reads them: they live on the machine the user's ComfyUI runs on, the node pack
+that uses them fetches them there, and Scumble only builds the graph and checks the node list (`/object_info`).
+
+| Feature | Node pack (tested commit) | Models on the ComfyUI machine | Licences |
+|---|---|---|---|
+| *Key green / blue screen* (item 49, `keying.js`, `docs/RECIPES.md` "Key green / blue screen") | ComfyUI-CorridorKey2.0 (`marawan206`, `c7662de`, 2026-11-02) | `models/corridorkey2/`, 35 files, 5,076,141,689 bytes (I0a): `corridorkey_v2.safetensors` and `foundation_stats.safetensors` from `huggingface.co/nikopueringer/CorridorKey2.0` @ `cf44a8d`; `foundations/cradio/` from `nvidia/C-RADIOv4-SO400M` @ `c0457f5`; `foundations/moge/model.pt` from `Ruicheng/moge-2-vitb-normal` @ `ca5f0e0`; `foundations/rvm/pretrain_rvm_small16_256_204031069.npz` from Google Cloud Storage (`representations4d`, MD5 `ZJb6kj8+tasiJbVeplXu7Q==`) | Corridor Key Licence 2.0 (CC BY-NC-SA 4.0 with Corridor's terms; used with Corridor's permission in the free app; organisations above US $20M revenue need one seat per user); NVIDIA Open Model License; MIT; CC BY 4.0 |
+| *Realism Pass (Windows only, RTX only)* (`realism.js`) | ComfyUI-DLSS5-Enhancer (`Blueforcer`, 1.1.0) | the pack's `runtime/` folder (the community DLSS 5 runtime v3.0, about 700 MB on disk) | NVIDIA's DLSS libraries under their own terms |
+
+The pack's loader fetches CorridorKey 2.0's set itself when its `auto_download` is on (the default in the ComfyUI page);
+every graph Scumble sends has it off, so a key without the set fails in a second with the files named
+(`keying.hint`), and the manual names the pack's `scripts/download_models.py` and the loader in the ComfyUI page as
+the two ways to fetch it. I0a fetched the set by hand with every file checked (sha256 of the LFS files, the git blob
+sha1 of the small C-RADIO files, RVM by MD5), no token sent (all three repos public): `docs/measurements/ck_i0a_2026-11-06/install.md`
+section 3. `keep_on_gpu` (the dialog's *Keep the model on the GPU between keys*, off by default) parks about 4.6 GB on
+that card between keys until ComfyUI's *Free model and node cache*.
+
 ## Settings › Helpers
 
 Device (auto / GPU / CPU; changing it frees the sessions; LaMa always runs on the CPU), the
