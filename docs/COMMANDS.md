@@ -178,7 +178,7 @@ Brush settings of this document: the tip (round, or an imported tip by id or nam
 
 ### `status` *(read-only)*
 
-What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (Realism Pass (Windows only, RTX only)) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends. loras: the selected recipe's LoRA rows (kept per recipe for every document; set_generation loras sets them): takes (whether its graph takes rows; reason when not), family (the base model its LoRAs should fit, when known), rows [{ name, strength, on, hint, mismatch, triggers, on_server }] (hint: the base model the file looks made for, null while unknown; mismatch: its tensor names fit another model than the recipe's, which never refuses a run; triggers: the file's trigger words; on_server: whether the server's list has it, null while the list is unread), and sent: what a run now would load, [{ name, strength }].
+What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (Realism Pass (Windows only, RTX only)) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends. key: whether key_screen would start on this document now (ready; reason when not: the CorridorKey 2.0 engine or its set missing, a run going, no picture), the provider it runs on (cpu: on the CPU, no live preview) and the working size. loras: the selected recipe's LoRA rows (kept per recipe for every document; set_generation loras sets them): takes (whether its graph takes rows; reason when not), family (the base model its LoRAs should fit, when known), rows [{ name, strength, on, hint, mismatch, triggers, on_server }] (hint: the base model the file looks made for, null while unknown; mismatch: its tensor names fit another model than the recipe's, which never refuses a run; triggers: the file's trigger words; on_server: whether the server's list has it, null while the list is unread), and sent: what a run now would load, [{ name, strength }].
 
 | param | type | description |
 |---|---|---|
@@ -578,6 +578,24 @@ Realism Pass (Windows only, RTX only): the whole visible picture (every visible 
 | `doc` | integer | document id (default the active tab) |
 | `factor` | number | 1 (the default: refine at the picture's own size), 1.5, 1.7, 2 or 3: above 1 the document becomes that many times larger and the pass layer comes at the new size |
 | `timeout` | integer | seconds to wait for the result (default 570) (default `570`) |
+
+### `key_screen` *(image)*
+
+Key green / blue screen with CorridorKey 2.0 inside Scumble (on the GPU when the engine runs there): one new layer "Key" lands directly above the source, its pixels the subject's own colour with the screen's spill taken out, its layer mask the matte (soft hair and motion blur), trimmed to the matte's box. A source layer is hidden in the same step; with the visible picture as the source a mid-grey Fill layer "Grey" goes under the key (grey: false leaves the base as it is). One undo step. The box is the selection's bounds grown by context (the whole picture, or the source layer, without a selection), keyed at the working size (Settings › Helpers) and scaled back to the full resolution. hint: selection (the selection's coverage as CorridorKey's alpha hint; select_mask gives a binary one: a soft hint needs a layer mask, set_mask from_layer, and rekey), none (the model decides). trust: how much the hint is believed (0.5 rough, 0.75 automatic, 0.95 clean). preview: the matte becomes the selection instead (one selection step), nothing is added. rekey: the active key layer's own mask is the hint (0.95) and its pixels and mask are replaced from the picture under it (one step); after a restart the key starts from the layer's bounds. Refused before anything is read when the engine or its 2.4 GB set is missing (status.key says why), a run is going on the document, or no picture is loaded.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `source` | string | "picture" (the default: the visible picture, filters skipped) or a layer whose own pixels are keyed (id, name, a unique part, or "active") (default `"picture"`) |
+| `screen` | string | auto (from the box's border), green or blue (default `"auto"`; one of `auto`, `green`, `blue`) |
+| `hint` | string | selection (the default) or none (default `"selection"`; one of `selection`, `none`) |
+| `trust` | number | 0.5 (rough, the default), 0.75 (automatic) or 0.95 (clean) |
+| `despill` | number | 0..1, how much of the screen's spill is taken out (default 0.5) |
+| `grey` | boolean | with the visible picture as the source: a mid-grey Fill layer under the key (default true) |
+| `preview` | boolean | the matte becomes the selection, nothing is added |
+| `rekey` | boolean | re-key the active key layer from its own mask |
+| `layer` | string | rekey: the key layer (default `"active"`) |
+| `timeout` | integer | seconds to wait for the result (default 300) (default `300`) |
 
 ### `relight` *(image)*
 
