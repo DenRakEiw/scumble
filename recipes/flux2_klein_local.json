@@ -5,6 +5,7 @@
   "mode": "local",
   "canvas": "canvas",
   "result": "decode:0",
+  "loras": { "family": "flux2" },
   "refs": { "name": "image {n}", "slots": 4 },
   "needs": ["InpaintCanvas", "ImageFromBatch", "UNETLoader", "CLIPLoader", "VAELoader", "ImageScaleToTotalPixels", "GetImageSize", "EmptyFlux2LatentImage", "Flux2Scheduler", "CLIPTextEncode", "VAEEncode", "ReferenceLatent", "CFGGuider", "RandomNoise", "KSamplerSelect", "SamplerCustomAdvanced", "VAEDecode"],
   "settings": [

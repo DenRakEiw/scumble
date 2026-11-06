@@ -5,6 +5,7 @@
   "mode": "local",
   "canvas": "canvas",
   "result": "decode:0",
+  "loras": { "family": "qwen_image_2_1" },
   "refs": { "name": "<image{n}>", "slots": 10 },
   "needs": ["InpaintCanvas", "ImageFromBatch", "UNETLoader", "CLIPLoader", "VAELoader", "QwenImage21Cache", "TextEncodeQwenImage21", "KSampler", "VAEDecode"],
   "settings": [

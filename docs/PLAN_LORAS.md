@@ -708,6 +708,85 @@ itself only if a newer stable is wanted) and LR9 (the live runs). The order LR0 
 LR8 → LR9 → LR5 → LR10 keeps every session that needs the user (LR5, LR8, LR9) late and together; LR5 may move earlier
 whenever the user has the key at hand; LR7 before LR5, since LR5 runs its variant live.
 
+### LR0 as built (2026-11-06)
+
+**Built:** `renderer/editor/loras.js` (new, pure, app-only, `// @ts-check`): `MAX_LORAS` 5, `LORA_MODEL_CLASS` /
+`LORA_CLIP_CLASS`, `normalizeName`, `comboOf` (both combo forms), `usableRows`, `modelSource`, `spliceLoras`,
+`missingLoras`, and `familyOf` / `recipeFamily` as LR3's stubs (the folder alone; the declared family alone).
+`electron/main/recipes.js`: `lorasOf(decl, graph, canvas)` (`false`, or `{ model, family }` with `model` a node of the
+graph other than the canvas; each part that does not hold left out with one warning), called in `normalize`'s comfy
+branch against `r.prompt` and in the provider loop per variant against `options.graph` and per text route against its
+own graph; the `LoraDecl` typedef on `Recipe`, `ProviderVariant`, `TextShape`; `GRAPH_KEEPS` gains `loras` and
+`fromGraph` keeps a declared `model` only while the saved graph holds it; `detach` writes the declaration into the Cloud
+copy's variant (a note when the copy lost the model node). `tools/cloud_recipes.js`: a MANIFEST row's `loras` goes into
+`providers.comfycloud` (`cloud_ideogram_4`: `false`); regenerated, only `recipes/cloud_ideogram_4.json` changed (one
+`"loras": false`). The five local edit / generate recipes declare `loras: { family }` (`flux2_klein_local` flux2,
+`flux3_klein_local` flux3, `moss_image_local` moss_image, both `qwen_image_edit_2_1_*` qwen_image_2_1). `docs/BUGS.md`:
+the relight recipe's root-level `lora_name` values. No UI, so no CHANGELOG line. The worktree's `node_modules` is a
+junction to `F:\canvas\node_modules` (untracked).
+
+**Tests (all green):** `node tools/loras_test.js` 56 of 56 (new: every graph of every shipped recipe raw and normalised,
+with the fixtures' node list and with the class table; the rows; the declarations through `normalize`; the fixtures;
+`missingLoras`; `comboOf`); `node tools/recipes_test.js` 258 of 258 (§14 new: `fromGraph`, `detach`, the manifest,
+`cloud_recipes.js --check` spawned); `node tools/cloud_recipes.js --check` ok, 13; unchanged and green beside them, since
+they read the touched recipe files: `comfyprompt_test.js` 87 of 87, `comfyrefs_test.js`, `cloudgraph_test.js` 29 of 29,
+`comfycloud_v2_test.js` 81 of 81, `settings_migration_test.js`. `lint` (`npx eslint .`): 0 errors, 21 warnings, none in
+a touched file. `types` (`npx tsc --noEmit -p tsconfig.check.json`): clean; `loras.js` also checked alone with `checkJs`
+(clean), since `host.js` imports it from LR1 on. No app instance was started.
+
+**`require(esm)`:** a CommonJS scratch script under `ELECTRON_RUN_AS_NODE=1` (Electron 44.2.0, its Node 24.20.0)
+`require()`s `renderer/editor/loras.js` (no `package.json` `type`; Node's syntax detection) and gets all eleven exports;
+a splice ran through it; no warning. Plain Node 24.18.0 the same. So main can require the module itself at LR5 and **no
+CJS twin is needed**. Not tried: the require from inside `app.asar` (the packaged exe); LR5's exe check (or the release's
+exe gates) does it, as S0 did for the SDK.
+
+**Every shipped graph's source and chain** (as the test prints them; the readers re-pointed to the chain's end, with the
+node list and with the class table alike):
+
+| Recipe / route | Source | Readers re-pointed |
+|---|---|---|
+| `flux2_klein_local` | `unet` (UNETLoader) | `guider.model` |
+| `flux3_klein_local` | `unet` | `guider.model`, `sched.model` (the upsampler's nodes untouched) |
+| `moss_image_local` | `unet` | `slg.model` (SkipLayerGuidanceDiTSimple after the chain) |
+| `qwen_image_edit_2_1_local`, `..._turbo_local` | `unet` | `cache.model` (QwenImage21Cache after the chain) |
+| `relight_qwen_local` | `unet` | `lora_relight.model` (no rows in 0.1.52, §3.2) |
+| `realism_pass`, `rtx_vsr_local`, `upscale_model_local` | none ("no model loader Scumble can see") | |
+| `cloud_anima_base` | `90:78` | `90:83.model` (its LoRA), `90:84.on_false` (the switch) |
+| `cloud_anima_preview` | `60:44` | `60:19.model` |
+| `cloud_boogu_image_edit` | `45:2` | `45:21.model`, `45:33.model` (ModelSamplingAuraFlow) |
+| `cloud_flux2_dev` | `68:12` | `68:89.model`, `68:92.on_false` |
+| `cloud_flux2_klein_9b` (edit and text) | `75:70` | `75:63.model` |
+| `cloud_flux2_klein_9b_multi` | `92:106` | `92:114.model` |
+| `cloud_ideogram_4` | none (declared `false`; without it `{ many: [98:154, 98:23] }`) | |
+| `cloud_krea_2_turbo` | `30:10` | `30:15.model`, `30:22.on_false` |
+| `cloud_mage_flow`, `cloud_mage_flow_edit_turbo` | `12:1` | `12:6.model` |
+| `cloud_qwen_image_2_1_edit` | `459:451` | `459:469.model` (edit), `459:480.model` (text) |
+| `cloud_qwen_image_edit_2509` | `433:37` | `433:89.model`, `433:440.on_false` |
+| `cloud_z_image_turbo` | `57:28` | `57:11.model` (ModelSamplingAuraFlow) |
+| `relight` (comfycloud) | `10:37` | `10:89.model` (out of scope, §3.5) |
+
+**Deviations from the row, each by the code:**
+1. **A Cloud recipe's text route has its own resolution, `v.text.loras`**, written by `normalize` (the variant's
+   `v.loras` for the edit graph): the edit and text graphs of `cloud_flux2_klein_9b` share ids (`75:70`, `75:63` in
+   both), so "dropped for a route whose graph lacks it" needs a field per route. **LR5's Generate new request sends
+   `declared: v.text.loras`**, not `v.loras` as §3.5 writes; `modelSource` also falls back to the generic rule when a
+   declared node is not in the graph it is given, so a request sending `v.loras` would still splice right.
+2. **`modelSource` takes `r.save`** as a root beside `r.result` and the output nodes, so main calls it with `{ loras:
+   declared, save: req.options.save }` (§3.5 writes `{ loras }`); without any root every node counts as live.
+3. **A source must have its MODEL read by a live node** (a checkpoint loader kept for its VAE beside a UNETLoader is no
+   second source); the rule of §3.1 says only "outputs MODEL, takes none".
+4. **`spliceLoras` fixes the separators itself** from the node list's `lora_name` combo (the server's spelling goes);
+   `missingLoras` lists a separator-only difference with `server` set and a true miss with `server: null`, so LR1's
+   refusal is `missing.filter((m) => !m.server)`.
+5. **More than five usable rows throw** ("At most 5 LoRAs per recipe; the rows name 6."), the graph unchanged; switched-off
+   rows do not count. A strength is clamped to −100 .. 100. No usable row, or no / two sources: nothing changes, and
+   with rows the `note` says why they stayed out.
+6. **A declared `model` naming the canvas node** is refused by `lorasOf`; a declared node whose class gives no MODEL at
+   its first output answers `none` with the reason at run time; **`loras` on a variant without a graph** (an API
+   variant) is dropped with a warning (decision 1).
+7. **The relight recipes declare nothing**: `modelSource` finds their `unet` / `10:37`, so LR2 hides the section for them
+   by task, as §3.2 says, not by the graph.
+
 ## 5. How it fits into 0.1.52 beside CorridorKey
 
 - **One branch, one release.** Both plans build on `corridorkey` (cut from `main` = 0.1.51) and ship as 0.1.52 on the

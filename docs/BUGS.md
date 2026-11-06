@@ -15,6 +15,20 @@ Nothing at the moment (0.1.50's and 0.1.51's fixes went out with them; `CHANGELO
 
 ## Open
 
+### The local relight recipe names LoRA files at the folder root that the user's server holds under other names (found 2026-11-06, read, not run; item 50's research)
+
+`recipes/relight_qwen_local.json` hard-codes its two `lora_name` values at the root of `models/loras`
+(`Qwen-Image-Edit-2509-Relight.safetensors`, `Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors`); only the
+Relight LoRA's `strength_model` is a Settings row. The user's ComfyUI holds the files as
+`qwen\Qwen-Edit-Relight.safetensors` and `qwen\Qwen-Image-Edit-2509-Lightning-4steps-V1.0-fp32.safetensors` (the
+research's listing of `models/loras`, `docs/research/issues10_11_2026-11-06/lora_ecosystem.md`). `host.js`
+`checkComfyRelightModels` matches the names exactly against the `LoraLoaderModelOnly` combo, so a local relight on
+that server refuses with "Your ComfyUI lacks ... Relight LoRA" (inferred: the check read, no relight run), and the
+graph would fail ComfyUI's own check if it got that far. Open: the two `lora_name` inputs as Settings rows (file
+combos with the refusal and the download link, issue #4's mechanism), or a match by file stem across subfolders, or
+the manual telling the user to put the files at those names. Not fixed by item 50 (`docs/PLAN_LORAS.md` §2.2: the
+relight recipes take no LoRA rows in 0.1.52).
+
 ### The helper downloader sends the Hugging Face token to every URL and checks only the size (found 2026-10-24, read, item 49's plan)
 
 `electron/main/onnx/models.js` `_file` (`:297-299` at `ec1142b`) puts `authorization: Bearer <token>` on every

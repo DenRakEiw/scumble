@@ -88,6 +88,16 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {any} [options]   the route's own options instead of the variant's (a Comfy Cloud recipe's text-to-image graph)
  * @property {string[]} [aspects]   the aspects the route takes for a new image ("W:H"), where the variant's options and
  *   limits do not list them (item 34: the Generate new dialog and the New dialog's presets offer them; renderer/editor/genpresets.js)
+ * @property {LoraDecl} [loras]   a Comfy Cloud graph variant's `loras` as it holds for this route's graph (normalize;
+ *   absent: the variant declared none, or nothing of it holds here)
+ */
+
+/**
+ * Where a recipe's LoRAs go (item 50, docs/PLAN_LORAS.md §3.1, §3.5; lorasOf): `false` takes none; `model` names the
+ * node of the graph the chain starts after (renderer/editor/loras.js modelSource; a node that itself reads a MODEL is
+ * allowed, as an edit LoRA in the graph), `family` the base model the LoRAs must fit (the picker's hint).
+ *
+ * @typedef {false | { model?: string, family?: string }} LoraDecl
  */
 
 /**
@@ -121,6 +131,8 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {UpscaleFactor} [factor]         upscalers only
  * @property {boolean} [usesPrompt]           upscalers only: the tab's prompt goes along
  * @property {{ name: string }} [refs]        what the model calls reference picture n ("image {n}"); always set by normalize()
+ * @property {LoraDecl} [loras]               a graph variant (Comfy Cloud): where the LoRAs go in `options.graph`; its
+ *   text route's own resolution is `text.loras`
  */
 
 /**
@@ -162,6 +174,7 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {LocalBoxes} [boxes]             ComfyUI recipes: where the Inpaint Canvas node's box rows go (localBoxes)
  * @property {boolean} [edit]                 ComfyUI recipes: false = a text-to-image graph, Generate new only (normalize)
  * @property {LocalUpsampler} [upsampler]     ComfyUI recipes: a prompt upsampler in the graph (localUpsampler)
+ * @property {LoraDecl} [loras]               ComfyUI recipes: where the LoRAs go (lorasOf); a provider recipe's is its variant's
  */
 
 /**
@@ -583,6 +596,35 @@ function withoutUpsampler(prompt, up) {
 }
 
 /**
+ * A recipe's `loras` (LoraDecl) checked against one graph: `false` as it is; an object keeps `model` while it names a
+ * node of the graph other than the canvas node, and `family` while it is a name (other keys go). Answers `{ loras }`
+ * (undefined when nothing of it holds: the graph's own model loader is then found by renderer/editor/loras.js's rule)
+ * and the findings in `why`, one per part left out.
+ * @param {any} decl
+ * @param {Record<string, any> | null | undefined} graph
+ * @param {string} [canvas]
+ * @returns {{ loras?: LoraDecl, why: string[] }}
+ */
+function lorasOf(decl, graph, canvas) {
+    if (decl === false) return { loras: false, why: [] };
+    if (!decl || typeof decl !== "object" || Array.isArray(decl)) return { why: [`${JSON.stringify(decl)} is neither false nor { model, family }`] };
+    /** @type {{ model?: string, family?: string }} */
+    const out = {};
+    const why = [];
+    if (decl.model !== undefined) {
+        const m = typeof decl.model === "string" ? decl.model : "";
+        if (m && graph && graph[m] && m !== String(canvas == null ? "" : canvas)) out.model = m;
+        else why.push(`names the model source ${JSON.stringify(decl.model)}, which is no node of the graph`);
+    }
+    if (decl.family !== undefined) {
+        if (typeof decl.family === "string" && decl.family.trim()) out.family = decl.family.trim();
+        else why.push(`names the family ${JSON.stringify(decl.family)}, which is no name`);
+    }
+    if (!Object.keys(out).length && !why.length) why.push("names neither a model source nor a family");
+    return Object.keys(out).length ? { loras: out, why } : { why };
+}
+
+/**
  * Fill in everything the rest of the app is allowed to rely on. Runs on every recipe that
  * is read from disk or imported; the shape it answers is the typedef above.
  * @param {Recipe} r
@@ -620,6 +662,13 @@ function normalize(r) {
                 delete r.upsampler;
             }
         }
+        // where the LoRA rows go (item 50): a part that does not hold is left out, the rest kept
+        if (r.loras !== undefined) {
+            const got = lorasOf(r.loras, r.prompt, r.canvas);
+            for (const w of got.why) console.warn(`${r.id}: loras ${w}; left out`);
+            if (got.loras === undefined) delete r.loras;
+            else r.loras = got.loras;
+        }
         return r;
     }
     if (!r.providers || typeof r.providers !== "object" || !Object.keys(r.providers).length) {
@@ -631,6 +680,15 @@ function normalize(r) {
     for (const [id, v] of Object.entries(r.providers)) {
         v.limits = editLimits(r, v);
         v.refs = refsOf(v.refs !== undefined ? v.refs : r.refs, `${r.id}/${id}`);
+        // a graph variant's LoRAs (item 50): checked against its edit graph here, against its text route's graph below
+        const lorasDeclared = v.loras;
+        const graph = v.options && typeof v.options === "object" && v.options.graph && typeof v.options.graph === "object" ? v.options.graph : null;
+        if (lorasDeclared !== undefined) {
+            const got = graph ? lorasOf(lorasDeclared, graph) : { why: ["is on a variant without a graph (LoRAs go into Comfy Cloud graphs only)"] };
+            for (const w of got.why) console.warn(`recipe ${r.id}/${id}: loras ${w}; left out`);
+            if (got.loras === undefined) delete v.loras;
+            else v.loras = got.loras;
+        }
         if (r.task === "upscale") {
             // an upscaler makes nothing from a prompt alone, so it has no Generate new shape
             v.text = null;
@@ -647,6 +705,18 @@ function normalize(r) {
         }
         v.text = textVariant(id, v, `${r.id}/${id}`);
         v.edit = v.edit !== false;   // false: text to image only, no Generate on a crop
+        // the text route runs its own graph (text.options) or the variant's: the declaration holds for it as far as its
+        // graph has the named node (two templates' graphs share ids such as 75:70, so each route is checked by itself)
+        if (lorasDeclared !== undefined && graph && v.text) {
+            const tg = v.text.options && typeof v.text.options === "object" && v.text.options.graph && typeof v.text.options.graph === "object" ? v.text.options.graph : null;
+            if (!tg) {
+                if (v.loras !== undefined) v.text.loras = v.loras;
+            } else {
+                const got = lorasOf(lorasDeclared, tg);
+                for (const w of got.why) console.warn(`recipe ${r.id}/${id} (text): loras ${w}; left out`);
+                if (got.loras !== undefined) v.text.loras = got.loras;
+            }
+        }
     }
     r.providerIds = Object.keys(r.providers);
     if (!r.default || !r.providers[r.default]) r.default = r.providerIds[0];
@@ -1064,7 +1134,7 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
 }
 
 // What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
-const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit", "upsampler"];
+const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit", "upsampler", "loras"];
 
 /**
  * The graph of ComfyUI's page -> a recipe to save (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3). `output` is the API
@@ -1097,6 +1167,11 @@ function fromGraph({ output, workflow, objectInfo, base, name, ids, date }) {
     // the boxes' input only while the saved graph still feeds it the canvas node's plain prompt (a node renamed, a link
     // moved or a Settings row on it: no box rows go there)
     if (kept.boxes !== undefined && !localBoxes(/** @type {Recipe} */ ({ id: "", ...graph, task: kept.task, boxes: kept.boxes })).boxes) delete kept.boxes;
+    // the LoRAs' model source only while the saved graph still holds that node (its family stays)
+    if (kept.loras !== undefined) {
+        const got = lorasOf(kept.loras, fields.prompt, fields.canvas);
+        if (got.loras === undefined) delete kept.loras; else kept.loras = got.loras;
+    }
     if (!name) {
         if (!base || !base.id) throw new Error("This window holds no recipe to save into: use Save as new recipe.");
         return /** @type {Recipe} */ ({ id: base.id, name: base.name || base.id, ...kept, ...graph });
@@ -1624,6 +1699,15 @@ function detach(recipe) {
         const held = node && node.inputs ? node.inputs[ft.slice(at + 1)] : undefined;
         notes.push(`the Comfy Cloud copy runs at the factor its graph holds${held != null ? ` (${held}×)` : ""}; change it in its graph`);
     }
+    // where the LoRAs go: the recipe's declaration as a field of the Cloud copy's variant (item 50, docs/PLAN_LORAS.md §3.5)
+    /** @type {LoraDecl | undefined} */
+    let loras;
+    if (recipe.loras !== undefined) {
+        const got = lorasOf(recipe.loras, prompt);
+        loras = got.loras;
+        const named = recipe.loras && typeof recipe.loras === "object" ? recipe.loras.model : undefined;
+        if (named !== undefined && !(loras && loras.model)) notes.push(`the LoRAs' model source ${JSON.stringify(named)} is not in the Comfy Cloud copy; its graph's own model loader takes them there`);
+    }
     /** @type {Recipe} */
     const out = {
         id: `${recipe.id}_cloud`, name: `${name} (Comfy Cloud)`, kind: "provider",
@@ -1639,6 +1723,7 @@ function detach(recipe) {
                 limits: { ...LIMITS_DEFAULT, max, step, aspects: [] },
                 refs: { name: (recipe.refs && recipe.refs.name) || REF_NAME_DEFAULT },
                 note: "A ComfyUI recipe without its Inpaint Canvas node, on Comfy Cloud's GPUs.",
+                ...(loras !== undefined ? { loras } : {}),
             },
         },
     };

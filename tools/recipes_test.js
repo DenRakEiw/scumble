@@ -19,6 +19,8 @@
 // Boxes in the prompt on the user's ComfyUI (§13): a ComfyUI recipe's `boxes` kept by normalize, a bad one warned and
 // dropped, carried through Save to recipe / Save as new recipe while the graph still feeds its input the plain prompt, none
 // on the Comfy Cloud copy.
+// LoRAs (item 50, §14): a recipe's `loras` through Save to recipe (GRAPH_KEEPS, the model source only while the saved
+// graph holds it), the Comfy Cloud copy (a field of its variant), the manifest of tools/cloud_recipes.js and its --check.
 "use strict";
 
 const fs = require("node:fs");
@@ -1102,6 +1104,57 @@ async function main() {
             const v = d.providers.comfycloud;
             check("the Comfy Cloud copy takes the prompt into say_in.string_b and declares no boxes",
                 d.boxes === undefined && (v.options || {}).boxes === undefined && (v.options.values.prompt || []).some((x) => eq(x, ["say_in", "string_b"])), short({ values: v.options.values, boxes: d.boxes }));
+        } finally { console.warn = warn; }
+    });
+
+    // ---- 14. where a recipe's LoRAs go (item 50, docs/PLAN_LORAS.md LR0; the splice itself: tools/loras_test.js) ----
+    await section("14. a recipe's loras through Save to recipe, the Comfy Cloud copy and the generated Cloud recipes", async () => {
+        const warn = console.warn;
+        const warned = [];
+        console.warn = (...a) => warned.push(a.join(" "));
+        try {
+            freshUserData();
+            const all = await recipes.list(RECIPES);
+            const k = all.find((r) => r.id === "flux3_klein_local");
+            check("flux3_klein_local declares its family (normalize keeps it, no warning about loras)", !!k && eq(k.loras, { family: "flux3" }) && !warned.some((w) => /loras/.test(w)), short({ loras: k && k.loras, warned }));
+            const workflow = { nodes: [{ id: 1, type: "InpaintCanvas" }], links: [], extra: {} };
+            const date = "2026-11-06";
+            const p = recipes.toPrompt(k);
+            const over = recipes.fromGraph({ output: p, workflow, objectInfo: {}, base: k, date });
+            const fresh = recipes.fromGraph({ output: p, workflow, objectInfo: {}, base: k, name: "My Klein LoRAs", ids: [k.id], date });
+            check("fromGraph (Save to recipe, Save as new recipe) keeps loras (GRAPH_KEEPS)", eq(over.loras, { family: "flux3" }) && eq(fresh.loras, { family: "flux3" }) && fresh.id !== k.id, short({ over: over.loras, fresh: fresh.loras }));
+            const declared = { ...k, loras: { model: "unet", family: "flux3" } };
+            const keptModel = recipes.fromGraph({ output: recipes.toPrompt(declared), workflow, objectInfo: {}, base: declared, date });
+            const renamed = JSON.parse(JSON.stringify(recipes.toPrompt(declared)));
+            renamed.unet_main = renamed.unet;
+            delete renamed.unet;
+            for (const n of Object.values(renamed)) for (const [kk, v] of Object.entries(n.inputs || {})) if (Array.isArray(v) && v[0] === "unet") n.inputs[kk] = ["unet_main", v[1]];
+            const lost = recipes.fromGraph({ output: renamed, workflow, objectInfo: {}, base: declared, date });
+            const off = recipes.fromGraph({ output: p, workflow, objectInfo: {}, base: { ...k, loras: false }, date });
+            check("a declared model source is kept while the saved graph holds the node, left out (the family kept) once it is renamed; false kept",
+                eq(keptModel.loras, { model: "unet", family: "flux3" }) && eq(lost.loras, { family: "flux3" }) && off.loras === false, short({ kept: keptModel.loras, lost: lost.loras, off: off.loras }));
+            // the Comfy Cloud copy: the declaration as a field of its variant, checked by normalize there
+            const { recipe: d, notes } = recipes.detach(k);
+            const v = d.providers.comfycloud;
+            check("detach writes the recipe's loras into the Cloud copy's variant (not at the top)", eq(v.loras, { family: "flux3" }) && d.loras === undefined && !notes.some((n) => /LoRA/.test(n)), short({ v: v.loras, top: d.loras, notes }));
+            const { recipe: dm } = recipes.detach(declared);
+            const { recipe: df } = recipes.detach({ ...k, loras: false });
+            const { recipe: dg, notes: notesG } = recipes.detach({ ...k, loras: { model: "up_clip", family: "flux3" } });
+            check("detach: a model source the copy keeps stays, false stays, one the copy drops (an upsampler node) is left out with a note",
+                eq(dm.providers.comfycloud.loras, { model: "unet", family: "flux3" }) && df.providers.comfycloud.loras === false
+                && eq(dg.providers.comfycloud.loras, { family: "flux3" }) && notesG.some((n) => /LoRAs' model source "up_clip" is not in the Comfy Cloud copy/.test(n)),
+                short({ dm: dm.providers.comfycloud.loras, df: df.providers.comfycloud.loras, dg: dg.providers.comfycloud.loras, notesG }));
+            const before = warned.length;
+            const nd = recipes._normalize(JSON.parse(JSON.stringify(dm)));
+            check("the Cloud copy through normalize keeps the variant's loras without a warning", eq(nd.providers.comfycloud.loras, { model: "unet", family: "flux3" }) && warned.length === before, short({ loras: nd.providers.comfycloud.loras, said: warned.slice(before) }));
+            // the generated Cloud recipes: the manifest's loras in the variant, the files what the tool writes
+            const tool = require(path.join(ROOT, "tools", "cloud_recipes.js"));
+            const info = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "comfy_templates", "object_info.json"), "utf8"));
+            const withLoras = tool.MANIFEST.filter((m) => m.loras !== undefined).map((m) => `${m.id}=${JSON.stringify(m.loras)}`);
+            const built = tool.build(tool.MANIFEST.find((m) => m.id === "cloud_ideogram_4"), info);
+            check("the manifest declares loras false for cloud_ideogram_4 alone, and build writes it into providers.comfycloud", eq(withLoras, ["cloud_ideogram_4=false"]) && built.providers.comfycloud.loras === false && built.loras === undefined, short(withLoras));
+            const run = require("node:child_process").spawnSync(process.execPath, [path.join(ROOT, "tools", "cloud_recipes.js"), "--check"], { encoding: "utf8" });
+            check("node tools/cloud_recipes.js --check", run.status === 0 && /^ok: 13 Comfy Cloud recipes match their exports/.test(run.stdout), short((run.stdout || "") + (run.stderr || "")));
         } finally { console.warn = warn; }
     });
 

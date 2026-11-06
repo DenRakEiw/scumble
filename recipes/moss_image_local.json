@@ -5,6 +5,7 @@
   "mode": "local",
   "canvas": "canvas",
   "result": "decode:0",
+  "loras": { "family": "moss_image" },
   "edit": false,
   "boxes": { "schema": "moss", "input": "pos|text", "layout": "layout" },
   "needs": ["InpaintCanvas", "ImageFromBatch", "UNETLoader", "CLIPLoader", "VAELoader", "ImageScaleToTotalPixels", "GetImageSize", "EmptyFlux2LatentImage", "SkipLayerGuidanceDiTSimple", "MOSSImageLayoutPrompt", "CLIPTextEncode", "KSampler", "VAEDecode"],

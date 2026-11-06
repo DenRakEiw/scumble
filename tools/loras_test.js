@@ -1,0 +1,417 @@
+// LoRAs on the user's ComfyUI and Comfy Cloud (item 50, docs/PLAN_LORAS.md LR0), in plain Node, no Electron, no
+// ComfyUI and no network:
+//   node tools/loras_test.js
+// renderer/editor/loras.js (an ES module, imported as tools/comfyprompt_test.js imports comfyprompt.js) is the API under
+// test, over every graph a shipped recipe carries (the local recipes' prompt, each Comfy Cloud variant's edit graph and
+// its text route's own graph), read raw and as electron/main/recipes.js normalize() serves them (loaded with electron
+// stood in for), with the fixtures' node list (tools/refs/comfy_templates/object_info.json) and without one (the class
+// table): the model source of each, printed with its chain, and every input that read the source's MODEL re-pointed to
+// the chain's end, the recipe's own graph untouched; the rows (switched off, an empty name, five in order, the sixth
+// refused); the declarations through normalize (both branches; a Cloud recipe's two routes checked by themselves); the
+// fixtures (a checkpoint loader with its CLIP, flattened ids, a taken id, a Nunchaku loader, a declared source that
+// reads a MODEL); missingLoras (separators, an empty list refuses nothing); comboOf on both combo forms.
+"use strict";
+
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const util = require("node:util");
+const Module = require("node:module");
+const { pathToFileURL } = require("node:url");
+
+const ROOT = path.join(__dirname, "..");
+const RECIPES = path.join(ROOT, "recipes");
+
+const results = [];
+function check(what, ok, detail) {
+    results.push(!!ok);
+    console.log(`[${ok ? "ok" : "FAIL"}] ${what}${detail ? ": " + detail : ""}`);
+}
+const eq = (a, b) => util.isDeepStrictEqual(a, b);
+const clone = (v) => JSON.parse(JSON.stringify(v));
+const short = (v) => { const s = typeof v === "string" ? v : JSON.stringify(v); return s && s.length > 400 ? s.slice(0, 400) + " ..." : s; };
+const throws = (fn) => { try { fn(); return null; } catch (e) { return (e && e.message) || String(e); } };
+async function section(name, fn) {
+    console.log(`\n--- ${name} ---`);
+    try { await fn(); } catch (err) { check(`${name}: ran through`, false, String(err && err.stack || err).split(/\r?\n/).slice(0, 3).join(" ")); }
+}
+
+let USERDATA = "";
+function loadRecipes() {
+    USERDATA = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-loras-test-"));
+    const orig = Module._load;
+    Module._load = function (request, ...rest) {
+        if (request === "electron") return { app: { getPath: () => USERDATA } };
+        return orig.call(this, request, ...rest);
+    };
+    try { return require(path.join(ROOT, "electron", "main", "recipes.js")); } finally { Module._load = orig; }
+}
+const rawFile = (id) => JSON.parse(fs.readFileSync(path.join(RECIPES, id + ".json"), "utf8"));
+/** The inputs of a graph that read `[id, slot]`, as "node.input", sorted. */
+const readersOf = (g, id, slot) => {
+    const out = [];
+    for (const [n, node] of Object.entries(g)) for (const [k, v] of Object.entries((node && node.inputs) || {})) if (Array.isArray(v) && String(v[0]) === String(id) && v[1] === slot) out.push(`${n}.${k}`);
+    return out.sort();
+};
+/** console.warn caught while fn runs: [result, warnings]. */
+function warnsOf(fn) {
+    const warn = console.warn, said = [];
+    console.warn = (...a) => said.push(a.join(" "));
+    try { return [fn(), said]; } finally { console.warn = warn; }
+}
+
+/**
+ * Every graph a recipe carries: [route, graph, the `r` modelSource reads]. A local recipe its prompt; a provider
+ * recipe's graph variants their edit graph ({ loras, save } of the variant) and their text route's own graph (the
+ * route's own `text.loras` once normalised, the variant's in a raw file).
+ */
+function graphsOf(r, normalised) {
+    const out = [];
+    if (r.prompt) out.push(["prompt", r.prompt, r]);
+    for (const [id, v] of Object.entries(r.providers || {})) {
+        if (!v || !v.options || !v.options.graph) continue;
+        out.push([id, v.options.graph, { loras: v.loras, save: v.options.save }]);
+        const t = v.text && v.text.options && v.text.options.graph ? v.text : null;
+        if (t) out.push([`${id}.text`, t.options.graph, { loras: normalised ? t.loras : v.loras, save: t.options.save }]);
+    }
+    return out;
+}
+
+// What each shipped graph's model source is and what reads it (read from the files at a86b94e + LR0): [node, readers]
+// or "none" or ["many", ids]. A recipe with a graph that is not here fails the table check.
+const EXPECT = {
+    "flux2_klein_local/prompt": ["unet", ["guider.model"]],
+    "flux3_klein_local/prompt": ["unet", ["guider.model", "sched.model"]],
+    "moss_image_local/prompt": ["unet", ["slg.model"]],
+    "qwen_image_edit_2_1_local/prompt": ["unet", ["cache.model"]],
+    "qwen_image_edit_2_1_turbo_local/prompt": ["unet", ["cache.model"]],
+    "relight_qwen_local/prompt": ["unet", ["lora_relight.model"]],
+    "realism_pass/prompt": "none",
+    "rtx_vsr_local/prompt": "none",
+    "upscale_model_local/prompt": "none",
+    "cloud_anima_base/comfycloud": ["90:78", ["90:83.model", "90:84.on_false"]],
+    "cloud_anima_preview/comfycloud": ["60:44", ["60:19.model"]],
+    "cloud_boogu_image_edit/comfycloud": ["45:2", ["45:21.model", "45:33.model"]],
+    "cloud_flux2_dev/comfycloud": ["68:12", ["68:89.model", "68:92.on_false"]],
+    "cloud_flux2_klein_9b/comfycloud": ["75:70", ["75:63.model"]],
+    "cloud_flux2_klein_9b/comfycloud.text": ["75:70", ["75:63.model"]],
+    "cloud_flux2_klein_9b_multi/comfycloud": ["92:106", ["92:114.model"]],
+    "cloud_ideogram_4/comfycloud": "none",   // declared false (two loaders: section 2's last check)
+    "cloud_krea_2_turbo/comfycloud": ["30:10", ["30:15.model", "30:22.on_false"]],
+    "cloud_mage_flow/comfycloud": ["12:1", ["12:6.model"]],
+    "cloud_mage_flow_edit_turbo/comfycloud": ["12:1", ["12:6.model"]],
+    "cloud_qwen_image_2_1_edit/comfycloud": ["459:451", ["459:469.model"]],
+    "cloud_qwen_image_2_1_edit/comfycloud.text": ["459:451", ["459:480.model"]],
+    "cloud_qwen_image_edit_2509/comfycloud": ["433:37", ["433:440.on_false", "433:89.model"]],
+    "cloud_z_image_turbo/comfycloud": ["57:28", ["57:11.model"]],
+    "relight/comfycloud": ["10:37", ["10:89.model"]],
+};
+// the patches a chain must come before (the plan's patch graphs) and the switch graphs whose two branches both re-point
+const PATCH = { "qwen_image_edit_2_1_local/prompt": "QwenImage21Cache", "cloud_qwen_image_2_1_edit/comfycloud": "QwenImage21Cache", "cloud_z_image_turbo/comfycloud": "ModelSamplingAuraFlow", "moss_image_local/prompt": "SkipLayerGuidanceDiTSimple", "cloud_boogu_image_edit/comfycloud": "ModelSamplingAuraFlow" };
+const SWITCH = ["cloud_anima_base/comfycloud", "cloud_flux2_dev/comfycloud", "cloud_krea_2_turbo/comfycloud", "cloud_qwen_image_edit_2509/comfycloud"];
+
+async function main() {
+    const L = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "loras.js")).href);
+    const recipes = loadRecipes();
+    const info = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "comfy_templates", "object_info.json"), "utf8"));
+    const listed = await recipes.list(RECIPES);
+    const byId = (id) => listed.find((r) => r.id === id);
+    const ROWS2 = [{ name: "klein\\style_a.safetensors", strength: 0.8, on: true }, { name: "style_b.safetensors", strength: 1 }];
+
+    await section("1. the module: the cap, names, the combo on both forms, the rows a run loads", () => {
+        check("MAX_LORAS is 5 and the chain is LoraLoaderModelOnly (LoraLoader with a CLIP)", L.MAX_LORAS === 5 && L.LORA_MODEL_CLASS === "LoraLoaderModelOnly" && L.LORA_CLIP_CLASS === "LoraLoader");
+        check("normalizeName: backslashes as slashes, the ends trimmed, the case kept, null as \"\"",
+            L.normalizeName("klein\\sub\\A.safetensors") === "klein/sub/A.safetensors" && L.normalizeName(" x/y.safetensors ") === "x/y.safetensors" && L.normalizeName(null) === "" && L.normalizeName("Q\\a") !== L.normalizeName("q/a"));
+        const old = { LoraLoaderModelOnly: { input: { required: { model: ["MODEL"], lora_name: [["a.safetensors", "klein\\b.safetensors", 7], {}], strength_model: ["FLOAT", {}] } } } };
+        const neu = { LoraLoaderModelOnly: { input: { required: { lora_name: ["COMBO", { options: ["a.safetensors", "klein/b.safetensors"] }] } } } };
+        const opt = { X: { input: { optional: { lora_name: [["o.safetensors"]] } } } };
+        check("comboOf reads [[names], {}] and [\"COMBO\", { options }] (strings only), an optional input, and answers null without a list",
+            eq(L.comboOf(old, "LoraLoaderModelOnly", "lora_name"), ["a.safetensors", "klein\\b.safetensors"]) && eq(L.comboOf(neu, "LoraLoaderModelOnly", "lora_name"), ["a.safetensors", "klein/b.safetensors"])
+            && eq(L.comboOf(opt, "X", "lora_name"), ["o.safetensors"]) && L.comboOf(null, "LoraLoaderModelOnly", "lora_name") === null && L.comboOf(old, "Nope", "lora_name") === null
+            && L.comboOf(old, "LoraLoaderModelOnly", "strength_model") === null && L.comboOf({ X: { input: { required: { lora_name: [[], {}] } } } }, "X", "lora_name") === null);
+        const rows = [{ name: "a", strength: 0.8, on: true }, { name: "b", strength: 1, on: false }, { name: "", strength: 1 }, { name: "  ", strength: 1 }, { name: "c", strength: NaN },
+            { name: "d", strength: "1" }, { name: 5, strength: 1 }, null, { name: "e", strength: 0.5 }];
+        check("usableRows: switched on (on left out counts as on), a name, a finite number; in order", eq(L.usableRows(rows), [{ name: "a", strength: 0.8 }, { name: "e", strength: 0.5 }]) && eq(L.usableRows(null), []), short(L.usableRows(rows)));
+    });
+
+    await section("2. every shipped recipe: its model source and its chain (raw and normalised, with and without the node list)", () => {
+        const seen = new Set();
+        const bad = [];
+        for (const normalised of [false, true]) {
+            const files = fs.readdirSync(RECIPES).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).sort();
+            for (const id of files) {
+                const r = normalised ? byId(id) : rawFile(id);
+                if (!r) { bad.push(`${id}: not listed`); continue; }
+                for (const [route, g, rr] of graphsOf(r, normalised)) {
+                    const key = `${id}/${route}`;
+                    seen.add(key);
+                    const want = EXPECT[key];
+                    for (const [iname, inf] of [["node list", info], ["class table", null]]) {
+                        const before = clone(g);
+                        const src = L.modelSource(g, rr, inf);
+                        const where = `${normalised ? "normalised" : "raw"} ${key} (${iname})`;
+                        if (want === undefined) { bad.push(`${where}: not in the table (${JSON.stringify(src)})`); continue; }
+                        if (want === "none") {
+                            if (!("none" in src)) bad.push(`${where}: wants none, got ${JSON.stringify(src)}`);
+                            const q = clone(g);
+                            const out = L.spliceLoras(q, rr, ROWS2, inf);
+                            if (out.applied.length || !eq(q, before) || !/^The LoRAs stayed out: /.test(out.note || "")) bad.push(`${where}: a splice without a source changed the graph or said nothing (${short(out)})`);
+                            if (!normalised && inf === info) console.log(`   ${key}: none (${src.none})`);
+                            continue;
+                        }
+                        const [node, readers] = want;
+                        if (!eq(src, { node, slot: 0, clip: null })) { bad.push(`${where}: wants ${node}:0, got ${JSON.stringify(src)}`); continue; }
+                        if (!eq(readersOf(g, node, 0), readers)) bad.push(`${where}: readers ${readersOf(g, node, 0)} against ${readers}`);
+                        const q = clone(g);
+                        const out = L.spliceLoras(q, rr, ROWS2, inf);
+                        const ok = eq(g, before) && out.note === null && eq(out.applied, [{ name: ROWS2[0].name, strength: 0.8 }, { name: ROWS2[1].name, strength: 1 }])
+                            && q.scumble_lora_1 && q.scumble_lora_1.class_type === "LoraLoaderModelOnly" && eq(q.scumble_lora_1.inputs, { model: [node, 0], lora_name: ROWS2[0].name, strength_model: 0.8 })
+                            && q.scumble_lora_2 && eq(q.scumble_lora_2.inputs, { model: ["scumble_lora_1", 0], lora_name: ROWS2[1].name, strength_model: 1 })
+                            && eq(readersOf(q, node, 0), ["scumble_lora_1.model"]) && eq(readersOf(q, "scumble_lora_2", 0), readers)
+                            && Object.keys(q).length === Object.keys(g).length + 2;
+                        if (!ok) bad.push(`${where}: the chain ${short({ applied: out.applied, l1: q.scumble_lora_1, l2: q.scumble_lora_2, readers: readersOf(q, "scumble_lora_2", 0) })}`);
+                        if (PATCH[key] && !readers.some((x) => q[x.split(".")[0]].class_type === PATCH[key])) bad.push(`${where}: no ${PATCH[key]} after the chain`);
+                        if (!normalised && inf === info) console.log(`   ${key}: source ${node}:0 (${g[node].class_type}) -> scumble_lora_1 -> scumble_lora_2 -> ${readers.join(", ")}`);
+                    }
+                }
+            }
+        }
+        const missingRows = Object.keys(EXPECT).filter((k) => !seen.has(k));
+        check("every graph of every shipped recipe is in the table and nothing in the table is gone", !missingRows.length && !bad.some((b) => /not in the table|not listed/.test(b)), short([...missingRows, ...bad.filter((b) => /not in the table|not listed/.test(b))]));
+        check("each graph's source and its readers as the table says, both with the node list and with the class table; the chain of two after the source, every reader re-pointed to its end, the graph given untouched, nothing else added; the upscalers, the Realism Pass and Ideogram 4 (declared false) none",
+            !bad.length, short(bad));
+        const k = byId("flux3_klein_local");
+        const q = clone(k.prompt);
+        L.spliceLoras(q, k, ROWS2, info);
+        check("flux3_klein_local: sched and guider both read the chain's end", eq(q.sched.inputs.model, ["scumble_lora_2", 0]) && eq(q.guider.inputs.model, ["scumble_lora_2", 0]) && eq(k.prompt.sched.inputs.model, ["unet", 0]), short({ sched: q.sched.inputs.model, guider: q.guider.inputs.model }));
+        const sw = [];
+        for (const key of SWITCH) {
+            const [id] = key.split("/");
+            const v = byId(id).providers.comfycloud;
+            const g = clone(v.options.graph);
+            const [node, readers] = EXPECT[key];
+            L.spliceLoras(g, { loras: v.loras, save: v.options.save }, ROWS2, info);
+            const swId = readers.find((x) => /\.on_false$/.test(x)).split(".")[0];
+            const loraId = readers.find((x) => /\.model$/.test(x)).split(".")[0];
+            if (!(g[swId].class_type === "ComfySwitchNode" && eq(g[swId].inputs.on_false, ["scumble_lora_2", 0]) && g[loraId].class_type === "LoraLoaderModelOnly" && eq(g[loraId].inputs.model, ["scumble_lora_2", 0]) && eq(g.scumble_lora_1.inputs.model, [node, 0]))) sw.push(key);
+        }
+        check("the switch graphs (Anima base, Flux.2 dev, Krea 2 Turbo, Qwen Image Edit 2509): the switch's on_false and the template's own LoRA both read the chain's end, so its LoRA stacks after the user's", !sw.length, short(sw));
+        const up = clone(k.prompt);
+        const upNodes = new Set(k.upsampler.nodes);
+        L.spliceLoras(up, k, ROWS2, info);
+        check("flux3_klein_local's upsampler nodes are left as they are (no MODEL there, never a source)", [...upNodes].every((id) => eq(up[id], k.prompt[id])), short([...upNodes]));
+        const iv = byId("cloud_ideogram_4").providers.comfycloud;
+        const two = [info, null].map((inf) => L.modelSource(iv.options.graph, { save: iv.options.save }, inf));
+        console.log(`   cloud_ideogram_4/comfycloud without its declaration: ${JSON.stringify(two[0])}`);
+        check("cloud_ideogram_4's graph without its declaration: two model loaders (98:23 into CFGOverride, 98:154 into model_negative), with and without the node list", two.every((s) => eq(s, { many: ["98:154", "98:23"] })), short(two));
+    });
+
+    await section("3. the rows", () => {
+        const k = byId("flux2_klein_local");
+        const five = [1, 2, 3, 4, 5].map((i) => ({ name: `l${i}.safetensors`, strength: i / 10, on: true }));
+        const q = clone(k.prompt);
+        const out = L.spliceLoras(q, k, five, info);
+        const chainOk = five.every((row, i) => {
+            const n = q[`scumble_lora_${i + 1}`];
+            return n && n.inputs.lora_name === row.name && n.inputs.strength_model === row.strength && eq(n.inputs.model, i ? [`scumble_lora_${i}`, 0] : ["unet", 0]);
+        });
+        check("five rows: five nodes in their order with their strengths, the guider on the fifth", chainOk && eq(q.guider.inputs.model, ["scumble_lora_5", 0]) && out.applied.length === 5, short(out.applied));
+        const six = [...five, { name: "l6.safetensors", strength: 1 }];
+        const q6 = clone(k.prompt);
+        const said = throws(() => L.spliceLoras(q6, k, six, info));
+        check("a sixth switched-on row is refused, the graph unchanged", !!said && /At most 5 LoRAs per recipe; the rows name 6/.test(said) && eq(q6, k.prompt), said);
+        const offSixth = [...five, { name: "l6.safetensors", strength: 1, on: false }];
+        const q7 = clone(k.prompt);
+        check("five on and a sixth switched off: the five go", L.spliceLoras(q7, k, offSixth, info).applied.length === 5 && !q7.scumble_lora_6);
+        const mixed = [{ name: "a.safetensors", strength: 0.7 }, { name: "off.safetensors", strength: 1, on: false }, { name: "", strength: 1 }, { name: "nan.safetensors", strength: NaN }, { name: "b.safetensors", strength: 1.2 }];
+        const qm = clone(k.prompt);
+        const om = L.spliceLoras(qm, k, mixed, info);
+        check("a switched-off row, an empty name and a strength that is no number go nowhere",
+            eq(om.applied, [{ name: "a.safetensors", strength: 0.7 }, { name: "b.safetensors", strength: 1.2 }]) && !JSON.stringify(qm).includes("off.safetensors") && !JSON.stringify(qm).includes("nan.safetensors") && !qm.scumble_lora_3, short(om));
+        const qn = clone(k.prompt);
+        const none = L.spliceLoras(qn, k, [], info);
+        const none2 = L.spliceLoras(qn, k, [{ name: "x.safetensors", strength: 1, on: false }], info);
+        check("no usable row: nothing changes, no note", eq(qn, k.prompt) && eq(none, { applied: [], note: null }) && eq(none2, { applied: [], note: null }));
+        const qc = clone(k.prompt);
+        const oc = L.spliceLoras(qc, k, [{ name: "a.safetensors", strength: 250 }, { name: "b.safetensors", strength: -300 }], info);
+        check("a strength outside LoraLoaderModelOnly's -100 .. 100 is clamped", eq(oc.applied.map((x) => x.strength), [100, -100]) && qc.scumble_lora_1.inputs.strength_model === 100, short(oc.applied));
+        for (const [what, list] of [["[[names], {}]", [["klein\\style_a.safetensors", "style_b.safetensors"], {}]], ["[\"COMBO\", { options }]", ["COMBO", { options: ["klein\\style_a.safetensors", "style_b.safetensors"] }]]]) {
+            const inf = { ...info, LoraLoaderModelOnly: { ...info.LoraLoaderModelOnly, input: { required: { ...info.LoraLoaderModelOnly.input.required, lora_name: list } } } };
+            const qs = clone(k.prompt);
+            const os2 = L.spliceLoras(qs, k, [{ name: "klein/style_a.safetensors", strength: 1 }, { name: "gone/x.safetensors", strength: 1 }], inf);
+            check(`a name that differs from the server's only in its separators goes in the server's spelling (${what}); one the list lacks goes as typed`,
+                qs.scumble_lora_1.inputs.lora_name === "klein\\style_a.safetensors" && qs.scumble_lora_2.inputs.lora_name === "gone/x.safetensors" && os2.applied[0].name === "klein\\style_a.safetensors", short(os2.applied));
+        }
+    });
+
+    await section("4. the declarations through normalize (both branches)", () => {
+        const raw = rawFile("moss_image_local");
+        const local = (loras, more = {}) => ({ ...clone(raw), kind: "comfy", loras, ...more });
+        const kept = [];
+        for (const id of ["flux2_klein_local", "flux3_klein_local", "moss_image_local", "qwen_image_edit_2_1_local", "qwen_image_edit_2_1_turbo_local"]) kept.push(`${id}=${JSON.stringify(byId(id).loras)}`);
+        check("the five local edit / generate recipes declare their family through list()",
+            eq(kept, ['flux2_klein_local={"family":"flux2"}', 'flux3_klein_local={"family":"flux3"}', 'moss_image_local={"family":"moss_image"}', 'qwen_image_edit_2_1_local={"family":"qwen_image_2_1"}', 'qwen_image_edit_2_1_turbo_local={"family":"qwen_image_2_1"}']), short(kept));
+        const others = listed.filter((r) => r.loras !== undefined && !/^(flux2_klein|flux3_klein|moss_image|qwen_image_edit_2_1(_turbo)?)_local$/.test(r.id)).map((r) => r.id);
+        const variants = listed.flatMap((r) => Object.entries(r.providers || {}).filter(([, v]) => v.loras !== undefined).map(([p]) => `${r.id}/${p}`));
+        check("no other recipe declares loras at the top; of the variants only cloud_ideogram_4's", !others.length && eq(variants, ["cloud_ideogram_4/comfycloud"]), short({ others, variants }));
+        const ideo = byId("cloud_ideogram_4").providers.comfycloud;
+        check("cloud_ideogram_4: loras false on the variant and on its text route (which runs the same graph)", ideo.loras === false && ideo.text && ideo.text.loras === false && "none" in L.modelSource(ideo.options.graph, { loras: ideo.text.loras }, info), short({ v: ideo.loras, t: ideo.text && ideo.text.loras }));
+        const bad = [
+            ["true", true], ["an array", []], ["a string", "flux3"], ["a number", 3], ["an empty object", {}],
+            ["a model the graph lacks", { model: "nope" }], ["the canvas node as the model", { model: "canvas" }], ["a model that is no string", { model: 7 }], ["an empty family", { family: "" }],
+        ];
+        for (const [what, decl] of bad) {
+            const [r, said] = warnsOf(() => recipes._normalize(local(decl)));
+            check(`a bad loras (${what}) is dropped with a warning`, r.loras === undefined && said.length === 1 && /^moss_image_local: loras .*; left out$/.test(said[0]), short({ loras: r.loras, said }));
+        }
+        const [part, saidP] = warnsOf(() => recipes._normalize(local({ model: "nope", family: "moss_image", note: "x" })));
+        check("a model the graph lacks is left out with one warning, the family and nothing else kept", eq(part.loras, { family: "moss_image" }) && saidP.length === 1 && /names the model source "nope", which is no node of the graph/.test(saidP[0]), short({ loras: part.loras, saidP }));
+        const [off, saidO] = warnsOf(() => recipes._normalize(local(false)));
+        check("loras false is kept, without a warning", off.loras === false && !saidO.length && "none" in L.modelSource(off.prompt, off, info));
+        // a declared source that itself reads a MODEL (the MOSS edit recipe's edit LoRA): the chain after it
+        const withLora = clone(raw);
+        withLora.prompt.edit_lora = { class_type: "LoraLoaderModelOnly", inputs: { model: ["unet", 0], lora_name: "moss_image_edit_lora_rank_64_bf16.safetensors", strength_model: 1 } };
+        withLora.prompt.slg.inputs.model = ["edit_lora", 0];
+        const [dl, saidD] = warnsOf(() => recipes._normalize({ ...withLora, kind: "comfy", loras: { model: "edit_lora", family: "moss_image" } }));
+        const srcD = L.modelSource(dl.prompt, dl, info), srcD0 = L.modelSource(dl.prompt, dl, null);
+        const qd = clone(dl.prompt);
+        L.spliceLoras(qd, dl, ROWS2, info);
+        check("a declared model that reads a MODEL is accepted: the chain after it, slg on the chain's end, the edit LoRA still on the UNETLoader",
+            !saidD.length && eq(dl.loras, { model: "edit_lora", family: "moss_image" }) && eq(srcD, { node: "edit_lora", slot: 0, clip: null }) && eq(srcD0, srcD)
+            && eq(qd.scumble_lora_1.inputs.model, ["edit_lora", 0]) && eq(qd.slg.inputs.model, ["scumble_lora_2", 0]) && eq(qd.edit_lora.inputs.model, ["unet", 0]), short({ srcD, slg: qd.slg.inputs.model }));
+        const generic = L.modelSource(withLora.prompt, { ...withLora, loras: undefined }, info);
+        check("the same graph without the declaration: the UNETLoader by the rule (the edit LoRA reads a MODEL)", eq(generic, { node: "unet", slot: 0, clip: null }), short(generic));
+        const wrong = L.modelSource(raw.prompt, { ...raw, loras: { model: "clip" } }, info);
+        check("a declared node whose class gives no MODEL at its first output: no LoRAs, the reason said", "none" in wrong && /gives no MODEL/.test(wrong.none), short(wrong));
+        // a Comfy Cloud recipe with an edit and a text graph (they share ids such as 75:70)
+        const rk = rawFile("cloud_flux2_klein_9b");
+        const kf = clone(rk);
+        kf.providers.comfycloud.loras = false;
+        const [nf, saidF] = warnsOf(() => recipes._normalize(kf));
+        const vf = nf.providers.comfycloud;
+        check("cloud_flux2_klein_9b with loras false: it holds for both routes, without a warning",
+            vf.loras === false && vf.text.loras === false && !saidF.length && "none" in L.modelSource(vf.options.graph, { loras: vf.loras }, info) && "none" in L.modelSource(vf.text.options.graph, { loras: vf.text.loras }, info), short({ v: vf.loras, t: vf.text.loras, saidF }));
+        const km = clone(rk);
+        const ge = km.providers.comfycloud.options.graph;
+        ge.my_lora = { class_type: "LoraLoaderModelOnly", inputs: { model: ["75:70", 0], lora_name: "klein_edit.safetensors", strength_model: 1 } };
+        ge["75:63"].inputs.model = ["my_lora", 0];
+        km.providers.comfycloud.loras = { model: "my_lora", family: "flux2" };
+        const [nm, saidM] = warnsOf(() => recipes._normalize(km));
+        const vm = nm.providers.comfycloud;
+        const se = L.modelSource(vm.options.graph, { loras: vm.loras, save: vm.options.save }, info);
+        const st = L.modelSource(vm.text.options.graph, { loras: vm.text.loras, save: vm.text.options.save }, info);
+        check("a declared model honoured on the edit graph that has the node, left out with a warning on the text graph that lacks it (the family kept there), the text graph then by the rule",
+            eq(vm.loras, { model: "my_lora", family: "flux2" }) && eq(vm.text.loras, { family: "flux2" }) && saidM.length === 1 && /^recipe cloud_flux2_klein_9b\/comfycloud \(text\): loras names the model source "my_lora", which is no node of the graph; left out$/.test(saidM[0])
+            && eq(se, { node: "my_lora", slot: 0, clip: null }) && eq(st, { node: "75:70", slot: 0, clip: null }), short({ v: vm.loras, t: vm.text.loras, saidM, se, st }));
+        const qe = clone(vm.options.graph);
+        L.spliceLoras(qe, { loras: vm.loras, save: vm.options.save }, ROWS2, info);
+        check("... and the splice on the edit graph goes after my_lora, CFGGuider on the chain's end", eq(qe["75:63"].inputs.model, ["scumble_lora_2", 0]) && eq(qe.scumble_lora_1.inputs.model, ["my_lora", 0]) && eq(qe.my_lora.inputs.model, ["75:70", 0]), short(qe["75:63"].inputs));
+        const ap = clone(rawFile("flux3"));
+        const pid = Object.keys(ap.providers)[0];
+        ap.providers[pid].loras = { family: "flux3" };
+        const [na, saidA] = warnsOf(() => recipes._normalize(ap));
+        check("loras on an API variant (no graph) is dropped with a warning: LoRAs go into Comfy Cloud graphs only", na.providers[pid].loras === undefined && saidA.length === 1 && /without a graph/.test(saidA[0]), short(saidA));
+    });
+
+    await section("5. fixtures: a checkpoint loader with its CLIP, flattened ids, a taken id, Nunchaku, two loaders", () => {
+        const ckpt = {
+            ckpt: { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "sdxl.safetensors" } },
+            pos: { class_type: "CLIPTextEncode", inputs: { clip: ["ckpt", 1], text: "a" } },
+            neg: { class_type: "CLIPTextEncode", inputs: { clip: ["ckpt", 1], text: "" } },
+            lat: { class_type: "EmptyLatentImage", inputs: { width: 1024, height: 1024, batch_size: 1 } },
+            ks: { class_type: "KSampler", inputs: { model: ["ckpt", 0], positive: ["pos", 0], negative: ["neg", 0], latent_image: ["lat", 0], seed: 1, steps: 20, cfg: 7, sampler_name: "euler", scheduler: "normal", denoise: 1 } },
+            dec: { class_type: "VAEDecode", inputs: { samples: ["ks", 0], vae: ["ckpt", 2] } },
+            save: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "x" } },
+        };
+        const ckptInfo = { ...info, CheckpointLoaderSimple: { input: { required: { ckpt_name: [["sdxl.safetensors"], {}] } }, output: ["MODEL", "CLIP", "VAE"], output_node: false } };
+        for (const [what, inf] of [["the class table", null], ["a node list with the class", ckptInfo]]) {
+            const src = L.modelSource(ckpt, { result: "dec:0" }, inf);
+            const q = clone(ckpt);
+            const out = L.spliceLoras(q, { result: "dec:0" }, ROWS2, inf);
+            const consumers = src.clip ? src.clip.consumers.map((c) => `${c.node}.${c.input}`).sort() : [];
+            check(`a checkpoint loader whose CLIP feeds the text encoders (${what}): LoraLoader nodes, strength_clip = strength, the CLIP readers on [last, 1], the VAE left`,
+                src.node === "ckpt" && src.slot === 0 && src.clip && src.clip.slot === 1 && eq(consumers, ["neg.clip", "pos.clip"])
+                && q.scumble_lora_1.class_type === "LoraLoader" && eq(q.scumble_lora_1.inputs, { model: ["ckpt", 0], clip: ["ckpt", 1], lora_name: ROWS2[0].name, strength_model: 0.8, strength_clip: 0.8 })
+                && eq(q.scumble_lora_2.inputs, { model: ["scumble_lora_1", 0], clip: ["scumble_lora_1", 1], lora_name: ROWS2[1].name, strength_model: 1, strength_clip: 1 })
+                && eq(q.pos.inputs.clip, ["scumble_lora_2", 1]) && eq(q.neg.inputs.clip, ["scumble_lora_2", 1]) && eq(q.ks.inputs.model, ["scumble_lora_2", 0]) && eq(q.dec.inputs.vae, ["ckpt", 2]) && out.applied.length === 2,
+                short({ src, l1: q.scumble_lora_1, pos: q.pos.inputs.clip }));
+        }
+        const sepClip = clone(ckpt);
+        sepClip.clipl = { class_type: "CLIPLoader", inputs: { clip_name: "t5.safetensors", type: "sd3" } };
+        sepClip.pos.inputs.clip = ["clipl", 0];
+        sepClip.neg.inputs.clip = ["clipl", 0];
+        const s2 = L.modelSource(sepClip, { result: "dec:0" }, null);
+        check("a checkpoint whose CLIP nothing reads: model-only (LoraLoaderModelOnly)", eq(s2, { node: "ckpt", slot: 0, clip: null }), short(s2));
+        const flat = {
+            "57:12": { class_type: "UNETLoader", inputs: { unet_name: "m.safetensors", weight_dtype: "default" } },
+            "57:20": { class_type: "ModelSamplingAuraFlow", inputs: { model: ["57:12", 0], shift: 3 } },
+            "57:13": { class_type: "KSampler", inputs: { model: ["57:20", 0], seed: 1 } },
+            "57:14": { class_type: "VAEDecode", inputs: { samples: ["57:13", 0] } },
+            "9": { class_type: "SaveImage", inputs: { images: ["57:14", 0] } },
+        };
+        const qf = clone(flat);
+        L.spliceLoras(qf, { save: "9" }, ROWS2, null);
+        check("flattened ids (57:12): the source found, the patch on the chain's end", eq(L.modelSource(flat, { save: "9" }, null), { node: "57:12", slot: 0, clip: null }) && eq(qf["57:20"].inputs.model, ["scumble_lora_2", 0]) && eq(qf.scumble_lora_1.inputs.model, ["57:12", 0]));
+        const taken = clone(flat);
+        taken.scumble_lora_1 = { class_type: "PrimitiveString", inputs: { value: "mine" } };
+        taken["9"].inputs.extra = ["scumble_lora_1", 0];
+        const qt = clone(taken);
+        L.spliceLoras(qt, { save: "9" }, ROWS2, null);
+        check("an id scumble_lora_1 the graph holds already: the chain takes scumble_lora_1_2 and scumble_lora_2, the graph's own node left",
+            eq(qt.scumble_lora_1, taken.scumble_lora_1) && qt.scumble_lora_1_2 && eq(qt.scumble_lora_1_2.inputs.model, ["57:12", 0]) && eq(qt.scumble_lora_2.inputs.model, ["scumble_lora_1_2", 0]) && eq(qt["57:20"].inputs.model, ["scumble_lora_2", 0]), short(Object.keys(qt)));
+        const nun = { dit: { class_type: "NunchakuFluxDiTLoader", inputs: { model_path: "svdq.safetensors" } }, ks: { class_type: "KSampler", inputs: { model: ["dit", 0] } }, save: { class_type: "SaveImage", inputs: { images: ["ks", 0] } } };
+        const nunInfo = { ...info, NunchakuFluxDiTLoader: { input: { required: { model_path: [["svdq.safetensors"], {}] } }, output: ["MODEL"], output_node: false } };
+        const n0 = L.modelSource(nun, {}, null), n1 = L.modelSource(nun, {}, nunInfo);
+        check("a Nunchaku model loader: no LoRAs (its loader needs the pack's own LoRA node), with or without the node list", "none" in n0 && "none" in n1 && /pack's own LoRA node/.test(n0.none), short({ n0, n1 }));
+        const vaeOnly = clone(flat);
+        vaeOnly.ck = { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "x.safetensors" } };
+        vaeOnly["57:14"].inputs.vae = ["ck", 2];
+        check("a checkpoint loader kept for its VAE beside a UNETLoader: the UNETLoader alone is the source", eq(L.modelSource(vaeOnly, { save: "9" }, null), { node: "57:12", slot: 0, clip: null }));
+        const stray = clone(flat);
+        stray.u2 = { class_type: "UNETLoader", inputs: { unet_name: "other.safetensors" } };
+        stray.k2 = { class_type: "KSampler", inputs: { model: ["u2", 0] } };
+        check("a second loader that reaches no output is not live: one source", eq(L.modelSource(stray, { save: "9" }, null), { node: "57:12", slot: 0, clip: null }));
+        const two = clone(stray);
+        two["9"].inputs.more = ["k2", 0];
+        const t2 = L.modelSource(two, { save: "9" }, null);
+        const qt2 = clone(two);
+        const ot2 = L.spliceLoras(qt2, { save: "9" }, ROWS2, null);
+        check("two live loaders and no declaration: many, and a splice leaves the graph with the note naming both",
+            eq(t2, { many: ["57:12", "u2"] }) && eq(qt2, two) && /2 model loaders \(57:12, u2\)/.test(ot2.note || ""), short({ t2, note: ot2.note }));
+        const decl = L.modelSource(two, { save: "9", loras: { model: "u2" } }, null);
+        check("... a declared one of the two is taken", eq(decl, { node: "u2", slot: 0, clip: null }), short(decl));
+        const noRoot = { u: { class_type: "UNETLoader", inputs: {} }, x: { class_type: "SomethingUnknown", inputs: { model: ["u", 0] } } };
+        check("a graph with no result, no save and no output node: every node live", eq(L.modelSource(noRoot, {}, null), { node: "u", slot: 0, clip: null }));
+        check("no graph: none", "none" in L.modelSource(null, {}, null));
+    });
+
+    await section("6. missingLoras", () => {
+        const names = ["klein\\style_a.safetensors", "qwen\\NYC_Qwen.safetensors", "root.safetensors"];
+        const rows = [
+            { name: "klein/style_a.safetensors", strength: 1 },      // separators only: the server's spelling
+            { name: "root.safetensors", strength: 1 },               // as listed
+            { name: "klein\\old.safetensors", strength: 1 },         // not there
+            { name: "gone.safetensors", strength: 1, on: false },    // switched off: never asked
+            { name: "", strength: 1 },
+        ];
+        check("a name the list has in other separators gets the server's spelling, a missing one null, a listed or switched-off one nothing",
+            eq(L.missingLoras(rows, names), [{ name: "klein/style_a.safetensors", server: "klein\\style_a.safetensors" }, { name: "klein\\old.safetensors", server: null }]), short(L.missingLoras(rows, names)));
+        check("against an empty or unread list nothing is missing (the names go as typed)", eq(L.missingLoras(rows, []), []) && eq(L.missingLoras(rows, null), []) && eq(L.missingLoras(rows, [3, null]), []));
+        const viaCombo = L.comboOf({ LoraLoaderModelOnly: { input: { required: { lora_name: ["COMBO", { options: names }] } } } }, "LoraLoaderModelOnly", "lora_name");
+        check("missingLoras over the combo read through comboOf", eq(L.missingLoras(rows, viaCombo).filter((m) => !m.server).map((m) => m.name), ["klein\\old.safetensors"]));
+    });
+
+    await section("7. familyOf and recipeFamily (stubs until LR3)", () => {
+        check("recipeFamily reads the declaration: flux3_klein_local flux3, the Qwen 2.1 recipes qwen_image_2_1, relight_qwen_local none, false none",
+            L.recipeFamily(byId("flux3_klein_local")) === "flux3" && L.recipeFamily(byId("qwen_image_edit_2_1_turbo_local")) === "qwen_image_2_1" && L.recipeFamily(byId("relight_qwen_local")) === null && L.recipeFamily({ loras: false }) === null);
+        check("familyOf: the folder alone today, null without one", eq(L.familyOf(null, "klein"), { family: null, label: "in folder klein", from: "folder", sure: false }) && L.familyOf(null, "") === null && L.familyOf(null) === null);
+    });
+
+    if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
+    const failed = results.filter((x) => !x).length;
+    console.log(`\n${results.length - failed} of ${results.length} checks passed`);
+    console.log(failed ? "FAIL" : "PASS");
+    process.exit(failed ? 1 : 0);
+}
+
+main().catch((err) => { console.log("[FAIL] " + ((err && err.stack) || err)); console.log("FAIL"); process.exit(1); });

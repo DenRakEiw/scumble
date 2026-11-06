@@ -7,6 +7,8 @@
 //   node tools/cloud_recipes.js            write the recipe files
 //   node tools/cloud_recipes.js --check    exit 1 when a file differs from what the exports give (recipes_test.js)
 // The widget order of each node comes from the fixtures' node list (tools/refs/comfy_templates/object_info.json).
+// A manifest row's `loras` goes into the variant as its `loras` (item 50, docs/PLAN_LORAS.md §3.5: `false` for a graph
+// with two model loaders, or `{ model, family }`; electron/main/recipes.js normalize checks it against both graphs).
 "use strict";
 
 const fs = require("node:fs");
@@ -52,7 +54,8 @@ const MANIFEST = [
         about: "Anima base 1.0, a 2B anime and illustration model: a new image from the prompt (Generate new)." },
     { file: "t2i/image_anima_preview.json", id: "cloud_anima_preview", name: "Anima preview (Comfy Cloud)", sizes: [768, 1024, 1280],
         about: "The Anima preview, a 2B anime and illustration model: a new image from the prompt (Generate new)." },
-    { file: "t2i/image_ideogram4_t2i.json", id: "cloud_ideogram_4", name: "Ideogram 4 (Comfy Cloud)",
+    // two model loaders (98:23 through CFGOverride into DualModelGuider.model, 98:154 into model_negative): no LoRA rows
+    { file: "t2i/image_ideogram4_t2i.json", id: "cloud_ideogram_4", name: "Ideogram 4 (Comfy Cloud)", loras: false,
         about: "Ideogram 4's open weights: a new image from the prompt, strong at lettering (Generate new)." },
     { file: "t2i/image_krea2_turbo_t2i.json", id: "cloud_krea_2_turbo", name: "Krea 2 Turbo (Comfy Cloud)",
         about: "Krea 2 Turbo with the template's prompt enhancer: a new image from the prompt (Generate new)." },
@@ -73,7 +76,8 @@ function build(m, info) {
     const v = read(m.file, m.name, info).providers.comfycloud;
     const model = m.name.replace(/ \(Comfy Cloud\)$/, "");
     // a model's own name for its pictures (Qwen Image 2.1: <image1>) and its own size steps, where the reading has none
-    const variant = { ...v, model, note: `Comfy's template, unchanged. ${v.note}`, ...(m.refs ? { refs: { name: m.refs } } : {}), ...(m.limits ? { limits: { ...v.limits, ...m.limits } } : {}) };
+    const variant = { ...v, model, note: `Comfy's template, unchanged. ${v.note}`, ...(m.refs ? { refs: { name: m.refs } } : {}), ...(m.limits ? { limits: { ...v.limits, ...m.limits } } : {}),
+        ...(m.loras !== undefined ? { loras: m.loras } : {}) };
     if (variant.text) variant.text = { ...variant.text, model, sizes: m.sizes || SIZES };   // a text-to-image template
     if (m.text) {
         // the same model's text-to-image template as this recipe's text route (Generate new)

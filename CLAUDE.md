@@ -231,7 +231,8 @@ code.
   `docs/PLAN_CORRIDORKEY.md`) on its own branch `corridorkey` off `main` (worktree `.claude/worktrees/corridorkey`),
   released as 0.1.52 on the user's word; next there: I0a (pack A's code check, findings to the user before any install).
   **And (2026-11-06): LoRAs and MOSS Image Edit** (item 50, `docs/PLAN_LORAS.md`, issues #10 / #11) in the same 0.1.52
-  on `corridorkey`; next there: LR0 (the splice module); the user's ComfyUI is at v0.44.0 since 2026-11-06.
+  on `corridorkey`; LR0 (the splice module) done 2026-11-06 ("LR0 as built" in the plan's §4), next there: LR1 (the
+  queue path, the store and the metadata); the user's ComfyUI is at v0.44.0 since 2026-11-06.
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel

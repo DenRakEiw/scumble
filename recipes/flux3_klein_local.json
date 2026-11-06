@@ -5,6 +5,7 @@
   "mode": "local",
   "canvas": "canvas",
   "result": "decode:0",
+  "loras": { "family": "flux3" },
   "refs": { "name": "<ref_image_{n0}>", "slots": 4 },
   "boxes": { "schema": "flux3", "input": "say_in|string_b" },
   "needs": ["InpaintCanvas", "ImageFromBatch", "StringConcatenate", "UNETLoader", "CLIPLoader", "VAELoader", "ImageScaleToTotalPixels", "GetImageSize", "EmptyFlux2LatentImage", "BasicScheduler", "CLIPTextEncode", "VAEEncode", "ReferenceLatent", "CFGGuider", "RandomNoise", "KSamplerSelect", "SamplerCustomAdvanced", "VAEDecode"],
