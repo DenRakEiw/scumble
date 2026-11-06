@@ -20,7 +20,7 @@ const READS = new Set([
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
-const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "select_by_text", "cutout_layer", "upsample_prompt", "relight"]);
+const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "select_by_text", "cutout_layer", "upsample_prompt", "relight", "key_screen"]);
 
 /** The Realism Pass's name, verbatim wherever the feature is named (renderer/editor/realism.js LABEL). */
 const REALISM_LABEL = "Realism Pass (Windows only, RTX only)";
@@ -159,6 +159,8 @@ const POLICY = {
 
     // ---- paid or queued -----------------------------------------------------------------
     cutout_layer: () => ASK("without an in-app matting model this queues on your ComfyUI"),
+    // item 49: CorridorKey 2.0 in Scumble on the GPU; `preview` changes the selection, so it asks too
+    key_screen: (call) => ASK("keys the green / blue screen with CorridorKey 2.0 on your GPU", keyCard(call)),
     upsample_prompt: () => ASK("rewrites the prompt on a paid model or your ComfyUI"),
     generate: (call, facts) => ASK("renders: this costs money, or queues on your ComfyUI", renderCard(call, facts)),
     generate_new: (call, facts) => ASK("renders a new base image, replaces every layer but the reference layers and clears the undo history", renderCard(call, facts)),
@@ -342,6 +344,14 @@ function realismRow(call, facts) {
     return ASK(`runs ${REALISM_LABEL} on your ComfyUI: it queues there and adds a layer`, { settings: values });
 }
 
+/** key_screen's ask card (item 49, docs/PLAN_CORRIDORKEY.md §4.8): the screen, the hint and its trust, what it does. */
+function keyCard(call) {
+    const a = (call && call.args) || {};
+    const trust = a.trust == null || a.trust === "" ? 0.5 : Number(a.trust);
+    const hint = a.rekey ? "the key layer's mask" : a.hint === "none" ? "none" : "the selection";
+    return { settings: { screen: a.screen || "auto", hint, trust: a.rekey ? 0.95 : trust, ...(a.preview ? { preview: "the matte becomes the selection" } : {}), ...(a.rekey ? { rekey: "yes" } : {}) } };
+}
+
 function exportRow(call, facts, fallback, fixedPng) {
     const args = call.args || {};
     const path = args.path === undefined || args.path === null ? "" : String(args.path);
@@ -399,7 +409,7 @@ function clampInt(value, min, max, fallback) {
 }
 
 /** The command's own default `timeout`, filled in so the Bridge's timer is long enough (§5). */
-const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, generate: 600, generate_new: 600, upscale: 1800, realism_pass: 1800, relight: 900 };
+const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, key_screen: 300, generate: 600, generate_new: 600, upscale: 1800, realism_pass: 1800, relight: 900 };
 
 /**
  * The arguments as they are sent: a screenshot small enough to be cheap, a log page bounded, and

@@ -724,6 +724,8 @@ function buildMenu() {
                 { type: "separator" },
                 // the Upscale dialog with the pass chosen; not greyed (main has no server state: the dialog says why)
                 { label: "Realism Pass (Windows only, RTX only)...", click: () => send("menu", "realism-pass") },
+                // the Key dialog (item 49, renderer/keydialog.js); not greyed: main has no engine state, the dialog says why
+                { label: "Key Green / Blue Screen...", click: () => send("menu", "key-screen") },
             ],
         },
         {

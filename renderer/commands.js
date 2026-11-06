@@ -22,6 +22,7 @@ import { defaultLight, normalizeLights, RELIGHT_ROUTES, LIGHT_PRESETS, applyLigh
 import { fontList } from "./editor/inpaint_text.js";
 import { parse, remap } from "./editor/reftokens.js";
 import { LABEL as REALISM_LABEL } from "./editor/realism.js";
+import * as keying from "./editor/keying.js";
 import * as genpresets from "./editor/genpresets.js";
 import { refusal } from "./editor/inpaint_status.js";
 import { canvasSizeRefusal } from "./editor/inpaint_sizelimit.js";
@@ -354,6 +355,7 @@ export function status(ed) {
         // the pixel backend of this document (docs/PLAN_BCE.md §C2 step b) and what chose it
         pixels: { tiles: !!ed.tileMode, from: ed.tileModeFrom || null },
         realism: realismState(ed),
+        key: keyState(ed),
     };
 }
 
@@ -402,6 +404,17 @@ function realismState(ed) {
     const v = host.realismValues();
     const reason = host.realismWholeRefusal(ed) || null;
     return { ready: !reason, reason, note: host.realismSupport().note || null, style: v.style, strength: v.intensity, preset: v.preset };
+}
+
+/**
+ * Key green / blue screen on this document (item 49, docs/PLAN_CORRIDORKEY.md §4.8): whether key_screen would start now
+ * (host.keyCheck: the engine, its set, a run going, no picture), the reason when not, the provider the engine runs on
+ * and the working size.
+ */
+function keyState(ed) {
+    const c = host.keyCheck(ed, {});
+    const sup = host.keySupport();
+    return { ready: !c, reason: c ? c.text : null, provider: sup.ok ? sup.provider || null : null, cpu: !!sup.cpu, working_size: host.keyWorkingSize() };
 }
 
 /**
@@ -1046,7 +1059,7 @@ const COMMANDS = {
     // -- document --
     status: {
         readOnly: true,
-        description: `What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends. loras: the selected recipe's LoRA rows (kept per recipe for every document; set_generation loras sets them): takes (whether its graph takes rows; reason when not), family (the base model its LoRAs should fit, when known), rows [{ name, strength, on, hint, mismatch, triggers, on_server }] (hint: the base model the file looks made for, null while unknown; mismatch: its tensor names fit another model than the recipe's, which never refuses a run; triggers: the file's trigger words; on_server: whether the server's list has it, null while the list is unread), and sent: what a run now would load, [{ name, strength }].`,
+        description: `What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends. key: whether key_screen would start on this document now (ready; reason when not: the CorridorKey 2.0 engine or its set missing, a run going, no picture), the provider it runs on (cpu: on the CPU, no live preview) and the working size. loras: the selected recipe's LoRA rows (kept per recipe for every document; set_generation loras sets them): takes (whether its graph takes rows; reason when not), family (the base model its LoRAs should fit, when known), rows [{ name, strength, on, hint, mismatch, triggers, on_server }] (hint: the base model the file looks made for, null while unknown; mismatch: its tensor names fit another model than the recipe's, which never refuses a run; triggers: the file's trigger words; on_server: whether the server's list has it, null while the list is unread), and sent: what a run now would load, [{ name, strength }].`,
         params: {},
         async run(ed) {
             const s = status(ed);
@@ -1640,6 +1653,51 @@ const COMMANDS = {
                 factor: out.factor, from: out.from || null, width: out.width == null ? null : out.width, height: out.height == null ? null : out.height,
                 // the tab was closed while the pass ran: the job was taken off the server, nothing was added
                 status: out.layer ? ed.status : "The document was closed while the pass ran; nothing was added.",
+            };
+        },
+    },
+    key_screen: {
+        needsImage: true,
+        description: "Key green / blue screen with CorridorKey 2.0 inside Scumble (on the GPU when the engine runs there): one new layer \"Key\" lands directly above the source, its pixels the subject's own colour with the screen's spill taken out, its layer mask the matte (soft hair and motion blur), trimmed to the matte's box. A source layer is hidden in the same step; with the visible picture as the source a mid-grey Fill layer \"Grey\" goes under the key (grey: false leaves the base as it is). One undo step. The box is the selection's bounds grown by context (the whole picture, or the source layer, without a selection), keyed at the working size (settings.key.workingSize, 1,024 px by default; status.key.working_size) and scaled back to the full resolution. hint: selection (the selection's coverage as CorridorKey's alpha hint; select_mask gives a binary one), mask (the source layer's own layer mask as a soft hint, 0.95 unless trust says otherwise: give the source a mask with set_mask first), none (the model decides). trust: how much the hint is believed (0.5 rough, 0.75 automatic, 0.95 clean). preview: the matte becomes the selection instead (one selection step), nothing is added. rekey: the active key layer's own mask is the hint (0.95) and its pixels and mask are replaced from what it was keyed from (the hidden source layer, or the picture under the key; one step); after a restart the key starts from the layer's bounds and reads the hidden layer directly below it, else the picture under it. Refused before anything is read when the engine or its 2.4 GB set is missing (status.key says why), a run is going on the document, or no picture is loaded.",
+        params: {
+            source: P.str("\"picture\" (the default: the visible picture, filters skipped) or a layer whose own pixels are keyed (id, name, a unique part, or \"active\")", { default: "picture" }),
+            screen: P.enum("auto (from the box's border), green or blue", keying.SCREENS.slice(), "auto"),
+            hint: P.enum("selection (the default), mask (the source layer's own mask) or none", ["selection", "mask", "none"], "selection"),
+            trust: P.num("0.5 (rough, the default; 0.95 with hint mask), 0.75 (automatic) or 0.95 (clean)"),
+            despill: P.num("0..1, how much of the screen's spill is taken out (default 0.5)"),
+            grey: P.bool("with the visible picture as the source: a mid-grey Fill layer under the key (default true)"),
+            preview: P.bool("the matte becomes the selection, nothing is added"),
+            rekey: P.bool("re-key the active key layer from its own mask"),
+            layer: P.layer("rekey: the key layer", { default: "active" }),
+            timeout: P.timeout(300),
+        },
+        async run(ed, a) {
+            const v = await host.loadKeyValues();
+            const rekey = !!a.rekey;
+            let source = "picture", layer = null;
+            if (rekey) layer = findLayer(ed, a.layer || "active");
+            else if (a.source != null && a.source !== "" && a.source !== "picture") { layer = findLayer(ed, a.source); source = layer.id; }
+            const num = (x, d, lo, hi) => (x == null || x === "" || !Number.isFinite(+x) ? d : Math.min(hi, Math.max(lo, +x)));
+            const opts = {
+                source, layer, rekey, preview: !!a.preview,
+                hint: rekey ? "mask" : a.hint === "none" ? "none" : a.hint === "mask" ? "mask" : "selection",
+                screen: keying.SCREENS.slice().includes(a.screen) ? a.screen : v.screen,
+                trust: keying.trustOf(num(a.trust, a.hint === "mask" ? 0.95 : v.trust, 0, 1)).value,
+                despill: num(a.despill, v.despill, 0, 1),
+                grey: a.grey == null ? v.greyUnderBase : !!a.grey,
+            };
+            const ms = clampInt(a.timeout, 5, 3600, 300) * 1000;
+            let timer = null;
+            const out = await Promise.race([
+                host.keyScreen(ed, opts),
+                new Promise((_, rej) => { timer = setTimeout(() => { host.cancelRuns(ed); rej(new Error(`${keying.LABEL} timed out after ${ms / 1000} s: ${ed.status}`)); }, ms); }),
+            ]).finally(() => clearTimeout(timer));
+            if (out.layer) ed.notifyChanged();
+            return {
+                layer: out.layer ? layerSummary(ed, out.layer) : null, grey: out.grey ? out.grey.id : null, hidden: out.hidden ? out.hidden.id : null,
+                seconds: Math.round((out.seconds || 0) * 10) / 10, box: out.box, matte_box: out.matteBox, workingSize: out.workingSize || null, provider: out.provider || null,
+                kept_percent: Math.round((out.kept || 0) * 10) / 10, preview: opts.preview, selection: opts.preview ? bounds(ed) : undefined,
+                status: out.layer || opts.preview ? ed.status : "The document was closed while the key ran; nothing was added.",
             };
         },
     },

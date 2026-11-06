@@ -20,6 +20,10 @@ const DEFAULTS = {
     // route, the DLSS model preset of the whole-picture pass (the recipe has its own row), the wait in seconds. The
     // renderer fills a stored object per key (realism.fillValues): get() merges only the top level
     realism: { style: "Default", intensity: 1, preset: "L", timeout: 300 },
+    // Key green / blue screen (item 49, docs/PLAN_CORRIDORKEY.md §4.8; renderer/editor/keying.js keyDefaults): the Key
+    // dialog's rows, the working size (the live bucket's long side, Stop A's pick), the grey layer under a key of the
+    // base, the wait in seconds. The renderer fills a stored object per key (keying.fillValues)
+    key: { screen: "auto", trust: 0.5, despill: 0.5, preview: true, workingSize: 1024, greyUnderBase: true, timeout: 300 },
     // in-app helper models (electron/main/onnx): device auto|gpu|cpu, model folder (null =
     // <userData>/models, or a ComfyUI models folder), the SAM2, matting and inpaint (Remove) model ids
     helpers: { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama" },
