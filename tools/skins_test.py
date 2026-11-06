@@ -436,7 +436,8 @@ try {
 STEPS["the_loras_section_reads_in_every_skin"] = """
 // item 50 LR2 (docs/PLAN_LORAS.md §3.2): the LoRAs section of the Generate tab and its picker read only the tokens; in
 // the default look and in every shipped skin the section is open with three rows (one not on the server, one switched
-// off) and the picker open, and each part is there, fits the panel and reads against what is behind it
+// off) and the picker open, and each part is there, fits the panel and reads against what is behind it; LR3: the
+// rows' hint lines (grey, and amber for a LoRA of another family) with a trigger chip, the picker's Show all switch
 await toDefault();
 const panel = await import('./editor/lora_panel.js');
 let ed = host.editor;
@@ -446,7 +447,13 @@ const klein3 = host.shell.recipes().find((r) => r.id === "flux3_klein_local");
 if (!klein3) throw new Error("flux3_klein_local is not listed");
 const NAMES = ["Flux_3\\\\Flux3_Targa.safetensors", "klein\\\\nyc_style.safetensors", "qwen\\\\NYC_Qwen.safetensors", "root_style.safetensors"];
 const LORA = { input: { required: { model: ["MODEL"], lora_name: [NAMES, {}], strength_model: ["FLOAT", { default: 1, min: -100, max: 100, step: 0.01 }] } }, output: ["MODEL"], output_node: false };
-const saved = { recipe: host.recipe, loras: host.loras, objectInfo: host.objectInfo, connected: host.connected, server: host.server, fetch: window.fetch, pane: localStorage.getItem("ipc.pane"), shown: Object.entries(ed.panes).find(([, p]) => !p.hidden) };
+const saved = { recipe: host.recipe, loras: host.loras, objectInfo: host.objectInfo, connected: host.connected, server: host.server, fetch: window.fetch, pane: localStorage.getItem("ipc.pane"), shown: Object.entries(ed.panes).find(([, p]) => !p.hidden), loraHeader: host.loraHeader };
+// LR3: the rows' hint lines (row 1 FLUX 3, grey; row 3 a Qwen 2509 LoRA, amber under FLUX 3) and their trigger chips
+const range = (n) => Array.from({ length: n }, (_, i) => i);
+const HEADERS = {
+    [NAMES[0]]: { keyCount: 4, modules: ["diffusion_model.content_mode_blocks.image.N.q_proj"], blocks: { content_mode_blocks: range(5) }, width: { content_mode_blocks: 3072 }, outs: {}, metadata: { tags: ["Targa"] } },
+    [NAMES[1]]: { keyCount: 4, modules: ["diffusion_model.transformer_blocks.N.attn.add_k_proj", "diffusion_model.transformer_blocks.N.img_mod.N"], blocks: { transformer_blocks: range(60) }, width: { transformer_blocks: 3072 }, outs: {}, metadata: { tags: ["NYC"] } },
+};
 const rgba = (s) => { const m = /rgba?\\(([^)]+)\\)/.exec(s || ""); if (!m) return [0, 0, 0, 0]; const v = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return [v[0], v[1], v[2], v.length > 3 ? v[3] : 1]; };
 /** the colour behind an element: its own background and its ancestors', composited from the first opaque one up */
 const behind = (el) => {
@@ -468,6 +475,8 @@ try {
     window.fetch = async (url, init) => String(url).includes("/object_info/LoraLoaderModelOnly")
         ? new Response(JSON.stringify({ LoraLoaderModelOnly: LORA }), { status: 200, headers: { "Content-Type": "application/json" } }) : orig.call(window, url, init);
     host.loras = { flux3_klein_local: [{ name: NAMES[0], strength: 0.8, on: true }, { name: "klein\\\\gone.safetensors", strength: 1, on: true }, { name: NAMES[1], strength: 0.5, on: false }] };
+    host.loraHeader = async (n) => HEADERS[n] || null;
+    host._loraInfo.clear();
     host.setRecipe(klein3);
     ed.showPane("gen");
     const p = ed._loraPanel;
@@ -481,8 +490,12 @@ try {
         await wait(80);
         const name = skin || "default";
         const pane = box(ed.panes.gen);
+        await until(() => p.list.querySelectorAll(".ipc-lora-hint").length === 3, 3000);
         const rows = Array.from(p.list.querySelectorAll(".ipc-lora-row"));
         if (rows.length !== 3) throw new Error(name + ": " + rows.length + " rows");
+        const amberEl = rows[2].querySelector(".ipc-lora-hint.ipc-lora-amber"), greyEl = rows[0].querySelector(".ipc-lora-hint"), chipEl = rows[0].querySelector(".ipc-lora-chip");
+        if (!amberEl || !greyEl || greyEl.classList.contains("ipc-lora-amber") || !chipEl) throw new Error(name + ": the hint lines " + JSON.stringify(rows.map((r) => (r.querySelector(".ipc-lora-info") || {}).textContent)));
+        if (getComputedStyle(amberEl).color === getComputedStyle(greyEl).color) throw new Error(name + ": the amber line looks like the grey one");
         for (const [i, r] of rows.entries()) {
             const b = box(r);
             if (!(b.height > 10) || b.right > pane.right + 1 || r.scrollWidth > r.clientWidth + 1) throw new Error(name + ": row " + i + " does not fit (" + JSON.stringify({ h: b.height, right: b.right, pane: pane.right, sw: r.scrollWidth, cw: r.clientWidth }) + ")");
@@ -495,11 +508,18 @@ try {
             name: contrast(rows[0].querySelector(".ipc-lora-stem")), strength: contrast(rows[0].querySelector(".ipc-lora-strength")),
             del: contrast(rows[0].querySelector(".ipc-lora-del")), missing: contrast(rows[1].querySelector(".ipc-lora-miss")),
             add: contrast(p.add), summary: contrast(p.summary),
+            hint: contrast(greyEl), amber: contrast(amberEl), chip: contrast(chipEl),
         };
         panel.openPicker(host, ed, 0);
         await wait(120);
-        const st = panel.openPickerState();
+        let st = panel.openPickerState();
         if (!st) throw new Error(name + ": the picker did not open");
+        // FLUX 3's folder first, the rest behind Show all: the switch reads too, then every name is listed
+        const more = st.el.querySelector(".ipc-lp-more");
+        if (!more) throw new Error(name + ": no Show all under flux3_klein_local");
+        c.more = contrast(more);
+        more.click();
+        st = panel.openPickerState();
         const pb = box(st.el), rb = box(ed.root);
         if (!(pb.width > 200) || !(pb.height > 120) || pb.left < rb.left - 1 || pb.right > rb.right + 1 || pb.top < rb.top - 1 || pb.bottom > rb.bottom + 1) throw new Error(name + ": the picker is at " + JSON.stringify({ l: pb.left, r: pb.right, t: pb.top, b: pb.bottom, w: pb.width, h: pb.height }));
         if (rgba(getComputedStyle(st.el).backgroundColor)[3] < 0.99) throw new Error(name + ": the picker is see-through: " + getComputedStyle(st.el).backgroundColor);
@@ -520,6 +540,8 @@ try {
     panel.closePicker();
     window.fetch = saved.fetch;
     host.objectInfo = saved.objectInfo; host.connected = saved.connected; host.server = saved.server; host.loras = saved.loras;
+    host.loraHeader = saved.loraHeader;
+    host._loraInfo.clear();
     if (saved.recipe) host.setRecipe(saved.recipe);
     if (ed._loraPanel) ed._loraPanel.section.open = false;
     if (saved.shown) ed.showPane(saved.shown[0]);

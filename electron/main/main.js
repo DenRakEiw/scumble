@@ -44,6 +44,7 @@ const keys = require("./keys");
 const providers = require("./providers");
 const llm = require("./llm");
 const recipes = require("./recipes");
+const loraheader = require("./loraheader");
 const prompts = require("./prompts");
 const brushes = require("./brushes");
 const helpers = require("./onnx");
@@ -970,6 +971,13 @@ async function cloudCopy(id) {
 
 const COMFY_SECRET = "comfy-auth";
 
+/** This machine's name, read once (a ComfyUI address of that name is this machine for the LoRA hint, loras:header). */
+let hostnameRead = null;
+function ownHostname() {
+    if (hostnameRead == null) { try { hostnameRead = require("node:os").hostname(); } catch (_) { hostnameRead = ""; } }
+    return hostnameRead;
+}
+
 /** Connect with the stored URL / auth, or the given ones (which are then stored). */
 async function connectComfy(conn) {
     let { comfy: saved } = settings.get();
@@ -1154,6 +1162,13 @@ function installIpc() {
     ipcMain.handle("recipes:remove", (_e, id) => recipes.remove(id));
     ipcMain.handle("recipes:cloudCopy", (_e, id) => cloudCopy(String(id || "")));
     ipcMain.handle("recipes:openFolder", async () => { const r = recipes.userDir(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(msix.forExplorer(r)); });
+    // a LoRA's base-model hint (item 50, docs/PLAN_LORAS.md §3.4): its file's header from the ComfyUI models folder of
+    // Settings > Helpers, reduced (loraheader.js), only while the server (the connected one, else the stored address)
+    // is this machine; else { header: null } and the window asks the server's /view_metadata
+    ipcMain.handle("loras:header", (_e, name) => loraheader.headerFor({
+        url: comfy.url || (settings.get().comfy || {}).url || "", hostname: ownHostname(),
+        dir: (settings.get().helpers || {}).dir || "", name: String(name || ""),
+    }));
     ipcMain.handle("keys:list", () => keys.list());
     ipcMain.handle("keys:set", (_e, { name, value }) => keys.set(name, value));
     ipcMain.handle("keys:clear", (_e, name) => keys.clear(name));

@@ -1,0 +1,38 @@
+=== flux (476 files)
+   138  {"base": "sd_1.5", "diffusers": [38, 38, 3072], "scheme": "tr+add_k"}   e.g. flux\360HDR.safetensors
+   136  {"base": "flux1", "flux": [19, 38, 3072], "scheme": "kohya+img_mlp"}   e.g. flux\airbrush_ep_05_dora.safetensors
+   127  {"base": "sd_1.5", "diffusers": [4, 4, 3072], "scheme": "tr"}   e.g. flux\60Y911.safetensors
+    17  {"base": "sd_1.5", "diffusers": [2, 2, 3072], "scheme": "tr"}   e.g. flux\3arth.safetensors
+    12  {"base": "flux.1", "diffusers": [38, 38, 3072], "scheme": "tr+add_k"}   e.g. flux\C4tW_0.3LR_8000.safetensors
+    10  {"base": "sd_1.5", "diffusers": [3, 3, 3072], "scheme": "tr"}   e.g. flux\BYD_000003750.safetensors
+     7  {"base": "sd_1.5", "scheme": "tr+add_k", "tb": [1, 3072]}   e.g. flux\Creepy_Flux.safetensors
+     6  {"base": "sdxl_base_v1-0", "layers": [32, 3072], "scheme": "te12+unet+kohya", "tb": [10, 640]}   e.g. flux\b0tl3_sdxl.safetensors
+     5  {"base": null, "flux": [19, 38, 3072], "scheme": "kohya+img_mlp"}   e.g. flux\42lux-highres-fix-v2.safetensors
+     5  {"base": null, "diffusers": [38, 38, 3072], "scheme": "tr+add_k"}   e.g. flux\alimama-creativeFLUX1-Turbo-Alpha.safetensors
+     3  {"base": "sd_1.5", "diffusers": [10, 10, 3072], "scheme": "tr"}   e.g. flux\bbuk2_000000800.safetensors
+     2  {"base": null, "flux": [19, 38, 3072], "scheme": "img_mlp"}   e.g. flux\flux1-canny-dev-lora.safetensors
+     2  {"base": "sd_1.5", "diffusers": [12, 10, 3072], "scheme": "tr+add_k"}   e.g. flux\Guggenheim.safetensors
+     2  {"base": null, "flux": [19, 38, 3072], "scheme": "dm+img_mlp"}   e.g. flux\srpo_16_base_R26Q_model_fp16.safetensors
+     1  {"base": null, "diffusers": [38, 38, 3072], "scheme": ""}   e.g. flux\catvtonflux_rank64_fp32.safetensors
+     1  {"base": "SD3", "scheme": "kohya"}   e.g. flux\Frodo the Pomeranian SD_3.5.safetensors
+     1  {"base": "sd_1.5", "diffusers": [6, 6, 3072], "scheme": "tr"}   e.g. flux\Jessica_Rabbit_Cosplay_EP07_flux.safetensors
+     1  {"base": "wan", "scheme": "kohya"}   e.g. flux\juliaxx_wan_v2.safetensors
+=== flux_2 (2 files)
+     2  {"base": "flux2", "flux": [8, 48, 6144], "scheme": "dm+img_mlp"}   e.g. flux_2\Targa_Flux_2_000001000.safetensors
+=== klein (25 files)
+    24  {"base": "flux2_klein_9b", "flux": [8, 24, 4096], "scheme": "dm+img_mlp"}   e.g. klein\360_klein.safetensors
+     1  {"base": "sd_1.5", "diffusers": [38, 38, 3072], "scheme": "tr+add_k"}   e.g. klein\gorillaz-style-lora.safetensors
+=== Flux_3 (4 files)
+     4  {"base": "flux3", "f3": [5, 28, 3072], "flux": [0, 28, null], "scheme": "dm"}   e.g. Flux_3\360_f3.safetensors
+=== kontext (3 files)
+     2  {"base": "flux2_klein_9b", "flux": [8, 24, 4096], "scheme": "dm+img_mlp"}   e.g. kontext\lucma_flux_klein_9b.safetensors
+     1  {"base": "flux.1_kontext", "diffusers": [38, 38, 3072], "scheme": "tr+add_k"}   e.g. kontext\lucma_flux_kontext.safetensors
+=== qwen (27 files)
+     9  {"base": "qwen_image", "scheme": "dm+add_k+img_mlp", "tb": [60, 3072]}   e.g. qwen\boogie_qwen_000003500.safetensors
+     9  {"base": null, "scheme": "add_k+img_mlp", "tb": [60, 3072]}   e.g. qwen\Qwen-Edit-Relight.safetensors
+     8  {"base": "sd_1.5", "scheme": "dm+add_k+img_mlp", "tb": [60, 3072]}   e.g. qwen\anna_qwen_000000500.safetensors
+     1  {"base": null, "scheme": "kohya+add_k+img_mlp", "tb": [60, 3072]}   e.g. qwen\sanya_style_09.safetensors
+=== z_image (3 files)
+     3  {"base": "zimage", "layers": [30, 15360], "scheme": "dm"}   e.g. z_image\anna_z_image_3k.safetensors
+=== ideogram (1 files)
+     1  {"base": "ideogram4", "layers": [34, 18432], "scheme": "dm"}   e.g. ideogram\Targa_Ideogram_000002750.safetensors

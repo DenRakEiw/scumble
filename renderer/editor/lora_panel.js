@@ -13,10 +13,14 @@
 // A row under a resting pointer is never picked by hover (Chromium sends a move of no distance after the layout, the
 // CLAUDE.md popup trap): the cursor follows the mouse only on a real move.
 //
-// LR3 fills each row's info line (`.ipc-lora-info`: the base-model hint, the amber mismatch line, the trigger chips) and
-// the picker's family group with Show all; LR5 the Comfy Cloud rows.
+// Each row's info line (LR3, `.ipc-lora-info`): the base-model hint host.loraInfo reads (grey "looks like FLUX 3",
+// "metadata says SDXL", "in folder klein"; amber when the file's tensor names fit another family than the recipe's,
+// loras.js loraHint; never a refusal) and the trigger words as chips that append to the prompt. The picker shows the
+// recipe's family first (folders named for it, files whose hint fits it) and the rest behind *Show all*. LR5 the Comfy
+// Cloud rows.
 
-import { MAX_LORAS, normalizeName, loraStem, loraFolder, groupByFolder, filterNames, strengthRange, clampStrength } from "./loras.js";
+import { MAX_LORAS, normalizeName, loraStem, loraFolder, groupByFolder, filterNames, strengthRange, clampStrength,
+    recipeFamily, familyLabel, familyGroups, loraHint, appendWord } from "./loras.js";
 
 /** The spinner's range and step (a typed value may go to the node's own range, clampStrength). */
 const SPIN = { min: -2, max: 2, step: 0.05 };
@@ -101,7 +105,10 @@ export function render(host, ed) {
     const t = host.loraTakes(r);
     const rows = t.takes ? host.loraRows(r) : [];
     const names = t.takes ? host.loraNames() : [];
-    const key = JSON.stringify([r ? r.id : null, t, rows, names]);
+    // each named row's hint (the first look starts the read; the section is drawn again when it is in)
+    const infos = rows.map((row) => (row.name && host.loraInfo ? host.loraInfo(row.name) : null));
+    const fam = t.takes ? recipeFamily(r) : null;
+    const key = JSON.stringify([r ? r.id : null, t, rows, names, infos, fam]);
     if (picker && picker.ed === ed && (!r || picker.recipeId !== r.id || !t.takes || picker.index >= rows.length)) closePicker();
     if (key === p.key) return;
     p.key = key;
@@ -114,15 +121,15 @@ export function render(host, ed) {
     const on = rows.filter((x) => x.on).length;
     p.count.textContent = rows.length ? `${on} on` : "";
     p.count.title = rows.length ? `${on} of ${rows.length} switched on` : "";
-    p.list.replaceChildren(...rows.map((row, i) => rowEl(host, ed, row, i, names)));
+    p.list.replaceChildren(...rows.map((row, i) => rowEl(host, ed, row, i, names, infos[i], fam)));
     const full = rows.length >= MAX_LORAS;
     p.add.disabled = !t.takes || full;
     p.add.title = full ? `Five LoRAs per recipe: remove one (\u00d7) to add another.` : "Add a LoRA row and pick its file";
     p.note.textContent = full ? "Five LoRAs per recipe." : rows.length ? "" : "Add a LoRA from your ComfyUI's list (up to five per recipe).";
 }
 
-/** One row: the tick, the name (opens the picker), the strength, ×, and the line LR3 writes the hint and the chips into. */
-function rowEl(host, ed, row, i, names) {
+/** One row: the tick, the name (opens the picker), the strength, ×, and the line with the hint and the trigger chips. */
+function rowEl(host, ed, row, i, names, inf, fam) {
     const r = host.recipe;
     const el = mk("div", "ipc-lora-row" + (row.on ? "" : " ipc-lora-off"));
     el.dataset.index = String(i);
@@ -164,10 +171,41 @@ function rowEl(host, ed, row, i, names) {
     del.title = row.name ? `Remove ${loraStem(row.name)} from this recipe's LoRAs` : "Remove this row";
     del.setAttribute("aria-label", "Remove");
     del.addEventListener("click", () => updateRows(host, r, (rs) => { rs.splice(i, 1); }));
-    // LR3: the base-model hint ("looks like FLUX 3", amber on a mismatch) and the trigger chips go here; empty, it takes no room
+    // the base-model hint ("looks like FLUX 3", amber on a mismatch) and the trigger chips; empty, it takes no room
     const info = mk("div", "ipc-lora-info");
+    if (row.name && inf) infoLine(ed, info, inf, fam);
     el.append(tick, name, str, del, info);
     return el;
+}
+
+/** What the hint's source is worth, as its tooltip says. */
+const FROM = {
+    keys: "Read from the file's tensor names.",
+    metadata: "From the file's own metadata, which may be wrong (some trainers write a default there).",
+    folder: "From the folder's name alone: the file itself could not be read here.",
+};
+
+/** The hint (grey, or amber when the tensor names fit another family than the recipe's) and the trigger chips. */
+function infoLine(ed, box, inf, fam) {
+    const h = loraHint(inf.fam, fam);
+    if (h) {
+        const line = mk("span", "ipc-lora-hint" + (h.kind === "mismatch" ? " ipc-lora-amber" : ""), h.text);
+        line.title = h.kind === "mismatch"
+            ? `${FROM.keys} Nothing is refused: a run loads it anyway, and ComfyUI's console then shows "lora key not loaded" lines for what does not fit.`
+            : (FROM[inf.fam.from] || "") + (fam && inf.fam.from === "keys" ? ` This recipe runs ${familyLabel(fam)}.` : "");
+        box.appendChild(line);
+    }
+    for (const word of inf.triggers || []) {
+        const chip = mk("button", "ipc-mini ipc-lora-chip", word);
+        chip.type = "button";
+        chip.title = `Append "${word}" to the prompt (a trigger word this LoRA was trained with)`;
+        chip.addEventListener("click", (e) => {
+            e.preventDefault();
+            ed.setPromptText(appendWord(ed.promptText, word));
+            ed.notifyChanged();
+        });
+        box.appendChild(chip);
+    }
 }
 
 /** The rows of `r` changed by `fn` (a copy of the stored ones), stored for the recipe, every section drawn again. */
@@ -244,7 +282,7 @@ export function openPicker(host, ed, index) {
     const pk = {
         host, ed, index, recipeId: r.id, el: dlg, search, list, note, total, anchor,
         names: serverUp(host) ? host.loraNames() : [], up: serverUp(host), current: rows[index].name, items: [], cursor: -1,
-        outside: null,
+        outside: null, family: recipeFamily(r), showAll: false,
     };
     pk.outside = (e) => {
         if (!dlg.isConnected) { closePicker(); return; }
@@ -309,7 +347,11 @@ function fill(pk, first) {
         pk.search.disabled = false;
         const hits = filterNames(all, q);
         pk.note.textContent = hits.length ? "" : `No LoRA matches "${q.trim()}".`;
-        for (const g of groupByFolder(hits)) {
+        // the recipe's family first (folders named for it, files whose hint fits it), the rest behind Show all
+        const split = familyGroups(groupByFolder(hits), pk.family, (n) => { const i = pk.host.loraInfo(n, { read: false }); return i ? i.fam : null; });
+        if (first && !pk.showAll && pk.current && split.rest.some((g) => g.names.some((n) => normalizeName(n) === normalizeName(pk.current)))) pk.showAll = true;
+        const shown = pk.showAll ? [...split.first, ...split.rest] : split.first;
+        for (const g of shown) {
             const head = mk("div", "ipc-lp-group");
             head.append(mk("span", "ipc-lp-folder", g.folder || "(root)"), mk("span", "ipc-lp-n", String(g.names.length)));
             nodes.push(head);
@@ -333,6 +375,16 @@ function fill(pk, first) {
                 pk.items.push({ name, el: b });
                 nodes.push(b);
             }
+        }
+        if (split.rest.length) {
+            const n = split.rest.reduce((a, g) => a + g.names.length, 0);
+            const label = familyLabel(pk.family);
+            const more = mk("button", "ipc-lp-more", pk.showAll ? `Only the ${label} folders` : `Show all (${n} more in ${split.rest.length} other folder${split.rest.length === 1 ? "" : "s"})`);
+            more.type = "button";
+            more.tabIndex = -1;
+            more.title = pk.showAll ? `Show the folders that look made for ${label} alone` : `This recipe runs ${label}: its folders come first. Show the others too.`;
+            more.addEventListener("click", (e) => { e.preventDefault(); pk.showAll = !pk.showAll; fill(pk, false); });
+            nodes.push(more);
         }
     }
     pk.note.hidden = !pk.note.textContent;

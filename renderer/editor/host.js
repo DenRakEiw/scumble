@@ -45,7 +45,7 @@ import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from
 import { promptPayload } from "./boxes_model.js";
 import * as realism from "./realism.js";
 import * as comfyprompt from "./comfyprompt.js";
-import { MAX_LORAS, LORA_MODEL_CLASS, comboOf, usableRows, modelSource, spliceLoras, missingLoras, loraWords } from "./loras.js";
+import { MAX_LORAS, LORA_MODEL_CLASS, comboOf, usableRows, modelSource, spliceLoras, missingLoras, loraWords, loraFolder, familyOf, loraTriggers, loraMeta } from "./loras.js";
 import * as genpresets from "./genpresets.js";
 import * as loraPanel from "./lora_panel.js";
 import * as dialogs from "../dialogs.js";
@@ -1365,6 +1365,7 @@ export const host = {
         api.clientId = await window.scumble.comfy.clientId();
         try { await this.loadObjectInfo(); } catch (err) { console.warn(err); this.objectInfo = null; this._types = {}; }
         this.connected = true;
+        this._loraInfo.clear();   // the LoRA hints are the server's: read again for this one (loraInfo)
         this.emit("realism");   // the pass's check reads the node list
         for (const ed of this._editors) {
             // Uploads are cached per hash; a (possibly different) server may not have them.
@@ -1514,6 +1515,63 @@ export const host = {
             }
         } catch (_) { /* the list as it was */ }
         return this.loraNames();
+    },
+
+    // ---- the LoRA hint (LR3, docs/PLAN_LORAS.md §3.4): the base model a row's file looks made for, its trigger words ----
+
+    _loraInfo: new Map(),   // `${server url}|${name}` -> { done, value: { fam, triggers } }, per server, name and session
+
+    /**
+     * A LoRA file's reduced safetensors header (main's loras:header: read from the ComfyUI models folder of Settings ›
+     * Helpers, only while the server is this machine), or null. The `loras` gate stands in here.
+     */
+    async loraHeader(name) {
+        try {
+            const res = await window.scumble.loras.header(name);
+            return (res && res.header) || null;
+        } catch (_) { return null; }
+    },
+
+    /** ComfyUI's /view_metadata answer for a LoRA file reduced as main reduces a header (loraMeta), or null (a 404: no metadata; no server). */
+    async loraServerMeta(name) {
+        const st = this.server && this.server.state;
+        if (!this.connected || (st !== "connected" && st !== "missing-node")) return null;
+        try {
+            const res = await api.fetchApi("/view_metadata/loras?filename=" + encodeURIComponent(name));
+            if (!res || res.status !== 200) return null;
+            const meta = await res.json();
+            return meta && typeof meta === "object" && !Array.isArray(meta) ? { metadata: loraMeta(meta) } : null;
+        } catch (_) { return null; }
+    },
+
+    /**
+     * What is known of a LoRA file: `{ fam, triggers }` (familyOf over its header, else the server's metadata, else its
+     * folder; loraTriggers), or null while it is read: the first ask starts the read and the LoRAs section is drawn
+     * again when it is in. Kept per server, name and session (a connect starts over). `read: false` only looks.
+     * @param {string} name the server's name ("klein\x.safetensors")
+     * @param {{ read?: boolean }} [opts]
+     * @returns {{ fam: ReturnType<typeof familyOf>, triggers: string[] } | null}
+     */
+    loraInfo(name, { read = true } = {}) {
+        if (typeof name !== "string" || !name) return null;
+        const key = `${(this.server && this.server.url) || ""}|${name}`;
+        const got = this._loraInfo.get(key);
+        if (got) return got.done ? got.value : null;
+        if (!read) return null;   // the picker's family group asks what is known, never reads 1,200 files
+        const entry = { done: false, value: null };
+        this._loraInfo.set(key, entry);
+        (async () => {
+            let header = await this.loraHeader(name);
+            if (!header) header = await this.loraServerMeta(name);
+            entry.value = { fam: familyOf(header, loraFolder(name) || null), triggers: loraTriggers(header) };
+        })().catch((err) => {
+            console.warn("lora hint", err);
+            entry.value = { fam: familyOf(null, loraFolder(name) || null), triggers: [] };
+        }).then(() => {
+            entry.done = true;
+            if (this._loraInfo.get(key) === entry) loraPanel.renderAll(this);
+        });
+        return null;
     },
 
     /**

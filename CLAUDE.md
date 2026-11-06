@@ -232,9 +232,11 @@ code.
   released as 0.1.52 on the user's word; next there: I0a (pack A's code check, findings to the user before any install).
   **And (2026-11-06): LoRAs and MOSS Image Edit** (item 50, `docs/PLAN_LORAS.md`, issues #10 / #11) in the same 0.1.52
   on `corridorkey`; LR0 (the splice module), LR1 (the queue path, the store, the via line and the PNG metadata; the
-  new gate `loras`) and LR2 (the LoRAs section after Settings in the Generate tab, `renderer/editor/lora_panel.js`;
-  its screenshot in `docs/measurements/lr2_2026-11-06/`) done 2026-11-06 ("LR0 as built" .. "LR2 as built" in the
-  plan's §4), next there: LR3 (detection and trigger words); the user's ComfyUI is at v0.44.0 since 2026-11-06.
+  new gate `loras`), LR2 (the LoRAs section after Settings in the Generate tab, `renderer/editor/lora_panel.js`;
+  its screenshot in `docs/measurements/lr2_2026-11-06/`) and LR3 (the base-model hint, amber on a mismatch, and the
+  trigger chips: `electron/main/loraheader.js`, the IPC `loras:header` only for a server on this machine, the
+  thresholds read from the user's base models' headers; `docs/measurements/lr3_2026-11-06/`) done 2026-11-06 ("LR0 as
+  built" .. "LR3 as built" in the plan's §4), next there: LR4 (MCP); the user's ComfyUI is at v0.44.0 since 2026-11-06.
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel

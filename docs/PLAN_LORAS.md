@@ -919,6 +919,113 @@ files is in FILES). No mutation round (Normal tier); no canvas backend (no pixel
 10. **`skins` checks it with a new step** (15) rather than inside an existing one; the plan said only that the gate renders
     every skin with the section open.
 
+### LR3 as built (2026-11-06)
+
+**Built:** `electron/main/loraheader.js` (new, pure CJS, `// @ts-check`): `parseHeader(buf)` / `readHeader(file)` (8 bytes
+and the header, never the tensors; a length the file cannot hold is no safetensors file, then the 16 MB cap),
+`reduceHeader(raw)` → `{ keyCount, modules, blocks, width, outs, metadata }` (below), `reduceMetadata` / `topTags`,
+`localServer(url, hostname)` (127.x, `localhost`, `::1`, the machine's own name), `comfyModelsDir`, `loraPath(dir, name)`
+(either separator under `<dir>/loras`; `..`, `.`, absolute names, drives, shares, a NUL, another extension refused) and
+`headerFor({ url, hostname, dir, name })`. `main.js`: the IPC `loras:header` beside `recipes:*` (the connected server's
+URL, else the stored `settings.comfy.url`; `os.hostname()` read once; `settings.helpers.dir`); `preload.js`:
+`window.scumble.loras.header`. `renderer/editor/loras.js`: `FAMILIES` (labels and parents), `familyLabel`, `familyFits`,
+the structural `TABLE`, `familyOf(header, folder)` (keys, then metadata, then folder; `{ family, name, label, from, sure,
+candidates }`), `recipeFamily(r)` (declared, else the graph's text encoder), `loraHint(fam, recipeFam)` (grey or amber),
+`topTags` / `loraMeta` (the twins of main's), `loraTriggers`, `appendWord`, `folderFits` / `familyGroups`.
+`renderer/editor/host.js`: `loraHeader(name)` (the IPC; the gate's stand-in point), `loraServerMeta(name)`
+(`/view_metadata/loras` through `api.fetchApi` while the server answers, reduced by `loraMeta`), `loraInfo(name, { read })`
+(a cache per server URL, name and session; the first look starts the read and redraws the sections when it is in;
+cleared in `onConnected`). `renderer/editor/lora_panel.js`: each named row's info line (the hint, amber on a mismatch,
+its tooltip naming the source; the trigger chips, a click appends `, <word>` through `ed.setPromptText` and
+`notifyChanged`), the render key carries the hints and the recipe's family, the picker's family split with a *Show all* /
+*Only the X folders* button at the list's end. `renderer/shell.css`: the hint, the amber line (`--sc-warn`), the chip
+(outlined), the picker's button. `recipes/flux2_klein_local.json`: `loras.family` `flux2_klein` (was `flux2`). CHANGELOG
+`## Unreleased`: the LoRA line names the hint, the amber line, the chips and *Show all*. Measurements and the screenshot:
+`docs/measurements/lr3_2026-11-06/` (`summary.txt`, `loras_hint.png`: three rows under `flux2_klein_local`, amber, grey
+and the two-family answer, the picker on the klein folder with *Show all*).
+
+**The thresholds** (`loras.js` `TABLE`; each from the user's base model's header, read-only, `models/diffusion_models`;
+the LoRA folders confirmed it, `summary.txt` §2):
+
+| Family | Hidden width h | Double blocks (index) | Single blocks (index) | MLP multiples | Source |
+|---|---|---|---|---|---|
+| FLUX.1 | 3072 | 19 (0-18) | 38 (0-37) | 4h, 7h (never 9h) | `flux1-dev-fp8`; 145 kohya / ComfyUI and 156 diffusers LoRAs in `flux/` |
+| FLUX.2 Klein 4B | 3072 | 5 (0-4) | 20 (0-19) | 6h, 9h (never 4h, 7h) | `flux-2-klein-4b`, `flux-2-klein-base-4b` (no 4B LoRA on the machine) |
+| FLUX.2 Klein 9B | 4096 | 8 (0-7) | 24 (0-23) | 6h, 9h | `flux-2-klein-9b`; 24 `klein/` and 2 `kontext/` LoRAs |
+| FLUX.2 dev | 6144 | 8 (0-7) | 48 (0-47) | 6h, 9h | `flux_2/Targa_Flux_2_*` (two LoRAs; no dev model on the machine) |
+| FLUX 3 Image Klein | 3072 | `content_mode_blocks.<mode>` 5 | 28 (`q_proj` .. `mlp_out`, no `linear1`) | | `flux3-image-klein-bf16`; `Flux_3/` 4 |
+| Qwen Image / Edit 2509 | 3072 | `transformer_blocks` 60 | | | `qwen_image_edit_bf16` (`add_k_proj`, `img_mod`); `qwen/` 27 |
+| Qwen Image 2.1 | 4096 | `transformer_blocks` 32 | | | `qwen_image_2.1_int8_convrot` (one stream, `img_mlp.gate_up`; no 2.1 LoRA on the machine) |
+| MOSS-Image | 3072 | `layers` 42 | | | `moss_image_sft_bf16` (`proj.qkv` ...; no MOSS LoRA on the machine) |
+| Z-Image | 3840 | `layers` 30 | | | `zImage_turbo`; `z_image/` 3 |
+| Ideogram 4 | 4608 | `layers` (34 seen) | | | `ideogram/` 1 LoRA (no model) |
+
+**The user's files** (real_files, the code itself over 541 files, `summary.txt` §3; amber columns flux2_klein_local /
+flux3_klein_local / qwen_image_edit_2_1_local / moss_image_local): `Flux_3/Flux3_Targa` "looks like FLUX 3" (grey under
+`flux3_klein_local`, chip "Targa"; 516 keys reduced to 1,565 bytes over the IPC on the dev instance); `qwen/anna_qwen_*`
+"looks like Qwen Image (Edit 2509 / 2511)" by its keys (60 blocks, `add_k_proj`), not its `sd_1.5`, amber under Qwen
+Image 2.1 with the plan's sentence; a `flux/` LoRA (`airbrush_ep_05_dora`, 320 files like it) "looks like FLUX.1", amber
+under `flux2_klein_local` ("This LoRA looks made for FLUX.1; this recipe runs FLUX.2 Klein. ..."); a `klein/` file
+(`anna_klein_2750`, 24 like it) "looks like FLUX.2 Klein 9B", grey there, amber elsewhere; `klein/gorillaz-style-lora` is
+a FLUX.1 Kontext LoRA in diffusers names (amber under the Klein recipe); `flux_2/` reads FLUX.2 dev (amber under Klein);
+127 `flux/` LoRAs on a few single blocks' `proj_out` only (`60Y911`) read "FLUX.1 or FLUX.2 Klein 4B" (grey under the
+Klein recipe, which loads 4B or 9B; amber under the others). The dev instance on port 9571 (`--no-comfy`, Settings ›
+Helpers at the user's models folder in its own profile) showed exactly these lines through the real IPC; a RunPod URL as
+the stored address read nothing; `..\..\comfyui_version.py` was refused. Nothing was written in the ComfyUI folder.
+
+**Tests (all green):** `node tools/loraheader_test.js` 55 of 55 (new; synthetic safetensors files with zero tensors' bytes
+in its own temp folder: FLUX.1 19 / 38 at 3072 with its out-features, Klein 9B, Klein 4B, FLUX.2 dev, a FLUX.1 file on four
+blocks, FLUX 3, Qwen 2509 with anna_qwen's metadata, Qwen 2.1, MOSS's edit LoRA, Z-Image, SDXL of 2,958 keys reduced to
+2.7 KB, a 1.6 MB `ss_tag_frequency` to five tags, the 16 KB metadata cap, a 17 MB file whose header claims 16 MB + 1
+refused by the cap, text and empty files, the module cap, the server and path checks, `headerFor` end to end, each
+family file through `familyOf`, the twins held equal); `node tools/loras_test.js` 86 of 86 (§7 rewritten: every family by
+its module paths, keys over metadata over folder, the Qwen 2.1 / 2509 split, FLUX.1 against FLUX.2 by width, blocks and
+multiples, the two-candidate answer, `recipeFamily` over every shipped graph, `familyFits`, the amber line, the remote
+case, the chips, `appendWord`, the family split); the `loras` gate (its node step runs both files) gained four steps
+(the grey line, the server's metadata, the folder, two chips appending; amber under Qwen 2.1 and under FLUX.2 Klein with
+the run still queued and the chain in it, grey for a Klein 9B file; one read per server and name, none for a look; the
+picker's FLUX 3 group, *Show all* and back, a search showing what it finds, a row outside the group opening with every
+folder) and LR2's pick step clicks *Show all* first; `skins` step 15 gained the hint lines, a chip and *Show all* in every
+skin (default look: grey 4.6, amber 10.1, chip 8.5, the button 4.5). Gate runs on tiles (`--offline`, port 9571):
+`lr3-c` loras, skins, recipes, editor, generate, metadata, lint (0 errors, the same 21 warnings), types: ALL PASS; `lr3-d`
+(after the chip's outline) loras, skins, lint PASS. `lr3-a` was red in loras and skins (LR2's steps expected every name in
+the picker), fixed in the steps. `python tools/build_node.py --check`: ok (60 modules, 64 host members). No mutation round
+(Light / Normal); no canvas backend (no pixel path).
+
+**Deviations, each by the code:**
+1. **`modules` carry N for every index** (the indices are in `blocks`): a file comes to a few dozen patterns (SDXL's
+   2,958 keys to 42, 2.7 KB), the 2,000 cap stays as a backstop.
+2. **`width` is the smallest out-features under a prefix**, not "the first module's": the first in key order is often
+   `linear1` (9h).
+3. **`outs` added** (the distinct out-features per prefix, at most 16): FLUX.1's MLP gives 4h and 7h, FLUX.2's 6h and 9h,
+   which is all that tells a full Klein 4B LoRA from FLUX.1 (the same 3072 width, the 4B's blocks a subset of FLUX.1's).
+4. **The thresholds are read, so the labels are exact**; a shape two families fit names both ("FLUX.1 or FLUX.2 Klein
+   4B", `candidates`), amber only when none fits the recipe. Families beyond §3.4's list: FLUX.2 dev / Klein 4B / 9B,
+   Ideogram 4; FLUX 3 also by its single blocks' names and `txt_mode_blocks`; Qwen 2.1 also by a one-stream
+   `attn.to_q` without `add_*` at 4096 / 32 blocks.
+5. **Amber only on a keys answer**: "metadata says" and "in folder" stay grey; 314 of the user's 528 files in `flux/`,
+   `klein/` and `qwen/` say `sd_1.5`, so an amber line on metadata would be wrong more often than right.
+6. **`flux2_klein_local` declares `flux2_klein`** (LR0 wrote `flux2`): the recipe loads 4B or 9B; `FAMILIES` carries
+   parents (`flux2_klein_9b` → `flux2_klein` → `flux2`) and `familyFits` accepts either direction. `recipeFamily` maps
+   `CLIPLoader` `flux2` by the graph's model file (klein + 9b / 4b, dev), `lumina2` to Z-Image, DualCLIPLoader `flux` to
+   FLUX.1; `stable_diffusion` and the rest say nothing.
+7. **The tags: at least a quarter of the top tag's count** besides the five and the 40 characters: kohya writes
+   sentence captions' fragments into `ss_tag_frequency` (`airbrush` 150, "a woman with long" 5). The trigger phrase is
+   split at commas; five chips at most.
+8. **The metadata reduction has a twin in `loras.js`** (`loraMeta`, `topTags`) rather than one shared function: the
+   renderer cannot import main's CJS file, and main requiring the ES module from inside `app.asar` is unverified until
+   LR5's exe check; `loraheader_test.js` holds the two to the same answers.
+9. **The server check sits in main** (§7 says host): the connected server's URL, else the stored one (so `--no-comfy`
+   and a stopped server still read the files of a loopback address).
+10. **The `/view_metadata` fallback runs only while the server answers** (`host.connected` and the shell's state
+    `connected` / `missing-node`); a 404 or no server leaves the folder.
+11. **The picker's family group**: the folders named for the recipe's family (a folder-word table: `klein`, `Flux_3`,
+    `flux` / `kontext` for FLUX.1 ...) or holding a file whose cached keys hint fits (a look never reads a file); a search
+    whose hits lie outside the group shows them; a row whose file sits in a hidden folder opens with every folder; with
+    no family, or no folder fitting, nothing is split (the Qwen 2.1 recipe and the user's `qwen/` of 2509 LoRAs).
+12. **`readHeader` checks the file can hold the length before the cap**: a text file reads as a huge length and is "not
+    a safetensors file", a real 17 MB file claiming 16 MB + 1 is the cap's refusal.
+
 ## 5. How it fits into 0.1.52 beside CorridorKey
 
 - **One branch, one release.** Both plans build on `corridorkey` (cut from `main` = 0.1.51) and ship as 0.1.52 on the

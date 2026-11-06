@@ -1,0 +1,104 @@
+LR3 (docs/PLAN_LORAS.md, item 50): the base-model hint and the trigger words, 2026-11-06
+==========================================================================================
+
+Everything below read-only: of each file only its first 8 bytes and its safetensors header were read (Python
+struct + json in the session's scratchpad, then electron/main/loraheader.js itself); nothing was written in the user's
+ComfyUI folder, its server stayed stopped. The scripts and their outputs lie beside this file: st_model.py (the base
+models' block counts and widths), st_survey.py -> survey.txt (§2), real_files.js -> real_files.txt (§3).
+
+1. The thresholds (renderer/editor/loras.js TABLE), from the user's base models' headers
+---------------------------------------------------------------------------------------
+models/diffusion_models, header only:
+
+  file                                   double blocks  single blocks  hidden h  img_mlp.0  linear1   other
+  flux1-dev-fp8                          19 (0..18)     38 (0..37)     3072      12288 = 4h 21504 = 7h
+  flux-2-klein-4b, flux-2-klein-base-4b   5 (0..4)      20 (0..19)     3072      18432 = 6h 27648 = 9h
+  flux-2-klein-9b                         8 (0..7)      24 (0..23)     4096      24576 = 6h 36864 = 9h
+  flux3-image-klein-bf16                 content_mode_blocks.image 5, single_blocks 28, 3072 (q_proj / k_proj /
+                                         v_proj / attn_out / mlp_in / mlp_out, no linear1)
+  qwen_image_edit_bf16                   transformer_blocks 60, 3072 (add_k_proj, img_mod, img_mlp.net)
+  qwen_image_2.1_int8_convrot            transformer_blocks 32, 4096 (one stream: to_q / to_k / to_v / to_out,
+                                         img_mlp.gate_up, txt_in.text_norm)
+  moss_image_sft_bf16                    layers 42, 3072 (proj.qkv / o / ffn_up_gate / ffn_down)
+  zImage_turbo                           layers 30, 3840 (attention.qkv / out, feed_forward.w1..w3)
+
+  FLUX.2 dev: no model on the machine; flux_2/Targa_Flux_2_000001000 and _000002500 (ai-toolkit, flux2) read
+  8 double, 48 single, h 6144. Ideogram 4: its one LoRA, layers 34 seen, h 4608.
+
+  What tells them apart: the hidden width h (the smallest out-features under the block prefixes), the highest block
+  index (no FLUX.2 has a double block past 7, Klein 4B none past 4 / 19, Klein 9B none past 7 / 23), and the MLP's
+  multiples of h: FLUX.1 4h and 7h, FLUX.2 6h and 9h (FLUX.1's 6h is its modulation, so 6h decides nothing).
+  A FLUX.1 LoRA on a few low blocks with only h-wide modules fits FLUX.1 and Klein 4B alike: "FLUX.1 or FLUX.2
+  Klein 4B", both as candidates, amber only where neither fits the recipe.
+
+2. The user's LoRA folders by header signature (st_survey.py, 541 files, subfolders walked)
+------------------------------------------------------------------------------------------
+  flux/ 476: 136 + 5 + 2 + 2 kohya / ComfyUI FLUX.1 at 19 / 38 / 3072; 138 + 12 + 5 + 1 diffusers FLUX.1 at
+             3072; 127 + 17 + 10 + 3 + 1 + 2 diffusers on a few blocks (proj_out and the like); 7 diffusers double
+             blocks only; 6 SDXL (kohya, te1 + te2); 1 SD 3.5 (kohya joint_blocks); 1 Wan
+  flux_2/ 2: FLUX.2 dev (8 / 48 / 6144)
+  klein/ 25: 24 Klein 9B (8 / 24 / 4096), 1 FLUX.1 Kontext in diffusers names (gorillaz-style-lora)
+  Flux_3/ 4: FLUX 3 (content_mode_blocks 5, single 28, 3072)
+  kontext/ 3: 2 Klein 9B (lucma_flux_klein_9b*), 1 FLUX.1 Kontext
+  qwen/ 27: all Qwen Image / Edit 2509-shaped (60 blocks, add_k_proj, img_mod)
+  z_image/ 3, ideogram/ 1
+  ss_base_model_version "sd_1.5" on FLUX or Qwen files: 314 of the 528 in flux/, klein/ and qwen/ (ai-toolkit's
+  default); anna_qwen_000000500 .. 003500 among them.
+
+3. How the user's files read through LR3's code (real_files.js: loraheader.headerFor + loras.familyOf, loopback URL)
+---------------------------------------------------------------------------------------------------------------
+  amber columns: flux2_klein_local (FLUX.2 Klein), flux3_klein_local (FLUX 3), qwen_image_edit_2_1_local
+  (Qwen Image 2.1), moss_image_local (MOSS-Image); "." grey, "A" amber
+
+  Flux_3   4  looks like FLUX 3                            [A.AA]  Flux3_Targa: chip "Targa", answer 1.5 KB
+  flux_2   2  looks like FLUX.2 dev                        [AAAA]
+  klein   24  looks like FLUX.2 Klein 9B                   [.AAA]
+           1  looks like FLUX.1                            [AAAA]  gorillaz-style-lora (its metadata: sd_1.5)
+  kontext  2  looks like FLUX.2 Klein 9B                   [.AAA]
+           1  looks like FLUX.1                            [AAAA]
+  qwen    27  looks like Qwen Image (Edit 2509 / 2511)     [AAAA]  anna_qwen_000003500 by its keys (60 blocks,
+                                                                   add_k_proj), not its sd_1.5; chip "Anna"
+  z_image  3  looks like Z-Image                           [AAAA]
+  ideogram 1  looks like Ideogram 4                        [AAAA]
+  flux   320  looks like FLUX.1                            [AAAA]  e.g. airbrush_ep_05_dora (chip "airbrush"; its
+                                                                   sentence-caption fragments left out), 3arth
+         127  looks like FLUX.1 or FLUX.2 Klein 4B         [.AAA]  e.g. 60Y911 (proj_out of single blocks 5, 8, 9,
+                                                                   10 at 3072)
+           6  looks like SDXL                              [AAAA]
+           1  metadata says SDXL                           [....]
+           1  metadata says wan                            [....]
+  (flux/ counts the 455 files at its top level; real_files.js does not walk subfolders)
+  The largest reduced answer: 2.6 KB (b0tl3_sdxl); SDXL's 2,958 keys come to 40 module patterns.
+
+4. The dev instance (port 9571, --no-comfy, its own profile; Settings > Helpers dir set to
+   F:/Comfyui/ComfyUI_windows_portable_nvidia/ComfyUI/models in that profile; the stored server address 127.0.0.1:8188)
+--------------------------------------------------------------------------------------------------------------
+  loras:header before the folder was linked: { header: null, reason: "Settings › Helpers points at no ComfyUI
+  models folder" }; after: Flux3_Targa 516 keys, content_mode_blocks 5, single_blocks 28, width 3072, metadata
+  { ss_base_model_version: flux3, tags: [Targa] }, 1,565 bytes over the IPC; "..\..\comfyui_version.py" and
+  "..\diffusion_models\flux1-dev-fp8.safetensors" refused; the stored address set to a RunPod URL: { header: null,
+  reason: "the ComfyUI server is not this machine" }, set back: read again.
+  The section's lines (the real files' headers through the IPC):
+    flux3_klein_local:   Flux3_Targa "looks like FLUX 3" + chip Targa; 360_klein amber (FLUX.2 Klein 9B; this recipe
+                         runs FLUX 3); anna_qwen_000003500 amber (Qwen Image (Edit 2509 / 2511)) + chip Anna
+    flux2_klein_local:   airbrush_ep_05_dora amber ("This LoRA looks made for FLUX.1; this recipe runs FLUX.2 Klein.
+                         ComfyUI loads it without an error and the picture may come back unchanged."); anna_klein_2750
+                         "looks like FLUX.2 Klein 9B"; Targa_Flux_2_000002500 amber (FLUX.2 dev); 60Y911 "looks like
+                         FLUX.1 or FLUX.2 Klein 4B" (grey: the recipe loads 4B or 9B); gorillaz-style-lora amber
+    qwen_image_edit_2_1_local: anna_qwen_000003500 and Qwen-Edit-Relight amber (Qwen Image (Edit 2509 / 2511); this
+                         recipe runs Qwen Image 2.1)
+  The picker under flux2_klein_local (a stand-in list of 13 of the user's names, the server being stopped): the klein
+  folder first, "Show all (9 more in 5 other folders)".
+  loras_hint.png: the section and the picker for the user's eye.
+
+5. Gates (worktree dist/gates, --offline, --tiles on, port 9571)
+-----------------------------------------------------------------
+  lr3-a: loras FAIL, skins FAIL (LR2's steps expected the picker to list every name; the family group now shows
+         FLUX 3's folder first: the steps click Show all first), recipes, lint, types PASS
+  lr3-b: loras, skins PASS
+  lr3-c: loras (node: loras_test.js 86 of 86, loraheader_test.js 55 of 55; 20 app steps), skins (step 15 with the hint
+         lines, a chip and Show all in the default look and the four skins, each at a contrast of 3 or more; the
+         default look: grey line 4.6, amber line 10.1, chip 8.5, Show all 4.5), recipes, editor, generate, metadata, lint (0 errors,
+         the same 21 warnings), types: ALL PASS
+  lr3-d (after the chip got its outline, seen in the screenshot): loras, skins, lint PASS
+  python tools/build_node.py --check: ok (60 modules, 64 host members; no shipped file changed)

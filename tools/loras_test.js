@@ -11,8 +11,10 @@
 // fixtures (a checkpoint loader with its CLIP, flattened ids, a taken id, a Nunchaku loader, a declared source that
 // reads a MODEL); missingLoras (separators, an empty list refuses nothing); comboOf on both combo forms; loraStem and
 // loraWords (LR1: how the status note, the via line and the log name the LoRAs a run loaded); loraFolder, groupByFolder,
-// filterNames, strengthRange and clampStrength (LR2: the LoRAs section's picker and strength). tools/loras_test.py (the
-// gate `loras`) runs this file first, then the queue path and the section in the app.
+// filterNames, strengthRange and clampStrength (LR2: the LoRAs section's picker and strength); familyOf over reduced
+// headers of each family, recipeFamily over every shipped graph, familyFits and the amber line, the trigger words and
+// the picker's family group (LR3). tools/loras_test.py (the gate `loras`) runs this file and tools/loraheader_test.js
+// first, then the queue path and the section in the app.
 "use strict";
 
 const fs = require("node:fs");
@@ -253,7 +255,7 @@ async function main() {
         const kept = [];
         for (const id of ["flux2_klein_local", "flux3_klein_local", "moss_image_local", "qwen_image_edit_2_1_local", "qwen_image_edit_2_1_turbo_local"]) kept.push(`${id}=${JSON.stringify(byId(id).loras)}`);
         check("the five local edit / generate recipes declare their family through list()",
-            eq(kept, ['flux2_klein_local={"family":"flux2"}', 'flux3_klein_local={"family":"flux3"}', 'moss_image_local={"family":"moss_image"}', 'qwen_image_edit_2_1_local={"family":"qwen_image_2_1"}', 'qwen_image_edit_2_1_turbo_local={"family":"qwen_image_2_1"}']), short(kept));
+            eq(kept, ['flux2_klein_local={"family":"flux2_klein"}', 'flux3_klein_local={"family":"flux3"}', 'moss_image_local={"family":"moss_image"}', 'qwen_image_edit_2_1_local={"family":"qwen_image_2_1"}', 'qwen_image_edit_2_1_turbo_local={"family":"qwen_image_2_1"}']), short(kept));
         const others = listed.filter((r) => r.loras !== undefined && !/^(flux2_klein|flux3_klein|moss_image|qwen_image_edit_2_1(_turbo)?)_local$/.test(r.id)).map((r) => r.id);
         const variants = listed.flatMap((r) => Object.entries(r.providers || {}).filter(([, v]) => v.loras !== undefined).map(([p]) => `${r.id}/${p}`));
         check("no other recipe declares loras at the top; of the variants only cloud_ideogram_4's", !others.length && eq(variants, ["cloud_ideogram_4/comfycloud"]), short({ others, variants }));
@@ -404,10 +406,110 @@ async function main() {
         check("missingLoras over the combo read through comboOf", eq(L.missingLoras(rows, viaCombo).filter((m) => !m.server).map((m) => m.name), ["klein\\old.safetensors"]));
     });
 
-    await section("7. familyOf and recipeFamily (stubs until LR3)", () => {
-        check("recipeFamily reads the declaration: flux3_klein_local flux3, the Qwen 2.1 recipes qwen_image_2_1, relight_qwen_local none, false none",
-            L.recipeFamily(byId("flux3_klein_local")) === "flux3" && L.recipeFamily(byId("qwen_image_edit_2_1_turbo_local")) === "qwen_image_2_1" && L.recipeFamily(byId("relight_qwen_local")) === null && L.recipeFamily({ loras: false }) === null);
-        check("familyOf: the folder alone today, null without one", eq(L.familyOf(null, "klein"), { family: null, label: "in folder klein", from: "folder", sure: false }) && L.familyOf(null, "") === null && L.familyOf(null) === null);
+    await section("7. the base-model hint (LR3): familyOf over reduced headers, recipeFamily over every shipped graph, the amber line", () => {
+        // reduced headers in electron/main/loraheader.js reduceHeader's shape (tools/loraheader_test.js makes them from files)
+        const range = (n) => Array.from({ length: n }, (_, i) => i);
+        const hdr = (modules, blocks = {}, width = {}, outs = {}, metadata = {}) => ({ keyCount: modules.length * 2, modules, blocks, width, outs, metadata });
+        const fam = (h, folder) => { const f = L.familyOf(h, folder); return f && [f.label, f.family, f.from]; };
+        const H = {
+            flux1: hdr(["lora_unet_double_blocks_N_img_attn_proj", "lora_unet_double_blocks_N_img_mlp_N", "lora_unet_single_blocks_N_linear1"], { double_blocks: range(19), single_blocks: range(38) }, { double_blocks: 3072, single_blocks: 3072 }, { double_blocks: [3072, 12288], single_blocks: [3072, 21504] }, { ss_base_model_version: "flux1" }),
+            flux1Diffusers: hdr(["transformer.single_transformer_blocks.N.attn.to_k", "transformer.transformer_blocks.N.attn.add_k_proj", "transformer.transformer_blocks.N.ff.net.N.proj"], { transformer_blocks: range(19), single_transformer_blocks: range(38) }, { transformer_blocks: 3072, single_transformer_blocks: 3072 }, {}, { ss_base_model_version: "sd_1.5" }),
+            klein9b: hdr(["diffusion_model.double_blocks.N.img_attn.proj", "diffusion_model.single_blocks.N.linear1"], { double_blocks: range(8), single_blocks: range(24) }, { double_blocks: 4096, single_blocks: 4096 }, { double_blocks: [4096, 24576], single_blocks: [4096, 36864] }),
+            klein4b: hdr(["diffusion_model.double_blocks.N.img_mlp.N", "diffusion_model.single_blocks.N.linear1"], { double_blocks: range(5), single_blocks: range(20) }, { double_blocks: 3072, single_blocks: 3072 }, { double_blocks: [3072, 18432], single_blocks: [3072, 27648] }),
+            dev: hdr(["diffusion_model.double_blocks.N.img_attn.qkv"], { double_blocks: range(8), single_blocks: range(48) }, { double_blocks: 6144, single_blocks: 6144 }),
+            fewBlocks: hdr(["transformer.single_transformer_blocks.N.proj_out"], { single_transformer_blocks: [5, 8, 9, 10] }, { single_transformer_blocks: 3072 }, { single_transformer_blocks: [3072] }, { ss_base_model_version: "sd_1.5" }),
+            flux3: hdr(["diffusion_model.content_mode_blocks.image.N.q_proj", "diffusion_model.single_blocks.N.attn_out"], { content_mode_blocks: range(5), single_blocks: range(28) }, { content_mode_blocks: 3072, single_blocks: 3072 }, {}, { ss_base_model_version: "flux3", tags: ["Targa"] }),
+            qwen2509: hdr(["diffusion_model.transformer_blocks.N.attn.add_k_proj", "diffusion_model.transformer_blocks.N.img_mod.N"], { transformer_blocks: range(60) }, { transformer_blocks: 3072 }, {}, { ss_base_model_version: "sd_1.5", tags: ["Anna"] }),
+            qwen21: hdr(["transformer.transformer_blocks.N.attn.to_q", "transformer.transformer_blocks.N.img_mlp.gate_layer"], { transformer_blocks: range(32) }, { transformer_blocks: 4096 }),
+            qwen21Bare: hdr(["transformer_blocks.N.attn.to_k", "transformer_blocks.N.attn.to_out.N"], { transformer_blocks: range(32) }, { transformer_blocks: 4096 }),
+            addAttnLow: hdr(["transformer.transformer_blocks.N.attn.add_k_proj"], { transformer_blocks: [10, 18] }, { transformer_blocks: 3072 }),
+            addAttnHigh: hdr(["transformer.transformer_blocks.N.attn.add_k_proj"], { transformer_blocks: [10, 40] }, { transformer_blocks: 3072 }),
+            moss: hdr(["layers.N.proj.q", "layers.N.proj.o"], { layers: range(42) }, { layers: 3072 }, {}, {}),
+            zimage: hdr(["diffusion_model.layers.N.attention.to_k", "diffusion_model.layers.N.feed_forward.w1"], { layers: range(30) }, { layers: 3840 }),
+            ideogram: hdr(["diffusion_model.layers.N.attention.qkv", "diffusion_model.layers.N.adaln_modulation"], { layers: range(34) }, { layers: 4608 }),
+            layersNoWidth: hdr(["diffusion_model.layers.N.attention.qkv"], { layers: range(20) }),
+            sdxl: hdr(["lora_te1_text_model_encoder_layers_N_mlp_fc1", "lora_unet_input_blocks_N_N_transformer_blocks_N_attn1_to_k"], { transformer_blocks: range(10) }, {}, {}, { ss_base_model_version: "sdxl_base_v1-0" }),
+            sd15: hdr(["lora_te_text_model_encoder_layers_N_mlp_fc1", "lora_unet_down_blocks_N_attentions_N_proj_in"]),
+            wan: hdr(["lora_unet_blocks_N_self_attn_q"], {}, {}, {}, { ss_base_model_version: "wan" }),
+        };
+        const want = {
+            flux1: ["looks like FLUX.1", "flux1", "keys"], flux1Diffusers: ["looks like FLUX.1", "flux1", "keys"],
+            klein9b: ["looks like FLUX.2 Klein 9B", "flux2_klein_9b", "keys"], klein4b: ["looks like FLUX.2 Klein 4B", "flux2_klein_4b", "keys"],
+            dev: ["looks like FLUX.2 dev", "flux2_dev", "keys"], fewBlocks: ["looks like FLUX.1 or FLUX.2 Klein 4B", null, "keys"],
+            flux3: ["looks like FLUX 3", "flux3", "keys"], qwen2509: ["looks like Qwen Image (Edit 2509 / 2511)", "qwen_image", "keys"],
+            qwen21: ["looks like Qwen Image 2.1", "qwen_image_2_1", "keys"], qwen21Bare: ["looks like Qwen Image 2.1", "qwen_image_2_1", "keys"],
+            addAttnLow: ["looks like FLUX.1 or Qwen Image (Edit 2509 / 2511)", null, "keys"], addAttnHigh: ["looks like Qwen Image (Edit 2509 / 2511)", "qwen_image", "keys"],
+            moss: ["looks like MOSS-Image", "moss_image", "keys"], zimage: ["looks like Z-Image", "z_image", "keys"], ideogram: ["looks like Ideogram 4", "ideogram4", "keys"],
+            layersNoWidth: ["looks like Z-Image or Ideogram 4", null, "keys"],
+            sdxl: ["looks like SDXL", "sdxl", "keys"], sd15: ["looks like SD 1.5", "sd15", "keys"], wan: ["metadata says wan", null, "metadata"],
+        };
+        const got = Object.fromEntries(Object.keys(want).map((k) => [k, fam(H[k], "x")]));
+        const wrong = Object.keys(want).filter((k) => !eq(got[k], want[k]));
+        check("familyOf by the module paths: each family, FLUX.1 against FLUX.2 by width, blocks and MLP multiples, the Qwen 2.1 / 2509 split", !wrong.length, short(wrong.map((k) => `${k}: ${JSON.stringify(got[k])}`)));
+        check("... a FLUX.1 LoRA on four single blocks (60Y911's shape) names both families it fits as candidates", eq(L.familyOf(H.fewBlocks).candidates, ["flux1", "flux2_klein_4b"]) && L.familyOf(H.fewBlocks).sure === false && L.familyOf(H.flux1).sure === true);
+        check("keys over metadata: anna_qwen's sd_1.5 loses, FLUX.1's diffusers file with sd_1.5 too", got.qwen2509[1] === "qwen_image" && got.flux1Diffusers[1] === "flux1");
+        check("metadata over the folder: a header without modules, the value mapped or as it is",
+            eq(fam({ metadata: { ss_base_model_version: "flux2_klein_9b" } }, "klein"), ["metadata says FLUX.2 Klein 9B", "flux2_klein_9b", "metadata"])
+            && eq(fam({ metadata: { "modelspec.architecture": "stable-diffusion-xl-v1-base/lora" } }), ["metadata says SDXL", "sdxl", "metadata"])
+            && eq(fam({ metadata: { ss_base_model_version: "SD3" } }), ["metadata says SD3", null, "metadata"]));
+        check("the folder last, nothing without one", eq(fam(null, "klein"), ["in folder klein", null, "folder"]) && eq(fam({ metadata: {} }, "qwen"), ["in folder qwen", null, "folder"]) && L.familyOf(null, "") === null && L.familyOf(null) === null && L.familyOf(hdr([]), null) === null);
+        // a remote server: no header is read (loraheader.headerFor, tools/loraheader_test.js), the server's /view_metadata answer and the folder are all
+        const remote = L.familyOf({ metadata: L.loraMeta({ ss_base_model_version: "sd_1.5", ss_tag_frequency: JSON.stringify({ d: { Anna: 1 } }) }) }, "qwen");
+        check("a remote server's anna_qwen: its metadata alone (SD 1.5), never amber under Qwen Image 2.1", remote.label === "metadata says SD 1.5" && L.loraHint(remote, "qwen_image_2_1").kind === "hint" && eq(L.loraTriggers({ metadata: L.loraMeta({ ss_tag_frequency: JSON.stringify({ d: { Anna: 1 } }) }) }), ["Anna"]));
+
+        // the recipe's side: every shipped graph
+        const RF = {
+            "flux2_klein_local/prompt": "flux2_klein", "flux3_klein_local/prompt": "flux3", "moss_image_local/prompt": "moss_image",
+            "qwen_image_edit_2_1_local/prompt": "qwen_image_2_1", "qwen_image_edit_2_1_turbo_local/prompt": "qwen_image_2_1", "relight_qwen_local/prompt": "qwen_image",
+            "realism_pass/prompt": null, "rtx_vsr_local/prompt": null, "upscale_model_local/prompt": null,
+            "cloud_anima_base/comfycloud": null, "cloud_anima_preview/comfycloud": null, "cloud_boogu_image_edit/comfycloud": null,
+            "cloud_flux2_dev/comfycloud": "flux2_dev", "cloud_flux2_klein_9b/comfycloud": "flux2_klein_9b", "cloud_flux2_klein_9b/comfycloud.text": "flux2_klein_9b",
+            "cloud_flux2_klein_9b_multi/comfycloud": "flux2_klein_9b", "cloud_ideogram_4/comfycloud": null, "cloud_krea_2_turbo/comfycloud": null,
+            "cloud_mage_flow/comfycloud": null, "cloud_mage_flow_edit_turbo/comfycloud": null,
+            "cloud_qwen_image_2_1_edit/comfycloud": "qwen_image_2_1", "cloud_qwen_image_2_1_edit/comfycloud.text": "qwen_image_2_1",
+            "cloud_qwen_image_edit_2509/comfycloud": "qwen_image", "cloud_z_image_turbo/comfycloud": "z_image", "relight/comfycloud": "qwen_image",
+        };
+        const rf = {};
+        for (const r of listed) for (const [route, g, rr] of graphsOf(r, true)) rf[`${r.id}/${route}`] = L.recipeFamily(route === "prompt" ? r : { loras: rr.loras, options: { graph: g } });
+        const rfWrong = Object.keys({ ...RF, ...rf }).filter((k) => !(k in RF) || rf[k] !== RF[k]);
+        check("recipeFamily over every shipped graph: the declaration, else the text encoder's type (Qwen 2.1 by its cache, FLUX.2 by its model file)", !rfWrong.length, short(rfWrong.map((k) => `${k}: ${rf[k]}`)));
+        check("recipeFamily: false and an empty recipe say nothing", L.recipeFamily({ loras: false, prompt: byId("flux3_klein_local").prompt }) === null && L.recipeFamily(null) === null && L.recipeFamily({}) === null);
+        check("... DualCLIPLoader's flux is FLUX.1, a checkpoint graph says nothing",
+            L.recipeFamily({ prompt: { c: { class_type: "DualCLIPLoader", inputs: { type: "flux" } } } }) === "flux1" && L.recipeFamily({ prompt: { c: { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "x.safetensors" } } } }) === null);
+
+        // what fits what, and the line
+        const fits = (a, b) => L.familyFits(a, b);
+        check("familyFits: the same, or one a size or kind of the other; unknown on either side fits",
+            fits("flux2_klein_9b", "flux2_klein") && fits("flux2_klein", "flux2_klein_9b") && fits("flux2_klein_4b", "flux2") && fits("flux3", "flux3") && fits(null, "flux3") && fits("flux1", null) && fits("anima", "anima")
+            && !fits("flux2_dev", "flux2_klein") && !fits("flux1", "flux2") && !fits("flux1", "flux2_klein") && !fits("qwen_image", "qwen_image_2_1") && !fits("flux2_klein_4b", "flux2_klein_9b") && !fits("anima", "flux3"));
+        const hint = (k, rfam) => L.loraHint(L.familyOf(H[k], "x"), rfam);
+        const amber = hint("qwen2509", "qwen_image_2_1");
+        check("the amber line: a 2509 LoRA under Qwen Image 2.1, the plan's sentence",
+            amber.kind === "mismatch" && amber.text === "This LoRA looks made for Qwen Image (Edit 2509 / 2511); this recipe runs Qwen Image 2.1. ComfyUI loads it without an error and the picture may come back unchanged.", amber.text);
+        check("... a FLUX.1 LoRA under FLUX.2 Klein (flux2_klein_local) and a FLUX.2 dev one: amber; a Klein 9B one: grey",
+            hint("flux1", "flux2_klein").kind === "mismatch" && /looks made for FLUX\.1; this recipe runs FLUX\.2 Klein\./.test(hint("flux1", "flux2_klein").text) && hint("dev", "flux2_klein").kind === "mismatch"
+            && eq(hint("klein9b", "flux2_klein"), { kind: "hint", text: "looks like FLUX.2 Klein 9B" }) && hint("klein4b", "flux2_klein").kind === "hint");
+        check("... two candidates: amber only when neither fits (FLUX.1 or Klein 4B: grey under FLUX.2 Klein, amber under FLUX 3 and Klein 9B)",
+            hint("fewBlocks", "flux2_klein").kind === "hint" && hint("fewBlocks", "flux3").kind === "mismatch" && hint("fewBlocks", "flux2_klein_9b").kind === "mismatch" && hint("fewBlocks", "flux1").kind === "hint");
+        check("... a metadata or folder hint is never amber, a recipe without a family never",
+            L.loraHint(L.familyOf({ metadata: { ss_base_model_version: "sdxl" } }), "flux3").kind === "hint" && L.loraHint(L.familyOf(null, "qwen"), "flux3").kind === "hint" && hint("qwen2509", null).kind === "hint" && L.loraHint(null, "flux3") === null);
+        check("familyLabel: the table's, an unknown id as it is", L.familyLabel("flux2_klein") === "FLUX.2 Klein" && L.familyLabel("anima") === "anima" && L.familyLabel(null) === "");
+
+        // the trigger words, the prompt, the picker's family group
+        check("loraTriggers: the trigger phrase's words first, then the tags, once (any case), shorter than 40, five at most",
+            eq(L.loraTriggers({ metadata: { "modelspec.trigger_phrase": "trig0r, Glowing,  ", tags: ["glowing", "red coat", "x".repeat(40), "a", "b", "c"] } }), ["trig0r", "Glowing", "red coat", "a", "b"])
+            && eq(L.loraTriggers(H.flux3), ["Targa"]) && eq(L.loraTriggers(null), []) && eq(L.loraTriggers({ metadata: { tags: "Targa" } }), []));
+        check("appendWord: \", <word>\" after the prompt's text, the word alone into an empty prompt",
+            L.appendWord("a red mug", "Targa") === "a red mug, Targa" && L.appendWord("a red mug,  ", "Targa") === "a red mug, Targa" && L.appendWord("", "Targa") === "Targa" && L.appendWord(null, " Targa ") === "Targa" && L.appendWord("keep", "") === "keep");
+        const groups = L.groupByFolder(["Flux_3\\Flux3_Targa.safetensors", "flux\\a.safetensors", "flux\\b.safetensors", "klein\\k.safetensors", "kontext\\lucma_klein.safetensors", "qwen\\anna_qwen.safetensors", "root.safetensors"]);
+        const split = (rfam, hintOf) => { const s = L.familyGroups(groups, rfam, hintOf); return [s.first.map((g) => g.folder), s.rest.map((g) => g.folder)]; };
+        check("familyGroups: the folders named for the recipe's family first, the rest behind Show all",
+            eq(split("flux3"), [["Flux_3"], ["flux", "klein", "kontext", "qwen", ""]]) && eq(split("flux1"), [["flux", "kontext"], ["Flux_3", "klein", "qwen", ""]]), short([split("flux3"), split("flux1")]));
+        const known = (n) => (n === "kontext\\lucma_klein.safetensors" ? L.familyOf(H.klein9b) : n === "flux\\a.safetensors" ? L.familyOf(H.flux1) : null);
+        check("... a folder whose file's hint fits joins the family group (a Klein LoRA in kontext/); a metadata hint does not",
+            eq(split("flux2_klein", known), [["klein", "kontext"], ["flux", "Flux_3", "qwen", ""]]) && eq(split("flux2_klein", (n) => (n === "flux\\a.safetensors" ? L.familyOf({ metadata: { ss_base_model_version: "flux2_klein_9b" } }) : null)), [["klein"], ["flux", "Flux_3", "kontext", "qwen", ""]]));
+        check("... no family, or none of the folders fits: every group first (Qwen 2.1's recipe and a qwen/ folder of 2509 LoRAs)",
+            eq(split(null), [groups.map((g) => g.folder), []]) && eq(split("qwen_image_2_1"), [groups.map((g) => g.folder), []]) && eq(split("z_image"), [groups.map((g) => g.folder), []]));
     });
 
     await section("8. loraStem and loraWords (LR1: the status note, the via line, the log)", () => {

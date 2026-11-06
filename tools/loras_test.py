@@ -39,6 +39,19 @@ Then the LoRAs section of the Generate tab (LR2, renderer/editor/lora_panel.js),
 - a recipe saved from the ComfyUI window under a new id takes the rows of the one it came from (shell.js
   copySavedLoras, main's comfyview:saved `from`); without `from`, or with `from` the same id, nothing moves.
 
+Then the base-model hint (LR3), with host.loraHeader stood in for (main's loras:header, the user's files are never
+read here) and the page's `fetch` answering /view_metadata:
+
+- a row's file read by its tensor names: the grey line "looks like FLUX 3" under flux3_klein_local, its trigger word as
+  a chip; a click on the chip appends ", Targa" to the prompt (the editor's prompt setter);
+- a 2509 LoRA under qwen_image_edit_2_1_local (a FLUX.1 one under flux2_klein_local too): the amber line with the
+  plan's sentence, and the run still goes (nothing refused), the chain in the queued prompt;
+- no header (a remote server, no models folder linked): the server's /view_metadata answer gives "metadata says SD
+  1.5" (anna_qwen's lie, grey, never amber); a 404 there leaves the folder, "in folder klein";
+- read once per server and name (the stand-in asked once for two looks, a connect starts over);
+- the picker of flux3_klein_local shows the Flux_3 folder first and the rest behind Show all; Show all and back; a
+  row whose file sits in a hidden folder opens the picker with every folder shown.
+
 Every stub, the recipe, the rows and the stored settings.recipeLoras are put back whatever happens.
 
     python tools/loras_test.py
@@ -58,13 +71,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def node_step():
-    r = subprocess.run(["node", os.path.join(ROOT, "tools", "loras_test.js")], cwd=ROOT,
-                       capture_output=True, text=True, encoding="utf-8", timeout=180)
-    # stdout alone: stderr carries Node's note that it read renderer/editor/loras.js as an ES module
-    tail = r.stdout.strip()
-    if r.returncode != 0 or not tail.endswith("PASS"):
-        raise Exception("tools/loras_test.js: " + (tail + r.stderr)[-1500:])
-    return {"checks": tail.count("[ok]"), "tail": (tail.splitlines()[-2:-1] or [""])[0]}
+    out = {}
+    # the splice module, then the header reader (LR3: synthetic safetensors files in its own temp folder)
+    for name in ("loras_test.js", "loraheader_test.js"):
+        r = subprocess.run(["node", os.path.join(ROOT, "tools", name)], cwd=ROOT,
+                           capture_output=True, text=True, encoding="utf-8", timeout=180)
+        # stdout alone: stderr carries Node's note that it read renderer/editor/loras.js as an ES module
+        tail = r.stdout.strip()
+        if r.returncode != 0 or not tail.endswith("PASS"):
+            raise Exception("tools/%s: %s" % (name, (tail + r.stderr)[-1500:]))
+        out[name] = {"checks": tail.count("[ok]"), "tail": (tail.splitlines()[-2:-1] or [""])[0]}
+    return out
 
 
 # the stand-ins every app step shares: S.install() puts them in, S.restore() takes them out again
@@ -85,10 +102,14 @@ const readers = (g, id, slot) => {
 };
 const S = window.__lrS || (window.__lrS = {
     posts: [], rereads: 0, reread: "list", rereadNames: NAMES, ensured: 0, n: 0,
+    headers: {}, headerAsks: 0, meta: {}, metaAsks: 0,
     install() {
         if (this.saved) return;
-        this.saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, missing: host.missingFilesRefusal, recipe: host.recipe, loras: host.loras, fetch: window.fetch, server: host.server };
+        this.saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, missing: host.missingFilesRefusal, recipe: host.recipe, loras: host.loras, fetch: window.fetch, server: host.server, loraHeader: host.loraHeader };
         const self = this, orig = this.saved.fetch;
+        // main's loras:header (the linked models folder): the test's reduced headers by name, never a file of the user's
+        host.loraHeader = async (name) => { self.headerAsks++; return self.headers[name] || null; };
+        host._loraInfo.clear();
         host.connected = true;
         host.server = { ...host.server, state: "connected" };   // the LoRAs section's picker asks the shell's last status
         host.objectInfo = OI();
@@ -100,6 +121,13 @@ const S = window.__lrS || (window.__lrS = {
                 const id = "lr1-" + (++self.n);
                 self.posts.push({ id, body: JSON.parse(init.body) });
                 return new Response(JSON.stringify({ prompt_id: id, number: self.n, node_errors: {} }), { status: 200, headers: { "Content-Type": "application/json" } });
+            }
+            // ComfyUI's /view_metadata: the test's metadata by file name, a 404 for any other
+            const vm = /\/view_metadata\/loras\?filename=([^&]+)/.exec(u);
+            if (vm) {
+                self.metaAsks++;
+                const m = self.meta[decodeURIComponent(vm[1])];
+                return m ? new Response(JSON.stringify(m), { status: 200, headers: { "Content-Type": "application/json" } }) : new Response("", { status: 404 });
             }
             if (u.includes("/object_info/LoraLoaderModelOnly")) {
                 self.rereads++;
@@ -114,6 +142,8 @@ const S = window.__lrS || (window.__lrS = {
         const s = this.saved;
         panel.closePicker();
         host.connected = s.connected; host.objectInfo = s.objectInfo; host.ensureOnServer = s.ensure; host.missingFilesRefusal = s.missing; host.loras = s.loras; window.fetch = s.fetch; host.server = s.server;
+        host.loraHeader = s.loraHeader;
+        host._loraInfo.clear();
         host.setRecipe(s.recipe);
         this.saved = null;
     },
@@ -403,6 +433,11 @@ await until(() => S.rereads > rereads0, 2000);
 await wait(60);
 if (S.rereads !== rereads0 + 1) throw new Error("the list was not read again on open: " + (S.rereads - rereads0));
 if (document.activeElement !== st.search) throw new Error("the search has no focus: " + (document.activeElement && document.activeElement.className));
+// FLUX 3's own folder first (LR3); Show all lists every folder
+const famOnly = Array.from(st.el.querySelectorAll(".ipc-lp-group .ipc-lp-folder")).map((g) => g.textContent);
+if (JSON.stringify(famOnly) !== '["Flux_3"]' || !st.el.querySelector(".ipc-lp-more")) throw new Error("the family group: " + JSON.stringify(famOnly));
+st.el.querySelector(".ipc-lp-more").click();
+st = panel.openPickerState();
 const groups = Array.from(st.el.querySelectorAll(".ipc-lp-group .ipc-lp-folder")).map((g) => g.textContent);
 if (JSON.stringify(groups) !== JSON.stringify(["Flux_3", "klein", "qwen", "(root)"]) || st.rows().length !== NAMES.length) throw new Error("the groups: " + JSON.stringify(groups) + ", " + st.rows().length + " rows");
 typeIn(st.search, "NYC");
@@ -529,6 +564,141 @@ if ((await shellMod.copySavedLoras({ id: "lr2_saved3", from: "no_such_recipe" })
 const st = await stored();
 if (JSON.stringify(st.lr2_saved) !== JSON.stringify(rows)) throw new Error("the store: " + JSON.stringify(st.lr2_saved));
 return { copied: rows.length };
+"""),
+    ("hint_the_grey_line_and_a_trigger_chip", r"""
+// LR3: the base-model hint under each row's name, read through host.loraHeader (main's loras:header, stood in for) or
+// the server's /view_metadata (the page's fetch), else the folder
+const ed = ednow(window.__lr);
+host.objectInfo = OI();
+host.setRecipe(klein3);
+const range = (n) => Array.from({ length: n }, (_, i) => i);
+S.headers = {
+    "Flux_3\\Flux3_Targa.safetensors": { keyCount: 516, modules: ["diffusion_model.content_mode_blocks.image.N.q_proj", "diffusion_model.single_blocks.N.attn_out"], blocks: { content_mode_blocks: range(5), single_blocks: range(28) }, width: { content_mode_blocks: 3072, single_blocks: 3072 }, outs: {}, metadata: { ss_base_model_version: "flux3", tags: ["Targa"] } },
+    "qwen\\NYC_Qwen.safetensors": { keyCount: 1680, modules: ["diffusion_model.transformer_blocks.N.attn.add_k_proj", "diffusion_model.transformer_blocks.N.img_mod.N"], blocks: { transformer_blocks: range(60) }, width: { transformer_blocks: 3072 }, outs: {}, metadata: { ss_base_model_version: "sd_1.5", tags: ["NYC"] } },
+    "flux\\old_flux1.safetensors": { keyCount: 912, modules: ["lora_unet_double_blocks_N_img_attn_proj", "lora_unet_single_blocks_N_linear1"], blocks: { double_blocks: range(19), single_blocks: range(38) }, width: { double_blocks: 3072, single_blocks: 3072 }, outs: { double_blocks: [3072, 12288], single_blocks: [3072, 21504] }, metadata: {} },
+};
+S.meta = { "klein\\nyc_style.safetensors": { ss_base_model_version: "sd_1.5", ss_tag_frequency: JSON.stringify({ d: { nyc: 12, "a street at night with": 1 } }) } };
+S.headerAsks = 0; S.metaAsks = 0;
+host._loraInfo.clear();
+host.loras = { flux3_klein_local: [
+    { name: "Flux_3\\Flux3_Targa.safetensors", strength: 0.8, on: true },
+    { name: "klein\\nyc_style.safetensors", strength: 1, on: true },
+    { name: "klein\\gone.safetensors", strength: 1, on: false },
+] };
+panel.renderAll(host);
+const hintOf = (i) => { const el = rowEls(ed)[i] && rowEls(ed)[i].querySelector(".ipc-lora-hint"); return el ? { text: el.textContent, amber: el.classList.contains("ipc-lora-amber"), title: el.title } : null; };
+const chips = (i) => Array.from(rowEls(ed)[i].querySelectorAll(".ipc-lora-chip")).map((c) => c.textContent);
+if (!(await until(() => hintOf(0) && hintOf(1) && hintOf(2)))) throw new Error("no hint lines: " + JSON.stringify([hintOf(0), hintOf(1), hintOf(2)]));
+const h = [hintOf(0), hintOf(1), hintOf(2)];
+if (h[0].text !== "looks like FLUX 3" || h[0].amber || !/tensor names/.test(h[0].title)) throw new Error("row 1: " + JSON.stringify(h[0]));
+if (h[1].text !== "metadata says SD 1.5" || h[1].amber || !/may be wrong/.test(h[1].title)) throw new Error("row 2 (the server's metadata): " + JSON.stringify(h[1]));
+if (h[2].text !== "in folder klein" || h[2].amber) throw new Error("row 3 (a 404, the folder): " + JSON.stringify(h[2]));
+if (JSON.stringify(chips(0)) !== '["Targa"]' || JSON.stringify(chips(1)) !== '["nyc"]' || chips(2).length) throw new Error("the chips: " + JSON.stringify([chips(0), chips(1), chips(2)]));
+if (S.headerAsks !== 3 || S.metaAsks !== 2) throw new Error("asks: " + JSON.stringify({ headers: S.headerAsks, meta: S.metaAsks }));
+// a chip appends its word to the prompt (the editor's prompt setter), a second one after it
+await run("set_prompt", { doc: window.__lr, text: "a red mug on the table" });
+rowEls(ed)[0].querySelector(".ipc-lora-chip").click();
+if (ed.promptText !== "a red mug on the table, Targa") throw new Error("after the chip: " + JSON.stringify(ed.promptText));
+rowEls(ed)[1].querySelector(".ipc-lora-chip").click();
+if (ed.promptText !== "a red mug on the table, Targa, nyc") throw new Error("after the second chip: " + JSON.stringify(ed.promptText));
+await run("set_prompt", { doc: window.__lr, text: "a red mug on the table" });
+return { hints: h.map((x) => x.text), chips: [chips(0), chips(1)], asks: { headers: S.headerAsks, meta: S.metaAsks } };
+"""),
+    ("hint_amber_on_a_mismatch_and_the_run_goes", r"""
+const ed = ednow(window.__lr);
+const rec = (id) => { const r = host.shell.recipes().find((x) => x.id === id); if (!r) throw new Error(id + " is not listed"); return r; };
+const hintOf = (i) => { const el = rowEls(ed)[i] && rowEls(ed)[i].querySelector(".ipc-lora-hint"); return el ? { text: el.textContent, amber: el.classList.contains("ipc-lora-amber") } : null; };
+// a 2509 LoRA (anna_qwen's shape, its metadata saying sd_1.5) under Qwen Image 2.1: amber, the plan's sentence
+const q21 = rec("qwen_image_edit_2_1_local");
+host.setRecipe(q21);
+host.loras = { qwen_image_edit_2_1_local: [{ name: "qwen\\NYC_Qwen.safetensors", strength: 1, on: true }] };
+panel.renderAll(host);
+if (!(await until(() => hintOf(0)))) throw new Error("no hint under qwen_image_edit_2_1_local");
+const a = hintOf(0);
+const sentence = "This LoRA looks made for Qwen Image (Edit 2509 / 2511); this recipe runs Qwen Image 2.1. ComfyUI loads it without an error and the picture may come back unchanged.";
+if (!a.amber || a.text !== sentence) throw new Error("the amber line: " + JSON.stringify(a));
+// a FLUX.1 LoRA under flux2_klein_local (FLUX.2 Klein): amber, and the run goes with the chain (nothing refused on it)
+const k2 = rec("flux2_klein_local");
+host.objectInfo = { ...OI(), ...Object.fromEntries((k2.needs || []).map((n) => [n, { input: { required: {} } }])), LoraLoaderModelOnly: LORA([...NAMES, "flux\\old_flux1.safetensors"]) };
+host.setRecipe(k2);
+host.loras = { flux2_klein_local: [{ name: "flux\\old_flux1.safetensors", strength: 0.7, on: true }] };
+panel.renderAll(host);
+if (!(await until(() => hintOf(0)))) throw new Error("no hint under flux2_klein_local");
+const b = hintOf(0);
+if (!b.amber || !/^This LoRA looks made for FLUX\.1; this recipe runs FLUX\.2 Klein\. /.test(b.text)) throw new Error("the FLUX.1 line: " + JSON.stringify(b));
+const q = await queue(ed);
+if (q.err) throw new Error("refused on a hint: " + q.err);
+const g = q.body.prompt;
+if (!g.scumble_lora_1 || g.scumble_lora_1.inputs.lora_name !== "flux\\old_flux1.safetensors" || g.scumble_lora_1.inputs.strength_model !== 0.7) throw new Error("the chain: " + JSON.stringify(g.scumble_lora_1));
+// a Klein 9B one under the same recipe: grey
+S.headers["klein\\nyc_style.safetensors"] = { keyCount: 224, modules: ["diffusion_model.double_blocks.N.img_attn.proj", "diffusion_model.single_blocks.N.linear1"], blocks: { double_blocks: range8(), single_blocks: Array.from({ length: 24 }, (_, i) => i) }, width: { double_blocks: 4096, single_blocks: 4096 }, outs: { double_blocks: [4096], single_blocks: [4096, 36864] }, metadata: {} };
+host._loraInfo.clear();
+host.loras = { flux2_klein_local: [{ name: "klein\\nyc_style.safetensors", strength: 1, on: true }] };
+panel.renderAll(host);
+if (!(await until(() => hintOf(0) && hintOf(0).text === "looks like FLUX.2 Klein 9B"))) throw new Error("the Klein 9B line: " + JSON.stringify(hintOf(0)));
+if (hintOf(0).amber) throw new Error("a Klein 9B LoRA is amber under FLUX.2 Klein");
+host.objectInfo = OI();
+host.setRecipe(klein3);
+return { amber: a.text.slice(0, 60), flux1: b.text.slice(0, 60), queued: q.id };
+function range8() { return Array.from({ length: 8 }, (_, i) => i); }
+"""),
+    ("hint_read_once_per_server_and_name", r"""
+const ed = ednow(window.__lr);
+host.setRecipe(klein3);
+host._loraInfo.clear();
+S.headerAsks = 0; S.metaAsks = 0;
+host.loras = { flux3_klein_local: [{ name: "Flux_3\\Flux3_Targa.safetensors", strength: 0.8, on: true }] };
+panel.renderAll(host);
+await until(() => host.loraInfo("Flux_3\\Flux3_Targa.safetensors"));
+panel.renderAll(host); panel.renderAll(host);
+await wait(80);
+if (S.headerAsks !== 1) throw new Error("asked " + S.headerAsks + " times for one name");
+// a look without reading (the picker's family group) never asks
+if (host.loraInfo("qwen\\NYC_Qwen.safetensors", { read: false }) !== null || S.headerAsks !== 1) throw new Error("a look read the file");
+// another server: read again (the hints are the server's)
+const url0 = host.server.url;
+host.server = { ...host.server, url: "http://127.0.0.1:8190" };
+panel.renderAll(host);
+await until(() => S.headerAsks === 2);
+host.server = { ...host.server, url: url0 };
+if (S.headerAsks !== 2) throw new Error("another server did not read again: " + S.headerAsks);
+return { asks: S.headerAsks };
+"""),
+    ("hint_the_picker_shows_the_recipes_family_first", r"""
+const ed = ednow(window.__lr);
+host.objectInfo = OI();
+S.reread = "list"; S.rereadNames = NAMES;
+host.setRecipe(klein3);
+host.loras = { flux3_klein_local: [{ name: "Flux_3\\Flux3_Targa.safetensors", strength: 0.8, on: true }, { name: "klein\\nyc_style.safetensors", strength: 1, on: true }] };
+panel.renderAll(host);
+P(ed).section.open = true;
+const folders = (st) => Array.from(st.el.querySelectorAll(".ipc-lp-group .ipc-lp-folder")).map((g) => g.textContent);
+const more = (st) => st.el.querySelector(".ipc-lp-more");
+nameBtn(ed, 0).click();
+let st = panel.openPickerState();
+await wait(80);
+st = panel.openPickerState();
+if (JSON.stringify(folders(st)) !== '["Flux_3"]' || !more(st) || more(st).textContent !== "Show all (3 more in 3 other folders)") throw new Error("the family group: " + JSON.stringify({ folders: folders(st), more: more(st) && more(st).textContent }));
+if (st.rows().length !== 1 || st.cursor.name !== "Flux_3\\Flux3_Targa.safetensors") throw new Error("the rows: " + st.rows().length);
+more(st).click();
+st = panel.openPickerState();
+if (!st || JSON.stringify(folders(st)) !== '["Flux_3","klein","qwen","(root)"]' || more(st).textContent !== "Only the FLUX 3 folders" || st.rows().length !== NAMES.length) throw new Error("Show all: " + JSON.stringify(st && { folders: folders(st), more: more(st).textContent }));
+if (document.activeElement !== st.search) throw new Error("Show all took the focus from the search");
+more(st).click();
+st = panel.openPickerState();
+if (JSON.stringify(folders(st)) !== '["Flux_3"]') throw new Error("back: " + JSON.stringify(folders(st)));
+// a search that finds nothing in the family's folders shows what it finds
+typeIn(st.search, "nyc");
+st = panel.openPickerState();
+if (JSON.stringify(folders(st)) !== '["klein","qwen"]' || more(st)) throw new Error("the search: " + JSON.stringify(folders(st)));
+key(st.search, "Escape");
+// a row whose file sits outside the family's folders: every folder at open, its own name under the cursor
+nameBtn(ed, 1).click();
+await wait(80);
+st = panel.openPickerState();
+if (JSON.stringify(folders(st)) !== '["Flux_3","klein","qwen","(root)"]' || st.cursor.name !== "klein\\nyc_style.safetensors") throw new Error("a row outside: " + JSON.stringify({ folders: folders(st), cursor: st.cursor && st.cursor.name }));
+key(st.search, "Escape");
+return { family: ["Flux_3"], all: NAMES.length };
 """),
     ("cleanup", r"""
 S.restore();

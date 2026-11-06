@@ -131,6 +131,11 @@ contextBridge.exposeInMainWorld("scumble", {
         cloudCopy: (id) => ipcRenderer.invoke("recipes:cloudCopy", id),
         openFolder: () => ipcRenderer.invoke("recipes:openFolder"),
     },
+    loras: {
+        // a LoRA file's reduced safetensors header (item 50 LR3, electron/main/loraheader.js) from the ComfyUI models
+        // folder of Settings > Helpers, only while the ComfyUI server is this machine: { header, reason }
+        header: (name) => ipcRenderer.invoke("loras:header", name),
+    },
     keys: {
         list: () => ipcRenderer.invoke("keys:list"),
         set: (name, value) => ipcRenderer.invoke("keys:set", { name, value }),

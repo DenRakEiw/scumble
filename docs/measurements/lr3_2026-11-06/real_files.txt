@@ -1,0 +1,33 @@
+recipe families: [["flux2_klein_local","flux2_klein"],["flux3_klein_local","flux3"],["qwen_image_edit_2_1_local","qwen_image_2_1"],["moss_image_local","moss_image"]]
+  Flux_3\Flux3_Targa.safetensors: looks like FLUX 3 [A.AA] triggers ["Targa"] answer 1540 B, 24 modules, meta "flux3"
+=== Flux_3
+     4  looks like FLUX 3 [A.AA]
+  flux_2\Targa_Flux_2_000002500.safetensors: looks like FLUX.2 dev [AAAA] triggers ["targa"] answer 774 B, 8 modules, meta "flux2"
+=== flux_2
+     2  looks like FLUX.2 dev [AAAA]
+  klein\360_klein.safetensors: looks like FLUX.2 Klein 9B [.AAA] triggers [] answer 694 B, 8 modules, meta "flux2_klein_9b"
+  klein\gorillaz-style-lora.safetensors: looks like FLUX.1 [AAAA] triggers [] answer 1459 B, 20 modules, meta "sd_1.5"
+=== klein
+    24  looks like FLUX.2 Klein 9B [.AAA]
+     1  looks like FLUX.1 [AAAA]
+=== kontext
+     2  looks like FLUX.2 Klein 9B [.AAA]
+     1  looks like FLUX.1 [AAAA]
+  qwen\anna_qwen_000003500.safetensors: looks like Qwen Image (Edit 2509 / 2511) [AAAA] triggers ["Anna"] answer 1120 B, 14 modules, meta "sd_1.5"
+=== qwen
+    27  looks like Qwen Image (Edit 2509 / 2511) [AAAA]
+=== z_image
+     3  looks like Z-Image [AAAA]
+=== ideogram
+     1  looks like Ideogram 4 [AAAA]
+  flux\3arth.safetensors: looks like FLUX.1 [AAAA] triggers ["3arth"] answer 273 B, 1 modules, meta "sd_1.5"
+  flux\60Y911.safetensors: looks like FLUX.1 or FLUX.2 Klein 4B [.AAA] triggers ["60Y911"] answer 278 B, 1 modules, meta "sd_1.5"
+  flux\airbrush_ep_05_dora.safetensors: looks like FLUX.1 [AAAA] triggers ["airbrush"] answer 960 B, 11 modules, meta "flux1"
+  flux\b0tl3_sdxl.safetensors: looks like SDXL [AAAA] triggers ["b0tl3"] answer 2631 B, 40 modules, meta "sdxl_base_v1-0"
+=== flux
+   320  looks like FLUX.1 [AAAA]
+   127  looks like FLUX.1 or FLUX.2 Klein 4B [.AAA]
+     6  looks like SDXL [AAAA]
+     1  metadata says SDXL [....]
+     1  metadata says wan [....]
+amber columns: flux2_klein_local, flux3_klein_local, qwen_image_edit_2_1_local, moss_image_local
