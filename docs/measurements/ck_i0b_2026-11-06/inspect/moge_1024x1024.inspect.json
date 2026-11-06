@@ -1,0 +1,74 @@
+{
+ "file": "Nucito/corridorkey-web@1ae72ca/moge_1024x1024.onnx",
+ "ir_version": 8,
+ "producer": "pytorch",
+ "producer_version": "2.9.1",
+ "opsets": [
+  {
+   "version": 17
+  }
+ ],
+ "inputs": [
+  {
+   "name": "x",
+   "dtype": "float32",
+   "shape": [
+    1,
+    3,
+    224,
+    224
+   ]
+  }
+ ],
+ "outputs": [
+  {
+   "name": "feat",
+   "dtype": "float32",
+   "shape": [
+    1,
+    768,
+    16,
+    16
+   ]
+  }
+ ],
+ "nodes": 1167,
+ "initializers": 182,
+ "initializer_dtypes": {
+  "float16": 182
+ },
+ "external_locations": {
+  "moge.weights": 182
+ },
+ "value_info": 0,
+ "ops": {
+  "::Constant": 339,
+  "::Unsqueeze": 125,
+  "::Transpose": 89,
+  "::Add": 89,
+  "::Cast": 89,
+  "::Mul": 74,
+  "::MatMul": 72,
+  "::Concat": 37,
+  "::Squeeze": 36,
+  "::Sqrt": 36,
+  "::Reshape": 35,
+  "::Div": 26,
+  "::LayerNormalization": 26,
+  "::Slice": 22,
+  "::Shape": 18,
+  "::Split": 12,
+  "::Softmax": 12,
+  "::Erf": 12,
+  "::Conv": 3,
+  "::ConstantOfShape": 2,
+  "::Equal": 2,
+  "::Where": 2,
+  "::Expand": 2,
+  "::Mod": 2,
+  "::Sub": 2,
+  "::Gather": 1,
+  "::Resize": 1,
+  "::ReduceSum": 1
+ }
+}

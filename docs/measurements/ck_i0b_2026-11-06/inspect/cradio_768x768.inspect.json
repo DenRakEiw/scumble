@@ -1,0 +1,71 @@
+{
+ "file": "Nucito/corridorkey-web@1ae72ca/cradio_768x768.onnx",
+ "ir_version": 8,
+ "producer": "pytorch",
+ "producer_version": "2.9.1",
+ "opsets": [
+  {
+   "version": 17
+  }
+ ],
+ "inputs": [
+  {
+   "name": "x",
+   "dtype": "float32",
+   "shape": [
+    1,
+    3,
+    192,
+    192
+   ]
+  }
+ ],
+ "outputs": [
+  {
+   "name": "feat",
+   "dtype": "float32",
+   "shape": [
+    1,
+    1152,
+    12,
+    12
+   ]
+  }
+ ],
+ "nodes": 2337,
+ "initializers": 331,
+ "initializer_dtypes": {
+  "float16": 331
+ },
+ "external_locations": {
+  "cradio.weights": 331
+ },
+ "value_info": 0,
+ "ops": {
+  "::Constant": 592,
+  "::Unsqueeze": 239,
+  "::Transpose": 194,
+  "::Cast": 194,
+  "::Add": 190,
+  "::MatMul": 163,
+  "::Mul": 109,
+  "::Shape": 87,
+  "::Squeeze": 81,
+  "::Sqrt": 81,
+  "::Concat": 62,
+  "::Reshape": 60,
+  "::Gather": 57,
+  "::Div": 56,
+  "::LayerNormalization": 54,
+  "::Slice": 30,
+  "::Split": 27,
+  "::Softmax": 27,
+  "::Erf": 27,
+  "::Sub": 2,
+  "::Resize": 1,
+  "::ConstantOfShape": 1,
+  "::Equal": 1,
+  "::Where": 1,
+  "::Expand": 1
+ }
+}

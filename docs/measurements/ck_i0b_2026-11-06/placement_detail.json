@@ -1,0 +1,954 @@
+{
+ "placement_cpu_129_1024": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "1024x1024",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1346
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1346,
+   "cpu": 1346,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "1024x1024",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 653
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 653,
+   "cpu": 653,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "1024x1024",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1003
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1003,
+   "cpu": 1003,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "1024x1024",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 4721
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 4721,
+   "cpu": 4721,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "1024x1024",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1872
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1872,
+   "cpu": 1872,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_cpu_129_768": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "768x768",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1346
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1346,
+   "cpu": 1346,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "768x768",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 653
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 653,
+   "cpu": 653,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "768x768",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1003
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1003,
+   "cpu": 1003,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "768x768",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 4671
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 4671,
+   "cpu": 4671,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "768x768",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1822
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1822,
+   "cpu": 1822,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_cpu_130_1024": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "1024x1024",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1373
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1373,
+   "cpu": 1373,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "1024x1024",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 665
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 665,
+   "cpu": 665,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "1024x1024",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1098
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1098,
+   "cpu": 1098,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "1024x1024",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 4620
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 4620,
+   "cpu": 4620,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "1024x1024",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1829
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1829,
+   "cpu": 1829,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_cpu_130_768": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "768x768",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1373
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1373,
+   "cpu": 1373,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "768x768",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 665
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 665,
+   "cpu": 665,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "768x768",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1098
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1098,
+   "cpu": 1098,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "768x768",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 4574
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 4574,
+   "cpu": 4574,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "768x768",
+   "provider": "cpu",
+   "eps": {
+    "CPUExecutionProvider": 1783
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1783,
+   "cpu": 1783,
+   "cpu_share": 1.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_dml_129_1024": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "1024x1024",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "1024x1024",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "1024x1024",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "1024x1024",
+   "provider": "dml",
+   "eps": {},
+   "cpu_nodes": [],
+   "error": {
+    "line": "\u001b[1;31m2026-11-06 11:44:32.7377001 [E:onnxruntime:, inference_session.cc:2886 onnxruntime::InferenceSession::Initialize::<lambda_7>::operator ()] Exception during initialization: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\AbiCustomRegistry.cpp(519)\\onnxruntime.dll!00007FF8C8C1839C: (caller: 00007FF8C8C4A01A) Exception(3) tid(c188) 80070057 Falscher Parameter.",
+    "before": [
+     "2026-11-06 11:44:32.1083725 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer NhwcTransformer on step 1.",
+     "2026-11-06 11:44:32.1099826 [I:onnxruntime:, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer NhwcTransformer modified: 0 with status: OK",
+     "2026-11-06 11:44:32.1101418 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer ConvAddActivationFusion on step 1.",
+     "2026-11-06 11:44:32.1112060 [I:onnxruntime:, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ConvAddActivationFusion modified: 0 with status: OK",
+     "2026-11-06 11:44:32.1113677 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer DmlGraphFusionTransformer on step 1."
+    ]
+   },
+   "total": 0,
+   "cpu": 0,
+   "cpu_share": null,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "1024x1024",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 19
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 19,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_dml_129_768": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "768x768",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "768x768",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "768x768",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "768x768",
+   "provider": "dml",
+   "eps": {},
+   "cpu_nodes": [],
+   "error": {
+    "line": "\u001b[1;31m2026-11-06 11:44:09.0333745 [E:onnxruntime:, inference_session.cc:2886 onnxruntime::InferenceSession::Initialize::<lambda_7>::operator ()] Exception during initialization: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\AbiCustomRegistry.cpp(519)\\onnxruntime.dll!00007FF8C8C1839C: (caller: 00007FF8C8C4A01A) Exception(3) tid(23c4) 80070057 Falscher Parameter.",
+    "before": [
+     "2026-11-06 11:44:08.4222295 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer NhwcTransformer on step 1.",
+     "2026-11-06 11:44:08.4240600 [I:onnxruntime:, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer NhwcTransformer modified: 0 with status: OK",
+     "2026-11-06 11:44:08.4242370 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer ConvAddActivationFusion on step 1.",
+     "2026-11-06 11:44:08.4251005 [I:onnxruntime:, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ConvAddActivationFusion modified: 0 with status: OK",
+     "2026-11-06 11:44:08.4252781 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer DmlGraphFusionTransformer on step 1."
+    ]
+   },
+   "total": 0,
+   "cpu": 0,
+   "cpu_share": null,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "768x768",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 19
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 19,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_dml_130_1024": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "1024x1024",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "1024x1024",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "1024x1024",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "1024x1024",
+   "provider": "dml",
+   "eps": {},
+   "cpu_nodes": [],
+   "error": {
+    "line": "\u001b[1;31m2026-11-06 11:46:50.3338267 [E:onnxruntime:, inference_session.cc:3113 onnxruntime::InferenceSession::Initialize::<lambda_8>::operator ()] Exception during initialization: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\AbiCustomRegistry.cpp(519)\\onnxruntime.dll!00007FF8C90CDB4C: (caller: 00007FF8C90FE962) Exception(3) tid(ae60) 80070057 Falscher Parameter.",
+    "before": [
+     "2026-11-06 11:46:49.7332598 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer NhwcTransformer on step 1.",
+     "2026-11-06 11:46:49.7348829 [I:onnxruntime:, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer NhwcTransformer modified: 0 with status: OK",
+     "2026-11-06 11:46:49.7350610 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer ConvAddActivationFusion on step 1.",
+     "2026-11-06 11:46:49.7360500 [I:onnxruntime:, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ConvAddActivationFusion modified: 0 with status: OK",
+     "2026-11-06 11:46:49.7362353 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer DmlGraphFusionTransformer on step 1."
+    ]
+   },
+   "total": 0,
+   "cpu": 0,
+   "cpu_share": null,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "1024x1024",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 19
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 19,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_dml_130_768": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "768x768",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "768x768",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "768x768",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 1
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "768x768",
+   "provider": "dml",
+   "eps": {},
+   "cpu_nodes": [],
+   "error": {
+    "line": "\u001b[1;31m2026-11-06 11:46:26.6232776 [E:onnxruntime:, inference_session.cc:3113 onnxruntime::InferenceSession::Initialize::<lambda_8>::operator ()] Exception during initialization: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\AbiCustomRegistry.cpp(519)\\onnxruntime.dll!00007FF8C90CDB4C: (caller: 00007FF8C90FE962) Exception(3) tid(8cb0) 80070057 Falscher Parameter.",
+    "before": [
+     "2026-11-06 11:46:26.0390765 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer NhwcTransformer on step 1.",
+     "2026-11-06 11:46:26.0407023 [I:onnxruntime:, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer NhwcTransformer modified: 0 with status: OK",
+     "2026-11-06 11:46:26.0408744 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer ConvAddActivationFusion on step 1.",
+     "2026-11-06 11:46:26.0417618 [I:onnxruntime:, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ConvAddActivationFusion modified: 0 with status: OK",
+     "2026-11-06 11:46:26.0419281 [V:onnxruntime:, graph_transformer_mgr.cc:55 onnxruntime::GraphTransformerManager::ApplyTransformers] Applying graph transformer DmlGraphFusionTransformer on step 1."
+    ]
+   },
+   "total": 0,
+   "cpu": 0,
+   "cpu_share": null,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "768x768",
+   "provider": "dml",
+   "eps": {
+    "DmlExecutionProvider": 19
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 19,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_webgpu_129_1024": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "1024x1024",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 1095
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1095,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "1024x1024",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 529
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 529,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "1024x1024",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 824
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 824,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "1024x1024",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 4296
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 4296,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "1024x1024",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 1782
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1782,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_webgpu_129_768": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "768x768",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 1095
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1095,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "768x768",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 529
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 529,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "768x768",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 824
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 824,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "768x768",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 4260
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 4260,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "768x768",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 1746
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1746,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_webgpu_130_1024": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "1024x1024",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 987
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 987,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "1024x1024",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 481
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 481,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "1024x1024",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 760
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 760,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "1024x1024",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 4296
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 4296,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "1024x1024",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 1782
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1782,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ },
+ "placement_webgpu_130_768": {
+  "cradio": {
+   "graph": "cradio",
+   "bucket": "768x768",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 987
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 987,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "moge": {
+   "graph": "moge",
+   "bucket": "768x768",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 481
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 481,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "rvm": {
+   "graph": "rvm",
+   "bucket": "768x768",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 760
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 760,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage1": {
+   "graph": "stage1",
+   "bucket": "768x768",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 4260
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 4260,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  },
+  "stage2": {
+   "graph": "stage2",
+   "bucket": "768x768",
+   "provider": "webgpu",
+   "eps": {
+    "WebGpuExecutionProvider": 1746
+   },
+   "cpu_nodes": [],
+   "error": null,
+   "total": 1746,
+   "cpu": 0,
+   "cpu_share": 0.0,
+   "cpu_ops": {},
+   "cpu_in_attention": 0
+  }
+ }
+}

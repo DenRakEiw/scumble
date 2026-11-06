@@ -1,0 +1,221 @@
+CorridorKey 2.0, I0b (2026-11-06): the spike, measurement only, no app code
+==========================================================================
+
+The spec is docs/PLAN_CORRIDORKEY.md §4.2 and §5 row I0b. The harness is tools/ck_spike/ (main.js the Electron entry,
+key_process.js the utility process, ckio.js the pre-processing, sampler.ps1 the Windows counters, parity.py,
+placement.py, summarize.py, onnx_inspect.py / onnx_prefix.py / try_load.js / bisect_dml.py). Every number below is in
+the rows beside this file; scripts/ holds the batch scripts as run ($SCRATCH = the session scratchpad).
+
+Stop A in one paragraph
+-----------------------
+By §4.2's list as written it is a NO-GO on Nucito's set: DirectML cannot build stage 1 at all (both ORT versions,
+every optimisation level, with and without DML graph fusion), and WebGPU, which builds and runs all five graphs with
+every node on the GPU, misses the parity thresholds (0 of 40 cases; the alpha channel's max error and the edge band).
+Everything else on the list passes on WebGPU, most of it by a wide margin: load 7.8-9.3 s, a still at 1024 in 0.25 s
+warm and 1.3 s cold after the load, the hint loop 217-220 ms end to end at 1024, 4.2 GB GPU and 5.0 GB private after a
+run, everything back within 0.43 s of kill(). The parity misses need reading before Stop A decides: (1) the bf16
+reference itself, run again in fp32 here, fails the same list in 14 of its 20 bucket cases, so the list measures the
+reference's noise as much as ours; (2) against fp32 WebGPU's error is about 2.5x the bf16 reference's, and it comes from
+WebGPU's fp16 arithmetic in stage 2 (bf16-rounded inputs change nothing; stage 2 alone on I0a's baton carries it);
+(3) DirectML's own fp16 stage 2, fed I0a's baton, passes the list 8 of 8 against fp32 and is twice as fast as
+WebGPU's: DirectML is the better provider if an own export (I1) gets stage 1 past DirectML; the first node DirectML
+refuses is a MatMul in stage 1's decoder block dec_16.2 (section 4). By eye at 100 % the WebGPU matte of hair_green
+cannot be told from the fp32 run's; inside the opaque subject 25-28 % of the pixels land below 255 and 0.3-0.7 % 5 to
+15 levels below (the bf16 reference: 3-10 % and at most 0.02 %). ORT 1.29.0 (installed) and 1.30.0 give bit-identical arrays
+on both GPU providers: no I0c is needed for either. The CPU provider runs the fp16 set but is no fallback (> 25 min per
+768² still). The numbers Stop A asks for are in section 10.
+
+Machine and state
+-----------------
+- RTX 5090 (32,607 MiB, driver 610.88), Windows 11 Pro 10.0.26200; Electron 44.2.0 (Node 24.20.0 in the utility
+  process); app.disableHardwareAcceleration() in the harness, so Electron's own GPU process makes no D3D device.
+- onnxruntime-node 1.29.0 and 1.30.0, each installed into its own scratch module dir with
+  `npm install --prefix <dir> onnxruntime-node@<v> --ignore-scripts --no-save` (17 packages each; onnxruntime-common
+  the same version); never into the app's package.json or node_modules. The scratch 1.29.0 onnxruntime.dll is
+  byte-identical to the app's (sha256 5e289b54...0053a); 1.30.0's is 508c362f...7af67 (DirectML.dll differs too).
+  Every row carries ort_node (`ort.env.versions.node`) and the package version.
+- The user's ComfyUI was down the whole step (/system_stats gave no answer at the start and before every GPU batch);
+  this step did not start it. Nothing was installed or written on the ComfyUI side; the fp32 calibration (section 8)
+  read pack A's pinned code and models through python_embeded with -I -B (no .pyc; the pack folder has no new file).
+- The busy lock (lock_times.log): every download, GPU run and timed batch inside it; the other workflow's "K12b
+  measuring" held it 11:08-11:32Z and 11:44-11:52Z, my batches waited.
+- The card held 3.4-5.4 GB of other processes when this step's processes were idle (the desktop and others; 7.7 GB
+  during the DirectML parity batch); the per-process counter separates it.
+
+1. The set (downloads.json; nucito_tree_1ae72ca.json)
+-----------------------------------------------------
+Nucito/corridorkey-web at 1ae72ca7270b4fb2f64e98b5c3cc6e6ee4103957, all 106 files, 2,837,154,621 bytes, into
+$SCRATCH/ck_spike_dl/incoming/<file>.part, each checked against the Hugging Face tree listing (LFS sha256 for the 104
+LFS files, the git blob sha1 for README.md, manifest.json, .gitattributes) and only then moved to
+$SCRATCH/ck_spike_dl/set/; 106 verified, 0 mismatches, 296 s. No token was sent (the repo is public and not gated).
+The five weights: cradio.weights 862,480,006 B 99b775d3..., stage1.weights 924,066,824 B 909b2842..., stage2.weights
+403,593,480 B e96e3573..., moge.weights 175,524,992 B 997a22a9..., rvm.weights 66,446,848 B ef7f3744... (full hashes
+in downloads.json). Untracked, outside the repo.
+
+2. The pre- and post-processing table (processing.md; inspect/)
+---------------------------------------------------------------
+Nucito publishes no loader (README: files and input names only; no JS loader on HF, GitHub or the web, searched
+2026-11-06), so the table is read from the graphs (inputs, dtypes, shapes, the nodes that read the inputs and write
+the outputs) and checked against upstream's runtime.py / video_io.py / color_utils.py / foundations.py / rvm.py:
+C-RADIO takes the display RGB area-resized to H/4, MoGe area-resized to 7H/32, RVM bilinear to H/4 clamped with a zero
+state; the RADIO / ImageNet normalisations and CK2's foundation_stats sit inside the graphs; stage 1 and 2 take the
+asinh model code (sRGB -> linear -> asinh(x/0.008)/asinh(2000)), the hint grey / 255 white = subject or zeros with
+quality -1; logits ch0 alpha raw, ch1-3 the fg code. The JS pre-processing equals numpy / OpenCV to float32 precision
+on hair_green b768 (PNG byte sum 105,831,300 both; C-RADIO input sum 25,939.0450 vs 25,939.0453; MoGe 19,859.9438 vs
+19,859.9446; RVM 25,943.9165 vs cv2 linear 25,943.9166; code 437,969.2999 vs 437,969.2992; hint 476,189.3256 vs
+476,189.3255). I0a's bucket inputs were fed byte for byte (in/input.png, hint.png of b768_* and b1024_*). The native
+cases (1408) are not a bucket of this set and were not run.
+
+3. Placement (placement.txt, placement_dml_variants.txt, *_detail.json; ORT's verbose log, logSeverityLevel 0)
+-------------------------------------------------------------------------------------------------------------
+- WebGPU, 1.29.0 and 1.30.0, 768 and 1024: every node of every graph on WebGpuExecutionProvider, 0 on the CPU
+  (after optimisation: cradio 1,095 / 987 on 1.30, moge 529 / 481, rvm 824 / 760, stage1 4,260-4,296, stage2
+  1,746-1,782).
+- DirectML, both versions, 768 and 1024: cradio, moge and rvm fused into one DML node each, stage2 into 19, all on
+  DML; **stage1 refused** at session creation: 80070057 (E_INVALIDARG) in DmlGraphFusionTransformer
+  (AbiCustomRegistry.cpp:519). Variants at 1024 on both versions: optimisation "basic" the same; "disabled" the same
+  (and then 7-17 % CPU nodes on the other graphs); graph fusion off (session config ep.dml.disable_graph_fusion = 1):
+  all 4,314 stage-1 nodes placed on DML, then refused at kernel creation (MLOperatorAuthorImpl.cpp:2495, 80070057).
+- CPU: every graph loads, 100 % CPU nodes.
+
+4. The node DirectML refuses (bisect_dml_stage1.jsonl)
+------------------------------------------------------
+Bisection over node prefixes of stage1_384x384_t1.onnx (19,170 nodes as exported; each prefix a graph of its own with
+the last node's outputs as outputs, loaded on DML with fusion off in a fresh Node process, 1.29.0): prefixes up to node
+17,372 build; adding node 17,373, **MatMul /s1/dec_16.2/attn/proj/MatMul** (the output projection of the attention of
+stage 1's /16 decoder block dec_16.2), is refused with 80070057. dec_16.0 and dec_16.1 build. Why that MatMul
+(its operand rank or shape after the window partition) is **inferred, unverified**; it is I1's lead: an own export at
+opset <= 21 that keeps that projection at a rank DirectML takes.
+
+5. Load seconds (bench_summary.txt; rows/bench_rows.jsonl, "load")
+------------------------------------------------------------------
+WebGPU, all five graphs, first load in a fresh process: 7.8-9.3 s (cradio 2.0-2.3, moge 0.45-0.52, rvm 0.40-0.48,
+stage1 3.3-4.2, stage2 1.5-2.0); a second load in the same process after release(): 7.7-9.1 s. The OS file cache was
+warm in both (the files were read minutes before; a cold OS cache cannot be made here without admin rights), so
+"cold" is the process-cold load. DirectML (the four graphs it builds, stage 1's refusal included): 6.4-7.9 s. CPU:
+10.2 s (all five), 6.7 s (stage 1 + 2).
+
+6. Run seconds per part (bench_summary.txt; hair_green, warm = median of 5 after one cold run)
+---------------------------------------------------------------------------------------------
+WebGPU (1.29 / 1.30; ms)  cradio   moge  rvm    stage1        stage2        stage1+2 cold (first run after load)
+  384                     24 / 26  10    14/11  65 / 59       34 / 34       787 + 195 / 779 + 171
+  512                     26 / 26  9     11     55 / 51       37 / 35       516 + 150 / 601 + 148
+  768                     25 / 23  9     13/12  67 / 67       75 / 74       592 + 229 / 702 + 201
+  1024                    28 / 24  10/8  16/14  75 / 73       125 / 119     653 + 297 / 618 + 201
+With the hint the same within 5 ms. Features cold (first run): 0.35-0.47 s for the three. A still at 1024 (features +
+stage 1 + 2): 0.25 s warm, 1.3 s cold after the load. The CPU time of the process per stage-1+2 run: 78-109 ms.
+DirectML (its four graphs, parity runs, warm): cradio 5-6, moge 2-3, rvm 2-3 ms; stage 2 29-33 ms at 768 and 48-58 ms
+at 1024 (WebGPU 74 and 120).
+
+7. The hint loop (bench_summary.txt "loop"; 10 runs, median)
+-----------------------------------------------------------
+Main posts the hint plane (1 byte per pixel), the utility process runs stage 1 + 2 on the cached features and posts
+the clamped alpha back (float32); post -> answer is timed in main, the model time inside the process.
+  bucket   post -> answer (1.29 / 1.30)   model         stage 1 + 2    IPC (answer - model)
+  384      132.9 / 94.1 ms                130.4 / 92.7  127.6 / 90.5   2.1 / 1.4
+  512      97.7 / 95.0 ms                 95.4 / 92.6   90.9 / 88.5    2.3 / 2.2
+  768      161.5 / 157.9 ms               155.7 / 152.3 147.1 / 142.7  5.9 / 5.6
+  1024     219.7 / 216.5 ms               210.2 / 207.2 194.3 / 192.5  9.7 / 9.3
+(384 on 1.29: one slow run in ten pulls the median; the 1.30 row is the clean one.)
+
+8. Parity (parity/; I0a's bf16 reference and an fp32 calibration)
+----------------------------------------------------------------
+- Cases: WebGPU 1.29 and 1.30 x 768 and 1024 x the five stills x hint / no hint (40 per version); DirectML the four
+  graphs it builds (the features and stage 2 alone on I0a's baton) for hair_green and highlights_green at 768 and 1024
+  (16); per case the chain (own features -> stage 1 -> stage 2) and the isolated rows (stage 1 on I0a's features, stage
+  2 on I0a's baton). 1.29 and 1.30 are bit-identical: 200 of 200 WebGPU arrays and 32 of 32 DirectML arrays.
+- The fp32 calibration (parity/fp32_calibration_run.json; scripts/ck_ref_fp32.py): I0a's 20 bucket cases run again
+  with upstream's code, no autocast, no bf16 rounding, TF32 off, pack A's pinned code and models through
+  python_embeded -I -B (ComfyUI down, under the lock), plus stage 2 in fp32 on I0a's bf16 baton for the isolated row.
+  The question it answers: how far the bf16 reference itself sits from fp32.
+- Feature maps and baton (relative MAE, min cosine): WebGPU vs fp32 <= 6.6 %, >= 0.9928; the bf16 reference vs fp32
+  <= 6.7 %, >= 0.9937; DirectML vs fp32 <= 1.4 %, >= 0.9995. Baton: WebGPU chain vs fp32 <= 2.3 %, bf16 vs fp32 <= 1.9 %.
+  So WebGPU's features are as far from fp32 as the reference's.
+- Logits against §4.2's list (alpha raw MAE <= 2e-3, max <= 0.03; fg MAE <= 0.01; edge band alpha MAE <= 5e-3, fg
+  alpha-weighted MAE <= 0.02; no NaN / Inf):
+    WebGPU chain vs bf16 ref: alpha MAE median 2.1-2.3e-3, max 3.9-4.0e-3; alpha max 0.04-0.78; fg MAE <= 2.3e-3; edge
+      alpha MAE median 6.5-6.6e-3, max 0.06; edge fg wMAE <= 7.4e-3; 0 of 40 pass (also with the alpha clamped first).
+    WebGPU chain vs fp32: alpha MAE median 1.8e-3, max 3.7e-3 (clamped max 1.9e-3); alpha max 0.04-0.64; edge alpha
+      MAE median 4.7-5.0e-3, max 0.025; edge fg wMAE <= 6.0e-3; 0 of 40.
+    bf16 ref vs fp32 (the reference's own noise): alpha MAE median 8.4e-4, max 1.9e-3; alpha max up to 0.68; edge alpha
+      MAE median 4.0e-3, max 0.051; edge fg wMAE <= 7.1e-3; **6 of 20 pass**.
+    Isolated stage 2 vs fp32 on the same baton: WebGPU alpha MAE <= 3.6e-3, max <= 0.094, edge <= 7.9e-3, 0 of 20;
+      **DirectML alpha MAE <= 1.22e-3, max 0.013, edge <= 1.63e-3, fg wMAE <= 8.9e-4, 8 of 8 pass**.
+  Per still (parity_vs_fp32.jsonl): the clean plates (blue, green) sit at alpha MAE 1.1-1.2e-3, max 0.04-0.12, edge
+  4.4-6.1e-3 on WebGPU; hair_green at 3.6e-3 / 0.04 / 4.5-4.9e-3; flat_green_plant is ill-conditioned (the leaf lit
+  close to the screen green): bf16 vs fp32 already alpha max 0.68 and edge 0.05 at 768.
+- Where WebGPU's error sits: mostly where the logit is above 1 or below 0 (hair_green 768 stage 2 alone: raw alpha MAE
+  3.6e-3, clamped 1.6e-3); inside the opaque subject (fp32 logit >= 1) 25-28 % of the pixels land below 255 levels,
+  0.3-0.7 % below 251, the lowest 0.94-0.97, in a faint periodic pattern (eye_hair_1024.jpg, the x20 panel); the bf16
+  reference 3-10 % below 255 and below 251 only in flat_green_plant 768 hint (0.02 %); DirectML's stage 2 3-5 % below 255, none below 251 (parity/interior.txt).
+- Input rounding is not the cause: --bf16-inputs (display, code and hint rounded to bf16 as upstream does) moves the
+  isolated stage-2 alpha MAE on hair_green from 3.86e-3 to 3.75e-3 (parity_webgpu_129_1024_bf16in).
+- By eye at 100 % (eye_hair_1024.jpg: hair_green b1024_hint, the densest edge crop x 701 y 449, 320 px; panels: input,
+  alpha bf16 ref, alpha WebGPU, alpha fp32, |WebGPU - fp32| x 20, |bf16 - fp32| x 20, WebGPU key over grey, fp32 key over
+  grey): the WebGPU matte and its composite cannot be told from the fp32 run's; in the crop |d| mean 0.57 levels, max
+  8.1 levels, 4.7 % of the pixels more than 2 levels off. hair_green stands in for "the user's plate" (I0a's note).
+- fp16 stress: no NaN or Inf in any array of any run (56 parity cases, every bench), highlights_green and hair_green
+  included. hair_green's decoded fg reaches 147 linear (768 no hint; fp32 109, bf16 105), 603-960 pixels above 4.0
+  linear (fp32 613-972); the relative error of those pixels mean 5.1-5.8 % (bf16 ref 4.0-5.0 %), max 0.24-0.59;
+  highlights_green tops out at 10 linear. fp16 holds the hair.
+
+9. Memory and kill() (bench_summary.txt "mem", "kill"; counters/: sampler rows every 250 ms and nvidia-smi)
+--------------------------------------------------------------------------------------------------------
+WebGPU per bucket (1.29 / 1.30 alike), the utility process:
+  bucket  private after load / after runs   GPU dedicated after load / after runs   after release()
+  384     3.1-3.2 / 3.3-3.4 GB              2.52 / 2.83 GB                          0.43-0.49 GB private, 0.02 GB GPU
+  512     3.1 / 3.7 GB                      2.52 / 2.97 GB                          0.44-0.49 / 0.02
+  768     3.1-3.2 / 4.5 GB                  2.57 / 3.67 GB                          0.48-0.50 / 0.02
+  1024    3.1-3.2 / 5.0 GB                  2.58 / 4.16 GB                          0.48-0.53 / 0.02
+(peak sample at 1024: 4.22 GB GPU, 5.03 GB private). Main's private bytes 0.06-0.10 GB throughout. release() gives
+everything back without a kill; a reload brings it to the same level. kill(): the exit event after 109-134 ms, the
+process's GPU counter at 0 after 125-373 ms, the process gone (its private bytes with it) after 278-434 ms. DirectML
+(four graphs, 1024): 4.6 GB GPU and 5.3 GB private after the runs (no B5-like growth); kill: exit 0.46-0.70 s, GPU 0
+after 0.59-0.95 s. nvidia-smi's total follows the counters' card total within 25-65 MiB (bench_webgpu_129_1024: smi
+4,033-8,370 MiB, counters 4,057-8,307 MiB); per process it has no number under WDDM.
+
+10. The numbers Stop A needs
+----------------------------
+- The go list on the GPU providers:
+    item                                    WebGPU (1.29 = 1.30)                 DirectML (1.29 = 1.30)
+    all five graphs load                    yes                                  no: stage 1 refused (sections 3-4)
+    CPU nodes <= 5 %, none in attention     0 %                                  0 % on the four it builds
+    parity, the list as written             0 / 40 (see section 8)               stage 2 alone 8 / 8; the chain untested
+    still at 1024 <= 3 s warm, <= 15 s cold 0.25 s / 1.3 s                       -
+    five graphs loaded <= 20 s              7.8-9.3 s                            -
+    private <= 10 GB after a run            5.0 GB                               5.3 GB (four graphs)
+    GPU dedicated <= 8 GB after a run       4.2 GB                               4.6 GB (four graphs)
+    GPU 0 and private back <= 3 s of kill   0.13-0.37 s / 0.28-0.43 s            0.59-0.95 s
+    hint loop <= 250 ms end to end          1024: 217-220 ms; 768: 158-162       -
+    <= 150 ms (dab by dab)                  512: 95-98 ms; 384: 94 ms            -
+- The provider: WebGPU is the only one that runs Nucito's set; DirectML is faster (stage 2 at 1024 in ~55 ms against
+  120) and closer to fp32, and blocked only by stage 1's MatMul in this export.
+- The ORT version: 1.29.0 as installed (1.30.0 gives bit-identical arrays and the same times): no I0c for this.
+- The working size (= the live bucket) by §4.7's rule: 1,024 (the largest bucket inside 250 ms); dab-by-dab
+  following needs 512. Buckets allowed on WebGPU: 384-1024 all run.
+- The loop's end-to-end cadence: about 4.6 updates a second at 1024 (217 ms), 6.3 at 768, 10 at 512.
+- The CPU sentence's N: the fp16 set on the CPU took 601 s for the three feature graphs alone at 768 (C-RADIO 475 s,
+  MoGe 94 s, RVM 33 s; 712 s of CPU time, mostly one core) and stage 1 + 2 did not finish within 890 s; so more than
+  25 minutes per 768² still (the bench was stopped after the features so as not to hold the machine for hours). No NaN.
+
+11. Where this differs from the row, or what the row did not say
+---------------------------------------------------------------
+- Nucito has no public loader: the table is read from the graphs and upstream's code (section 2).
+- The fp32 calibration of the reference was added (the bf16 reference cannot tell its own noise from ours).
+- DirectML's refusal was bisected to one node (not asked; it is what I1 needs).
+- The ladder ran 384 -> 1024 on WebGPU only; its 384 and 512 inputs are hair_green resized with cv2 INTER_AREA here
+  ($SCRATCH/ck_i0b/inputs/, sha256 in ladder_inputs.json: d4bbce0e... / 4ebee713... for the inputs), since
+  I0a made references at 768 and 1024 only; the parity rows are at 768 and 1024.
+- The CPU provider got one partial bench (the features at 768) and one capped stage run, not the full bench.
+- Load "cold" is process-cold with a warm OS file cache (section 5).
+- "The user's plate" is hair_green (made with FLUX 3 Klein in I0a).
+
+Files
+-----
+summary.txt, processing.md, bench_summary.txt, placement.txt, placement_dml_variants.txt, placement_detail.json,
+placement_dml_variants_detail.json, bisect_dml_stage1.jsonl, downloads.json, nucito_tree_1ae72ca.json, ladder_inputs.json, lock_times.log,
+eye_hair_1024.jpg; rows/ (every JSON row of main.js: bench, parity runs, placement); parity/ (parity.py's rows against
+the bf16 reference and the fp32 run, the reference against fp32, parity_summary.txt, interior.txt, the fp32 run's
+log and rows); counters/ (sampler rows and nvidia-smi per run); inspect/ (each graph's interface); scripts/.
+Untracked: $SCRATCH/ck_spike_dl/set (the set), $SCRATCH/ck_i0b/runs/*/arrays (the saved outputs, float32),
+$SCRATCH/ck_i0b/ref_fp32 (the fp32 arrays), the verbose placement logs (3 MB each).

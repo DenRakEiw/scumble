@@ -1,0 +1,94 @@
+{
+ "file": "Nucito/corridorkey-web@1ae72ca/stage2_1024x1024.onnx",
+ "ir_version": 8,
+ "producer": "pytorch",
+ "producer_version": "2.9.1",
+ "opsets": [
+  {
+   "version": 17
+  }
+ ],
+ "inputs": [
+  {
+   "name": "rgb",
+   "dtype": "float32",
+   "shape": [
+    1,
+    3,
+    1024,
+    1024
+   ]
+  },
+  {
+   "name": "baton",
+   "dtype": "float32",
+   "shape": [
+    1,
+    512,
+    64,
+    64
+   ]
+  }
+ ],
+ "outputs": [
+  {
+   "name": "logits",
+   "dtype": "float32",
+   "shape": [
+    1,
+    4,
+    1024,
+    1024
+   ]
+  }
+ ],
+ "nodes": 12810,
+ "initializers": 226,
+ "initializer_dtypes": {
+  "float16": 226
+ },
+ "external_locations": {
+  "stage2.weights": 226
+ },
+ "value_info": 0,
+ "ops": {
+  "::Constant": 4047,
+  "::Unsqueeze": 1553,
+  "::Shape": 1023,
+  "::Mul": 791,
+  "::Concat": 601,
+  "::Cast": 556,
+  "::Expand": 498,
+  "::ConstantOfShape": 474,
+  "::Where": 458,
+  "::Equal": 455,
+  "::Reshape": 413,
+  "::Slice": 343,
+  "::Add": 339,
+  "::Gather": 227,
+  "::Transpose": 195,
+  "::ScatterND": 152,
+  "::Div": 117,
+  "::Sqrt": 104,
+  "::MatMul": 103,
+  "::Sub": 50,
+  "::Pow": 50,
+  "::ReduceMean": 50,
+  "::Sigmoid": 37,
+  "::Squeeze": 30,
+  "::Range": 27,
+  "::Softmax": 18,
+  "::Conv": 16,
+  "::Pad": 15,
+  "::Neg": 12,
+  "::Mod": 12,
+  "::Split": 10,
+  "::Cos": 8,
+  "::Sin": 8,
+  "::Less": 5,
+  "::Tile": 5,
+  "::Not": 5,
+  "::If": 2,
+  "::ConvTranspose": 1
+ }
+}

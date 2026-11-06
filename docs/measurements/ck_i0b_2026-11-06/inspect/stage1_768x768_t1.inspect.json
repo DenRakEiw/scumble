@@ -1,0 +1,151 @@
+{
+ "file": "Nucito/corridorkey-web@1ae72ca/stage1_768x768_t1.onnx",
+ "ir_version": 8,
+ "producer": "pytorch",
+ "producer_version": "2.9.1",
+ "opsets": [
+  {
+   "version": 17
+  }
+ ],
+ "inputs": [
+  {
+   "name": "rgb",
+   "dtype": "float32",
+   "shape": [
+    1,
+    1,
+    3,
+    768,
+    768
+   ]
+  },
+  {
+   "name": "hint",
+   "dtype": "float32",
+   "shape": [
+    1,
+    1,
+    1,
+    768,
+    768
+   ]
+  },
+  {
+   "name": "hint_quality",
+   "dtype": "float32",
+   "shape": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "moge",
+   "dtype": "float32",
+   "shape": [
+    1,
+    1,
+    768,
+    12,
+    12
+   ]
+  },
+  {
+   "name": "cradio",
+   "dtype": "float32",
+   "shape": [
+    1,
+    1,
+    1152,
+    12,
+    12
+   ]
+  },
+  {
+   "name": "rvm",
+   "dtype": "float32",
+   "shape": [
+    1,
+    1,
+    384,
+    12,
+    12
+   ]
+  }
+ ],
+ "outputs": [
+  {
+   "name": "baton",
+   "dtype": "float32",
+   "shape": [
+    "Transposebaton_dim_0",
+    "Transposebaton_dim_1",
+    "Transposebaton_dim_2",
+    "Transposebaton_dim_3",
+    "Transposebaton_dim_4"
+   ]
+  },
+  {
+   "name": "aux",
+   "dtype": "float32",
+   "shape": [
+    "Reshapeaux_dim_0",
+    "Reshapeaux_dim_1",
+    "Reshapeaux_dim_2",
+    "Reshapeaux_dim_3",
+    "Reshapeaux_dim_4"
+   ]
+  }
+ ],
+ "nodes": 21620,
+ "initializers": 509,
+ "initializer_dtypes": {
+  "float16": 509
+ },
+ "external_locations": {
+  "stage1.weights": 509
+ },
+ "value_info": 0,
+ "ops": {
+  "::Constant": 6984,
+  "::Unsqueeze": 3480,
+  "::Mul": 1328,
+  "::Cast": 1273,
+  "::Shape": 1249,
+  "::Concat": 1039,
+  "::Reshape": 831,
+  "::Add": 550,
+  "::ConstantOfShape": 515,
+  "::Expand": 506,
+  "::Gather": 487,
+  "::Where": 486,
+  "::Equal": 480,
+  "::Slice": 436,
+  "::Transpose": 366,
+  "::Div": 285,
+  "::MatMul": 200,
+  "::Sqrt": 195,
+  "::Sub": 128,
+  "::ScatterND": 116,
+  "::Pow": 111,
+  "::ReduceMean": 111,
+  "::Sigmoid": 73,
+  "::Squeeze": 66,
+  "::Range": 61,
+  "::Cos": 48,
+  "::Sin": 48,
+  "::Conv": 35,
+  "::Softmax": 28,
+  "::Pad": 28,
+  "::Split": 22,
+  "::Neg": 16,
+  "::Mod": 16,
+  "::Less": 6,
+  "::Tile": 6,
+  "::Not": 6,
+  "::DepthToSpace": 2,
+  "::Identity": 1,
+  "::Clip": 1,
+  "::ConvTranspose": 1
+ }
+}

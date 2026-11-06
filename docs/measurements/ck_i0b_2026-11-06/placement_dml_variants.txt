@@ -1,0 +1,30 @@
+placement_dml_129_1024_dmlnofusion cradio  nodes   933  DmlExecutionProvider 933  CPU 0.0 %
+placement_dml_129_1024_dmlnofusion moge    nodes   456  DmlExecutionProvider 456  CPU 0.0 %
+placement_dml_129_1024_dmlnofusion rvm     nodes   720  DmlExecutionProvider 720  CPU 0.0 %
+placement_dml_129_1024_dmlnofusion stage1  nodes  4314  DmlExecutionProvider 4314  CPU 0.0 % ERROR: [1;31m2026-11-06 11:50:43.6219990 [E:onnxruntime:, inference_session.cc:2886 onnxruntime::InferenceSession::Initialize::<lambda_7>::operator ()] Exception during initialization: N:\_work\1\s\onnxrunt
+placement_dml_129_1024_dmlnofusion stage2  nodes  1781  DmlExecutionProvider 1781  CPU 0.0 %
+placement_dml_129_1024_optbasic cradio  nodes     1  DmlExecutionProvider 1  CPU 0.0 %
+placement_dml_129_1024_optbasic moge    nodes     1  DmlExecutionProvider 1  CPU 0.0 %
+placement_dml_129_1024_optbasic rvm     nodes     1  DmlExecutionProvider 1  CPU 0.0 %
+placement_dml_129_1024_optbasic stage1  nodes     -  -  CPU - ERROR: [1;31m2026-11-06 11:49:53.7064587 [E:onnxruntime:, inference_session.cc:2886 onnxruntime::InferenceSession::Initialize::<lambda_7>::operator ()] Exception during initialization: N:\_work\1\s\onnxrunt
+placement_dml_129_1024_optbasic stage2  nodes    19  DmlExecutionProvider 19  CPU 0.0 %
+placement_dml_129_1024_optdisabled cradio  nodes  1653  DmlExecutionProvider 1374, CPUExecutionProvider 279  CPU 16.9 % cpu ops {"Unsqueeze": 111, "Gather": 57, "Cast": 54, "Slice": 29, "Sqrt": 27, "Concat": 1}
+placement_dml_129_1024_optdisabled moge    nodes   699  DmlExecutionProvider 643, CPUExecutionProvider 56  CPU 8.0 % cpu ops {"Cast": 24, "Slice": 15, "Sqrt": 12, "Mod": 2, "Concat": 2, "Resize": 1}
+placement_dml_129_1024_optdisabled rvm     nodes  1150  DmlExecutionProvider 1066, CPUExecutionProvider 84  CPU 7.3 % cpu ops {"Cast": 40, "Slice": 21, "Sqrt": 20, "Shape": 2, "Concat": 1}
+placement_dml_129_1024_optdisabled stage1  nodes     -  -  CPU - ERROR: [1;31m2026-11-06 11:50:15.6529479 [E:onnxruntime:, inference_session.cc:2886 onnxruntime::InferenceSession::Initialize::<lambda_7>::operator ()] Exception during initialization: N:\_work\1\s\onnxrunt
+placement_dml_129_1024_optdisabled stage2  nodes 10279  DmlExecutionProvider 8752, CPUExecutionProvider 1527  CPU 14.9 % cpu ops {"Shape": 424, "Unsqueeze": 360, "Slice": 194, "Concat": 192, "Gather": 179, "Cast": 69, "Div": 37, "Sqrt": 18}
+placement_dml_130_1024_dmlnofusion cradio  nodes   933  DmlExecutionProvider 933  CPU 0.0 %
+placement_dml_130_1024_dmlnofusion moge    nodes   456  DmlExecutionProvider 456  CPU 0.0 %
+placement_dml_130_1024_dmlnofusion rvm     nodes   720  DmlExecutionProvider 720  CPU 0.0 %
+placement_dml_130_1024_dmlnofusion stage1  nodes  4314  DmlExecutionProvider 4314  CPU 0.0 % ERROR: [1;31m2026-11-06 11:51:56.8068819 [E:onnxruntime:, inference_session.cc:3113 onnxruntime::InferenceSession::Initialize::<lambda_8>::operator ()] Exception during initialization: N:\_work\1\s\onnxrunt
+placement_dml_130_1024_dmlnofusion stage2  nodes  1781  DmlExecutionProvider 1781  CPU 0.0 %
+placement_dml_130_1024_optbasic cradio  nodes     1  DmlExecutionProvider 1  CPU 0.0 %
+placement_dml_130_1024_optbasic moge    nodes     1  DmlExecutionProvider 1  CPU 0.0 %
+placement_dml_130_1024_optbasic rvm     nodes     1  DmlExecutionProvider 1  CPU 0.0 %
+placement_dml_130_1024_optbasic stage1  nodes     -  -  CPU - ERROR: [1;31m2026-11-06 11:51:07.1921639 [E:onnxruntime:, inference_session.cc:3113 onnxruntime::InferenceSession::Initialize::<lambda_8>::operator ()] Exception during initialization: N:\_work\1\s\onnxrunt
+placement_dml_130_1024_optbasic stage2  nodes    19  DmlExecutionProvider 19  CPU 0.0 %
+placement_dml_130_1024_optdisabled cradio  nodes  1653  DmlExecutionProvider 1374, CPUExecutionProvider 279  CPU 16.9 % cpu ops {"Unsqueeze": 111, "Gather": 57, "Cast": 54, "Slice": 29, "Sqrt": 27, "Concat": 1}
+placement_dml_130_1024_optdisabled moge    nodes   699  DmlExecutionProvider 643, CPUExecutionProvider 56  CPU 8.0 % cpu ops {"Cast": 24, "Slice": 15, "Sqrt": 12, "Mod": 2, "Concat": 2, "Resize": 1}
+placement_dml_130_1024_optdisabled rvm     nodes  1150  DmlExecutionProvider 1066, CPUExecutionProvider 84  CPU 7.3 % cpu ops {"Cast": 40, "Slice": 21, "Sqrt": 20, "Shape": 2, "Concat": 1}
+placement_dml_130_1024_optdisabled stage1  nodes     -  -  CPU - ERROR: [1;31m2026-11-06 11:51:28.9923159 [E:onnxruntime:, inference_session.cc:3113 onnxruntime::InferenceSession::Initialize::<lambda_8>::operator ()] Exception during initialization: N:\_work\1\s\onnxrunt
+placement_dml_130_1024_optdisabled stage2  nodes 10279  DmlExecutionProvider 8752, CPUExecutionProvider 1527  CPU 14.9 % cpu ops {"Shape": 424, "Unsqueeze": 360, "Slice": 194, "Concat": 192, "Gather": 179, "Cast": 69, "Div": 37, "Sqrt": 18}

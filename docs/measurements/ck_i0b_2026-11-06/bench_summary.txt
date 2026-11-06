@@ -1,0 +1,224 @@
+== bench_webgpu_129_384  provider webgpu  bucket 384x384  ort_node 1.29.0  opt all
+  mem forked                   child private 0.03 GB  child GPU dedicated 0.00 GB  card 5.37 GB  main private 0.06 GB
+  load first                                  cradio      2332 ms (cpu 2312 ms)
+  load first                                  moge         448 ms (cpu 657 ms)
+  load first                                  rvm          479 ms (cpu 968 ms)
+  load first                                  stage1      4166 ms (cpu 4250 ms)
+  load first                                  stage2      1871 ms (cpu 2094 ms)
+  load total first                                9297 ms
+  mem after load               child private 3.07 GB  child GPU dedicated 2.52 GB  card 7.17 GB  main private 0.06 GB
+  mem after first features     child private 2.96 GB  child GPU dedicated 2.53 GB  card 7.07 GB  main private 0.06 GB
+  mem after first stages       child private 3.32 GB  child GPU dedicated 2.83 GB  card 7.83 GB  main private 0.06 GB
+  mem after runs               child private 3.32 GB  child GPU dedicated 2.83 GB  card 8.51 GB  main private 0.06 GB
+  loop median of 10: post->answer 132.9 ms, model 130.4 ms (stage1+2 127.6), IPC 2.1 ms
+  mem after loop               child private 3.32 GB  child GPU dedicated 2.83 GB  card 7.89 GB  main private 0.07 GB
+  mem after release            child private 0.43 GB  child GPU dedicated 0.02 GB  card 5.76 GB  main private 0.07 GB
+  load second (same process, after release)   cradio      2131 ms (cpu 2188 ms)
+  load second (same process, after release)   moge         647 ms (cpu 1015 ms)
+  load second (same process, after release)   rvm          496 ms (cpu 1000 ms)
+  load second (same process, after release)   stage1      3972 ms (cpu 3859 ms)
+  load second (same process, after release)   stage2      1807 ms (cpu 2094 ms)
+  load total second                               9053 ms
+  mem after reload and a run   child private 3.41 GB  child GPU dedicated 2.83 GB  card 7.51 GB  main private 0.06 GB
+  kill: exit after 109 ms, GPU counter 0 after 280 ms, process gone after 280 ms (GPU before 2.83 GB, private before 3.41 GB)
+  features cold: cradio 201 moge 98 rvm 171 ms | warm median: cradio 24.0 moge 10.0 rvm 14.0 ms (cpu 31 ms)
+  stages nohint cold: s1 787 s2 195 ms | warm median: s1 64.8 s2 34.3 total 98.4 ms (cpu 94 ms)
+  stages hint   cold: s1 72 s2 39 ms | warm median: s1 68.9 s2 36.7 total 106.8 ms (cpu 93 ms)
+== bench_webgpu_129_512  provider webgpu  bucket 512x512  ort_node 1.29.0  opt all
+  mem forked                   child private 0.03 GB  child GPU dedicated 0.00 GB  card 3.92 GB  main private 0.06 GB
+  load first                                  cradio      2032 ms (cpu 2016 ms)
+  load first                                  moge         464 ms (cpu 859 ms)
+  load first                                  rvm          415 ms (cpu 844 ms)
+  load first                                  stage1      3347 ms (cpu 3485 ms)
+  load first                                  stage2      1565 ms (cpu 1734 ms)
+  load total first                                7824 ms
+  mem after load               child private 3.14 GB  child GPU dedicated 2.52 GB  card 6.54 GB  main private 0.06 GB
+  mem after first features     child private 3.08 GB  child GPU dedicated 2.54 GB  card 6.52 GB  main private 0.06 GB
+  mem after first stages       child private 3.49 GB  child GPU dedicated 2.97 GB  card 6.96 GB  main private 0.06 GB
+  mem after runs               child private 3.71 GB  child GPU dedicated 2.97 GB  card 6.94 GB  main private 0.06 GB
+  loop median of 10: post->answer 97.7 ms, model 95.4 ms (stage1+2 90.9), IPC 2.3 ms
+  mem after loop               child private 3.74 GB  child GPU dedicated 2.97 GB  card 6.95 GB  main private 0.07 GB
+  mem after release            child private 0.49 GB  child GPU dedicated 0.02 GB  card 4.06 GB  main private 0.07 GB
+  load second (same process, after release)   cradio      1666 ms (cpu 1641 ms)
+  load second (same process, after release)   moge         489 ms (cpu 905 ms)
+  load second (same process, after release)   rvm          420 ms (cpu 766 ms)
+  load second (same process, after release)   stage1      3500 ms (cpu 3562 ms)
+  load second (same process, after release)   stage2      1777 ms (cpu 1954 ms)
+  load total second                               7852 ms
+  mem after reload and a run   child private 3.56 GB  child GPU dedicated 2.97 GB  card 8.78 GB  main private 0.07 GB
+  kill: exit after 114 ms, GPU counter 0 after 125 ms, process gone after 405 ms (GPU before 2.97 GB, private before 3.56 GB)
+  features cold: cradio 176 moge 98 rvm 83 ms | warm median: cradio 26.3 moge 8.8 rvm 11.4 ms (cpu 32 ms)
+  stages nohint cold: s1 516 s2 150 ms | warm median: s1 54.9 s2 37.4 total 94.1 ms (cpu 78 ms)
+  stages hint   cold: s1 55 s2 35 ms | warm median: s1 52.0 s2 35.6 total 92.2 ms (cpu 78 ms)
+== bench_webgpu_129_768  provider webgpu  bucket 768x768  ort_node 1.29.0  opt all
+  mem forked                   child private 0.03 GB  child GPU dedicated 0.00 GB  card 5.06 GB  main private 0.06 GB
+  load first                                  cradio      1972 ms (cpu 1969 ms)
+  load first                                  moge         477 ms (cpu 953 ms)
+  load first                                  rvm          438 ms (cpu 953 ms)
+  load first                                  stage1      3585 ms (cpu 3718 ms)
+  load first                                  stage2      1881 ms (cpu 2251 ms)
+  load total first                                8353 ms
+  mem after load               child private 3.20 GB  child GPU dedicated 2.57 GB  card 6.77 GB  main private 0.06 GB
+  mem after first features     child private 3.17 GB  child GPU dedicated 2.59 GB  card 6.85 GB  main private 0.06 GB
+  mem after first stages       child private 4.34 GB  child GPU dedicated 3.56 GB  card 7.85 GB  main private 0.06 GB
+  mem after runs               child private 4.49 GB  child GPU dedicated 3.67 GB  card 8.00 GB  main private 0.06 GB
+  loop median of 10: post->answer 161.5 ms, model 155.7 ms (stage1+2 147.1), IPC 5.9 ms
+  mem after loop               child private 4.51 GB  child GPU dedicated 3.67 GB  card 8.13 GB  main private 0.09 GB
+  mem after release            child private 0.50 GB  child GPU dedicated 0.02 GB  card 4.44 GB  main private 0.09 GB
+  load second (same process, after release)   cradio      1728 ms (cpu 1797 ms)
+  load second (same process, after release)   moge         489 ms (cpu 984 ms)
+  load second (same process, after release)   rvm          426 ms (cpu 938 ms)
+  load second (same process, after release)   stage1      3442 ms (cpu 3515 ms)
+  load second (same process, after release)   stage2      1740 ms (cpu 2063 ms)
+  load total second                               7825 ms
+  mem after reload and a run   child private 4.44 GB  child GPU dedicated 3.56 GB  card 7.97 GB  main private 0.06 GB
+  kill: exit after 129 ms, GPU counter 0 after 308 ms, process gone after 308 ms (GPU before 3.56 GB, private before 4.44 GB)
+  features cold: cradio 185 moge 91 rvm 76 ms | warm median: cradio 24.6 moge 8.9 rvm 13.0 ms (cpu 16 ms)
+  stages nohint cold: s1 592 s2 229 ms | warm median: s1 66.5 s2 74.8 total 146.1 ms (cpu 93 ms)
+  stages hint   cold: s1 63 s2 74 ms | warm median: s1 66.4 s2 74.2 total 146.9 ms (cpu 109 ms)
+== bench_webgpu_129_1024  provider webgpu  bucket 1024x1024  ort_node 1.29.0  opt all
+  mem forked                   child private 0.03 GB  child GPU dedicated 0.00 GB  card 3.96 GB  main private 0.06 GB
+  load first                                  cradio      1972 ms (cpu 1890 ms)
+  load first                                  moge         515 ms (cpu 906 ms)
+  load first                                  rvm          404 ms (cpu 891 ms)
+  load first                                  stage1      3814 ms (cpu 3781 ms)
+  load first                                  stage2      2026 ms (cpu 2250 ms)
+  load total first                                8732 ms
+  mem after load               child private 3.21 GB  child GPU dedicated 2.58 GB  card 6.54 GB  main private 0.06 GB
+  mem after first features     child private 3.22 GB  child GPU dedicated 2.64 GB  card 6.59 GB  main private 0.06 GB
+  mem after first stages       child private 4.79 GB  child GPU dedicated 3.94 GB  card 7.89 GB  main private 0.06 GB
+  mem after runs               child private 4.98 GB  child GPU dedicated 4.16 GB  card 8.11 GB  main private 0.06 GB
+  loop median of 10: post->answer 219.7 ms, model 210.2 ms (stage1+2 194.3), IPC 9.7 ms
+  mem after loop               child private 5.02 GB  child GPU dedicated 4.16 GB  card 8.11 GB  main private 0.10 GB
+  mem after release            child private 0.53 GB  child GPU dedicated 0.02 GB  card 3.96 GB  main private 0.10 GB
+  load second (same process, after release)   cradio      1714 ms (cpu 1704 ms)
+  load second (same process, after release)   moge         511 ms (cpu 921 ms)
+  load second (same process, after release)   rvm          383 ms (cpu 767 ms)
+  load second (same process, after release)   stage1      3978 ms (cpu 4155 ms)
+  load second (same process, after release)   stage2      2191 ms (cpu 2547 ms)
+  load total second                               8777 ms
+  mem after reload and a run   child private 4.85 GB  child GPU dedicated 3.94 GB  card 7.93 GB  main private 0.06 GB
+  kill: exit after 134 ms, GPU counter 0 after 155 ms, process gone after 434 ms (GPU before 3.94 GB, private before 4.85 GB)
+  features cold: cradio 184 moge 100 rvm 81 ms | warm median: cradio 28.4 moge 10.0 rvm 16.0 ms (cpu 31 ms)
+  stages nohint cold: s1 653 s2 297 ms | warm median: s1 75.2 s2 124.6 total 207.7 ms (cpu 94 ms)
+  stages hint   cold: s1 73 s2 123 ms | warm median: s1 73.7 s2 125.6 total 213.1 ms (cpu 79 ms)
+== bench_webgpu_130_384  provider webgpu  bucket 384x384  ort_node 1.30.0  opt all
+  mem forked                   child private 0.03 GB  child GPU dedicated 0.00 GB  card 4.18 GB  main private 0.06 GB
+  load first                                  cradio      2067 ms (cpu 1937 ms)
+  load first                                  moge         481 ms (cpu 907 ms)
+  load first                                  rvm          429 ms (cpu 921 ms)
+  load first                                  stage1      3619 ms (cpu 3578 ms)
+  load first                                  stage2      1699 ms (cpu 1985 ms)
+  load total first                                8295 ms
+  mem after load               child private 3.18 GB  child GPU dedicated 2.52 GB  card 6.88 GB  main private 0.06 GB
+  mem after first features     child private 3.16 GB  child GPU dedicated 2.53 GB  card 6.89 GB  main private 0.06 GB
+  mem after first stages       child private 3.42 GB  child GPU dedicated 2.83 GB  card 7.17 GB  main private 0.06 GB
+  mem after runs               child private 3.36 GB  child GPU dedicated 2.83 GB  card 7.14 GB  main private 0.06 GB
+  loop median of 10: post->answer 94.1 ms, model 92.7 ms (stage1+2 90.5), IPC 1.4 ms
+  mem after loop               child private 3.41 GB  child GPU dedicated 2.83 GB  card 7.20 GB  main private 0.07 GB
+  mem after release            child private 0.49 GB  child GPU dedicated 0.02 GB  card 4.31 GB  main private 0.07 GB
+  load second (same process, after release)   cradio      1839 ms (cpu 2063 ms)
+  load second (same process, after release)   moge         515 ms (cpu 922 ms)
+  load second (same process, after release)   rvm          468 ms (cpu 828 ms)
+  load second (same process, after release)   stage1      3417 ms (cpu 3375 ms)
+  load second (same process, after release)   stage2      1563 ms (cpu 1875 ms)
+  load total second                               7802 ms
+  mem after reload and a run   child private 3.48 GB  child GPU dedicated 2.83 GB  card 6.72 GB  main private 0.07 GB
+  kill: exit after 125 ms, GPU counter 0 after 342 ms, process gone after 342 ms (GPU before 2.83 GB, private before 3.48 GB)
+  features cold: cradio 169 moge 115 rvm 173 ms | warm median: cradio 26.0 moge 9.7 rvm 10.5 ms (cpu 16 ms)
+  stages nohint cold: s1 779 s2 171 ms | warm median: s1 58.6 s2 33.5 total 94.9 ms (cpu 94 ms)
+  stages hint   cold: s1 57 s2 34 ms | warm median: s1 57.3 s2 34.1 total 94.6 ms (cpu 93 ms)
+== bench_webgpu_130_512  provider webgpu  bucket 512x512  ort_node 1.30.0  opt all
+  mem forked                   child private 0.03 GB  child GPU dedicated 0.00 GB  card 3.98 GB  main private 0.06 GB
+  load first                                  cradio      2053 ms (cpu 1969 ms)
+  load first                                  moge         477 ms (cpu 859 ms)
+  load first                                  rvm          441 ms (cpu 938 ms)
+  load first                                  stage1      3324 ms (cpu 3249 ms)
+  load first                                  stage2      1530 ms (cpu 1813 ms)
+  load total first                                7825 ms
+  mem after load               child private 3.14 GB  child GPU dedicated 2.52 GB  card 6.44 GB  main private 0.06 GB
+  mem after first features     child private 3.11 GB  child GPU dedicated 2.53 GB  card 6.45 GB  main private 0.06 GB
+  mem after first stages       child private 3.51 GB  child GPU dedicated 2.97 GB  card 6.93 GB  main private 0.06 GB
+  mem after runs               child private 3.74 GB  child GPU dedicated 2.97 GB  card 6.77 GB  main private 0.06 GB
+  loop median of 10: post->answer 95.0 ms, model 92.6 ms (stage1+2 88.5), IPC 2.2 ms
+  mem after loop               child private 3.70 GB  child GPU dedicated 2.97 GB  card 6.88 GB  main private 0.07 GB
+  mem after release            child private 0.44 GB  child GPU dedicated 0.02 GB  card 3.87 GB  main private 0.07 GB
+  load second (same process, after release)   cradio      1747 ms (cpu 1953 ms)
+  load second (same process, after release)   moge         471 ms (cpu 735 ms)
+  load second (same process, after release)   rvm          466 ms (cpu 922 ms)
+  load second (same process, after release)   stage1      3388 ms (cpu 3312 ms)
+  load second (same process, after release)   stage2      1620 ms (cpu 1766 ms)
+  load total second                               7692 ms
+  mem after reload and a run   child private 3.61 GB  child GPU dedicated 2.97 GB  card 7.07 GB  main private 0.07 GB
+  kill: exit after 117 ms, GPU counter 0 after 278 ms, process gone after 278 ms (GPU before 2.97 GB, private before 3.61 GB)
+  features cold: cradio 191 moge 113 rvm 102 ms | warm median: cradio 26.0 moge 8.6 rvm 10.6 ms (cpu 31 ms)
+  stages nohint cold: s1 601 s2 148 ms | warm median: s1 50.7 s2 34.9 total 88.0 ms (cpu 78 ms)
+  stages hint   cold: s1 57 s2 35 ms | warm median: s1 50.2 s2 34.8 total 88.8 ms (cpu 78 ms)
+== bench_webgpu_130_768  provider webgpu  bucket 768x768  ort_node 1.30.0  opt all
+  mem forked                   child private 0.03 GB  child GPU dedicated 0.00 GB  card 4.01 GB  main private 0.06 GB
+  load first                                  cradio      2086 ms (cpu 2032 ms)
+  load first                                  moge         524 ms (cpu 984 ms)
+  load first                                  rvm          429 ms (cpu 797 ms)
+  load first                                  stage1      3782 ms (cpu 3844 ms)
+  load first                                  stage2      1748 ms (cpu 2047 ms)
+  load total first                                8569 ms
+  mem after load               child private 3.14 GB  child GPU dedicated 2.57 GB  card 6.85 GB  main private 0.06 GB
+  mem after first features     child private 3.14 GB  child GPU dedicated 2.59 GB  card 6.75 GB  main private 0.06 GB
+  mem after first stages       child private 4.34 GB  child GPU dedicated 3.56 GB  card 7.87 GB  main private 0.06 GB
+  mem after runs               child private 4.52 GB  child GPU dedicated 3.67 GB  card 7.79 GB  main private 0.06 GB
+  loop median of 10: post->answer 157.9 ms, model 152.3 ms (stage1+2 142.7), IPC 5.6 ms
+  mem after loop               child private 4.48 GB  child GPU dedicated 3.67 GB  card 7.73 GB  main private 0.08 GB
+  mem after release            child private 0.48 GB  child GPU dedicated 0.02 GB  card 4.08 GB  main private 0.08 GB
+  load second (same process, after release)   cradio      1890 ms (cpu 1984 ms)
+  load second (same process, after release)   moge         566 ms (cpu 969 ms)
+  load second (same process, after release)   rvm          489 ms (cpu 906 ms)
+  load second (same process, after release)   stage1      3648 ms (cpu 3563 ms)
+  load second (same process, after release)   stage2      1698 ms (cpu 1984 ms)
+  load total second                               8290 ms
+  mem after reload and a run   child private 4.33 GB  child GPU dedicated 3.56 GB  card 7.70 GB  main private 0.06 GB
+  kill: exit after 119 ms, GPU counter 0 after 373 ms, process gone after 373 ms (GPU before 3.56 GB, private before 4.33 GB)
+  features cold: cradio 191 moge 121 rvm 105 ms | warm median: cradio 23.2 moge 8.5 rvm 11.7 ms (cpu 31 ms)
+  stages nohint cold: s1 702 s2 201 ms | warm median: s1 67.4 s2 74.0 total 145.7 ms (cpu 94 ms)
+  stages hint   cold: s1 62 s2 74 ms | warm median: s1 64.8 s2 73.5 total 148.4 ms (cpu 78 ms)
+== bench_webgpu_130_1024  provider webgpu  bucket 1024x1024  ort_node 1.30.0  opt all
+  mem forked                   child private 0.03 GB  child GPU dedicated 0.00 GB  card 3.53 GB  main private 0.06 GB
+  load first                                  cradio      2007 ms (cpu 2031 ms)
+  load first                                  moge         511 ms (cpu 938 ms)
+  load first                                  rvm          400 ms (cpu 735 ms)
+  load first                                  stage1      3675 ms (cpu 3734 ms)
+  load first                                  stage2      1825 ms (cpu 2000 ms)
+  load total first                                8417 ms
+  mem after load               child private 3.14 GB  child GPU dedicated 2.58 GB  card 6.10 GB  main private 0.06 GB
+  mem after first features     child private 3.17 GB  child GPU dedicated 2.63 GB  card 6.16 GB  main private 0.06 GB
+  mem after first stages       child private 4.85 GB  child GPU dedicated 4.15 GB  card 7.67 GB  main private 0.06 GB
+  mem after runs               child private 4.95 GB  child GPU dedicated 4.16 GB  card 7.70 GB  main private 0.06 GB
+  loop median of 10: post->answer 216.5 ms, model 207.2 ms (stage1+2 192.5), IPC 9.3 ms
+  mem after loop               child private 4.94 GB  child GPU dedicated 4.16 GB  card 7.69 GB  main private 0.10 GB
+  mem after release            child private 0.48 GB  child GPU dedicated 0.02 GB  card 3.55 GB  main private 0.10 GB
+  load second (same process, after release)   cradio      1738 ms (cpu 1891 ms)
+  load second (same process, after release)   moge         518 ms (cpu 781 ms)
+  load second (same process, after release)   rvm          380 ms (cpu 735 ms)
+  load second (same process, after release)   stage1      3727 ms (cpu 3812 ms)
+  load second (same process, after release)   stage2      1843 ms (cpu 1984 ms)
+  load total second                               8207 ms
+  mem after reload and a run   child private 4.95 GB  child GPU dedicated 4.14 GB  card 7.66 GB  main private 0.06 GB
+  kill: exit after 122 ms, GPU counter 0 after 139 ms, process gone after 419 ms (GPU before 4.14 GB, private before 4.95 GB)
+  features cold: cradio 173 moge 112 rvm 99 ms | warm median: cradio 23.7 moge 8.0 rvm 13.6 ms (cpu 31 ms)
+  stages nohint cold: s1 618 s2 201 ms | warm median: s1 72.5 s2 119.3 total 198.0 ms (cpu 93 ms)
+  stages hint   cold: s1 71 s2 119 ms | warm median: s1 72.6 s2 120.4 total 205.5 ms (cpu 93 ms)
+== bench_cpu_129_768  provider cpu  bucket 768x768  ort_node 1.29.0  opt all
+  mem forked                   child private 0.03 GB  child GPU dedicated 0.00 GB  card 4.09 GB  main private 0.06 GB
+  load first                                  cradio      1550 ms (cpu 2328 ms)
+  load first                                  moge         396 ms (cpu 1579 ms)
+  load first                                  rvm          588 ms (cpu 1374 ms)
+  load first                                  stage1      5329 ms (cpu 8360 ms)
+  load first                                  stage2      2292 ms (cpu 3750 ms)
+  load total first                               10154 ms
+  mem after load               child private 2.68 GB  child GPU dedicated 0.00 GB  card 5.51 GB  main private 0.06 GB
+  mem after first features     child private 2.70 GB  child GPU dedicated 0.00 GB  card 3.36 GB  main private 0.06 GB
+  features cold: cradio 474911 moge 93651 rvm 32908 ms | warm median: cradio nan moge nan rvm nan ms (cpu nan ms)
+== stagesref_cpu_129_768  provider cpu  bucket 768x768  ort_node 1.29.0  opt all
+  load first                                  stage1      4591 ms (cpu 7312 ms)
+  load first                                  stage2      2149 ms (cpu 3672 ms)
+  mem after load               child private 1.65 GB  child GPU dedicated 0.00 GB  card 3.47 GB  main private 0.06 GB
+  error  Error: child exited 143     at ForkUtilityProcess.<anonymous> (F:\canvas\.claude\worktrees\corridorkey\tools\ck_spike\main.js:217:118)     at ForkUtilityProcess.emit (node:events:514:28)     at UtilityProcess.emit (node:electron/js2c/browse

@@ -1,0 +1,22 @@
+[
+ {
+  "file": "ck_i0b/inputs/hair_green_b384/input.png",
+  "sha256": "d4bbce0e8441ae6225b1fab1e919a2745a346acc8a2cf140b971773d1341fe66",
+  "made": "cv2.resize of dist/ck_ref/stills/hair_green.png (input) or dist/ck_ref/hair_green/hint_full.png (hint), INTER_AREA, OpenCV 4.13.0"
+ },
+ {
+  "file": "ck_i0b/inputs/hair_green_b384/hint.png",
+  "sha256": "e8a74b5ab3e2b18ac980dfdc5403c0091982b4c3f21265a6be33123d2ac92f37",
+  "made": "cv2.resize of dist/ck_ref/stills/hair_green.png (input) or dist/ck_ref/hair_green/hint_full.png (hint), INTER_AREA, OpenCV 4.13.0"
+ },
+ {
+  "file": "ck_i0b/inputs/hair_green_b512/input.png",
+  "sha256": "4ebee713b2351cf1eb64d6aba971d62958cbf08292bbd76aa5cb5a45fd9f3e04",
+  "made": "cv2.resize of dist/ck_ref/stills/hair_green.png (input) or dist/ck_ref/hair_green/hint_full.png (hint), INTER_AREA, OpenCV 4.13.0"
+ },
+ {
+  "file": "ck_i0b/inputs/hair_green_b512/hint.png",
+  "sha256": "72c8fd65ae091e5a40217e3e2681d15d6f1e68038bb92cb4bb94eabe346abb8f",
+  "made": "cv2.resize of dist/ck_ref/stills/hair_green.png (input) or dist/ck_ref/hair_green/hint_full.png (hint), INTER_AREA, OpenCV 4.13.0"
+ }
+]

@@ -1,0 +1,38 @@
+== parity_webgpu_129_1024 logits (pixels with fp32 logit >= 1: share below 255 / below 251 levels, min; then I0a's bf16 the same)
+  blue_plate        b1024_hint    opaque 0.16 | ours <255 0.2722 <251 0.00344 min 0.965 | bf16 <255 0.0411 <251 0.00000 min 0.996
+  blue_plate        b1024_nohint  opaque 0.16 | ours <255 0.2754 <251 0.00364 min 0.964 | bf16 <255 0.0449 <251 0.00000 min 0.992
+  flat_green_plant  b1024_hint    opaque 0.18 | ours <255 0.2631 <251 0.00313 min 0.969 | bf16 <255 0.0696 <251 0.00000 min 0.988
+  flat_green_plant  b1024_nohint  opaque 0.19 | ours <255 0.2579 <251 0.00330 min 0.961 | bf16 <255 0.0569 <251 0.00000 min 0.988
+  green_plate       b1024_hint    opaque 0.15 | ours <255 0.2695 <251 0.00354 min 0.962 | bf16 <255 0.0310 <251 0.00000 min 0.996
+  green_plate       b1024_nohint  opaque 0.15 | ours <255 0.2704 <251 0.00357 min 0.959 | bf16 <255 0.0309 <251 0.00000 min 0.996
+  hair_green        b1024_hint    opaque 0.57 | ours <255 0.2597 <251 0.00316 min 0.965 | bf16 <255 0.0270 <251 0.00000 min 0.996
+  hair_green        b1024_nohint  opaque 0.57 | ours <255 0.2597 <251 0.00310 min 0.966 | bf16 <255 0.0276 <251 0.00000 min 0.996
+  highlights_green  b1024_hint    opaque 0.25 | ours <255 0.2717 <251 0.00377 min 0.946 | bf16 <255 0.0667 <251 0.00000 min 0.996
+  highlights_green  b1024_nohint  opaque 0.23 | ours <255 0.2810 <251 0.00688 min 0.940 | bf16 <255 0.0851 <251 0.00000 min 0.992
+== parity_webgpu_129_768 logits (pixels with fp32 logit >= 1: share below 255 / below 251 levels, min; then I0a's bf16 the same)
+  blue_plate        b768_hint     opaque 0.15 | ours <255 0.2691 <251 0.00410 min 0.960 | bf16 <255 0.0503 <251 0.00000 min 0.996
+  blue_plate        b768_nohint   opaque 0.15 | ours <255 0.2694 <251 0.00392 min 0.964 | bf16 <255 0.0525 <251 0.00000 min 0.996
+  flat_green_plant  b768_hint     opaque 0.16 | ours <255 0.2658 <251 0.00354 min 0.966 | bf16 <255 0.0990 <251 0.00018 min 0.930
+  flat_green_plant  b768_nohint   opaque 0.16 | ours <255 0.2488 <251 0.00324 min 0.962 | bf16 <255 0.0669 <251 0.00000 min 0.988
+  green_plate       b768_hint     opaque 0.15 | ours <255 0.2704 <251 0.00449 min 0.963 | bf16 <255 0.0420 <251 0.00000 min 0.996
+  green_plate       b768_nohint   opaque 0.15 | ours <255 0.2682 <251 0.00374 min 0.966 | bf16 <255 0.0416 <251 0.00000 min 0.992
+  hair_green        b768_hint     opaque 0.57 | ours <255 0.2555 <251 0.00307 min 0.954 | bf16 <255 0.0295 <251 0.00000 min 0.996
+  hair_green        b768_nohint   opaque 0.57 | ours <255 0.2550 <251 0.00304 min 0.960 | bf16 <255 0.0310 <251 0.00000 min 0.996
+  highlights_green  b768_hint     opaque 0.25 | ours <255 0.2721 <251 0.00323 min 0.955 | bf16 <255 0.0643 <251 0.00000 min 0.996
+  highlights_green  b768_nohint   opaque 0.24 | ours <255 0.2757 <251 0.00356 min 0.957 | bf16 <255 0.0732 <251 0.00000 min 0.996
+== parity_dml_129_1024 s2ref_logits (pixels with fp32 logit >= 1: share below 255 / below 251 levels, min; then I0a's bf16 the same)
+  hair_green        b1024_hint    opaque 0.57 | ours <255 0.0335 <251 0.00000 min 0.989 | bf16 <255 0.0267 <251 0.00000 min 0.996
+  hair_green        b1024_nohint  opaque 0.57 | ours <255 0.0335 <251 0.00000 min 0.989 | bf16 <255 0.0271 <251 0.00000 min 0.996
+  highlights_green  b1024_hint    opaque 0.24 | ours <255 0.0466 <251 0.00000 min 0.990 | bf16 <255 0.0638 <251 0.00000 min 0.996
+  highlights_green  b1024_nohint  opaque 0.23 | ours <255 0.0530 <251 0.00000 min 0.990 | bf16 <255 0.0785 <251 0.00000 min 0.996
+== parity_webgpu_129_1024 s2ref_logits (pixels with fp32 logit >= 1: share below 255 / below 251 levels, min; then I0a's bf16 the same)
+  blue_plate        b1024_hint    opaque 0.16 | ours <255 0.2763 <251 0.00369 min 0.965 | bf16 <255 0.0406 <251 0.00000 min 0.996
+  blue_plate        b1024_nohint  opaque 0.16 | ours <255 0.2774 <251 0.00395 min 0.965 | bf16 <255 0.0437 <251 0.00000 min 0.996
+  flat_green_plant  b1024_hint    opaque 0.18 | ours <255 0.2648 <251 0.00320 min 0.969 | bf16 <255 0.0675 <251 0.00000 min 0.992
+  flat_green_plant  b1024_nohint  opaque 0.19 | ours <255 0.2612 <251 0.00333 min 0.961 | bf16 <255 0.0553 <251 0.00000 min 0.992
+  green_plate       b1024_hint    opaque 0.15 | ours <255 0.2717 <251 0.00358 min 0.959 | bf16 <255 0.0308 <251 0.00000 min 0.996
+  green_plate       b1024_nohint  opaque 0.15 | ours <255 0.2730 <251 0.00354 min 0.956 | bf16 <255 0.0305 <251 0.00000 min 0.996
+  hair_green        b1024_hint    opaque 0.57 | ours <255 0.2638 <251 0.00316 min 0.966 | bf16 <255 0.0267 <251 0.00000 min 0.996
+  hair_green        b1024_nohint  opaque 0.57 | ours <255 0.2635 <251 0.00323 min 0.964 | bf16 <255 0.0271 <251 0.00000 min 0.996
+  highlights_green  b1024_hint    opaque 0.24 | ours <255 0.2745 <251 0.00397 min 0.945 | bf16 <255 0.0638 <251 0.00000 min 0.996
+  highlights_green  b1024_nohint  opaque 0.23 | ours <255 0.2846 <251 0.00668 min 0.943 | bf16 <255 0.0785 <251 0.00000 min 0.996
