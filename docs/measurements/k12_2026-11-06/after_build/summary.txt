@@ -1,0 +1,162 @@
+K12's first after (the build's, 2026-11-06 09:45-09:49; kept beside ../after/, which K12's finishing step measured again
+with the review's rows added): relight's march in stripes, against ../before/ (the same harness).
+Three fresh runs, 2026-11-06 09:45-09:49, ../k12_chain.sh as before: each its own instance (run_gates.sh, offline,
+tiles, port 9555, a fresh profile), `perf:15000x10000,--filter=relight,--map=4096x2731`; perf/r*.json, perf/r*.log,
+chain.log.
+
+Build: 0ca7d5b plus K12's working files (not committed): renderer/editor/inpaint_relight.js (stripePlan, marchOnPool),
+inpaint_canvas.js (ensureRelightMaps: march groups, superseded full marches cancelled, the quick depth on a
+SharedArrayBuffer), inpaint_worker.js (relight_shadow into the march's shared out, its timing), px/kernels.js (the
+route relightStripes, shadowMarch's key), px/px.js (_slot: the one-slot resident depth copy); px ABI 21, the same
+px.wasm / px_scalar.wasm (no .rs edit). The default: STRIPES_PER_WORKER 4 x the pool's 8 workers = 32 stripes a march
+(of about 85 rows at 4096 x 2731), 21 for the quick map (32 rows at least).
+The machine: the busy lock taken and released around each run; no other agent's gate run at any run's start; the idle
+key instance on 9571 there (untouched). GPU before / after each run: 3,702 / 3,726 MiB at 0 / 3 %, 3,723 / 4,130 at
+0 / 0 %, 4,173 / 4,015 at 2 / 6 %; ComfyUI on 8188 did not answer. All runs focused and visible (no retry). r2 ran
+about 1.15-1.4x slower on every march row, the one-job route included (another process's load, unseen by the checks).
+
+Medians [min-max] (blocked = the window's longest block, landed = the relight_maps marks, start to the last landing):
+- one light moved, landed       3,545 [3,512-3,935] -> 660 [638-939] ms (5.4x); blocked 56 -> 61 (inside the spreads)
+- three lights moved, landed    3,665 [3,626-5,685] -> 1,039 [1,035-1,473] ms (3.5x); blocked 53 -> 58 (inside)
+- a drag step's quick map       44 [43-54] -> 6.1 [5.7-49] ms landed (21 stripes); blocked 30 -> 37 (the spreads 5 / 9:
+                                a tie by §1.1 rule 2; the landing now falls into the probe's first frames)
+- pan at 1:1 during a march     worst frame 92 [84-93] -> 6.5 [4.9-15] ms; the window's block 93 -> 21 [15-88];
+                                the march landed 3,865 -> 563 ms
+- the first march after start   3,949 [3,909-6,063] -> 2,370 [2,289-2,846] ms (cold workers, beside the setup's rows)
+- the A/B in one run (the same lights marched again, route relightStripes 0 against the default stripes):
+  one light   one job 3,549 [3,488-4,078] -> stripes 501 [496-801] ms; three lights 3,708 [3,600-5,687] -> 1,213
+  [1,093-1,499]. The one-job route reproduces before's walls (3,545 / 3,665).
+- the parallel efficiency (Stop 5; serial = the one-job route's summed kernel ms, over 8 workers x the stripes' wall):
+  one light 0.874 [0.633-0.881], three lights 0.892 [0.781-0.995]; the stripes' busy share 0.952 [0.886-0.955] /
+  0.963 [0.955-0.968]; the stripes' summed kernel over one job's 1.093 [1.081-1.399] / 1.070 [0.968-1.240]. So of the
+  ~12 % the medians lose, about 4-5 % is idle workers (the busy share: dispatch, the last stripes' tail) and the rest is
+  the same work running slower on 8 busy cores (memory, clocks), which shared-memory threads would not remove. The low
+  runs are r2's (its stripes row ran 1.4x slower than its one-job row). q6.7's rule (skip the threads spike unless the
+  efficiency is below 0.85): both medians are above it.
+- the chain rows (must not get worse; nothing in flight during them): frame after a whole change at 1:1 32.8 -> 31.2 ms,
+  its mips settled 100 -> 97; at fit 19.9 -> 19.2, 77 -> 80; the 192 px pictures 338 -> 341 and 16.4 -> 14.8 (110 ->
+  117); the lights overlay's frame 383 -> 378 (2,376 chains both). All inside their spreads: not worse.
+- a whole change at 1:1: no march 81.6 [76.3-85.6] -> 77.1 [69.7-86.5] ms to the mips settled; during a three-light
+  march 163 [83-223] -> 210 [140-278] (frame 37 -> 40, block 41 -> 31). Worse by 47 ms in the median, inside both
+  spreads (140 / 138: a tie by rule 2), and the expected cost: before, three marches held three of the eight workers and
+  the mips had five; now all eight run stripes and a mip batch waits up to one stripe (the slowest 143-212 ms here).
+  The march itself lands 2.6 s sooner. Halving it would take STRIPES_PER_WORKER 8 (stripes of ~70 ms), not measured.
+
+The review (2026-11-06) found that the efficiency above is the *_rep rows' only (the same light marched again
+unchanged). The named one-light row, the figure q6.7 reads, ran its 32 stripes 1.33-1.59x slower in summed kernel ms
+than the one-job march of the same light: computed from these runs' JSON by ../summarize.py (`derive`), its efficiency
+is 0.669 [0.540-0.680], below 0.85; three lights 0.939 [0.916-1.012]. ../after/summary.txt has the new runs, the
+diagnosis and the decision.
+
+Every row (python ../summarize.py before after_build; the named rows' efficiency derived):
+row (15000 x 10000, relight, map 4096 x 2731)                               before                   after_build
+frame after a whole change, fit [0]                               19.9 [19.7-22.4]              19.2 [18.8-19.4]
+frame after a whole change, fit [1]                               19.9 [19.7-22.4]              19.2 [18.8-19.4]
+  mips settled [longest block] [0]                                77.4 [76.9-94.3]                   80 [75-102]
+  mips settled [longest block] [1]                                25.3 [24.4-28.9]              34.0 [25.2-38.6]
+  chains built here [asked] [0]                                         16 [16-16]                    16 [16-16]
+  chains built here [asked] [1]                                2,360 [2,360-2,360]           2,360 [2,360-2,360]
+frame after a whole change, 1:1 [0]                               32.8 [30.8-33.3]              31.2 [31.2-32.9]
+frame after a whole change, 1:1 [1]                               32.8 [30.8-33.3]              31.2 [31.2-32.9]
+  mips settled [longest block] [0]                                    100 [72-123]                   97 [86-108]
+  mips settled [longest block] [1]                                16.7 [14.0-25.6]              23.7 [12.9-24.5]
+  chains built here [asked] [0]                                         16 [16-16]                    16 [16-16]
+  chains built here [asked] [1]                                2,344 [2,344-2,344]           2,344 [2,344-2,344]
+  below stats redone [marches in flight] [0]                               0 [0-0]                       0 [0-0]
+  below stats redone [marches in flight] [1]                               0 [0-0]                       0 [0-0]
+  (waited for the setup's marches [in flight]) [0]             2,529 [2,516-4,535]             1,004 [970-1,361]
+  (waited for the setup's marches [in flight]) [1]                         0 [0-0]                       0 [0-0]
+192 px picture, the old way [wall] [0]                               338 [335-403]                 341 [341-384]
+192 px picture, the old way [wall] [1]                               338 [335-403]                 341 [341-384]
+  chains built here [from the worker] [0]                      2,360 [2,360-2,360]           2,360 [2,360-2,360]
+  chains built here [from the worker] [1]                                  0 [0-0]                       0 [0-0]
+192 px picture, settled [wall] [0]                                16.4 [13.6-26.5]               14.8 [7.8-25.5]
+192 px picture, settled [wall] [1]                                   110 [101-110]                 117 [113-131]
+  chains built here [from the worker] [0]                               98 [98-98]                    98 [98-98]
+  chains built here [from the worker] [1]                      2,262 [2,262-2,262]           2,262 [2,262-2,262]
+the frame with the lights overlay [0]                                383 [374-400]                 378 [375-396]
+the frame with the lights overlay [1]                                383 [374-400]                 378 [375-396]
+  chains built here [asked] [0]                                2,376 [2,376-2,376]           2,376 [2,376-2,376]
+  chains built here [asked] [1]                                2,344 [2,344-2,344]           2,344 [2,344-2,344]
+  below stats redone [marches] [0]                                         1 [1-1]                       1 [1-1]
+  below stats redone [marches] [1]                                         0 [0-0]                       0 [0-0]
+one light moved [blocked, landed] [0]                             56.3 [45.5-66.8]              61.0 [51.1-70.7]
+one light moved [blocked, landed] [1]                          3,545 [3,512-3,935]                 660 [638-939]
+  marches [slowest landed] [0]                                             1 [1-1]                       1 [1-1]
+  marches [slowest landed] [1]                                 3,531 [3,498-3,916]                 646 [624-919]
+  stripes [workers] [0]                                                          -                    32 [32-32]
+  stripes [workers] [1]                                                          -                       8 [8-8]
+  kernel ms summed [slowest job] [0]                                             -           4,828 [4,687-6,470]
+  kernel ms summed [slowest job] [1]                                             -                 196 [195-315]
+  busy share                                                                     -           0.887 [0.861-0.946]
+  parallel efficiency [busy share] [0]                                           -           0.669 [0.540-0.680]
+  parallel efficiency [busy share] [1]                                           -           0.887 [0.861-0.946]
+  stripes' kernel / one job's                                                    -           1.391 [1.327-1.595]
+  again, one job (stripes 0) [blocked, landed] [0]                               -              57.1 [52.2-69.7]
+  again, one job (stripes 0) [blocked, landed] [1]                               -           3,549 [3,488-4,078]
+    kernel ms summed [slowest job] [0]                                           -           3,532 [3,471-4,057]
+    kernel ms summed [slowest job] [1]                                           -           3,532 [3,471-4,057]
+  again, stripes [blocked, landed] [0]                                           -              44.0 [38.9-59.7]
+  again, stripes [blocked, landed] [1]                                           -                 501 [496-801]
+    stripes [workers] [0]                                                        -                    32 [32-32]
+    stripes [workers] [1]                                                        -                       8 [8-8]
+    kernel ms summed [slowest job] [0]                                           -           3,817 [3,792-5,677]
+    kernel ms summed [slowest job] [1]                                           -                 138 [135-229]
+    parallel efficiency [busy share] [0]                                         -           0.874 [0.633-0.881]
+    parallel efficiency [busy share] [1]                                         -           0.952 [0.886-0.955]
+    stripes' kernel / one job's                                                  -           1.093 [1.081-1.399]
+three lights moved [blocked, landed] [0]                          52.6 [44.3-66.7]              58.1 [46.6-78.5]
+three lights moved [blocked, landed] [1]                       3,665 [3,626-5,685]           1,039 [1,035-1,473]
+  marches [slowest landed] [0]                                             3 [3-3]                       3 [3-3]
+  marches [slowest landed] [1]                                 3,656 [3,617-5,673]           1,030 [1,025-1,461]
+  stripes [workers] [0]                                                          -                    96 [96-96]
+  stripes [workers] [1]                                                          -                       8 [8-8]
+  kernel ms summed [slowest job] [0]                                             -          8,119 [8,050-11,470]
+  kernel ms summed [slowest job] [1]                                             -                 143 [142-240]
+  busy share                                                                     -           0.974 [0.972-0.977]
+  parallel efficiency [busy share] [0]                                           -           0.939 [0.916-1.012]
+  parallel efficiency [busy share] [1]                                           -           0.974 [0.972-0.977]
+  stripes' kernel / one job's                                                    -           1.041 [0.962-1.062]
+  again, one job a light [blocked, landed] [0]                                   -              72.2 [58.0-97.6]
+  again, one job a light [blocked, landed] [1]                                   -           3,708 [3,600-5,687]
+    kernel ms summed [slowest job] [0]                                           -          7,802 [7,578-11,927]
+    kernel ms summed [slowest job] [1]                                           -           3,684 [3,582-5,675]
+  again, stripes [blocked, landed] [0]                                           -              57.7 [46.6-94.7]
+  again, stripes [blocked, landed] [1]                                           -           1,213 [1,093-1,499]
+    stripes [workers] [0]                                                        -                    96 [96-96]
+    stripes [workers] [1]                                                        -                       8 [8-8]
+    kernel ms summed [slowest job] [0]                                           -          9,394 [8,350-11,547]
+    kernel ms summed [slowest job] [1]                                           -                 212 [190-284]
+    parallel efficiency [busy share] [0]                                         -           0.892 [0.781-0.995]
+    parallel efficiency [busy share] [1]                                         -           0.963 [0.955-0.968]
+    stripes' kernel / one job's                                                  -           1.070 [0.968-1.240]
+a drag step's quick map [blocked, landed] [0]                     29.9 [28.4-33.3]              37.3 [32.0-41.0]
+a drag step's quick map [blocked, landed] [1]                     43.9 [42.8-53.9]                6.1 [5.7-49.3]
+  marches [slowest landed] [0]                                             1 [1-1]                       1 [1-1]
+  marches [slowest landed] [1]                                    43.4 [42.3-53.1]                5.4 [5.1-48.5]
+  stripes [workers] [0]                                                          -                    21 [21-21]
+  stripes [workers] [1]                                                          -                       8 [6-8]
+pan at 1:1 during a march [median, worst frame] [0]                  3.9 [3.6-4.0]                 3.1 [2.9-4.1]
+pan at 1:1 during a march [median, worst frame] [1]               92.1 [83.6-92.5]                6.5 [4.9-14.8]
+  frames [shadows landed] [0]                                        180 [133-181]                    27 [24-29]
+  frames [shadows landed] [1]                                  3,865 [3,759-4,016]                 563 [512-766]
+  block [chains built here] [0]                                   92.8 [86.9-94.9]              20.7 [14.9-87.6]
+  block [chains built here] [1]                                            0 [0-0]                       0 [0-0]
+the first march after start [-, landed] [0]                                      -                             -
+the first march after start [-, landed] [1]                    3,949 [3,909-6,063]           2,370 [2,289-2,846]
+  marches [slowest landed] [0]                                             3 [3-3]                       3 [3-3]
+  marches [slowest landed] [1]                                 3,939 [3,900-6,053]           2,359 [2,279-2,836]
+whole change 1:1, no march [frame, mips settled] [0]              33.3 [31.0-35.1]              35.2 [34.6-41.2]
+whole change 1:1, no march [frame, mips settled] [1]              81.6 [76.3-85.6]              77.1 [69.7-86.5]
+  [block, built, asked, marching] [0]                              14.4 [9.1-15.6]              10.6 [10.4-14.4]
+  [block, built, asked, marching] [1]                                   16 [16-16]                    16 [16-16]
+  [block, built, asked, marching] [2]                          2,344 [2,344-2,344]           2,344 [2,344-2,344]
+  [block, built, asked, marching] [3]                                      0 [0-0]                       0 [0-0]
+  during a three-light march [frame, mips settled] [0]              37.1 [33.1-39.4]              40.4 [39.2-40.9]
+  during a three-light march [frame, mips settled] [1]                  163 [83-223]                 210 [140-278]
+  [block, built, asked, marching] [0]                              40.6 [8.8-41.8]               30.9 [5.9-34.7]
+  [block, built, asked, marching] [1]                                   16 [16-16]                    16 [16-16]
+  [block, built, asked, marching] [2]                          2,344 [2,344-2,344]           2,344 [2,344-2,344]
+  [block, built, asked, marching] [3]                                      3 [3-3]                       3 [3-3]
+before: 3 runs; focus [[True, 'visible', True, 'visible'], [True, 'visible', True, 'visible'], [True, 'visible', True, 'visible']]
+after_build: 3 runs; focus [[True, 'visible', True, 'visible'], [True, 'visible', True, 'visible'], [True, 'visible', True, 'visible']]

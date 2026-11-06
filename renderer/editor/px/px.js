@@ -384,13 +384,14 @@ export class Px {
 
     /**
      * Marches shadow rays through u16 depth height field.
-     * Visibility map into `out` (0=shadow, 255=lit).
+     * Visibility map into `out` (0=shadow, 255=lit): a full-size `out` takes the rows at row0 * w. With a `key` the depth
+     * map stays resident in this instance (`_slot`, kind "relight_depth"): the stripes of one march copy it once (K12).
      */
-    shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null) {
+    shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null, key = null) {
         const bandRows = Math.min(rows, h - row0);
         const a = this.job, n = w * h, nOut = w * bandRows;
         try {
-            const pd = this._in(a, depth, n * 2);
+            const pd = key !== null && key !== undefined ? this._slot("relight_depth", String(key), depth, n * 2) : this._in(a, depth, n * 2);
             const pl = this._in(a, new Float32Array(light), 16);
             const po = a.take(nOut);
             this.exports.shadow_march(pd, w, h, scale, pl, radius, taps, steps, bias, row0, bandRows, po);
@@ -525,6 +526,23 @@ export class Px {
             this.put(ptr, data);
             kept.set(data, ptr);
         }
+        return ptr;
+    }
+
+    /**
+     * One block per `kind` that stays in this instance's memory between calls (docs/PLAN_WASM_BUILD.md §3.2, "Resident
+     * data"): the first `bytes` of `data` copied in when `key` or the size differs from the slot's, the old block freed
+     * first. The caller's key names the data (a worker gets a new view of a SharedArrayBuffer with every message, so no
+     * array identity survives between jobs): relight's depth map by its data version and size (K12).
+     */
+    _slot(kind, key, data, bytes = data.byteLength) {
+        const slots = this._slots || (this._slots = new Map());
+        const s = slots.get(kind);
+        if (s && s.key === key && s.bytes === bytes) return s.ptr;
+        if (s) { slots.delete(kind); this.free(s.ptr, s.bytes); }
+        const ptr = this.alloc(bytes);
+        this.put(ptr, new Uint8Array(data.buffer, data.byteOffset, bytes));
+        slots.set(kind, { key, ptr, bytes });
         return ptr;
     }
 

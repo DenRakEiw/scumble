@@ -1,0 +1,34 @@
+[11:10:17] commit 0ca7d5b (dirty: 8 files); px ABI ABI = 21; rounds: 1 2 3
+[11:10:17] px.wasm 1000640eba8b5574, px_scalar.wasm ade55404e282dd7d
+lock: held by 'CK I0a part 2: reference rerun (torch on the GPU, 2 stills) 49648 2026-11-06T11:09:51', waiting
+lock: taken after 30 s
+[11:10:47] lock: taken (K12 measuring 34892 2026-11-06T11:10:17)
+[11:10:48] others: 0 busy; no instance on 9571
+[11:10:48] perf-relight r1 (try 1)
+[11:10:52] gpu: 9059 MiB, 51 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 91s 
+ALL PASS
+[11:12:39] rc=0
+[11:12:43] gpu: 9060 MiB, 49 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[11:12:44] lock: taken (K12 measuring 35568 2026-11-06T11:12:44)
+[11:12:44] others: 0 busy; no instance on 9571
+[11:12:44] perf-relight r2 (try 1)
+[11:12:49] gpu: 9093 MiB, 50 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 81s 
+ALL PASS
+[11:14:25] rc=0
+[11:14:29] gpu: 9040 MiB, 53 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[11:14:30] lock: taken (K12 measuring 6380 2026-11-06T11:14:30)
+[11:14:30] others: 0 busy; no instance on 9571
+[11:14:30] perf-relight r3 (try 1)
+[11:14:35] gpu: 9130 MiB, 44 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 93s 
+ALL PASS
+[11:16:23] rc=0
+[11:16:28] gpu: 3718 MiB, 2 %; comfy 8188: 000, no queue
+lock: released
+[11:16:28] done

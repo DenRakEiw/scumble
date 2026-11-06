@@ -36,9 +36,12 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
 
 /**
  * The routes and the kind of value each takes. "kernel": "js" or "rust". "kernelSize": also a number of pixels, Rust
- * from that size on. "mb": a number of MB >= 0, or Infinity.
+ * from that size on. "mb": a number of MB >= 0, or Infinity. "count": a whole number >= 0.
+ * `relightStripes` (K12, docs/PLAN_WASM_BUILD.md §4.5) is read on the window: how many stripes a full or quick shadow
+ * march is cut into (0 or 1: one job a light, as before K12); absent, `STRIPES_PER_WORKER` times the pool's size
+ * (inpaint_relight.js `marchOnPool`).
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -47,7 +50,7 @@ export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", 
 // instead of 288 MB (M7b). No flood or mips entry: Rust won every A/B of M1-M4 (the flood ladder from a 0.26 MP box up).
 const DEFAULT_ROUTES = Object.freeze({ releaseMB: 256, keepMB: 16 });
 
-const TAKES = { kernel: '"js" or "rust"', kernelSize: '"js", "rust" or a number of pixels >= 0', mb: "a number of MB >= 0 or Infinity" };
+const TAKES = { kernel: '"js" or "rust"', kernelSize: '"js", "rust" or a number of pixels >= 0', mb: "a number of MB >= 0 or Infinity", count: "a whole number >= 0" };
 
 let OVERRIDES = {};   // name -> value: setRoute (the window, a harness) or adoptRoutes (a worker, per job message)
 
@@ -57,6 +60,7 @@ function validRoute(name, v) {
     if (!own(ROUTE_KINDS, name)) return false;
     const kind = ROUTE_KINDS[name], number = typeof v === "number" && v >= 0;
     if (kind === "mb") return number;
+    if (kind === "count") return Number.isInteger(v) && v >= 0;
     return v === "js" || v === "rust" || (kind === "kernelSize" && number);
 }
 
@@ -462,14 +466,18 @@ export function heightNormals(depth, w, h, scale, sigma, out = null) {
     return J.heightNormals(depth, w, h, scale, sigma, out);
 }
 
-/** Marches shadow rays through u16 depth height field. */
-export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null) {
+/**
+ * Marches shadow rays through u16 depth height field. A full-size `out` takes rows row0.. at row0 * w (both kernels), so
+ * the stripes of one march write into one buffer (K12). `key` names the depth map's data for the Rust sun's resident copy
+ * (px.js `_slot`): the stripes of one march on one worker copy it once; the twin reads `depth` where it lies.
+ */
+export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null, key = null) {
     if (light && light[3] !== 1) {
         return J.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out);
     }
     const p = rustPx();
     if (p) {
-        try { return p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out); }
+        try { return p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key); }
         catch (err) { if (!recovered(p, err, "shadow_march")) throw err; }
         finally { releaseIfLarge(); }
     }

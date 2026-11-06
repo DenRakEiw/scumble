@@ -10,6 +10,75 @@ import { registerGLFilter } from "./inpaint_filters_gl.js";
 import { bilinearResize } from "./inpaint_depth.js";
 import { heightNormals, shadowMarch, boxBlurs } from "./px/kernels.js";
 
+// ---- the march on the pool in stripes (K12, docs/PLAN_WASM_BUILD.md section 4.5) ---------------------------------------------
+
+/** The fewest rows a stripe of a march takes (about 45 ms of a point light's full march at 4096 x 2731). */
+export const STRIPE_MIN_ROWS = 32;
+
+/**
+ * Stripes a march is cut into for each of the pool's workers, when the route relightStripes is not set: 4 x 8 = 32
+ * stripes of about 85 rows at 4096 x 2731, each about 100-150 ms, so a mip chain (INTERACTIVE) waits at most one stripe.
+ */
+export const STRIPES_PER_WORKER = 4;
+
+/**
+ * The stripes of a march over `h` rows: `count` contiguous pieces as even as whole rows allow, fewer when they would be
+ * under `minRows` rows (one for a map that short), as [row0, rows] in order, covering 0..h once.
+ * @param {number} h
+ * @param {number} count
+ * @param {number} [minRows]
+ * @returns {Array<[number, number]>}
+ */
+export function stripePlan(h, count, minRows = STRIPE_MIN_ROWS) {
+    const rows = Math.max(0, Math.floor(h) || 0);
+    const n = Math.max(1, Math.min(Math.floor(count) || 1, Math.floor(rows / Math.max(1, minRows)) || 1));
+    /** @type {Array<[number, number]>} */
+    const plan = [];
+    for (let i = 0; i < n; i++) {
+        const a = Math.floor((i * rows) / n), b = Math.floor(((i + 1) * rows) / n);
+        if (b > a) plan.push([a, b - a]);
+    }
+    return plan;
+}
+
+/**
+ * One light's shadow march on the worker pool (`pool`: inpaint_pool.js `WorkerPool`), resolving to its channel (w * h
+ * bytes). `args`: the relight_shadow job's fields but the rows (`depth`, `w`, `h`, `scale`, `light`, `radius`, `taps`,
+ * `steps`, `bias`, `key`). A depth map on a SharedArrayBuffer is marched in `stripes` stripes (`stripePlan`) into one
+ * SharedArrayBuffer `out` that every stripe writes at its own rows (both kernels write at row0 * w), the replies carry
+ * only their rows; otherwise (the node's page is not isolated) and with `stripes` 0 or 1 it is one job a light, its reply
+ * transferred, as before K12. Every stripe goes in `group` at `priority`; when one fails or answers other rows than it
+ * was sent, the march rejects and the rest of its group is cancelled. A group cancelled from outside (a newer march of
+ * the channel superseded this one) rejects with the pool's CancelledError (`err.cancelled`).
+ * @param {any} pool
+ * @param {any} args
+ * @param {{ priority?: number, group?: any, stripes?: number }} [opts]
+ * @returns {Promise<Uint8Array>}
+ */
+export async function marchOnPool(pool, args, { priority = 1, group = null, stripes = 0 } = {}) {
+    const { depth, w, h } = args;
+    const shared = typeof SharedArrayBuffer === "function" && !!depth && depth.buffer instanceof SharedArrayBuffer;
+    if (!shared || !(stripes > 1)) {
+        const res = await pool.run("relight_shadow", { ...args, row0: 0, rows: h }, [], { priority, group });
+        return new Uint8Array(res.vis);
+    }
+    const out = new Uint8Array(new SharedArrayBuffer(w * h));
+    const plan = stripePlan(h, stripes);
+    try {
+        const replies = await pool.map(plan.map(([row0, rows]) => ({ op: "relight_shadow", args: { ...args, out, row0, rows } })), { priority, group });
+        for (let i = 0; i < plan.length; i++) {
+            const r = replies[i];
+            if (!r || r.row0 !== plan[i][0] || r.rows !== plan[i][1]) {
+                throw new Error(`relight_shadow: stripe ${i} answered rows ${r ? r.row0 : "-"}+${r ? r.rows : "-"}, it was sent ${plan[i][0]}+${plan[i][1]}`);
+            }
+        }
+    } catch (err) {
+        if (group !== null && group !== undefined) pool.cancel(group);
+        throw err;
+    }
+    return out;
+}
+
 const DUMMY_NORMALS = { data: new Uint8Array([128, 128, 255, 255]), width: 1, height: 1, channels: 4, linear: true };
 const DUMMY_VIS = { data: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1, channels: 4, linear: true };
 const DUMMY_RG8 = { data: new Uint8Array([0, 0]), width: 1, height: 1, channels: 2 };

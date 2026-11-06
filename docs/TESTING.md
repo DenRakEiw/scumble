@@ -143,6 +143,24 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   overflowed would pick Up). A coverage check over the rows of 5 px or more (the ones that reach the lanes) requires
   every filter to win rows, ties of the sums won by None, Sub, Up and Average, and Paeth ties of a over c and b over c.
   The writer takes 8-bit RGBA only, so no other pixel size or depth is asked.
+  K12 (relight's march in stripes, `inpaint_relight.js` `stripePlan` / `marchOnPool`, JS only, no ABI change):
+  `node tools/px_test.js`'s `relightStripeCases`: `stripePlan` over 12 heights x 8 counts (contiguous, even, never under
+  32 rows), 308 cases of S stripes into one buffer against one call (the twin for point, spot, a light on a pixel, below
+  the surface and off the map; the Rust sun straight up, grazing and through `lightToMap`, on both builds and through
+  kernels.js as a worker routes it; 512 x 341 and 1024 x 682 at taps / steps 1/16 to 16/64 in 2 to 21 stripes); the
+  resident depth slot (`px.js` `_slot`: eight keyed stripes copy the map once, a new key or size copies again and never
+  answers from the old copy); `marchOnPool` on a real `WorkerPool` with fake workers (one shared out, no transfer, the
+  bytes; the non-SAB and route-0 paths one job; a failed stripe or other rows reject and cancel the rest; a group
+  cancelled from outside rejects with `CancelledError` and sends none of its queued stripes). The `relight` gate's case
+  nk ("three nudges: only the last key lands"): for a point and a sun three nudges flushed at once post three full
+  marches, the pool cancels exactly the stripes of the two superseded ones, one landing (current) holds the last key and
+  the bytes of one call, the sun's stripes on Rust and the point's on the twin, each nudge's quick march lands; three
+  nudges without a flush cancel nothing; there, back and there again posts two full marches and lands one; the route
+  `relightStripes` 0 is one job of all rows. `perf_test.py --filter=relight` adds the stripes' rows (the stripes and
+  their workers, kernel ms, each worker's first stripe against its later ones, the other pool jobs and mip chains of a
+  row, the efficiency of the named row and of the same march again against the one-job route), a whole change during a
+  three-light march, eight NORMAL jobs during one, and a light made a sun; `docs/measurements/k12_2026-11-06/`
+  (`k12_chain.sh`, `summarize.py`) runs them three times on fresh instances under the machine's busy lock.
   `docs/measurements/w1_2026-11-06/w1_identity.js --old <the px.wasm before W1> file.png ...` re-filters real PNGs in
   the app's parts of 128 rows on the new SIMD build, the scalar build, the old SIMD build and the JS twin and compares
   every line (and, for a file Scumble wrote, the file's own lines); the old build is
@@ -580,6 +598,12 @@ generate editor log lint types`.
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:
+
+- 2026-11-06 (K12's last lint run): the `lint` gate runs `npx eslint .`, which also reads the other agents' worktrees
+  under `.claude/worktrees/` (their untracked files too): a new script there with a top-level `return`
+  (`corridorkey/docs/measurements/ck_i0a_2026-11-06/scripts/s0_setup.js`) made it red with nothing changed in this
+  tree. `npx eslint . --ignore-pattern ".claude/**"` gives this tree's own result (0 errors, K12's
+  `gates/gates/k12-lint-final/lint_own_tree.log`).
 
 - 2026-11-06 (W1's gates, tiles): the `layered` gate's `the_pool_and_the_window_read_a_psd_alike` failed once in its
   "a closed tab" case: its shape check stringifies `ed.base`, whose pixels carry cache fields, and `_regions` was `null`

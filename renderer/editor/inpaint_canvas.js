@@ -49,11 +49,11 @@ import { normalizeLimit, u16Bilinear, rangeWeight, opp, colourSimilarity, hexToR
 import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
 import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend, seedOfLayer, hash32, mul255 } from "./blend_modes.js";
-import { heightNormals, shadowMarch, pxCalls, kernelRoutes, setRoute as setKernelRoute, pxTimed, pxSplit, pxInstances } from "./px/kernels.js";
+import { heightNormals, shadowMarch, pxCalls, kernelRoutes, setRoute as setKernelRoute, route as kernelRoute, pxTimed, pxSplit, pxInstances } from "./px/kernels.js";
 import { statusKindFor, failKind, refusal } from "./inpaint_status.js";
 import { RunProgress } from "./inpaint_progress.js";
 import { canvasSizeRefusal, CANVAS_MAX_SIDE } from "./inpaint_sizelimit.js";
-import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex, LIGHT_PRESETS, SPOT_GOBOS, applyLightPreset, loraPercent, relightMapKey, relightDepthScale, relightVisKey, relightVisCurrent } from "./inpaint_relight.js";
+import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex, LIGHT_PRESETS, SPOT_GOBOS, applyLightPreset, loraPercent, relightMapKey, relightDepthScale, relightVisKey, relightVisCurrent, marchOnPool, STRIPES_PER_WORKER } from "./inpaint_relight.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -23173,7 +23173,10 @@ class InpaintEditor {
      * Downsample 16-bit depth map for quarter-size shadow march.
      */
     downsampleDepth(src, srcW, srcH, dstW, dstH) {
-        const dst = new Uint16Array(dstW * dstH);
+        // on a SharedArrayBuffer where the page is isolated, as the depth map itself (inpaint_maps.js `makeMap`): the quick
+        // march reads it in stripes where it lies (K12, inpaint_relight.js `marchOnPool`)
+        const shared = typeof SharedArrayBuffer === "function" && typeof crossOriginIsolated !== "undefined" && crossOriginIsolated;
+        const dst = shared ? new Uint16Array(new SharedArrayBuffer(dstW * dstH * 2)) : new Uint16Array(dstW * dstH);
         for (let dy = 0; dy < dstH; dy++) {
             const sy = Math.min(srcH - 1, Math.floor(((dy + 0.5) / dstH) * srcH));
             const sRow = sy * srcW;
@@ -23578,11 +23581,30 @@ class InpaintEditor {
         // the K0b harness (docs/PLAN_WASM_BUILD.md §4.5): a "start" mark for a call that posts marches, made at its first;
         // "landed" for each answer, "idle" when the layer's last march in flight has answered
         let run = null;
+        // K12 (§4.5): each march is a pool group of its own (a page-wide sequence number: a layer's id and its cache's
+        // tickets repeat in a second tab of the same document and after a deep release; then the layer, the channel, the
+        // size, the ticket), cut into stripes by marchOnPool. A full march of a channel supersedes the one still on its way for it (the light moved on,
+        // went off, or came back to the key the channel holds): the older one's queued stripes are cancelled and its
+        // pending key is freed at once, so the light can march there again. A quick march is never cancelled: the quick
+        // map trails the pointer, an older answer still lands over an older one.
+        const fullMarches = cache.fullMarches || (cache.fullMarches = [null, null, null, null]);
+        const supersede = (i) => {
+            const m = fullMarches[i];
+            if (!m) return;
+            fullMarches[i] = null;
+            m.superseded = true;
+            cache.pending.delete(m.pendingKey);
+            const pool = editorPool();
+            if (pool && !pool.off) pool.cancel(m.group);
+        };
+        // the depth map's name for the workers' resident copy of it (px.js `_slot`): its data, the march's size
+        const depthKey = `${mapKey}:${quick ? "q" : "f"}:${targetW}x${targetH}`;
 
         for (let i = 0; i < 4; i++) {
             const l = lights[i];
             const vKey = relightVisKey(l, depthScale, mapKey, quick);
             if (vKey === null) {
+                if (!quick) supersede(i);
                 if (targetVis.keys[i] !== null) {
                     for (let idx = 0; idx < targetW * targetH; idx++) {
                         targetVis.data[idx * 4 + i] = 255;
@@ -23595,10 +23617,17 @@ class InpaintEditor {
             }
 
             const pendingKey = `v:${quick ? "q" : "f"}:${i}:${vKey}`;
-            if (targetVis.keys[i] === vKey || cache.pending.has(pendingKey)) continue;
+            if (targetVis.keys[i] === vKey) {
+                if (!quick && fullMarches[i] && fullMarches[i].pendingKey !== pendingKey) supersede(i);
+                continue;
+            }
+            if (cache.pending.has(pendingKey)) continue;
+            if (!quick) supersede(i);
             cache.pending.add(pendingKey);
             const chan = i;
             const ticket = stamp();
+            const march = { group: `relight${nextPartsSeq()}:${layer.id}:${chan}:${targetW}x${targetH}:${ticket}`, pendingKey, superseded: false };
+            if (!quick) fullMarches[chan] = march;
             if (!run) run = markStep("relight_maps", "start", { quick, lights: 0, w: targetW, h: targetH });
             run.lights++;
             cache.marching = (cache.marching || 0) + 1;
@@ -23622,7 +23651,8 @@ class InpaintEditor {
                     const pool = editorPool();
                     const posted = performance.now();
                     if (pool && !pool.off) {
-                        const res = await pool.run("relight_shadow", {
+                        const stripes = kernelRoute("relightStripes");
+                        vChan = await marchOnPool(pool, {
                             depth: marchDepth,
                             w: targetW,
                             h: targetH,
@@ -23632,10 +23662,8 @@ class InpaintEditor {
                             taps,
                             steps,
                             bias,
-                            row0: 0,
-                            rows: targetH,
-                        }, [], { priority: quick ? INTERACTIVE : NORMAL });
-                        vChan = new Uint8Array(res.vis);
+                            key: depthKey,
+                        }, { priority: quick ? INTERACTIVE : NORMAL, group: march.group, stripes: stripes === undefined ? STRIPES_PER_WORKER * pool.size : stripes });
                     } else {
                         vChan = shadowMarch(marchDepth, targetW, targetH, marchScale, lightVec, radius, taps, steps, bias, 0, targetH);
                     }
@@ -23661,12 +23689,14 @@ class InpaintEditor {
                         }
                     }
                 } catch (err) {
-                    console.warn(`relight_shadow channel ${chan} failed:`, err);
+                    // a superseded march's cancelled stripes (the pool's CancelledError): a newer march of the channel took over
+                    if (!(err && err.cancelled)) console.warn(`relight_shadow channel ${chan} failed:`, err);
                 } finally {
                     cache.marching--;
                     this._relightMarches--;
                     if (!cache.marching) markStep("relight_maps", "idle", { quick });
-                    cache.pending.delete(pendingKey);
+                    if (!march.superseded) cache.pending.delete(pendingKey);   // a superseded one's key was freed when it was, and may be a newer march's now
+                    if (fullMarches[chan] === march) fullMarches[chan] = null;
                     // the channel still lacks the key it wants now and no march for that key is on its way (a light turned
                     // off and on while its march ran, a march for a key left behind): ask for one
                     const want = this.relightChannelKey(layer, chan, quick);

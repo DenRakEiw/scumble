@@ -1,0 +1,3 @@
+[skip] relight node tests (RELIGHT_GATE_SKIP_NODE=1)
+[FAIL] CDP session error: Received message 257:None is not WSMsgType.TEXT
+FAIL

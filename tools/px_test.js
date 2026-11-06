@@ -737,6 +737,192 @@ async function relightBench(js, simd) {
 }
 
 /**
+ * K12 (docs/PLAN_WASM_BUILD.md §4.5): relight's march in stripes. S stripes into one shared `out` give the bytes of one
+ * call, for the twin (point and spot go as kind 0) and the Rust sun on both builds and through kernels.js as a worker
+ * routes it, at 512 x 341 and 1024 x 682 with taps 1 / 3 / 4 / 16 and steps 1 / 16 / 32 / 64, a light on a pixel, below
+ * the surface and off the map, the sun straight up and grazing. The Rust sun's stripes copy the depth map once (the
+ * one-slot resident copy, keyed), a new key or another size copies it again and never answers from the old copy.
+ * `stripePlan`. And `marchOnPool` on a real WorkerPool whose workers answer as inpaint_worker.js does (from the twin): the
+ * same bytes, no transfer and the rows back; a depth map that is not on a SharedArrayBuffer (the node's page) or the
+ * route 0 go as one job; a failed stripe or a reply with other rows rejects the march and cancels the rest of its group;
+ * a group cancelled from outside (a superseded march) rejects with a CancelledError, sends none of its queued stripes
+ * and leaves another march's group alone.
+ */
+async function relightStripeCases(js, simd, scalar) {
+    const RL = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
+    const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);   // loaded by relightBench already
+    const { lightToMap, defaultLight, stripePlan, marchOnPool } = RL;
+    if (typeof stripePlan !== "function" || typeof marchOnPool !== "function") {
+        check("inpaint_relight.js exports stripePlan and marchOnPool (K12)", false);
+        return;
+    }
+    let ok = true, detail = "";
+    for (const h of [1, 7, 31, 32, 33, 63, 64, 65, 100, 341, 682, 2731]) {
+        for (const n of [0, 1, 2, 3, 7, 24, 32, 1000]) {
+            const plan = stripePlan(h, n);
+            let at = 0, bad = "";
+            for (const [r0, rows] of plan) {
+                if (r0 !== at || !(rows >= 1)) bad = bad || "a gap or an empty stripe";
+                if (plan.length > 1 && rows < 32) bad = bad || "a stripe under 32 rows";
+                at = r0 + rows;
+            }
+            if (at !== h) bad = bad || `covers ${at} of ${h} rows`;
+            if (plan.length > Math.max(1, n)) bad = bad || `${plan.length} stripes for ${n}`;
+            if (h >= 64 && n >= 2 && plan.length < 2) bad = bad || "not split";
+            if (bad) { ok = false; detail = `h ${h}, ${n} asked: ${bad} ${JSON.stringify(plan).slice(0, 120)}`; break; }
+        }
+        if (!ok) break;
+    }
+    check("stripePlan covers every row once and in order, in stripes of 32 rows or more, never more than asked", ok, detail);
+
+    // S stripes into one shared out against one call of the same kernel
+    const striped = (impl, depth, w, h, a, S, key) => {
+        const out = new Uint8Array(new SharedArrayBuffer(w * h));
+        for (const [r0, rows] of stripePlan(h, S)) impl.shadowMarch(depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, r0, rows, out, key);
+        return out;
+    };
+    const one = (impl, depth, w, h, a) => impl.shadowMarch(depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, 0, h);
+    ok = true; detail = "";
+    let cases = 0;
+    K.setKernels("rust");   // a worker's mode: the sun on Rust (relightBench left the twins in force)
+    for (const [w, h, combos, counts] of [
+        [512, 341, [[1, 16], [3, 1], [4, 32], [16, 64], [4, 64], [1, 1]], [2, 7, 10]],
+        [1024, 682, [[1, 16], [4, 32]], [5, 21]],
+    ]) {
+        const sab = new Uint16Array(new SharedArrayBuffer(w * h * 2));
+        sab.set(smoothDepth(w, h));
+        const map = { data: sab, w, h }, long = Math.max(w, h), scale = 0.5 * long;
+        const lights = [];
+        for (const [type, fx, fy, dist] of [["point", 0.30, 0.35, -30], ["spot", 0.65, 0.12, -60], ["sun", 0.15, 0.20, -30]]) {
+            const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
+            lights.push([type, [lm.mx, lm.my, lm.mz, type === "sun" ? 1 : 0]]);
+        }
+        lights.push(["a point on a pixel", [Math.floor(w / 3), Math.floor(h / 2), scale * 0.6, 0]]);
+        lights.push(["a point below the surface", [w * 0.5, h * 0.5, scale * 0.05, 0]]);
+        lights.push(["a point off the map", [-0.4 * w, 1.3 * h, scale * 0.8, 0]]);
+        lights.push(["the sun straight up", [0, 0, 1, 1]]);
+        lights.push(["the sun grazing", [1, 0.25, 0.02, 1]]);
+        for (const [taps, steps] of combos) {
+            for (const [name, light] of lights) {
+                const a = { scale, light, radius: 0.3 * 0.05 * long, taps, steps, bias: 0.005 * scale };
+                const impls = light[3] === 1 ? [["rust simd", simd, "k:sun"], ["rust scalar", scalar, "k:sun"], ["kernels.js (a worker's route)", K, "k:sun"]] : [["twin", js, null]];
+                for (const [iname, impl, key] of impls) {
+                    const want = one(iname.startsWith("kernels") ? simd : impl, sab, w, h, a);
+                    for (const S of counts) {
+                        cases++;
+                        const got = striped(impl, sab, w, h, a, S, key ? `${key}:${w}x${h}` : null);
+                        if (!eqBytes(got, want)) { ok = false; detail += `${detail ? "; " : ""}${w} x ${h} ${name} ${iname} taps ${taps} steps ${steps} in ${S}`; }
+                    }
+                }
+            }
+        }
+    }
+    K.setKernels("js");
+    check(`shadow_march in stripes into one shared out equals one call: the twin (point, spot) and the Rust sun on both builds and through kernels.js (${cases} cases)`, ok, detail);
+
+    // the one-slot resident depth copy, on an instance of its own: a key copies the map once over all stripes
+    {
+        const w = 512, h = 341, n = w * h;
+        const fresh = new P.Px(new WebAssembly.Instance(simd.module, {}), simd.module);
+        const d1 = smoothDepth(w, h), d2 = d1.map((v, i) => (i % 7 === 0 ? 65535 - v : v)), small = smoothDepth(256, 170);
+        const a = { scale: 256, light: [0.3, -0.2, 0.9, 1], radius: 7.7, taps: 4, steps: 32, bias: 1.28 };
+        const mb = (f) => { P.pxTimed(true); P.pxCalls(true); try { f(); return P.pxLaps().copyInMB; } finally { P.pxTimed(false); } };
+        const depthMB = (n * 2) / 1048576;
+        let r1, r2, r3, r4;
+        const keyed = mb(() => { r1 = striped(fresh, d1, w, h, a, 8, "map:1"); });
+        const again = mb(() => { r2 = striped(fresh, d1, w, h, a, 8, "map:1"); });
+        const plain = mb(() => { r3 = striped(fresh, d1, w, h, a, 8, null); });
+        const next = mb(() => { r4 = striped(fresh, d2, w, h, a, 8, "map:2"); });
+        const want1 = one(simd, d1, w, h, a), want2 = one(simd, d2, w, h, a);
+        const r5 = striped(fresh, small, 256, 170, a, 4, "map:2");   // the same key on another size: copied again
+        const want5 = one(simd, small, 256, 170, a);
+        check("the Rust sun's stripes with a key copy the depth map once (8 stripes), again none, without a key once a stripe",
+            keyed < 1.5 * depthMB && again < 0.01 && plain > 7.5 * depthMB, `${keyed.toFixed(2)} / ${again.toFixed(2)} / ${plain.toFixed(2)} MB, the map ${depthMB.toFixed(2)} MB`);
+        check("a new key copies the new map and never answers from the old one; a key on another size copies again",
+            eqBytes(r1, want1) && eqBytes(r2, want1) && eqBytes(r3, want1) && eqBytes(r4, want2) && !eqBytes(want1, want2) && next > 0.9 * depthMB && eqBytes(r5, want5));
+    }
+
+    // marchOnPool on a real WorkerPool: workers that answer relight_shadow as inpaint_worker.js does, a tick later
+    const { WorkerPool, CancelledError } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_pool.js")).href);
+    const sent = [];
+    const answer = (msg, w, fail) => {
+        try {
+            const { depth, w: mw, h: mh, scale, light, radius, taps, steps, bias, row0, rows, out } = msg;
+            if (fail && fail(msg)) throw new Error("stripe failed on purpose");
+            if (out) {
+                js.shadowMarch(depth, mw, mh, scale, light, radius, taps, steps, bias, row0, rows, out);
+                const back = msg.tag === "badrows" && row0 > 0 ? rows + 1 : Math.min(rows, mh - row0);
+                return { id: msg.id, ok: true, row0, rows: back };
+            }
+            const vis = js.shadowMarch(depth, mw, mh, scale, light, radius, taps, steps, bias, row0, rows);
+            return { id: msg.id, ok: true, vis: vis.buffer, row0, rows };
+        } catch (err) { return { id: msg.id, ok: false, error: String((err && err.message) || err) }; }
+    };
+    const poolOf = (size, fail = null) => new WorkerPool({
+        size,
+        create: () => {
+            const wk = { onmessage: null, onerror: null, terminate() {} };
+            wk.postMessage = (msg, transfer) => {
+                sent.push({ msg, transfer: transfer || [] });
+                setTimeout(() => wk.onmessage({ data: answer(msg, wk, fail) }), 1);
+            };
+            return wk;
+        },
+    });
+    const w = 160, h = 330, plain16 = smoothDepth(w, h), shared16 = new Uint16Array(new SharedArrayBuffer(w * h * 2));
+    shared16.set(plain16);
+    const args = (depth, tag) => ({ depth, w, h, scale: 80, light: [40, 30, 50, 0], radius: 2.4, taps: 4, steps: 32, bias: 0.4, key: null, tag });
+    const want = js.shadowMarch(plain16, w, h, 80, [40, 30, 50, 0], 2.4, 4, 32, 0.4, 0, h);
+    const of = (tag) => sent.filter((s) => s.msg.tag === tag);
+    {
+        const pool = poolOf(3);
+        const got = await marchOnPool(pool, args(shared16, "s"), { priority: 1, group: "g:s", stripes: 8 });
+        const s = of("s"), plan = stripePlan(h, 8);
+        check("marchOnPool on a SharedArrayBuffer: the stripes of stripePlan, one shared out, no transfer, the bytes of one call",
+            eqBytes(got, want) && s.length === plan.length && plan.length > 1 && s.every((x, i) => x.msg.out && x.msg.out.buffer === s[0].msg.out.buffer
+                && x.msg.out.buffer instanceof SharedArrayBuffer && x.transfer.length === 0 && x.msg.row0 === plan[i][0] && x.msg.rows === plan[i][1]) && got.buffer === s[0].msg.out.buffer,
+            `${s.length} jobs for ${plan.length} stripes`);
+        const one1 = await marchOnPool(pool, args(plain16, "plain"), { priority: 1, group: "g:p", stripes: 8 });
+        const one0 = await marchOnPool(pool, args(shared16, "zero"), { priority: 1, group: "g:z", stripes: 0 });
+        const p = of("plain"), z = of("zero");
+        check("marchOnPool without a SharedArrayBuffer (the node's page) and on the route 0: one job a light, rows 0..h, the reply's own buffer",
+            eqBytes(one1, want) && eqBytes(one0, want) && p.length === 1 && z.length === 1 && !p[0].msg.out && !z[0].msg.out
+                && p[0].msg.row0 === 0 && p[0].msg.rows === h, `${p.length} / ${z.length} jobs`);
+        pool.terminate();
+    }
+    {
+        const plan = stripePlan(h, 8);
+        const pool = poolOf(2, (msg) => msg.tag === "fail" && msg.row0 === plan[1][0]);
+        const c0 = pool.stats().cancelled;
+        let err = null;
+        try { await marchOnPool(pool, args(shared16, "fail"), { priority: 1, group: "g:f", stripes: 8 }); } catch (e) { err = e; }
+        await new Promise((r) => setTimeout(r, 20));
+        check("a failed stripe rejects its march with the stripe's error and cancels the rest of its group",
+            !!err && !err.cancelled && /on purpose/.test(err.message) && pool.stats().cancelled > c0 && of("fail").length < plan.length && pool.pending === 0,
+            `${err && err.message}; ${of("fail").length} of ${plan.length} sent, ${pool.stats().cancelled - c0} cancelled`);
+        let bad = null;
+        try { await marchOnPool(pool, args(shared16, "badrows"), { priority: 1, group: "g:b", stripes: 4 }); } catch (e) { bad = e; }
+        check("a stripe's reply with other rows than it was sent rejects the march", !!bad && /rows/.test(bad.message), bad && bad.message);
+        pool.terminate();
+    }
+    {
+        const pool = poolOf(2);
+        const A = marchOnPool(pool, args(shared16, "A"), { priority: 1, group: "g:A", stripes: 4 });
+        const B = marchOnPool(pool, args(shared16, "B"), { priority: 1, group: "g:B", stripes: 4 });
+        const sentA = of("A").length;   // the pool's two workers took A's first two stripes at once
+        const n = pool.cancel("g:A");   // superseded: what ensureRelightMaps does for a newer full march of the channel
+        let errA = null;
+        try { await A; } catch (e) { errA = e; }
+        const gotB = await B;
+        check("a cancelled march rejects with a CancelledError, sends none of its queued stripes, and another group's march lands whole",
+            errA instanceof CancelledError && errA.cancelled === true && of("A").length === sentA && sentA < 4 && n === 4 && eqBytes(gotB, want) && of("B").length === 4,
+            `${errA && errA.name}; A sent ${of("A").length} (${sentA} before the cancel), ${n} cancelled, B ${of("B").length}`);
+        pool.terminate();
+    }
+}
+
+/**
  * The call counters of px.js (docs/PLAN_WASM_BUILD.md §3.4): a kernel call counts under its export name and nothing
  * else does, the counts go on across a new instance of the same module (kernels.js `releaseIfLarge`, here made to
  * happen for real), the instance's own exports (`px.raw`) are not counted, and a reset clears them.
@@ -3321,6 +3507,7 @@ async function main() {
     await blendGlslCases();
     await tierCCases(js, simdPx, scalarPx, ref);
     await relightBench(js, simdPx);   // before memoryCases grows simdPx past 2 GB
+    await relightStripeCases(js, simdPx, scalarPx);
     await counterCases(simdPx);
     await splitCases(simdPx, js);
     await routeCases(js, simdPx, scalarPx, raster);

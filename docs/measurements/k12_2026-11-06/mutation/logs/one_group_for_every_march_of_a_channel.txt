@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-one_group_for_every_march_of_a_channel --offline --tiles on relight  (rc 1, 46 s)
+relight rc=1 30s FAIL
+SOME FAILED

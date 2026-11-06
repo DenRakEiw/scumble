@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0, D0 and K5 done 2026-11-06 (§7; K5 took ABI 21); Stop 3 and W1 done the same day (§7); next K12.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0, D0 and K5 done 2026-11-06 (§7; K5 took ABI 21); Stop 3, W1 and K12 done the same day (§7); next Stop 5.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -1274,3 +1274,88 @@ writer, §1.4). `docs/measurements/w1_2026-11-06/` (`w1_chain.sh`, `w1_lock.py`,
   the order has it. W1 reorders nothing.
 
 Next: K12.
+
+### K12 (2026-11-06): relight's march in stripes
+
+The order of 2026-10-24 (W1 -> K12, Stop 5), on `0ca7d5b`; normal tier by the table, with the pixel path's tests of
+§4.5 (the shadow maps change how they are made, not their bytes). `docs/measurements/k12_2026-11-06/` (`k12_chain.sh`,
+`k12_others.py`, `summarize.py`, `before/`, `after/` and `after_build/` (the build's own after, the same code but the
+march's group name) with their `summary.txt`, `gates/`, `mutation/`; `harness_try1/` is a first baseline, not used).
+- **Built (JS only, ABI 21 unchanged, `px.wasm` and `px_scalar.wasm` untouched):** `inpaint_relight.js` `stripePlan(h,
+  count)` (even contiguous stripes, never under `STRIPE_MIN_ROWS` 32) and `marchOnPool(pool, args, { priority, group,
+  stripes })`: a depth map on a SharedArrayBuffer marches in `STRIPES_PER_WORKER` 4 x the pool's size stripes (32 of
+  about 85 rows at 4096 x 2731, 21 for the quick map) into one shared `out`, each reply `{ row0, rows }` without a
+  transfer and checked against the plan; a failed stripe or other rows cancel the rest of the group and reject; a page
+  that is not isolated (the node's) and the new route `relightStripes` 0 or 1 (`px/kernels.js`, kind "count") keep one
+  job a light. `ensureRelightMaps`: the quick depth on a SAB; one pool group per march (`relight<n>:<layer>:<channel>:
+  <size>:<ticket>`, `n` the page-wide `nextPartsSeq`, so a second tab of the same document never shares a group); a
+  full march supersedes the channel's march in flight when the light moves on, goes off or comes back to the key the
+  channel holds (its queued stripes cancelled, its pending key freed at once and never again at its end); a quick
+  march is never superseded; `CancelledError` silent. The worker writes a stripe at `row0 * w` and answers with a
+  `timing` (kernel ms, rows). `px.js` `_slot(kind, key, data, bytes)`: one resident block per kind (§3.2), copied
+  again only when the key (the map's data and size, named by the window) or the size changes, so the Rust sun's
+  stripes copy the 22 MB depth map once a worker.
+- **The chain rows pinned (K0c's "Rows to pin"):** W0b's relight chain rows (62 / 60 / 483 ms, 16 / 16 / 2,376
+  chains) did not differ because full marches held the pool (§4.5's inference): addFilterLayer leaves the relight
+  layer active with the lights tool, so every draw runs `drawLightsOverlay` -> `ownLightPos` -> `belowStats`, which
+  after a whole change of a layer below reads the whole picture at 256 px on the window (2,376 exact chains, about
+  380 ms at 15k), and whether that read fell into the timed frame or into a draw in the 30 ms wait before it decided
+  the row. `perf_test.py` now runs those rows with the paint layer and tool once the setup's marches have landed, the
+  change and its frame in one task, and the overlay's read as its own row (`whole_1to1_lights`); 16 built / 2,344
+  asked in every run since. A finding for later (not K12's): with the lights tool on a relight layer, a whole change
+  of a layer below costs the next frame about 380 ms on the window at 15k.
+- **The review** (a workflow over the build: 2 should, 5 nice; none rejected): the efficiency was computed for the
+  re-march rows only (the same light marched again unchanged), while the named one-light row, the one q6.7 reads, ran
+  its stripes slower: `perf_test.py` now computes it for the named rows too, and the build's runs regenerated from their
+  JSON give 0.669 [0.540-0.680] (`after_build/summary.txt`), below 0.85, against the re-march's 0.874; the new rows
+  (each worker's first stripe against its later ones, the other pool jobs and mip chains of a row) and the new runs
+  say why (below). The canvas backend had run the gate before case nk's last checks: run again (311 checks). The march's
+  group is unique for the page (`nextPartsSeq`); case nk counts the full marches posted (3) and requires exactly the
+  stripes of two cancelled, not `>= 2` jobs; a row with a sun (the Rust sun and the resident slot, which no row timed)
+  and a row of eight NORMAL jobs during a three-light march (what other NORMAL work waits for now) were added. Accepted
+  until K13: within one sun march a stripe can come from the f64 twin while the others come from Rust's f32 kernel, when
+  that worker's Rust call trapped and the job finished on the twin (kernels.js's recovery); before K12 a map came from
+  one kernel. The two differ on rare pixels (question 6.6; one flipped tap is 64 levels at 4 taps), only after a trap,
+  and K13 makes them byte-equal, so no check of the stripes' kernels was built.
+- **Tests:** `node tools/px_test.js` PASS: `relightStripeCases`, `stripePlan` over 12 heights x 8 counts, 308 cases of
+  S stripes into one buffer equal to one call (the twin for point, spot, a light on a pixel, below the surface and off
+  the map; the Rust sun straight up, grazing and through `lightToMap`, on both builds and through kernels.js; 512 x 341
+  and 1024 x 682 at taps / steps 1/16 to 16/64 in 2 to 21 stripes), the slot (eight keyed stripes copy the map once,
+  0.33 MB against 2.66 MB unkeyed; a new key or size copies again), `marchOnPool` on a real `WorkerPool` with fake
+  workers (the failure, rows and outside-cancel paths). The `relight` gate on both backends `--offline` (`k12-tiles-d`
+  312 in-app checks, `k12-canvas-c` 311), its new case nk ("three nudges: only the last key lands", for a point and a
+  sun; three nudges without a flush cancel nothing; there, back and there again posts two full marches and lands one;
+  the route 0 is one job of all rows); `pxjobs`, `lint`, `types` PASS; `build_node.py --check` only the expected
+  "differs" lines (the node build is due at the release). A mutation round on a copy tree (`mutation/`, on the build
+  before the review's two code changes): 16 of 16 red, two of them by a livelocked or lost page rather than a check
+  (a superseded march that frees its key again re-asks for ever; quick marches superseded), both the reason for the
+  guards.
+- **Before -> after** (medians of three fresh runs, 15000 x 10000, map 4096 x 2731, `perf_test.py --filter=relight`;
+  `after/summary.txt`; the third after run ran beside another agent's torch job and is 1.3-2.2x slower on every march
+  row): one light moved, its shadows landed 3,545 -> 649 ms (626-923), three lights 3,665 -> 1,031 (1,026-1,538), a
+  drag step's quick map 44 -> 7.4, the first march after start 3,949 -> 2,286; a pan at 1:1 during a march, its worst
+  frame 92 -> 10.4 ms (the march 3,865 -> 561). The A/B in one run (route `relightStripes` 0 against the stripes, the
+  same lights): one light 3,492 -> 592, three 3,585 -> 1,106, a sun (the Rust sun) 1,462 -> 251. The window's longest
+  blocks inside their spreads (one light 56 -> 58, three 53 -> 47) but the drag step's, 30 -> 37 ms, outside them: the
+  same landing, now within 6 ms of the step (inferred: in its task instead of a block of its own). The chain rows are
+  not worse (1:1 frame 32.8 -> 31.8, its mips 100 -> 105 (93-107); fit 19.9 -> 19.3; the 192 px pictures 338 -> 340 and
+  16.4 -> 10.8; the lights overlay 383 -> 380), and a whole change's mips during a three-light march 163 -> 150 (the
+  mips, INTERACTIVE, wait for at most one stripe). The route: stripes win every march row far beyond the spreads; no
+  route entry.
+- **For Stop 5:** the parallel efficiency (the one-job march's summed kernel ms / (8 workers x the stripes' wall)): one
+  light 0.670 (0.528-0.689) on the named row (moved and released: what q6.7 means) and 0.728 (0.632-0.827) on the same
+  march again; three lights 0.914 / 0.853; a sun 0.693 / 0.703 (stripes of 60-75 ms). So one light and the sun are
+  below q6.7's 0.85 and three lights at or above it. The loss is the idle share (busy 0.89-0.98 for the twin, 0.78-0.81
+  for the sun: the tail of 32 stripes on 8 workers and the dispatch) and the same work running slower on eight busy
+  cores than as one job (kernel x 1.07-1.39), plus, on the named row only, the window's work after the release:
+  `diag/` marched a moved light with the window left alone against moved and released, in the same runs (beside the
+  other agent's GPU job, so only the pairs count): released lower in all three (0.604 / 0.648, 0.682 / 0.874, 0.595 /
+  0.659), and in the least loaded run left alone equals the re-march. No other pool job and no mip chain ran in those
+  rows. Shared-memory wasm threads would remove none of it (the twin is JS and reads the shared map in place; the sun
+  copies it once a worker); what they could win is the dispatch, inside the idle share. New costs: other NORMAL pool
+  work queues behind a march's stripes (eight small NORMAL jobs posted after a three-light move wait 1,019 ms, 5 ms with
+  one job a light; a transform's or a canvas turn's resample rows, `psd_read`, any `pool.run` without a priority); not
+  built: a march keeping about pool.size stripes queued at a time, or the full marches below NORMAL. And the drag step's
+  block above. Not measured: `STRIPES_PER_WORKER` 8.
+
+Next: Stop 5.

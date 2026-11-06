@@ -2231,6 +2231,150 @@ JS = r"""
         await commands.run("close_document", { doc: docC.id, force: true });
     }
 
+    // -------------------------------------------------------------------------
+    // Case nk (K12, docs/PLAN_WASM_BUILD.md §4.5): three nudges, only the last key lands. Each nudge's flush posts a full
+    // march of the light, in stripes into one shared buffer; the next flush supersedes it and its stripes are cancelled
+    // (the pool counts them), so of the three only the last key's march lands (one "landed" mark, current), the channel
+    // holds that key and the bytes of one call of the kernel for it, and nothing warns about the cancelled ones. A point
+    // light (the twin) and a sun (the Rust sun; its depth map resident in the workers), then the route relightStripes 0
+    // (one job a light, as before K12) gives the bytes of one call too.
+    // -------------------------------------------------------------------------
+    {
+        const E = ed.constructor;
+        const K = await import("./editor/px/kernels.js");
+        const J = await import("./editor/inpaint_jobs.js");
+        const docK = shell.newDocument();
+        shell.activate(docK);
+        await new Promise((r) => setTimeout(r, 150));
+        docK.resizeCanvas();
+        const kW = 512, kH = 384, kMw = 256, kMh = 192;
+        const kBase = mk(kW, kH);
+        { const g = kBase.getContext("2d"); g.fillStyle = "#7a7a7a"; g.fillRect(0, 0, kW, kH); }
+        Object.defineProperty(kBase, "naturalWidth", { value: kW });
+        Object.defineProperty(kBase, "naturalHeight", { value: kH });
+        await docK.setBaseFromCanvas(kBase, { keepLayers: false });
+        await settle(docK);
+        const kDepth = new Uint16Array(kMw * kMh);
+        for (let y = 0; y < kMh; y++) {
+            for (let x = 0; x < kMw; x++) {
+                const dx = (x + 0.5 - kMw * 0.45) / (kMw * 0.18), dy = (y + 0.5 - kMh * 0.55) / (kMh * 0.22), r2 = dx * dx + dy * dy;
+                kDepth[y * kMw + x] = r2 <= 1 ? Math.round(20000 - Math.sqrt(1 - r2) * 12000) : 42000 + ((x * 7 + y * 13) % 97) * 40;
+            }
+        }
+        await docK.setMap("depth", makeMap("depth", kMw, kMh, kDepth, [kW, 0, 0, kH, 0, 0]));
+        const kMap = docK.maps.depth;
+        check("nk: the depth map is on a SharedArrayBuffer (the window is isolated)", !!kMap && kMap.data.buffer instanceof SharedArrayBuffer);
+        const kFx = docK.addFilterLayer("relight");
+        const pool = J.editorPool();
+        // the bytes of one call of the kernel for the light as it is now, as ensureRelightMaps computes its full march
+        const oneCall = () => {
+            const l = kFx.params.lights[0], ds = RL.relightDepthScale(kFx.params);
+            const lm = RL.lightToMap(l, kMap, { depth_scale: ds });
+            const scaleZ = (ds / 100) * Math.max(kMw, kMh);
+            const diff = Number.isFinite(l.diffusion) ? Number(l.diffusion) : 30;
+            return K.shadowMarch(kMap.data, kMw, kMh, scaleZ, [lm.mx, lm.my, lm.mz, l.type === "sun" ? 1 : 0],
+                (diff / 100) * (0.05 * Math.max(kMw, kMh)), 4, 32, 0.005 * scaleZ, 0, kMh);
+        };
+        const channelDiff = () => {
+            const vis = kFx._relight && kFx._relight.vis, want = oneCall();
+            if (!vis || !vis.data || vis.w !== kMw || vis.h !== kMh) return -1;
+            let n = 0;
+            for (let i = 0; i < kMw * kMh; i++) if (vis.data[i * 4] !== want[i]) n++;
+            return n;
+        };
+        const nudge = () => docK.onKey({ key: "ArrowRight", shiftKey: true, preventDefault: () => {} });
+        const warned = [];
+        const warnWas = console.warn;
+        console.warn = (...a) => { warned.push(a.map(String).join(" ")); warnWas.apply(console, a); };
+        try {
+            for (const type of ["point", "sun"]) {
+                kFx.params = { ...kFx.params, lights: [{ ...defaultLight(0, { width: kW, height: kH }), type, x: 140, y: 150, dist: -40 }] };
+                docK.markFilterChanged(kFx);
+                docK.selectLayers([kFx.id]);
+                docK.setTool("lights");
+                kFx._selectedLightId = kFx.params.lights[0].id;
+                await settle(docK);
+                const c0 = pool.stats().cancelled, t0 = performance.now();
+                E.jobTimings(true);
+                const keys = [];
+                for (let i = 0; i < 3; i++) {
+                    nudge();
+                    if (typeof kFx._flushNudge === "function") kFx._flushNudge();   // its 300 ms not waited for: the next flush supersedes it
+                    keys.push(docK.relightChannelKey(kFx, 0, false));
+                }
+                await settle(docK);
+                const landed = E.stepMarks(false).filter((m) => m.op === "relight_maps" && m.t >= t0 && m.step === "landed" && !m.quick);
+                const vis = kFx._relight && kFx._relight.vis;
+                const jobs = E.jobTimings(true).filter((t) => t.op === "relight_shadow" && t.w === kMw && t.h === kMh);
+                const cancelled = pool.stats().cancelled - c0;
+                notes["nk_" + type] = { landed: landed.length, cancelled, jobs: jobs.length, keysDistinct: new Set(keys).size };
+                check(`nk (${type}): three nudges, only the last key lands`, new Set(keys).size === 3 && landed.length === 1 && landed[0].current === true
+                    && !!vis && vis.keys[0] === keys[2], { landed: landed.map((m) => m.current), key: vis && vis.keys[0] === keys[2] });
+                // counted by marches, not by jobs (a single cancelled march is several stripes): three full marches posted, and
+                // the pool cancelled exactly the stripes of two of them (the flushes run in one task, so no stripe of a
+                // superseded march has answered when the next flush supersedes it)
+                const fullPosted = E.stepMarks(false).filter((m) => m.op === "relight_maps" && m.t >= t0 && m.step === "start" && !m.quick)
+                    .reduce((a, m) => a + (Number(m.lights) || 0), 0);
+                const perMarch = RL.stripePlan(kMh, RL.STRIPES_PER_WORKER * pool.size).length;
+                check(`nk (${type}): three full marches posted, the two superseded ones cancelled in the pool (${perMarch} stripes each)`,
+                    fullPosted === 3 && perMarch > 1 && cancelled === 2 * perMarch, { fullPosted, cancelled, perMarch });
+                const quickLanded = E.stepMarks(false).filter((m) => m.op === "relight_maps" && m.t >= t0 && m.step === "landed" && m.quick).length;
+                check(`nk (${type}): each nudge's quick march landed (a superseded full march takes no quick one with it)`, quickLanded === 3, { quickLanded });
+                check(`nk (${type}): the march ran in stripes (more than one job, each fewer rows than the map)`, jobs.length >= 2 && jobs.some((t) => t.row0 > 0)
+                    && jobs.every((t) => t.rows < kMh), jobs.map((t) => [t.row0, t.rows]).slice(0, 8));
+                check(`nk (${type}): its stripes ran ${type === "sun" ? "Rust" : "the twin"}`, jobs.length > 0
+                    && jobs.every((t) => (type === "sun") === !!(t.pxCalls && t.pxCalls.shadow_march)), jobs.map((t) => t.pxCalls).slice(0, 3));
+                check(`nk (${type}): the channel holds the bytes of one call for the last key`, channelDiff() === 0, { diff: channelDiff() });
+                check(`nk (${type}): nothing in flight afterwards`, docK.relightMarching() === 0 && pool.pending === 0, { marching: docK.relightMarching(), pending: pool.pending });
+            }
+            // a quick march is never cancelled: three nudges without their flush post three quick marches, all of them land
+            // (the quick map trails the pointer) and the pool cancels nothing
+            {
+                await settle(docK);
+                const c0 = pool.stats().cancelled, t0 = performance.now();
+                for (let i = 0; i < 3; i++) nudge();
+                if (kFx._nudgeRelightTimer) { clearTimeout(kFx._nudgeRelightTimer); kFx._nudgeRelightTimer = null; }
+                for (let n = 0; docK.relightMarching() > 0 && n < 2000; n++) await new Promise((r) => setTimeout(r, 5));
+                const quickLanded = E.stepMarks(false).filter((m) => m.op === "relight_maps" && m.t >= t0 && m.step === "landed" && m.quick);
+                check("nk: three nudges' quick marches all land and none is cancelled", quickLanded.length === 3 && pool.stats().cancelled === c0,
+                    { landed: quickLanded.length, cancelled: pool.stats().cancelled - c0 });
+                if (typeof kFx._flushNudge === "function") kFx._flushNudge();
+                await settle(docK);
+            }
+            // there, back and there again within one march's time: A, then the key the channel holds (nothing to march; A's
+            // march superseded), then A again: two full marches posted, no third (the first A's march, cancelled, never
+            // frees the key the second one holds), and only the second lands
+            {
+                const t0 = performance.now();
+                for (const key of ["ArrowRight", "ArrowLeft", "ArrowRight"]) {
+                    docK.onKey({ key, shiftKey: true, preventDefault: () => {} });
+                    if (typeof kFx._flushNudge === "function") kFx._flushNudge();
+                }
+                await settle(docK);
+                const ms = E.stepMarks(false).filter((m) => m.op === "relight_maps" && m.t >= t0 && !m.quick);
+                const posted = ms.filter((m) => m.step === "start").reduce((a, m) => a + (Number(m.lights) || 0), 0);
+                const landed = ms.filter((m) => m.step === "landed");
+                check("nk: there, back and there again: two full marches posted, one lands, the channel holds A", posted === 2 && landed.length === 1
+                    && landed[0].current === true && kFx._relight.vis.keys[0] === docK.relightChannelKey(kFx, 0, false) && channelDiff() === 0,
+                    { posted, landed: landed.length, diff: channelDiff() });
+            }
+            // the route relightStripes 0: one job a light (the node's page, a page that is not isolated, goes so too)
+            E.setRoute("relightStripes", 0);
+            try {
+                E.jobTimings(true);
+                nudge();
+                if (typeof kFx._flushNudge === "function") kFx._flushNudge();
+                await settle(docK);
+                const jobs = E.jobTimings(true).filter((t) => t.op === "relight_shadow" && t.w === kMw && t.h === kMh);
+                check("nk: on the route relightStripes 0 the march is one job of all rows, the same bytes as one call",
+                    jobs.length === 1 && jobs[0].row0 === 0 && jobs[0].rows === kMh && channelDiff() === 0, { jobs: jobs.map((t) => [t.row0, t.rows]), diff: channelDiff() });
+            } finally { E.setRoute("relightStripes", null); }
+        } finally { console.warn = warnWas; }
+        const bad = warned.filter((w) => /relight_shadow|cancelled/i.test(w));
+        check("nk: no warning for a cancelled march", bad.length === 0, bad.slice(0, 3));
+        await commands.run("close_document", { doc: docK.id, force: true });
+    }
+
     // Keep lights tool active for visual screenshot
     ed.setTool("lights");
     ed.selectLayers([fx.id]);
