@@ -90,6 +90,8 @@ const EXPECT = {
     "moss_image_local/prompt": ["unet", ["slg.model"]],
     // P-H3-Image (docs/PLAN_PH3.md): the declared source is the recipe's own P-H3-Image LoRA, so the rows stack after it
     "p_h3_image_local/prompt": ["lora", ["shift.model"]],
+    // MOSS-Image Edit (LR6): the declared source is the recipe's edit LoRA, so the rows stack after it, before the SLG
+    "moss_image_edit_local/prompt": ["lora", ["slg.model"]],
     "qwen_image_edit_2_1_local/prompt": ["unet", ["cache.model"]],
     "qwen_image_edit_2_1_turbo_local/prompt": ["unet", ["cache.model"]],
     "relight_qwen_local/prompt": ["unet", ["lora_relight.model"]],
@@ -117,7 +119,7 @@ const EXPECT = {
     "relight/comfycloud": ["10:37", ["10:89.model"]],
 };
 // the patches a chain must come before (the plan's patch graphs) and the switch graphs whose two branches both re-point
-const PATCH = { "qwen_image_edit_2_1_local/prompt": "QwenImage21Cache", "cloud_qwen_image_2_1_edit/comfycloud": "QwenImage21Cache", "cloud_z_image_turbo/comfycloud": "ModelSamplingAuraFlow", "moss_image_local/prompt": "SkipLayerGuidanceDiTSimple", "p_h3_image_local/prompt": "MiniMaxH3SigmaShift", "cloud_boogu_image_edit/comfycloud": "ModelSamplingAuraFlow" };
+const PATCH = { "qwen_image_edit_2_1_local/prompt": "QwenImage21Cache", "cloud_qwen_image_2_1_edit/comfycloud": "QwenImage21Cache", "cloud_z_image_turbo/comfycloud": "ModelSamplingAuraFlow", "moss_image_local/prompt": "SkipLayerGuidanceDiTSimple", "moss_image_edit_local/prompt": "SkipLayerGuidanceDiTSimple", "p_h3_image_local/prompt": "MiniMaxH3SigmaShift", "cloud_boogu_image_edit/comfycloud": "ModelSamplingAuraFlow" };
 const SWITCH = ["cloud_anima_base/comfycloud", "cloud_flux2_dev/comfycloud", "cloud_krea_2_turbo/comfycloud", "cloud_qwen_image_edit_2509/comfycloud"];
 
 async function main() {
@@ -258,10 +260,10 @@ async function main() {
         const raw = rawFile("moss_image_local");
         const local = (loras, more = {}) => ({ ...clone(raw), kind: "comfy", loras, ...more });
         const kept = [];
-        for (const id of ["flux2_klein_local", "flux3_klein_local", "moss_image_local", "p_h3_image_local", "qwen_image_edit_2_1_local", "qwen_image_edit_2_1_turbo_local"]) kept.push(`${id}=${JSON.stringify(byId(id).loras)}`);
-        check("the six local edit / generate recipes declare their family through list() (P-H3-Image its own LoRA node as the source too)",
-            eq(kept, ['flux2_klein_local={"family":"flux2_klein"}', 'flux3_klein_local={"family":"flux3"}', 'moss_image_local={"family":"moss_image"}', 'p_h3_image_local={"model":"lora","family":"p_h3_image"}', 'qwen_image_edit_2_1_local={"family":"qwen_image_2_1"}', 'qwen_image_edit_2_1_turbo_local={"family":"qwen_image_2_1"}']), short(kept));
-        const others = listed.filter((r) => r.loras !== undefined && !/^(flux2_klein|flux3_klein|moss_image|p_h3_image|qwen_image_edit_2_1(_turbo)?)_local$/.test(r.id)).map((r) => r.id);
+        for (const id of ["flux2_klein_local", "flux3_klein_local", "moss_image_local", "moss_image_edit_local", "p_h3_image_local", "qwen_image_edit_2_1_local", "qwen_image_edit_2_1_turbo_local"]) kept.push(`${id}=${JSON.stringify(byId(id).loras)}`);
+        check("the seven local edit / generate recipes declare their family through list() (P-H3-Image and MOSS-Image Edit their own LoRA node as the source too)",
+            eq(kept, ['flux2_klein_local={"family":"flux2_klein"}', 'flux3_klein_local={"family":"flux3"}', 'moss_image_local={"family":"moss_image"}', 'moss_image_edit_local={"model":"lora","family":"moss_image"}', 'p_h3_image_local={"model":"lora","family":"p_h3_image"}', 'qwen_image_edit_2_1_local={"family":"qwen_image_2_1"}', 'qwen_image_edit_2_1_turbo_local={"family":"qwen_image_2_1"}']), short(kept));
+        const others = listed.filter((r) => r.loras !== undefined && !/^(flux2_klein|flux3_klein|moss_image|moss_image_edit|p_h3_image|qwen_image_edit_2_1(_turbo)?)_local$/.test(r.id)).map((r) => r.id);
         const variants = listed.flatMap((r) => Object.entries(r.providers || {}).filter(([, v]) => v.loras !== undefined).map(([p]) => `${r.id}/${p}`));
         check("no other recipe declares loras at the top; of the variants only cloud_ideogram_4's", !others.length && eq(variants, ["cloud_ideogram_4/comfycloud"]), short({ others, variants }));
         const ideo = byId("cloud_ideogram_4").providers.comfycloud;
@@ -291,6 +293,19 @@ async function main() {
             && eq(qd.scumble_lora_1.inputs.model, ["edit_lora", 0]) && eq(qd.slg.inputs.model, ["scumble_lora_2", 0]) && eq(qd.edit_lora.inputs.model, ["unet", 0]), short({ srcD, slg: qd.slg.inputs.model }));
         const generic = L.modelSource(withLora.prompt, { ...withLora, loras: undefined }, info);
         check("the same graph without the declaration: the UNETLoader by the rule (the edit LoRA reads a MODEL)", eq(generic, { node: "unet", slot: 0, clip: null }), short(generic));
+        // the shipped MOSS-Image Edit recipe (LR6) declares its edit LoRA node `lora` as the source: the user's rows go after
+        // it, with the node list and with the class table alike; the edit LoRA keeps its UNETLoader and its file
+        const me = byId("moss_image_edit_local");
+        const meSrc = [info, null].map((inf) => L.modelSource(me.prompt, me, inf));
+        const qme = clone(me.prompt);
+        const meOut = L.spliceLoras(qme, me, ROWS2, info);
+        check("moss_image_edit_local: the declared source is its edit LoRA (both ways), the chain after it, slg on the chain's end, the edit LoRA on the UNETLoader with its file, the recipe's graph untouched",
+            eq(me.loras, { model: "lora", family: "moss_image" }) && meSrc.every((s) => eq(s, { node: "lora", slot: 0, clip: null })) && meOut.applied.length === 2
+            && eq(qme.scumble_lora_1.inputs.model, ["lora", 0]) && eq(qme.scumble_lora_2.inputs.model, ["scumble_lora_1", 0]) && eq(qme.slg.inputs.model, ["scumble_lora_2", 0])
+            && eq(qme.lora.inputs, { model: ["unet", 0], lora_name: "moss_image_edit_lora_rank_64_bf16.safetensors", strength_model: 1 }) && eq(me.prompt.slg.inputs.model, ["lora", 0]),
+            short({ meSrc, slg: qme.slg.inputs.model, l1: qme.scumble_lora_1 && qme.scumble_lora_1.inputs }));
+        const meRule = L.modelSource(me.prompt, { ...me, loras: undefined }, info);
+        check("... without its declaration the rule would take the UNETLoader (the rows before the edit LoRA): the declaration is what puts them after it", eq(meRule, { node: "unet", slot: 0, clip: null }), short(meRule));
         const wrong = L.modelSource(raw.prompt, { ...raw, loras: { model: "clip" } }, info);
         check("a declared node whose class gives no MODEL at its first output: no LoRAs, the reason said", "none" in wrong && /gives no MODEL/.test(wrong.none), short(wrong));
         // a Comfy Cloud recipe with an edit and a text graph (they share ids such as 75:70)
@@ -464,7 +479,7 @@ async function main() {
 
         // the recipe's side: every shipped graph
         const RF = {
-            "flux2_klein_local/prompt": "flux2_klein", "flux3_klein_local/prompt": "flux3", "moss_image_local/prompt": "moss_image",
+            "flux2_klein_local/prompt": "flux2_klein", "flux3_klein_local/prompt": "flux3", "moss_image_local/prompt": "moss_image", "moss_image_edit_local/prompt": "moss_image",
             "qwen_image_edit_2_1_local/prompt": "qwen_image_2_1", "qwen_image_edit_2_1_turbo_local/prompt": "qwen_image_2_1", "relight_qwen_local/prompt": "qwen_image",
             "realism_pass/prompt": null, "rtx_vsr_local/prompt": null, "upscale_model_local/prompt": null,
             "cloud_anima_base/comfycloud": null, "cloud_anima_preview/comfycloud": null, "cloud_boogu_image_edit/comfycloud": null,

@@ -1087,6 +1087,81 @@ same 21 warnings), types: ALL PASS. No other backend (no pixel path), no mutatio
 6. **`mcp_test.py`'s hint lists** gained `list_loras` (read-only) and `set_generation` (neither): the row named the gate,
    not the lists.
 
+### LR6 as built (2026-11-06)
+
+**Built:** `recipes/moss_image_edit_local.json` (new; "MOSS-Image Edit (ComfyUI)"): Comfy's template `image_moss_image_edit`
+(the research's copy, `frontendVersion` 1.57.1, read node by node with its links) with the canvas node's pictures, 20
+nodes: `img0`..`img3` `ImageFromBatch`, `scale0`..`scale3` `ImageScaleToTotalPixels` (lanczos, 1 MP, 16), `size`
+`GetImageSize(scale0)` -> `latent` `EmptyFlux2LatentImage`, `unet` `UNETLoader` (`moss_image_sft_bf16`) -> `lora`
+`LoraLoaderModelOnly` (`moss_image_edit_lora_rank_64_bf16.safetensors`, 1) -> `slg` `SkipLayerGuidanceDiTSimple` ("",
+"22", 0, 1) -> `ks` `KSampler` (30, CFG 4, euler, normal, denoise 1, the canvas's seed), `clip` `CLIPLoader`
+(`qwen3.5_9b_int8_convrot`, `moss_image`), `vae` `VAELoader` (`flux2-vae_small`), `pos` / `neg` `TextEncodeMOSSImageEdit`
+(the canvas's prompt 7 / negative 12, the VAE, `edit_format` `Moss-Image-Edit` on both, `images.image_0..3` = `scale0..3`,
+`image_strength` 1), `decode`; `refs: { "name": "image {n}", "slots": 4 }`, `loras: { "model": "lora", "family":
+"moss_image" }`, `needs` exactly the graph's thirteen classes (`TextEncodeMOSSImageEdit` and `LoraLoaderModelOnly` among
+them), the eight Settings rows of §3.6 (Model, Text encoder, VAE, Edit LoRA, LoRA strength, Steps, CFG, Megapixels on
+`scale0` alone), `models` with the Comfy-Org links (the edit LoRA under `loras`, the template's int8 SFT and w4a8 encoder
+beside the user's files), the description with "0.43 or newer", the template's notes, the Megapixels row's reach, the
+ai-toolkit sentence, "not run yet" and §3.6's licence sentence word for word. `renderer/editor/comfyrefs.js` ENCODERS:
+`TextEncodeMOSSImageEdit: { name: "image {n}", inputs: byRank }` (P-H3's `byRank`: the node sorts its present
+`images.image_k`, 0-based, and the identity trace numbers them by rank). `tools/refs/comfy_templates/object_info.json`
+(99 classes): `TextEncodeMOSSImageEdit` and `SkipLayerGuidanceDiTSimple` written from the V3 schemas of the user's ComfyUI
+0.44.0 on disk (`comfy_extras/nodes_moss_image.py:102`, `nodes_slg.py:91`) in `get_v1_info`'s shape (the autogrow input a
+`TemplatePrefix`: `prefix` "image_", `min` 1, `max` 10, no `names`), and CLIPLoader's `type` list brought to 0.44.0's
+(`flux3`, `moss_image`, `fibo2` appended: the older dump lacked `moss_image`); the file stays `json.dumps(indent=0)`
+byte for byte, `cloud_recipes.js --check` unchanged. `tools/node_specs.js` (new): `ph3_test.js` §3's `specKind` /
+`specProblems` moved out to be shared, with the prefix template read as `prefix + 0 .. max - 1` and a growing input's
+`min` counted. Docs: `docs/RECIPES.md`'s entry after `moss_image_local`, a MOSS-Image Edit paragraph in `docs/MANUAL.md`'s
+Recipes chapter (with the ai-toolkit sentence of §6 Q1) and the recipe in its list of shipped local recipes,
+`docs/TESTING.md`'s paragraph, the CHANGELOG `## Unreleased` line.
+
+**Tests (all green):** `node tools/comfyrefs_test.js` 110 of 110 (six new: `image {n}`, 4 slots, the trim `pos` and `neg`
+`images.image_0..3` reading batches 0..3, the class derived without `refs`, `trimSlots` on both encoders never `image_0`,
+image 2 / image 3 after the Original, the recipe's graph untouched); `node tools/recipes_test.js` 295 of 295 (§7's
+detach table gained the recipe: 4 pictures, negative / prompt / seed; **§15 new**: read without a warning, every class
+but the canvas node's in the node list, `specProblems` empty as `normalize()` serves it and in the queued shapes (the
+crop alone, two pictures, four, two LoRA rows spliced), 55 template values pinned, the eight rows and every default
+file's link, the description's sentences, and the check caught on a broken copy: a format outside the three,
+`images.image_10`, a strength of 200, a missing `clip`, a layer list as a number, CLIP type "moss", a link to no node, an
+encoder without a picture); `node tools/loras_test.js` 88 of 88 (`EXPECT` and `PATCH` rows: the source `lora`, `slg.model`
+re-pointed before the SLG patch, with the node list and the class table; the seven local declarations; `recipeFamily`
+`moss_image`; a new check: the chain after the edit LoRA, which keeps the `UNETLoader` and its file, and the rule alone
+would have taken `unet`); `node tools/ph3_test.js` 23 of 23 on the shared helper; `node tools/cloud_recipes.js --check`
+ok, 14; `comfyprompt_test.js` 102, `cloudgraph_test.js` 29, `comfycloud_v2_test.js` 81, `genpresets_test.js` 31,
+`realism_test.js` 542, `settings_migration_test.js` PASS. The `loras` gate gained
+`moss_edit_needs_a_043_server_and_takes_rows_after_its_edit_lora`: against a v0.42 node list (the recipe's `needs`
+without `TextEncodeMOSSImageEdit`) `list_recipes` lists it with `ready: false`, "The server lacks these node types:
+TextEncodeMOSSImageEdit.", `edit: true`, `loras: true`, and the run is refused with the sentence before `ensureOnServer`
+and without a POST; with the node `ready: true`, the queued graph holds `scumble_lora_1` on `["lora", 0]`, `slg.model` on
+it, the edit LoRA on `unet` with its file at 1, both encoders `Moss-Image-Edit` with the same pictures (`image_0` alone
+for a crop without references), the via text "MOSS-Image Edit (ComfyUI) via your ComfyUI + 1 LoRA: root_style 0.7"; with
+the edit LoRA absent from the server's list the real `missingFilesRefusal` names "Edit LoRA" with the Comfy-Org link.
+Gate runs on tiles (`--offline`, port 9571, the worktree's `dist/gates`): `lr6-a` recipes, loras, lint (0 errors, the same
+21 warnings), types: ALL PASS; `lr6-b` generate, commands: ALL PASS; `lr6-c` help (the manual): PASS.
+`python tools/build_node.py --check`: ok (60
+modules, 64 host members; `comfyrefs.js` is app-only). No mutation round (Light / Normal), no canvas backend (no pixel
+path). No app instance on the user's ComfyUI; nothing read there but the node sources (read-only).
+
+**Deviations, each by the code:**
+1. **The two classes' specs went into the fixtures' node list now**, not at LR7 (§3.6 and the LR7 row put them there):
+   the spec check this session runs needs them. LR7 keeps the export, the MANIFEST row, §10's `want` table at fourteen
+   and its `slg` / encoder checks, which now see both classes; its row's "the specs of ... into object_info.json" is
+   done. **CLIPLoader's `type` list** was an older dump without `moss_image`; it carries 0.44.0's list now.
+2. **The spec check is `recipes_test.js` §15** (run by the `recipes` gate), not a test file of its own, on a shared
+   `tools/node_specs.js` (`ph3_test.js` §3 requires it; its 23 checks unchanged). The helper reads ComfyUI's
+   `TemplatePrefix` autogrow (P-H3's node uses `TemplateNames`, the MOSS edit node a prefix with `max` 10) and counts the
+   template's `min` (the MOSS encoders need `image_0`).
+3. **No `newImage`**: the encoders' `images` input takes at least one picture, so Generate new edits the white canvas,
+   as every other edit recipe's does; the description and the manual send a new picture to `moss_image_local`.
+4. **No shipped `presets`** (§3.6 names none; §7's CFG 4 against the re-packager's 5 is LR9's judgement).
+5. **The manual got a MOSS-Image Edit paragraph** (the plan's LR10 writes the manual, LR6 only the ai-toolkit sentence),
+   since the sentence needs the recipe around it; LR10 adds the live run's findings (the pictures' names, the seconds).
+6. **The gate step also checks the real missing-file refusal** of the edit LoRA (the gate stubs `missingFilesRefusal`
+   for its runs; the step calls the saved one) and that the LoRAs section shows under the recipe.
+7. **The template's export is not committed** (the research's copy in the planning session's scratchpad,
+   `iss_moss_edit/tpl/image_moss_image_edit.json`, read for the pinned values): LR7 commits it under
+   `tools/refs/comfy_cloud/edit/`.
+
 ## 5. How it fits into 0.1.52 beside CorridorKey
 
 - **One branch, one release.** Both plans build on `corridorkey` (cut from `main` = 0.1.51) and ship as 0.1.52 on the

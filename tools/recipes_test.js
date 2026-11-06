@@ -21,6 +21,8 @@
 // on the Comfy Cloud copy.
 // LoRAs (item 50, §14): a recipe's `loras` through Save to recipe (GRAPH_KEEPS, the model source only while the saved
 // graph holds it), the Comfy Cloud copy (a field of its variant), the manifest of tools/cloud_recipes.js and its --check.
+// MOSS-Image Edit (item 50 LR6, §15): its graph against the node specs of tools/refs/comfy_templates/object_info.json
+// (tools/node_specs.js) as normalize serves it and as a run queues it, Comfy's template values pinned.
 "use strict";
 
 const fs = require("node:fs");
@@ -595,6 +597,7 @@ async function main() {
         // graph's own 2× runs, docs/PLAN_0_1_42.md U1)
         const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, flux3_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, qwen_image_edit_2_1_turbo_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, relight_qwen_local: { pictures: 1, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] },
             moss_image_local: { pictures: 1, values: ["negative", "prompt", "seed"] },
+            moss_image_edit_local: { pictures: 4, values: ["negative", "prompt", "seed"] },
             p_h3_image_local: { pictures: 8, values: ["prompt", "seed"] },
             rtx_vsr_local: { pictures: 1, values: [], notes: [/^the Comfy Cloud copy runs at the factor its graph holds \(2×\); change it in its graph$/] }, realism_pass: { refused: /Cloud copy/ } };
         const unlisted = comfy.map((r) => r.id).filter((id) => !want[id]);
@@ -1209,6 +1212,97 @@ async function main() {
             const run = require("node:child_process").spawnSync(process.execPath, [path.join(ROOT, "tools", "cloud_recipes.js"), "--check"], { encoding: "utf8" });
             check("node tools/cloud_recipes.js --check", run.status === 0 && /^ok: 14 Comfy Cloud recipes match their exports/.test(run.stdout), short((run.stdout || "") + (run.stderr || "")));
         } finally { console.warn = warn; }
+    });
+
+    // ---- 15. MOSS-Image Edit on the user's ComfyUI (item 50, docs/PLAN_LORAS.md LR6) ----------------------------------
+    // The graph has not run (LR9 runs it): every node against the spec its class has in the fixtures' node list
+    // (tools/node_specs.js; TextEncodeMOSSImageEdit and SkipLayerGuidanceDiTSimple written from ComfyUI 0.44.0's V3
+    // schemas), as normalize serves it and in the shapes a run queues; Comfy's template values pinned
+    // (tools/refs: image_moss_image_edit, the research's copy), so a value reset to the node's default shows too.
+    await section("15. the MOSS-Image Edit recipe against its node specs", async () => {
+        const { specProblems } = require(path.join(ROOT, "tools", "node_specs.js"));
+        const R = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "comfyrefs.js")).href);
+        const L = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "loras.js")).href);
+        const info = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "comfy_templates", "object_info.json"), "utf8"));
+        const warn = console.warn, warned = [];
+        console.warn = (...a) => warned.push(a.join(" "));
+        let r;
+        try { r = recipes._normalize(rawFile("moss_image_edit_local.json")); } finally { console.warn = warn; }
+        const g = r.prompt;
+        const classes = [...new Set(Object.values(g).map((n) => n.class_type))].sort();
+        check("moss_image_edit_local: a local edit recipe read without a warning; refs image {n} over 4 slots; its LoRA rows after its edit LoRA node (family moss_image); needs exactly its graph's classes, TextEncodeMOSSImageEdit (ComfyUI 0.43) among them",
+            !warned.length && r.kind !== "provider" && r.mode === "local" && r.edit === true && r.task === undefined && eq(r.refs, { name: "image {n}", slots: 4 }) && eq(r.loras, { model: "lora", family: "moss_image" })
+            && eq([...r.needs].sort(), classes) && r.needs.includes("TextEncodeMOSSImageEdit") && r.needs.includes("LoraLoaderModelOnly") && r.boxes === undefined && r.upsampler === undefined && r.newImage === undefined,
+            short({ warned, refs: r.refs, loras: r.loras, needs: r.needs }));
+        const lacking = Object.entries(g).filter(([, n]) => !info[n.class_type]).map(([id, n]) => `${id} ${n.class_type}`);
+        check("every class of the graph but the canvas node's has its spec in the node list (TextEncodeMOSSImageEdit and SkipLayerGuidanceDiTSimple included)", eq(lacking, ["canvas InpaintCanvas"]), short(lacking));
+        const probs = specProblems(g, info);
+        check("every node: its required inputs there, every input one its class declares (images.image_0 .. image_9 of the growing input, at least one), combos in their options (model files aside, type moss_image, Moss-Image-Edit), numbers in range, links to nodes of the graph",
+            !probs.length, short(probs));
+        // what a run queues: the Settings rows wired to the canvas node, then the crop alone (image_1..3 left out), the
+        // crop and one picture, and the user's two LoRA rows spliced after the edit LoRA
+        const spec = R.comfyRefSpec(r);
+        const shapes = {};
+        for (const n of [1, 2, 4]) { const q = recipes.toPrompt(r); R.trimSlots(q, spec, n); shapes[`${n} picture${n > 1 ? "s" : ""}`] = q; }
+        const lq = recipes.toPrompt(r);
+        const spliced = L.spliceLoras(lq, r, [{ name: "moss_style.safetensors", strength: 0.8 }, { name: "moss_other.safetensors", strength: 1 }], info);
+        shapes["with two LoRA rows"] = lq;
+        const shapeProbs = Object.entries(shapes).flatMap(([what, q]) => specProblems(q, info).map((p) => `${what}: ${p}`));
+        check("the queued shapes hold too: the crop alone, two pictures, all four, and two LoRA rows after the edit LoRA (slg on the chain's end)",
+            !shapeProbs.length && !("images.image_1" in shapes["1 picture"].pos.inputs) && !("images.image_1" in shapes["1 picture"].neg.inputs) && eq(shapes["1 picture"].neg.inputs["images.image_0"], ["scale0", 0])
+            && "images.image_3" in shapes["4 pictures"].pos.inputs && spliced.applied.length === 2 && eq(lq.slg.inputs.model, ["scumble_lora_2", 0]) && eq(lq.scumble_lora_1.inputs.model, ["lora", 0]), short(shapeProbs));
+        // Comfy's template values (image_moss_image_edit, ComfyUI 0.43+): the node defaults differ (SLG "7, 8, 9" both,
+        // KSampler 20 steps CFG 8, a megapixel step of 1), and the user's model files (SFT bf16, the int8 text encoder)
+        const pins = [
+            ["unet.unet_name", g.unet.inputs.unet_name, "moss_image_sft_bf16.safetensors"], ["unet.weight_dtype", g.unet.inputs.weight_dtype, "default"],
+            ["lora.model", g.lora.inputs.model, ["unet", 0]], ["lora.lora_name", g.lora.inputs.lora_name, "moss_image_edit_lora_rank_64_bf16.safetensors"], ["lora.strength_model", g.lora.inputs.strength_model, 1],
+            ["slg.model", g.slg.inputs.model, ["lora", 0]], ["slg.double_layers", g.slg.inputs.double_layers, ""], ["slg.single_layers", g.slg.inputs.single_layers, "22"],
+            ["slg.start_percent", g.slg.inputs.start_percent, 0], ["slg.end_percent", g.slg.inputs.end_percent, 1],
+            ["clip.clip_name", g.clip.inputs.clip_name, "qwen3.5_9b_int8_convrot.safetensors"], ["clip.type", g.clip.inputs.type, "moss_image"], ["vae.vae_name", g.vae.inputs.vae_name, "flux2-vae_small.safetensors"],
+            ["size.image", g.size.inputs.image, ["scale0", 0]], ["latent.width", g.latent.inputs.width, ["size", 0]], ["latent.height", g.latent.inputs.height, ["size", 1]], ["latent.batch_size", g.latent.inputs.batch_size, 1],
+            ["ks.model", g.ks.inputs.model, ["slg", 0]], ["ks.seed", g.ks.inputs.seed, ["canvas", 10]], ["ks.steps", g.ks.inputs.steps, 30], ["ks.cfg", g.ks.inputs.cfg, 4],
+            ["ks.sampler_name", g.ks.inputs.sampler_name, "euler"], ["ks.scheduler", g.ks.inputs.scheduler, "normal"], ["ks.positive", g.ks.inputs.positive, ["pos", 0]],
+            ["ks.negative", g.ks.inputs.negative, ["neg", 0]], ["ks.latent_image", g.ks.inputs.latent_image, ["latent", 0]], ["ks.denoise", g.ks.inputs.denoise, 1],
+            ["decode.samples", g.decode.inputs.samples, ["ks", 0]], ["decode.vae", g.decode.inputs.vae, ["vae", 0]],
+            ["pos.prompt", g.pos.inputs.prompt, ["canvas", 7]], ["neg.prompt", g.neg.inputs.prompt, ["canvas", 12]],
+        ];
+        for (const e of ["pos", "neg"]) {
+            pins.push([`${e}.clip`, g[e].inputs.clip, ["clip", 0]], [`${e}.vae`, g[e].inputs.vae, ["vae", 0]], [`${e}.edit_format`, g[e].inputs.edit_format, "Moss-Image-Edit"], [`${e}.image_strength`, g[e].inputs.image_strength, 1]);
+            for (let k = 0; k < 4; k++) pins.push([`${e}.images.image_${k}`, g[e].inputs[`images.image_${k}`], [`scale${k}`, 0]]);
+        }
+        for (let k = 0; k < 4; k++) {
+            pins.push([`img${k}`, g[`img${k}`].inputs, { image: ["canvas", 0], batch_index: k, length: 1 }]);
+            pins.push([`scale${k}`, g[`scale${k}`].inputs, { image: [`img${k}`, 0], upscale_method: "lanczos", megapixels: 1, resolution_steps: 16 }]);
+        }
+        const off = pins.filter(([, got, want]) => !eq(got, want)).map(([k, got]) => `${k}=${JSON.stringify(got)}`);
+        check("Comfy's template values: the edit LoRA at 1 between the UNETLoader and SLG (layer 22, 0 to 1), 30 steps, CFG 4, euler / normal, both encoders Moss-Image-Edit at strength 1 with the VAE and the same four scaled pictures, the latent the crop's scaled size at 1 MP in steps of 16",
+            !off.length && Object.keys(g).length === 20, short({ off, nodes: Object.keys(g).length }));
+        // the Settings rows: eight slots, the edit LoRA a file row with its download link (a ComfyUI without it is refused
+        // with the link before the run, issue #4's missingFilesRefusal), the Megapixels row on the edited picture alone
+        const rows = r.settings.map((s) => [s.index, `${s.node}:${s.input}`, s.label]);
+        const link = (file) => { for (const list of Object.values(r.models || {})) for (const row of list) { const m = /^(.*?)\s*\((https?:\/\/[^)]+)\)\s*$/.exec(String(row)); if (m && m[1] === file) return m[2]; } return null; };
+        const files = [g.unet.inputs.unet_name, g.clip.inputs.clip_name, g.vae.inputs.vae_name, g.lora.inputs.lora_name];
+        check("eight Settings rows on slots 1..8: Model, Text encoder, VAE, Edit LoRA, LoRA strength, Steps, CFG, Megapixels (scale0 alone); every default file has its link, the edit LoRA's in Comfy-Org's MOSS-Image repository",
+            eq(rows, [[1, "unet:unet_name", "Model"], [2, "clip:clip_name", "Text encoder"], [3, "vae:vae_name", "VAE"], [4, "lora:lora_name", "Edit LoRA"], [5, "lora:strength_model", "LoRA strength"], [6, "ks:steps", "Steps"], [7, "ks:cfg", "CFG"], [8, "scale0:megapixels", "Megapixels"]])
+            && files.every((f) => !!link(f)) && link(g.lora.inputs.lora_name) === "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/loras/moss_image_edit_lora_rank_64_bf16.safetensors",
+            short({ rows, links: files.map(link) }));
+        check("the description: ComfyUI 0.43 or newer, the Moss-Image-Edit format on both encoders, the ai-toolkit LoRAs by an own copy, not run yet, and the licence sentence",
+            /0\.43 or newer/.test(r.description) && /both encoders in the Moss-Image-Edit format/.test(r.description) && /ai-toolkit format on both encoders: Edit in ComfyUI/.test(r.description) && /not run yet/.test(r.description)
+            && r.description.includes("The edit LoRA is chinoll's Moss-Image-Edit, rehosted by Comfy-Org, whose repository card says Apache-2.0; chinoll's own repository names no licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0."));
+        // the check itself: what a slip in the file would be is caught
+        const bad = JSON.parse(JSON.stringify(g));
+        bad.neg.inputs.edit_format = "Moss-Image-Edit v2";
+        bad.pos.inputs["images.image_10"] = ["scale3", 0];
+        bad.pos.inputs.image_strength = 200;
+        delete bad.neg.inputs.clip;
+        bad.slg.inputs.single_layers = 22;
+        bad.clip.inputs.type = "moss";
+        bad.ks.inputs.latent_image = ["nope", 0];
+        const noPics = JSON.parse(JSON.stringify(g));
+        for (let k = 0; k < 4; k++) delete noPics.neg.inputs[`images.image_${k}`];
+        const caught = [...specProblems(bad, info), ...specProblems(noPics, info)].join(" | ");
+        check("the spec check itself: a format outside the node's three, an eleventh picture input (images.image_10; the node grows to ten), a strength past 100, a missing clip, a layer list that is no text, an unknown CLIP type, a link to no node and an encoder with no picture are each caught",
+            ["neg.edit_format=", "pos.images.image_10 unknown", "pos.image_strength=200", "neg.clip missing", "slg.single_layers is no text", "clip.type=", "ks.latent_image links", "neg.images takes at least 1 input, has 0"].every((s) => caught.includes(s)), caught);
     });
 
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });

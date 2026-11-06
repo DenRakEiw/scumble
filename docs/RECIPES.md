@@ -220,6 +220,41 @@ the crop still goes as the first picture (the numbering of the others stays). Th
   left, a plant lower right) and a Keep box in 20 s: the word, the bicycle and the plant each landed in its box, the
   Keep box stayed out with the panel's warning and the run's note; `/history` showed `layout.element = ["canvas", 22]`
   and `pos.text = ["layout", 0]`. Generate on a selection refused before anything was queued.
+- `moss_image_edit_local`, **MOSS-Image Edit** (0.1.52, item 50, issue DenRakEiw/scumble#11; `docs/PLAN_LORAS.md`
+  §3.6, LR6): MOSS-Image with chinoll's edit LoRA, on ComfyUI 0.43 or newer, which brought the core node
+  `TextEncodeMOSSImageEdit` (PRs Comfy-Org/ComfyUI#17296 and #17320; 0.42 has neither the node nor the model's reference
+  latents: there the recipe is listed with "The server lacks these node types: TextEncodeMOSSImageEdit", `list_recipes`
+  `ready: false`, through its `needs`). The graph is Comfy's template `image_moss_image_edit` ("MOSS-Image: Image Edit
+  LoRA", `minComfyUIVersion` 0.43.0), core nodes only, with the canvas node's pictures: `UNETLoader`
+  (`moss_image_sft_bf16`, the user's file; the template's `moss_image_sft_int8_convrot` in `models`) ->
+  `LoraLoaderModelOnly` `lora` (`moss_image_edit_lora_rank_64_bf16`, strength 1) -> `SkipLayerGuidanceDiTSimple` (single
+  layer 22, 0 to 1) -> `KSampler` (30 steps, CFG 4, `euler` / `normal`, denoise 1, the canvas's seed); `CLIPLoader` type
+  `moss_image` (`qwen3.5_9b_int8_convrot`; the template's `qwen3.5_9b_w4a8_gptq` in `models`), `VAELoader`
+  (`flux2-vae_small`); `img0`..`img3` `ImageFromBatch` of the crop batch, each through its own `ImageScaleToTotalPixels`
+  (lanczos, 1 MP, steps of 16: the node uses references at the size they arrive); `GetImageSize` of `scale0` ->
+  `EmptyFlux2LatentImage`, so the output is the scaled crop's size; two `TextEncodeMOSSImageEdit`, `pos` (the prompt,
+  `["canvas", 7]`) and `neg` (the negative, `["canvas", 12]`), both with the VAE, `images.image_0`..`image_3` the four
+  scaled pictures, `image_strength` 1 and `edit_format` fixed to `Moss-Image-Edit` on both (the template's note: both
+  encoders must use the LoRA's layout; a Settings row writes one input, so the format is no row). `refs: { "name":
+  "image {n}", "slots": 4 }`: the node sorts its present `images.image_k` and numbers them by rank (`comfyrefs.js`
+  `TextEncodeMOSSImageEdit`, `byRank`); in the Moss-Image-Edit format no "Picture N" marker enters the text, so the
+  name is a plain phrase until LR9's two-reference run settles what the model follows (§7 of the plan); `trimSlots`
+  leaves out the slots a run does not fill on both encoders, never `image_0` (the autogrow input's one required slot).
+  No mask input: the stitch keeps the selection. The LoRA rows (`loras: { "model": "lora", "family": "moss_image" }`)
+  chain after the recipe's edit LoRA, before the SLG patch; without the declaration the rule would find the
+  `UNETLoader` (the edit LoRA itself reads a MODEL). Settings rows: Model, Text encoder, VAE, **Edit LoRA**
+  (`lora.lora_name`: a file combo, so a server without the 297 MB file refuses the run with the `models.loras` link,
+  Comfy-Org's rehost), LoRA strength, Steps, CFG, **Megapixels** (`scale0.megapixels`: the picture being edited alone;
+  the three reference scalers stay at the file's 1 MP, LR9 judges whether they should follow). Sampler, scheduler, the
+  SLG window and the format stay the template's values in the file. An edit LoRA trained with ai-toolkit (its
+  `ai-toolkit` or `ai-toolkit (kv_cache off)` layout) takes a user's own copy: *Edit in ComfyUI*, both encoders'
+  `edit_format` and the LoRA changed, *Save as new recipe* (the plan's §6 Q1). No `boxes` (an edit is untrained on a
+  layout), no `newImage` (the encoders need `image_0`: Generate new edits the white canvas; `moss_image_local` makes new
+  pictures). The node specs are checked by `tools/recipes_test.js` §15 against the fixtures' node list, where LR6 wrote
+  `TextEncodeMOSSImageEdit` and `SkipLayerGuidanceDiTSimple` from ComfyUI 0.44.0's V3 schemas on disk. **Not run yet**
+  (the edit LoRA is not on the user's machine; LR8 downloads it, LR9 runs it). The edit LoRA is chinoll's
+  Moss-Image-Edit, rehosted by Comfy-Org, whose repository card says Apache-2.0; chinoll's own repository names no
+  licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0.
 - `p_h3_image_local`, **P-H3-Image** (0.1.52, `docs/PLAN_PH3.md`): Pruna AI's 8-step image fine-tune of MiniMax H3
   (published 2026-11-03), on ComfyUI 0.44 or newer, which runs it on its own nodes (PR Comfy-Org/ComfyUI#17506). The
   graph is Comfy's templates' LoRA route: `UNETLoader` (`minimax_h3_fl2va_pruned_int8_convrot`, MiniMax H3's FL2VA

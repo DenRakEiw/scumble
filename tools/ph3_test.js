@@ -17,6 +17,7 @@ const { pathToFileURL } = require("node:url");
 
 const ROOT = path.join(__dirname, "..");
 const ws = require(path.join(ROOT, "electron", "main", "providers", "wavespeed.js"));
+const { specProblems } = require(path.join(ROOT, "tools", "node_specs.js"));
 
 const KEY = "ws_" + "0".repeat(32);   // never a real key
 const API = "https://api.wavespeed.ai/api/v3/";
@@ -96,56 +97,7 @@ function loadRecipe(id) {
 const defaults = (rows) => Object.fromEntries((rows || []).map((s) => [s.key, s.spec[1].default]));
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-// ---- a graph against the node list's specs (tools/refs/comfy_templates/object_info.json) ----------------------------
-// A combo of model files is not checked (the saved list is one machine's folder); every other combo, number, text and
-// switch is, and a link must name a node of the graph. Both spec shapes: the old ([options], {...}) and V3's
-// ("COMBO", { options }), a growing input (COMFY_AUTOGROW_V3: "images.image_1" ... by its template's names) and a
-// dynamic combo (COMFY_DYNAMICCOMBO_V3: its value one of the options' keys, the chosen option's inputs as "name.sub").
-const MODEL_FILE = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx)$/i;
-function specKind(spec) {
-    const [t, o = {}] = Array.isArray(spec) ? spec : [spec];
-    if (Array.isArray(t)) return { kind: "combo", options: t };
-    if (t === "COMBO") return { kind: "combo", options: o.options || [] };
-    if (t === "COMFY_AUTOGROW_V3") return { kind: "grow", names: (o.template && o.template.names) || [] };
-    if (t === "COMFY_DYNAMICCOMBO_V3") return { kind: "dyn", options: o.options || [] };
-    if (t === "INT" || t === "FLOAT" || t === "STRING" || t === "BOOLEAN") return { kind: t, o };
-    return { kind: "socket" };
-}
-function specProblems(g, info) {
-    const out = [];
-    const isLink = (v) => Array.isArray(v) && v.length === 2 && typeof v[0] === "string" && Number.isInteger(v[1]);
-    for (const [id, n] of Object.entries(g)) {
-        const decl = info[n.class_type] && info[n.class_type].input;
-        if (!decl) continue;
-        const ins = n.inputs || {};
-        const known = new Map();
-        for (const [k, spec] of Object.entries({ ...(decl.required || {}), ...(decl.optional || {}) })) {
-            const s = specKind(spec);
-            if (s.kind === "grow") { for (const name of s.names) known.set(`${k}.${name}`, { kind: "socket" }); continue; }
-            known.set(k, s);
-            if (s.kind !== "dyn") continue;
-            const chosen = s.options.find((x) => x.key === ins[k]);
-            const sub = (chosen && chosen.inputs) || {};
-            for (const [sk, sspec] of Object.entries({ ...(sub.required || {}), ...(sub.optional || {}) })) known.set(`${k}.${sk}`, specKind(sspec));
-            for (const sk of Object.keys(sub.required || {})) if (!(`${k}.${sk}` in ins)) out.push(`${id}.${k}.${sk} missing`);
-        }
-        for (const [k, spec] of Object.entries(decl.required || {})) if (specKind(spec).kind !== "grow" && !(k in ins)) out.push(`${id}.${k} missing`);
-        for (const [k, v] of Object.entries(ins)) {
-            const s = known.get(k);
-            if (!s) { out.push(`${id}.${k} unknown to ${n.class_type}`); continue; }
-            if (isLink(v)) { if (!g[v[0]]) out.push(`${id}.${k} links to ${v[0]}, no node of the graph`); continue; }
-            if (s.kind === "socket") out.push(`${id}.${k} is no link`);
-            else if (s.kind === "combo") { if (!s.options.some((x) => MODEL_FILE.test(String(x))) && !s.options.includes(v)) out.push(`${id}.${k}=${JSON.stringify(v)} not among its options`); }
-            else if (s.kind === "dyn") { if (!s.options.some((x) => x.key === v)) out.push(`${id}.${k}=${JSON.stringify(v)} not among its options`); }
-            else if (s.kind === "INT" || s.kind === "FLOAT") {
-                const okType = s.kind === "INT" ? Number.isInteger(v) : typeof v === "number" && Number.isFinite(v);
-                if (!okType || (s.o.min !== undefined && v < s.o.min) || (s.o.max !== undefined && v > s.o.max)) out.push(`${id}.${k}=${JSON.stringify(v)} out of range or no ${s.kind}`);
-            } else if (s.kind === "STRING" && typeof v !== "string") out.push(`${id}.${k} is no text`);
-            else if (s.kind === "BOOLEAN" && typeof v !== "boolean") out.push(`${id}.${k} is no boolean`);
-        }
-    }
-    return out;
-}
+// ---- a graph against the node list's specs (tools/refs/comfy_templates/object_info.json): tools/node_specs.js ------
 
 async function main() {
     const warned = [];

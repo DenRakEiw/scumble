@@ -2094,7 +2094,10 @@ false
 "joyimage",
 "mage",
 "minimax",
-"yue2"
+"yue2",
+"flux3",
+"moss_image",
+"fibo2"
 ]
 ]
 },
@@ -10625,6 +10628,195 @@ null
 "LLM",
 "gemma"
 ],
+"essentials_category": null,
+"has_intermediate_output": false
+},
+"SkipLayerGuidanceDiTSimple": {
+"input": {
+"required": {
+"model": [
+"MODEL",
+{}
+],
+"double_layers": [
+"STRING",
+{
+"advanced": true,
+"default": "7, 8, 9",
+"multiline": false
+}
+],
+"single_layers": [
+"STRING",
+{
+"advanced": true,
+"default": "7, 8, 9",
+"multiline": false
+}
+],
+"start_percent": [
+"FLOAT",
+{
+"advanced": true,
+"default": 0.0,
+"min": 0.0,
+"max": 1.0,
+"step": 0.001
+}
+],
+"end_percent": [
+"FLOAT",
+{
+"advanced": true,
+"default": 1.0,
+"min": 0.0,
+"max": 1.0,
+"step": 0.001
+}
+]
+}
+},
+"input_order": {
+"required": [
+"model",
+"double_layers",
+"single_layers",
+"start_percent",
+"end_percent"
+]
+},
+"is_input_list": false,
+"output": [
+"MODEL"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"MODEL"
+],
+"output_tooltips": [
+null
+],
+"output_matchtypes": null,
+"name": "SkipLayerGuidanceDiTSimple",
+"display_name": null,
+"description": "Simple version of the SkipLayerGuidanceDiT node that only modifies the uncond pass.",
+"python_module": "comfy_extras.nodes_slg",
+"category": "advanced/guidance",
+"output_node": false,
+"deprecated": false,
+"experimental": true,
+"dev_only": false,
+"api_node": false,
+"price_badge": null,
+"search_aliases": null,
+"essentials_category": null,
+"has_intermediate_output": false
+},
+"TextEncodeMOSSImageEdit": {
+"input": {
+"required": {
+"clip": [
+"CLIP",
+{}
+],
+"prompt": [
+"STRING",
+{
+"multiline": true,
+"dynamicPrompts": true
+}
+],
+"edit_format": [
+"COMBO",
+{
+"tooltip": "The layout the edit LoRA was trained with: ai-toolkit's MOSS-Image Edit Training (its kv_cache option on or off) or Moss-Image-Edit. With kv_cache off the references also attend to the image being generated, so they are recomputed every step.",
+"multiselect": false,
+"options": [
+"ai-toolkit",
+"ai-toolkit (kv_cache off)",
+"Moss-Image-Edit"
+]
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"prefix": "image_",
+"min": 1,
+"max": 10
+}
+}
+],
+"image_strength": [
+"FLOAT",
+{
+"tooltip": "Scales how much the model attends to the images the text encoder sees (ai-toolkit formats, or no VAE): 0 ignores them, 1 is unchanged, above 1 emphasizes them.",
+"advanced": true,
+"default": 1.0,
+"min": 0.0,
+"max": 100.0,
+"step": 0.05
+}
+]
+},
+"optional": {
+"vae": [
+"VAE",
+{
+"tooltip": "Encodes the images as reference latents for the edit LoRA."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"clip",
+"prompt",
+"edit_format",
+"images",
+"image_strength"
+],
+"optional": [
+"vae"
+]
+},
+"is_input_list": false,
+"output": [
+"CONDITIONING"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"CONDITIONING"
+],
+"output_tooltips": [
+null
+],
+"output_matchtypes": null,
+"name": "TextEncodeMOSSImageEdit",
+"display_name": "Text Encode MOSS-Image Edit",
+"description": "Encodes an edit instruction with reference images for a MOSS-Image edit LoRA, use it for the negative prompt too. The references are used at the size they come in, scale them first. Without a VAE, the images only go to the text encoder.",
+"python_module": "comfy_extras.nodes_moss_image",
+"category": "model/conditioning/moss_image",
+"output_node": false,
+"deprecated": false,
+"experimental": true,
+"dev_only": false,
+"api_node": false,
+"price_badge": null,
+"search_aliases": null,
 "essentials_category": null,
 "has_intermediate_output": false
 }

@@ -52,6 +52,13 @@ read here) and the page's `fetch` answering /view_metadata:
 - the picker of flux3_klein_local shows the Flux_3 folder first and the rest behind Show all; Show all and back; a
   row whose file sits in a hidden folder opens the picker with every folder shown.
 
+Then MOSS-Image Edit (LR6, recipes/moss_image_edit_local.json): against a v0.42 node list (every class it needs but
+TextEncodeMOSSImageEdit, which ComfyUI 0.43 brought) list_recipes lists it with ready false and "The server lacks these
+node types: TextEncodeMOSSImageEdit.", and a run is refused with that sentence before anything is uploaded; with the
+node it is ready, the run goes with the user's row chained after the recipe's edit LoRA (slg on the chain's end), both
+encoders in the Moss-Image-Edit format, the via line naming the row; a server without the edit LoRA's file gets the
+run's own file check, which names the Edit LoRA row with its download link.
+
 Every stub, the recipe, the rows and the stored settings.recipeLoras are put back whatever happens.
 
     python tools/loras_test.py
@@ -699,6 +706,55 @@ st = panel.openPickerState();
 if (JSON.stringify(folders(st)) !== '["Flux_3","klein","qwen","(root)"]' || st.cursor.name !== "klein\\nyc_style.safetensors") throw new Error("a row outside: " + JSON.stringify({ folders: folders(st), cursor: st.cursor && st.cursor.name }));
 key(st.search, "Escape");
 return { family: ["Flux_3"], all: NAMES.length };
+"""),
+    ("moss_edit_needs_a_043_server_and_takes_rows_after_its_edit_lora", r"""
+// LR6: recipes/moss_image_edit_local.json. A v0.42 node list (every class it needs but TextEncodeMOSSImageEdit, which
+// ComfyUI 0.43 brought): listed, not ready, the sentence, and a run refused before anything is uploaded; with the node
+// the run goes, the user's row after the recipe's edit LoRA; the edit LoRA missing on the server: the real
+// missingFilesRefusal names it with its download link
+const ed = ednow(window.__lr);
+const me = host.shell.recipes().find((r) => r.id === "moss_image_edit_local");
+if (!me) throw new Error("moss_image_edit_local is not listed");
+if (!me.needs.includes("TextEncodeMOSSImageEdit") || !me.loras || me.loras.model !== "lora" || me.edit !== true) throw new Error("the recipe: " + JSON.stringify({ needs: me.needs, loras: me.loras, edit: me.edit }));
+const EDIT_LORA = "moss_image_edit_lora_rank_64_bf16.safetensors";
+const withEdit = [...NAMES, EDIT_LORA];
+const nodeList = (has043, names = withEdit) => ({ ...Object.fromEntries(me.needs.filter((n) => has043 || n !== "TextEncodeMOSSImageEdit").map((n) => [n, { input: { required: {} } }])), LoraLoaderModelOnly: LORA(names) });
+const listed = async () => (await run("list_recipes")).recipes.find((r) => r.id === "moss_image_edit_local");
+host.objectInfo = nodeList(false);
+S.reread = "list"; S.rereadNames = withEdit;
+host.loras = { moss_image_edit_local: [{ name: "root_style.safetensors", strength: 0.7, on: true }] };
+let lr = await listed();
+const sentence = "The server lacks these node types: TextEncodeMOSSImageEdit";
+if (!lr || lr.ready !== false || lr.reason !== sentence + "." || lr.edit !== true || lr.loras !== true || lr.mode !== "local") throw new Error("list_recipes on v0.42: " + JSON.stringify(lr && { ready: lr.ready, reason: lr.reason, edit: lr.edit, loras: lr.loras, mode: lr.mode }));
+host.setRecipe(me);
+if (P(ed).section.hidden) throw new Error("the LoRAs section is hidden under the MOSS edit recipe: " + P(ed).summary.title);
+const ensured0 = S.ensured, posts0 = S.posts.length;
+let q = await queue(ed);
+if (q.err !== sentence || S.ensured !== ensured0 || S.posts.length !== posts0) throw new Error("the run on v0.42: " + JSON.stringify({ q, ensured: S.ensured - ensured0 }));
+// ComfyUI 0.43 or newer: ready, and the run goes with the row after the edit LoRA
+host.objectInfo = nodeList(true);
+lr = await listed();
+if (lr.ready !== true || lr.reason !== null) throw new Error("list_recipes with the node: " + JSON.stringify({ ready: lr.ready, reason: lr.reason }));
+q = await queue(ed);
+if (q.err) throw new Error("refused with the node: " + q.err);
+const g = q.body.prompt;
+if (!g.scumble_lora_1 || JSON.stringify(g.scumble_lora_1.inputs) !== JSON.stringify({ model: ["lora", 0], lora_name: "root_style.safetensors", strength_model: 0.7 }) || g.scumble_lora_2) throw new Error("the chain: " + JSON.stringify(g.scumble_lora_1));
+if (JSON.stringify(g.slg.inputs.model) !== '["scumble_lora_1",0]' || JSON.stringify(g.lora.inputs.model) !== '["unet",0]' || g.lora.inputs.lora_name !== EDIT_LORA || g.lora.inputs.strength_model !== 1) throw new Error("the edit LoRA and slg: " + JSON.stringify({ slg: g.slg.inputs.model, lora: g.lora.inputs }));
+const pics = (n) => Object.keys(g[n].inputs).filter((k) => /^images\.image_\d+$/.test(k)).sort();
+if (JSON.stringify(pics("pos")) !== JSON.stringify(pics("neg")) || JSON.stringify(g.pos.inputs["images.image_0"]) !== '["scale0",0]' || pics("pos").includes("images.image_3")) throw new Error("the pictures: " + JSON.stringify({ pos: pics("pos"), neg: pics("neg") }));
+if (g.pos.inputs.edit_format !== "Moss-Image-Edit" || g.neg.inputs.edit_format !== "Moss-Image-Edit") throw new Error("edit_format: " + JSON.stringify([g.pos.inputs.edit_format, g.neg.inputs.edit_format]));
+if (JSON.stringify(me.prompt.slg.inputs.model) !== '["lora",0]' || me.prompt.scumble_lora_1) throw new Error("the recipe's own graph changed");
+const via = ed._sentTexts.get(q.id).via;
+if (via !== "MOSS-Image Edit (ComfyUI) via your ComfyUI + 1 LoRA: root_style 0.7") throw new Error("the via text: " + via);
+// the edit LoRA not on the server (a 0.43 server without the 297 MB file): the run's own file check names it with its link
+host.objectInfo = nodeList(true, NAMES);
+const said = S.saved.missing.call(host, ed);
+const link = "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/loras/" + EDIT_LORA;
+if (!said || !said.startsWith("Your ComfyUI lacks a model file this recipe needs: Edit LoRA") || !said.includes(EDIT_LORA + " (" + link + ")")) throw new Error("the missing edit LoRA: " + JSON.stringify(said));
+host.objectInfo = OI();
+host.loras = {};
+host.setRecipe(klein3);
+return { v042: sentence, chain: "lora -> scumble_lora_1 -> slg", pictures: pics("pos"), via, missing: said.slice(0, 120) };
 """),
     ("cleanup", r"""
 S.restore();

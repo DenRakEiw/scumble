@@ -354,6 +354,19 @@ also: `comfyrefs_test.js` (its `<Picture {n}>` slots), `comfyprompt_test.js` (it
 `generate` gate's step `p_h3_generate_new_is_text_to_image` (the queued graphs of an edit and of Generate new against
 stubs). Light / Normal tier: written from the docs and the node specs; a live run is the user's.
 
+MOSS-Image Edit (`recipes/moss_image_edit_local.json`, `docs/PLAN_LORAS.md` LR6): `node tools/recipes_test.js` §15
+checks its graph against the node specs of `tools/refs/comfy_templates/object_info.json` (`TextEncodeMOSSImageEdit`
+and `SkipLayerGuidanceDiTSimple` there since LR6, written from ComfyUI 0.44.0's V3 schemas, and CLIPLoader's types of
+0.44.0) through `tools/node_specs.js` (the spec check `ph3_test.js` §3 shares; a growing input read by its names or by
+its prefix and max, at least its min given), as `normalize()` serves it and in the shapes a run queues (the crop alone,
+two pictures, four, two LoRA rows), pins Comfy's template values (the edit LoRA at 1, SLG layer 22 over 0-1, 30 steps,
+CFG 4, euler / normal, Moss-Image-Edit on both encoders) and proves the check on a broken copy. Also
+`comfyrefs_test.js` (`image {n}` over 4 slots, the two encoders' trim), `loras_test.js` (the declared source: the rows
+after the edit LoRA) and the `loras` gate's step `moss_edit_needs_a_043_server_and_takes_rows_after_its_edit_lora`
+(against a v0.42 node list `list_recipes` says not ready with the sentence and the run is refused before any upload;
+with the node the queued graph holds the row after the edit LoRA; the missing edit LoRA refused with its link). Light
+/ Normal tier: a live run is LR9's.
+
 Ideogram 4.5 (`recipes/ideogram_4_5.json`, `electron/main/providers/replicate.js`, `util.js` `ideogramMask`,
 `docs/PLAN_IDEOGRAM45.md`): `node tools/ideogram45_test.js` (plain Node, a scripted api.replicate.com and
 api.wavespeed.ai, 149 checks; 67 of them Replicate's, I1) pins

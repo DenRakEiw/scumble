@@ -173,6 +173,38 @@ async function main() {
         delete pNoUp.upsampler;
         check("P-H3-Image: the upsampler's whole-batch read does not count (undeclared, it ends the identity)", C.comfyRefSpec(pNoUp).trim === null, short(C.comfyRefSpec(pNoUp)));
 
+        // MOSS-Image Edit (docs/PLAN_LORAS.md LR6): two TextEncodeMOSSImageEdit nodes (pos and neg) reading the same four
+        // pictures, each scaled (scale0..3), as images.image_0..3 numbered by rank; one class, four batches: an identity
+        const [ME, mWarn] = shipped("moss_image_edit_local.json");
+        const mSpec = C.comfyRefSpec(ME);
+        const mTrim = ["pos", "neg"].flatMap((node) => range(0, 3).map((k) => ({ node, input: `images.image_${k}`, batch: k })));
+        check("MOSS-Image Edit: image {n}, 4 slots, not a guess, the trim pos and neg images.image_0..3 reading batches 0..3, read without a warning",
+            eq(ME.refs, { name: "image {n}", slots: 4 }) && mSpec.name === "image {n}" && mSpec.slots === 4 && mSpec.guess === false && eq(mSpec.trim, mTrim) && !mWarn.length,
+            short({ ...mSpec, trim: mSpec.trim && mSpec.trim.length, warned: mWarn }));
+        const mSlots = C.comfySlots(ME.prompt, ME.canvas);
+        check("MOSS-Image Edit: comfySlots gives each encoder's four inputs by rank (the batch + 1), class TextEncodeMOSSImageEdit, through the scale nodes",
+            mSlots.length === 8 && mSlots.every((s) => s.cls === "TextEncodeMOSSImageEdit" && (s.node === "pos" || s.node === "neg") && s.num === s.batch + 1 && s.input === `images.image_${s.batch}`)
+            && C.batchOf(ME.prompt, "canvas", ["scale2", 0]) === 2, short(mSlots));
+        const mBare = clone(ME);
+        delete mBare.refs;
+        const mDerived = C.comfyRefSpec(mBare);
+        check("MOSS-Image Edit without refs: the identity trace derives the same spec from the class (image {n}, 4 slots, the same trim)", eq(mDerived, mSpec), short({ ...mDerived, trim: mDerived.trim && mDerived.trim.length }));
+        // a run with two pictures (the crop and one reference): image_2 and image_3 left out of both encoders; with the crop
+        // alone image_1..3 too, image_0 (the picture being edited, the node's one required slot) always kept
+        const mp = clone(ME.prompt), mRemoved = C.trimSlots(mp, mSpec, 2);
+        const m1 = clone(ME.prompt), m1Removed = C.trimSlots(m1, mSpec, 1);
+        check("MOSS-Image Edit: trimSlots leaves out the slots past the batch on both encoders, never image_0",
+            eq(mRemoved, ["pos.images.image_2", "pos.images.image_3", "neg.images.image_2", "neg.images.image_3"]) && eq(mp.pos.inputs["images.image_1"], ["scale1", 0]) && eq(mp.neg.inputs["images.image_1"], ["scale1", 0])
+            && eq(m1Removed, ["pos", "neg"].flatMap((n) => [1, 2, 3].map((k) => `${n}.images.image_${k}`))) && eq(m1.pos.inputs["images.image_0"], ["scale0", 0]) && eq(m1.neg.inputs["images.image_0"], ["scale0", 0]),
+            short({ mRemoved, m1Removed }));
+        // with the Original in the batch it is image 2, the first reference layer image 3; three references and the Original keep two
+        const mOne = C.comfyLayout(mSpec, { hasSelection: true, fill: "none", withOriginal: false, refine: false, count: 1 });
+        const mOrig = C.comfyLayout(mSpec, { hasSelection: true, fill: "green", withOriginal: true, refine: false, count: 3 });
+        check("MOSS-Image Edit: {@ref:0} beside the crop is image 2; after the Original (image 2) the first reference is image 3; three references with the Original keep two (4 slots)",
+            C.resolveMarkers("the hat of {@ref:0}", mOne.pictures, mSpec.name).text === "the hat of image 2" && C.resolveMarkers("put {@ref:1} here, keep {@ref:0}", mOrig.pictures, mSpec.name).text === "put image 3 here, keep image 2"
+            && mOrig.kept === 2 && mOrig.drops === 1 && mOrig.pictures[1].field === "pos.images.image_1", short({ one: mOne.pictures, orig: mOrig.pictures, kept: mOrig.kept }));
+        check("MOSS-Image Edit: the recipe's own graph was not touched", eq(ME.prompt, rawFile("moss_image_edit_local.json").prompt));
+
         const before = JSON.stringify(QWEN) + JSON.stringify(KLEIN);
         C.comfyRefSpec(QWEN); C.comfyRefSpec(KLEIN);
         check("comfyRefSpec leaves the recipe as it was", JSON.stringify(QWEN) + JSON.stringify(KLEIN) === before);

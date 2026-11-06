@@ -1,0 +1,57 @@
+{
+  "id": "moss_image_edit_local",
+  "name": "MOSS-Image Edit (ComfyUI)",
+  "description": "MOSS-Image with its edit LoRA on your own ComfyUI (0.43 or newer, whose Text Encode MOSS-Image Edit node runs it; Comfy's template image_moss_image_edit): an instruction edit of the crop, which goes as image 1, with up to three more pictures of the crop batch (the Original copy with a fill mode, then the reference layers) as image 2, image 3 and image 4; an @img token is written as the image N its picture has, and inputs the batch does not fill are left out. Say in the prompt what each picture is for; the phrasing the edit LoRA was trained on works best: \"Change only the X to Y. Keep the character, face, hair, pose, background and composition unchanged.\" The model has no mask input: it renders the whole crop again and the stitch keeps your selection. The crop (Settings › ComfyUI's crop size, 1024 by default) is scaled to the Megapixels row's area, 1 MP by default, sides in steps of 16, and the result comes back at that size; about 0.26 MP makes the model re-frame the picture instead of editing it. The row sets the picture being edited only: the other pictures go at 1 MP. Comfy's template settings: 30 steps, CFG 4 (keep it there; lower lets things appear that were not asked for), euler with the normal scheduler, skip-layer guidance on layer 22 over the whole schedule, both encoders in the Moss-Image-Edit format, the layout this edit LoRA was trained with. A negative prompt such as \"nsfw, worst quality, bad anatomy, watermark, jpeg artifact\" helps (the negative encoder sees the same pictures). The edit LoRA (moss_image_edit_lora_rank_64_bf16, 297 MB, from Comfy-Org's MOSS-Image repository on Hugging Face) is the Edit LoRA row, its strength the next row; a ComfyUI without the file stops the run with its download link. Your own LoRA rows go after the edit LoRA. Edit LoRAs trained with ai-toolkit need the ai-toolkit format on both encoders: Edit in ComfyUI, set edit_format on both Text Encode MOSS-Image Edit nodes and pick the LoRA, then Save as new recipe. Which model file (SFT or Base, bf16 or int8), Qwen3.5 9B text encoder and VAE it loads is picked under Settings; the edit LoRA was trained on SFT. Generate new edits the blank canvas; for a new picture from the prompt alone take MOSS-Image (ComfyUI). Built from Comfy's template and ComfyUI 0.44's node specs; not run yet. The edit LoRA is chinoll's Moss-Image-Edit, rehosted by Comfy-Org, whose repository card says Apache-2.0; chinoll's own repository names no licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0.",
+  "mode": "local",
+  "canvas": "canvas",
+  "result": "decode:0",
+  "loras": { "model": "lora", "family": "moss_image" },
+  "refs": { "name": "image {n}", "slots": 4 },
+  "needs": ["InpaintCanvas", "ImageFromBatch", "ImageScaleToTotalPixels", "GetImageSize", "EmptyFlux2LatentImage", "UNETLoader", "LoraLoaderModelOnly", "SkipLayerGuidanceDiTSimple", "CLIPLoader", "VAELoader", "TextEncodeMOSSImageEdit", "KSampler", "VAEDecode"],
+  "settings": [
+    { "index": 1, "node": "unet", "input": "unet_name", "label": "Model" },
+    { "index": 2, "node": "clip", "input": "clip_name", "label": "Text encoder" },
+    { "index": 3, "node": "vae", "input": "vae_name", "label": "VAE" },
+    { "index": 4, "node": "lora", "input": "lora_name", "label": "Edit LoRA" },
+    { "index": 5, "node": "lora", "input": "strength_model", "label": "LoRA strength" },
+    { "index": 6, "node": "ks", "input": "steps", "label": "Steps" },
+    { "index": 7, "node": "ks", "input": "cfg", "label": "CFG" },
+    { "index": 8, "node": "scale0", "input": "megapixels", "label": "Megapixels" }
+  ],
+  "models": {
+    "diffusion_models": [
+      "moss_image_sft_bf16.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_bf16.safetensors)",
+      "moss_image_sft_int8_convrot.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_int8_convrot.safetensors)"
+    ],
+    "loras": [
+      "moss_image_edit_lora_rank_64_bf16.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/loras/moss_image_edit_lora_rank_64_bf16.safetensors)"
+    ],
+    "text_encoders": [
+      "qwen3.5_9b_int8_convrot.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_int8_convrot.safetensors)",
+      "qwen3.5_9b_w4a8_gptq.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors)"
+    ],
+    "vae": ["flux2-vae_small.safetensors (https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae_small.safetensors)"]
+  },
+  "prompt": {
+    "canvas": { "class_type": "InpaintCanvas", "inputs": { "padding": 64, "target_size": 1024, "feather": 16, "multiple_of": 64 } },
+    "img0": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 0, "length": 1 } },
+    "img1": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 1, "length": 1 } },
+    "img2": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 2, "length": 1 } },
+    "img3": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 3, "length": 1 } },
+    "scale0": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["img0", 0], "upscale_method": "lanczos", "megapixels": 1, "resolution_steps": 16 } },
+    "scale1": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["img1", 0], "upscale_method": "lanczos", "megapixels": 1, "resolution_steps": 16 } },
+    "scale2": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["img2", 0], "upscale_method": "lanczos", "megapixels": 1, "resolution_steps": 16 } },
+    "scale3": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["img3", 0], "upscale_method": "lanczos", "megapixels": 1, "resolution_steps": 16 } },
+    "size": { "class_type": "GetImageSize", "inputs": { "image": ["scale0", 0] } },
+    "latent": { "class_type": "EmptyFlux2LatentImage", "inputs": { "width": ["size", 0], "height": ["size", 1], "batch_size": 1 } },
+    "unet": { "class_type": "UNETLoader", "inputs": { "unet_name": "moss_image_sft_bf16.safetensors", "weight_dtype": "default" } },
+    "lora": { "class_type": "LoraLoaderModelOnly", "inputs": { "model": ["unet", 0], "lora_name": "moss_image_edit_lora_rank_64_bf16.safetensors", "strength_model": 1 } },
+    "slg": { "class_type": "SkipLayerGuidanceDiTSimple", "inputs": { "model": ["lora", 0], "double_layers": "", "single_layers": "22", "start_percent": 0, "end_percent": 1 } },
+    "clip": { "class_type": "CLIPLoader", "inputs": { "clip_name": "qwen3.5_9b_int8_convrot.safetensors", "type": "moss_image", "device": "default" } },
+    "vae": { "class_type": "VAELoader", "inputs": { "vae_name": "flux2-vae_small.safetensors" } },
+    "pos": { "class_type": "TextEncodeMOSSImageEdit", "inputs": { "clip": ["clip", 0], "prompt": ["canvas", 7], "vae": ["vae", 0], "edit_format": "Moss-Image-Edit", "images.image_0": ["scale0", 0], "images.image_1": ["scale1", 0], "images.image_2": ["scale2", 0], "images.image_3": ["scale3", 0], "image_strength": 1 } },
+    "neg": { "class_type": "TextEncodeMOSSImageEdit", "inputs": { "clip": ["clip", 0], "prompt": ["canvas", 12], "vae": ["vae", 0], "edit_format": "Moss-Image-Edit", "images.image_0": ["scale0", 0], "images.image_1": ["scale1", 0], "images.image_2": ["scale2", 0], "images.image_3": ["scale3", 0], "image_strength": 1 } },
+    "ks": { "class_type": "KSampler", "inputs": { "model": ["slg", 0], "seed": ["canvas", 10], "steps": 30, "cfg": 4, "sampler_name": "euler", "scheduler": "normal", "positive": ["pos", 0], "negative": ["neg", 0], "latent_image": ["latent", 0], "denoise": 1 } },
+    "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["ks", 0], "vae": ["vae", 0] } }
+  }
+}
