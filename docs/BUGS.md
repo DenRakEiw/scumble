@@ -29,15 +29,21 @@ combos with the refusal and the download link, issue #4's mechanism), or a match
 the manual telling the user to put the files at those names. Not fixed by item 50 (`docs/PLAN_LORAS.md` §2.2: the
 relight recipes take no LoRA rows in 0.1.52).
 
-### The helper downloader sends the Hugging Face token to every URL and checks only the size (found 2026-10-24, read, item 49's plan)
+### (Fixed for 0.1.52 on the branch `ck-i2`, I2 of `docs/PLAN_CORRIDORKEY.md`.) The helper downloader sent the Hugging Face token to every URL and checked only the size (found 2026-10-24, read, item 49's plan)
 
-`electron/main/onnx/models.js` `_file` (`:297-299` at `ec1142b`) puts `authorization: Bearer <token>` on every
-download request, whatever the URL's host. Today every registry URL is on `huggingface.co`, so the token goes nowhere
-else (and undici drops `Authorization` on a cross-origin redirect, so HF's storage redirects do not get it either); a
-model hosted anywhere else (GitHub release assets, Google Cloud Storage) would receive the user's Hugging Face token. The
-same function compares only the file size (`:328`), no hash. Not reachable today; to fix before the first non-HF URL
-goes into the registry: the token only to `huggingface.co` hosts, a sha256 per file. Planned as session I2 of
-`docs/PLAN_CORRIDORKEY.md`.
+Was: `electron/main/onnx/models.js` `_file` put `authorization: Bearer <token>` on every download request, whatever
+the URL's host, and compared only the file size. **Fixed (2026-11-06, `ck-i2`):** the redirects are followed by hand
+and the token goes on a hop only when that hop is `https://huggingface.co` or `https://hf.co` on the default port
+(`hfTokenAllowed`; never Hugging Face's CDN hops, which carry a signed URL, never another host, never http; an https
+URL is never followed to http); every file with a known sha256 is checked while it streams (over the old `.part` bytes
+on a resume) and a mismatch deletes the `.part`. Hashes are known for SAM2 (all four), BiRefNet lite and BiRefNet,
+RMBG-1.4, LaMa and Depth Anything V2 Small (the HF tree API's LFS oids, read 2026-11-06, the URLs pinned to that
+commit); **RMBG-2.0 has none** (gated: the API masks its oid without a token), so it keeps the size check alone.
+Found on the way: SAM2 large's decoder is 20,640,910 bytes on Hugging Face, the registry said 20,640,886, so its
+download always failed the size check (a `.part` of 20,640,910 bytes from 2026-10-05 sits in the user's models
+folder; the new code keeps a whole `.part` that checks, so the next Download finishes without a request). Tests:
+`node tools/download_test.js` (64 checks on local servers and a fetch stub for huggingface.co). The integration moves
+this entry under "Fixed, waiting for its release" (`docs/ck2/i2_notes.md`).
 
 ### The `depth` gate runs a test that does not exist (found 2026-10-23, read, K0c)
 

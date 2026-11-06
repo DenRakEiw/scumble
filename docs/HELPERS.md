@@ -230,7 +230,8 @@ error names the URL. It puts `settings.llm` back at the end.
 | File | What |
 |---|---|
 | `runtime.js` | `Runtime`: one `InferenceSession` per model file, created on first use. Providers tried in order: Windows `dml` → `cpu`, Linux `cuda` → `cpu`, macOS `coreml` → `cpu`; `device: "cpu"` skips the GPU. DML sessions get `executionMode: sequential`, `enableMemPattern: false`. `free()` releases every session. `status()` reports what is loaded where and the last failure per provider. |
-| `models.js` | The registry (below), lookup in the model folder and its `onnx/`, `sam2/`, `RMBG/`, `BiRefNet/`, `rembg/` subfolders, `Downloader` (Node `fetch`, `.part` files resumed with `Range`, progress events, `Authorization: Bearer <hf token>`, size check against the registry), `remove()`. No Electron imports: `node tools/helpers_test.js` uses it directly. |
+| `models.js` | The registry (below), lookup in the model folder and its `onnx/`, `sam2/`, `RMBG/`, `BiRefNet/`, `rembg/` subfolders (a set only in its own folder), `Downloader` (Node `fetch` with the redirects followed by hand, `.part` files resumed with `Range`, progress events per file and for the whole set, the Hugging Face token only to Hugging Face's own hosts, a size and a sha256 check per file, the free disk checked first; "Downloads" below), `offered()`, `describe()`, `verify()`, `termsText()`, `remove()`. No Electron imports: `node tools/helpers_test.js` and `node tools/download_test.js` use it directly. |
+| `corridorkey2.json` | The CorridorKey 2.0 set's catalogue (item 49, `docs/PLAN_CORRIDORKEY.md` §4.4), read by `fromSetCatalogue`; a placeholder until the set is built and hosted, written by `tools/ck2_catalogue.js` from the built set. |
 | `sam2.js` | `Sam2`: `encode(rgba1024, key)` (cached per key, three embeddings), `decode()` for B prompts, `predict(points, box)` (best of three masks), `automask()`: the SAM2 automatic mask generator with crop_n_layers = 0 and the node's parameters (32 × 32 point grid, batches of 64, pred IoU ≥ 0.8, stability ≥ 0.92 with offset 1.0, box NMS 0.7, min area 0.02 %), masks kept as Int8 quantised logits, painted large to small (the smallest object under the cursor wins) into a `Uint16Array` label map at the requested size by bilinear sampling of the logits. |
 | `matting.js` | `Matting`: one 1024 × 1024 RGB in with the model's mean / std, the output tensor of 1024² values (sigmoid applied when the range says it is a logit; RMBG-1.4 already outputs probabilities) → `Uint8Array` alpha. |
 | `depth.js` | `Depth`: one `[1, 3, H, W]` RGB in at multiples of 14 with ImageNet mean / std, the output tensor of $H \times W$ values → `Float32Array` depth map. |
@@ -266,13 +267,71 @@ layer with smoothing.
 
 | id | Files (folder names) | Source | Licence |
 |---|---|---|---|
-| `sam2_tiny` / `sam2_small` / `sam2_base_plus` / `sam2_large` | `sam2_hiera_<v>.encoder.onnx` + `.decoder.onnx` | `vietanhdev/segment-anything-2-onnx-models` (samexporter) | Apache-2.0 |
-| `birefnet_lite` | `birefnet_lite.onnx` (224 MB) | `onnx-community/BiRefNet_lite-ONNX` | MIT |
-| `birefnet` | `birefnet.onnx` (973 MB) | `onnx-community/BiRefNet-ONNX` | MIT |
-| `rmbg14` | `rmbg14.onnx` (176 MB) | `briaai/RMBG-1.4` | BRIA, non-commercial |
-| `rmbg2` | `rmbg2.onnx` (1.02 GB) | `briaai/RMBG-2.0` (gated: accept the licence, save a token) | CC BY-NC 4.0 |
+| `sam2_tiny` / `sam2_small` / `sam2_base_plus` / `sam2_large` | `sam2_hiera_<v>.encoder.onnx` + `.decoder.onnx` (the large decoder 20,640,910 bytes, the other three 20,640,886) | `vietanhdev/segment-anything-2-onnx-models` (samexporter), pinned to commit `071f5807`, a sha256 per file | Apache-2.0 |
+| `birefnet_lite` | `birefnet_lite.onnx` (224 MB) | `onnx-community/BiRefNet_lite-ONNX`, pinned to `de15b22b`, sha256 `56000243…3333` | MIT |
+| `birefnet` | `birefnet.onnx` (973 MB) | `onnx-community/BiRefNet-ONNX`, pinned to `534d3c82`, sha256 `58f621f0…bd3c` | MIT |
+| `rmbg14` | `rmbg14.onnx` (176 MB) | `briaai/RMBG-1.4`, pinned to `2ceba5a5`, sha256 `8cafcf77…2e0f` | BRIA, non-commercial |
+| `rmbg2` | `rmbg2.onnx` (1.02 GB) | `briaai/RMBG-2.0` (gated: accept the licence, save a token), `main`, **no sha256** (the HF API masks a gated repo's oid without a token): the size check alone | CC BY-NC 4.0 |
 | `lama` (kind `inpaint`) | `lama_fp32.onnx` (208 MB; also found in `inpaint/` and `lama/`) | `Carve/LaMa-ONNX`, pinned to commit `c3c0c9e4`, sha256 `1faef530…68d6` | Apache-2.0 (the weights: `advimman/lama`, Apache-2.0) |
 | `da2_small` (kind `depth`) | `depth_anything_v2_small.onnx` (99 MB; also found in `depth/`) | `onnx-community/depth-anything-v2-small`, pinned to commit `4472b736…`, sha256 `afb6a5c2…df10c` | Apache-2.0 |
+| `corridorkey2` (kind `key`) | a set of 28 files in `onnx/corridorkey2/` (planned; about 2.4 GB) | Scumble's ONNX conversion of `nikopueringer/CorridorKey2.0` @ `cf44a8d` and its three feature models; **a placeholder, not offered** (below) | Corridor Key Licence 2.0 (CC BY-NC-SA 4.0 with Corridor's terms); C-RADIOv4 NVIDIA Open Model License; MoGe-2 MIT; RVM CC BY 4.0 |
+
+The full hashes are in `models.js`; every one is the Hugging Face tree API's LFS oid (which is the file's sha256),
+read 2026-11-06 at the pinned commit, and every size there matched the registry but SAM2 large's decoder (the
+registry said 20,640,886, so that download always failed its size check; fixed with I2 of `docs/PLAN_CORRIDORKEY.md`).
+
+## Downloads (`Downloader` in `models.js`, I2 of `docs/PLAN_CORRIDORKEY.md`, 2026-11-06)
+
+- **Refused before any request:** an unknown id; a model that is not `offered` (a placeholder, a set whose catalogue
+  breaks a rule, a file without a URL, a set file without its size or sha256: "... is not available for download
+  yet."); a model with `terms` the caller has not accepted (the `termsAccepted(model)` option, default: never); one
+  already downloading. **Refused as the download's error:** less free disk (`statfs` of the target folder) than the
+  bytes still to fetch plus 64 MB (present files and `.part` bytes do not count).
+- **The token rule** (`hfTokenAllowed`): the Hugging Face token goes on a request only when its URL is
+  `https://huggingface.co/...` or `https://hf.co/...` on the default port without user info. The redirects are
+  followed by hand (at most 10), so each hop is judged by its own URL: Hugging Face's storage hops
+  (`us.aws.cdn.hf.co`, `cdn-lfs.hf.co`, `cas-bridge.xethub.hf.co`) carry a signed URL and get no token (as before:
+  undici dropped the header on a cross-origin redirect), another host never gets it, and an https URL is never
+  followed to http. A 401 / 403 from Hugging Face gives the gated sentence for a gated model; from another host it
+  names that host.
+- **Each file** goes to `<name>.part` beside its target, resumed with `Range: bytes=<have>-`; a 206 must start at
+  `have` (else the `.part` is dropped and the file asked again without a range, once; a 416 likewise); a server that
+  answers 200 is written over from the start. The sha256 is computed while the bytes stream (the old `.part` bytes
+  hashed first on a resume). Then: fewer bytes than the registry's size keeps the `.part` ("Download again resumes
+  it"), more bytes or a wrong sha256 deletes it, a match renames it. A broken connection keeps the `.part`. A `.part`
+  already of the registry's size is hashed and renamed when it checks, without a request (SAM2 large's left-over case).
+- **Progress events** `{ id, file, received, total, index, count, setReceived, setTotal }` (the file's bytes, the
+  file's place in the model's list, and the whole model's bytes, present files included), `{ id, done: true, ... }`,
+  `{ id, file, error }` or `{ cancelled: true }`; `running()` gives the same fields per model.
+- **`verify(id, dir)`** hashes the present files (`ok` null where no sha256 is known); `remove(id, dir)` deletes a
+  set's files, its `.part` files and then its folder when empty.
+
+**Sets** (`fromSetCatalogue`): many files that must sit together (an ONNX graph finds its external data by the
+name inside the graph, beside the `.onnx`). A set's files keep their own names in its `subdir`, which must lie under
+`onnx/` (`onnx/corridorkey2/`: in a ComfyUI models folder that is `models/onnx/corridorkey2/`, in the app folder
+`<app models>/onnx/corridorkey2/`); they are looked for there only (never in `SUBDIRS`: a bare
+`models/corridorkey2/` is a ComfyUI CorridorKey pack's fp32 weights), count as present only at their registry size,
+and are never linked by the scan (which reports the pack's `corridorkey2/corridorkey_v2.safetensors` under
+`elsewhere`). `describeAll()` leaves out a model that is not offered (so its Settings › Helpers row and Download
+button stay hidden), `describeAll(..., { all: true })` and `describe(id)` give it with `offered: false`, and a set's
+row adds `set`, `subdir`, `folder`, `version`, `approxBytes`, `terms` and `termsText` (the terms paragraph with
+`{size}` and `{host}` filled in). `setFolder(model, dir)` is the folder of a present set.
+
+**The CorridorKey 2.0 set** (`corridorkey2.json`): until I1 of `docs/PLAN_CORRIDORKEY.md` builds the set and it is
+hosted, the catalogue is a placeholder (`placeholder: true`, `base: null`, no sha256): the planned layout of 28
+files (`manifest.json`, `THIRD_PARTY_NOTICES.md`, `LICENSE`, the five shared external-data files `cradio.weights`,
+`moge.weights`, `rvm.weights`, `stage1.weights`, `stage2.weights` at Nucito's fp16 sizes as an estimate, about 2.43
+GB in all, and the five graphs per bucket for 768 × 768, 1024 × 768, 768 × 1024 and 1024 × 1024). A placeholder is
+never present and never offered. **When the set is built:** `node tools/ck2_catalogue.js --set dist/ck_onnx/<version>
+--version <version>` rewrites the file list from the files themselves (names, sizes, sha256; the manifest's own
+list held to the folder), and at the release `--base <the hosting folder URL>` makes it offered (each URL is the base
+plus the file's name; a Hugging Face repo is covered by the token rule, any other host gets no token);
+`--check` compares the catalogue with a folder byte for byte. The rows per part of the set (pinned revisions, sha256,
+licences) go in this table once the set exists (I8).
+
+Tests: `node tools/download_test.js` (64 checks, no network: two local HTTP servers as two hosts and a fetch stub for
+huggingface.co and its CDN; the token rule, the checksum, the resume cases, sets, the progress, the free disk, the
+terms, the placeholder, the catalogue tool) and `node tools/scan_test.js` (a CorridorKey-sized set by truncate).
 
 **LaMa** (package 5 step 3, 2026-09-28): the Big-LaMa weights in Carve's ONNX export (opset 17,
 the Fourier unit rewritten with `Einsum` / `Cos` / `Sin` so it exports, the same output as the
@@ -340,7 +399,7 @@ weights". So on a typical ComfyUI install the scan explains the situation rather
 saving a download; it saves one where someone has put the ONNX exports into the folder.
 
 Gate: `node tools/scan_test.js` (a synthetic ComfyUI folder with files truncated to the
-registry sizes, twelve checks, no models needed); `node tools/scan_test.js --dir <folder>`
+registry sizes, 22 checks, no models needed); `node tools/scan_test.js --dir <folder>`
 prints the report for a real folder.
 
 ## Settings › Helpers
@@ -348,7 +407,8 @@ prints the report for a real folder.
 Device (auto / GPU / CPU; changing it frees the sessions; LaMa always runs on the CPU), the
 SAM2 model for the object tool, the model folder (Change folder … / App folder / Open folder / Scan folder,
 with a summary line of the last scan), one row per
-model with Download (progress bar, Cancel; a `.part` resumes) or Remove, the Hugging
+model with Download (progress bar, Cancel; a `.part` resumes; a model not offered yet, such as the CorridorKey 2.0
+set before it is hosted, has no row) or Remove, the Hugging
 Face token, and a runtime line (ONNX Runtime version, providers tried, what is loaded
 on which provider, failures). `host.refreshHelpers()` after a change refreshes the
 cutout model lists in every open editor.
