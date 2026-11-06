@@ -20,10 +20,10 @@
 // A recipe variant describes the model with `options`:
 //   channels   { <Channel row value>: overrides }   normal, VIP and official are different model ids
 //              with different rules; the variant's `model` is the default channel's id
-//   mask       true: a "fill" run uploads req.maskAlpha as mask_url (only gpt-image-2-official has one;
+//   mask       true: a "fill" run uploads req.maskAlpha as mask_url (gpt-image-2-official and gpt-image-2.6-*-official;
 //              alpha 0 = repaint, OpenAI's convention, which the ToAPIs page states)
 //   size       "ratio" (the crop's own W:H, gpt-image-2 official / VIP), "preset" (the closest of
-//              `ratios`), "pixels" (WxH under `pixels` rules, GPT Image 2.5 official / VIP, Qwen)
+//              `ratios`), "pixels" (WxH under `pixels` rules, GPT Image 2.5 official / VIP, 2.6 official, Qwen)
 //   tiers      { "1K": 1024, ... } with `tier_key` ("resolution" or "metadata.resolution"): a row left on
 //              auto takes the smallest tier whose output covers both edges of the emitted crop, read from
 //              `tier_sizes` ({ "16:9": { "1K": "1820x1024", ... } }, the model page's table) for the size

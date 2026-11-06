@@ -63,7 +63,7 @@ function closestAspect(w, h, presets) {
 /**
  * A free pixel size for a crop of w x h under a model's rules: both edges multiples of `step`,
  * at most `max` an edge, `minPixels` to `maxPixels` in all (0 = no bound) and a ratio no steeper
- * than `maxRatio` (0 = any). GPT Image 2 / 2.5 (OpenAI and ToAPIs) and Qwen Image 3.0 on ToAPIs.
+ * than `maxRatio` (0 = any). GPT Image 2 / 2.5 / 2.6 (OpenAI, fal and ToAPIs) and Qwen Image 3.0 on ToAPIs.
  * Returns [width, height].
  */
 function fitPixels(w, h, r) {

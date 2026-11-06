@@ -4,7 +4,7 @@
   "name": "GPT Image 2.5 Flare",
   "family": "OpenAI",
   "refs": { "name": "Image {n}" },
-  "description": "OpenAI's fast image model (September 2026): custom sizes in multiples of 16 up to 3840 px an edge, quality up to max. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Run against the live API through OpenRouter since 2026-09-21; the other providers' adapters are written from their docs and not run live yet. Also on Comfy Router. Also on Oxen.ai. Also on Magnific.",
+  "description": "OpenAI's fast image model (September 2026): custom sizes in multiples of 16 up to 3840 px an edge, quality up to max. Also on fal.ai. Also on Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Run against the live API through OpenRouter since 2026-09-21; the other providers' adapters are written from their docs and not run live yet. Also on Comfy Router. Also on Oxen.ai. Also on Magnific.",
   "default": "openai",
   "providers": {
     "toapis": {
@@ -262,9 +262,162 @@
         "refs": {}
       }
     },
+    "fal": {
+      "model": "openai/gpt-image-2.5/flare/edit",
+      "input": "fill",
+      "options": {
+        "sizing": "pixels",
+        "pixels": {
+          "step": 16,
+          "max": 3840,
+          "minPixels": 655360,
+          "maxPixels": 8294400,
+          "maxRatio": 3
+        },
+        "max_images": 16,
+        "omit": [
+          "seed",
+          "negative_prompt"
+        ]
+      },
+      "fields": {
+        "images": "image_urls",
+        "mask": "mask_url"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 3840,
+        "step": 16,
+        "pixels": 8294400,
+        "minPixels": 655360,
+        "ratio": 3
+      },
+      "text": {
+        "model": "openai/gpt-image-2.5/flare/text-to-image",
+        "sizes": [
+          1024,
+          1536,
+          2048,
+          2560,
+          3072,
+          3840
+        ],
+        "refs": {
+          "model": "openai/gpt-image-2.5/flare/edit"
+        }
+      },
+      "note": "fal's hosted GPT Image 2.5 Flare with the selection as mask_url (white = repaint) beside the crop and the reference layers; fal bills the OpenAI run by tokens. Not run against the live API yet (written from fal's schema, read 2026-11-06). The pictures go inline (data URIs) to fal. The size goes as image_size: the crop's own size in multiples of 16 (at most 3840 px an edge, 655,360 to 8,294,400 pixels, no steeper than 3:1); a new image the asked size held to the same rules. Background \"transparent\" gives a cut-out with a real alpha channel (PNG). At most sixteen pictures (the crop, Original and the reference layers)."
+    },
+    "replicate": {
+      "model": "openai/gpt-image-2.5-flare",
+      "input": "edit",
+      "options": {
+        "omit": [
+          "seed",
+          "negative_prompt"
+        ]
+      },
+      "fields": {
+        "images": "input_images"
+      },
+      "fixed": {
+        "output_format": "png",
+        "aspect_ratio": "auto"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "fixed": {
+          "output_format": "png",
+          "aspect_ratio": "match_input_image"
+        },
+        "aspects": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16"
+        ],
+        "refs": {}
+      },
+      "note": "Runs on Replicate (OpenAI's official model there); not run against the live API yet (written from Replicate's schema, read 2026-11-06). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit asks for size auto (the model picks it; not verified to keep the crop's shape, an answer of another shape is centre-cropped); a new image the asked aspect, or the closest of Replicate's seven. Background \"transparent\" gives a cut-out (PNG). Replicate bills per image by quality."
+    },
     "wavespeed": {
       "model": "openai/gpt-image-2.5-flare/edit",
-      "input": "edit",
+      "input": "fill",
+      "fields": {
+        "images": "images",
+        "mask": "mask_image"
+      },
       "options": {
         "max_images": 16,
         "aspect_ratios": [
@@ -283,7 +436,16 @@
           "16:9",
           "9:21",
           "21:9"
+        ],
+        "accepts": [
+          "aspect_ratio",
+          "resolution",
+          "quality",
+          "output_format"
         ]
+      },
+      "limits": {
+        "aspects": ["1:1", "1:2", "2:1", "1:3", "3:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "9:21", "21:9"]
       },
       "settings": [
         {
@@ -319,7 +481,7 @@
           ]
         }
       ],
-      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". WaveSpeed sends the aspect preset closest to the crop.",
+      "note": "Inpainting with the selection as mask_image (white = repaint, the first picture's) beside the crop and the reference layers; with a mask no aspect preset goes: WaveSpeed picks the shape from the input image (its docs; not verified that it keeps the exact ratio), and the crop is first widened to the nearest of WaveSpeed's 15 presets, so a pick among them cannot differ from it. A new image takes the aspect preset closest to the asked size. Written from WaveSpeed's docs (the mask input read 2026-11-06), not run against the live API yet.",
       "text": {
         "model": "openai/gpt-image-2.5-flare/text-to-image",
         "refs": {

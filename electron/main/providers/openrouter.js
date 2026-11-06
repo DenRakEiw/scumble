@@ -34,7 +34,8 @@
 //               3 % of the emitted crop, and info.fit "stretch" for the stitch; else "auto" (image 1's shape)
 //   tier_unit   "area": the tier by the emitted area (a tier's base squared, 15 % slack) instead of the long side
 //   passthrough { <host slug>: [keys] }: settings rows that go as provider.options[<slug>][key]; only keys this file
-//               knows (PASSTHROUGH: safety_tolerance, a whole number 0 to 4)
+//               knows (PASSTHROUGH: safety_tolerance, a whole number 0 to 4; complexity, low / medium / high, which
+//               GPT Image 2.6's OpenAI endpoint takes this way)
 //   min_side, max_pixels   each picture's size: a reference layer outside is scaled into them (ctx.resizePng), the
 //               crop is refused
 // The seed reported is the one sent: none (null) where `accepts` has no seed.
@@ -73,6 +74,8 @@ const PARAMS = ["resolution", "aspect_ratio", "quality", "background", "output_f
 /** The passthrough keys this file sends (`options.passthrough`), each value checked; anything else is left out. */
 const PASSTHROUGH = {
     safety_tolerance: (v) => (v === "" || v == null || !Number.isFinite(Number(v)) ? undefined : Math.max(0, Math.min(4, Math.round(Number(v))))),
+    // GPT Image 2.6's planning depth: OpenAI's endpoint lists it in allowed_passthrough_parameters (read 2026-11-06)
+    complexity: (v) => { const s = String(v == null ? "" : v).toLowerCase(); return ["low", "medium", "high"].includes(s) ? s : undefined; },
 };
 /** edit_aspect: a preset within this of the emitted crop goes (|ln| of the ratios); the planned one within the second. */
 const FIT_SLACK = 0.03;

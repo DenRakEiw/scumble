@@ -19,7 +19,8 @@
 // to the asked shape instead of `aspect_ratio`, `text_values` ({ key: { value: replacement } }) swaps a Settings
 // value a text run's model does not take (Ideogram's "very_low" is an edit's only), and on a fill `max_ratio` refuses
 // a crop steeper than that and `max_bytes` holds each picture to that size (JPEG for an opaque one over it), both
-// before the first upload.
+// before the first upload. `omit` lists input fields the model's schema does not have (GPT Image 2.5 and 2.6: "seed",
+// "negative_prompt"); they stay home, and a run whose seed stayed home reports none.
 // A text run (Generate new) goes to the same model without the crop: reference layers, when there are any, fill the
 // image list in order (the crop's slot being a reference's), and the shape goes as `aspect_ratio`: the one asked for,
 // else the preset closest to the asked size. It never keeps the edit's "match_input_image", which would follow the
@@ -137,6 +138,7 @@ async function inputFor(req, ctx, info = {}) {
         else if (input.aspect_ratio === "match_input_image") input.aspect_ratio = closestAspect(req.width || 1024, req.height || 1024, TEXT_ASPECTS);
     }
     if (req.negative && o.negative !== false && input.negative_prompt === undefined && req.kind !== "edit") input.negative_prompt = req.negative;
+    for (const k of Array.isArray(o.omit) ? o.omit : []) delete input[k];
     return input;
 }
 
@@ -210,6 +212,8 @@ module.exports = {
         if (!imgUrl) throw new Error("Replicate: no image URL in the output (" + JSON.stringify(pred.output).slice(0, 200) + ")");
         const file = await fetchImage(imgUrl, ctx.fetch);
         const metrics = pred.metrics || {};
-        return { bytes: file.bytes, mime: file.mime, seed: num(input.seed, req.seed), info: { model, id: pred.id, predict_time: metrics.predict_time, ...sent } };
+        // a seed `options.omit` kept home means nothing to the model: none is reported
+        const omitted = Array.isArray((req.options || {}).omit) && req.options.omit.includes("seed");
+        return { bytes: file.bytes, mime: file.mime, seed: omitted ? undefined : num(input.seed, req.seed), info: { model, id: pred.id, predict_time: metrics.predict_time, ...sent } };
     },
 };

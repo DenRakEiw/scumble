@@ -21,6 +21,12 @@
 // `max_pixels` (256 px, 4 MP): a reference layer or the Original outside them is scaled into them (ctx.resizePng), the
 // crop is refused. The seed reported is the one sent: none where `options.omit` keeps it home.
 //
+// GPT Image 2.5 and 2.6 (openai/gpt-image-2.x/<flare|sunburst>/edit and text-to-image; read 2026-11-06): `options.sizing:
+// "pixels"` sends `image_size` { width, height } held inside the model's rules, `options.pixels` { step, max, minPixels,
+// maxPixels, maxRatio } (util.fitPixels; fal's text-to-image page: multiples of 16, at most 3840 an edge, 655,360 to
+// 8,294,400 pixels, no steeper than 3:1): on an edit or a fill the emitted crop's size, on a text run the asked one, so
+// no free size of the Generate new dialog goes out under the pixel floor.
+//
 // text (kind "text", Generate new): the text-to-image route takes no picture. With reference layers the recipe's
 // `text.refs.model` sends the run to the edit route (".../edit", FLUX 3's ".../edit-image"), which gets the references
 // alone in its image list (no crop, no mask) and the asked size as `options.sizing` says; textLayout(req) declares
@@ -52,6 +58,20 @@ function fittedSize(w, h, range) {
     return { width: fw, height: fh };
 }
 
+/**
+ * `sizing: "pixels"`: the run's size (the emitted crop, or a text run's asked size) as { width, height } inside the
+ * variant's `options.pixels` rules ({ step, max, minPixels, maxPixels, maxRatio }, 0 or absent = no bound); null when
+ * the variant names no rules (the route then picks its own size).
+ */
+function pixelSize(req) {
+    const r = (req.options || {}).pixels;
+    if (!r || typeof r !== "object" || Array.isArray(r)) return null;
+    const n = (x) => (Number.isFinite(+x) && +x > 0 ? +x : 0);
+    const rules = { step: n(r.step) || 16, max: n(r.max) || 4096, minPixels: n(r.minPixels), maxPixels: n(r.maxPixels), maxRatio: n(r.maxRatio) };
+    const [width, height] = fitPixels(+req.width || 1024, +req.height || 1024, rules);
+    return { width, height };
+}
+
 /** `sizing: "flux3"`: { aspect, resolution, fit } by FLUX 3's rules over the variant's presets (`options.aspect_ratios`). */
 function flux3Shape(req) {
     const o = req.options || {};
@@ -74,13 +94,19 @@ function inputFor(req) {
         input.resolution = shape.resolution;
         if (shape.aspect !== "auto") input.aspect_ratio = shape.aspect;
     }
+    // GPT Image 2.5 / 2.6: the size inside the model's rules, on every kind of run (an edit's crop is already inside
+    // them through the variant's limits, so it goes as it is)
+    const pixels = sizing === "pixels" ? pixelSize(req) : null;
+    if (pixels) input.image_size = pixels;
     if (req.kind === "text") {
         const o = req.options || {};
+        // a shape of its own (FLUX 3, or GPT Image's pixel size above) sends no aspect_ratio beside it
+        const own = !!shape || sizing === "pixels";
         if (sizing === "image_size") input.image_size = withRefs && Array.isArray(o.pixels) ? fittedSize(req.width, req.height, o.pixels) : { width: req.width, height: req.height };
-        else if (!shape && req.aspect) input.aspect_ratio = req.aspect;
+        else if (!own && req.aspect) input.aspect_ratio = req.aspect;
         // a free size on an edit route that takes presets only: the closest one, not the first picture's shape
         // (`text.refs.options.aspect_ratios`; Nano Banana 2 and Pro)
-        else if (!shape && withRefs && Array.isArray(o.aspect_ratios) && o.aspect_ratios.length) input.aspect_ratio = closestAspect(req.width || 1, req.height || 1, o.aspect_ratios);
+        else if (!own && withRefs && Array.isArray(o.aspect_ratios) && o.aspect_ratios.length) input.aspect_ratio = closestAspect(req.width || 1, req.height || 1, o.aspect_ratios);
         if (withRefs) {
             // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from sending one
             const n = countOf(refLay), max = refLay.max;

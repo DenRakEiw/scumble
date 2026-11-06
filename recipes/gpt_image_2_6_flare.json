@@ -1,0 +1,519 @@
+{
+  "id": "gpt_image_2_6_flare",
+  "kind": "provider",
+  "name": "GPT Image 2.6 Flare",
+  "family": "OpenAI",
+  "refs": { "name": "Image {n}" },
+  "description": "OpenAI's fast image model (November 2026): custom sizes in multiples of 16 up to 3840 px an edge, quality up to max, and a Complexity setting (how much the model plans before it draws). Also on fal.ai. Also on Replicate. Also on WaveSpeedAI. Also on OpenRouter. Adapters written from the providers' docs, not run against the live API yet.",
+  "default": "openai",
+  "providers": {
+    "openai": {
+      "model": "gpt-image-2.6-flare",
+      "input": "fill",
+      "options": {
+        "max_images": 16
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto",
+              "1024x1024",
+              "1536x1024",
+              "1024x1536"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "complexity",
+          "label": "Complexity",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "key": "output_format",
+          "label": "File format",
+          "spec": [
+            [
+              "png",
+              "webp",
+              "jpeg"
+            ],
+            {
+              "default": "png"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "key": "output_compression",
+          "label": "Compression",
+          "spec": [
+            "INT",
+            {
+              "default": 85,
+              "min": 0,
+              "max": 100,
+              "step": 5
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "key": "moderation",
+          "label": "Moderation",
+          "spec": [
+            [
+              "auto",
+              "low"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "note": "OpenAI image edit with the selection as mask (transparent = repaint). The mask goes as on GPT Image 2.5; OpenAI's 2.6 pages do not name inpainting, so it is not verified until a live run. Complexity is how much the model plans before it draws: low is faster and cheaper for simple edits, high (the model's default) suits dense scenes and lettering. Background \"transparent\" asks for a cut-out with a real alpha channel: the result layer keeps it instead of the selection's composite mask, and colour match is skipped. PNG or WebP only, and say it in the prompt too (the \"Transparent asset\" template does). Not run against the live API yet; GIF and SVG output are not offered (a layer is a raster picture).",
+      "limits": {
+        "max": 3840,
+        "step": 16,
+        "pixels": 8294400,
+        "minPixels": 655360,
+        "ratio": 3
+      },
+      "text": {
+        "sizes": [
+          1024,
+          1536,
+          2048,
+          2560,
+          3072,
+          3840
+        ],
+        "refs": {}
+      }
+    },
+    "fal": {
+      "model": "openai/gpt-image-2.6/flare/edit",
+      "input": "fill",
+      "options": {
+        "sizing": "pixels",
+        "pixels": {
+          "step": 16,
+          "max": 3840,
+          "minPixels": 655360,
+          "maxPixels": 8294400,
+          "maxRatio": 3
+        },
+        "max_images": 16,
+        "omit": [
+          "seed",
+          "negative_prompt"
+        ]
+      },
+      "fields": {
+        "images": "image_urls",
+        "mask": "mask_url"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "reasoning_effort",
+          "label": "Complexity",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 3840,
+        "step": 16,
+        "pixels": 8294400,
+        "minPixels": 655360,
+        "ratio": 3
+      },
+      "text": {
+        "model": "openai/gpt-image-2.6/flare/text-to-image",
+        "sizes": [
+          1024,
+          1536,
+          2048,
+          2560,
+          3072,
+          3840
+        ],
+        "refs": {
+          "model": "openai/gpt-image-2.6/flare/edit"
+        }
+      },
+      "note": "fal's hosted GPT Image 2.6 Flare with the selection as mask_url (white = repaint) beside the crop and the reference layers; fal bills the OpenAI run by tokens. Not run against the live API yet (written from fal's schema, read 2026-11-06). The pictures go inline (data URIs) to fal. The size goes as image_size: the crop's own size in multiples of 16 (at most 3840 px an edge, 655,360 to 8,294,400 pixels, no steeper than 3:1); a new image the asked size held to the same rules. Background \"transparent\" gives a cut-out with a real alpha channel (PNG). At most sixteen pictures (the crop, Original and the reference layers). Complexity is how much the model plans before it draws: low is faster and cheaper for simple edits, high (the model's default) suits dense scenes and lettering. It goes as fal's reasoning_effort (OpenAI's complexity)."
+    },
+    "replicate": {
+      "model": "openai/gpt-image-2.6-flare",
+      "input": "edit",
+      "options": {
+        "omit": [
+          "seed",
+          "negative_prompt"
+        ]
+      },
+      "fields": {
+        "images": "input_images"
+      },
+      "fixed": {
+        "output_format": "png",
+        "aspect_ratio": "auto"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "complexity",
+          "label": "Complexity",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "fixed": {
+          "output_format": "png",
+          "aspect_ratio": "match_input_image"
+        },
+        "aspects": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16"
+        ],
+        "refs": {}
+      },
+      "note": "Runs on Replicate (OpenAI's official model there); not run against the live API yet (written from Replicate's schema, read 2026-11-06). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit asks for size auto (the model picks it; not verified to keep the crop's shape, an answer of another shape is centre-cropped); a new image the asked aspect, or the closest of Replicate's seven. Background \"transparent\" gives a cut-out (PNG). Replicate bills per image by quality. Complexity is how much the model plans before it draws: low is faster for simple edits, high (the model's default) suits dense scenes and lettering; Replicate bills it the same."
+    },
+    "wavespeed": {
+      "model": "openai/gpt-image-2.6-flare/edit",
+      "input": "fill",
+      "fields": {
+        "images": "images",
+        "mask": "mask_image"
+      },
+      "options": {
+        "max_images": 16,
+        "aspect_ratios": [
+          "1:1",
+          "1:2",
+          "2:1",
+          "1:3",
+          "3:1",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "9:21",
+          "21:9"
+        ],
+        "accepts": [
+          "aspect_ratio",
+          "resolution",
+          "quality",
+          "complexity",
+          "output_format"
+        ]
+      },
+      "limits": {
+        "aspects": ["1:1", "1:2", "2:1", "1:3", "3:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "9:21", "21:9"]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1k",
+              "2k",
+              "4k"
+            ],
+            {
+              "default": "2k"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "complexity",
+          "label": "Complexity",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        }
+      ],
+      "note": "Inpainting with the selection as mask_image (white = repaint, the first picture's) beside the crop and the reference layers; with a mask no aspect preset goes: WaveSpeed picks the shape from the input image (its docs; not verified that it keeps the exact ratio), and the crop is first widened to the nearest of WaveSpeed's 15 presets, so a pick among them cannot differ from it. A new image takes the aspect preset closest to the asked size. Written from WaveSpeed's docs (the mask input read 2026-11-06), not run against the live API yet. Complexity is how much the model plans before it draws: low is faster for simple edits, high (the model's default) suits dense scenes and lettering; WaveSpeed bills it the same.",
+      "text": {
+        "model": "openai/gpt-image-2.6-flare/text-to-image",
+        "refs": {
+          "model": "openai/gpt-image-2.6-flare/edit"
+        }
+      }
+    },
+    "openrouter": {
+      "model": "openai/gpt-image-2.6-flare",
+      "input": "fill",
+      "fixed": {
+        "output_format": "png"
+      },
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "quality",
+          "background",
+          "output_format",
+          "n"
+        ],
+        "ratios": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "21:9"
+        ],
+        "max_images": 16,
+        "passthrough": {
+          "openai": [
+            "complexity"
+          ]
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "complexity",
+          "label": "Complexity",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 2048,
+        "step": 16,
+        "pixels": 0,
+        "minPixels": 0
+      },
+      "text": {
+        "sizes": [
+          1536
+        ],
+        "refs": {}
+      },
+      "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. The pictures go inline in the request to OpenRouter, which passes them to OpenAI. No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. There is no size parameter: the host picks the output size. The answer is asked for as PNG. Complexity goes to OpenAI as a passthrough parameter (provider.options.openai, which OpenRouter's endpoint list allows). Complexity is how much the model plans before it draws: low is faster and cheaper for simple edits, high (the model's default) suits dense scenes and lettering."
+    }
+  },
+  "limits": {
+    "max": 2048,
+    "step": 16,
+    "pixels": 8294400
+  }
+}
