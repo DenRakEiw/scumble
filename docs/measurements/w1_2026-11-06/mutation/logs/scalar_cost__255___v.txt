@@ -1,0 +1,25 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 162971 bytes, sha256 19364640f16ff74a
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 139931 bytes, sha256 bf6e243271882abd
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.04s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.36s
+$ node tools/px_test.js  (rc 1, 56 s)
+FAIL rust simd png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)  forced1 1 px x 3: out[5] is 0, the twin has 2
+FAIL rust scalar png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)  forced1 1 px x 3: out[5] is 0, the twin has 2
+FAIL (2)
+ok   rust scalar a large alloc grows memory  226033664 -> 494534656
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2203238400
+FAIL (2)
+(node:39248) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/F--canvas/543d44fb-4d2d-4818-8804-974916d10a44/scratchpad/w1_mut/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

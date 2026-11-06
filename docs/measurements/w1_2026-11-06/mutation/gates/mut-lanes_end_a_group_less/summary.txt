@@ -1,0 +1,2 @@
+export rc=0 134s PASS
+ALL PASS

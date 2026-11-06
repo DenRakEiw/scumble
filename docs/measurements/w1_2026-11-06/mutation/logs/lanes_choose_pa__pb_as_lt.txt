@@ -1,0 +1,26 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 5 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 163352 bytes, sha256 ad8a9c1bdd0855e2
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 139967 bytes, sha256 ade55404e282dd7d
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.85s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.29s
+$ node tools/px_test.js  (rc 0, 58 s)
+PASS
+ok   rust scalar a large alloc grows memory  226033664 -> 494534656
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2203238400
+PASS
+(node:12428) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/F--canvas/543d44fb-4d2d-4818-8804-974916d10a44/scratchpad/w1_mut/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-lanes_choose_pa__pb_as_lt --offline --tiles on export  (rc 0, 150 s)
+export rc=0 135s PASS
+ALL PASS

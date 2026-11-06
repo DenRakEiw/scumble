@@ -2668,6 +2668,90 @@ async function pngPartCases(px, label) {
     check(`${label} pngPart of noise inflates back`, !!nout && nout.length === np.raw);
 }
 
+// W1 (docs/PLAN_WASM_BUILD.md §7): the writer's filter choice. The SIMD build adds the five filters' costs 16 bytes at a
+// time and keeps the Paeth row it computed; the scalar build is the old per-byte loop. Both against the JS twin byte
+// for byte (each case also at an odd offset), the twin against the plain reference here, and the filtered rows back to
+// the input. The cases: every row width from 1 to 40 px (so every count of bytes after the last 16-byte group, and the
+// rows too narrow for the lanes), the widths around 64, 256, 1024 and 4096 px, with and without the row above; random
+// pixels, tiny value ranges (ties of the row sums and inside Paeth), bytes around 128 (the cost of 0x80), rows made so
+// each filter wins, flat rows (every sum 0: None), a row equal to the one above, and rows whose true Up sum is the
+// largest possible (128 a byte) over more than 255 groups, which a lane sum that overflowed its u16 would pick.
+// The writer takes 8-bit RGBA only (4 bytes a pixel), so no other pixel size or depth is asked.
+function pngFilterCases(js, simdPx, scalarPx) {
+    const W = [...Array.from({ length: 40 }, (_, i) => i + 1), 63, 64, 65, 67, 127, 128, 129, 255, 256, 257, 700, 1023, 1024, 1025, 4096, 4097, 4100];
+    const fill = (n, seed, pick) => { const r = rng(seed), d = new Uint8Array(n); for (let i = 0; i < n; i++) d[i] = pick(r); return d; };
+    const kinds = {
+        random: (w, rows, s) => randomRGBA(w, rows, s),
+        tiny: (w, rows, s) => fill(w * rows * 4, s, (r) => (r() * 3) | 0),
+        two: (w, rows, s) => fill(w * rows * 4, s, (r) => (r() < 0.5 ? 0 : 255)),
+        mid: (w, rows, s) => fill(w * rows * 4, s, (r) => 126 + ((r() * 5) | 0)),
+        flat: (w, rows) => new Uint8Array(w * rows * 4),
+    };
+    // rows that filter T reduces to residuals of -1, 0, 1: the lines' filter bytes all T, unfiltered against `prev`
+    const forced = (T) => (w, rows, s, prev) => {
+        const n = w * 4, f = new Uint8Array(rows * (n + 1)), r = rng(s);
+        for (let y = 0; y < rows; y++) { f[y * (n + 1)] = T; for (let i = 0; i < n; i++) f[y * (n + 1) + 1 + i] = (((r() * 3) | 0) - 1) & 255; }
+        return unfilter(f, w, rows, prev);
+    };
+    for (let T = 1; T <= 4; T++) kinds[`forced${T}`] = forced(T);
+    const cases = [];
+    let seed = 1000;
+    for (const w of W) for (const [kind, make] of Object.entries(kinds)) for (const withPrev of [false, true]) {
+        const rows = w > 1000 ? 2 : 3, s = seed++;
+        const prev = withPrev ? (kind === "flat" ? new Uint8Array(w * 4) : kind === "tiny" ? kinds.tiny(w, 1, s + 7) : randomRGBA(w, 1, s + 7)) : null;
+        cases.push({ tag: `${kind} ${w} px x ${rows}${withPrev ? " with the row above" : ""}`, args: [make(w, rows, s, prev), w, rows, prev] });
+    }
+    for (const w of [21, 64, 333]) {
+        const src = randomRGBA(w, 2, seed++), prev = src.slice(0, w * 4);
+        src.copyWithin(w * 4, 0, w * 4);   // both rows equal to the one above the first
+        cases.push({ tag: `rows equal to the one above ${w} px`, args: [src, w, 2, prev] });
+    }
+    for (const w of [4097, 8193, 1029]) {
+        // x - b = 128 at every byte: Up's true sum is 128 a byte, the largest; every other filter is random
+        const n = w * 4, src = randomRGBA(w, 2, seed++), prev = new Uint8Array(n);
+        for (let i = 0; i < n; i++) { prev[i] = (src[i] - 128) & 255; src[n + i] = (src[i] + 128) & 255; }
+        cases.push({ tag: `Up at 128 a byte over ${Math.floor((n - 4) / 16)} groups ${w} px`, args: [src, w, 2, prev] });
+    }
+    // what the cases exercise, counted with the reference's sums in the rows of 5 px or more (the ones that reach the
+    // SIMD build's lanes; narrower rows take the scalar loop in both builds): each filter's wins, ties of the smallest
+    // sum, and the Paeth predictor's ties where the order picks a different byte (a over c, b over c). A tie of a with
+    // b never does: pa = pb with a != b puts c midway, so pc = 0 < pa and c is picked; it is counted only with a = b
+    const wins = [0, 0, 0, 0, 0], tieWins = [0, 0, 0, 0, 0], ptie = { ab: 0, ac: 0, bc: 0 };
+    let refOk = true, refDetail = "", backOk = true, backDetail = "";
+    for (const c of cases) {
+        const [src, w, rows, prev] = c.args, n = w * 4;
+        for (let y = 0; y < (w >= 5 ? rows : 0); y++) {
+            const sums = [0, 0, 0, 0, 0];
+            for (let i = 0; i < n; i++) {
+                const x = src[y * n + i], a = i >= 4 ? src[y * n + i - 4] : 0;
+                const b = y ? src[(y - 1) * n + i] : prev ? prev[i] : 0;
+                const cc = i >= 4 ? (y ? src[(y - 1) * n + i - 4] : prev ? prev[i - 4] : 0) : 0;
+                const pa = Math.abs(b - cc), pb = Math.abs(a - cc), pc = Math.abs(a + b - 2 * cc);
+                if (pa === pb && pa <= pc) ptie.ab++;
+                if (pa === pc && pa < pb && a !== cc) ptie.ac++;
+                if (pb === pc && pa > pb && b !== cc) ptie.bc++;
+                [x, x - a, x - b, x - ((a + b) >> 1), x - paeth(a, b, cc)].forEach((v, t) => { v &= 255; sums[t] += v < 128 ? v : 256 - v; });
+            }
+            const min = Math.min(...sums), best = sums.indexOf(min);
+            wins[best]++;
+            if (sums.filter((v) => v === min).length > 1) tieWins[best]++;
+        }
+        const got = js.pngFilterRows(src, w, rows, prev), want = reference.pngFilterRows(src, w, rows, prev);
+        if (refOk && !eqBytes(got, want)) { refOk = false; refDetail = `${c.tag}: ${firstDiff(got, want)}`; }
+        if (backOk && !eqBytes(unfilter(simdPx.pngFilterRows(src, w, rows, prev), w, rows, prev), src)) { backOk = false; backDetail = c.tag; }
+    }
+    check(`js pngFilterRows equals the reference (${cases.length} cases)`, refOk, refDetail);
+    twinCheck({
+        name: "png_filter_rows", builds: [["rust simd", simdPx], ["rust scalar", scalarPx]], twin: js,
+        call: (k, [src, w, rows, prev]) => k.pngFilterRows(src, w, rows, prev), cases,
+    });
+    check(`rust simd png_filter_rows unfilters back to the input (${cases.length} cases)`, backOk, backDetail);
+    console.log(`       png_filter_rows cases, rows of 5 px or more: won by None ${wins[0]}, Sub ${wins[1]}, Up ${wins[2]}, Average ${wins[3]}, Paeth ${wins[4]}; won on a tied sum ${tieWins.join(" / ")}; Paeth ties a=b ${ptie.ab} (a = b), a=c ${ptie.ac}, b=c ${ptie.bc}`);
+    check(`png_filter_rows cases, rows of 5 px or more: every filter wins rows, ties of the sums are won by None, Sub, Up and Average, the Paeth predictor ties a over c and b over c`,
+        wins.every((v) => v > 0) && tieWins.slice(0, 4).every((v) => v > 0) && ptie.ac > 0 && ptie.bc > 0,
+        `wins ${wins}, tied ${tieWins}, paeth ${JSON.stringify(ptie)}`);
+}
+
 // E4: a PSD's channel rows. The twin and the Rust kernel give the bytes of inpaint_export.js `packBits`, row by row.
 async function psdCases(ref, label, js) {
     const ex = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_export.js")).href);
@@ -3243,6 +3327,7 @@ async function main() {
     await trapCases(js, simdPx, raster);
     await lifecycleCases(js);
     await selCases(js, simdPx, scalarPx, raster, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href));
+    pngFilterCases(js, simdPx, scalarPx);
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));

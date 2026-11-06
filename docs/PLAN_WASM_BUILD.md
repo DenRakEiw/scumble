@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0, D0 and K5 done 2026-11-06 (§7; K5 took ABI 21); next Stop 3, then W1.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0, D0 and K5 done 2026-11-06 (§7; K5 took ABI 21); Stop 3 and W1 done the same day (§7); next K12.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -1207,3 +1207,70 @@ because K21's chain is the larger wait and K11 depends on neither.
 changes the block meets are asked by the sessions that need them (q6.2 at K25's start, q6.4 at K36's), as §6 says.
 
 Next: W1.
+
+### W1 (2026-11-06): the PNG writer's filter choice in SIMD lanes
+
+The user's answers of 2026-10-24 (Q3: W1 at #4, after K5), on `59ff16f`; full tier (a Rust kernel inside a file
+writer, §1.4). `docs/measurements/w1_2026-11-06/` (`w1_chain.sh`, `w1_lock.py`, `summarize.py`, `w1_identity.js`,
+`before/` and `after/` with their `summary.txt`, `gates/`, `mutation/`, the identity logs).
+- **Built (ABI 21, unchanged):** `crates/px/src/png.rs` `filter_rows` calls `row_filter`: the old `filter_row` in the
+  scalar build (`px_scalar.wasm` is the same file as before, `ade55404...`), `lanes::filter_row::<UP>` in the SIMD build
+  for rows of 5 px or more. A group is 16 bytes: x, a (four bytes to the left), b and c (above and above left, zeros
+  without the row above) loaded once, the five filtered groups made, their costs as `i8x16_abs` read unsigned (0x80
+  costs 128) added pairwise into u16 lanes for at most 255 groups (255 x 256 < 65,536) and then into u32 lanes: exact
+  sums, so the choice (the smallest sum, a tie to the lower type) is the scalar loop's. Paeth in i16 lanes in the
+  standard's order (a, then b, then c), Average as the rounded-up average less its rounding bit. The Paeth group goes
+  straight into `out`; a row won by None is copied, one won by Sub, Up or Average written again by that filter alone
+  (one or two lane ops a group): no scratch, no allocation. Each row's first pixel (nothing to its left) and its bytes
+  after the last whole group go through the scalar code. No route: `png_part` always runs Rust, and the JS twin was
+  already the slowest arm (px_bench's band 37 ms against the scalar build's 23).
+- **The rows the task named as "px_jobs.py rows for the PNG writer" do not exist** (`png_part` has no route to A/B):
+  the 15k rows are native_test's `export_png`, `export_ora`, `save_png` and `build_the_file` (W:58, :62), tiffperf
+  `own` (W:115) and w0_bench `files_15k` (W:156), the png_part laps summed over the workers; px_bench's png band in
+  Node and Electron's V8 explains only.
+- **The review** (a workflow over the first build: 6 findings, 2 should, 4 nice; all fixed, none rejected): the busy
+  lock's helper took a lock over after its 60-minute wait and then deleted it, and it checked and created in two steps;
+  `w1_lock.py` (now beside the chain) takes the lock with `O_CREAT | O_EXCL` and a token of its own, deletes it only on
+  that token and on a timeout takes nothing (the chain logs "NOT LOCKED" and goes on); the full tier was finished before
+  the commit (below); px_test's coverage check counts only the rows of 5 px or more, the ones the lanes see;
+  `tiff_test.py`'s measured rows say `focused` (the window brought to the front for each variant, its focus at the
+  start and the end) and the chain retries a tiffperf run with the window behind (before/'s tiff rows have no such
+  field: unchecked); the byte identity on transparent content, and the old build's source in `w1_identity.js`'s header;
+  the stand-in rows above.
+- **Tests:** `node tools/px_test.js` `pngFilterCases`: 1032 cases on both builds against the twin (each also at an odd
+  offset), the twin against px_test's reference, the SIMD lines unfiltered back to the input: every width from 1 to
+  40 px and widths around 64, 256, 1024 and 4096 px, with and without the row above, random, tiny-range, two-value,
+  around-128, flat and per-filter rows, rows equal to the one above, and Up at 128 a byte over more than 255 groups. In
+  the rows of 5 px or more None wins 637 rows, Sub 681, Up 543, Average 552, Paeth 353; ties of the sums are won by None
+  421, Sub 255, Up 42, Average 4; Paeth ties a over c 13,337, b over c 7,408. `w1_identity.js` on real pictures (new
+  SIMD, scalar, old SIMD and the twin on every line): the 15k photo Scumble wrote (its own lines equal the new ones),
+  two RGB files of another encoder, and a 6000 x 4000 RGBA picture with 56 % alpha 0 and 11 % partial alpha on which
+  every filter wins rows (None 156, Sub 153, Up 463, Average 2,872, Paeth 356): all identical. In the app the 15k
+  photo's PNG export is one file in all six runs before and after (184,507,848 bytes, sha256 `3cb4f984...`). Gates
+  `--offline`, tiles: lint types export layered pxjobs pixels document tiff PASS (`layered`'s
+  `the_pool_and_the_window_read_a_psd_alike` failed once on a cache field in its "a closed tab" shape and passed on the
+  rerun: `docs/TESTING.md` flakes); canvas: export layered pixels document tiff PASS. `build_px.py --check` identical on
+  both builds; `build_node.py --check` only the expected "differs" lines.
+- **The mutation round** (a copy tree, `mutation/mut_w1.py`; the untouched copy PASS first, px_test and the `export`
+  gate; each mutant rebuilt on both builds, the kill set `px_test.js`, a mutant left green also through the `export`
+  gate on a fresh instance from the copy): **36 of 40 red** (the lanes 27 of 30, the scalar code 9 of 10, which the
+  scalar build runs whole and the SIMD build for rows under 5 px, first pixels and tails). The four survivors are
+  equivalent: `pa <= pb` as `<` in the lanes' `choose` and in the scalar `paeth` (pa = pb with a != b puts c midway, so
+  pc = 0 and c is picked; with a = b either pick is the same byte; 0 of the 2^24 triples differ, the review's
+  exhaustive probe), `end` a group less (that group goes through the scalar tail, the same sums and bytes) and `MIN` 4
+  bytes (a row under 20 bytes runs no group). The restored copy: PASS, both builds identical to the committed ones.
+- **Before -> after** (medians of three fresh runs, 15000 x 10000; the card held 8.0-8.8 GB at 37-56 % in both, another
+  process's training run): the png_part filter lap about 13x faster (export_png 4,313 -> 332 ms summed, export_ora
+  13,162 -> 1,014, save_png 4,286 -> 334, the own-TIFF open's store 5,701 -> 760, the photo's PNG 4,841 -> 658). The
+  whole operations: export_png 1,899 -> 1,375 (1,314-1,432), export_ora 5,075 -> 3,522 (3,514-3,660), save_png 2,565 ->
+  2,075 (encoded 1,827 -> 1,300), the photo's PNG export 2,032 -> 1,422, the own-TIFF open 5,232 -> 4,309 (its store
+  2,128 -> 1,329), build_the_file's encode 2,353 -> 1,776; all beyond their spreads. The window's longest blocks are
+  unchanged (export_png 82 -> 79, export_ora 44 -> 45, save_png 106 -> 107): the filter is worker work. Untouched and
+  inside their spreads: deflate (export_png 7,003 -> 7,019, now 70 % of png_part), the TIFF exports, save_png's disk
+  write. px_bench's band (explains only): SIMD 19.8 -> 1.45 ms, scalar 22.9 -> 22.7.
+- **What it leaves:** a PNG export's png_part is now deflate first (7.0 of 10.1 s summed at 15k, export_ora 15.5 of
+  21.3). That deflate is already Rust (miniz_oxide at level 2 in the workers, `inpaint_png.js` `PNG_LEVEL`, chosen in E2
+  at 84 MB/s a worker); a faster one means another level or codec, which changes the files' bytes, and no session of
+  the order has it. W1 reorders nothing.
+
+Next: K12.

@@ -1,0 +1,8 @@
+# rgba_test.png: dist/daily/adobe_6000x4000.png's pixels with an alpha made in Python (a feathered cutout, a half-transparent band, 60 soft strokes, 56 % of it alpha 0 with RGB 0, 11 % partial, a flat and a gradient region), written by Pillow (so its own lines are Pillow's filter choice, not comparable). --old is git show 59ff16f:renderer/editor/px/px.wasm (sha256 2985f252...).
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+rgba_test.png: 6000 x 4000, RGBA, 27.8 MB, decoded in 170 ms
+  ok   every build and the twin give the same lines; sha256 f6e0728c7ee2c23596869673ffb9374f7de0982b85a535a76df5638d5309f907
+  the new lines differ from the file's own lines
+  types chosen None 156, Sub 153, Up 463, Average 2872, Paeth 356; the file's 156 / 1002 / 2452 / 0 / 390
+  filter ms: simd 65, scalar 589, old simd 516, js 1011 (Node, explains only)
+PASS

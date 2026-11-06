@@ -641,8 +641,13 @@ async def measure(c):
         with Image.open(IMAGE) as im:
             pw, ph = im.size
     hashes = {}
+    focus_js = "(() => JSON.stringify({ focused: document.hasFocus(), visibility: document.visibilityState }))()"
     for v in names:
         try:
+            # a timing row counts only with the window in front (native_test.py and px_jobs.py do the same): each
+            # variant's line says whether it was, at its start and at its end
+            await c.call("Page.bringToFront")
+            focus_start = json.loads(await c.eval(focus_js))
             if v in ("noise", "own"):
                 if v == "noise":
                     base = os.path.join(OUT, "noise_%dx%d.png" % (w, h))
@@ -675,6 +680,9 @@ async def measure(c):
                 good = r["size"] == [pw, ph] and bool(r.get("hash")) and r.get("alphaOff") == 0
                 if r.get("hash"):
                     hashes[v] = r["hash"]
+            focus_end = json.loads(await c.eval(focus_js))
+            r.update(focusedStart=focus_start["focused"], focusedEnd=focus_end["focused"],
+                     focused=bool(focus_start["focused"] and focus_end["focused"]), visibility=focus_end["visibility"])
             ok = variant_line(good, v, r) and ok
         except Exception as err:  # noqa: BLE001
             ok = variant_line(False, v, str(err)[:1500]) and ok

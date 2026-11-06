@@ -1,0 +1,22 @@
+{
+  "env": {
+    "runtime": "Node 24.18.0",
+    "v8": "13.6.233.17-node.50",
+    "cpu": "AMD Ryzen 9 7900X3D 12-Core Processor",
+    "date": "2026-11-06T06:09:20.060Z"
+  },
+  "rows": [
+    {
+      "kernel": "PNG rows (filter)",
+      "input": "4,096 × 256 band",
+      "info": true,
+      "js": 36.98769999999999,
+      "scalar": 22.913599999999974,
+      "simd": 19.83280000000002,
+      "copy": 0.3170678571428565,
+      "speedup": 1.835629903989088,
+      "speedupNoCopy": 1.8649762010406978
+    }
+  ],
+  "notes": []
+}

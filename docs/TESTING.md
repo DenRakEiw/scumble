@@ -133,6 +133,20 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   checks the route ran; `ab_median.py` takes `combine` as the `selCombine` route's kernel row and prints "not touched by
   the route" for a row whose combine ran in neither arm. The `depth` gate has no script of its own (`docs/BUGS.md`):
   run `node tools/depth_test.js` in its place.
+  W1 (the PNG writer's filter choice in SIMD lanes, `crates/px/src/png.rs` `row_filter` / `lanes`, no ABI change):
+  `node tools/px_test.js`'s `pngFilterCases` twin `png_filter_rows` on both builds against `kernels_js.js`
+  `pngFilterRows` (each case also at an odd offset), that twin against px_test's own `reference.pngFilterRows`, and the
+  SIMD build's lines unfiltered back to the input: 1032 cases, every row width from 1 to 40 px (every count of bytes
+  after the last 16-byte group, and the rows under 5 px that keep the scalar loop) and widths around 64, 256, 1024 and
+  4096 px, with and without the row above; random, tiny-range, two-value, around-128, flat and per-filter "forced" rows,
+  rows equal to the one above, and rows whose Up sum is 128 a byte over more than 255 groups (a u16 lane sum that
+  overflowed would pick Up). A coverage check over the rows of 5 px or more (the ones that reach the lanes) requires
+  every filter to win rows, ties of the sums won by None, Sub, Up and Average, and Paeth ties of a over c and b over c.
+  The writer takes 8-bit RGBA only, so no other pixel size or depth is asked.
+  `docs/measurements/w1_2026-11-06/w1_identity.js --old <the px.wasm before W1> file.png ...` re-filters real PNGs in
+  the app's parts of 128 rows on the new SIMD build, the scalar build, the old SIMD build and the JS twin and compares
+  every line (and, for a file Scumble wrote, the file's own lines); the old build is
+  `git show 59ff16f:renderer/editor/px/px.wasm`. The mutation round's script is `mutation/mut_w1.py` there.
   `python tools/mem_test.py [12000x8000] [--rounds 4] [--keep]` is the memory walk: a
   document per round, benchmarked, closed and collected, with the private bytes of the
   renderer and of the GPU process, a census of every live canvas and the line that made it.
@@ -567,6 +581,11 @@ generate editor log lint types`.
 
 Known flakes; **re-run before believing any of these**:
 
+- 2026-11-06 (W1's gates, tiles): the `layered` gate's `the_pool_and_the_window_read_a_psd_alike` failed once in its
+  "a closed tab" case: its shape check stringifies `ed.base`, whose pixels carry cache fields, and `_regions` was `null`
+  before and `{}` after (a cache made between the two reads), so the shape differed with nothing landed
+  (`stopped` 1, `lost` 0). The rerun on a fresh instance passed, as did the same step on the same build earlier the
+  same day and on the canvas backend. Ruled out: W1's PNG writer (the step reads a PSD and lands nothing).
 - 2026-10-19 (0.1.49's exe gates, tiles): the `brush` gate ran out of its 420 s after its reader part had printed
   `RESULT PASS` (the in-app part never answered); the rerun on a fresh instance passed in 16 s, and the canvas list's
   `brush` passed in the same build. The machine was loaded (a video render of another session ran beside the gates).
