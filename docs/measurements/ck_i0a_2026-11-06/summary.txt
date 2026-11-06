@@ -70,7 +70,9 @@ not deleted (the user's folders).
   placed in the picture, clamped; without one, the whole picture. On these square stills every box is the whole picture
   (the subjects fill the frame), so no reflect padding was needed at any bucket and the hint / no-hint inputs of a
   bucket are the same bytes (the hint differs).
-- Files per case: in/input.png (the exact 8-bit RGB input the run consumed; native: the still), hint.png (with a hint),
+- Files per case: in/input.png (the exact 8-bit input the run consumed: at b768 and b1024 RGB, PNG colour type 2;
+  native: the still copied as is, RGBA, colour type 6, alpha 255 everywhere, which upstream reads as RGB: whoever
+  feeds it byte for byte drops the alpha first), hint.png (with a hint),
   feat_cradio.npy (1152 ch), feat_moge.npy (768 ch), feat_rvm.npy (384 ch) at /64, baton.npy (512 ch at /16),
   aux.npy (stage 1's 4 ch at /2), logits.npy (the raw 4-channel stage-2 output, bf16 in torch), all float16 CHW at the
   padded model size; alpha.npy (HW) and fg_linear.npy (HWC RGB, scene-linear, straight, unclamped) float16 cropped to
@@ -80,10 +82,16 @@ not deleted (the user's folders).
   upstream feeds (its fp16 memmaps).
 - NaN / Inf: none in any array of the 30 keys, the highlights still included; no array overflows float16. Largest
   |value| over all keys: feat_cradio 27.5, feat_moge 5.7, feat_rvm 5.8, baton 4.3, logits -0.41 .. 1.28, fg_linear
-  164.9 (the asinh decode of a logit near 1.28, linear light far above 1; fp16 holds it).
-- Noise floor: hair_green and highlights_green (12 keys) run a second time in a fresh process: every array and every
-  PNG is bit-identical (ref_rerun_diff.txt). The reference has no run-to-run spread on this card; I0b's thresholds
-  therefore measure fp16 against this bf16 run only.
+  164.9 (the asinh decode of a logit near 1.28, linear light far above 1; fp16 holds it). That maximum is on the hair:
+  hair_green native_nohint at alpha 0.174, with 2,094 px above 4.0 linear at a mean alpha of 0.226 (599-1,942 px in its
+  other cases, fg max 75.8-119.2); highlights_green tops out at 11.2 (native_hint) with 0-26 px above 4.0. **The fp16
+  stress case for I0b is hair_green, not the highlights still** (scripts/ck_rerun_diff.py `stress`).
+- Noise floor: hair_green and highlights_green (12 keys) run a second time in a fresh process: every array but aux.npy
+  and every PNG (alpha, fg, hint, in/input) is bit-identical (ref_rerun_diff.txt, all eight arrays and four PNGs per
+  case since the check's fix round; the first version left out aux and fg.png and said "every array"). aux.npy, stage
+  1's /2 output, differs in all 12 keys by one or two bf16 steps (max |d| 0.0078, 0.0156 in one key; MAE 0.8-1.4e-4).
+  The parity rows (features, baton, logits) have no run-to-run spread on this card, so I0b's thresholds measure fp16
+  against this bf16 run only; a comparison of aux (a stage 1 preview) takes that spread as its floor.
 - Seconds in-process (warm, everything resident, another process on the card): stage 1 + stage 2 about 0.14-0.20 s
   at 768 and 1024, 0.22-0.29 s at 1408; features (C-RADIO + MoGe) 0.03-0.04 s, RVM 0.02-0.04 s; peak allocated 5.6-5.75 GB
   (rows in ref_run.json). The first case paid 0.3 s of warm-up.
@@ -133,9 +141,12 @@ GPU totals from nvidia-smi sampled every ~0.3 s (short peaks may be missed); 4.2
   and its A equals the `alpha` output (through MaskToImage) byte for byte; straight, not premultiplied (3.5 % of the
   pixels have RGB above alpha + 2); where alpha is 0 (183,457 px) the RGB is near black (mean 1.3 of 255), so nothing
   may be read from the colour under a zero alpha. (foreground and alpha come back as 8-bit RGB PNGs, colour type 2.)
+  In routeb.json `rgba_rgb_eq_fg` and `rgba_a_eq_alpha` hold the largest byte difference, so their 0 means equal (the
+  names read like a boolean false).
 - The polarity of a grey hint through ImageToMask (channel red) into alpha_hint, clean-matte trust: white = subject.
   The subject hint gives alpha 0.996 inside its white area and 0.013 outside; the inverted hint gives 0.003 inside and
-  0.988 outside (the model follows the hint, both ways).
+  0.988 outside (the model follows the hint, both ways). The subject_white row's 0.069 s in routeb.json is a full
+  cache hit of the read-back run (the same graph and inputs), valid for its alpha but not a timing.
 - /system_stats VRAM: vram_total 34,190,458,880; at the start (the Klein models still loaded from the stills)
   vram_free 12.1 GB, nvidia-smi 23,812 MiB; after /free with free_memory 32.2 GB free, 4,415 MiB; during the
   keep_on_gpu idle 27.3 GB free.
@@ -162,5 +173,36 @@ Files
 - manifest.txt: sha256, bytes and path of every file under dist/ck_ref (396 files, 921,692,497 bytes).
 - ref_run.json (the 30 reference rows), ref_rerun_diff.txt (the rerun), routeb.json (the probe's raw rows).
 - scripts/: ck_ref.py (prep / run / manifest), ck_common.py (the hint, the box), routeb.py (objectinfo / probe),
-  make_stills.py, drive.py, still.js.tpl, s0_setup.js, stills.json.
+  make_stills.py, drive.py, still.js.tpl, s0_setup.js, stills.json; since the check's fix round also ck_rerun_diff.py
+  (the rerun diff and the fp16 stress figures) and part 1's ck_fetch.py (fetch / verify / place of the 35 model files),
+  ck_fetch.sh (its lock wrapper; the scratchpad path replaced by $SCRATCH) and ck_missing.py (pack A's paths.py asked
+  for missing files), which install.md cites by their scratchpad path ck_scripts/.
 - Untracked: dist/ck_ref/ (stills, the 30 case folders, plan.json, run.json, run.log, routeb/).
+- Left on the user's machine besides the uploads and results of section 1: ComfyUI/temp/ holds 67.7 MB (the probe's
+  ck_probe/ uploads of type "temp" and 14 ComfyUI_temp_* previews written by the pack's nodes); ComfyUI empties that
+  folder at its next start, so it was left alone.
+
+6. Check (2026-11-06, an independent check of parts 1 and 2; its fixes in the commit after 156af0e)
+---------------------------------------------------------------------------------------------------
+No must-fix finding. The check re-verified the clone (detached at c7662de1832539b257ed055326dd2ead4393f1f1, tree
+f2399551, origin/main still c7662de, 116 files equal to HEAD and to the code check's exN, git status --ignored empty),
+python_embeded (pip freeze differs from comfy_update/pip_freeze_before.txt only by the v0.44.0 update's packages, no
+site-packages entry newer than 03:00), the 35 model files (5,076,141,689 bytes, every sha256 / git sha1 / RVM MD5 and
+size against install.md and fresh Hugging Face tree listings fetched without a token, gated false at the pinned shas,
+the layout equal to paths.py), auto_download false in every graph, the 396 manifest entries, the bucket inputs (each
+reproduced with INTER_AREA from its still), the arrays (dtype, shapes, no NaN / Inf, alpha = clamp(logits[0]),
+fg_linear = the asinh decode, the PNGs equal to their arrays at 8 bits, fg straight), the stills' sha256 and clipping
+counts, every Route B number against routeb.json and the ComfyUI log, and the clean-up (8188 and 9571 down, no lock
+left, ComfyUI-InpaintCanvas not written, both commits without a trailer, origin/corridorkey = 156af0e). Fixed:
+- Should 1, the plan's pin: docs/PLAN_CORRIDORKEY.md's I0a row named eeee7fa and the 0.42.4 backup's freeze; it now
+  names c7662de, findings.md, install.md and the freeze of 2026-11-06 (§2.2's table and the sources list say where
+  eeee7fa was only read).
+- Should 2, the fp16 stress case: §4.2, the I0b row and §7's parity risk now name hair_green beside highlights_green
+  for NaN / Inf and the fg error, with the edge band's fg row alpha-weighted (the figures above, re-measured).
+- Nits: the native input's colour type (section 2), the rerun diff over all eight arrays and four PNGs, which found
+  aux.npy's one-to-two bf16 step spread (section 2, "Noise floor": the first summary's "every array" was wrong), the
+  scripts committed (section "Files"), routeb.json's two field names and the cache-hit row (section 4), ComfyUI/temp
+  (section "Files"). Left as they were: the box growth and edge padding never exercised (said in section 5); CLAUDE.md
+  item 49's "next there: I0a" goes with the hand-over. During the reference run another, unidentified process held
+  the card at 47-49 % and 9 GB (section "Machine and state"); the arrays are unaffected, the seconds indicative.
+- The fix round held the busy lock 10:27:46-10:27:59Z (the rerun diff and the stress figures; taken after 0 s).
