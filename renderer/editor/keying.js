@@ -44,7 +44,8 @@ export const WORKING_SIZES = Object.freeze([512, 768, 1024, 1536, 2048]);
 /**
  * settings.key (electron/main/settings.js DEFAULTS.key, §4.8). `workingSize` is Stop A's bucket; the engine's own list
  * (keyEngine.status().workingSizes) narrows what the dialog offers. Route B's (§4.11): `cap` the largest box that goes to
- * your ComfyUI at its own size, in megapixels of 2^20 px (16 = 4,096 × 4,096, I0a's 16 MP row; provisional until B0),
+ * your ComfyUI at its own size, in megapixels of 2^20 px (16 = 4,096 × 4,096, I0a's 16 MP row; B0 kept it: what a key
+ * evicts does not depend on its size),
  * `keepOnGpu` pack A's keep_on_gpu (off: about 4.6 GB parked on the card between keys otherwise), `evicts` pack B's
  * unload_other_models (off), `comfyTimeout` the wait for a key on your ComfyUI in seconds.
  */
@@ -913,7 +914,7 @@ export function despillNote(pack, screen) {
         : "";
 }
 
-/** settings.key.cap in pixels (megapixels of 2^20 px). */
+/** settings.key.cap in pixels (megapixels of 2^20 px). @param {number | string} [cap] */
 export function capPixels(cap = keyDefaults.cap) {
     const c = Number.isFinite(+cap) ? Math.min(CAP_RANGE[1], Math.max(CAP_RANGE[0], +cap)) : keyDefaults.cap;
     return Math.round(c * MP);
@@ -923,6 +924,9 @@ export function capPixels(cap = keyDefaults.cap) {
  * The size a w × h box goes to your ComfyUI at (§4.11 "Resolution on Route B"): its own while its area is at most the
  * cap and its longer side at most COMFY_LONG, else scaled by one factor below both (sides floored, at least 1 px).
  * Nothing is refused by size: the app brings a scaled answer back to the box and refines it (I6).
+ * @param {number} w
+ * @param {number} h
+ * @param {number} [cap]
  * -> { w, h, scale, scaled }
  */
 export function comfyFit(w, h, cap = keyDefaults.cap) {
@@ -930,6 +934,75 @@ export function comfyFit(w, h, cap = keyDefaults.cap) {
     const s = Math.min(1, Math.sqrt(capPixels(cap) / (w * h)), COMFY_LONG / Math.max(w, h));
     if (s >= 1) return { w, h, scale: 1, scaled: false };
     return { w: Math.max(1, Math.floor(w * s)), h: Math.max(1, Math.floor(h * s)), scale: s, scaled: true };
+}
+
+/**
+ * The box a key on your ComfyUI goes with and the size it goes at (§4.11 "Resolution on Route B", §4.7 point 1 without
+ * the bucket's aspect: the pack keys any size). `sel` ([x0, y0, x1, y1] in image pixels, or null): its bounds grown by
+ * half their longer side, at least `minSide` (768) a side, centred on the selection and moved inside the picture, cut to
+ * it along a side the picture is shorter than; never the selection's bounds as they are (B0: a tight box keeps the gaps
+ * between leaves on the screen's colour). Without a selection the whole picture, or `within` (a layer's rect, a Re-key's
+ * record) cut to it. `fit(w, h)` gives the size it goes at (comfyFit with settings.key.cap by default). The plan has the
+ * in-app plan's shape (the "bucket" is the size sent, the content all of it, nothing padded), so keyRead, keyHint and
+ * landKey take it as they are; `scaled` when the box goes smaller than its own size (landKey refines it then).
+ * -> { box, bucket: { w, h }, content: [0, 0, w, h], sx, sy, padded: false, whole, layerBox, scaled, route: "comfyui" }
+ */
+export function comfyPlan(W, H, sel, { cap = keyDefaults.cap, within = null, minSide = 768, fit = null } = {}) {
+    W = Math.max(1, Math.round(W)); H = Math.max(1, Math.round(H));
+    const s0 = sel && sel[2] > sel[0] && sel[3] > sel[1] ? sel.map((v) => +v) : null;
+    let box;
+    if (!s0) box = within ? [Math.max(0, Math.floor(within[0])), Math.max(0, Math.floor(within[1])), Math.min(W, Math.ceil(within[2])), Math.min(H, Math.ceil(within[3]))] : [0, 0, W, H];
+    else {
+        const w0 = s0[2] - s0[0], h0 = s0[3] - s0[1];
+        const grow = Math.max(w0, h0) * 0.5;
+        const place = (c, side, n) => {
+            const s = Math.min(n, Math.ceil(side - 1e-9));
+            const lo = Math.max(0, Math.min(n - s, Math.round(c - s / 2)));
+            return [lo, lo + s];
+        };
+        const [x0, x1] = place((s0[0] + s0[2]) / 2, Math.max(w0 + grow, minSide), W);
+        const [y0, y1] = place((s0[1] + s0[3]) / 2, Math.max(h0 + grow, minSide), H);
+        box = [x0, y0, x1, y1];
+    }
+    if (!(box[2] > box[0] && box[3] > box[1])) box = [0, 0, W, H];
+    const bw = box[2] - box[0], bh = box[3] - box[1];
+    const f = typeof fit === "function" ? fit(bw, bh) : comfyFit(bw, bh, cap);
+    const w = Math.max(1, Math.round(f.w)), h = Math.max(1, Math.round(f.h));
+    return { box, bucket: { w, h }, content: [0, 0, w, h], sx: w / bw, sy: h / bh, padded: false, whole: !s0 && !within, layerBox: !s0 && !!within, scaled: w !== bw || h !== bh, route: "comfyui" };
+}
+
+/** What a key on your ComfyUI goes with, for the dialog's box line: "the selection's box, 1,536 × 1,024, at its own size". */
+export function comfyBoxLine(plan) {
+    const [x0, y0, x1, y1] = plan.box;
+    const what = plan.rekey ? "the key layer's box" : plan.whole ? "the whole picture" : plan.layerBox ? "the layer's box" : "the selection's box";
+    const size = `${fmtInt(x1 - x0)} × ${fmtInt(y1 - y0)}`;
+    const at = plan.scaled ? `sent at ${fmtInt(plan.bucket.w)} × ${fmtInt(plan.bucket.h)} (the cap) and scaled back` : "at its own size";
+    return `${what}, ${size}, ${at}${plan.from ? `, read from ${plan.from}` : ""}`;
+}
+
+/**
+ * What the dialog's route row says once your ComfyUI can key (B0, docs/measurements/ck_b0_2026-11-06): the first key
+ * after another job there pays the pack's model load again, and that job's models load again at its next run.
+ */
+export const COMFY_COST = "The first key after another job on your ComfyUI takes about 10 s more (the pack loads its 4.7 GB of models again), and that job's models load again at its next run.";
+
+/**
+ * The status line after a key on your ComfyUI (§4.5 step 6's shape): "Key: 38 % of the box kept, in 12 s on your
+ * ComfyUI (CorridorKey 2.0 through ComfyUI-CorridorKey2.0 on RTX 5090, green screen, hint from the selection (rough);
+ * at its own size, 1,536 × 1,024)." plus where the layer went and the pack's despill note. The scaled matte's refine is
+ * not called "refined" until its 15k cost is measured (docs/PLAN_CORRIDORKEY.md "The integration").
+ */
+export function comfyStatusLine({ kept, seconds, pack, gpu = "", screen, hint, trust, sent, box, grey = false, hidden = "", rekey = false }) {
+    const p = packById(pack);
+    const pct = kept >= 10 ? Math.round(kept) : Math.round(kept * 10) / 10;
+    const secs = seconds >= 10 ? Math.round(seconds) : Math.round(seconds * 10) / 10;
+    const [sw, sh] = sent, [bw, bh] = box;
+    const at = sw === bw && sh === bh ? `at its own size, ${fmtInt(bw)} × ${fmtInt(bh)}` : `keyed at ${fmtInt(sw)} × ${fmtInt(sh)} of its ${fmtInt(bw)} × ${fmtInt(bh)} and scaled back`;
+    const head = `${rekey ? "Re-key" : LAYER_NAME}: ${pct} % of the box kept, in ${secs} s on your ComfyUI (${ENGINE}${p ? ` through ${p.label}` : ""}${gpu ? ` on ${gpu}` : ""}, ${screen} screen, ${hintWords(hint, trust)}; ${at}).`;
+    const tail = grey ? " A grey layer sits under the Key layer: replace it with your background."
+        : hidden ? ` ${hidden} is hidden; Ctrl+Z takes the key back.` : "";
+    const note = despillNote(p, screen);
+    return head + tail + (note ? ` ${note}` : "");
 }
 
 /** A ComfyUI device name without its "cuda:0 " prefix and " : cudaMallocAsync" suffix. */

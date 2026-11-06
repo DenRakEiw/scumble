@@ -384,6 +384,36 @@
     check("comfyFit: just above the cap, a 15k box and a long strip are scaled by one factor below the cap and 8,192", f17.scaled && fits(f17) && fits(f15k) && Math.abs(f15k.w / f15k.h - 1.5) < 0.002 && f15k.w * f15k.h > 0.999 * K.capPixels() && fl.scaled && fl.w === 8192 && fl.h === 91, JSON.stringify({ f17, f15k, fl }));
     check("comfyFit: the cap 64 is 8,192 squared; a 1 px box; capPixels clamps to 1-64", !f64.scaled && !f1.scaled && K.capPixels(500) === 64 * K.MP && K.capPixels(0) === K.MP && K.capPixels("x") === 16 * K.MP);
 
+    // the box on your ComfyUI (B2): the selection grown by half its longer side, at least 768 a side, no bucket's aspect
+    const cpw = K.comfyPlan(1536, 1024, null);
+    check("comfyPlan: no selection is the whole picture at its own size, the plan's shape (content = what goes, nothing padded)", cpw.whole && cpw.box.join() === "0,0,1536,1024" && cpw.bucket.w === 1536 && cpw.bucket.h === 1024 && cpw.content.join() === "0,0,1536,1024" && !cpw.scaled && !cpw.padded && cpw.route === "comfyui" && cpw.sx === 1 && cpw.sy === 1, JSON.stringify(cpw));
+    const cps = K.comfyPlan(4000, 3000, [1000, 1000, 1200, 1100]);
+    check("comfyPlan: a small selection grows to 768 a side, centred on it", cps.box.join() === `${1100 - 384},${1050 - 384},${1100 + 384},${1050 + 384}` && !cps.scaled && !cps.whole && !cps.layerBox, JSON.stringify(cps.box));
+    const cpl = K.comfyPlan(4000, 3000, [500, 400, 2500, 1400]);
+    check("comfyPlan: a large selection grows by half its longer side (3,000 x 2,000), no aspect step", cpl.box[2] - cpl.box[0] === 3000 && cpl.box[3] - cpl.box[1] === 2000 && inside(cpl.box, [0, 0, 4000, 3000]), JSON.stringify(cpl.box));
+    let cpBad = [];
+    for (let i = 0; i < 200; i++) {
+        const W = 600 + ((i * 7919) % 15000), H = 400 + ((i * 104729) % 10000);
+        const x0 = (i * 31) % W, y0 = (i * 57) % H, x1 = Math.min(W, x0 + 1 + ((i * 131) % 3000)), y1 = Math.min(H, y0 + 1 + ((i * 173) % 3000));
+        const p = K.comfyPlan(W, H, [x0, y0, x1, y1]);
+        const [bx0, by0, bx1, by1] = p.box;
+        if (!inside(p.box, [0, 0, W, H]) || !inside([x0, y0, x1, y1], p.box)) cpBad.push(`${W}x${H} [${x0},${y0},${x1},${y1}] -> ${p.box}`);
+        if (bx1 - bx0 < Math.min(W, 768) || by1 - by0 < Math.min(H, 768)) cpBad.push(`small ${p.box}`);
+        if (p.bucket.w * p.bucket.h > K.capPixels() || (p.scaled !== (p.bucket.w !== bx1 - bx0 || p.bucket.h !== by1 - by0))) cpBad.push(`cap ${JSON.stringify(p.bucket)} ${p.box}`);
+    }
+    check("comfyPlan: 200 selections on pictures up to 15k: inside the picture, holding the selection, at least 768 a side, under the cap", !cpBad.length, cpBad.slice(0, 3).join("; "));
+    const cpb = K.comfyPlan(15000, 10000, null);
+    check("comfyPlan: a 15k whole picture goes scaled by one factor under the cap", cpb.scaled && cpb.bucket.w * cpb.bucket.h <= K.capPixels() && Math.abs(cpb.bucket.w / cpb.bucket.h - 1.5) < 0.002 && cpb.content[2] === cpb.bucket.w && K.isScaled(cpb), JSON.stringify(cpb.bucket));
+    const cpi = K.comfyPlan(2000, 1500, null, { within: [100.4, 50, 900.2, 1700] });
+    const cpf = K.comfyPlan(512, 400, null, { fit: (w, h) => ({ w: w / 2, h: h / 2, scaled: true }) });
+    check("comfyPlan: a layer's rect cut to the picture; the fit given (the gate's seam)", cpi.layerBox && cpi.box.join() === "100,50,901,1500" && cpf.bucket.w === 256 && cpf.bucket.h === 200 && cpf.scaled && Math.abs(cpf.sx - 0.5) < 1e-9, JSON.stringify([cpi.box, cpf.bucket]));
+    check("comfyBoxLine: the box, at its own size or sent at the cap's size", K.comfyBoxLine(cpw) === "the whole picture, 1,536 × 1,024, at its own size" && K.comfyBoxLine({ ...cpb, from: "the picture under the key", rekey: true }) === `the key layer's box, 15,000 × 10,000, sent at ${K.fmtInt(cpb.bucket.w)} × ${K.fmtInt(cpb.bucket.h)} (the cap) and scaled back, read from the picture under the key`, K.comfyBoxLine(cpb));
+    const sl1 = K.comfyStatusLine({ kept: 38.2, seconds: 11.46, pack: "marawan206", gpu: "NVIDIA GeForce RTX 5090", screen: "green", hint: "selection", trust: 0.5, sent: [512, 400], box: [512, 400], grey: true });
+    check("comfyStatusLine: on your ComfyUI through the pack on its card, at its own size, the grey layer", sl1 === "Key: 38 % of the box kept, in 11 s on your ComfyUI (CorridorKey 2.0 through ComfyUI-CorridorKey2.0 on NVIDIA GeForce RTX 5090, green screen, hint from the selection (rough); at its own size, 512 × 400). A grey layer sits under the Key layer: replace it with your background.", sl1);
+    const sl2 = K.comfyStatusLine({ kept: 5.04, seconds: 2.33, pack: "hashu786", screen: "blue", hint: "none", trust: -1, sent: [4096, 2731], box: [15000, 10000], hidden: "Subject", rekey: true });
+    check("comfyStatusLine: scaled back, a hidden source, pack B's despill note on blue, never \"refined\"", sl2.startsWith("Re-key: 5 % of the box kept, in 2.3 s on your ComfyUI (CorridorKey 2.0 through ComfyUI-CorridorKey2, blue screen, no hint; keyed at 4,096 × 2,731 of its 15,000 × 10,000 and scaled back). Subject is hidden;") && sl2.endsWith("despills green screens only, so the blue screen's spill stays on the subject.") && !/refined/.test(sl2), sl2);
+    check("COMFY_COST: B0's reload in the dialog's words", /about 10 s more/.test(K.COMFY_COST) && /4\.7 GB/.test(K.COMFY_COST));
+
     // readiness on your ComfyUI
     const R5090 = ["cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync"];
     const sNo = K.serverSupport({ state: "disconnected" });

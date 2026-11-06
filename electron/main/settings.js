@@ -22,7 +22,7 @@ const DEFAULTS = {
     realism: { style: "Default", intensity: 1, preset: "L", timeout: 300 },
     // Key green / blue screen (item 49, docs/PLAN_CORRIDORKEY.md §4.8; renderer/editor/keying.js keyDefaults): the Key
     // dialog's rows, the working size (the live bucket's long side, Stop A's pick), the grey layer under a key of the
-    // base, the wait in seconds; for a key on your ComfyUI (§4.11) the cap in megapixels of 2^20 px (provisional until
+    // base, the wait in seconds; for a key on your ComfyUI (§4.11) the cap in megapixels of 2^20 px (16, kept by
     // B0), keep_on_gpu of pack A, unload_other_models of pack B and that wait. The renderer fills a stored object per key
     // (keying.fillValues)
     key: { screen: "auto", trust: 0.5, despill: 0.5, preview: true, workingSize: 1024, greyUnderBase: true, timeout: 300, cap: 16, keepOnGpu: false, evicts: false, comfyTimeout: 300 },

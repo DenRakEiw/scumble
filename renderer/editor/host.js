@@ -47,6 +47,7 @@ import * as realism from "./realism.js";
 import * as keying from "./keying.js";
 import { bandPlan as refineBandPlan } from "./keymatte.js";
 import { bytesSource } from "./inpaint_raster.js";
+import { readPng } from "./inpaint_png.js";
 import * as comfyprompt from "./comfyprompt.js";
 import { MAX_LORAS, LORA_MODEL_CLASS, comboOf, usableRows, modelSource, spliceLoras, missingLoras, normalizeName, loraWords, loraFolder, familyOf, loraTriggers, loraMeta } from "./loras.js";
 import * as genpresets from "./genpresets.js";
@@ -368,6 +369,13 @@ const runIdOf = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUI
 const KEY_BAND_ROWS = 256;
 /** A layer mask's colour where it lets through: inpaint_canvas.js MASK_RGB (combine's default is the selection's red). */
 const KEY_MASK_RGB = [255, 255, 255];
+
+/** A hint plane (255 = subject) as an opaque grey RGBA picture: what a key on your ComfyUI uploads (ImageToMask, red). */
+function keyGreyRgba(plane) {
+    const out = new Uint8Array(plane.length * 4);
+    for (let i = 0; i < plane.length; i++) { const v = plane[i], o = i * 4; out[o] = v; out[o + 1] = v; out[o + 2] = v; out[o + 3] = 255; }
+    return out;
+}
 
 /** One call into the key process (helpers:keyPrepare / keyRun, I3); refused while this build has none. */
 function keyHelper(name, req) {
@@ -3993,11 +4001,20 @@ export const host = {
      * the document loading, no picture, a source layer that has no pixels of its own, Re-key without a key layer.
      * -> { text, kind } or null
      */
-    keyCheck(editor, { source = "picture", layer = null, rekey = false, hint = "selection" } = {}) {
+    keyCheck(editor, o = {}) {
+        const sup = this.keySupport();
+        if (!sup.ok) return { text: sup.text, kind: sup.kind };
+        return this.keyDocCheck(editor, o);
+    },
+
+    /**
+     * The document's half of keyCheck and keyComfyCheck (every route): a key running, a run going on the document, the
+     * document loading, no picture, a source layer without pixels of its own, Re-key without a key layer, a hint "mask"
+     * without a mask, a transform pending. -> { text, kind } or null
+     */
+    keyDocCheck(editor, { source = "picture", layer = null, rekey = false, hint = "selection" } = {}) {
         const T = keying.TEXTS, L = keying.LABEL;
         const say = (text, kind) => ({ text, kind });
-        const sup = this.keySupport();
-        if (!sup.ok) return say(sup.text, sup.kind);
         if (this._keyBusy) return say(T.keyGoing, "info");
         if (editor.providerPending || (editor._localRuns && editor._localRuns.size)) return say(T.runGoing, "info");
         if (editor._loading) return say(T.loading, "info");
@@ -4317,6 +4334,8 @@ export const host = {
      * -> { layer, grey, hidden, box, matteBox, workingSize, provider, seconds, kept, status } (layer null after a close)
      */
     async keyScreen(editor, opts = {}) {
+        // Route B (§4.11): the key on your ComfyUI, asked for or the default while the in-app engine is not ready
+        if (this.keyRoute(opts.route) === "comfyui") return this.keyComfy(editor, opts);
         const L = keying.LABEL, T = keying.TEXTS;
         const say = (text, kind) => { editor.setStatus(text, kind); return refusal(text, kind || "info"); };
         const v = await this.loadKeyValues();
@@ -4688,6 +4707,237 @@ export const host = {
         x.putImageData(img, 0, 0);
         matte._overlay = c;
         return c;
+    },
+
+    // ---- Key screen, Route B: your ComfyUI with a CorridorKey 2.0 node pack (docs/PLAN_CORRIDORKEY.md §4.11, B2) ----
+
+    /**
+     * The route a key takes: the one asked ("app": in Scumble, "comfyui": your ComfyUI), else in Scumble when its engine
+     * is ready, else your ComfyUI when it can key, else in Scumble when its set is offered (its reason is the download),
+     * else your ComfyUI (its reason says what it needs). This build has no in-app engine (Stop A), so it is your ComfyUI.
+     */
+    keyRoute(route = "") {
+        if (route === "app" || route === "comfyui") return route;
+        const app = this.keySupport();
+        if (app.ok) return "app";
+        if (this.keyComfySupport().ok) return "comfyui";
+        return app.offered ? "app" : "comfyui";
+    },
+
+    /** Whether your ComfyUI can key now (keying.serverSupport: connected, an RTX 30+ card, a pack, Inpaint Canvas). */
+    keyComfySupport() {
+        const s = this.server || { state: "disconnected", gpus: [] };
+        return keying.serverSupport({ state: s.state, gpus: s.gpus, objectInfo: this.objectInfo });
+    },
+
+    /** The size a w × h box goes to your ComfyUI at (keying.comfyFit with settings.key.cap); the key gate stands in for it. */
+    keyComfyFit(w, h) {
+        return keying.comfyFit(w, h, this.keyValues().cap);
+    },
+
+    /**
+     * Why a key on your ComfyUI would not start on this document now, before anything is read or sent: what the server
+     * lacks (serverSupport's reason: plain while not connected, "warn" for what a connected server cannot do), then the
+     * document's refusals (keyDocCheck). -> { text, kind } or null
+     */
+    keyComfyCheck(editor, o = {}) {
+        const sup = this.keyComfySupport();
+        if (!sup.ok) {
+            const st = (this.server && this.server.state) || "disconnected";
+            return { text: sup.reason, kind: st === "connected" || st === "missing-node" ? "warn" : "info" };
+        }
+        return this.keyDocCheck(editor, o);
+    },
+
+    /**
+     * The box of a key on your ComfyUI and the size it goes at (keying.comfyPlan: the selection's bounds grown by
+     * context, a source layer's rect, the whole picture; at its own size up to settings.key.cap, else scaled by one
+     * factor). Re-key: the key's record while this session holds it, else the key layer's bounds grown as a selection's
+     * (`fromBounds`); `from` names the picture a Re-key reads.
+     */
+    keyComfyPlan(editor, { source = "picture", layer = null, hint = "selection", rekey = false } = {}) {
+        const W = editor.width, H = editor.height;
+        const fit = (w, h) => this.keyComfyFit(w, h);
+        if (rekey && layer) {
+            const r = this.keyRekeyRead(editor, layer);
+            const from = r.layer ? `${r.layer.name}${r.layer.visible ? "" : " (hidden)"}` : "the picture under the key";
+            const box = this.keyRecordBox(editor, layer);
+            if (box) return { ...keying.comfyPlan(W, H, null, { within: box, fit }), rekey: true, fromBounds: false, whole: false, layerBox: false, from };
+            return { ...keying.comfyPlan(W, H, [layer.x, layer.y, layer.x + layer.w, layer.y + layer.h], { fit }), rekey: true, fromBounds: true, whole: false, layerBox: false, from };
+        }
+        const sel = hint === "selection" && editor.getBounds ? editor.getBounds() : null;
+        const within = source !== "picture" && layer && !sel ? [layer.x, layer.y, layer.x + layer.w, layer.y + layer.h] : null;
+        return { ...keying.comfyPlan(W, H, sel, { within, fit }), rekey: false, fromBounds: false };
+    },
+
+    /**
+     * An RGBA picture (w × h, opaque) as a PNG in your ComfyUI's input folder (uploadInput), the wait ended by a Cancel and
+     * at `endAt` (passPicture's shape: the request runs on and is ignored). -> the uploaded { filename, subfolder, type }
+     */
+    async keyComfyUpload(rgba, w, h, name, token, endAt) {
+        const L = keying.LABEL;
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        let png;
+        try {
+            c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h), 0, 0);
+            png = await canvasBytes(c);
+        } finally {
+            c.width = c.height = 0;
+        }
+        const upload = this.uploadInput(new Blob([png], { type: "image/png" }), name);
+        return new Promise((resolve, reject) => {
+            const t0 = Date.now();
+            let iv = null;
+            const done = (fn, v) => { clearInterval(iv); fn(v); };
+            iv = setInterval(() => {
+                if (token && token.cancelled) done(reject, Object.assign(new Error(keying.TEXTS.cancelled), { kind: "cancelled" }));
+                else if (Date.now() > endAt) done(reject, Object.assign(new Error(`${L}: your ComfyUI did not take the picture within ${Math.round((Date.now() - t0) / 1000)} s.`), { kind: "timeout" }));
+            }, 250);
+            upload.then((v) => done(resolve, v), (err) => done(reject, err));
+        });
+    },
+
+    /**
+     * Your ComfyUI's answer (the pack's `rgba`: 8-bit straight RGBA, I0a and B0) decoded in bands without a canvas
+     * (readPng): the alpha as floats and the unmixed colour as RGB at the size that went. An answer of another size, or
+     * one without an alpha channel, is refused. -> { alpha: Float32Array, fg: Uint8Array, bw, bh }
+     */
+    async keyComfyDecode(bytes, w, h) {
+        const L = keying.LABEL;
+        const alpha = new Float32Array(w * h), fg = new Uint8Array(w * h * 3);
+        // (readPng's options are typed from its destructuring defaults, which leave out onRows)
+        await readPng(new Blob([bytes], { type: "image/png" }), /** @type {any} */ ({
+            onHeader: (hd) => {
+                if (hd.width !== w || hd.height !== h) throw refusal(`${L}: your ComfyUI answered ${hd.width} × ${hd.height} for a picture of ${w} × ${h}.`, "error");
+                if (hd.colorType === 0 || hd.colorType === 2) throw refusal(`${L}: your ComfyUI answered a picture without a matte (no alpha channel); the node pack's output is not the one Scumble reads.`, "error");
+            },
+            onRows: (rgba, y0, rows) => {
+                const k = 1 / 255;
+                for (let i = 0, p = y0 * w, n = rows * w; i < n; i++, p++) {
+                    const o = i * 4, q = p * 3;
+                    alpha[p] = rgba[o + 3] * k;
+                    fg[q] = rgba[o]; fg[q + 1] = rgba[o + 1]; fg[q + 2] = rgba[o + 2];
+                }
+            },
+        }));
+        return { alpha, fg, bw: w, bh: h };
+    },
+
+    /**
+     * Key green / blue screen on your ComfyUI (Route B, §4.11; B2): the box (keyComfyPlan) read as a run reads it (the
+     * visible picture with filters skipped, a layer's own pixels on the screen's colour, a Re-key's source or the picture
+     * under the key: keyRead), and the hint (keyHint: the selection's coverage, a layer's mask, none) uploaded at the
+     * size that goes (its own up to settings.key.cap, else scaled by one factor), keyed by the node pack whose nodes the
+     * server lists (keying.keyPrompt; auto_download false always), the answer fetched (comfyPictureRun on ck_out, at the
+     * queue's front), decoded in bands (keyComfyDecode) and landed by landKey as the in-app key lands (a scaled matte's
+     * alpha refined against the full-resolution picture, I6). Busy like the Realism Pass: the title row's timer and
+     * Cancel (its job taken off the server), a closed tab ends it and adds nothing; refused before anything is read or
+     * sent (keyComfyCheck). `preview`: the matte into the selection instead. `timeout` (s, settings.key.comfyTimeout) the
+     * wait for the server not counting its queue, `deadline` (ms) a hard end (key_screen's own timeout).
+     * -> keyScreen's answer plus { route: "comfyui", pack, sent: [w, h], scaled }
+     */
+    async keyComfy(editor, opts = {}) {
+        const L = keying.LABEL, T = keying.TEXTS;
+        const say = (text, kind) => { editor.setStatus(text, kind); return refusal(text, kind || "info"); };
+        const v = await this.loadKeyValues();
+        const o = {
+            source: "picture", layer: null, hint: "selection", rekey: false, preview: false,
+            screen: v.screen, trust: v.trust, despill: v.despill, grey: v.greyUnderBase,
+            keepOnGpu: v.keepOnGpu, evicts: v.evicts, timeout: v.comfyTimeout, deadline: 0, ...opts,
+        };
+        if (o.rekey) { o.hint = "mask"; o.trust = 0.95; }
+        else if (o.hint === "mask" && opts.trust == null) o.trust = 0.95;
+        const refused = this.keyComfyCheck(editor, o);
+        if (refused) throw say(refused.text, refused.kind);
+        const sup = this.keyComfySupport();
+        const pack = keying.packById(sup.pack);
+        const info = this.objectInfo;
+        const token = { provider: "comfyui", label: L, started: Date.now(), editor };
+        editor.providerPending = token;
+        this._providerRuns.add(token);
+        this._keyBusy = editor;
+        this.notifyProviderRuns();
+        let closed = false;
+        const offRemoved = this.on("removed", (e) => { if (e && e.editor === editor) { closed = true; token.cancelled = true; } });
+        const gone = () => closed || !this._editors.includes(editor);
+        const cancelled = () => Object.assign(new Error(T.cancelled), { hint: T.cancelled, kind: "cancelled", statusKind: "info" });
+        const stop = () => { if (token.cancelled) throw cancelled(); };
+        const t0 = performance.now();
+        const timeoutMs = Math.max(30, Number.isFinite(+o.timeout) ? +o.timeout : 300) * 1000;
+        const none = { layer: null, grey: null, hidden: null, box: null, matteBox: null, workingSize: 0, provider: "comfyui", route: "comfyui", pack: pack ? pack.id : null, sent: null, scaled: false, seconds: 0, kept: 0, status: "" };
+        let refine = null;
+        try {
+            const plan = this.keyComfyPlan(editor, o);
+            const { w, h } = plan.bucket;
+            editor.setStatus(`${L}: reading ${keying.comfyBoxLine(plan)} ...`);
+            const r = await this.keyRead(editor, plan, o);
+            if (gone()) return none;
+            stop();
+            const hnt = await this.keyHint(editor, plan, o);
+            if (gone()) return none;
+            stop();
+            const screen = this.keyScreenColour(plan, r, hnt.hint, o.screen);
+            if (!screen) throw refusal(T.askScreen, "info");
+            // what goes is opaque (the pack keys the colour): a picture with transparent parts goes as its colour, the
+            // refine below keeps the picture as it was read (its reads at full resolution are the same picture)
+            let sent = r.image;
+            for (let i = 3; i < sent.length; i += 4) if (sent[i] !== 255) { sent = sent.slice(); for (let j = 3; j < sent.length; j += 4) sent[j] = 255; break; }
+            const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
+            const endAt = Math.min(Date.now() + timeoutMs, o.deadline || Infinity);
+            const id = editor.node ? editor.node.id : 0;
+            editor.setStatus(`${L}: sending ${w} × ${h} to your ComfyUI ...`);
+            const refs = { picture: await this.keyComfyUpload(sent, w, h, `n${id}_key_${stamp}.png`, token, endAt) };
+            if (hnt.hint) refs.hint = await this.keyComfyUpload(keyGreyRgba(hnt.hint), w, h, `n${id}_keyhint_${stamp}.png`, token, endAt);
+            sent = null;
+            if (gone()) return none;
+            stop();
+            const trust = hnt.hint ? hnt.quality : keying.trustOf(o.trust).value;
+            const prompt = keying.keyPrompt(pack, refs, { screen, trust, despill: o.despill, keepOnGpu: o.keepOnGpu === true, evicts: o.evicts === true }, info);
+            const res = await this.comfyPictureRun(editor, prompt, keying.COMFY_OUTPUT, { label: L, token, timeoutMs, deadline: o.deadline || 0, front: true });
+            if (gone()) return none;
+            stop();
+            editor.setStatus(`${L}: reading the matte (${w} × ${h}) ...`);
+            const matte = await this.keyComfyDecode(res.bytes, w, h);
+            if (gone()) return none;
+            stop();
+            const kept = keying.keptShare(matte.alpha, w, plan.content);
+            const at = { sent: [w, h], box: [plan.box[2] - plan.box[0], plan.box[3] - plan.box[1]] };
+            if (o.preview) {
+                const mb = await this.keyIntoSelection(editor, plan, matte, () => gone() || !!token.cancelled);
+                if (gone()) return none;
+                stop();
+                const secs = (performance.now() - t0) / 1000;
+                const text = `${L}: the matte is the selection now (${Math.round(kept)} % of the box, ${Math.round(secs * 10) / 10} s on your ComfyUI, ${keying.ENGINE} through ${pack.label}); nothing was added.`;
+                editor.setStatus(text, "info");
+                return { ...none, box: plan.box.slice(), matteBox: mb, workingSize: Math.max(w, h), sent: at.sent, scaled: plan.scaled, seconds: secs, kept, status: text };
+            }
+            const record = { box: plan.box.slice(), size: [editor.width, editor.height], bucket: { ...plan.bucket }, screen, despill: o.despill, trust: hnt.quality, hint: o.hint, source: r.source, provider: "comfyui", route: "comfyui", pack: pack.id, hash: r.hash, greyId: null };
+            // a box that went smaller than its own size comes back scaled: its alpha refined against the picture (I6)
+            refine = plan.scaled && r.read ? { small: r.image, ...this.keyBandReader(editor, r.read) } : null;
+            const ref = refine;
+            refine = null;   // landKey lets it go
+            const landed = await this.landKey(editor, { matte, plan, refine: ref, source: o.rekey ? null : o.source === "picture" ? null : o.layer, rekeyLayer: o.rekey ? o.layer : null, grey: !o.rekey && o.source === "picture" && !!o.grey, record, token, gone });
+            if (!landed) return none;
+            const secs = (performance.now() - t0) / 1000;
+            let text = keying.comfyStatusLine({ kept, seconds: secs, pack, gpu: sup.gpu, screen, hint: hnt.hint ? o.hint : "none", trust: hnt.quality, sent: at.sent, box: at.box, grey: !!landed.grey, hidden: landed.hidden ? landed.hidden.name : "", rekey: o.rekey });
+            const rn = landed.refine;
+            if (rn && (rn.fallback || rn.error)) {
+                text += ` The matte was not refined against the picture: ${rn.fallback || rn.error}.`;
+                console.warn(`${L}: the matte was not refined`, rn);
+            }
+            editor.setStatus(text, "info");
+            return { layer: landed.layer, grey: landed.grey, hidden: landed.hidden, box: plan.box.slice(), matteBox: landed.matteBox, workingSize: Math.max(w, h), provider: "comfyui", route: "comfyui", pack: pack.id, sent: at.sent, scaled: plan.scaled, seconds: secs, kept, refine: rn || null, status: text };
+        } catch (err) {
+            if (refine) refine.done();
+            if (gone()) return none;
+            const text = err && err.hint ? String(err.hint) : keying.runFailure(err, pack);
+            throw say(text, failKind(err));
+        } finally {
+            offRemoved();
+            if (this._keyBusy === editor) this._keyBusy = null;
+            this.endRun(editor, token);
+        }
     },
 
     /** A provider route's relight request, sent (`providerEdit`); a member so the relight gate can stand in for it. */

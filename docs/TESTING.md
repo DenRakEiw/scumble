@@ -493,8 +493,15 @@ the key worker with no fallback and `guideDiff` at most a level, nearer the edge
 `keymatte.refineMatte`'s bytes exactly; a fill layer over the box changes nothing; a layer source refines too), the
 Key dialog's loop (a selection change, real selection-brush strokes, the dab coalescing, a stale ticket, the final run
 never replaced, features gone prepared again, a turn of the picture, an edit under the panel, another tab, the
-dormant, missing and CPU states) and `key_screen` (preview, rekey, hint mask, `status.key`). Plain Node: `node
-tools/keying_test.js` (the box plan at 1k / 4k / 15k, the buckets, reflect-101, the screen from the ring, the matte's
+dormant, missing and CPU states) and `key_screen` (preview, rekey, hint mask, `status.key`). **Route B** (the key on
+the user's ComfyUI, `host.keyComfy`; steps `comfy *`): a connected server and pack A's node list stood in for,
+`host.uploadInput` and `host.comfyPictureRun` stubbed with B0's fixture (`tools/fixtures/corridorkey_routeb/`, real
+answers of pack A at `c7662de`): the picture and the hint that went byte for byte, the queued graph equal to B0's,
+the landed bytes and mask equal to the pack's `rgba` answer, Re-key (the picture under the key, the mask as a clean
+matte), the scaled path (the half fixture: the mask `refineMatte`'s bytes exactly, the colour within a level of the
+bilinear rows), the refusals (not connected, no pack, a run going, the models missing, an answer of another size) and
+a Cancel or a closed tab mid-job. Plain Node: `node
+tools/keying_test.js` (the box plan at 1k / 4k / 15k, `comfyPlan` (Route B's box and the cap), the buckets, reflect-101, the screen from the ring, the matte's
 box, the bilinear rows, the queue, the texts, and the refine's steps through `RowsClient` against `refineMatte`'s
 bytes) and `node tools/keymatte_test.js` (the refine module, `renderer/editor/keymatte.js`: an equal-luminance edge
 snapped to within 1 px, a flat picture left alone, banded equal to unbanded (both methods' halos read and trimmed),

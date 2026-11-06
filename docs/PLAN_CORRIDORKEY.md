@@ -1302,6 +1302,46 @@ layer itself): the reference now reads up to the key layer, and `key` PASS on bo
 `docs/BUGS.md`) all ok. The app's refine ran one band in the gate (the boxes are under 16 MP); several bands are
 `keying_test`'s.
 
+### B2 as built (2026-11-06)
+
+**`host.keyComfy(editor, opts)`** (`renderer/editor/host.js`, the section after `keyOverlayCanvas`), reached through
+`host.keyScreen` whenever `host.keyRoute(opts.route)` says "comfyui": the route asked, else in Scumble when its engine is
+ready, else your ComfyUI when it can key, else in Scumble when its set is offered, else your ComfyUI; this build has no
+in-app engine, so the default is your ComfyUI. `keyComfyCheck` is `keying.serverSupport` (plain while not connected,
+red for what a connected server lacks) and then `keyDocCheck`, the document half split out of `keyCheck` (a key
+running, a run going, loading, no picture, the source layer, Re-key, hint "mask", a pending transform). **The box**
+(`keying.comfyPlan`, new): §4.7 point 1's growth without the bucket's aspect (the pack keys any size): the selection's
+bounds plus half their longer side, at least 768 a side, centred and moved inside the picture, never the bounds as
+they are (B0's tight box); without a selection the whole picture or the source layer's rect; Re-key from the record's
+box or the layer's bounds grown. It goes at its own size up to `settings.key.cap` (16 MP, B0 kept it) and 8,192 a side,
+else scaled by one factor (`host.keyComfyFit`, the seam the gate replaces); the plan has the in-app plan's shape (the
+"bucket" is the size that goes, nothing padded), so `keyRead`, `keyHint`, `keyScreenColour`, `landKey` and
+`keyIntoSelection` take it unchanged. **The run:** the picture (made opaque for the upload only; the refine keeps it as
+read) and the hint (a grey PNG, white = subject) uploaded through `uploadInput` as PNGs drawn on a canvas, each wait
+raced against a Cancel and the timeout (`keyComfyUpload`, passPicture's shape); `keying.keyPrompt` with the node list;
+`comfyPictureRun(editor, prompt, "ck_out", { label: "Key screen", token, timeoutMs: comfyTimeout, deadline, front:
+true })`; the answer decoded in bands by `readPng` straight into the float alpha and the RGB colour
+(`keyComfyDecode`, no canvas; another size or a picture without alpha refused); then `landKey` as the in-app key lands,
+with `refine: { small: the picture as read, ...keyBandReader }` when the box went scaled. The token is the Realism
+Pass's (`provider: "comfyui"`, `providerPending`, the title row, `_keyBusy`); a Cancel takes the job off the server
+through comfyPictureRun; a closed tab returns `layer: null`. The record carries `route: "comfyui"` and the pack. **The
+status line** is `keying.comfyStatusLine`: "Key: N % of the box kept, in S s on your ComfyUI (CorridorKey 2.0 through
+<pack> on <card>, <screen> screen, <hint>; at its own size, W × H | keyed at w × h of its W × H and scaled back)" with
+the grey / hidden tail and pack B's despill note; never "refined" (the integration's rule). Failures read
+`keying.runFailure` (the models missing name the files and both ways to fetch them). `key_screen` passes `route` through
+(its schema is B4's).
+
+**Tests:** `node tools/keying_test.js` (comfyPlan: the whole picture, the 768 floor, the growth, 200 random selections
+up to 15k inside the picture and under the cap, a 15k whole picture scaled, a layer's rect, the fit seam; comfyBoxLine;
+comfyStatusLine; COMFY_COST) PASS; the `key` gate's new steps `comfy setup / native / rekey / scaled / refusals /
+cancel` on B0's fixture, PASS on both backends (`b2-key-tiles`, `b2-key-canvas`): the picture and the hint that went
+equal the fixture's input and hint byte for byte, the queued graph equals B0's `graph.json` (refs aside), the Key layer
+the pack's `rgba` exactly (colour opaque, mask = its alpha in white, trimmed to its matte), one undo; Re-key sent the
+picture under the key and the mask as "clean matte (0.95)"; the scaled path (the 512 × 400 fixture sent at 256 × 200,
+answered with `half_rgba.png`) refined with no fallback, the mask `refineMatte`'s bytes exactly and the colour within
+a level of the bilinear rows (against the native key the refined mask is 2.63 levels MAE, the bilinear 3.37); the
+refusals and a Cancel (26 ms to free the document) or a closed tab add nothing. `lint`, `types` clean.
+
 ## 6. The user's answers, and the questions still open
 
 **The user's answers (2026-10-24; AskUserQuestion; binding):**

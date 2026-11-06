@@ -27,6 +27,11 @@ Start the app first (tools/run_gates.sh does: `--offline`, on both backends). Ch
               pluginPointer gives one run in flight and one pending, a stale ticket is dropped, Key lands the matte shown,
               Re-key follows a mask change at its end (not mid-stroke), the dormant and the not-downloaded states
   command     key_screen, its preview into the selection, rekey, status.key
+  comfy *     Route B (B2): the key on your ComfyUI, host.uploadInput and host.comfyPictureRun stubbed with B0's fixture
+              (tools/fixtures/corridorkey_routeb): native (the picture and the hint byte for byte, B0's graph, the
+              landed bytes and mask the pack's rgba answer exactly), rekey (the picture under the key, a clean matte),
+              scaled (the half fixture, the mask refineMatte's bytes, the colour within a level), refusals (not
+              connected, no pack, a run going, the models missing, another size), cancel (the title row, a closed tab)
 """
 import asyncio
 import json
@@ -35,6 +40,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
+
+# B0's Route B fixture (docs/measurements/ck_b0_2026-11-06/summary.txt section 6): real answers of pack A at c7662de
+FIXDIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "corridorkey_routeb").replace("\\", "/")
 
 HELPERS = r"""
 const K = window.__keying;
@@ -71,6 +79,19 @@ const ev = (ed, ix, iy) => {
         altKey: false, ctrlKey: false, shiftKey: false, metaKey: false, detail: 1, pressure: 0.5, preventDefault() {}, stopPropagation() {}, target: ed.canvas };
 };
 const waitFor = async (cond, ms = 3000) => { for (let t = 0; t < ms / 25 && !cond(); t++) await wait(25); return cond(); };
+// Route B: a connected ComfyUI with an RTX 5090 and pack A's node list, the uploads and the job answered by the stub
+const comfyOn = () => {
+    const C = window.__comfyStub;
+    host.server = { state: "connected", os: "nt", gpus: ["cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync"], remote: false, url: "http://127.0.0.1:8188", version: "0.44.0" };
+    host.objectInfo = window.__ckFix.info;
+    host.comfyPictureRun = (...a) => C.run(...a);
+    host.uploadInput = (...a) => C.upload(...a);
+};
+const comfyOff = () => {
+    const o = window.__comfy0;
+    if (!o) return;
+    host.server = o.server; host.objectInfo = o.objectInfo; host.comfyPictureRun = o.comfyPictureRun; host.uploadInput = o.uploadInput; host.keyComfyFit = o.keyComfyFit;
+};
 const settle = async (ed) => { for (let t = 0; t < 50 && (ed.providerPending || host._keyBusy); t++) await wait(50); await wait(60); };
 """
 
@@ -137,10 +158,14 @@ const ed = ednow(window.__keyDoc);
 engineOff();
 const n0 = ed.layers.length;
 let msg = "";
-try { await host.keyScreen(ed, {}); } catch (err) { msg = err.message; }
+try { await host.keyScreen(ed, { route: "app" }); } catch (err) { msg = err.message; }
 ok(msg === K.TEXTS.notInstalled, "this build's engine answers not installed", msg);
 ok(ed.layers.length === n0, "nothing added");
 ok(host.keyCheck(ed, {}).text === K.TEXTS.notInstalled, "keyCheck says the same");
+// without the in-app engine the default route is your ComfyUI (Route B), which says what it needs (offline: connect)
+let msg2 = "";
+try { await host.keyScreen(ed, {}); } catch (err) { msg2 = err.message; }
+ok(host.keyRoute() === "comfyui" && msg2 === K.serverSupport({ state: "disconnected" }).reason && ed.statusKind !== "error", "the default route is your ComfyUI and says to connect it", [host.keyRoute(), msg2, ed.statusKind]);
 engineOn();
 ed.providerPending = { label: "x" };
 ok(host.keyCheck(ed, {}).text === K.TEXTS.runGoing, "a run going refuses", host.keyCheck(ed, {}));
@@ -830,15 +855,282 @@ ed.layers.splice(ed.layers.findIndex((l) => l.id === ml.id), 1); ed.layersRestac
 engineOff();
 const s1 = (await run("status", { doc: ed.node.id })).key;
 let msg = "";
-try { await run("key_screen", { doc: ed.node.id }); } catch (err) { msg = err.message; }
+try { await run("key_screen", { doc: ed.node.id, route: "app" }); } catch (err) { msg = err.message; }
 engineOn();
-ok(s1.ready === false && s1.reason === K.TEXTS.notInstalled && msg === K.TEXTS.notInstalled, "without the engine: status.key and key_screen say why", [s1, msg]);
+ok(s1.ready === false && msg === K.TEXTS.notInstalled, "without the engine: status.key and key_screen say why", [s1, msg]);
 return { s0, layer: r.layer.id };
+"""),
+
+    ("comfy setup", r"""
+// Route B (B2, docs/PLAN_CORRIDORKEY.md §4.11): your ComfyUI stood in for. A connected server with an RTX 5090, pack A's
+// node list as /object_info gave it (tools/refs/corridorkey), the uploads kept and decoded, and comfyPictureRun answering
+// B0's fixture (tools/fixtures/corridorkey_routeb: the real rgba answers of pack A at c7662de) for the picture that went
+const F = __FIXDIR__;
+const KP = await import("./editor/inpaint_png.js");
+const readFile = async (p) => new Uint8Array((await window.scumble.file.read(p)).data);
+const decode = async (bytes) => {
+    let w = 0, h = 0, data = null;
+    await KP.readPng(new Blob([bytes]), { onHeader: (hd) => { w = hd.width; h = hd.height; data = new Uint8Array(w * h * 4); }, onRows: (rgba, y0, rows) => { data.set(rgba.subarray(0, rows * w * 4), y0 * w * 4); } });
+    return { w, h, data };
+};
+const json = async (p) => JSON.parse(new TextDecoder().decode(await readFile(p)));
+const refs = F + "/../../refs/corridorkey/";
+const fx = {
+    dir: F, input: await decode(await readFile(F + "/input.png")), hint: await decode(await readFile(F + "/hint.png")),
+    rgbaBytes: await readFile(F + "/rgba.png"), halfBytes: await readFile(F + "/half_rgba.png"), graph: await json(F + "/graph.json"),
+};
+fx.rgba = await decode(fx.rgbaBytes);
+fx.half = await decode(fx.halfBytes);
+const info = { ...(await json(refs + "CorridorKey2Basic.json")), ...(await json(refs + "CorridorKey2ModelLoader.json")) };
+for (const c of ["InpaintCanvas", "InpaintCanvasLoadRef", "ImageToMask", "PreviewImage"]) info[c] = { input: { required: {} }, output: [] };
+fx.info = info;
+window.__ckFix = fx;
+window.__ckDecode = decode;
+const cs = {
+    calls: [], uploads: [], delay: 0, fail: "", answer: null, cancelSeen: 0,
+    async upload(blob, name) {
+        const img = await decode(new Uint8Array(await blob.arrayBuffer()));
+        this.uploads.push({ name, img });
+        return { filename: name, subfolder: "inpaint_canvas", type: "input" };
+    },
+    async run(editor, prompt, output, opts) {
+        const t = opts.token;
+        this.calls.push({ prompt: JSON.parse(JSON.stringify(prompt)), output, label: opts.label, timeoutMs: opts.timeoutMs, front: opts.front, deadline: opts.deadline, token: t });
+        const gone = () => { if (t && t.cancelled) { this.cancelSeen++; throw Object.assign(new Error(`${opts.label} cancelled.`), { kind: "cancelled" }); } };
+        for (let waited = 0; waited < this.delay; waited += 25) { gone(); await new Promise((r) => setTimeout(r, 25)); }
+        gone();
+        if (this.fail) throw Object.assign(new Error(this.fail), { kind: "error", nodeType: "CorridorKey2ModelLoader" });
+        const name = JSON.parse(prompt.ck_in.inputs.ref).filename;
+        const pic = this.uploads.find((u) => u.name === name);
+        const bytes = this.answer || (pic && pic.img.w === 256 ? fx.halfBytes : fx.rgbaBytes);
+        return { bytes, mime: "image/png", seconds: 0.2, promptId: "ck-stub-" + this.calls.length };
+    },
+};
+window.__comfyStub = cs;
+window.__comfy0 = { server: host.server, objectInfo: host.objectInfo, comfyPictureRun: host.comfyPictureRun, uploadInput: host.uploadInput, keyComfyFit: host.keyComfyFit };
+ok(fx.input.w === 512 && fx.input.h === 400 && fx.rgba.w === 512 && fx.half.w === 256 && fx.half.h === 200, "B0's fixture read", [fx.input.w, fx.input.h, fx.half.w, fx.half.h]);
+return { calls: 0, nodes: Object.keys(fx.graph).length };
+"""),
+
+    ("comfy native", r"""
+const C = window.__comfyStub, fx = window.__ckFix;
+comfyOn(); engineOff();
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("load_image", { doc: d.id, path: fx.dir + "/input.png" });
+ok(ed.width === 512 && ed.height === 400, "the fixture's picture", [ed.width, ed.height]);
+window.__ckDoc = d.id;
+// B0's soft brush hint as the selection (white = subject)
+const { bytesSource } = await import("./editor/inpaint_raster.js");
+const hp = new Uint8Array(512 * 400);
+for (let i = 0; i < hp.length; i++) hp[i] = fx.hint.data[i * 4];
+ed.sel.clear(); ed.sel.combine(bytesSource(hp, 0, 0, 512, 400), "add"); ed.markSelectionChanged({ within: [0, 0, 512, 400] }, [0, 0, 512, 400]);
+ok(host.keyRoute() === "comfyui" && host.keyComfySupport().ok && host.keyComfySupport().pack === "marawan206", "no in-app engine: the route is your ComfyUI, pack A", host.keyComfySupport());
+const n0 = ed.layers.length, u0 = ed.undo.length, up0 = C.uploads.length, c0 = C.calls.length;
+const out = await host.keyScreen(ed, { hint: "selection", trust: 0.5, screen: "green", despill: 0.5 });
+const L = out.layer, G = out.grey;
+ok(out.route === "comfyui" && !out.scaled && out.sent.join() === "512,400" && out.box.join() === "0,0,512,400" && L && G, "keyed on your ComfyUI at its own size", out);
+ok(C.uploads.length === up0 + 2 && C.calls.length === c0 + 1, "two uploads (the picture, the hint) and one job", [C.uploads.length - up0, C.calls.length - c0]);
+const up = C.uploads[up0].img, uh = C.uploads[up0 + 1].img;
+let dPic = 0, dHint = 0;
+for (let i = 0; i < 512 * 400 * 4; i++) { if (up.data[i] !== fx.input.data[i]) dPic++; if (uh.data[i] !== fx.hint.data[i]) dHint++; }
+ok(up.w === 512 && up.h === 400 && dPic === 0, "the picture that went is the fixture's input byte for byte", dPic);
+ok(uh.w === 512 && uh.h === 400 && dHint === 0, "the hint that went is the fixture's hint byte for byte (grey, white = subject)", dHint);
+// the queued graph is B0's (the plan's six nodes), with Scumble's uploads as the refs
+const call = C.calls[c0];
+const canon = (v) => (Array.isArray(v) ? "[" + v.map(canon).join(",") + "]" : v && typeof v === "object" ? "{" + Object.keys(v).sort().map((k) => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}" : JSON.stringify(v));
+const want = JSON.parse(JSON.stringify(fx.graph)), got = JSON.parse(JSON.stringify(call.prompt));
+const refOf = (g, id) => JSON.parse(g[id].inputs.ref);
+ok(canon(refOf(got, "ck_in")) === canon({ filename: C.uploads[up0].name, subfolder: "inpaint_canvas", type: "input" }) && refOf(got, "ck_hint_img").filename === C.uploads[up0 + 1].name, "the refs are the uploads", [refOf(got, "ck_in"), refOf(got, "ck_hint_img")]);
+for (const g of [want, got]) { g.ck_in.inputs.ref = "<input>"; g.ck_hint_img.inputs.ref = "<hint>"; }
+ok(canon(got) === canon(want), "the graph is B0's (auto_download false, loose hint (0.5), the rgba output)", { got: canon(got).slice(0, 300) });
+ok(call.output === "ck_out" && call.front === true && call.timeoutMs === 300000 && call.label === "Key screen", "ck_out, at the queue's front, 300 s", { o: call.output, f: call.front, t: call.timeoutMs });
+// the landing: the pack's answer exactly, trimmed to its matte
+ok(ed.layers.length === n0 + 2 && ed.undo.length === u0 + 1 && ed.layers.indexOf(G) === ed.layers.indexOf(L) - 1, "a Key over a Grey layer, one undo step");
+const A = new Float32Array(512 * 400);
+for (let i = 0; i < A.length; i++) A[i] = fx.rgba.data[i * 4 + 3] / 255;
+const mb = K.matteBox(A, 512, 400, [0, 0, 512, 400], [0, 0, 512, 400]);
+ok(L.x === mb[0] && L.y === mb[1] && L.w === mb[2] - mb[0] && L.h === mb[3] - mb[1], "trimmed to the matte's box", { mb, L: [L.x, L.y, L.w, L.h] });
+const px = rect(L.px, L.w, L.h), mk = rect(L.maskPx, L.w, L.h);
+let offPx = 0, offA = 0, offRgb = 0;
+for (let Y = 0; Y < L.h; Y++) for (let X = 0; X < L.w; X++) {
+    const i = ((Y + L.y) * 512 + X + L.x) * 4, o = (Y * L.w + X) * 4;
+    if (px[o] !== fx.rgba.data[i] || px[o + 1] !== fx.rgba.data[i + 1] || px[o + 2] !== fx.rgba.data[i + 2] || px[o + 3] !== 255) offPx++;
+    if (mk[o + 3] !== fx.rgba.data[i + 3]) offA++;
+    if (mk[o + 3] > 0 && (mk[o] !== 255 || mk[o + 1] !== 255 || mk[o + 2] !== 255)) offRgb++;
+}
+ok(offPx === 0 && offA === 0 && offRgb === 0, "the layer's pixels are the pack's colour, opaque; its mask the pack's alpha in white", { offPx, offA, offRgb });
+ok(/^Key: [\d.]+ % of the box kept, in [\d.]+ s on your ComfyUI \(CorridorKey 2\.0 through ComfyUI-CorridorKey2\.0 on NVIDIA GeForce RTX 5090, green screen, hint from the selection \(rough\); at its own size, 512 × 400\)\. A grey layer sits under the Key layer/.test(ed.status), "the status line", ed.status);
+ok(!ed.providerPending && !host._keyBusy && !host.runsOf(ed).length, "the document free");
+ok(L.key && L.key.route === "comfyui" && L.key.box.join() === "0,0,512,400" && L.key.greyId === G.id, "the session's key record", L.key);
+await ed.undoStep();
+ok(ed.layers.length === n0, "one undo takes both back");
+// no hint: four nodes, no alpha_hint, one upload
+await run("select_none", { doc: d.id });
+const up1 = C.uploads.length;
+const out2 = await host.keyScreen(ed, { hint: "selection", screen: "green", grey: false });
+const g2 = C.calls[C.calls.length - 1].prompt;
+ok(out2.layer && !out2.grey && C.uploads.length === up1 + 1 && Object.keys(g2).sort().join() === "ck_in,ck_key,ck_model,ck_out" && !("alpha_hint" in g2.ck_key.inputs) && /no hint/.test(ed.status), "no selection: no hint, four nodes, one upload", { nodes: Object.keys(g2), status: ed.status });
+await ed.undoStep();
+await ed.redoStep();
+await ed.undoStep();
+// the first key again, for Re-key below
+ed.sel.clear(); ed.sel.combine(bytesSource(hp, 0, 0, 512, 400), "add"); ed.markSelectionChanged({ within: [0, 0, 512, 400] }, [0, 0, 512, 400]);
+const out3 = await host.keyScreen(ed, { hint: "selection", trust: 0.5, screen: "green" });
+window.__ckKey = out3.layer.id;
+return { box: out.box, matteBox: out.matteBox, kept: Math.round(out.kept), status: ed.status.slice(0, 160) };
+"""),
+
+    ("comfy rekey", r"""
+// Re-key on your ComfyUI: the key layer's mask as the hint (clean matte (0.95)), the picture under the key (not the grey
+// layer, not the key) as the picture; one layerfull step
+const C = window.__comfyStub, fx = window.__ckFix;
+comfyOn(); engineOff();
+const ed = ednow(window.__ckDoc);
+const L = ed.layers.find((l) => l.id === window.__ckKey);
+ok(L && host.isKeyLayer(L), "the key layer");
+await run("select_none", { doc: ed.node.id });
+const u0 = ed.undo.length, n0 = ed.layers.length, up0 = C.uploads.length;
+const mask0 = rect(L.maskPx, L.w, L.h), r0 = [L.x, L.y, L.w, L.h];
+const out = await host.keyScreen(ed, { rekey: true, layer: L });
+ok(out.layer === L && ed.layers.length === n0 && ed.undo.length === u0 + 1, "Re-key replaced the layer in one step", out);
+const up = C.uploads[up0].img, uh = C.uploads[up0 + 1].img;
+let dPic = 0, dHint = 0;
+for (let i = 0; i < 512 * 400 * 4; i++) if (up.data[i] !== fx.input.data[i]) dPic++;
+for (let Y = 0; Y < 400; Y++) for (let X = 0; X < 512; X++) {
+    const inL = X >= r0[0] && Y >= r0[1] && X < r0[0] + r0[2] && Y < r0[1] + r0[3];
+    const want = inL ? mask0[((Y - r0[1]) * r0[2] + X - r0[0]) * 4 + 3] : 0;
+    if (uh.data[(Y * 512 + X) * 4] !== want) dHint++;
+}
+ok(dPic === 0, "the picture under the key went (no grey, no key)", dPic);
+ok(dHint === 0, "the key layer's mask went as the hint", dHint);
+const g = C.calls[C.calls.length - 1].prompt;
+ok(g.ck_key.inputs.hint_quality === "clean matte (0.95)" && g.ck_hint.class_type === "ImageToMask", "trusted as a clean matte", g.ck_key.inputs);
+ok(/^Re-key: .* on your ComfyUI .*hint from the layer's mask/.test(ed.status), "the status names the Re-key", ed.status);
+await ed.undoStep();
+const L1 = ed.layers.find((l) => l.id === L.id);
+ok([L1.x, L1.y, L1.w, L1.h].join() === r0.join(), "one undo restores the layer");
+return { status: ed.status.slice(0, 120) };
+"""),
+
+    ("comfy scaled", r"""
+// a box above the cap goes scaled (here the 512 x 400 picture at 256 x 200, B0's half fixture) and its alpha is refined
+// against the full-resolution picture (I6): the mask is keymatte.refineMatte's answer exactly, the colour bilinear
+const C = window.__comfyStub, fx = window.__ckFix;
+comfyOn(); engineOff();
+const ed = ednow(window.__ckDoc);
+host.shell.activate(ed);
+await run("select_none", { doc: ed.node.id });
+host.keyComfyFit = (w, h) => (w === 512 && h === 400 ? { w: 256, h: 200, scale: 0.5, scaled: true } : K.comfyFit(w, h, 16));
+const up0 = C.uploads.length;
+let out;
+try { out = await host.keyScreen(ed, { hint: "none", screen: "green", grey: false }); } finally { host.keyComfyFit = window.__comfy0.keyComfyFit; }
+const L = out.layer, rf = out.refine;
+const up = C.uploads[up0].img;
+ok(out.scaled && out.sent.join() === "256,200" && up.w === 256 && up.h === 200 && C.uploads.length === up0 + 1, "the box went at 256 x 200", { sent: out.sent, up: [up.w, up.h] });
+ok(rf && !rf.fallback && !rf.error && rf.guideDiff != null && rf.guideDiff <= 1, "refined, no fallback: the full-resolution reads are the picture that went", rf);
+ok(/keyed at 256 × 200 of its 512 × 400 and scaled back\)/.test(ed.status) && !/not refined|, refined/.test(ed.status), "the status says it went scaled, never \"refined\"", ed.status);
+const n = 256 * 200, A = new Float32Array(n), FG = new Uint8Array(n * 3);
+for (let i = 0; i < n; i++) { A[i] = fx.half.data[i * 4 + 3] / 255; FG[i * 3] = fx.half.data[i * 4]; FG[i * 3 + 1] = fx.half.data[i * 4 + 1]; FG[i * 3 + 2] = fx.half.data[i * 4 + 2]; }
+const box = [0, 0, 512, 400], content = [0, 0, 256, 200];
+const mb = K.matteBox(A, 256, 200, content, box);
+ok(L.x === mb[0] && L.y === mb[1] && L.w === mb[2] - mb[0] && L.h === mb[3] - mb[1], "trimmed to the scaled matte's box", { mb, L: [L.x, L.y, L.w, L.h] });
+const KM = await import("./editor/keymatte.js");
+const rd = host.keyBandReader(ed, { layer: null, fill: null, upTo: ed.layers.indexOf(L) });
+const want = await KM.refineMatte({
+    alpha: A, aw: 256, ah: 200, small: { data: up.data, width: 256, height: 200 },
+    src: { x: 0, y: 0, w: 256, h: 200 }, full: { w: 512, h: 400 }, out: { x: L.x, y: L.y, w: L.w, h: L.h },
+    read: (b) => rd.read([L.x, L.y + b[1], L.x + L.w, L.y + b[3]]),
+});
+rd.done();
+const mk = rect(L.maskPx, L.w, L.h), px = rect(L.px, L.w, L.h);
+const lin = K.bilinearRows(A, FG, 256, K.sampleMap(mb, box, content), L.w, 0, L.h);
+let offA = 0, offPx = 0, eR = 0, eB = 0;
+for (let k = 0; k < L.w * L.h; k++) {
+    if (mk[k * 4 + 3] !== want.alpha[k]) offA++;
+    for (let c = 0; c < 3; c++) offPx = Math.max(offPx, Math.abs(px[k * 4 + c] - lin.rgba[k * 4 + c]));
+    const X = L.x + (k % L.w), Y = L.y + Math.floor(k / L.w), t = fx.rgba.data[(Y * 512 + X) * 4 + 3];
+    eR += Math.abs(mk[k * 4 + 3] - t); eB += Math.abs(lin.a[k] - t);
+}
+ok(offA === 0 && !want.fallback, "the mask is refineMatte's answer exactly", { offA, fallback: want.fallback });
+ok(offPx <= 1, "the colour within a level of the bilinear rows", offPx);
+await ed.undoStep();
+// how near the native key each comes (reported: the hair edge of B0's fixture; I6's own tests judge the refine)
+return { refine: rf, maeRefinedVsNative: Math.round((eR / (L.w * L.h)) * 100) / 100, maeBilinearVsNative: Math.round((eB / (L.w * L.h)) * 100) / 100 };
+"""),
+
+    ("comfy refusals", r"""
+const C = window.__comfyStub, fx = window.__ckFix;
+comfyOn(); engineOff();
+const ed = ednow(window.__ckDoc);
+const n0 = ed.layers.length, up0 = C.uploads.length, c0 = C.calls.length;
+const tryKey = async (o) => { try { await host.keyScreen(ed, o || { hint: "none", screen: "green" }); return ""; } catch (err) { return err.message; } };
+// not connected: what it needs, plain
+host.server = { ...host.server, state: "disconnected" };
+let msg = await tryKey({ route: "comfyui" });
+ok(msg === K.serverSupport({ state: "disconnected" }).reason && ed.statusKind !== "error" && ed.statusKind !== "warn", "not connected: connect it, plain", [msg, ed.statusKind]);
+comfyOn();
+// a connected server without a pack: install one, in red
+host.objectInfo = { InpaintCanvas: fx.info.InpaintCanvas };
+msg = await tryKey();
+ok(/needs a CorridorKey 2\.0 node pack on your ComfyUI: install one there/.test(msg) && ed.statusKind === "warn", "no pack: install one there", [msg, ed.statusKind]);
+comfyOn();
+// a run going on the document
+ed.providerPending = { label: "x" };
+msg = await tryKey();
+ed.providerPending = null;
+ok(msg === K.TEXTS.runGoing, "a run going refuses", msg);
+ok(C.uploads.length === up0 && C.calls.length === c0 && ed.layers.length === n0, "nothing read, sent or added");
+// the pack's own failure: the models missing on the ComfyUI machine (pack A's loader)
+const missA = "CorridorKey 2.0 model files are missing:\n  F:\\Comfy\\models\\corridorkey2\\corridorkey_v2.safetensors\nEnable auto_download or see the README for the manual download steps.\n";
+C.fail = missA;
+msg = await tryKey();
+C.fail = "";
+ok(msg === K.hint(missA) && ed.statusKind === "error" && ed.layers.length === n0 && !ed.providerPending && !host._keyBusy, "the models missing: the files and how to fetch them, red, nothing added", [msg, ed.statusKind]);
+// an answer of another size than what went
+C.answer = fx.halfBytes;
+msg = await tryKey();
+C.answer = null;
+ok(msg === "Key screen: your ComfyUI answered 256 × 200 for a picture of 512 × 400." && ed.statusKind === "error" && ed.layers.length === n0, "an answer of another size is refused", msg);
+return { ok: true };
+"""),
+
+    ("comfy cancel", r"""
+const C = window.__comfyStub;
+comfyOn(); engineOff();
+const ed = ednow(window.__ckDoc);
+const n0 = ed.layers.length, c0 = C.calls.length;
+C.delay = 4000;
+const p = host.keyScreen(ed, { hint: "none", screen: "green" });
+ok(await waitFor(() => C.calls.length === c0 + 1), "the job went");
+ok(ed.providerPending && ed.providerPending.provider === "comfyui" && host.runsOf(ed).length === 1, "the key holds the document like a run, in the title row");
+const tc = performance.now();
+const cancelled = host.cancelRuns(ed);
+let msg = "";
+try { await p; } catch (err) { msg = err.message; }
+const took = performance.now() - tc;
+ok(cancelled.length === 1 && msg === K.TEXTS.cancelled && took < 1000 && C.cancelSeen >= 1, "the title row's Cancel takes the job off and ends the key", { msg, took });
+ok(ed.layers.length === n0 && !ed.providerPending && !host._keyBusy && ed.statusKind !== "error", "nothing added, the document free, plain", ed.statusKind);
+// a closed tab ends it too and adds nothing
+const d2 = await run("new_document");
+const e2 = ednow(d2.id);
+await run("load_image", { doc: d2.id, path: window.__ckFix.dir + "/input.png" });
+const p2 = host.keyScreen(e2, { hint: "none", screen: "green" });
+ok(await waitFor(() => C.calls.length === c0 + 2), "the second job went");
+await run("close_document", { doc: d2.id, force: true });
+const r2 = await p2;
+C.delay = 0;
+ok(r2 && r2.layer === null && !host._keyBusy, "a closed tab: nothing landed", r2);
+host.shell.activate(ed);
+return { took: Math.round(took) };
 """),
 
     ("cleanup", r"""
 closeDialog();
 engineOff();
+comfyOff();
+for (const id of [window.__ckDoc]) { try { if (id) await run("close_document", { doc: id, force: true }); } catch (_) { /* gone */ } }
 for (const id of [window.__keyDoc, window.__keyDoc2]) { try { await run("close_document", { doc: id, force: true }); } catch (_) { /* gone */ } }
 host.keyStored = null; host._keyLoaded = false;
 return { ok: true };
@@ -859,7 +1151,7 @@ async def run_all(c):
     ok = True
     for name, body in STEPS:
         try:
-            res = await c.eval(PRE % (HELPERS, body), timeout=240)
+            res = await c.eval(PRE % (HELPERS, body.replace("__FIXDIR__", json.dumps(FIXDIR))), timeout=240)
             print("[ok] %s: %s" % (name, json.dumps(res)[:300]))
         except Exception as err:  # noqa: BLE001
             ok = False
@@ -868,7 +1160,7 @@ async def run_all(c):
                 break
     if not ok:
         try:
-            await c.eval("(async () => { const h = window.__host; if (window.__keyEngine0) h.keyEngine = window.__keyEngine0; h.keyStored = null; h._keyLoaded = false; return 1; })()")
+            await c.eval("(async () => { const h = window.__host; if (window.__keyEngine0) h.keyEngine = window.__keyEngine0; const o = window.__comfy0; if (o) { h.server = o.server; h.objectInfo = o.objectInfo; h.comfyPictureRun = o.comfyPictureRun; h.uploadInput = o.uploadInput; h.keyComfyFit = o.keyComfyFit; } h.keyStored = null; h._keyLoaded = false; return 1; })()")
         except Exception:  # noqa: BLE001
             pass
     for level, text in (await c.logs())[-15:]:

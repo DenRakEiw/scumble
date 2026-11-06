@@ -1679,6 +1679,7 @@ const COMMANDS = {
             else if (a.source != null && a.source !== "" && a.source !== "picture") { layer = findLayer(ed, a.source); source = layer.id; }
             const num = (x, d, lo, hi) => (x == null || x === "" || !Number.isFinite(+x) ? d : Math.min(hi, Math.max(lo, +x)));
             const opts = {
+                route: a.route === "app" || a.route === "comfyui" ? a.route : "",
                 source, layer, rekey, preview: !!a.preview,
                 hint: rekey ? "mask" : a.hint === "none" ? "none" : a.hint === "mask" ? "mask" : "selection",
                 screen: keying.SCREENS.slice().includes(a.screen) ? a.screen : v.screen,
