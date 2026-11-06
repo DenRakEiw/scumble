@@ -1342,6 +1342,38 @@ answered with `half_rgba.png`) refined with no fallback, the mask `refineMatte`'
 a level of the bilinear rows (against the native key the refined mask is 2.63 levels MAE, the bilinear 3.37); the
 refusals and a Cancel (26 ms to free the document) or a closed tab add nothing. `lint`, `types` clean.
 
+### B3 as built (2026-11-06)
+
+**The Key dialog's route row** (`renderer/keydialog.js`): *Route* lists *In Scumble (live preview)* only while the
+in-app engine is ready or its set offered (never in this build) and always *Full resolution on your ComfyUI*; with one
+entry the select is fixed. The dialog opens on `host.keyRoute()`. **How ck-ui's live loop changed for it:** on your
+ComfyUI's route `restart()` makes **no `KeySession`**, so nothing is prepared, `host.keySession` stays null (no dab
+through `pluginPointer`, no stroke's end, no overlay through `pluginOverlay`), Refit and the Preview row are hidden, and
+a row's change (`rerun`) only re-plans; the box line follows the selection through `host.on("changed")`
+(`host.keyComfyPlan`: "Keys the selection's box, 512 × 400, at its own size." or "sent at w × h (the cap) and scaled
+back"), the readiness line follows the server through the `realism` event `setServerStatus` emits; **Key / Re-key**
+runs `host.keyScreen` once with `route: "comfyui"` and the rows as they are, and the panel closes on a landed key (the
+in-app route is unchanged: its session, live loop and dormant / missing / CPU states as before). **The readiness line:**
+`serverSupport`'s line ("CorridorKey 2.0 on your ComfyUI through <pack> on <card>."), pack B's unverified note, and
+`keying.COMFY_COST` (B0: the first key after another job pays about 10 s for the pack's model load and that job's models
+load again); not ready, its reason (red for what a connected server lacks), Key greyed with it; the document's own
+refusals come from the Key (status line and the dialog's line). **Its own rows:** *Keep the model on the GPU between
+keys* for pack A (off by default; when ticked `keying.KEEP_GPU_NOTE`: about 4.6 GB stay until ComfyUI's *Free model and
+node cache*, and it saves the load only for keys in a row), *Let the pack unload the other models first* for pack B,
+*Wait* (`settings.key.comfyTimeout`, 30-3,600 s, the queue not counted); all stored through `setKeyValues`. **The
+first-run block** (`keying.comfyFirstRun`): the models fetched once onto the ComfyUI machine, about 5.1 GB, never by
+Scumble, by the pack's `scripts/download_models.py` or its Load Model node once in the ComfyUI page with
+`auto_download` on, with a link to the pack's page; shown until a key from the dialog landed in this session, and again
+when a key found the models missing (the hint's sentence, `keying.MISSING_TEXT`, stays in the dialog's line). **No
+download switch** (B0 skipped that run; Scumble always sends `auto_download: false`). A number input got the skin's
+tokens in the panel's CSS.
+
+**Tests:** the `key` gate's `dialog comfy` step and the `dialog states` step's first case (no engine and no server:
+your ComfyUI's route alone, Key greyed with the connect sentence) PASS on both backends (`b3-key-tiles`,
+`b3-key-canvas`); `skins` and `editor` PASS on tiles (`b3-tiles`); `lint`, `types` clean. One look in the app on a dev
+instance with the server stood in for (the panel on B0's fixture: the rows, the readiness line, the first-run block).
+Not done: a key through the dialog against the user's ComfyUI (B5's live run, on the user's word).
+
 ## 6. The user's answers, and the questions still open
 
 **The user's answers (2026-10-24; AskUserQuestion; binding):**

@@ -20,6 +20,13 @@
 // freeHelpers before a local ComfyUI run) prepares the kept picture again and runs once more. On the CPU (no live
 // preview, §4.8) nothing runs before Key. Escape or Close drops the overlay and the tickets; only the dialog's own close
 // starts the engine's idle timer (host.keyEngine.closed), never a restart.
+//
+// Route B (B3, §4.11), the row *Full resolution on your ComfyUI* (the only route of this build, which has no in-app
+// engine): no live loop there. No KeySession is made, so nothing is prepared, no dab or stroke's end runs anything and
+// no overlay is drawn; the Preview row is hidden. The box line follows the selection (host "changed"), the readiness
+// line the server (host "realism"), and Key / Re-key runs host.keyScreen once with route "comfyui" and the rows as they
+// are. Its own rows: keep the model on the GPU (pack A) or unload other models (pack B), the wait for the server, and
+// the first-run block (the models fetched once onto that machine, never by Scumble).
 
 import { host } from "./editor/host.js";
 import * as keying from "./editor/keying.js";
@@ -28,6 +35,8 @@ import * as keying from "./editor/keying.js";
 const DAB_MS = 40;
 
 let current = null;
+/** A key on your ComfyUI landed from the dialog this session: its first-run block stays folded from then on. */
+let comfyKeyed = false;
 
 /** The open Key dialog, or null (tests, the menu's second click). */
 export function currentKeyDialog() {
@@ -300,7 +309,8 @@ const CSS = `
 .row { display: flex; align-items: center; gap: 8px; }
 .row > label:first-child { width: 72px; flex: none; color: var(--sc-fg-2, #aaa); }
 .row select, .row input[type=range] { flex: 1; min-width: 0; }
-select { font: inherit; color: var(--sc-fg, #ddd); background: var(--sc-btn, #2d2d2d); border: 1px solid var(--sc-border, #555); border-radius: var(--sc-radius, 3px); padding: 2px 4px; }
+select, input[type=number] { font: inherit; color: var(--sc-fg, #ddd); background: var(--sc-btn, #2d2d2d); border: 1px solid var(--sc-border, #555); border-radius: var(--sc-radius, 3px); padding: 2px 4px; }
+input[type=number] { width: 72px; flex: none; }
 .buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 button { font: inherit; color: var(--sc-fg, #ddd); background: var(--sc-btn, #2d2d2d); border: 1px solid var(--sc-border, #555); border-radius: var(--sc-radius, 3px); padding: 5px 12px; cursor: pointer; }
 button:hover { background: var(--sc-btn-hover, #3a3a3a); }
@@ -355,7 +365,12 @@ class KeyDialog {
             source: "picture",
             layerId: rekeyable ? active.id : null,
             activeId: active ? active.id : null,
+            route: host.keyRoute(),
+            keepOnGpu: v.keepOnGpu, evicts: v.evicts, comfyTimeout: v.comfyTimeout,
         };
+        this.comfyPlan = null;
+        this.comfyError = "";
+        this.comfyMissing = false;
         this.build(active, rekeyable);
         this._off = [
             host.on("removed", (e) => { if (e && e.editor === ed) this.close(); }),
@@ -364,9 +379,12 @@ class KeyDialog {
             host.on("geometry", (e) => { if (e && e.editor === ed && !this.closed) { this.geometryRestarts++; this.restart(); } }),
             // another tab in front: the panel belongs to this document, it closes (its strokes would go to the other one)
             host.on("activate", (e) => { if (e && e.editor && e.editor !== ed) this.close(); }),
+            // your ComfyUI's route: the box line follows the selection, the readiness line the server
+            host.on("changed", (e) => { if (e && e.editor === ed && !this.closed && this.values.route === "comfyui") { this.replan(); this.sync(); } }),
+            host.on("realism", () => { if (!this.closed && this.values.route === "comfyui") this.sync(); }),
         ];
         this.sync();
-        if (host.keySupport().ok) this.restart();
+        this.restart();
     }
 
     build(active, rekeyable) {
@@ -390,6 +408,15 @@ class KeyDialog {
             return s;
         };
         box.appendChild(node("div", "title", "Key green / blue screen"));
+        // the route: in Scumble only once its engine is offered (not in this build), your ComfyUI always
+        const app = host.keySupport();
+        const routes = [];
+        if (app.ok || app.offered) routes.push(["app", keying.APP_ROUTE_LABEL]);
+        routes.push(["comfyui", keying.ROUTE_LABEL]);
+        if (!routes.some(([r]) => r === this.values.route)) this.values.route = "comfyui";
+        E.route = select(routes, this.values.route);
+        E.route.disabled = routes.length < 2;
+        E.routeRow = row("Route", E.route);
         E.ready = box.appendChild(node("div", "line"));
         E.boxLine = box.appendChild(node("div", "line"));
         E.screen = select([["auto", "Auto"], ["green", "Green"], ["blue", "Blue"]], this.values.screen);
@@ -420,6 +447,33 @@ class KeyDialog {
         E.preview.checked = !!this.values.preview;
         E.previewRow = row("Preview", E.preview, node("span", "line", "the matte over the canvas, screen only"));
         E.loop = box.appendChild(node("div", "line"));
+        // your ComfyUI's own rows (§4.11): pack A's keep_on_gpu, pack B's unload_other_models, the wait for the server
+        E.keep = document.createElement("input");
+        E.keep.type = "checkbox";
+        E.keep.checked = !!this.values.keepOnGpu;
+        const keepLabel = node("label", "", "Keep the model on the GPU between keys");
+        keepLabel.title = keying.KEEP_GPU_NOTE;
+        E.keepRow = row("", E.keep, keepLabel);
+        E.keepNote = box.appendChild(node("div", "line", keying.KEEP_GPU_NOTE));
+        E.evicts = document.createElement("input");
+        E.evicts.type = "checkbox";
+        E.evicts.checked = !!this.values.evicts;
+        E.evictsRow = row("", E.evicts, node("label", "", "Let the pack unload the other models first"));
+        E.timeout = document.createElement("input");
+        E.timeout.type = "number"; E.timeout.min = "30"; E.timeout.max = "3600"; E.timeout.step = "10";
+        E.timeout.value = String(this.values.comfyTimeout);
+        E.timeoutRow = row("Wait", E.timeout, node("span", "line", "s for your ComfyUI (its queue not counted)"));
+        // the first-run block on your ComfyUI: the models are fetched once onto that machine, never by Scumble
+        E.comfyFirst = box.appendChild(node("div", "terms"));
+        E.comfyFirstText = E.comfyFirst.appendChild(node("div", ""));
+        const packLinks = E.comfyFirst.appendChild(node("div", ""));
+        E.packLink = packLinks.appendChild(node("a", "", "The node pack's page"));
+        E.packLink.href = "#";
+        E.packLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            const p = keying.packById(host.keyComfySupport().pack) || keying.PACKS[0];
+            try { window.scumble.openExternal(p.url); } catch (err) { console.warn(err); }
+        });
         // the first-run block (§1 "The first time", §3.3): what the set is, its parts and licences, the seat clause, and
         // the download (I2's terms dialog through keyEngine.download once it exists; Settings › Helpers meanwhile)
         E.terms = box.appendChild(node("div", "terms"));
@@ -472,6 +526,15 @@ class KeyDialog {
             this.sessionOpts();
             if (this.values.preview) this.rerun(); else this.editor.drawSoon();
         });
+        E.route.addEventListener("change", () => { this.values.route = E.route.value; this.comfyError = ""; this.restart(); this.sync(); });
+        E.keep.addEventListener("change", () => { this.values.keepOnGpu = E.keep.checked; save({ keepOnGpu: this.values.keepOnGpu }); this.sync(); });
+        E.evicts.addEventListener("change", () => { this.values.evicts = E.evicts.checked; save({ evicts: this.values.evicts }); });
+        E.timeout.addEventListener("change", () => {
+            const n = Math.round(+E.timeout.value);
+            this.values.comfyTimeout = Number.isFinite(n) ? Math.min(3600, Math.max(30, n)) : this.values.comfyTimeout;
+            E.timeout.value = String(this.values.comfyTimeout);
+            save({ comfyTimeout: this.values.comfyTimeout });
+        });
         E.refit.addEventListener("click", () => this.restart());
         E.download.addEventListener("click", () => {
             const dl = host.keyEngine && host.keyEngine.download;
@@ -490,7 +553,12 @@ class KeyDialog {
         const rekey = v.hint === "mask";
         const layer = rekey ? this.editor.layers.find((l) => l.id === v.layerId) || null
             : v.source !== "picture" ? this.editor.layers.find((l) => l.id === v.source) || null : null;
-        return { source: rekey || v.source === "picture" ? "picture" : v.source, layer, layerId: layer ? layer.id : null, hint: v.hint, trust: rekey ? 0.95 : v.trust, despill: v.despill, screen: v.screen, preview: !!v.preview && !this.cpu(), rekey, grey: v.grey };
+        const comfy = v.route === "comfyui";
+        return {
+            route: comfy ? "comfyui" : "app", source: rekey || v.source === "picture" ? "picture" : v.source, layer, layerId: layer ? layer.id : null,
+            hint: v.hint, trust: rekey ? 0.95 : v.trust, despill: v.despill, screen: v.screen, preview: !comfy && !!v.preview && !this.cpu(), rekey, grey: v.grey,
+            keepOnGpu: !!v.keepOnGpu, evicts: !!v.evicts, timeout: v.comfyTimeout,
+        };
     }
 
     sessionOpts() {
@@ -502,6 +570,9 @@ class KeyDialog {
         if (this.closed) return;
         if (this.session) this.session.close();
         this.session = null;
+        this.comfyPlan = null;
+        // your ComfyUI: no live loop (no session, nothing prepared), only the box the Key would send
+        if (this.values.route === "comfyui") { this.replan(); this.sync(); return; }
         if (!host.keySupport().ok) { this.sync(); return; }
         const s = new KeySession(this.editor, this.keyOpts());
         s.onUpdate = () => this.sync();
@@ -510,8 +581,14 @@ class KeyDialog {
         s.prepare().catch((err) => console.warn("key prepare", err));
     }
 
+    /** Your ComfyUI's route: the box the Key would send now (host.keyComfyPlan), for the box line. */
+    replan() {
+        try { this.comfyPlan = this.editor.base && this.editor.width ? host.keyComfyPlan(this.editor, this.keyOpts()) : null; } catch (err) { this.comfyPlan = null; console.warn("key plan", err); }
+    }
+
     /** Another value of a row: the same box and features, a new run (with Preview off: the matte shown is dropped). */
     rerun() {
+        if (this.values.route === "comfyui") { this.replan(); this.sync(); return; }
         const s = this.session;
         if (!s) return;
         if (!s.opts.preview) { s.dropMatte(); return; }
@@ -523,13 +600,22 @@ class KeyDialog {
         if (this.busy || this.closed) return null;
         this.busy = true;
         this.sync();
+        const comfy = this.values.route === "comfyui";
+        this.comfyError = "";
         try {
             const o = this.keyOpts();
-            const out = await host.keyScreen(this.editor, { ...o, preview: false, session: this.session && this.session.prep ? this.session : null });
-            if (out && out.layer) this.close();
+            const out = await host.keyScreen(this.editor, { ...o, preview: false, session: !comfy && this.session && this.session.prep ? this.session : null });
+            if (out && out.layer) {
+                if (comfy) { comfyKeyed = true; this.comfyMissing = false; }
+                this.close();
+            }
             return out;
         } catch (err) {
-            if (this.els.loop) { this.els.loop.textContent = String((err && err.message) || err); this.els.loop.className = "line warn"; }
+            const msg = String((err && err.message) || err);
+            if (comfy) {
+                this.comfyError = msg;
+                if (msg.includes(keying.MISSING_TEXT)) this.comfyMissing = true;
+            } else if (this.els.loop) { this.els.loop.textContent = msg; this.els.loop.className = "line warn"; }
             throw err;
         } finally {
             this.busy = false;
@@ -541,6 +627,8 @@ class KeyDialog {
     sync() {
         if (this.closed) return;
         const E = this.els, v = this.values;
+        if (v.route === "comfyui") { this.syncComfy(); return; }
+        for (const r of [E.keepRow, E.keepNote, E.evictsRow, E.timeoutRow, E.comfyFirst]) r.hidden = true;
         const sup = host.keySupport();
         // the dormant case (§4.3): no in-app rows while the set is not offered (or this build has no engine)
         const dormant = !sup.ok && !sup.offered;
@@ -578,13 +666,63 @@ class KeyDialog {
         E.key.title = sup.ok ? "" : sup.text;
     }
 
+    /**
+     * The rows on your ComfyUI's route: the shared ones (Screen, Hint, Trust, Despill, Source, the grey layer) always, no
+     * Preview, Refit or in-app download; the readiness line from keyComfySupport (with what a key there costs, B0), the
+     * box the Key sends, the pack's own tick, the wait, and the first-run block until a key from the dialog landed (or
+     * again once a key found the models missing). Key is greyed only for what the server lacks; the document's own
+     * refusals (a run going, no picture) come from the Key itself, in the status line and here.
+     */
+    syncComfy() {
+        const E = this.els, v = this.values;
+        const cs = host.keyComfySupport();
+        const rekey = v.hint === "mask";
+        const packA = cs.pack === keying.PACKS[0].id, packB = cs.pack === keying.PACKS[1].id;
+        for (const r of [E.screenRow, E.hintRow, E.despillRow]) r.hidden = false;
+        E.previewRow.hidden = true;
+        E.terms.hidden = true;
+        E.download.hidden = true;
+        E.settings.hidden = true;
+        E.refit.hidden = true;
+        E.trustRow.hidden = v.hint !== "selection";
+        E.sourceRow.hidden = rekey;
+        E.sourceNote.hidden = rekey || !E.sourceNote.textContent;
+        E.leaveRow.hidden = rekey || v.source !== "picture";
+        E.keepRow.hidden = !cs.ok || !packA;
+        E.keepNote.hidden = E.keepRow.hidden || !E.keep.checked;
+        E.evictsRow.hidden = !cs.ok || !packB;
+        E.timeoutRow.hidden = false;
+        E.comfyFirst.hidden = !cs.ok || (comfyKeyed && !this.comfyMissing);
+        if (!E.comfyFirst.hidden) E.comfyFirstText.textContent = keying.comfyFirstRun(cs.pack);
+        E.ready.textContent = cs.ok ? [cs.line, cs.note, keying.COMFY_COST].filter(Boolean).join(" ") : cs.reason;
+        E.ready.className = "line" + (!cs.ok && (cs.kind === "warn" || cs.kind === "error") ? " warn" : "");
+        const p = this.comfyPlan;
+        E.boxLine.textContent = p ? `Keys ${keying.comfyBoxLine(p)}${p.fromBounds ? " (from this layer's bounds: the key's record is gone after a restart)" : ""}.` : "";
+        E.boxLine.hidden = !E.boxLine.textContent;
+        let loop = "", kind = "";
+        if (this.comfyError) { loop = this.comfyError; kind = " warn"; }
+        else if (this.busy) loop = "Keying on your ComfyUI ... (the title row's Cancel stops it)";
+        else if (cs.ok) loop = "No live preview on your ComfyUI: Key keys once with the rows as they are.";
+        E.loop.textContent = loop;
+        E.loop.className = "line" + kind;
+        E.loop.hidden = !loop;
+        E.key.disabled = !cs.ok || this.busy;
+        E.key.title = cs.ok ? "" : cs.reason;
+    }
+
     focus() {
         if (this.els.key) this.els.key.focus();
     }
 
     /** What the gate reads. */
     state() {
-        return { values: { ...this.values }, session: this.session ? this.session.state() : null, keyDisabled: !!this.els.key.disabled, rows: Object.fromEntries(Object.entries(this.els).filter(([k]) => k.endsWith("Row")).map(([k, n]) => [k, !n.hidden])), ready: this.els.ready.textContent };
+        const E = this.els;
+        return {
+            values: { ...this.values }, session: this.session ? this.session.state() : null, keyDisabled: !!E.key.disabled,
+            rows: Object.fromEntries(Object.entries(E).filter(([k]) => k.endsWith("Row")).map(([k, n]) => [k, !n.hidden])), ready: E.ready.textContent,
+            boxLine: E.boxLine.hidden ? "" : E.boxLine.textContent, loop: E.loop.hidden ? "" : E.loop.textContent,
+            firstRun: E.comfyFirst.hidden ? "" : E.comfyFirstText.textContent, routeFixed: !!E.route.disabled, comfyBox: this.comfyPlan ? this.comfyPlan.box.slice() : null,
+        };
     }
 
     close() {

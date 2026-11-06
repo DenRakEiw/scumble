@@ -986,6 +986,30 @@ export function comfyBoxLine(plan) {
  */
 export const COMFY_COST = "The first key after another job on your ComfyUI takes about 10 s more (the pack loads its 4.7 GB of models again), and that job's models load again at its next run.";
 
+/** The in-app route's row in the Key dialog (listed only once Scumble has an engine of its own that is offered). */
+export const APP_ROUTE_LABEL = "In Scumble (live preview)";
+
+/**
+ * Pack A's keep_on_gpu in the dialog's words (I0a: 4.6 GB parked, released by /free only with free_memory; B0: after
+ * another job the loader runs again anyway, so it saves the load only for keys in a row).
+ */
+export const KEEP_GPU_NOTE = "About 4.6 GB stay on your ComfyUI's card between keys, until its Free model and node cache releases them; it saves the model load only for keys in a row.";
+
+/** What hint() says when the models are not on your ComfyUI (the dialog shows its first-run block on it). */
+export const MISSING_TEXT = "models are not on your ComfyUI yet";
+
+/**
+ * The Key dialog's first-run block for your ComfyUI (§4.11 "The download and the first run"): the models are fetched
+ * once onto that machine, never by Scumble (every graph sends auto_download off; B0's download run was skipped).
+ */
+export function comfyFirstRun(pack) {
+    const p = packById(pack) || PACKS[0];
+    const ways = p.downloadSwitch
+        ? `run the pack's ${p.script} with ComfyUI's Python on that machine, or run its Load Model node once in the ComfyUI page with ${p.downloadSwitch} on`
+        : `run the pack's ${p.script} with ComfyUI's Python on that machine`;
+    return `The first key needs the ${ENGINE} models on your ComfyUI (about ${COMFY_SET_GB} GB from their own hosts); Scumble never downloads them there. Fetch them once: ${ways}.`;
+}
+
 /**
  * The status line after a key on your ComfyUI (§4.5 step 6's shape): "Key: 38 % of the box kept, in 12 s on your
  * ComfyUI (CorridorKey 2.0 through ComfyUI-CorridorKey2.0 on RTX 5090, green screen, hint from the selection (rough);
@@ -1097,7 +1121,7 @@ export function hint(message, pack = null) {
         const ways = p.downloadSwitch
             ? `run the pack's ${p.script} with ComfyUI's Python on that machine, or run its Load Model node once in the ComfyUI page with ${p.downloadSwitch} on`
             : `run the pack's ${p.script} with ComfyUI's Python on that machine`;
-        return `${LABEL}: the ${ENGINE} models are not on your ComfyUI yet${files.length ? ` (missing: ${files.join(", ")})` : ""}. ${off}Fetch them there once, about ${COMFY_SET_GB} GB: ${ways} ${MANUAL}.`;
+        return `${LABEL}: the ${ENGINE} ${MISSING_TEXT}${files.length ? ` (missing: ${files.join(", ")})` : ""}. ${off}Fetch them there once, about ${COMFY_SET_GB} GB: ${ways} ${MANUAL}.`;
     }
     let g = /needs an NVIDIA GPU \(CUDA\)[^']*'([^']+)'/.exec(m);
     if (g || /needs an NVIDIA GPU \(CUDA\)|requires an NVIDIA CUDA GPU/.test(m)) {

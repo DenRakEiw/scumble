@@ -32,6 +32,9 @@ Start the app first (tools/run_gates.sh does: `--offline`, on both backends). Ch
               landed bytes and mask the pack's rgba answer exactly), rekey (the picture under the key, a clean matte),
               scaled (the half fixture, the mask refineMatte's bytes, the colour within a level), refusals (not
               connected, no pack, a run going, the models missing, another size), cancel (the title row, a closed tab)
+  dialog comfy  B3: the route row on your ComfyUI: no session and nothing run before Key, the box line following the
+              selection, the rows reaching the graph and the wait, Key and Re-key once, the first-run block, the
+              readiness line following the server
 """
 import asyncio
 import json
@@ -780,7 +783,9 @@ ed.activeLayerId = null;
 engineOff();
 let dlg = await M.openKeyDialog(ed);
 let st = dlg.state();
-ok(!st.rows.screenRow && !st.rows.hintRow && !st.rows.sourceRow && !st.rows.previewRow && st.keyDisabled && st.ready === K.TEXTS.notInstalled && !dlg.session, "no engine in the build: no in-app rows, Key greyed, the reason", st);
+// no engine in the build (and no server: the gate is offline): the route is your ComfyUI alone, no live preview, Key
+// greyed with what it needs
+ok(st.values.route === "comfyui" && st.routeFixed && st.rows.routeRow && !st.rows.previewRow && st.rows.screenRow && st.keyDisabled && st.ready === K.serverSupport({ state: "disconnected" }).reason && !dlg.session && host.keySession === null, "no engine in the build: your ComfyUI's route alone, Key greyed, the reason", st);
 dlg.close();
 engineOn();
 stub.present = false;
@@ -1124,6 +1129,80 @@ C.delay = 0;
 ok(r2 && r2.layer === null && !host._keyBusy, "a closed tab: nothing landed", r2);
 host.shell.activate(ed);
 return { took: Math.round(took) };
+"""),
+
+    ("dialog comfy", r"""
+// B3: the dialog's route row "Full resolution on your ComfyUI": no live loop (no session, nothing prepared, no run
+// before Key), the box line follows the selection, the rows reach the graph, Key and Re-key run it once, the first-run
+// block, the readiness line following the server
+const C = window.__comfyStub, fx = window.__ckFix, M = window.__keyDialogMod;
+comfyOn(); engineOff(); closeDialog();
+const ed = ednow(window.__ckDoc);
+host.shell.activate(ed);
+ed.activeLayerId = null;
+await host.setKeyValues({ ...K.keyDefaults, workingSize: 512 });
+await run("select_rect", { doc: ed.node.id, x: 100, y: 100, w: 120, h: 80 });
+const c0 = C.calls.length, s0 = stub.calls.length, n0 = ed.layers.length;
+let dlg = await M.openKeyDialog(ed);
+await wait(150);
+let st = dlg.state();
+ok(st.values.route === "comfyui" && st.routeFixed && st.rows.routeRow, "the route row: your ComfyUI, the only one in this build", st.values);
+ok(!st.rows.previewRow && st.rows.keepRow && !st.rows.evictsRow && st.rows.timeoutRow && st.rows.screenRow && st.rows.hintRow && st.rows.trustRow && st.rows.sourceRow, "no Preview row; pack A's keep tick and the wait shown", st.rows);
+ok(!dlg.session && host.keySession === null && C.calls.length === c0 && stub.calls.length === s0, "no live loop: no session, nothing prepared or run before Key");
+ok(st.ready.startsWith("CorridorKey 2.0 on your ComfyUI through ComfyUI-CorridorKey2.0 on NVIDIA GeForce RTX 5090.") && st.ready.includes(K.COMFY_COST) && !st.keyDisabled, "the readiness line: the pack, the card, what a key costs there", st.ready);
+ok(st.boxLine === "Keys the selection's box, 512 × 400, at its own size." && st.firstRun === K.comfyFirstRun("marawan206") && /download_models\.py/.test(st.firstRun) && /No live preview/.test(st.loop), "the box line, the first-run block, no live preview", st);
+// the box line follows the selection, still nothing runs
+await run("select_none", { doc: ed.node.id });
+await wait(80);
+ok(dlg.state().boxLine === "Keys the whole picture, 512 × 400, at its own size." && C.calls.length === c0 && stub.calls.length === s0, "a selection change moves the box line, runs nothing", dlg.state().boxLine);
+// the rows reach the graph and the wait; the tick and the wait are stored
+dlg.els.screen.value = "blue"; dlg.els.screen.dispatchEvent(new Event("change"));
+dlg.els.despill.value = "0.8"; dlg.els.despill.dispatchEvent(new Event("input")); dlg.els.despill.dispatchEvent(new Event("change"));
+dlg.els.keep.checked = true; dlg.els.keep.dispatchEvent(new Event("change"));
+dlg.els.timeout.value = "120"; dlg.els.timeout.dispatchEvent(new Event("change"));
+dlg.els.hint.value = "none"; dlg.els.hint.dispatchEvent(new Event("change"));
+await wait(50);
+ok(C.calls.length === c0 && stub.calls.length === s0 && dlg.state().rows.keepRow && !dlg.els.keepNote.hidden, "changing rows runs nothing; the keep note shows");
+const out = await dlg.apply();
+ok(out && out.layer && out.route === "comfyui" && C.calls.length === c0 + 1 && ed.layers.length === n0 + 2, "Key ran once on your ComfyUI and landed", out && out.status);
+const g = C.calls[C.calls.length - 1];
+ok(g.prompt.ck_key.inputs.screen === "blue" && g.prompt.ck_key.inputs.despill === 0.8 && g.prompt.ck_model.inputs.keep_on_gpu === true && !("alpha_hint" in g.prompt.ck_key.inputs) && g.timeoutMs === 120000, "the rows reached the graph and the wait", { k: g.prompt.ck_key.inputs, m: g.prompt.ck_model.inputs, t: g.timeoutMs });
+ok(M.currentKeyDialog() === null && host.keyValues().keepOnGpu === true && host.keyValues().comfyTimeout === 120, "the dialog closed; the tick and the wait stored");
+const keyId = out.layer.id;
+// Re-key from the dialog: the key layer active, its mask as a clean matte, once
+ed.activeLayerId = keyId;
+dlg = await M.openKeyDialog(ed);
+await wait(80);
+st = dlg.state();
+ok(st.values.hint === "mask" && dlg.els.key.textContent === "Re-key" && /^Keys the key layer's box, 512 × 400, at its own size, read from the picture under the key\.$/.test(st.boxLine) && !st.rows.sourceRow, "a key layer active: Re-key on your ComfyUI", st);
+const u0 = ed.undo.length;
+const rk = await dlg.apply();
+ok(rk && rk.layer && rk.layer.id === keyId && ed.undo.length === u0 + 1 && C.calls.length === c0 + 2 && C.calls[C.calls.length - 1].prompt.ck_key.inputs.hint_quality === "clean matte (0.95)", "Re-key ran once with the mask as a clean matte, one step");
+await ed.undoStep(); await ed.undoStep();
+ok(ed.layers.length === n0, "undone");
+// the first key found the models missing: the dialog stays open with the files and the first-run block
+await host.setKeyValues({ ...K.keyDefaults, workingSize: 512 });
+ed.activeLayerId = null;
+dlg = await M.openKeyDialog(ed);
+await wait(50);
+ok(!dlg.state().firstRun, "after a key from the dialog landed the first-run block is folded");
+C.fail = "CorridorKey 2.0 model files are missing:\n  F:\\Comfy\\models\\corridorkey2\\corridorkey_v2.safetensors\n";
+let err = "";
+try { await dlg.apply(); } catch (e) { err = e.message; }
+C.fail = "";
+st = dlg.state();
+ok(err.includes(K.MISSING_TEXT) && !dlg.closed && st.loop === err && st.firstRun === K.comfyFirstRun("marawan206") && ed.layers.length === n0, "the models missing: the files in the dialog, the first-run block again, nothing added", st);
+// the server goes away: the readiness line follows it, Key greyed
+host.server = { ...host.server, state: "disconnected" };
+host.emit("realism");
+st = dlg.state();
+ok(st.keyDisabled && st.ready === K.serverSupport({ state: "disconnected" }).reason && !st.firstRun && !st.rows.keepRow, "not connected: the reason, Key greyed", st);
+comfyOn();
+host.emit("realism");
+ok(!dlg.state().keyDisabled, "connected again: Key back");
+dlg.close();
+await host.setKeyValues({ ...K.keyDefaults, workingSize: 512 });
+return { ready: st.ready.slice(0, 80) };
 """),
 
     ("cleanup", r"""

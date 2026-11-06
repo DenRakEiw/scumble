@@ -500,7 +500,9 @@ answers of pack A at `c7662de`): the picture and the hint that went byte for byt
 the landed bytes and mask equal to the pack's `rgba` answer, Re-key (the picture under the key, the mask as a clean
 matte), the scaled path (the half fixture: the mask `refineMatte`'s bytes exactly, the colour within a level of the
 bilinear rows), the refusals (not connected, no pack, a run going, the models missing, an answer of another size) and
-a Cancel or a closed tab mid-job. Plain Node: `node
+a Cancel or a closed tab mid-job; the Key dialog on that route (step `dialog comfy`: no session and nothing run before
+Key, the box line following the selection, the rows and the wait in the graph, Key and Re-key once, the first-run
+block, the readiness line following the server). Plain Node: `node
 tools/keying_test.js` (the box plan at 1k / 4k / 15k, `comfyPlan` (Route B's box and the cap), the buckets, reflect-101, the screen from the ring, the matte's
 box, the bilinear rows, the queue, the texts, and the refine's steps through `RowsClient` against `refineMatte`'s
 bytes) and `node tools/keymatte_test.js` (the refine module, `renderer/editor/keymatte.js`: an equal-luminance edge
