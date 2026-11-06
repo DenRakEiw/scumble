@@ -9,7 +9,9 @@
 // the chain's end, the recipe's own graph untouched; the rows (switched off, an empty name, five in order, the sixth
 // refused); the declarations through normalize (both branches; a Cloud recipe's two routes checked by themselves); the
 // fixtures (a checkpoint loader with its CLIP, flattened ids, a taken id, a Nunchaku loader, a declared source that
-// reads a MODEL); missingLoras (separators, an empty list refuses nothing); comboOf on both combo forms.
+// reads a MODEL); missingLoras (separators, an empty list refuses nothing); comboOf on both combo forms; loraStem and
+// loraWords (LR1: how the status note, the via line and the log name the LoRAs a run loaded). tools/loras_test.py (the
+// gate `loras`) runs this file first, then the queue path in the app.
 "use strict";
 
 const fs = require("node:fs");
@@ -405,6 +407,14 @@ async function main() {
         check("recipeFamily reads the declaration: flux3_klein_local flux3, the Qwen 2.1 recipes qwen_image_2_1, relight_qwen_local none, false none",
             L.recipeFamily(byId("flux3_klein_local")) === "flux3" && L.recipeFamily(byId("qwen_image_edit_2_1_turbo_local")) === "qwen_image_2_1" && L.recipeFamily(byId("relight_qwen_local")) === null && L.recipeFamily({ loras: false }) === null);
         check("familyOf: the folder alone today, null without one", eq(L.familyOf(null, "klein"), { family: null, label: "in folder klein", from: "folder", sure: false }) && L.familyOf(null, "") === null && L.familyOf(null) === null);
+    });
+
+    await section("8. loraStem and loraWords (LR1: the status note, the via line, the log)", () => {
+        check("loraStem takes the folders (either separator) and the extension off",
+            L.loraStem("Flux_3\\Flux3_Targa.safetensors") === "Flux3_Targa" && L.loraStem("klein/sub/nyc_style.safetensors") === "nyc_style" && L.loraStem("root.ckpt") === "root" && L.loraStem("no_ext") === "no_ext" && L.loraStem(null) === "");
+        const words = L.loraWords([{ name: "Flux_3\\Flux3_Targa.safetensors", strength: 0.8 }, { name: "klein/nyc_style.safetensors", strength: 1 }, { name: "x.safetensors", strength: 0.855 }, { name: "y.safetensors", strength: -2 }]);
+        check("loraWords: the stems with their strengths, one decimal at least, two at most", words === "Flux3_Targa 0.8, nyc_style 1.0, x 0.86, y -2.0", words);
+        check("loraWords of none, of no list: \"\"", L.loraWords([]) === "" && L.loraWords(null) === "");
     });
 
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });

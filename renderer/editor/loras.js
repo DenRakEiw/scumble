@@ -11,7 +11,8 @@
 // graph; on a Comfy Cloud recipe it is a field of the variant (providers.comfycloud.loras, its text route's as
 // text.loras).
 //
-// App-only: host.js imports it (LR1) and main requires it for Comfy Cloud graphs (LR5); it is not in
+// App-only: host.js imports it (since LR1: the store's rows, the refusal, the splice in queueGenerate, the via line and
+// the PNG metadata) and main requires it for Comfy Cloud graphs (LR5); it is not in
 // tools/build_node.py FILES (the node's own graphs take a Load LoRA node by hand). Pure, no DOM, no editor:
 // tools/loras_test.js imports this file.
 
@@ -275,6 +276,28 @@ export function missingLoras(rows, names) {
         out.push({ name: row.name, server: list.find((x) => normalizeName(x) === n) || null });
     }
     return out;
+}
+
+/**
+ * A LoRA as a line names it: the file's stem, its folders and extension off ("klein\Flux3_Targa.safetensors" ->
+ * "Flux3_Targa"; the Preset row's suggestion does the same, host.js renderPresets).
+ * @param {any} name
+ */
+export function loraStem(name) {
+    return String(name == null ? "" : name).replace(/^.*[\\/]/, "").replace(/\.[a-z0-9]+$/i, "");
+}
+
+/**
+ * The LoRAs a run loaded as the status line, the via line and the log name them: "Flux3_Targa 0.8, nyc_style 1.0"
+ * (each strength to two decimals at most, one at least), "" for none.
+ * @param {any} applied [{ name, strength }]
+ */
+export function loraWords(applied) {
+    if (!Array.isArray(applied)) return "";
+    return applied.filter((a) => a && typeof a.name === "string").map((a) => {
+        const s = String(Math.round((+a.strength || 0) * 100) / 100);
+        return `${loraStem(a.name)} ${/[.e]/.test(s) ? s : s + ".0"}`;
+    }).join(", ");
 }
 
 /**

@@ -5,7 +5,8 @@ Export section's switch ("Prompt and recipe in the PNG", `settings.embedRecipe`,
 `metadata` says so. Every PNG export carries an `sRGB` chunk (its pixels are sRGB), on the banded path and on the
 canvas path; uploads never do (their names are the hash of their bytes). JPEG gets Chromium's sRGB ICC profile (APP2);
 WebP's chunks are printed (2026-09-26: VP8X, ICCP, VP8). An embedded recipe leaves out the inputs named like a key, a
-token, a secret or a password (renderer/editor/redact.js; the matcher itself is tools/secret_names_test.js).
+token, a secret or a password (renderer/editor/redact.js; the matcher itself is tools/secret_names_test.js). The
+workflow chunk names the selected recipe's switched-on LoRA rows as `loras` (item 50, docs/PLAN_LORAS.md LR1).
 
 No ComfyUI, no API key. Start the app first (tools/run_gates.sh does), then:
 
@@ -197,6 +198,33 @@ try {
     if (host.recipe.prompt.api.inputs.api_key !== KEY) throw new Error("the recipe itself lost its key");
     return { api: Object.keys(api), llm: Object.keys(llm), bytes: got.texts.workflow.length };
 } finally { host.recipe = recipeWas; host.setEmbedRecipe(false); }
+"""),
+    ("the_loras_a_run_would_load_are_in_the_png", r"""
+// item 50 (docs/PLAN_LORAS.md LR1): the workflow chunk names the switched-on LoRA rows of the selected recipe (what a run
+// now would load, spliced into the queued copy only, so the chunk's prompt never shows them); a row switched off is not
+// named, and with the switch off there is no chunk at all
+const ed = ednow(window.__md);
+const klein3 = host.shell.recipes().find((x) => x.id === "flux3_klein_local");
+if (!klein3) throw new Error("flux3_klein_local is not listed");
+const recipeWas = host.recipe, lorasWas = host.loras;
+host.recipe = klein3;
+host.loras = { flux3_klein_local: [{ name: "Flux_3\\Flux3_Targa.safetensors", strength: 0.8, on: true }, { name: "klein\\nyc_style.safetensors", strength: 1, on: false }] };
+host.setEmbedRecipe(true);
+try {
+    const on = await exportOf(ed);
+    const wf = JSON.parse((await checkPng(on.blob, true, "a recipe with a LoRA row on, switch on")).texts.workflow);
+    if (wf.recipe !== "flux3_klein_local" || JSON.stringify(wf.loras) !== JSON.stringify([{ name: "Flux_3\\Flux3_Targa.safetensors", strength: 0.8 }])) throw new Error("the chunk's loras: " + JSON.stringify({ recipe: wf.recipe, loras: wf.loras }));
+    if (!wf.prompt || wf.prompt.scumble_lora_1 || JSON.stringify(wf.prompt).includes("Flux3_Targa")) throw new Error("the chunk's prompt shows the chain");
+    host.loras.flux3_klein_local[0].on = false;
+    const off = await exportOf(ed);
+    const wf2 = JSON.parse((await checkPng(off.blob, true, "every LoRA row off, switch on")).texts.workflow);
+    if ("loras" in wf2) throw new Error("a switched-off row is named: " + JSON.stringify(wf2.loras));
+    host.loras.flux3_klein_local[0].on = true;
+    host.setEmbedRecipe(false);
+    const none = await exportOf(ed);
+    await checkPng(none.blob, false, "a LoRA row on, switch off");
+    return { loras: wf.loras };
+} finally { host.recipe = recipeWas; host.loras = lorasWas; host.setEmbedRecipe(false); }
 """),
     ("uploads_carry_no_srgb", r"""
 // the PNGs the mirror and ComfyUI get are named by the hash of their bytes: no chunk of the export's may go in

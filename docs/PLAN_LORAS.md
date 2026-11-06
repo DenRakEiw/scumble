@@ -787,6 +787,67 @@ node list and with the class table alike):
 7. **The relight recipes declare nothing**: `modelSource` finds their `unet` / `10:37`, so LR2 hides the section for them
    by task, as §3.2 says, not by the graph.
 
+### LR1 as built (2026-11-06)
+
+**Built:** `renderer/editor/host.js` imports the module. Beside the presets: `host.loras` (the store, `settings.recipeLoras`),
+`saveLoras(recipeId, rows)` (the whole object through `settings.set`, the `savePresets` shape), `loraRows(r | id)` (the
+stored rows checked: `name` a string, `strength` finite, `on` a boolean, any other entry dropped, extra keys left out),
+`loraNames()` (`comboOf` over `LoraLoaderModelOnly.lora_name`, both forms; `[]` while the list is unread),
+`refreshLoraNames()` (`/object_info/LoraLoaderModelOnly`, the `boxPromptSlot` shape: merged only into a known node list,
+a failed read answers the list as it was), `loraGraph(r)` (a ComfyUI recipe's own graph; null for an API recipe, the
+upscalers, the pass and relight), `lorasNow(r)` (what a run would load now: the rows spliced into a copy of the graph,
+so the PNG follows the run's own rule) and `loraPlan(editor, r)` (the refusals). In `queueGenerate`: `loraPlan` right
+after the refusals of the connection, `needs` and the upscaler's selection (before the boxes' slot read and long before
+`ensureOnServer`), skipped for `upscale` / `pass`; `editor.lastLoras = []` beside `lastRunNotes`; the splice after
+`wireUpsampler`'s note (so after the Settings rows, the factor and the boxes too) and before the pass's DLSS loop and
+`api.queuePrompt`; the note `LoRAs: <stem> <strength>, ...` (or the splice's "The LoRAs stayed out: ..." note) in
+`lastRunNotes`; `workflowInfo({ loras })` into the run's `extra_pnginfo`; the log line `local run <id>: LoRAs ...`
+(source `comfy`, the rows as detail); `viaLine(r, route, seconds, loras)` writes " + N LoRA(s): a 0.8, b 1.0" after the
+route, so the `_sentTexts` via and the landed result's (`, N s` appended at 5412 as before) carry it. `workflowForPng`
+passes `lorasNow(this.recipe)`; `workflowInfo(extra)` adds `loras` only when there are some. `renderer/shell.js` loads
+`host.loras = settings.recipeLoras || {}` beside the presets. `renderer/editor/loras.js`: `loraStem`, `loraWords`.
+`electron/main/settings.js`: one comment line (§5). CHANGELOG `## Unreleased`: one line (the via line, the PNG chunk, the
+refusal).
+
+**Tests (all green):** `node tools/settings_migration_test.js` PASS (the new `settings.recipeLoras` section: not a default,
+an older profile reads `{}` and no rows, a write of another key and a restart keep it whole, `loraRows` drops a
+malformed row of each kind and keeps the order, `saveLoras` writes the whole object and keeps the other keys);
+`node tools/loras_test.js` 59 of 59 (§8 new: `loraStem`, `loraWords`). The new gate **`loras`** = `tools/loras_test.py`
+(the node step first, then seven app steps against the page's `fetch` answering POST /prompt, so the real
+`api.queuePrompt` builds the body, and `/object_info/LoraLoaderModelOnly`): the chain in order with the strengths,
+`guider.model` and `sched.model` re-pointed, the switched-off row nowhere, a `/` name in the server's `\` spelling,
+`r.prompt` untouched, `extra_pnginfo.workflow.loras`, `lastLoras`, the via text, the status note, the log line; a
+missing file refused with the sentence after one re-read and before `ensureOnServer` (the plural; a switched-off missing
+row neither sent nor refused; a file the re-read lists queued and kept in the node list); the node list unread and the
+re-read failing: no refusal, the names as typed; the re-read answering: its spelling, the node list still null; six rows
+refused (`warn`) before any upload, five in order; a `loras: false` recipe: no chain, no refusal, the note; the first
+run's result landed through a dispatched `executed`: the history entry's via "FLUX 3 Image Klein (ComfyUI) via your
+ComfyUI + 2 LoRAs: Flux3_Targa 0.8, nyc_style 1.0, 0 s" and the history row showing it. `metadata` gained a step: the
+workflow chunk's `loras` names the switched-on row only, a recipe whose rows are all off has no key, the chunk's
+`prompt` never shows the chain, the switch off writes no chunk. Gate run `lr1-b` on tiles (`--offline`, port 9571, the
+worktree's `dist/gates`): `loras`, `metadata` (10 steps), `generate`, `recipes`, `lint` (0 errors, the same 21 warnings
+as at LR0, none new), `types`: ALL PASS. No mutation round (Normal tier); no other backend (no pixel path changed).
+
+**Deviations, each by the code:**
+1. **The refusal sits after the `needs` check and the upscaler's selection refusal, not among them**: `loraPlan` is async
+   (the re-read) and needs `upscale`, both known there; it is still before the boxes' slot read and `ensureOnServer`.
+2. **More than five switched-on rows are refused before any upload** (`refusal(..., "warn")`, a limit), not left to
+   `spliceLoras`' throw after the uploads; the store cannot hold more from the UI (LR2), only from a hand-edited file.
+3. **The re-read runs when the list is empty too**, not only before a refusal: the row's "node list unread" case needs
+   it, and a successful re-read against an unread list gives the names without merging them (the rows are then sent in
+   the re-read's spelling by `loraPlan` itself, since `spliceLoras` sees no combo in a null node list).
+4. **A graph without a model source refuses nothing** (no file check): its rows stay out with the splice's note
+   ("The LoRAs stayed out: ..."), which `notesKind` shows red; the note `LoRAs: ...` joined `HINT_NOTE`, so a run whose
+   only note is its LoRAs stays a plain line.
+5. **`workflowForPng` names local recipes' rows only** (`loraGraph`): a Comfy Cloud recipe's rows are spliced in main
+   from LR5, and `resolveRecipe` (shell.js 507) does not carry the variant's `loras` yet, so LR5 adds the Cloud branch to
+   `loraGraph` (the graph `r.options.graph`, the declaration `{ loras: v.loras, save: r.options.save }`) and to
+   `resolveRecipe`; §3.5's "the PNG chunk needs nothing more" holds after those two lines.
+6. **`runProvider` resets `editor.lastLoras = []`** beside its `lastRunNotes` (an API run loads none; a later
+   `loras_sent`, LR4, never reports an earlier local run's rows); LR5 sets it from main's answer there.
+7. **`loraStem` / `loraWords` went into `loras.js`** (pure, tested in plain Node) rather than into `viaLine` alone: the
+   status note, the via line and the log name the LoRAs the same way.
+
 ## 5. How it fits into 0.1.52 beside CorridorKey
 
 - **One branch, one release.** Both plans build on `corridorkey` (cut from `main` = 0.1.51) and ship as 0.1.52 on the

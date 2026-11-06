@@ -3264,6 +3264,7 @@ if (startMode === "safe") host.editor.setStatus("The window crashed twice while 
 await loadProviders();
 await loadRecipes();
 host.presets = settings.recipePresets || {};
+host.loras = settings.recipeLoras || {};   // the LoRA rows per recipe (item 50, docs/PLAN_LORAS.md §3.3)
 await host.refreshHelpers();
 await host.refreshLLMs();
 selectRecipe(settings.recipe);

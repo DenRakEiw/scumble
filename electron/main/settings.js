@@ -12,6 +12,8 @@ const DEFAULTS = {
     comfy: { url: "http://127.0.0.1:8188", auth: { type: "none" } },
     recipe: "flux2_klein_local",
     recipeProviders: {},   // recipe id -> chosen provider id for model recipes with several providers
+    // not defaults, read with `|| {}` (renderer/shell.js): recipePresets, and recipeLoras (item 50, the LoRA rows per
+    // recipe, { [recipeId]: [{ name, strength, on }] }, host.saveLoras writes the whole object)
     // InpaintCanvas node widgets, filled into the recipe's canvas node on every run
     nodeParams: { padding: 64, target_size: 1024, feather: 16, multiple_of: 64 },
     // the Realism Pass (docs/PLAN_0_1_42.md, renderer/editor/realism.js realismDefaults): Style and Strength of every

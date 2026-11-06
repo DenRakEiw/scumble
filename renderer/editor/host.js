@@ -34,7 +34,7 @@ function sentTexts(snap) {
 }
 
 // a run note that only explains how the run went, not what it left out or changed (item 45: those show red)
-const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None |^Served by .+ \(Comfy Router's fallback provider\)\.$/;
+const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None |^Served by .+ \(Comfy Router's fallback provider\)\.$|^LoRAs: /;
 /** The kind of a line that appends a run's notes to the one before: red when a note says something was left out. */
 function notesKind(editor, notes) {
     return notes.some((n) => !HINT_NOTE.test(String(n))) ? "warn" : (editor.statusKind || "info");
@@ -45,6 +45,7 @@ import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from
 import { promptPayload } from "./boxes_model.js";
 import * as realism from "./realism.js";
 import * as comfyprompt from "./comfyprompt.js";
+import { MAX_LORAS, LORA_MODEL_CLASS, comboOf, usableRows, modelSource, spliceLoras, missingLoras, loraWords } from "./loras.js";
 import * as genpresets from "./genpresets.js";
 import * as dialogs from "../dialogs.js";
 import { tileBoxes, fusedSize } from "./inpaint_edges.js";
@@ -232,12 +233,16 @@ const RELIGHT_DEFAULTS = Object.freeze({
 
 /**
  * What a result names about its run (QW5, docs/PLAN_COMFY_SDK.md S8): the recipe's model, where it ran and its seconds,
- * "FLUX 3 Image via Comfy Router, 23 s"; shown in the status line and the history, never stored in the document.
+ * "FLUX 3 Image via Comfy Router, 23 s"; shown in the status line and the history, never stored in the document. The
+ * LoRAs the run loaded (item 50, `loras` [{ name, strength }]) follow the route: "FLUX 3 Image Klein via your ComfyUI
+ * + 2 LoRAs: Flux3_Targa 0.8, nyc_style 1.0, 14 s" (the history entry keeps a fixed set of fields, so they ride in it).
  */
-function viaLine(r, route, seconds) {
+function viaLine(r, route, seconds, loras = null) {
     const model = (r && (r.name || r.id)) || "";
     const secs = Number.isFinite(+seconds) && seconds !== null ? `, ${Math.round(+seconds)} s` : "";
-    return model || route ? `${model}${model && route ? " via " : ""}${route || ""}${secs}` : "";
+    const n = Array.isArray(loras) ? loras.length : 0;
+    const with_ = n ? ` + ${n} LoRA${n === 1 ? "" : "s"}: ${loraWords(loras)}` : "";
+    return model || route ? `${model}${model && route ? " via " : ""}${route || ""}${with_}${secs}` : "";
 }
 
 /** The shipped local Klein recipes and their model family (0.1.50 Q1). */
@@ -1461,6 +1466,100 @@ export const host = {
         try { await window.scumble.settings.set({ recipePresets: this.presets }); } catch (err) { console.warn("presets", err); }
     },
 
+    // ---- LoRAs per recipe (item 50, docs/PLAN_LORAS.md §3.1, §3.3): rows spliced into the queued copy of the graph ----
+
+    loras: {},   // settings.recipeLoras: { [recipeId]: [{ name, strength, on }] }, shared by all documents like presets
+
+    /** The rows of a recipe (the store's whole object written, as savePresets does). */
+    async saveLoras(recipeId, rows) {
+        this.loras = { ...(this.loras || {}), [recipeId]: Array.isArray(rows) ? rows : [] };
+        try { await window.scumble.settings.set({ recipeLoras: this.loras }); } catch (err) { console.warn("loras", err); }
+    },
+
+    /**
+     * The stored rows of a recipe (`r` or its id) as the store holds them, each checked: `name` a string, `strength` a
+     * finite number, `on` a boolean; an entry of another shape is dropped (a hand-edited or a newer file).
+     * @returns {{ name: string, strength: number, on: boolean }[]}
+     */
+    loraRows(r) {
+        const id = r && typeof r === "object" ? r.id : r;
+        const list = id != null && this.loras && Array.isArray(this.loras[id]) ? this.loras[id] : [];
+        return list.filter((row) => row && typeof row === "object" && typeof row.name === "string" && typeof row.strength === "number"
+            && Number.isFinite(row.strength) && typeof row.on === "boolean").map((row) => ({ name: row.name, strength: row.strength, on: row.on }));
+    },
+
+    /** The server's LoRA files (LoraLoaderModelOnly's lora_name, either combo form); [] while the node list is unread. */
+    loraNames() {
+        return comboOf(this.objectInfo, LORA_MODEL_CLASS, "lora_name") || [];
+    },
+
+    /**
+     * The server's LoRA files read again through /object_info/LoraLoaderModelOnly (a file copied into models/loras since
+     * the connect is listed by then; the boxPromptSlot shape): kept in the node list only when that list is known (a
+     * partial one would read every other node as missing). A failed read answers the list as it was.
+     */
+    async refreshLoraNames() {
+        try {
+            const res = await api.fetchApi("/object_info/" + LORA_MODEL_CLASS);
+            const one = res && res.status === 200 ? await res.json() : null;
+            if (one && one[LORA_MODEL_CLASS]) {
+                if (this.objectInfo) {
+                    this.objectInfo = { ...this.objectInfo, [LORA_MODEL_CLASS]: one[LORA_MODEL_CLASS] };
+                    if (this._types) this._types[LORA_MODEL_CLASS] = { nodeData: one[LORA_MODEL_CLASS] };
+                }
+                return comboOf(one, LORA_MODEL_CLASS, "lora_name") || [];
+            }
+        } catch (_) { /* the list as it was */ }
+        return this.loraNames();
+    },
+
+    /**
+     * The graph a recipe's LoRA rows go into, with what modelSource reads of the recipe: a ComfyUI recipe's own graph,
+     * or null (an API recipe, an upscaler, the Realism Pass, relight; Comfy Cloud graphs are spliced in main, LR5).
+     */
+    loraGraph(r) {
+        if (!r || r.kind === "provider" || !r.prompt || r.task === "upscale" || r.task === "pass" || r.task === "relight") return null;
+        return { graph: r.prompt, decl: r };
+    },
+
+    /**
+     * What a run of `r` would load now, [{ name, strength }] (the PNG's tEXt chunk, workflowForPng): the switched-on
+     * rows spliced into a copy of its graph, so the rule is the run's own (no model source, more than five: none).
+     */
+    lorasNow(r = this.recipe) {
+        const g = this.loraGraph(r);
+        if (!g) return [];
+        const rows = this.loraRows(r);
+        if (!usableRows(rows).length) return [];
+        try { return spliceLoras(JSON.parse(JSON.stringify(g.graph)), g.decl, rows, this.objectInfo).applied; } catch (_) { return []; }
+    },
+
+    /**
+     * The LoRA rows a local run of `r` sends (queueGenerate, before anything is uploaded): null when its graph takes none
+     * or no row is switched on; `{ rows }` in the server's spelling (a name that differs only in its separators). Refuses
+     * more than MAX_LORAS rows, and a file the server's list lacks, after reading the list again; against an empty or
+     * unread list nothing is refused and the names go as typed (ComfyUI's own check answers, as for the Settings rows).
+     * A graph without a model source refuses nothing either: the splice's note says why the rows stayed out.
+     */
+    async loraPlan(editor, r) {
+        const g = this.loraGraph(r);
+        if (!g) return null;
+        const use = usableRows(this.loraRows(r));
+        if (!use.length) return null;
+        if (use.length > MAX_LORAS) throw refusal(`At most ${MAX_LORAS} LoRAs per recipe: ${r.name || r.id}'s rows switch on ${use.length}. Switch rows off in the LoRAs section, then try again.`, "warn");
+        if (!("node" in modelSource(g.graph, g.decl, this.objectInfo))) return { rows: use };
+        let names = this.loraNames();
+        let miss = missingLoras(use, names);
+        if (!names.length || miss.some((m) => !m.server)) { names = await this.refreshLoraNames(); miss = missingLoras(use, names); }
+        const lacks = miss.filter((m) => !m.server).map((m) => m.name);
+        if (lacks.length) {
+            const one = lacks.length === 1;
+            throw new Error(`Your ComfyUI lacks ${one ? "a LoRA file" : "LoRA files"} this recipe's rows name: ${lacks.join(", ")}. Put the file${one ? "" : "s"} in models/loras (and refresh ComfyUI), pick one of the server's files in the LoRAs section, or switch the row${one ? "" : "s"} off, then try again.`);
+        }
+        const spelt = new Map(miss.map((m) => [m.name, m.server]));
+        return { rows: use.map((row) => ({ ...row, name: spelt.get(row.name) || row.name })) };
+    },
+
     /**
      * The preset row at the top of the editor's Settings section (called by renderSettings): a ComfyUI recipe's shipped
      * presets (its file's `presets`, any row: the Realism Pass's L and M) first, then the user's own; without shipped
@@ -2052,6 +2151,7 @@ export const host = {
         editor.lastSentPrompt = null;
         editor.lastRunNotes = [];
         editor.lastSentBoxes = 0;
+        editor.lastLoras = [];   // an API run loads none (a Comfy Cloud graph's come back with main's answer, LR5)
         const token = { provider: r.provider, label, started: Date.now(), editor, runId: runIdOf() };
         editor.providerPending = token;
         this._providerRuns.add(token);
@@ -3992,6 +4092,9 @@ export const host = {
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
         if (upscale && !pass && !(editor.getBounds && editor.getBounds())) throw refusal("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
+        // the recipe's LoRA rows (item 50): more than five, or a file the server's list lacks, refuse here, before
+        // anything is uploaded; spliced into the queued copy below
+        const loraPlan = upscale ? null : await this.loraPlan(editor, r);
         // a ComfyUI upscaler that takes a factor (RTX Video Super Resolution): the one the dialog or the command asked
         // (editor.generate() takes no arguments and is shared with the node, so the factor travels on the editor, read
         // once), and the size limits on the crop the node makes, before anything is uploaded
@@ -4024,6 +4127,7 @@ export const host = {
         editor.lastSentPrompt = null;
         editor.lastRunNotes = [];
         editor.lastSentBoxes = 0;
+        editor.lastLoras = [];
         if (boxSchema && !editor.genSettings.boxes) {
             const held = this.plugins ? this.plugins.countBoxes(editor) : 0;
             if (held) editor.lastRunNotes.push(`The document's ${held} box${held === 1 ? "" : "es"} did not go: the Boxes switch under the prompt is off.`);
@@ -4130,6 +4234,17 @@ export const host = {
             if (plan) editor.lastRunNotes.push(upsampled.note);
             else editor.setStatus(`${editor.status} ${upsampled.note}`, editor.statusKind || "info");
         }
+        // the LoRA rows (item 50, docs/PLAN_LORAS.md §3.1): a chain after the graph's model loader, every reader of its
+        // MODEL re-pointed to the chain's end, in this copy only (the recipe's own graph never changes); last, so the
+        // Settings rows, the boxes and the upsampler have written the graph it reads
+        let lorasSent = [];
+        if (loraPlan) {
+            const spliced = spliceLoras(prompt, r, loraPlan.rows, this.objectInfo);
+            lorasSent = spliced.applied;
+            if (spliced.note) editor.lastRunNotes.push(spliced.note);
+            if (lorasSent.length) editor.lastRunNotes.push(`LoRAs: ${loraWords(lorasSent)}.`);
+        }
+        editor.lastLoras = lorasSent;
         if (pass) {
             // Style and Strength are app-wide (settings.realism, the Upscale dialog's row); the DLSS model preset is the
             // recipe's own Settings row (its shipped presets L and M), so it is not taken from settings.realism here. A
@@ -4139,7 +4254,7 @@ export const host = {
                 if (node && node.class_type === "DLSS5Settings") node.inputs = realism.passSettings(node.inputs, { style: v.style, intensity: v.intensity });
             }
         }
-        const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo() });
+        const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo(lorasSent.length ? { loras: lorasSent } : null) });
         editor.lastPromptId = res && res.prompt_id;
         // the tab closed while its prompt was being queued (the uploads take a while): its result lands nowhere
         if (res && res.prompt_id && !this._editors.includes(editor)) this._closedPrompts.add(String(res.prompt_id));
@@ -4164,6 +4279,9 @@ export const host = {
                 Promise.resolve(window.scumble.log.add({ level: "info", source: "comfy", message: `local run ${(res && res.prompt_id) || ""}: prompt as sent`, detail: editor.lastSentPrompt })).catch(() => { /* the log is optional */ });
             }
         }
+        if (lorasSent.length && window.scumble && window.scumble.log) {
+            Promise.resolve(window.scumble.log.add({ level: "info", source: "comfy", message: `local run ${(res && res.prompt_id) || ""}: LoRAs ${loraWords(lorasSent)}`, detail: lorasSent })).catch(() => { /* the log is optional */ });
+        }
         // open until ComfyUI says the prompt ended (success, error, interrupt) or its queue is empty: a turn of the whole
         // picture waits for it, since the result lands in the geometry it was made for (PLAN_0_1_31 §7)
         if (res && res.prompt_id) (editor._localRuns || (editor._localRuns = new Set())).add(res.prompt_id);
@@ -4183,7 +4301,7 @@ export const host = {
             // and denoise of the click too, which a later click changes before this result lands
             const texts0 = upscale ? (r.usesPrompt ? { prompt: texts.prompt, negative: texts.negative, refs: null } : { prompt: "", negative: "", refs: null }) : sentTexts(snap);
             // QW5: the result names the recipe and where it ran; the seconds are counted when it lands
-            sent.set(res.prompt_id, { ...texts0, ...clickGen, via: viaLine(r, "your ComfyUI", null), viaStarted: Date.now() });
+            sent.set(res.prompt_id, { ...texts0, ...clickGen, via: viaLine(r, "your ComfyUI", null, lorasSent), viaStarted: Date.now() });
             // taken out when the result lands; the bound is only for prompts that never answer
             while (sent.size > 500) sent.delete(sent.keys().next().value);
         }
@@ -4231,18 +4349,24 @@ export const host = {
     /** What goes into an exported PNG's tEXt chunk in place of the litegraph workflow, or null when nothing is to go in (3f). */
     workflowForPng(editor) {
         const own = editor && editor._export ? editor._export.metadata : null;
-        return (own == null ? this.embedRecipe : own) ? this.workflowInfo() : null;
+        if (!(own == null ? this.embedRecipe : own)) return null;
+        // the LoRA rows a run of the selected recipe would load now (item 50): the picture's own run is not known here
+        const loras = this.lorasNow(this.recipe);
+        return this.workflowInfo(loras.length ? { loras } : null);
     },
 
     /**
      * The recipe as the app describes it: the export's tEXt chunk, and a local run's `extra_pnginfo` for a SaveImage in
      * it. The recipe's prompt goes without the inputs named like a key, a token, a secret or a password (`redact.js`,
      * the user 2026-09-27): an imported workflow carries its third-party key widgets, and the picture may travel. The
-     * run itself is queued from `r.prompt` (queueGenerate), which keeps them.
+     * run itself is queued from `r.prompt` (queueGenerate), which keeps them. `extra.loras` ([{ name, strength }], item
+     * 50): the LoRAs the run loaded (a local run's extra_pnginfo) or a run would load (the export), spliced into the
+     * queued copy only, so `prompt` never shows them; the key is left out when there are none.
      */
-    workflowInfo() {
+    workflowInfo(extra = null) {
         const r = this.recipe;
-        return { app: "scumble", recipe: r ? r.id : null, kind: r ? r.kind || "comfy" : null, provider: (r && r.provider) || null, model: (r && r.model) || null, prompt: r ? withoutSecrets(r.prompt || null) : null, nodeParams: this.nodeParams };
+        const loras = extra && Array.isArray(extra.loras) && extra.loras.length ? { loras: extra.loras.map((l) => ({ name: l.name, strength: l.strength })) } : {};
+        return { app: "scumble", recipe: r ? r.id : null, kind: r ? r.kind || "comfy" : null, provider: (r && r.provider) || null, model: (r && r.model) || null, prompt: r ? withoutSecrets(r.prompt || null) : null, nodeParams: this.nodeParams, ...loras };
     },
 
     /**

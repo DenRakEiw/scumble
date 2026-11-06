@@ -2,6 +2,10 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
+## Unreleased
+
+- **LoRAs on your own ComfyUI** (issue #10, in progress): a run of a ComfyUI recipe loads the LoRAs stored for that recipe, in their order and at their strengths, between the recipe's model loader and whatever reads the model, in the copy of the graph that is queued (the recipe file never changes). The status line and the result's line in the history name them ("FLUX 3 Image Klein via your ComfyUI + 2 LoRAs: Flux3_Targa 0.8, nyc_style 1.0, 14 s"), an exported PNG's recipe chunk lists them, and a LoRA file your ComfyUI does not have refuses the run before anything is uploaded.
+
 ## 0.1.51 - 2026-10-24
 
 - **Large exports save again.** Saving an export of more than about 500 MB (a PSD of a 15,000 x 10,000 picture with a layer above it is about 0.9 GB, and a large ORA or TIFF can pass it too) ended Scumble's window: it reloaded and brought the documents back from the autosave, but the file was never written. An export now goes to the disk in pieces, whatever its size.

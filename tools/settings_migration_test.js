@@ -5,6 +5,8 @@
 // fillValues fills it.
 // Then settings.relight (docs/PLAN_RELIGHT_FIXES.md F3.6): flat, only what the user picked; a nested block an older build
 // stored is dropped on read, and renderer/editor/host.js stores the picks, never its defaults.
+// Then settings.recipeLoras (item 50, docs/PLAN_LORAS.md LR1): absent reads {}, a write of another key keeps it whole,
+// host.loraRows drops a malformed row, host.saveLoras writes the whole object.
 //
 //     node tools/settings_migration_test.js
 //
@@ -177,11 +179,81 @@ async function relight() {
     }
 }
 
+// ---- settings.recipeLoras (item 50, docs/PLAN_LORAS.md §3.3, LR1) ---------------------------------------------
+// The LoRA rows per recipe: not a default (read with `|| {}` as renderer/shell.js reads it, beside recipePresets),
+// written whole by host.saveLoras, kept by a write of any other key; host.loraRows drops an entry of another shape.
+async function recipeLoras() {
+    console.log("--- settings.recipeLoras ---");
+    const { isDeepStrictEqual } = require("node:util");
+    const savedWindow = global.window, savedDocument = global.document;
+    let s = fresh(undefined);
+    global.window = {
+        scumble: { comfy: { onEvent() {} }, helpers: { free: async () => {} }, settings: { set: async (patch) => s.set(patch) } },
+        addEventListener() {}, removeEventListener() {},
+    };
+    global.document = { createElement: () => ({ getContext: () => ({}) }) };
+    try {
+        const { host } = await import(pathToFileURL(path.join(__dirname, "..", "renderer", "editor", "host.js")).href);
+        check("recipeLoras is not a default", !("recipeLoras" in s.DEFAULTS));
+        // a profile written before item 50
+        s = fresh({ recipe: "flux3_klein_local", recipePresets: { flux3_klein_local: [{ name: "p", values: {} }] } });
+        host.loras = s.get().recipeLoras || {};
+        check("a profile without the key reads {} (the shell's `|| {}`) and no rows for any recipe",
+            s.get().recipeLoras === undefined && isDeepStrictEqual(host.loras, {}) && isDeepStrictEqual(host.loraRows("flux3_klein_local"), []) && isDeepStrictEqual(host.loraRows({ id: "x" }), []));
+
+        // a stored object survives a write of another key and a restart, whole
+        const stored = {
+            flux3_klein_local: [{ name: "Flux_3\\Flux3_Targa.safetensors", strength: 0.8, on: true }, { name: "klein\\nyc.safetensors", strength: 1, on: false }],
+            qwen_image_edit_2_1_local: [{ name: "qwen\\NYC_Qwen.safetensors", strength: -0.5, on: true }],
+        };
+        s = fresh({ recipe: "flux3_klein_local", recipeLoras: stored });
+        s.set({ apiSize: "x2" });
+        check("a write of another key keeps a stored recipeLoras whole", isDeepStrictEqual(onDisk().recipeLoras, stored) && onDisk().apiSize === "x2", JSON.stringify(onDisk().recipeLoras));
+        s.set({ recipe: "moss_image_local", recipePresets: {} });
+        s = fresh(onDisk());
+        check("... and a second write and a restart", isDeepStrictEqual(s.get().recipeLoras, stored) && s.get().recipe === "moss_image_local");
+
+        // loraRows: the stored shape checked, an entry of another shape dropped, the order kept
+        host.loras = {
+            a: [
+                { name: "good.safetensors", strength: 0.75, on: true },
+                { name: 5, strength: 1, on: true },
+                { name: "str.safetensors", strength: "1", on: true },
+                { name: "nul.safetensors", strength: null, on: true },
+                { name: "noon.safetensors", strength: 1 },
+                null, "row", [1, 2],
+                { name: "yes.safetensors", strength: 1, on: "yes" },
+                { name: "off.safetensors", strength: 1.5, on: false, extra: "kept out" },
+            ],
+            b: "not a list",
+        };
+        check("loraRows drops a malformed row (name, strength, on of another type; not an object) and keeps the rest in order, without extra keys",
+            isDeepStrictEqual(host.loraRows("a"), [{ name: "good.safetensors", strength: 0.75, on: true }, { name: "off.safetensors", strength: 1.5, on: false }]), JSON.stringify(host.loraRows("a")));
+        check("loraRows of a recipe whose entry is no list, of an unknown id, of null: none",
+            isDeepStrictEqual(host.loraRows("b"), []) && isDeepStrictEqual(host.loraRows("zzz"), []) && isDeepStrictEqual(host.loraRows(null), []));
+
+        // saveLoras writes the whole object through settings.set: the other recipes' rows and the other keys stay
+        s = fresh({ recipe: "flux3_klein_local", nodeParams: { padding: 32, target_size: 1024, feather: 16, multiple_of: 64 }, recipeLoras: stored });
+        host.loras = s.get().recipeLoras || {};
+        const mine = [{ name: "moss\\style.safetensors", strength: 1, on: true }];
+        await host.saveLoras("moss_image_local", mine);
+        const disk = onDisk();
+        check("saveLoras stores the recipe's rows beside the others, the other keys kept",
+            isDeepStrictEqual(disk.recipeLoras, { ...stored, moss_image_local: mine }) && disk.nodeParams.padding === 32 && disk.recipe === "flux3_klein_local", JSON.stringify(disk.recipeLoras));
+        await host.saveLoras("flux3_klein_local", []);
+        check("saveLoras with [] empties that recipe's rows and keeps the rest", isDeepStrictEqual(onDisk().recipeLoras.flux3_klein_local, []) && isDeepStrictEqual(onDisk().recipeLoras.moss_image_local, mine));
+    } finally {
+        global.window = savedWindow;
+        global.document = savedDocument;
+    }
+}
+
 (async () => {
     try {
         embedRecipe();
         await realism();
         await relight();
+        await recipeLoras();
     } finally {
         Module._load = load;
         fs.rmSync(dir, { recursive: true, force: true });
