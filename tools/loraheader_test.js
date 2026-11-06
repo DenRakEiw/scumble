@@ -124,6 +124,17 @@ async function main() {
         ...pair(`transformer.transformer_blocks.${i}.attn.to_q`, 4096, 4096), ...pair(`transformer.transformer_blocks.${i}.attn.to_out.0`, 4096, 4096),
         ...pair(`transformer.transformer_blocks.${i}.img_mlp.gate_layer`, 12288, 4096), ...pair(`transformer.transformer_blocks.${i}.img_mlp.proj`, 12288, 4096),
     ]), null);
+    // Comfy-Org's Qwen Image 2.1 turbo LoRA (qwen_image_2.1_turbo_lora_avg_rank_178_bf16, read 2026-11-06 at LR9): kohya's
+    // lora_down / lora_up under diffusion_model., the gated MLP's gate_up / out, and 1-D `.diff`s of the attention's
+    // norm_q / norm_k at the head's 128 (a norm's scale, no out-features) and of txt_in.text_norm
+    lora("qwen21/q21_turbo.safetensors", [
+        ...pair("diffusion_model.img_in", 4096, 64, "kohya"), ["diffusion_model.txt_in.text_norm.diff", [4096]],
+        ...Array.from({ length: 32 }, (_, i) => i).flatMap((i) => [
+            ...pair(`diffusion_model.transformer_blocks.${i}.attn.to_q`, 4096, 4096, "kohya"), ...pair(`diffusion_model.transformer_blocks.${i}.attn.to_out.0`, 4096, 4096, "kohya"),
+            ["diffusion_model.transformer_blocks." + i + ".attn.norm_q.diff", [128]], ["diffusion_model.transformer_blocks." + i + ".attn.norm_k.diff", [128]],
+            ...pair(`diffusion_model.transformer_blocks.${i}.img_mlp.gate_up`, 24576, 4096, "kohya"), ...pair(`diffusion_model.transformer_blocks.${i}.img_mlp.out`, 4096, 12288, "kohya"),
+        ]),
+    ], null);
     // MOSS-Image's edit LoRA (bare layers.N.proj.q ..., 42 layers at 3072, format moss-edit-lora)
     lora("moss/moss_edit.safetensors", Array.from({ length: 42 }, (_, i) => i).flatMap((i) => ["q", "k", "v", "o"].flatMap((p) => pair(`layers.${i}.proj.${p}`, 3072, 3072))), { format: "moss-edit-lora" });
     // Z-Image (ai-toolkit: diffusion_model.layers.N.attention.to_k, 30 layers at 3840)
@@ -197,6 +208,9 @@ async function main() {
         check("Qwen Image Edit 2509: 60 transformer blocks at 3072, the metadata as written (sd_1.5)", q.blocks.transformer_blocks.length === 60 && q.width.transformer_blocks === 3072 && q.metadata.ss_base_model_version === "sd_1.5" && eq(q.metadata.tags, ["Anna"]), short({ w: q.width, m: q.metadata }));
         const q21 = await red("qwen21/q21.safetensors");
         check("Qwen Image 2.1: 32 transformer blocks at 4096, no metadata", q21.blocks.transformer_blocks.length === 32 && q21.width.transformer_blocks === 4096 && eq(q21.metadata, {}));
+        const q21t = await red("qwen21/q21_turbo.safetensors");
+        check("Comfy-Org's Qwen Image 2.1 turbo LoRA: the 1-D norm_q / norm_k diffs (128) are no out-features, so the width is 4096 (LR9)",
+            q21t.blocks.transformer_blocks.length === 32 && q21t.width.transformer_blocks === 4096 && eq(q21t.outs.transformer_blocks, [4096, 24576]) && q21t.modules.includes("diffusion_model.transformer_blocks.N.attn.norm_k"), short({ w: q21t.width, o: q21t.outs }));
         const moss = await red("moss/moss_edit.safetensors"), z = await red("z_image/z.safetensors");
         check("MOSS-Image's edit LoRA: 42 layers at 3072 (bare names); Z-Image: 30 layers at 3840", moss.blocks.layers.length === 42 && moss.width.layers === 3072 && moss.modules.includes("layers.N.proj.q") && z.blocks.layers.length === 30 && z.width.layers === 3840, short([moss.modules, z.width]));
         const sd = await red("sdxl/sdxl.safetensors");
@@ -269,6 +283,7 @@ async function main() {
             "Flux_3/flux3.safetensors": ["looks like FLUX 3", "flux3"],
             "qwen/anna_qwen.safetensors": ["looks like Qwen Image (Edit 2509 / 2511)", "qwen_image"],
             "qwen21/q21.safetensors": ["looks like Qwen Image 2.1", "qwen_image_2_1"],
+            "qwen21/q21_turbo.safetensors": ["looks like Qwen Image 2.1", "qwen_image_2_1"],
             "moss/moss_edit.safetensors": ["looks like MOSS-Image", "moss_image"],
             "z_image/z.safetensors": ["looks like Z-Image", "z_image"],
             "sdxl/sdxl.safetensors": ["looks like SDXL", "sdxl"],

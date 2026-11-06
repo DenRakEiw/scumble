@@ -192,7 +192,10 @@ function reduceHeader(raw) {
         const prefix = m[1] || m[3], index = Number(m[2] || m[4]);
         (blocks[prefix] || (blocks[prefix] = new Set())).add(index);
         const t = raw[k];
-        if (UP.test(k) && t && Array.isArray(t.shape) && Number.isInteger(t.shape[0]) && t.shape[0] > 0) {
+        // a `.diff` of a 1-D tensor is a norm's scale, not a layer's out-features (Comfy-Org's Qwen Image 2.1 turbo LoRA
+        // carries attn.norm_q / norm_k diffs at the head's 128, which read as the width 128 until LR9's live run)
+        const normDiff = /\.diff$/.test(k) && t && Array.isArray(t.shape) && t.shape.length < 2;
+        if (UP.test(k) && !normDiff && t && Array.isArray(t.shape) && Number.isInteger(t.shape[0]) && t.shape[0] > 0) {
             if (!(prefix in width) || t.shape[0] < width[prefix]) width[prefix] = t.shape[0];
             (outs[prefix] || (outs[prefix] = new Set())).add(t.shape[0]);
         }
