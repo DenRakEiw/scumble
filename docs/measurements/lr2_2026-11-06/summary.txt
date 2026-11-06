@@ -1,0 +1,27 @@
+LR2 of docs/PLAN_LORAS.md (item 50): the LoRAs section of the Generate tab, 2026-11-06, branch corridorkey.
+
+loras_section.png  the dev instance (port 9571, --no-comfy, its own profile) against the stub of the loras gate:
+                   FLUX 3 Image Klein (ComfyUI), the section open after Settings with three rows (Flux3_Targa 0.8 and
+                   nyc_style 1.0 switched on, old_grain 0.5 switched off and "(not on the server)"), the picker open on
+                   the third row (12 files in four folder groups). For the user's eye; no gate reads it.
+
+Gates (tools/run_gates.sh, --offline, --tiles on, SCUMBLE_CDP_PORT=9571, the worktree's dist/gates):
+
+lr2-a  loras PASS, skins PASS, editor FAIL, lint rc=0 (0 errors, 21 warnings, as before), types rc=0
+       editor: a_new_mask_and_a_neighbours_write_reach_the_screen at zoom 0.2 ("a slot kept a neighbour's old edge
+       line", 10 / 235 levels on 2,450-2,860 bytes, shifts 0-2); the runner stops at a failed step (49 steps ok)
+lr2-b  editor alone, a fresh instance: PASS (178 s)
+lr2-c  loras, skins, editor in lr2-a's order: ALL PASS (editor 174 s)
+
+Another session's 15k measurement (native_test.py, its busy lock) ran on the machine around lr2-a; the flake is in
+docs/TESTING.md "Known flakes".
+
+skins step 15 (the_loras_section_reads_in_every_skin), contrast against what is behind each text (the default look and
+90s as the gate printed them; Duck, Comfy and Black Forest passed the same thresholds, the line is cut at 400 chars):
+  default: name 11.27, strength 13.32, x 8.49, missing 4.72, + 9.3, summary 5.31, picker row 11.14, cursor 9.8,
+           search 13.9, folder head 4.27
+  90s:     name 14.37, strength 14.37, x 6.8, missing 9.04, + 6.34, summary 4.67, picker row 6.97, cursor 6.3,
+           search 14.37, folder head 4.67
+
+python tools/build_node.py --check: ok: 60 modules parse and resolve, 64 host members answered by both hosts
+node tools/loras_test.js: 68 of 68

@@ -848,6 +848,77 @@ as at LR0, none new), `types`: ALL PASS. No mutation round (Normal tier); no oth
 7. **`loraStem` / `loraWords` went into `loras.js`** (pure, tested in plain Node) rather than into `viaLine` alone: the
    status note, the via line and the log name the LoRAs the same way.
 
+### LR2 as built (2026-11-06)
+
+**Built:** `renderer/editor/lora_panel.js` (new, app-only DOM, never imports `host.js`: host is passed in): `ensure(host,
+ed)` makes the section through `ed.addSection("LoRAs", false, build, "gen")` and moves the returned `<details>` to
+right after `ed.settingsList.closest("details")` (one `insertBefore`), then `render`; `render(host, ed)` hides it
+(`hidden`, the reason in the summary's `title` and in `dataset.reason`) or draws the rows, and skips the rebuild while
+what it shows is the same (a key over the recipe, the answer, the rows and the server's names: a status change never
+takes the focus out of a strength being typed); `renderAll(host)` (the rows are the recipe's, so every document's
+section); a row is the tick, a name button in the select look (the stem; "Pick a LoRA" while empty; "(not on the
+server)" in `--sc-error` against a non-empty list, separators alike), the strength (`ipc-num`, the spinner −2 .. 2 by
+0.05, a typed value through `clampStrength`), **×**, and an empty `.ipc-lora-info` line for LR3's hint and chips;
+**+** adds a row (strength 1.0, on) and opens its picker, greyed at five with "Five LoRAs per recipe."; every change
+goes through `host.saveLoras` (the whole store) and `renderAll`; `ed.notifyChanged()` is never called. The picker
+(`openPicker`, `closePicker`, `openPickerState` for the gate): the server's names read again on open
+(`host.refreshLoraNames`, the rows' marks follow), a search field, the names grouped by subfolder with a count, the row's
+own name ticked and the cursor on it, ↑ / ↓ wrapping, Enter and a click pick (the server's spelling), Escape and a press
+outside close, the cursor follows the mouse only on a move with a distance; not connected: "Connect ComfyUI to pick
+LoRAs (Settings › ComfyUI). The row keeps its name."; connected with no files: its own sentence. `renderer/editor/loras.js`:
+`groupByFolder`, `filterNames`, `loraFolder`, `strengthRange`, `clampStrength`. `renderer/editor/host.js`: `loraTakes(r)`
+(the reasons), `applyRecipe` calls `loraPanel.ensure`, `onConnected` re-renders each editor's section after the node
+list. `electron/main/main.js`: both `comfyview:saved` sends carry `from: base ? base.id : null`; `electron/preload.js`'s
+comment; `renderer/shell.js`: `copySavedLoras({ id, from })` (exported), called by the `onSaved` handler before
+`loadRecipes`. `renderer/shell.css`: the section's and the picker's rules, tokens only (`@layer app`). CHANGELOG
+`## Unreleased`: the LoRA line names the section. Screenshot for the user's eye: `docs/measurements/lr2_2026-11-06/
+loras_section.png` (the dev instance against the stub: FLUX 3 Image Klein, three rows, one switched off and not on the
+server, the picker open on it); the gate runs and the contrasts in `summary.txt` beside it.
+
+**Tests:** `node tools/loras_test.js` 68 of 68 (§9 new: the folders, the search, the range, the clamp). The `loras` gate
+gained seven app steps (the section after Settings and before History, Boxes after Crop; hidden under `qwen_image_edit`,
+`rtx_vsr_local`, `realism_pass`, a `loras: false` recipe, a graph with two loaders and a Comfy Cloud recipe, each reason
+checked; **+** to five, the sixth greyed, × and the store; a pick through the search with the re-read, the focus, the
+groups, the arrows, a move of no distance against a real one, Enter, a click, Escape and a press outside with the
+editor's status untouched, the next queued prompt; the strength clamped (250 → 100, −3.5 kept, an empty field kept, 9
+against a node range of 5), the tick out of the run, ×; the rows after a recipe switch and in a second document, a
+change in one shown in the other, the missing mark, the disconnected picker; `copySavedLoras` with `from`, without it,
+with `from === id`, from a recipe without rows). `skins` gained step 15: the section open with three rows and the
+picker open in the default look and the four shipped skins, every control there and inside the panel, the picker
+opaque and inside the editor, its cursor row set off, every text at a contrast of 3 or more against what is behind it
+(the folder heads and the summary 2.5). Gate run `lr2-a` on tiles (`--offline`, port 9571, the
+worktree's `dist/gates`): `loras`, `skins`, `editor`, `lint` (0 errors, the same 21 warnings), `types`: all PASS but `editor`'s
+`a_new_mask_and_a_neighbours_write_reach_the_screen` once (zoom 0.2; green alone, `lr2-b`, and in the same order again,
+`lr2-c`; another session measured on the machine around the first run; a new line in `docs/TESTING.md`'s flakes).
+`python tools/build_node.py --check`: ok (60 modules, 64 host members; no shipped file changed, none of the touched
+files is in FILES). No mutation round (Normal tier); no canvas backend (no pixel path changed).
+
+**Deviations, each by the code:**
+1. **A Comfy Cloud recipe hides the section** with "… runs on Comfy Cloud, and Scumble does not send LoRA rows there
+   yet." (§3.2 hides only API recipes that are no Cloud graph): LR1's `loraGraph` is null for them and the splice is
+   main's at LR5, so rows shown there would go nowhere. **LR5 turns `loraTakes`' Cloud branch into the rule** (and the
+   picker's Cloud source).
+2. **`host.loraTakes(r)`** (new): the one answer for the section and, at LR4, `status.loras.takes / reason` and
+   `list_recipes` `loras_reason`. Its reasons: no recipe; an upscaler; the pass; relight; an API provider; Comfy Cloud
+   (1); no graph; two or more loaders (named); `modelSource`'s none.
+3. **The picker is a non-modal `<dialog>` in the editor's root**, not a plain popover: the editor's window capture
+   listener (`inpaint_canvas.js` `_docKey`) takes Escape before any field's own handler and runs its cancel chain,
+   unless the key's target sits inside `dialog[open]`; the shell's Tab / Escape and Ctrl+S listeners say the same. So
+   the keys go on the dialog (the search's, or the dialog's own while the search is off). Its focus is set again after
+   the opening click, since the editor's root takes the focus on a click on any button (`bindEvents`).
+4. **"Not connected" is `host.connected` and the shell's last status `connected` / `missing-node`** (`host.server.state`):
+   `host.connected` is never set back after a connect (`shell.js` 343).
+5. **No `host.on("recipe")` listener:** `setRecipe` calls `applyRecipe` for every editor, which renders; `onConnected`
+   calls `loraPanel.render` in its loop.
+6. **The summary carries "N on"** (the switched-on rows) beside the title, since the section is closed by default.
+7. **An Escape after +** leaves the empty row ("Pick a LoRA", stored with `name: ""`; `usableRows` skips it, × takes it).
+8. **The groups:** folders by name, any case and either separator one folder, the root's files last as "(root)"; the
+   search keeps a name when every word of it is found (a single word is the plan's substring).
+9. **`copySavedLoras` copies only from a recipe with rows**; a stale entry under the new id (a removed recipe's, §3.2) is
+   left when the source has none.
+10. **`skins` checks it with a new step** (15) rather than inside an existing one; the plan said only that the gate renders
+    every skin with the section open.
+
 ## 5. How it fits into 0.1.52 beside CorridorKey
 
 - **One branch, one release.** Both plans build on `corridorkey` (cut from `main` = 0.1.51) and ship as 0.1.52 on the

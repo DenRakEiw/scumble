@@ -12,7 +12,8 @@
 // text.loras).
 //
 // App-only: host.js imports it (since LR1: the store's rows, the refusal, the splice in queueGenerate, the via line and
-// the PNG metadata) and main requires it for Comfy Cloud graphs (LR5); it is not in
+// the PNG metadata), lora_panel.js too (LR2: the strength's range, the picker's groups and search), and main requires
+// it for Comfy Cloud graphs (LR5); it is not in
 // tools/build_node.py FILES (the node's own graphs take a Load LoRA node by hand). Pure, no DOM, no editor:
 // tools/loras_test.js imports this file.
 
@@ -298,6 +299,84 @@ export function loraWords(applied) {
         const s = String(Math.round((+a.strength || 0) * 100) / 100);
         return `${loraStem(a.name)} ${/[.e]/.test(s) ? s : s + ".0"}`;
     }).join(", ");
+}
+
+/**
+ * The strengths a row may hold: the node list's own range of LoraLoaderModelOnly's strength_model (ComfyUI's is
+ * -100 .. 100), else that one. The LoRAs section's spinner steps -2 .. 2; a typed value is clamped to this.
+ * @param {any} [info] the node list, or null
+ * @returns {{ min: number, max: number }}
+ */
+export function strengthRange(info = null) {
+    const def = info && info[LORA_MODEL_CLASS] && info[LORA_MODEL_CLASS].input;
+    const spec = def && ((def.required && def.required.strength_model) || (def.optional && def.optional.strength_model));
+    const o = Array.isArray(spec) && spec[1] && typeof spec[1] === "object" ? spec[1] : {};
+    const min = Number.isFinite(o.min) ? o.min : STRENGTH_MIN, max = Number.isFinite(o.max) ? o.max : STRENGTH_MAX;
+    return min <= max ? { min, max } : { min: STRENGTH_MIN, max: STRENGTH_MAX };
+}
+
+/**
+ * A typed strength as a row stores it: a number clamped to `strengthRange(info)`, rounded to 1/1000; null for what is
+ * no number ("", "abc"), so the row keeps its value.
+ * @param {any} value
+ * @param {any} [info]
+ * @returns {number | null}
+ */
+export function clampStrength(value, info = null) {
+    const t = typeof value === "string" ? value.trim().replace(",", ".") : value;
+    if (t === "" || t == null || typeof t === "boolean") return null;
+    const v = Number(t);
+    if (!Number.isFinite(v)) return null;
+    const { min, max } = strengthRange(info);
+    return Math.round(Math.min(max, Math.max(min, v)) * 1000) / 1000;
+}
+
+/**
+ * The subfolder part of a server name ("klein\\sub\\x.safetensors" -> "klein\\sub", the server's own separators), ""
+ * for a file at the root of models/loras.
+ * @param {any} name
+ */
+export function loraFolder(name) {
+    const s = String(name == null ? "" : name);
+    const at = Math.max(s.lastIndexOf("\\"), s.lastIndexOf("/"));
+    return at > 0 ? s.slice(0, at) : "";
+}
+
+/**
+ * The server's names as the picker groups them, by subfolder: `[{ folder, names }]`, the folders in the order of
+ * their names (any case; one spelled with "\\" and one with "/" are one folder, shown as the first name spells it),
+ * the files of the root of models/loras last as folder "" (the picker shows "(root)"), each group's names in the
+ * list's own order (ComfyUI sorts them).
+ * @param {any} names
+ * @returns {{ folder: string, names: string[] }[]}
+ */
+export function groupByFolder(names) {
+    /** @type {Map<string, { folder: string, names: string[] }>} */
+    const by = new Map();
+    for (const n of Array.isArray(names) ? names : []) {
+        if (typeof n !== "string" || !n) continue;
+        const folder = loraFolder(n), key = normalizeName(folder).toLowerCase();
+        let g = by.get(key);
+        if (!g) by.set(key, g = { folder, names: [] });
+        g.names.push(n);
+    }
+    const groups = [...by.values()];
+    groups.sort((a, b) => Number(a.folder === "") - Number(b.folder === "") || a.folder.localeCompare(b.folder, undefined, { sensitivity: "base", numeric: true }));
+    return groups;
+}
+
+/**
+ * The names a search keeps: every word of `query` (split at spaces) found somewhere in the name, any case, "/" and
+ * "\\" alike ("klein/nyc" finds "klein\\nyc_style.safetensors"); an empty query keeps all. The list's order stays.
+ * @param {any} names
+ * @param {any} query
+ * @returns {string[]}
+ */
+export function filterNames(names, query) {
+    const list = Array.isArray(names) ? names.filter((n) => typeof n === "string" && n) : [];
+    const words = normalizeName(query).toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return list;
+    return list.filter((n) => { const s = normalizeName(n).toLowerCase(); return words.every((w) => s.includes(w)); });
 }
 
 /**

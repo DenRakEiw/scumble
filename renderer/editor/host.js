@@ -47,6 +47,7 @@ import * as realism from "./realism.js";
 import * as comfyprompt from "./comfyprompt.js";
 import { MAX_LORAS, LORA_MODEL_CLASS, comboOf, usableRows, modelSource, spliceLoras, missingLoras, loraWords } from "./loras.js";
 import * as genpresets from "./genpresets.js";
+import * as loraPanel from "./lora_panel.js";
 import * as dialogs from "../dialogs.js";
 import { tileBoxes, fusedSize } from "./inpaint_edges.js";
 import { modelSize, DEPTH_LARGE, roundHalfEven } from "./inpaint_depth.js";
@@ -1374,6 +1375,8 @@ export const host = {
             else if (!ed.base) ed.setStatus(`Connected to ${status.message}. Load an image (Ctrl+O, drop a file, or paste).`);
             ed.refreshSegmentBackends();
             ed.settingsChanged();
+            // the server's LoRA list arrived with the node list: the rows' "(not on the server)" marks follow it
+            try { loraPanel.render(this, ed); } catch (err) { console.warn("loras section", err); }
         }
         const pending = this._pendingStates;
         this._pendingStates = [];
@@ -1520,6 +1523,30 @@ export const host = {
     loraGraph(r) {
         if (!r || r.kind === "provider" || !r.prompt || r.task === "upscale" || r.task === "pass" || r.task === "relight") return null;
         return { graph: r.prompt, decl: r };
+    },
+
+    /**
+     * Whether the selected recipe shows the LoRAs section (renderer/editor/lora_panel.js; LR4's status and list_recipes
+     * read the same): `{ takes: true }`, or `{ takes: false, reason }` in a sentence (the hidden section's summary title).
+     * A ComfyUI recipe takes rows when its graph has one model source (modelSource, the node list or the class table).
+     */
+    loraTakes(r = this.recipe) {
+        const label = (r && (r.name || r.id)) || "";
+        if (!r) return { takes: false, reason: "No recipe is selected." };
+        if (r.task === "upscale") return { takes: false, reason: `${label} is an upscaler: it loads no model a LoRA could change.` };
+        if (r.task === "pass") return { takes: false, reason: `${label} loads no model a LoRA could change.` };
+        if (r.task === "relight") return { takes: false, reason: `${label} is a relight recipe: it takes no LoRA rows.` };
+        if (r.kind === "provider") {
+            // a Comfy Cloud graph recipe's rows are spliced in main (docs/PLAN_LORAS.md LR5); until then it takes none
+            return this.recipeMode(r) === "cloud" ? { takes: false, reason: `${label} runs on Comfy Cloud, and Scumble does not send LoRA rows there yet.` }
+                : { takes: false, reason: `${label} runs through an API provider: LoRAs go only to your ComfyUI and Comfy Cloud.` };
+        }
+        const g = this.loraGraph(r);
+        if (!g) return { takes: false, reason: `${label} has no graph a LoRA could go into.` };
+        const src = modelSource(g.graph, g.decl, this.objectInfo);
+        if ("many" in src) return { takes: false, reason: `${label}'s graph has ${src.many.length} model loaders (${src.many.join(", ")}) and the recipe names none of them, so it takes no LoRA rows.` };
+        if ("none" in src) return { takes: false, reason: `${label} takes no LoRA rows: ${src.none}.` };
+        return { takes: true };
     },
 
     /**
@@ -1777,6 +1804,8 @@ export const host = {
         ed.settingsChanged();
         ed.syncBoxesRow();
         ed.renderInfo();
+        // the LoRAs section after the Settings rows (item 50, docs/PLAN_LORAS.md §3.2): made on the first call, then re-rendered
+        try { loraPanel.ensure(this, ed); } catch (err) { console.warn("loras section", err); }
     },
 
     /** The recipe's editable inputs in the shape settingTargets() had in the node. */

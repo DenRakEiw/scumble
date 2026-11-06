@@ -78,7 +78,7 @@ contextBridge.exposeInMainWorld("scumble", {
         open: (opts) => ipcRenderer.invoke("comfyview:open", opts || {}),
         info: () => ipcRenderer.invoke("comfyview:info"),
         close: () => ipcRenderer.invoke("comfyview:close"),
-        // a graph from the ComfyUI window was saved as a recipe: { id, message }
+        // a graph from the ComfyUI window was saved as a recipe: { id, message, from } (`from` the recipe it was saved from)
         onSaved: (cb) => on("comfyview:saved", cb),
     },
     file: {

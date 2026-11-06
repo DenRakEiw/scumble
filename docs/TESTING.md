@@ -519,6 +519,12 @@ generate editor log lint types`.
 
 Known flakes; **re-run before believing any of these**:
 
+- 2026-11-06 (`corridorkey`, LR2, tiles, the third gate of one instance after `loras` and `skins`): `editor_test.py`
+  `a_new_mask_and_a_neighbours_write_reach_the_screen` failed at zoom 0.2 ("a fill whose box ends on a tile border",
+  shifts 0-2: 10 and 235 levels on about 2,500-2,900 bytes, "a slot kept a neighbour's old edge line"; zoom 0.75 and
+  the undo cases exact). The editor gate alone on a fresh instance (`lr2-b`) and the same three gates in the same order
+  again (`lr2-c`) passed, so the order is ruled out. Another session's 15k measurement ran on the machine around the
+  first run (its `native_test.py` before it, its busy lock after it). Not looked into further.
 - 2026-10-19 (0.1.49's exe gates, tiles): the `brush` gate ran out of its 420 s after its reader part had printed
   `RESULT PASS` (the in-app part never answered); the rerun on a fresh instance passed in 16 s, and the canvas list's
   `brush` passed in the same build. The machine was loaded (a video render of another session ran beside the gates).

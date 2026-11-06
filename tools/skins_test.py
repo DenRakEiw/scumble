@@ -23,10 +23,14 @@ the shipped skins' manifests and tokens, electron/main/skins.js), then the app:
 12. a_skin_that_escapes_is_switched_off - a skin that squeezes the chat to nothing is switched off by guardAsk(),
    remembered as refused, the default look is back and the app log has the line;
 13. a_skin_that_hides_the_question_later_is_switched_off - a skin whose animation squeezes the chat three seconds
-   after it applies passes the question's first check and is switched off by the check that repeats while it is open.
+   after it applies passes the question's first check and is switched off by the check that repeats while it is open;
+15. the_loras_section_reads_in_every_skin - the LoRAs section of the Generate tab (item 50, renderer/editor/lora_panel.js),
+   open with three rows and its picker open, in the default look and every shipped skin: each part there and inside
+   the panel, the picker opaque and inside the editor, its cursor row set off, and every text against what is behind
+   it at a contrast of 3 or more (the folder heads and the section's summary 2.5).
 
 The step numbers are the design's (§6c); its steps 2, 5, 6, 9, 10 and 14 are not part of this light gate, and 13 is
-the review's (2026-09-26), not the design's.
+the review's (2026-09-26), 15 item 50's (docs/PLAN_LORAS.md LR2, 2026-11-06), neither the design's.
 
 The fixtures in tools/skins_fixtures/ are copied into the profile's plugin folder before step 8 (`bad_id` under the
 name `bad id!`, which is not a valid plugin id) and removed at the end, whatever happens; the appearance setting is
@@ -429,6 +433,103 @@ try {
 }
 """
 
+STEPS["the_loras_section_reads_in_every_skin"] = """
+// item 50 LR2 (docs/PLAN_LORAS.md §3.2): the LoRAs section of the Generate tab and its picker read only the tokens; in
+// the default look and in every shipped skin the section is open with three rows (one not on the server, one switched
+// off) and the picker open, and each part is there, fits the panel and reads against what is behind it
+await toDefault();
+const panel = await import('./editor/lora_panel.js');
+let ed = host.editor;
+let made = null;
+if (!ed) { made = await run("new_document"); ed = host.editors().find((e) => e.node.id === made.id); }
+const klein3 = host.shell.recipes().find((r) => r.id === "flux3_klein_local");
+if (!klein3) throw new Error("flux3_klein_local is not listed");
+const NAMES = ["Flux_3\\\\Flux3_Targa.safetensors", "klein\\\\nyc_style.safetensors", "qwen\\\\NYC_Qwen.safetensors", "root_style.safetensors"];
+const LORA = { input: { required: { model: ["MODEL"], lora_name: [NAMES, {}], strength_model: ["FLOAT", { default: 1, min: -100, max: 100, step: 0.01 }] } }, output: ["MODEL"], output_node: false };
+const saved = { recipe: host.recipe, loras: host.loras, objectInfo: host.objectInfo, connected: host.connected, server: host.server, fetch: window.fetch, pane: localStorage.getItem("ipc.pane"), shown: Object.entries(ed.panes).find(([, p]) => !p.hidden) };
+const rgba = (s) => { const m = /rgba?\\(([^)]+)\\)/.exec(s || ""); if (!m) return [0, 0, 0, 0]; const v = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return [v[0], v[1], v[2], v.length > 3 ? v[3] : 1]; };
+/** the colour behind an element: its own background and its ancestors', composited from the first opaque one up */
+const behind = (el) => {
+    const stack = [];
+    for (let e = el; e; e = e.parentElement) { const c = rgba(getComputedStyle(e).backgroundColor); if (c[3] > 0) { stack.push(c); if (c[3] >= 0.99) break; } }
+    let out = [255, 255, 255];
+    for (const c of stack.reverse()) out = out.map((v, i) => v * (1 - c[3]) + c[i] * c[3]);
+    return out;
+};
+const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+const contrast = (el) => { const fg = rgba(getComputedStyle(el).color), bg = behind(el); const col = fg.slice(0, 3).map((v, i) => v * fg[3] + bg[i] * (1 - fg[3])); const a = lum(col), b = lum(bg); return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100; };
+const box = (el) => el.getBoundingClientRect();
+const out = {};
+try {
+    host.objectInfo = { ...(host.objectInfo || {}), ...Object.fromEntries(klein3.needs.map((n) => [n, { input: { required: {} } }])), LoraLoaderModelOnly: LORA };
+    host.connected = true;
+    host.server = { ...host.server, state: "connected" };
+    const orig = window.fetch;
+    window.fetch = async (url, init) => String(url).includes("/object_info/LoraLoaderModelOnly")
+        ? new Response(JSON.stringify({ LoraLoaderModelOnly: LORA }), { status: 200, headers: { "Content-Type": "application/json" } }) : orig.call(window, url, init);
+    host.loras = { flux3_klein_local: [{ name: NAMES[0], strength: 0.8, on: true }, { name: "klein\\\\gone.safetensors", strength: 1, on: true }, { name: NAMES[1], strength: 0.5, on: false }] };
+    host.setRecipe(klein3);
+    ed.showPane("gen");
+    const p = ed._loraPanel;
+    if (!p || p.section.hidden) throw new Error("no LoRAs section under flux3_klein_local");
+    p.section.open = true;
+    for (const skin of ["", "skin_90s", "skin_duck", "skin_comfy", "skin_blackforest"]) {
+        await skins.applySkin(skin);
+        if ((root.dataset.skin || "") !== skin) throw new Error((skin || "the default look") + " is not in use");
+        panel.renderAll(host);
+        p.section.scrollIntoView({ block: "start" });
+        await wait(80);
+        const name = skin || "default";
+        const pane = box(ed.panes.gen);
+        const rows = Array.from(p.list.querySelectorAll(".ipc-lora-row"));
+        if (rows.length !== 3) throw new Error(name + ": " + rows.length + " rows");
+        for (const [i, r] of rows.entries()) {
+            const b = box(r);
+            if (!(b.height > 10) || b.right > pane.right + 1 || r.scrollWidth > r.clientWidth + 1) throw new Error(name + ": row " + i + " does not fit (" + JSON.stringify({ h: b.height, right: b.right, pane: pane.right, sw: r.scrollWidth, cw: r.clientWidth }) + ")");
+            for (const sel of [".ipc-lora-on", ".ipc-lora-name", ".ipc-lora-strength", ".ipc-lora-del"]) {
+                const e = r.querySelector(sel), eb = e && box(e);
+                if (!eb || !(eb.width > 8) || !(eb.height > 8) || eb.right > b.right + 1) throw new Error(name + ": " + sel + " of row " + i + " is " + JSON.stringify(eb && { w: eb.width, h: eb.height }));
+            }
+        }
+        const c = {
+            name: contrast(rows[0].querySelector(".ipc-lora-stem")), strength: contrast(rows[0].querySelector(".ipc-lora-strength")),
+            del: contrast(rows[0].querySelector(".ipc-lora-del")), missing: contrast(rows[1].querySelector(".ipc-lora-miss")),
+            add: contrast(p.add), summary: contrast(p.summary),
+        };
+        panel.openPicker(host, ed, 0);
+        await wait(120);
+        const st = panel.openPickerState();
+        if (!st) throw new Error(name + ": the picker did not open");
+        const pb = box(st.el), rb = box(ed.root);
+        if (!(pb.width > 200) || !(pb.height > 120) || pb.left < rb.left - 1 || pb.right > rb.right + 1 || pb.top < rb.top - 1 || pb.bottom > rb.bottom + 1) throw new Error(name + ": the picker is at " + JSON.stringify({ l: pb.left, r: pb.right, t: pb.top, b: pb.bottom, w: pb.width, h: pb.height }));
+        if (rgba(getComputedStyle(st.el).backgroundColor)[3] < 0.99) throw new Error(name + ": the picker is see-through: " + getComputedStyle(st.el).backgroundColor);
+        const items = st.rows();
+        if (items.length !== NAMES.length) throw new Error(name + ": the picker lists " + items.length);
+        const cur = items.find((it) => it.el.classList.contains("ipc-lp-cur")), other = items.find((it) => !it.el.classList.contains("ipc-lp-cur"));
+        c.pickerRow = contrast(other.el.querySelector(".ipc-lp-stem"));
+        c.pickerCursor = contrast(cur.el.querySelector(".ipc-lp-stem"));
+        c.search = contrast(st.search);
+        c.group = contrast(st.el.querySelector(".ipc-lp-folder"));
+        if (behind(cur.el).join() === behind(other.el).join()) throw new Error(name + ": the picker's cursor row looks like the others");
+        panel.closePicker();
+        const low = Object.entries(c).filter(([k, v]) => v < (k === "group" || k === "summary" ? 2.5 : 3));
+        if (low.length) throw new Error(name + ": too little contrast: " + JSON.stringify(c));
+        out[name] = c;
+    }
+} finally {
+    panel.closePicker();
+    window.fetch = saved.fetch;
+    host.objectInfo = saved.objectInfo; host.connected = saved.connected; host.server = saved.server; host.loras = saved.loras;
+    if (saved.recipe) host.setRecipe(saved.recipe);
+    if (ed._loraPanel) ed._loraPanel.section.open = false;
+    if (saved.shown) ed.showPane(saved.shown[0]);
+    try { if (saved.pane == null) localStorage.removeItem("ipc.pane"); else localStorage.setItem("ipc.pane", saved.pane); } catch (_) { /* ignore */ }
+    if (made) await run("close_document", { doc: made.id, force: true });
+    await toDefault();
+}
+return out;
+"""
+
 ORDER = [
     "default_look_declares_nothing",
     "skins_are_listed_not_loaded",
@@ -438,6 +539,7 @@ ORDER = [
     "the_hostile_skin_cannot_touch_the_protected",
     "a_skin_that_escapes_is_switched_off",
     "a_skin_that_hides_the_question_later_is_switched_off",
+    "the_loras_section_reads_in_every_skin",
 ]
 
 

@@ -3316,8 +3316,22 @@ if (helpButton) helpButton.addEventListener("click", () => toggleHelp());
 // the ComfyUI of Settings › ComfyUI, or on its start page when there is none to show
 const comfyButton = $("shell-comfy");
 if (comfyButton) comfyButton.addEventListener("click", () => window.scumble.comfyView.open().catch((err) => console.warn("comfyui window:", err.message)));
+/**
+ * A recipe saved from the ComfyUI window under a new id takes the LoRA rows of the recipe it was saved from (item 50,
+ * docs/PLAN_LORAS.md §3.2; main's comfyview:saved names it `from`); Save to recipe keeps the id, so nothing moves, and
+ * a graph saved from no recipe starts with none. Whether rows were copied; exported for the `loras` gate.
+ */
+export async function copySavedLoras({ id, from } = {}) {
+    if (!id || !from || from === id) return false;
+    const rows = host.loraRows(from);
+    if (!rows.length) return false;
+    await host.saveLoras(id, rows.map((r) => ({ ...r })));
+    return true;
+}
+
 // a graph saved from the ComfyUI window (item 35 V3): the recipes again, and the saved one selected
-window.scumble.comfyView.onSaved(async ({ id, message }) => {
+window.scumble.comfyView.onSaved(async ({ id, message, from }) => {
+    try { await copySavedLoras({ id, from }); } catch (err) { console.warn("loras of the saved recipe", err); }
     await loadRecipes();
     if (ui.settings.open) renderRecipeList();
     selectRecipe(id);

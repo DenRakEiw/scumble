@@ -1032,7 +1032,8 @@ async function saveComfyGraph({ output, workflow, objectInfo, heldId, name }) {
         // what was read from an untitled graph (a Comfy template as it is), so a wrong guess shows before a run
         const read = /^Read from the graph: /.test(v.note || "") ? " " + v.note : "";
         const msg = `Saved the graph as the Comfy Cloud recipe "${made.name}": it runs on your Comfy Cloud key.${read}`;
-        send("comfyview:saved", { id: made.id, message: msg });
+        // `from`: the recipe the window held, so the shell gives a new id that recipe's LoRA rows (docs/PLAN_LORAS.md §3.2)
+        send("comfyview:saved", { id: made.id, message: msg, from: base ? base.id : null });
         return { recipe: { id: made.id, name: made.name || made.id, cloud: true, prompt: v.options.graph, workflow: v.options.workflow || null }, message: msg };
     }
     if (!name && base && base.kind === "provider") throw new Error(`"${base.name || base.id}" is a Comfy Cloud recipe, and this graph holds the Inpaint Canvas node: save it as a new recipe instead.`);
@@ -1044,7 +1045,7 @@ async function saveComfyGraph({ output, workflow, objectInfo, heldId, name }) {
     const message = `Saved the graph as the recipe "${recipe.name}"`
         + (shadows ? ": your copy stands in for the shipped recipe, and removing it under Settings › Recipes brings the shipped one back" : "")
         + (missing.length ? `. Nodes the server does not list: ${missing.join(", ")}` : "") + ".";
-    send("comfyview:saved", { id: recipe.id, message });
+    send("comfyview:saved", { id: recipe.id, message, from: base ? base.id : null });
     return { recipe: { id: recipe.id, name: recipe.name || recipe.id, prompt: recipes.toPrompt(recipe), workflow: recipe.workflow || null }, message };
 }
 

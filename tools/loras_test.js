@@ -10,8 +10,9 @@
 // refused); the declarations through normalize (both branches; a Cloud recipe's two routes checked by themselves); the
 // fixtures (a checkpoint loader with its CLIP, flattened ids, a taken id, a Nunchaku loader, a declared source that
 // reads a MODEL); missingLoras (separators, an empty list refuses nothing); comboOf on both combo forms; loraStem and
-// loraWords (LR1: how the status note, the via line and the log name the LoRAs a run loaded). tools/loras_test.py (the
-// gate `loras`) runs this file first, then the queue path in the app.
+// loraWords (LR1: how the status note, the via line and the log name the LoRAs a run loaded); loraFolder, groupByFolder,
+// filterNames, strengthRange and clampStrength (LR2: the LoRAs section's picker and strength). tools/loras_test.py (the
+// gate `loras`) runs this file first, then the queue path and the section in the app.
 "use strict";
 
 const fs = require("node:fs");
@@ -415,6 +416,29 @@ async function main() {
         const words = L.loraWords([{ name: "Flux_3\\Flux3_Targa.safetensors", strength: 0.8 }, { name: "klein/nyc_style.safetensors", strength: 1 }, { name: "x.safetensors", strength: 0.855 }, { name: "y.safetensors", strength: -2 }]);
         check("loraWords: the stems with their strengths, one decimal at least, two at most", words === "Flux3_Targa 0.8, nyc_style 1.0, x 0.86, y -2.0", words);
         check("loraWords of none, of no list: \"\"", L.loraWords([]) === "" && L.loraWords(null) === "");
+    });
+
+    await section("9. the LoRAs section's helpers (LR2: the picker's groups and search, the strength's range)", () => {
+        const names = ["Flux_3\\Flux3_Targa.safetensors", "klein\\nyc_style.safetensors", "Klein/sub_b.safetensors", "qwen\\NYC_Qwen.safetensors",
+            "root_style.safetensors", "a\\b\\deep.safetensors", "flux\\x10.safetensors", "flux\\x9.safetensors", "", 7, null];
+        check("loraFolder: the part before the last separator, the server's own spelling; \"\" at the root",
+            L.loraFolder("klein\\nyc_style.safetensors") === "klein" && L.loraFolder("a\\b\\deep.safetensors") === "a\\b" && L.loraFolder("x/y.safetensors") === "x" && L.loraFolder("root.safetensors") === "" && L.loraFolder(null) === "");
+        const groups = L.groupByFolder(names);
+        const shape = groups.map((g) => [g.folder, g.names.length]);
+        check("groupByFolder: the folders by name (any case, \\ and / one folder, spelled as the first name spells it), the root last, junk left out",
+            eq(shape, [["a\\b", 1], ["flux", 2], ["Flux_3", 1], ["klein", 2], ["qwen", 1], ["", 1]]), short(shape));
+        check("... each group keeps the list's own order", eq(groups.find((g) => g.folder === "flux").names, ["flux\\x10.safetensors", "flux\\x9.safetensors"]) && eq(groups.find((g) => g.folder === "klein").names, ["klein\\nyc_style.safetensors", "Klein/sub_b.safetensors"]));
+        check("groupByFolder of nothing: []", eq(L.groupByFolder([]), []) && eq(L.groupByFolder(null), []));
+        const f = (q) => L.filterNames(names, q);
+        check("filterNames: a substring in any case, over the folder too", eq(f("nyc"), ["klein\\nyc_style.safetensors", "qwen\\NYC_Qwen.safetensors"]) && eq(f("TARGA"), ["Flux_3\\Flux3_Targa.safetensors"]) && eq(f("qwen\\"), ["qwen\\NYC_Qwen.safetensors"]), short(f("nyc")));
+        check("... \"/\" and \"\\\" alike, every word of the query", eq(f("klein/nyc"), ["klein\\nyc_style.safetensors"]) && eq(f("klein\\sub"), ["Klein/sub_b.safetensors"]) && eq(f("nyc qwen"), ["qwen\\NYC_Qwen.safetensors"]) && eq(f("nyc zz"), []));
+        check("... an empty query keeps every name (junk left out), in order", eq(f(""), names.slice(0, 8)) && eq(f("   "), names.slice(0, 8)) && eq(L.filterNames(null, "x"), []));
+        const spec = (min, max) => ({ LoraLoaderModelOnly: { input: { required: { strength_model: ["FLOAT", { default: 1, min, max, step: 0.01 }] } } } });
+        check("strengthRange: the node list's own, else ComfyUI's -100 .. 100", eq(L.strengthRange(spec(-10, 5)), { min: -10, max: 5 }) && eq(L.strengthRange(null), { min: -100, max: 100 }) && eq(L.strengthRange({ LoraLoaderModelOnly: { input: { required: {} } } }), { min: -100, max: 100 }) && eq(L.strengthRange(spec(3, -3)), { min: -100, max: 100 }));
+        const c = (v, info) => L.clampStrength(v, info);
+        check("clampStrength: typed text to a number in the range, 1/1000 at most; no number is null",
+            c("0.85") === 0.85 && c("1,5") === 1.5 && c(" -3.5 ") === -3.5 && c("250") === 100 && c(-250) === -100 && c("9", spec(-10, 5)) === 5 && c("0.12345") === 0.123
+            && c("") === null && c("abc") === null && c(null) === null && c(true) === null && c(NaN) === null && c(Infinity) === null, String([c("250"), c("9", spec(-10, 5)), c("0.12345")]));
     });
 
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
