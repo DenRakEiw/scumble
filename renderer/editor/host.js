@@ -3911,14 +3911,24 @@ export const host = {
      * The engine behind the Key screen, one object so a gate can replace it whole (tools/key_test.py). The key process
      * (I3: electron/main/onnx/keyer.js and key_process.js behind helpers:keyPrepare / keyRun / keyFree) fills these in;
      * until then every call answers that the engine is not part of this build.
-     *   status()        -> { installed, offered, present, provider, gpu, cpuSeconds, error, workingSizes } (sync, cached)
+     *   status()        -> { installed, offered, present, provider, gpu, cpuSeconds, error, workingSizes, buckets, gb,
+     *                       host } (sync, cached; buckets: the set's own at every size it holds, gb / host: the set's
+     *                       size and download host for the first-run block)
      *   prepare(req)    req { key, image: Uint8Array RGBA at the bucket (padded, keying.padRect), bucket: { w, h },
      *                       content: [0, 0, cw, ch] } -> { provider, ms, cached }
      *   run(req)        req { key, hint: Uint8Array at the bucket | null, quality (-1 with no hint), despill (0..1),
      *                       screen: "green" | "blue", ticket } -> { alpha: Float32Array | Uint16Array at the bucket,
-     *                       fg: Uint8Array RGB (sRGB, despilled) at the bucket, ms, provider, ticket }
+     *                       fg: Uint8Array RGB (sRGB, despilled) at the bucket, ms, provider, ticket }; rejects with a
+     *                       message holding keying.FEATURES_GONE when it no longer holds `key`'s features (the idle
+     *                       timer, freeHelpers before a local ComfyUI run, a restarted process): the caller prepares
+     *                       again from the picture it kept and runs once more
+     *   holds(key)      -> whether the features of `key` are still held (Re-key from its record reads nothing then)
+     *   cancel()        a Cancel of the run going (the title row, key_screen's timeout): stop it; the window has let
+     *                   the document go already and ignores the late answer
      *   free()          the process and its features gone (freeHelpers kills it before a local ComfyUI run)
-     *   closed()        the dialog closed: the idle timer starts (60 s, §4.9)
+     *   closed()        the dialog closed: the idle timer starts (60 s, §4.9); only the dialog's own close calls it,
+     *                   never its restart (Refit, another source)
+     *   download()      optional (I2): the first-run block's Download (the pre-download terms dialog, then the set)
      */
     keyEngine: {
         status() {
@@ -3928,6 +3938,8 @@ export const host = {
         },
         prepare(req) { return keyHelper("keyPrepare", req); },
         run(req) { return keyHelper("keyRun", req); },
+        holds(key) { return keyHelper("keyHolds", { key }).then((r) => !!r, () => false); },
+        cancel() { return keyHelper("keyCancel", {}).catch(() => { /* nothing running */ }); },
         free() { const h = window.scumble && window.scumble.helpers; return h && typeof h.keyFree === "function" ? h.keyFree() : Promise.resolve(); },
         closed() { /* I3: the idle timer */ },
     },
@@ -3936,7 +3948,7 @@ export const host = {
     keySupport() {
         let s;
         try { s = this.keyEngine.status(); } catch (err) { s = { installed: true, offered: true, present: true, error: String((err && err.message) || err) }; }
-        return { ...keying.engineSupport(s), workingSizes: (s && s.workingSizes) || null, buckets: (s && s.buckets) || null };
+        return { ...keying.engineSupport(s), workingSizes: (s && s.workingSizes) || null, buckets: (s && s.buckets) || null, gb: (s && s.gb) || null, host: (s && s.host) || "" };
     },
 
     /** settings.key, read once from the stored settings (the dialog and key_screen call it first). */
@@ -3980,7 +3992,7 @@ export const host = {
      * the document loading, no picture, a source layer that has no pixels of its own, Re-key without a key layer.
      * -> { text, kind } or null
      */
-    keyCheck(editor, { source = "picture", layer = null, rekey = false } = {}) {
+    keyCheck(editor, { source = "picture", layer = null, rekey = false, hint = "selection" } = {}) {
         const T = keying.TEXTS, L = keying.LABEL;
         const say = (text, kind) => ({ text, kind });
         const sup = this.keySupport();
@@ -3996,6 +4008,8 @@ export const host = {
             const why = this.keySourceRefusal(editor, layer);
             if (why) return say(why, "info");
         }
+        // a first key with the source layer's own mask as the hint (key_screen hint "mask")
+        if (!rekey && hint === "mask" && (source === "picture" || !layer || !layer.maskPx)) return say(T.maskHint, "info");
         if (editor.pending) return say(`${L}: apply or cancel the transform first (Enter / Escape).`, "info");
         return null;
     },
@@ -4015,25 +4029,68 @@ export const host = {
     /**
      * The box and the bucket (keying.boxPlan, §4.7 points 1-2): the selection's bounds grown (hint "selection" with a
      * selection), a source layer's own rect, the whole picture; Re-key: the key's record (`key.box`) while this
-     * session holds it, else the key layer's bounds grown as a selection's are (`fromBounds`).
+     * session holds it, else the key layer's bounds grown as a selection's are (`fromBounds`). A Re-key's `from` names
+     * the picture it reads (keyRekeyRead), for the box line.
      */
     keyPlan(editor, { source = "picture", layer = null, hint = "selection", rekey = false } = {}) {
         const W = editor.width, H = editor.height;
         const sup = this.keySupport();
         const opts = { workingSize: this.keyWorkingSize(), buckets: sup.buckets || null };
         if (rekey && layer) {
-            const rec = layer.key;
-            if (rec && Array.isArray(rec.box)) {
-                const p = keying.boxPlan(W, H, null, { ...opts, within: rec.box });
-                return { ...p, rekey: true, fromBounds: false, whole: false };
+            const r = this.keyRekeyRead(editor, layer);
+            const from = r.layer ? `${r.layer.name}${r.layer.visible ? "" : " (hidden)"}` : "the picture under the key";
+            const box = this.keyRecordBox(editor, layer);
+            if (box) {
+                const p = keying.boxPlan(W, H, null, { ...opts, within: box });
+                return { ...p, rekey: true, fromBounds: false, whole: false, layerBox: false, from };
             }
             const p = keying.boxPlan(W, H, [layer.x, layer.y, layer.x + layer.w, layer.y + layer.h], opts);
-            return { ...p, rekey: true, fromBounds: true, whole: false };
+            return { ...p, rekey: true, fromBounds: true, whole: false, layerBox: false, from };
         }
         const sel = hint === "selection" && editor.getBounds ? editor.getBounds() : null;
         const within = source !== "picture" && layer && !sel ? [layer.x, layer.y, layer.x + layer.w, layer.y + layer.h] : null;
         const p = keying.boxPlan(W, H, sel, { ...opts, within });
-        return { ...p, rekey: false, fromBounds: false, whole: !sel };
+        return { ...p, rekey: false, fromBounds: false, whole: !sel && !within, layerBox: !sel && !!within };
+    },
+
+    /**
+     * The box of a key layer's session record, while it still describes this picture: none after a restart (the record
+     * is not stored), after a turn, crop, extend, resize or straighten (keyWatchGeometry drops it) or at another size.
+     */
+    keyRecordBox(editor, layer) {
+        const rec = layer && layer.key;
+        if (!rec || !Array.isArray(rec.box)) return null;
+        if (Array.isArray(rec.size) && (rec.size[0] !== editor.width || rec.size[1] !== editor.height)) return null;
+        return rec.box;
+    },
+
+    /**
+     * What a Re-key reads (§4.5 "The source pixels"): the key's source layer while the record names one (a key of a layer
+     * hid it in the same step, so the visible picture holds no subject), the picture under the key for a key of the
+     * picture (or a source layer that went); after a restart (no record) the hidden pixel layer directly below the key
+     * when there is one, else the picture under the key. -> { source: "picture" | layer id, layer | null }
+     */
+    keyRekeyRead(editor, layer) {
+        const rec = layer && layer.key;
+        const pixels = (l) => !!l && l !== layer && l.kind !== "filter" && l.kind !== "text" && !!l.px && !!l.w && !!l.h
+            && !(editor.isReference && editor.isReference(l)) && !(editor.isControl && editor.isControl(l));
+        if (rec) {
+            const l = rec.source && rec.source !== "picture" ? editor.layers.find((x) => x.id === rec.source) : null;
+            return pixels(l) ? { source: l.id, layer: l } : { source: "picture", layer: null };
+        }
+        const i = editor.layers.indexOf(layer);
+        const below = i > 0 ? editor.layers[i - 1] : null;
+        return pixels(below) && !below.visible ? { source: below.id, layer: below } : { source: "picture", layer: null };
+    },
+
+    /** Records stop describing the picture once its geometry changes (the "geometry" event): Re-key reads it again. */
+    keyWatchGeometry() {
+        if (this._keyGeoOff) return;
+        this._keyGeoOff = this.on("geometry", (e) => {
+            const ed = e && e.editor;
+            if (!ed || !Array.isArray(ed.layers)) return;
+            for (const l of ed.layers) if (l.key) l.key = { ...l.key, box: null, hash: null };
+        });
     },
 
     /** The index the picture under a key layer is read up to (Re-key): the key's grey layer or the key, the lower. */
@@ -4092,25 +4149,86 @@ export const host = {
     },
 
     /**
-     * The picture the engine keys, at the bucket (§4.5 "The source pixels"): the visible picture inside the box (filters
-     * skipped, as a run reads it; Re-key: only the layers under the key, `upTo`), or a layer's own pixels; padded
-     * reflect-101 where the picture's edge leaves it short; prepared in the engine under the features' key
-     * `<doc>:<hash of the bytes>:<w>x<h>` (the hash, not compositeVersion: a mask stroke on the key layer keeps it).
-     * -> { key, image, hash, provider, ms, cached, source }
+     * The picture the engine keys, at the bucket (§4.5 "The source pixels"), read but not sent: the visible picture inside
+     * the box (filters skipped, as a run reads it), or a layer's own pixels (hidden or not) on the screen's colour where
+     * it is transparent; Re-key reads what keyRekeyRead names (the source layer, or only the layers under the key,
+     * `upTo`). A layer's screen on Auto is told from its own opaque pixels (the ring weighted by its alpha), before the
+     * fill is chosen; `weight` (its alpha at the bucket) keeps the fill out of the later guess too. Padded reflect-101
+     * where the picture's edge leaves it short.
+     * -> { image, hash, source: "picture" | layer id, weight | null, keyedScreen | null }
      */
-    async keyPrepare(editor, plan, { source = "picture", layer = null, rekey = false, screen = "auto" } = {}) {
+    async keyRead(editor, plan, { source = "picture", layer = null, rekey = false, screen = "auto" } = {}) {
         const { bucket } = plan;
         const [, , cw, ch] = plan.content;
-        let rgba;
-        if (rekey) rgba = (await this.pictureInputBox(editor, plan.box, cw, ch, { skipFilters: true, upTo: this.keyUpTo(editor, layer) })).image;
-        else if (source === "picture") rgba = (await this.pictureInputBox(editor, plan.box, cw, ch, { skipFilters: true })).image;
-        else rgba = await this.keyLayerInput(editor, layer, plan.box, cw, ch, { bg: screen === "blue" ? "#0047bb" : "#00b140" });
-        const image = keying.padRect(rgba, cw, ch, bucket.w, bucket.h, 4);
+        let src = source === "picture" ? "picture" : layer ? layer.id : "picture";
+        let from = source === "picture" ? null : layer;
+        let keyedScreen = null;
+        if (rekey && layer) {
+            const r = this.keyRekeyRead(editor, layer);
+            src = r.source; from = r.layer;
+            const rs = layer.key && layer.key.screen;
+            if (rs === "green" || rs === "blue") keyedScreen = rs;
+            if (screen !== "green" && screen !== "blue" && keyedScreen) screen = keyedScreen;
+        }
+        let image, weight = null;
+        if (!from) {
+            const opts = rekey && layer ? { skipFilters: true, upTo: this.keyUpTo(editor, layer) } : { skipFilters: true };
+            const rgba = (await this.pictureInputBox(editor, plan.box, cw, ch, opts)).image;
+            image = keying.padRect(rgba, cw, ch, bucket.w, bucket.h, 4);
+        } else {
+            const raw = await this.keyLayerInput(editor, from, plan.box, cw, ch);
+            const n = cw * ch, a = keying.alphaPlane(raw, n);
+            let fill = screen === "green" || screen === "blue" ? screen : keying.screenFromRing(raw, cw, ch, [0, 0, cw, ch], null, a).screen;
+            if (!fill) fill = "green";
+            image = keying.padRect(keying.overColour(raw, n, keying.SCREEN_FILL[fill]), cw, ch, bucket.w, bucket.h, 4);
+            weight = keying.padRect(a, cw, ch, bucket.w, bucket.h, 1);
+        }
         const hash = await this.inputHash(image);
-        const key = `${editor.node.id}:${hash}:${bucket.w}x${bucket.h}`;
+        return { image, hash, source: src, weight, keyedScreen };
+    },
+
+    /**
+     * The picture prepared in the engine under the features' key `<doc>:<hash of the bytes>:<w>x<h>` (the hash, not
+     * compositeVersion: a mask stroke on the key layer keeps it). A Re-key from its record asks the engine first whether it
+     * still holds the features under the record's hash and reads nothing then (§4.5); `read: true` reads in any case.
+     * -> { key, image | null, hash, provider, ms, cached, held, source, weight, keyedScreen }
+     */
+    async keyPrepare(editor, plan, o = {}) {
+        const { bucket } = plan;
+        const rec = o.rekey && o.layer ? o.layer.key : null;
+        if (rec && rec.hash && !o.read && !plan.fromBounds && rec.bucket && rec.bucket.w === bucket.w && rec.bucket.h === bucket.h && typeof this.keyEngine.holds === "function") {
+            const key = `${editor.node.id}:${rec.hash}:${bucket.w}x${bucket.h}`;
+            let held = false;
+            try { held = !!(await this.keyEngine.holds(key)); } catch (_) { held = false; }
+            if (held) {
+                editor.helperUsed = true;
+                const rs = rec.screen === "green" || rec.screen === "blue" ? rec.screen : null;
+                return { key, image: null, hash: rec.hash, provider: rec.provider || null, ms: 0, cached: true, held: true, source: rec.source || "picture", weight: null, keyedScreen: rs };
+            }
+        }
+        return this.keyPrepareRead(editor, plan, await this.keyRead(editor, plan, o));
+    },
+
+    /** A read picture (keyRead) prepared in the engine. */
+    async keyPrepareRead(editor, plan, r) {
+        const { bucket } = plan;
+        const key = `${editor.node.id}:${r.hash}:${bucket.w}x${bucket.h}`;
         editor.helperUsed = true;
-        const res = (await this.keyEngine.prepare({ key, image, bucket: { w: bucket.w, h: bucket.h }, content: plan.content.slice() })) || {};
-        return { key, image, hash, provider: res.provider || null, ms: res.ms || 0, cached: !!res.cached, source: rekey ? "rekey" : source === "picture" ? "picture" : layer.id };
+        const res = (await this.keyEngine.prepare({ key, image: r.image, bucket: { w: bucket.w, h: bucket.h }, content: plan.content.slice() })) || {};
+        return { key, image: r.image, hash: r.hash, provider: res.provider || null, ms: res.ms || 0, cached: !!res.cached, held: false, source: r.source, weight: r.weight, keyedScreen: r.keyedScreen || null };
+    },
+
+    /**
+     * After the engine said it no longer holds `prep`'s features (keying.isFeaturesGone): the kept picture sent again under
+     * the same key, or (a Re-key that read nothing) read and prepared now. -> the prep to run with
+     */
+    async keyReprepare(editor, plan, prep, o = {}) {
+        if (prep && prep.image) {
+            editor.helperUsed = true;
+            await this.keyEngine.prepare({ key: prep.key, image: prep.image, bucket: { w: plan.bucket.w, h: plan.bucket.h }, content: plan.content.slice() });
+            return prep;
+        }
+        return this.keyPrepare(editor, plan, { ...o, read: true });
     },
 
     /**
@@ -4129,7 +4247,10 @@ export const host = {
             plane = keying.alphaPlane(rgba, cw * ch);
             sig = `mask:${layer.id}:${layer.maskPx.version || 0}`;
         } else {
-            if (!editor.getBounds()) return { hint: null, quality: -1, sig: `sel:${editor.selectionSeq}:empty` };
+            // mid-stroke the bounds are stale (selectionDab writes the levels, the bounds follow at pointer-up): the
+            // shortcut only outside a selection-brush stroke, planeAny decides emptiness either way
+            const stroking = !!(editor.pointer && editor.pointer.kind === "selpaint");
+            if (!stroking && !editor.getBounds()) return { hint: null, quality: -1, sig: `sel:${editor.selectionSeq}:empty` };
             const box = plan.box;
             const s = cw / (box[2] - box[0]);
             let m = await editor.selectionCanvasSettled(box, s, cw, ch);
@@ -4148,20 +4269,36 @@ export const host = {
             sig = `sel:${editor.selectionSeq}`;
         }
         if (!keying.planeAny(plane)) return { hint: null, quality: -1, sig: sig + ":empty" };
-        return { hint: keying.padRect(plane, cw, ch, bucket.w, bucket.h, 1), quality: hint === "mask" ? 0.95 : keying.trustOf(trust).value, sig };
+        // the trust a mask hint goes with: 0.95 for a Re-key (its callers pass it), as given for a first key's layer mask
+        return { hint: keying.padRect(plane, cw, ch, bucket.w, bucket.h, 1), quality: keying.trustOf(trust).value, sig };
     },
 
-    /** The screen to send: the one asked, or Auto's guess from the box's border ring (null: the dialog asks). */
+    /**
+     * The screen to send: the one asked, or Auto's guess from the box's border ring (a layer source's ring weighted by
+     * its own alpha; a Re-key that read nothing: the screen it was keyed on). Null: the dialog asks.
+     */
     keyScreenColour(plan, prep, hint, screen) {
         if (screen === "green" || screen === "blue") return screen;
-        return keying.screenFromRing(prep.image, plan.bucket.w, plan.bucket.h, plan.content, hint).screen;
+        if (prep.keyedScreen) return prep.keyedScreen;
+        if (!prep.image) return null;
+        return keying.screenFromRing(prep.image, plan.bucket.w, plan.bucket.h, plan.content, hint, prep.weight || null).screen;
     },
 
-    /** One engine run (no coalescing: the dialog's KeyQueue sits in front of it for the live loop). */
-    async keyRunOnce(prep, h, { despill = 0.5, screen = "green", ticket = 0 } = {}) {
-        const res = await this.keyEngine.run({ key: prep.key, hint: h.hint, quality: h.quality, despill, screen, ticket });
+    /**
+     * One engine run (no coalescing: the dialog's KeyQueue sits in front of it for the live loop). When the engine no
+     * longer holds the features (FEATURES_GONE) `again()` prepares once more and the run is sent once more.
+     * -> { res, prep } (prep: the one the answer is from)
+     */
+    async keyRunOnce(prep, h, { despill = 0.5, screen = "green", ticket = 0, again = null } = {}) {
+        const send = (p) => this.keyEngine.run({ key: p.key, hint: h.hint, quality: h.quality, despill, screen, ticket });
+        let res;
+        try { res = await send(prep); } catch (err) {
+            if (!again || !keying.isFeaturesGone(err)) throw err;
+            prep = await again();
+            res = await send(prep);
+        }
         if (!res || !res.alpha || !res.fg) throw new Error("the keyer answered no matte");
-        return res;
+        return { res, prep };
     },
 
     /**
@@ -4184,47 +4321,95 @@ export const host = {
             screen: v.screen, trust: v.trust, despill: v.despill, grey: v.greyUnderBase, ...opts,
         };
         if (o.rekey) { o.hint = "mask"; o.trust = 0.95; }
+        else if (o.hint === "mask" && opts.trust == null) o.trust = 0.95;
         const refused = this.keyCheck(editor, o);
         if (refused) throw say(refused.text, refused.kind);
         const token = { provider: "key", label: L, started: Date.now(), editor };
+        // A Cancel (the title row's, key_screen's timeout, a closed tab: cancelRuns sets `cancelled`) lets the document
+        // go at once: the title row, providerPending and the app's one key; the engine is told (keyEngine.cancel) and its
+        // late answer is ignored (every engine await below races the cancel)
+        let cancelFlag = false, cancelReject = null, released = false;
+        const cancelP = new Promise((_, rej) => { cancelReject = rej; });
+        cancelP.catch(() => { /* raced below */ });
+        const cancelErr = () => Object.assign(new Error(T.cancelled), { hint: T.cancelled, kind: "cancelled", statusKind: "info" });
+        let offRemoved = () => {};
+        const release = () => {
+            if (released) return;
+            released = true;
+            offRemoved();
+            if (this._keyBusy === editor) this._keyBusy = null;
+            this.endRun(editor, token);
+        };
+        Object.defineProperty(token, "cancelled", {
+            configurable: true, enumerable: true,
+            get: () => cancelFlag,
+            set: (v) => {
+                if (!v || cancelFlag) return;
+                cancelFlag = true;
+                release();
+                try { if (typeof this.keyEngine.cancel === "function") Promise.resolve(this.keyEngine.cancel()).catch(() => {}); } catch (_) { /* nothing to stop */ }
+                cancelReject(cancelErr());
+            },
+        });
+        const race = (p) => Promise.race([p, cancelP]);
         editor.providerPending = token;
         this._providerRuns.add(token);
         this._keyBusy = editor;
         this.notifyProviderRuns();
         let closed = false;
-        const offRemoved = this.on("removed", (e) => { if (e && e.editor === editor) { closed = true; token.cancelled = true; } });
+        offRemoved = this.on("removed", (e) => { if (e && e.editor === editor) { closed = true; token.cancelled = true; } });
         const gone = () => closed || !this._editors.includes(editor);
-        const stop = () => { if (token.cancelled) throw Object.assign(new Error(T.cancelled), { hint: T.cancelled, kind: "cancelled", statusKind: "info" }); };
+        const stop = () => { if (token.cancelled) throw cancelErr(); };
         const t0 = performance.now();
         const none = { layer: null, grey: null, hidden: null, box: null, matteBox: null, workingSize: 0, provider: null, seconds: 0, kept: 0, status: "" };
         try {
             const ses = o.session && o.session.editor === editor && o.session.prep && o.session.plan ? o.session : null;
             const plan = ses ? ses.plan : this.keyPlan(editor, o);
             editor.setStatus(`${L}: ${keying.boxLine(plan)} ...`);
-            const prep = ses ? ses.prep : await this.keyPrepare(editor, plan, o);
+            let prep;
+            if (ses) {
+                prep = ses.prep;
+                // the panel is not modal: an edit, an undo or a paint under it since the picture was prepared means the
+                // features are another picture's; read it again (a few ms beside a run) and prepare it when it differs
+                if (prep.image) {
+                    const r = await race(this.keyRead(editor, plan, o));
+                    if (gone()) return none;
+                    if (r.hash !== prep.hash) {
+                        prep = await race(this.keyPrepareRead(editor, plan, r));
+                        if (ses.adopt) ses.adopt(prep);
+                    }
+                }
+            } else prep = await race(this.keyPrepare(editor, plan, o));
             if (gone()) return none;
             stop();
-            const h = await this.keyHint(editor, plan, o);
+            const h = await race(this.keyHint(editor, plan, o));
             if (gone()) return none;
             stop();
             const screen = this.keyScreenColour(plan, prep, h.hint, o.screen);
             if (!screen) throw refusal(T.askScreen, "info");
-            let res = ses && ses.currentMatte ? ses.currentMatte(h.sig, screen, o.despill) : null;
-            if (!res) res = ses && ses.final ? await ses.final({ hint: h, screen, despill: o.despill }) : await this.keyRunOnce(prep, h, { despill: o.despill, screen });
+            let res = ses && ses.currentMatte ? ses.currentMatte(h.sig, screen, o.despill, h.quality) : null;
+            if (!res && ses && ses.final) {
+                res = await race(ses.final({ hint: h, screen, despill: o.despill }));
+                prep = ses.prep || prep;
+            } else if (!res) {
+                const out = await race(this.keyRunOnce(prep, h, { despill: o.despill, screen, again: () => this.keyReprepare(editor, plan, prep, o) }));
+                res = out.res; prep = out.prep;
+            }
             if (gone()) return none;
             stop();
             const matte = { alpha: keying.alphaFloats(res.alpha), fg: res.fg, bw: plan.bucket.w, bh: plan.bucket.h };
             const kept = keying.keptShare(matte.alpha, matte.bw, plan.content);
             const provider = res.provider || prep.provider || null;
             if (o.preview) {
-                const mb = await this.keyIntoSelection(editor, plan, matte, gone);
+                const mb = await this.keyIntoSelection(editor, plan, matte, () => gone() || cancelFlag);
                 if (gone()) return none;
+                stop();
                 const secs = (performance.now() - t0) / 1000;
                 const text = `${L}: the matte is the selection now (${Math.round(kept)} % of the box, ${Math.round(secs * 10) / 10} s, ${keying.ENGINE} on ${keying.providerName(provider)}); nothing was added.`;
                 editor.setStatus(text, "info");
                 return { ...none, box: plan.box.slice(), matteBox: mb, workingSize: Math.max(plan.bucket.w, plan.bucket.h), provider, seconds: secs, kept, status: text };
             }
-            const record = { box: plan.box.slice(), bucket: { ...plan.bucket }, screen, despill: o.despill, trust: h.quality, hint: o.hint, source: prep.source, provider, hash: prep.hash, greyId: null };
+            const record = { box: plan.box.slice(), size: [editor.width, editor.height], bucket: { ...plan.bucket }, screen, despill: o.despill, trust: h.quality, hint: o.hint, source: prep.source, provider, hash: prep.hash, greyId: null };
             const landed = await this.landKey(editor, { matte, plan, source: o.rekey ? null : o.source === "picture" ? null : o.layer, rekeyLayer: o.rekey ? o.layer : null, grey: !o.rekey && o.source === "picture" && !!o.grey, record, token, gone });
             if (!landed) return none;
             const secs = (performance.now() - t0) / 1000;
@@ -4237,9 +4422,7 @@ export const host = {
             const text = err && err.hint ? String(err.hint) : msg.startsWith(L) || msg.startsWith("Key") ? msg : `${L}: the keyer stopped: ${msg}`;
             throw say(text, failKind(err));
         } finally {
-            offRemoved();
-            if (this._keyBusy === editor) this._keyBusy = null;
-            this.endRun(editor, token);
+            release();
         }
     },
 
@@ -4265,6 +4448,7 @@ export const host = {
         const T = keying.TEXTS, L = keying.LABEL;
         const mbox = keying.matteBox(matte.alpha, matte.bw, matte.bh, plan.content, plan.box);
         if (!mbox) throw refusal(T.nothingKept, "warn");
+        if (record) this.keyWatchGeometry();
         const lw = mbox[2] - mbox[0], lh = mbox[3] - mbox[1];
         const map = keying.sampleMap(mbox, plan.box, plan.content);
         const rc = this.keyRowsClient();

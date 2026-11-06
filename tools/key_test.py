@@ -52,6 +52,21 @@ const greenBase = async (ed) => {
     await wait(100);
 };
 const closeDialog = () => { const d = window.__keyDialogMod.currentKeyDialog(); if (d) d.close(); };
+const runs = () => stub.calls.filter((c) => c.op === "run" && !c.gone);
+const preps = () => stub.calls.filter((c) => c.op === "prepare");
+const fill = (l, rgba, x0 = 0, y0 = 0, x1 = l.w, y1 = l.h) => {
+    const img = new ImageData(l.w, l.h);
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) img.data.set(rgba, (y * l.w + x) * 4);
+    l.px.writeRect(img, 0, 0);
+};
+// a pointer event at image (ix, iy) for the editor's own handlers (onPointerDown / Move / Up)
+const ev = (ed, ix, iy) => {
+    const r = ed.canvas.getBoundingClientRect();
+    const [cx, cy] = ed.imageToScreen(ix, iy);
+    return { clientX: r.left + (cx * r.width) / ed.canvas.width, clientY: r.top + (cy * r.height) / ed.canvas.height, button: 0, buttons: 1, pointerId: 7, pointerType: "mouse",
+        altKey: false, ctrlKey: false, shiftKey: false, metaKey: false, detail: 1, pressure: 0.5, preventDefault() {}, stopPropagation() {}, target: ed.canvas };
+};
+const waitFor = async (cond, ms = 3000) => { for (let t = 0; t < ms / 25 && !cond(); t++) await wait(25); return cond(); };
 const settle = async (ed) => { for (let t = 0; t < 50 && (ed.providerPending || host._keyBusy); t++) await wait(50); await wait(60); };
 """
 
@@ -64,15 +79,23 @@ window.__keyEngine0 = host.keyEngine;
 // the fixture engine: a synthetic matte (a soft disc in the content) from the picture it was given, or the hint as the
 // matte when one went; the foreground the picture's own RGB; every request kept
 const st = {
-    calls: [], prepared: new Map(), delay: 0, fail: "", closedCount: 0, present: true, provider: "stub", last: null,
+    calls: [], prepared: new Map(), delay: 0, fail: "", closedCount: 0, cancels: 0, present: true, provider: "stub", last: null,
     status() { return { installed: true, offered: true, present: this.present, provider: this.provider, workingSizes: [512, 1024] }; },
     async prepare(req) {
-        this.calls.push({ op: "prepare", key: req.key, bucket: req.bucket, content: req.content, px: Array.from(req.image.slice(0, 4)) });
+        // what the picture holds: its first pixel, its centre's, and how many pixels are magenta (a colour only a test paints)
+        const { w, h } = req.bucket, [, , cw, ch] = req.content, im = req.image;
+        let magenta = 0;
+        for (let i = 0; i < w * h; i++) if (im[i * 4] > 150 && im[i * 4 + 1] < 80 && im[i * 4 + 2] > 150) magenta++;
+        const ci = (Math.floor(ch / 2) * w + Math.floor(cw / 2)) * 4;
+        this.calls.push({ op: "prepare", key: req.key, bucket: req.bucket, content: req.content, px: Array.from(im.slice(0, 4)), centre: Array.from(im.slice(ci, ci + 4)), magenta });
         this.prepared.set(req.key, req);
         return { provider: this.provider, ms: 1, cached: false };
     },
+    async holds(key) { return this.prepared.has(key); },
+    async cancel() { this.cancels++; },
     async run(req) {
         const p = this.prepared.get(req.key);
+        if (!p) { this.calls.push({ op: "run", key: req.key, gone: true }); throw new Error(K2.FEATURES_GONE + ": no features under " + req.key); }
         let hintSum = 0;
         if (req.hint) for (let i = 0; i < req.hint.length; i++) hintSum += req.hint[i];
         this.calls.push({ op: "run", key: req.key, hint: !!req.hint, hintSum, quality: req.quality, despill: req.despill, screen: req.screen, ticket: req.ticket });
@@ -263,15 +286,69 @@ return { box: plan.box };
     ("rekey read", r"""
 const ed = ednow(window.__keyDoc);
 const L = ed.layers.find((l) => l.id === window.__keyLayer);
-const cv = ed.compositeVersion, vis = ed.layers.map((l) => l.visible).join();
 const plan = host.keyPlan(ed, { rekey: true, layer: L });
-ok(!plan.fromBounds && plan.box.join() === "0,0,512,512", "Re-key keys the record's box", plan.box);
+ok(!plan.fromBounds && plan.box.join() === "0,0,512,512" && plan.from === "the picture under the key", "Re-key keys the record's box and reads the picture under the key", plan);
+// the engine still holds the features under the record's hash: nothing is read (§4.5)
+const n0 = preps().length;
+const held = await host.keyPrepare(ed, plan, { rekey: true, layer: L });
+ok(held.held && held.image === null && held.hash === L.key.hash && preps().length === n0, "features held: Re-key reads nothing", { held: held.held, n: preps().length - n0 });
+// the engine dropped them: the picture under the key is read, the key layer's own pixels (magenta here) are not in it
+const keep = rect(L.px, L.w, L.h).slice();
+fill(L, [230, 20, 230, 255]); ed.markLayerChanged(L);
+stub.prepared.clear();
+const cv = ed.compositeVersion, vis = ed.layers.map((l) => l.visible).join();
 const prep = await host.keyPrepare(ed, plan, { rekey: true, layer: L });
-const c = stub.calls[stub.calls.length - 1];
-ok(c.op === "prepare" && c.px[0] < 20 && c.px[1] > 150 && c.px[2] < 100, "the engine got the picture under the grey layer (the green base), not the grey", c.px);
+const c = preps().pop();
+ok(!prep.held && c.magenta === 0 && c.centre[1] > 150 && c.centre[0] < 30, "the engine got the picture under the key (the green base), not the key's own pixels", c);
 ok(ed.compositeVersion === cv && ed.layers.map((l) => l.visible).join() === vis, "nothing hidden or shown for the read", [cv, ed.compositeVersion]);
 ok(host.keyUpTo(ed, L) === ed.layers.findIndex((l) => l.id === window.__keyGrey), "upTo is the grey layer's index");
-return { key: prep.key };
+L.px.writeRect(new ImageData(new Uint8ClampedArray(keep), L.w, L.h), 0, 0); ed.markLayerChanged(L);
+return { key: prep.key, magenta: c.magenta };
+"""),
+
+    ("rekey layer", r"""
+// a key of a layer (a subject on a blue plate, transparent margins): Auto tells the screen from the layer's own pixels;
+// the Key hides the layer, so a Re-key must read the layer, not the picture under the key (the green base)
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { doc: d.id, width: 512, height: 512 });
+await greenBase(ed);
+const src = ed.addPaintLayer();
+src.name = "Subject";
+fill(src, [10, 60, 200, 255], 64, 0, 448, 512);
+ed.markLayerChanged(src);
+const out = await host.keyScreen(ed, { source: src.id, layer: src, hint: "none", screen: "auto" });
+const p0 = preps().pop(), r0 = runs().pop();
+ok(r0.screen === "blue", "Auto on a layer: the screen from its opaque pixels, not the fill", r0);
+ok(p0.px[2] > 150 && p0.px[1] < 100, "the transparent margins are read on the blue screen's colour", p0.px);
+const K1 = out.layer;
+ok(K1 && src.visible === false && K1.key.source === src.id && K1.key.screen === "blue", "the key above the hidden source, its record names the source", K1 && K1.key);
+// Re-key with the features held: nothing read, the record's screen
+let n0 = preps().length;
+ed.activeLayerId = K1.id;
+await host.keyScreen(ed, { rekey: true, layer: K1 });
+ok(preps().length === n0 && runs().pop().screen === "blue", "Re-key, features held: nothing read, keyed on the record's screen", { n: preps().length - n0 });
+// the engine dropped them: the hidden source is read (blue at the centre), not the green base under the key
+stub.prepared.clear();
+n0 = preps().length;
+await host.keyScreen(ed, { rekey: true, layer: K1 });
+let c = preps().pop();
+ok(preps().length === n0 + 1 && c.centre[2] > 150 && c.centre[1] < 100, "Re-key reads the hidden source layer", c);
+ok(K1.key.source === src.id, "a Re-key keeps the original source in its record");
+// after a restart (no record): the hidden pixel layer directly below the key, and the box line says so
+K1.key = undefined;
+const plan = host.keyPlan(ed, { rekey: true, layer: K1 });
+ok(plan.fromBounds && plan.from === "Subject (hidden)" && /read from Subject \(hidden\)/.test(K.boxLine(plan)), "after a restart Re-key reads the hidden layer below and says so", plan);
+await host.keyScreen(ed, { rekey: true, layer: K1 });
+c = preps().pop();
+ok(c.centre[2] > 150 && c.centre[1] < 100, "after a restart: the hidden layer below is read", c);
+// another screen for a layer source is another picture
+const r2 = await host.keyRead(ed, host.keyPlan(ed, { source: src.id, layer: src, hint: "none" }), { source: src.id, layer: src, screen: "green" });
+ok(r2.image[1] > 150 && r2.image[2] < 100, "Screen Green reads the margins on green", Array.from(r2.image.slice(0, 4)));
+await run("close_document", { doc: d.id, force: true });
+host.shell.activate(ednow(window.__keyDoc));
+return { screen: r0.screen };
 """),
 
     ("rekey", r"""
@@ -297,16 +374,23 @@ return { ok: true };
     ("cancel", r"""
 const ed = ednow(window.__keyDoc);
 const n0 = ed.layers.length;
-stub.delay = 400;
+stub.delay = 600;
+const c0 = stub.cancels;
 const p = host.keyScreen(ed, { source: "picture", hint: "none", screen: "green" });
 await wait(120);
 ok(ed.providerPending && ed.providerPending.provider === "key", "the key holds the document like a run");
+const tc = performance.now();
 const cancelled = host.cancelRuns(ed);
+// the document goes free at once, not when the engine answers
+ok(!ed.providerPending && !host._keyBusy && !host.runsOf(ed).length, "a Cancel lets the document go at once", { pending: !!ed.providerPending, busy: !!host._keyBusy });
 let msg = "";
 try { await p; } catch (err) { msg = err.message; }
+const took = performance.now() - tc;
+ok(cancelled.length === 1 && msg === K.TEXTS.cancelled && took < 300, "the title row's Cancel ends it before the engine answers", { msg, took });
+ok(stub.cancels === c0 + 1, "the engine is told to stop", stub.cancels - c0);
+await wait(650);
 stub.delay = 0;
-ok(cancelled.length === 1 && msg === K.TEXTS.cancelled, "the title row's Cancel ends it", msg);
-ok(ed.layers.length === n0 && !ed.providerPending && !host._keyBusy, "nothing added, the document free");
+ok(ed.layers.length === n0 && !ed.providerPending && !host._keyBusy, "the late answer adds nothing, the document free");
 stub.fail = "the keyer process died";
 try { await host.keyScreen(ed, { source: "picture", hint: "none", screen: "green" }); msg = ""; } catch (err) { msg = err.message; }
 stub.fail = "";
@@ -449,6 +533,127 @@ ok(!d && [L1.x, L1.y, L1.w, L1.h].join() === r0.join(), "one Ctrl+Z restores pix
 return { ok: true };
 """),
 
+    ("dialog follow", r"""
+// real selection-brush dabs on an empty selection with the dialog open: the hint follows the stroke before pointer-up
+engineOn(); closeDialog(); stub.delay = 0;
+const ed = ednow(window.__keyDoc2);
+host.shell.activate(ed);
+const M = window.__keyDialogMod;
+await run("select_none", { doc: ed.node.id });
+ed.activeLayerId = null;
+const dlg = await M.openKeyDialog(ed);
+ok(await waitFor(() => dlg.session && dlg.session.matte), "the first matte (no hint)", dlg.state());
+const s = dlg.session;
+// Refit restarts the session but the dialog stays open: the engine's idle timer does not start
+const closed0 = stub.closedCount;
+dlg.els.refit.click();
+ok(await waitFor(() => dlg.session && dlg.session !== s && dlg.session.matte), "Refit: a new session with its matte");
+ok(stub.closedCount === closed0, "Refit does not tell the engine the dialog closed", stub.closedCount - closed0);
+const tool0 = ed.tool, size0 = ed.brushSize;
+ed.setTool("select");
+ed.brushSize = 60;
+const e0 = ev(ed, 700, 500);
+const back = ed.toImage(e0);
+ok(Math.abs(back[0] - 700) < 2 && Math.abs(back[1] - 500) < 2, "the test's pointer events land where they should", back);
+const mark = stub.calls.length;
+ed.onPointerDown(e0);
+ok(ed.pointer && ed.pointer.kind === "selpaint", "a selection-brush stroke", ed.pointer && ed.pointer.kind);
+for (let i = 1; i <= 8; i++) { ed.onPointerMove(ev(ed, 700 + i * 20, 500 + i * 5)); await wait(55); }
+await dlg.session.queue.idle(); await wait(30);
+const during = stub.calls.slice(mark).filter((c) => c.op === "run" && !c.gone);
+ok(during.length >= 2 && during.every((c) => c.hint && c.hintSum > 0), "every run during the stroke carries the painted hint", during.map((c) => [c.hint, c.hintSum]));
+ok(during[during.length - 1].hintSum > during[0].hintSum, "the hint grows with the stroke", during.map((c) => c.hintSum));
+ed.onPointerUp(ev(ed, 860, 540));
+await wait(80); await dlg.session.queue.idle();
+ed.setTool(tool0); ed.brushSize = size0;
+// the engine dropped the features (its idle timer, freeHelpers before a local ComfyUI run): prepared again, the run goes on
+stub.prepared.clear();
+const t0 = dlg.session.matte.ticket, rp0 = dlg.session.reprepared;
+await run("select_rect", { doc: ed.node.id, x: 650, y: 380, w: 200, h: 160 });
+ok(await waitFor(() => dlg.session.matte.ticket > t0), "a matte after the features were gone", dlg.state());
+ok(dlg.session.reprepared === rp0 + 1 && stub.prepared.has(dlg.session.prep.key), "the kept picture was prepared again", dlg.state().session);
+closeDialog();
+ok(stub.closedCount === closed0 + 1, "the dialog's own close tells the engine, once", stub.closedCount - closed0);
+await run("select_none", { doc: ed.node.id });
+return { during: during.map((c) => c.hintSum) };
+"""),
+
+    ("dialog values", r"""
+// Trust changed with Preview off: Key runs once more at the new trust (not the matte shown); Key's final run is never
+// replaced by the previews asked while it waits
+engineOn(); closeDialog(); stub.delay = 0;
+const ed = ednow(window.__keyDoc2);
+host.shell.activate(ed);
+const M = window.__keyDialogMod;
+ed.activeLayerId = null;
+await run("select_rect", { doc: ed.node.id, x: 600, y: 350, w: 300, h: 300 });
+const n0 = ed.layers.length;
+let dlg = await M.openKeyDialog(ed);
+ok(await waitFor(() => dlg.session && dlg.session.matte), "the first matte", dlg.state());
+ok(dlg.session.matte.quality === dlg.values.trust, "the matte carries its trust");
+dlg.els.preview.checked = false; dlg.els.preview.dispatchEvent(new Event("change"));
+dlg.els.trust.value = "0.95"; dlg.els.trust.dispatchEvent(new Event("change"));
+ok(!dlg.session.matte, "a value changed with Preview off drops the matte shown");
+let before = runs().length;
+let out = await dlg.apply();
+ok(out && out.layer && runs().length === before + 1 && runs().pop().quality === 0.95, "Key ran at the new trust", runs().pop());
+ok(/\(clean\)/.test(ed.status), "the status names the trust it ran at", ed.status);
+await ed.undoStep();
+ok(ed.layers.length === n0, "undone");
+await host.setKeyValues({ preview: true, trust: 0.5 });
+// the final run waits behind a preview while dabs and a selection change ask for more
+dlg = await M.openKeyDialog(ed);
+ok(await waitFor(() => dlg.session && dlg.session.matte), "the first matte again");
+stub.delay = 200;
+await run("select_rect", { doc: ed.node.id, x: 610, y: 360, w: 280, h: 280 });
+await waitFor(() => dlg.session.queue.state.flying, 1000);
+const pk = dlg.apply();
+await wait(30);
+for (let i = 0; i < 6; i++) { ed.pointer = { kind: "selpaint" }; dlg.session.lastDab = 0; host.pluginPointer(ed, "move", {}, 700, 400, null); ed.pointer = null; await wait(15); }
+await run("select_rect", { doc: ed.node.id, x: 620, y: 370, w: 260, h: 260 });
+let err = "";
+try { out = await pk; } catch (e) { err = e.message; }
+stub.delay = 0;
+ok(!err && out && out.layer && ed.layers.length === n0 + 2, "Key landed although previews were asked while it waited", { err, n: ed.layers.length - n0 });
+await ed.undoStep();
+await run("select_none", { doc: ed.node.id });
+return { ok: true };
+"""),
+
+    ("dialog geometry", r"""
+// the panel is not modal: a turn of the picture re-plans the box, an edit under it is prepared again at Key, another tab
+// closes it
+engineOn(); closeDialog(); stub.delay = 0;
+const M = window.__keyDialogMod;
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { doc: d.id, width: 768, height: 512 });
+await greenBase(ed);
+let dlg = await M.openKeyDialog(ed);
+ok(await waitFor(() => dlg.session && dlg.session.matte), "the first matte", dlg.state());
+ok(dlg.session.plan.box.join() === "0,0,768,512", "the whole picture", dlg.session.plan.box);
+await run("rotate_canvas", { doc: d.id, angle: 90 });
+ok(await waitFor(() => dlg.geometryRestarts === 1 && dlg.session && dlg.session.prep && dlg.session.plan.box.join() === "0,0,512,768"), "a turn re-plans the box and prepares again", { r: dlg.geometryRestarts, box: dlg.session && dlg.session.plan && dlg.session.plan.box });
+await waitFor(() => dlg.session.matte);
+// an edit under the open panel: Key reads the picture again and keys the new one
+const l = ed.addPaintLayer();
+fill(l, [230, 20, 230, 255], 0, 0, 200, 200); ed.markLayerChanged(l);
+await wait(100);
+const p0 = preps().length;
+const out = await dlg.apply();
+const c = preps().pop();
+ok(out && out.layer && preps().length === p0 + 1 && c.magenta > 0, "Key prepared the edited picture once more", { n: preps().length - p0, magenta: c.magenta });
+await ed.undoStep();
+// another tab in front closes the panel
+dlg = await M.openKeyDialog(ed);
+await waitFor(() => dlg.session && dlg.session.prep);
+host.shell.activate(ednow(window.__keyDoc2));
+ok(dlg.closed && M.currentKeyDialog() === null && host.keySession === null, "another tab closes the panel");
+await run("close_document", { doc: d.id, force: true });
+return { ok: true };
+"""),
+
     ("dialog states", r"""
 engineOn(); closeDialog();
 const ed = ednow(window.__keyDoc2);
@@ -464,8 +669,31 @@ stub.present = false;
 dlg = await M.openKeyDialog(ed);
 st = dlg.state();
 ok(st.keyDisabled && st.ready === K.TEXTS.notDownloaded && !dlg.els.settings.hidden && !dlg.session, "the set missing: the download sentence, Settings › Helpers, Key greyed", st);
+const terms = dlg.els.terms;
+ok(!terms.hidden && /C-RADIOv4/.test(terms.textContent) && /MoGe-2/.test(terms.textContent) && /RVM/.test(terms.textContent) && /US \$20M/.test(terms.textContent) && !dlg.els.download.hidden, "the first-run block: the parts, their licences, the seat clause, Download", terms.textContent.slice(0, 120));
+// Download hands over to the engine's download (I2's terms dialog) where there is one
+let asked = 0;
+stub.download = () => { asked++; };
+dlg.els.download.click();
+delete stub.download;
+ok(asked === 1, "Download asks keyEngine.download");
 dlg.close();
 stub.present = true;
+// the CPU runs the set: no live preview, Key keys once
+stub.provider = "cpu";
+await run("select_rect", { doc: ed.node.id, x: 600, y: 350, w: 300, h: 300 });
+const r0 = runs().length, n0 = ed.layers.length;
+dlg = await M.openKeyDialog(ed);
+ok(await waitFor(() => dlg.session && dlg.session.prep), "prepared on the CPU");
+await wait(300);
+st = dlg.state();
+ok(runs().length === r0 && !st.rows.previewRow && !st.session.preview && /CPU/.test(st.ready), "on the CPU: no preview run, no Preview row", { runs: runs().length - r0, st });
+const out = await dlg.apply();
+ok(out && out.layer && runs().length === r0 + 1, "Key keys once on the CPU", runs().length - r0);
+await ed.undoStep();
+ok(ed.layers.length === n0, "undone");
+stub.provider = "stub";
+await run("select_none", { doc: ed.node.id });
 return { ok: true };
 """),
 
@@ -490,6 +718,22 @@ ok(b && b[0] >= pv.matte_box[0] - 1 && b[2] <= pv.matte_box[2] + 1, "the selecti
 const r2 = await run("key_screen", { doc: ed.node.id, hint: "none", grey: false });
 const rk = await run("key_screen", { doc: ed.node.id, rekey: true, layer: r2.layer.id });
 ok(rk.layer && rk.layer.id === r2.layer.id && stub.calls.filter((c) => c.op === "run").pop().quality === 0.95, "rekey re-keys the layer from its mask", rk);
+// hint "mask": a first key with the source layer's own mask as a soft hint (0.95 unless trust says otherwise)
+const ml = ed.addPaintLayer();
+ml.name = "Masked";
+fill(ml, [0, 177, 64, 255]); ed.markLayerChanged(ml);
+await run("select_rect", { doc: ed.node.id, x: 650, y: 380, w: 200, h: 200 });
+await run("set_mask", { doc: ed.node.id, layer: ml.id, op: "from_selection" });
+await run("select_none", { doc: ed.node.id });
+const n1 = ed.layers.length;
+const mk = await run("key_screen", { doc: ed.node.id, source: ml.id, hint: "mask" });
+const lastRun = runs().pop();
+ok(mk.layer && lastRun.hint && lastRun.hintSum > 0 && lastRun.quality === 0.95 && ed.layers.length === n1 + 1, "hint mask: the source layer's mask went as the hint at 0.95", { lastRun, layer: mk.layer });
+await ed.undoStep();
+let mmsg = "";
+try { await run("key_screen", { doc: ed.node.id, hint: "mask" }); } catch (err) { mmsg = err.message; }
+ok(mmsg === K.TEXTS.maskHint, "hint mask with the picture as the source is refused", mmsg);
+ed.layers.splice(ed.layers.findIndex((l) => l.id === ml.id), 1); ed.layersRestacked();
 engineOff();
 const s1 = (await run("status", { doc: ed.node.id })).key;
 let msg = "";

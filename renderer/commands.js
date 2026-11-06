@@ -1658,12 +1658,12 @@ const COMMANDS = {
     },
     key_screen: {
         needsImage: true,
-        description: "Key green / blue screen with CorridorKey 2.0 inside Scumble (on the GPU when the engine runs there): one new layer \"Key\" lands directly above the source, its pixels the subject's own colour with the screen's spill taken out, its layer mask the matte (soft hair and motion blur), trimmed to the matte's box. A source layer is hidden in the same step; with the visible picture as the source a mid-grey Fill layer \"Grey\" goes under the key (grey: false leaves the base as it is). One undo step. The box is the selection's bounds grown by context (the whole picture, or the source layer, without a selection), keyed at the working size (Settings › Helpers) and scaled back to the full resolution. hint: selection (the selection's coverage as CorridorKey's alpha hint; select_mask gives a binary one: a soft hint needs a layer mask, set_mask from_layer, and rekey), none (the model decides). trust: how much the hint is believed (0.5 rough, 0.75 automatic, 0.95 clean). preview: the matte becomes the selection instead (one selection step), nothing is added. rekey: the active key layer's own mask is the hint (0.95) and its pixels and mask are replaced from the picture under it (one step); after a restart the key starts from the layer's bounds. Refused before anything is read when the engine or its 2.4 GB set is missing (status.key says why), a run is going on the document, or no picture is loaded.",
+        description: "Key green / blue screen with CorridorKey 2.0 inside Scumble (on the GPU when the engine runs there): one new layer \"Key\" lands directly above the source, its pixels the subject's own colour with the screen's spill taken out, its layer mask the matte (soft hair and motion blur), trimmed to the matte's box. A source layer is hidden in the same step; with the visible picture as the source a mid-grey Fill layer \"Grey\" goes under the key (grey: false leaves the base as it is). One undo step. The box is the selection's bounds grown by context (the whole picture, or the source layer, without a selection), keyed at the working size (settings.key.workingSize, 1,024 px by default; status.key.working_size) and scaled back to the full resolution. hint: selection (the selection's coverage as CorridorKey's alpha hint; select_mask gives a binary one), mask (the source layer's own layer mask as a soft hint, 0.95 unless trust says otherwise: give the source a mask with set_mask first), none (the model decides). trust: how much the hint is believed (0.5 rough, 0.75 automatic, 0.95 clean). preview: the matte becomes the selection instead (one selection step), nothing is added. rekey: the active key layer's own mask is the hint (0.95) and its pixels and mask are replaced from what it was keyed from (the hidden source layer, or the picture under the key; one step); after a restart the key starts from the layer's bounds and reads the hidden layer directly below it, else the picture under it. Refused before anything is read when the engine or its 2.4 GB set is missing (status.key says why), a run is going on the document, or no picture is loaded.",
         params: {
             source: P.str("\"picture\" (the default: the visible picture, filters skipped) or a layer whose own pixels are keyed (id, name, a unique part, or \"active\")", { default: "picture" }),
             screen: P.enum("auto (from the box's border), green or blue", keying.SCREENS.slice(), "auto"),
-            hint: P.enum("selection (the default) or none", ["selection", "none"], "selection"),
-            trust: P.num("0.5 (rough, the default), 0.75 (automatic) or 0.95 (clean)"),
+            hint: P.enum("selection (the default), mask (the source layer's own mask) or none", ["selection", "mask", "none"], "selection"),
+            trust: P.num("0.5 (rough, the default; 0.95 with hint mask), 0.75 (automatic) or 0.95 (clean)"),
             despill: P.num("0..1, how much of the screen's spill is taken out (default 0.5)"),
             grey: P.bool("with the visible picture as the source: a mid-grey Fill layer under the key (default true)"),
             preview: P.bool("the matte becomes the selection, nothing is added"),
@@ -1680,9 +1680,9 @@ const COMMANDS = {
             const num = (x, d, lo, hi) => (x == null || x === "" || !Number.isFinite(+x) ? d : Math.min(hi, Math.max(lo, +x)));
             const opts = {
                 source, layer, rekey, preview: !!a.preview,
-                hint: rekey ? "mask" : a.hint === "none" ? "none" : "selection",
+                hint: rekey ? "mask" : a.hint === "none" ? "none" : a.hint === "mask" ? "mask" : "selection",
                 screen: keying.SCREENS.slice().includes(a.screen) ? a.screen : v.screen,
-                trust: keying.trustOf(num(a.trust, v.trust, 0, 1)).value,
+                trust: keying.trustOf(num(a.trust, a.hint === "mask" ? 0.95 : v.trust, 0, 1)).value,
                 despill: num(a.despill, v.despill, 0, 1),
                 grey: a.grey == null ? v.greyUnderBase : !!a.grey,
             };

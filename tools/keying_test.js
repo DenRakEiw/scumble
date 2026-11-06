@@ -49,7 +49,12 @@
     const p15 = K.boxPlan(15000, 10000, [7000, 4000, 8000, 6000], { workingSize: 1024 });
     check("15k: a 1,000 x 2,000 selection keys a box of about 1,750 x 3,000 at a portrait bucket", p15.bucket.h === 1024 && p15.bucket.w < 1024 && p15.box[3] - p15.box[1] >= 3000, JSON.stringify(p15));
     const pl = K.boxPlan(4000, 3000, null, { workingSize: 1024, within: [100, 200, 1100, 1700] });
-    check("within: a layer's rect is the box without a selection", pl.box.join() === "100,200,1100,1700" && pl.whole, JSON.stringify(pl.box));
+    check("within: a layer's rect is the box without a selection (the layer's box, not the whole picture)", pl.box.join() === "100,200,1100,1700" && !pl.whole && pl.layerBox, JSON.stringify(pl));
+    // a set's own buckets at several sizes: only those of the working size's long side are picked from
+    const mixed = [{ w: 512, h: 512 }, { w: 768, h: 512 }, { w: 512, h: 768 }, { w: 1024, h: 1024 }, { w: 1024, h: 640 }, { w: 640, h: 1024 }, { w: 1536, h: 864 }];
+    const pm = K.boxPlan(3000, 2000, [600, 800, 1800, 1200], { workingSize: 1024, buckets: mixed });
+    check("buckets: a set's list narrowed to the working size's long side", Math.max(pm.bucket.w, pm.bucket.h) === 1024 && pm.bucket.w === 1024 && pm.bucket.h === 640, JSON.stringify(pm.bucket));
+    check("bucketsAt: none of that size falls back to bucketsFor", JSON.stringify(K.bucketsAt(768, [{ w: 1024, h: 1024 }])) === JSON.stringify(K.bucketsFor(768)));
     const edge = K.boxPlan(800, 300, [0, 0, 800, 300], { workingSize: 1024 });
     check("a box the picture leaves short is padded, not stretched", edge.padded && edge.box.join() === "0,0,800,300" && Math.abs(edge.sx - edge.sy) < 0.01, JSON.stringify(edge));
 
@@ -67,6 +72,16 @@
     check("screen: a grey border asks", K.screenFromRing(ring([120, 120, 120]), 40, 30, [0, 0, 40, 30]).screen === null);
     const hintAll = new Uint8Array(40 * 30).fill(255);
     check("screen: a hint over everything leaves no ring (asks)", K.screenFromRing(ring([20, 180, 40]), 40, 30, [0, 0, 40, 30], hintAll).screen === null);
+    // a layer on blue whose transparent margins were read on the green fill: weighted by its alpha, blue
+    {
+        const w = 40, h = 30, img = ring([10, 40, 200], w, h), wt = new Uint8Array(w * h).fill(255);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (x < 4 || x >= w - 4 || y < 3) { img.set(K.SCREEN_FILL.green, (y * w + x) * 4); wt[y * w + x] = 0; }
+        check("screen: the fill is mostly green, unweighted", K.screenFromRing(img, w, h, [0, 0, w, h]).screen === "green");
+        check("screen: weighted by the layer's alpha, the plate's blue", K.screenFromRing(img, w, h, [0, 0, w, h], null, wt).screen === "blue");
+        check("screen: nothing opaque on the ring asks", K.screenFromRing(img, w, h, [0, 0, w, h], null, new Uint8Array(w * h)).screen === null);
+    }
+    const ov = K.overColour(new Uint8Array([200, 0, 0, 255, 200, 0, 0, 0, 200, 100, 0, 128]), 3, [0, 71, 187]);
+    check("overColour: opaque kept, transparent the fill, half between", Array.from(ov).join() === "200,0,0,255,0,71,187,255,100,86,93,255", Array.from(ov).join());
 
     // ---- the matte's box and the rows ----
     const bw = 64, bh = 48;
@@ -152,7 +167,22 @@
         check("queue: cancelPending drops the waiting one", q2.cancelPending() && (await b).dropped === true && !(await a).dropped);
         await q2.idle();
         check("queue: idle", q2.state.flying === null && q2.state.pending === null);
+        // a pinned request (Key's final run) is never replaced by a preview asked while it waits
+        let go = null;
+        const ran = [];
+        const q3 = new K.KeyQueue(async (req) => { ran.push(req.n); if (req.n === 1) await new Promise((r) => { go = r; }); return { n: req.n }; });
+        const f1 = q3.submit({ n: 1 });
+        const fin = q3.submit({ n: 2 }, { pinned: true });
+        const late = q3.submit({ n: 3 });
+        check("queue: a preview while the final waits is dropped at once", (await late).dropped === true && q3.state.pending === 2);
+        check("queue: cancelPending keeps a pinned final", q3.cancelPending() === false && q3.state.pending === 2);
+        await new Promise((r) => setTimeout(r, 5));
+        go();
+        const fr = await fin;
+        await f1;
+        check("queue: the pinned final ran and is the newest", !fr.dropped && fr.n === 2 && fr.stale === false && ran.join() === "1,2", JSON.stringify({ fr, ran }));
     }
+    check("isFeaturesGone: by the code or the message", K.isFeaturesGone(Object.assign(new Error("x"), { code: K.FEATURES_GONE })) && K.isFeaturesGone(new Error("Error invoking remote method 'helpers:keyRun': " + K.FEATURES_GONE + " k")) && !K.isFeaturesGone(new Error("other")));
 
     // ---- settings and texts ----
     const fv = K.fillValues({ screen: "blue", trust: 0.75, despill: 2, workingSize: 768, preview: false });
@@ -169,6 +199,10 @@
     const line = K.statusLine({ kept: 38.2, seconds: 2.43, provider: "dml", screen: "green", hint: "selection", trust: 0.5, keyedAt: 1024, grey: true });
     check("statusLine", line === "Key: 38 % of the box kept, in 2.4 s in Scumble (CorridorKey 2.0 on DirectML, green screen, hint from the selection (rough); keyed at 1,024 px). A grey layer sits under the Key layer: replace it with your background.", line);
     check("boxLine carries the box and the bucket", K.boxLine({ box: [0, 0, 3210, 4100], content: [0, 0, 802, 1024], whole: false }) === "the selection's box, 3,210 × 4,100, keyed at 802 × 1,024");
+    check("boxLine: a layer's box", K.boxLine({ box: [10, 20, 1010, 1520], content: [0, 0, 683, 1024], whole: false, layerBox: true }).startsWith("the layer's box, 1,000 × 1,500"));
+    check("boxLine: a Re-key says what it reads", K.boxLine({ box: [0, 0, 512, 512], content: [0, 0, 512, 512], rekey: true, from: "Subject (hidden)" }).endsWith(", read from Subject (hidden)"));
+    const tp = K.termsParagraph({ gb: 2.43, host: "Hugging Face" });
+    check("termsParagraph: the four parts, their licences, the size, the host, the seat clause", ["Corridor Key Licence 2.0", "C-RADIOv4 (NVIDIA Open Model License)", "MoGe-2 (MIT)", "RVM (Google DeepMind, CC BY 4.0)", "about 2.4 GB", "downloaded from Hugging Face", "US $20M"].every((s) => tp.includes(s)), tp);
     check("readyLine", K.readyLine("dml", 1024) === "CorridorKey 2.0 in Scumble on DirectML, working size 1,024 px.");
 
     console.log(fails ? `FAIL (${fails})` : "PASS");

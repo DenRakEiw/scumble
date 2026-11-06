@@ -70,8 +70,8 @@ export function trustOf(v) {
 
 /**
  * The buckets at a working size: `long` on one side, the other side every multiple of 128 from half of it (at least
- * 256) up to `long`, both ways round. Upstream pads to a multiple of 128; a set's own list (its manifest) replaces
- * this one (boxPlan's `buckets`).
+ * 256) up to `long`, both ways round. Upstream pads to a multiple of 128; a set's own list (its manifest, the buckets
+ * at every size it holds) replaces this one where it has buckets of that long side (bucketsAt).
  * -> [{ w, h }], the square first
  */
 export function bucketsFor(long) {
@@ -80,6 +80,16 @@ export function bucketsFor(long) {
     const lo = Math.max(256, Math.ceil(L / 2 / 128) * 128);
     for (let s = L - 128; s >= lo; s -= 128) { out.push({ w: L, h: s }); out.push({ w: s, h: L }); }
     return out;
+}
+
+/**
+ * The buckets a key at `workingSize` picks from (§4.7 point 2: the nearest aspect among those whose long side is the
+ * working size): the set's own list (`buckets`, every size it holds) narrowed to that long side, else bucketsFor.
+ */
+export function bucketsAt(workingSize, buckets = null) {
+    const L = Math.round(+workingSize || 1024);
+    const own = Array.isArray(buckets) ? buckets.filter((b) => b && Math.max(+b.w, +b.h) === L).map((b) => ({ w: +b.w, h: +b.h })) : [];
+    return own.length ? own : bucketsFor(L);
 }
 
 /** The bucket of `list` whose aspect is nearest w / h (in log space; the first of equals). */
@@ -98,14 +108,15 @@ export function nearestBucket(w, h, list) {
  * bounds in image pixels, or null): its bounds grown by half its longer side (the longer side times 1.5), at least
  * `minSide` a side, then grown to the nearest bucket's aspect (more picture around it, as Generate's crop plan
  * does), centred on the selection and moved inside the picture, cut to it along a side the picture is shorter than.
- * Without a selection: the whole picture, or `within` (a layer's own rect) cut to it. The box is read into the bucket at one scale (`sx`, `sy` within a rounding of
- * each other) at its top left (`content`); what the picture's edge leaves short of the bucket is padding (`padded`), filled by
- * reflect-101 (padRect), never a mirrored stretch of picture to fill an aspect.
- * -> { box: [x0, y0, x1, y1], bucket: { w, h }, content: [0, 0, cw, ch], sx, sy, padded, whole }
+ * Without a selection: the whole picture, or `within` (a layer's own rect) cut to it (`layerBox`). The box is read into the
+ * bucket at one scale (`sx`, `sy` within a rounding of each other) at its top left (`content`); what the picture's edge
+ * leaves short of the bucket is padding (`padded`), filled by reflect-101 (padRect), never a mirrored stretch of picture
+ * to fill an aspect. `buckets`: the set's own, at every size it holds (bucketsAt narrows them to the working size).
+ * -> { box: [x0, y0, x1, y1], bucket: { w, h }, content: [0, 0, cw, ch], sx, sy, padded, whole, layerBox }
  */
 export function boxPlan(W, H, sel, { workingSize = 1024, buckets = null, minSide = null, within = null } = {}) {
     W = Math.max(1, Math.round(W)); H = Math.max(1, Math.round(H));
-    const list = buckets && buckets.length ? buckets : bucketsFor(workingSize);
+    const list = bucketsAt(workingSize, buckets);
     const min = minSide == null ? Math.min(768, Math.max(...list.map((b) => Math.max(b.w, b.h)))) : minSide;
     let box;
     const s0 = sel && sel[2] > sel[0] && sel[3] > sel[1] ? sel.map((v) => +v) : null;
@@ -132,7 +143,7 @@ export function boxPlan(W, H, sel, { workingSize = 1024, buckets = null, minSide
     // (sx and sy differ by that rounding), and only a box the picture's edge cut is padded
     if (bucket.w - cw <= 2) cw = bucket.w;
     if (bucket.h - ch <= 2) ch = bucket.h;
-    return { box, bucket: { w: bucket.w, h: bucket.h }, content: [0, 0, cw, ch], sx: cw / bw, sy: ch / bh, padded: cw < bucket.w || ch < bucket.h, whole: !s0 };
+    return { box, bucket: { w: bucket.w, h: bucket.h }, content: [0, 0, cw, ch], sx: cw / bw, sy: ch / bh, padded: cw < bucket.w || ch < bucket.h, whole: !s0 && !within, layerBox: !s0 && !!within };
 }
 
 /** reflect-101 of an index into [0, n): ... 2 1 | 0 1 2 ... n-1 | n-2 n-3 ... */
@@ -169,6 +180,25 @@ export function alphaPlane(rgba, n) {
     return out;
 }
 
+/**
+ * An RGBA picture (n pixels) over a flat colour `rgb`, opaque: a layer read with its transparent parts, put on the
+ * screen's colour (the "over" a canvas fill under it gives, in straight alpha).
+ */
+export function overColour(rgba, n, rgb) {
+    const out = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) {
+        const o = i * 4, a = rgba[o + 3] / 255, b = 1 - a;
+        out[o] = Math.round(rgba[o] * a + rgb[0] * b);
+        out[o + 1] = Math.round(rgba[o + 1] * a + rgb[1] * b);
+        out[o + 2] = Math.round(rgba[o + 2] * a + rgb[2] * b);
+        out[o + 3] = 255;
+    }
+    return out;
+}
+
+/** The fill a layer source's transparent parts are read on: the screen's colour (#00b140 green, #0047bb blue). */
+export const SCREEN_FILL = Object.freeze({ green: Object.freeze([0, 177, 64]), blue: Object.freeze([0, 71, 187]) });
+
 /** Whether a hint plane holds anything (a selection outside the box sends none). */
 export function planeAny(p) {
     if (!p) return false;
@@ -181,10 +211,11 @@ export function planeAny(p) {
 /**
  * Green or blue from the mean colour of the content's border ring (§4.8 "Screen Auto"), taken outside the hint where
  * there is one (a hint level of 128 or more is the subject): "green" when green leads both other channels by 24
- * levels, "blue" when blue does, else null (the dialog asks instead of guessing).
+ * levels, "blue" when blue does, else null (the dialog asks instead of guessing). `weight` (a plane at the bucket,
+ * 0..255): each pixel counts by it, so a layer source's transparent parts (read on a fill) do not decide the screen.
  * -> { screen: "green" | "blue" | null, mean: [r, g, b], n }
  */
-export function screenFromRing(rgba, bw, bh, content, hint = null) {
+export function screenFromRing(rgba, bw, bh, content, hint = null, weight = null) {
     const [cx0, cy0, cx1, cy1] = content;
     const cw = cx1 - cx0, ch = cy1 - cy0;
     const r = Math.max(2, Math.round(Math.min(cw, ch) * 0.03));
@@ -192,18 +223,20 @@ export function screenFromRing(rgba, bw, bh, content, hint = null) {
     const take = (x, y) => {
         const i = y * bw + x;
         if (hint && hint[i] >= 128) return;
-        R += rgba[i * 4]; G += rgba[i * 4 + 1]; B += rgba[i * 4 + 2]; n++;
+        const k = weight ? weight[i] / 255 : 1;
+        if (!k) return;
+        R += rgba[i * 4] * k; G += rgba[i * 4 + 1] * k; B += rgba[i * 4 + 2] * k; n += k;
     };
     for (let y = cy0; y < cy1; y++) {
         const edgeRow = y < cy0 + r || y >= cy1 - r;
         for (let x = cx0; x < cx1; x++) if (edgeRow || x < cx0 + r || x >= cx1 - r) take(x, y);
     }
-    if (!n) return { screen: null, mean: [0, 0, 0], n: 0 };
+    if (n < 1) return { screen: null, mean: [0, 0, 0], n: 0 };
     const mean = [R / n, G / n, B / n];
     const lead = 24;
     const screen = mean[1] > mean[0] + lead && mean[1] > mean[2] + lead ? "green"
         : mean[2] > mean[0] + lead && mean[2] > mean[1] + lead ? "blue" : null;
-    return { screen, mean: mean.map((v) => Math.round(v)), n };
+    return { screen, mean: mean.map((v) => Math.round(v)), n: Math.round(n) };
 }
 
 // ---- the matte back to the box --------------------------------------------------------------------------------------
@@ -395,7 +428,8 @@ export function bytesHash(b) {
 /**
  * At most one engine run in flight and one pending; a newer request replaces the pending one (whose promise resolves
  * `{ dropped: true, ticket }`); every request gets a ticket, and an answer whose ticket is not the newest is `stale`
- * (the dialog keeps it only while nothing newer has answered). `run(req)` is the engine's keyRun.
+ * (the dialog keeps it only while nothing newer has answered). A `pinned` request (Key's final run) is never replaced:
+ * a preview asked while it waits is dropped at once instead. `run(req)` is the engine's keyRun.
  */
 export class KeyQueue {
     constructor(run) {
@@ -417,11 +451,16 @@ export class KeyQueue {
     isStale(t) { return t !== this._ticket; }
 
     /** Queue a run of `req` (its ticket filled in) -> a promise of the answer with `ticket` and `stale`. */
-    submit(req) {
+    submit(req, { pinned = false } = {}) {
+        if (!pinned && this._pending && this._pending.pinned) {
+            // a final run waits: this preview is dropped, the final keeps its slot and stays the newest ticket
+            this.dropped++;
+            return Promise.resolve({ dropped: true, ticket: 0 });
+        }
         const ticket = ++this._ticket;
         let resolve, reject;
         const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
-        const entry = { req: { ...req, ticket }, ticket, resolve, reject, promise };
+        const entry = { req: { ...req, ticket }, ticket, resolve, reject, promise, pinned };
         if (!this._flying) this._start(entry);
         else {
             if (this._pending) { this.dropped++; this._pending.resolve({ dropped: true, ticket: this._pending.ticket }); }
@@ -430,9 +469,9 @@ export class KeyQueue {
         return promise;
     }
 
-    /** Drop the waiting request (Apply, Close): its promise resolves `{ dropped: true }`. */
-    cancelPending() {
-        if (!this._pending) return false;
+    /** Drop the waiting request (Apply, Close): its promise resolves `{ dropped: true }`; a pinned one only with `force`. */
+    cancelPending({ force = false } = {}) {
+        if (!this._pending || (this._pending.pinned && !force)) return false;
         this.dropped++;
         this._pending.resolve({ dropped: true, ticket: this._pending.ticket });
         this._pending = null;
@@ -463,6 +502,16 @@ export class KeyQueue {
     }
 }
 
+/**
+ * The engine's answer that it no longer holds a key's features (freed by the idle timer, by freeHelpers before a local
+ * ComfyUI run, or a restarted process): the caller prepares the picture again and runs once more. I3's process rejects
+ * keyRun with a message that holds FEATURES_GONE (an error's code does not cross IPC).
+ */
+export const FEATURES_GONE = "KEY_FEATURES_GONE";
+export function isFeaturesGone(err) {
+    return !!err && (err.code === FEATURES_GONE || String((err && err.message) || err).includes(FEATURES_GONE));
+}
+
 // ---- readiness and texts (§4.8, §4.5 step 6) ------------------------------------------------------------------------
 
 export const TEXTS = Object.freeze({
@@ -476,7 +525,24 @@ export const TEXTS = Object.freeze({
     nothingKept: `${LABEL}: the matte keeps nothing of the box; nothing was added. Select the subject roughly as a hint, or pick the screen colour.`,
     askScreen: `${LABEL}: the border of the box is neither clearly green nor clearly blue. Pick Green or Blue under Screen.`,
     cancelled: `${LABEL} cancelled.`,
+    maskHint: `${LABEL}: hint "mask" needs a source layer with a mask (set_mask), or rekey on a key layer.`,
 });
+
+/** The first-run block's links (§3.3): the licence and Corridor's site. */
+export const LICENCE_URL = "https://github.com/nikopueringer/CorridorKey2.0/blob/main/LICENSE";
+export const CORRIDOR_URL = "https://corridorkey.com";
+
+/**
+ * The pre-download paragraph (§3.3) for the Key dialog's first-run block and I2's terms dialog: the set, its four parts
+ * and their licences, its size, the host, the seat clause. `gb` and `host` from keyEngine.status() when it names them.
+ */
+export function termsParagraph({ gb = null, host = "" } = {}) {
+    const size = Number.isFinite(+gb) && +gb > 0 ? `about ${Math.round(+gb * 10) / 10} GB` : "about 2.4 GB";
+    return `${ENGINE} by Corridor Digital, Corridor Key Licence 2.0 (CC BY-NC-SA 4.0 with their terms), used with their permission in this free app; `
+        + `this set is a conversion to ONNX of their weights and of C-RADIOv4 (NVIDIA Open Model License), MoGe-2 (MIT) and RVM (Google DeepMind, CC BY 4.0), ${size}`
+        + `${host ? `, downloaded from ${host}` : ""}. Your keyed pictures are yours, also commercially. `
+        + "Organisations with more than US $20M yearly revenue need one CorridorKey seat per user (corridorkey.com).";
+}
 
 /**
  * The engine's readiness as the dialog, `status.key` and the refusals say it (§4.8's table). `status` is
@@ -512,12 +578,15 @@ export function fmtInt(n) {
     return String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-/** What goes, for the dialog's box line: "the selection's box, 3,210 × 4,100, keyed at 803 × 1,024". */
+/**
+ * What goes, for the dialog's box line: "the selection's box, 3,210 × 4,100, keyed at 803 × 1,024"; a Re-key adds the
+ * picture it reads (`plan.from`: "Subject (hidden)", "the picture under the key").
+ */
 export function boxLine(plan) {
     const [x0, y0, x1, y1] = plan.box;
-    const what = plan.rekey ? "the key layer's box" : plan.whole ? "the whole picture" : "the selection's box";
+    const what = plan.rekey ? "the key layer's box" : plan.whole ? "the whole picture" : plan.layerBox ? "the layer's box" : "the selection's box";
     const [, , cw, ch] = plan.content;
-    return `${what}, ${fmtInt(x1 - x0)} × ${fmtInt(y1 - y0)}, keyed at ${fmtInt(cw)} × ${fmtInt(ch)}`;
+    return `${what}, ${fmtInt(x1 - x0)} × ${fmtInt(y1 - y0)}, keyed at ${fmtInt(cw)} × ${fmtInt(ch)}${plan.from ? `, read from ${plan.from}` : ""}`;
 }
 
 /** The hint's words in the status line. */

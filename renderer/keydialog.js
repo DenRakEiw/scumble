@@ -14,8 +14,12 @@
 //                drawSoon after each answer (rAF: a hidden window draws nothing, so the gate reads the state)
 //
 // The box and the features are fixed when the dialog opens (the selection's bounds then, grown, or the whole picture);
-// *Refit the box* reads them again. Escape or Close drops the overlay and the tickets; the engine's idle timer starts
-// (host.keyEngine.closed).
+// *Refit the box* reads them again, and so does a turn, crop, extend, resize or straighten of the picture (the host's
+// "geometry" event); another tab coming to the front closes the panel. Key reads the picture once more and prepares it
+// again when it changed under the panel (host.keyScreen). A run the engine answers with FEATURES_GONE (its idle timer,
+// freeHelpers before a local ComfyUI run) prepares the kept picture again and runs once more. On the CPU (no live
+// preview, §4.8) nothing runs before Key. Escape or Close drops the overlay and the tickets; only the dialog's own close
+// starts the engine's idle timer (host.keyEngine.closed), never a restart.
 
 import { host } from "./editor/host.js";
 import * as keying from "./editor/keying.js";
@@ -41,13 +45,21 @@ export class KeySession {
         this.opts = { ...opts };
         this.plan = null;
         this.prep = null;
-        this.matte = null;          // the newest answer shown: { alpha, fg, ticket, sig, screen, despill, ms, roundMs, provider }
+        this.matte = null;          // the newest answer shown: { alpha, fg, ticket, sig, screen, despill, quality, key, ms, roundMs, provider }
         this.shown = 0;             // its ticket
         this.staleDropped = 0;      // answers older than the one shown (tests)
+        this.reprepared = 0;        // features the engine no longer held, prepared again (tests)
+        this.finalPending = false;  // Key's final run is queued or running: no preview is asked meanwhile
         this.queue = new keying.KeyQueue(async (req) => {
             const t = performance.now();
-            const res = await host.keyEngine.run(req);
-            return { ...(res || {}), roundMs: performance.now() - t };
+            let res, key = req.key;
+            try { res = await host.keyEngine.run(req); } catch (err) {
+                if (this.closed || !keying.isFeaturesGone(err)) throw err;
+                const prep = await this.reprepare();
+                key = prep.key;
+                res = await host.keyEngine.run({ ...req, key });
+            }
+            return { ...(res || {}), key, roundMs: performance.now() - t };
         });
         this.selSeq = editor.selectionSeq;
         this.maskVer = null;
@@ -63,6 +75,11 @@ export class KeySession {
         ];
     }
 
+    /** The options keyPlan / keyPrepare take, from the session's. */
+    prepOpts() {
+        return { source: this.opts.source, layer: this.layer(), hint: this.opts.hint, rekey: !!this.opts.rekey, screen: this.opts.screen };
+    }
+
     /** The key layer of a Re-key, or the source layer, or null. */
     layer() {
         const id = this.opts.layerId;
@@ -76,8 +93,8 @@ export class KeySession {
     /** Plan the box and prepare the picture in the engine (once per box), then the first preview. */
     async prepare() {
         const ed = this.editor;
-        const lay = this.layer();
-        const o = { source: this.opts.source, layer: lay, hint: this.opts.hint, rekey: !!this.opts.rekey, screen: this.opts.screen };
+        const o = this.prepOpts();
+        const lay = o.layer;
         this.plan = host.keyPlan(ed, o);
         this.prep = null;
         this.matte = null;
@@ -128,25 +145,26 @@ export class KeySession {
 
     /** Ask for a run with the hint as it is now; reads run one at a time, the queue keeps the newest. */
     request(why = "") {
-        if (this.closed || !this.prep || !this.opts.preview) return;
+        if (this.closed || !this.prep || !this.opts.preview || this.finalPending) return;
         this.wanted = why || true;
         if (this.reading) return;
         this.reading = this._loop().finally(() => { this.reading = null; });
     }
 
     async _loop() {
-        while (this.wanted && !this.closed && this.prep) {
+        while (this.wanted && !this.closed && this.prep && !this.finalPending) {
             this.wanted = false;
             const plan = this.plan, prep = this.prep;
             this.requests++;
             let h;
             try { h = await host.keyHint(this.editor, plan, this.hintOpts()); } catch (err) { this.error = String((err && err.message) || err); this.update(); continue; }
-            if (this.closed || this.plan !== plan) return;
+            // Key's final run took the slot while the hint was read: this preview goes nowhere
+            if (this.closed || this.plan !== plan || this.finalPending) return;
             const screen = host.keyScreenColour(plan, prep, h.hint, this.opts.screen);
             if (!screen) { this.error = keying.TEXTS.askScreen; this.update(); continue; }
             const despill = this.opts.despill;
-            this.queue.submit({ key: prep.key, hint: h.hint, quality: h.quality, despill, screen })
-                .then((res) => { if (this.plan === plan) this.accept({ ...res, sig: h.sig, screen, despill }); })
+            this.queue.submit({ key: this.prep.key, hint: h.hint, quality: h.quality, despill, screen })
+                .then((res) => { if (this.plan === plan) this.accept({ ...res, sig: h.sig, screen, despill, quality: h.quality }); })
                 .catch((err) => { if (!this.closed) { this.error = String((err && err.message) || err); this.update(); } });
         }
     }
@@ -157,31 +175,64 @@ export class KeySession {
         if (!(res.ticket > this.shown)) { this.staleDropped++; return false; }
         this.shown = res.ticket;
         this.error = "";
-        this.matte = { alpha: res.alpha, fg: res.fg, ticket: res.ticket, sig: res.sig, screen: res.screen, despill: res.despill, ms: res.ms || 0, roundMs: res.roundMs || 0, provider: res.provider || null };
+        this.matte = {
+            alpha: res.alpha, fg: res.fg, ticket: res.ticket, sig: res.sig, screen: res.screen, despill: res.despill, quality: res.quality,
+            key: res.key || (this.prep && this.prep.key) || null, ms: res.ms || 0, roundMs: res.roundMs || 0, provider: res.provider || null,
+        };
         this.editor.drawSoon();
         this.update();
         return true;
     }
 
+    /** The matte shown no longer stands for the rows (a value changed with Preview off): Key runs once more. */
+    dropMatte() {
+        if (!this.matte) return;
+        this.matte = null;
+        try { this.editor.drawSoon(); } catch (_) { /* the tab went */ }
+        this.update();
+    }
+
     /**
-     * host.keyScreen's question: the matte shown, when it is the newest asked for and still the hint, the screen and
-     * the despill the Key would send (Key then lands what the overlay shows), else null.
+     * host.keyScreen's question: the matte shown, when it is the newest asked for, nothing is being read or waits, and
+     * it is still the picture, the hint (its sig and trust), the screen and the despill the Key would send (Key then
+     * lands what the overlay shows), else null.
      */
-    currentMatte(sig, screen, despill) {
+    currentMatte(sig, screen, despill, quality) {
         const m = this.matte;
         const st = this.queue.state;
-        if (!m || st.flying || st.pending || m.ticket !== this.queue.ticket) return null;
-        if (m.sig !== sig || m.screen !== screen || m.despill !== despill) return null;
+        if (!m || this.reading || this.wanted || this.finalPending || st.flying || st.pending || m.ticket !== this.queue.ticket) return null;
+        if (m.sig !== sig || m.screen !== screen || m.despill !== despill || m.quality !== quality) return null;
+        if (this.prep && m.key && m.key !== this.prep.key) return null;
         return m;
     }
 
-    /** host.keyScreen's final run through the same queue: the waiting preview is dropped first. */
+    /** host.keyScreen's final run through the same queue, pinned: the waiting preview is dropped, none replaces it. */
     async final({ hint, screen, despill }) {
-        this.queue.cancelPending();
-        const res = await this.queue.submit({ key: this.prep.key, hint: hint.hint, quality: hint.quality, despill, screen });
-        if (!res || res.dropped) throw new Error("the final key was replaced");
-        this.accept({ ...res, sig: hint.sig, screen, despill });
-        return res;
+        this.finalPending = true;
+        try {
+            this.queue.cancelPending();
+            const res = await this.queue.submit({ key: this.prep.key, hint: hint.hint, quality: hint.quality, despill, screen }, { pinned: true });
+            if (!res || res.dropped) throw new Error("the final key was replaced");
+            this.accept({ ...res, sig: hint.sig, screen, despill, quality: hint.quality });
+            return res;
+        } finally {
+            this.finalPending = false;
+        }
+    }
+
+    /** A picture prepared anew by host.keyScreen (it changed under the panel): the features and the matte are its. */
+    adopt(prep) {
+        this.prep = prep;
+        this.matte = null;
+        this.update();
+    }
+
+    /** The engine no longer holds the features: the kept picture sent again, or (nothing kept) read and prepared. */
+    async reprepare() {
+        const prep = await host.keyReprepare(this.editor, this.plan, this.prep, this.prepOpts());
+        this.prep = prep;
+        this.reprepared++;
+        return prep;
     }
 
     /** host.pluginOverlay: the matte over its box in image pixels (the view transform is applied). */
@@ -201,7 +252,7 @@ export class KeySession {
             box: this.plan ? this.plan.box.slice() : null, bucket: this.plan ? { ...this.plan.bucket } : null, prepared: !!this.prep,
             ticket: this.matte ? this.matte.ticket : 0, queue: this.queue.state, runs: this.queue.runs, dropped: this.queue.dropped,
             staleDropped: this.staleDropped, requests: this.requests, roundMs: this.matte ? Math.round(this.matte.roundMs) : null,
-            modelMs: this.matte ? Math.round(this.matte.ms) : null, error: this.error,
+            modelMs: this.matte ? Math.round(this.matte.ms) : null, error: this.error, reprepared: this.reprepared, preview: !!this.opts.preview,
         };
     }
 
@@ -209,17 +260,27 @@ export class KeySession {
         if (this.onUpdate) { try { this.onUpdate(); } catch (err) { console.warn("key dialog", err); } }
     }
 
+    /** The session's end (the dialog's close, or a restart: a new box, another source); the engine stays warm. */
     close() {
         if (this.closed) return;
         this.closed = true;
-        this.queue.cancelPending();
+        this.queue.cancelPending({ force: true });
         for (const off of this._off) off();
         this._off = [];
         this.matte = null;
         if (host.keySession === this) host.keySession = null;
         try { this.editor.drawSoon(); } catch (_) { /* the tab went */ }
-        try { host.keyEngine.closed(); } catch (err) { console.warn(err); }
     }
+}
+
+/** Settings opened at its Helpers section (as the menu's Settings entries scroll to theirs). */
+function openHelpersSettings() {
+    const sh = host.shell;
+    if (!sh || typeof sh.openSettings !== "function") return;
+    Promise.resolve(sh.openSettings()).then(() => {
+        const h = Array.from(document.querySelectorAll("#shell-settings h3")).find((x) => /^Helpers\b/.test(x.textContent || ""));
+        if (h) h.scrollIntoView();
+    }).catch((err) => console.warn("settings", err));
 }
 
 // ---- the panel --------------------------------------------------------------------------------------------------------
@@ -245,6 +306,8 @@ button { font: inherit; color: var(--sc-fg, #ddd); background: var(--sc-btn, #2d
 button:hover { background: var(--sc-btn-hover, #3a3a3a); }
 button.primary { background: var(--sc-go, #2f6b3f); color: var(--sc-on-active, #fff); border-color: transparent; }
 button:disabled { opacity: .5; cursor: default; }
+.terms { color: var(--sc-fg-2, #aaa); font-size: 12px; border-top: 1px solid var(--sc-border, #4a4a4a); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.terms a { color: var(--sc-link, #8ab4f8); cursor: pointer; margin-right: 12px; }
 [hidden] { display: none !important; }
 `;
 
@@ -271,6 +334,13 @@ class KeyDialog {
         this.els = {};
         this.root = null;
         this.hostEl = null;
+        this._off = [];
+        this.geometryRestarts = 0;  // tests
+    }
+
+    /** The CPU runs the set: no live preview (§4.4, §4.8); Key runs once. */
+    cpu() {
+        return !!host.keySupport().cpu;
     }
 
     async open() {
@@ -287,7 +357,14 @@ class KeyDialog {
             activeId: active ? active.id : null,
         };
         this.build(active, rekeyable);
-        this.offRemoved = host.on("removed", (e) => { if (e && e.editor === ed) this.close(); });
+        this._off = [
+            host.on("removed", (e) => { if (e && e.editor === ed) this.close(); }),
+            // the picture turned, cropped, extended, resized or straightened: the box and the features are another
+            // picture's; the box is planned and the picture prepared again
+            host.on("geometry", (e) => { if (e && e.editor === ed && !this.closed) { this.geometryRestarts++; this.restart(); } }),
+            // another tab in front: the panel belongs to this document, it closes (its strokes would go to the other one)
+            host.on("activate", (e) => { if (e && e.editor && e.editor !== ed) this.close(); }),
+        ];
         this.sync();
         if (host.keySupport().ok) this.restart();
     }
@@ -343,12 +420,26 @@ class KeyDialog {
         E.preview.checked = !!this.values.preview;
         E.previewRow = row("Preview", E.preview, node("span", "line", "the matte over the canvas, screen only"));
         E.loop = box.appendChild(node("div", "line"));
+        // the first-run block (§1 "The first time", §3.3): what the set is, its parts and licences, the seat clause, and
+        // the download (I2's terms dialog through keyEngine.download once it exists; Settings › Helpers meanwhile)
+        E.terms = box.appendChild(node("div", "terms"));
+        E.termsText = E.terms.appendChild(node("div", ""));
+        const links = E.terms.appendChild(node("div", ""));
+        const link = (text, url) => {
+            const a = links.appendChild(node("a", "", text));
+            a.href = "#";
+            a.addEventListener("click", (e) => { e.preventDefault(); try { window.scumble.openExternal(url); } catch (err) { console.warn(err); } });
+            return a;
+        };
+        link("The licence", keying.LICENCE_URL);
+        link("corridorkey.com", keying.CORRIDOR_URL);
         const buttons = node("div", "buttons");
         E.refit = buttons.appendChild(node("button", "", "Refit the box"));
+        E.download = buttons.appendChild(node("button", "", "Download..."));
         E.settings = buttons.appendChild(node("button", "", "Settings › Helpers"));
         E.key = buttons.appendChild(node("button", "primary", rekeyable ? "Re-key" : "Key"));
         E.close = buttons.appendChild(node("button", "", "Close"));
-        for (const b of [E.refit, E.settings, E.key, E.close]) b.type = "button";
+        for (const b of [E.refit, E.download, E.settings, E.key, E.close]) b.type = "button";
         box.appendChild(buttons);
         root.appendChild(box);
         this.root = root;
@@ -356,7 +447,13 @@ class KeyDialog {
         document.body.appendChild(el);
 
         const save = (patch) => { host.setKeyValues(patch).catch(() => { /* logged there */ }); };
-        E.screen.addEventListener("change", () => { this.values.screen = E.screen.value; save({ screen: this.values.screen }); this.sessionOpts(); this.rerun(); });
+        E.screen.addEventListener("change", () => {
+            this.values.screen = E.screen.value;
+            save({ screen: this.values.screen });
+            // a layer is read on the screen's colour where it is transparent: another screen is another picture
+            const s = this.session;
+            if (s && s.prep && s.prep.weight) this.restart(); else { this.sessionOpts(); this.rerun(); }
+        });
         E.hint.addEventListener("change", () => {
             const was = this.values.hint;
             this.values.hint = E.hint.value;
@@ -376,7 +473,12 @@ class KeyDialog {
             if (this.values.preview) this.rerun(); else this.editor.drawSoon();
         });
         E.refit.addEventListener("click", () => this.restart());
-        E.settings.addEventListener("click", () => { if (host.shell && host.shell.openSettings) host.shell.openSettings(); });
+        E.download.addEventListener("click", () => {
+            const dl = host.keyEngine && host.keyEngine.download;
+            if (typeof dl === "function") Promise.resolve(dl.call(host.keyEngine)).then(() => this.sync(), (err) => console.warn("the key set's download", err));
+            else openHelpersSettings();
+        });
+        E.settings.addEventListener("click", () => openHelpersSettings());
         E.key.addEventListener("click", () => { this.apply().catch(() => { /* the status line says it */ }); });
         E.close.addEventListener("click", () => this.close());
         box.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.close(); } });
@@ -388,7 +490,7 @@ class KeyDialog {
         const rekey = v.hint === "mask";
         const layer = rekey ? this.editor.layers.find((l) => l.id === v.layerId) || null
             : v.source !== "picture" ? this.editor.layers.find((l) => l.id === v.source) || null : null;
-        return { source: rekey || v.source === "picture" ? "picture" : v.source, layer, layerId: layer ? layer.id : null, hint: v.hint, trust: rekey ? 0.95 : v.trust, despill: v.despill, screen: v.screen, preview: v.preview, rekey, grey: v.grey };
+        return { source: rekey || v.source === "picture" ? "picture" : v.source, layer, layerId: layer ? layer.id : null, hint: v.hint, trust: rekey ? 0.95 : v.trust, despill: v.despill, screen: v.screen, preview: !!v.preview && !this.cpu(), rekey, grey: v.grey };
     }
 
     sessionOpts() {
@@ -408,9 +510,12 @@ class KeyDialog {
         s.prepare().catch((err) => console.warn("key prepare", err));
     }
 
-    /** Another value of a row: the same box and features, a new run. */
+    /** Another value of a row: the same box and features, a new run (with Preview off: the matte shown is dropped). */
     rerun() {
-        if (this.session && this.session.prep) this.session.request("values");
+        const s = this.session;
+        if (!s) return;
+        if (!s.opts.preview) { s.dropMatte(); return; }
+        if (s.prep) s.request("values");
     }
 
     /** Key (or Re-key): host.keyScreen with the session, then the dialog closes. */
@@ -441,7 +546,14 @@ class KeyDialog {
         const dormant = !sup.ok && !sup.offered;
         const missing = !sup.ok && sup.offered;
         const rekey = v.hint === "mask";
-        for (const r of [E.screenRow, E.hintRow, E.despillRow, E.previewRow]) r.hidden = dormant;
+        const cpu = !!sup.cpu;
+        for (const r of [E.screenRow, E.hintRow, E.despillRow]) r.hidden = dormant;
+        // on the CPU there is no live preview (the readiness line says so): no row to turn it on
+        E.previewRow.hidden = dormant || cpu;
+        E.preview.disabled = cpu;
+        E.terms.hidden = !missing;
+        if (missing) E.termsText.textContent = keying.termsParagraph({ gb: sup.gb, host: sup.host });
+        E.download.hidden = !missing;
         E.trustRow.hidden = dormant || v.hint !== "selection";
         E.sourceRow.hidden = dormant || rekey;
         E.sourceNote.hidden = dormant || rekey || !E.sourceNote.textContent;
@@ -456,6 +568,7 @@ class KeyDialog {
         let loop = "", kind = "";
         if (s && s.error) { loop = s.error; kind = " warn"; }
         else if (s && !s.prep) loop = "Preparing the picture ...";
+        else if (s && cpu) loop = "No live preview on the CPU: Key keys once with the rows as they are.";
         else if (s && s.matte && v.preview) loop = `Matte in ${(s.matte.roundMs / 1000).toFixed(2)} s (the model ${(s.matte.ms / 1000).toFixed(2)} s). Paint the selection to steer it.`;
         else if (s && v.preview) loop = "Keying the first preview ...";
         E.loop.textContent = loop;
@@ -479,8 +592,11 @@ class KeyDialog {
         this.closed = true;
         if (this.session) this.session.close();
         this.session = null;
-        if (this.offRemoved) this.offRemoved();
+        for (const off of this._off) off();
+        this._off = [];
         if (this.hostEl) this.hostEl.remove();
         if (current === this) current = null;
+        // the dialog's own close (never a restart's): the engine's idle timer starts
+        try { host.keyEngine.closed(); } catch (err) { console.warn(err); }
     }
 }
