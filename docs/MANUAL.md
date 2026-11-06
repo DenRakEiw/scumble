@@ -813,7 +813,7 @@ _What is in the settings dialog, how updates work, and the three things to check
 
 Ctrl+, opens the settings: the ComfyUI server and its authentication, API providers, language models, recipes, helper models, the assistant, the appearance, plugins, local files, rendering and updates. Most of it you set once.
 
-Settings › Helpers (in-app models) manages the local neural models: SAM2 (object hover and box drag), RMBG / BiRefNet (background removal cut-outs), LaMa (in-app object remove and content-aware move), and Depth Anything V2 Small (depth maps for depth selection and depth-limited filter layers). Each model can be downloaded or removed individually, and runs on your GPU or processor.
+Settings › Helpers (in-app models) manages the local neural models: SAM2 (object hover and box drag), RMBG / BiRefNet (background removal cut-outs), LaMa (in-app object remove and content-aware move), and Depth Anything V2 Small (depth maps for depth selection and depth-limited filter layers). Each model can be downloaded or removed individually, and runs on your GPU or processor. Every download is checked against its published checksum where there is one, and a stopped download resumes; the Hugging Face token you save there is sent to Hugging Face only.
 
 Settings › Appearance switches the app's look: the default, 90s, Duck, Comfy, Black Forest or a skin you add (docs/SKINS.md); View › Skin does the same from the menu, and View › Skin › Default brings the default back if a skin makes the app hard to read. A skin recolours the app's questions too, but cannot hide them or change the order of their buttons.
 

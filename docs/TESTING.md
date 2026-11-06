@@ -483,6 +483,28 @@ and named by a failure, `loras: false`, a declared model per route, an unread no
 changed); the live runs are LR9's (`docs/measurements/lr9_2026-11-06/`); a paid Comfy Cloud run with a LoRA is LR5's,
 on the user's word.
 
+The Key screen (item 49, `docs/PLAN_CORRIDORKEY.md`; the in-app engine is not built, so everything runs on a stub):
+the gate `key` (`tools/key_test.py`, both backends, `--offline`) replaces `host.keyEngine` with a fixture engine
+and checks the landing's bytes and mask (MASK_RGB), the trim, the grey layer, the hidden source, one undo, the
+restore, Re-key (held features read nothing; otherwise the source layer or the picture under the key, never the
+key's own pixels), Auto on a layer's own pixels, a Cancel that frees the document at once, PSD / ORA, **the refine of
+a scaled matte** (step `refine`: the whole picture keyed at a third of its size over a sharp disc, the mask refined in
+the key worker with no fallback and `guideDiff` at most a level, nearer the edge than the bilinear matte and
+`keymatte.refineMatte`'s bytes exactly; a fill layer over the box changes nothing; a layer source refines too), the
+Key dialog's loop (a selection change, real selection-brush strokes, the dab coalescing, a stale ticket, the final run
+never replaced, features gone prepared again, a turn of the picture, an edit under the panel, another tab, the
+dormant, missing and CPU states) and `key_screen` (preview, rekey, hint mask, `status.key`). Plain Node: `node
+tools/keying_test.js` (the box plan at 1k / 4k / 15k, the buckets, reflect-101, the screen from the ring, the matte's
+box, the bilinear rows, the queue, the texts, and the refine's steps through `RowsClient` against `refineMatte`'s
+bytes) and `node tools/keymatte_test.js` (the refine module, `renderer/editor/keymatte.js`: an equal-luminance edge
+snapped to within 1 px, a flat picture left alone, banded equal to unbanded (both methods' halos read and trimmed),
+sensor noise and subjects near the screen's colour (nothing added where the engine was sure), a read that is not the
+bucket's picture falling back, the noise estimate, the geometry, the refusals; `--measure` the edge measurement,
+`--time` the module at 4k, 8k, 15k). The helper downloader: `node tools/download_test.js` (72 checks without network
+or models: two local HTTP servers as two hosts, a fetch stub for huggingface.co and its CDN: the token rule, the
+sha256, the resume cases, sets in their own folder, the overall progress, the free-disk and terms refusals, the
+CorridorKey placeholder, `tools/ck2_catalogue.js`) and `node tools/scan_test.js` (the set's names at small sizes).
+
 Ideogram 4.5 (`recipes/ideogram_4_5.json`, `electron/main/providers/replicate.js`, `util.js` `ideogramMask`,
 `docs/PLAN_IDEOGRAM45.md`): `node tools/ideogram45_test.js` (plain Node, a scripted api.replicate.com and
 api.wavespeed.ai, 149 checks; 67 of them Replicate's, I1) pins

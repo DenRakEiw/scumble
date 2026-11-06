@@ -11,6 +11,10 @@
 //                  back to the box in bands, in floats, never through a canvas)
 //   the loop       KeyQueue: one engine run in flight, one pending, the newest hint replacing the pending one, tickets
 //   the texts      the readiness sentences of §4.8 and the status line of §4.5 step 6
+//   the refine     refineOp: a scaled matte's alpha refined against the full-resolution picture (keymatte.js, I6), the
+//                  steps keyworker.js and RowsClient's in-thread path run alike
+
+import { prepareRefine, noteSample, refineBand } from "./keymatte.js";
 
 /** The feature's name in the menu, the dialog, the status line and the undo history. */
 export const LABEL = "Key screen";
@@ -294,6 +298,16 @@ export function sampleMap(mbox, box, content) {
 }
 
 /**
+ * Whether a plan's matte is keyed smaller (or larger) than its box: the content's size in the bucket differs from the
+ * box's at full resolution. Then the landing refines the alpha against the picture (I6); at a scale of 1 the bilinear
+ * rows are the bucket's pixels exactly.
+ */
+export function isScaled(plan) {
+    const [cx0, cy0, cx1, cy1] = plan.content;
+    return cx1 - cx0 !== plan.box[2] - plan.box[0] || cy1 - cy0 !== plan.box[3] - plan.box[1];
+}
+
+/**
  * Rows y0 .. y0 + rows of a layer outW wide, sampled bilinearly from the bucket (`alpha` floats, `fg` RGB bytes, bw
  * wide) by `map` (sampleMap): the alpha as u8 levels (`a`, outW × rows) and the foreground as opaque RGBA (`rgba`).
  * Either array may be left out (null).
@@ -394,10 +408,68 @@ export class RowsClient {
         }
     }
 
+    /**
+     * The refine of the matte kept under `mid` (I6, keymatte.js; refine_notes.md "What the integration has to do"):
+     * `refine(mid, opts)` once (opts: prepareRefine's `small`, `src`, `full`, `out`; the alpha and its size are the
+     * kept matte's) -> { halo, sample, soft, residual, fitMs, method }; `refineSample(mid, rgba)` once, the rows
+     * `sample` of the matte's box at full resolution -> { noise, guideDiff, fallback }; then `refineBand(mid, band,
+     * rgba)` per band of keymatte.bandPlan -> { a } (u8 rows). Off the window's thread where the worker runs, else here
+     * with the same functions; a worker lost between the steps is caught up here from what was sent (the same bytes).
+     */
+    refine(mid, opts) { return this._refineStep(mid, { op: "refine", opts }); }
+    refineSample(mid, rgba) { return this._refineStep(mid, { op: "refineSample", rgba }); }
+    refineBand(mid, band, rgba) { return this._refineStep(mid, { op: "refineBand", band, rgba }); }
+
+    async _refineStep(mid, msg) {
+        const t = this._local.get(mid);
+        if (t) {
+            // what the in-thread path needs to catch up (a copy: the sample is small and posted, never transferred)
+            if (msg.op === "refine") { t.refineOpts = msg.opts; t.refine = null; t.sampleRgba = null; }
+            else if (msg.op === "refineSample") t.sampleRgba = msg.rgba;
+        }
+        try {
+            const m = await this._post({ ...msg, mid });
+            this.inThread = false;
+            return m;
+        } catch (err) {
+            if (!err.workerDown) throw err;
+            if (!t) throw new Error("no matte " + mid);
+            this.inThread = true;
+            if (!t.refine && msg.op !== "refine" && t.refineOpts) {
+                refineOp(t, { op: "refine", opts: t.refineOpts });
+                if (msg.op === "refineBand" && t.sampleRgba) refineOp(t, { op: "refineSample", rgba: t.sampleRgba });
+            }
+            return refineOp(t, msg).answer;
+        }
+    }
+
     drop(mid) {
         this._local.delete(mid);
         this._post({ op: "drop", mid }).catch(() => { /* nothing kept there */ });
     }
+}
+
+/**
+ * One refine step on a kept matte `t` ({ alpha, bw, bh, refine }), for keyworker.js and RowsClient's in-thread path
+ * (keymatte.js prepareRefine / noteSample / refineBand). -> { answer, transfer }
+ */
+export function refineOp(t, m) {
+    if (m.op === "refine") {
+        const st = prepareRefine({ ...m.opts, alpha: t.alpha, aw: t.bw, ah: t.bh });
+        t.refine = st;
+        return { answer: { halo: st.halo, sample: st.sample ? st.sample.slice() : null, soft: st.soft, residual: st.residual, fitMs: st.fitMs, method: st.method }, transfer: [] };
+    }
+    const st = t.refine;
+    if (!st) throw new Error("the matte's refine was not prepared");
+    if (m.op === "refineSample") {
+        noteSample(st, m.rgba);
+        return { answer: { noise: st.noise ? Array.from(st.noise) : null, guideDiff: st.guideDiff, fallback: st.fallback || null }, transfer: [] };
+    }
+    if (m.op === "refineBand") {
+        const a = refineBand(st, m.band, m.rgba);
+        return { answer: { a }, transfer: [a.buffer] };
+    }
+    throw new Error("unknown refine op " + m.op);
 }
 
 /** The app-only module worker beside this file, or null where none can start (plain Node). */

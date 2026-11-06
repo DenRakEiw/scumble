@@ -11,7 +11,23 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
-Nothing at the moment (0.1.50's and 0.1.51's fixes went out with them; `CHANGELOG.md` has them).
+0.1.50's and 0.1.51's fixes went out with them (`CHANGELOG.md` has them).
+
+### The helper downloader sent the Hugging Face token to every URL and checked only the size (found 2026-10-24, read, item 49's plan; fixed for 0.1.52, I2 of `docs/PLAN_CORRIDORKEY.md`, merged into `corridorkey` 2026-11-06)
+
+Was: `electron/main/onnx/models.js` `_file` put `authorization: Bearer <token>` on every download request, whatever
+the URL's host, and compared only the file size. **Fixed (2026-11-06, `ck-i2`):** the redirects are followed by hand
+and the token goes on a hop only when that hop is `https://huggingface.co` or `https://hf.co` on the default port
+(`hfTokenAllowed`; never Hugging Face's CDN hops, which carry a signed URL, never another host, never http; an https
+URL is never followed to http); every file with a known sha256 is checked while it streams (over the old `.part` bytes
+on a resume) and a mismatch deletes the `.part`. Hashes are known for SAM2 (all four), BiRefNet lite and BiRefNet,
+RMBG-1.4, LaMa and Depth Anything V2 Small (the HF tree API's LFS oids, read 2026-11-06, the URLs pinned to that
+commit); **RMBG-2.0 has none** (gated: the API masks its oid without a token), so it keeps the size check alone.
+Found on the way: SAM2 large's decoder is 20,640,910 bytes on Hugging Face, the registry said 20,640,886, so its
+download always failed the size check (a `.part` of 20,640,910 bytes from 2026-10-05 sits in the user's models
+folder; the new code keeps a whole `.part` that checks, so the next Download finishes without a request). Tests:
+`node tools/download_test.js` (72 checks on local servers and a fetch stub for huggingface.co). The CHANGELOG's
+`## Unreleased` has the user's lines.
 
 ## Open
 
@@ -50,22 +66,6 @@ the reader; the ceiling of a main -> window message (G2 found about 512 MiB a me
 came through main -> window here; a PSD v1 of 30k x 30k is larger still); whether a drop from Explorer (a disk-backed
 `File`) pays any read. A fix would hand the window a path and let the worker read the file in pieces. The user places
 it at a later Stop of `docs/PLAN_WASM_BUILD.md`.
-
-### (Fixed for 0.1.52 on the branch `ck-i2`, I2 of `docs/PLAN_CORRIDORKEY.md`.) The helper downloader sent the Hugging Face token to every URL and checked only the size (found 2026-10-24, read, item 49's plan)
-
-Was: `electron/main/onnx/models.js` `_file` put `authorization: Bearer <token>` on every download request, whatever
-the URL's host, and compared only the file size. **Fixed (2026-11-06, `ck-i2`):** the redirects are followed by hand
-and the token goes on a hop only when that hop is `https://huggingface.co` or `https://hf.co` on the default port
-(`hfTokenAllowed`; never Hugging Face's CDN hops, which carry a signed URL, never another host, never http; an https
-URL is never followed to http); every file with a known sha256 is checked while it streams (over the old `.part` bytes
-on a resume) and a mismatch deletes the `.part`. Hashes are known for SAM2 (all four), BiRefNet lite and BiRefNet,
-RMBG-1.4, LaMa and Depth Anything V2 Small (the HF tree API's LFS oids, read 2026-11-06, the URLs pinned to that
-commit); **RMBG-2.0 has none** (gated: the API masks its oid without a token), so it keeps the size check alone.
-Found on the way: SAM2 large's decoder is 20,640,910 bytes on Hugging Face, the registry said 20,640,886, so its
-download always failed the size check (a `.part` of 20,640,910 bytes from 2026-10-05 sits in the user's models
-folder; the new code keeps a whole `.part` that checks, so the next Download finishes without a request). Tests:
-`node tools/download_test.js` (64 checks on local servers and a fetch stub for huggingface.co). The integration moves
-this entry under "Fixed, waiting for its release" (`docs/ck2/i2_notes.md`).
 
 ### The `depth` gate runs a test that does not exist (found 2026-10-23, read, K0c)
 

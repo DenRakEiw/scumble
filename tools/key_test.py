@@ -12,8 +12,12 @@ Start the app first (tools/run_gates.sh does: `--offline`, on both backends). Ch
               one undo takes both back
   layer       a layer as the source: the Key directly above it, the source hidden in the same step; one undo
   scaled      a selection's box keyed at a smaller bucket: the hint reached the engine, the layer the matte's box, the
-              mask within a level of the matte sampled bilinearly
-  restore     syncLayers + getValue + setValue: the pixels and the mask come back, the session's record does not, and
+              mask within a level of the matte sampled bilinearly (a flat picture: the refine leaves the matte as it is)
+  refine      the whole picture keyed at a third of its size over a sharp disc: the mask refined in the key worker
+              against the full-resolution picture (no fallback, guideDiff at most a level), nearer the sharp edge than
+              the bilinear matte, and keymatte.refineMatte's bytes exactly; a fill layer over the box changes nothing
+              (the reads skip filters as the bucket did); a layer as the source refines too
+  restore    syncLayers + getValue + setValue: the pixels and the mask come back, the session's record does not, and
               Re-key falls back to the layer's bounds
   rekey read  the picture under the key (upTo) goes to the engine: no compositeVersion change, nothing hidden
   rekey       the key layer's mask as the hint (0.95), pixels and mask replaced; one undo restores both
@@ -250,6 +254,94 @@ const cx = 800 - L.x, cy = 500 - L.y;
 ok(mk[(cy * L.w + cx) * 4 + 3] === 255, "inside the selection the matte lets through");
 window.__keyDoc2 = d.id;
 return { box: plan.box, bucket: plan.bucket, layer: [L.x, L.y, L.w, L.h], worst };
+"""),
+
+    ("refine", r"""
+// I6 wired into the landing (docs/ck2/refine_notes.md step 9): a matte keyed smaller than its box is refined against
+// the full-resolution picture in the key worker. The picture: green with a skin-tone disc whose edge is sharp at full
+// resolution exactly where the stub's soft matte has its 0.5 contour
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const W = 1536, H = 1024;
+await run("new_canvas", { doc: d.id, width: W, height: H });
+const plan = host.keyPlan(ed, { source: "picture", hint: "none" });
+const cw = plan.content[2], ch = plan.content[3];
+ok(K.isScaled(plan) && plan.box.join() === `0,0,${W},${H}`, "the whole picture keyed smaller than its box", plan);
+const r = 0.3 * Math.min(cw, ch);
+const inDisc = (X, Y) => Math.hypot(((X + 0.5) * cw) / W - cw / 2, ((Y + 0.5) * ch) / H - ch / 2) < r;
+const disc = (transparent) => {
+    const img = new ImageData(W, H);
+    for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++) img.data.set(inDisc(X, Y) ? [222, 170, 140, 255] : transparent ? [0, 0, 0, 0] : [0, 177, 64, 255], (Y * W + X) * 4);
+    return img;
+};
+const l0 = ed.addPaintLayer();
+l0.px.writeRect(disc(false), 0, 0);
+ed.markLayerChanged(l0);
+await ed.flatten();
+await wait(100);
+const opts = { source: "picture", hint: "none", screen: "green", grey: false };
+const errs = (L) => {
+    const s = stub.last, mk = rect(L.maskPx, L.w, L.h);
+    const lin = K.bilinearRows(s.alpha, null, s.w, K.sampleMap([L.x, L.y, L.x + L.w, L.y + L.h], plan.box, s.content), L.w, 0, L.h).a;
+    let eR = 0, eB = 0;
+    for (let Y = 0; Y < L.h; Y++) for (let X = 0; X < L.w; X++) {
+        const t = inDisc(L.x + X, L.y + Y) ? 255 : 0, k = Y * L.w + X;
+        eR += Math.abs(mk[k * 4 + 3] - t); eB += Math.abs(lin[k] - t);
+    }
+    return { mk, refined: eR / (L.w * L.h), bilinear: eB / (L.w * L.h) };
+};
+const out = await host.keyScreen(ed, opts);
+const L = out.layer, rf = out.refine;
+ok(L && rf && !rf.fallback && !rf.error && rf.guideDiff != null && rf.guideDiff <= 1, "refined: no fallback, the full-resolution read is the bucket's picture", rf);
+const e1 = errs(L);
+ok(e1.refined < 0.6 * e1.bilinear, "the refined mask follows the sharp edge closer than the bilinear matte", e1);
+ok(!/not refined/.test(ed.status), "the status says nothing of a fallback", ed.status);
+// the same bytes as keymatte.refineMatte run in the window from the same inputs and the same reader
+const KM = await import("./editor/keymatte.js");
+const s = stub.last, prep = stub.prepared.get(preps().pop().key);
+const rd = host.keyBandReader(ed, { layer: null, fill: null, upTo: null });
+const want = await KM.refineMatte({
+    alpha: s.alpha, aw: s.w, ah: s.h, small: { data: prep.image, width: s.w, height: s.h },
+    src: { x: 0, y: 0, w: cw, h: ch }, full: { w: W, h: H }, out: { x: L.x, y: L.y, w: L.w, h: L.h },
+    read: (b) => rd.read([L.x, L.y + b[1], L.x + L.w, L.y + b[3]]),
+});
+rd.done();
+let off = 0;
+for (let k = 0; k < L.w * L.h; k++) if (e1.mk[k * 4 + 3] !== want.alpha[k]) off++;
+ok(off === 0 && !want.fallback, "the mask is refineMatte's answer exactly", { off, fallback: want.fallback });
+ok(host._keyRows && host._keyRows.inThread === false, "the key worker answered");
+// a filter layer over the box (a red fill): the reads skip it as the bucket did, so the same mask
+await ed.undoStep();
+const f = ed.addFilterLayer("fill");
+f.params.color = "#ff0000";
+ed.markFilterChanged(f);
+const out2 = await host.keyScreen(ed, opts);
+const rf2 = out2.refine;
+ok(rf2 && !rf2.fallback && rf2.guideDiff <= 1, "a fill layer over the box: still no fallback", rf2);
+const mk2 = rect(out2.layer.maskPx, out2.layer.w, out2.layer.h);
+let off2 = out2.layer.w === L.w && out2.layer.h === L.h ? 0 : -1;
+if (off2 === 0) for (let k = 0; k < L.w * L.h; k++) if (mk2[k * 4 + 3] !== e1.mk[k * 4 + 3]) off2++;
+ok(off2 === 0, "the mask equals the one without the filter layer", off2);
+await ed.undoStep();
+ed.layers.splice(ed.layers.indexOf(f), 1);
+ed.layersRestacked();
+// a layer as the source (the disc on transparent pixels, read on the screen's green at both scales)
+const sl = ed.addPaintLayer();
+sl.name = "Subject";
+sl.px.writeRect(disc(true), 0, 0);
+ed.markLayerChanged(sl);
+const out3 = await host.keyScreen(ed, { source: sl.id, layer: sl, hint: "none", screen: "green" });
+const rf3 = out3.refine;
+ok(rf3 && !rf3.fallback && rf3.guideDiff <= 1, "a layer source: refined, no fallback", rf3);
+const e3 = errs(out3.layer);
+ok(e3.refined < 0.6 * e3.bilinear, "a layer source: the refined mask nearer the edge", e3);
+await ed.undoStep();
+ed.layers.splice(ed.layers.indexOf(sl), 1);
+ed.layersRestacked();
+await run("close_document", { doc: d.id, force: true });
+host.shell.activate(ednow(window.__keyDoc));
+return { bucket: plan.bucket, refine: rf, layerRefine: rf3, err: { refined: e1.refined, bilinear: e1.bilinear }, layerErr: { refined: e3.refined, bilinear: e3.bilinear } };
 """),
 
     ("restore", r"""

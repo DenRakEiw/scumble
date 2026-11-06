@@ -572,7 +572,7 @@ export function prepareRefine(o) {
     const box = o.box || boxBlurs;
     const st = {
         geo, p, ...prm, guide, linear, box, g: null, coef: null, soft: 0, residual: 0, fitMs: 0, small: o.small || null,
-        gate: o.gate !== undefined ? o.gate : REFINE.gate, gateP: null, tau: o.tau != null ? o.tau : REFINE.tau,
+        gate: o.gate !== undefined ? o.gate : REFINE.gate, gateP: null, reachP: null, tau: o.tau != null ? o.tau : REFINE.tau,
         guideTol: o.guideTol != null ? o.guideTol : REFINE.guideTol,
         sample: null, sigma: null, noise: null, guideDiff: null, cells: 0, fallback: null, sat: null,
     };

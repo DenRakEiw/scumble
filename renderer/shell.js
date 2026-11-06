@@ -2082,8 +2082,13 @@ function renderHelpers(status) {
         info.className = "shell-model-info";
         const dl = st.downloads && st.downloads[m.id];
         const err = downloadErrors[m.id];
+        // a model of several files (SAM2's encoder and decoder): the file it is at and the whole download's bytes
+        // (models.js Downloader.running(): index, count, setReceived, setTotal); one file keeps its own bytes
+        const many = !!dl && dl.count > 1 && dl.setTotal > 0;
         if (dl) {
-            info.textContent = `downloading ${dl.file} · ${fmtBytes(dl.received)} of ${fmtBytes(dl.total || m.size)}`;
+            info.textContent = many
+                ? `downloading ${dl.file} · file ${dl.index} of ${dl.count} · ${fmtBytes(dl.setReceived)} of ${fmtBytes(dl.setTotal)}`
+                : `downloading ${dl.file} · ${fmtBytes(dl.received)} of ${fmtBytes(dl.total || m.size)}`;
         } else if (err) {
             info.textContent = err; info.classList.add("error");
         } else if (m.present && m.linked) {
@@ -2138,7 +2143,7 @@ function renderHelpers(status) {
             const bar = document.createElement("div");
             bar.className = "shell-model-bar";
             const fill = document.createElement("div");
-            fill.style.width = Math.round(100 * dl.received / (dl.total || m.size || 1)) + "%";
+            fill.style.width = Math.round(100 * (many ? dl.setReceived / dl.setTotal : dl.received / (dl.total || m.size || 1))) + "%";
             bar.appendChild(fill);
             row.appendChild(bar);
         }

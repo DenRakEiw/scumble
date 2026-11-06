@@ -1208,8 +1208,11 @@ said in chat before it is installed.
 **The plan's consequence (§4.2, §4.11, §5):** the in-app route stops here; **Route B (B0-B5) is 0.1.52**, about 4.5-5.5
 days by §5's totals; I0c and I1-I8 are not built for it. Stop B's hosting branch does not apply: Scumble hosts nothing,
 pack A fetches the weights from their upstream hosts on the user's ComfyUI machine. No in-app text in the CHANGELOG, the
-manual or the Store notes; no node build. The `docs/BUGS.md` Hugging Face token line stays open (I2 is not built); it is
-not live, since every registry URL is huggingface.co. **`KEY_CAP`'s 16 MP default is provisional until B0** (16 MP costs
+manual or the Store notes; no node build. **Correction (the integration, 2026-11-06):** I2 is built (the branch `ck-i2`,
+merged into `corridorkey` the same day), so the `docs/BUGS.md` Hugging Face token entry is fixed for 0.1.52: the sha256
+per file, the token to `huggingface.co` / `hf.co` only, SAM2 large's decoder size; the CK2 set's catalogue entry stays
+a placeholder that is never offered, and I2's in-app wiring (the terms dialog, `helpers.key`, `MISSING.key`) waits
+with the in-app route. **`KEY_CAP`'s 16 MP default is provisional until B0** (16 MP costs
 about 9 GB over idle and 6.6 s warm, on a card where Flux takes 29 GB; B0's eviction and reload item is still open).
 
 **B0, what is left** (I0a took 1, 4 and 16 MP in normal mode, `keep_on_gpu`, `/free`, the `rgba` read-back and the
@@ -1236,6 +1239,60 @@ only at Stop B's decision (§4.11 phase 2) or on a second no-go. *Recommended: (
 **Next:** B0 with the user present and their yes (`/queue` first, own prompts taken off); without them, B1 (Light,
 against `tools/refs/corridorkey/` and I0a's numbers) and B2 against a stubbed `comfyPictureRun` first, B0's last items
 and the gate's fixture on the user's word; then B3-B5, B5 the live run with the user present.
+
+### The integration (2026-11-06)
+
+**The user's answers to Stop A's four questions (2026-11-06, in chat):** (1) Claude may start the user's ComfyUI for B0
+with `run_nvidia_gpu.bat`'s command line and queue test prompts through pack A; (2) the `auto_download: true` run is
+skipped (Scumble always sends `false`); (3) no message to Corridor now; (4) **(a)**: Route B in 0.1.52, the in-app route
+an update of its own. The same day four branches were built and merged into `corridorkey` with `--no-ff`, in this
+order: `ck-merge` (`wasm-kernels`' D0, K5, W1, K12 and Stop 5, gate-checked there; the user's yes: they ship in 0.1.52),
+`ck-i2` (I2), `ck-refine` (I6), `ck-ui` (I4, I5, I7 on a stubbed engine). One conflict: `docs/BUGS.md`, where ck-merge
+added two entries above the downloader entry ck-i2 had retitled as fixed; both kept, the entry then moved under "Fixed,
+waiting for its release". Their notes are `docs/ck2/i2_notes.md`, `refine_notes.md`, `ui_notes.md`.
+
+**What ships of them in 0.1.52:** the downloader's hardening (I2: the sha256 per file, the token to `huggingface.co` /
+`hf.co` only, resumes, SAM2 large's decoder size), with the overall progress of a model of several files in the Helpers
+row (SAM2's two files; `renderer/shell.js` `renderHelpers`); the CK2 catalogue entry stays a placeholder that is never
+offered, so nothing of I2's in-app wiring (the terms dialog, `helpers.key` / `helpers.terms`, `MISSING.key`,
+`status.key`) is built. The refine (I6) and the landing (I4) are shared with Route B. The Key dialog (I5) and
+`key_screen` (I7) are in the build; with no engine, `host.keyEngine` answers "not part of this build" and the dialog shows
+its dormant state until B3 / B4 give them the ComfyUI route. No in-app text in the CHANGELOG, the manual or the Store notes.
+
+**The wiring (Route B's scaled path, §4.11 "Resolution on Route B"):** the refine lives in the app-only key worker:
+`keyworker.js` runs `refine` / `refineSample` / `refineBand` through `keying.refineOp` (keymatte.js `prepareRefine`,
+`noteSample`, `refineBand`), one message at a time and after this thread's Rust kernels are in, so the worker and the
+window answer the same bytes; `keying.RowsClient` gained the three steps with the in-thread path (a worker lost between
+steps is caught up from what was sent). `host.landKey` takes `refine: { small, read, done }`: for a matte keyed smaller
+than its box (`keying.isScaled`) the alpha is refined first (`keyRefineAlpha`: prepared on the kept matte with the
+content's place in the bucket, the box at full resolution and the matte's box; the noise strip read and checked; per
+band of `keymatte.bandPlan` its rows with the halo read at full resolution and combined "add" in white), then the
+foreground's bilinear rows as before; a refine that throws lands the bilinear alpha and says why. `host.keyBandReader`
+reads the same picture the bucket came from at a scale of 1 (the visible picture through `pictureInputBox` with filters
+skipped and `upTo` for a Re-key on tiles, one flatten cropped per band on canvases, a layer source's own pixels on its
+screen fill); `keyRead` carries that read (`read: { layer, fill, upTo }`) through the prep, and a Re-key that read
+nothing reads the picture again and refines only when its hash is the prep's. A `fallback` (the read was not the bucket's
+picture) adds "The matte was not refined against the picture: ..." to the status. The status never says "refined"
+(statusLine's `refined` stays false) until a 15k measurement of the wired path is in `docs/measurements/ck_i6_<date>/`;
+the band reads are not overlapped with the worker's apply (refine_notes "Timing": about 80 ms a 4.4 MP band, 2.4 s for a
+whole 15k box), and `key_screen preview` (into the selection) stays bilinear. B2's `host.keyComfy` hands its answer to
+`landKey` with `refine: { small: the scaled picture it uploaded, ...keyBandReader(...) }` and a plan whose content is
+the scaled size. One fix to ck-refine's file: `reachP: null` in `prepareRefine`'s state (keymatte.js is type-checked
+now that host.js imports it).
+
+**ck-ui's three placement choices, checked:** (1) a key of the visible picture lands at the top of the stack under its
+top run of filter layers, the grey layer directly under it: kept. §4.5 step 5 says "above the base when the base was the
+source" and does not cover a visible picture of several layers, where a key right above the base would sit under the
+layers it was made from; the grey layer still lies between the base and the key (the user's answer 4), and the filters
+skipped by the read still apply over the key once. With the base alone both read the same. (2) The Key dialog is a
+non-modal panel: kept; §4.6's loop needs the canvas to take the selection brush while it is open, which a modal dialog
+would block (Route B has no live loop; the panel serves it as it is). (3) `tools/commands_doc.py` (the GROUPS that
+generate `docs/COMMANDS.md`) and `electron/main/assistant/policy.js` (RUNS and the ask card, I7's own file list): kept;
+B4 changes the ask card's words ("on your GPU") to the route's. Nothing contradicted the plan.
+
+**Open for B1-B4:** the menu entry and `key_screen` are visible and answer the dormant state until B3 / B4; README,
+`docs/MCP.md` and the LoRA CHANGELOG line still say 117 tools (`key_screen` is the 118th): B4 sets the count with the
+command's Route B form. **The gates:** GATES_PLACEHOLDER
 
 ## 6. The user's answers, and the questions still open
 

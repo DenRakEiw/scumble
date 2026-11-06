@@ -45,6 +45,7 @@ import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from
 import { promptPayload } from "./boxes_model.js";
 import * as realism from "./realism.js";
 import * as keying from "./keying.js";
+import { bandPlan as refineBandPlan } from "./keymatte.js";
 import { bytesSource } from "./inpaint_raster.js";
 import * as comfyprompt from "./comfyprompt.js";
 import { MAX_LORAS, LORA_MODEL_CLASS, comboOf, usableRows, modelSource, spliceLoras, missingLoras, normalizeName, loraWords, loraFolder, familyOf, loraTriggers, loraMeta } from "./loras.js";
@@ -4154,8 +4155,9 @@ export const host = {
      * it is transparent; Re-key reads what keyRekeyRead names (the source layer, or only the layers under the key,
      * `upTo`). A layer's screen on Auto is told from its own opaque pixels (the ring weighted by its alpha), before the
      * fill is chosen; `weight` (its alpha at the bucket) keeps the fill out of the later guess too. Padded reflect-101
-     * where the picture's edge leaves it short.
-     * -> { image, hash, source: "picture" | layer id, weight | null, keyedScreen | null }
+     * where the picture's edge leaves it short. `read` says how the same picture is read at full resolution for the
+     * refine (keyBandReader): the layer and its fill, or the picture up to `upTo`.
+     * -> { image, hash, source: "picture" | layer id, weight | null, keyedScreen | null, read: { layer, fill, upTo } }
      */
     async keyRead(editor, plan, { source = "picture", layer = null, rekey = false, screen = "auto" } = {}) {
         const { bucket } = plan;
@@ -4170,11 +4172,12 @@ export const host = {
             if (rs === "green" || rs === "blue") keyedScreen = rs;
             if (screen !== "green" && screen !== "blue" && keyedScreen) screen = keyedScreen;
         }
-        let image, weight = null;
+        let image, weight = null, read;
         if (!from) {
             const opts = rekey && layer ? { skipFilters: true, upTo: this.keyUpTo(editor, layer) } : { skipFilters: true };
             const rgba = (await this.pictureInputBox(editor, plan.box, cw, ch, opts)).image;
             image = keying.padRect(rgba, cw, ch, bucket.w, bucket.h, 4);
+            read = { layer: null, fill: null, upTo: opts.upTo == null ? null : opts.upTo };
         } else {
             const raw = await this.keyLayerInput(editor, from, plan.box, cw, ch);
             const n = cw * ch, a = keying.alphaPlane(raw, n);
@@ -4182,16 +4185,17 @@ export const host = {
             if (!fill) fill = "green";
             image = keying.padRect(keying.overColour(raw, n, keying.SCREEN_FILL[fill]), cw, ch, bucket.w, bucket.h, 4);
             weight = keying.padRect(a, cw, ch, bucket.w, bucket.h, 1);
+            read = { layer: from, fill, upTo: null };
         }
         const hash = await this.inputHash(image);
-        return { image, hash, source: src, weight, keyedScreen };
+        return { image, hash, source: src, weight, keyedScreen, read };
     },
 
     /**
      * The picture prepared in the engine under the features' key `<doc>:<hash of the bytes>:<w>x<h>` (the hash, not
      * compositeVersion: a mask stroke on the key layer keeps it). A Re-key from its record asks the engine first whether it
      * still holds the features under the record's hash and reads nothing then (§4.5); `read: true` reads in any case.
-     * -> { key, image | null, hash, provider, ms, cached, held, source, weight, keyedScreen }
+     * -> { key, image | null, hash, provider, ms, cached, held, source, weight, keyedScreen, read | null }
      */
     async keyPrepare(editor, plan, o = {}) {
         const { bucket } = plan;
@@ -4203,7 +4207,7 @@ export const host = {
             if (held) {
                 editor.helperUsed = true;
                 const rs = rec.screen === "green" || rec.screen === "blue" ? rec.screen : null;
-                return { key, image: null, hash: rec.hash, provider: rec.provider || null, ms: 0, cached: true, held: true, source: rec.source || "picture", weight: null, keyedScreen: rs };
+                return { key, image: null, hash: rec.hash, provider: rec.provider || null, ms: 0, cached: true, held: true, source: rec.source || "picture", weight: null, keyedScreen: rs, read: null };
             }
         }
         return this.keyPrepareRead(editor, plan, await this.keyRead(editor, plan, o));
@@ -4215,7 +4219,7 @@ export const host = {
         const key = `${editor.node.id}:${r.hash}:${bucket.w}x${bucket.h}`;
         editor.helperUsed = true;
         const res = (await this.keyEngine.prepare({ key, image: r.image, bucket: { w: bucket.w, h: bucket.h }, content: plan.content.slice() })) || {};
-        return { key, image: r.image, hash: r.hash, provider: res.provider || null, ms: res.ms || 0, cached: !!res.cached, held: false, source: r.source, weight: r.weight, keyedScreen: r.keyedScreen || null };
+        return { key, image: r.image, hash: r.hash, provider: res.provider || null, ms: res.ms || 0, cached: !!res.cached, held: false, source: r.source, weight: r.weight, keyedScreen: r.keyedScreen || null, read: r.read || null };
     },
 
     /**
@@ -4410,12 +4414,21 @@ export const host = {
                 return { ...none, box: plan.box.slice(), matteBox: mb, workingSize: Math.max(plan.bucket.w, plan.bucket.h), provider, seconds: secs, kept, status: text };
             }
             const record = { box: plan.box.slice(), size: [editor.width, editor.height], bucket: { ...plan.bucket }, screen, despill: o.despill, trust: h.quality, hint: o.hint, source: prep.source, provider, hash: prep.hash, greyId: null };
-            const landed = await this.landKey(editor, { matte, plan, source: o.rekey ? null : o.source === "picture" ? null : o.layer, rekeyLayer: o.rekey ? o.layer : null, grey: !o.rekey && o.source === "picture" && !!o.grey, record, token, gone });
+            // a matte keyed smaller than its box is refined against the full-resolution picture (I6, keymatte.js)
+            const refine = keying.isScaled(plan) ? await race(this.keyRefineInput(editor, plan, o, prep)) : null;
+            if (gone()) { if (refine) refine.done(); return none; }
+            const landed = await this.landKey(editor, { matte, plan, refine, source: o.rekey ? null : o.source === "picture" ? null : o.layer, rekeyLayer: o.rekey ? o.layer : null, grey: !o.rekey && o.source === "picture" && !!o.grey, record, token, gone });
             if (!landed) return none;
             const secs = (performance.now() - t0) / 1000;
-            const text = keying.statusLine({ kept, seconds: secs, provider, screen, hint: h.hint ? o.hint : "none", trust: h.quality, keyedAt: Math.max(plan.bucket.w, plan.bucket.h), grey: !!landed.grey, hidden: landed.hidden ? landed.hidden.name : "", rekey: o.rekey });
+            let text = keying.statusLine({ kept, seconds: secs, provider, screen, hint: h.hint ? o.hint : "none", trust: h.quality, keyedAt: Math.max(plan.bucket.w, plan.bucket.h), grey: !!landed.grey, hidden: landed.hidden ? landed.hidden.name : "", rekey: o.rekey });
+            const rn = landed.refine;
+            if (rn && (rn.fallback || rn.error)) {
+                // plain: not the user's error (docs/ck2/refine_notes.md step 8); the console keeps the record
+                text += ` The matte was not refined against the picture: ${rn.fallback || rn.error}.`;
+                console.warn(`${L}: the matte was not refined`, rn);
+            }
             editor.setStatus(text, "info");
-            return { layer: landed.layer, grey: landed.grey, hidden: landed.hidden, box: plan.box.slice(), matteBox: landed.matteBox, workingSize: Math.max(plan.bucket.w, plan.bucket.h), provider, seconds: secs, kept, status: text };
+            return { layer: landed.layer, grey: landed.grey, hidden: landed.hidden, box: plan.box.slice(), matteBox: landed.matteBox, workingSize: Math.max(plan.bucket.w, plan.bucket.h), provider, seconds: secs, kept, refine: rn || null, status: text };
         } catch (err) {
             if (gone()) return none;
             const msg = String((err && err.message) || err);
@@ -4433,39 +4446,137 @@ export const host = {
     },
 
     /**
+     * What the refine of a scaled matte needs (I6; docs/ck2/refine_notes.md steps 1 and 4): the bucket picture the
+     * engine keyed (`small`, the padded RGBA sent to prepare) and a reader of the same picture at full resolution
+     * (keyBandReader). A Re-key that read nothing (the engine held the features) reads the picture now and refines only
+     * when it is the picture the features were made from. -> { small, read, done } or null (the bilinear matte)
+     */
+    async keyRefineInput(editor, plan, o, prep) {
+        let image = prep ? prep.image : null, spec = prep ? prep.read : null;
+        if (!image || !spec) {
+            const r = await this.keyRead(editor, plan, o);
+            if (!prep || r.hash !== prep.hash) return null;
+            image = r.image; spec = r.read;
+        }
+        return { small: image, ...this.keyBandReader(editor, spec) };
+    },
+
+    /**
+     * Full-resolution rows of the picture a key's bucket was read from (keymatte.js needs the same picture, only the
+     * scale differs: the same source, filters skipped alike, the same fill under a layer's transparent parts): the
+     * visible picture through pictureInputBox at a scale of 1 on tiles (its levels), one flatten cropped per band on the
+     * canvas backend, a layer source's own pixels with its mask on the screen's colour. `read([x0, y0, x1, y1])` in
+     * image pixels -> straight RGBA bytes; `done()` lets the flatten go.
+     */
+    keyBandReader(editor, spec) {
+        let flat = null;
+        const upTo = spec && spec.upTo != null ? spec.upTo : null;
+        const read = async (b) => {
+            const w = b[2] - b[0], h = b[3] - b[1];
+            if (spec && spec.layer) {
+                const raw = await this.keyLayerInput(editor, spec.layer, b, w, h);
+                return keying.overColour(raw, w * h, keying.SCREEN_FILL[spec.fill === "blue" ? "blue" : "green"]);
+            }
+            if (editor.tileMode) return (await this.pictureInputBox(editor, b, w, h, { skipFilters: true, upTo })).image;
+            if (!flat) {
+                if (editor.relightSettled) await editor.relightSettled();
+                flat = editor.flattenToCanvas(upTo == null ? { forRun: true, skipFilters: true } : { forRun: true, skipFilters: true, upTo });
+            }
+            return new Uint8Array(flat.getContext("2d").getImageData(b[0], b[1], w, h).data.buffer);
+        };
+        const done = () => { if (flat) { flat.width = flat.height = 0; flat = null; } };
+        return { read, done };
+    },
+
+    /**
+     * The refined alpha of a scaled matte into the mask `m` (I6, docs/ck2/refine_notes.md step 4): the refine prepared in
+     * the key worker on the matte kept under `mid` (the bucket picture `refine.small`, the content's place in the bucket,
+     * the box at full resolution, the matte's box inside it), the noise sample's rows read and checked (a read that is not
+     * the bucket's picture falls back to the bilinear matte, said in `fallback`), then per band of keymatte.bandPlan its
+     * rows with the halo read at full resolution and the answer combined "add" in white.
+     * -> { fallback, guideDiff, noise, bands, halo, soft, ms } or null (the tab went away)
+     */
+    async keyRefineAlpha(editor, rc, mid, m, { plan, mbox, matte, refine, gone }) {
+        const t0 = performance.now();
+        const [cx0, cy0, cx1, cy1] = plan.content;
+        const lw = mbox[2] - mbox[0], lh = mbox[3] - mbox[1];
+        const info = await rc.refine(mid, {
+            small: { data: refine.small, width: matte.bw, height: matte.bh },
+            src: { x: cx0, y: cy0, w: cx1 - cx0, h: cy1 - cy0 },
+            full: { w: plan.box[2] - plan.box[0], h: plan.box[3] - plan.box[1] },
+            out: { x: mbox[0] - plan.box[0], y: mbox[1] - plan.box[1], w: lw, h: lh },
+        });
+        const rows = (y0, y1) => refine.read([mbox[0], mbox[1] + y0, mbox[2], mbox[1] + y1]);
+        let note = { noise: null, guideDiff: null, fallback: null };
+        if (info.method === "fast" && info.sample) {
+            const sample = await rows(info.sample[0], info.sample[1]);
+            if (gone()) return null;
+            note = await rc.refineSample(mid, sample);
+        }
+        const bands = refineBandPlan(lw, lh, { halo: info.halo });
+        for (const band of bands) {
+            const rgba = note.fallback || info.method === "bilinear" ? null : await rows(band.ry0, band.ry1);
+            if (gone()) return null;
+            const { a } = await rc.refineBand(mid, band, rgba);
+            if (gone()) return null;
+            m.combine(bytesSource(a, 0, band.y0, lw, band.y1 - band.y0), "add", KEY_MASK_RGB);
+        }
+        return { fallback: note.fallback || null, guideDiff: note.guideDiff, noise: note.noise, bands: bands.length, halo: info.halo, soft: info.soft, ms: Math.round(performance.now() - t0), error: null };
+    },
+
+    /**
      * The matte back to the box in bands (§4.5 steps 2-5), shared by every route (Route B lands its native answer
-     * through it with a bucket the box's own size): the matte's box first (keying.matteBox: the layer is that big, not
-     * the box's), then per 256-row band the alpha and the foreground sampled bilinearly from the bucket in the app-only
-     * worker (the refine joins there with I6), the pixels written opaque (`writeRect`, the copy path) and the mask
-     * combined with "add" in white (a replace per band would clear the bands before it). Then one undo step: the grey
+     * through it with a bucket the box's own size, and a scaled one with `refine`): the matte's box first
+     * (keying.matteBox: the layer is that big, not the box's), then per 256-row band the foreground (and the alpha)
+     * sampled bilinearly from the bucket in the app-only worker, the pixels written opaque (`writeRect`, the copy path)
+     * and the mask combined with "add" in white (a replace per band would clear the bands before it). A matte keyed
+     * smaller than its box, with `refine` ({ small: the RGBA picture the matte was keyed from, at the bucket; read: the
+     * same picture's full-resolution rows; done }, keyRefineInput / keyBandReader), has its alpha refined against the
+     * picture instead (keyRefineAlpha, keymatte.js); a refine that fails lands the bilinear alpha and says why in
+     * `refine.error`. Then one undo step: the grey
      * Fill layer (`grey`) and the Key layer (`ref: null`, both dirty flags, so syncLayers uploads the pixels and the
      * mask), above the source layer (hidden in the same step) or, for the visible picture, at the top of the stack
      * under its top run of filter layers; `rekeyLayer`: its pixels, mask and rect replaced (a `layerfull` step). The
      * `key` record stays on the layer for this session only (§4.5 step 5: not in the document).
-     * -> { layer, grey, hidden, matteBox } or null (the tab went away)
+     * -> { layer, grey, hidden, matteBox, refine } or null (the tab went away); `refine`: keyRefineAlpha's record, null
+     * when the matte was not scaled or nothing to refine with was given
      */
-    async landKey(editor, { matte, plan, source = null, rekeyLayer = null, grey = false, record = null, token = null, gone = () => false }) {
+    async landKey(editor, { matte, plan, refine = null, source = null, rekeyLayer = null, grey = false, record = null, token = null, gone = () => false }) {
         const T = keying.TEXTS, L = keying.LABEL;
         const mbox = keying.matteBox(matte.alpha, matte.bw, matte.bh, plan.content, plan.box);
-        if (!mbox) throw refusal(T.nothingKept, "warn");
+        if (!mbox) { if (refine) refine.done(); throw refusal(T.nothingKept, "warn"); }
         if (record) this.keyWatchGeometry();
         const lw = mbox[2] - mbox[0], lh = mbox[3] - mbox[1];
         const map = keying.sampleMap(mbox, plan.box, plan.content);
         const rc = this.keyRowsClient();
         const mid = `m${++this._keyMatteSeq}`;
-        await rc.matte(mid, matte.alpha, matte.fg, matte.bw, matte.bh);
         const px = editor.pixels.Layer.empty(lw, lh);
-        const m = editor.pixels.Mask.empty(lw, lh);
+        let m = editor.pixels.Mask.empty(lw, lh);
+        let refined = null;
         try {
+            await rc.matte(mid, matte.alpha, matte.fg, matte.bw, matte.bh);
+            if (refine && refine.small && typeof refine.read === "function" && keying.isScaled(plan)) {
+                try {
+                    refined = await this.keyRefineAlpha(editor, rc, mid, m, { plan, mbox, matte, refine, gone });
+                    if (!refined) return null;
+                } catch (err) {
+                    if (gone()) return null;
+                    // the bilinear alpha instead, on a fresh mask (the bands written so far are dropped)
+                    refined = { fallback: null, guideDiff: null, noise: null, bands: 0, halo: 0, soft: 0, ms: 0, error: String((err && err.message) || err) };
+                    m = editor.pixels.Mask.empty(lw, lh);
+                }
+            }
+            const alphaToo = !refined || !!refined.error;
             for (let y0 = 0; y0 < lh; y0 += KEY_BAND_ROWS) {
                 const rows = Math.min(KEY_BAND_ROWS, lh - y0);
-                const { a, rgba } = await rc.rows(mid, map, lw, y0, rows);
+                const { a, rgba } = await rc.rows(mid, map, lw, y0, rows, { alpha: alphaToo });
                 if (gone()) return null;
                 px.writeRect(new ImageData(rgba, lw, rows), 0, y0);
-                m.combine(bytesSource(a, 0, y0, lw, rows), "add", KEY_MASK_RGB);
+                if (alphaToo) m.combine(bytesSource(a, 0, y0, lw, rows), "add", KEY_MASK_RGB);
             }
         } finally {
             rc.drop(mid);
+            if (refine) refine.done();
         }
         if (gone()) return null;
         if (token && token.cancelled) throw Object.assign(new Error(T.cancelled), { hint: T.cancelled, kind: "cancelled", statusKind: "info" });
@@ -4481,7 +4592,7 @@ export const host = {
             editor.markMaskChanged(l);
             editor.renderLayers();
             editor.draw();
-            return { layer: l, grey: null, hidden: null, matteBox: mbox };
+            return { layer: l, grey: null, hidden: null, matteBox: mbox, refine: refined };
         }
         const isFill = (x) => editor.isFillLayer(x);
         const skip = (x) => editor.isReference(x) || editor.isControl(x) || (x.kind !== "filter" && !x.visible);
@@ -4514,7 +4625,7 @@ export const host = {
         editor.activeLayerId = layer.id;
         if (editor.selectLayers) editor.selectLayers([layer.id]);
         editor.layersRestacked();
-        return { layer, grey: fill, hidden, matteBox: mbox };
+        return { layer, grey: fill, hidden, matteBox: mbox, refine: refined };
     },
 
     /**

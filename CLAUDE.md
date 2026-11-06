@@ -232,7 +232,8 @@ code.
   put it). **D0 done 2026-11-06** (`docs/measurements/d0_2026-11-06/`: the PSD reader in the pool job `psd_read`, plain
   JS; a 15k PSD open blocks the window 1.8 s instead of 11.0 s in the same machine state (baseline 9.0 s), the block
   left is the file's read into the window, `docs/BUGS.md`). **K5 done** (the selection's combine in Rust, ABI 21, Rust on every row, no route entry: select by depth 1,746 -> 1,205 ms, the wand's window block 329 -> 94 ms at 15k). **Stop 3 done** (#9-#16 re-ranked, nothing measured or asked: K21 up to #9 with K11 after it, K23 ahead of K25, K9 down to #14 before K36 / K37; `docs/PLAN_WASM_BUILD.md` §7). **W1 done** (the PNG writer's filter choice in SIMD lanes, the same bytes: a 15k PNG export 1,899 -> 1,375 ms, an ORA 5,075 -> 3,522 ms, `docs/measurements/w1_2026-11-06/`). **K12 done** (relight's march in stripes, JS only, the same bytes: one light's shadows land 3,545 -> 649 ms after a move at 15k, three lights 3,665 -> 1,031; parallel efficiency one light 0.67, three 0.91, `docs/measurements/k12_2026-11-06/`). **Stop 5 done** (K13 and K14 run in place, the threads spike decided at K14, a new K12b before G6; three questions for the user in the plan's §7 "Stop 5"). **Next: K12b** (the march's stripes no longer ahead of other NORMAL pool work, the drag step's block, the 8-stripes row), then G6. **Merged for 0.1.52 (2026-11-06):** `wasm-kernels` at `2ea002b` (D0, K5, W1, K12, Stop 5) merged on the
-  branch `ck-merge` (worktree `.claude/worktrees/ck-merge`), into `corridorkey` once its CorridorKey workflow ends.
+  branch `ck-merge` (worktree `.claude/worktrees/ck-merge`), **merged into `corridorkey` 2026-11-06** with the
+  CorridorKey integration (item 49).
   **Beside it, all for 0.1.52 on `corridorkey` (2026-11-06):** GPT-Image-2.6 (item 51, branch `gpt26`), P-H3-Image
   (item 52, branch `ph3`), both merged there. **And (2026-10-24): CorridorKey 2.0 planned** (item 49,
   `docs/PLAN_CORRIDORKEY.md`) on its own branch `corridorkey` off `main` (worktree `.claude/worktrees/corridorkey`),
@@ -742,7 +743,15 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   reference keys; the spike on Nucito's fp16 set): **Stop A is a no-go** for the in-app route (DirectML refuses stage 1
   at one MatMul, WebGPU runs everything but misses parity at both buckets), so **Route B (B0-B5) is 0.1.52** and
   I0c-I8 are not built; the in-app route is a later update on the user's word (plan §5 "Stop A", with four questions for
-  the user). Next: B0 with the user present (or B1 / B2 first without them).
+  the user). **The user's answers (2026-11-06):** Route B in 0.1.52, the in-app route a later update of its own; Claude
+  may start the user's ComfyUI for B0 and queue test prompts through pack A; the `auto_download: true` run skipped
+  (Scumble always sends false); no message to Corridor now. **Built the same day on branches and merged into
+  `corridorkey` (2026-11-06, the integration; plan §5 "The integration"):** `ck-merge` (D0, K5, W1, K12), `ck-i2` (I2:
+  the downloader's sha256 per file and the HF token to huggingface.co / hf.co only, SAM2 large's decoder size; the CK2
+  catalogue entry a placeholder, not offered), `ck-refine` (I6: `renderer/editor/keymatte.js`), `ck-ui` (I4 landing,
+  I5 Key dialog, I7 `key_screen`, on a stubbed engine); the refine wired into `keyworker.js` / `host.landKey` for every
+  scaled matte (Route B's key above the cap included). No in-app engine (I1, I3 not built): `host.keyEngine` answers
+  "not part of this build"; no in-app text in the CHANGELOG, the manual or the Store notes. Next: B0, then B1-B5.
 - 50: **LoRAs on the user's ComfyUI and Comfy Cloud, and MOSS Image Edit** (issues #10, hwatik, 2026-10-24: "lora
   support for local generations ... qwen 2.1 or moss"; #11, nadergits, 2026-10-31: "add moss image edit ... with
   loras"; the user, 2026-11-06). **The user's decisions:** LoRAs only for the user's own ComfyUI (local or remote) and
@@ -904,7 +913,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb blendmodes relight cloudjobs loras`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb blendmodes relight cloudjobs loras key`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is

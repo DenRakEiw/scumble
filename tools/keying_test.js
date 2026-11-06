@@ -139,6 +139,65 @@
     check("RowsClient without a worker: the same rows, in the thread", cd === 0 && rc.inThread, `${cd} off`);
     rc.drop("t");
 
+    // ---- the refine of a scaled matte through the rows client (I6; the same steps keyworker.js runs) ----
+    {
+        const KM = await import("../renderer/editor/keymatte.js");
+        // a 96 x 64 bucket of a 288 x 192 box (3x): a skin-tone disc on green, sharp at full resolution, soft in the matte
+        const aw = 96, ah = 64, F = 3, W = aw * F, H = ah * F, R = 20 * F, cx = W / 2, cy = H / 2;
+        const big = new Uint8Array(W * H * 4);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const inD = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) < R, o = (y * W + x) * 4;
+            big.set(inD ? [222, 170, 140, 255] : [0, 177, 64, 255], o);
+        }
+        const small = new Uint8Array(aw * ah * 4), alphaS = new Float32Array(aw * ah);
+        for (let v = 0; v < ah; v++) for (let u = 0; u < aw; u++) {
+            for (let c = 0; c < 4; c++) {
+                let s = 0;
+                for (let j = 0; j < F; j++) for (let i = 0; i < F; i++) s += big[((v * F + j) * W + u * F + i) * 4 + c];
+                small[(v * aw + u) * 4 + c] = Math.round(s / (F * F));
+            }
+            alphaS[v * aw + u] = Math.min(1, Math.max(0, (20 - Math.hypot(u + 0.5 - aw / 2, v + 0.5 - ah / 2)) / 3 + 0.5));
+        }
+        const out = { x: 30, y: 20, w: W - 60, h: H - 40 };
+        const read = (b) => {
+            const rows = b[3] - b[1], o = new Uint8Array(out.w * rows * 4);
+            for (let y = 0; y < rows; y++) o.set(big.subarray(((out.y + b[1] + y) * W + out.x) * 4, ((out.y + b[1] + y) * W + out.x + out.w) * 4), y * out.w * 4);
+            return o;
+        };
+        const opts = { small: { data: small, width: aw, height: ah }, src: { x: 0, y: 0, w: aw, h: ah }, full: { w: W, h: H }, out };
+        const want = await KM.refineMatte({ ...opts, alpha: alphaS, aw, ah, read });
+        const rr = new K.RowsClient();
+        await rr.matte("r", alphaS, null, aw, ah);
+        const info = await rr.refine("r", opts);
+        const note = await rr.refineSample("r", read([0, info.sample[0], out.w, info.sample[1]]));
+        const got = new Uint8Array(out.w * out.h);
+        for (const band of KM.bandPlan(out.w, out.h, { halo: info.halo, bandRows: 24 })) {
+            const { a } = await rr.refineBand("r", band, read([0, band.ry0, out.w, band.ry1]));
+            got.set(a, band.y0 * out.w);
+        }
+        rr.drop("r");
+        let off = 0;
+        for (let k = 0; k < got.length; k++) if (got[k] !== want.alpha[k]) off++;
+        check("the refine through RowsClient in bands of 24 rows: refineMatte's bytes exactly", off === 0 && note.fallback === null && rr.inThread, `${off} off, fallback ${note.fallback}`);
+        // against the true (sharp) disc: the refined matte nearer than the bilinear one
+        const lin = K.bilinearRows(alphaS, null, aw, K.sampleMap([out.x, out.y, out.x + out.w, out.y + out.h], [0, 0, W, H], [0, 0, aw, ah]), out.w, 0, out.h).a;
+        let eR = 0, eB = 0;
+        for (let y = 0; y < out.h; y++) for (let x = 0; x < out.w; x++) {
+            const t = Math.hypot(out.x + x + 0.5 - cx, out.y + y + 0.5 - cy) < R ? 255 : 0, k = y * out.w + x;
+            eR += Math.abs(got[k] - t); eB += Math.abs(lin[k] - t);
+        }
+        check("the refined matte follows the sharp edge closer than the bilinear one", eR < eB * 0.6, `refined ${(eR / got.length).toFixed(2)} bilinear ${(eB / got.length).toFixed(2)} levels`);
+        // a read that is not the bucket's picture: the bilinear matte, said
+        const rr2 = new K.RowsClient();
+        await rr2.matte("f", alphaS, null, aw, ah);
+        const i2 = await rr2.refine("f", opts);
+        const dark = read([0, i2.sample[0], out.w, i2.sample[1]]).map((v, k) => (k % 4 === 3 ? v : Math.round(v * 0.6)));
+        const n2 = await rr2.refineSample("f", dark);
+        check("a read that is not the bucket's picture falls back, said", typeof n2.fallback === "string" && n2.fallback.length > 0, String(n2.guideDiff));
+        rr2.drop("f");
+        check("isScaled: a 3x box, not a box at its own size", K.isScaled({ box: [0, 0, W, H], content: [0, 0, aw, ah] }) && !K.isScaled({ box: [5, 5, 101, 69], content: [0, 0, 96, 64] }));
+    }
+
     // ---- the queue ----
     {
         let release = null, running = 0, maxRunning = 0;
