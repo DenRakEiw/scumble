@@ -1,0 +1,1087 @@
+{
+ "phase": "box",
+ "start": "2026-11-06T14:35:02+0100",
+ "cases": {
+  "green_plate": {
+   "subject_bounds": [
+    483,
+    53,
+    883,
+    1301
+   ],
+   "boxes": {
+    "tight": [
+     479,
+     49,
+     887,
+     1305
+    ],
+    "loose": [
+     383,
+     0,
+     983,
+     1344
+    ],
+    "whole": [
+     0,
+     0,
+     1344,
+     1344
+    ]
+   },
+   "plan_box": [
+    0,
+    0,
+    1344,
+    1344
+   ],
+   "loose_box": [
+    383,
+    0,
+    983,
+    1344
+   ],
+   "metrics": {
+    "tight vs whole (nohint)": {
+     "mae": 0.00099,
+     "max": 0.4824,
+     "edge_mae": 0.02974,
+     "edge_px": 11295,
+     "px_off_by_over_0.1": 371,
+     "ring24_mae": 0.00185
+    },
+    "loose vs whole (nohint)": {
+     "mae": 0.00108,
+     "max": 0.5843,
+     "edge_mae": 0.03269,
+     "edge_px": 11625,
+     "px_off_by_over_0.1": 590,
+     "ring24_mae": 0.00198
+    },
+    "hint vs no hint (whole)": {
+     "mae": 9e-05,
+     "max": 0.3843,
+     "edge_mae": 0.01041,
+     "edge_px": 10468,
+     "px_off_by_over_0.1": 211
+    },
+    "whole (nohint) vs I0a native_nohint (bf16 reference, upstream code)": {
+     "mae": 2e-05,
+     "max": 0.0039,
+     "edge_mae": 0.00124,
+     "edge_px": 10436,
+     "px_off_by_over_0.1": 0
+    },
+    "tight vs whole (hint)": {
+     "mae": 0.00105,
+     "max": 0.7412,
+     "edge_mae": 0.03389,
+     "edge_px": 11131,
+     "px_off_by_over_0.1": 452,
+     "ring24_mae": 0.0023
+    },
+    "loose vs whole (hint)": {
+     "mae": 0.00101,
+     "max": 0.5804,
+     "edge_mae": 0.03266,
+     "edge_px": 11047,
+     "px_off_by_over_0.1": 548,
+     "ring24_mae": 0.00231
+    },
+    "whole (hint) vs I0a native_hint (bf16 reference, upstream code)": {
+     "mae": 0.0001,
+     "max": 0.2996,
+     "edge_mae": 0.0092,
+     "edge_px": 10676,
+     "px_off_by_over_0.1": 218
+    }
+   }
+  },
+  "flat_green_plant": {
+   "subject_bounds": [
+    191,
+    219,
+    1166,
+    1186
+   ],
+   "boxes": {
+    "tight": [
+     187,
+     215,
+     1170,
+     1190
+    ],
+    "whole": [
+     0,
+     0,
+     1344,
+     1344
+    ]
+   },
+   "plan_box": [
+    0,
+    0,
+    1344,
+    1344
+   ],
+   "loose_box": [
+    0,
+    0,
+    1344,
+    1344
+   ],
+   "metrics": {
+    "tight vs whole (nohint)": {
+     "mae": 0.00329,
+     "max": 0.9961,
+     "edge_mae": 0.06001,
+     "edge_px": 38165,
+     "px_off_by_over_0.1": 5315,
+     "ring24_mae": 0.00102
+    },
+    "hint vs no hint (whole)": {
+     "mae": 0.00037,
+     "max": 0.8588,
+     "edge_mae": 0.0145,
+     "edge_px": 32637,
+     "px_off_by_over_0.1": 450
+    },
+    "whole (nohint) vs I0a native_nohint (bf16 reference, upstream code)": {
+     "mae": 6e-05,
+     "max": 0.0039,
+     "edge_mae": 0.00122,
+     "edge_px": 32580,
+     "px_off_by_over_0.1": 0
+    },
+    "tight vs whole (hint)": {
+     "mae": 0.00332,
+     "max": 1.0,
+     "edge_mae": 0.06072,
+     "edge_px": 37338,
+     "px_off_by_over_0.1": 5169,
+     "ring24_mae": 0.00103
+    },
+    "whole (hint) vs I0a native_hint (bf16 reference, upstream code)": {
+     "mae": 0.00048,
+     "max": 0.6476,
+     "edge_mae": 0.01822,
+     "edge_px": 33317,
+     "px_off_by_over_0.1": 634
+    }
+   }
+  }
+ },
+ "runs": [
+  {
+   "label": "box green_plate tight no hint",
+   "prompt_id": "48fd1a67-42e5-4555-be36-d6908127acea",
+   "end": "success",
+   "wall_s": 2.287,
+   "server_s": 2.284,
+   "node_s": {
+    "ck_in": 0.017,
+    "ck_key": 2.227,
+    "ck_out": 0.037
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 5033,
+    "total_mib": 32607,
+    "util": 4
+   },
+   "smi_after": {
+    "used_mib": 5019,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 10011,
+   "progress_frames": 3,
+   "progress_last": [
+    1.23,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.003,
+     "execution_start",
+     null
+    ],
+    [
+     0.006,
+     "execution_cached",
+     [
+      "ck_model"
+     ]
+    ],
+    [
+     0.006,
+     "ck_in"
+    ],
+    [
+     0.023,
+     "ck_key"
+    ],
+    [
+     2.25,
+     "ck_out"
+    ],
+    [
+     2.287,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] 1 frames at 408x1256 (padded 512x1280), window 80/40, low_vram=False, est. peak 6.2 GB of 28.9 GB",
+    "[INFO] Prompt executed in 2.29 seconds"
+   ]
+  },
+  {
+   "label": "box green_plate loose no hint",
+   "prompt_id": "98b160ef-b159-41f2-b2b1-642395adf262",
+   "end": "success",
+   "wall_s": 2.365,
+   "server_s": 2.361,
+   "node_s": {
+    "ck_in": 0.037,
+    "ck_key": 2.275,
+    "ck_out": 0.048
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 5056,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 5045,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 10062,
+   "progress_frames": 3,
+   "progress_last": [
+    1.253,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.003,
+     "execution_start",
+     null
+    ],
+    [
+     0.005,
+     "execution_cached",
+     [
+      "ck_model"
+     ]
+    ],
+    [
+     0.005,
+     "ck_in"
+    ],
+    [
+     0.042,
+     "ck_key"
+    ],
+    [
+     2.317,
+     "ck_out"
+    ],
+    [
+     2.365,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] 1 frames at 600x1344 (padded 640x1408), window 80/40, low_vram=False, est. peak 6.2 GB of 28.9 GB",
+    "[INFO] Prompt executed in 2.36 seconds"
+   ]
+  },
+  {
+   "label": "box green_plate whole no hint",
+   "prompt_id": "20ff08ec-c4f6-4860-be13-2c2e264db55b",
+   "end": "success",
+   "wall_s": 2.567,
+   "server_s": 2.563,
+   "node_s": {
+    "ck_in": 0.042,
+    "ck_key": 2.44,
+    "ck_out": 0.08
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 5045,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 5046,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 10395,
+   "progress_frames": 3,
+   "progress_last": [
+    1.274,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.003,
+     "execution_start",
+     null
+    ],
+    [
+     0.005,
+     "execution_cached",
+     [
+      "ck_model"
+     ]
+    ],
+    [
+     0.005,
+     "ck_in"
+    ],
+    [
+     0.047,
+     "ck_key"
+    ],
+    [
+     2.487,
+     "ck_out"
+    ],
+    [
+     2.567,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] 1 frames at 1344x1344 (padded 1408x1408), window 80/40, low_vram=False, est. peak 7.3 GB of 28.9 GB",
+    "[INFO] Prompt executed in 2.57 seconds"
+   ]
+  },
+  {
+   "label": "box green_plate tight hint",
+   "prompt_id": "670b8cb1-f843-4915-88d0-cf9abad6c8af",
+   "end": "success",
+   "wall_s": 2.271,
+   "server_s": 2.267,
+   "node_s": {
+    "ck_in": 0.018,
+    "ck_hint_img": 0.007,
+    "ck_hint": 0.002,
+    "ck_key": 2.199,
+    "ck_out": 0.038
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 5046,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 5017,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 10014,
+   "progress_frames": 3,
+   "progress_last": [
+    1.174,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.003,
+     "execution_start",
+     null
+    ],
+    [
+     0.006,
+     "execution_cached",
+     [
+      "ck_model"
+     ]
+    ],
+    [
+     0.007,
+     "ck_in"
+    ],
+    [
+     0.025,
+     "ck_hint_img"
+    ],
+    [
+     0.032,
+     "ck_hint"
+    ],
+    [
+     0.034,
+     "ck_key"
+    ],
+    [
+     2.233,
+     "ck_out"
+    ],
+    [
+     2.271,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] 1 frames at 408x1256 (padded 512x1280), window 80/40, low_vram=False, est. peak 6.2 GB of 28.9 GB",
+    "[INFO] Prompt executed in 2.27 seconds"
+   ]
+  },
+  {
+   "label": "box green_plate loose hint",
+   "prompt_id": "a765388f-5c12-4b11-8ac8-e2b522892e53",
+   "end": "success",
+   "wall_s": 2.34,
+   "server_s": 2.336,
+   "node_s": {
+    "ck_in": 0.021,
+    "ck_hint_img": 0.012,
+    "ck_hint": 0.002,
+    "ck_key": 2.25,
+    "ck_out": 0.048
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 5019,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_after": {
+    "used_mib": 5045,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_peak_mib": 10071,
+   "progress_frames": 3,
+   "progress_last": [
+    1.246,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.003,
+     "execution_start",
+     null
+    ],
+    [
+     0.007,
+     "execution_cached",
+     [
+      "ck_model"
+     ]
+    ],
+    [
+     0.007,
+     "ck_in"
+    ],
+    [
+     0.028,
+     "ck_hint_img"
+    ],
+    [
+     0.04,
+     "ck_hint"
+    ],
+    [
+     0.042,
+     "ck_key"
+    ],
+    [
+     2.292,
+     "ck_out"
+    ],
+    [
+     2.34,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] 1 frames at 600x1344 (padded 640x1408), window 80/40, low_vram=False, est. peak 6.2 GB of 28.9 GB",
+    "[INFO] Prompt executed in 2.34 seconds"
+   ]
+  },
+  {
+   "label": "box green_plate whole hint",
+   "prompt_id": "91a9a9ce-74d3-4c92-ae39-e939a1fc9037",
+   "end": "success",
+   "wall_s": 2.541,
+   "server_s": 2.538,
+   "node_s": {
+    "ck_in": 0.041,
+    "ck_hint_img": 0.02,
+    "ck_hint": 0.002,
+    "ck_key": 2.391,
+    "ck_out": 0.079
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 5045,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_after": {
+    "used_mib": 5054,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 10398,
+   "progress_frames": 3,
+   "progress_last": [
+    1.279,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.004,
+     "execution_start",
+     null
+    ],
+    [
+     0.007,
+     "execution_cached",
+     [
+      "ck_model"
+     ]
+    ],
+    [
+     0.008,
+     "ck_in"
+    ],
+    [
+     0.049,
+     "ck_hint_img"
+    ],
+    [
+     0.069,
+     "ck_hint"
+    ],
+    [
+     0.071,
+     "ck_key"
+    ],
+    [
+     2.462,
+     "ck_out"
+    ],
+    [
+     2.541,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] 1 frames at 1344x1344 (padded 1408x1408), window 80/40, low_vram=False, est. peak 7.3 GB of 28.9 GB",
+    "[INFO] Prompt executed in 2.54 seconds"
+   ]
+  },
+  {
+   "label": "box flat_green_plant tight no hint",
+   "prompt_id": "a65c0957-0b48-49c1-a0e2-d1fc98e612fd",
+   "end": "success",
+   "wall_s": 2.323,
+   "server_s": 2.319,
+   "node_s": {
+    "ck_in": 0.028,
+    "ck_key": 2.226,
+    "ck_out": 0.063
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 5046,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 5045,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 10039,
+   "progress_frames": 3,
+   "progress_last": [
+    1.195,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.005,
+     "execution_start",
+     null
+    ],
+    [
+     0.006,
+     "execution_cached",
+     [
+      "ck_model"
+     ]
+    ],
+    [
+     0.006,
+     "ck_in"
+    ],
+    [
+     0.034,
+     "ck_key"
+    ],
+    [
+     2.26,
+     "ck_out"
+    ],
+    [
+     2.323,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] 1 frames at 983x975 (padded 1024x1024), window 80/40, low_vram=False, est. peak 6.3 GB of 28.9 GB",
+    "[INFO] Prompt executed in 2.32 seconds"
+   ]
+  },
+  {
+   "label": "box flat_green_plant whole no hint",
+   "prompt_id": "3f5fb8d1-73bc-4de4-a0c2-ae2a2528cc6f",
+   "end": "success",
+   "wall_s": 2.517,
+   "server_s": 2.513,
+   "node_s": {
+    "ck_in": 0.042,
+    "ck_key": 2.392,
+    "ck_out": 0.078
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 5045,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 5016,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 10461,
+   "progress_frames": 3,
+   "progress_last": [
+    1.265,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.003,
+     "execution_start",
+     null
+    ],
+    [
+     0.005,
+     "execution_cached",
+     [
+      "ck_model"
+     ]
+    ],
+    [
+     0.005,
+     "ck_in"
+    ],
+    [
+     0.047,
+     "ck_key"
+    ],
+    [
+     2.439,
+     "ck_out"
+    ],
+    [
+     2.517,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] 1 frames at 1344x1344 (padded 1408x1408), window 80/40, low_vram=False, est. peak 7.3 GB of 28.9 GB",
+    "[INFO] Prompt executed in 2.52 seconds"
+   ]
+  },
+  {
+   "label": "box flat_green_plant tight hint",
+   "prompt_id": "ec354965-7f6a-4bd8-a4f5-3aac77c197c9",
+   "end": "success",
+   "wall_s": 2.357,
+   "server_s": 2.353,
+   "node_s": {
+    "ck_in": 0.026,
+    "ck_hint_img": 0.013,
+    "ck_hint": 0.0,
+    "ck_key": 2.249,
+    "ck_out": 0.062
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 5051,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 5046,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_peak_mib": 10037,
+   "progress_frames": 3,
+   "progress_last": [
+    1.2,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.004,
+     "execution_start",
+     null
+    ],
+    [
+     0.007,
+     "execution_cached",
+     [
+      "ck_model"
+     ]
+    ],
+    [
+     0.007,
+     "ck_in"
+    ],
+    [
+     0.033,
+     "ck_hint_img"
+    ],
+    [
+     0.046,
+     "ck_hint"
+    ],
+    [
+     0.046,
+     "ck_key"
+    ],
+    [
+     2.295,
+     "ck_out"
+    ],
+    [
+     2.357,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] 1 frames at 983x975 (padded 1024x1024), window 80/40, low_vram=False, est. peak 6.3 GB of 28.9 GB",
+    "[INFO] Prompt executed in 2.35 seconds"
+   ]
+  },
+  {
+   "label": "box flat_green_plant whole hint",
+   "prompt_id": "2384ee06-4493-4d51-8afe-d281ec797aad",
+   "end": "success",
+   "wall_s": 2.529,
+   "server_s": 2.526,
+   "node_s": {
+    "ck_in": 0.041,
+    "ck_hint_img": 0.02,
+    "ck_hint": 0.001,
+    "ck_key": 2.381,
+    "ck_out": 0.079
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32270974976,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 5044,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_after": {
+    "used_mib": 5051,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 10451,
+   "progress_frames": 3,
+   "progress_last": [
+    1.294,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.003,
+     "execution_start",
+     null
+    ],
+    [
+     0.006,
+     "execution_cached",
+     [
+      "ck_model"
+     ]
+    ],
+    [
+     0.007,
+     "ck_in"
+    ],
+    [
+     0.048,
+     "ck_hint_img"
+    ],
+    [
+     0.068,
+     "ck_hint"
+    ],
+    [
+     0.069,
+     "ck_key"
+    ],
+    [
+     2.45,
+     "ck_out"
+    ],
+    [
+     2.529,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] 1 frames at 1344x1344 (padded 1408x1408), window 80/40, low_vram=False, est. peak 7.3 GB of 28.9 GB",
+    "[INFO] Prompt executed in 2.53 seconds"
+   ]
+  }
+ ],
+ "end": "2026-11-06T14:35:49+0100"
+}

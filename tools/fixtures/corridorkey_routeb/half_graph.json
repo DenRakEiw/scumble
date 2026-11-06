@@ -1,0 +1,63 @@
+{
+ "ck_in": {
+  "class_type": "InpaintCanvasLoadRef",
+  "inputs": {
+   "ref": "{\"filename\": \"<input>\", \"subfolder\": \"ck_b0\", \"type\": \"temp\"}"
+  }
+ },
+ "ck_model": {
+  "class_type": "CorridorKey2ModelLoader",
+  "inputs": {
+   "weights": "corridorkey_v2.safetensors",
+   "auto_download": false,
+   "keep_on_gpu": false,
+   "vram_reserve_gb": 0.5
+  }
+ },
+ "ck_key": {
+  "class_type": "CorridorKey2Basic",
+  "inputs": {
+   "model": [
+    "ck_model",
+    0
+   ],
+   "images": [
+    "ck_in",
+    0
+   ],
+   "hint_quality": "loose hint (0.5)",
+   "invert_hint": false,
+   "despill": 0.5,
+   "screen": "green",
+   "alpha_hint": [
+    "ck_hint",
+    0
+   ]
+  }
+ },
+ "ck_out": {
+  "class_type": "PreviewImage",
+  "inputs": {
+   "images": [
+    "ck_key",
+    2
+   ]
+  }
+ },
+ "ck_hint_img": {
+  "class_type": "InpaintCanvasLoadRef",
+  "inputs": {
+   "ref": "{\"filename\": \"<hint>\", \"subfolder\": \"ck_b0\", \"type\": \"temp\"}"
+  }
+ },
+ "ck_hint": {
+  "class_type": "ImageToMask",
+  "inputs": {
+   "image": [
+    "ck_hint_img",
+    0
+   ],
+   "channel": "red"
+  }
+ }
+}

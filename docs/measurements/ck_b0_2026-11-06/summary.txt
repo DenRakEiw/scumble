@@ -1,0 +1,228 @@
+CorridorKey 2.0, B0 (2026-11-06): Route B's remaining probe through the user's ComfyUI
+=====================================================================================
+
+The spec is docs/PLAN_CORRIDORKEY.md §5 row B0 and §5 "Stop A" ("B0, what is left"): the despill on blue by eye; what
+the pack evicts and how the next Generate reloads; a tight box against a loose one; a Cancel mid-run and whether the
+interrupt flag stays set; the key gate's Route B fixture; 2 and 8 MP only if the eviction numbers move KEY_CAP off
+16 MP. The user's answers of 2026-11-06 (in chat, the plan's "The integration"): Claude may start the user's ComfyUI
+for B0 and queue test prompts through pack A; the auto_download: true run is skipped (Scumble always sends false).
+
+Results in one place
+--------------------
+- KEY_CAP: **16 MP stays** (no longer provisional). What a key evicts does not depend on its size (section 2), so the
+  condition for measuring 2 and 8 MP did not occur and they were not run.
+- Eviction: **every key empties the GPU of the models the previous prompt loaded, at 1 MP as at 16 MP**, and the next
+  Generate reloads them like a cold start (FLUX 3 Image Klein: 4.96-5.05 s against 2.02-2.07 s warm, +2.9-3.0 s).
+  Likewise the key after any other prompt runs the CorridorKey loader again (ck_model 8.9-10.0 s). The cause is
+  ComfyUI's node cache, not the key's VRAM request (section 2).
+- Cancel: **the interrupt flag does not stay set.** Every key queued right after a cancelled one ran normally.
+  Scumble's cancel (POST /api/jobs/<id>/cancel) stops a 16 MP key 1.0-1.1 s after the click early and mid-run. In the
+  last ~2 s the key finishes, but the prompt still ends interrupted before PreviewImage writes, so no answer arrives.
+  VRAM is back at idle after each (section 3).
+- Box: **a tight box (the subject's bounds + 4 px) is worse.** On flat_green_plant it left gaps between the leaves
+  filled with the screen colour; the whole picture opens them. Keep §4.7 point 1's growth (x 1.5, at least 768 px) on
+  Route B (section 4).
+- Despill on blue: **pack A's screen "blue" works.** CorridorKey's unmixed foreground already carries next to no blue
+  spill. At 0.5, 107 of 317,162 opaque pixels move by more than 2 levels; by eye nothing shows over grey or orange at
+  0, 0.5 or 1.0. Scumble's default 0.5 holds for blue. The wrong screen (green on a blue plate) is harmless at 0.5
+  (section 5).
+- The fixture: tools/fixtures/corridorkey_routeb/ (section 6).
+- Also confirmed: the plan's six-node graph (§4.11, InpaintCanvasLoadRef in, PreviewImage on rgba) runs end to end, and
+  the rgba answer is again an 8-bit straight RGBA PNG. A whole-picture key through the server equals I0a's reference
+  (upstream code, bf16, no hint) within one 8-bit level: green_plate alpha MAE 2e-5, max 0.0039, 0 px off by more than
+  0.1; flat_green_plant MAE 6e-5, max 0.0039.
+
+1. Machine and state
+--------------------
+- RTX 5090 32,607 MiB; ComfyUI 0.44.0 portable; pack A at c7662de (detached, `git status --ignored` empty after the
+  step); models/corridorkey2 as I0a placed them; the desktop's own use about 4.4-5.0 GB by nvidia-smi.
+- ComfyUI was down (8188 refused). Started by this step at 2026-11-06T13:27:45Z with run_nvidia_gpu.bat's command line
+  (HOTRELOAD_OBSERVE_ONLY as in the bat; python_embeded -s ComfyUI/main.py --windows-standalone-build
+  --enable-cors-header --enable-manager), plus --disable-auto-launch (no browser tab, as in I0a). It was up at 13:29:19Z
+  (pid 51108). The pack imported in 0.4 s; the same three IMPORT FAILED as before (inpaint, dlss, comfyui-tosvg). The
+  step stopped it at 13:41:24Z (Stop-Process on that pid only; 8188 refused afterwards, nvidia-smi 4,361 MiB). Log: the
+  session scratchpad's ck_b0_comfy.log.
+- Queue and history empty before the first prompt. All 49 prompts of this step were deleted from the history at the
+  end (history empty, queue empty), then /free with free_memory.
+- The busy lock (w1_lock.py) was held 13:27:31-13:41:31Z (taken after 0 s) for the start, every run and the stop.
+- Every graph sends auto_download false. Inputs were uploaded as type "temp" (subfolder ck_b0) and read by
+  InpaintCanvasLoadRef with type temp; outputs are PreviewImage (temp). **Nothing was written to the user's input or
+  output folder** (0 new files in each). ComfyUI/temp holds 127 new files, 365.9 MB (46 uploads in temp/ck_b0 of
+  174 MB, the rest previews), left alone: ComfyUI empties temp at its next start. No file was written in custom_nodes.
+- The Generate: a plain FLUX 3 Image Klein text-to-image graph on recipes/flux3_klein_local.json's models
+  (flux3-image-klein-int8-convrot, flux2-vae; the text encoder qwen3vl_4b_bf16 because the recipe's default is not on
+  this server, I0a), 1024 x 1024, 16 steps, CFG 1, euler / simple, PreviewImage. It is not the InpaintCanvas recipe
+  graph; its models, and so the load and reload, are the same. A new prompt text and seed each time, as Scumble's
+  next Generate would have.
+
+2. What a key evicts, and the next Generate's reload (raw/b0_evict.json)
+-----------------------------------------------------------------------
+keep_on_gpu off (Scumble's default) unless said. A key 1 MP warm-up ran first, so the loader's first disk read
+(ck_model 10.0 s) is not in the rows. smi = nvidia-smi MiB before -> after.
+
+| run | wall s | the nodes that cost | smi |
+|---|---|---|---|
+| generate cold (after /free) | 5.37 | neg 1.49 (text encoder load), run 2.52, clip 0.49, decode 0.30 | 5,050 -> 17,913 |
+| generate warm | 2.02 | run 1.61 | 17,913 -> 17,911 |
+| key 1 MP | 11.45 | ck_model 8.92 (loader again), ck_key 2.28 | 17,911 -> 5,062 |
+| generate after it | 4.96 | neg 1.39, run 2.36, clip 0.44 | 5,060 -> 17,920 |
+| generate warm | 2.06 | run 1.62 | |
+| key 4 MP | 13.00 | ck_model 9.66, ck_key 2.83 | 17,916 -> 5,051 |
+| generate after it | 4.97 | neg 1.37, run 2.35, clip 0.48 | 5,051 -> 17,910 |
+| generate warm | 2.06 | run 1.62 | |
+| key 16 MP | 17.08 | ck_model 9.67, ck_key 6.06, ck_out 0.84, ck_in 0.50 | 17,913 -> 5,052 |
+| generate after it | 5.05 | neg 1.41, run 2.39, clip 0.44, vae 0.32 | 5,052 -> 17,918 |
+| generate warm | 2.07 | run 1.64 | |
+| key 1 MP keep_on_gpu | 11.27 | ck_model 9.66, ck_key 1.32 | 17,911 -> 9,709 |
+| generate after it | 4.66 | neg 1.33, run 2.31 | 9,709 -> 19,589 |
+| generate warm | 2.05 | run 1.62 | 19,589 -> 19,588 |
+
+- **Size-independent.** Klein's three models (12,863 MiB by nvidia-smi: 17,913 against 5,050 idle) leave the GPU at
+  every key. ComfyUI's log shows "Requested to load Flux3TEModel_ / Flux3 / AutoencoderKL" and the loader nodes run
+  again in every Generate after a key, as after /free. In a warm Generate the loaders are cached and nothing loads. The cost is +2.9-3.0 s on Klein, whatever the
+  key's size; a larger model pays its own cold load (not measured).
+- **Why** (read in ComfyUI 0.44.0, matching the rows): a prompt drops from the node cache the outputs of nodes it does
+  not contain (execution.py:764 `clean_unused`). The other workflow's model patchers die, and the model manager frees
+  them (`cleanup_models_gc` in free_memory, model_management.py:893-1070). The key's own request did not unload
+  anything at 1 MP. Pack A's make_room asks free_memory for its estimate (6.3 GB), free_memory unloads only while free
+  VRAM is below that (model_management.py:909-921), and 17.5 GB were free. The same holds the other way: a Generate
+  drops CorridorKey's loader, so the next key reads its 4.65 GB of weights again (8.9-10.0 s from the OS file cache).
+  Back-to-back keys keep it cached (section 3: ck_model cached, 2.26-2.43 s at 1 MP).
+- **What it means for Route B** (for B2, B3 and B5's texts): a key right after a Generate costs about 11.5 s at 1 MP,
+  13 s at 4 MP and 17 s at 16 MP, not I0a's warm 2.65 / 2.89 / 6.60 s. The next Generate pays about 3 s on Klein.
+  keep_on_gpu does not avoid the loader's rerun after another prompt (ck_model 9.66 s with it on). It only saves the
+  weights' trip between keys in a row (I0a: 0.72 s against 2.65 s), so it suits repeated Re-keys. After a Generate it
+  leaves 1.75 GiB in torch's pool beside the Generate's models (torch_vram_total; nvidia-smi 19,589 against
+  17,913 MiB), until /free with free_memory (5,053 MiB after it).
+- **KEY_CAP = 16 MP.** The eviction gives no reason to go lower. On an empty card the 16 MP key peaks at 14,257 MiB by
+  nvidia-smi (about 9,200 MiB over the 5,038 MiB idle; section 3's uncancelled reference). The key node takes 6.0 s warm, and
+  17.1 s wall after another prompt. The pack keys it in its normal mode: its own estimate, 23.2 GB x 1.1 + 0.3 = 25.8 GB,
+  fits the 28.9 GB budget it computes on this card. By the same formula (runtime.py's _VRAM_PEAK_GB, read) normal mode
+  lasts up to about 19.3 MP here (inferred from the formula, not run). On a 24 GB card the pack's rule would put 16 MP
+  into its low_vram mode (inferred; no such card here). The cap is about this card and the plan's 8,192 px side limit;
+  a cap by the card's VRAM is B1's call.
+- Not run: 2 and 8 MP, hint / no hint per size (the plan's condition did not occur; b0.py keeps the `extra` phase for
+  them).
+
+3. A Cancel, and whether the interrupt flag stays set (raw/b0_cancel.json)
+--------------------------------------------------------------------------
+Scumble's own path (host.js cancelComfyPrompt: POST /api/jobs/<id>/cancel, never a bare /interrupt). Each cancelled
+16 MP key used a fresh input, then a 1 MP key of another still ran at once. The loader was cached through this phase
+(no other workflow in between).
+
+| case | cancel sent (s after post) | the answer | the prompt ended | the next key |
+|---|---|---|---|---|
+| 16 MP uncancelled (reference) | - | - | success at 7.24 s (ck_key 6.04) | - |
+| 0.5 s into the key node | 0.88 | 200 {"cancelled": true} | interrupted in ck_key at 1.99 s | success, 2.35 s (ck_key 2.26) |
+| 3.0 s into the key node | 3.35 | 200 {"cancelled": true} | interrupted in ck_key at 4.39 s | success, 2.37 s (ck_key 2.28) |
+| 5.4 s into the key node | 5.73 | 200 {"cancelled": true} | ck_key finished (6.08 s), interrupted at ck_out (PreviewImage) at 6.42 s, no output | success, 2.55 s (ck_key 2.43) |
+| after its end (1 MP) | 2.35 (= the end) | 200 {"cancelled": false} | success, the output kept | success, 2.35 s |
+| a 1 MP key pending behind a 16 MP one | at once | 200 {"cancelled": true} | the pending job never ran, no history entry; the 16 MP key beside it success, 7.17 s | - |
+
+- **The flag does not leak.** ComfyUI 0.44.0 resets it at the start of every prompt (execution.py:739), and the job
+  endpoint interrupts only the running job with that id, under the queue's mutex (execution.py:1380-1397). The rows
+  agree: the key after each cancel ran as fast as an uncancelled one. History status: "error" with messages
+  execution_start, execution_cached, execution_interrupted. The websocket sends execution_interrupted with node_id and
+  node_type.
+- **Latency:** pack A checks for the interrupt only at its step starts (pipeline.py: the RVM pass, each stage-1 window,
+  each stage-2 batch; read). So a cancel lands 1.0-1.1 s after the click early and mid-run. In the last part (stage 2
+  started) the key runs to its end, and the executor's check before PreviewImage stops the prompt 0.68 s after the click.
+  Either way nothing is written for Scumble to fetch: comfyPictureRun's "interrupted" path is the one taken.
+- **VRAM after a cancel:** 5,0xx MiB (idle) every time. The pack's `active()` offloads in a finally block (loader.py),
+  so an interrupted key leaves nothing on the GPU.
+- **Progress frames** (for B3's bar): 3 `progress` frames per key from the pack's ProgressBar (value 1..3, max 3).
+  At 16 MP 1/3 arrives about 1.2 s into the prompt and 3/3 at 3.4 s of 7.2 s, so the bar stands full for the last
+  ~3.8 s (the decode, the despill, the PNG). At 1 MP 3/3 comes at 1.2 s of 2.35 s. A cancel 0.5 s in saw no frame.
+
+4. A tight box against a loose one (raw/b0_box.json; eye/box_*.jpg)
+-------------------------------------------------------------------
+Native keys (Route B below the cap), trust 0.5 (Scumble's Rough), despill 0.5. Hint: I0a's rough brush hint
+(hint_full.png) cropped. Boxes: "tight" = the subject's bounds (I0a's native alpha > 0.02) + 4 px; "loose" = the bounds
+grown by a quarter of their width / height on each side, clamped. §4.7 point 1's box (box_plan: the longer side x 1.5,
+squared, clamped) is the whole picture on both stills. Compared inside the tight box against the whole picture's key;
+"edge" = pixels with 0.02 < alpha < 0.98 in either.
+
+| still, hint | box | alpha MAE | edge MAE | px off by > 0.1 | max |
+|---|---|---|---|---|---|
+| green_plate, none | tight 408 x 1256 | 0.0010 | 0.030 | 371 (310 at the feet, y > 1150) | 0.48 |
+| green_plate, none | loose 600 x 1344 | 0.0011 | 0.033 | 590 (533 at the feet) | 0.58 |
+| green_plate, hint | tight | 0.0011 | 0.034 | 452 (377 at the feet) | 0.74 |
+| green_plate, hint | loose | 0.0010 | 0.033 | 548 (478 at the feet) | 0.58 |
+| flat_green_plant, none | tight 983 x 975 | 0.0033 | 0.060 | 5,315 (212 in the box's 24 px ring) | 1.00 |
+| flat_green_plant, hint | tight | 0.0033 | 0.061 | 5,169 | 1.00 |
+
+- **flat_green_plant:** the tight key's differences lie all over the leaves, not at the box edge (4 % in the 24 px
+  ring), with more alpha in the tight key (mean 136 against 111 where they differ). Looked at 200 % (eye/
+  box_plant_tight_vs_whole.jpg): **the tight box keeps gaps between the leaves opaque, filled with the light green
+  screen**; the whole picture keys them out. A defect: the screen colour lands in the Key layer.
+- **green_plate:** both the tight and the loose box differ from the whole picture mostly in the floor contact shadow
+  under the shoes. The whole picture keeps more of it as soft alpha (eye/box_green_plate_toe.jpg); elsewhere they agree.
+  Neither is wrong: it is the soft shadow at the subject's foot, and more floor around it keeps more of it.
+- The hint against none (whole picture): green_plate edge MAE 0.010, plant 0.015.
+- **For B1 / B2:** key §4.7 point 1's grown box on Route B too, never the selection's bounds as they are. The plant
+  shows what a box without context costs.
+
+5. The despill on blue (raw/b0_despill.json; eye/despill_blue_plate_head.jpg)
+-----------------------------------------------------------------------------
+Whole stills, no hint. "Excess" = the screen channel above the larger of the other two, in 8-bit levels,
+alpha-weighted in the edge band (0.05 < alpha < 0.95).
+
+| key | edge excess | edge px excess > 8 | opaque px changed > 2 levels against despill 0 | opaque mean dRGB | edge mean dRGB |
+|---|---|---|---|---|---|
+| blue_plate, screen blue, 0 | 0.12 | 24 of 12,966 | - | - | - |
+| blue_plate, screen blue, 0.5 | 0.01 | 0 | 107 of 317,162 (max 10) | +0.02 / +0.02 / -0.03 | +0.07 / +0.07 / -0.14 |
+| blue_plate, screen blue, 1.0 | 0.00 | 0 | 1,825 (max 20) | +0.04 / +0.03 / -0.07 | +0.15 / +0.14 / -0.29 |
+| blue_plate, screen green, 0.5 (wrong screen) | 0.14 | 26 | 31 (max 17) | 0 / -0.01 / 0 | +0.12 / -0.22 / +0.12 |
+| green_plate, screen green, 0 | 1.03 | 317 of 8,366 | - | - | - |
+| green_plate, screen green, 0.5 | 0.18 | 0 | 1,784 of 292,379 (max 7) | +0.03 / -0.06 / +0.03 | +0.31 / -0.64 / +0.31 |
+| green_plate, screen green, 1.0 | 0.00 | 0 | 3,944 (max 15) | +0.07 / -0.12 / +0.06 | +0.63 / -1.27 / +0.63 |
+
+- By eye (the head and the stool of blue_plate over mid-grey and over orange (225, 150, 70), at 2x): no blue fringe at
+  0, 0.5 or 1.0 on the hair, the jaw, the sweater or between the stool's legs. 1.0 shifts a few bluish pixels of the
+  skin by up to 20 levels, which is not visible at that size. The wrong screen looks the same as 0.
+- So the pack's despill on blue does what its green one does (screen channel down, the other two up by half each). The
+  model leaves little spill to remove on these stills, the blue plate even less than the green one. `despillBlue: true`
+  in the pack table holds; Scumble's 0.5 default stands for both screens; a wrong Screen Auto pick costs nothing
+  visible at 0.5.
+
+6. The key gate's Route B fixture (tools/fixtures/corridorkey_routeb/, committed; fixture.json says it all)
+------------------------------------------------------------------------------------------------------------
+- Where B2's `key` gate steps read it: **tools/fixtures/corridorkey_routeb/**, 10 files, 830 KB.
+- **native:** hair_green's right hair edge, the box (832, 96, 512, 400) of the 1344 x 1344 still: rim-lit flyaway
+  strands on green, part of the hair. `input.png` (512 x 400 RGB) and `hint.png` (I0a's rough hint cropped, grey), the
+  exact bytes uploaded. `graph.json` is the queued graph: the plan's §4.11 graph with node ids ck_in, ck_hint_img,
+  ck_hint, ck_model, ck_key, ck_out; trust "loose hint (0.5)", despill 0.5, screen green, auto_download false,
+  keep_on_gpu false, vram_reserve_gb 0.5; the upload names replaced by `<input>` / `<hint>`, type temp, subfolder
+  ck_b0, where Scumble's own refs will be its uploads. `rgba.png` is the /view bytes of ck_out: 512 x 400, 8-bit RGBA
+  (colour type 6), straight (13.5 % of the pixels have RGB above alpha + 2), alpha mean 0.299, 127,977 px at 0 and
+  46,509 at 255. ck_key 2.16 s.
+- **half** (the scaled path): the same box reduced to 256 x 200 with OpenCV INTER_AREA (`half_input.png`,
+  `half_hint.png`, `half_graph.json`), keyed: `half_rgba.png` (256 x 200, the same format). Against the native alpha,
+  its bilinear upsample is off by MAE 0.0089 (edge 0.075, max 0.63), which is what the refine is for. Scumble's own
+  scale may differ from INTER_AREA: B2's stub hands the answer back, and the gate's "within a level" is against its own
+  reference.
+- sha256 of every file in fixture.json; the source still's sha256 d0953714... (I0a's stills.json).
+
+7. Where this differs from the row, or what the row did not say
+---------------------------------------------------------------
+- No crops of the green plate at 1-16 MP in this step: I0a took 1, 4 and 16 MP (hair_green), and this step's eviction
+  rows use hair_green at the same sizes (16 MP a Lanczos upscale, as in I0a). 2 and 8 MP were not run (section 2).
+- The auto_download: true run on a fresh models folder was skipped (the user's answer). The download switch is not
+  allowed, and Scumble always sends false.
+- The Generate is a plain Klein text-to-image graph, not the InpaintCanvas recipe (same models, section 1).
+- The box comparison uses no ground truth: the whole picture's key is the reference. The defect on the plant is judged
+  by eye.
+- New beyond the row: the loader's rerun after another prompt (section 2), keep_on_gpu after a Generate, the cancel's
+  latency and its last-seconds case, a cancel after the end and of a pending job, the progress frames, the server path
+  against I0a's reference.
+
+Files
+-----
+- scripts/b0.py (the phases evict / extra / cancel / box / despill / fixture / cleanup; imports I0a's ck_common.py),
+  scripts/boxdiff.py and scripts/zoom.py (the box comparison's where and the 200 % crops).
+- raw/b0_*.json: every run's wall and server seconds, per-node seconds, the websocket timeline, the progress frames,
+  /system_stats and nvidia-smi before / after / peak, the cancel's answer, the model manager's log lines (ANSI colour
+  codes stripped).
+- eye/: box_plant_tight_vs_whole.jpg, box_green_plate_toe.jpg, despill_blue_plate_head.jpg, fixture_native.jpg (input,
+  hint, the key over grey).
+- Untracked: dist/ck_b0/ in this worktree (every key's RGBA, the comparison sheets, queued.txt with the 49 prompt ids).

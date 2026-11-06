@@ -1,0 +1,23 @@
+{
+ "phase": "cleanup",
+ "ids": 49,
+ "still_in_history": [],
+ "history_total_after": 0,
+ "queue_after": {
+  "queue_running": [],
+  "queue_pending": []
+ },
+ "free": {
+  "vram": {
+   "vram_total": 34190458880,
+   "vram_free": 32270974976,
+   "torch_vram_total": 134217728,
+   "torch_vram_free": 66060288
+  },
+  "smi": {
+   "used_mib": 5066,
+   "total_mib": 32607,
+   "util": 1
+  }
+ }
+}

@@ -1,0 +1,1736 @@
+{
+ "phase": "evict",
+ "start": "2026-11-06T14:29:39+0100",
+ "free_start": {
+  "vram": {
+   "vram_total": 34190458880,
+   "vram_free": 32437698560,
+   "torch_vram_total": 67108864,
+   "torch_vram_free": 33554432
+  },
+  "smi": {
+   "used_mib": 4871,
+   "total_mib": 32607,
+   "util": 3
+  }
+ },
+ "keep_parked": {
+  "vram": {
+   "vram_total": 34190458880,
+   "vram_free": 17058345768,
+   "torch_vram_total": 1879048192,
+   "torch_vram_free": 85046056
+  },
+  "smi": {
+   "used_mib": 19588,
+   "total_mib": 32607,
+   "util": 4
+  }
+ },
+ "free_end": {
+  "vram": {
+   "vram_total": 34190458880,
+   "vram_free": 32273072128,
+   "torch_vram_total": 134217728,
+   "torch_vram_free": 66060288
+  },
+  "smi": {
+   "used_mib": 5053,
+   "total_mib": 32607,
+   "util": 3
+  }
+ },
+ "runs": [
+  {
+   "label": "key 1MP warm-up (loader cold)",
+   "prompt_id": "325ab6f7-edfe-4f0c-8496-af9cae46a522",
+   "end": "success",
+   "wall_s": 12.844,
+   "server_s": 12.84,
+   "node_s": {
+    "ck_in": 0.024,
+    "ck_model": 10.026,
+    "ck_key": 2.718,
+    "ck_out": 0.068
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32437698560,
+    "torch_vram_total": 67108864,
+    "torch_vram_free": 33554432
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32275169280,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 4865,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 5050,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_peak_mib": 10012,
+   "progress_frames": 3,
+   "progress_last": [
+    11.691,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.004,
+     "execution_start",
+     null
+    ],
+    [
+     0.008,
+     "execution_cached",
+     []
+    ],
+    [
+     0.008,
+     "ck_in"
+    ],
+    [
+     0.032,
+     "ck_model"
+    ],
+    [
+     10.058,
+     "ck_key"
+    ],
+    [
+     12.776,
+     "ck_out"
+    ],
+    [
+     12.844,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] loading F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\corridorkey_v2.safetensors",
+    "[RVM] loaded F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\foundations\\rvm\\pretrain_rvm_small16_256_204031069.npz (309 tensors)",
+    "[FrozenFoundations] loaded stats from F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\foundation_stats.safetensors",
+    "[INFO] [CorridorKey 2.0] model ready (d_16=512, C-RADIO=1152, MoGe=768, RVM=384)",
+    "[INFO] [CorridorKey 2.0] 1 frames at 1024x1024 (padded 1024x1024), window 80/40, low_vram=False, est. peak 6.3 GB of 29.0 GB",
+    "[INFO] Prompt executed in 12.84 seconds"
+   ]
+  },
+  {
+   "label": "generate cold",
+   "prompt_id": "5b25b338-93a0-48df-82bd-00f5659738cd",
+   "end": "success",
+   "wall_s": 5.373,
+   "server_s": 5.368,
+   "node_s": {
+    "vae": 0.269,
+    "latent": 0.002,
+    "unet": 0.056,
+    "sched": 0.001,
+    "sampler": 0.002,
+    "clip": 0.486,
+    "neg": 1.491,
+    "pos": 0.149,
+    "guider": 0.003,
+    "noise": 0.003,
+    "run": 2.523,
+    "decode": 0.301,
+    "out": 0.075
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32275169280,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "smi_before": {
+    "used_mib": 5050,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_after": {
+    "used_mib": 17913,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_peak_mib": 18206,
+   "progress_frames": 9,
+   "progress_last": [
+    4.961,
+    "run",
+    16,
+    16
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.004,
+     "execution_start",
+     null
+    ],
+    [
+     0.011,
+     "execution_cached",
+     []
+    ],
+    [
+     0.012,
+     "vae"
+    ],
+    [
+     0.281,
+     "latent"
+    ],
+    [
+     0.283,
+     "unet"
+    ],
+    [
+     0.339,
+     "sched"
+    ],
+    [
+     0.34,
+     "sampler"
+    ],
+    [
+     0.342,
+     "clip"
+    ],
+    [
+     0.828,
+     "neg"
+    ],
+    [
+     2.319,
+     "pos"
+    ],
+    [
+     2.468,
+     "guider"
+    ],
+    [
+     2.471,
+     "noise"
+    ],
+    [
+     2.474,
+     "run"
+    ],
+    [
+     4.997,
+     "decode"
+    ],
+    [
+     5.298,
+     "out"
+    ],
+    [
+     5.373,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] VAE load device: cuda:0, offload device: cpu, dtype: torch.float16",
+    "[INFO] model weight dtype torch.bfloat16, manual cast: torch.bfloat16",
+    "[INFO] CLIP/text encoder model load device: cuda:0, offload device: cpu, current: cpu, dtype: torch.float16",
+    "[INFO] Requested to load Flux3TEModel_",
+    "[INFO] Requested to load Flux3",
+    "[INFO] Requested to load AutoencoderKL",
+    "[INFO] Prompt executed in 5.37 seconds"
+   ]
+  },
+  {
+   "label": "generate warm a",
+   "prompt_id": "5b2c6861-aa32-4a4e-b667-117b6f4b4d88",
+   "end": "success",
+   "wall_s": 2.022,
+   "server_s": 2.018,
+   "node_s": {
+    "pos": 0.166,
+    "guider": 0.001,
+    "noise": 0.003,
+    "run": 1.607,
+    "decode": 0.149,
+    "out": 0.086
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "smi_before": {
+    "used_mib": 17913,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_after": {
+    "used_mib": 17911,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_peak_mib": 18329,
+   "progress_frames": 9,
+   "progress_last": [
+    1.743,
+    "run",
+    16,
+    16
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.003,
+     "execution_start",
+     null
+    ],
+    [
+     0.01,
+     "execution_cached",
+     [
+      "unet",
+      "clip",
+      "vae",
+      "neg",
+      "latent",
+      "sched",
+      "sampler"
+     ]
+    ],
+    [
+     0.01,
+     "pos"
+    ],
+    [
+     0.176,
+     "guider"
+    ],
+    [
+     0.177,
+     "noise"
+    ],
+    [
+     0.18,
+     "run"
+    ],
+    [
+     1.787,
+     "decode"
+    ],
+    [
+     1.936,
+     "out"
+    ],
+    [
+     2.022,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] Prompt executed in 2.02 seconds"
+   ]
+  },
+  {
+   "label": "key 1MP",
+   "prompt_id": "4d85c178-4181-46df-be83-b6596198245e",
+   "end": "success",
+   "wall_s": 11.447,
+   "server_s": 11.444,
+   "node_s": {
+    "ck_in": 0.173,
+    "ck_model": 8.916,
+    "ck_key": 2.282,
+    "ck_out": 0.07
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 17911,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 5062,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 17911,
+   "progress_frames": 3,
+   "progress_last": [
+    10.283,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.003,
+     "execution_start",
+     null
+    ],
+    [
+     0.006,
+     "execution_cached",
+     []
+    ],
+    [
+     0.006,
+     "ck_in"
+    ],
+    [
+     0.179,
+     "ck_model"
+    ],
+    [
+     9.095,
+     "ck_key"
+    ],
+    [
+     11.377,
+     "ck_out"
+    ],
+    [
+     11.447,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] loading F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\corridorkey_v2.safetensors",
+    "[RVM] loaded F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\foundations\\rvm\\pretrain_rvm_small16_256_204031069.npz (309 tensors)",
+    "[FrozenFoundations] loaded stats from F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\foundation_stats.safetensors",
+    "[INFO] [CorridorKey 2.0] model ready (d_16=512, C-RADIO=1152, MoGe=768, RVM=384)",
+    "[INFO] [CorridorKey 2.0] 1 frames at 1024x1024 (padded 1024x1024), window 80/40, low_vram=False, est. peak 6.3 GB of 28.9 GB",
+    "[INFO] Prompt executed in 11.45 seconds"
+   ]
+  },
+  {
+   "label": "generate after key 1MP",
+   "prompt_id": "2a056b2b-73e8-41cc-aeb4-12ddb8b6076f",
+   "end": "success",
+   "wall_s": 4.964,
+   "server_s": 4.96,
+   "node_s": {
+    "vae": 0.297,
+    "latent": 0.002,
+    "unet": 0.047,
+    "sched": 0.001,
+    "sampler": 0.001,
+    "clip": 0.441,
+    "neg": 1.392,
+    "pos": 0.147,
+    "guider": 0.002,
+    "noise": 0.002,
+    "run": 2.355,
+    "decode": 0.187,
+    "out": 0.078
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "smi_before": {
+    "used_mib": 5060,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 17920,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 18526,
+   "progress_frames": 9,
+   "progress_last": [
+    4.667,
+    "run",
+    16,
+    16
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.011,
+     "execution_start",
+     null
+    ],
+    [
+     0.011,
+     "execution_cached",
+     []
+    ],
+    [
+     0.012,
+     "vae"
+    ],
+    [
+     0.309,
+     "latent"
+    ],
+    [
+     0.311,
+     "unet"
+    ],
+    [
+     0.358,
+     "sched"
+    ],
+    [
+     0.359,
+     "sampler"
+    ],
+    [
+     0.36,
+     "clip"
+    ],
+    [
+     0.801,
+     "neg"
+    ],
+    [
+     2.193,
+     "pos"
+    ],
+    [
+     2.34,
+     "guider"
+    ],
+    [
+     2.342,
+     "noise"
+    ],
+    [
+     2.344,
+     "run"
+    ],
+    [
+     4.699,
+     "decode"
+    ],
+    [
+     4.886,
+     "out"
+    ],
+    [
+     4.964,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] VAE load device: cuda:0, offload device: cpu, dtype: torch.float16",
+    "[INFO] model weight dtype torch.bfloat16, manual cast: torch.bfloat16",
+    "[INFO] CLIP/text encoder model load device: cuda:0, offload device: cpu, current: cpu, dtype: torch.float16",
+    "[INFO] Requested to load Flux3TEModel_",
+    "[INFO] Requested to load Flux3",
+    "[INFO] Requested to load AutoencoderKL",
+    "[INFO] Prompt executed in 4.96 seconds"
+   ]
+  },
+  {
+   "label": "generate warm after the reload (1MP)",
+   "prompt_id": "e6c19571-f050-4de4-993d-0a7c88f5f23d",
+   "end": "success",
+   "wall_s": 2.064,
+   "server_s": 2.06,
+   "node_s": {
+    "pos": 0.186,
+    "guider": 0.002,
+    "noise": 0.003,
+    "run": 1.615,
+    "decode": 0.155,
+    "out": 0.092
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "smi_before": {
+    "used_mib": 17920,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 17917,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 18333,
+   "progress_frames": 10,
+   "progress_last": [
+    1.789,
+    "run",
+    16,
+    16
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.005,
+     "execution_start",
+     null
+    ],
+    [
+     0.01,
+     "execution_cached",
+     [
+      "unet",
+      "clip",
+      "vae",
+      "neg",
+      "latent",
+      "sched",
+      "sampler"
+     ]
+    ],
+    [
+     0.011,
+     "pos"
+    ],
+    [
+     0.197,
+     "guider"
+    ],
+    [
+     0.199,
+     "noise"
+    ],
+    [
+     0.202,
+     "run"
+    ],
+    [
+     1.817,
+     "decode"
+    ],
+    [
+     1.972,
+     "out"
+    ],
+    [
+     2.064,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] Prompt executed in 2.06 seconds"
+   ]
+  },
+  {
+   "label": "key 4MP",
+   "prompt_id": "e6bacab7-39aa-41ea-b026-88e2be2b8ce8",
+   "end": "success",
+   "wall_s": 13.001,
+   "server_s": 12.997,
+   "node_s": {
+    "ck_in": 0.272,
+    "ck_model": 9.655,
+    "ck_key": 2.832,
+    "ck_out": 0.236
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 17916,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 5051,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 17916,
+   "progress_frames": 3,
+   "progress_last": [
+    11.316,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.004,
+     "execution_start",
+     null
+    ],
+    [
+     0.006,
+     "execution_cached",
+     []
+    ],
+    [
+     0.006,
+     "ck_in"
+    ],
+    [
+     0.278,
+     "ck_model"
+    ],
+    [
+     9.933,
+     "ck_key"
+    ],
+    [
+     12.765,
+     "ck_out"
+    ],
+    [
+     13.001,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] loading F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\corridorkey_v2.safetensors",
+    "[RVM] loaded F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\foundations\\rvm\\pretrain_rvm_small16_256_204031069.npz (309 tensors)",
+    "[FrozenFoundations] loaded stats from F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\foundation_stats.safetensors",
+    "[INFO] [CorridorKey 2.0] model ready (d_16=512, C-RADIO=1152, MoGe=768, RVM=384)",
+    "[INFO] [CorridorKey 2.0] 1 frames at 2048x2048 (padded 2048x2048), window 80/40, low_vram=False, est. peak 9.4 GB of 28.9 GB",
+    "[INFO] Prompt executed in 13.00 seconds"
+   ]
+  },
+  {
+   "label": "generate after key 4MP",
+   "prompt_id": "481cca4b-58d8-43f1-92e2-f9b0ca42f4eb",
+   "end": "success",
+   "wall_s": 4.974,
+   "server_s": 4.97,
+   "node_s": {
+    "vae": 0.296,
+    "latent": 0.002,
+    "unet": 0.047,
+    "sched": 0.002,
+    "sampler": 0.001,
+    "clip": 0.483,
+    "neg": 1.365,
+    "pos": 0.155,
+    "guider": 0.003,
+    "noise": 0.0,
+    "run": 2.349,
+    "decode": 0.185,
+    "out": 0.075
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "smi_before": {
+    "used_mib": 5051,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 17910,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 18646,
+   "progress_frames": 9,
+   "progress_last": [
+    4.678,
+    "run",
+    16,
+    16
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.009,
+     "execution_start",
+     null
+    ],
+    [
+     0.01,
+     "execution_cached",
+     []
+    ],
+    [
+     0.011,
+     "vae"
+    ],
+    [
+     0.307,
+     "latent"
+    ],
+    [
+     0.309,
+     "unet"
+    ],
+    [
+     0.356,
+     "sched"
+    ],
+    [
+     0.358,
+     "sampler"
+    ],
+    [
+     0.359,
+     "clip"
+    ],
+    [
+     0.842,
+     "neg"
+    ],
+    [
+     2.207,
+     "pos"
+    ],
+    [
+     2.362,
+     "guider"
+    ],
+    [
+     2.365,
+     "noise"
+    ],
+    [
+     2.365,
+     "run"
+    ],
+    [
+     4.714,
+     "decode"
+    ],
+    [
+     4.899,
+     "out"
+    ],
+    [
+     4.974,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] VAE load device: cuda:0, offload device: cpu, dtype: torch.float16",
+    "[INFO] model weight dtype torch.bfloat16, manual cast: torch.bfloat16",
+    "[INFO] CLIP/text encoder model load device: cuda:0, offload device: cpu, current: cpu, dtype: torch.float16",
+    "[INFO] Requested to load Flux3TEModel_",
+    "[INFO] Requested to load Flux3",
+    "[INFO] Requested to load AutoencoderKL",
+    "[INFO] Prompt executed in 4.97 seconds"
+   ]
+  },
+  {
+   "label": "generate warm after the reload (4MP)",
+   "prompt_id": "7af64318-13e3-4ad3-9471-8f068739d8bb",
+   "end": "success",
+   "wall_s": 2.055,
+   "server_s": 2.051,
+   "node_s": {
+    "pos": 0.183,
+    "guider": 0.004,
+    "noise": 0.001,
+    "run": 1.62,
+    "decode": 0.153,
+    "out": 0.083
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "smi_before": {
+    "used_mib": 17910,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 17913,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 18328,
+   "progress_frames": 9,
+   "progress_last": [
+    1.784,
+    "run",
+    16,
+    16
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.01,
+     "execution_start",
+     null
+    ],
+    [
+     0.01,
+     "execution_cached",
+     [
+      "unet",
+      "clip",
+      "vae",
+      "neg",
+      "latent",
+      "sched",
+      "sampler"
+     ]
+    ],
+    [
+     0.011,
+     "pos"
+    ],
+    [
+     0.194,
+     "guider"
+    ],
+    [
+     0.198,
+     "noise"
+    ],
+    [
+     0.199,
+     "run"
+    ],
+    [
+     1.819,
+     "decode"
+    ],
+    [
+     1.972,
+     "out"
+    ],
+    [
+     2.055,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] Prompt executed in 2.05 seconds"
+   ]
+  },
+  {
+   "label": "key 16MP",
+   "prompt_id": "9aeb9a70-af9d-45c2-8d0f-a0731008ab77",
+   "end": "success",
+   "wall_s": 17.075,
+   "server_s": 17.071,
+   "node_s": {
+    "ck_in": 0.498,
+    "ck_model": 9.666,
+    "ck_key": 6.062,
+    "ck_out": 0.843
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "smi_before": {
+    "used_mib": 17913,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_after": {
+    "used_mib": 5052,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_peak_mib": 17913,
+   "progress_frames": 3,
+   "progress_last": [
+    13.259,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.004,
+     "execution_start",
+     null
+    ],
+    [
+     0.006,
+     "execution_cached",
+     []
+    ],
+    [
+     0.006,
+     "ck_in"
+    ],
+    [
+     0.504,
+     "ck_model"
+    ],
+    [
+     10.17,
+     "ck_key"
+    ],
+    [
+     16.232,
+     "ck_out"
+    ],
+    [
+     17.075,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] loading F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\corridorkey_v2.safetensors",
+    "[RVM] loaded F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\foundations\\rvm\\pretrain_rvm_small16_256_204031069.npz (309 tensors)",
+    "[FrozenFoundations] loaded stats from F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\foundation_stats.safetensors",
+    "[INFO] [CorridorKey 2.0] model ready (d_16=512, C-RADIO=1152, MoGe=768, RVM=384)",
+    "[INFO] [CorridorKey 2.0] 1 frames at 4096x4096 (padded 4096x4096), window 80/40, low_vram=False, est. peak 23.2 GB of 28.9 GB",
+    "[INFO] Prompt executed in 17.07 seconds"
+   ]
+  },
+  {
+   "label": "generate after key 16MP",
+   "prompt_id": "4706bee1-25ac-41ff-9468-9f8f710cfac3",
+   "end": "success",
+   "wall_s": 5.053,
+   "server_s": 5.049,
+   "node_s": {
+    "vae": 0.324,
+    "latent": 0.001,
+    "unet": 0.044,
+    "sched": 0.001,
+    "sampler": 0.001,
+    "clip": 0.444,
+    "neg": 1.41,
+    "pos": 0.157,
+    "guider": 0.001,
+    "noise": 0.003,
+    "run": 2.388,
+    "decode": 0.188,
+    "out": 0.08
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32273072128,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 66060288
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "smi_before": {
+    "used_mib": 5052,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_after": {
+    "used_mib": 17918,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_peak_mib": 18620,
+   "progress_frames": 9,
+   "progress_last": [
+    4.753,
+    "run",
+    16,
+    16
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.004,
+     "execution_start",
+     null
+    ],
+    [
+     0.01,
+     "execution_cached",
+     []
+    ],
+    [
+     0.011,
+     "vae"
+    ],
+    [
+     0.335,
+     "latent"
+    ],
+    [
+     0.336,
+     "unet"
+    ],
+    [
+     0.38,
+     "sched"
+    ],
+    [
+     0.381,
+     "sampler"
+    ],
+    [
+     0.382,
+     "clip"
+    ],
+    [
+     0.826,
+     "neg"
+    ],
+    [
+     2.236,
+     "pos"
+    ],
+    [
+     2.393,
+     "guider"
+    ],
+    [
+     2.394,
+     "noise"
+    ],
+    [
+     2.397,
+     "run"
+    ],
+    [
+     4.785,
+     "decode"
+    ],
+    [
+     4.973,
+     "out"
+    ],
+    [
+     5.053,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] VAE load device: cuda:0, offload device: cpu, dtype: torch.float16",
+    "[INFO] model weight dtype torch.bfloat16, manual cast: torch.bfloat16",
+    "[INFO] CLIP/text encoder model load device: cuda:0, offload device: cpu, current: cpu, dtype: torch.float16",
+    "[INFO] Requested to load Flux3TEModel_",
+    "[INFO] Requested to load Flux3",
+    "[INFO] Requested to load AutoencoderKL",
+    "[INFO] Prompt executed in 5.05 seconds"
+   ]
+  },
+  {
+   "label": "generate warm after the reload (16MP)",
+   "prompt_id": "482983d2-78e2-42aa-9d30-546a16e1a187",
+   "end": "success",
+   "wall_s": 2.073,
+   "server_s": 2.069,
+   "node_s": {
+    "pos": 0.184,
+    "guider": 0.002,
+    "noise": 0.002,
+    "run": 1.639,
+    "decode": 0.154,
+    "out": 0.082
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "smi_before": {
+    "used_mib": 17916,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_after": {
+    "used_mib": 17914,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 18335,
+   "progress_frames": 10,
+   "progress_last": [
+    1.803,
+    "run",
+    16,
+    16
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.007,
+     "execution_start",
+     null
+    ],
+    [
+     0.01,
+     "execution_cached",
+     [
+      "unet",
+      "clip",
+      "vae",
+      "neg",
+      "latent",
+      "sched",
+      "sampler"
+     ]
+    ],
+    [
+     0.01,
+     "pos"
+    ],
+    [
+     0.194,
+     "guider"
+    ],
+    [
+     0.196,
+     "noise"
+    ],
+    [
+     0.198,
+     "run"
+    ],
+    [
+     1.837,
+     "decode"
+    ],
+    [
+     1.991,
+     "out"
+    ],
+    [
+     2.073,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] Prompt executed in 2.07 seconds"
+   ]
+  },
+  {
+   "label": "key 1MP keep_on_gpu",
+   "prompt_id": "1b63a911-d1e6-4efb-b641-98405bfd7eb4",
+   "end": "success",
+   "wall_s": 11.274,
+   "server_s": 11.266,
+   "node_s": {
+    "ck_in": 0.22,
+    "ck_model": 9.66,
+    "ck_key": 1.316,
+    "ck_out": 0.068
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 18783294696,
+    "torch_vram_total": 134217728,
+    "torch_vram_free": 65164520
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 27334228944,
+    "torch_vram_total": 5033164800,
+    "torch_vram_free": 26164176
+   },
+   "smi_before": {
+    "used_mib": 17911,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 9709,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 17911,
+   "progress_frames": 3,
+   "progress_last": [
+    11.061,
+    "ck_key",
+    3,
+    3
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.007,
+     "execution_start",
+     null
+    ],
+    [
+     0.009,
+     "execution_cached",
+     []
+    ],
+    [
+     0.01,
+     "ck_in"
+    ],
+    [
+     0.23,
+     "ck_model"
+    ],
+    [
+     9.89,
+     "ck_key"
+    ],
+    [
+     11.206,
+     "ck_out"
+    ],
+    [
+     11.274,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] [CorridorKey 2.0] loading F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\corridorkey_v2.safetensors",
+    "[RVM] loaded F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\foundations\\rvm\\pretrain_rvm_small16_256_204031069.npz (309 tensors)",
+    "[FrozenFoundations] loaded stats from F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2\\foundation_stats.safetensors",
+    "[INFO] [CorridorKey 2.0] model ready (d_16=512, C-RADIO=1152, MoGe=768, RVM=384)",
+    "[INFO] [CorridorKey 2.0] 1 frames at 1024x1024 (padded 1024x1024), window 80/40, low_vram=False, est. peak 6.3 GB of 28.9 GB",
+    "[INFO] Prompt executed in 11.27 seconds"
+   ]
+  },
+  {
+   "label": "generate after key 1MP keep_on_gpu",
+   "prompt_id": "0aaa6451-6fe9-4214-a032-83a11baf5787",
+   "end": "success",
+   "wall_s": 4.664,
+   "server_s": 4.66,
+   "node_s": {
+    "vae": 0.092,
+    "latent": 0.041,
+    "unet": 0.05,
+    "sched": 0.002,
+    "sampler": 0.001,
+    "clip": 0.413,
+    "neg": 1.334,
+    "pos": 0.141,
+    "guider": 0.002,
+    "noise": 0.003,
+    "run": 2.313,
+    "decode": 0.183,
+    "out": 0.078
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 27334228944,
+    "torch_vram_total": 5033164800,
+    "torch_vram_free": 26164176
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 17058345768,
+    "torch_vram_total": 1879048192,
+    "torch_vram_free": 85046056
+   },
+   "smi_before": {
+    "used_mib": 9709,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 19589,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 20294,
+   "progress_frames": 9,
+   "progress_last": [
+    4.369,
+    "run",
+    16,
+    16
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.005,
+     "execution_start",
+     null
+    ],
+    [
+     0.01,
+     "execution_cached",
+     []
+    ],
+    [
+     0.011,
+     "vae"
+    ],
+    [
+     0.103,
+     "latent"
+    ],
+    [
+     0.144,
+     "unet"
+    ],
+    [
+     0.194,
+     "sched"
+    ],
+    [
+     0.196,
+     "sampler"
+    ],
+    [
+     0.197,
+     "clip"
+    ],
+    [
+     0.61,
+     "neg"
+    ],
+    [
+     1.944,
+     "pos"
+    ],
+    [
+     2.085,
+     "guider"
+    ],
+    [
+     2.087,
+     "noise"
+    ],
+    [
+     2.09,
+     "run"
+    ],
+    [
+     4.403,
+     "decode"
+    ],
+    [
+     4.586,
+     "out"
+    ],
+    [
+     4.664,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] VAE load device: cuda:0, offload device: cpu, dtype: torch.float16",
+    "[INFO] model weight dtype torch.bfloat16, manual cast: torch.bfloat16",
+    "[INFO] CLIP/text encoder model load device: cuda:0, offload device: cpu, current: cpu, dtype: torch.float16",
+    "[INFO] Requested to load Flux3TEModel_",
+    "[INFO] Requested to load Flux3",
+    "[INFO] Requested to load AutoencoderKL",
+    "[INFO] Prompt executed in 4.66 seconds"
+   ]
+  },
+  {
+   "label": "generate warm after keep_on_gpu",
+   "prompt_id": "ffb1f821-96f9-450b-847b-a633ff3d1737",
+   "end": "success",
+   "wall_s": 2.049,
+   "server_s": 2.045,
+   "node_s": {
+    "pos": 0.179,
+    "guider": 0.002,
+    "noise": 0.002,
+    "run": 1.617,
+    "decode": 0.154,
+    "out": 0.085
+   },
+   "error": null,
+   "status_str": "success",
+   "history_messages": [
+    "execution_start",
+    "execution_cached",
+    "execution_success"
+   ],
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 17058345768,
+    "torch_vram_total": 1879048192,
+    "torch_vram_free": 85046056
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 17058345768,
+    "torch_vram_total": 1879048192,
+    "torch_vram_free": 85046056
+   },
+   "smi_before": {
+    "used_mib": 19589,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 19588,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 20007,
+   "progress_frames": 9,
+   "progress_last": [
+    1.78,
+    "run",
+    16,
+    16
+   ],
+   "cancel": null,
+   "pending": null,
+   "timeline": [
+    [
+     0.009,
+     "execution_start",
+     null
+    ],
+    [
+     0.01,
+     "execution_cached",
+     [
+      "unet",
+      "clip",
+      "vae",
+      "neg",
+      "latent",
+      "sched",
+      "sampler"
+     ]
+    ],
+    [
+     0.01,
+     "pos"
+    ],
+    [
+     0.189,
+     "guider"
+    ],
+    [
+     0.191,
+     "noise"
+    ],
+    [
+     0.193,
+     "run"
+    ],
+    [
+     1.81,
+     "decode"
+    ],
+    [
+     1.964,
+     "out"
+    ],
+    [
+     2.049,
+     "execution_success",
+     null
+    ]
+   ],
+   "log": [
+    "[INFO] Prompt executed in 2.05 seconds"
+   ]
+  }
+ ],
+ "end": "2026-11-06T14:31:56+0100"
+}
