@@ -1,0 +1,166 @@
+CorridorKey 2.0, I0a part 2 (2026-11-06): the stills, the reference keys, /object_info, the Route B facts
+=====================================================================================================
+
+The spec is docs/PLAN_CORRIDORKEY.md §5 row I0a ("reference keys", "Route B facts"); part 1 (the code check, the pinned
+install, the 35 model files) is install.md and findings.md beside this file. The user's word (2026-11-06, in chat):
+"ja, in custom nodes laden"; the user asked for five neutral pictures.
+
+Machine and state
+-----------------
+- RTX 5090 32,607 MiB, driver 610.88; ComfyUI 0.44.0 portable (Python 3.12.9, torch 2.10.0+cu130), pack A pinned at
+  c7662de (git status of the pack folder empty after this step: no __pycache__, nothing written there).
+- ComfyUI was down. Started by this step at 2026-11-06T09:52:50Z with run_nvidia_gpu.bat's command line
+  (HOTRELOAD_OBSERVE_ONLY as in the bat; python_embeded -s ComfyUI/main.py --windows-standalone-build
+  --enable-cors-header --enable-manager) plus --disable-auto-launch (no browser tab); up at 09:54:02Z, pid 12660;
+  stopped by this step (Stop-Process on that pid) at 10:01:19Z. Log: the session scratchpad's ck_comfy_start.log. The
+  pack imported in 0.1 s; the same three IMPORT FAILED as before (dlss, inpaint, comfyui-tosvg). Queue empty before
+  and after; every prompt of this step (5 from Scumble, 11 from the probe) deleted from the history, history empty at
+  the stop.
+- The busy lock (w1_lock.py): 09:52:37-10:01:34Z (start, stills, probe; taken after 0 s), the reference keys
+  10:06:48-10:07:52Z (requested 10:03:18Z, waited 210 s for "K12 measuring"), the rerun 10:09:51-10:10:22Z (0 s).
+- nvidia-smi per process answers [N/A] here; the totals are below. During the reference run another process (not
+  ComfyUI, which was stopped) held the card at 47-49 % utilisation and 9.0 GB: the reference's seconds are therefore
+  indicative only (its arrays are deterministic, see "Noise floor").
+
+1. The stills (dist/ck_ref/stills/, untracked)
+---------------------------------------------
+Made on the user's ComfyUI through a Scumble dev instance (worktree corridorkey, port 9571, its own profile; Generate
+new, recipe flux3_klein_local "FLUX 3 Image Klein (ComfyUI)", aspect 1:1, resolution 1344 -> 1344 x 1344 = 1.81 MP;
+settings: Megapixels 1.72 (the latent at about 1344 px), Text encoder qwen3vl_4b_bf16.safetensors (the recipe's
+default qwen3vl_4b_int8_convrot.safetensors is not on this server: list_settings marked it valid false), model
+flux3-image-klein-int8-convrot, VAE flux2-vae, 16 steps, CFG 1, the Prompt upsampler on (BFL's 9B upsampler wrote the
+caption; each caption in full in dist/ck_ref/stills/stills.json). 15-24 s each. Exported with the export command
+(PNG, metadata off): 8-bit RGBA, alpha 255 everywhere (upstream and the spike read RGB only, OpenCV IMREAD_COLOR).
+
+| still | screen | seed | prompt (as typed; the upsampler expanded it) | sha256 | bytes |
+|---|---|---|---|---|---|
+| green_plate | green | 49001 | a man in a plain grey t-shirt and dark jeans standing before a curved chroma green backdrop, soft light with falloff, fabric wrinkles, full figure | 063c0ecf1df671314c3019944962b27cf81907a828c663a2634708c26a1a1d35 | 2,593,612 |
+| blue_plate | blue | 49002 | a woman in a plain beige sweater on a wooden stool before a curved chroma blue backdrop, soft light, wrinkles, faint shadow, full figure | d7a6a72c09154346f24b998ec29fd4e14101c0ebade9fa4ab65151dda726a6f5 | 2,845,573 |
+| flat_green_plant | green | 49003 | a potted monstera in a plain white pot, centred, on a perfectly flat uniform chroma green, even light, no shadow | ad0180558b29a4be307ea73db3a33cd06b3fc6d2e3a234865704b7039c8e9b21 | 2,721,368 |
+| hair_green | green | 49004 | a woman with long loose curly hair and many flyaway strands, rim-lit from behind, plain dark top, even green screen, head and shoulders | d0953714b0a25c88b849d14683776c900340b1bb036ccafeaa89e5cfa74cd853 | 3,427,994 |
+| highlights_green | green | 49005 | a clear glass water bottle and a polished chrome cup on a grey table before a green screen, hard side spotlight, specular and blown reflections, a lit rim on the bottle | c986073043a0dd13417eb544ed5efda1477e7492c714bf9adc8f3c31a18e7054 | 2,684,236 |
+
+The full prompts: scripts/stills.json. Clipping: highlights_green has 2,745 pixels at luma >= 250 and 63 at 255 in all
+three channels (hair_green 181 / 2, the others 0-1); its decoded linear foreground reaches 11.2 (scene-linear above 1).
+On the user's machine the runs left 7 uploads in ComfyUI/input/inpaint_canvas (n1_base_*.png, n1_mask_2e838006ce8f.png)
+and 5 results in ComfyUI/output/inpaint_canvas (ncanvas_result_20261106_1055*/1056*.png), as every Scumble run does;
+not deleted (the user's folders).
+
+2. The reference keys (dist/ck_ref/<still>/<case>/, untracked; every file's sha256 in manifest.txt)
+---------------------------------------------------------------------------------------------------
+- How: scripts/ck_ref.py on python_embeded (-I -B), ComfyUI stopped. It loads pack A's vendored upstream `corridorkey`
+  package by path (not ck_comfy) and pack A's ck_comfy/env.py by file for the two loaders upstream's foundations.py
+  needs on transformers 5 (MoGe under a private name with the utils3d shim, C-RADIO built eagerly with its pinned
+  hf_model.py); then upstream runtime.load_model (17.8 s, 4.65 GB of weights on the GPU) and upstream's path for a
+  one-frame clip in normal mode, step by step: probe_frame_dir_meta / preprocess_frame_dir_path (8-bit PNG / 255,
+  display sRGB and the asinh code, both bf16, reflect-101 to a multiple of 128), RVM as precompute_rvm_to_memmap
+  (bilinear to H/4, zero state, normalised, stored fp16), C-RADIO + MoGe inline as hann_stage1_stream
+  (_build_foundation_inputs, float32 out), load_initial_hint_frame for the hint, stage 1 under bf16 autocast (the baton
+  stored fp16 as upstream's memmap), stage 2 under inference_mode + bf16 autocast, the decode of
+  _render_predictions_torch in float.
+- Cases per still: b768 and b1024 (the bucket input made from the box: INTER_AREA, OpenCV 4.13.0 of python_embeded)
+  and native (the still itself, 1344 x 1344, padded by upstream to 1408 x 1408, 32 px each side), each without a hint
+  (zeros, quality -1) and with the rough brush hint at quality 0.75 (the pack's "rough matte" preset). 5 x 6 = 30 keys.
+- The hint (hint_full.png per still, cropped and reduced per bucket the same way, 8-bit grey, white = subject):
+  a quick screen-difference key, gaps under 8 % of the side closed, holes filled, grown by 3 %, painted over with round
+  dabs of radius 4 % on a grid, blurred by side / 400 (scripts/ck_common.py). It overshoots the subject by about 90 px
+  and misses the plant's top-right leaf (lit close to the screen's green): kept as a rough hint's flaw; the key has the
+  leaf anyway.
+- The box (§4.7 points 1-2): with a hint, the hint's bounds x 1.5, at least 768 and at least the bucket's side, square,
+  placed in the picture, clamped; without one, the whole picture. On these square stills every box is the whole picture
+  (the subjects fill the frame), so no reflect padding was needed at any bucket and the hint / no-hint inputs of a
+  bucket are the same bytes (the hint differs).
+- Files per case: in/input.png (the exact 8-bit RGB input the run consumed; native: the still), hint.png (with a hint),
+  feat_cradio.npy (1152 ch), feat_moge.npy (768 ch), feat_rvm.npy (384 ch) at /64, baton.npy (512 ch at /16),
+  aux.npy (stage 1's 4 ch at /2), logits.npy (the raw 4-channel stage-2 output, bf16 in torch), all float16 CHW at the
+  padded model size; alpha.npy (HW) and fg_linear.npy (HWC RGB, scene-linear, straight, unclamped) float16 cropped to
+  the input; alpha.png and fg.png 8-bit (round(x * 255); fg sRGB-encoded from linear clamped at 0, no despill);
+  case.json (box, scale, pads, shapes, dtypes, min / max / NaN / Inf per array, seconds per part, peak memory).
+  C-RADIO and MoGe features are fp16 roundings of the float32 stage 1 received; RVM and the baton are exactly what
+  upstream feeds (its fp16 memmaps).
+- NaN / Inf: none in any array of the 30 keys, the highlights still included; no array overflows float16. Largest
+  |value| over all keys: feat_cradio 27.5, feat_moge 5.7, feat_rvm 5.8, baton 4.3, logits -0.41 .. 1.28, fg_linear
+  164.9 (the asinh decode of a logit near 1.28, linear light far above 1; fp16 holds it).
+- Noise floor: hair_green and highlights_green (12 keys) run a second time in a fresh process: every array and every
+  PNG is bit-identical (ref_rerun_diff.txt). The reference has no run-to-run spread on this card; I0b's thresholds
+  therefore measure fp16 against this bf16 run only.
+- Seconds in-process (warm, everything resident, another process on the card): stage 1 + stage 2 about 0.14-0.20 s
+  at 768 and 1024, 0.22-0.29 s at 1408; features (C-RADIO + MoGe) 0.03-0.04 s, RVM 0.02-0.04 s; peak allocated 5.6-5.75 GB
+  (rows in ref_run.json). The first case paid 0.3 s of warm-up.
+- The mattes look right by eye (alpha and a grey composite of all 30 checked): the hair keeps single strands, the
+  plant keeps its light leaf, the bottle is partly transparent; fg.png is green in the water (no despill).
+- nvidia-smi around the run: before 2026/11/06 11:06:50 local: 9,000 MiB used, 47 %, 58 C, 203 W, SM 2,902 MHz; after
+  11:07:45: 9,025 MiB, 49 %, 59 C, 205 W (the other process; ComfyUI down). Rerun: 9,794 MiB / 48 % before,
+  9,270 MiB / 42 % after.
+
+3. /object_info (tools/refs/corridorkey/, committed)
+---------------------------------------------------
+One JSON per class of python_module custom_nodes.ComfyUI-CorridorKey2.0 (17): Advanced, Basic, ChromaHint, Composite,
+DemoClip, DepthNormals, Despill, FineTuneAdvanced, FineTuneBasic, HintPrep, LoRA, LoadImageSequence, MatteRefine,
+ModelLoader, MotionTracking, SemanticIdentity, TemporalStability (each "CorridorKey2<name>"). No local path in them.
+The core classes Route B uses are there: LoadImage, ImageToMask, MaskToImage, PreviewImage, PreviewAny,
+InpaintCanvasLoadRef. ModelLoader's `weights` combo lists corridorkey_v2.safetensors; auto_download default true.
+
+4. The Route B facts (scripts/routeb.py; raw rows in routeb.json, read-backs in dist/ck_ref/routeb/)
+---------------------------------------------------------------------------------------------------
+Inputs: hair_green resized to 1024^2 (INTER_AREA), 2048^2 and 4096^2 (Lanczos up from 1344), each also mirrored for the
+warm run (a cache miss with the same cost); uploaded as type "temp" (subfolder ck_probe), so nothing landed in the
+user's input folder. Every graph: LoadImage -> CorridorKey2ModelLoader (auto_download false, weights default,
+vram_reserve_gb 0.5) -> CorridorKey2Advanced with its defaults (window auto, low_vram auto) -> PreviewAny on `info`.
+Cold = after /free {unload_models, free_memory} (the loader runs again; the files in the OS cache); warm = the next run.
+GPU totals from nvidia-smi sampled every ~0.3 s (short peaks may be missed); 4.2-4.7 GB of it is the desktop's own use.
+
+| run | wall s | loader s | key s | info | smi peak MiB |
+|---|---|---|---|---|---|
+| 1 MP cold | 12.15 | 9.32 | 2.72 | 1024x1024, window 80/40, low_vram=False, est. peak 6.26 GB of 28.84 GB, segments [forward:1] | 9,496 |
+| 1 MP warm | 2.65 | (cached) | 2.40 | same | 9,555 |
+| 4 MP cold | 12.03 | 8.89 | 2.97 | 2048x2048, low_vram=False, est. 9.35 GB | 10,396 |
+| 4 MP warm | 2.89 | (cached) | 2.63 | same | 10,419 |
+| 16 MP cold | 15.33 | 8.39 | 6.42 | 4096x4096, low_vram=False, est. 23.21 GB of 28.83 GB | 13,418 |
+| 16 MP warm | 6.60 | (cached) | 5.96 | same | 13,547 |
+| 1 MP keep_on_gpu cold | 9.70 | 8.49 | 1.13 | as 1 MP | 9,187 |
+| 1 MP keep_on_gpu warm | 0.72 | (cached) | 0.63 | as 1 MP | 8,899 |
+
+- The mode: normal (low_vram=False) at 1, 4 and 16 MP on this card with ComfyUI otherwise idle; one window, one
+  forward segment. The pack's estimate (23.2 GB at 16 MP) is far above what the samples saw (about 9 GB over idle).
+- keep_on_gpu off: the weights travel to the GPU and back every run (about 1.8 s of the 2.4 s warm key at 1 MP).
+  keep_on_gpu on: 4.6 GB stay (nvidia-smi 4,430 -> 9,007 MiB; ComfyUI torch_vram_total 0.23 -> 5.07 GB).
+  /free {"unload_models": true} alone does NOT release them (8,874 MiB, torch_vram_total unchanged);
+  /free {"unload_models": true, "free_memory": true} does (4,236 MiB, torch_vram_total 0.23 GB): the pack's model is
+  no ModelPatcher, only the node cache reset drops it.
+- The rgba read-back (Basic, 1 MP, the subject hint, clean-matte trust, despill 0.5 green; PreviewImage -> /view):
+  an 8-bit RGBA PNG (bit depth 8, colour type 6), 1024 x 1024; its RGB equals the `foreground` output byte for byte
+  and its A equals the `alpha` output (through MaskToImage) byte for byte; straight, not premultiplied (3.5 % of the
+  pixels have RGB above alpha + 2); where alpha is 0 (183,457 px) the RGB is near black (mean 1.3 of 255), so nothing
+  may be read from the colour under a zero alpha. (foreground and alpha come back as 8-bit RGB PNGs, colour type 2.)
+- The polarity of a grey hint through ImageToMask (channel red) into alpha_hint, clean-matte trust: white = subject.
+  The subject hint gives alpha 0.996 inside its white area and 0.013 outside; the inverted hint gives 0.003 inside and
+  0.988 outside (the model follows the hint, both ways).
+- /system_stats VRAM: vram_total 34,190,458,880; at the start (the Klein models still loaded from the stills)
+  vram_free 12.1 GB, nvidia-smi 23,812 MiB; after /free with free_memory 32.2 GB free, 4,415 MiB; during the
+  keep_on_gpu idle 27.3 GB free.
+
+5. Where this differs from the row, or what the row did not say
+---------------------------------------------------------------
+- The stills are not the user's: none were in the repo, so they were made with FLUX 3 Image Klein on the user's
+  ComfyUI (the step's instruction). The "user's plate" of §4.2's by-eye hair check is hair_green.
+- The stills are square, so the box plan's growth to a bucket's aspect and its edge padding were not exercised (every
+  box is the whole picture); the native case exercises upstream's own 128 padding. A rule was added to §4.7 point 1's
+  box for the reference: at least the bucket's side, so the bucket resample is always a reduction (INTER_AREA).
+- hint_quality 0.75 for the brush hint (the row names none).
+- fg_linear is saved besides the 8-bit fg (the row says "decoded fg"; linear is what the model gives, the PNG is
+  sRGB). aux.npy (stage 1's /2 output) is saved as well, for a preview from stage 1 alone (§2.1).
+- The Route B 16 MP input is a 3x Lanczos upscale of a 1.8 MP still (the cost is that of 16 MP; the content is soft).
+- The Route B polarity and read-back hint was made by the first version of the rough hint (dilate + dabs, without the
+  close and the hole fill); it is in dist/ck_ref/routeb/hint_1024.png.
+- ComfyUI got --disable-auto-launch beside the bat's flags.
+- The recipe flux3_klein_local's default text encoder (qwen3vl_4b_int8_convrot.safetensors) is not on the user's
+  server; qwen3vl_4b_bf16.safetensors was set for the stills. Not changed in the recipe (a note for whoever owns it).
+
+Files
+-----
+- manifest.txt: sha256, bytes and path of every file under dist/ck_ref (396 files, 921,692,497 bytes).
+- ref_run.json (the 30 reference rows), ref_rerun_diff.txt (the rerun), routeb.json (the probe's raw rows).
+- scripts/: ck_ref.py (prep / run / manifest), ck_common.py (the hint, the box), routeb.py (objectinfo / probe),
+  make_stills.py, drive.py, still.js.tpl, s0_setup.js, stills.json.
+- Untracked: dist/ck_ref/ (stills, the 30 case folders, plan.json, run.json, run.log, routeb/).

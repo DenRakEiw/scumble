@@ -1,0 +1,98 @@
+{
+ "CorridorKey2Despill": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE",
+     {
+      "tooltip": "Foreground to despill (sRGB, or linear from the Advanced keyer)."
+     }
+    ],
+    "screen": [
+     "COMBO",
+     {
+      "tooltip": "Screen color whose spill is removed.",
+      "default": "green",
+      "multiselect": false,
+      "options": [
+       "green",
+       "blue"
+      ]
+     }
+    ],
+    "method": [
+     "COMBO",
+     {
+      "tooltip": "Limit for the screen channel: average of the other two (CorridorKey default), max (gentlest) or min (strongest).",
+      "default": "average",
+      "multiselect": false,
+      "options": [
+       "average",
+       "max",
+       "min"
+      ]
+     }
+    ],
+    "strength": [
+     "FLOAT",
+     {
+      "tooltip": "0 = unchanged, 1 = full spill removal.",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ],
+    "redistribute": [
+     "BOOLEAN",
+     {
+      "tooltip": "On (CorridorKey's method): the removed spill is split equally over the other two channels, so R+G+B stays the same; luminance does not (removing green spill still darkens). Off: the spill is just removed.",
+      "default": true
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "image",
+    "screen",
+    "method",
+    "strength",
+    "redistribute"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "IMAGE"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "image"
+  ],
+  "output_tooltips": [
+   null
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2Despill",
+  "display_name": "CorridorKey 2.0 Despill",
+  "description": "Removes green/blue screen spill from a foreground. Instant to tweak: connect the keyer's foreground (with its own despill at 0) and adjust here without re-running the model.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "despill",
+   "spill suppression",
+   "green spill",
+   "blue spill"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

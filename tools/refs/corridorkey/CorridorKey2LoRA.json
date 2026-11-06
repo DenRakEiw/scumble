@@ -1,0 +1,83 @@
+{
+ "CorridorKey2LoRA": {
+  "input": {
+   "required": {
+    "model": [
+     "CORRIDORKEY2_MODEL",
+     {}
+    ],
+    "lora_name": [
+     "COMBO",
+     {
+      "tooltip": "LoRA file in models/corridorkey2/loras, or in a folder set for corridorkey2_loras in extra_model_paths.yaml.",
+      "default": "none",
+      "multiselect": false,
+      "options": [
+       "none"
+      ]
+     }
+    ],
+    "strength": [
+     "FLOAT",
+     {
+      "tooltip": "Scale of the LoRA's change. 0 gives exactly the base model.",
+      "default": 1.0,
+      "min": -2.0,
+      "max": 2.0,
+      "step": 0.05
+     }
+    ]
+   },
+   "optional": {
+    "lora": [
+     "CORRIDORKEY2_LORA",
+     {
+      "tooltip": "A LoRA straight from a Fine-Tune node (applied after lora_name)."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "model",
+    "lora_name",
+    "strength"
+   ],
+   "optional": [
+    "lora"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CORRIDORKEY2_MODEL"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "model"
+  ],
+  "output_tooltips": [
+   null
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2LoRA",
+  "display_name": "CorridorKey 2.0 LoRA",
+  "description": "Applies a CorridorKey 2.0 LoRA from models/corridorkey2/loras, and/or one wired in from a Fine-Tune node, to the model. The shared base weights are not modified; chain several LoRA nodes to stack adapters.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "corridorkey lora",
+   "fine-tune",
+   "adapter"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

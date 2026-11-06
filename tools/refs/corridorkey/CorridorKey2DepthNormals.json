@@ -1,0 +1,148 @@
+{
+ "CorridorKey2DepthNormals": {
+  "input": {
+   "required": {
+    "model": [
+     "CORRIDORKEY2_MODEL",
+     {}
+    ],
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "Clip frames (IMAGE batch)."
+     }
+    ],
+    "max_resolution": [
+     "INT",
+     {
+      "tooltip": "Long side the frames are processed at (never upscaled). The geometry output has this size; depth and normals images are scaled back to the input size.",
+      "default": 1024,
+      "min": 256,
+      "max": 4096,
+      "step": 64
+     }
+    ],
+    "resolution_level": [
+     "INT",
+     {
+      "tooltip": "MoGe detail level: 0 = fastest, 9 = most detail (more ViT tokens).",
+      "advanced": true,
+      "default": 9,
+      "min": 0,
+      "max": 9
+     }
+    ],
+    "lock_camera": [
+     "BOOLEAN",
+     {
+      "tooltip": "One field of view and one metric scale for the whole clip: steadier depth from a fixed camera. Off: both estimated per frame, like single images. For a moving camera the per-frame scale can be steadier; turn this off and enter the logged FoV in fov_x_degrees to lock only the lens.",
+      "default": true
+     }
+    ],
+    "fov_x_degrees": [
+     "FLOAT",
+     {
+      "tooltip": "Horizontal field of view of the camera, if known. 0 = estimate it.",
+      "advanced": true,
+      "default": 0.0,
+      "min": 0.0,
+      "max": 170.0,
+      "step": 0.1
+     }
+    ],
+    "depth_style": [
+     "COMBO",
+     {
+      "tooltip": "gray: near = white. turbo: near = red, far = blue. Normalized over the whole clip, so brightness does not pump.",
+      "default": "gray",
+      "multiselect": false,
+      "options": [
+       "gray",
+       "turbo"
+      ]
+     }
+    ],
+    "normal_convention": [
+     "COMBO",
+     {
+      "tooltip": "Normal-map green channel. OpenGL: green = up (Blender, Unity, Substance, glTF). DirectX: green = down (Unreal).",
+      "default": "OpenGL",
+      "multiselect": false,
+      "options": [
+       "OpenGL",
+       "DirectX"
+      ]
+     }
+    ],
+    "batch_size": [
+     "INT",
+     {
+      "tooltip": "Frames per MoGe batch. Lowered automatically when it would not fit in the free VRAM.",
+      "advanced": true,
+      "default": 4,
+      "min": 1,
+      "max": 64
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "model",
+    "images",
+    "max_resolution",
+    "resolution_level",
+    "lock_camera",
+    "fov_x_degrees",
+    "depth_style",
+    "normal_convention",
+    "batch_size"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "MOGE_GEOMETRY",
+   "IMAGE",
+   "IMAGE"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "geometry",
+   "depth",
+   "normals"
+  ],
+  "output_tooltips": [
+   "Points, metric depth, intrinsics, mask and normals at the processed resolution (OpenCV camera: X right, Y down, Z forward).",
+   "Disparity visualization at the input size.",
+   "Camera-space normal map at the input size."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2DepthNormals",
+  "display_name": "CorridorKey 2.0 Depth & Normals",
+  "description": "Metric depth, a camera-space point map and surface normals for every frame, from the MoGe-2 model already loaded inside CorridorKey 2.0 (no extra download). With lock_camera the field of view and metric scale are shared by the whole clip, which steadies depth from a fixed camera and lens. The geometry output works with ComfyUI's MoGe nodes (render, mesh, FoV).",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "corridorkey",
+   "moge",
+   "depth",
+   "normal map",
+   "surface normals",
+   "point map",
+   "geometry",
+   "relight"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

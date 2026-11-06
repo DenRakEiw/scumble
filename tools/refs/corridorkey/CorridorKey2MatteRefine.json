@@ -1,0 +1,174 @@
+{
+ "CorridorKey2MatteRefine": {
+  "input": {
+   "required": {
+    "alpha": [
+     "MASK",
+     {
+      "tooltip": "Matte to refine, 1 = subject."
+     }
+    ],
+    "clip_black": [
+     "FLOAT",
+     {
+      "tooltip": "Matte values at or below this become 0 (cleans a noisy background).",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01
+     }
+    ],
+    "clip_white": [
+     "FLOAT",
+     {
+      "tooltip": "Matte values at or above this become 1 (solidifies the core).",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01
+     }
+    ],
+    "clip_rollback_px": [
+     "FLOAT",
+     {
+      "tooltip": "Restore the unclipped matte within this many pixels of the clipped edge, bringing back hair and motion blur that clipping removed.",
+      "advanced": true,
+      "default": 0.0,
+      "min": 0.0,
+      "max": 32.0,
+      "step": 0.5
+     }
+    ],
+    "despeckle_px": [
+     "INT",
+     {
+      "tooltip": "Remove isolated foreground specks smaller than this area (pixels). 0 = off.",
+      "default": 0,
+      "min": 0,
+      "max": 1000000,
+      "step": 1
+     }
+    ],
+    "fill_holes_px": [
+     "INT",
+     {
+      "tooltip": "Fill holes inside the subject smaller than this area (pixels). 0 = off.",
+      "default": 0,
+      "min": 0,
+      "max": 1000000,
+      "step": 1
+     }
+    ],
+    "despeckle_level": [
+     "FLOAT",
+     {
+      "tooltip": "Matte level separating specks (above it) and holes (below 1 - it) from their surroundings. Low keeps hair attached to the subject; raise on noisy mattes, where haze joins specks to the subject or core noise joins holes together. 0.5 = classic hard threshold.",
+      "advanced": true,
+      "default": 0.05,
+      "min": 0.01,
+      "max": 0.5,
+      "step": 0.01
+     }
+    ],
+    "choke_px": [
+     "FLOAT",
+     {
+      "tooltip": "Shrink (-) or grow (+) the matte edge by this many pixels.",
+      "default": 0.0,
+      "min": -32.0,
+      "max": 32.0,
+      "step": 0.25
+     }
+    ],
+    "soften_px": [
+     "FLOAT",
+     {
+      "tooltip": "Blur the matte edge (Gaussian, sigma = soften_px / 2).",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 32.0,
+      "step": 0.25
+     }
+    ],
+    "temporal_smoothing": [
+     "FLOAT",
+     {
+      "tooltip": "Reduce flicker by averaging each pixel with its neighbor frames, only where the matte changes little, so moving edges do not ghost. 1 = about 3 frames each way.",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ]
+   },
+   "optional": {
+    "garbage_matte": [
+     "MASK",
+     {
+      "tooltip": "White = always background. 1 mask for the whole clip or one per frame; resized to the matte."
+     }
+    ],
+    "holdout_matte": [
+     "MASK",
+     {
+      "tooltip": "White = always subject (core matte). 1 mask or one per frame; resized to the matte."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "alpha",
+    "clip_black",
+    "clip_white",
+    "clip_rollback_px",
+    "despeckle_px",
+    "fill_holes_px",
+    "despeckle_level",
+    "choke_px",
+    "soften_px",
+    "temporal_smoothing"
+   ],
+   "optional": [
+    "garbage_matte",
+    "holdout_matte"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "MASK"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "alpha"
+  ],
+  "output_tooltips": [
+   "Refined matte, 1 = subject."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2MatteRefine",
+  "display_name": "CorridorKey 2.0 Matte Refine",
+  "description": "Cleans up a matte. Steps run in this order: clip levels, despeckle / fill holes, choke, soften, temporal smoothing, garbage matte, holdout matte. Every step is off at its default.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "matte",
+   "alpha",
+   "choke",
+   "erode",
+   "despeckle",
+   "garbage matte",
+   "clip black"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

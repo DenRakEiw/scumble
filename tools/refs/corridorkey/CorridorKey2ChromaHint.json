@@ -1,0 +1,111 @@
+{
+ "CorridorKey2ChromaHint": {
+  "input": {
+   "required": {
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "Green/blue-screen clip (sRGB)."
+     }
+    ],
+    "screen": [
+     "COMBO",
+     {
+      "tooltip": "Screen color; auto picks green or blue from the clip.",
+      "default": "auto",
+      "multiselect": false,
+      "options": [
+       "auto",
+       "green",
+       "blue"
+      ]
+     }
+    ],
+    "clip_black": [
+     "FLOAT",
+     {
+      "tooltip": "Subject values at or below this become 0 (raise if the screen leaks in).",
+      "default": 0.2,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01
+     }
+    ],
+    "clip_white": [
+     "FLOAT",
+     {
+      "tooltip": "Subject values at or above this become 1 (lower if the subject has holes).",
+      "default": 0.8,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01
+     }
+    ],
+    "shrink_px": [
+     "FLOAT",
+     {
+      "tooltip": "Erode the mask so the hint stays inside the subject.",
+      "default": 2.0,
+      "min": 0.0,
+      "max": 64.0,
+      "step": 0.5
+     }
+    ],
+    "despeckle_px": [
+     "INT",
+     {
+      "tooltip": "Remove specks smaller than this area (pixels), e.g. tracking markers. 0 = off.",
+      "advanced": true,
+      "default": 0,
+      "min": 0,
+      "max": 1000000,
+      "step": 1
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "images",
+    "screen",
+    "clip_black",
+    "clip_white",
+    "shrink_px",
+    "despeckle_px"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "MASK"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "mask"
+  ],
+  "output_tooltips": [
+   "Rough subject mask, 1 = subject."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2ChromaHint",
+  "display_name": "CorridorKey 2.0 Chroma Hint",
+  "description": "A quick classic difference key that gives CorridorKey a rough subject hint without painting one. Set hint_quality around 0.75 on the keyer for hints made this way.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "chroma key",
+   "difference key",
+   "auto hint",
+   "green screen mask"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

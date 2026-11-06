@@ -1,0 +1,331 @@
+{
+ "CorridorKey2Advanced": {
+  "input": {
+   "required": {
+    "model": [
+     "CORRIDORKEY2_MODEL",
+     {}
+    ],
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "Clip frames (IMAGE batch)."
+     }
+    ],
+    "hint_mode": [
+     "COMBO",
+     {
+      "tooltip": "auto: 1 mask = first frame, one mask per frame = per-frame hints, otherwise use hint_frames. keyframes: masks are placed on hint_frames.",
+      "default": "auto",
+      "multiselect": false,
+      "options": [
+       "auto",
+       "first frame",
+       "per frame",
+       "keyframes",
+       "none"
+      ]
+     }
+    ],
+    "hint_frames": [
+     "STRING",
+     {
+      "tooltip": "Frame number of each hint mask, e.g. '0, 48, 120' (negative counts from the end). A single number with one mask places that mask there.",
+      "default": "",
+      "multiline": false
+     }
+    ],
+    "propagate_backward": [
+     "BOOLEAN",
+     {
+      "tooltip": "When the first hint is not on frame 0, key the earlier frames by running time backwards from that hint. Off: earlier frames are keyed without a hint.",
+      "default": true
+     }
+    ],
+    "hint_quality": [
+     "FLOAT",
+     {
+      "tooltip": "Trust in the hint: 0.95 clean matte, 0.75 rough automatic mask, 0.5 or less loose hint.",
+      "default": 0.95,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ],
+    "carry_hint": [
+     "BOOLEAN",
+     {
+      "tooltip": "Feed the model's own stage-1 matte forward as a hint between overlapping temporal windows. Turn off to use per-frame hints literally.",
+      "default": true
+     }
+    ],
+    "carry_hint_quality": [
+     "FLOAT",
+     {
+      "advanced": true,
+      "default": 0.95,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ],
+    "invert_hint": [
+     "BOOLEAN",
+     {
+      "tooltip": "Turn on for the mask of a cutout PNG from Load Image (its MASK is 1 - alpha). Masks painted in the Mask Editor are already white = subject; leave this off.",
+      "default": false
+     }
+    ],
+    "hint_grow_px": [
+     "FLOAT",
+     {
+      "tooltip": "Grow (+) or shrink (-) the hint before keying.",
+      "advanced": true,
+      "default": 0.0,
+      "min": -64.0,
+      "max": 64.0,
+      "step": 0.5
+     }
+    ],
+    "hint_blur_px": [
+     "FLOAT",
+     {
+      "tooltip": "Soften the hint edges before keying.",
+      "advanced": true,
+      "default": 0.0,
+      "min": 0.0,
+      "max": 64.0,
+      "step": 0.5
+     }
+    ],
+    "temporal_window": [
+     "COMBO",
+     {
+      "tooltip": "Frames per stage-1 window / step between windows. Larger windows give the spatio-temporal attention more context (steadier mattes) and need more VRAM.",
+      "default": "auto",
+      "multiselect": false,
+      "options": [
+       "auto",
+       "80/40 (most temporal context)",
+       "48/24",
+       "24/12",
+       "8/4",
+       "4/2",
+       "2/1",
+       "1/1 (per-frame, hints are not carried)",
+       "custom"
+      ]
+     }
+    ],
+    "hann_chunk": [
+     "INT",
+     {
+      "tooltip": "Window length when temporal_window is custom.",
+      "advanced": true,
+      "default": 16,
+      "min": 1,
+      "max": 256
+     }
+    ],
+    "hann_stride": [
+     "INT",
+     {
+      "tooltip": "Window step when temporal_window is custom (must not exceed hann_chunk).",
+      "advanced": true,
+      "default": 8,
+      "min": 1,
+      "max": 256
+     }
+    ],
+    "low_vram": [
+     "COMBO",
+     {
+      "tooltip": "Staged inference: foundation features and stage-1 results go through disk. Exact, lower peak VRAM, slower.",
+      "default": "auto",
+      "multiselect": false,
+      "options": [
+       "auto",
+       "on",
+       "off"
+      ]
+     }
+    ],
+    "vram_budget_gb": [
+     "FLOAT",
+     {
+      "tooltip": "Override the VRAM budget used for automatic choices (0 = measure).",
+      "advanced": true,
+      "default": 0.0,
+      "min": 0.0,
+      "max": 256.0,
+      "step": 0.5
+     }
+    ],
+    "input_colorspace": [
+     "COMBO",
+     {
+      "tooltip": "linear: frames are scene-linear (e.g. EXR plates) and may exceed 1.0.",
+      "default": "sRGB",
+      "multiselect": false,
+      "options": [
+       "sRGB",
+       "linear"
+      ]
+     }
+    ],
+    "linear_brightness": [
+     "FLOAT",
+     {
+      "tooltip": "Experimental linear-light gain applied before the model, inverted on the foreground.",
+      "advanced": true,
+      "default": 1.0,
+      "min": 0.05,
+      "max": 8.0,
+      "step": 0.01
+     }
+    ],
+    "linear_contrast": [
+     "FLOAT",
+     {
+      "advanced": true,
+      "default": 1.0,
+      "min": 0.1,
+      "max": 4.0,
+      "step": 0.01
+     }
+    ],
+    "contrast_pivot": [
+     "FLOAT",
+     {
+      "advanced": true,
+      "default": 0.18,
+      "min": 0.001,
+      "max": 1.0,
+      "step": 0.001
+     }
+    ],
+    "output_colorspace": [
+     "COMBO",
+     {
+      "tooltip": "linear: unclamped scene-linear foreground (keeps HDR values, for EXR).",
+      "default": "sRGB",
+      "multiselect": false,
+      "options": [
+       "sRGB",
+       "linear"
+      ]
+     }
+    ],
+    "process_scale": [
+     "FLOAT",
+     {
+      "tooltip": "Run the model at a reduced resolution and scale the result back up. Use for 4K on smaller GPUs.",
+      "default": 1.0,
+      "min": 0.25,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ],
+    "stage2_batch": [
+     "INT",
+     {
+      "tooltip": "Full-resolution frames refined per stage-2 batch.",
+      "advanced": true,
+      "default": 1,
+      "min": 1,
+      "max": 16
+     }
+    ]
+   },
+   "optional": {
+    "alpha_hint": [
+     "MASK",
+     {
+      "tooltip": "Subject hint masks, white = subject. See hint_mode and hint_frames."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "model",
+    "images",
+    "hint_mode",
+    "hint_frames",
+    "propagate_backward",
+    "hint_quality",
+    "carry_hint",
+    "carry_hint_quality",
+    "invert_hint",
+    "hint_grow_px",
+    "hint_blur_px",
+    "temporal_window",
+    "hann_chunk",
+    "hann_stride",
+    "low_vram",
+    "vram_budget_gb",
+    "input_colorspace",
+    "linear_brightness",
+    "linear_contrast",
+    "contrast_pivot",
+    "output_colorspace",
+    "process_scale",
+    "stage2_batch"
+   ],
+   "optional": [
+    "alpha_hint"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "IMAGE",
+   "MASK",
+   "MASK",
+   "MASK",
+   "STRING"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "foreground",
+   "alpha",
+   "coarse_alpha",
+   "decision_matte",
+   "info"
+  ],
+  "output_tooltips": [
+   "Straight foreground, no despill.",
+   "Final matte, 1 = subject.",
+   "Stage-1 matte (half resolution, blended across temporal windows).",
+   "Stage-1 /8 decision head: which subject the model chose.",
+   "Resolution, window and memory decisions."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2Advanced",
+  "display_name": "CorridorKey 2.0 (Advanced)",
+  "description": "Full control over CorridorKey 2.0: hint keyframes with forward and backward propagation, the spatio-temporal attention window, low-VRAM staging, scene-linear/HDR input and output, processing scale, and the stage-1 coarse and decision mattes.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "corridorkey",
+   "green screen",
+   "keyer",
+   "matting",
+   "alpha hint",
+   "keyframe"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

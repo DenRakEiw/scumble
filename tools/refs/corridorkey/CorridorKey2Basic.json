@@ -1,0 +1,124 @@
+{
+ "CorridorKey2Basic": {
+  "input": {
+   "required": {
+    "model": [
+     "CORRIDORKEY2_MODEL",
+     {}
+    ],
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "Clip frames (an IMAGE batch, one frame per batch item)."
+     }
+    ],
+    "hint_quality": [
+     "COMBO",
+     {
+      "tooltip": "How much the model should trust the hint.",
+      "default": "clean matte (0.95)",
+      "multiselect": false,
+      "options": [
+       "clean matte (0.95)",
+       "rough matte (0.75)",
+       "loose hint (0.5)"
+      ]
+     }
+    ],
+    "invert_hint": [
+     "BOOLEAN",
+     {
+      "tooltip": "Turn on for the mask of a cutout PNG from Load Image (its MASK is 1 - alpha). Masks painted in the Mask Editor are already white = subject; leave this off.",
+      "default": false
+     }
+    ],
+    "despill": [
+     "FLOAT",
+     {
+      "tooltip": "Green/blue spill removal on the foreground. Changing it re-runs the key; use the Despill node for instant tweaking.",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ],
+    "screen": [
+     "COMBO",
+     {
+      "tooltip": "Screen color, used by despill.",
+      "default": "green",
+      "multiselect": false,
+      "options": [
+       "green",
+       "blue"
+      ]
+     }
+    ]
+   },
+   "optional": {
+    "alpha_hint": [
+     "MASK",
+     {
+      "tooltip": "Optional subject hint, white = subject. One mask is used on the first frame and carried through the clip; a mask per frame is used on every frame."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "model",
+    "images",
+    "hint_quality",
+    "invert_hint",
+    "despill",
+    "screen"
+   ],
+   "optional": [
+    "alpha_hint"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "IMAGE",
+   "MASK",
+   "IMAGE"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "foreground",
+   "alpha",
+   "rgba"
+  ],
+  "output_tooltips": [
+   "Straight (un-premultiplied) sRGB foreground.",
+   "Matte, 1 = subject.",
+   "Foreground with the matte as a 4th channel."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2Basic",
+  "display_name": "CorridorKey 2.0 (Basic)",
+  "description": "Pulls a matte and a clean foreground from green/blue-screen footage. Feed it the clip as an IMAGE batch; optionally give a hint mask for the subject. Memory use, the temporal window and hint carry-over are chosen automatically.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "corridorkey",
+   "green screen",
+   "blue screen",
+   "keyer",
+   "matting",
+   "remove background"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

@@ -1,0 +1,111 @@
+{
+ "CorridorKey2FineTuneBasic": {
+  "input": {
+   "required": {
+    "model": [
+     "CORRIDORKEY2_MODEL",
+     {}
+    ],
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "The shot to learn from (IMAGE batch, sRGB)."
+     }
+    ],
+    "target_alpha": [
+     "MASK",
+     {
+      "tooltip": "Correct mattes, white = subject: one per frame, or one per frame listed in target_frames. Rotoscoped or cleaned-up keys work well."
+     }
+    ],
+    "target_frames": [
+     "STRING",
+     {
+      "tooltip": "Frame number of each target matte, e.g. '0, 24, 48'. Empty: the mattes belong to the first frames of the clip, in order.",
+      "default": "",
+      "multiline": false
+     }
+    ],
+    "steps": [
+     "INT",
+     {
+      "tooltip": "Training steps. 100-300 is typical; more can overfit to the target frames.",
+      "default": 200,
+      "min": 1,
+      "max": 10000
+     }
+    ],
+    "save_name": [
+     "STRING",
+     {
+      "tooltip": "File name in the CorridorKey 2.0 LoRA folder (models/corridorkey2/loras, unless extra_model_paths.yaml sets corridorkey2_loras; empty = do not save). An existing file is never overwritten. Set it before running: ComfyUI runs a node again when any of its inputs changes, so changing only save_name afterwards repeats the whole fine-tune.",
+      "default": "",
+      "multiline": false
+     }
+    ]
+   },
+   "hidden": {
+    "prompt": [
+     "PROMPT"
+    ],
+    "extra_pnginfo": [
+     "EXTRA_PNGINFO"
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "model",
+    "images",
+    "target_alpha",
+    "target_frames",
+    "steps",
+    "save_name"
+   ],
+   "hidden": [
+    "prompt",
+    "extra_pnginfo"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CORRIDORKEY2_LORA",
+   "LOSS_MAP",
+   "STRING"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "lora",
+   "loss",
+   "info"
+  ],
+  "output_tooltips": [
+   "The trained LoRA. Apply it with the CorridorKey 2.0 LoRA node.",
+   "Loss per step, for Plot Loss Graph.",
+   "Training summary."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2FineTuneBasic",
+  "display_name": "CorridorKey 2.0 Fine-Tune (Basic)",
+  "description": "Teaches CorridorKey 2.0 a difficult shot from a few correct mattes, as a small LoRA (rank 8 on the stage-1 decoder and stage 2). Crops are sized to the free VRAM; about 1 s per step on an RTX 4090 at 768 px. Apply the result with the CorridorKey 2.0 LoRA node.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": true,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "corridorkey train",
+   "fine-tune",
+   "lora training"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

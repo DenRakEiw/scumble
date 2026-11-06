@@ -1,0 +1,1073 @@
+{
+ "client_id": "ck-i0a-a130a512",
+ "start": "2026-11-06T10:58:50+0100",
+ "queue_before": {
+  "queue_running": [],
+  "queue_pending": []
+ },
+ "refs": {
+  "1MP": "ck_probe/hair_1024.png [temp]",
+  "1MP_flip": "ck_probe/hair_1024_flip.png [temp]",
+  "4MP": "ck_probe/hair_2048.png [temp]",
+  "4MP_flip": "ck_probe/hair_2048_flip.png [temp]",
+  "16MP": "ck_probe/hair_4096.png [temp]",
+  "16MP_flip": "ck_probe/hair_4096_flip.png [temp]",
+  "hint": "ck_probe/hair_1024_hint.png [temp]",
+  "hint_inv": "ck_probe/hair_1024_hint_inv.png [temp]"
+ },
+ "idle": {
+  "vram": {
+   "vram_total": 34190458880,
+   "vram_free": 12100656796,
+   "torch_vram_total": 201326592,
+   "torch_vram_free": 97607324
+  },
+  "smi": {
+   "used_mib": 23812,
+   "total_mib": 32607,
+   "util": 2
+  }
+ },
+ "free_before": {
+  "1MP": {
+   "vram": {
+    "vram_total": 34190458880,
+    "vram_free": 32235057152,
+    "torch_vram_total": 201326592,
+    "torch_vram_free": 99348480
+   },
+   "smi": {
+    "used_mib": 4415,
+    "total_mib": 32607,
+    "util": 2
+   }
+  },
+  "4MP": {
+   "vram": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi": {
+    "used_mib": 4725,
+    "total_mib": 32607,
+    "util": 10
+   }
+  },
+  "16MP": {
+   "vram": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi": {
+    "used_mib": 4522,
+    "total_mib": 32607,
+    "util": 5
+   }
+  }
+ },
+ "free_before_keep": {
+  "vram": {
+   "vram_total": 34190458880,
+   "vram_free": 32231911424,
+   "torch_vram_total": 234881024,
+   "torch_vram_free": 131854336
+  },
+  "smi": {
+   "used_mib": 4430,
+   "total_mib": 32607,
+   "util": 4
+  }
+ },
+ "keep_idle": {
+  "vram": {
+   "vram_total": 34190458880,
+   "vram_free": 27293068240,
+   "torch_vram_total": 5066719232,
+   "torch_vram_free": 24849360
+  },
+  "smi": {
+   "used_mib": 9007,
+   "total_mib": 32607,
+   "util": 1
+  }
+ },
+ "keep_after_unload_models_only": {
+  "vram": {
+   "vram_total": 34190458880,
+   "vram_free": 27293068240,
+   "torch_vram_total": 5066719232,
+   "torch_vram_free": 24849360
+  },
+  "smi": {
+   "used_mib": 8874,
+   "total_mib": 32607,
+   "util": 2
+  }
+ },
+ "keep_after_free_memory": {
+  "vram": {
+   "vram_total": 34190458880,
+   "vram_free": 32231911424,
+   "torch_vram_total": 234881024,
+   "torch_vram_free": 131854336
+  },
+  "smi": {
+   "used_mib": 4236,
+   "total_mib": 32607,
+   "util": 2
+  }
+ },
+ "polarity": {
+  "subject_white": {
+   "alpha_mean_inside_hint_white_area": 0.9961370825767517,
+   "alpha_mean_outside": 0.013119814917445183
+  },
+  "inverted": {
+   "alpha_mean_inside_hint_white_area": 0.0031159562058746815,
+   "alpha_mean_outside": 0.9878288507461548
+  }
+ },
+ "free_end": {
+  "vram": {
+   "vram_total": 34190458880,
+   "vram_free": 32231911424,
+   "torch_vram_total": 234881024,
+   "torch_vram_free": 131854336
+  },
+  "smi": {
+   "used_mib": 4406,
+   "total_mib": 32607,
+   "util": 0
+  }
+ },
+ "runs": [
+  {
+   "label": "advanced 1MP cold",
+   "prompt_id": "21c75055-28a3-48aa-a99a-64f608641114",
+   "wall_s": 12.153,
+   "server_s": 12.13,
+   "node_s": {
+    "load": 0.059,
+    "model": 9.322,
+    "key": 2.717,
+    "info": 0.001
+   },
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32235057152,
+    "torch_vram_total": 201326592,
+    "torch_vram_free": 99348480
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi_before": {
+    "used_mib": 4486,
+    "total_mib": 32607,
+    "util": 2
+   },
+   "smi_after": {
+    "used_mib": 4600,
+    "total_mib": 32607,
+    "util": 0
+   },
+   "smi_peak_mib": 9496,
+   "timeline": [
+    [
+     0.022,
+     "execution_start",
+     null
+    ],
+    [
+     0.044,
+     "execution_cached",
+     []
+    ],
+    [
+     0.054,
+     "load"
+    ],
+    [
+     0.113,
+     "model"
+    ],
+    [
+     9.435,
+     "key"
+    ],
+    [
+     12.152,
+     "info"
+    ],
+    [
+     12.152,
+     "execution_success",
+     null
+    ],
+    [
+     12.153,
+     null
+    ]
+   ],
+   "info": "1 frames, processed at 1024x1024 (padded 1024x1024); temporal window 80/40; low_vram=False; estimated peak 6.26 GB of 28.84 GB budget; segments [forward:1]"
+  },
+  {
+   "label": "advanced 1MP warm",
+   "prompt_id": "19d52bba-cdf5-4dd4-b337-b48f1d44ed9d",
+   "wall_s": 2.646,
+   "server_s": 2.502,
+   "node_s": {
+    "load": 0.067,
+    "key": 2.404,
+    "info": 0.002
+   },
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi_before": {
+    "used_mib": 4600,
+    "total_mib": 32607,
+    "util": 2
+   },
+   "smi_after": {
+    "used_mib": 4625,
+    "total_mib": 32607,
+    "util": 19
+   },
+   "smi_peak_mib": 9555,
+   "timeline": [
+    [
+     0.143,
+     "execution_start",
+     null
+    ],
+    [
+     0.161,
+     "execution_cached",
+     [
+      "model"
+     ]
+    ],
+    [
+     0.173,
+     "load"
+    ],
+    [
+     0.24,
+     "key"
+    ],
+    [
+     2.644,
+     "info"
+    ],
+    [
+     2.645,
+     "execution_success",
+     null
+    ],
+    [
+     2.646,
+     null
+    ]
+   ],
+   "info": "1 frames, processed at 1024x1024 (padded 1024x1024); temporal window 80/40; low_vram=False; estimated peak 6.26 GB of 28.83 GB budget; segments [forward:1]"
+  },
+  {
+   "label": "advanced 4MP cold",
+   "prompt_id": "ff35b207-88fc-43a3-bfdf-2a6b29ef1a4c",
+   "wall_s": 12.029,
+   "server_s": 12.007,
+   "node_s": {
+    "load": 0.126,
+    "model": 8.886,
+    "key": 2.966,
+    "info": 0.002
+   },
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi_before": {
+    "used_mib": 4725,
+    "total_mib": 32607,
+    "util": 10
+   },
+   "smi_after": {
+    "used_mib": 4657,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 10396,
+   "timeline": [
+    [
+     0.022,
+     "execution_start",
+     null
+    ],
+    [
+     0.039,
+     "execution_cached",
+     []
+    ],
+    [
+     0.049,
+     "load"
+    ],
+    [
+     0.175,
+     "model"
+    ],
+    [
+     9.061,
+     "key"
+    ],
+    [
+     12.027,
+     "info"
+    ],
+    [
+     12.029,
+     "execution_success",
+     null
+    ],
+    [
+     12.029,
+     null
+    ]
+   ],
+   "info": "1 frames, processed at 2048x2048 (padded 2048x2048); temporal window 80/40; low_vram=False; estimated peak 9.35 GB of 28.83 GB budget; segments [forward:1]"
+  },
+  {
+   "label": "advanced 4MP warm",
+   "prompt_id": "e8878969-ef52-412c-827a-2f9f871d9fb5",
+   "wall_s": 2.892,
+   "server_s": 2.807,
+   "node_s": {
+    "load": 0.143,
+    "key": 2.628,
+    "info": 0.002
+   },
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi_before": {
+    "used_mib": 4659,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 4577,
+    "total_mib": 32607,
+    "util": 2
+   },
+   "smi_peak_mib": 10419,
+   "timeline": [
+    [
+     0.084,
+     "execution_start",
+     null
+    ],
+    [
+     0.106,
+     "execution_cached",
+     [
+      "model"
+     ]
+    ],
+    [
+     0.119,
+     "load"
+    ],
+    [
+     0.262,
+     "key"
+    ],
+    [
+     2.89,
+     "info"
+    ],
+    [
+     2.892,
+     "execution_success",
+     null
+    ],
+    [
+     2.892,
+     null
+    ]
+   ],
+   "info": "1 frames, processed at 2048x2048 (padded 2048x2048); temporal window 80/40; low_vram=False; estimated peak 9.35 GB of 28.83 GB budget; segments [forward:1]"
+  },
+  {
+   "label": "advanced 16MP cold",
+   "prompt_id": "31c8d81f-005f-4818-828d-8676d3963ae1",
+   "wall_s": 15.329,
+   "server_s": 15.303,
+   "node_s": {
+    "load": 0.458,
+    "model": 8.39,
+    "key": 6.416,
+    "info": 0.001
+   },
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi_before": {
+    "used_mib": 4522,
+    "total_mib": 32607,
+    "util": 5
+   },
+   "smi_after": {
+    "used_mib": 4219,
+    "total_mib": 32607,
+    "util": 2
+   },
+   "smi_peak_mib": 13418,
+   "timeline": [
+    [
+     0.026,
+     "execution_start",
+     null
+    ],
+    [
+     0.053,
+     "execution_cached",
+     []
+    ],
+    [
+     0.064,
+     "load"
+    ],
+    [
+     0.522,
+     "model"
+    ],
+    [
+     8.912,
+     "key"
+    ],
+    [
+     15.328,
+     "info"
+    ],
+    [
+     15.329,
+     "execution_success",
+     null
+    ],
+    [
+     15.329,
+     null
+    ]
+   ],
+   "info": "1 frames, processed at 4096x4096 (padded 4096x4096); temporal window 80/40; low_vram=False; estimated peak 23.21 GB of 28.83 GB budget; segments [forward:1]"
+  },
+  {
+   "label": "advanced 16MP warm",
+   "prompt_id": "4d67b173-237a-4c12-8bd0-e789a14d0ea0",
+   "wall_s": 6.6,
+   "server_s": 6.451,
+   "node_s": {
+    "load": 0.452,
+    "key": 5.963,
+    "info": 0.031
+   },
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi_before": {
+    "used_mib": 4219,
+    "total_mib": 32607,
+    "util": 2
+   },
+   "smi_after": {
+    "used_mib": 4361,
+    "total_mib": 32607,
+    "util": 2
+   },
+   "smi_peak_mib": 13547,
+   "timeline": [
+    [
+     0.119,
+     "execution_start",
+     null
+    ],
+    [
+     0.144,
+     "execution_cached",
+     [
+      "model"
+     ]
+    ],
+    [
+     0.154,
+     "load"
+    ],
+    [
+     0.606,
+     "key"
+    ],
+    [
+     6.569,
+     "info"
+    ],
+    [
+     6.57,
+     "execution_success",
+     null
+    ],
+    [
+     6.6,
+     null
+    ]
+   ],
+   "info": "1 frames, processed at 4096x4096 (padded 4096x4096); temporal window 80/40; low_vram=False; estimated peak 23.21 GB of 28.83 GB budget; segments [forward:1]"
+  },
+  {
+   "label": "advanced 1MP keep_on_gpu cold",
+   "prompt_id": "ac2b0e94-25dc-42ce-974c-e5403f4c7731",
+   "wall_s": 9.703,
+   "server_s": 9.681,
+   "node_s": {
+    "load": 0.038,
+    "model": 8.489,
+    "key": 1.132,
+    "info": 0.002
+   },
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 27293068240,
+    "torch_vram_total": 5066719232,
+    "torch_vram_free": 24849360
+   },
+   "smi_before": {
+    "used_mib": 4430,
+    "total_mib": 32607,
+    "util": 4
+   },
+   "smi_after": {
+    "used_mib": 8899,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 9187,
+   "timeline": [
+    [
+     0.021,
+     "execution_start",
+     null
+    ],
+    [
+     0.033,
+     "execution_cached",
+     []
+    ],
+    [
+     0.042,
+     "load"
+    ],
+    [
+     0.08,
+     "model"
+    ],
+    [
+     8.569,
+     "key"
+    ],
+    [
+     9.701,
+     "info"
+    ],
+    [
+     9.702,
+     "execution_success",
+     null
+    ],
+    [
+     9.703,
+     null
+    ]
+   ],
+   "info": "1 frames, processed at 1024x1024 (padded 1024x1024); temporal window 80/40; low_vram=False; estimated peak 6.26 GB of 28.83 GB budget; segments [forward:1]"
+  },
+  {
+   "label": "advanced 1MP keep_on_gpu warm",
+   "prompt_id": "d249ccff-8d64-4fe7-b5e0-ae62783579b7",
+   "wall_s": 0.715,
+   "server_s": 0.692,
+   "node_s": {
+    "load": 0.04,
+    "key": 0.628,
+    "info": 0.001
+   },
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 27293068240,
+    "torch_vram_total": 5066719232,
+    "torch_vram_free": 24849360
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 27293068240,
+    "torch_vram_total": 5066719232,
+    "torch_vram_free": 24849360
+   },
+   "smi_before": {
+    "used_mib": 8899,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 8908,
+    "total_mib": 32607,
+    "util": 34
+   },
+   "smi_peak_mib": 8899,
+   "timeline": [
+    [
+     0.023,
+     "execution_start",
+     null
+    ],
+    [
+     0.036,
+     "execution_cached",
+     [
+      "model"
+     ]
+    ],
+    [
+     0.046,
+     "load"
+    ],
+    [
+     0.086,
+     "key"
+    ],
+    [
+     0.714,
+     "info"
+    ],
+    [
+     0.715,
+     "execution_success",
+     null
+    ],
+    [
+     0.715,
+     null
+    ]
+   ],
+   "info": "1 frames, processed at 1024x1024 (padded 1024x1024); temporal window 80/40; low_vram=False; estimated peak 6.26 GB of 28.83 GB budget; segments [forward:1]"
+  },
+  {
+   "label": "basic 1MP hint fg/alpha/rgba",
+   "prompt_id": "1c687ff0-4366-4e5b-938b-bb2415a370dd",
+   "wall_s": 10.778,
+   "server_s": 10.742,
+   "node_s": {
+    "load": 0.039,
+    "model": 8.46,
+    "hint_img": 0.039,
+    "hint": 0.001,
+    "key": 1.993,
+    "out_rgba": 0.07,
+    "out_fg": 0.061,
+    "alpha_img": 0.002,
+    "out_alpha": 0.051
+   },
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi_before": {
+    "used_mib": 4236,
+    "total_mib": 32607,
+    "util": 1
+   },
+   "smi_after": {
+    "used_mib": 4368,
+    "total_mib": 32607,
+    "util": 2
+   },
+   "smi_peak_mib": 9264,
+   "timeline": [
+    [
+     0.035,
+     "execution_start",
+     null
+    ],
+    [
+     0.055,
+     "execution_cached",
+     []
+    ],
+    [
+     0.062,
+     "load"
+    ],
+    [
+     0.101,
+     "model"
+    ],
+    [
+     8.561,
+     "hint_img"
+    ],
+    [
+     8.6,
+     "hint"
+    ],
+    [
+     8.601,
+     "key"
+    ],
+    [
+     10.594,
+     "out_rgba"
+    ],
+    [
+     10.664,
+     "out_fg"
+    ],
+    [
+     10.725,
+     "alpha_img"
+    ],
+    [
+     10.727,
+     "out_alpha"
+    ],
+    [
+     10.778,
+     "execution_success",
+     null
+    ],
+    [
+     10.778,
+     null
+    ]
+   ],
+   "readback": {
+    "pngs": {
+     "out_fg": {
+      "file": {
+       "filename": "ComfyUI_temp_eyqei_00001_.png",
+       "subfolder": "",
+       "type": "temp",
+       "metadata": {
+        "kind": "image",
+        "width": 1024,
+        "height": 1024
+       },
+       "id": "9c57cf92-48c5-4f81-ae64-6cc41d871531"
+      },
+      "mode": "RGB",
+      "size": [
+       1024,
+       1024
+      ],
+      "bits": null,
+      "bytes": 2233332,
+      "png_bitdepth": 8,
+      "png_colortype": 2
+     },
+     "out_alpha": {
+      "file": {
+       "filename": "ComfyUI_temp_inujm_00001_.png",
+       "subfolder": "",
+       "type": "temp",
+       "metadata": {
+        "kind": "image",
+        "width": 1024,
+        "height": 1024
+       },
+       "id": "26ded44c-8dbb-43fa-85e3-809ced9fb343"
+      },
+      "mode": "RGB",
+      "size": [
+       1024,
+       1024
+      ],
+      "bits": null,
+      "bytes": 267382,
+      "png_bitdepth": 8,
+      "png_colortype": 2
+     },
+     "out_rgba": {
+      "file": {
+       "filename": "ComfyUI_temp_jeqab_00001_.png",
+       "subfolder": "",
+       "type": "temp",
+       "metadata": {
+        "kind": "image",
+        "width": 1024,
+        "height": 1024
+       },
+       "id": "42db123f-5b20-4682-8f92-ebbbc5db3ec2"
+      },
+      "mode": "RGBA",
+      "size": [
+       1024,
+       1024
+      ],
+      "bits": null,
+      "bytes": 2671190,
+      "png_bitdepth": 8,
+      "png_colortype": 6
+     }
+    },
+    "rgba_rgb_eq_fg": 0,
+    "rgba_a_eq_alpha": 0,
+    "px_rgb_above_alpha_plus2": 0.03531932830810547,
+    "alpha0_px": 183457,
+    "alpha0_rgb_mean": 1.2826075501797878,
+    "alpha_mean": 0.8104714337517234
+   }
+  },
+  {
+   "label": "basic 1MP polarity subject_white",
+   "prompt_id": "3fa1ae95-c32e-4021-9895-46504788e15d",
+   "wall_s": 0.069,
+   "server_s": 0.026,
+   "node_s": {},
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi_before": {
+    "used_mib": 4368,
+    "total_mib": 32607,
+    "util": 2
+   },
+   "smi_after": {
+    "used_mib": 4534,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_peak_mib": 4368,
+   "timeline": [
+    [
+     0.042,
+     "execution_start",
+     null
+    ],
+    [
+     0.061,
+     "execution_cached",
+     [
+      "load",
+      "model",
+      "key",
+      "hint_img",
+      "hint",
+      "alpha_img",
+      "out_alpha"
+     ]
+    ],
+    [
+     0.068,
+     "execution_success",
+     null
+    ],
+    [
+     0.069,
+     null
+    ]
+   ],
+   "polarity": {
+    "alpha_mean_inside_hint_white_area": 0.9961370825767517,
+    "alpha_mean_outside": 0.013119814917445183
+   }
+  },
+  {
+   "label": "basic 1MP polarity inverted",
+   "prompt_id": "0fc5dd93-41f1-4d6b-931b-78e9dd7d5ec5",
+   "wall_s": 2.093,
+   "server_s": 2.052,
+   "node_s": {
+    "hint_img": 0.038,
+    "hint": 0.001,
+    "key": 1.927,
+    "alpha_img": 0.002,
+    "out_alpha": 0.054
+   },
+   "error": null,
+   "vram_before": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "vram_after": {
+    "vram_total": 34190458880,
+    "vram_free": 32231911424,
+    "torch_vram_total": 234881024,
+    "torch_vram_free": 131854336
+   },
+   "smi_before": {
+    "used_mib": 4534,
+    "total_mib": 32607,
+    "util": 3
+   },
+   "smi_after": {
+    "used_mib": 4439,
+    "total_mib": 32607,
+    "util": 27
+   },
+   "smi_peak_mib": 9335,
+   "timeline": [
+    [
+     0.041,
+     "execution_start",
+     null
+    ],
+    [
+     0.061,
+     "execution_cached",
+     [
+      "load",
+      "model"
+     ]
+    ],
+    [
+     0.071,
+     "hint_img"
+    ],
+    [
+     0.109,
+     "hint"
+    ],
+    [
+     0.11,
+     "key"
+    ],
+    [
+     2.037,
+     "alpha_img"
+    ],
+    [
+     2.039,
+     "out_alpha"
+    ],
+    [
+     2.093,
+     "execution_success",
+     null
+    ],
+    [
+     2.093,
+     null
+    ]
+   ],
+   "polarity": {
+    "alpha_mean_inside_hint_white_area": 0.0031159562058746815,
+    "alpha_mean_outside": 0.9878288507461548
+   }
+  }
+ ],
+ "history_deleted": {
+  "ids": [
+   "21c75055-28a3-48aa-a99a-64f608641114",
+   "19d52bba-cdf5-4dd4-b337-b48f1d44ed9d",
+   "ff35b207-88fc-43a3-bfdf-2a6b29ef1a4c",
+   "e8878969-ef52-412c-827a-2f9f871d9fb5",
+   "31c8d81f-005f-4818-828d-8676d3963ae1",
+   "4d67b173-237a-4c12-8bd0-e789a14d0ea0",
+   "ac2b0e94-25dc-42ce-974c-e5403f4c7731",
+   "d249ccff-8d64-4fe7-b5e0-ae62783579b7",
+   "1c687ff0-4366-4e5b-938b-bb2415a370dd",
+   "3fa1ae95-c32e-4021-9895-46504788e15d",
+   "0fc5dd93-41f1-4d6b-931b-78e9dd7d5ec5"
+  ],
+  "still_there": []
+ },
+ "queue_after": {
+  "queue_running": [],
+  "queue_pending": []
+ },
+ "end": "2026-11-06T11:00:49+0100"
+}

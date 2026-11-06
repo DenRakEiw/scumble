@@ -1,0 +1,102 @@
+{
+ "CorridorKey2TemporalStability": {
+  "input": {
+   "required": {
+    "alpha": [
+     "MASK",
+     {
+      "tooltip": "Matte sequence to check, 1 = subject."
+     }
+    ],
+    "heat_max": [
+     "FLOAT",
+     {
+      "tooltip": "Per-pixel change shown in the hottest color.",
+      "advanced": true,
+      "default": 0.25,
+      "min": 0.01,
+      "max": 1.0,
+      "step": 0.01
+     }
+    ],
+    "gradient_error": [
+     "BOOLEAN",
+     {
+      "tooltip": "Also compute the gradient error against the reference (slower on long clips).",
+      "advanced": true,
+      "default": true
+     }
+    ]
+   },
+   "optional": {
+    "reference_alpha": [
+     "MASK",
+     {
+      "tooltip": "Ground-truth matte with the same number of frames (resized to alpha if needed)."
+     }
+    ],
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "Clip frames to lay the heat map over (a dimmed grayscale copy)."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "alpha",
+    "heat_max",
+    "gradient_error"
+   ],
+   "optional": [
+    "reference_alpha",
+    "images"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "IMAGE",
+   "FLOAT",
+   "STRING"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "heatmap",
+   "flicker_score",
+   "report"
+  ],
+  "output_tooltips": [
+   "|alpha_t - alpha_t-1| per pixel, or with a reference |change - reference change|; frame 0 is 0.",
+   "Mean |a_t - (a_t-1 + a_t+1) / 2| over the clip; lower is steadier.",
+   "Per-frame table and summary."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2TemporalStability",
+  "display_name": "CorridorKey 2.0 Temporal Stability",
+  "description": "Measures how steady a matte is over time. Without a reference: per-frame change and flicker (change that steady motion would not explain). With a ground-truth reference: SAD, MSE, gradient error and dtSSD (temporal coherence error) per frame. The heat map shows where the matte changes between frames (or, with a reference, where its change differs from the reference's).",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "flicker",
+   "temporal",
+   "stability",
+   "dtssd",
+   "matte metrics",
+   "heatmap",
+   "chatter"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

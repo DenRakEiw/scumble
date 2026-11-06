@@ -1,0 +1,144 @@
+{
+ "CorridorKey2Composite": {
+  "input": {
+   "required": {
+    "foreground": [
+     "IMAGE",
+     {
+      "tooltip": "Straight (un-premultiplied) foreground, sRGB or linear (see colorspace)."
+     }
+    ],
+    "alpha": [
+     "MASK",
+     {
+      "tooltip": "Matte, 1 = subject. 1 mask or one per frame; resized to the foreground."
+     }
+    ],
+    "background_mode": [
+     "COMBO",
+     {
+      "tooltip": "checker: review checkerboard. solid: solid_color. image: the background input.",
+      "default": "checker",
+      "multiselect": false,
+      "options": [
+       "checker",
+       "solid",
+       "image"
+      ]
+     }
+    ],
+    "solid_color": [
+     "COLOR",
+     {
+      "tooltip": "Background color for background_mode 'solid'.",
+      "default": "#000000",
+      "socketless": true
+     }
+    ],
+    "light_wrap_size": [
+     "FLOAT",
+     {
+      "tooltip": "How far (pixels) background light reaches into the subject's edge.",
+      "advanced": true,
+      "default": 16.0,
+      "min": 0.0,
+      "max": 256.0,
+      "step": 1.0
+     }
+    ],
+    "light_wrap_intensity": [
+     "FLOAT",
+     {
+      "tooltip": "Amount of blurred background added onto the subject's edge. 0 = off.",
+      "advanced": true,
+      "default": 0.0,
+      "min": 0.0,
+      "max": 4.0,
+      "step": 0.05
+     }
+    ],
+    "premultiply": [
+     "BOOLEAN",
+     {
+      "tooltip": "rgba output: multiply the color by alpha (premultiplied, as compositing apps expect for premultiplied files). Off: straight color.",
+      "default": false
+     }
+    ],
+    "colorspace": [
+     "COMBO",
+     {
+      "tooltip": "sRGB: the foreground, background plate and composite are display sRGB. linear: they are scene-linear and unclamped, as from the Advanced keyer with output_colorspace linear (save with Save Image (Advanced) as EXR, input_color_space linear). Checker and solid_color are converted for you.",
+      "default": "sRGB",
+      "multiselect": false,
+      "options": [
+       "sRGB",
+       "linear"
+      ]
+     }
+    ]
+   },
+   "optional": {
+    "background": [
+     "IMAGE",
+     {
+      "tooltip": "Background plate for background_mode 'image': 1 frame or a clip, resized to the foreground. A shorter clip holds its last frame."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "foreground",
+    "alpha",
+    "background_mode",
+    "solid_color",
+    "light_wrap_size",
+    "light_wrap_intensity",
+    "premultiply",
+    "colorspace"
+   ],
+   "optional": [
+    "background"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "IMAGE",
+   "IMAGE"
+  ],
+  "output_is_list": [
+   false,
+   false
+  ],
+  "output_name": [
+   "composite",
+   "rgba"
+  ],
+  "output_tooltips": [
+   "Foreground over the background, in the chosen colorspace.",
+   "Foreground color with alpha as a 4th channel."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2Composite",
+  "display_name": "CorridorKey 2.0 Composite",
+  "description": "Places a straight foreground over a checkerboard, a solid color or a background plate, blended in linear light, with optional light wrap. Also outputs the foreground as RGBA.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "composite",
+   "over",
+   "light wrap",
+   "background replace",
+   "premultiply",
+   "rgba"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

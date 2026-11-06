@@ -1,0 +1,13 @@
+hair_green b1024_hint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+hair_green b1024_nohint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+hair_green b768_hint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+hair_green b768_nohint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+hair_green native_hint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+hair_green native_nohint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+highlights_green b1024_hint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+highlights_green b1024_nohint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+highlights_green b768_hint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+highlights_green b768_nohint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+highlights_green native_hint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+highlights_green native_nohint alpha.png identical | feat_cradio max 0 mae 0; feat_moge max 0 mae 0; feat_rvm max 0 mae 0; baton max 0 mae 0; logits max 0 mae 0; alpha max 0 mae 0; fg_linear max 0 mae 0
+WORST over 12 cases (max abs, max of MAE): {'feat_cradio': [0, 0], 'feat_moge': [0, 0], 'feat_rvm': [0, 0], 'baton': [0, 0], 'logits': [0, 0], 'alpha': [0, 0], 'fg_linear': [0, 0]}

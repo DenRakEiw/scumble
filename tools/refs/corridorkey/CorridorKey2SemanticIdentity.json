@@ -1,0 +1,118 @@
+{
+ "CorridorKey2SemanticIdentity": {
+  "input": {
+   "required": {
+    "model": [
+     "CORRIDORKEY2_MODEL",
+     {}
+    ],
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "Clip frames (IMAGE batch)."
+     }
+    ],
+    "resolution": [
+     "INT",
+     {
+      "tooltip": "Long side the frames are resized to for C-RADIO, which gives one feature per 16x16 patch. Higher shows finer detail and needs more VRAM.",
+      "default": 768,
+      "min": 256,
+      "max": 2048,
+      "step": 16
+     }
+    ],
+    "reference_frame": [
+     "INT",
+     {
+      "tooltip": "Frame the reference mask belongs to.",
+      "default": 0,
+      "min": 0,
+      "max": 1000000
+     }
+    ],
+    "sharpness": [
+     "FLOAT",
+     {
+      "tooltip": "Steepness of subject_mask: sigmoid(sharpness x (similarity to the subject - similarity to the background)).",
+      "advanced": true,
+      "default": 10.0,
+      "min": 0.5,
+      "max": 100.0,
+      "step": 0.5
+     }
+    ],
+    "batch_size": [
+     "INT",
+     {
+      "tooltip": "Frames per C-RADIO batch. Lowered automatically when it would not fit in the free VRAM.",
+      "advanced": true,
+      "default": 4,
+      "min": 1,
+      "max": 64
+     }
+    ]
+   },
+   "optional": {
+    "reference_mask": [
+     "MASK",
+     {
+      "tooltip": "Subject mask on reference_frame, white = subject (a hint or a keyed alpha). One mask, or one per frame (the one at reference_frame is used). Without it subject_mask is all zeros."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "model",
+    "images",
+    "resolution",
+    "reference_frame",
+    "sharpness",
+    "batch_size"
+   ],
+   "optional": [
+    "reference_mask"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "IMAGE",
+   "MASK"
+  ],
+  "output_is_list": [
+   false,
+   false
+  ],
+  "output_name": [
+   "features_pca",
+   "subject_mask"
+  ],
+  "output_tooltips": [
+   "C-RADIO features as colors (3-component PCA, fitted once per clip).",
+   "Similarity to the reference subject, 1 = subject. All zeros when no reference_mask is connected."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2SemanticIdentity",
+  "display_name": "CorridorKey 2.0 Semantic Identity",
+  "description": "Shows how C-RADIO, the keyer's semantic foundation model, sees the clip: its features as a PCA color video (same color = same kind of thing; colors are fitted once per clip so they stay stable) and, given a subject mask on one frame, a soft mask of everything that resembles the subject on every frame. Use it to check that the model can tell the subject from the background, or as a rough hint for the keyer.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "c-radio",
+   "semantic",
+   "features",
+   "pca",
+   "similarity",
+   "subject mask"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

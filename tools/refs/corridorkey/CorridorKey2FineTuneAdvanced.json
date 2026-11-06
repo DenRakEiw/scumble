@@ -1,0 +1,383 @@
+{
+ "CorridorKey2FineTuneAdvanced": {
+  "input": {
+   "required": {
+    "model": [
+     "CORRIDORKEY2_MODEL",
+     {}
+    ],
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "The shot to learn from (IMAGE batch, sRGB)."
+     }
+    ],
+    "target_alpha": [
+     "MASK",
+     {
+      "tooltip": "Correct mattes, white = subject: one per frame, or one per frame listed in target_frames. Rotoscoped or cleaned-up keys work well."
+     }
+    ],
+    "target_frames": [
+     "STRING",
+     {
+      "tooltip": "Frame number of each target matte, e.g. '0, 24, 48'. Empty: the mattes belong to the first frames of the clip, in order.",
+      "default": "",
+      "multiline": false
+     }
+    ],
+    "scope": [
+     "COMBO",
+     {
+      "tooltip": "Layers that get adapters. stage2: final refinement only (edges, color). decoder+stage2: also the stage-1 decoder. all: every stage-1 and stage-2 block, including subject selection; the foundation models are never trained.",
+      "default": "decoder+stage2",
+      "multiselect": false,
+      "options": [
+       "stage2",
+       "decoder+stage2",
+       "all"
+      ]
+     }
+    ],
+    "rank": [
+     "INT",
+     {
+      "tooltip": "LoRA rank (capacity).",
+      "default": 8,
+      "min": 1,
+      "max": 128
+     }
+    ],
+    "lora_alpha": [
+     "FLOAT",
+     {
+      "tooltip": "LoRA alpha; the change is scaled by lora_alpha / rank.",
+      "default": 8.0,
+      "min": 0.5,
+      "max": 256.0,
+      "step": 0.5
+     }
+    ],
+    "learning_rate": [
+     "FLOAT",
+     {
+      "tooltip": "Peak AdamW learning rate (short warmup, then cosine decay to 10%).",
+      "default": 0.0001,
+      "min": 1e-06,
+      "max": 0.01,
+      "step": 1e-05,
+      "round": 1e-06
+     }
+    ],
+    "steps": [
+     "INT",
+     {
+      "default": 200,
+      "min": 1,
+      "max": 20000
+     }
+    ],
+    "window_frames": [
+     "COMBO",
+     {
+      "tooltip": "Consecutive frames per training step (temporal context). More frames use more VRAM.",
+      "default": "8",
+      "multiselect": false,
+      "options": [
+       "4",
+       "8",
+       "16"
+      ]
+     }
+    ],
+    "crop": [
+     "INT",
+     {
+      "tooltip": "Square training crop at native resolution, a multiple of 128. 0 = largest that fits in free VRAM. On Windows, a crop that would exceed the commit limit (RAM plus page file) stops with an error before training.",
+      "default": 512,
+      "min": 0,
+      "max": 2048,
+      "step": 128
+     }
+    ],
+    "augment": [
+     "BOOLEAN",
+     {
+      "tooltip": "Random horizontal flips and mild color jitter, the same across a window.",
+      "default": true
+     }
+    ],
+    "seed": [
+     "INT",
+     {
+      "tooltip": "Seed for crops, hints, augmentation and adapter initialization.",
+      "default": 0,
+      "min": 0,
+      "max": 2147483647,
+      "control_after_generate": false
+     }
+    ],
+    "save_name": [
+     "STRING",
+     {
+      "tooltip": "File name in the CorridorKey 2.0 LoRA folder (models/corridorkey2/loras, unless extra_model_paths.yaml sets corridorkey2_loras; empty = do not save). An existing file is never overwritten. Set it before running: ComfyUI runs a node again when any of its inputs changes, so changing only save_name afterwards repeats the whole fine-tune.",
+      "default": "",
+      "multiline": false
+     }
+    ],
+    "loss_alpha": [
+     "FLOAT",
+     {
+      "tooltip": "Weight of the alpha loss. Charbonnier L1 on the raw matte.",
+      "advanced": true,
+      "default": 1.0,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.05
+     }
+    ],
+    "loss_split": [
+     "FLOAT",
+     {
+      "tooltip": "Weight of the split loss. L1 averaged separately over the edge/transparency band and the solid regions, so thin edges count as much as large areas.",
+      "advanced": true,
+      "default": 1.0,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.05
+     }
+    ],
+    "loss_laplacian": [
+     "FLOAT",
+     {
+      "tooltip": "Weight of the laplacian loss. Laplacian-pyramid L1: matte structure at several scales.",
+      "advanced": true,
+      "default": 1.0,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.05
+     }
+    ],
+    "loss_gradient": [
+     "FLOAT",
+     {
+      "tooltip": "Weight of the gradient loss. Sobel gradient L1: edge sharpness.",
+      "advanced": true,
+      "default": 0.5,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.05
+     }
+    ],
+    "loss_composition": [
+     "FLOAT",
+     {
+      "tooltip": "Weight of the composition loss. Re-composite over the background plate vs the input frame (only with a background input).",
+      "advanced": true,
+      "default": 1.0,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.05
+     }
+    ],
+    "loss_fg": [
+     "FLOAT",
+     {
+      "tooltip": "Weight of the fg loss. Foreground color L1 where the target matte is > 0 (only with a target_fg input).",
+      "advanced": true,
+      "default": 1.0,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.05
+     }
+    ],
+    "loss_temporal": [
+     "FLOAT",
+     {
+      "tooltip": "Weight of the temporal loss. Frame-to-frame change of the matte (and foreground) must match the target's: reduces flicker. Uses consecutive target frames only.",
+      "advanced": true,
+      "default": 5.0,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.05
+     }
+    ],
+    "loss_aux": [
+     "FLOAT",
+     {
+      "tooltip": "Weight of the aux loss. Deep supervision of the half-resolution stage-1 matte (scopes with stage-1 layers).",
+      "advanced": true,
+      "default": 0.5,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.05
+     }
+    ],
+    "loss_bottleneck": [
+     "FLOAT",
+     {
+      "tooltip": "Weight of the bottleneck loss. Supervision of the stage-1 /8 decision head (scope 'all' only).",
+      "advanced": true,
+      "default": 0.25,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.05
+     }
+    ],
+    "hint_none": [
+     "FLOAT",
+     {
+      "tooltip": "Share of steps trained without a hint. Shares are normalized.",
+      "advanced": true,
+      "default": 0.35,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ],
+    "hint_first_frame": [
+     "FLOAT",
+     {
+      "tooltip": "Share of steps with a first-frame hint (quality 0.75-0.95). Shares are normalized.",
+      "advanced": true,
+      "default": 0.3,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ],
+    "hint_carry": [
+     "FLOAT",
+     {
+      "tooltip": "Share of steps where the first half of the window gets a carried hint, as between overlapping temporal windows (quality 0.95). Shares are normalized.",
+      "advanced": true,
+      "default": 0.15,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ],
+    "hint_degraded": [
+     "FLOAT",
+     {
+      "tooltip": "Share of steps with a rough hint on every frame (quality 0.5-0.75). Shares are normalized.",
+      "advanced": true,
+      "default": 0.2,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ]
+   },
+   "optional": {
+    "target_fg": [
+     "IMAGE",
+     {
+      "tooltip": "Correct straight sRGB foreground for the target frames (same count as target_alpha)."
+     }
+    ],
+    "background": [
+     "IMAGE",
+     {
+      "tooltip": "Clean plate of the screen without the subject (1 frame or one per frame)."
+     }
+    ],
+    "init_lora": [
+     "CORRIDORKEY2_LORA",
+     {
+      "tooltip": "Continue training this LoRA (its scope, rank and alpha are used). Do not also apply it to the model."
+     }
+    ]
+   },
+   "hidden": {
+    "prompt": [
+     "PROMPT"
+    ],
+    "extra_pnginfo": [
+     "EXTRA_PNGINFO"
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "model",
+    "images",
+    "target_alpha",
+    "target_frames",
+    "scope",
+    "rank",
+    "lora_alpha",
+    "learning_rate",
+    "steps",
+    "window_frames",
+    "crop",
+    "augment",
+    "seed",
+    "save_name",
+    "loss_alpha",
+    "loss_split",
+    "loss_laplacian",
+    "loss_gradient",
+    "loss_composition",
+    "loss_fg",
+    "loss_temporal",
+    "loss_aux",
+    "loss_bottleneck",
+    "hint_none",
+    "hint_first_frame",
+    "hint_carry",
+    "hint_degraded"
+   ],
+   "optional": [
+    "target_fg",
+    "background",
+    "init_lora"
+   ],
+   "hidden": [
+    "prompt",
+    "extra_pnginfo"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CORRIDORKEY2_LORA",
+   "LOSS_MAP",
+   "STRING"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "lora",
+   "loss",
+   "info"
+  ],
+  "output_tooltips": [
+   "The trained LoRA. Apply it with the CorridorKey 2.0 LoRA node.",
+   "Loss per step, for Plot Loss Graph.",
+   "Training summary."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2FineTuneAdvanced",
+  "display_name": "CorridorKey 2.0 Fine-Tune (Advanced)",
+  "description": "LoRA fine-tuning with every knob: adapted layers, rank, learning rate, temporal window, crop size, per-term loss weights (alpha, split, Laplacian, gradient, composition, foreground, temporal, deep supervision) and the hint curriculum. A target foreground enables the foreground loss and a clean background plate the composition loss.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": true,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "corridorkey train",
+   "fine-tune",
+   "lora training",
+   "matting loss"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

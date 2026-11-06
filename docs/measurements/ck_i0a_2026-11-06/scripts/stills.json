@@ -1,0 +1,39 @@
+{
+  "recipe": "flux3_klein_local",
+  "aspect": "1:1",
+  "resolution": 1344,
+  "megapixels": 1.72,
+  "out_dir": "F:/canvas/.claude/worktrees/corridorkey/dist/ck_ref/stills",
+  "stills": [
+    {
+      "name": "green_plate",
+      "screen": "green",
+      "seed": 49001,
+      "prompt": "Photograph of a green screen studio: a man in a plain grey t-shirt and dark jeans stands in front of a large chroma key green backdrop that curves into the floor. Soft studio lighting with a gentle falloff toward the corners, a few fabric wrinkles in the backdrop, a faint shadow at his feet, his full figure in view, natural skin, realistic photo, 35mm lens."
+    },
+    {
+      "name": "blue_plate",
+      "screen": "blue",
+      "seed": 49002,
+      "prompt": "Photograph of a blue screen studio: a woman in a plain beige sweater and dark trousers sits on a simple wooden stool in front of a large chroma key blue backdrop that curves into the floor. Soft studio lighting, a few wrinkles in the blue fabric, a faint shadow under the stool, her full figure in view, realistic photo, 35mm lens."
+    },
+    {
+      "name": "flat_green_plant",
+      "screen": "green",
+      "seed": 49003,
+      "prompt": "A potted monstera plant in a plain white ceramic pot, standing alone in the centre, against a perfectly flat, uniform chroma key green background, evenly lit, no shadow on the background, product photo, sharp leaf edges."
+    },
+    {
+      "name": "hair_green",
+      "screen": "green",
+      "seed": 49004,
+      "prompt": "Portrait photograph of a woman with long, loose, curly hair with many fine flyaway strands, lit from behind by a rim light so single strands of hair glow, wearing a plain dark top, in front of an evenly lit chroma key green screen, head and shoulders, sharp focus on the hair edges, realistic photo."
+    },
+    {
+      "name": "highlights_green",
+      "screen": "green",
+      "seed": 49005,
+      "prompt": "Product photograph of a clear glass bottle of water and a polished chrome cup on a small grey table in front of a chroma key green screen. A hard spotlight from the side gives bright specular highlights and blown-out white reflections on the glass and the metal, and a bright lit rim along the edge of the bottle, realistic photo."
+    }
+  ]
+}

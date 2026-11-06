@@ -1,0 +1,133 @@
+{
+ "CorridorKey2HintPrep": {
+  "input": {
+   "required": {
+    "mask": [
+     "MASK",
+     {
+      "tooltip": "Hint mask(s), white = subject. The mask of a cutout PNG from Load Image needs invert; a Mask Editor painting does not."
+     }
+    ],
+    "invert": [
+     "BOOLEAN",
+     {
+      "tooltip": "Swap subject and background. Turn on for the mask of a cutout PNG from Load Image (its MASK is 1 - alpha). Masks painted in the Mask Editor are already white = subject; leave this off.",
+      "default": false
+     }
+    ],
+    "threshold": [
+     "FLOAT",
+     {
+      "tooltip": "Make the mask binary: values at or above become 1, below become 0. 0 = off.",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01
+     }
+    ],
+    "grow_px": [
+     "FLOAT",
+     {
+      "tooltip": "Grow (+) or shrink (-) the mask by this many pixels.",
+      "default": 0.0,
+      "min": -64.0,
+      "max": 64.0,
+      "step": 0.5
+     }
+    ],
+    "blur_px": [
+     "FLOAT",
+     {
+      "tooltip": "Soften the mask edges (Gaussian, sigma = blur_px / 2).",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 64.0,
+      "step": 0.5
+     }
+    ],
+    "frame": [
+     "COMBO",
+     {
+      "tooltip": "Use every mask, or a single one: the first, last, middle, or frame_index.",
+      "default": "all",
+      "multiselect": false,
+      "options": [
+       "all",
+       "first",
+       "last",
+       "middle",
+       "index"
+      ]
+     }
+    ],
+    "frame_index": [
+     "INT",
+     {
+      "tooltip": "Mask used when frame is 'index' (negative counts from the end).",
+      "default": 0,
+      "min": -100000,
+      "max": 100000,
+      "step": 1
+     }
+    ]
+   },
+   "optional": {
+    "match_frames": [
+     "IMAGE",
+     {
+      "tooltip": "The clip to key: the mask is resized to its frames, and a single mask is repeated for every frame (a per-frame hint)."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "mask",
+    "invert",
+    "threshold",
+    "grow_px",
+    "blur_px",
+    "frame",
+    "frame_index"
+   ],
+   "optional": [
+    "match_frames"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "MASK"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "mask"
+  ],
+  "output_tooltips": [
+   "Prepared hint, 1 = subject."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2HintPrep",
+  "display_name": "CorridorKey 2.0 Hint Prep",
+  "description": "Turns any mask into a CorridorKey alpha hint: pick frames, invert, threshold, grow or shrink, blur, and match the clip's size and length.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "hint",
+   "mask",
+   "alpha hint",
+   "threshold",
+   "grow mask",
+   "repeat mask"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

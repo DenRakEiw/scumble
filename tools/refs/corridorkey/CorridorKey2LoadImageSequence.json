@@ -1,0 +1,97 @@
+{
+ "CorridorKey2LoadImageSequence": {
+  "input": {
+   "required": {
+    "folder": [
+     "STRING",
+     {
+      "tooltip": "Folder with the frames: an absolute path, or a folder inside ComfyUI's input folder. When several file types are present, the most common one is used.",
+      "default": "",
+      "multiline": false
+     }
+    ],
+    "start_frame": [
+     "INT",
+     {
+      "tooltip": "Index of the first file to load (0 = the first in filename order).",
+      "default": 0,
+      "min": 0,
+      "max": 1000000
+     }
+    ],
+    "frame_count": [
+     "INT",
+     {
+      "tooltip": "Number of frames to load; 0 loads all of them. Long shots can be keyed in batches by stepping start_frame.",
+      "default": 0,
+      "min": 0,
+      "max": 1000000
+     }
+    ],
+    "exr_output": [
+     "COMBO",
+     {
+      "tooltip": "EXR only. linear: the plate's scene-linear values, for the Advanced keyer with input_colorspace linear. sRGB: converted to display sRGB and clipped to [0, 1], for nodes that expect normal images (and the Basic keyer).",
+      "default": "linear",
+      "multiselect": false,
+      "options": [
+       "linear",
+       "sRGB"
+      ]
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "folder",
+    "start_frame",
+    "frame_count",
+    "exr_output"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "IMAGE",
+   "INT",
+   "STRING"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "images",
+   "frame_count",
+   "colorspace"
+  ],
+  "output_tooltips": [
+   null,
+   null,
+   "'linear' or 'sRGB': what the images output holds."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2LoadImageSequence",
+  "display_name": "CorridorKey 2.0 Load Image Sequence",
+  "description": "Loads a folder of frames in filename order, like CorridorKey's own frame-folder input: EXR plates (scene-linear, values above 1.0 kept), 16-bit PNG/TIFF at full precision, or JPEG. For EXR plates set the Advanced keyer's input_colorspace to linear.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "exr",
+   "image sequence",
+   "frames",
+   "plates",
+   "load exr",
+   "16-bit"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

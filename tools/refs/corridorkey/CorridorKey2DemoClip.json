@@ -1,0 +1,119 @@
+{
+ "CorridorKey2DemoClip": {
+  "input": {
+   "required": {
+    "frames": [
+     "INT",
+     {
+      "default": 24,
+      "min": 1,
+      "max": 600
+     }
+    ],
+    "width": [
+     "INT",
+     {
+      "default": 1280,
+      "min": 128,
+      "max": 4096,
+      "step": 4
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 720,
+      "min": 128,
+      "max": 4096,
+      "step": 4
+     }
+    ],
+    "screen": [
+     "COMBO",
+     {
+      "default": "green",
+      "multiselect": false,
+      "options": [
+       "green",
+       "blue"
+      ]
+     }
+    ],
+    "spill": [
+     "FLOAT",
+     {
+      "default": 0.35,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+     }
+    ],
+    "noise": [
+     "FLOAT",
+     {
+      "default": 0.01,
+      "min": 0.0,
+      "max": 0.1,
+      "step": 0.005
+     }
+    ],
+    "seed": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 2147483647,
+      "control_after_generate": false
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "frames",
+    "width",
+    "height",
+    "screen",
+    "spill",
+    "noise",
+    "seed"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "IMAGE",
+   "MASK",
+   "IMAGE"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "images",
+   "true_alpha",
+   "true_foreground"
+  ],
+  "output_tooltips": [
+   null,
+   null,
+   null
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2DemoClip",
+  "display_name": "CorridorKey 2.0 Demo Clip",
+  "description": "Creates a green/blue-screen test clip with a moving subject, fine hair strands, a semi-transparent veil, screen spill and noise, together with its exact matte and foreground. A seed gives the same clip on any device. Useful for trying the nodes, comparing settings and fine-tuning tests.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": null,
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

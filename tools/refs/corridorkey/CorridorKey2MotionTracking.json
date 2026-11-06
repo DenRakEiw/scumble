@@ -1,0 +1,138 @@
+{
+ "CorridorKey2MotionTracking": {
+  "input": {
+   "required": {
+    "model": [
+     "CORRIDORKEY2_MODEL",
+     {}
+    ],
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "Clip frames (IMAGE batch)."
+     }
+    ],
+    "resolution": [
+     "INT",
+     {
+      "tooltip": "Long side the frames are resized to for RVM, which gives one feature per 16x16 patch. Higher tracks finer shapes and needs more VRAM.",
+      "default": 512,
+      "min": 128,
+      "max": 2048,
+      "step": 16
+     }
+    ],
+    "reference_frame": [
+     "INT",
+     {
+      "tooltip": "Frame the reference mask belongs to. Frames before it are tracked backwards.",
+      "default": 0,
+      "min": 0,
+      "max": 1000000
+     }
+    ],
+    "top_k": [
+     "INT",
+     {
+      "tooltip": "Most similar memory patches each patch reads its label from.",
+      "advanced": true,
+      "default": 8,
+      "min": 1,
+      "max": 64
+     }
+    ],
+    "temperature": [
+     "FLOAT",
+     {
+      "tooltip": "Softmax temperature of the matching: lower trusts the best match more.",
+      "advanced": true,
+      "default": 0.05,
+      "min": 0.005,
+      "max": 1.0,
+      "step": 0.005
+     }
+    ],
+    "track_features": [
+     "COMBO",
+     {
+      "tooltip": "encoder: RVM's per-frame patch tokens (most reliable). recurrent: the state RVM hands to the keyer (causal, so frames before reference_frame get a reversed-time pass). both: the two similarities averaged.",
+      "advanced": true,
+      "default": "encoder",
+      "multiselect": false,
+      "options": [
+       "encoder",
+       "recurrent",
+       "both"
+      ]
+     }
+    ]
+   },
+   "optional": {
+    "reference_mask": [
+     "MASK",
+     {
+      "tooltip": "Subject mask on reference_frame, white = subject. One mask, or one per frame (the one at reference_frame is used). Without it tracked_mask is all zeros."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "model",
+    "images",
+    "resolution",
+    "reference_frame",
+    "top_k",
+    "temperature",
+    "track_features"
+   ],
+   "optional": [
+    "reference_mask"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "IMAGE",
+   "MASK",
+   "MASK"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "identity_pca",
+   "motion_energy",
+   "tracked_mask"
+  ],
+  "output_tooltips": [
+   "RVM recurrent features as colors (3-component PCA, fitted once per clip).",
+   "Change of RVM's per-frame patch encoding since the previous frame, scaled by the clip's 99th percentile (frame 0 is 0, a still shot stays near 0).",
+   "The reference mask propagated to every frame (soft, patch resolution), 1 = subject. All zeros when no reference_mask is connected."
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2MotionTracking",
+  "display_name": "CorridorKey 2.0 Motion Tracking",
+  "description": "Shows how RVM, the keyer's recurrent video model, follows the clip: its features as a PCA color video (an object that keeps its color is tracked consistently), a motion-energy mask (how much each patch changed since the previous frame) and, given a subject mask on one frame, that mask propagated forwards and backwards through the clip by feature matching.",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "rvm",
+   "motion",
+   "tracking",
+   "propagate mask",
+   "track mask",
+   "features",
+   "pca"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}

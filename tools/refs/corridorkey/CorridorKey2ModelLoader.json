@@ -1,0 +1,87 @@
+{
+ "CorridorKey2ModelLoader": {
+  "input": {
+   "required": {
+    "weights": [
+     "COMBO",
+     {
+      "tooltip": "CorridorKey 2.0 weights in models/corridorkey2.",
+      "default": "corridorkey_v2.safetensors",
+      "multiselect": false,
+      "options": [
+       "corridorkey_v2.safetensors"
+      ]
+     }
+    ],
+    "auto_download": [
+     "BOOLEAN",
+     {
+      "tooltip": "Download missing model files from Hugging Face and the original publishers.",
+      "default": true
+     }
+    ],
+    "keep_on_gpu": [
+     "BOOLEAN",
+     {
+      "tooltip": "Keep the weights on the GPU between runs (faster repeats, less VRAM for other models). They are released when ComfyUI frees its model and node cache.",
+      "advanced": true,
+      "default": false
+     }
+    ],
+    "vram_reserve_gb": [
+     "FLOAT",
+     {
+      "tooltip": "VRAM left untouched when choosing the temporal window size automatically.",
+      "advanced": true,
+      "default": 0.5,
+      "min": 0.0,
+      "max": 16.0,
+      "step": 0.25
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "weights",
+    "auto_download",
+    "keep_on_gpu",
+    "vram_reserve_gb"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CORRIDORKEY2_MODEL"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "model"
+  ],
+  "output_tooltips": [
+   null
+  ],
+  "output_matchtypes": null,
+  "name": "CorridorKey2ModelLoader",
+  "display_name": "CorridorKey 2.0 Load Model",
+  "description": "Loads CorridorKey 2.0 and its three foundation models (C-RADIO, MoGe-2, RVM). Missing files are downloaded into models/corridorkey2 on first use (about 5.1 GB).",
+  "python_module": "custom_nodes.ComfyUI-CorridorKey2.0",
+  "category": "CorridorKey 2.0",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": [
+   "corridorkey",
+   "green screen",
+   "keyer",
+   "matting",
+   "chroma key"
+  ],
+  "essentials_category": null,
+  "has_intermediate_output": false
+ }
+}
