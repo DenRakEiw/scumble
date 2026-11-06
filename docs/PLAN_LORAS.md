@@ -1473,6 +1473,44 @@ release syncs it), the reader is the same. `bash -n tools/run_gates.sh` clean.
 Q3); nothing was posted. Both say LoRAs on Comfy Cloud come later: should LR5 land before the release, that sentence
 changes, and so do the manual's Comfy Cloud paragraph, README's LoRA bullet and the CHANGELOG's LoRA line.
 
+**Rewritten after LR5's live runs** (2026-11-06; the user: "ja, bitte"), for the release, posted on the user's word with
+the release's link in place of `<link>`. The user the same day: no Creator plan on Comfy Cloud, so an import under
+*Your imports* stays unseen; MOSS-Image Edit's Generate new on Comfy Cloud stays unrun ("ok"). Neither draft claims them.
+
+#10 (hwatik, "Please add lora support for local generations"):
+
+> Scumble 0.1.52 is out with LoRA support: <link>
+>
+> Every recipe that runs on your own ComfyUI or on Comfy Cloud now has a **LoRAs** section in the Generate tab. Pick up
+> to five LoRAs (+ adds a row), set a strength for each and switch them on or off; the rows are kept per recipe. On your
+> ComfyUI the list comes from its loras folder, with a search; on Comfy Cloud it lists Comfy Cloud's LoRA catalog, and a
+> file name you type in goes as written. The recipes themselves stay as they are: Scumble adds the LoRAs when it sends
+> the run, and the result's line in the history says which ones went with it. Qwen Image Edit 2.1 and MOSS-Image take
+> them like every other recipe.
+>
+> Under each LoRA a grey line says which model it looks made for, and the words it was trained with show as chips (a
+> click adds one to the prompt). When your ComfyUI runs on the same PC and *Settings › Helpers* points at its models
+> folder, Scumble reads the file itself and turns the line amber when the LoRA was made for another model than the
+> recipe runs, since ComfyUI quietly leaves such a LoRA out. The manual's chapter *LoRAs on your ComfyUI* has the
+> details. Thanks for the request!
+
+#11 (nadergits, "add moss image edit"):
+
+> Scumble 0.1.52 is out with MOSS-Image Edit: <link>
+>
+> The recipe *MOSS-Image Edit (ComfyUI)* runs on your own ComfyUI 0.43 or newer with Comfy's own template (MOSS-Image
+> and its 297 MB edit LoRA; when the LoRA is missing, the run stops with its download link). It edits the selection by
+> instruction with up to three more pictures (the Original and your reference layers), named in the prompt as image 2,
+> image 3 and image 4. Say what each picture is for: "Image 1 is the scene to edit. @img1 is a picture of the bag to
+> place. Place that bag on the ground. Keep everything else unchanged." works much better than a bare "put the bag from
+> @img1 on the ground". The same template runs on Comfy Cloud as *MOSS-Image Edit (Comfy Cloud)*, with one picture for
+> now.
+>
+> LoRAs come in the same update for every recipe on your ComfyUI or Comfy Cloud, the other edit models such as Qwen
+> Image Edit included (see #10); on MOSS-Image Edit yours go after the edit LoRA. LoRAs trained with ai-toolkit need the
+> encoders' *edit_format* set to ai-toolkit: open the recipe with *Edit in ComfyUI*, set it on both Text Encode
+> MOSS-Image Edit nodes, pick the LoRA in the LoRA node, then *Save as new recipe*. Thanks for the request!
+
 **Deviations:** a chapter of its own instead of §3.9's paragraph in the Recipes chapter (the brief asked for a chapter;
 the subject has Steps and Notes of its own); the Comfy Cloud lists of the manual and README brought up to date beside it
 (stale since LR7 and the P-H3 merge); `commands_doc` run beside `help` and `lint` to show COMMANDS.md is what the repo

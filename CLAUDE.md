@@ -766,9 +766,10 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   unconfirmed: an import is the user's call); the picker lists *Your imports* and Comfy Cloud's catalog and takes a
   typed name; `comfycloud.js` `withLoras` splices in `run` / `runV2` before `checkModelFiles` through `loras.js`,
   never refusing a name; `docs/measurements/lr5_2026-11-06/probe.md`). LR5's two paid live runs passed 2026-11-06 (`cloud_qwen_image_edit_2509` with
-  the catalog's `qwen-80s_fantasy_movie` 32.7 s, `cloud_moss_image_edit` 26.8 s; `docs/measurements/lr5_2026-11-06/live.md`). **Open:** the drafted
-  closing comments for #10 / #11 still say LoRAs on Comfy Cloud come later (the manual, README and CHANGELOG say they
-  work now). Then the release block with CorridorKey (0.1.52).
+  the catalog's `qwen-80s_fantasy_movie` 32.7 s, `cloud_moss_image_edit` 26.8 s; `docs/measurements/lr5_2026-11-06/live.md`). The closing comments
+  for #10 / #11 rewritten for it (`docs/PLAN_LORAS.md`, after "LR10 as built"), posted at the release on the user's
+  word; no Creator plan (the user), so an import under *Your imports* stays unseen. **Open:** the release block with
+  CorridorKey (0.1.52).
 - 51: **GPT-Image-2.6 Sunburst and Flare** (OpenAI, released 2026-11-04; the user, 2026-11-06: "schaue welcher api
   anbieter es schon hat und integriere es"): two recipes beside 2.5's on the hosts that list it (OpenAI direct, fal,
   Replicate, WaveSpeed, OpenRouter, ToAPIs; not yet Comfy Cloud, Comfy Router, Oxen, Magnific), a *Complexity* row
