@@ -1,0 +1,2713 @@
+{
+ "void_a": {
+  "prompt_id": "f1cdd4ce-36cd-420f-a263-43c4d6cdfa9d",
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "p-h3-image_lora_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "shift": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "shift_video": 1,
+     "shift_audio": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_text_encoder_int8_convrot.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "p-h3-image_vae_int8_convrot.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 4,
+     "resolution_steps": 32
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "cond": {
+    "class_type": "PH3ImageConditioning",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      7
+     ],
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "images.image_1": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "BasicGuider",
+    "inputs": {
+     "model": [
+      "shift",
+      0
+     ],
+     "conditioning": [
+      "cond",
+      0
+     ]
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "sigmas": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+     "sigmas": "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "cond",
+      1
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   }
+  },
+  "outputs": {
+   "canvas.0.0.1": {
+    "inpaint_result": [
+     {
+      "filename": "ncanvas_result_20261106_053418.png",
+      "subfolder": "inpaint_canvas",
+      "type": "output",
+      "x": 267,
+      "y": 0,
+      "width": 593,
+      "height": 512,
+      "canvas_node": "canvas",
+      "align": {
+       "aligned": false,
+       "reason": "ecc failed: OpenCV(4.13.0) D:\\a\\opencv-python\\opencv-python\\opencv\\modul"
+      },
+      "metadata": {
+       "kind": "image",
+       "width": 593,
+       "height": 512
+      },
+      "id": "9a6157a4-ceaa-464c-8ff0-149e3c7ea179"
+     }
+    ]
+   }
+  },
+  "comfy_seconds": 22.202
+ },
+ "void_b": {
+  "prompt_id": "f09cc133-9c95-4111-9e35-330905a16cf6",
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "p-h3-image_lora_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "shift": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "shift_video": 1,
+     "shift_audio": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_text_encoder_int8_convrot.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "p-h3-image_vae_int8_convrot.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 4,
+     "resolution_steps": 32
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "cond": {
+    "class_type": "PH3ImageConditioning",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "up_run",
+      0
+     ],
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "images.image_1": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "BasicGuider",
+    "inputs": {
+     "model": [
+      "shift",
+      0
+     ],
+     "conditioning": [
+      "cond",
+      0
+     ]
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "sigmas": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+     "sigmas": "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "cond",
+      1
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "up_clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_prompt_upsampler_w4a8.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "up_pics": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1.0,
+     "resolution_steps": 32
+    }
+   },
+   "up_run": {
+    "class_type": "TextGenerateV2",
+    "inputs": {
+     "clip": [
+      "up_clip",
+      0
+     ],
+     "images.image1": [
+      "up_pics",
+      0
+     ],
+     "prompt": "<|im_start|>user\n<Picture 1>: <|vision_start|><|image_pad|><|vision_end|>Edit <Picture 1>. <|im_end|>\n<|im_start|>assistant\n<think>\n",
+     "max_length": 3072,
+     "sampling_mode": "off",
+     "thinking": true,
+     "use_default_template": true,
+     "mtp": "auto"
+    }
+   },
+   "up_show": {
+    "class_type": "PreviewAny",
+    "inputs": {
+     "source": [
+      "up_run",
+      0
+     ]
+    }
+   }
+  },
+  "outputs": {
+   "up_show": {
+    "text": [
+     "subject_definitions:\n<Picture 1> is the source image and composition anchor: white architectural facade and blue sky.\n<Subject 1> is the blue car in the bottom-right corner.\n\nsummary:\n[keyframe completion] The target is a single still frame, an edited version of <Picture 1>, in which <Subject 1> is replaced with a red sports car.\n\nretention_analysis:\n<Picture 1> (composition anchor): partially_preserved - building and sky remain unchanged.\n<Subject 1>: weak_reference - replaced by red car.\n\ndetailed_description:\nPhotographic style matching <Picture 1>. [Shot 1] The white brick building, recessed vertical columns, and clear blue sky remain unchanged. In the bottom-right corner, <Subject 1> is replaced by a red sports car, matching the original vehicle's angle, scale, and position, showing its front headlight and hood. The camera is static and nothing moves; the frame holds this single still image.\n\noverall_soundscape:\nN/A\n\nnon_diegetic_music:\nN/A"
+    ]
+   },
+   "canvas.0.0.1": {
+    "inpaint_result": [
+     {
+      "filename": "ncanvas_result_20261106_053619.png",
+      "subfolder": "inpaint_canvas",
+      "type": "output",
+      "x": 267,
+      "y": 0,
+      "width": 593,
+      "height": 512,
+      "canvas_node": "canvas",
+      "align": {
+       "aligned": false,
+       "reason": "fit out of range",
+       "scale": [
+        0.9506,
+        1.0545
+       ],
+       "shift": [
+        21.6,
+        -15.1
+       ]
+      },
+      "metadata": {
+       "kind": "image",
+       "width": 593,
+       "height": 512
+      },
+      "id": "7d5db491-01f3-43de-8537-912af2ae0c2b"
+     }
+    ]
+   }
+  },
+  "comfy_seconds": 26.675
+ },
+ "a": {
+  "prompt_id": "4a33071a-d2ab-434d-b911-b04fed67b0e3",
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "p-h3-image_lora_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "shift": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "shift_video": 1,
+     "shift_audio": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_text_encoder_int8_convrot.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "p-h3-image_vae_int8_convrot.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 4,
+     "resolution_steps": 32
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "cond": {
+    "class_type": "PH3ImageConditioning",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      7
+     ],
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "images.image_1": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "BasicGuider",
+    "inputs": {
+     "model": [
+      "shift",
+      0
+     ],
+     "conditioning": [
+      "cond",
+      0
+     ]
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "sigmas": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+     "sigmas": "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "cond",
+      1
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   }
+  },
+  "outputs": {
+   "canvas.0.0.1": {
+    "inpaint_result": [
+     {
+      "filename": "ncanvas_result_20261106_053704.png",
+      "subfolder": "inpaint_canvas",
+      "type": "output",
+      "x": 267,
+      "y": 0,
+      "width": 593,
+      "height": 512,
+      "canvas_node": "canvas",
+      "align": {
+       "aligned": false,
+       "reason": "fit out of range",
+       "scale": [
+        1.078,
+        2.2654
+       ],
+       "shift": [
+        -622.1,
+        -329.6
+       ]
+      },
+      "metadata": {
+       "kind": "image",
+       "width": 593,
+       "height": 512
+      },
+      "id": "b991bfcc-9fde-4436-b418-1ab8a72199a3"
+     }
+    ]
+   }
+  },
+  "comfy_seconds": 16.901
+ },
+ "b": {
+  "prompt_id": "0138909b-d5fd-49f5-964e-6997c079313e",
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "p-h3-image_lora_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "shift": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "shift_video": 1,
+     "shift_audio": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_text_encoder_int8_convrot.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "p-h3-image_vae_int8_convrot.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 4,
+     "resolution_steps": 32
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "cond": {
+    "class_type": "PH3ImageConditioning",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "up_run",
+      0
+     ],
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "images.image_1": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "BasicGuider",
+    "inputs": {
+     "model": [
+      "shift",
+      0
+     ],
+     "conditioning": [
+      "cond",
+      0
+     ]
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "sigmas": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+     "sigmas": "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "cond",
+      1
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "up_clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_prompt_upsampler_w4a8.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "up_pics": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1.0,
+     "resolution_steps": 32
+    }
+   },
+   "up_run": {
+    "class_type": "TextGenerateV2",
+    "inputs": {
+     "clip": [
+      "up_clip",
+      0
+     ],
+     "images.image1": [
+      "up_pics",
+      0
+     ],
+     "prompt": "<|im_start|>user\n<Picture 1>: <|vision_start|><|image_pad|><|vision_end|>Edit <Picture 1>. make the sky a warm sunset<|im_end|>\n<|im_start|>assistant\n<think>\n",
+     "max_length": 3072,
+     "sampling_mode": "off",
+     "thinking": true,
+     "use_default_template": true,
+     "mtp": "auto"
+    }
+   },
+   "up_show": {
+    "class_type": "PreviewAny",
+    "inputs": {
+     "source": [
+      "up_run",
+      0
+     ]
+    }
+   }
+  },
+  "outputs": {
+   "up_show": {
+    "text": [
+     "subject_definitions:\n<Picture 1> is the source image and the composition anchor of the target frame: a low-angle view of a white brick building and blue car.\n<Subject 1> is the clear blue sky in the upper right.\n\nsummary:\n[keyframe completion] The target is a single still frame, an edited version of <Picture 1>, in which the sky is replaced with a warm sunset.\n\nretention_analysis:\n<Picture 1> (composition anchor): partially_preserved - building and car preserved\n<Subject 1>: attribute_transfer - replaced with sunset sky\n\ndetailed_description:\nPhotographic style. [Shot 1] The white brick building and blue car from <Picture 1> remain unchanged in position and appearance. The clear blue sky in the upper right is replaced with a warm sunset sky featuring soft golden-orange and amber hues. The camera is static and nothing moves; the frame holds this single still image.\n\noverall_soundscape:\nN/A\n\nnon_diegetic_music:\nN/A"
+    ]
+   },
+   "canvas.0.0.1": {
+    "inpaint_result": [
+     {
+      "filename": "ncanvas_result_20261106_053754.png",
+      "subfolder": "inpaint_canvas",
+      "type": "output",
+      "x": 267,
+      "y": 0,
+      "width": 593,
+      "height": 512,
+      "canvas_node": "canvas",
+      "align": {
+       "aligned": false,
+       "reason": "no gain",
+       "before": 1.44,
+       "after": 1.44
+      },
+      "metadata": {
+       "kind": "image",
+       "width": 593,
+       "height": 512
+      },
+      "id": "5e99e218-3a08-4432-be23-154a39c6f199"
+     }
+    ]
+   }
+  },
+  "comfy_seconds": 24.199
+ },
+ "c": {
+  "prompt_id": "faba0b0e-566f-4105-97cf-2f841418a6d8",
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "p-h3-image_lora_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "shift": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "shift_video": 1,
+     "shift_audio": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_text_encoder_int8_convrot.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "p-h3-image_vae_int8_convrot.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 4,
+     "resolution_steps": 32
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "cond": {
+    "class_type": "PH3ImageConditioning",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "up_run",
+      0
+     ],
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "images.image_1": [
+      "scale0",
+      0
+     ],
+     "images.image_2": [
+      "img1",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "BasicGuider",
+    "inputs": {
+     "model": [
+      "shift",
+      0
+     ],
+     "conditioning": [
+      "cond",
+      0
+     ]
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "sigmas": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+     "sigmas": "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "cond",
+      1
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "up_clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_prompt_upsampler_w4a8.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "up_pics": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1.0,
+     "resolution_steps": 32
+    }
+   },
+   "up_run": {
+    "class_type": "TextGenerateV2",
+    "inputs": {
+     "clip": [
+      "up_clip",
+      0
+     ],
+     "images.image1": [
+      "up_pics",
+      0
+     ],
+     "prompt": "<|im_start|>user\n<Picture 1>: <|vision_start|><|image_pad|><|vision_end|><Picture 2>: <|vision_start|><|image_pad|><|vision_end|>Edit <Picture 1>. put the blue bag from <Picture 2> on the window sill<|im_end|>\n<|im_start|>assistant\n<think>\n",
+     "max_length": 3072,
+     "sampling_mode": "off",
+     "thinking": true,
+     "use_default_template": true,
+     "mtp": "auto"
+    }
+   },
+   "up_show": {
+    "class_type": "PreviewAny",
+    "inputs": {
+     "source": [
+      "up_run",
+      0
+     ]
+    }
+   }
+  },
+  "outputs": {
+   "up_show": {
+    "text": [
+     "subject_definitions:\n<Picture 1> is the source image and composition anchor: a coffee shop window with a cat on the sill.\n<Picture 2> is a reference image: a blue woven leather handbag with a gold chain.\n<Subject 1> is the ginger cat on the window sill in <Picture 1>.\n\nsummary:\n[keyframe completion] The target is a single still frame, an edited version of <Picture 1>, in which the blue bag from <Picture 2> rests on the window sill to the left of the cat.\n\nretention_analysis:\n<Picture 1> (composition anchor): partially_preserved - window sill holds the bag.\n<Picture 2> (reference): weak_reference - blue woven bag transferred.\n<Subject 1>: fully_preserved - cat remains unchanged.\n\ndetailed_description:\nPhotographic style matching <Picture 1>. [Shot 1] The blue woven leather bag from <Picture 2> sits on the wooden window sill to the left of <Subject 1>, sized roughly equal in length to the cat. The bag retains its royal blue woven texture and gold chain strap, lit by the natural daylight of <Picture 1>. <Subject 1> and the entire coffee shop interior remain unchanged. The camera is static and nothing moves; the frame holds this single still image.\n\noverall_soundscape:\nN/A\n\nnon_diegetic_music:\nN/A"
+    ]
+   },
+   "canvas.0.0.1": {
+    "inpaint_result": [
+     {
+      "filename": "ncanvas_result_20261106_053916.png",
+      "subfolder": "inpaint_canvas",
+      "type": "output",
+      "x": 0,
+      "y": 0,
+      "width": 512,
+      "height": 450,
+      "canvas_node": "canvas",
+      "align": {
+       "aligned": true,
+       "scale": [
+        1.0036,
+        1.003
+       ],
+       "shift": [
+        -0.8,
+        -0.7
+       ],
+       "before": 7.82,
+       "after": 3.23
+      },
+      "metadata": {
+       "kind": "image",
+       "width": 512,
+       "height": 450
+      },
+      "id": "b3c02b09-6bc7-4122-a6a5-ffb04145a3bd"
+     }
+    ]
+   }
+  },
+  "comfy_seconds": 35.822
+ },
+ "d": {
+  "prompt_id": "d9dabf51-806c-4eab-8439-12710602051b",
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "p-h3-image_lora_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "shift": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "shift_video": 1,
+     "shift_audio": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_text_encoder_int8_convrot.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "p-h3-image_vae_int8_convrot.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 4,
+     "resolution_steps": 32
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "cond": {
+    "class_type": "PH3ImageConditioning",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "up_run",
+      0
+     ],
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "BasicGuider",
+    "inputs": {
+     "model": [
+      "shift",
+      0
+     ],
+     "conditioning": [
+      "cond",
+      0
+     ]
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "sigmas": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+     "sigmas": "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "cond",
+      1
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "up_clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_prompt_upsampler_w4a8.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "up_pics": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 32
+    }
+   },
+   "up_run": {
+    "class_type": "TextGenerateV2",
+    "inputs": {
+     "clip": [
+      "up_clip",
+      0
+     ],
+     "prompt": "Aspect ratio: 16:9\nRequest: a lighthouse on a rocky coast at dawn, photograph",
+     "max_length": 3072,
+     "sampling_mode": "off",
+     "thinking": true,
+     "use_default_template": true,
+     "mtp": "auto"
+    }
+   },
+   "up_show": {
+    "class_type": "PreviewAny",
+    "inputs": {
+     "source": [
+      "up_run",
+      0
+     ]
+    }
+   }
+  },
+  "outputs": {
+   "up_show": {
+    "text": [
+     "A photograph by an experienced landscape photographer, taken at dawn from a low rocky headland on a grey-green sea. A white-painted stone lighthouse with a black lantern room stands on the left third of the frame, its spiral staircase door slightly open and a thin band of pale light visible inside. The foreground is wet, dark basalt with barnacles, seaweed and small tide pools reflecting the sky. Low sun sits just above the horizon on the right, raking across the rocks and catching the lighthouse's weathered paint, with long soft shadows falling toward the camera. The sky is a pale peach fading to cool blue-grey, with a few thin clouds. The sea is calm with small swells breaking over the rocks. Shot on a full-frame camera with a 35mm lens, true white balance, fine natural grain, and no people or text."
+    ]
+   },
+   "canvas.0.0.1": {
+    "inpaint_result": [
+     {
+      "filename": "ncanvas_result_20261106_054023.png",
+      "subfolder": "inpaint_canvas",
+      "type": "output",
+      "x": 0,
+      "y": 0,
+      "width": 1024,
+      "height": 576,
+      "canvas_node": "canvas",
+      "align": {
+       "aligned": false,
+       "reason": "ring too small"
+      },
+      "metadata": {
+       "kind": "image",
+       "width": 1024,
+       "height": 576
+      },
+      "id": "e83841c7-4c91-44ed-8f41-c735b1237b1d"
+     }
+    ]
+   }
+  },
+  "comfy_seconds": 20.309
+ },
+ "e": {
+  "prompt_id": "2f76b20c-cfc6-42a5-91dd-9f8b56f3c6b8",
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "p-h3-image_lora_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "shift": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "shift_video": 1,
+     "shift_audio": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_text_encoder_int8_convrot.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "p-h3-image_vae_int8_convrot.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 8,
+     "resolution_steps": 32
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "cond": {
+    "class_type": "PH3ImageConditioning",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "up_run",
+      0
+     ],
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "images.image_1": [
+      "scale0",
+      0
+     ],
+     "images.image_2": [
+      "img1",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "BasicGuider",
+    "inputs": {
+     "model": [
+      "shift",
+      0
+     ],
+     "conditioning": [
+      "cond",
+      0
+     ]
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "sigmas": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+     "sigmas": "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "cond",
+      1
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "up_clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_prompt_upsampler_w4a8.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "up_pics": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1.0,
+     "resolution_steps": 32
+    }
+   },
+   "up_run": {
+    "class_type": "TextGenerateV2",
+    "inputs": {
+     "clip": [
+      "up_clip",
+      0
+     ],
+     "images.image1": [
+      "up_pics",
+      0
+     ],
+     "prompt": "<|im_start|>user\n<Picture 1>: <|vision_start|><|image_pad|><|vision_end|><Picture 2>: <|vision_start|><|image_pad|><|vision_end|>Edit <Picture 1>: put the blue bag from <Picture 2> on the window sill, left of the cat<|im_end|>\n<|im_start|>assistant\n<think>\n",
+     "max_length": 3072,
+     "sampling_mode": "off",
+     "thinking": true,
+     "use_default_template": true,
+     "mtp": "auto"
+    }
+   },
+   "up_show": {
+    "class_type": "PreviewAny",
+    "inputs": {
+     "source": [
+      "up_run",
+      0
+     ]
+    }
+   }
+  },
+  "outputs": {
+   "up_show": {
+    "text": [
+     "subject_definitions:\n<Picture 1> is the source image and composition anchor: cafe storefront with a cat on the window sill.\n<Picture 2> is a reference image: blue woven leather handbag with a gold chain.\n<Subject 1> is the sleeping ginger cat in <Picture 1>.\n\nsummary:\n[keyframe completion] The target is a single still frame, an edited version of <Picture 1>, in which the blue bag from <Picture 2> rests on the window sill to the left of the cat.\n\nretention_analysis:\n<Picture 1> (composition anchor): partially_preserved - storefront and cat preserved\n<Picture 2> (reference): weak_reference - blue woven bag transferred\n<Subject 1>: fully_preserved - cat remains unchanged\n\ndetailed_description:\nPhotographic style matching <Picture 1>. [Shot 1] The blue woven leather bag from <Picture 2> sits on the wooden window sill to the left of <Subject 1>, sized roughly equal to the cat's length. The bag retains its blue woven texture and gold chain strap, lit by the natural daylight of <Picture 1>. <Subject 1> and the rest of the cafe window remain unchanged. The camera is static and nothing moves; the frame holds this single still image.\n\noverall_soundscape:\nN/A\n\nnon_diegetic_music:\nN/A"
+    ]
+   },
+   "canvas.0.0.1": {
+    "inpaint_result": [
+     {
+      "filename": "ncanvas_result_20261106_054209.png",
+      "subfolder": "inpaint_canvas",
+      "type": "output",
+      "x": 14,
+      "y": 0,
+      "width": 512,
+      "height": 450,
+      "canvas_node": "canvas",
+      "align": {
+       "aligned": false,
+       "reason": "no gain",
+       "before": 5.08,
+       "after": 5.03
+      },
+      "metadata": {
+       "kind": "image",
+       "width": 512,
+       "height": 450
+      },
+      "id": "24e6ddd5-68d7-4ecd-867f-b78469540b8a"
+     }
+    ]
+   }
+  },
+  "comfy_seconds": 52.135
+ },
+ "f": {
+  "prompt_id": "d4f2cc9c-921f-4ae3-afdb-37b8c0aa2e72",
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "p-h3-image_lora_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "shift": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "shift_video": 1,
+     "shift_audio": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_text_encoder_int8_convrot.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "p-h3-image_vae_int8_convrot.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 4,
+     "resolution_steps": 32
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "cond": {
+    "class_type": "PH3ImageConditioning",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "up_run",
+      0
+     ],
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "images.image_1": [
+      "scale0",
+      0
+     ],
+     "images.image_2": [
+      "img1",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "BasicGuider",
+    "inputs": {
+     "model": [
+      "shift",
+      0
+     ],
+     "conditioning": [
+      "cond",
+      0
+     ]
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "sigmas": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+     "sigmas": "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "cond",
+      1
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "up_clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "p-h3-image_prompt_upsampler_w4a8.safetensors",
+     "type": "minimax",
+     "device": "default"
+    }
+   },
+   "up_pics": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1.0,
+     "resolution_steps": 32
+    }
+   },
+   "up_run": {
+    "class_type": "TextGenerateV2",
+    "inputs": {
+     "clip": [
+      "up_clip",
+      0
+     ],
+     "images.image1": [
+      "up_pics",
+      0
+     ],
+     "prompt": "<|im_start|>user\n<Picture 1>: <|vision_start|><|image_pad|><|vision_end|><Picture 2>: <|vision_start|><|image_pad|><|vision_end|>Edit <Picture 1>. the blue bag from <Picture 2> on a wooden garden table in the sun<|im_end|>\n<|im_start|>assistant\n<think>\n",
+     "max_length": 3072,
+     "sampling_mode": "off",
+     "thinking": true,
+     "use_default_template": true,
+     "mtp": "auto"
+    }
+   },
+   "up_show": {
+    "class_type": "PreviewAny",
+    "inputs": {
+     "source": [
+      "up_run",
+      0
+     ]
+    }
+   }
+  },
+  "outputs": {
+   "up_show": {
+    "text": [
+     "subject_definitions:\n<Picture 1> is the source image and composition anchor: empty white canvas.\n<Picture 2> is a reference image: blue woven leather handbag with gold chain.\n\nsummary:\n[keyframe completion] The target is a single still frame placing the blue bag from <Picture 2> on a wooden garden table in sunlight.\n\nretention_analysis:\n<Picture 1> (composition anchor): weak_reference - blank canvas\n<Picture 2> (reference): weak_reference - blue woven bag and gold chain\n\ndetailed_description:\nPhotographic style. [Shot 1] The blue woven leather handbag from <Picture 2> rests centered on a rustic wooden garden table outdoors. Bright, warm sunlight illuminates the bag, casting soft shadows across the wood grain. The camera is static and nothing moves; the frame holds this single still image.\n\noverall_soundscape:\nN/A\n\nnon_diegetic_music:\nN/A"
+    ]
+   },
+   "canvas.0.0.1": {
+    "inpaint_result": [
+     {
+      "filename": "ncanvas_result_20261106_054320.png",
+      "subfolder": "inpaint_canvas",
+      "type": "output",
+      "x": 0,
+      "y": 0,
+      "width": 1024,
+      "height": 1024,
+      "canvas_node": "canvas",
+      "align": {
+       "aligned": false,
+       "reason": "ring too small"
+      },
+      "metadata": {
+       "kind": "image",
+       "width": 1024,
+       "height": 1024
+      },
+      "id": "c6b49eb7-aeb3-45c8-ad0b-dd18689360c4"
+     }
+    ]
+   }
+  },
+  "comfy_seconds": 46.893
+ }
+}

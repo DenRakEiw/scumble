@@ -254,7 +254,18 @@ the crop still goes as the first picture (the numbering of the others stays). Th
   VAE, Megapixels, Sampler, Prompt upsampler, Upsampler model; a missing file is refused with its link (`models`).
   Pruna's full model files (`p-h3-image_int8_convrot` 21.2 GB, `_w4a8` 13.4 GB) are not this graph: they need the LoRA
   node out. Pruna's VRAM figures at 8 MP: about 31 GB with the int8 set, 21 GB with w4a8 (the upsampler is moved out
-  before sampling). **Not run live yet** (checked against the node specs of ComfyUI 0.44.0 only). P-H3-Image is under
+  before sampling). **Run live 2026-11-06** (the user's ComfyUI 0.44.0, RTX 5090, the int8 set above; numbers and
+  pictures in `docs/measurements/ph3_live_2026-11-06/`): an edit at 4 MP with the upsampler 24.2 s warm (sampling 11 s,
+  the upsampler about 7 s), without it 16.9 s, the first run after ComfyUI's start 22.2 s; one reference layer 35.8 s
+  (two pictures double the step time); Generate new 20.3 s, with a reference layer 46.9 s; 8 MP 52.1 s (4.1 s per
+  step). ComfyUI 0.44 stages every model for dynamic VRAM loading (MiniMaxH3 20.0 GB, the text encoder 4.9, the VAE
+  2.7, the upsampler 6.4) and fills the 32 GB card to 31.5-31.8 GB in every run, 4 MP and 8 MP alike, swapping models:
+  no run ran out of memory. With the upsampler "make the sky a warm sunset" changed the sky and kept the rest of the
+  crop (1.4 levels mean difference where the sky was not), the stitch needed no shift; without it the same request gave
+  a new picture. `@img1` went as `<Picture 2>` and the result used that picture; Generate new sent no picture (16:9),
+  and with a reference layer the white canvas as `<Picture 1>` composed well (no renumbering needed); a prompt starting
+  "Edit <Picture 1>" got no second lead (`verbatim`). Not run: the upsampler's file missing, `er_sde`, `<Picture 3>`
+  with the Original on. P-H3-Image is under
   the MiniMax H3 Community License, which does not cover use in the EU, the UK, South Korea or the US without a
   separate licence from MiniMax (platform.minimax.io/h3-license). "Powered by MiniMax H3" is encouraged by the licence,
   not required; its notice: "MiniMax H3 is licensed under the MiniMax H3 Community License Agreement, Copyright © 2026

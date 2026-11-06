@@ -146,7 +146,8 @@ mutation round, no canvas backend (Normal tier, no pixel path changed). No app i
    `<Picture 1>` and the upsampler "Edit <Picture 1>.". Whether a blank first picture composes worse is a question of the
    model's output, which only the live run answers; renumbering the references from 1 shifts the tokens, the
    upsampler's blocks and the slots together (`comfyLayout`, `trimSlots`, the request) and is built only if the run
-   shows it is needed (section 4).
+   shows it is needed (section 4). **The live run answered it (2026-11-06): not needed**, the blank first picture
+   composes well (section 4).
 5. *nice*, **fixed**: a prompt that already starts "Edit <Picture N>" got the lead twice in the upsampler's request.
    `upsampler.request.verbatim` (`{ match, drop }`, checked by `localUpsampler`: the pattern compiles, `edit` holds
    `drop`) copies the node's `PH3_IMAGE_EDIT_VERBATIM` (`^\s*(Edit <Picture \d+>|subject_definitions:)`, read in
@@ -160,24 +161,42 @@ cloudgraph, comfycloud v2, genpresets, refs layout, ideogram45, nanobanana21, wa
 green; eslint 0 errors (21 warnings as before), tsc clean. Gates on tiles (`--offline`, port 9573): `ph3-c` generate,
 recipes, loras, boxes, metadata, lint, types: ALL PASS.
 
-## 4. Open points
+## 4. The live run (2026-11-06) and the open points
 
-- **The live run on the user's ComfyUI first** (the user's word; a production machine: `/queue` checked first, own
-  prompts deleted after). What it must check:
-  - **VRAM at 4 MP** on the RTX 5090 (the int8 set; Pruna AI says about 31 GB at 8 MP) and once at 8 MP (the preset),
-    the upsampler moved out before sampling;
-  - **the seconds** of a run, cold and warm, with and without the upsampler;
-  - **the edit keeps the picture**: a short instruction on a selection changes what it asks and leaves the rest of the
-    crop as it was (no redrawn scene), and the stitch fits the 4 MP answer back without a shift;
-  - **`<Picture 2>` references**: an @img token on a reference layer goes as `<Picture 2>` (`<Picture 3>` with the
-    Original on), the node takes the slots as numbered, the result uses the picture named;
-  - **Generate new**: without references a real text-to-image run at the canvas's aspect (16:9 once), no white picture
-    sent; with a reference layer the white canvas goes as `<Picture 1>` (review finding 4: if that composes badly,
-    renumber the references from 1 for that case);
-  - **the upsampler on and off**: on, the brief in the log and a better edit of a short request; off (the row), the
-    prompt as typed with the node's own "Edit <Picture 1>. "; a prompt starting "Edit <Picture 2>" not doubled
-    (`verbatim`); its file missing, the note and the plain run;
-  - whether the LoRA route matches Pruna AI's own model files in quality (Pruna AI's claim, unverified).
+**Run live 2026-11-06** on the user's ComfyUI 0.44.0 (RTX 5090; the user's yes in chat; started for the run and stopped
+after, the queue empty before and after), from this branch at `b4acf69` in a connected dev instance driven over CDP;
+the numbers, the queued graphs and the pictures in `docs/measurements/ph3_live_2026-11-06/` (`summary.txt`). No fix
+was needed: the recipe and the code ran as built.
+- **Passed: the edit with the upsampler** (the default): "make the sky a warm sunset" on a rect over the sky gave an
+  orange sunset sky and kept the building, the tree and the car (1.4 levels mean difference in the crop's lower 40 %);
+  the stitch fitted the 4 MP answer back with no shift (the node's align "no gain"). 24.2 s warm (sampling 11 s).
+- **Passed: `<Picture 2>` references**: `@img1` went as `<Picture 2>` (`prompt_sent`), the conditioning got
+  `images.image_1` and `images.image_2` only, the upsampler's request two picture blocks; the bag of the reference
+  landed on the sill, the facade kept (4.5 levels), the app's edge fit aligned it by under a pixel. 35.8 s (two
+  pictures double the step time). The model has no mask and put the bag across the selection's edge, where the
+  feather cut it: a selection with room is the user's part (the description says the stitch keeps the selection).
+  Not run: `<Picture 3>` with the Original on.
+- **Passed: Generate new**: without references a real text-to-image run at 16:9 (no picture in the conditioning or the
+  upsampler, the request "Aspect ratio: 16:9"), 20.3 s. **Review finding 4 answered**: with a reference layer the
+  white canvas goes as `<Picture 1>`, the upsampler calls it a blank canvas and the picture is the reference's bag on
+  the asked table, nothing white left: no renumbering needed. 46.9 s against 20.3 s (the second picture's tokens).
+- **Passed: `verbatim`**: a prompt starting "Edit <Picture 1>:" went without a second lead.
+- **Passed: 8 MP** (the preset): 52.1 s (sampling 32 s, 4.1 s/it), no out-of-memory. **VRAM**: ComfyUI 0.44 stages
+  every model "for dynamic VRAM loading" (MiniMaxH3 20.0 GB, the text encoder 4.9, the VAE 2.7, the upsampler 6.4) and
+  fills the card to 31.5-31.8 GB in every run, 4 MP or 8 MP, swapping models in and out: the card's peak is not what
+  the model needs, and none of the runs ran out.
+- **The seconds**: cold (ComfyUI fresh, every model from disk, the files probably still in the OS cache) 22.2 s; warm
+  16.9 s without the upsampler, 24.2 s with it; the first upsampler run 26.7 s.
+- **Upsampler off: not an edit.** "make the sky a warm sunset" with the row off gave a new picture (a sunset over a
+  city, nothing of the building; 63 levels mean difference): the prompt went as typed and the node put "Edit
+  <Picture 1>. " in front. Pruna AI's card says short requests without the upsampler often redraw the scene; here the
+  first try did. The description, RECIPES.md and the manual already say so; the row stays as built (on by default).
+- **An empty prompt goes** (the driver's own slip, `set_prompt` with `prompt` for `text`, on two runs): without the
+  upsampler the model redraws the crop; with it, the upsampler invents an edit (it replaced the car by a red sports
+  car). Open: whether a P-H3 edit with an empty prompt should be refused (other recipes take one too; the user's call).
+- Not checked live: the upsampler's file missing (the note and the plain run), the er_sde preset, a cold start with
+  the files out of the OS cache, whether the LoRA route matches Pruna AI's own model files in quality (Pruna AI's
+  claim, unverified).
 - The Comfy Cloud recipe's upsampler gets the prompt without the template's "Aspect ratio" / "Request" frame (the
   prompt control held both), and edits at the crop's own size (about 1 MP); a Cloud-specific request would need the
   graph changed, which the tool does not do ("Comfy's template, unchanged"). Never run.
