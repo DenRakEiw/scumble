@@ -1,0 +1,5 @@
+$ bash tools/run_gates.sh mut-quick_marches_superseded_too --offline --tiles on relight  (rc 1, 120 s)
+an instance already listens on 9555, closing it
+closed
+relight rc=1 93s FAIL
+SOME FAILED

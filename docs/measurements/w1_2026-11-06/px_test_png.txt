@@ -1,0 +1,11 @@
+94:ok   js pngFilterRows equals the reference (distanceTransform / floodMask for the EDT and the flood)
+183:ok   js pngFilterRows equals the reference (1032 cases)
+184:ok   rust simd png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)
+185:ok   rust scalar png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)
+186:ok   js png_filter_rows gives the same at an odd offset
+187:ok   rust simd png_filter_rows unfilters back to the input (1032 cases)
+188:       png_filter_rows cases: rows won by None 713, Sub 716, Up 599, Average 585, Paeth 369; won on a tied sum 487 / 272 / 79 / 4 / 0; Paeth ties a=b 737822 (a = b), a=c 13341, b=c 7414
+189:ok   png_filter_rows cases: every filter wins rows, ties of the sums are won by None, Sub, Up and Average, the Paeth predictor ties a over c and b over c  wins 713,716,599,585,369, tied 487,272,79,4,0, paeth {"ab":737822,"ac":13341,"bc":7414}
+273:ok   js pngFilterRows equals the rust simd
+376:ok   js pngFilterRows equals the rust scalar
+PASS

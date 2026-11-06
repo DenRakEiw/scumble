@@ -1,0 +1,57 @@
+[12:00:36] native_test 15k, the default rows (wand_whole_add, the px split by function, the counters, bucket_fill last)
+[12:01:13] native rc=0
+closed
+[12:01:18] native_test 15k, filter_wand (the program marks)
+[12:01:40] native_filter rc=0
+closed
+[12:01:45] perf 15k with relight, map 4096x2731 (the relight_maps rows)
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 68s 
+ALL PASS
+[12:03:10] px_jobs 15k, three rounds (the rows of 4.3 / 4.8 beside the old ones)
+[12:07:20] pxjobs rc=0
+closed
+[12:07:25] selection_test: the two 15k range cases (ms, range_select jobs, marks)
+[12:07:43] selection rc=0
+closed
+[12:07:48] exportperf 15k with a fill layer and a depth limit
+exportperf:15000x10000,--fill-limit rc=0 53s 
+ALL PASS
+[12:08:56] w0_bench freqsep_4000 (a fresh instance)
+[12:09:13] w0_bench freqsep_4000 rc=0
+closed
+[12:09:18] w0_bench stitch_align_2048 (a fresh instance)
+[12:09:39] w0_bench stitch_align_2048 rc=0
+closed
+[12:09:43] w0_bench stitch_align_4096 (a fresh instance)
+[12:10:21] w0_bench stitch_align_4096 rc=0
+closed
+[12:10:26] w0_bench edgefit_2048 (a fresh instance)
+[12:10:36] w0_bench edgefit_2048 rc=0
+closed
+[12:10:41] w0_bench match_fallback_16k (a fresh instance)
+[12:10:51] w0_bench match_fallback_16k rc=0
+closed
+[12:10:56] w0_bench grow_fallback_15k (a fresh instance)
+[12:11:16] w0_bench grow_fallback_15k rc=0
+closed
+[12:11:21] brush_perf 15k, blur (a fresh instance)
+[12:11:59] brush blur rc=0
+closed
+[12:12:04] brush_perf 15k, sharpen (a fresh instance)
+[12:12:43] brush sharpen rc=0
+closed
+[12:12:48] brush_perf 15k, tone (a fresh instance)
+[12:13:13] brush tone rc=0
+closed
+[12:13:19] brush_perf 15k, sponge (a fresh instance)
+[12:13:46] brush sponge rc=0
+closed
+[12:13:51] liquify_perf 15k, KERNELS rust (a fresh instance)
+[12:14:10] liquify rust rc=0
+closed
+[12:14:15] liquify_perf 15k, KERNELS js (a fresh instance)
+[12:14:35] liquify js rc=0
+closed
+[12:14:40] px_test with PX_BENCH=large (Node: the medians and the cold first calls; explain, never decide)
+[12:21:52] px_bench rc=0
+[12:21:52] done

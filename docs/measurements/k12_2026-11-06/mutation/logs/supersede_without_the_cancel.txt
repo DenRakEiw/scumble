@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-supersede_without_the_cancel --offline --tiles on relight  (rc 1, 47 s)
+relight rc=1 31s FAIL
+SOME FAILED

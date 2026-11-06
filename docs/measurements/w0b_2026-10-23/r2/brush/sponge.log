@@ -1,0 +1,11 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+sponge (cold) | Saturate | layer | 200 | fit | 156.5 | 33.6 | 20.3 | 14.7 | 15 | 1.5 | 57.4 | 208 | 5.7 | 6.1 | 0 | 0 | 11571 | mip_chain 32, smudge_dab 86
+sponge | Saturate | layer | 50 | fit | 156.5 | 4 | 4.2 | 4.3 | 5.3 | 1 | 10.6 | 245 | 3.7 | 5.5 | 0 | 0 | 8404 | mip_chain 56, smudge_dab 1562
+sponge | Saturate | layer | 200 | fit | 156.5 | 6.2 | 14 | 14.1 | 17.7 | 1.4 | 24.6 | 574 | 4.7 | 5 | 0 | 0 | 11655 | mip_chain 144, smudge_dab 422
+sponge | Saturate | layer | 400 | fit | 156.5 | 16.2 | 39.7 | 30.3 | 262.7 | 1.7 | 1420 | 2840 | 6.1 | 15.5 | 0 | 0 | 11679 | mip_chain 212, smudge_dab 676
+sponge | Saturate | layer | 1000 | fit | 156.5 | 70.3 | 121.5 | 87.7 | 103.1 | 2.8 | 196.4 | 3013 | 9.7 | 15.6 | 0 | 0 | 11549 | mip_chain 480, smudge_dab 122
+sponge | Saturate | layer | 50 | 1:1 | 18 | 36.3 | 5.3 | 2.4 | 3.5 | 1.5 | 46 | 406 | 9 | 15.2 | 0 | 0 | 8239 | smudge_dab 182
+sponge | Saturate | layer | 200 | 1:1 | 18 | 41.5 | 5.5 | 4.1 | 4.7 | 1.6 | 51 | 472 | 12.2 | 18.4 | 0 | 0 | 11488 | smudge_dab 62
+sponge | Saturate | layer | 400 | 1:1 | 18 | 48.1 | 9.1 | 9.1 | 11.6 | 1.7 | 61.4 | 535 | 12.4 | 18.3 | 0 | 0 | 11416 | smudge_dab 62
+sponge | Saturate | layer | 1000 | 1:1 | 18 | 82 | 62.7 | 55.5 | 75.4 | 10.6 | 148.6 | 2030 | 25.2 | 25.5 | 0 | 0 | 11530 | mip_chain 41, smudge_dab 62
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": true, "params": {"W": 15000, "H": 10000, "TOOLS": ["sponge"], "SIZES": [50, 200, 400, 1000], "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 6110}}

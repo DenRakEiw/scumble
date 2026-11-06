@@ -1,0 +1,4 @@
+pixels rc=0 11s PASS
+editor rc=0 170s PASS
+nodecopy rc=0 13s PASS
+ALL PASS

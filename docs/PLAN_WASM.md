@@ -41,11 +41,11 @@ that already pins the behaviour.
 | # | Path | Today | Where it costs | Expected | Tier | Existing test |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | **Edge snap and the guided filter**: `inpaint_edges.js` `snapField`, `gaussBlur`, `resampleBilinearF32`, `fuseTiles`, `rangeMax` (Rust in 0.1.46); `inpaint_depth.js` `guidedFilter`, `guidedFar`, `bilinearResize`, `disparityRange`, `farU16` | JS f32 loops over maps up to `WORK_MAX` 4096^2 (16.7 M samples), several passes each | every depth compute and every edge / detail pass of release 2 (R2-S3: about 1 s on a 15k picture) | 3-6x on the f32 passes; the pass drops under the frame budget for 2k maps | normal (maps, not pixels; the map is recomputed, never the only copy) | `tools/edges_test.js` (11 cases), the depth gate; the GLSL twin `SNAP_GLSL` stays the reference the CPU kernel must match |
-| 2 | **Histograms and range selection**: the range bar's depth / brightness / colour histograms, `select by range` and the limit's CPU rows (`inpaint_limit.js` `limitAlphaRows`) | JS per-pixel over the whole picture (153 MP on 15k) | every drag of the range bar recomputes a selection tint; the histogram once per picture | 2-4×; u8 SIMD counts | normal (selection) / full for the limit rows (they decide a filter layer's alpha) | the `selection`, `limit` and `maskview` gates |
+| 2 | **Histograms and range selection**: the range bar's depth / brightness / colour histograms, `select by range` and the limit's CPU rows (`inpaint_limit.js` `limitAlphaRows`) | JS per-pixel over the whole picture (153 MP on 15k); **corrected 2026-10-23 (K0c):** the luma and colour histograms work on 256 px samples and the depth one costs 8.7 ms once, so the histograms need no kernel; the cost is select by range's window combine (76 % of select by depth's 1.6 s at 15k, K0b) and `limitAlphaRows` (about 11.5 s of a 15k layered export with a depth-limited fill layer, K0b) | every drag of the range bar recomputes a selection tint; the histogram once per picture | 2-4×; u8 SIMD counts | normal (selection) / full for the limit rows (they decide a filter layer's alpha) | the `selection`, `limit` and `maskview` gates |
 | 3 | **The compositor's CPU band**: the blend modes and masks when the composite is read on the CPU (exports, flatten, the wand's coarse pass, `readBand` / `readBox`) | **Rust already** (corrected 2026-10-13): `composite_tile` (`crates/px/src/composite.rs`, Rust by default since 2026-09-17) does every op with masks, the five operators and the 25 blend modes (ops 0-29, rounded once), in the worker bands, the box stack and the emulated blends; the 165 / 27 ms per 59-tile band are its JS twin against Rust (`docs/PERFORMANCE.md` §12.1), not CPU against GPU. Still JS per pixel: dissolve's dither (`hash32` in `inpaint_worker.js` `rowsOfStack` and the match sampler, `inpaint_boxstack.js`, and the tile path in `inpaint_canvas.js`), the clip coverage (`clipCoverage`, `inpaint_raster.js`) and the alpha-only row copy (`storeRows`); `readBand`'s region pass draws through Canvas 2D | every export and flatten of a document with blend modes; the wand's coarse pass | small: only the JS passes around the kernel are left | **full** (pixels; both backends, the mutation round, the 15k measurement) | the `composite`, `pixels`, `export`, `layered` gates and `tools/pixels_test.js` |
 | 4 | **Heal, liquify, frequency separation, dodge and burn**: `inpaint_liquify.js` `liquifyBlock` (displacement field + resample), the heal patch (`poisson_blend` is Rust already, the patch search and blend around it are JS), the frequency split's blur and subtract | JS; heal 204 ms at 400 px, the first stroke up to 1.7 s; liquify per block | per brush stroke, so it is latency the user feels | 2-4×; the first-stroke cost is allocation, not arithmetic (measure first) | normal (one undo step; the stroke is replayable) | the `brush` gate, `tools/liquify_test.js` if it exists, else one new step |
 | 5 | **Edgefit** (`edgefit.js`: `shrinkPlane`, `edgeRing`, `blur121`, `erode`, the Lucas-Kanade iterations) | JS at a work scale, small matrices | once per inpaint result (item 42) | 2×, but the whole fit is a fraction of a second already | normal | `tools/edgefit_test.js` (9 cases) |
-| 6 | **The PNG reader's row path** | the browser's inflater (`DecompressionStream`), then `unfilter_rows` in Rust already; `png_read` 7.4 s on a 1.1 GB PNG, one worker | opening big PNGs | a Rust inflater (`miniz_oxide` is in the crate) lets the worker pool inflate IDAT parts in parallel only when the file was written with sync flushes (Scumble's own PNGs are); other files stay sequential | normal | `tools/png_test.js` / the `document` gate |
+| 6 | **The PNG reader's row path** | the browser's inflater (`DecompressionStream`), then `unfilter_rows` in Rust already; `png_read` 7.4 s on a 1.1 GB PNG, one worker | opening big PNGs | a Rust inflater (`miniz_oxide` is in the crate) lets the worker pool inflate IDAT parts in parallel only when the file was written with sync flushes (Scumble's own PNGs are); other files stay sequential | normal | the `document` gate and the pins in `tools/px_test.js`, `tools/editor_test.py` and `tools/export_test.py` (corrected 2026-10-23, K0c: there is no `tools/png_test.js`) |
 | 7 | **wasm threads** (shared memory + `wasm-bindgen-rayon`): one kernel over all cores without the JS worker-pool choreography | the pool today: JS splits a job into tiles, each worker runs the kernel | the big single-call jobs (wand across the picture, grow, a histogram) | unknown: a spike with one kernel, measured against the pool | - | the gates of whatever kernel the spike takes |
 
 Not ranked, cheap when a module is open anyway: `alphaOf` / `grayOf` planes, the matting's alpha scaling, the TIFF
@@ -95,3 +95,45 @@ only when their module is open or a measurement names them.
 - #5 and #6 when their modules are open for another reason.
 
 About 1-2 days per kernel including the measurement; W1-W3 are the ones that change what the user feels.
+
+## 5. W0 as harvested (2026-10-23)
+
+The user (2026-10-23): "wir haben ja auch viel gemessen vorher schon"; the rule stands as decided 2026-09-17: **Rust
+wherever it is faster, however little; JS only where Rust is slower** (`docs/PERFORMANCE.md` §12, `PLAN_BCE.md`; the
+3x rule of phase B is gone). W0 therefore first harvested every earlier measurement (a read-only workflow of six
+agents, every verdict checked against the code at `7def997`; the full table in this session's scratchpad
+`w0_synthesis.md`) instead of measuring everything again.
+
+- **Done (Rust):** mips, EDT grow / shrink, flood / wand, `composite_tile` with every blend mode, `dilate_mask`,
+  `box_blurs`, `smudge_dab`, `poisson_blend` (heal: 73 vs 162 ms on 512^2), `match_pixels`, PNG filter / unfilter and
+  `deflate_part` (84 against about 25 MB/s per worker), `psd_pack_rows`, `resample_block`, `range_max`, relight's
+  `height_normals` and the sun's march. Measured 1.4-6.1x on the kernels.
+- **Switch now (a Rust kernel exists, JS still runs):** the main thread's grow fallback (`growMask`,
+  `inpaint_raster.js` 97-135; `growMaskBounds` -> `grow_mask` exists, the job measured 2.80x); a rare path, routing only.
+  Unclear until measured: the `matchCanvas` CPU fallback (`inpaint_filters.js` 272-292; `match_pixels` was measured
+  against the `Math.fround` twin, not this loop) and the TIFF strips without a pool (`CompressionStream`; native won
+  the only deflate A/B, at level 6).
+- **Stays JS (Rust slower):** relight's point / spot `shadow_march` (the twin 0.67-0.83 of Rust's time, 2.63 against
+  3.56 s at 4096 x 2731; `kernels.js` 152), until a faster Rust loop beats it. Splitting one light's march into
+  stripes over the workers (the kernel takes `row0` / `rows` already) changes the wall time only, never measured.
+- **Build a kernel, then measure (largest known cost first):** the TIFF reader (a 15k open 8.6 s, not split up), the PNG
+  reader's inflate and its byte-wise `crc32` (a 15k open 2.7 s wall), `rangeSelectJob` with `snapField` and
+  `limitAlphaRows` (select by range at 15k 1.4-2.6 s, the depth snap 1.2 s, whole jobs), the stitch's per-pixel passes
+  (about 190 of 571 ms of a crop), invert (169-211 ms at 15k, a JS loop on the main thread), then liquify (no Rust
+  twin), the compositor's remaining JS passes (#3), frequency separation and the tone / blur / sharpen / sponge dabs
+  (#4), edgefit (#5); the threads spike (#7) last.
+- **Corrections to section 2:** the "about 1 s" edge pass (#1) and the 441 / 641 / 3,431 ms were numpy / ONNX timings,
+  not the app's JS; heal's "204 ms / 1.7 s" (#4) were the old flatten's; `range_max`'s "20 vs 102 ms" were single cold
+  calls.
+- **Open question for the user:** which column decides, the kernel's or the job's wall time? For the mips after a whole
+  change the kernel is 1.46-3.56x faster in Rust, but the wall time with the window in front was slower in three of
+  four release runs (0.57-0.64x); the cause was never measured. Recommended: the wall time of the real job (what the
+  user feels), the kernel column only to find where the time goes.
+- **The gaps** (no split 15k baseline): snap and the guided filter in the app, the histograms, `limitAlphaRows`, the
+  compositor's remaining passes, frequency separation, the dabs, edgefit, inflate alone, `crc32`, the TIFF parts, the
+  PSD / ORA readers, the ONNX normalisation, the `matchCanvas` loop, relight in the app with lights. Harnesses, all
+  offline: `pxjobs`, `perf:15000x10000` (relight: `,--filter=relight,--map=4096x2731`, with lights), `native`,
+  `edges selection`, `exportperf:15000x10000,--limit=...`, `tiffperf:15000x10000`, `PX_BENCH=large` px_test.js,
+  `brush_perf.py` with `liquify_perf.js`; none yet for frequency separation, the dabs, edgefit, the histograms,
+  `crc32` and the readers (a `PX_BENCH` row twin against Rust in px_test.js is the cheapest). Measure with the window
+  in front (V8's efficiency mode slows JS, not wasm, in a window behind: `docs/PERFORMANCE.md` §10).

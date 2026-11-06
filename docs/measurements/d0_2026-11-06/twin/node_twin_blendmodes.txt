@@ -1,0 +1,8 @@
+(node:18784) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/renderer/editor/inpaint_layered.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+tools/fixtures/blendmodes/blendmodes.psd: 1.4 MB
+readPsd 16 ms (31 layers Hintergrund 512x512, normal 72x72, dissolve 72x72, darken 72x72, multiply 72x72, color_burn 72x72, linear_burn 72x72, darker_color 72x72, lighten 72x72, screen 72x72, color_dodge 72x72, linear_dodge 72x72, lighter_color 72x72, overlay 72x72, soft_light 72x72, hard_light 72x72, vivid_light 72x72, linear_light 72x72, pin_light 72x72, hard_mix 72x72, difference 72x72, exclusion 72x72, subtract 72x72, divide 72x72, hue 72x72, saturation 72x72, color 72x72, luminosity 72x72, multiply_opacity50 72x72, multiply_fill50 72x72, normal_opacity50 72x72, merged picture read); readPsdStream 10 ms {"channels":3.210900000000038,"interleave":4.371599999999987,"mask":0,"deliver":1.1906999999999996,"bands":32}
+[ok] the worker's reader equals readPsd on blendmodes.psd: every layer's bytes and mask by SHA-256, the fields, groups, notes
+PASS

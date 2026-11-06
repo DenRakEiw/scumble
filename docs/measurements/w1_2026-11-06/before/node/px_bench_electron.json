@@ -1,0 +1,22 @@
+{
+  "env": {
+    "runtime": "Electron 44.2.0 (ELECTRON_RUN_AS_NODE)",
+    "v8": "15.2.124.19-electron.0",
+    "cpu": "AMD Ryzen 9 7900X3D 12-Core Processor",
+    "date": "2026-11-06T06:09:21.495Z"
+  },
+  "rows": [
+    {
+      "kernel": "PNG rows (filter)",
+      "input": "4,096 × 256 band",
+      "info": true,
+      "js": 35.994500000000016,
+      "scalar": 28.10329999999999,
+      "simd": 18.673500000000104,
+      "copy": 0.30877499999999974,
+      "speedup": 1.896216338663296,
+      "speedupNoCopy": 1.9275711569871645
+    }
+  ],
+  "notes": []
+}

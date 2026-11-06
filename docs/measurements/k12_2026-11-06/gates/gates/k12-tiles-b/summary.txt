@@ -1,0 +1,2 @@
+relight rc=0 30s PASS
+ALL PASS

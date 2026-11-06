@@ -1,0 +1,102 @@
+probes in
+the save rows write into C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\d0\files_before-r1 (kept)
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1085, "encodeMs": 2217, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 2991 ms, longest block 523 ms
+   {"loadFileMs": 2930, "tiles": 2360, "compositorBefore": "not made", "compositorAfter": "made"}
+   main thread ms: idle 2130 | browser natives 511 | px kernels 3 | other JS 304 | GC 56 | (program) 150
+     natives: getProgramParameter 475, getImageData 10, getContext 6, getShaderParameter 5, setTimeout 3, slice 2, f 2, texSubImage2D 1
+     px kernels by function (self time): wasm-function[15] [wasm] 2, _out [px.js:254] 1
+     JS by file: inpaint_tiles.js 273, inpaint_arena.js 9, inpaint_compositor.js 7, inpaint_pool.js 5, inpaint_canvas.js 4, inpaint_resample.js 2, host.js 2, prompt_field.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1330] 164, normalizeBlock [inpaint_tiles.js:540] 96, allocTileBytes [inpaint_arena.js:110] 6
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   3     474.8 ms        0.0 MB
+     2d getImageData                          1       9.6 ms        0.3 MB
+     gl getShaderParameter                    6       4.6 ms        0.0 MB
+     gl texSubImage2D                      2360       2.5 ms        1.0 MB
+     worker postMessage (moved)             164       1.8 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       1.3 ms        0.0 MB
+     blob arrayBuffer                         8       0.5 ms        0.0 MB
+     2d drawImage >= 1 MP                     5       0.2 ms       41.8 MB
+   worker png_read: 1 jobs, {"kernel": 2070.6, "parse": 0.5, "read": 44.1, "write": 2024.5, "wait": 1063.1, "copy": 39.7, "unfilter": 946.4, "deliver": 7.1, "gen": 0}  px: png_unfilter_rows 40
+   worker mips: 19 jobs, {"kernel": 402.3, "gen": 0}  px: mip_chain 2442, clamp_extend 98
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2442, clamp_extend 98, png_unfilter_rows 40
+
+== add_the_paint_layer: wall 761 ms, longest block 638 ms
+   {"tiles": 2301, "genMs": 58, "writeMs": 553, "addMs": 150}
+   boundaries (calls, ms inside the call, MB):
+     gl texSubImage2D                      2301       2.3 ms        0.9 MB
+     2d putImageData                       2286       2.0 ms        1.1 MB
+     worker postMessage (moved)              90       1.5 ms        0.0 MB
+     2d drawImage < 1 MP                     20       1.1 ms       11.2 MB
+     2d drawImage >= 1 MP                     5       0.1 ms       41.8 MB
+   worker mips: 18 jobs, {"kernel": 509.4, "gen": 0}  px: mip_chain 2340, clamp_extend 39
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2340, clamp_extend 39
+
+== export_psd: wall 1287 ms, longest block 74 ms
+   {"MB": 925.2}
+   main thread ms: idle 957 | browser natives 216 | px kernels 0 | other JS 77 | GC 35 | (program) 109
+     natives: Blob 131, getProgramParameter 36, getContext 13, texSubImage2D 6, setTimeout 4, walk 4, getError 4, __n1_postMessage 3
+     px kernels by function (self time): -
+     JS by file: inpaint_tiles.js 35, inpaint_pool.js 14, inpaint_compositor.js 8, inpaint_bands.js 6, inpaint_filters_gl.js 5, inpaint_canvas.js 4, host.js 3, inpaint_status.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): put [inpaint_tiles.js:1139] 20, w.onmessage [inpaint_pool.js:132] 14, _upload [inpaint_compositor.js:847] 6, regionCanvas [inpaint_tiles.js:2174] 5
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   2      35.9 ms        0.0 MB
+     worker postMessage (moved)             237       7.5 ms        0.0 MB
+     gl getError                             12       4.3 ms        0.0 MB
+     gl texSubImage2D                      2301       3.8 ms       10.1 MB
+     gl getShaderParameter                    4       2.8 ms        0.0 MB
+     2d drawImage < 1 MP                     27       1.9 ms        1.8 MB
+     2d putImageData                          2       0.2 ms        1.2 MB
+     2d drawImage >= 1 MP                     3       0.1 ms       25.1 MB
+   worker psd_part: 237 jobs, {"kernel": 7996.2, "rows": 3380.8, "pack": 4609.9, "gen": 0}  px: psd_pack_rows 948, composite_tile 78
+   px calls, window: -
+   px calls, workers: psd_pack_rows 948, composite_tile 78
+   marks export: ready 0.1, encoded 1286.5, saved 0.1 | total 1286.6 ms  {"fmt": "psd", "MB": 925.2459812164307}
+
+== save_psd: wall 4002 ms, longest block 137 ms
+   {"MB": 925.2, "file": "C:\\Users\\SCHOEN~1\\AppData\\Local\\Temp\\claude\\F--canvas\\543d44fb-4d2d-4818-8804-974916d10a44\\scratchpad\\d0\\files_before-r1\\n1.psd"}
+   main thread ms: idle 1977 | browser natives 257 | px kernels 0 | other JS 1443 | GC 40 | (program) 438
+     natives: Blob 127, invoke 59, (anonymous) 45, __n1_postMessage 5, walk 5, setTimeout 5, arrayBuffer 4, beat 1
+     px kernels by function (self time): -
+     JS by file: host.js 1121, sandbox_bundle 295, inpaint_bands.js 9, inpaint_pool.js 8, inpaint_canvas.js 5, inpaint_tiles.js 3, inpaint_jobs.js 2
+     JS by function (self time; a typed-array copy counts for the function that makes it): saveExport [host.js:4322] 1119, invoke [sandbox_bundle:2] 295
+   boundaries (calls, ms inside the call, MB):
+     blob arrayBuffer (until settled)        15     282.6 ms        0.0 MB
+     worker postMessage (moved)             237       8.0 ms        0.0 MB
+     blob arrayBuffer                        15       1.9 ms      925.2 MB
+   worker psd_part: 237 jobs, {"kernel": 7262.8, "rows": 2906.4, "pack": 4353.1, "gen": 0}  px: psd_pack_rows 948, composite_tile 78
+   px calls, window: -
+   px calls, workers: psd_pack_rows 948, composite_tile 78
+   marks export: ready 0.0, encoded 1101.0, saved 2900.4 | total 4001.5 ms  {"fmt": "psd", "MB": 925.2459812164307}
+   marks save: pieces 2837.1, written 63.2 | total 2900.2 ms  {"MB": 925.2459812164307, "pieces": 15}
+
+== open_psd: wall 14783 ms, longest block 9337 ms
+   {"loadImageMs": 14570, "from": "file", "size": [15000, 10000], "layers": 1, "status": "Opened n1.psd: 15000 \u00d7 10000, 1 layer over \"Background\" as the base."}
+   main thread ms: idle 3728 | browser natives 235 | px kernels 3 | other JS 9184 | GC 217 | (program) 1843
+     natives: File 118, Blob 36, (anonymous) 33, getBoundingClientRect 12, getContext 4, texSubImage2D 4, setTimeout 3, getShaderParameter 3
+     px kernels by function (self time): wasm-function[15] [wasm] 3
+     JS by file: inpaint_layered.js 8326, inpaint_resample.js 526, inpaint_tiles.js 292, inpaint_canvas.js 12, inpaint_pool.js 9, inpaint_arena.js 7, inpaint_compositor.js 5, shell.js 2
+     JS by function (self time; a typed-array copy counts for the function that makes it): unpackRows [inpaint_layered.js:68] 5862, interleave [inpaint_layered.js:179] 2113, canvasRoundTrip [inpaint_resample.js:165] 526, _putBlock [inpaint_tiles.js:1330] 259, readPsd [inpaint_layered.js:243] 188, readChannel [inpaint_layered.js:105] 162, coarseSlot [inpaint_tiles.js:1183] 11, thumbnailCanvas [inpaint_tiles.js:2055] 10
+   boundaries (calls, ms inside the call, MB):
+     blob arrayBuffer (until settled)         2     867.8 ms        0.0 MB
+     gl texSubImage2D                      4661       5.1 ms        1.8 MB
+     worker postMessage (moved)             261       4.9 ms        0.0 MB
+     gl getShaderParameter                    6       4.3 ms        0.0 MB
+     2d putImageData                       2286       2.1 ms        1.1 MB
+     gl getProgramParameter                   3       1.8 ms        0.0 MB
+     2d drawImage < 1 MP                     20       1.4 ms       11.2 MB
+     2d drawImage >= 1 MP                     9       0.3 ms       75.2 MB
+     blob arrayBuffer                         2       0.2 ms      925.2 MB
+   worker png_part: 79 jobs, {"kernel": 12635.5, "compose": 0, "rows": 365.9, "prev": 2.5, "copyIn": 43.2, "filter": 4120, "adler": 168.9, "deflate": 6963.7, "copyOut": 46.4, "chunk": 921.9, "gen": 0}  px: adler32 79, deflate_part 79, png_filter_rows 79
+   worker mips: 37 jobs, {"kernel": 1768.3, "gen": 0}  px: mip_chain 4782, clamp_extend 137
+   px calls, window: mip_chain 32
+   px calls, workers: mip_chain 4782, clamp_extend 137, adler32 79, deflate_part 79, png_filter_rows 79
+   marks layered_open: read 258.1, parsed 8476.1, layers 856.3, stored 2264.4, base 27.2, added 28.7 | total 11910.8 ms  {"kind": "psd", "MB": 925.2459812164307, "inflateMs": 0, "inflates": 0, "maskMs": 0, "rgbaMs": 856.2749999999069, "bitmapMs": 0, "fromImageMs": 0}
+[ok] close: {"closed": 2, "arena": {"slots": 9322, "chunks": 37, "allocated": 11682, "freed": 2360, "droppedChunks": 9, "refused": 0, "failed": 0, "enabled": true, "bytes": 2483027968, "freeSlots": 150}}
+
+RESULT measured
+
+--- stderr

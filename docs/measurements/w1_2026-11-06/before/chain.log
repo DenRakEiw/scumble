@@ -1,0 +1,92 @@
+lock: taken after 0 s
+[07:09:17] commit 59ff16f; px ABI ABI = 21
+[07:09:17] px.wasm 2985f252bebdbbe4, px_scalar.wasm ade55404e282dd7d
+[07:09:19] gpu: 8153 MiB, 53 %; comfy 8188: 000
+[07:09:19] node px_bench png
+[07:09:21] rc=0
+[07:09:21] electron-as-node px_bench png
+[07:09:22] rc=0
+[07:09:22] == round 1
+[07:09:22] native r1
+[07:09:25] gpu: 8164 MiB, 37 %; comfy 8188: 000
+[07:09:53] rc=0
+closed
+[07:09:59] sha256 native r1 n1.png 246538165 f17376cf3fcd01217666d81b74cc8227f8e5cc8a73354d604e487ccf4f2e9531
+[07:09:59] tiffperf own r1
+[07:10:01] gpu: 8153 MiB, 49 %; comfy 8188: 000
+tiffperf:15000x10000,--variant,own,--out,/f/canvas/dist/w1_files/tiff_r1 rc=0 9s PASS
+ALL PASS
+[07:10:26] rc=0
+[07:10:26] w0_bench files_15k r1
+[07:10:28] gpu: 8151 MiB, 51 %; comfy 8188: 000
+[07:10:45] rc=0
+closed
+[07:10:50] sha256 files r1 photo_15k.png 184507848 3cb4f984679ef5eda32eff7ec0812838f28f4740f7304cf51771ca947c7ecea6
+[07:10:51] == round 2
+[07:10:51] native r2
+[07:10:53] gpu: 8142 MiB, 47 %; comfy 8188: 000
+[07:11:19] rc=0
+closed
+[07:11:25] sha256 native r2 n1.png 246538165 b9e050d8d81e6e40fedb1d78e45a5676f93ea4af146739e94844c92822a91a69
+[07:11:25] tiffperf own r2
+[07:11:27] gpu: 8157 MiB, 51 %; comfy 8188: 000
+tiffperf:15000x10000,--variant,own,--out,/f/canvas/dist/w1_files/tiff_r2 rc=0 10s PASS
+ALL PASS
+[07:11:53] rc=0
+[07:11:53] w0_bench files_15k r2
+[07:11:55] gpu: 8156 MiB, 48 %; comfy 8188: 000
+[07:12:13] rc=0
+closed
+[07:12:18] sha256 files r2 photo_15k.png 184507848 3cb4f984679ef5eda32eff7ec0812838f28f4740f7304cf51771ca947c7ecea6
+[07:12:18] == round 3
+[07:12:18] native r3
+[07:12:21] gpu: 8155 MiB, 53 %; comfy 8188: 000
+[07:12:48] rc=0
+closed
+[07:12:53] sha256 native r3 n1.png 246538165 c0ae1f2d412263743c4a6c30fd60c7f5693a60411d326c5c4e0ebb71e1992448
+[07:12:53] tiffperf own r3
+[07:12:55] gpu: 8153 MiB, 55 %; comfy 8188: 000
+tiffperf:15000x10000,--variant,own,--out,/f/canvas/dist/w1_files/tiff_r3 rc=0 10s PASS
+ALL PASS
+[07:13:22] rc=0
+[07:13:22] w0_bench files_15k r3
+[07:13:24] gpu: 8533 MiB, 50 %; comfy 8188: 000
+[07:13:42] rc=0
+closed
+[07:13:47] sha256 files r3 photo_15k.png 184507848 3cb4f984679ef5eda32eff7ec0812838f28f4740f7304cf51771ca947c7ecea6
+[07:13:49] gpu: 8311 MiB, 56 %; comfy 8188: 000
+[07:13:49] done
+lock: released
+[07:15:24] native r2, r3 and files r2 of the first pass NOT COUNTED (the window behind): moved to notcounted/ as *_try0
+lock: taken after 0 s
+[07:15:32] commit 59ff16f; px ABI ABI = 21; parts: native; rounds: 2 3
+[07:15:32] px.wasm 2985f252bebdbbe4, px_scalar.wasm ade55404e282dd7d
+[07:15:34] gpu: 8042 MiB, 53 %; comfy 8188: 000
+[07:15:34] == round 2
+[07:15:34] native r2 (try 1)
+[07:15:37] gpu: 8056 MiB, 43 %; comfy 8188: 000
+[07:16:04] rc=0
+closed
+[07:16:10] sha256 native r2 n1.png 246538165 58640ffe30765ae6a64a8fc49bca7a8d30810cfd5d5c2aad50ef7271060fdccc
+[07:16:10] == round 3
+[07:16:10] native r3 (try 1)
+[07:16:12] gpu: 8183 MiB, 50 %; comfy 8188: 000
+[07:16:39] rc=0
+closed
+[07:16:45] sha256 native r3 n1.png 246538165 18e25c6420fa99ea15ae25002b7a7d19e26a8a61464c02380d9d96234f93dba0
+[07:16:47] gpu: 7997 MiB, 51 %; comfy 8188: 000
+[07:16:47] done
+lock: released
+lock: taken after 0 s
+[07:16:47] commit 59ff16f; px ABI ABI = 21; parts: files; rounds: 2
+[07:16:48] px.wasm 2985f252bebdbbe4, px_scalar.wasm ade55404e282dd7d
+[07:16:50] gpu: 8037 MiB, 51 %; comfy 8188: 000
+[07:16:50] == round 2
+[07:16:50] w0_bench files_15k r2 (try 1)
+[07:16:52] gpu: 8138 MiB, 46 %; comfy 8188: 000
+[07:17:09] rc=0
+closed
+[07:17:14] sha256 files r2 photo_15k.png 184507848 3cb4f984679ef5eda32eff7ec0812838f28f4740f7304cf51771ca947c7ecea6
+[07:17:16] gpu: 8073 MiB, 43 %; comfy 8188: 000
+[07:17:16] done
+lock: released

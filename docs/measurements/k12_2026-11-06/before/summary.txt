@@ -1,0 +1,102 @@
+K12 baseline (docs/PLAN_WASM_BUILD.md §4.5, the order row "K12", Stop 5): relight's march rows BEFORE the stripes.
+Three fresh runs, 2026-11-06 09:31-09:36, k12_chain.sh (../k12_chain.sh): each run its own instance through
+tools/run_gates.sh (offline, tiles, port 9555, a fresh profile), `perf:15000x10000,--filter=relight,--map=4096x2731`,
+the rows' JSON in perf/r*.json, the logs in perf/r*.log, the chain's log in chain.log.
+
+Build: 0ca7d5b (px ABI 21, px.wasm 1000640e..., px_scalar.wasm ade55404...) with the K12 harness only: tools/perf_test.py,
+tools/px_test.js and tools/relight_test.py changed, no renderer file (the chain's "dirty: 3 files").
+The machine: the busy lock (../w1_2026-11-06/w1_lock.py) taken before and released after each run; no other agent's
+gate run at any run's start (k12_others.py: none of run_gates / _test.py / an instance on 9572-9579); the other agent's
+idle key instance on 9571 was there (untouched). The GPU before / after each run: 3,916 / 3,948 MiB at 5 / 0 %,
+4,333 / 4,078 at 6 / 2 %, 4,078 / 4,223 at 0 / 1 %; ComfyUI on 8188 did not answer (000), so nothing ran there. All
+three runs focused and visible at their start and end (no retry).
+
+The harness (K12's step 1 and 2, tools/perf_test.py):
+- Pinned the chain rows. Why they did different work per run (W0b 62 / 60 / 483 ms, 16 / 16 / 2,376 chains; the 192 px
+  rows 422 / 0.4 / 425): in a relight run addFilterLayer leaves the relight layer active with the lights tool, so every
+  draw runs drawLightsOverlay -> ownLightPos -> belowStats, which after a whole change of a layer below reads the whole
+  picture at 256 px on the window (2,376 exact mip chains, about 380-480 ms at 15k). Whether that read fell into the timed
+  frame or into a draw that ran during the 30 ms wait before it decided the row. Not §4.5's inferred cause (full marches
+  holding the pool). Now: in a relight run the whole-change rows run with the paint layer active and the paint tool once
+  the setup's marches have landed (whole_quiet: the wait; *_state: below stats redone in the frame, marches in flight),
+  the change and its frame are one task (the 30 ms wait comes before the change; a debug run showed a queued draw taking
+  all 2,344 asks in the wait), and the overlay's read has its own row (whole_1to1_lights, its below stats dropped right
+  before the frame, so it always pays it). Result: 16 built / 2,344 asked in all three runs, as in the film.look runs.
+- New rows: the stripes of each march row [stripes, workers] and kernel ms [summed, slowest job] (from the workers'
+  relight_shadow timings, a K12 build only), the same work again on the route relightStripes 0 (one job a light) and
+  again on stripes (the channels' keys dropped, so the lights march where the row before left them), the parallel
+  efficiency [serial kernel ms of the one-job route / (workers x the stripes' wall), the stripes' busy share] and the
+  stripes' kernel over one job's; a whole change at 1:1 with no march in flight and the same during a three-light march
+  [frame, mips settled] [block, built, asked, marching]; focus at the start and end (NOT COUNTED exits 2, the chain
+  retries); PERF_JSON / --json for the rows.
+- harness_try1/ (beside this folder) is a first baseline with the harness before the one-task fix: its during-a-march
+  row asked 0 chains in the frame (a queued draw took them in the wait), so it is not used; its r2 try 1 was NOT COUNTED
+  (the window lost the focus at its end) and was retried.
+
+Medians [min-max] of the three runs (python ../summarize.py before):
+row (15000 x 10000, relight, map 4096 x 2731)                               before
+frame after a whole change, fit [0]                               19.9 [19.7-22.4]
+frame after a whole change, fit [1]                               19.9 [19.7-22.4]
+  mips settled [longest block] [0]                                77.4 [76.9-94.3]
+  mips settled [longest block] [1]                                25.3 [24.4-28.9]
+  chains built here [asked] [0]                                         16 [16-16]
+  chains built here [asked] [1]                                2,360 [2,360-2,360]
+frame after a whole change, 1:1 [0]                               32.8 [30.8-33.3]
+frame after a whole change, 1:1 [1]                               32.8 [30.8-33.3]
+  mips settled [longest block] [0]                                    100 [72-123]
+  mips settled [longest block] [1]                                16.7 [14.0-25.6]
+  chains built here [asked] [0]                                         16 [16-16]
+  chains built here [asked] [1]                                2,344 [2,344-2,344]
+  below stats redone [marches in flight] [0]                               0 [0-0]
+  below stats redone [marches in flight] [1]                               0 [0-0]
+  (waited for the setup's marches [in flight]) [0]             2,529 [2,516-4,535]
+  (waited for the setup's marches [in flight]) [1]                         0 [0-0]
+192 px picture, the old way [wall] [0]                               338 [335-403]
+192 px picture, the old way [wall] [1]                               338 [335-403]
+  chains built here [from the worker] [0]                      2,360 [2,360-2,360]
+  chains built here [from the worker] [1]                                  0 [0-0]
+192 px picture, settled [wall] [0]                                16.4 [13.6-26.5]
+192 px picture, settled [wall] [1]                                   110 [101-110]
+  chains built here [from the worker] [0]                               98 [98-98]
+  chains built here [from the worker] [1]                      2,262 [2,262-2,262]
+the frame with the lights overlay [0]                                383 [374-400]
+the frame with the lights overlay [1]                                383 [374-400]
+  chains built here [asked] [0]                                2,376 [2,376-2,376]
+  chains built here [asked] [1]                                2,344 [2,344-2,344]
+  below stats redone [marches] [0]                                         1 [1-1]
+  below stats redone [marches] [1]                                         0 [0-0]
+one light moved [blocked, landed] [0]                             56.3 [45.5-66.8]
+one light moved [blocked, landed] [1]                          3,545 [3,512-3,935]
+  marches [slowest landed] [0]                                             1 [1-1]
+  marches [slowest landed] [1]                                 3,531 [3,498-3,916]
+three lights moved [blocked, landed] [0]                          52.6 [44.3-66.7]
+three lights moved [blocked, landed] [1]                       3,665 [3,626-5,685]
+  marches [slowest landed] [0]                                             3 [3-3]
+  marches [slowest landed] [1]                                 3,656 [3,617-5,673]
+a drag step's quick map [blocked, landed] [0]                     29.9 [28.4-33.3]
+a drag step's quick map [blocked, landed] [1]                     43.9 [42.8-53.9]
+  marches [slowest landed] [0]                                             1 [1-1]
+  marches [slowest landed] [1]                                    43.4 [42.3-53.1]
+pan at 1:1 during a march [median, worst frame] [0]                  3.9 [3.6-4.0]
+pan at 1:1 during a march [median, worst frame] [1]               92.1 [83.6-92.5]
+  frames [shadows landed] [0]                                        180 [133-181]
+  frames [shadows landed] [1]                                  3,865 [3,759-4,016]
+  block [chains built here] [0]                                   92.8 [86.9-94.9]
+  block [chains built here] [1]                                            0 [0-0]
+the first march after start [-, landed] [0]                                      -
+the first march after start [-, landed] [1]                    3,949 [3,909-6,063]
+  marches [slowest landed] [0]                                             3 [3-3]
+  marches [slowest landed] [1]                                 3,939 [3,900-6,053]
+whole change 1:1, no march [frame, mips settled] [0]              33.3 [31.0-35.1]
+whole change 1:1, no march [frame, mips settled] [1]              81.6 [76.3-85.6]
+  [block, built, asked, marching] [0]                              14.4 [9.1-15.6]
+  [block, built, asked, marching] [1]                                   16 [16-16]
+  [block, built, asked, marching] [2]                          2,344 [2,344-2,344]
+  [block, built, asked, marching] [3]                                      0 [0-0]
+  during a three-light march [frame, mips settled] [0]              37.1 [33.1-39.4]
+  during a three-light march [frame, mips settled] [1]                  163 [83-223]
+  [block, built, asked, marching] [0]                              40.6 [8.8-41.8]
+  [block, built, asked, marching] [1]                                   16 [16-16]
+  [block, built, asked, marching] [2]                          2,344 [2,344-2,344]
+  [block, built, asked, marching] [3]                                      3 [3-3]
+before: 3 runs; focus [[True, 'visible', True, 'visible'], [True, 'visible', True, 'visible'], [True, 'visible', True, 'visible']]

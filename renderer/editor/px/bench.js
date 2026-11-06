@@ -178,11 +178,11 @@ export async function runBench({ impls, extras = {}, sizes = ["96", "150"], runs
     const TILE = 256, LEVELS = 5;
     const chainBytes = js.mipChainBytes(TILE, LEVELS);
     const placeChain = (src, size = TILE, levels = LEVELS) => (px) => {
-        const n = size * size * 4, nOut = px.exports.mip_chain_bytes(size, levels);
+        const n = size * size * 4, nOut = px.raw.mip_chain_bytes(size, levels);
         const ps = px.alloc(n), po = px.alloc(nOut), back = new Uint8Array(nOut);
         px.u8().set(src, ps);
         return {
-            call: () => px.exports.mip_chain(ps, size, levels, po),
+            call: () => px.raw.mip_chain(ps, size, levels, po),
             copy: () => { px.u8().set(src, ps); back.set(px.view(Uint8Array, po, nOut)); },
             release: () => { px.free(ps, n); px.free(po, nOut); },
         };
@@ -213,7 +213,7 @@ export async function runBench({ impls, extras = {}, sizes = ["96", "150"], runs
                 const n = W * H * 4, nOut = (W >> 1) * (H >> 1) * 4, ps = px.alloc(n), po = px.alloc(nOut);
                 px.u8().set(src, ps);
                 return {
-                    call: () => px.exports.mip_half(ps, W, H, po),
+                    call: () => px.raw.mip_half(ps, W, H, po),
                     copy: () => { px.u8().set(src, ps); dst.set(px.view(Uint8Array, po, nOut)); },
                     release: () => { px.free(ps, n); px.free(po, nOut); },
                 };
@@ -223,10 +223,10 @@ export async function runBench({ impls, extras = {}, sizes = ["96", "150"], runs
     }
 
     const placeEdt = (feature, w, h) => (px) => {
-        const n = w * h, pf = px.alloc(n), po = px.alloc(n * 4), sb = px.exports.dist_scratch_bytes(w, h), pt = px.alloc(sb), back = new Float32Array(n);
+        const n = w * h, pf = px.alloc(n), po = px.alloc(n * 4), sb = px.raw.dist_scratch_bytes(w, h), pt = px.alloc(sb), back = new Float32Array(n);
         px.u8().set(feature, pf);
         return {
-            call: () => px.exports.dist_transform(pf, w, h, po, pt),
+            call: () => px.raw.dist_transform(pf, w, h, po, pt),
             copy: () => { px.u8().set(feature, pf); back.set(px.view(Float32Array, po, n)); },
             release: () => { px.free(pf, n); px.free(po, n * 4); px.free(pt, sb); },
         };
@@ -259,7 +259,7 @@ export async function runBench({ impls, extras = {}, sizes = ["96", "150"], runs
             const n = F * F, pr = px.alloc(n * 4), po = px.alloc(n), pairs = n >> 3, ps = px.alloc(pairs * 8), back = new Uint8Array(n);
             px.u8().set(scene, pr);
             return {
-                call: () => { if (px.exports.flood(pr, F, F, sx, sy, 32, 1, po, ps, pairs) < 0) throw new Error("stack"); },
+                call: () => { if (px.raw.flood(pr, F, F, sx, sy, 32, 1, po, ps, pairs) < 0) throw new Error("stack"); },
                 copy: () => { px.u8().set(scene, pr); back.set(px.view(Uint8Array, po, n)); },
                 release: () => { px.free(pr, n * 4); px.free(po, n); px.free(ps, pairs * 8); },
             };
@@ -281,7 +281,7 @@ export async function runBench({ impls, extras = {}, sizes = ["96", "150"], runs
         for (let i = 0; i < n; i++) { u32[(ptab >>> 2) + i] = ps[i]; u32[(ptab >>> 2) + n + i] = pm[i]; u8[ptab + 8 * n + i] = ops[i]; u8[ptab + 9 * n + i] = alphas[i]; }
         const back = new Uint8Array(pxs * 4);
         return {
-            call: () => { px.u8().set(base, pd); px.exports.composite_tile(pd, pxs, n, ptab, ptab + 8 * n, ptab + 9 * n, ptab + 4 * n); },
+            call: () => { px.u8().set(base, pd); px.raw.composite_tile(pd, pxs, n, ptab, ptab + 8 * n, ptab + 9 * n, ptab + 4 * n); },
             // the stack's sources and masks in, the tile out (the base refill is inside `call`
             // for both builds, the kernel writes in place)
             copy: () => { const v = px.u8(); for (let i = 0; i < n; i++) { v.set(srcs[i], ps[i]); if (masks[i]) v.set(masks[i], pm[i]); } back.set(px.view(Uint8Array, pd, pxs * 4)); },
@@ -303,7 +303,7 @@ export async function runBench({ impls, extras = {}, sizes = ["96", "150"], runs
             const n = PW * PR * 4, nOut = PR * (1 + 4 * PW), pb = px.alloc(n), pp = px.alloc(PW * 4), po = px.alloc(nOut);
             px.u8().set(band, pb); px.u8().set(prev, pp);
             return {
-                call: () => px.exports.png_filter_rows(pb, PW, PR, pp, po),
+                call: () => px.raw.png_filter_rows(pb, PW, PR, pp, po),
                 copy: () => { px.u8().set(band, pb); out.set(px.view(Uint8Array, po, nOut)); },
                 release: () => { px.free(pb, n); px.free(pp, PW * 4); px.free(po, nOut); },
             };

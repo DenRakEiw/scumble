@@ -1,0 +1,171 @@
+{
+ "grow_fallback_15k": {
+  "n": 20,
+  "runs": 3,
+  "ladder": [
+   [
+    7500,
+    5000
+   ],
+   [
+    10607,
+    7071
+   ],
+   [
+    15000,
+    10000
+   ]
+  ],
+  "steps": [
+   {
+    "size": [
+     7500,
+     5000
+    ],
+    "MP": 37.5,
+    "growMask": {
+     "wall": 419.2,
+     "walls": [
+      419.2,
+      256.5,
+      422.9
+     ],
+     "parts": {
+      "bounds": 69.1,
+      "feature": 36.3,
+      "edt": 118.4,
+      "write": 41.9
+     },
+     "kernels": "rust",
+     "pxCalls": {
+      "dist_transform": 1
+     }
+    },
+    "growMaskBounds": {
+     "wall": 204.9,
+     "walls": [
+      238.6,
+      204.9,
+      204.1
+     ],
+     "parts": {
+      "kernel": 204.7
+     },
+     "kernels": "rust",
+     "pxCalls": {
+      "grow_mask": 1
+     },
+     "bounds": [
+      1106,
+      730,
+      6394,
+      4270
+     ]
+    }
+   },
+   {
+    "size": [
+     10607,
+     7071
+    ],
+    "MP": 75.0,
+    "growMask": {
+     "wall": 564.2,
+     "walls": [
+      588.3,
+      564.2,
+      476.8
+     ],
+     "parts": {
+      "bounds": 156.9,
+      "feature": 65.4,
+      "edt": 233.5,
+      "write": 88.3
+     },
+     "kernels": "rust",
+     "pxCalls": {
+      "dist_transform": 1
+     }
+    },
+    "growMaskBounds": {
+     "wall": 364.3,
+     "walls": [
+      364.3,
+      382.9,
+      363.5
+     ],
+     "parts": {
+      "kernel": 364.1
+     },
+     "kernels": "rust",
+     "pxCalls": {
+      "grow_mask": 1
+     },
+     "bounds": [
+      1572,
+      1041,
+      9035,
+      6030
+     ]
+    }
+   },
+   {
+    "size": [
+     15000,
+     10000
+    ],
+    "MP": 150.0,
+    "growMask": {
+     "wall": 974.9,
+     "walls": [
+      974.9,
+      951.4,
+      1034.7
+     ],
+     "parts": {
+      "bounds": 202.1,
+      "feature": 121.8,
+      "edt": 479.1,
+      "write": 163.1
+     },
+     "kernels": "rust",
+     "pxCalls": {
+      "dist_transform": 1
+     }
+    },
+    "growMaskBounds": {
+     "wall": 734.6,
+     "walls": [
+      723,
+      734.6,
+      769.8
+     ],
+     "parts": {
+      "kernel": 734.3
+     },
+     "kernels": "rust",
+     "pxCalls": {
+      "grow_mask": 1
+     },
+     "bounds": [
+      2231,
+      1480,
+      12769,
+      8520
+     ]
+    }
+   }
+  ],
+  "largest_ok": {
+   "growMask": [
+    15000,
+    10000
+   ],
+   "growMaskBounds": [
+    15000,
+    10000
+   ]
+  },
+  "stopped": {}
+ }
+}

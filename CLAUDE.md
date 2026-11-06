@@ -227,7 +227,14 @@ code.
   no node build (no shipped editor file changed). **Open:** the Store update: `dist/Scumble-0.1.51.msix` with
   `dist/store-listing/whats-new-0.1.51.txt` (written for everything since 0.1.47, the Store's live version; 0.1.48 to
   0.1.50 were never submitted), the user's upload. `main` merged into `wasm-kernels` the same day (`saveExport` keeps
-  K0a's marks: start, pieces, written). **Next: #0 M9 + the second open, then D0.** **Beside it (2026-10-24): CorridorKey 2.0 planned** (item 49,
+  K0a's marks: start, pieces, written). **#0 M9 + the second open done 2026-11-06** (`docs/measurements/m9_2026-11-06/`: K1's defaults hold, keepMB 16 costs
+  nothing on the wand rows, and a second document's open does not pay the 0.4 s shader link, so G6 stays where the user
+  put it). **D0 done 2026-11-06** (`docs/measurements/d0_2026-11-06/`: the PSD reader in the pool job `psd_read`, plain
+  JS; a 15k PSD open blocks the window 1.8 s instead of 11.0 s in the same machine state (baseline 9.0 s), the block
+  left is the file's read into the window, `docs/BUGS.md`). **K5 done** (the selection's combine in Rust, ABI 21, Rust on every row, no route entry: select by depth 1,746 -> 1,205 ms, the wand's window block 329 -> 94 ms at 15k). **Stop 3 done** (#9-#16 re-ranked, nothing measured or asked: K21 up to #9 with K11 after it, K23 ahead of K25, K9 down to #14 before K36 / K37; `docs/PLAN_WASM_BUILD.md` §7). **W1 done** (the PNG writer's filter choice in SIMD lanes, the same bytes: a 15k PNG export 1,899 -> 1,375 ms, an ORA 5,075 -> 3,522 ms, `docs/measurements/w1_2026-11-06/`). **K12 done** (relight's march in stripes, JS only, the same bytes: one light's shadows land 3,545 -> 649 ms after a move at 15k, three lights 3,665 -> 1,031; parallel efficiency one light 0.67, three 0.91, `docs/measurements/k12_2026-11-06/`). **Stop 5 done** (K13 and K14 run in place, the threads spike decided at K14, a new K12b before G6; three questions for the user in the plan's §7 "Stop 5"). **Next: K12b** (the march's stripes no longer ahead of other NORMAL pool work, the drag step's block, the 8-stripes row), then G6. **Merged for 0.1.52 (2026-11-06):** `wasm-kernels` at `2ea002b` (D0, K5, W1, K12, Stop 5) merged on the
+  branch `ck-merge` (worktree `.claude/worktrees/ck-merge`), into `corridorkey` once its CorridorKey workflow ends.
+  **Beside it, all for 0.1.52 on `corridorkey` (2026-11-06):** GPT-Image-2.6 (item 51, branch `gpt26`), P-H3-Image
+  (item 52, branch `ph3`), both merged there. **And (2026-10-24): CorridorKey 2.0 planned** (item 49,
   `docs/PLAN_CORRIDORKEY.md`) on its own branch `corridorkey` off `main` (worktree `.claude/worktrees/corridorkey`),
   released as 0.1.52 on the user's word; next there: I0a (pack A's code check, findings to the user before any install).
   **And (2026-11-06): LoRAs and MOSS Image Edit** (item 50, `docs/PLAN_LORAS.md`, issues #10 / #11) in the same 0.1.52
@@ -779,11 +786,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   anbieter es schon hat und integriere es"): two recipes beside 2.5's on the hosts that list it (OpenAI direct, fal,
   Replicate, WaveSpeed, OpenRouter, ToAPIs; not yet Comfy Cloud, Comfy Router, Oxen, Magnific), a *Complexity* row
   (default high), the size-rule regex of `openai.js` fixed for 2.6, and the stale 2.5 bits (WaveSpeed's mask, fal and
-  Replicate variants); built from docs on the branch `gpt26`, **merged into `corridorkey` 2026-11-06** (`c847c13`). Research in `docs/research/gpt_image_2_6_2026-11-06/` on that branch.
+  Replicate variants); built from docs on the branch `gpt26` (worktree `.claude/worktrees/gpt26`), **merged into `corridorkey` 2026-11-06** (`c847c13`). Research in `docs/research/gpt_image_2_6_2026-11-06/` on that branch.
 - 52: **P-H3-Image** (PrunaAI's 8-step image fine-tune of MiniMax H3; the user, 2026-11-06): a local recipe on the LoRA
   route of Comfy's template (an empty prompt refused since 2026-11-06, `promptRequired`, `564c67f`; the user's `minimax_h3_fl2va_pruned_int8_convrot` plus `p-h3-image_lora_bf16`, the P-H3
   text encoder, VAE and upsampler, **downloaded 2026-11-06 into the user's models folder, sha256 checked**, 16.9 GB), a
-  WaveSpeed variant and a Comfy Cloud variant; built on the branch `ph3` (`docs/PLAN_PH3.md`), **merged into `corridorkey` 2026-11-06** (`72bccbb`); the live run on the user's word. **The MiniMax H3
+  WaveSpeed variant and a Comfy Cloud variant; built on the branch `ph3` (worktree `.claude/worktrees/ph3`, `docs/PLAN_PH3.md` there), **merged into `corridorkey` 2026-11-06** (`72bccbb`); the live run on the user's word. **The MiniMax H3
   Community License excludes the EU, the UK, South Korea and the US** (no use or display of the model or its outputs
   there without MiniMax's separate licence); the user knows and decided to go ahead ("achte nicht auf die license");
   the recipe, RECIPES.md and the manual carry one plain line on it. Research in `docs/research/p_h3_image_2026-11-06/`.

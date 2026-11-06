@@ -1,0 +1,15 @@
+[ok] node: {"checks": 122}
+[ok] setup_a_document_with_layers: {"layers": ["Offset opaque", "Multiply half", "Hidden äöü"]}
+[ok] a_psd_opens_with_its_layers: {"layers": ["Offset opaque", "Multiply half", "Hidden äöü"], "status": "Opened roundtrip.psd: 160 × 100, 3 layers over \"Background\" as the base."}
+[ok] an_ora_opens_with_its_layers: {"layers": ["Offset opaque", "Multiply half", "Hidden äöü"], "status": "Opened roundtrip.ora: 160 × 100, 3 layers over \"Background\" as the base."}
+[ok] a_file_without_a_covering_bottom_opens_over_a_transparent_base: {"psd": ["Corner", "Hidden inside", "Masked"], "ora": ["Corner@3,2 10x8 normal 100", "Right@25,4 6x7 screen 50"], "status": "Opened loose.ora: 40 × 30, 2 layers."}
+[ok] layer_masks_survive_a_psd_round_trip: {"tiles": true, "banded": true, "hidden": 1616, "soft": 1664, "status": "Opened masks_canvas.psd: 120 × 80, 2 layers over \"Background\" as the base. 2 layer masks kept as masks (1 switched off)."}
+[ok] an_ora_bakes_the_enabled_mask_and_leaves_the_switched_off_one: {"worst": 0, "gone": 1616}
+[ok] the_pool_and_the_window_read_a_psd_alike: {"tiles": true, "roundtrip": "4", "loose": "3 masked", "masks_bands": "3 masked", "masks_canvas": "3 masked", "flat": "0 + merged", "deep": "3 masked", "photoshop": "31", "refused": "20000 × 20000 px is larger than a layered file can be opened at (268 MP); save it as PNG", "stopped": "first band, la
+[ok] a_psd_dropped_on_a_document_adds_its_layers: {"added": ["Background", "Offset opaque", "Multiply half", "Hidden äöü"], "status": "4 layers of not_really.png added."}
+[ok] a_broken_file_says_why_and_keeps_the_tab: {"message": "the file ends early (truncated or not a PSD)"}
+[ok] cleanup: true
+  console error: Error: the file ends early (truncated or not a PSD)
+    at InpaintEditor.readPsdOnPool (scumble://app/editor/inpaint_canvas.js:18655:44)
+    at async InpaintEditor.readLayered (scumble://app/editor/inpaint_canvas.js:1854
+PASS

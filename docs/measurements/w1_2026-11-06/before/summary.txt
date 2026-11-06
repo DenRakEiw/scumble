@@ -1,0 +1,57 @@
+W1 baseline (before), 2026-11-06, on 59ff16f (ABI 21; px.wasm 2985f252bebdbbe4, px_scalar.wasm ade55404e282dd7d); 15000 x 10000,
+offline, tiles, every run a fresh instance; three counted runs per row (native r2, r3 and files r2 of the first pass
+ran with the window behind: NOT COUNTED, in notcounted/, run again). The machine's busy lock held for each batch.
+The card held 8.0-8.5 GB at 37-56 % use all through (not ours; ComfyUI on 8188 did not answer). The chain: ../w1_chain.sh.
+
+Medians [min-max] of the three runs (python ../summarize.py before); png_part laps are summed over the pool's workers.
+
+row                                                          before                    
+build_the_file encodeMs                                      2,353 [2,267-2,369]       
+export_png wall                                              1,899 [1,884-1,915]       
+export_png longest block                                     82 [81-103]               
+export_png encoded                                           1,898 [1,883-1,914]       
+export_png png_part filter (summed)                          4,313 [4,142-4,338]       
+export_png png_part deflate (summed)                         7,003 [6,816-7,039]       
+export_png png_part adler (summed)                           194 [181-202]             
+export_png png_part compose (summed)                         1,608 [1,356-1,793]       
+export_png png_part kernel (summed)                          13,885 [13,755-14,254]    
+export_ora wall                                              5,075 [5,020-5,187]       
+export_ora longest block                                     44 [42-47]                
+export_ora encoded                                           5,074 [5,019-5,186]       
+export_ora png_part filter (summed)                          13,162 [13,118-13,710]    
+export_ora png_part deflate (summed)                         15,490 [15,280-15,492]    
+export_ora png_part adler (summed)                           553 [547-580]             
+export_ora png_part compose (summed)                         1,308 [1,269-1,396]       
+export_ora png_part kernel (summed)                          33,152 [32,962-33,882]    
+save_png wall                                                2,565 [2,496-2,664]       
+save_png longest block                                       106 [98-113]              
+save_png encoded                                             1,827 [1,801-1,861]       
+save_png saved                                               737 [695-802]             
+save_png png_part filter (summed)                            4,286 [4,249-4,485]       
+save_png png_part deflate (summed)                           6,856 [6,820-7,121]       
+save_png png_part adler (summed)                             177 [177-192]             
+save_png png_part compose (summed)                           1,294 [1,219-1,372]       
+save_png png_part kernel (summed)                            13,438 [13,309-13,998]    
+tiff own open                                                5,232 [4,611-5,535]       
+tiff own open: stored                                        2,128 [1,734-2,157]       
+tiff own store png_part filter (summed)                      5,701 [4,734-6,347]       
+tiff own store png_part deflate (summed)                     5,176 [4,305-5,789]       
+tiff own export                                              1,864 [1,722-1,980]       
+photo png export wall                                        2,032 [1,941-2,321]       
+photo png export encoded                                     1,461 [1,366-1,744]       
+photo png png_part filter (summed)                           4,841 [3,957-5,925]       
+photo png png_part deflate (summed)                          5,122 [5,053-6,187]       
+photo png png_part adler (summed)                            162 [150-182]             
+photo png png_part kernel (summed)                           11,074 [10,163-13,300]    
+photo tiff export wall                                       1,511 [1,354-1,613]       
+px_bench node: JS / scalar / SIMD ms (4,096 x 256 band)      37.0 / 22.9 / 19.8        
+px_bench electron: JS / scalar / SIMD ms (4,096 x 256 band)  36.0 / 28.1 / 18.7        
+
+Identity: files_15k's photo_15k.png (the 15k photo exported as PNG) is the same file in all three runs,
+184,507,848 bytes, sha256 3cb4f984679ef5eda32eff7ec0812838f28f4740f7304cf51771ca947c7ecea6: the after-runs must give it.
+native save_png's n1.png (246,538,165 bytes) differs from run to run of this one build (r1 f17376cf..., r2 58640ffe...,
+r3 18e25c64...; the first pass's unfocused r2 b9e050d8..., r3 c0ae1f2d...): not an identity check.
+
+What W1 can move (inferred): the filter lap, 4,313 of export_png's 13,885 ms summed (31 %), 13,162 of export_ora's
+33,152 (40 %), 5,701 of the TIFF store's png_part, 4,841 of the photo's. The walls are the pool's: about 8 workers, so
+a lap of 4.3 s summed is about 0.55 s of export_png's 1,899 wall at most.

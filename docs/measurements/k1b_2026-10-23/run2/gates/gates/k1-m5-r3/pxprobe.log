@@ -1,0 +1,15 @@
+-- cold calls, rotation 3 (CAB) ...
+
+== cold calls (M5, rotation 3: CAB), flood_shape 2048^2, mip_chain 256^2  (window focused True, visible, 24 logical cores)
+  window      flood_shape: W0 call 0 54.1 ms, calls 2-4 median 26.9 ms (2.01x); call 1 30.1 ms; 4194304 pixels in the region, instance 25.2 MB
+  C bytes     flood_shape: call 0 38.9 ms, rest median 24.0 ms (1.62x)  (compile 0.3, instantiate 0.1 ms)  first reply after 121 ms, instance 25.2 MB
+              mip_chain: call 0 0.4 ms, rest median 0.1 ms (3.79x)  (compile 0.3, instantiate 0.1 ms)
+  A thread    flood_shape: call 0 24.3 ms, rest median 24.0 ms (1.01x)  first reply after 101 ms, instance 25.2 MB
+              mip_chain: call 0 0.4 ms, rest median 0.1 ms (3.85x)
+  B posted    flood_shape: call 0 24.5 ms, rest median 24.3 ms (1.01x)  (instantiate 0.1 ms)  first reply after 103 ms, instance 25.2 MB
+              mip_chain: call 0 0.2 ms, rest median 0.1 ms (2.00x)  (instantiate 0.2 ms)
+  hint (this instance only; M5's verdict takes the three rotations):
+    flood_shape: A 1.01x, B 1.01x, C 1.62x of their warm calls -> A0 ~ B0 ~ warm: V8 shares code across isolates (posting a module saves only compile; no warm-up needed)
+    mip_chain:   A 3.85x, B 2.00x, C 3.79x of their warm calls -> A0 ~ C0 (cold), B0 ~ warm: sharing only when the Module is posted (candidate: post the window's Module)
+
+PASS

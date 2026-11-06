@@ -1,0 +1,116 @@
+K5 of docs/PLAN_WASM_BUILD.md (§4.3; §7 "The order after Stop 1" #3): the baseline, the app's code at 4bfdd74 (ABI 20).
+2026-11-06 04:43-04:58, branch wasm-kernels at 4bfdd74, 15000 x 10000, --offline (--no-comfy), tiles, every tool on a
+fresh instance with its own profile, three rounds (r1-r3). The chain: ../k5_chain.sh, its log chain.log; the rows:
+../summarize.py, its output summary_rows.txt (medians of the three runs, (min-max) their spread).
+The machine: K5's lock (machine_busy.lock) held from 04:43:47 (after 1.5 min waiting for another agent's instance on
+9573) to 04:58:28; the card at 4.4-5.5 GB used; ComfyUI not running (8188 refused). px_jobs r1's first try was NOT
+COUNTED (the window behind) and counted on its second; every counted px_jobs run focused and visible, PASS.
+
+**px_jobs r2 does not count.** The app loaded the tree's code at 4bfdd74 in every run (its runtime files were not
+touched before the after-runs), but the CPU was not idle in r2: it ran 04:50:30-04:52:42 while this session's own cargo
+build wrote both wasm targets (px.wasm 04:51:18, px_scalar.wasm 04:51:21; sel.rs and lib.rs written 04:51:00-04:51:15).
+r2 is the high run on wand_band, wand_add, grow, shrink and range_luma. Its file is kept as
+json/overlap_pxjobs_r2.jsonl (and pxjobs/r2.log); a clean fourth run, r4, takes its place in the px_jobs medians:
+2026-11-06 06:27-06:33 under the lock, from a tree exported at 4bfdd74 (git archive, node_modules a junction), the same
+--split --only list, the card at 2.7-3.0 GB, two tries NOT COUNTED (the window behind) and the third counted (chain_r4.log,
+pxjobs/r4.log, json/pxjobs_r4.jsonl). r4 ran in the after-runs' machine state (the card at 2.7-4.0 GB) and is the low run
+on most rows, so the before medians below are r1, r3 and r4. native_test, selection_test and the perf gate are r1-r3 as
+taken (none of them overlapped the build: native r2 04:50:00-04:50:25, selection r2 from 04:52:47).
+
+What K5 is held to (the after-runs repeat this chain; the rows the plan names, §4.3 "Measure"):
+- native_test, profiled (the window's self time): wand_whole_picture wall 1,088 / blk 329 with combineRows 193 + read 55
+  + combine 38 + allocTileBytes 62; wand_whole_add 1,118 / 425 with combineRows 262 + read 56 + mul255 32; invert
+  230 all blocking (tileExtent 41); grow_16 589 / 82, shrink_16 330 / 24, wand_one_disc 77 / 32.
+- selection_test: range depth 1,746 ms, the window's combine 1,367; range luma 2,711, combine 1,149 (read 830).
+- the perf gate (blocked [wall]): wand band 1,007 [7,124], object 164 [242], masked layer 201 [294]; invert 264.
+- px_jobs (the legacy kernels flip; "rust" is the app's default; r1, r3, r4): wand_band rust 1,984 / js 3,114,
+  wand_object 124 / 128, wand_add 2,057 / 3,231, range_depth 1,230 / 1,275, range_depth_snap 2,736 / 2,769,
+  range_luma 2,565 / 4,491, invert 200 / 199, grow 335 / 733, shrink 337 / 796. The combine is the same JS in both arms
+  here (no kernel yet).
+These rows' spreads are wide; compare the after-runs median against median, with the spread, never one run.
+
+== before
+
+native_test, 3 runs: wall | longest block | window self time of the combine's functions
+  grow_16              wall 589 (501-710) | blk 82 (69-82)
+     tileExtent 16 (14-18); writable 2 (1-4); _in 0 (0-1); _out 0 (0-2)
+  shrink_16            wall 330 (315-488) | blk 24 (23-29)
+     tileExtent 15 (12-19); writable 4 (1-5); _in 1 (0-1); _out 0 (0-1)
+  invert               wall 230 (227-289) | blk 230 (227-289)
+     tileExtent 41 (34-52); tileEmpty 9 (8-10); writable 18 (11-21); allocTileBytes 0 (0-1); _in 0 (0-1); _out 1 (0-1)
+  wand_whole_picture   wall 1,088 (1,056-1,408) | blk 329 (328-475)
+     combineRows 193 (172-261); read 55 (40-80); combine 38 (35-53); tileExtent 16 (16-17); tileEmpty 1 (0-2); allocTileBytes 62 (60-90)
+  wand_whole_add       wall 1,118 (1,060-1,414) | blk 425 (424-561)
+     combineRows 262 (261-338); read 56 (51-66); mul255 32 (30-56); combine 28 (27-32); tileExtent 19 (16-21); tileEmpty 1 (0-2); writable 14 (13-18); allocTileBytes 46 (36-67); _in 0 (0-1); _out 0 (0-1)
+  wand_one_disc        wall 77 (69-78) | blk 32 (30-33)
+     combineRows 4 (2-4); read 5 (4-7); combine 5 (3-5); tileExtent 2 (1-2); tileEmpty 1 (0-1); _in 0 (0-1); _out 0 (0-1)
+
+selection_test 15k range cases: selectRange ms | the window's combine (marks' combineMs) | readMs
+  range depth ms 1,746 (1,190-1,770) | combine 1,367 (900-1,382) | read 0 (0-0)
+  range luma  ms 2,711 (1,876-3,252) | combine 1,149 (813-1,299) | read 830 (570-998)
+
+perf gate (blocked [wall], ms)
+  grow +16                         78 (72-79) [682 (613-727)]
+  shrink -16                       66 (45-66) [390 (384-518)]
+  invert                           264 (244-322) [260 (241-319)]
+  magic wand (whole-image band)    1,007 (721-1,082) [7,124 (6,440-7,125)]
+  magic wand (an object)           164 (142-177) [242 (217-264)]
+  magic wand, a masked layer       201 (182-206) [294 (278-305)]
+
+px_jobs (tools/ab_median.py over json/pxjobs_r*.jsonl)
+
+== 15000x10000  (3 runs kept: pxjobs_r1.jsonl:1, pxjobs_r3.jsonl:1, pxjobs_r4.jsonl:1; key wall; kernel row px_jobs.py's kernel parts, both arms; split every export + copyIn)
+  grow
+    js   per run 687.7 855.6 732.6              | median    732.6 | spread    167.9
+    rust per run 330.4 362.9 335.2              | median    335.2 | spread     32.5
+    round 0 (cold) js 661.7 / rust 538.1; kernel row js 611.0 / rust 201.4 (kernel + edt + bounds + feature + write + resultBounds)
+    split (explains, does not decide; every export): js jobs 0.0 + copyIn 0.0, window 0.0 + copyIn 0.0 | rust jobs 180.6 + copyIn 12.1, window 0.3 + copyIn 0.3
+    verdict: rust (its median lower by 397.5, beyond the spread 167.9)
+  shrink
+    js   per run 795.8 964.0 604.9              | median    795.8 | spread    359.1
+    rust per run 369.3 337.4 307.9              | median    337.4 | spread     61.3
+    round 0 (cold) js 710.6 / rust 316.0; kernel row js 550.7 / rust 174.1 (kernel + edt + bounds + feature + write + resultBounds)
+    split (explains, does not decide; every export): js jobs 0.0 + copyIn 0.0, window 0.0 + copyIn 0.0 | rust jobs 163.3 + copyIn 5.1, window 0.3 + copyIn 0.3
+    verdict: rust (its median lower by 458.4, beyond the spread 359.1)
+  wand_band
+    js   per run 3534.4 3114.3 2980.8           | median   3114.3 | spread    553.6
+    rust per run 2139.2 1983.7 1769.1           | median   1983.7 | spread    370.2
+    round 0 (cold) js 4181.3 / rust 1948.1; kernel row js 1631.9 / rust 844.4 (flood + clip + bounds + shape)
+    split (explains, does not decide; every export): js jobs 0.0 + copyIn 0.0, window 0.0 + copyIn 0.0 | rust jobs 558.6 + copyIn 86.1, window 0.5 + copyIn 0.3
+    verdict: rust (its median lower by 1130.7, beyond the spread 553.6)
+  wand_object
+    js   per run 128.2 127.5 118.2              | median    127.5 | spread     10.0
+    rust per run 127.0 123.9 107.7              | median    123.9 | spread     19.3
+    round 0 (cold) js 128.2 / rust 120.2; kernel row js 19.3 / rust 7.8 (flood + clip + bounds + shape)
+    split (explains, does not decide; every export): js jobs 0.0 + copyIn 0.0, window 0.0 + copyIn 0.0 | rust jobs 3.7 + copyIn 1.8, window 0.2 + copyIn 0.3
+    verdict: rust (inside the spread 19.3; the kernel row faster (7.8 against 19.3))
+  wand_add
+    js   per run 3231.0 3234.5 2950.4           | median   3231.0 | spread    284.1
+    rust per run 2074.9 2056.5 1930.1           | median   2056.5 | spread    144.8
+    round 0 (cold) js 3984.5 / rust 2056.5; kernel row js 1844.9 / rust 867.5 (flood + clip + bounds + shape)
+    split (explains, does not decide; every export): js jobs 0.0 + copyIn 0.0, window 0.0 + copyIn 0.0 | rust jobs 565.6 + copyIn 97.9, window 0.5 + copyIn 0.3
+    verdict: rust (its median lower by 1174.4, beyond the spread 284.1)
+  invert
+    js   per run 205.2 196.8 199.2              | median    199.2 | spread      8.4
+    rust per run 200.5 199.9 196.7              | median    199.9 | spread      3.8
+    round 0 (cold) js 196.8 / rust 196.7; kernel row js - / rust - (no kernel parts in px_jobs.py)
+    split (explains, does not decide; every export): js jobs -, window 0.0 + copyIn 0.0 | rust jobs -, window 0.6 + copyIn 0.3
+    verdict: twin (inside the spread 8.4; no kernel row to break the tie)
+  range_depth
+    js   per run 1323.7 1274.6 809.2            | median   1274.6 | spread    514.5
+    rust per run 1327.2 1230.2 1172.1           | median   1230.2 | spread    155.2
+    round 0 (cold) js 1274.6 / rust 1230.2; kernel row js - / rust - (no kernel parts in px_jobs.py)
+    split (explains, does not decide; every export): js jobs 0.0 + copyIn 0.0, window 0.0 + copyIn 0.0 | rust jobs 0.0 + copyIn 0.0, window 5.5 + copyIn 1.6
+    verdict: twin (inside the spread 514.5; no kernel row to break the tie)
+  range_depth_snap
+    js   per run 2768.5 2797.6 2240.8           | median   2768.5 | spread    556.7
+    rust per run 2736.3 2790.8 2356.0           | median   2736.3 | spread    434.8
+    round 0 (cold) js 2768.5 / rust 2622.9; kernel row js - / rust - (no kernel parts in px_jobs.py)
+    split (explains, does not decide; every export): js jobs 0.0 + copyIn 0.0, window 0.0 + copyIn 0.0 | rust jobs 0.0 + copyIn 0.0, window 8.4 + copyIn 3.0
+    verdict: twin (inside the spread 556.7; no kernel row to break the tie)
+  range_luma
+    js   per run 4490.6 4533.0 3638.3           | median   4490.6 | spread    894.8
+    rust per run 2565.2 2861.0 2549.4           | median   2565.2 | spread    311.7
+    round 0 (cold) js 4085.0 / rust 2465.9; kernel row js - / rust - (no kernel parts in px_jobs.py)
+    split (explains, does not decide; every export): js jobs 0.0 + copyIn 0.0, window 0.0 + copyIn 0.0 | rust jobs 307.2 + copyIn 213.5, window 5.2 + copyIn 3.2
+    verdict: rust (its median lower by 1925.4, beyond the spread 894.8)

@@ -23,6 +23,28 @@ time. "its landings" under invert counts the colour matches and filter passes th
 while those chains landed; its bracket is the longest block from the end of the operation until they
 had landed, whatever held the window: it includes the selection's background encode and any other
 timer of that window, not only the landings and their draws.
+
+With --filter=relight (and its depth map, --map=WxH, 4096x2731 by default) the run ends with relight's own rows
+(docs/PLAN_WASM_BUILD.md §4.5, K0b), after every row above so they stay comparable with runs before them: one light
+moved and three lights moved as a release does them, a drag step's quick map, a pan at 1:1 while the full march of a
+moved light runs, and the first march of the document (the one the setup starts; cold only for the first size of a
+fresh instance, and the rows above ran meanwhile). Each is timed from the window's relight_maps marks of its kind (full,
+or quick for the drag step; start to the end of the last march, InpaintEditor.stepMarks) and waits on
+ed.relightMarching(), with a 120 s limit:
+
+    python tools/perf_test.py 15000x10000 --filter=relight --map=4096x2731
+
+K12 (docs/PLAN_WASM_BUILD.md §4.5) adds to a relight run: the stripes of each row's marches [stripes, workers], their
+kernel ms, each worker's first stripe against its later ones, the other pool jobs and mip chains of the row, and the
+parallel efficiency of the named row and of the same march again [the one-job route's summed kernel ms / (workers x the
+stripes' wall), the stripes' summed kernel ms / (workers x the wall)]; the same marches on the route `relightStripes` 0
+(one job a light, as before K12; skipped by a build without the route); a whole change at 1:1 with no march in flight
+against the same change while a three-light march runs (the mips the frame asks for wait behind the marches' jobs);
+eight small NORMAL jobs posted during a three-light march (what a transform's rows wait for); and a light made a sun
+(the Rust sun, its depth map resident in the workers). The whole-change rows above run with the paint layer active and
+the paint tool once the setup's marches have landed (their state printed with them), and the lights overlay's read of
+the picture below after a whole change has a row of its own. A run whose window was not focused and visible at its
+start or end prints NOT COUNTED and exits 2.
 """
 import asyncio
 import json
@@ -46,6 +68,7 @@ SETUP = """
 BENCH = """
 (async () => {
     const W = %(w)d, H = %(h)d;
+    const focusAtStart = [document.hasFocus(), document.visibilityState];
     const shell = window.__perf.shell;
     const before = window.editor;
     const ed = shell.newDocument();
@@ -114,6 +137,15 @@ BENCH = """
     const fx = ed.addFilterLayer(FILTERS[chosenFilter] ? chosenFilter : (FILTERS["film.look"] ? "film.look" : "grain"));
     if (%(limit_obj)s) {
         fx.params = { ...fx.params, limit: %(limit_obj)s };
+        ed.markFilterChanged(fx);
+    }
+    // relight without lights renders nothing (the filter skips it; N3's 15k rows were taken so): two point lights and a
+    // spot, the "Cyberpunk neon" preset placed on this picture, so the shadow march and the shading run (W0, 2026-10-23).
+    // The relight rows at the end read the marks of the march this starts (the first one of the document) from here on.
+    const relightSince = performance.now();
+    if (chosenFilter === "relight" && fx && fx.filter === "relight") {
+        const { applyLightPreset } = await import("./editor/inpaint_relight.js");
+        fx.params = { ...fx.params, lights: applyLightPreset("cyberpunk_neon", { width: W, height: H }) };
         ed.markFilterChanged(fx);
     }
     const fxId = fx && fx.filter;
@@ -225,6 +257,25 @@ BENCH = """
         // again. The operation itself (the band copies of a flip) is not timed: the rows are the frame after it, which
         // markLayerChanged, the layer list and the draw make, as flipLayer runs them.
         const target = ed.layers.find((l) => l.kind === "paint");
+        // K12 (docs/PLAN_WASM_BUILD.md §7 K0c, "Rows to pin"): in a relight run addFilterLayer leaves the relight layer
+        // active with the lights tool, so every draw runs drawLightsOverlay -> ownLightPos -> belowStats, which after a
+        // whole change of a layer below reads the whole picture at 256 px on this thread (2,360 mip chains, about 420 ms
+        // at 15k). Whether that read fell into the timed frame or into a draw during the 30 ms wait before it (a march's
+        // landing asks for one) decided the rows: 62 / 60 / 483 ms and 16 / 16 / 2,376 chains in W0b, the 192 px rows
+        // 422 / 0.4 / 425. So in a relight run these rows run as in any other run: the paint layer active, the paint tool,
+        // and only once the setup's marches have landed (marches in flight and below stats redone printed per row); the
+        // overlay's read has a row of its own (whole_1to1_lights) that always pays it.
+        const relightRun = fxId === "relight";
+        const toolWas = ed.tool, activeWas = ed.activeLayerId;
+        const marchesNow = () => (typeof ed.relightMarching === "function" ? ed.relightMarching() : 0);
+        if (relightRun) {
+            const q0 = performance.now();
+            while (marchesNow() > 0 && performance.now() - q0 < 120000) await new Promise((r) => setTimeout(r, 20));
+            out.whole_quiet = [+(performance.now() - q0).toFixed(1), marchesNow()];   // [waited for the setup's marches, still in flight]
+            ed.setTool("paint");
+            ed.activeLayerId = target.id;
+        }
+        const belowNow = () => ed.layers.map((l) => l._bstats);
         const settleNow = () => {   // the benchmark's settle, without the paint layer's canvasOf (a mirror on tiles)
             const { canvasOf } = window.__perf.pixels;
             for (const c of [canvasOf(ed.sel), ed.viewCanvas, ed.sceneCanvas, ed.canvas]) { try { if (c) c.getContext("2d").getImageData(0, 0, 1, 1); } catch (_) { /* no 2D context */ } }
@@ -236,19 +287,25 @@ BENCH = """
             setTimeout(tick, 1);
             return () => { stop = true; return +most.toFixed(1); };
         };
-        const replaced = async (label) => {
+        // K12: the change and its frame in one task. With the 30 ms wait between them (before K12) a draw queued by the row
+        // before (a landing's drawSoon) could run in the wait, see the new pixels first and ask for their chains, so the
+        // timed frame asked none (0 of 2,344 in a debug run of the during-a-march row): the wait now comes before the change
+        const T = await import("./editor/inpaint_tiles.js");
+        const replaced = async (label, before = null) => {
             await ed.mipsSettled(); ed.sceneSig = null; ed.draw(); settleNow();
+            await new Promise((r) => setTimeout(r, 30));
             ed.pushUndo({ kind: "layerfull", id: target.id });
             if (ed.tileMode) target.px = ed.turnedTilePixels(target.px, "h");
             else { const c = target.px.toCanvas(), f = document.createElement("canvas"); f.width = c.width; f.height = c.height; const x = f.getContext("2d"); x.translate(c.width, 0); x.scale(-1, 1); x.drawImage(c, 0, 0); target.px = ed.pixels.Layer.fromCanvas(f); f.width = 1; c.width = 1; }
-            await new Promise((r) => setTimeout(r, 30));
-            const T = await import("./editor/inpaint_tiles.js");
+            if (before) before();
+            const b0 = belowNow(), m0 = marchesNow();
             T.chainStats(true);
             const t0 = performance.now();
             ed.markLayerChanged(target);
             ed.renderLayers();
             ed.draw();
             out[label] = [+(performance.now() - t0).toFixed(1), +(performance.now() - t0).toFixed(1)];
+            out[label + "_state"] = [ed.layers.filter((l, i) => l._bstats !== b0[i]).length, m0];   // [below stats redone in the frame, marches in flight]
             const cs = T.chainStats();
             out[label + "_chains"] = [cs.main + cs.thumb, cs.requested];   // built on this thread in the frame (kept + thumbnail scratch), asked of the worker
             // settled: from the end of the frame until no chain is on its way (the landings' own tasks and frames
@@ -315,6 +372,15 @@ BENCH = """
             await sample("panel_flatten_sync", async () => ed.sampleRegion("image", [0, 0, W, H], scale, { forRun: true }));
             await sample("panel_flatten_settled", async () => ed.sampleRegionSettled("image", [0, 0, W, H], scale, { forRun: true }));
         }
+        // the lights overlay's read (see relightRun above), always in the frame: the relight layer active with the lights
+        // tool, as addFilterLayer leaves it, and its below stats dropped right before the frame (a draw during the wait
+        // would have taken them)
+        if (relightRun && fxLayer) {
+            ed.setTool("lights");
+            ed.activeLayerId = fxLayer.id;
+            await replaced("whole_1to1_lights", () => { fxLayer._bstats = null; });
+        }
+        if (relightRun) { ed.setTool(toolWas); ed.activeLayerId = activeWas; }
         if (fxLayer) fxLayer.visible = true;
         for (const l of matched) l.visible = true;
     }
@@ -676,6 +742,7 @@ BENCH = """
         masked.maskPx = null; ed.markLayerChanged(masked);
     }
 
+    // read before the relight rows below, so a relight run's figures stay comparable with the runs before K0b
     let mem = null;
     try { mem = Math.round((await performance.measureUserAgentSpecificMemory()).bytes / 1048576); } catch (_) { /* needs isolation */ }
 
@@ -688,9 +755,343 @@ BENCH = """
         regions: rep.tiles.regions || 0, regionMB: +((rep.tiles.regionBytes || 0) / 1048576).toFixed(1),
         pyramidMB: +(rep.pyramid.bytes / 1048576).toFixed(1),
     } : null;
+
+    // --- K0b (docs/PLAN_WASM_BUILD.md 4.5): relight's shadow march, after every row above so it moves none of them --------
+    // Only with --filter=relight. A row moves lights as a release (or a drag step) does and waits until the layer's last
+    // march has answered: [the longest block of the window from the change on, its own frame included; the shadows landed:
+    // the relight_maps marks of the row's kind (full, or quick for the drag step) from start to the end of the last march,
+    // its write included]; "_marches" [marches posted, the slowest one's post to answer]. The pan row pans at 1:1, paced
+    // like a display, while the full march of a moved light runs. The first-march row reads the marks of the march the
+    // setup started (cold for the first size of a fresh instance); the rows above ran meanwhile and nothing probed the
+    // window, so it has no block. A build without the marks gets the window's own poll as the wall (a note says so).
+    if (fxId === "relight") {
+        const E = ed.constructor;
+        const notes = [];
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const LIMIT = 120000;
+        const hasMarks = typeof E.stepMarks === "function";
+        const marksIn = (since, until = Infinity) => (hasMarks ? E.stepMarks(false) : []).filter((m) => m.op === "relight_maps" && m.t >= since && m.t <= until);
+        // the relight_shadow marches in flight (a build without the counter: every relight job the editor waits for)
+        const marching = () => (typeof ed.relightMarching === "function" ? ed.relightMarching() : (ed._relightPending ? ed._relightPending.size : 0));
+        // when no march was on its way, seen twice 50 ms apart (a landing's redraw may ask for another): that first time,
+        // or null at the limit
+        const quiet = async (t0 = performance.now()) => {
+            for (;;) {
+                if (marching() === 0) {
+                    const at = performance.now();
+                    await sleep(50);
+                    if (marching() === 0) return at;
+                } else if (performance.now() - t0 > LIMIT) return null;
+                else await sleep(5);
+            }
+        };
+        // one run of the marches of one kind (quick or full) since `since`: from its first start to the end of its last
+        // march. A march ends at its landing, or at the idle mark right after it when it was the last one in flight (the
+        // idle comes after the channel's write, which is most of a landing at 15k). `own` takes only the first start's
+        // marches (its first `lights` landings of that kind). `other`: the marches of the other kind that started
+        // meanwhile (a pass of the other kind during the row; not counted, a note says so); `again`: later starts of the
+        // same kind before the run's last landing.
+        const runOf = (since, quick, { own = false } = {}) => {
+            const marks = marksIn(since);
+            const start = marks.find((m) => m.step === "start" && !!m.quick === quick);
+            if (!start) return null;
+            const after = marks.filter((m) => m.t >= start.t);
+            let landed = after.filter((m) => m.step === "landed" && !!m.quick === quick);
+            if (own) landed = landed.slice(0, Number(start.lights) || 0);
+            const last = landed[landed.length - 1];
+            const next = last ? after[after.indexOf(last) + 1] : null;
+            const end = last ? (next && next.step === "idle" ? next.t : last.t) : null;
+            const starts = after.filter((m) => m.step === "start" && (!last || m.t <= last.t));
+            const same = starts.filter((m) => !!m.quick === quick);
+            const lights = (ms) => ms.reduce((a, m) => a + (Number(m.lights) || 0), 0);
+            return {
+                ms: end != null ? +(end - start.t).toFixed(1) : null,
+                posted: own ? Number(start.lights) || 0 : lights(same),
+                slowest: landed.length ? +Math.max(...landed.map((m) => Number(m.ms) || 0)).toFixed(1) : null,
+                other: lights(starts.filter((m) => !!m.quick !== quick)),
+                again: same.length - 1,
+            };
+        };
+        // the wall of a row: its marks, else the poll from the change until no march was on its way
+        const wallOf = (key, run, since, at) => {
+            if (run && run.ms != null) return run.ms;
+            if (at == null) { notes.push(`${key}: still marching after ${LIMIT / 1000} s`); return null; }
+            notes.push(!hasMarks ? `${key}: no step marks in this build: the poll's wall`
+                : run ? `${key}: no landing mark: the poll's wall` : `${key}: no relight_maps start mark (no march posted?): the poll's wall`);
+            return +(at - since).toFixed(1);
+        };
+        const otherNote = (key, run, quick) => {
+            if (run && run.other) notes.push(`${key}: ${run.other} ${quick ? "full" : "quick"} march(es) started meanwhile, not counted (the block and the poll include them)`);
+        };
+        // the first march of the document: the setup's full march, from its start to the end of its own landings. The
+        // filter slider row above sets the preview, so quick marches of the same lights run beside it (not counted).
+        {
+            const run = runOf(relightSince, false, { own: true });
+            out.relight_first = run && run.ms != null ? [null, run.ms] : null;
+            out.relight_first_marches = run ? [run.posted, run.slowest] : null;
+            if (!run) notes.push("first march: no full relight_maps start since the setup");
+            else if (run.ms == null) notes.push("first march: none of its marches landed");
+            else if (run.again > 0) notes.push("first march: another full march started before its own had landed (the wall may hold its landings)");
+        }
+        const lightsNow = () => (fx.params && Array.isArray(fx.params.lights) ? fx.params.lights : []);
+        const dx = Math.max(8, Math.round(W / 50)), dy = Math.max(8, Math.round(H / 50));
+        // the lights `which` moved by (mx, my), their aim with them (a move drag's step), as a new params object
+        const moved = (which, mx, my) => {
+            fx.params = { ...fx.params, lights: lightsNow().map((l, i) => (which.includes(i)
+                ? { ...l, x: l.x + mx, y: l.y + my, ...(Array.isArray(l.aim) ? { aim: [l.aim[0] + mx, l.aim[1] + my] } : {}) } : l)) };
+        };
+        // what a light drag's pointer-up runs, and what one of its steps runs
+        const release = () => { ed.filterPreview = null; ed.ensureRelightMaps(fx, { quick: false }); ed.markFilterChanged(fx); ed.renderLayers(); ed.draw(); };
+        const dragStep = () => { ed.filterPreview = fx.id; ed.ensureRelightMaps(fx, { quick: true }); ed.markFilterChanged(fx, { soon: true }); };
+        const calm = async () => {   // the row before has landed: its marches, its chains, its GPU work
+            await ed.mipsSettled();
+            if ((await quiet()) == null) notes.push("a march was still on its way before a row, after the limit");
+            await ed.mipsSettled();
+            await sleep(60);
+            settle(false);   // the canvases there are; no display mirror made for it
+            await sleep(30);
+        };
+        // K12: the route `relightStripes` (px/kernels.js), when this build has it; 0 is one job a light (before K12)
+        const hasStripes = !!(E.routes && Object.prototype.hasOwnProperty.call(E.routes, "relightStripes")) || (() => {
+            try { E.setRoute("relightStripes", null); return true; } catch (_) { return false; }
+        })();
+        const relightJobs = await import("./editor/inpaint_jobs.js");
+        const relightTiles = await import("./editor/inpaint_tiles.js");
+        const relightPool = () => relightJobs.editorPool();
+        const median = (a) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
+        const relightRow = async (key, quick, fn, stripes = undefined) => {
+            await calm();
+            if (stripes !== undefined) E.setRoute("relightStripes", stripes);
+            try {
+                if (typeof E.jobTimings === "function") E.jobTimings(true);
+                const runs0 = relightPool().stats().run;
+                relightTiles.chainStats(true);
+                const since = performance.now();
+                const done = probe();
+                fn();
+                const at = await quiet(since);
+                const blocked = done();
+                const run = runOf(since, quick);
+                const wall = wallOf(key, run, since, at);
+                out[key] = [blocked, wall];
+                out[key + "_marches"] = run ? [run.posted, run.slowest] : null;
+                otherNote(key, run, quick);
+                // the marches' jobs (a K12 worker answers each with its timing; an older one with none): [jobs, workers],
+                // and [the summed kernel ms, the kernel ms of the slowest job]
+                const tm = (typeof E.jobTimings === "function" ? E.jobTimings(true) : []).filter((t) => t && t.op === "relight_shadow");
+                // what else ran meanwhile (K12's review: the named rows' stripes ran slower than the same march again):
+                // [other pool jobs queued in the row, mip chains built on this thread, mip chains asked of the workers]
+                const cs = relightTiles.chainStats();
+                out[key + "_others"] = [relightPool().stats().run - runs0 - tm.length, cs.main + cs.thumb, cs.requested];
+                if (tm.length) {
+                    const workers = new Set(tm.map((t) => (t.pool ? t.pool.worker : 0))).size;
+                    const busy = tm.reduce((a, t) => a + (Number(t.kernel) || 0), 0);
+                    out[key + "_stripes"] = [tm.length, workers];
+                    out[key + "_kernel"] = [+busy.toFixed(1), +Math.max(...tm.map((t) => Number(t.kernel) || 0)).toFixed(1)];
+                    // busy share: the summed kernel ms over the workers' time across the row's wall
+                    if (wall) out[key + "_busy"] = +(busy / (workers * wall)).toFixed(3);
+                    out[key + "_workers"] = workers;
+                    // [the median kernel ms of each worker's first stripe in the row, of its later ones] (a warm-up shows as
+                    // a first stripe slower than the rest; a slowdown of the whole row as both)
+                    const byWorker = new Map();
+                    for (const t of tm) {
+                        const n = t.pool ? t.pool.worker : 0;
+                        if (!byWorker.has(n)) byWorker.set(n, []);
+                        byWorker.get(n).push(Number(t.kernel) || 0);
+                    }
+                    const firsts = [...byWorker.values()].map((a) => a[0]), later = [...byWorker.values()].flatMap((a) => a.slice(1));
+                    out[key + "_first"] = [+median(firsts).toFixed(1), later.length ? +median(later).toFixed(1) : null];
+                    // the kernels the stripes ran (the worker's timing: "js" for the twin, the Rust build for a sun)
+                    const kinds = [...new Set(tm.map((t) => String(t.kernels)))];
+                    if (kinds.some((k) => k !== "js")) notes.push(`${key}: its jobs ran ${kinds.join(", ")}`);
+                }
+            } finally {
+                if (stripes !== undefined) E.setRoute("relightStripes", null);
+            }
+        };
+        // the parallel efficiency of the stripes: [the serial work (the one-job route's summed kernel ms) / (the stripes'
+        // workers x the stripes' wall), the stripes' busy share], and the stripes' summed kernel ms over the one-job
+        // route's (their overhead in compute; above 1 also when the workers slow each other down)
+        const efficiency = (key, jobKey) => {
+            const a = out[key], wk = out[key + "_workers"], ka = out[key + "_kernel"], kb = out[jobKey + "_kernel"];
+            if (!a || !a[1] || !wk || !kb || !kb[0]) return;
+            out[key + "_eff"] = [+(kb[0] / (wk * a[1])).toFixed(3), out[key + "_busy"] ?? null];
+            if (ka) out[key + "_overhead"] = +(ka[0] / kb[0]).toFixed(3);
+        };
+        ed.activeLayerId = fx.id;   // the layer whose lights a user drags, its handles shown
+        ed.renderLayers();
+        ed.fitView(); ed.sceneSig = null; ed.draw();
+        const all = lightsNow().map((_, i) => i);
+        // K12's A/B of the same work: the channels' keys dropped, so the lights march again where the row before left them,
+        // once on the route relightStripes 0 (one job a light) and once on the build's own stripes, in that order
+        const again = (which) => () => {
+            const vis = fx._relight && fx._relight.vis;
+            if (vis && Array.isArray(vis.keys)) for (const i of which) vis.keys[i] = null;
+            release();
+        };
+        // the efficiency of both stripes rows against the same one-job march: the named row (the light moved: what a release
+        // waits for, the figure Stop 5's q6.7 reads) and the row that marches the same light again unchanged (the march alone)
+        await relightRow("relight_one", false, () => { moved([0], dx, 0); release(); });
+        if (hasStripes) {
+            await relightRow("relight_one_job", false, again([0]), 0);
+            await relightRow("relight_one_rep", false, again([0]));
+            efficiency("relight_one", "relight_one_job");
+            efficiency("relight_one_rep", "relight_one_job");
+        }
+        await relightRow("relight_three", false, () => { moved(all.slice(0, 3), 0, dy); release(); });
+        if (hasStripes) {
+            await relightRow("relight_three_job", false, again(all.slice(0, 3)), 0);
+            await relightRow("relight_three_rep", false, again(all.slice(0, 3)));
+            efficiency("relight_three", "relight_three_job");
+            efficiency("relight_three_rep", "relight_three_job");
+        }
+        await relightRow("relight_quick", true, () => { moved([Math.min(1, all.length - 1)], -dx, 0); dragStep(); });
+        release();   // the drag's end: the full march of where it left the light, not timed
+        // pan at 1:1 while a full march runs: [median frame, worst frame]; frames [start..idle]; the longest block of the
+        // window meanwhile (the landings and their redraws between the frames) [mip chains built on this thread]. The light
+        // moved is a point light: a spot's march ends in a sixth of the time (33 against 200 ms at 2048 x 1152, a 1024 map).
+        {
+            await calm();
+            ed.view.scale = 1; ed.view.angle = 0; ed._fitted = false;
+            ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
+            ed.sceneSig = null; ed.draw();
+            await calm();
+            ed.sceneSig = null; ed.draw(); ed.draw();
+            const T = await import("./editor/inpaint_tiles.js");
+            T.chainStats(true);
+            const since = performance.now();
+            const done = probe();
+            moved([Math.max(0, lightsNow().findIndex((l) => l.type === "point"))], dx, 0);
+            release();   // the change's own frame, not a pan frame
+            const ts = [];
+            let at = null;
+            for (let i = 0; performance.now() - since < LIMIT; i++) {
+                await sleep(16);   // paced like a display: the march's answers and their landings run between the frames
+                const a = performance.now();
+                ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw();
+                ts.push(performance.now() - a);
+                if (marching() === 0) { at = performance.now(); break; }
+            }
+            const held = done();
+            const cs = T.chainStats();
+            const run = runOf(since, false);
+            otherNote("pan", run, false);
+            ts.sort((x, y) => x - y);
+            out.relight_pan = ts.length ? [+ts[Math.floor(ts.length / 2)].toFixed(1), +ts[ts.length - 1].toFixed(1)] : null;
+            out.relight_pan_frames = [ts.length, wallOf("pan", run, since, at)];
+            out.relight_pan_held = [held, cs.main + cs.thumb];
+            await calm();
+            ed.fitView(); ed.sceneSig = null; ed.draw();
+        }
+        // K12: what a whole change's mips wait for while a full march runs (INTERACTIVE mips behind NORMAL marches: before
+        // K12 each light holds one worker for its whole march, with stripes every worker is busy and a mip waits at most
+        // one stripe). The frame after a whole change at 1:1 with no march in flight, then the same with a three-light march
+        // posted right before it: [the frame, the mips settled]; held [the longest block from the frame's end until the
+        // mips settled, chains built here, chains asked, marches in flight at the frame]. As whole_1to1_gl: the GPU stack
+        // (the relight layer and the colour-matched result hidden), the paint layer active, tiles only.
+        if (ed.tileMode) {
+            await calm();
+            const target = ed.layers.find((l) => l.kind === "paint");
+            const hidden = ed.layers.filter((l) => l.visible && (l === fx || (l.match && l.match.strength > 0)));
+            for (const l of hidden) l.visible = false;
+            const activeWas = ed.activeLayerId;
+            ed.activeLayerId = target.id;
+            ed.view.scale = 1; ed.view.angle = 0; ed._fitted = false;
+            ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
+            ed.sceneSig = null; ed.draw();
+            const T = await import("./editor/inpaint_tiles.js");
+            const whole = async (key, before) => {
+                await calm();
+                ed.sceneSig = null; ed.draw(); settle(false);
+                await sleep(30);   // before the change: the change, the march and the frame in one task (see `replaced`)
+                ed.pushUndo({ kind: "layerfull", id: target.id });
+                target.px = ed.turnedTilePixels(target.px, "h");
+                if (before) before();
+                const marchingAt = marching();
+                T.chainStats(true);
+                const t0 = performance.now();
+                const done = probe();
+                ed.markLayerChanged(target); ed.renderLayers(); ed.draw();
+                const frame = performance.now() - t0;
+                const cs = T.chainStats();
+                const s0 = performance.now();
+                await ed.mipsSettled();
+                const settled = performance.now() - s0;
+                await sleep(50);
+                out[key] = [+frame.toFixed(1), +settled.toFixed(1)];
+                out[key + "_held"] = [done(s0), cs.main + cs.thumb, cs.requested, marchingAt];
+                ed.clearUndo();
+            };
+            await whole("relight_whole_calm", null);
+            await whole("relight_whole_march", () => { moved(all.slice(0, 3), dx, 0); ed.ensureRelightMaps(fx, { quick: false }); });
+            await calm();   // its marches land before anything after this
+            for (const l of hidden) l.visible = true;
+            ed.activeLayerId = activeWas;
+            ed.fitView(); ed.sceneSig = null; ed.draw();
+        }
+        // K12 (its review): what any other NORMAL pool job (a transform's resample rows, a PSD read, ...) waits for while a
+        // full march runs. Within NORMAL the pool is first come, first served: before K12 a light held one worker and a job
+        // after it ran on an idle one; now each light's stripes are queued ahead of it. Eight small NORMAL jobs (a crc of
+        // 1 KB) posted right after a three-light move: [the slowest one's queue wait, its answer] ms from the post; calm:
+        // no march; job: on the route relightStripes 0 (one job a light, as before K12)
+        {
+            const P = await import("./editor/inpaint_pool.js");
+            const normalRow = async (key, fn, stripes = undefined) => {
+                await calm();
+                if (stripes !== undefined) E.setRoute("relightStripes", stripes);
+                try {
+                    const pool = relightPool();
+                    if (fn) fn();
+                    const marchingAt = marching();
+                    const t0 = performance.now();
+                    const got = await Promise.all(Array.from({ length: pool.size }, () => pool.run("crc", { blob: new Blob([new Uint8Array(1024)]) }, [], { priority: P.NORMAL })
+                        .then((r) => [r.timing && r.timing.pool ? r.timing.pool.queueMs : 0, performance.now() - t0])));
+                    out[key] = [+Math.max(...got.map((g) => g[0])).toFixed(1), +Math.max(...got.map((g) => g[1])).toFixed(1)];
+                    out[key + "_marching"] = marchingAt;
+                    if ((await quiet()) == null) notes.push(`${key}: still marching after ${LIMIT / 1000} s`);
+                } finally {
+                    if (stripes !== undefined) E.setRoute("relightStripes", null);
+                }
+            };
+            await normalRow("relight_normal_calm", null);
+            await normalRow("relight_normal_march", () => { moved(all.slice(0, 3), 0, -dy); release(); });
+            if (hasStripes) await normalRow("relight_normal_job", () => { moved(all.slice(0, 3), 0, dy); release(); }, 0);
+        }
+        // K12 (its review): a sun, the Rust sun (no row above marches one: the preset's lights run the twin), its depth map
+        // resident in each worker (px.js `_slot`, kind relight_depth): light 0 made a sun (its first striped march copies
+        // the map once into each worker), then the same march as one job and on stripes again, as the rows above
+        const type0 = lightsNow()[0] ? lightsNow()[0].type : "point";
+        {
+            const sunned = () => { fx.params = { ...fx.params, lights: lightsNow().map((l, i) => (i === 0 ? { ...l, type: "sun" } : l)) }; release(); };
+            if (lightsNow()[0] && lightsNow()[0].type === "sun") notes.push("sun: light 0 is a sun already; its row marches nothing");
+            await relightRow("relight_sun", false, sunned);
+            if (hasStripes) {
+                await relightRow("relight_sun_job", false, again([0]), 0);
+                await relightRow("relight_sun_rep", false, again([0]));
+                efficiency("relight_sun", "relight_sun_job");
+                efficiency("relight_sun_rep", "relight_sun_job");
+            }
+        }
+        // K12 (its review): why the named one-light row's stripes run slower than the same march again. Light 0 back to its
+        // own kind, moved and marched with the window left alone (no markFilterChanged, renderLayers or draw until the row
+        // has landed), then moved and released as relight_one does; each against the same march as one job
+        if (hasStripes) {
+            const back = (mx) => { fx.params = { ...fx.params, lights: lightsNow().map((l, i) => (i === 0 ? { ...l, type: type0, x: l.x + mx } : l)) }; };
+            await relightRow("relight_nodraw", false, () => { back(dx); ed.filterPreview = null; ed.ensureRelightMaps(fx, { quick: false }); });
+            ed.markFilterChanged(fx); ed.renderLayers(); ed.draw();
+            await relightRow("relight_nodraw_job", false, again([0]), 0);
+            efficiency("relight_nodraw", "relight_nodraw_job");
+            await relightRow("relight_draw", false, () => { back(-dx); release(); });
+            await relightRow("relight_draw_job", false, again([0]), 0);
+            efficiency("relight_draw", "relight_draw_job");
+        }
+        out.relight_notes = notes;
+    }
+
+    const focus = [...focusAtStart, document.hasFocus(), document.visibilityState];   // [focused, visibility] at the start and the end
     shell.closeDocument(ed, { force: true });
     if (before) shell.activate(before);
-    return JSON.stringify({ size: `${W}x${H}`, mp: +(W * H / 1e6).toFixed(1), filter: fxId, setBase: Math.round(setBaseMs), memMB: mem, view, display, ...out });
+    return JSON.stringify({ size: `${W}x${H}`, mp: +(W * H / 1e6).toFixed(1), filter: fxId, setBase: Math.round(setBaseMs), memMB: mem, view, display, focus, ...out });
 })()
 """
 
@@ -714,12 +1115,18 @@ ROWS = [
     ("  mips settled [longest block]", "whole_1to1_gl_settled"),
     ("  chains built here [asked]", "whole_1to1_gl_chains"),
     ("  chains landed [handed]", "whole_1to1_gl_landed"),
+    ("  below stats redone [marches]", "whole_1to1_gl_state"),
+    ("  (relight: waited [in flight])", "whole_quiet"),
     ("192 px picture after a whole change, the old way", "panel_flatten_sync"),
     ("  chains built here [taken from the worker]", "panel_flatten_sync_chains"),
     ("  chains it left on the tiles, MB", "panel_flatten_sync_keptMB"),
     ("192 px picture after a whole change, settled", "panel_flatten_settled"),
     ("  chains built here [taken from the worker]", "panel_flatten_settled_chains"),
     ("  chains it left on the tiles, MB", "panel_flatten_settled_keptMB"),
+    ("the same, lights overlay (relight)", "whole_1to1_lights"),
+    ("  mips settled [longest block]", "whole_1to1_lights_settled"),
+    ("  chains built here [asked]", "whole_1to1_lights_chains"),
+    ("  below stats redone [marches]", "whole_1to1_lights_state"),
     ("frame after a whole touch, fit", "touch_fit_gl"),
     ("  (the level of fit, whole-change rows)", "whole_level_row"),
     ("redraw with ants", "draw_with_ants"),
@@ -794,6 +1201,86 @@ C2_ROWS = [
     ("  mirrors made MB [_masked]", "match_full_pick_mb"),
     ("magic wand over it", "match_full_wand"),
     ("  mirrors made MB [_masked]", "match_full_wand_mb"),
+]
+
+# K0b (docs/PLAN_WASM_BUILD.md §4.5), --filter=relight only: [the longest block, the shadows landed (the relight_maps
+# marks of the row's kind, start to the last march's end)]; "marches" [posted, the slowest one's post to answer]; the pan
+# row [median frame, worst frame]
+RELIGHT_ROWS = [
+    ("one light moved: landed", "relight_one"),
+    ("  marches [slowest landed]", "relight_one_marches"),
+    ("  stripes [workers]", "relight_one_stripes"),
+    ("  kernel ms [slowest job]", "relight_one_kernel"),
+    ("  first stripe ms [later]", "relight_one_first"),
+    ("  others [built, asked]", "relight_one_others"),
+    ("  efficiency [busy share]", "relight_one_eff"),
+    ("  stripes' kernel / one job's", "relight_one_overhead"),
+    ("  again, one job (stripes 0)", "relight_one_job"),
+    ("    kernel ms [slowest job]", "relight_one_job_kernel"),
+    ("    others [built, asked]", "relight_one_job_others"),
+    ("  again, stripes", "relight_one_rep"),
+    ("    stripes [workers]", "relight_one_rep_stripes"),
+    ("    kernel ms [slowest job]", "relight_one_rep_kernel"),
+    ("    first stripe ms [later]", "relight_one_rep_first"),
+    ("    others [built, asked]", "relight_one_rep_others"),
+    ("    efficiency [busy share]", "relight_one_rep_eff"),
+    ("    stripes' kernel / one job's", "relight_one_rep_overhead"),
+    ("three lights moved", "relight_three"),
+    ("  marches [slowest landed]", "relight_three_marches"),
+    ("  stripes [workers]", "relight_three_stripes"),
+    ("  kernel ms [slowest job]", "relight_three_kernel"),
+    ("  first stripe ms [later]", "relight_three_first"),
+    ("  others [built, asked]", "relight_three_others"),
+    ("  efficiency [busy share]", "relight_three_eff"),
+    ("  stripes' kernel / one job's", "relight_three_overhead"),
+    ("  again, one job a light", "relight_three_job"),
+    ("    kernel ms [slowest job]", "relight_three_job_kernel"),
+    ("    others [built, asked]", "relight_three_job_others"),
+    ("  again, stripes", "relight_three_rep"),
+    ("    stripes [workers]", "relight_three_rep_stripes"),
+    ("    kernel ms [slowest job]", "relight_three_rep_kernel"),
+    ("    first stripe ms [later]", "relight_three_rep_first"),
+    ("    others [built, asked]", "relight_three_rep_others"),
+    ("    efficiency [busy share]", "relight_three_rep_eff"),
+    ("    stripes' kernel / one job's", "relight_three_rep_overhead"),
+    ("a drag step's quick map", "relight_quick"),
+    ("  marches [slowest landed]", "relight_quick_marches"),
+    ("pan at 1:1 during a march", "relight_pan"),
+    ("  frames [shadows landed]", "relight_pan_frames"),
+    ("  block [chains built here]", "relight_pan_held"),
+    ("the first march after start", "relight_first"),
+    ("  marches [slowest landed]", "relight_first_marches"),
+    ("whole change 1:1: frame [mips settled]", "relight_whole_calm"),
+    ("  block [built, asked, marching]", "relight_whole_calm_held"),
+    ("  during a 3-light march", "relight_whole_march"),
+    ("  block [built, asked, marching]", "relight_whole_march_held"),
+    ("8 NORMAL jobs: wait [answer]", "relight_normal_calm"),
+    ("  during a 3-light march", "relight_normal_march"),
+    ("  the same, one job a light", "relight_normal_job"),
+    ("a light made a sun: landed", "relight_sun"),
+    ("  stripes [workers]", "relight_sun_stripes"),
+    ("  kernel ms [slowest job]", "relight_sun_kernel"),
+    ("  first stripe ms [later]", "relight_sun_first"),
+    ("  efficiency [busy share]", "relight_sun_eff"),
+    ("  again, one job (stripes 0)", "relight_sun_job"),
+    ("    kernel ms [slowest job]", "relight_sun_job_kernel"),
+    ("  again, stripes", "relight_sun_rep"),
+    ("    kernel ms [slowest job]", "relight_sun_rep_kernel"),
+    ("    first stripe ms [later]", "relight_sun_rep_first"),
+    ("    efficiency [busy share]", "relight_sun_rep_eff"),
+    ("    stripes' kernel / one job's", "relight_sun_rep_overhead"),
+    ("a light moved, no redraw", "relight_nodraw"),
+    ("  kernel ms [slowest job]", "relight_nodraw_kernel"),
+    ("  first stripe ms [later]", "relight_nodraw_first"),
+    ("  efficiency [busy share]", "relight_nodraw_eff"),
+    ("  stripes' kernel / one job's", "relight_nodraw_overhead"),
+    ("  one job (stripes 0)", "relight_nodraw_job"),
+    ("a light moved, released", "relight_draw"),
+    ("  kernel ms [slowest job]", "relight_draw_kernel"),
+    ("  first stripe ms [later]", "relight_draw_first"),
+    ("  efficiency [busy share]", "relight_draw_eff"),
+    ("  stripes' kernel / one job's", "relight_draw_overhead"),
+    ("  one job (stripes 0)", "relight_draw_job"),
 ]
 
 
@@ -914,6 +1401,7 @@ async def main():
         map_w, map_h = int(mw), int(mh)
 
     async def run(c):
+        await c.call("Page.bringToFront")   # a timing run counts only with the window in front (as px_jobs.py does)
         await c.eval(SETUP)
         results = []
         for size in SIZES:
@@ -932,6 +1420,10 @@ async def main():
         return results
 
     results = await session(run)
+    json_out = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--json=")), None) or os.environ.get("PERF_JSON")
+    if json_out:   # every row of every size, as the BENCH body returned them
+        with open(json_out, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=1)
     head = "%-28s" % "" + "".join("%22s" % r["size"] for r in results)
     print()
     print(head)
@@ -940,6 +1432,9 @@ async def main():
         cells = []
         for r in results:
             v = r.get(key)
+            if v and key.endswith("_state"):
+                cells.append("%22s" % f"{v[0]}  [{v[1]}]")
+                continue
             cells.append("%22s" % ("-" if not v else f"{v[0]:.1f} ms  [{v[1]:.1f}]"))
         print("%-28s%s" % (label, "".join(cells)))
     print()
@@ -969,6 +1464,40 @@ async def main():
                 continue
             cells.append("%22s" % ("-" if not v else f"{v[0]:.1f} ms  [{v[1]:.1f}]"))
         print("%-28s%s" % (label, "".join(cells)))
+    if any("relight_notes" in r for r in results):
+        def ms0(x):
+            return "-" if x is None else f"{x:.0f}"
+        print()
+        print("%-28s%s" % ("relight, blocked [landed]", ""))
+        print("-" * len(head))
+        for label, key in RELIGHT_ROWS:
+            cells = []
+            for r in results:
+                v = r.get(key)
+                if not v:
+                    cells.append("%22s" % "-")
+                elif key.endswith("_overhead"):
+                    cells.append("%22s" % f"{v:.3f}")
+                elif key.endswith(("_marches", "_frames")):
+                    cells.append("%22s" % f"{v[0]}  [{ms0(v[1])} ms]")
+                elif key.endswith("_stripes"):
+                    cells.append("%22s" % f"{v[0]}  [{v[1]}]")
+                elif key.endswith("_others"):
+                    cells.append("%22s" % f"{v[0]}  [{v[1]}, {v[2]}]")
+                elif key.endswith("_eff"):
+                    cells.append("%22s" % f"{v[0]:.3f}  [{'-' if v[1] is None else f'{v[1]:.3f}'}]")
+                elif key in ("relight_pan", "relight_whole_calm", "relight_whole_march"):
+                    cells.append("%22s" % f"{v[0]:.1f} ms  [{v[1]:.1f}]")
+                elif key.endswith("_held") and len(v) > 2:
+                    cells.append("%22s" % f"{ms0(v[0])} ms [{', '.join(str(x) for x in v[1:])}]")
+                elif key.endswith("_held"):
+                    cells.append("%22s" % f"{ms0(v[0])} ms  [{v[1]}]")
+                else:
+                    cells.append("%22s" % f"{ms0(v[0])} ms  [{ms0(v[1])}]")
+            print("%-28s%s" % (label, "".join(cells)))
+        for r in results:
+            for note in r.get("relight_notes") or []:
+                print("%-28s%s" % (r["size"], note))
     print()
     for r in results:
         gl = r.get("glMB")
@@ -980,6 +1509,15 @@ async def main():
               + (f"; tile display: {r['display']['mirrors']} mirrors {r['display']['mirrorMB']} MB,"
                  f" {r['display']['regions']} region canvases {r['display']['regionMB']} MB,"
                  f" pyramids {r['display']['pyramidMB']} MB" if r.get("display") else "")))
+    uncounted = False
+    for r in results:
+        f = r.get("focus") or []
+        ok = len(f) == 4 and f[0] and f[2] and f[1] == "visible" and f[3] == "visible"
+        print("%-28s%s" % (r["size"], f"focus at start {f[:2]}, at the end {f[2:]}" + ("" if ok else ": NOT COUNTED")))
+        uncounted = uncounted or not ok
+    if uncounted:
+        print("\nNOT COUNTED (the window was not focused and visible)")
+        sys.exit(2)
 
 
 if __name__ == "__main__":

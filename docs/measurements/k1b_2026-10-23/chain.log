@@ -1,0 +1,78 @@
+[15:47:18] M0: the versions and V8's wasm flags (no app)
+[15:47:20] k1-m1-r1: pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object
+pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object rc=1 11s 
+SOME FAILED
+[15:47:47] k1-m1s-r1: pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object,--split
+pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object,--split rc=1 12s 
+SOME FAILED
+[15:48:16] k1-m2-r1: pxjobs:15000x10000,--ab,mips=js:rust,--only,mips_direct,mips_whole,--split
+pxjobs:15000x10000,--ab,mips=js:rust,--only,mips_direct,mips_whole,--split rc=1 12s 
+SOME FAILED
+[15:48:44] k1-m3-r1: pxjobs:15000x10000,--ab,flood=js:rust,--only,wand_object,wand_band,wand_add,--split
+pxjobs:15000x10000,--ab,flood=js:rust,--only,wand_object,wand_band,wand_add,--split rc=1 9s 
+SOME FAILED
+[15:49:10] k1-m4-r1: pxjobs:15000x10000,--ab,flood=js:rust,--only,flood_ladder,--split
+pxjobs:15000x10000,--ab,flood=js:rust,--only,flood_ladder,--split rc=2 33s 
+SOME FAILED
+[15:49:59] k1-m5-r1: pxprobe:--cold,--rotation,1
+pxprobe:--cold,--rotation,1 rc=2 1s 
+SOME FAILED
+[15:50:16] k1-m1-r2: pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object
+pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object rc=1 12s 
+SOME FAILED
+[15:50:44] k1-m1s-r2: pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object,--split
+pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object,--split rc=1 12s 
+SOME FAILED
+[15:51:12] k1-m2-r2: pxjobs:15000x10000,--ab,mips=js:rust,--only,mips_direct,mips_whole,--split
+pxjobs:15000x10000,--ab,mips=js:rust,--only,mips_direct,mips_whole,--split rc=1 12s 
+SOME FAILED
+[15:51:40] k1-m3-r2: pxjobs:15000x10000,--ab,flood=js:rust,--only,wand_object,wand_band,wand_add,--split
+pxjobs:15000x10000,--ab,flood=js:rust,--only,wand_object,wand_band,wand_add,--split rc=1 9s 
+SOME FAILED
+[15:52:06] k1-m4-r2: pxjobs:15000x10000,--ab,flood=js:rust,--only,flood_ladder,--split
+pxjobs:15000x10000,--ab,flood=js:rust,--only,flood_ladder,--split rc=0 31s PASS
+ALL PASS
+[15:52:54] k1-m5-r2: pxprobe:--cold,--rotation,2
+pxprobe:--cold,--rotation,2 rc=0 2s PASS
+ALL PASS
+[15:53:11] k1-m1-r3: pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object
+pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object rc=1 12s 
+SOME FAILED
+[15:53:39] k1-m1s-r3: pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object,--split
+pxjobs:15000x10000,--only,mips_direct,mips_whole,band,wand_band,wand_object,--split rc=1 13s 
+SOME FAILED
+[15:54:07] k1-m2-r3: pxjobs:15000x10000,--ab,mips=js:rust,--only,mips_direct,mips_whole,--split
+pxjobs:15000x10000,--ab,mips=js:rust,--only,mips_direct,mips_whole,--split rc=1 12s 
+SOME FAILED
+[15:54:35] k1-m3-r3: pxjobs:15000x10000,--ab,flood=js:rust,--only,wand_object,wand_band,wand_add,--split
+pxjobs:15000x10000,--ab,flood=js:rust,--only,wand_object,wand_band,wand_add,--split rc=1 9s 
+SOME FAILED
+[15:55:01] k1-m4-r3: pxjobs:15000x10000,--ab,flood=js:rust,--only,flood_ladder,--split
+pxjobs:15000x10000,--ab,flood=js:rust,--only,flood_ladder,--split rc=2 33s 
+SOME FAILED
+[15:55:50] k1-m5-r3: pxprobe:--cold,--rotation,3
+pxprobe:--cold,--rotation,3 rc=0 1s PASS
+ALL PASS
+[15:56:07] k1-m7a: pxprobe:--regrow
+pxprobe:--regrow rc=0 6s PASS
+ALL PASS
+[15:56:28] k1-m7b-16: pxprobe:--retention,15000x10000,--keep-mb,16
+pxprobe:--retention,15000x10000,--keep-mb,16 rc=0 11s PASS
+ALL PASS
+[15:56:55] k1-m7b-32: pxprobe:--retention,15000x10000,--keep-mb,32
+pxprobe:--retention,15000x10000,--keep-mb,32 rc=0 11s PASS
+ALL PASS
+[15:57:23] k1-m7b-64: pxprobe:--retention,15000x10000,--keep-mb,64
+pxprobe:--retention,15000x10000,--keep-mb,64 rc=0 11s PASS
+ALL PASS
+[15:57:50] k1-m7b-128: pxprobe:--retention,15000x10000,--keep-mb,128
+pxprobe:--retention,15000x10000,--keep-mb,128 rc=0 12s PASS
+ALL PASS
+[15:58:18] k1-m7b-256: pxprobe:--retention,15000x10000,--keep-mb,256
+pxprobe:--retention,15000x10000,--keep-mb,256 rc=0 11s PASS
+ALL PASS
+[15:58:46] M8: the window's release (the pxjobs gate's check run)
+[15:58:46] k1-m8: pxjobs
+pxjobs rc=0 134s PASS
+ALL PASS
+[16:01:16] done

@@ -1,0 +1,33 @@
+[09:44:57] commit 0ca7d5b (dirty: 8 files); px ABI ABI = 21; rounds: 1 2 3
+[09:44:58] px.wasm 1000640eba8b5574, px_scalar.wasm ade55404e282dd7d
+lock: taken after 0 s
+[09:44:58] lock: taken (K12 measuring 1328 2026-11-06T09:44:58)
+[09:44:58] others: 0 busy; the idle key instance on 9571 is there (2 main process)
+[09:44:58] perf-relight r1 (try 1)
+[09:45:00] gpu: 3702 MiB, 0 %; comfy 8188: 000
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 58s 
+ALL PASS
+[09:46:15] rc=0
+[09:46:17] gpu: 3726 MiB, 3 %; comfy 8188: 000
+lock: released
+lock: taken after 0 s
+[09:46:17] lock: taken (K12 measuring 15568 2026-11-06T09:46:17)
+[09:46:18] others: 0 busy; the idle key instance on 9571 is there (2 main process)
+[09:46:18] perf-relight r2 (try 1)
+[09:46:20] gpu: 3723 MiB, 0 %; comfy 8188: 000
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 66s 
+ALL PASS
+[09:47:42] rc=0
+[09:47:44] gpu: 4130 MiB, 0 %; comfy 8188: 000
+lock: released
+lock: taken after 0 s
+[09:47:44] lock: taken (K12 measuring 17164 2026-11-06T09:47:44)
+[09:47:45] others: 0 busy; the idle key instance on 9571 is there (2 main process)
+[09:47:45] perf-relight r3 (try 1)
+[09:47:47] gpu: 4173 MiB, 2 %; comfy 8188: 000
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 57s 
+ALL PASS
+[09:49:01] rc=0
+[09:49:03] gpu: 4015 MiB, 6 %; comfy 8188: 000
+lock: released
+[09:49:03] done

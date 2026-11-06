@@ -1,0 +1,35 @@
+The gates on the merge of wasm-kernels (2ea002b: D0, K5, W1, K12, Stop 5) into corridorkey's line (481fae0) for
+0.1.52, on the branch ck-merge (merge commit 6c74c3e), 2026-11-06. Worktree .claude/worktrees/ck-merge, port 9578,
+--offline (no ComfyUI), SCUMBLE_GATES under the worktree's dist/gates (labels m0152-tiles, m0152-canvas).
+
+Tiles (--tiles on), one instance, label m0152-tiles:
+  lint rc=1 (see Fix 1; green after it)   types PASS   pixels PASS   editor PASS (162 s)   composite PASS
+  commands PASS   export PASS (179 s)   layered PASS   pxjobs PASS (129 s)   document PASS   tiff PASS
+  relight PASS (39 node checks, 312 in-app)   selection PASS   limit PASS   maps PASS
+  depth rc=2: no tools/depth_test.py on any branch (the known gap, docs/TESTING.md: "The `depth` gate has no script
+    of its own"); `node tools/depth_test.js` in its place: all ok
+  loras PASS   recipes PASS   generate PASS   metadata PASS   skins PASS   toapis PASS   openrouter PASS
+  transparent PASS   boxes PASS   help PASS   cloudjobs PASS
+  commands_doc rc=0: regenerated docs/COMMANDS.md (117 commands) with no diff, so the merged file is current
+
+Canvas (--tiles off), one instance, label m0152-canvas, on 7c082d2 (Fix 1 in):
+  lint PASS (0 errors, the same 21 warnings)   pixels PASS   composite PASS   export PASS   layered PASS
+  document PASS   tiff PASS   relight PASS (39 node checks, 311 in-app)   selection PASS
+  ALL PASS
+
+Reruns: none needed (no known flake fired); the depth gate was replaced by its plain-Node test as TESTING.md says.
+
+Fix 1 (7c082d2, eslint.config.mjs): lint was red on one parsing error, corridorkey's tracked
+docs/measurements/ck_i0a_2026-11-06/scripts/s0_setup.js ("'return' outside of function"): a body for tools/cdp.py
+eval, not a module. Not a merge resolution and not an interaction of the two branches: the file is corridorkey's
+alone (its 156af0e), so corridorkey's own tree is red the same way. The ignore list takes
+"docs/measurements/*/scripts/**"; the other two JS files under docs/measurements (lr3's real_files.js, w1's
+w1_identity.js) are still linted and pass.
+
+No other fix: every gate that reads the merged files (host.js with K0a's save marks beside corridorkey's changes, the
+px kernels, relight's march in stripes, the LoRA rows, the recipes, the boxes) passed on the merged tree.
+
+Machine: the K12b workflow's busy lock was taken while each run went (the lock written 12:03:57 during the tiles run,
+which ended 12:07:22; written again 12:43:23 as the canvas run started, which ended 12:45:27; each run waited for the
+lock to be gone before it started). Gate verdicts do not depend on timing here, but K12b numbers taken in those two
+windows ran beside a gate instance.

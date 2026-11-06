@@ -1,0 +1,383 @@
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:1 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.setMap (scumble://app/editor/inpaint_canvas.js:13584:22)
+    at <anonymous>:296:14
+WARN relight_shadow channel 1 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:1:150x100:23 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23606:29)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+    at InpaintEditor.queueHistory (scumble://app/editor/inpaint_canvas.js:14806:44)
+    at InpaintEditor.undoStep (scumble://app/editor/inpaint_canvas.js:14800:109)
+    at <anonymous>:587:14
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:22 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at HTMLSelectElement.<anonymous> (scumble://app/editor/inpaint_canvas.js:20233:22)
+    at <anonymous>:594:14
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:24 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:25 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23606:29)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at scumble://app/editor/inpaint_canvas.js:20270:22
+    at HTMLButtonElement.<anonymous> (scumble://app/editor/inpaint_canvas.js:1486:63)
+    at <anonymous>:636:26
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:28 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at <anonymous>:666:8
+WARN relight_shadow channel 1 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:1:150x100:29 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23606:29)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at <anonymous>:666:8
+WARN relight_shadow channel 2 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:2:150x100:30 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23606:29)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at <anonymous>:666:8
+WARN relight_shadow channel 3 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:3:150x100:31 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23606:29)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at <anonymous>:666:8
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:43 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.onPointerUp (scumble://app/editor/inpaint_canvas.js:6929:22)
+    at HTMLCanvasElement.<anonymous> (scumble://app/editor/inpaint_canvas.js:3276:63)
+    at firePointer (<anonymous>:734:19)
+    at <anonymous>:804:5
+WARN relight_shadow channel 1 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:1:150x100:49 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23606:29)
+    at InpaintEditor.onKey (scumble://app/editor/inpaint_canvas.js:3790:34)
+    at <anonymous>:829:8
+WARN relight_shadow channel 1 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:1:150x100:50 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23606:29)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:79 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23620:91)
+    at InpaintEditor.onPointerUp (scumble://app/editor/inpaint_canvas.js:6929:22)
+    at HTMLCanvasElement.<anonymous> (scumble://app/editor/inpaint_canvas.js:3276:63)
+    at firePointer (<anonymous>:734:19)
+    at <anonymous>:950:5
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:80 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14537:26)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:83 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23606:29)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at <anonymous>:982:27
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:87 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23620:91)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at <anonymous>:989:23
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:91 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23620:91)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+    at InpaintEditor.queueHistory (scumble://app/editor/inpaint_canvas.js:14806:44)
+    at InpaintEditor.undoStep (scumble://app/editor/inpaint_canvas.js:14800:109)
+    at <anonymous>:1077:14
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:93 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23620:91)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:98 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at InpaintEditor.flushPendingDebounces (scumble://app/editor/inpaint_canvas.js:14793:74)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14854:14)
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:100 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:101 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.relightIdle (scumble://app/editor/inpaint_canvas.js:23214:106)
+    at InpaintEditor.readBoxBytes (scumble://app/editor/inpaint_canvas.js:9066:20)
+    at <anonymous>:1128:18
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6x4i1:0:400x300:5 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at writeParams (scumble://app/commands.js:2735:8)
+    at Object.run (scumble://app/commands.js:1571:38)
+    at Object.run (scumble://app/commands.js:2862:32)
+    at <anonymous>:1273:39
+ERROR Relight render failed: Error: Relight (magnific): relight gate route: stopped at the send
+    at refusal (scumble://app/editor/inpaint_status.js:46:26)
+    at say (scumble://app/editor/host.js:3599:76)
+    at Object.relightWhole (scumble://app/editor/host.js:3933:19)
+    at async scumble://app/editor/inpaint_canvas.js:20508:21
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:0:150x100:107 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23620:91)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+    at InpaintEditor.queueHistory (scumble://app/editor/inpaint_canvas.js:14806:44)
+    at InpaintEditor.undoStep (scumble://app/editor/inpaint_canvas.js:14800:109)
+    at <anonymous>:1679:14
+WARN relight_shadow channel 1 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:1:150x100:108 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23606:29)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+    at InpaintEditor.queueHistory (scumble://app/editor/inpaint_canvas.js:14806:44)
+    at InpaintEditor.undoStep (scumble://app/editor/inpaint_canvas.js:14800:109)
+    at <anonymous>:1679:14
+WARN relight_shadow channel 2 failed: CancelledError: pool jobs of relight:Lmw4r6rmv1:2:150x100:109 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23606:29)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+    at InpaintEditor.queueHistory (scumble://app/editor/inpaint_canvas.js:14806:44)
+    at InpaintEditor.undoStep (scumble://app/editor/inpaint_canvas.js:14800:109)
+    at <anonymous>:1679:14
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r79qe1:0:64x64:3 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at <anonymous>:1901:10
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r79qe1:0:64x64:4 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at <anonymous>:1906:10
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r79qe1:0:64x64:7 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at <anonymous>:1916:10
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:4 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23620:91)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:5 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at flushWheel (scumble://app/editor/inpaint_canvas.js:4066:30)
+    at InpaintEditor.flushPendingDebounces (scumble://app/editor/inpaint_canvas.js:14794:74)
+    at InpaintEditor.pushUndoSnapshot (scumble://app/editor/inpaint_canvas.js:14351:33)
+    at HTMLInputElement.<anonymous> (scumble://app/editor/inpaint_canvas.js:20308:30)
+    at slider (<anonymous>:1973:27)
+    at <anonymous>:2004:9
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:7 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:13 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23620:91)
+    at flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at InpaintEditor.flushPendingDebounces (scumble://app/editor/inpaint_canvas.js:14793:74)
+    at InpaintEditor.pushUndoSnapshot (scumble://app/editor/inpaint_canvas.js:14351:33)
+    at HTMLInputElement.<anonymous> (scumble://app/editor/inpaint_canvas.js:19767:48)
+    at <anonymous>:2032:21
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:14 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23620:91)
+    at Object.flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at InpaintEditor.onWheel (scumble://app/editor/inpaint_canvas.js:4042:76)
+    at wheel (<anonymous>:1964:18)
+    at <anonymous>:2042:9
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:21 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:22 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:23 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at InpaintEditor.flushPendingDebounces (scumble://app/editor/inpaint_canvas.js:14793:74)
+    at InpaintEditor.pushUndoSnapshot (scumble://app/editor/inpaint_canvas.js:14351:33)
+    at InpaintEditor.pushUndo (scumble://app/editor/inpaint_canvas.js:14340:14)
+    at InpaintEditor.duplicateLayer (scumble://app/editor/inpaint_canvas.js:17129:14)
+    at <anonymous>:2052:14
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:25 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at InpaintEditor.flushPendingDebounces (scumble://app/editor/inpaint_canvas.js:14793:74)
+    at <anonymous>:2072:14
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:27 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:33 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at InpaintEditor.flushPendingDebounces (scumble://app/editor/inpaint_canvas.js:14793:74)
+    at <anonymous>:2101:14
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:39 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:40 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14802:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:41 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7ah11:0:64x64:42 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23620:91)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at scumble://app/editor/inpaint_canvas.js:23687:34
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7bt51:0:64x64:5 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at InpaintEditor.markFilterChanged (scumble://app/editor/inpaint_canvas.js:15403:18)
+    at InpaintEditor.applySnapshot (scumble://app/editor/inpaint_canvas.js:14717:22)
+    at InpaintEditor.historyStepNow (scumble://app/editor/inpaint_canvas.js:14897:18)
+    at scumble://app/editor/inpaint_canvas.js:14800:133
+    at InpaintEditor.queueHistory (scumble://app/editor/inpaint_canvas.js:14806:44)
+    at InpaintEditor.undoStep (scumble://app/editor/inpaint_canvas.js:14800:109)
+    at <anonymous>:2168:20
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7c7g1:0:256x192:4 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at Object.flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at <anonymous>:2241:68
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7c7g1:0:256x192:6 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at Object.flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at <anonymous>:2241:68
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7c7g1:0:256x192:14 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at Object.flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at <anonymous>:2241:68
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7c7g1:0:256x192:16 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:84:28)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23624:25)
+    at Object.flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at <anonymous>:2241:68
+WARN relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7c7g1:0:256x192:28 cancelled
+    at WorkerPool.cancel (scumble://app/editor/inpaint_pool.js:92:26)
+    at supersede (scumble://app/editor/inpaint_canvas.js:23597:41)
+    at InpaintEditor.ensureRelightMaps (scumble://app/editor/inpaint_canvas.js:23620:91)
+    at Object.flushNudge (scumble://app/editor/inpaint_canvas.js:3687:30)
+    at <anonymous>:2283:68

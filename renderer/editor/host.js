@@ -52,7 +52,7 @@ import * as dialogs from "../dialogs.js";
 import { tileBoxes, fusedSize } from "./inpaint_edges.js";
 import { modelSize, DEPTH_LARGE, roundHalfEven } from "./inpaint_depth.js";
 import { INTERACTIVE } from "./inpaint_pool.js";
-import { editorPool } from "./inpaint_jobs.js";
+import { editorPool, markStep } from "./inpaint_jobs.js";
 
 const PROXY = "/comfy";
 
@@ -4645,6 +4645,7 @@ export const host = {
 
     /** Save an export (the dialog, or `exportPath`) in pieces of SAVE_PIECE; null when the dialog was cancelled. */
     async saveExport(blob, name) {
+        markStep("save", "start");   // the K0a harness: the pieces read off the blob and written by main, then the finish
         const file = window.scumble.file;
         const open = await file.saveStart({ name, size: blob.size, path: this.exportPath || undefined });
         if (!open) return null;
@@ -4653,7 +4654,10 @@ export const host = {
                 const data = new Uint8Array(await blob.slice(at, Math.min(blob.size, at + SAVE_PIECE)).arrayBuffer());
                 await file.saveWrite({ id: open.id, offset: at, data });
             }
-            return await file.saveFinish({ id: open.id });
+            markStep("save", "pieces", { MB: blob.size / 1048576, pieces: Math.ceil(blob.size / SAVE_PIECE) });
+            const saved = await file.saveFinish({ id: open.id });
+            markStep("save", "written");
+            return saved;
         } catch (err) {
             // the target stays as it was; main has dropped a save whose piece or finish failed already
             file.saveAbort({ id: open.id }).catch(() => {});

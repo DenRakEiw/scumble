@@ -1,0 +1,15 @@
+
+
+DevTools listening on ws://127.0.0.1:9555/devtools/browser/1e483f41-9625-4a69-9903-0ae514eb6d1f
+Error occurred in handler for 'help:manual': Error: ENOENT: no such file or directory, open 'C:\Users\schoeneberg\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\k5before\tree\docs\MANUAL.md'
+    at Object.readFileSync (node:fs:484:20)
+    at Object.readFileSync (node:electron/js2c/node_init:2:11153)
+    at readManual (C:\Users\schoeneberg\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\k5before\tree\electron\main\main.js:632:15)
+    at C:\Users\schoeneberg\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\k5before\tree\electron\main\main.js:1274:41
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\Users\\schoeneberg\\AppData\\Local\\Temp\\claude\\F--canvas\\543d44fb-4d2d-4818-8804-974916d10a44\\scratchpad\\k5before\\tree\\docs\\MANUAL.md'
+}

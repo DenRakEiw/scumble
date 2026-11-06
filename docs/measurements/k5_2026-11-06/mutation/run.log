@@ -1,0 +1,54 @@
+R01 scalar mul255 without its correction -> px_test.js
+R02 SIMD mul255 without its correction -> combine_test.js
+R03 SIMD subtract without its clamp (equivalent: mul255(d, s) <= d) -> SURVIVED
+R04 SIMD subtract clamped at 1 -> combine_test.js
+R05 scalar subtract takes one more -> px_test.js
+R06 SIMD first pixel from the lane group's start -> combine_test.js
+R07 SIMD last pixel the group's end -> combine_test.js
+R08 FRESH ignored -> combine_test.js
+R09 a fresh tile's rest not zeroed -> combine_test.js
+R10 rest_of_row's last pixel its first -> px_test.js
+R11 rest_of_row's first pixel at `from` -> px_test.js
+R12 SIMD RGBA alpha from the third byte -> combine_test.js
+R13 scalar alpha source halved -> combine_test.js
+R14 scalar add is max -> px_test.js
+R15 extent's x1 not exclusive -> combine_test.js
+R16 SIMD colour's red and blue swapped -> combine_test.js
+J01 twin table's mul255 without its correction -> combine_test.js
+J02 twin words path drops the colour -> combine_test.js
+J03 twin bytes path red and blue swapped -> SURVIVED
+J04 twin rest of row's last its first -> px_test.js
+J05 twin extent's x1 not exclusive -> combine_test.js
+J06 twin source length unchecked -> px_test.js
+J07 twin reads the source with no pixel to combine -> px_test.js
+J08 alphaAny above 128 only -> px_test.js
+J09 alphaAny full is nothing -> px_test.js
+J10 alphaAny reads RGBA's red -> px_test.js
+K01 the route read under another name -> combine_test.js
+K02 a missing tile made without alphaAny -> px_test.js
+P01 a missing tile not FRESH -> combine_test.js
+P02 packed rows keep the long stride -> combine_test.js
+P03 packed rows all at the first row -> combine_test.js
+P04 a short tile view unchecked -> px_test.js
+P05 a short source view unchecked -> px_test.js
+P06 write() called for an empty result -> px_test.js
+P07 the extent's y1 read as x1 -> combine_test.js
+V01 bytesSource view's offset without its rows -> combine_test.js
+V02 bytesSource view across the source's edge -> combine_test.js
+V03 tilesSource view across two source tiles -> combine_test.js
+V04 tilesSource view's offset without its rows -> combine_test.js
+V05 tilesSource view at a fractional origin -> combine_test.js
+V06 rectSource full when it starts inside -> combine_test.js
+V07 tilesSource full tile covers nothing -> combine_test.js
+V08 tilesSource RGBA tile read as alpha -> combine_test.js
+C01 fill: a new edge tile's extent the whole tile -> combine_test.js
+C02 fill path under subtract too -> combine_test.js
+C03 kernel path's extent the whole tile -> combine_test.js
+C04 kernel path's extent never fresh -> combine_test.js
+C05 fill path's extent never fresh -> combine_test.js
+C06 the old tile not given to the kernel -> combine_test.js
+C07 combine's colour unclamped -> combine_test.js
+C08 invert's colour unclamped -> combine_test.js
+C09 an empty result's tile kept -> combine_test.js
+C10 fill: an edge tile filled beyond the image -> combine_test.js
+restored tree: PASS {"combine_test.js": [0, 2], "px_test.js": [0, 52]} build --check rc 0, 2 identical

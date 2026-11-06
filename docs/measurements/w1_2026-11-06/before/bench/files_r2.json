@@ -1,0 +1,139 @@
+{
+ "files_15k": {
+  "visibility": "visible",
+  "focus": true,
+  "load_jpg": 1569.9,
+  "size": [
+   15000,
+   10000
+  ],
+  "png": {
+   "wall": 2031.6,
+   "marks": [
+    {
+     "op": "export",
+     "total": 2030.9,
+     "steps": [
+      {
+       "step": "start",
+       "ms": 0,
+       "fmt": "png"
+      },
+      {
+       "step": "ready",
+       "ms": 0.1
+      },
+      {
+       "step": "encoded",
+       "ms": 1461.2,
+       "MB": 175.96039581298828
+      },
+      {
+       "step": "saved",
+       "ms": 569.6
+      }
+     ]
+    },
+    {
+     "op": "save",
+     "total": 569.6,
+     "steps": [
+      {
+       "step": "start",
+       "ms": 0
+      },
+      {
+       "step": "pieces",
+       "ms": 558,
+       "MB": 175.96039581298828,
+       "pieces": 3
+      },
+      {
+       "step": "written",
+       "ms": 11.6
+      }
+     ]
+    }
+   ],
+   "ops": {
+    "png_part": {
+     "jobs": 79,
+     "pixels": 150000000,
+     "kernel": 11073.6,
+     "compose": 335.7,
+     "rows": 335.7,
+     "prev": 3.7,
+     "copyIn": 44,
+     "filter": 4840.9,
+     "adler": 149.6,
+     "deflate": 5121.6,
+     "copyOut": 32.4,
+     "chunk": 541.1,
+     "gen": 0
+    }
+   },
+   "MB": 176.0
+  },
+  "tiff": {
+   "wall": 1354.3,
+   "marks": [
+    {
+     "op": "export",
+     "total": 1354.1,
+     "steps": [
+      {
+       "step": "start",
+       "ms": 0,
+       "fmt": "tiff"
+      },
+      {
+       "step": "ready",
+       "ms": 0
+      },
+      {
+       "step": "encoded",
+       "ms": 784.9,
+       "MB": 177.92721939086914
+      },
+      {
+       "step": "saved",
+       "ms": 569.2
+      }
+     ]
+    },
+    {
+     "op": "save",
+     "total": 569.2,
+     "steps": [
+      {
+       "step": "start",
+       "ms": 0
+      },
+      {
+       "step": "pieces",
+       "ms": 559.7,
+       "MB": 177.92721939086914,
+       "pieces": 3
+      },
+      {
+       "step": "written",
+       "ms": 9.5
+      }
+     ]
+    }
+   ],
+   "ops": {
+    "tiff_part": {
+     "jobs": 79,
+     "pixels": 150000000,
+     "kernel": 5876.1,
+     "rows": 454.1,
+     "predict": 797.8,
+     "deflate": 4621,
+     "gen": 0
+    }
+   },
+   "MB": 177.9
+  }
+ }
+}

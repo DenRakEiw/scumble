@@ -86,7 +86,85 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   stored references in `tools/refs/` (`--update` rewrites them, `--tolerance n` allows n
   levels); run it after anything that touches drawing.
   `python tools/perf_test.py [2048x1152 6000x4000 12000x8000]` is the drawing benchmark
-  (synthetic documents in their own tab, no ComfyUI; `docs/PERFORMANCE.md` §7).
+  (synthetic documents in their own tab, no ComfyUI; `docs/PERFORMANCE.md` §7); with `--filter=relight` it adds
+  relight's march rows (one light, three lights, a drag step's quick map, a pan during a march, the first march).
+  The kernel update's harness (`docs/PLAN_WASM_BUILD.md` K0a, K0b; measurements, not gates): `native_test.py` (the main
+  thread's px time by function, the px call counts per row, `wand_whole_add`, `bucket_fill`, the stitch laps),
+  `px_jobs.py` (the selection and map rows of §4.3 / §4.8 beside the old ones), `selection_test.py`'s two range cases
+  in ms, `export_test.py --perf ... --fill-limit`, `w0_bench.py` (`freqsep_4000`, `stitch_align_2048` / `_4096`,
+  `edgefit_2048`, `match_fallback_16k`, `grow_fallback_15k`, `--size=WxH`), `brush_perf.js` (TOOLS `blur`, `sharpen`,
+  `tone`, `sponge`; `KERNELS`), `liquify_perf.js` (`KERNELS`), and `PX_BENCH=1 node tools/px_test.js` (medians, a cold
+  first call). Each reads the window's step marks (`InpaintEditor.stepMarks`) and the px.js call counters
+  (`InpaintEditor.pxCalls`, a worker job's `timing.pxCalls`; the single editor worker's overlapping jobs count each
+  other's calls, so a gate step that asserts a Rust path ran uses a pool job, the stitch worker or the window).
+  K1 adds the route A/B: `px_jobs.py --ab NAME=A:B` (`kernels`, `stacks` or a route of `px/kernels.js`), `--set`,
+  `--split`, `--fresh-pool` (a timing run with the window behind prints NOT COUNTED and exits 2),
+  `python tools/ab_median.py` over three runs' `PX_JOBS_JSON` (medians, the spread, the tie rule), and
+  `tools/px_probe.py` (`--cold`, `--regrow`, `--retention`; gate `pxprobe:<args>` with commas). `node tools/px_test.js`
+  takes about 8 s longer since K1 (its lifecycle cases wait out the 2 s idle trim). `native_test.py ... open_again`
+  (#0 of the plan's §7) opens the same file a second time into a new tab and prints both opens side by side with the
+  programs' link waits (`gl getProgramParameter`, counted in every row's boundaries since). `native_test.py` brings
+  the window to the front first (`Page.bringToFront`, as `px_jobs.py` does); every row still says `focused`, and a
+  chain counts a row only with the window in front (the user may be at the machine).
+  D0 (the PSD open in the pool job `psd_read`): `node tools/layered_test.js` twins `readPsdStream` against the
+  window's `readPsd` on every PSD it reads (bands of 3 and of 256 rows, the masks against a frozen copy of the window's
+  mask loop); `node tools/layered_test.js --twin-file PATH` does one file of any size by SHA-256 (the 15k PSD, the
+  Photoshop-written `tools/fixtures/blendmodes/blendmodes.psd`). The `layered` gate's step
+  `the_pool_and_the_window_read_a_psd_alike` reads the gate's PSDs and the Photoshop fixture through the pool and the
+  window and compares this backend's pixels, and checks the refusals, the fallback, the stop of an open that is over
+  and a worker lost mid-read (`pool.stats()` `lost` against `stopped`). The switch `InpaintEditor.psdOnPool` (false: the
+  window's reader; "fail": a job no worker knows, so the fallback runs) is a class switch for harnesses, like
+  `mipsOnPool` and `pngParts`, not a route of `px/kernels.js`: it chooses where the reader runs, not which kernel
+  (K20b's JS / Rust choice inside `psd_read` becomes a route).
+  K5 (the selection's combine, Rust `sel_combine`, ABI 21): `node tools/px_test.js`'s `selCases` twin `sel_combine` on
+  both builds against `kernels_js.js` `selCombine`, and that twin against the editor's `combineRows` with a plain extent
+  scan (every mode x the source kinds 0 / 1 / 2 / 4 x seven parts of a tile x four tile states, with a tile's stride and
+  a band's long row, which px.js packs: 448 cases; the twin also on a tile one byte off its alignment, its bytes path),
+  a new tile against a transparent one, seven refusals (short views
+  over longer buffers among them), no pixel to combine without a source, `alphaAny`, and the `selCombine` route of
+  `px/kernels.js` (the same bytes on js and rust, `write` at most once, Rust's calls counted, the twins' route making no
+  missing tile from a source that covers nothing); `PX_BENCH=1` adds one tile's medians. `node tools/combine_test.js`
+  section 12 runs `TileMaskPixels.combine` on both routes against a per-pixel model over every view and read kind (192
+  combines: the cached extents and `bounds()` exact), a fresh extent on every tile it writes, a fractional or
+  out-of-range colour clamped as a tile's bytes stored it, and the views' offsets and refusals. The `selection` gate's
+  `real_wand_on_tiles` and `range_select_depth_cases` and the `editor` gate's
+  `wand_and_bucket_flood_a_region_not_the_image` require `sel_combine` calls on tiles while the route is on Rust
+  (`InpaintEditor.pxCalls`). `px_jobs.py` times the window's combine per row (`combine`, `combineN` in the JSON) and
+  checks the route ran; `ab_median.py` takes `combine` as the `selCombine` route's kernel row and prints "not touched by
+  the route" for a row whose combine ran in neither arm. The `depth` gate has no script of its own (`docs/BUGS.md`):
+  run `node tools/depth_test.js` in its place.
+  W1 (the PNG writer's filter choice in SIMD lanes, `crates/px/src/png.rs` `row_filter` / `lanes`, no ABI change):
+  `node tools/px_test.js`'s `pngFilterCases` twin `png_filter_rows` on both builds against `kernels_js.js`
+  `pngFilterRows` (each case also at an odd offset), that twin against px_test's own `reference.pngFilterRows`, and the
+  SIMD build's lines unfiltered back to the input: 1032 cases, every row width from 1 to 40 px (every count of bytes
+  after the last 16-byte group, and the rows under 5 px that keep the scalar loop) and widths around 64, 256, 1024 and
+  4096 px, with and without the row above; random, tiny-range, two-value, around-128, flat and per-filter "forced" rows,
+  rows equal to the one above, and rows whose Up sum is 128 a byte over more than 255 groups (a u16 lane sum that
+  overflowed would pick Up). A coverage check over the rows of 5 px or more (the ones that reach the lanes) requires
+  every filter to win rows, ties of the sums won by None, Sub, Up and Average, and Paeth ties of a over c and b over c.
+  The writer takes 8-bit RGBA only, so no other pixel size or depth is asked.
+  K12 (relight's march in stripes, `inpaint_relight.js` `stripePlan` / `marchOnPool`, JS only, no ABI change):
+  `node tools/px_test.js`'s `relightStripeCases`: `stripePlan` over 12 heights x 8 counts (contiguous, even, never under
+  32 rows), 308 cases of S stripes into one buffer against one call (the twin for point, spot, a light on a pixel, below
+  the surface and off the map; the Rust sun straight up, grazing and through `lightToMap`, on both builds and through
+  kernels.js as a worker routes it; 512 x 341 and 1024 x 682 at taps / steps 1/16 to 16/64 in 2 to 21 stripes); the
+  resident depth slot (`px.js` `_slot`: eight keyed stripes copy the map once, a new key or size copies again and never
+  answers from the old copy); `marchOnPool` on a real `WorkerPool` with fake workers (one shared out, no transfer, the
+  bytes; the non-SAB and route-0 paths one job; a failed stripe or other rows reject and cancel the rest; a group
+  cancelled from outside rejects with `CancelledError` and sends none of its queued stripes). The `relight` gate's case
+  nk ("three nudges: only the last key lands"): for a point and a sun three nudges flushed at once post three full
+  marches, the pool cancels exactly the stripes of the two superseded ones, one landing (current) holds the last key and
+  the bytes of one call, the sun's stripes on Rust and the point's on the twin, each nudge's quick march lands; three
+  nudges without a flush cancel nothing; there, back and there again posts two full marches and lands one; the route
+  `relightStripes` 0 is one job of all rows. `perf_test.py --filter=relight` adds the stripes' rows (the stripes and
+  their workers, kernel ms, each worker's first stripe against its later ones, the other pool jobs and mip chains of a
+  row, the efficiency of the named row and of the same march again against the one-job route), a whole change during a
+  three-light march, eight NORMAL jobs during one, and a light made a sun; `docs/measurements/k12_2026-11-06/`
+  (`k12_chain.sh`, `summarize.py`) runs them three times on fresh instances under the machine's busy lock.
+  `docs/measurements/w1_2026-11-06/w1_identity.js --old <the px.wasm before W1> file.png ...` re-filters real PNGs in
+  the app's parts of 128 rows on the new SIMD build, the scalar build, the old SIMD build and the JS twin and compares
+  every line (and, for a file Scumble wrote, the file's own lines); the old build is
+  `git show 59ff16f:renderer/editor/px/px.wasm`. The mutation round's script is `mutation/mut_w1.py` there.
   `python tools/mem_test.py [12000x8000] [--rounds 4] [--keep]` is the memory walk: a
   document per round, benchmarked, closed and collected, with the private bytes of the
   renderer and of the GPU process, a census of every live canvas and the line that made it.
@@ -104,7 +182,9 @@ Since then: `tools/document_test.py` / `document_ux_test.py` / `document_perf.py
 what an exported picture says about itself; `node tools/secret_names_test.js` the names it leaves out of an embedded
 recipe), `node tools/font_ref_test.js` (which file a text's font is loaded from), `node tools/pixel_memory_test.js`
 (the tile store at the renderer's typed-array limit, the refusal stood in for), `tools/tiff_test.js` with `tools/tiff_fixtures.py` and
-`tools/tiff_test.py` (gates `tiff`, `tiffperf:WxH`), `tools/comfyview_test.py` (gate `comfyview`, the ComfyUI window of
+`tools/tiff_test.py` (gates `tiff`, `tiffperf:WxH`; `tiffperf:WxH,--variant,all` also opens Scumble's own TIFF of the
+15k photo and Pillow / tifffile files with LZW, PackBits, zlib in one strip and none, `docs/PLAN_WASM_BUILD.md` K0a),
+`tools/comfyview_test.py` (gate `comfyview`, the ComfyUI window of
 item 35 V1 against a stub server it starts, offline only: the start page with no target and no load, one window on a
 second open, its bounds kept; the stub page without `window.scumble`, `window.comfybar` or `require`, kept on its
 origin; Ctrl+S reaching the page and no Scumble menu command, also after the menu is built again, with a control key
@@ -588,6 +668,16 @@ Known flakes; **re-run before believing any of these**:
   the undo cases exact). The editor gate alone on a fresh instance (`lr2-b`) and the same three gates in the same order
   again (`lr2-c`) passed, so the order is ruled out. Another session's 15k measurement ran on the machine around the
   first run (its `native_test.py` before it, its busy lock after it). Not looked into further.
+- 2026-11-06 (K12's last lint run): the `lint` gate runs `npx eslint .`, which also reads the other agents' worktrees
+  under `.claude/worktrees/` (their untracked files too): a new script there with a top-level `return`
+  (`corridorkey/docs/measurements/ck_i0a_2026-11-06/scripts/s0_setup.js`) made it red with nothing changed in this
+  tree. `npx eslint . --ignore-pattern ".claude/**"` gives this tree's own result (0 errors, K12's
+  `gates/gates/k12-lint-final/lint_own_tree.log`).
+- 2026-11-06 (W1's gates, tiles): the `layered` gate's `the_pool_and_the_window_read_a_psd_alike` failed once in its
+  "a closed tab" case: its shape check stringifies `ed.base`, whose pixels carry cache fields, and `_regions` was `null`
+  before and `{}` after (a cache made between the two reads), so the shape differed with nothing landed
+  (`stopped` 1, `lost` 0). The rerun on a fresh instance passed, as did the same step on the same build earlier the
+  same day and on the canvas backend. Ruled out: W1's PNG writer (the step reads a PSD and lands nothing).
 - 2026-10-19 (0.1.49's exe gates, tiles): the `brush` gate ran out of its 420 s after its reader part had printed
   `RESULT PASS` (the in-app part never answered); the rerun on a fresh instance passed in 16 s, and the canvas list's
   `brush` passed in the same build. The machine was loaded (a video render of another session ran beside the gates).

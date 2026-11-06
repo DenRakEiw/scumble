@@ -1,0 +1,32 @@
+[ok] node selection_test.js passed
+[ok] node selection_test.js passed
+[ok] setup: {"doc": 2, "width": 800, "height": 600, "tiles": true}
+[ok] select_rect_intersect: {"bounds": [200, 200, 400, 400]}
+[ok] lasso_intersect_pointer_events: {"lassoBounds": [150, 150, 449, 450]}
+[ok] polygon_intersect_pointer_events: {"ok": true}
+[ok] soft_wand_add_keeps_alpha: {"alphaBefore": 204, "alphaAfter": 230}
+[ok] load_selection_intersect: {"bounds": [200, 200, 400, 400]}
+[ok] real_wand_on_tiles: {"ok": true, "bounds": [100, 100, 300, 300]}
+[ok] range_select_depth_cases: {"c1Vals": [0, 0, 255, 255, 255, 0, 0, 0, 0], "aCase2": 128, "aCase4": 100, "expectedSub": [255, 127, 0, 0, 255]}
+[ok] range_select_15k_tile_case: {"ms": 1202.6, "tiles": 2301, "flattenCount": 0}
+  range depth 15000x10000: selectRange 1202.6 ms (wall 1202.7 ms), 2301 partial tiles
+   range_select jobs: 40, summed {"ms": 8245.7, "tiles": 2301, "gen": 0}
+   px calls: window mip_chain 48, sel_combine 2301; range_select jobs none
+   marks range: edges 0.1, posted 0.1, combined 1193.0, done 9.4 | total 1202.7 ms  (source "depth", mode "replace", snap false, readMs 0, pictureTiles 0, jobs 40, combineMs 248.2, ms 1202.6, tiles 2301, pct 50)
+[ok] range_select_luma_color_cases: {"selectedStripes": [102, 119, 136, 153], "redVal": 255, "greenVal": 0, "blueVal": 0, "emptyBounds": true}
+[ok] range_select_invert_histogram_stale: {"total": 16384, "stale": true}
+[ok] range_select_15k_luma_case: {"ms": 1757.5, "tiles": 2360, "flattenCount": 0}
+  range luma 15000x10000: selectRange 1757.5 ms (wall 1758.1 ms), 2360 partial tiles
+   range_select jobs: 10, summed {"ms": 3001.8, "tiles": 2360, "gen": 0}; the picture in 40 stack_into jobs, kernel 460.8 ms summed
+   px calls: window mip_chain 16, sel_combine 98; range_select jobs none; stack_into jobs none
+   marks range: held 9.3, combined 1724.6, done 23.7 | total 1757.6 ms  (source "luma", mode "replace", snap false, program false, readMs 180.3, combineMs 152.0, bands 10, ms 1757.5, tiles 2360, pct 100)
+[ok] selection_panel_range_cases: {"panelOk": true, "getImageDataCount": 0, "mid": 0.5003173876554513, "expectedV": 0.5003173876554513}
+[ok] object_standin_setup: {"doc": 5, "width": 1600, "height": 1200}
+[ok] object_case1_drag: {"box": [256, 255.99999999999994, 767.9999999999999, 768], "insideOk": true, "outsideOk": true}
+[ok] object_case2_second_drag_reuses_key: {"keyReused": "5:image:d92e064abb09a1a5a5f9"}
+[ok] object_case3_shift_alt_intersect: {"intersectOk": true}
+[ok] object_case4_click_empty_spot: {"clickOk": true}
+[ok] object_case5_15k_no_large_allocations: {"elapsedMs": 482.4, "maxU8Alloc": 87296, "maxCanvasMB": 9.6}
+[ok] object_case6_embedding_retry: {"retryOk": true, "segCalls": 2}
+[ok] cleanup: "ok"
+PASS

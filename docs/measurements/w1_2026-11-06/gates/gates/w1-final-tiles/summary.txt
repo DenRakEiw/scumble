@@ -1,0 +1,9 @@
+lint rc=0 43s 
+types rc=0 5s 
+export rc=0 154s PASS
+layered rc=1 4s FAIL
+pxjobs rc=0 241s PASS
+pixels rc=0 22s PASS
+document rc=0 38s PASS
+tiff rc=0 11s PASS
+SOME FAILED

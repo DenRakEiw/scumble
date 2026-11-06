@@ -1,0 +1,8 @@
+(node:22776) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/renderer/editor/px/px.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\package.json.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+Electron 44.2.0 (ELECTRON_RUN_AS_NODE), V8 15.2.124.19-electron.0, AMD Ryzen 9 7900X3D 12-Core Processor
+PNG rows (filter) | 4,096 × 256 band | JS 36.0 | scalar 28.1 | SIMD 18.7 | copy 0.309 | ×1.90 (×1.93 without copy)
+done in 1 s
+wrote docs/measurements/w1_2026-11-06/before/node/px_bench_electron.json

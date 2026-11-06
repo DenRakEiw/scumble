@@ -1,0 +1,506 @@
+[
+ {
+  "size": "15000x10000",
+  "mp": 150,
+  "filter": "relight",
+  "setBase": 4238,
+  "memMB": null,
+  "view": "1820x1198",
+  "display": {
+   "mirrors": 2,
+   "mirrorMB": 1144.4,
+   "regions": 15,
+   "regionMB": 196.2,
+   "pyramidMB": 0
+  },
+  "focus": [
+   true,
+   "visible",
+   true,
+   "visible"
+  ],
+  "opacity_tick": [
+   19.1,
+   64.4
+  ],
+  "match_tick": [
+   17.1,
+   17.5
+  ],
+  "filter_tick": [
+   14.3,
+   29.9
+  ],
+  "pan": [
+   3.3,
+   6.7
+  ],
+  "zoom": [
+   3.2,
+   4.9
+  ],
+  "fit": [
+   0,
+   0.1
+  ],
+  "redraw_cached": [
+   0,
+   0.1
+  ],
+  "pan_1to1": [
+   3.3,
+   7
+  ],
+  "gl_stack": 1,
+  "pan_1to1_gl": [
+   0.1,
+   0.3
+  ],
+  "pan_fit_gl": [
+   0.2,
+   5.8
+  ],
+  "first_1to1_gl": [
+   2.1,
+   2.2
+  ],
+  "glMB": {
+   "atlas": 94.8,
+   "pages": 82,
+   "slots": 18874,
+   "textures": 0
+  },
+  "whole_quiet": [
+   2499.1,
+   0
+  ],
+  "whole_level": 3,
+  "whole_level_row": [
+   3,
+   1
+  ],
+  "whole_fit_gl": [
+   22.3,
+   22.3
+  ],
+  "whole_fit_gl_state": [
+   0,
+   0
+  ],
+  "whole_fit_gl_chains": [
+   16,
+   2360
+  ],
+  "whole_fit_gl_settled": [
+   83.4,
+   25.8
+  ],
+  "whole_fit_gl_landed": [
+   2360,
+   0
+  ],
+  "touch_fit_gl": [
+   9.7,
+   9.7
+  ],
+  "whole_1to1_gl": [
+   31,
+   31
+  ],
+  "whole_1to1_gl_state": [
+   0,
+   0
+  ],
+  "whole_1to1_gl_chains": [
+   16,
+   2344
+  ],
+  "whole_1to1_gl_settled": [
+   92.9,
+   27.8
+  ],
+  "whole_1to1_gl_landed": [
+   2344,
+   2344
+  ],
+  "panel_flatten_sync": [
+   359,
+   359
+  ],
+  "panel_flatten_sync_chains": [
+   2360,
+   0
+  ],
+  "panel_flatten_sync_keptMB": [
+   221,
+   0
+  ],
+  "panel_flatten_settled": [
+   38.1,
+   134.6
+  ],
+  "panel_flatten_settled_chains": [
+   98,
+   2262
+  ],
+  "panel_flatten_settled_keptMB": [
+   32.7,
+   0
+  ],
+  "whole_1to1_lights": [
+   56.1,
+   56.1
+  ],
+  "whole_1to1_lights_state": [
+   1,
+   0
+  ],
+  "whole_1to1_lights_chains": [
+   0,
+   0
+  ],
+  "whole_1to1_lights_settled": [
+   34.1,
+   18.5
+  ],
+  "whole_1to1_lights_landed": [
+   1320,
+   82
+  ],
+  "stroke_frame": [
+   1.1,
+   6
+  ],
+  "stroke_commit": [
+   21.2,
+   97.1
+  ],
+  "undo_bytes": 4718592,
+  "undo_step": [
+   41.2,
+   0
+  ],
+  "selection_change": [
+   17.1,
+   0
+  ],
+  "get_value": [
+   0,
+   54.4
+  ],
+  "bounds_scan": [
+   2.1,
+   2.3
+  ],
+  "draw_with_ants": [
+   0.4,
+   27.8
+  ],
+  "full_composite": [
+   303.3,
+   2135.6
+  ],
+  "grow": [
+   69.8,
+   547.8
+  ],
+  "shrink": [
+   44.2,
+   327.6
+  ],
+  "invert": [
+   258.3,
+   252.4
+  ],
+  "invert_landings": [
+   0,
+   23.7
+  ],
+  "feather": [
+   45.1,
+   392.9
+  ],
+  "wand": [
+   206.3,
+   2352.1
+  ],
+  "wand_object": [
+   138.6,
+   211.6
+  ],
+  "bucket": [
+   92.8,
+   153
+  ],
+  "fill_small": [
+   20.4,
+   20.3
+  ],
+  "undo_fill": [
+   38,
+   37.1
+  ],
+  "clear_small": [
+   33.3,
+   32.1
+  ],
+  "long_stroke": [
+   187.5,
+   185.3
+  ],
+  "long_buffer": [
+   14698,
+   9698,
+   28
+  ],
+  "long_commit": [
+   78.9,
+   78.8
+  ],
+  "png": [
+   11.6,
+   1578.6
+  ],
+  "png_main": [
+   240.6,
+   1281.2
+  ],
+  "point_add": [
+   148.8,
+   144.1
+  ],
+  "point_add_plain": [
+   58.2,
+   58
+  ],
+  "mean_color": [
+   63.7,
+   62.5
+  ],
+  "mean_color_plain": [
+   13.8,
+   13.8
+  ],
+  "bucket_sel": [
+   151.6,
+   263.5
+  ],
+  "screenshot": [
+   24.3,
+   24.2
+  ],
+  "screenshot_mb": [
+   0,
+   0
+  ],
+  "prompt_ctx": [
+   81.7,
+   81.6
+  ],
+  "prompt_ctx_mb": [
+   0,
+   0
+  ],
+  "prompt_ctx_sel": [
+   100.7,
+   100.5
+  ],
+  "prompt_ctx_sel_mb": [
+   0,
+   0
+  ],
+  "object_input": [
+   72,
+   71.9
+  ],
+  "object_input_mb": [
+   0,
+   0
+  ],
+  "object_input_old": [
+   1730.2,
+   1730
+  ],
+  "object_input_old_mb": [
+   1733,
+   0
+  ],
+  "cutout_input": [
+   24,
+   23.9
+  ],
+  "cutout_input_mb": [
+   0,
+   0
+  ],
+  "cutout_input_old": [
+   505.6,
+   505.5
+  ],
+  "cutout_input_old_mb": [
+   0,
+   0
+  ],
+  "wand_masked": [
+   176.1,
+   489.7
+  ],
+  "wand_masked_mb": [
+   0,
+   0
+  ],
+  "pick_layer": [
+   10.7,
+   10.6
+  ],
+  "pick_layer_mb": [
+   0,
+   0
+  ],
+  "wand_layer": [
+   53.4,
+   106.3
+  ],
+  "wand_layer_mb": [
+   0,
+   0
+  ],
+  "pan_masked_filter": [
+   3.7,
+   5.1
+  ],
+  "pan_masked_filter_mb": [
+   0,
+   0
+  ],
+  "peek_fit": [
+   35.5,
+   35.5
+  ],
+  "peek_fit_mb": [
+   0,
+   0
+  ],
+  "peek_1to1": [
+   21,
+   21.1
+  ],
+  "peek_1to1_mb": [
+   0,
+   0
+  ],
+  "move_first": [
+   0.3,
+   0.3
+  ],
+  "move_mb": [
+   0,
+   0
+  ],
+  "match_full_fit": [
+   12.8,
+   0.2
+  ],
+  "match_full_fit_mb": [
+   0,
+   0
+  ],
+  "match_full_1to1": [
+   126.8,
+   36.5
+  ],
+  "match_full_1to1_mb": [
+   0,
+   0
+  ],
+  "match_full_pan": [
+   3.5,
+   15.6
+  ],
+  "match_full_pan_mb": [
+   0,
+   0
+  ],
+  "match_full_pick": [
+   27.4,
+   27.4
+  ],
+  "match_full_pick_mb": [
+   0,
+   0
+  ],
+  "match_full_wand": [
+   184.8,
+   627.1
+  ],
+  "match_full_wand_mb": [
+   0,
+   0
+  ],
+  "relight_first": [
+   null,
+   3867.5
+  ],
+  "relight_first_marches": [
+   3,
+   3857.9
+  ],
+  "relight_one": [
+   60.4,
+   3947.1
+  ],
+  "relight_one_marches": [
+   1,
+   3932.9
+  ],
+  "relight_three": [
+   50.4,
+   5569.2
+  ],
+  "relight_three_marches": [
+   3,
+   5560
+  ],
+  "relight_quick": [
+   35.6,
+   53.4
+  ],
+  "relight_quick_marches": [
+   1,
+   52.7
+  ],
+  "relight_pan": [
+   3.5,
+   77.3
+  ],
+  "relight_pan_frames": [
+   175,
+   3625.7
+  ],
+  "relight_pan_held": [
+   79.7,
+   0
+  ],
+  "relight_whole_calm": [
+   30.3,
+   77.7
+  ],
+  "relight_whole_calm_held": [
+   12.4,
+   16,
+   2344,
+   0
+  ],
+  "relight_whole_march": [
+   32.6,
+   26.3
+  ],
+  "relight_whole_march_held": [
+   36.9,
+   0,
+   0,
+   3
+  ],
+  "relight_notes": []
+ }
+]

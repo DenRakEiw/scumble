@@ -1,0 +1,7 @@
+pxjobs rc=0 117s PASS
+selection rc=0 12s PASS
+pixels rc=0 10s PASS
+editor rc=0 163s PASS
+brush rc=0 14s RESULT PASS
+export rc=0 137s PASS
+ALL PASS

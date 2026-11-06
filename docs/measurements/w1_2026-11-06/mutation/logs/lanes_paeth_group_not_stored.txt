@@ -1,0 +1,36 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 5 s)
+warning: unused variable: `o`
+   --> src\png.rs:309:64
+    |
+309 |     unsafe fn sums<const UP: bool>(r: *const u8, u: *const u8, o: *mut u8, end: usize, tot: &mut [u32; 5]) {
+    |                                                                ^ help: if this is intentional, prefix it with an underscore: `_o`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 2.90s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.37s
+$ node tools/px_test.js  (rc 1, 58 s)
+FAIL rust simd png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)  mid 5 px x 3 with the row above: out[26] is 254, the twin has 1
+FAIL rust simd png_filter_rows unfilters back to the input (1032 cases)  mid 5 px x 3 with the row above
+FAIL js pngFilterRows equals the rust simd  4096x4 at 5: 214 vs 37
+FAIL rust simd pngPart level 1: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189478
+FAIL rust simd pngPart level 1: the joined rows unfilter back to the input
+FAIL rust simd pngPart level 2: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189407
+FAIL rust simd pngPart level 2: the joined rows unfilter back to the input
+FAIL rust simd pngPart level 6: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189402
+FAIL rust simd pngPart level 6: the joined rows unfilter back to the input
+FAIL (9)
+ok   rust scalar a large alloc grows memory  226033664 -> 494534656
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2203238400
+FAIL (9)
+(node:43024) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/F--canvas/543d44fb-4d2d-4818-8804-974916d10a44/scratchpad/w1_mut/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\543d44fb-4d2d-4818-8804-974916d10a44\scratchpad\w1_mut\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

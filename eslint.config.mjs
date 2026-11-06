@@ -46,6 +46,8 @@ export default [
             "**/js/inpaint_canvas.js",
             // Vendored libraries: not ours to fix, and three.js trips no-cond-assign by design.
             "plugins/*/vendor/**",
+            // A measurement's CDP snippets: bodies for tools/cdp.py eval (a top-level return), not modules.
+            "docs/measurements/*/scripts/**",
         ],
     },
 

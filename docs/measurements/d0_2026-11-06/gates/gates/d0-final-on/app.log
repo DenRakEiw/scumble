@@ -1,0 +1,10 @@
+
+
+DevTools listening on ws://127.0.0.1:9555/devtools/browser/c51312a3-004b-48b4-80ac-4330488144ee
+Error occurred in handler for 'file:saveWrite': Error: no such save: it was cancelled, or the window reloaded
+    at failure (F:\canvas\electron\main\filesaves.js:14:45)
+    at FileSaves.saveOf (F:\canvas\electron\main\filesaves.js:156:54)
+    at FileSaves.write (F:\canvas\electron\main\filesaves.js:83:24)
+    at F:\canvas\electron\main\main.js:1147:61
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)

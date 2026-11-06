@@ -1,0 +1,16 @@
+photo_15k.png: 15000 x 10000, RGBA, 176.0 MB, decoded in 1181 ms
+  ok   every build and the twin give the same lines; sha256 bc19177de843ffa1a2110283b844a3d374707323d1e76c3c55b549b7285ce3fc
+  the new lines equal the file's own lines
+  types chosen None 0, Sub 95, Up 0, Average 2348, Paeth 7557; the file's 0 / 95 / 0 / 2348 / 7557
+  filter ms: simd 301, scalar 3841, old simd 3299, js 7896 (Node, explains only)
+adobe_15000x10000.png: 15000 x 10000, RGB, 398.0 MB, decoded in 1452 ms
+  ok   every build and the twin give the same lines; sha256 c90542cda9f36c231350126fd29507cc2c0a3198aacefa530e71e38219590466
+  the new lines differ from the file's own lines (an RGB file: not comparable)
+  types chosen None 0, Sub 1, Up 0, Average 9999, Paeth 0; the file's 0 / 4511 / 5489 / 0 / 0
+  filter ms: simd 326, scalar 3453, old simd 3161, js 9001 (Node, explains only)
+adobe_6000x4000.png: 6000 x 4000, RGB, 63.8 MB, decoded in 245 ms
+  ok   every build and the twin give the same lines; sha256 8d458dcb46d8380efe1e345ea1e3355352f7fc60d0fbadb8f0218db795d625c2
+  the new lines differ from the file's own lines (an RGB file: not comparable)
+  types chosen None 0, Sub 1, Up 0, Average 3999, Paeth 0; the file's 0 / 1488 / 2512 / 0 / 0
+  filter ms: simd 59, scalar 596, old simd 531, js 1499 (Node, explains only)
+PASS
