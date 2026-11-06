@@ -4,8 +4,8 @@
   "kind": "key",
   "label": "CorridorKey 2.0",
   "note": "keys green and blue screens (Image › Key Green / Blue Screen)",
-  "source": "Scumble's ONNX conversion of nikopueringer/CorridorKey2.0 @ cf44a8d",
-  "sourceUrl": "https://github.com/nikopueringer/CorridorKey2.0",
+  "source": "Scumble's ONNX conversion of the CorridorKey 2.0 weights (huggingface.co/nikopueringer/CorridorKey2.0 @ cf44a8d; code github.com/nikopueringer/CorridorKey2.0 @ 485f5e9)",
+  "sourceUrl": "https://huggingface.co/nikopueringer/CorridorKey2.0",
   "license": "Corridor Key Licence 2.0 (CC BY-NC-SA 4.0 with Corridor's terms); C-RADIOv4 NVIDIA Open Model License; MoGe-2 MIT; RVM CC BY 4.0",
   "subdir": "onnx/corridorkey2",
   "placeholder": true,
@@ -16,7 +16,7 @@
     "version": 1,
     "text": "CorridorKey 2.0 by Corridor Digital, Corridor Key Licence 2.0 (CC BY-NC-SA 4.0 with their terms), used with their permission in this free app; this set is a conversion to ONNX of their weights and of C-RADIOv4 (NVIDIA Open Model License), MoGe-2 (MIT) and RVM (Google DeepMind, CC BY 4.0), about {size}, downloaded from {host}. Your keyed pictures are yours, also commercially. Organisations with more than US $20M yearly revenue need one CorridorKey seat per user (corridorkey.com).",
     "links": [
-      { "label": "Corridor Key Licence 2.0", "url": "https://github.com/nikopueringer/CorridorKey2.0/blob/cf44a8d/LICENSE" },
+      { "label": "Corridor Key Licence 2.0", "url": "https://github.com/nikopueringer/CorridorKey2.0/blob/485f5e9ab759ead6138cc990776184b59d6ea971/LICENSE" },
       { "label": "corridorkey.com", "url": "https://corridorkey.com" },
       { "label": "The set's notices", "file": "THIRD_PARTY_NOTICES.md" }
     ]

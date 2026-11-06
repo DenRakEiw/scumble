@@ -8,6 +8,8 @@
 //
 // --base is the folder URL the files are served from (e.g. https://huggingface.co/<user>/CorridorKey2.0-ONNX/resolve/
 // <commit>/); a file's URL is the base plus its name. Without --out the catalogue is electron/main/onnx/corridorkey2.json.
+// An --out that does not exist yet takes the descriptive fields (DESCRIPTIVE below) from that catalogue, never its
+// version or files; --check needs an existing catalogue. A catalogue without id and subdir is never written.
 // The files are the folder's regular files (no .part, no hidden files, no subfolders: the set lives in one folder);
 // when manifest.json lists `files` (names, or objects with `name`), that list plus manifest.json itself must match the
 // folder exactly.
@@ -18,6 +20,10 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const CATALOGUE = path.join(__dirname, "..", "electron", "main", "onnx", "corridorkey2.json");
+/** The fields a new catalogue takes from the app's (the rest is read from the set or given on the command line). */
+const DESCRIPTIVE = ["id", "kind", "label", "note", "source", "sourceUrl", "license", "subdir", "terms"];
+
+function readJson(p) { return JSON.parse(fs.readFileSync(p, "utf8")); }
 
 async function sha256(p) {
     const h = crypto.createHash("sha256");
@@ -66,6 +72,7 @@ async function build(dir, { current = {}, version = null, base = null } = {}) {
     }
     if (!files.length) throw new Error("the set folder is empty: " + dir);
     const out = { ...current };
+    if (!out.id || !out.subdir) throw new Error("refusing to write a catalogue without id and subdir (start from electron/main/onnx/corridorkey2.json)");
     out.about = "The CorridorKey 2.0 set in the helper registry (electron/main/onnx/models.js fromSetCatalogue), written by tools/ck2_catalogue.js from the built set: names, sizes and sha256 read from the files. Offered for download only with a base URL.";
     out.placeholder = false;
     out.version = version || current.version || null;
@@ -97,7 +104,13 @@ async function main() {
     const dir = flag("--set");
     const out = flag("--out") || CATALOGUE;
     if (!dir) { console.error("usage: node tools/ck2_catalogue.js --set <dir> [--version v] [--base url] [--out json] [--check]"); process.exit(2); }
-    const current = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : {};
+    if (args.includes("--check") && !fs.existsSync(out)) { console.error("no catalogue at " + out); process.exit(2); }
+    let current;
+    if (fs.existsSync(out)) current = readJson(out);
+    else {
+        const app = readJson(CATALOGUE);
+        current = Object.fromEntries(DESCRIPTIVE.filter((k) => k in app).map((k) => [k, app[k]]));
+    }
     if (args.includes("--check")) {
         const diffs = await compare(current, dir);
         for (const d of diffs) console.log("  " + d);
@@ -111,4 +124,4 @@ async function main() {
 
 if (require.main === module) main().catch((err) => { console.error(String(err && err.message || err)); process.exit(1); });
 
-module.exports = { build, compare, setNames };
+module.exports = { build, compare, setNames, DESCRIPTIVE };

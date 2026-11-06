@@ -614,11 +614,12 @@ class Downloader {
 /**
  * Hash the model's present files against the registry. -> { id, ok, files: [{ name, path, ok }] }, `ok` null for a
  * file without a known sha256 or not present; the whole `ok` is true only when every file is present and none failed.
+ * `links` are the scan's (as for `locate`): a model present only through a link is hashed at the linked path.
  */
-async function verify(id, dir, lookup = byId) {
+async function verify(id, dir, links = null, lookup = byId) {
     const model = lookup(id);
     if (!model) throw new Error("unknown model " + id);
-    const loc = locate(model, dir);
+    const loc = locate(model, dir, links);
     const files = [];
     for (let i = 0; i < model.files.length; i++) {
         const f = model.files[i], l = loc.files[i];

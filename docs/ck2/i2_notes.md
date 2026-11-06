@@ -13,8 +13,11 @@ can go.
   `fromSetCatalogue`, `hashFile`. The hashes of every helper but RMBG-2.0, their URLs pinned to the commit the hash
   was read at, and SAM2 large's decoder size fixed. `docs/HELPERS.md` "Downloads" is the full description.
 - `electron/main/onnx/corridorkey2.json`: the set's catalogue, a placeholder (28 planned files, no URL, no sha256).
-- `tools/ck2_catalogue.js`: writes that catalogue from a built set folder (`--set`, `--version`, `--base`, `--check`).
-- `tools/download_test.js` (64 checks), `tools/scan_test.js` (22 checks, six new for the set).
+- `tools/ck2_catalogue.js`: writes that catalogue from a built set folder (`--set`, `--version`, `--base`, `--check`);
+  an `--out` that does not exist yet takes the descriptive fields (id, kind, label, note, source, sourceUrl, licence,
+  subdir, terms) from `corridorkey2.json`, `--check` needs an existing catalogue, and nothing is written without `id`
+  and `subdir`.
+- `tools/download_test.js` (72 checks), `tools/scan_test.js` (22 checks, six new for the set).
 - `docs/BUGS.md`: the downloader entry marked fixed in place; `docs/HELPERS.md`.
 
 ## The interface (exact)
@@ -30,7 +33,8 @@ models.describe("corridorkey2", dir, links?, elsewhere?) -> row | null
 models.describeAll(dir, links?, elsewhere?, { all = false }?)   // leaves out what is not offered unless all
 models.setFolder(model, dir) -> string | null                   // the folder of a present set (the key process loads from it)
 models.termsText(model) -> string                               // the terms paragraph with {size} and {host} filled in
-models.verify(id, dir, lookup?) -> Promise<{ id, ok, files: [{ name, path, ok: true | false | null }] }>
+models.verify(id, dir, links?, lookup?) -> Promise<{ id, ok, files: [{ name, path, ok: true | false | null }] }>
+//   links: the scan's (as for describe / locate), so a model present only through a link is hashed at that path
 models.hfTokenAllowed(url) -> boolean
 new models.Downloader(dirProvider, tokenProvider, onProgress, {
     termsAccepted?: (model) => boolean,      // default: never, so a model with terms is refused until this is wired
@@ -63,7 +67,8 @@ download's error (with an `error` event): `Not enough free disk space for <label
      `termsAccepted: conf().terms || {}`; `keying.inAppOffered` (§4.3) is `status.key.offered`, never a setting.
    - For I3: `keySetFolder()` = `models.setFolder(models.byId(conf().key), modelsDir())`, null meaning "not
      downloaded" (`MISSING.key`).
-   - Optional: `helpers:verify` -> `models.verify(id, modelsDir())` for a Verify button or the parity test.
+   - Optional: `helpers:verify` -> `models.verify(id, modelsDir(), links())` for a Verify button or the parity test
+     (without `links()` a model found only through Scan folder reports missing).
 2. **`electron/main/settings.js:23`**: `helpers.key: "corridorkey2"` and `helpers.terms: {}` in the defaults; the
    settings migration test with them.
 3. **`renderer/shell.js` `renderHelpers`** (`:2077-2143`): the kind label `key: "green / blue screen keying (CorridorKey
@@ -101,11 +106,45 @@ download's error (with an `error` event): `Not enough free disk space for <label
    (pinned revisions, sha256, licences). The catalogue's planned list (28 files: buckets 768², 1024 × 768, 768 × 1024,
    1024²) is a guess at I1's layout; the tool replaces it whole.
 10. **`THIRD_PARTY_NOTICES.md`** (plan §3.3; committed with the set's hosting, so not drafted as a file here): in the
-    repo root and inside the hosted set: Corridor's LICENSE (`CorridorKey2.0@cf44a8d`), NVIDIA's Open Model License
+    repo root and inside the hosted set: Corridor's LICENSE (the weights' Hugging Face revision `cf44a8d`, the same
+    text as the GitHub code commit `485f5e9ab759ead6138cc990776184b59d6ea971`), NVIDIA's Open Model License
     and its `Notice` line ("Licensed by NVIDIA Corporation under the NVIDIA Open Model License"), Microsoft's MIT
     notice for MoGe-2 (and the Apache-2.0 notice for its DINOv2 code), the CC BY 4.0 line for RVM (Google DeepMind),
     each part marked "converted to ONNX / fp16 by Scumble from <source @ revision>". The catalogue's terms link
     `{ "file": "THIRD_PARTY_NOTICES.md" }` points at the copy inside the set.
+
+11. **`docs/PLAN_CORRIDORKEY.md`** I2's Tests column (owned by the corridorkey workflow, not edited here): "ftruncate
+    sizes: no 2.4 GB on disk" is not so on NTFS (a truncate of a non-sparse file reserves the whole size, measured
+    2026-11-06: 2 GiB in the temp folder took 2.147 GB of free space until the unlink). The scan test now gives the set
+    in CorridorKey's layout small sizes (`1000 + i`), the rule it checks does not depend on them; the column can say
+    "the set's names at small sizes".
+
+## Merge order and wiring
+
+- **`ck-i2` first**, into `corridorkey`: it touches only its own files (`models.js`, `corridorkey2.json`,
+  `tools/ck2_catalogue.js`, `tools/download_test.js`, `tools/scan_test.js`, `docs/HELPERS.md`, one hunk of
+  `docs/BUGS.md`, this file). Checked 2026-11-06: `corridorkey` after `6e9c0cf` (I0a, `09a1b3e` / `156af0e`), `ck-ui`
+  and `ck-refine` change none of them, so the merge is clean.
+- **Then the wiring above** (items 1-3: `index.js`, `settings.js`, `shell.js`, the terms dialog), one commit on
+  `corridorkey`; it is what makes `status.key` exist, which `ck-ui`'s readiness line (I4 / I5) and I3's
+  `keySetFolder()` read. `models.describe("corridorkey2", ...)` answers `offered: false, placeholder: true` until the
+  set is hosted, so the Key dialog's in-app route reads as "not available" and nothing offers a download.
+- **Then `ck-ui` and `ck-refine`** in either order (renderer side, no file of I2's).
+- **The shared docs' text** (items 4-8, 11) after the code, in the integration's docs commit.
+- **I1 / the release** (item 9): the catalogue rewritten by the tool, never by hand.
+
+## The tests (run on `ck-i2`, 2026-11-06, the review round's fixes included)
+
+- `node tools/download_test.js`: PASS 72 (no network, no model: two local HTTP servers as two hosts, a fetch stub for
+  huggingface.co with its CDN hop and a 401 for a gated and a not-gated model). Mutation spot check: the gated
+  condition inverted in `models.js` turns the new HF case red.
+- `node tools/scan_test.js`: PASS 22. `node tools/settings_migration_test.js`: PASS (unchanged; the `helpers.key` /
+  `helpers.terms` defaults get their step with the wiring, item 2).
+- Gates `lint` and `types` (`run_gates.sh i2-fix --offline --tiles on`, port 9575, no app started): ALL PASS.
+- The review round (2026-11-06) fixed: the terms' licence link (it named `cf44a8d`, a Hugging Face revision, on
+  GitHub: 404) and `source` / `sourceUrl` (the weights' HF repo and revision, the code commit beside); `verify` takes
+  the scan's links; the catalogue tool with a new `--out`; the scan test's 4.9 GB of truncated files; a stubbed-HF
+  401 case for the gated wording.
 
 ## Decisions I2 took (the plan left them open or was looser)
 

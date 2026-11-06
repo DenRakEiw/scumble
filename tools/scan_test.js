@@ -8,8 +8,9 @@
 // Hugging Face snapshot (`.../onnx/model.onnx`, found by size and layout), a decoder file
 // of the size all four SAM2 decoders share (must not be linked by size alone), and the
 // PyTorch weights the ComfyUI nodes keep (safetensors, pth), which have to be reported
-// and never linked. The big files are created by truncate, so nothing is written. A CorridorKey 2.0-sized set (2.4 GB
-// by truncate) counts only in its own onnx/corridorkey2/ folder at its registry sizes, never in a pack's corridorkey2/.
+// and never linked. The big files are created by truncate, so nothing is written. A set in CorridorKey 2.0's layout
+// (its file names at small sizes: on NTFS a truncate reserves the whole size) counts only in its own onnx/corridorkey2/
+// folder at its registry sizes, never in a pack's corridorkey2/.
 "use strict";
 
 const fs = require("node:fs");
@@ -77,17 +78,18 @@ async function synthetic() {
             fs.rmSync(dir2, { recursive: true, force: true });
         }
 
-        // a CorridorKey-sized set (the planned layout at its estimated sizes, by truncate: nothing is written): present
-        // only in onnx/corridorkey2/, never as the same names in a bare corridorkey2/ (a ComfyUI pack's folder)
+        // a set in CorridorKey 2.0's planned layout (its names, small sizes: the rule does not depend on the size, and on
+        // NTFS a truncate to the real 2.4 GB reserves it on disk): present only in onnx/corridorkey2/, never as the same
+        // names in a bare corridorkey2/ (a ComfyUI pack's folder)
         const ckReal = models.byId("corridorkey2");
         const ck = models.fromSetCatalogue({ id: "corridorkey2", subdir: "onnx/corridorkey2", base: "https://huggingface.co/x/resolve/0/",
-            files: ckReal.files.map((f, i) => ({ name: f.name, size: f.estimate || 1000 + i, sha256: "0".repeat(64) })) });
+            files: ckReal.files.map((f, i) => ({ name: f.name, size: 1000 + i, sha256: "0".repeat(64) })) });
         for (const f of ck.files) mk(dir, "corridorkey2/" + f.name, f.size);
         mk(dir, "corridorkey2/corridorkey_v2.safetensors", 16);                                // the pack's fp32 checkpoint
         const ckBareAbsent = !models.locate(ck, dir).present && models.locate(ck, dir).files.every((f) => !f.present);
         for (const f of ck.files) mk(dir, "onnx/corridorkey2/" + f.name, f.size);
         const ckLoc = models.locate(ck, dir);
-        const ckPresent = ckLoc.present && ckLoc.bytes > 2.4e9 && ckLoc.files.every((f) => f.rel === "onnx/corridorkey2/" + f.name);
+        const ckPresent = ckLoc.present && ckLoc.bytes === ck.files.reduce((a, f) => a + f.size, 0) && ckLoc.files.every((f) => f.rel === "onnx/corridorkey2/" + f.name);
         mk(dir, "onnx/corridorkey2/" + ck.files[3].name, 10);                                   // a weights file cut short
         const ckShortAbsent = !models.locate(ck, dir).present;
 

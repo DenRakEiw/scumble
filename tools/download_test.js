@@ -166,6 +166,9 @@ function registryChecks() {
     const ck = models.byId("corridorkey2");
     check("CorridorKey 2.0: a placeholder in onnx/corridorkey2, not offered, kind key, no URL", ck && ck.kind === "key" && ck.placeholder && ck.subdir === "onnx/corridorkey2" && !models.offered(ck) && ck.files.every((f) => !f.url && !f.sha256) && ck.files.length > 0,
         ck && { subdir: ck.subdir, placeholder: ck.placeholder });
+    const ghLinks = [ck.sourceUrl, ...((ck.terms && ck.terms.links) || []).map((l) => l.url)].filter((u) => u && /github\.com/.test(u));
+    check("CorridorKey 2.0: a GitHub link to a file names a full 40-hex commit (cf44a8d is the Hugging Face revision, not a GitHub commit)",
+        ghLinks.every((u) => !/\/blob\//.test(u) || /\/blob\/[0-9a-f]{40}\//.test(u)) && /^https:\/\/huggingface\.co\/nikopueringer\/CorridorKey2\.0$/.test(ck.sourceUrl), { sourceUrl: ck.sourceUrl, ghLinks });
     const dir = tmp("reg");
     try {
         check("CorridorKey 2.0 left out of Settings' rows, shown with all: true and offered false",
@@ -204,6 +207,7 @@ async function stubbedHF() {
         const u = new URL(url);
         if (u.hostname === "huggingface.co" && u.pathname.startsWith("/repo/resolve/")) return new Response(null, { status: 302, headers: { location: "https://us.aws.cdn.hf.co/xet-bridge-us/abc?X-Amz-Signature=1" } });
         if (u.hostname === "huggingface.co" && u.pathname.startsWith("/down/")) return new Response(null, { status: 302, headers: { location: "http://plain.example/x" } });
+        if (u.hostname === "huggingface.co" && u.pathname.startsWith("/gated/")) return new Response("Access to model is restricted", { status: 401 });
         if (u.hostname === "us.aws.cdn.hf.co" || u.hostname === "github.com" || u.hostname === "huggingface.co.evil.com") return new Response(body, { status: 200, headers: { "content-length": String(body.length) } });
         return new Response("?", { status: 404 });
     };
@@ -212,6 +216,8 @@ async function stubbedHF() {
         gh: { id: "gh", label: "GH", files: [{ name: "gh.onnx", role: "model", size: body.length, sha256: sha(body), url: "https://github.com/x/releases/download/v1/gh.onnx" }] },
         evil: { id: "evil", label: "Evil", files: [{ name: "evil.onnx", role: "model", size: body.length, sha256: sha(body), url: "https://huggingface.co.evil.com/x/evil.onnx" }] },
         down: { id: "down", label: "Down", files: [{ name: "down.onnx", role: "model", size: body.length, sha256: sha(body), url: "https://huggingface.co/down/x" }] },
+        gatedhf: { id: "gatedhf", label: "Gated", gated: true, sourceUrl: "https://huggingface.co/briaai/RMBG-2.0", files: [{ name: "gated.onnx", role: "model", size: body.length, sha256: null, url: "https://huggingface.co/gated/resolve/main/gated.onnx" }] },
+        opendenied: { id: "opendenied", label: "Open", sourceUrl: "https://huggingface.co/x/open", files: [{ name: "open.onnx", role: "model", size: body.length, sha256: null, url: "https://huggingface.co/gated/resolve/main/open.onnx" }] },
     };
     const dir = tmp("stub");
     try {
@@ -230,6 +236,14 @@ async function stubbedHF() {
         seen.length = 0;
         const r4 = await attempt(() => d.download("down"));
         check("an https URL redirected to http is refused and not followed", r4.error && /from https to http/.test(r4.error) && !seen.some((s) => s.url.startsWith("http://")), { r4, seen });
+        seen.length = 0;
+        const r5 = await attempt(() => d.download("gatedhf"));
+        check("a gated model refused by huggingface.co (401): the gated wording with its licence page, the token was sent",
+            r5.error && /is gated on Hugging Face \(401\)/.test(r5.error) && r5.error.includes("https://huggingface.co/briaai/RMBG-2.0") && /save your Hugging Face token/.test(r5.error)
+            && seen.length === 1 && seen[0].auth === "Bearer " + TOKEN && !exists(path.join(dir, "gated.onnx")) && !exists(path.join(dir, "gated.onnx.part")), { r5, seen });
+        const r6 = await attempt(() => d.download("opendenied"));
+        check("a model that is not gated, refused by huggingface.co: \"Hugging Face refused\", no gated wording",
+            r6.error && /^Hugging Face refused the download of open\.onnx \(401\)/.test(r6.error) && !/gated/.test(r6.error), r6);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
@@ -285,6 +299,27 @@ async function plainDownloads() {
         registry.denied.gated = true;
         r = await attempt(() => d.download("denied"));
         check("the gated wording only for Hugging Face's own host", r.error && !/gated/.test(r.error), r);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}
+
+async function verifyLinks() {
+    // a model present only through a link a scan made (its file under another name in a ComfyUI folder)
+    const root = tmp("vlink");
+    try {
+        const f = file("vlink.onnx", 30000);
+        plain("vlink", f, `${A}/ok/${f.name}`);
+        const lp = path.join(root, "BiRefNet", "renamed.onnx");
+        fs.mkdirSync(path.dirname(lp), { recursive: true });
+        fs.writeFileSync(lp, f.buf);
+        const links = { vlink: { model: lp } };
+        const lookup = (id) => registry[id];
+        const v0 = await models.verify("vlink", root, null, lookup);
+        const v1 = await models.verify("vlink", root, links, lookup);
+        check("verify with the scan's links hashes the linked file (without them it is missing)",
+            !v0.ok && v0.files[0].ok === null && v1.ok && v1.files[0].ok === true && v1.files[0].path === lp, { v0, v1 });
+        const b = Buffer.from(f.buf); b[11] ^= 1; fs.writeFileSync(lp, b);
+        const v2 = await models.verify("vlink", root, links, lookup);
+        check("verify through a link finds a changed byte", !v2.ok && v2.files[0].ok === false, v2);
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
@@ -383,11 +418,11 @@ async function sets() {
             && lastPerFile.every((e, i) => e && e.index === i + 1 && e.received === files[i].size && e.total === files[i].size)
             && lastPerFile[lastPerFile.length - 1].setReceived === total && done && done.setReceived === total && done.setTotal === total,
             { last: lastPerFile.map((e) => e && [e.index, e.received, e.setReceived]), done });
-        const v = await models.verify("ck_test", root, (id) => registry[id]);
+        const v = await models.verify("ck_test", root, null, (id) => registry[id]);
         check("verify: every file of the set checks", v.ok && v.files.every((x) => x.ok === true), v);
         const fb = path.join(folder, "ck_b.weights");
         const buf = fs.readFileSync(fb); buf[7] ^= 1; fs.writeFileSync(fb, buf);
-        const v2 = await models.verify("ck_test", root, (id) => registry[id]);
+        const v2 = await models.verify("ck_test", root, null, (id) => registry[id]);
         check("verify: a changed byte is found", !v2.ok && v2.files.find((x) => x.name === "ck_b.weights").ok === false);
         // a file of the wrong size in the set's folder counts as missing and is fetched again, the others not
         fs.writeFileSync(fb, buf.subarray(0, 1000));
@@ -495,6 +530,20 @@ async function catalogueTool() {
         check("the set the tool described downloads, checks and lands in onnx/<id>/", !r.error && models.locate(m, root).present, r);
         check("--check finds no difference on the folder, and a changed file", (await cat.compare(withBase, dir)).length === 0
             && (() => { fs.writeFileSync(path.join(dir, "LICENSE"), "changed"); return true; })() && (await cat.compare(withBase, dir)).length === 1);
+        const bare = await attempt(() => cat.build(dir, { current: {} }));
+        check("build refuses a catalogue without id and subdir", bare.error && /without id and subdir/.test(bare.error), bare);
+        // the command line with an --out that does not exist yet: the descriptive fields from the app's catalogue
+        const outNew = path.join(root, "preview", "catalogue.json");
+        fs.mkdirSync(path.dirname(outNew));
+        fs.writeFileSync(path.join(dir, "LICENSE"), parts.LICENSE);
+        const cli = require("node:child_process").spawnSync(process.execPath, [path.join(__dirname, "ck2_catalogue.js"), "--set", dir, "--out", outNew, "--version", "t2"], { encoding: "utf8" });
+        const prev = cli.status === 0 ? JSON.parse(fs.readFileSync(outNew, "utf8")) : null;
+        const pm = prev && models.fromSetCatalogue(prev);
+        check("the tool with a new --out: id, subdir, terms and licence from the app's catalogue, the version from --version, a valid entry",
+            prev && prev.id === "corridorkey2" && prev.subdir === "onnx/corridorkey2" && prev.terms && prev.terms.links && prev.license === current.license
+            && prev.version === "t2" && prev.files.length === 5 && !pm.invalid, { status: cli.status, err: cli.stderr, prev: prev && { id: prev.id, subdir: prev.subdir, version: prev.version } });
+        const noCat = require("node:child_process").spawnSync(process.execPath, [path.join(__dirname, "ck2_catalogue.js"), "--set", dir, "--out", path.join(root, "none.json"), "--check"], { encoding: "utf8" });
+        check("--check against a catalogue that does not exist: refused, not compared with the app's", noCat.status !== 0 && /no catalogue/.test(noCat.stderr + noCat.stdout), { status: noCat.status, out: noCat.stdout, err: noCat.stderr });
         fs.writeFileSync(path.join(dir, "stray.onnx"), "x");
         const stray = await attempt(() => cat.build(dir, { current }));
         check("a file the manifest does not list is refused", stray.error && /not in the manifest stray\.onnx/.test(stray.error), stray);
@@ -533,6 +582,7 @@ async function cancelAndBusy() {
         await corridorRefused();
         await stubbedHF();
         await plainDownloads();
+        await verifyLinks();
         await resumes();
         await sets();
         await refusals();
