@@ -734,6 +734,18 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   LR0-LR10, about 8.5-9 days (inferred); its §6 answered the same day (one MOSS edit recipe, Claude downloads the
   edit LoRA with sha256, Comfy-Org's Qwen 2.1 turbo LoRA for the live run); the comments on #10 and #11 posted by Claude
   on the user's word (0.1.52 named), a closing comment at the release.
+- 51: **GPT-Image-2.6 Sunburst and Flare** (OpenAI, released 2026-11-04; the user, 2026-11-06: "schaue welcher api
+  anbieter es schon hat und integriere es"): two recipes beside 2.5's on the hosts that list it (OpenAI direct, fal,
+  Replicate, WaveSpeed, OpenRouter, ToAPIs; not yet Comfy Cloud, Comfy Router, Oxen, Magnific), a *Complexity* row
+  (default high), the size-rule regex of `openai.js` fixed for 2.6, and the stale 2.5 bits (WaveSpeed's mask, fal and
+  Replicate variants); built from docs on the branch `gpt26`, **merged into `corridorkey` 2026-11-06** (`c847c13`). Research in `docs/research/gpt_image_2_6_2026-11-06/` on that branch.
+- 52: **P-H3-Image** (PrunaAI's 8-step image fine-tune of MiniMax H3; the user, 2026-11-06): a local recipe on the LoRA
+  route of Comfy's template (the user's `minimax_h3_fl2va_pruned_int8_convrot` plus `p-h3-image_lora_bf16`, the P-H3
+  text encoder, VAE and upsampler, **downloaded 2026-11-06 into the user's models folder, sha256 checked**, 16.9 GB), a
+  WaveSpeed variant and a Comfy Cloud variant; built on the branch `ph3` (`docs/PLAN_PH3.md`), **merged into `corridorkey` 2026-11-06** (`72bccbb`); the live run on the user's word. **The MiniMax H3
+  Community License excludes the EU, the UK, South Korea and the US** (no use or display of the model or its outputs
+  there without MiniMax's separate licence); the user knows and decided to go ahead ("achte nicht auf die license");
+  the recipe, RECIPES.md and the manual carry one plain line on it. Research in `docs/research/p_h3_image_2026-11-06/`.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
