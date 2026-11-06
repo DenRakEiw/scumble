@@ -13,8 +13,11 @@
 //   the texts      the readiness sentences of §4.8 and the status line of §4.5 step 6
 //   the refine     refineOp: a scaled matte's alpha refined against the full-resolution picture (keymatte.js, I6), the
 //                  steps keyworker.js and RowsClient's in-thread path run alike
+//   your ComfyUI   Route B (§4.11): the pack table (PACKS, packFor), serverSupport, keyPrompt (the graph, with
+//                  trustOption and withSpecDefaults), comfyFit (KEY_CAP), hint / runFailure for the pack's failures
 
 import { prepareRefine, noteSample, refineBand } from "./keymatte.js";
+import { gpuGeneration } from "./realism.js";
 
 /** The feature's name in the menu, the dialog, the status line and the undo history. */
 export const LABEL = "Key screen";
@@ -40,9 +43,15 @@ export const WORKING_SIZES = Object.freeze([512, 768, 1024, 1536, 2048]);
 
 /**
  * settings.key (electron/main/settings.js DEFAULTS.key, §4.8). `workingSize` is Stop A's bucket; the engine's own list
- * (keyEngine.status().workingSizes) narrows what the dialog offers.
+ * (keyEngine.status().workingSizes) narrows what the dialog offers. Route B's (§4.11): `cap` the largest box that goes to
+ * your ComfyUI at its own size, in megapixels of 2^20 px (16 = 4,096 × 4,096, I0a's 16 MP row; provisional until B0),
+ * `keepOnGpu` pack A's keep_on_gpu (off: about 4.6 GB parked on the card between keys otherwise), `evicts` pack B's
+ * unload_other_models (off), `comfyTimeout` the wait for a key on your ComfyUI in seconds.
  */
-export const keyDefaults = Object.freeze({ screen: "auto", trust: 0.5, despill: 0.5, preview: true, workingSize: 1024, greyUnderBase: true, timeout: 300 });
+export const keyDefaults = Object.freeze({ screen: "auto", trust: 0.5, despill: 0.5, preview: true, workingSize: 1024, greyUnderBase: true, timeout: 300, cap: 16, keepOnGpu: false, evicts: false, comfyTimeout: 300 });
+/** The cap's megapixel (2^20 px) and the range settings.key.cap may take: 64 is 8,192², the longest side's own cap. */
+export const MP = 1048576;
+export const CAP_RANGE = Object.freeze([1, 64]);
 
 /** settings.key filled per key from the defaults (settings.get() merges only the top level, as realism.fillValues). */
 export function fillValues(stored) {
@@ -50,6 +59,7 @@ export function fillValues(stored) {
     const d = keyDefaults;
     const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : NaN);
     const trust = num(s.trust), despill = num(s.despill), timeout = num(s.timeout), ws = num(s.workingSize);
+    const cap = num(s.cap), comfyTimeout = num(s.comfyTimeout);
     return {
         screen: SCREENS.includes(s.screen) ? s.screen : d.screen,
         trust: TRUSTS.some((t) => t.value === trust) ? trust : d.trust,
@@ -58,6 +68,10 @@ export function fillValues(stored) {
         workingSize: WORKING_SIZES.includes(ws) ? ws : d.workingSize,
         greyUnderBase: typeof s.greyUnderBase === "boolean" ? s.greyUnderBase : d.greyUnderBase,
         timeout: timeout >= 30 && timeout <= 3600 ? timeout : d.timeout,
+        cap: cap >= CAP_RANGE[0] && cap <= CAP_RANGE[1] ? cap : d.cap,
+        keepOnGpu: typeof s.keepOnGpu === "boolean" ? s.keepOnGpu : d.keepOnGpu,
+        evicts: typeof s.evicts === "boolean" ? s.evicts : d.evicts,
+        comfyTimeout: comfyTimeout >= 30 && comfyTimeout <= 3600 ? comfyTimeout : d.comfyTimeout,
     };
 }
 
@@ -680,4 +694,361 @@ export function statusLine({ kept, seconds, provider, screen, hint, trust, keyed
     const tail = grey ? " A grey layer sits under the Key layer: replace it with your background."
         : hidden ? ` ${hidden} is hidden; Ctrl+Z takes the key back.` : "";
     return head + tail;
+}
+
+// ---- Route B: your ComfyUI with a CorridorKey 2.0 node pack (§4.11) -------------------------------------------------
+
+/** Route B's row in the Key dialog and its sentences. */
+export const ROUTE_LABEL = "Full resolution on your ComfyUI";
+/** The node of keyPrompt whose picture is the answer (PreviewImage: a temp file, nothing in the user's output folder). */
+export const COMFY_OUTPUT = "ck_out";
+/** The longest side a box goes at (C-RADIO's tested range at H/4, §4.11); KEY_CAP is settings.key.cap. */
+export const COMFY_LONG = 8192;
+/** The set the packs fetch onto the ComfyUI machine (pack A's loader: "about 5.1 GB"). */
+export const COMFY_SET_GB = 5.1;
+const MANUAL = `(Help › Scumble help › ${LABEL})`;
+
+/** Pack A's hint_quality presets as /object_info listed them at c7662de (tools/refs/corridorkey/CorridorKey2Basic.json). */
+const PACK_A_TRUSTS = Object.freeze(["clean matte (0.95)", "rough matte (0.75)", "loose hint (0.5)"]);
+const PACK_A_WEIGHTS = "corridorkey_v2.safetensors";
+
+/**
+ * The two packs that run CorridorKey 2.0 (§2.2), in the shape of inpaint_canvas.js CUTOUT_BACKENDS: the one present is
+ * the one whose classes the server lists (packFor; neither class name clashes). A is the primary, installed on the
+ * user's ComfyUI at `pinned` by I0a and the one run live; B's entry is written from its source at `pinned` (read
+ * 2026-10-24, never installed) and stays `verified: false` until a live run. `build(hint, v, info)` gives the pack's
+ * own nodes of keyPrompt's graph: `hint` the MASK link or null, `v` keyPrompt's values, `info` the node list.
+ * `inputs` names the pack's inputs for the hint, the trust, the despill, the screen and the download switch.
+ */
+export const PACKS = Object.freeze([
+    Object.freeze({
+        id: "marawan206",
+        label: "ComfyUI-CorridorKey2.0",
+        url: "https://github.com/marawan206/ComfyUI-CorridorKey2.0",
+        pinned: "c7662de",
+        needs: Object.freeze(["CorridorKey2ModelLoader", "CorridorKey2Basic"]),
+        output: Object.freeze(["ck_key", 2]), // `rgba`: 8-bit straight RGBA (I0a)
+        inputs: Object.freeze({ image: "images", hint: "alpha_hint", quality: "hint_quality", despill: "despill", screen: "screen", download: "auto_download" }),
+        despillBlue: true,
+        evicts: "the auto window may unload other models",
+        downloadSwitch: "auto_download",
+        script: "scripts/download_models.py",
+        verified: true,
+        build(hint, v, info) {
+            const weights = specOf(info, "CorridorKey2ModelLoader", "weights");
+            return {
+                // auto_download is false in every graph Scumble sends: a missing set fails in a second, naming its files
+                // (hint); the switch waits for B0's evidence, and the user skipped that run (the plan's integration)
+                ck_model: { class_type: "CorridorKey2ModelLoader", inputs: { weights: comboDefault(weights, PACK_A_WEIGHTS), auto_download: false, keep_on_gpu: !!v.keepOnGpu, vram_reserve_gb: 0.5 } },
+                ck_key: {
+                    class_type: "CorridorKey2Basic",
+                    inputs: {
+                        model: ["ck_model", 0], images: ["ck_in", 0], ...(hint ? { alpha_hint: hint } : {}),
+                        hint_quality: trustOption(specOf(info, "CorridorKey2Basic", "hint_quality"), v.trust, PACK_A_TRUSTS),
+                        invert_hint: false, despill: v.despill, screen: v.screen,
+                    },
+                },
+            };
+        },
+    }),
+    Object.freeze({
+        id: "hashu786",
+        label: "ComfyUI-CorridorKey2",
+        url: "https://github.com/hashu786/ComfyUI-CorridorKey2",
+        pinned: "141c31b",
+        needs: Object.freeze(["CorridorKey2"]),
+        output: Object.freeze(["ck_key", 4]), // `cutout`: despilled straight colour and the matte
+        inputs: Object.freeze({ image: "image", hint: "mask", quality: "hint_quality", despill: "despill_strength", screen: null, download: null }),
+        despillBlue: false,
+        evicts: "unload_other_models on by default",
+        downloadSwitch: null,
+        script: "scripts/download_weights.py",
+        verified: false,
+        build(hint, v, info) {
+            return {
+                ck_key: {
+                    class_type: "CorridorKey2",
+                    inputs: {
+                        image: ["ck_in", 0], ...(hint ? { mask: hint } : {}), gamma_space: "sRGB",
+                        hint_quality: trustOption(specOf(info, "CorridorKey2", "hint_quality"), v.trust),
+                        carry_hint: true, carry_hint_quality: 0.95,
+                        // its despill is green-only (nodes.py): on a blue screen it would take green out of the subject
+                        despill_strength: v.screen === "blue" ? 0 : v.despill,
+                        window: "1/1", low_vram: false, unload_other_models: !!v.evicts,
+                    },
+                },
+            };
+        },
+    }),
+]);
+
+/** A pack by id, or the entry itself. */
+export function packById(id) {
+    if (id && typeof id === "object") return PACKS.includes(id) ? id : null;
+    return PACKS.find((p) => p.id === id) || null;
+}
+
+/** The pack whose node classes the server lists (A first), or null; null without a node list. */
+export function packFor(objectInfo) {
+    if (!objectInfo || typeof objectInfo !== "object") return null;
+    return PACKS.find((p) => p.needs.every((c) => !!objectInfo[c])) || null;
+}
+
+/** Whether an execution_error comes from a pack's nodes. */
+export function isPackNode(nodeType) {
+    return PACKS.some((p) => p.needs.includes(String(nodeType || "")));
+}
+
+/** One required or optional input's spec of a class in the node list ([type, opts]), or null. */
+function specOf(info, cls, name) {
+    const d = info && info[cls] && info[cls].input;
+    if (!d) return null;
+    const s = (d.required && d.required[name]) || (d.optional && d.optional[name]);
+    return Array.isArray(s) ? s : null;
+}
+
+/** A spec's combo options (the old [options, {...}] and V3's ["COMBO", { options }]), or null. */
+function comboOptions(spec) {
+    if (!Array.isArray(spec)) return null;
+    const [t, o] = spec;
+    if (Array.isArray(t)) return t;
+    if (t === "COMBO" && o && Array.isArray(o.options)) return o.options;
+    return null;
+}
+
+/** A combo's default (its own when listed, else its first option), or `fallback` without a combo. */
+function comboDefault(spec, fallback) {
+    const opts = comboOptions(spec);
+    if (!opts || !opts.length) return fallback;
+    const o = spec[1] && typeof spec[1] === "object" ? spec[1] : {};
+    return o.default !== undefined && opts.includes(o.default) ? o.default : opts[0];
+}
+
+/**
+ * The value a pack's hint_quality input takes for a trust (TRUSTS' 0.5, 0.75, 0.95), by the number and never by the
+ * name: pack A's combo names its presets "clean matte (0.95)", "rough matte (0.75)", "loose hint (0.5)", so Scumble's
+ * Rough (0.5) is its "loose hint". A combo: the option whose text carries the number (`fallback`'s texts when the spec
+ * lists none), else the spec's default; a FLOAT: the trust within its range; no spec and no fallback: the number.
+ */
+export function trustOption(spec, trust, fallback = null) {
+    const n = Number.isFinite(+trust) ? +trust : TRUSTS[0].value;
+    const t0 = Array.isArray(spec) ? spec[0] : null;
+    const o = Array.isArray(spec) && spec[1] && typeof spec[1] === "object" ? spec[1] : {};
+    if (t0 === "FLOAT" || t0 === "INT") {
+        const lo = Number.isFinite(+o.min) ? +o.min : -Infinity, hi = Number.isFinite(+o.max) ? +o.max : Infinity;
+        return Math.min(hi, Math.max(lo, n));
+    }
+    const listed = comboOptions(spec);
+    const opts = listed && listed.length ? listed : Array.isArray(fallback) && fallback.length ? fallback : null;
+    if (!opts) return n;
+    const carries = (s) => (String(s).match(/\d+(?:\.\d+)?/g) || []).some((x) => Math.abs(+x - n) < 1e-6);
+    const hit = opts.find(carries);
+    if (hit !== undefined) return hit;
+    return listed && listed.length ? comboDefault(spec, opts[0]) : opts[0];
+}
+
+/**
+ * A graph with every required widget input its builder left out set to the server's own default (the node's spec in
+ * the node list: a combo's default or its first option, a value's default), so a pack that adds a required input
+ * still validates. The twin of inpaint_canvas.js withSpecDefaults (issue #7), kept here on purpose: that one reads
+ * host.nodeTypes() and ships in the node's editor build, this module is app-only (§4.11) and takes the raw
+ * /object_info answer. Links (IMAGE, MASK, ...) have no default and stay as they are. Changes and returns `nodes`.
+ */
+export function withSpecDefaults(nodes, objectInfo) {
+    const info = objectInfo && typeof objectInfo === "object" ? objectInfo : {};
+    for (const node of Object.values(nodes || {})) {
+        const req = node && info[node.class_type] && info[node.class_type].input && info[node.class_type].input.required;
+        if (!req || !node.inputs) continue;
+        for (const [name, spec] of Object.entries(req)) {
+            if (name in node.inputs || !Array.isArray(spec)) continue;
+            const opts = spec[1] && typeof spec[1] === "object" ? spec[1] : {};
+            if (comboOptions(spec)) {
+                const v = comboDefault(spec, undefined);
+                if (v !== undefined) node.inputs[name] = v;
+            } else if (opts.default !== undefined && ["INT", "FLOAT", "STRING", "BOOLEAN"].includes(spec[0])) {
+                node.inputs[name] = opts.default;
+            }
+        }
+    }
+    return nodes;
+}
+
+/** An uploaded file as InpaintCanvasLoadRef's `ref` (the JSON of { filename, subfolder, type }). */
+function loadRef(ref) {
+    return { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" }) } };
+}
+
+/**
+ * The prompt of a key on your ComfyUI (§4.11): the picture box (`refs.picture`, an uploaded { filename, subfolder,
+ * type }) and, when there is one, the hint (`refs.hint`, a grey PNG, white = subject) through ImageToMask's red channel,
+ * the pack's nodes (its `build`), and PreviewImage on the pack's output (COMFY_OUTPUT). `values`: `screen` "green" or
+ * "blue" (Auto is resolved before, screenFromRing), `trust`, `despill`, `keepOnGpu`, `evicts` (settings.key). With the
+ * node list, every required input the graph leaves out gets the server's default (withSpecDefaults).
+ * Pack A: ck_in, ck_hint_img, ck_hint, ck_model, ck_key, ck_out (six nodes; four without a hint).
+ */
+export function keyPrompt(pack, refs, values, objectInfo = null) {
+    const p = packById(pack);
+    if (!p) throw new Error(`${LABEL}: unknown node pack ${JSON.stringify(pack && pack.id ? pack.id : pack)}.`);
+    if (!refs || !refs.picture || !refs.picture.filename) throw new Error(`${LABEL}: no picture was uploaded for the key.`);
+    const v = values || {};
+    if (v.screen !== "green" && v.screen !== "blue") throw new Error(`${LABEL}: the screen must be green or blue for your ComfyUI, not ${JSON.stringify(v.screen)}.`);
+    const despill = Number.isFinite(+v.despill) ? Math.min(1, Math.max(0, +v.despill)) : keyDefaults.despill;
+    const vals = { screen: v.screen, trust: trustOf(v.trust).value, despill, keepOnGpu: v.keepOnGpu === true, evicts: v.evicts === true };
+    const g = { ck_in: loadRef(refs.picture) };
+    const hasHint = !!(refs.hint && refs.hint.filename);
+    if (hasHint) {
+        g.ck_hint_img = loadRef(refs.hint);
+        g.ck_hint = { class_type: "ImageToMask", inputs: { image: ["ck_hint_img", 0], channel: "red" } };
+    }
+    Object.assign(g, p.build(hasHint ? ["ck_hint", 0] : null, vals, objectInfo));
+    g[COMFY_OUTPUT] = { class_type: "PreviewImage", inputs: { images: [...p.output] } };
+    return withSpecDefaults(g, objectInfo);
+}
+
+/** What the status line adds for a pack that does not despill the screen asked (B on blue), or "". */
+export function despillNote(pack, screen) {
+    const p = packById(pack);
+    return p && screen === "blue" && !p.despillBlue
+        ? `${p.label} despills green screens only, so the blue screen's spill stays on the subject.`
+        : "";
+}
+
+/** settings.key.cap in pixels (megapixels of 2^20 px). */
+export function capPixels(cap = keyDefaults.cap) {
+    const c = Number.isFinite(+cap) ? Math.min(CAP_RANGE[1], Math.max(CAP_RANGE[0], +cap)) : keyDefaults.cap;
+    return Math.round(c * MP);
+}
+
+/**
+ * The size a w × h box goes to your ComfyUI at (§4.11 "Resolution on Route B"): its own while its area is at most the
+ * cap and its longer side at most COMFY_LONG, else scaled by one factor below both (sides floored, at least 1 px).
+ * Nothing is refused by size: the app brings a scaled answer back to the box and refines it (I6).
+ * -> { w, h, scale, scaled }
+ */
+export function comfyFit(w, h, cap = keyDefaults.cap) {
+    w = Math.max(1, Math.round(+w || 0)); h = Math.max(1, Math.round(+h || 0));
+    const s = Math.min(1, Math.sqrt(capPixels(cap) / (w * h)), COMFY_LONG / Math.max(w, h));
+    if (s >= 1) return { w, h, scale: 1, scaled: false };
+    return { w: Math.max(1, Math.floor(w * s)), h: Math.max(1, Math.floor(h * s)), scale: s, scaled: true };
+}
+
+/** A ComfyUI device name without its "cuda:0 " prefix and " : cudaMallocAsync" suffix. */
+function cleanGpu(name) {
+    return String(name || "").replace(/^\s*[a-z]+:\d+\s+/i, "").replace(/\s*:\s*[A-Za-z]+\s*$/, "").trim();
+}
+
+/**
+ * Whether your ComfyUI can key (§4.11 "Readiness on Route B", realism.serverSupport as the model, no os check: the
+ * packs run on CUDA, not on Windows only). `state` is the ComfyUI status's state, `gpus` /system_stats' device names,
+ * `objectInfo` the node list (null when not read). Only positive evidence refuses: a card refuses only when ComfyUI
+ * runs on CUDA devices and none is an RTX 30 or later (gpuGeneration); no CUDA device listed is left to the pack.
+ * -> { ok, show: "hidden" | "disabled" | "ready", kind, reason, line, gpu, generation, pack (its id or null),
+ *      packLabel, verified, note }
+ */
+export function serverSupport({ state, gpus, objectInfo } = {}) {
+    const out = (ok, show, kind, reason, extra = {}) => ({ ok, show, kind, reason, line: "", gpu: "", generation: 0, pack: null, packLabel: "", verified: false, note: "", ...extra });
+    if (state !== "connected" && state !== "missing-node") {
+        return out(false, "hidden", "info", `${ROUTE_LABEL} needs your own ComfyUI with an RTX 30, 40 or 50 card and a ${ENGINE} node pack: connect it under Settings › ComfyUI.`);
+    }
+    const cuda = (Array.isArray(gpus) ? gpus.map(String) : []).filter((g) => /^\s*cuda:\d+/i.test(g));
+    const good = cuda.find((g) => gpuGeneration(g) >= 30);
+    if (cuda.length && !good) {
+        const shown = cuda.map(cleanGpu).filter(Boolean).join(", ") || "no NVIDIA card";
+        return out(false, "disabled", "warn", `${ROUTE_LABEL} needs an RTX 30, 40 or 50 card on your ComfyUI's machine; it shows ${shown}.`, { gpu: cleanGpu(cuda[0]), generation: gpuGeneration(cuda[0]) });
+    }
+    const gpu = good ? cleanGpu(good) : "", generation = good ? gpuGeneration(good) : 0;
+    const pack = packFor(objectInfo);
+    const of = pack ? { pack: pack.id, packLabel: pack.label, verified: pack.verified } : {};
+    if (objectInfo && !pack) {
+        return out(false, "disabled", "warn", `${ROUTE_LABEL} needs a ${ENGINE} node pack on your ComfyUI: install one there ${MANUAL}.`, { gpu, generation });
+    }
+    if ((objectInfo && !objectInfo.InpaintCanvas) || (!objectInfo && state === "missing-node")) {
+        return out(false, "disabled", "warn", `${ROUTE_LABEL} also needs the Inpaint Canvas node pack on your ComfyUI.`, { gpu, generation, ...of });
+    }
+    if (!objectInfo) {
+        return out(false, "disabled", "warn", `${ROUTE_LABEL}: Scumble could not read your ComfyUI's node list (/object_info); reconnect under Settings › ComfyUI.`, { gpu, generation });
+    }
+    const note = pack.verified ? "" : `${pack.label} has not keyed with Scumble yet; if a key fails there, ${PACKS[0].label} is the pack Scumble is tested with.`;
+    const line = `${ENGINE} on your ComfyUI through ${pack.label}${gpu ? ` on ${gpu}` : ""}.`;
+    return out(true, "ready", "info", "", { line, gpu, generation, note, ...of });
+}
+
+const firstLine = (s) => String(s || "").split(/\r?\n/).map((l) => l.trim()).find(Boolean) || "";
+const MISSING = /model files are missing|Missing CorridorKey 2\.0 model files|files are still missing/i;
+
+/** A path as the user finds it on the ComfyUI machine: from the models folder's corridorkey2 on, else the file's name. */
+function shortPath(p) {
+    const s = String(p || "").trim().replace(/^[-*]\s+/, "");
+    const m = /[\\/]corridorkey2[\\/](.+)$/i.exec(s);
+    return (m ? m[1] : s.replace(/^.*[\\/]/, "")).replace(/\\/g, "/");
+}
+
+/**
+ * The files a pack's missing-model failure names (pack A's loader: one path a line after "missing:"; its load_base and
+ * both download checks: comma-separated; pack B: "  - path" lines), shortened (shortPath), or null for any other
+ * failure. The Key dialog's first-run block lists them (§3.3).
+ */
+export function missingModels(message) {
+    const m = String(message || "");
+    const at = m.search(MISSING);
+    if (at < 0) return null;
+    const colon = m.indexOf(":", at);
+    if (colon < 0) return [];
+    const block = m.slice(colon + 1).split(/\r?\n\s*\r?\n/)[0];
+    const names = [];
+    for (const line of block.split(/\r?\n/)) {
+        const l = line.trim();
+        if (!l || /^(Enable auto_download|Download them|This error means|TIPS:)/i.test(l)) continue;
+        for (const part of l.split(/,\s+/)) if (part.trim()) names.push(shortPath(part));
+    }
+    return names;
+}
+
+/** The pack a failure's text points at (pack B's download script or switch), else pack A. */
+function packOfMessage(m) {
+    return /ComfyUI-CorridorKey2[\\/]scripts[\\/]download_weights|CORRIDORKEY2_NO_DOWNLOAD/.test(m) ? PACKS[1] : PACKS[0];
+}
+
+/**
+ * The sentence a user reads for a key that failed inside the pack (realism.hint's shape); `message` is the
+ * execution_error's text (ComfyUI adds its own tips after a blank line), `pack` the pack that ran (an id or entry; else
+ * read from the text). The cases: the models missing (with the files), no CUDA device, the GPU's memory, the Windows
+ * commit limit, the disk of the low-VRAM mode, and the generic last line.
+ */
+export function hint(message, pack = null) {
+    const m = String(message || "");
+    const p = packById(pack) || packOfMessage(m);
+    const files = missingModels(m);
+    if (files) {
+        const off = /CORRIDORKEY2_NO_DOWNLOAD/.test(m) ? "The server's CORRIDORKEY2_NO_DOWNLOAD turns the pack's own download off. " : "";
+        const ways = p.downloadSwitch
+            ? `run the pack's ${p.script} with ComfyUI's Python on that machine, or run its Load Model node once in the ComfyUI page with ${p.downloadSwitch} on`
+            : `run the pack's ${p.script} with ComfyUI's Python on that machine`;
+        return `${LABEL}: the ${ENGINE} models are not on your ComfyUI yet${files.length ? ` (missing: ${files.join(", ")})` : ""}. ${off}Fetch them there once, about ${COMFY_SET_GB} GB: ${ways} ${MANUAL}.`;
+    }
+    let g = /needs an NVIDIA GPU \(CUDA\)[^']*'([^']+)'/.exec(m);
+    if (g || /needs an NVIDIA GPU \(CUDA\)|requires an NVIDIA CUDA GPU/.test(m)) {
+        return `${LABEL}: ${ENGINE} needs an NVIDIA GPU (CUDA) on your ComfyUI's machine${g ? `, and that ComfyUI runs on ${g[1]}` : ""}. Start it on an RTX 30, 40 or 50 card.`;
+    }
+    if (/Windows commit limit/.test(m)) {
+        return `${LABEL}: the Windows commit limit (RAM plus page file) on your ComfyUI's machine leaves too little room for this box. Key a smaller box, close other programs there, or enlarge the page file.`;
+    }
+    g = /needs about ([\d.]+) GB of disk space/.exec(m);
+    if (g) {
+        return `${LABEL}: the node pack needs about ${g[1]} GB of free disk space on your ComfyUI's machine for this box. Free some there, or key a smaller box.`;
+    }
+    if (/out of memory|OutOfMemoryError|ran out of memory on your GPU/i.test(m)) {
+        return `${LABEL}: your ComfyUI's GPU ran out of memory for this box. Key a smaller box, or free the card (Free VRAM in ComfyUI, other programs on it) and try again.`;
+    }
+    return `${LABEL} failed on your ComfyUI: ${firstLine(m).replace(/[.:;\s]+$/, "") || "no message"}.`;
+}
+
+/**
+ * The sentence a failed key on your ComfyUI ends with (host.comfyPictureRun's error: its own texts, a cancel, the
+ * timeout, an answer it could not fetch, already name the feature; the pack's and the server's never start with it).
+ */
+export function runFailure(err, pack = null) {
+    const msg = String((err && err.message) || err || "");
+    if (msg.startsWith(LABEL)) return msg;
+    return hint(msg, pack);
 }

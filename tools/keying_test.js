@@ -264,6 +264,174 @@
     check("termsParagraph: the four parts, their licences, the size, the host, the seat clause", ["Corridor Key Licence 2.0", "C-RADIOv4 (NVIDIA Open Model License)", "MoGe-2 (MIT)", "RVM (Google DeepMind, CC BY 4.0)", "about 2.4 GB", "downloaded from Hugging Face", "US $20M"].every((s) => tp.includes(s)), tp);
     check("readyLine", K.readyLine("dml", 1024) === "CorridorKey 2.0 in Scumble on DirectML, working size 1,024 px.");
 
+    // ---- Route B: your ComfyUI with a node pack (§4.11, B1) ----
+    const fs = require("fs"), path = require("path");
+    const ROOT = path.join(__dirname, "..");
+    const { specProblems } = require("./node_specs.js");
+    // the node list: pack A's 17 classes as I0a saved them (c7662de), core's ImageToMask and PreviewImage from the
+    // fixtures' list, InpaintCanvasLoadRef as the node's nodes.py declares it, pack B's CorridorKey2 as its nodes.py
+    // declares it at 141c31b (never installed: hand-copied here, the entry stays unverified)
+    const refsDir = path.join(ROOT, "tools", "refs", "corridorkey");
+    const packA = {};
+    for (const f of fs.readdirSync(refsDir)) Object.assign(packA, JSON.parse(fs.readFileSync(path.join(refsDir, f), "utf8")));
+    const core = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "comfy_templates", "object_info.json"), "utf8"));
+    const base = {
+        ImageToMask: core.ImageToMask, PreviewImage: core.PreviewImage, InpaintCanvas: { input: { required: {} } },
+        InpaintCanvasLoadRef: { input: { required: { ref: ["STRING", { default: "", multiline: false }] } } },
+    };
+    const f01 = (d) => ["FLOAT", { default: d, min: 0.0, max: 1.0, step: 0.01 }];
+    const packB = {
+        CorridorKey2: {
+            input: {
+                required: {
+                    image: ["IMAGE", {}], gamma_space: [["sRGB", "Linear"], {}], hint_quality: f01(0.95), carry_hint: ["BOOLEAN", { default: true }],
+                    carry_hint_quality: f01(0.95), despill_strength: f01(0.5), window: [["auto", "80/40", "48/24", "24/12", "8/4", "4/2", "2/1", "1/1"], { default: "auto" }],
+                    low_vram: ["BOOLEAN", { default: false }], unload_other_models: ["BOOLEAN", { default: true }],
+                },
+                optional: { mask: ["MASK", {}] },
+            },
+            output: ["IMAGE", "MASK", "IMAGE", "IMAGE", "IMAGE"], output_name: ["fg", "matte", "processed", "QC", "cutout"],
+        },
+    };
+    const infoA = { ...base, ...packA }, infoB = { ...base, ...packB };
+    check("the saved spec: pack A's loader and keyer are there, and Basic's slot 2 is `rgba`", !!packA.CorridorKey2ModelLoader && packA.CorridorKey2Basic.output_name[2] === "rgba" && K.PACKS[0].output[1] === 2);
+
+    // settings: DEFAULTS.key in main is keyDefaults (read from the file: settings.js needs Electron's app)
+    const settingsSrc = fs.readFileSync(path.join(ROOT, "electron", "main", "settings.js"), "utf8");
+    const keyLine = /^\s*key: (\{[^\n]*\}),\s*$/m.exec(settingsSrc);
+    const mainKey = keyLine ? Function(`"use strict"; return (${keyLine[1]});`)() : null;
+    check("settings.js DEFAULTS.key is keying.keyDefaults (the cap 16, keep on GPU and evicts off, the ComfyUI wait)", JSON.stringify(mainKey) === JSON.stringify(K.keyDefaults) && K.keyDefaults.cap === 16 && K.keyDefaults.keepOnGpu === false && K.keyDefaults.evicts === false && K.keyDefaults.comfyTimeout === 300, JSON.stringify(mainKey));
+    const fb = K.fillValues({ cap: 0.5, keepOnGpu: "yes", evicts: true, comfyTimeout: 10 });
+    const fk = K.fillValues({ cap: 8, keepOnGpu: true, comfyTimeout: 900 });
+    check("fillValues: Route B's keys kept when they fit, else the defaults", fb.cap === 16 && fb.keepOnGpu === false && fb.evicts === true && fb.comfyTimeout === 300 && fk.cap === 8 && fk.keepOnGpu === true && fk.comfyTimeout === 900 && fk.evicts === false, JSON.stringify({ fb, fk }));
+
+    // the pack present
+    check("packFor: pack A's classes, B's, both (A first), none, no list", K.packFor(infoA).id === "marawan206" && K.packFor(infoB).id === "hashu786" && K.packFor({ ...infoA, ...packB }).id === "marawan206" && K.packFor(base) === null && K.packFor(null) === null);
+    check("packFor: one of pack A's two classes alone is no pack", K.packFor({ ...base, CorridorKey2Basic: packA.CorridorKey2Basic }) === null);
+    check("isPackNode", K.isPackNode("CorridorKey2ModelLoader") && K.isPackNode("CorridorKey2") && !K.isPackNode("CorridorKey2Despill") && !K.isPackNode("PreviewImage"));
+
+    // the trust mapping: by the number, never by the name
+    const hq = packA.CorridorKey2Basic.input.required.hint_quality;
+    const mapped = K.TRUSTS.map((t) => K.trustOption(hq, t.value));
+    check("trustOption: Rough 0.5 -> loose hint, Automatic 0.75 -> rough matte, Clean 0.95 -> clean matte", mapped.join("|") === "loose hint (0.5)|rough matte (0.75)|clean matte (0.95)", mapped.join("|"));
+    const reordered = ["COMBO", { default: "b (0.75)", options: ["c (0.5)", "a (0.95)", "b (0.75)"] }];
+    check("trustOption: an option list in another order still maps by the number", K.trustOption(reordered, 0.95) === "a (0.95)" && K.trustOption(reordered, 0.5) === "c (0.5)");
+    check("trustOption: no option carries the number: the spec's default", K.trustOption(["COMBO", { default: "medium", options: ["low", "medium", "high"] }], 0.75) === "medium" && K.trustOption([["low", "high"], {}], 0.75) === "low");
+    check("trustOption: no spec: the fallback's texts, else the number; a FLOAT clamped", K.trustOption(null, 0.75, ["x (0.95)", "y (0.75)"]) === "y (0.75)" && K.trustOption(null, 0.5) === 0.5 && K.trustOption(f01(0.95), 0.75) === 0.75 && K.trustOption(["FLOAT", { min: 0.6, max: 1 }], 0.5) === 0.6);
+
+    // the graph for every input combination, against the saved spec
+    const pic = { filename: "ck_box.png", subfolder: "scumble_key", type: "input" }, hintRef = { filename: "ck_hint.png", subfolder: "scumble_key", type: "input" };
+    const combos = [];
+    for (const hasHint of [true, false]) for (const screen of ["green", "blue"]) for (const t of K.TRUSTS) for (const keepOnGpu of [false, true]) for (const evicts of [false, true]) {
+        combos.push({ hasHint, values: { screen, trust: t.value, despill: screen === "blue" ? 0.3 : 0.5, keepOnGpu, evicts } });
+    }
+    const problemsA = [], shapeA = [];
+    for (const c of combos) {
+        const refs = { picture: pic, ...(c.hasHint ? { hint: hintRef } : {}) };
+        const g = K.keyPrompt("marawan206", refs, c.values, infoA);
+        problemsA.push(...specProblems(g, infoA).map((p) => `${JSON.stringify(c)} ${p}`));
+        const bare = K.keyPrompt("marawan206", refs, c.values, null);
+        const ids = Object.keys(g).join();
+        const want = c.hasHint ? "ck_in,ck_hint_img,ck_hint,ck_model,ck_key,ck_out" : "ck_in,ck_model,ck_key,ck_out";
+        const k = g.ck_key.inputs, m = g.ck_model.inputs;
+        const ok = ids === want && JSON.stringify(bare) === JSON.stringify(g)
+            && m.auto_download === false && m.keep_on_gpu === c.values.keepOnGpu && m.weights === "corridorkey_v2.safetensors"
+            && k.screen === c.values.screen && k.despill === c.values.despill && k.invert_hint === false
+            && k.hint_quality === K.trustOption(hq, c.values.trust)
+            && (c.hasHint ? JSON.stringify(k.alpha_hint) === '["ck_hint",0]' && g.ck_hint.inputs.channel === "red" && JSON.parse(g.ck_hint_img.inputs.ref).filename === "ck_hint.png" : !("alpha_hint" in k))
+            && JSON.stringify(g[K.COMFY_OUTPUT]) === '{"class_type":"PreviewImage","inputs":{"images":["ck_key",2]}}'
+            && JSON.stringify(JSON.parse(g.ck_in.inputs.ref)) === JSON.stringify(pic);
+        if (!ok) shapeA.push(JSON.stringify(c));
+    }
+    check(`pack A: the graph of all ${combos.length} input combinations validates against tools/refs/corridorkey/`, !problemsA.length, problemsA.slice(0, 3).join("; "));
+    check("pack A: six nodes with a hint, four without; auto_download false always; the trust, screen, despill, keep on GPU as given; PreviewImage on rgba; the same graph with and without the node list", !shapeA.length, shapeA.slice(0, 2).join("; "));
+    const problemsB = [], shapeB = [];
+    for (const c of combos) {
+        const g = K.keyPrompt("hashu786", { picture: pic, ...(c.hasHint ? { hint: hintRef } : {}) }, c.values, infoB);
+        problemsB.push(...specProblems(g, infoB).map((p) => `${JSON.stringify(c)} ${p}`));
+        const k = g.ck_key.inputs;
+        const ok = Object.keys(g).join() === (c.hasHint ? "ck_in,ck_hint_img,ck_hint,ck_key,ck_out" : "ck_in,ck_key,ck_out")
+            && k.hint_quality === c.values.trust && k.window === "1/1" && k.unload_other_models === c.values.evicts && k.gamma_space === "sRGB"
+            && k.despill_strength === (c.values.screen === "blue" ? 0 : c.values.despill) && (c.hasHint ? JSON.stringify(k.mask) === '["ck_hint",0]' : !("mask" in k))
+            && JSON.stringify(g.ck_out.inputs.images) === '["ck_key",4]';
+        if (!ok) shapeB.push(JSON.stringify(c));
+    }
+    check(`pack B (from its source, unverified): all ${combos.length} combinations validate against its declared spec`, !problemsB.length, problemsB.slice(0, 3).join("; "));
+    check("pack B: window 1/1, unload_other_models from evicts, no despill on blue (green-only), cutout on slot 4", !shapeB.length && !K.PACKS[1].verified && K.PACKS[1].output[1] === 4, shapeB.slice(0, 2).join("; "));
+    check("despillNote: pack B on blue says so, pack A and green say nothing", /despills green screens only/.test(K.despillNote("hashu786", "blue")) && K.despillNote("hashu786", "green") === "" && K.despillNote("marawan206", "blue") === "");
+    const snap = K.keyPrompt("marawan206", { picture: pic }, { screen: "green", trust: 0.9, despill: 7 }, infoA).ck_key.inputs;
+    check("keyPrompt: a trust between presets snaps to the nearest (0.9 -> clean matte), a despill past 1 to 1", snap.hint_quality === "clean matte (0.95)" && snap.despill === 1, JSON.stringify(snap));
+    let threw = [];
+    for (const [what, fn] of [["auto screen", () => K.keyPrompt("marawan206", { picture: pic }, { screen: "auto" }, infoA)], ["no picture", () => K.keyPrompt("marawan206", {}, { screen: "green" }, infoA)], ["unknown pack", () => K.keyPrompt("nope", { picture: pic }, { screen: "green" }, infoA)]]) {
+        try { fn(); } catch (err) { if (String(err.message).startsWith(K.LABEL)) threw.push(what); }
+    }
+    check("keyPrompt refuses an Auto screen (resolved before), no picture, an unknown pack", threw.length === 3, threw.join());
+
+    // withSpecDefaults: a pack that adds required inputs later still validates
+    const grown = JSON.parse(JSON.stringify(infoA));
+    Object.assign(grown.CorridorKey2Basic.input.required, { matte_mode: ["COMBO", { default: "fine", options: ["fast", "fine"] }], refine_steps: ["INT", { default: 3, min: 0, max: 8 }], tag: [["one", "two"], {}], guide: ["IMAGE", {}] });
+    Object.assign(grown.CorridorKey2ModelLoader.input.required, { precision: ["COMBO", { options: ["bf16", "fp32"] }] });
+    const gg = K.keyPrompt("marawan206", { picture: pic }, { screen: "green", trust: 0.5, despill: 0.5 }, grown);
+    const gp = specProblems(gg, grown);
+    check("withSpecDefaults: new required inputs get the spec's default or first option, a new socket is left alone", gg.ck_key.inputs.matte_mode === "fine" && gg.ck_key.inputs.refine_steps === 3 && gg.ck_key.inputs.tag === "one" && gg.ck_model.inputs.precision === "bf16" && !("guide" in gg.ck_key.inputs) && gp.length === 1 && /guide missing/.test(gp[0]), JSON.stringify(gp));
+    const kept = K.withSpecDefaults({ n: { class_type: "CorridorKey2Basic", inputs: { hint_quality: "rough matte (0.75)" } } }, infoA);
+    check("withSpecDefaults: what the builder gave stays, an unknown class is not touched", kept.n.inputs.hint_quality === "rough matte (0.75)" && kept.n.inputs.despill === 0.5 && kept.n.inputs.screen === "green" && JSON.stringify(K.withSpecDefaults({ x: { class_type: "Nope", inputs: {} } }, infoA).x.inputs) === "{}");
+
+    // the cap: the box native up to 16 MP (2^20 px each) and 8,192 a side, else one factor below both
+    const fits = (f, cap) => f.w * f.h <= K.capPixels(cap) && Math.max(f.w, f.h) <= K.COMFY_LONG;
+    const f16 = K.comfyFit(4096, 4096), f17 = K.comfyFit(4097, 4096), f15k = K.comfyFit(15000, 10000), fl = K.comfyFit(9000, 100), f64 = K.comfyFit(8192, 8192, 64), f1 = K.comfyFit(1, 1, 1);
+    check("comfyFit: 4,096 x 4,096 goes at its own size under the 16 MP default (I0a's 16 MP row)", !f16.scaled && f16.w === 4096 && f16.h === 4096 && K.capPixels() === 4096 * 4096);
+    check("comfyFit: just above the cap, a 15k box and a long strip are scaled by one factor below the cap and 8,192", f17.scaled && fits(f17) && fits(f15k) && Math.abs(f15k.w / f15k.h - 1.5) < 0.002 && f15k.w * f15k.h > 0.999 * K.capPixels() && fl.scaled && fl.w === 8192 && fl.h === 91, JSON.stringify({ f17, f15k, fl }));
+    check("comfyFit: the cap 64 is 8,192 squared; a 1 px box; capPixels clamps to 1-64", !f64.scaled && !f1.scaled && K.capPixels(500) === 64 * K.MP && K.capPixels(0) === K.MP && K.capPixels("x") === 16 * K.MP);
+
+    // readiness on your ComfyUI
+    const R5090 = ["cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync"];
+    const sNo = K.serverSupport({ state: "disconnected" });
+    check("serverSupport: not connected: info, the whole need in one sentence", !sNo.ok && sNo.kind === "info" && sNo.show === "hidden" && sNo.reason === "Full resolution on your ComfyUI needs your own ComfyUI with an RTX 30, 40 or 50 card and a CorridorKey 2.0 node pack: connect it under Settings › ComfyUI.", sNo.reason);
+    const sOld = K.serverSupport({ state: "connected", gpus: ["cuda:0 NVIDIA GeForce GTX 1080 Ti : cudaMallocAsync"], objectInfo: infoA });
+    check("serverSupport: CUDA devices, none RTX 30 or later: a warning naming the card", !sOld.ok && sOld.kind === "warn" && sOld.reason.includes("it shows NVIDIA GeForce GTX 1080 Ti."), sOld.reason);
+    const sOk = K.serverSupport({ state: "connected", gpus: R5090, objectInfo: infoA });
+    check("serverSupport: all there: offered, pack A named with the card", sOk.ok && sOk.show === "ready" && sOk.pack === "marawan206" && sOk.verified && sOk.note === "" && sOk.line === "CorridorKey 2.0 on your ComfyUI through ComfyUI-CorridorKey2.0 on NVIDIA GeForce RTX 5090." && sOk.generation === 50, JSON.stringify(sOk));
+    const sB = K.serverSupport({ state: "connected", gpus: R5090, objectInfo: infoB });
+    check("serverSupport: pack B offered with its unverified note", sB.ok && sB.pack === "hashu786" && !sB.verified && /has not keyed with Scumble yet/.test(sB.note), JSON.stringify(sB));
+    const sNone = K.serverSupport({ state: "connected", gpus: R5090, objectInfo: base });
+    check("serverSupport: no pack's nodes: a warning pointing to the manual", !sNone.ok && sNone.kind === "warn" && sNone.reason.endsWith("install one there (Help › Scumble help › Key screen)."), sNone.reason);
+    const { InpaintCanvas: _ic, ...noCanvas } = infoA;
+    const sNc = K.serverSupport({ state: "connected", gpus: R5090, objectInfo: noCanvas });
+    const sMn = K.serverSupport({ state: "missing-node", gpus: R5090, objectInfo: null });
+    check("serverSupport: Inpaint Canvas missing (from the node list, or the state without one): a warning", !sNc.ok && sNc.kind === "warn" && /Inpaint Canvas node pack/.test(sNc.reason) && !sMn.ok && /Inpaint Canvas node pack/.test(sMn.reason), sNc.reason);
+    const sNi = K.serverSupport({ state: "connected", gpus: R5090, objectInfo: null });
+    check("serverSupport: the node list not read: a warning, nothing claimed", !sNi.ok && sNi.kind === "warn" && /could not read your ComfyUI's node list/.test(sNi.reason));
+    const sCpu = K.serverSupport({ state: "connected", gpus: ["cpu"], objectInfo: infoA });
+    check("serverSupport: no CUDA device listed is left to the pack (only positive evidence refuses), no os check", sCpu.ok && sCpu.gpu === "" && K.serverSupport({ state: "connected", os: "posix", gpus: R5090, objectInfo: infoA }).ok);
+
+    // the pack's failures
+    const tips = "\nThis error means you ran out of memory on your GPU.\n\nTIPS: If the workflow worked before you might have accidentally set the batch_size to a large number.";
+    const root = "F:\\Comfyui\\ComfyUI_windows_portable_nvidia\\ComfyUI\\models\\corridorkey2";
+    const missA = "CorridorKey 2.0 model files are missing:\n  " + [`${root}\\corridorkey_v2.safetensors`, `${root}\\foundations\\moge\\model.pt`, `${root}\\foundations\\cradio\\model.safetensors`].join("\n  ") + "\nEnable auto_download or see the README for the manual download steps.\n";
+    const mm = K.missingModels(missA);
+    check("missingModels: pack A's loader, the files from the models folder on", JSON.stringify(mm) === JSON.stringify(["corridorkey_v2.safetensors", "foundations/moge/model.pt", "foundations/cradio/model.safetensors"]), JSON.stringify(mm));
+    const hA = K.hint(missA);
+    check("hint: missing models name the files and both ways to fetch them on the ComfyUI machine", hA === "Key screen: the CorridorKey 2.0 models are not on your ComfyUI yet (missing: corridorkey_v2.safetensors, foundations/moge/model.pt, foundations/cradio/model.safetensors). Fetch them there once, about 5.1 GB: run the pack's scripts/download_models.py with ComfyUI's Python on that machine, or run its Load Model node once in the ComfyUI page with auto_download on (Help › Scumble help › Key screen).", hA);
+    const mlb = K.missingModels(`Missing CorridorKey 2.0 model files: ${root}\\foundations\\rvm\\pretrain_rvm_small16_256_204031069.npz, ${root}\\foundations\\cradio\\hf_model.py`);
+    check("missingModels: the comma-separated form (load_base, the download's check)", JSON.stringify(mlb) === JSON.stringify(["foundations/rvm/pretrain_rvm_small16_256_204031069.npz", "foundations/cradio/hf_model.py"]), JSON.stringify(mlb));
+    const missB = "CorridorKey 2.0 model files are missing (auto-download is disabled by CORRIDORKEY2_NO_DOWNLOAD):\n  - /srv/comfy/models/corridorkey2/weights/corridorkey_v2.safetensors\n\nDownload them manually into /srv/comfy/models/corridorkey2 (about 5 GB) by running\n  python -s ComfyUI/custom_nodes/ComfyUI-CorridorKey2/scripts/download_weights.py";
+    const hB = K.hint(missB);
+    check("hint: pack B's missing models: its file, its script, the server switch, no auto_download", JSON.stringify(K.missingModels(missB)) === '["weights/corridorkey_v2.safetensors"]' && hB.includes("scripts/download_weights.py") && hB.includes("CORRIDORKEY2_NO_DOWNLOAD") && !hB.includes("auto_download"), hB);
+    check("missingModels: any other failure is null", K.missingModels("CUDA out of memory") === null && K.missingModels("") === null);
+    const hCuda = K.hint("CorridorKey 2.0 keying needs an NVIDIA GPU (CUDA) or an Apple Silicon Mac (Metal/MPS); ComfyUI is running on 'cpu'. On the CPU a single frame would take minutes.\n");
+    check("hint: no CUDA device, with the device ComfyUI runs on", hCuda === "Key screen: CorridorKey 2.0 needs an NVIDIA GPU (CUDA) on your ComfyUI's machine, and that ComfyUI runs on cpu. Start it on an RTX 30, 40 or 50 card.", hCuda);
+    check("hint: pack B's CUDA refusal", /needs an NVIDIA GPU \(CUDA\) on your ComfyUI's machine\. Start it/.test(K.hint("CorridorKey 2.0 requires an NVIDIA CUDA GPU.")));
+    const hOom = K.hint("CUDA out of memory. Tried to allocate 3.20 GiB. GPU 0 has a total capacity of 31.84 GiB" + tips);
+    const hOom2 = K.hint("Allocation on device " + tips);
+    check("hint: CUDA out of memory (torch's text or ComfyUI's tip alone)", /ran out of memory for this box\. Key a smaller box/.test(hOom) && hOom === hOom2, hOom);
+    const hCommit = K.hint("CorridorKey 2.0: a 1/1 window needs about 21.3 GB of GPU memory, but the Windows commit limit (RAM plus page file) only leaves room for 12.0 GB. GPU memory counts against that limit, and running out of it makes memory allocations fail in every program.\n");
+    check("hint: the Windows commit limit", /Windows commit limit \(RAM plus page file\) on your ComfyUI's machine/.test(hCommit), hCommit);
+    check("hint: the low-VRAM mode's disk", /needs about 7\.4 GB of free disk space/.test(K.hint("CorridorKey 2.0: low-VRAM mode needs about 7.4 GB of disk space in C:\\Temp\\ck for this clip and 2.0 GB is free.")));
+    const hGen = K.hint("ValueError: alpha_hint has 2 masks for a 1-frame clip.\nmore\n");
+    check("hint: anything else: the first line, plainly", hGen === "Key screen failed on your ComfyUI: ValueError: alpha_hint has 2 masks for a 1-frame clip." && K.hint("") === "Key screen failed on your ComfyUI: no message.", hGen);
+    check("runFailure: the runner's own texts (they name the feature) pass, the pack's go through hint", K.runFailure(new Error("Key screen cancelled.")) === "Key screen cancelled." && K.runFailure(new Error(missA)) === hA && K.runFailure("CUDA out of memory") === K.hint("CUDA out of memory"));
+
     console.log(fails ? `FAIL (${fails})` : "PASS");
     process.exit(fails ? 1 : 0);
 })().catch((err) => { console.error(err); process.exit(1); });
