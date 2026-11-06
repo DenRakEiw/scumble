@@ -231,7 +231,8 @@ code.
   nothing on the wand rows, and a second document's open does not pay the 0.4 s shader link, so G6 stays where the user
   put it). **D0 done 2026-11-06** (`docs/measurements/d0_2026-11-06/`: the PSD reader in the pool job `psd_read`, plain
   JS; a 15k PSD open blocks the window 1.8 s instead of 11.0 s in the same machine state (baseline 9.0 s), the block
-  left is the file's read into the window, `docs/BUGS.md`). **Next: K5.** **Beside it (2026-10-24): CorridorKey 2.0 planned** (item 49,
+  left is the file's read into the window, `docs/BUGS.md`). **Next: K5.** **Beside it, all for 0.1.52 on `corridorkey` (2026-11-06):** LoRAs (item 50, LR0-LR2 done there,
+  LR3 running), GPT-Image-2.6 (item 51, branch `gpt26`), P-H3-Image (item 52, branch `ph3`). **And (2026-10-24): CorridorKey 2.0 planned** (item 49,
   `docs/PLAN_CORRIDORKEY.md`) on its own branch `corridorkey` off `main` (worktree `.claude/worktrees/corridorkey`),
   released as 0.1.52 on the user's word; next there: I0a (pack A's code check, findings to the user before any install).
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
@@ -710,6 +711,41 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   I6 (refine), I7 (command), I8 (docs, live run, **Stop B**); Route B (pack A through ComfyUI, B0-B5) on a no-go or by
   the user's Stop B decision. The in-app release needs Corridor's written yes to hosting a converted set (asked in the
   thank-you reply's second version); open for the user: whether and which reply went (plan §6).
+- 50: **LoRAs on the user's ComfyUI and Comfy Cloud, and MOSS Image Edit** (issues #10, hwatik, 2026-10-24: "lora
+  support for local generations ... qwen 2.1 or moss"; #11, nadergits, 2026-10-31: "add moss image edit ... with
+  loras"; the user, 2026-11-06). **The user's decisions:** LoRAs only for the user's own ComfyUI (local or remote) and
+  Comfy Cloud, never for API providers; the recipes stay as they are and Scumble splices the switched-on LoRAs into the
+  queued copy at run time as a `LoraLoaderModelOnly` chain (no bypassed placeholder nodes: the API format has no bypass,
+  and a placeholder's `lora_name` must exist on the server); up to **5** rows per recipe (a picker over the server's list
+  with search, a strength, an on / off switch, a **+**), stored per recipe; the base model and the trigger words shown as
+  a hint (tensor key prefixes when the ComfyUI models folder is linked, else `/view_metadata` and the subfolder; metadata
+  lies, the user's `anna_qwen` says `sd_1.5`; never a refusal, ComfyUI itself loads a wrong LoRA silently); released
+  **with CorridorKey 2.0 in 0.1.52** on `corridorkey`. "MOSS Image Edit" is a community LoRA (chinoll/Moss-Image-Edit,
+  rehosted by Comfy-Org, 297 MB) plus core `TextEncodeMOSSImageEdit` from ComfyUI v0.43.0: a local recipe and a Comfy
+  Cloud variant from Comfy's template `image_moss_image_edit`. **The user's ComfyUI updated to v0.44.0 on 2026-11-06**
+  (the user's "ok, update" after the pins were shown: comfy-aimdo 0.6.0, comfy-kitchen 0.2.40, embedded-docs 0.5.16,
+  frontend 1.57.6, workflow-templates 0.11.101, torch unchanged; `update.py --stable`, backup branch
+  `backup_branch_2026-11-06_02_55_11`, the pip freeze before it in that session's scratchpad `comfy_update/`; one probe
+  start with the user's flags: 5,904 classes, InpaintCanvas 23 outputs, RTX VSR, DLSS5, `SAM3Segment`, the same three
+  IMPORT FAILED as on 0.42.4 and 0.41.2 (`dlss`, `inpaint`, `comfyui-tosvg`); stopped again, as it was). **The plan is
+  `docs/PLAN_LORAS.md`** (research of three readers in `docs/research/issues10_11_2026-11-06/`, two critics): sessions
+  LR0-LR10, about 8.5-9 days (inferred); its §6 answered the same day (one MOSS edit recipe, Claude downloads the
+  edit LoRA with sha256, Comfy-Org's Qwen 2.1 turbo LoRA for the live run); the comments on #10 and #11 posted by Claude
+  on the user's word (0.1.52 named), a closing comment at the release.
+- 51: **GPT-Image-2.6 Sunburst and Flare** (OpenAI, released 2026-11-04; the user, 2026-11-06: "schaue welcher api
+  anbieter es schon hat und integriere es"): two recipes beside 2.5's on the hosts that list it (OpenAI direct, fal,
+  Replicate, WaveSpeed, OpenRouter, ToAPIs; not yet Comfy Cloud, Comfy Router, Oxen, Magnific), a *Complexity* row
+  (default high), the size-rule regex of `openai.js` fixed for 2.6, and the stale 2.5 bits (WaveSpeed's mask, fal and
+  Replicate variants); built from docs on the branch `gpt26` (worktree `.claude/worktrees/gpt26`), merged into
+  `corridorkey` for 0.1.52. Research in `docs/research/gpt_image_2_6_2026-11-06/` on that branch.
+- 52: **P-H3-Image** (PrunaAI's 8-step image fine-tune of MiniMax H3; the user, 2026-11-06): a local recipe on the LoRA
+  route of Comfy's template (the user's `minimax_h3_fl2va_pruned_int8_convrot` plus `p-h3-image_lora_bf16`, the P-H3
+  text encoder, VAE and upsampler, **downloaded 2026-11-06 into the user's models folder, sha256 checked**, 16.9 GB), a
+  WaveSpeed variant and a Comfy Cloud variant; built on the branch `ph3` (worktree `.claude/worktrees/ph3`,
+  `docs/PLAN_PH3.md` there), merged into `corridorkey` for 0.1.52; the live run on the user's word. **The MiniMax H3
+  Community License excludes the EU, the UK, South Korea and the US** (no use or display of the model or its outputs
+  there without MiniMax's separate licence); the user knows and decided to go ahead ("achte nicht auf die license");
+  the recipe, RECIPES.md and the manual carry one plain line on it. Research in `docs/research/p_h3_image_2026-11-06/`.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
